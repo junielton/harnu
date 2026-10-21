@@ -10,6 +10,16 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-21
+
+### Added
+
+- **The review companion now sees what you have selected, without you doing anything.** While a companion is open, every change of the selection in the Review diff — a click, a range, a drag, a whole file — is shared with it half a second after you stop, as a hidden note. It is never a message and never a turn: nothing is typed into the conversation and the companion says nothing until you start the conversation yourself. While it is answering a question, updates wait and only the latest is sent when the answer is done. There is no send button; the bar keeps **Copy as text** and **Clear selection**.
+- **A one-line chip says whether the companion sees the selection on screen** — _Updating…_ or _Companion sees this_ — and never whether it was asked or answered: that describes the conversation, not your selection, and a "reviewed"-style badge would claim more than Harnu knows. When something does not work it says so in one plain sentence with what to do next: **Try again**, **Open Mods settings**, or — when the companion was started before the Harnu mod was on and so can never receive a selection — close it and open a fresh one. Open Mods settings is offered only when the mod is actually off.
+- **Copy as text** copies exactly the text the companion would have been sent, so you can paste it into any session. It works with no companion and no mod, and is unavailable only after the head or base moved.
+- **A range that spans both sides of a change is honest about what it sends.** The companion is told where it starts and ends, but not the lines in between, and the bar says so: _Lines not included — the range spans both sides_.
+- With no companion open nothing is sent, and the bar says so quietly: _Open "Ask a fresh session" first_.
+
 ## 2026-10-20
 
 ### Added

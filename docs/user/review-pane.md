@@ -378,7 +378,7 @@ be an AI findings list wearing a costume — the thing this pane exists to not b
 
 ### What the session _is_ told
 
-There is one exception to "Harnu never speaks first", and it is not a message —
+There are two exceptions to "Harnu never speaks first", and neither is a message —
 nothing is typed into the conversation, and nothing appears in the transcript.
 Before its first turn the session is handed a short **orientation**: that the
 folder it is standing in has nothing to do with the diff you are reading, the
@@ -401,7 +401,13 @@ or the base no longer resolves, the orientation says exactly that and names no
 command, so the session asks you instead of running something that quietly works
 against the wrong commit.
 
-You can read the whole thing. The scroll icon in the companion's header opens
+The second is the selection (see
+[Sharing a selection with the companion](#sharing-a-selection-with-the-companion)):
+while a companion is open, Harnu keeps a hidden note of which lines you have
+selected up to date in its context. It is never a turn, never typed into the
+composer, and the companion does not speak because of it.
+
+You can read the orientation. The scroll icon in the companion's header opens
 **What this session was told**, showing the text verbatim. It is worth knowing it
 is there: the orientation is invisible by design, and a reviewer who cannot check
 what its reader was primed with is trusting a black box.
@@ -461,9 +467,11 @@ list, and re-flags live if the list changes while the pane is open.
 ## Selecting lines
 
 You can select lines in the diff — one row, a range, or a whole file — and the
-pane shows exactly what you picked. **In this release a selection is only
-highlighted: nothing is sent to the companion session or anywhere else.**
-Sending a selection to the companion comes in a later release.
+pane shows exactly what you picked. While a companion session is open, your
+selection is also shared with it automatically (see
+[Sharing a selection with the companion](#sharing-a-selection-with-the-companion));
+with no companion open, a selection is only highlighted and nothing is sent
+anywhere.
 
 - **Click** a line number (the gutter on the left of a row) to select that row.
   Click the only selected row again to clear it.
@@ -483,9 +491,10 @@ The text of the code itself is still ordinary selectable text: drag across the
 code to copy it as usual. Only the line numbers select for the review.
 
 The bar at the bottom of the review names the file and the lines (`L85–92`,
-`old L85–92`, `whole file`) and has a **Clear selection** button. On a narrow
-window it wraps onto two rows rather than hiding anything. It never shows a
-count of selections or any "progress" — there is only ever one selection.
+`old L85–92`, `old L85 – new L92`, `whole file`) and has a **Copy as text** and a
+**Clear selection** button. On a narrow window it wraps onto two rows rather
+than hiding anything. It never shows a count of selections or any "progress" —
+there is only ever one selection.
 
 **When the selection goes away.** There is one selection at a time; picking
 something else replaces it. It also clears when you collapse its file (including
@@ -495,6 +504,86 @@ commit**, the selection is cleared and the bar tells you so — for example _The
 head moved (a1b2c3d → e4f5a6b). Selection cleared._ — because a range picked on
 the old commit would no longer mean the same lines. Selections are not carried
 over to the new commit in this release; pick again.
+
+### Sharing a selection with the companion
+
+While a companion is open ([Ask a fresh session](#ask-a-fresh-session)), the
+selection you make is shared with it **automatically and silently**. Pick a line,
+a range or a file and, about half a second after you stop changing it, the
+companion is told which lines you are looking at. It is a hidden note, not a
+message: nothing is typed into the conversation, no turn starts, and the
+companion says nothing. **You** start the conversation, in the companion — a
+question like "what am I looking at?" or "is this safe?" can then refer to your
+selection. Pick something else and the companion's note is replaced; only the
+latest selection counts, and rapid changes while you drag or click around send
+one update, not one per click.
+
+**What the companion is told.** The file, which commits you are reviewing, whether
+the lines are on the old or the new side, and — for a range on one side — the
+selected lines themselves, read from git (up to 200 lines or 8,000 characters;
+past that it says how many lines were left out). It is told nothing from the
+evidence header and no verdict of any kind. A range whose two ends are on
+**different sides** (`old L85 – new L92`) is different: the companion is told
+both ends but **the lines are not included**, and the bar says so while that
+selection is live — `Lines not included — the range spans both sides`.
+
+**A line above the companion's prompt.** While a selection stands, the Harnu mod
+draws one line above the prompt inside the companion's own terminal
+(`⧉ speech.ts L85–92`), so you can see in the place you are typing what the
+companion has. It goes away once the companion finishes answering you; the note
+itself stays in the companion's context.
+
+**While the companion is answering, updates wait.** If you change the selection
+while an answer is being written, nothing is sent until that answer finishes, and
+then only the latest selection is. (Only the first answer after a selection is
+noticed this way; see "What is not built yet".)
+
+**The chip.** Under the buttons, one short line says whether the companion sees
+**the selection on screen** — and nothing else:
+
+- **Updating…** — a change is waiting out the half-second, or waiting for an answer
+  to finish.
+- **Companion sees this** — the note is in the companion's context. That is the
+  whole claim. It does not say the companion read it, used it, or answered about
+  it, and it does not say whether you asked anything: Harnu does not show whether a
+  question was asked or answered, because that is about the conversation, not about
+  your selection.
+- **The conversation was cleared** — you ran `/clear` in the companion, so it no
+  longer has the note. **Try again** sends it again.
+- **The companion was closed.**
+- Anything that did not work gets one plain sentence saying what happened and what
+  to do next, never text written by the mod or by the companion. The ones you are
+  most likely to meet: **Not connected to the Harnu mod** (with the reason below
+  it), **Connection to the companion was lost**, **The companion is busy**,
+  **The companion is starting a new conversation** (each with **Try again**), and
+  **The head moved — this selection is out of date** (select again).
+
+**"Not connected to the Harnu mod".** The mod can only join a session when that
+session **starts**, so what to do depends on the reason shown under the sentence:
+
+- _The Harnu mod is switched off_ — **Open Mods settings** takes you to
+  Settings → Mods. Turn it on, then open a new companion.
+- _This session started without the Harnu mod_, or _Harnu is waiting for you to
+  see the mod notice_ — the companion was started before the mod was on, and
+  turning it on now cannot reach a session that is already running. **Close the
+  companion and use “Ask a fresh session” in the review header again.**
+- _This Claude Code version is too old for the Harnu mod_, or _Harnu couldn't read
+  the Claude Code version_ — neither Settings nor a new companion helps; update
+  Claude Code. **Copy as text** still works.
+
+**With no companion open, nothing is sent**, and the bar says so quietly:
+`Open "Ask a fresh session" first`. Harnu never opens a companion for you. Open one
+while something is selected and the selection is shared straight away.
+
+**Copy as text** is the way around every failure. It copies exactly the text the
+companion would have been sent, so you can paste it into any session yourself. It
+needs no companion and no mod. The one time it is unavailable is after the head or
+base moved, because the text would be stale.
+
+**Clearing does not retract.** Clear selection (or Esc) clears the pane only. A
+note already in the companion cannot be taken back and Harnu does not send a
+"nothing is selected" note, so the companion keeps the last selection it was told
+about until you select something else.
 
 ---
 
@@ -512,10 +601,18 @@ Named here so you know they are missing rather than broken:
 - **Expanding a `⋯ n unchanged lines` gap.** The count is accurate; clicking it
   does nothing, because the pane only has the lines git put in the diff.
 - **An editor for the sensitive-path list** (above).
-- **Asking about specific lines.** You can select lines in the diff (see above),
-  but sending that selection to the companion session — "ask about this" — is
-  not in this release. It is a later step, deliberately left until the plain
-  conversation has been lived with for a while.
+- **Telling the companion that nothing is selected.** Clearing the selection leaves the
+  last note in the companion (see "Clearing does not retract" above).
+- **Noticing every answer.** Updates are held only while the first answer after a
+  selection is being written. If you ask a second question about the same
+  selection and then change the selection, the update goes out immediately and the
+  companion's running answer may pick it up.
+- **Sending a selection after `/clear` in the companion.** `/clear` starts a new
+  conversation, and the companion can then no longer be reached by the selection
+  update: **Try again** answers _Not connected to the Harnu mod_. Close it and open
+  a fresh companion. This is a known gap, not intended behaviour.
+- **Quoting a range that spans both sides.** The companion is told where such a
+  range starts and ends but is not sent the lines between (see above).
 - **Inline review comments on specific lines.** The review you submit is a
   single body against the whole pull request; you cannot yet attach a comment to
   a line in the diff. That is a later step, and it will go through the same

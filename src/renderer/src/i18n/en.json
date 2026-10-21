@@ -3791,7 +3791,6 @@
         "baseMoved": "The base moved ({from} → {to}). Selection cleared."
       },
       "action": {
-        "ask": "Ask about this",
         "copy": "Copy as text",
         "clear": "Clear selection",
         "dismiss": "Dismiss",
@@ -3803,15 +3802,8 @@
         "narrow": "Narrow the selection"
       },
       "state": {
-        "queued": "Sending…",
-        "delivered": "Sent — ask your question in the companion",
-        "asked": "Asked — waiting for the answer",
-        "answered": "Answered",
-        "stopped": {
-          "aborted": "That turn was stopped",
-          "refusal": "The companion declined that turn",
-          "error": "That turn failed"
-        },
+        "queued": "Updating…",
+        "delivered": "Companion sees this",
         "cleared": "The conversation was cleared",
         "ended": "The companion was closed"
       },
@@ -3856,8 +3848,16 @@
           "revoked": "Mod delivery was switched off",
           "host-shutdown": "Harnu is shutting down",
           "cancelled": "Cancelled"
-        }
-      }
+        },
+        "unknown": "Harnu couldn't complete that send"
+      },
+      "copied": "Copied",
+      "copyFailed": "Couldn't copy to the clipboard",
+      "guide": {
+        "refresh": "Use “{action}” in the review header",
+        "freshCompanion": "Close this companion, then use “{action}” in the review header"
+      },
+      "mixedNote": "Lines not included — the range spans both sides"
     },
     "truncated": "This diff was cut to keep the pane responsive: {n} files are not shown, out of {rows} changed lines in total.",
     "receipt": {

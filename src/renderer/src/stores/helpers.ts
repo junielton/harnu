@@ -1049,6 +1049,21 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
+   * The minted `--session-id` of the review companion open in the current worktree's
+   * stack, or `null` when there is none (T257 U2b).
+   *
+   * The ONE thing the selection store reads from the helper stack, and read-only: it
+   * addresses the companion by this id and learns nothing else about the pane —
+   * never its PTY, its output or its state (spec §11 G-5).
+   */
+  const reviewCompanionSessionId = computed<string | null>(() => {
+    for (const pane of panesForCurrentWorktree.value) {
+      if (pane.type === 'review-companion') return pane.sessionId
+    }
+    return null
+  })
+
+  /**
    * Dispose every review companion, in every worktree (T245 AC-6).
    *
    * Registered against `ui.registerReviewClosedHandler` below, so closing the
@@ -1500,6 +1515,7 @@ export const useHelpersStore = defineStore('helpers', () => {
     addReviewCompanionHelper,
     promoteReviewCompanion,
     canPromoteReviewCompanion,
+    reviewCompanionSessionId,
     disposeReviewCompanions,
     addForkHelper,
     removeHelper,

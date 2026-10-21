@@ -121,9 +121,15 @@ describe('U1-AC-4 — its own store', () => {
     expect(src).not.toMatch(/selection/i)
   })
 
-  it('the selection store calls no window.api at all in this unit', () => {
+  // U1 pinned "no window.api at all in this unit". U2b is the unit that gives this store its
+  // three delivery names (spec §4.1, §6.5), so the pin tightens rather than disappears: exactly
+  // those three, and nothing else (U2b-AC-7 pins the same set from the repo side).
+  it('the selection store calls exactly the three delivery names on window.api', () => {
     const src = readFileSync('src/renderer/src/stores/review-selection.ts', 'utf8')
-    expect(src).not.toMatch(/window\.api\.\w/)
+    const calls = new Set([...src.matchAll(/window\.api\.(\w+)/g)].map((m) => m[1]))
+    expect(calls).toEqual(
+      new Set(['reviewSelectionSend', 'reviewSelectionCompose', 'onReviewSelectionState'])
+    )
   })
 })
 
