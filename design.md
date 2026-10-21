@@ -435,6 +435,12 @@ _another_ folder.
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
 | `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
 | `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
+| `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane")                                                                                                                                                                         |
+| `arrow-left` / `arrow-right`             | Browser pane → back / forward (address bar)                                                                                                                                                                                            |
+| `rotate-cw`                              | Browser pane → reload (swaps to `x` — stop — while a load is in flight)                                                                                                                                                                |
+| `play`                                   | Browser pane → Resume the agent after "Pause agent for 10 min" (chip)                                                                                                                                                                  |
+| `pause`                                  | Browser pane → "Pause agent for 10 min" (⋯ menu)                                                                                                                                                                                       |
+| `bug`                                    | Browser pane → Open DevTools (⋯ menu)                                                                                                                                                                                                  |
 
 ### Novelty dot (on an icon button)
 
@@ -3750,6 +3756,86 @@ re-checked every 5s.
 **Motion.** The leading dot uses `.anim-pulse-dot.anim-pulse-dot--accent` (§7 — Agent
 activity pulse). Under `prefers-reduced-motion` there is no pulse; the word carries
 the signal.
+
+#### Browser pane
+
+`BrowserPane.vue` (T564 U1, spec `docs/specs/2026-10-21-T564-browser-pane.md` §2 and §7.4; approved mockup
+`docs/specs/T564-browser-pane-mockup/`, scenarios "Comment" for the header and "States" for the chip). A real
+Chromium page inside the helper stack. **The page is not DOM.** It is a native `WebContentsView` that main
+positions over the pane's **host `<div>`**; the renderer only reports that div's rectangle (spec §2.3) and
+draws the chrome around it. Because a native view is drawn above every DOM layer, anything that overlaps it
+must freeze it first (see "Frozen frame").
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│ 🌐 localhost:5173   ● Connected to ‹Fix login bug› · driving   ⋯  ⤢  ✕ │  header, 24px
+├───────────────────────────────────────────────────────────────────────┤
+│ ←  →  ⟳  [local] [⚠ opened by agent · docs.example.com ✕] http://…/   │  address bar, 28px
+├───────────────────────────────────────────────────────────────────────┤
+│ ⚠ Blocked: file:// pages cannot be opened                          ✕  │  notice strip (only when set)
+├───────────────────────────────────────────────────────────────────────┤
+│   host <div>  ← the native view is bounded to this rectangle          │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+- **Header** — the standard pane header (24px, `--surface`, 11px `--text-2`, resize handle, maximize and close as
+  in "Pane header"), with: `globe` 12px `--text-3`; the **page title** (falls back to the host, then to
+  `browserPane.newTab`), `min-w-0 flex-1 truncate`, native `title` = the full URL; the **connection chip**
+  (below); a `more-horizontal` button (18×18) that opens the pane menu; maximize; close. Maximize keeps the same
+  view and re-bounds it (spec decision 26); it never re-parents it.
+- **Address bar** — a 28px row (`h-7`, `--bg`, `border-b border-border`, `px-2`, `gap-1`): back, forward and
+  reload as 18×18 icon buttons (`arrow-left`, `arrow-right`, `rotate-cw`; **disabled** is `text-text-disabled`,
+  never hidden; reload becomes `x` = stop while a load is in flight), then the **origin badge**, then the
+  **URL field**. The field is a single-line input, mono 11px, `--surface` fill, `--radius-sm`, 1px `--border`
+  (`--accent-line` on focus). It shows the **real URL** (query string included, because the operator typed it
+  and must be able to edit it). Enter navigates (a bare word with no dot or scheme is treated as `https://` +
+  word; a blocked scheme raises the notice strip and never navigates). Escape restores the live URL.
+  `browser.focusAddress` focuses and selects it.
+- **Origin badge** — a pill with the chip's geometry (`padding 1px 6px`, 10px, `rounded-full`, 1px border) that
+  names the origin class at the moment of the last navigation (spec §1.2): `local` = `--green-soft` fill and
+  `--green` text; `external` = `--surface-2` fill and `--text-3` text; `page` = `--accent-soft` and `--accent`;
+  `blank` shows nothing. Text only, from `$t('browserPane.origin.*')`.
+- **"Opened by agent" flag** (spec §3.2, decision 21) — set when a verb navigated the pane to a host it had not
+  shown before. An amber pill in the address bar, between the origin badge and the field: `--warning` text on a
+  `--warning` 10% fill, 1px `--warning` 30% border, 10px, `triangle-alert` 10px, text "opened by agent · ‹host›",
+  with a 12px `x` that dismisses it. It also clears when the **operator** navigates.
+- **Notice strip** — one optional 22px row under the address bar for a refusal or an intercepted event: a blocked
+  scheme, a certificate error accepted on loopback, a dialog the page raised and Harnu dismissed. `--warning` 10%
+  fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old.
+- **Pane menu (⋯)** — a standard context menu (§6 "Context menu"): **Pause agent for 10 min** (`pause`; becomes
+  **Resume agent** while paused) and **Open DevTools** (`bug`). Clear browsing data, zoom and device mode arrive
+  with later units. It registers with the native-overlay composable, so opening it freezes the view.
+- **Host div** — `flex-1 min-h-0`, `--bg`. It is empty in the DOM: the page is drawn by the native view. While
+  the view is hidden for any reason the host shows `--bg`, never a stale paint.
+
+**Connection chip** — the Agent connection chip's geometry and tokens (see the section above), with these states.
+It shows for an agent-opened pane, and while paused or disconnected.
+
+| State                       | Chip                                                                                                                                   |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent-opened, owner known   | accent pill, "Connected to ‹session›", live word `reading` / `driving` while a verb runs; **Disconnect** (`unplug`) at its right       |
+| Agent-opened, owner unknown | "Connected to an agent"; same Disconnect                                                                                               |
+| Operator-opened             | no chip (an agent has no standing on it before the lease of a later unit); no Disconnect                                               |
+| **Paused**                  | `--warning` 10% pill, `--warning` text, "Agent paused · 9:41" (mm:ss, counts down each second), then a **Resume** text button (`play`) |
+| **Disconnected**            | `--red-soft` pill, `--red` text, "Disconnected" (the mockup's red chip), no button. Permanent; the operator keeps using the pane       |
+
+The pause countdown is the only chip text that ticks. It is plain text with no animation, so nothing changes under
+`prefers-reduced-motion`. Disconnect needs **no confirm** (revoking is the safe direction) and is **permanent**,
+exactly like the terminal chip.
+
+**Frozen frame** (spec §2.4). When any registered overlay rectangle intersects a visible pane's rectangle, or an
+overlay is `fullscreen`, or a splitter or sidebar drag starts, main captures the view as a JPEG, the renderer
+paints it as an `<img>` filling the host (`object-fit: fill`, no border, no filter: it must look like the live
+page), and main hides the view. When the last overlay closes the view returns and the `<img>` is removed on the
+next frame. While frozen the page keeps running and agent verbs keep working; the operator sees a still image.
+No new colour or motion: the swap is instant (no fade, so a menu opening never flashes). Every app layer that can
+overlap a pane registers with the native-overlay composable: context menus, dialogs, popovers, palettes, toasts,
+the Split dropdown, and the pane's own ⋯ menu. A **parked** view (spec §2.3, a 1×1 view in the window's
+bottom-right corner) registers the same way and is hidden while an overlay intersects that corner.
+
+**Open from the Split menu.** The Split dropdown gains a **Browser** item (`globe`) that opens an operator pane at
+`about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
+agent partition (spec §3.4). Operator panes are unlimited; agent panes are capped at 4 per folder.
 
 #### Review companion pane
 
