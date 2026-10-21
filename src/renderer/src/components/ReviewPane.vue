@@ -64,6 +64,7 @@ import {
 import type { DiffFile, DiffHunk, DiffRow } from '../../../main/review-core'
 import { correctiveFromSnapshot, UNKNOWN_CORRECTIVE } from '../../../main/review-corrective'
 import { gutterKeyAction, stepRow, type RowPos } from '../lib/review-selection'
+import { keyNotFromTextEntry } from '../lib/takeover-esc'
 import type { CapturedSelection } from '../stores/review-selection'
 
 const { t } = useI18n()
@@ -399,12 +400,32 @@ function onGutterKey(e: KeyboardEvent, file: DiffFile, hi: number, ri: number): 
     return
   }
   // Only swallow Esc when it clears something, so it still closes the takeover
-  // for an operator with nothing selected.
+  // for an operator with nothing selected. `onEscCapture` normally clears first.
   if (selection.live) {
     e.preventDefault()
     e.stopPropagation()
     selection.clear('esc')
   }
+}
+
+/**
+ * Esc clears the line selection wherever focus sits in Review, not only on a
+ * gutter — in the document CAPTURE phase, stopped only when it cleared
+ * something, so the first Esc clears and the next reaches `view.closeTakeover`
+ * (T486 §6.1). Document, not window: a dialog, palette or menu over Review
+ * listens in window capture and keeps its Esc, and so does a drag in flight
+ * (`onDragKey`). A text field keeps its Esc (the bounce and verdict boxes
+ * cancel on it), and so does a pane beside Review — the companion's terminal
+ * gets Esc to interrupt Claude. A footer / Topbar popover owns it too.
+ */
+function onEscCapture(e: KeyboardEvent): void {
+  if (gutterKeyAction(e.key, false)?.kind !== 'clear') return
+  if (!selection.live || ui.anyPopoverOpen) return
+  if (!keyNotFromTextEntry()) return
+  if (document.activeElement?.closest('[data-focus-region]')) return
+  e.preventDefault()
+  e.stopPropagation()
+  selection.clear('esc')
 }
 
 // ── Intent rail + the ~1000px breakpoint (AC-8) ─────────────────────────────
@@ -771,6 +792,7 @@ async function boot(path: string, slug: string): Promise<void> {
 }
 
 onMounted(() => {
+  document.addEventListener('keydown', onEscCapture, true)
   clock = setInterval(() => (now.value = Date.now()), 30_000)
   measure()
   if (body.value) {
@@ -792,6 +814,7 @@ onBeforeUnmount(() => {
   ro?.disconnect()
   window.removeEventListener('mouseup', endDrag)
   window.removeEventListener('keydown', onDragKey, true)
+  document.removeEventListener('keydown', onEscCapture, true)
   store.reset()
   selection.reset()
 })

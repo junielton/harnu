@@ -250,7 +250,8 @@ exactly like its **X**, including the review's side pane. It peels **one layer
 per press**: a dialog, the command palette, a right-click menu or a footer /
 Topbar popover open over the view closes first; then the view's own state —
 Cleanup's selection, then its side panel, a PR Stack filter, the Roadmap's
-dispatch confirm, or a selection on a canvas pane beside the view; only the next
+dispatch confirm, a line selection in Review, or a selection on a canvas pane
+beside the view; only the next
 `Esc` closes the view. `Esc` typed in a text field stays with the field, and in
 a terminal pane it goes to the program running there (Claude Code uses it to
 cancel), so the view stays open. The command id is `view.closeTakeover`; you can
