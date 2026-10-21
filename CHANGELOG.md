@@ -12,6 +12,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-10-21
 
+### Fixed
+
+- **Clearing the selection now tells the review companion.** Clear selection, Esc, collapsing the file or a refresh that moves the head used to leave the last selection in the companion's context, so it kept answering about lines you were no longer looking at. It is now told that nothing is selected in the review right now, through the same hidden note, after the same half-second pause. Nothing is sent if the companion never had a selection to replace.
+- **The line above the companion's prompt no longer disappears after the first answer.** It said which selection the companion has, then vanished once the companion answered while the note was still in its context. It now stays for as long as the selection is the companion's current one, and goes away only when you clear it, run `/clear` in the companion, or close it.
+- **A selection made after `/clear` in the companion now reaches it.** Running `/clear` gave the conversation a new id, and Harnu kept addressing the old one, so every later selection failed with _Not connected to the Harnu mod_ and the only way out was a fresh companion. Harnu now follows the companion through `/clear` and a resume.
+- **Updates now wait for every answer, not only the first.** A second question about the same selection, followed by a change of selection, used to send the update straight into the answer being written. It now waits until that answer is done, like the first one.
+
 ### Added
 
 - **The review companion now sees what you have selected, without you doing anything.** While a companion is open, every change of the selection in the Review diff — a click, a range, a drag, a whole file — is shared with it half a second after you stop, as a hidden note. It is never a message and never a turn: nothing is typed into the conversation and the companion says nothing until you start the conversation yourself. While it is answering a question, updates wait and only the latest is sent when the answer is done. There is no send button; the bar keeps **Copy as text** and **Clear selection**.

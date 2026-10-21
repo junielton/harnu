@@ -109,10 +109,12 @@ things, both for the selection you make in the diff:
 - **It receives a hidden note.** While the companion is open, Harnu tells the mod which
   lines you have selected, and the mod adds that to the companion's context. It is not a
   message and not a turn: nothing is typed into the conversation and the companion does
-  not answer it. A newer selection replaces the note.
+  not answer it. A newer selection replaces the note, and clearing the selection replaces
+  it with a note that says nothing is selected.
 - **It draws one line above the companion's prompt** (`⧉ speech.ts L85–92`) while the
-  selection stands, so you can see what the companion has. The line is cleared once the
-  companion finishes answering you.
+  selection stands, so you can see what the companion has. The line stays through the
+  companion's answers and is cleared when you clear the selection, run `/clear` in the
+  companion, or close it.
 
 Neither works in any other session: the mod only does this for a review companion that
 Harnu started, and only if the mod was **on when that companion started** — a mod joins a

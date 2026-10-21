@@ -530,13 +530,15 @@ selection is live — `Lines not included — the range spans both sides`.
 **A line above the companion's prompt.** While a selection stands, the Harnu mod
 draws one line above the prompt inside the companion's own terminal
 (`⧉ speech.ts L85–92`), so you can see in the place you are typing what the
-companion has. It goes away once the companion finishes answering you; the note
-itself stays in the companion's context.
+companion has. It stays for as long as that selection is the one the companion has
+— including after it answers you, since the note is still in its context — and it
+changes when you pick something else. It goes away when you clear the selection,
+when you run `/clear` in the companion, or when the companion is closed.
 
-**While the companion is answering, updates wait.** If you change the selection
-while an answer is being written, nothing is sent until that answer finishes, and
-then only the latest selection is. (Only the first answer after a selection is
-noticed this way; see "What is not built yet".)
+**While the companion is answering, updates wait.** If you change or clear the
+selection while an answer is being written, nothing is sent until that answer
+finishes, and then only the latest state is. This holds for every question you ask,
+not only the first one after a selection.
 
 **The chip.** Under the buttons, one short line says whether the companion sees
 **the selection on screen** — and nothing else:
@@ -549,7 +551,8 @@ noticed this way; see "What is not built yet".)
   question was asked or answered, because that is about the conversation, not about
   your selection.
 - **The conversation was cleared** — you ran `/clear` in the companion, so it no
-  longer has the note. **Try again** sends it again.
+  longer has the note. **Try again** sends it again, and so does picking something
+  else: the companion is still reachable after `/clear`.
 - **The companion was closed.**
 - Anything that did not work gets one plain sentence saying what happened and what
   to do next, never text written by the mod or by the companion. The ones you are
@@ -580,10 +583,12 @@ companion would have been sent, so you can paste it into any session yourself. I
 needs no companion and no mod. The one time it is unavailable is after the head or
 base moved, because the text would be stale.
 
-**Clearing does not retract.** Clear selection (or Esc) clears the pane only. A
-note already in the companion cannot be taken back and Harnu does not send a
-"nothing is selected" note, so the companion keeps the last selection it was told
-about until you select something else.
+**Clearing tells the companion.** Clear selection, Esc, collapsing the file or a
+refresh that moves the head all replace the note with one that says nothing is
+selected in the review right now, so the companion does not keep answering about
+lines you are no longer looking at. It is sent only when the companion has a
+selection note to replace, and like every update it waits out the half-second and
+any answer in progress.
 
 ---
 
@@ -601,16 +606,6 @@ Named here so you know they are missing rather than broken:
 - **Expanding a `⋯ n unchanged lines` gap.** The count is accurate; clicking it
   does nothing, because the pane only has the lines git put in the diff.
 - **An editor for the sensitive-path list** (above).
-- **Telling the companion that nothing is selected.** Clearing the selection leaves the
-  last note in the companion (see "Clearing does not retract" above).
-- **Noticing every answer.** Updates are held only while the first answer after a
-  selection is being written. If you ask a second question about the same
-  selection and then change the selection, the update goes out immediately and the
-  companion's running answer may pick it up.
-- **Sending a selection after `/clear` in the companion.** `/clear` starts a new
-  conversation, and the companion can then no longer be reached by the selection
-  update: **Try again** answers _Not connected to the Harnu mod_. Close it and open
-  a fresh companion. This is a known gap, not intended behaviour.
 - **Quoting a range that spans both sides.** The companion is told where such a
   range starts and ends but is not sent the lines between (see above).
 - **Inline review comments on specific lines.** The review you submit is a
