@@ -65,6 +65,8 @@ const changedCbs = new Set<(p: Changed) => void>()
 /** Resolves the held `canvasWatchStart` — "chokidar is now watching the file". */
 let watchLive: (() => void) | null = null
 let holdWatch = false
+let reads = 0
+let failWatch = false
 
 const ctxFor = (): Parameters<typeof drawCanvasHandler>[1] =>
   ({ folder, folders: [], denyFolders: [], bridge: undefined }) as Parameters<
@@ -128,6 +130,8 @@ beforeEach(async () => {
   changedCbs.clear()
   watchLive = null
   holdWatch = false
+  reads = 0
+  failWatch = false
 
   registerCanvasWatchHandlers(
     () =>
@@ -142,12 +146,16 @@ beforeEach(async () => {
   )
 
   const api = {
-    canvasRead: (p: string) => readCanvasFile(p),
+    canvasRead: (p: string) => {
+      reads++
+      return readCanvasFile(p)
+    },
     canvasWrite: (p: string, doc: unknown, writerId?: string) =>
       writeCanvasFile(p, doc, { selfWrite: true, writerId }),
     // The contract of the real handler: resolves once the file is being watched.
     canvasWatchStart: async (p: string) => {
       if (holdWatch) await new Promise<void>((r) => (watchLive = r))
+      if (failWatch) throw new Error('watch unavailable')
       addCanvasRef(p)
     },
     canvasWatchStop: async (p: string) => {
@@ -220,6 +228,24 @@ describe('BUG-210 — a write while the pane is still opening', () => {
     await notifyCanvasChanged(canvasPath)
     await settle()
     expect(pane.element.textContent).toContain('AgentLater')
+    pane.unmount()
+  })
+
+  it('a pane closed while it waits for the watch does not go on to load', async () => {
+    holdWatch = true
+    const pane = mountPane()
+    await settle()
+    pane.unmount()
+    watchLive!()
+    await settle()
+    expect(reads).toBe(0)
+  })
+
+  it('a watch that cannot start does not stop the pane from showing the board', async () => {
+    failWatch = true
+    const pane = mountPane()
+    await settle()
+    expect(pane.element.textContent).toContain('Renderer')
     pane.unmount()
   })
 })

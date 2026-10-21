@@ -1612,6 +1612,8 @@ watch(
  *    informed choice rather than a silent loss.
  */
 let unsubscribeCanvasChanged: (() => void) | undefined
+/** Set on unmount, so an open still waiting on the watch does not go on to load. */
+let unmounted = false
 /** This mounted pane's identity for `canvas:write` / `canvas:changed` (BUG-209): two
  *  panes can hold the same file, so the echo of a Save is told apart per pane. */
 const writerId = `diagram-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
@@ -1633,7 +1635,14 @@ onMounted(async () => {
   window.addEventListener('blur', onWindowBlur)
   // Read only once the watch is live (BUG-210): a write between the read and the
   // watch going live would produce no event, and the next Save would revert it.
-  await window.api.canvasWatchStart(filePath.value, writerId)
+  // A watch that cannot start must not keep the board from showing.
+  try {
+    await window.api.canvasWatchStart(filePath.value, writerId)
+  } catch {
+    // Read anyway: the pane works, it just won't hear outside changes.
+  }
+  // The wait can be long; a pane closed meanwhile has nothing left to build into.
+  if (unmounted) return
   await load(filePath.value, true)
   // Follow the pane as the operator drags the inter-pane divider or maximizes.
   // X6 reads its container's size only at construction and then PINS an inline
@@ -1655,6 +1664,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  unmounted = true
   window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('keyup', onWindowKeyup)
   window.removeEventListener('blur', onWindowBlur)
