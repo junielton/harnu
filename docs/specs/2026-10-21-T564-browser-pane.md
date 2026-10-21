@@ -1,17 +1,23 @@
 # T564 — Browser pane: a `WebContentsView` helper pane with agent verbs, live panels and point-and-comment
 
-Status: **draft for operator review, 2026-10-21** · card T564 (design card T565) · docs only, no code.
+Status: **approved by the operator, 2026-10-21; every open question resolved (§14)** · card T564 (design card T565) · docs only, no code.
 PRD: `docs/prds/T564-browser-pane.md` · ADRs: `docs/adr/0021-browser-pane-single-webcontentsview-substrate.md`,
 `docs/adr/0022-page-events-go-to-the-session-only.md`.
+Approved visual reference: `docs/specs/T564-browser-pane-mockup/` (open `index.html`; the five PNGs are its
+scenarios). It shows the **docked** composer (§8). The **floating-at-the-node** variant
+(`1b-comment-floating.png`) was **rejected** in favour of docked (Q2) and is kept only as the record of what
+was not chosen.
 Builds on: ADR-0018 (mod as integration substrate), ADR-0019 (SDK noun transport), ADR-0020 (agent terminals:
 the confirm / lease / disconnect / kill-switch model this spec mirrors), `docs/user/mods.md`,
 `docs/dev/live-verify-second-instance.md`.
 
 > **Requirements are the 31 decisions + 23b on the parent card (operator-approved, 2026-10-21).** This spec
 > does not re-open them. Where a decision is silent, the spec proposes a default and tags it **[gap]**.
-> Where a decision looks technically unsound, §14 says so; the spec still follows the decision.
-> Everything in §13 is an assumption about Electron or Chromium that must be proven in a spike (unit U0)
-> before code that depends on it is written.
+> Every **[gap]** default and every question raised while writing this spec was resolved by the operator on
+> 2026-10-21 (§14, "Resolved questions"). Two resolutions **amend** decisions as first written: Q1 (decision 7:
+> two partitions instead of one) and Q2 (decisions 15–18: the composer is docked in the pane chrome instead of
+> floating in the page). Everything in §13 is an assumption about Electron or Chromium that must be proven in
+> a spike (unit U0) before code that depends on it is written.
 
 ## 1. Intent, scope and traceability
 
@@ -61,11 +67,11 @@ to page events directly (ADR-0022); any implementation.
  Renderer (Vue)                      Main (Node)                              Guest (Chromium)
 ┌───────────────────────┐  IPC   ┌────────────────────────────┐         ┌──────────────────────┐
 │ HelperStack           │◄──────►│ browser/registry           │ owns    │ WebContentsView      │
-│  BrowserPane.vue      │ bounds │  paneId → view + state     ├────────►│  partition           │
-│   header + chrome     │ cmds   │ browser/bounds, freeze     │         │  persist:harnu-      │
-│   host <div> (rect)   │        │ browser/protocol harnu-page│         │  browser             │
-│   freeze <img>        │        │ browser/cdp (debugger)     │ CDP     │  guest preload       │
-└───────────────────────┘        │ browser/verbs (MCP)        ├────────►│  (isolated world)    │
+│  BrowserPane.vue      │ bounds │  paneId → view + state     ├────────►│  partition (§3.4):   │
+│   header + chrome     │ cmds   │ browser/bounds, freeze     │         │  operator or agent   │
+│   docked composer     │        │ browser/protocol harnu-page│         │                      │
+│   host <div> (rect)   │        │ browser/cdp (debugger)     │ CDP     │  guest preload       │
+│   freeze <img>        │        │ browser/verbs (MCP)        ├────────►│  (isolated world)    │
                                  │ browser/overlay-bridge     │         └──────────────────────┘
         MCP (loopback HTTP) ────►│ browser/comment-delivery   │
                                  └────────────────────────────┘
@@ -75,9 +81,10 @@ to page events directly (ADR-0022); any implementation.
   D-2 has main own the PTY; the pane **adopts** it by reporting a rect. An agent-opened pane for a folder the
   operator is not viewing therefore exists, loads and answers reads while hidden.
 - **The renderer owns geometry and chrome**, never page content. It reports the pane host's rect; it renders
-  the header, the connection chip, the zoom and device pickers and the freeze image. It never touches
-  `webContents`.
-- **One guest session, one hardened prefs set** (§3). The guest never gets the app preload or `window.api`.
+  the header, the connection chip, the zoom and device pickers, the freeze image and the **docked comment
+  composer** (§8). It never touches `webContents`. The pane host rect excludes the header and the docked
+  composer, so opening the composer shortens the view instead of covering it.
+- **Two guest sessions, one hardened prefs set** (§3). The guest never gets the app preload or `window.api`.
 
 ### 2.2 Pane type and registry
 
@@ -93,8 +100,8 @@ browser: {
 }
 ```
 
-`BrowserPane` carries `paneId`, `name`, `url`, `pagePath?`, `openedBy`, `ownerSessionId?`, `zoom`, `emulation`,
-`pins`, `lastActiveAt`. The pane renders in `HelperStack` like any other, honours the existing
+`BrowserPane` carries `paneId`, `name`, `url`, `pagePath?`, `openedBy`, `partition` (`operator` | `agent`,
+fixed at creation, §3.4), `ownerSessionId?`, `zoom`, `emulation`, `pins`, `lastActiveAt`. The pane renders in `HelperStack` like any other, honours the existing
 maximize-to-main-pane toggle (decision 26: the same view is re-bounded, never re-parented), and participates in
 the `pane.split` bridge command used by `spawn_terminal` (`src/main/terminal-lifecycle.ts`).
 
@@ -130,7 +137,7 @@ the pane would render underneath it. `WebContentsView` cannot be clipped to a re
   visible views freeze for the duration. Otherwise the pointer enters the native view, the renderer stops
   receiving `pointermove`, and the drag dies.
 - **Tooltips are not registered** (too frequent and too short); they may clip under a view. Toasts **are**
-  registered; the cost is a brief frozen frame while one overlaps a pane (§14, OQ-13 covers the trade-off).
+  registered; the cost is a brief frozen frame while one overlaps a pane (accepted, Q13).
 - While frozen the page keeps running (audio, timers, network) and agent verbs keep working; the operator
   sees a still image and cannot interact. Keyboard focus returns to the renderer.
 - `capturePage()` cost is budgeted at 100 ms for a 1280×800 pane (assumption A12). A failed capture
@@ -146,7 +153,7 @@ Harnu first. New action ids for the keybindings table (T486 conventions: every i
 both locales): `browser.overlay.toggle`, `browser.zoom.in|out|reset`, `browser.devtools`, `browser.reload`,
 `browser.back`, `browser.forward`, `browser.focusAddress`. `browser.overlay.toggle` defaults to
 `Ctrl+Shift+C` scoped to **browser-pane focus only** (Chrome's own inspect chord; Harnu's terminals use it for
-copy, which a focus-scoped binding does not touch — OQ-12).
+copy, which a focus-scoped binding does not touch — Q12).
 
 ### 2.6 New main-process modules (proposed layout)
 
@@ -169,20 +176,20 @@ renderer's session, or another origin's data.
 
 ### 3.1 `webPreferences` (the guest set, distinct from `src/main/index.ts` `createWindow`)
 
-| Pref                                 | Value                                | Why                                                                                   |
-| ------------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `partition`                          | `persist:harnu-browser`              | Decision 7. Isolated from the app's default session; cookies persist.                 |
-| `sandbox`                            | `true`                               | Decision 7. The app window uses `sandbox: false`; the guest must not.                 |
-| `contextIsolation`                   | `true`                               | Preload world is separate from the page world.                                        |
-| `nodeIntegration` / `...InSubFrames` | `false`                              |                                                                                       |
-| `webSecurity`                        | `true`                               | Same-origin policy stays on, including for `harnu-page://`.                           |
-| `allowRunningInsecureContent`        | `false`                              |                                                                                       |
-| `webviewTag`                         | `false`                              | No nested guests.                                                                     |
-| `preload`                            | `out/preload/browser-guest.js`       | Overlay + `harnu` API (§5.3, §8). Not `index.js`.                                     |
-| `autoplayPolicy`                     | `document-user-activation-required`  | The app's `no-user-gesture-required` is for notification sound only.                  |
-| `backgroundThrottling`               | `true`, lifted per call              | Lifted only while a pixel verb runs on a non-visible pane (A3).                       |
-| `spellcheck`, `enableWebSQL`         | `false`                              |                                                                                       |
-| `disableDialogs`                     | `false`, but dialogs are intercepted | `alert/confirm/prompt` raise a header banner and auto-dismiss after the call returns. |
+| Pref                                 | Value                                                                                   | Why                                                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `partition`                          | `persist:harnu-browser` (operator panes) or `persist:harnu-browser-agent` (agent panes) | Decision 7 as amended by Q1 (§3.4). Both isolated from the app's default session; cookies persist in each. |
+| `sandbox`                            | `true`                                                                                  | Decision 7. The app window uses `sandbox: false`; the guest must not.                                      |
+| `contextIsolation`                   | `true`                                                                                  | Preload world is separate from the page world.                                                             |
+| `nodeIntegration` / `...InSubFrames` | `false`                                                                                 |                                                                                                            |
+| `webSecurity`                        | `true`                                                                                  | Same-origin policy stays on, including for `harnu-page://`.                                                |
+| `allowRunningInsecureContent`        | `false`                                                                                 |                                                                                                            |
+| `webviewTag`                         | `false`                                                                                 | No nested guests.                                                                                          |
+| `preload`                            | `out/preload/browser-guest.js`                                                          | Overlay + `harnu` API (§5.3, §8). Not `index.js`.                                                          |
+| `autoplayPolicy`                     | `document-user-activation-required`                                                     | The app's `no-user-gesture-required` is for notification sound only.                                       |
+| `backgroundThrottling`               | `true`, lifted per call                                                                 | Lifted only while a pixel verb runs on a non-visible pane (A3).                                            |
+| `spellcheck`, `enableWebSQL`         | `false`                                                                                 |                                                                                                            |
+| `disableDialogs`                     | `false`, but dialogs are intercepted                                                    | `alert/confirm/prompt` raise a header banner and auto-dismiss after the call returns.                      |
 
 The renderer's CSP (`src/renderer/index.html`) is **unchanged**: guest content lives in its own
 `webContents`, not an iframe. The freeze `<img>` is a `data:` URL, already allowed by `img-src 'self' data:`.
@@ -203,9 +210,9 @@ Enforced in main in three layers, because each alone has gaps: `will-navigate` +
   whose initiator origin is not a `harnu-page://` origin of the **same folder host**. A `local` or `external`
   page cannot embed or fetch our files.
 - **Popups and `target=_blank`:** `window.open` and `_blank` links are denied as popups. If the request
-  carries a real user activation, the target opens as a **new operator-class pane** in the same folder, with
-  no `opener` link and at most one per activation (OQ-10: OAuth flows that need `opener` are unsupported in
-  v1).
+  carries a real user activation, the target opens as a **new operator-class pane** in the same folder (a
+  person's click made it) that **inherits the opener's partition** (§3.4), with no `opener` link and at most
+  one per activation. OAuth flows that need `opener` are unsupported in v1 (Q10).
 - **Downloads (decision 21, 24):** no automatic downloads. `session.on('will-download')` cancels unless a
   `browser_download` call (§6) or an explicit operator Save is in flight. Nothing a download produces is
   ever opened or executed.
@@ -216,7 +223,7 @@ Enforced in main in three layers, because each alone has gaps: `will-navigate` +
   narrower than `setWindowOpenHandler` in `src/main/index.ts`, which opens `http(s)`/`mailto` externally;
   the guest has no such path.
 - **HTTP auth and certificate errors:** `login` events are cancelled. `certificate-error` is denied except
-  for loopback hosts (self-signed local dev HTTPS), where it is accepted and flagged in the header (OQ-14).
+  for loopback hosts (self-signed local dev HTTPS), where it is accepted and flagged in the header (Q14).
 - **"Opened by agent" flag (decision 21):** a navigation to a host not previously seen in this pane's
   history, initiated by a verb, sets `flagged: true` on the pane. The header shows "opened by agent · host",
   until the operator dismisses it or navigates themselves. Every verb navigation is audited (host only, no
@@ -233,14 +240,34 @@ shares the DOM but not JS globals with the page. It does three things and nothin
 3. Talks to main over a **private** `ipcRenderer` channel set that main only accepts from this guest
    `webContents` (`event.sender` checked against the registry). A page cannot send on these channels.
 
-What isolation does and does not give the overlay is stated honestly in §8.6 and OQ-2.
+What isolation does and does not give the overlay is stated in §8.6; the composer, the one part that took
+keystrokes, is no longer in the guest at all (Q2).
 
-### 3.4 Cookies and the partition
+### 3.4 Cookies and the two partitions (decision 7, amended by Q1)
 
-One persistent partition for every pane (decision 7). The header "⋯" menu gets **Clear browsing data** for
-this partition (cookies, cache, storage) **[gap]**, and Settings → Control server mirrors it. A persistent
-partition means an `external` pane can be logged in as the operator; §7 and OQ-1 are about what an agent may
-do there.
+Decision 7 asked for one dedicated persistent partition. Q1 splits it in two, because one partition lets an
+agent `navigate` (free) to a site where the operator is logged in and `snapshot` it (free):
+
+| Partition                     | Used by                                                 | Holds                                                       |
+| ----------------------------- | ------------------------------------------------------- | ----------------------------------------------------------- |
+| `persist:harnu-browser`       | panes the **operator** opened (header button, Explorer) | the operator's own logins, cookies, cache and storage       |
+| `persist:harnu-browser-agent` | panes an **agent verb** opened (`browser_open`)         | logins made inside agent panes, for example a dev app's own |
+
+- **Fixed at creation.** A pane's partition is recorded on the pane (`partition: 'operator' | 'agent'`, §2.2),
+  survives restart, and never changes. No verb argument selects it; `browser_open` always uses the agent
+  partition. A pane an agent opened that the operator then logs in to keeps the agent partition: the login
+  lands there, visible to agents, which is the operator's choice to make.
+- **Both persist** (`persist:`), so a dev server's login in an agent pane survives a restart. They are
+  independent sessions: cookies, storage and cache are never shared between them, and an agent pane starts
+  logged out of every external site.
+- **Popups inherit the opener's partition** (§3.2), so a flow that opens a window keeps its login.
+- **The `harnu-page://` handler is registered on both sessions** (§4.1); the app's default session has none.
+- **Clear browsing data** is in the pane header "⋯" menu and clears **that pane's partition only** (cookies,
+  cache, storage). Settings → Control server has one "Clear browsing data" action per partition, labelled
+  "Operator panes" and "Agent panes".
+- **What this buys the tier table.** An agent-opened pane cannot carry the operator's identity, so reading an
+  external page there is free (§7.1). An operator-opened pane can, so reading it needs the folder opt-in and
+  writing needs a lease, as in §7.1.
 
 ## 4. `harnu-page://` — our files, served
 
@@ -256,9 +283,11 @@ harnu-page://f<folderId>/<posix path relative to that folder>[?query][#hash]
 - `protocol.registerSchemesAsPrivileged` (before `app.whenReady`, like `harnu-voice:` in
   `speech-kokoro.ts`) with `standard: true, secure: true, supportFetchAPI: true, stream: true`. **Not**
   `bypassCSP`, **not** `allowServiceWorkers`.
-- The handler is registered with `session.fromPartition('persist:harnu-browser').protocol.handle(...)`, **not**
-  on the default session. The app renderer therefore cannot request `harnu-page:` at all (its CSP would block
-  it too).
+- The handler is registered with `session.fromPartition(...).protocol.handle(...)` on **both** guest
+  partitions (§3.4), **not** on the default session. The app renderer therefore cannot request `harnu-page:`
+  at all (its CSP would block it too). An operator pane and an agent pane showing the same file are separate
+  origins in separate storage, so a page's `localStorage` is not shared between them; its `setData` state is
+  (§4.5), because that lives on disk.
 
 ### 4.2 Path jail (decision 14)
 
@@ -291,7 +320,7 @@ Reason: decision 25 lets a **read-only** Scheduler worker patch a panel. Without
 the folder. With it, a `page` pane cannot reach the network at all. The cost: a preview of a page that loads a
 CDN script or web font breaks (UC1). The pane header gets a per-pane **"Allow network"** switch, operator
 only, off by default, persisted on the pane; when on, the policy drops to `default-src * data: blob:
-'unsafe-inline'`. **No verb can set it.** OQ-3 asks for confirmation.
+'unsafe-inline'`. **No verb can set it.** Confirmed by the operator (Q3).
 
 ### 4.4 Reload on change
 
@@ -357,7 +386,7 @@ live main-world reference.
      input) on this pane in flight or within the previous **1500 ms** (`agentInputAt`);
   3. the pane is not `paused` and not `disconnected`.
      Condition 2 exists because a CDP-driven click is a real activation: without it, an agent could click its
-     own panel's button and self-approve (OQ-8, assumptions A1/A2).
+     own panel's button and self-approve (Q8, assumptions A1/A2).
 - **Rate:** 1 per second and 20 per minute per pane; excess is coalesced into a `dropped: n` field on the
   next delivered event.
 - **Delivery:** a user turn (§8.7) starting `[harnu-page-event]`, which is **data, never instructions**
@@ -508,22 +537,26 @@ row that says `free` becomes a normal confirm; a mission grant or an "always all
 
 **Rows are verb classes; columns are the origin class at call time.**
 
-| Verb class (verbs)                                                 | Agent-opened pane: `page` | `local` | `external`      | Operator-opened pane (any class)               |
-| ------------------------------------------------------------------ | ------------------------- | ------- | --------------- | ---------------------------------------------- |
-| **Open** (`open`)                                                  | free (cap 4)              | free    | free, flagged   | n/a (creates agent panes)                      |
-| **Navigate** (`navigate`)                                          | free                      | free    | free, flagged   | lease                                          |
-| **Read** (`list`, `snapshot`, `screenshot`, `console`, `wait_for`) | free                      | free    | free **[OQ-1]** | folder opt-in, else `BROWSER_READ_NOT_ENABLED` |
-| **Network capture** (`network start/stop`, `read`)                 | free                      | free    | lease           | lease (and folder opt-in)                      |
-| **Live panel** (`set_data`, `patch`)                               | free                      | refused | refused         | free on `page`, else refused                   |
-| **Eval** (`eval`)                                                  | free                      | free    | **lease**       | **lease** (decision 6)                         |
-| **Input** (`click`, `type`, `fill`, `press`, `upload`) **[gap]**   | free                      | free    | **lease**       | lease                                          |
-| **Emulate** (`emulate`)                                            | free                      | free    | free            | lease                                          |
-| **Download** (`download`)                                          | free                      | free    | free            | lease                                          |
-| **Close** (`close`)                                                | free                      | free    | free            | lease                                          |
+| Verb class (verbs)                                                 | Agent-opened pane: `page` | `local` | `external`    | Operator-opened pane (any class)               |
+| ------------------------------------------------------------------ | ------------------------- | ------- | ------------- | ---------------------------------------------- |
+| **Open** (`open`)                                                  | free (cap 4)              | free    | free, flagged | n/a (creates agent panes)                      |
+| **Navigate** (`navigate`)                                          | free                      | free    | free, flagged | lease                                          |
+| **Read** (`list`, `snapshot`, `screenshot`, `console`, `wait_for`) | free                      | free    | free (Q1)     | folder opt-in, else `BROWSER_READ_NOT_ENABLED` |
+| **Network capture** (`network start/stop`, `read`)                 | free                      | free    | lease         | lease (and folder opt-in)                      |
+| **Live panel** (`set_data`, `patch`)                               | free                      | refused | refused       | free on `page`, else refused                   |
+| **Eval** (`eval`)                                                  | free                      | free    | **lease**     | **lease** (decision 6)                         |
+| **Input** (`click`, `type`, `fill`, `press`, `upload`) **[gap]**   | free                      | free    | **lease**     | lease                                          |
+| **Emulate** (`emulate`)                                            | free                      | free    | free          | lease                                          |
+| **Download** (`download`)                                          | free                      | free    | free          | lease                                          |
+| **Close** (`close`)                                                | free                      | free    | free          | lease                                          |
 
-Why `Input` is a lease on `external` although decision 6 names only `eval`: the partition persists cookies, so
-a click on an external site is the operator's logged-in click. It is the same side door `send_terminal` is
-(ADR-0020), and the decision's own model applies to it. This is gap-fill, flagged in OQ-4.
+Why `Input` is a lease on `external` although decision 6 names only `eval`: a click or a typed field on an
+external site can post, buy or delete as whatever that pane is logged in as. It is the same side door
+`send_terminal` is (ADR-0020), and the decision's own model applies to it. Operator-approved (Q4).
+
+Why **reads on `external` are free** in an agent pane (Q1): the agent partition (§3.4) holds no login the
+operator did not make inside an agent pane, so navigate-then-snapshot cannot reach the operator's mailbox.
+The same row in an **operator-opened** pane is the last column: folder opt-in first.
 
 **Operator-opened panes mirror operator-opened terminals:** reads are blocked until the operator opts the
 folder in (folder menu: "Let agents read browser panes I open", off by default, **exact folder only**), and
@@ -537,7 +570,7 @@ An origin is `local` iff its host is a **literal** member of the folder's _trust
 (the MCP server, the dev-mode CDP port, the dev-mode renderer server), which classify as `external`.
 Classification looks at the host string only; a hostname that merely resolves to loopback is `external`
 (DNS rebinding cannot upgrade a site). The operator can add hosts per folder (`*.test`, a docker service name)
-in the folder menu; **no verb edits the list** **[gap]**, because dev servers on `*.test` are common (OQ-5).
+in the folder menu; **no verb edits the list** **[gap]**, because dev servers on `*.test` are common (Q5).
 Class is re-evaluated at every call and after every redirect: a `local` page that redirects to an external
 site is `external` for the next verb.
 
@@ -564,7 +597,7 @@ trust in the worker.
   every **write** verb (`open`, `navigate`, `network`, `set_data`, `patch`, `eval`, input, `emulate`,
   `upload`, `download`) refuses `BROWSER_WRITES_DISABLED` before any confirm, in free and ask mode, for every
   writer; every lease ends and none is granted; a verb in flight completes. Reads, `list` and `close` keep
-  working **[gap: `close`]**. Live panels therefore stop updating while it is off (OQ-6).
+  working **[gap: `close`]**. Live panels therefore stop updating while it is off (Q6).
 - **Disconnect.** A per-pane header button, **permanent** and **per pane**: reads **and** writes refuse
   `BROWSER_DISCONNECTED` from then on (even `close`). The operator can still use the pane. No verb reconnects;
   a window reload that restores the pane does not either. An agent that still needs a browser opens a new,
@@ -596,16 +629,36 @@ an operator-authority message.
 ### 8.1 Activation (decision 16)
 
 Operator-only; **no verb activates it**. Header button, or `browser.overlay.toggle` (`Ctrl+Shift+C` while the
-pane is focused). Active: hover outlines the element under the pointer with its role/tag and size; click
-pins it and opens the composer; `Esc` exits (and discards an empty composer). The page does not receive the
-picking clicks.
+pane is focused). Active: hover outlines the element under the pointer with its role/tag and size, and a hint
+pill reads "Click an element to comment · Esc to exit"; click pins it and **opens the docked composer**
+(§8.2); `Esc` exits (and discards an empty composer). The page does not receive the picking clicks.
 
-### 8.2 Injection (decision 15)
+### 8.2 Where each part lives (decisions 15–18, amended by Q2)
 
-The overlay is built by `browser-guest.ts` in the **isolated world**, into a **closed shadow root** on a
-host element appended to `document.documentElement`. Pointer picking uses capture-phase listeners that
-ignore any event with `isTrusted === false` and `stopImmediatePropagation()` the ones it consumes. It works on
-every origin class, external included, because nothing is added to the page's own JS world.
+The overlay is split along the one line that matters: **what the page can see.**
+
+| Part                                                                                | Lives in                                                                 | Why                                                                                                    |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Hover outline, hint pill, numbered pins                                             | the **guest**, built by `browser-guest.ts` in the isolated world         | they must sit on the page's own nodes and follow its layout; they carry no text the operator types     |
+| **Composer** (text box, Send, Keep as draft, destination picker, "Send N comments") | the **app's pane chrome** (`BrowserPane.vue`), **docked** below the page | the page cannot read keystrokes typed outside its `webContents`, and a native view never hides it (Q2) |
+
+- **Guest half (decision 15).** Built in the **isolated world**, into a **closed shadow root** on a host
+  element appended to `document.documentElement`. Pointer picking uses capture-phase listeners that ignore any
+  event with `isTrusted === false` and `stopImmediatePropagation()` the ones they consume. It works on every
+  origin class, external included, because nothing is added to the page's own JS world.
+- **Docked half.** A panel under the page, inside the pane (the approved mockup's "Docked" scenario,
+  `docs/specs/T564-browser-pane-mockup/1-comment.png`): a title line ("Comment on `div.pay` ·
+  `src/components/PayButton.vue:42` · crop + HTML + 14 styles attached"), the text box, "Send to ‹session›",
+  **Keep as draft** (Shift+Enter) and **Send** (Enter), and a footer "1 draft · 1 sent" with **Send N
+  comments**. The pane host rect excludes this panel (§2.1), so opening it shortens the view; nothing is drawn
+  over the native view.
+- **The wire between them.** On a pick the guest sends `overlay:picked { paneId, pin }` on the private channel
+  (§3.3) — selector, HTML, styles, component, rect — and main builds the crop (§8.3). Main forwards the pin to
+  the renderer (`browser:pin`), which opens the composer on it. Main sends the numbered pins back to the guest
+  (`overlay:pins`) for display. **The text the operator types never enters the guest.**
+- **Seam.** Because the composer is renderer code, a page cannot observe, forge or submit into it; it can still
+  influence what the composer _shows_ (the selector and HTML preview are page-authored), which is why the
+  preview is rendered as plain text and the message keeps the §8.5 fence.
 
 ### 8.3 Payload (decision 17)
 
@@ -613,7 +666,7 @@ One pin carries:
 
 | Field            | Source                                                                                                                                 | Cap                      |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| `comment`        | the composer text, typed by the operator                                                                                               | 4000 chars               |
+| `comment`        | the docked composer text, typed by the operator                                                                                        | 4000 chars               |
 | `selector`       | stable CSS selector: `data-testid`/`id` first, else shortest unique `tag.class:nth-of-type` path                                       | 512 chars                |
 | `outerHTML`      | the node, children elided past depth 2                                                                                                 | ~2 KB                    |
 | `crop`           | `capturePage({x,y,w,h})` of the node rect, with 8 px padding                                                                           | PNG, longest side 800 px |
@@ -629,7 +682,8 @@ message; image bytes never ride in the turn. Source-component discovery is best-
 - A submitted or drafted comment leaves a **numbered pin** on the node, re-attached by selector after reload
   or navigation within the origin; a pin whose selector no longer matches shows detached at its last rect.
 - **Enter** sends this one comment now, as a single-comment turn. **Shift+Enter** keeps it as a **draft pin**.
-  The header's **"Send N comments"** batches every draft pin into **one** turn, numbered in pin order.
+  The composer footer's **"Send N comments"** batches every draft pin into **one** turn, numbered in pin
+  order.
   A sent pin turns solid and is greyed out as sent; the reply appears in the session chat as ordinary
   assistant output.
 - **Unsent drafts persist** across navigation and restart (§10.3).
@@ -665,28 +719,32 @@ header that states it is data and not the operator speaking.
 
 ### 8.6 What the overlay can and cannot guarantee
 
-- **Cannot be forged by the page:** the page cannot `dispatchEvent` into a trusted pick (`isTrusted`), cannot
-  call the private IPC channels (§3.3), and agent verbs cannot reach it: `eval` runs in the main world, the
-  snapshot strips the overlay (A10), and a comment is accepted only if **no agent input verb** ran on the
-  pane within the previous 1500 ms (the same `agentInputAt` window as §5.4).
-- **Cannot be read by the page through its DOM:** the shadow root is closed.
-- **Can be observed by the page through keystrokes.** While the operator types a comment, the page's own
-  `keydown`/`input` listeners on `window` still receive the key events (they are not stopped in the
-  composer), so a hostile **external** page can read what is typed. Decision 15 as written does not close this.
-  The spec follows decision 15 and keeps the composer behind a seam so it can move; OQ-2 recommends **docking
-  the composer in the app's own pane chrome** (outside the native view, so it has no overlay problem either),
-  keeping highlight and pins in the guest.
+- **Cannot be forged by the page:** the page cannot `dispatchEvent` into a trusted pick (`isTrusted`) and
+  cannot call the private IPC channels (§3.3). A pick is accepted only if **no agent input verb** ran on the
+  pane within the previous 1500 ms (the `agentInputAt` window of §5.4), so an agent cannot use `click` to open
+  a composer on a node of its choosing. Agent verbs cannot reach the guest overlay otherwise: `eval` runs in
+  the main world and the snapshot strips the overlay (A10).
+- **Cannot be submitted by an agent:** the composer is renderer code and CDP is attached to the guest only, so
+  no verb can type into it or press Send. Main accepts `comment:submit` **only from the app window's
+  `webContents`**, never from a guest, and still checks `paused` and `disconnected`.
+- **Cannot be read by the page:** the guest's overlay DOM is a closed shadow root, and the composer is outside
+  the guest entirely, so the page's own `keydown`/`input` listeners never see what the operator types (Q2, the
+  keystroke hole decision 15 as first written left open).
+- **Can still be influenced by the page:** the selector, HTML and styles shown in the composer's preview and
+  carried in the message are page-authored. They are rendered as plain text and fenced (§8.5).
 
 ### 8.7 Delivery — the user-turn path (decisions 19–20)
 
 `message_session` is the wrong door: it refuses operator-owned sessions by design, and a comment **is**
 operator input. The path is the one lesson quizzes already use, generalised and moved behind main:
 
-1. The guest sends `overlay:submit { paneId, batch }` on the private channel. Main checks the sender, the
-   `agentInputAt` window and `paused`/`disconnected`, builds the text with `formatComment()` (§8.5).
+1. The docked composer (renderer) sends `comment:submit { paneId, batch, sessionId }` to main. Main checks
+   that the sender is the app window, that the pane is not `paused` or `disconnected`, and builds the text with
+   `formatComment()` (§8.5).
 2. **Destination (decision 19):** the pane's `ownerSessionId`; no owner (operator-opened) → the folder's
-   **selected session**. The popover has a **destination picker** listing the folder's sessions; the choice is
-   remembered per pane. No session at all → the text is copied to the clipboard and a toast says so.
+   **selected session**. The composer's **"Send to ‹session›"** picker lists the folder's sessions and
+   overrides it; the choice is remembered per pane. No session at all → the text is copied to the clipboard
+   and a toast says so.
 3. Main sends one bridge command to the renderer, **`session.userTurn { sessionId, text, source }`**.
 4. The renderer resolves the PTY with `livePtyIdFor(sessionId)` (`TerminalPane.vue`) and calls
    **`pasteAndSubmit(ptyId, text)`** (`components/prompt-inject.ts`): bracketed paste plus a quiescence-timed
@@ -694,12 +752,12 @@ operator input. The path is the one lesson quizzes already use, generalised and 
 5. **Busy session (decision 20):** the turn is queued **between turns**, never interrupting. `pasteAndSubmit`'s
    submitter fires on output quiescence, so a streaming session receives it when the turn settles; a new rule
    defers the paste while the operator typed in that terminal within the last 1500 ms, to avoid interleaving
-   with their own input (OQ-7).
+   with their own input (Q7).
 6. **Parked session (decision 20):** there is no live PTY, and `MarkdownPane.deliver()` deliberately does not
    queue. Main first **wakes it headlessly** using the wake step behind `message_session`'s `woke: true`
    (it never moves the operator's view), then dispatches `session.userTurn` once the PTY is live. That wake
    step is gated on "Harnu spawned this for an agent" today; for a comment it must be callable for an
-   operator-owned session, because the operator authored the turn (assumption A9, OQ-7).
+   operator-owned session, because the operator authored the turn (assumption A9, Q7).
 7. An Activity row ("Comment sent to ‹session›") is posted; the audit log records the batch size, the
    destination and `source: 'overlay'`. The audit never stores the comment text.
 
@@ -734,7 +792,7 @@ Real mobile rules, not a narrower window, through CDP:
   `setDeviceMetricsOverride` so the page renders at device size and is displayed smaller (assumption A5).
   The fit scale is display-only and never visible to the page.
 - **Zoom vs device.** Entering device mode resets page zoom to 1.0 and disables the zoom controls;
-  `browser_emulate({ zoom })` while a device is active refuses `ZOOM_IN_DEVICE_MODE` (OQ-15).
+  `browser_emulate({ zoom })` while a device is active refuses `ZOOM_IN_DEVICE_MODE` (Q15).
 - **Persistence.** The emulation record lives on the pane (§10.3), is re-applied after navigation commit,
   reload and revive, and is cleared by `reset: true` or by the header's "Reset device".
 - **Operator picker** in the header: preset list, a free-size editor, a rotate button, light/dark and
@@ -753,7 +811,7 @@ Real mobile rules, not a narrower window, through CDP:
   releases the view; the pane keeps its place and shows a "Paused to save memory — click to reload" placeholder.
   Returning to it, or any verb that needs a live page, **revives** it (`revived: true` in the ACK).
   Discard never fires while a verb is in flight, while network capture is active, or while an operator
-  interaction is recent. A live view costs ~100–300 MB, so the number is a real knob (OQ-13).
+  interaction is recent. A live view costs ~100–300 MB, so the number is a real knob (Q13).
 - **No global live cap in v1,** but `app.getAppMetrics()` already reports the guest processes; attributing
   them in the System Monitor is a follow-up, not part of this card.
 
@@ -765,7 +823,7 @@ session, destroy the `webContents`, remove the view. Page files, sidecars and sa
 ### 10.3 Restart restore (decision 27)
 
 `browser` is `persistable`: `helpers.json` stores each pane's `BrowserPane` record, including `paneId`,
-`url`/`pagePath`, `name`, `openedBy`, `ownerSessionId`, `zoom`, `emulation`, `allowNetwork`, and **pins**
+`url`/`pagePath`, `name`, `openedBy`, `partition`, `ownerSessionId`, `zoom`, `emulation`, `allowNetwork`, and **pins**
 (draft and sent: comment text, selector, rect, crop path). On boot the pane reopens **discarded** (lazy: no
 `webContents` until shown or driven), at the same URL; a `page` pane re-reads its sidecar; unsent pins return;
 scroll position is restored best-effort. Unlike agent terminals (ADR-0020: an id held by an agent must never
@@ -777,16 +835,16 @@ network capture, `flagged` state and the pause timer **do not** survive a restar
 
 Per `CLAUDE.md`, none of this lands in this card; it is the checklist for the implementation PRs.
 
-| Contract                               | What                                                                                                                                                                                                                                                              |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `design.md` first                      | pane header (address/title, back/forward/reload, zoom, device picker, overlay button, DevTools, maximize, ⋯), connection chip states, freeze placeholder, overlay (outline, pins, composer, "Send N comments"), the "opened by agent" flag, discarded placeholder |
-| i18n                                   | every string in `en.json` and `pt-BR.json`, same change (`docs/lessons/i18n/002-vue-i18n-schema-parity.md`)                                                                                                                                                       |
-| `docs/harnu-features.md` + marker bump | the 19 verbs, ACK fields to read, tiers, `BROWSER_APPROVED_RESEND`, kill-switch, disconnect, pause, the untrusted-content note, "open this `.html` in the browser pane" as an offer. CI gate `awareness-gate.mjs`                                                 |
-| `docs/user/`                           | a `browser-pane.md` page and an `agent-control.md` section. CI gate `user-docs-gate.mjs` (new component + new verbs)                                                                                                                                              |
-| Keybindings table (T486)               | the §2.5 ids, with handlers and both-locale labels                                                                                                                                                                                                                |
-| `CHANGELOG.md`                         | one user-facing entry per shipped unit                                                                                                                                                                                                                            |
-| Scheduler                              | observe allowlist gains exactly: `browser_list`, `browser_snapshot`, `browser_screenshot`, `browser_console`, `browser_wait_for`, `browser_set_data`, `browser_patch`                                                                                             |
-| `tests/no-client-identifiers.test.ts`  | worked examples use the neutral vocabulary only                                                                                                                                                                                                                   |
+| Contract                               | What                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `design.md` first                      | pane header (address/title, back/forward/reload, zoom, device picker, overlay button, DevTools, maximize, ⋯), connection chip states, freeze placeholder, overlay (outline, hint pill, pins), the **docked composer** (text box, Send, Keep as draft, "Send to", "Send N comments"), the "opened by agent" flag, discarded placeholder. Match the approved mockup in `docs/specs/T564-browser-pane-mockup/` |
+| i18n                                   | every string in `en.json` and `pt-BR.json`, same change (`docs/lessons/i18n/002-vue-i18n-schema-parity.md`)                                                                                                                                                                                                                                                                                                 |
+| `docs/harnu-features.md` + marker bump | the 19 verbs, ACK fields to read, tiers, `BROWSER_APPROVED_RESEND`, kill-switch, disconnect, pause, the untrusted-content note, "open this `.html` in the browser pane" as an offer. CI gate `awareness-gate.mjs`                                                                                                                                                                                           |
+| `docs/user/`                           | a `browser-pane.md` page and an `agent-control.md` section. CI gate `user-docs-gate.mjs` (new component + new verbs)                                                                                                                                                                                                                                                                                        |
+| Keybindings table (T486)               | the §2.5 ids, with handlers and both-locale labels                                                                                                                                                                                                                                                                                                                                                          |
+| `CHANGELOG.md`                         | one user-facing entry per shipped unit                                                                                                                                                                                                                                                                                                                                                                      |
+| Scheduler                              | observe allowlist gains exactly: `browser_list`, `browser_snapshot`, `browser_screenshot`, `browser_console`, `browser_wait_for`, `browser_set_data`, `browser_patch`                                                                                                                                                                                                                                       |
+| `tests/no-client-identifiers.test.ts`  | worked examples use the neutral vocabulary only                                                                                                                                                                                                                                                                                                                                                             |
 
 ### 11.1 Suggested units (one unit, one PR, ≤ ~500 lines)
 
@@ -834,54 +892,45 @@ section, not the whole spec.
 | A7  | `setBounds` with integer DIP is stable under HiDPI, fractional app zoom and Linux X11/Wayland without flicker                                  | §2.3            | snapshot-during-resize                                                  |
 | A8  | `before-input-event` on a guest can forward app chords without breaking IME and page shortcuts                                                 | §2.5            | smaller page-owns/Harnu-owns split                                      |
 | A9  | The headless wake behind `message_session` can be called for an operator-owned parked session                                                  | §8.7            | wake via renderer `selectSession` without focus steal, or queue + toast |
-| A10 | The AX tree includes closed-shadow-root content, and the overlay nodes can be filtered out                                                     | §6.2, §8.6      | overlay moves out of the page (OQ-2 option)                             |
+| A10 | The AX tree includes closed-shadow-root content, and the guest overlay's outline and pins can be filtered out                                  | §6.2, §8.6      | outline and pins move to a separate overlay view (Q2 option)            |
 | A11 | Cross-process iframes in the AX tree are opaque                                                                                                | §6.2            | document, no work                                                       |
 | A12 | `capturePage` of a 1280×800 view completes in ≲ 100 ms                                                                                         | §2.4            | freeze on a lower-resolution capture                                    |
 
-## 14. Open questions — need operator input
+## 14. Resolved questions
 
-Ordered by how much they could change the design. The first four are safety questions: each is a place a
-decision as written leaves a hole. **Recommendation first**, cost after.
+Every question raised while writing this spec was **resolved by the operator on 2026-10-21**. Where a question
+carried a recommendation, the recommendation was adopted. Where it carried none, the spec as written stands.
+Two resolutions **amend** the parent card's decisions as first written (marked **amends**); they are folded into
+§3.4 and §8 and recorded in ADR-0021 (D-2).
 
-1. **OQ-1 — Reads on external sites reuse the operator's cookies.** Decisions 7, 8 and 21 together mean an
-   agent can `navigate` (free) to a site where the operator is logged in, then `snapshot` it (free) and read
-   their mailbox into the transcript. **Recommend** two partitions: `persist:harnu-browser` for
-   operator-opened panes and `persist:harnu-browser-agent` for agent-opened ones, so agent panes start logged
-   out and still keep their own dev-app logins. The spec follows decision 7 (one partition) behind a constant.
-   Cost: the operator logs in separately inside an agent pane.
-2. **OQ-2 — The composer is observable by the page.** §8.6. **Recommend** docking the composer in the app's
-   pane chrome (no keylogging, no overlay-under-native-view problem for it), highlight and pins stay in the
-   guest. Cost: the box is not floating at the node.
-3. **OQ-3 — Network egress from `harnu-page://`.** §4.3 blocks it by default, with an operator-only
-   "Allow network" per pane, so an `observe` worker's `patch` cannot exfiltrate. This is a gap-fill that
-   breaks CDN-dependent previews until the operator flips the switch. **Recommend** keeping it. Confirm.
-4. **OQ-4 — Input verbs on external sites need a lease** (§7.1). Decision 6 only names `eval`. **Recommend**
-   as written; the alternative (free) lets an agent act as the logged-in operator.
-5. **OQ-5 — What counts as `local`.** `localhost` only is too narrow for `*.test` / docker names; a wider
-   rule is a risk. **Recommend** the per-folder _trusted dev hosts_ list (operator-edited, never a verb) and
-   excluding Harnu's own ports (§7.2).
-6. **OQ-6 — Kill-switch scope.** Does "drive browser panes" stop `set_data`/`patch`/`open`? The spec says yes
-   (every write); live panels freeze while it is off.
-7. **OQ-7 — Delivering a comment to a parked, operator-owned session.** Needs the headless wake called for an
-   operator-owned session (A9), plus the "operator typed within 1.5 s" deferral. If A9 fails, the fallback is
-   queue + toast.
-8. **OQ-8 — Is the gesture gate sound?** A CDP click counts as a gesture, so the spec adds the
-   `agentInputAt` window (1.5 s). Residual race: operator and agent acting in the same second. Accept?
-9. **OQ-9 — Page-only `patch` for every caller** (§5.2) is stricter than decision 5. Alternative: allow it
-   on `local`, and make decision 25's "page panels only" a per-caller check, which the transport cannot do.
-   **Recommend** the spec's version.
-10. **OQ-10 — Popups and OAuth.** Popups open as a new operator pane without `opener`; sign-in flows that
-    need `window.opener` or `postMessage` do not work in v1. Acceptable?
-11. **OQ-11 — `browser_open({ html })`** writes `.harnu/out/panels/*.html` for the agent. Not in the parent
-    card's verb list. Keep, or agents write their own file?
-12. **OQ-12 — `Ctrl+Shift+C` collides with terminal copy** if made global. The spec scopes it to
-    browser-pane focus. OK?
-13. **OQ-13 — Memory numbers.** Discard after 10 min hidden; toasts freeze an overlapping pane. A live view
-    is ~100–300 MB. Are 10 min and "toasts freeze" right, or should toasts avoid pane rects?
-14. **OQ-14 — Self-signed HTTPS on loopback** is auto-accepted and flagged. Alternative: always prompt.
-15. **OQ-15 — Zoom is disabled in device mode.** Simplest rule; Chrome DevTools allows both.
-16. **OQ-16 — Operator-initiated downloads** prompt "Save to `.harnu/out/downloads/`?" in the header
-    **[gap]**; decision 21 only says "no automatic downloads".
+| Q   | Question                                             | Resolution (2026-10-21)                                                                                                                                                                                              | Where       |
+| --- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Q1  | Reads on external sites reuse the operator's cookies | **Two partitions:** `persist:harnu-browser` for operator panes, `persist:harnu-browser-agent` for agent panes. **Amends decision 7.** Reads on `external` in agent panes stay free                                   | §3.4, §7.1  |
+| Q2  | The comment composer is observable by the page       | **Composer docked in the pane chrome**; highlight, hover and pins stay in the guest. **Amends decisions 15–18.** The floating-at-the-node variant is rejected (mockup `1b`)                                          | §8.2, §8.6  |
+| Q3  | Network egress from `harnu-page://`                  | **Offline by default**, operator-only per-pane "Allow network"; no verb sets it                                                                                                                                      | §4.3        |
+| Q4  | Input verbs on external sites                        | **Lease required** (same model as `eval`)                                                                                                                                                                            | §7.1        |
+| Q5  | What counts as `local`                               | **Per-folder trusted dev hosts**, edited by the operator only, never by a verb; Harnu's own ports classify as `external`                                                                                             | §7.2        |
+| Q6  | Kill-switch scope                                    | As written: refuses **every write** (`open`, `navigate`, `network`, `set_data`, `patch`, `eval`, input, `emulate`, `upload`, `download`); reads, `list` and `close` keep working. Live panels freeze while it is off | §7.4        |
+| Q7  | Comment to a parked, operator-owned session          | As written: headless wake called for an operator-owned session, plus a 1.5 s "operator typed" deferral; if assumption A9 fails, fall back to queue + toast                                                           | §8.7        |
+| Q8  | Is the gesture gate sound                            | As written: the 1.5 s `agentInputAt` window stands; the residual race (operator and agent acting in the same second) is accepted                                                                                     | §5.4        |
+| Q9  | `set_data` / `patch` page-only for every caller      | **Page-only for every caller** (stricter than decision 5 for `patch`); this is how decision 25 is enforced structurally                                                                                              | §5.2, §7.3  |
+| Q10 | Popups and OAuth                                     | As written: a popup opens as a new operator-class pane with no `opener`; flows that need `window.opener` are unsupported in v1                                                                                       | §3.2        |
+| Q11 | `browser_open({ html })`                             | As written: **kept**; it writes `.harnu/out/panels/<slug>.html` and opens it                                                                                                                                         | §5.1, §6.1  |
+| Q12 | `Ctrl+Shift+C` collides with terminal copy           | **Scoped to browser-pane focus** only                                                                                                                                                                                | §2.5        |
+| Q13 | Memory numbers; toasts freezing a pane               | As written: discard after **10 min** hidden; toasts register as overlays and briefly freeze an overlapping pane                                                                                                      | §2.4, §10.1 |
+| Q14 | Self-signed HTTPS on loopback                        | As written: **auto-accepted and flagged** in the header, loopback hosts only                                                                                                                                         | §3.2        |
+| Q15 | Zoom in device mode                                  | As written: entering device mode **resets zoom to 1.0 and disables zoom**; `browser_emulate({ zoom })` then refuses `ZOOM_IN_DEVICE_MODE`                                                                            | §9.2        |
+| Q16 | Operator-initiated downloads                         | As written: the header prompts "Save to `.harnu/out/downloads/`?" before saving                                                                                                                                      | §3.2        |
+
+Consequences of the two amendments, so nothing downstream is stale:
+
+- **Q1** adds `partition` to the pane record (§2.2, §10.3), a second `harnu-page:` handler registration
+  (§4.1), a "Clear browsing data" action per partition (§3.4), and popup partition inheritance (§3.2). The
+  `external`-read cell of the tier table no longer depends on an unresolved question (§7.1).
+- **Q2** removes the keystroke-observation hole from §8.6, moves `comment:submit` to a renderer → main path
+  accepted only from the app window (§8.7), narrows the `agentInputAt` window to **picks and `harnu.emit`**
+  (§8.6, §5.4), and means the pane host rect shrinks when the composer opens (§2.1). Assumption A10 now
+  concerns only the guest's outline and pins.
 
 ## 15. Prior art in this repo
 

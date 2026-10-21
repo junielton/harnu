@@ -2,7 +2,9 @@
 
 > Written 2026-10-21 alongside the spec (`docs/specs/2026-10-21-T564-browser-pane.md`) and ADR-0021 / ADR-0022.
 > Requirements are the 31 decisions + 23b the operator approved on the parent card (T564); this PRD frames
-> them and does not re-open them. House shape: problem / who / what this delivers / out of scope / how we
+> them and does not re-open them. The spec's open questions were all resolved by the operator on 2026-10-21
+> (spec §14): two amend decisions (two partitions, docked composer). Approved mockup:
+> `docs/specs/T564-browser-pane-mockup/`. House shape: problem / who / what this delivers / out of scope / how we
 > know / cost & risk.
 
 ## 1. Problem
@@ -58,7 +60,7 @@ overlay-under-native-view problem four times.
    for live state and a small `harnu` API (`getData`, `onData`, `emit`).
 4. **Point-and-comment** — pick any node on any page, type a request, and it arrives in the session as the
    operator's own turn, carrying selector, source component when discoverable, HTML, styles and a crop.
-5. **Safe by default** — a dedicated hardened partition, a tier table (free vs confirm + lease), a global
+5. **Safe by default** — two dedicated hardened partitions (operator panes and agent panes never share a login), a tier table (free vs confirm + lease), a global
    kill-switch, per-pane Disconnect, a 10-minute pause, blocked-folder respect, and "opened by agent" flags.
 6. **Zoom and real device emulation** — phone and tablet classes with touch, media queries and
    `<meta viewport>` behaving as on a device.
@@ -114,14 +116,17 @@ Harnu ships no product analytics, so success is verifiable by construction and b
   code. The expensive parts are the overlay-under-native-view freeze (renderer-wide, touches every popover),
   the access layer (a second copy of the `send_terminal` model, for panes), and the live proof, which unit
   tests cannot give.
-- **Risk — the page is untrusted and the partition remembers the operator.** One persistent partition means
-  an external pane can be logged in as the operator. Mitigated by the tier table (acting on `external` needs a
-  lease), the visible chip and flag, the kill-switch and Disconnect. Unresolved: whether an agent may _read_
-  such a page without a prompt (spec OQ-1; recommendation: split partitions).
+- **Risk — the page is untrusted and a partition remembers logins.** An operator-opened pane can be logged in
+  as the operator. Mitigated by two partitions (an agent pane starts logged out and never sees the operator's
+  cookies, spec Q1), the tier table (acting on `external` needs a lease, reading an operator-opened pane needs
+  a folder opt-in), the visible chip and flag, the kill-switch and Disconnect. Residual: a login the operator
+  makes inside an agent pane is visible to agents; that is their choice to make.
 - **Risk — a hostile page talks into the session.** Two channels carry page-derived data into user turns:
   `[harnu-comment]` and `[harnu-page-event]`. Mitigated by an authority split (only the operator's typed
   words are outside the fence), a pure formatter tested against hostile input, and the user-gesture gate with
-  an agent-input window. Residual: a page can watch the operator's keystrokes in the composer (spec OQ-2).
+  an agent-input window. The comment composer is docked in the app's pane chrome, outside the page, so the page
+  cannot watch what the operator types (spec Q2). Residual: the selector and HTML the page supplies are
+  fenced, not trusted.
 - **Risk — the overlay under a native view.** A native view paints above every renderer layer. The freeze
   strategy (spec §2.4) trades a brief still image for correctness; if the capture is slow, panes will flicker
   under menus. Proven or reopened in U0 (A3, A7, A12).

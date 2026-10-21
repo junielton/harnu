@@ -1,6 +1,6 @@
 # ADR-0021 — The browser pane is one main-owned `WebContentsView` for every use case, and overlays are handled by freezing the view
 
-**Status:** Proposed (substrate chosen by the operator, 2026-10-21; overlay trade-off for review)
+**Status:** Accepted (substrate chosen and the spec's open questions resolved by the operator, 2026-10-21)
 **Date:** 2026-10-21
 **Author:** agent (T565, design card for T564)
 **Technical context:** `docs/specs/2026-10-21-T564-browser-pane.md`, `docs/prds/T564-browser-pane.md`, `src/main/index.ts` (`createWindow`), `src/renderer/index.html` (CSP), `src/renderer/src/components/HelperStack.vue`, `HelperPane.vue`, `lib/pane-registry.ts`, ADR-0020
@@ -38,9 +38,13 @@ Four substrates are real candidates:
   header and the chrome and never touches `webContents`. This is the same ownership split ADR-0020 chose for
   agent terminals (main spawns, the pane adopts), and it lets an agent-opened pane exist, load and answer
   reads while the operator is looking at another folder.
-- **D-2 — A hardened guest.** A dedicated partition (`persist:harnu-browser`), `sandbox: true`, context
-  isolation on, Node off, no app preload, a second preload for the overlay and for the `harnu` API of our own
-  pages only. The app's CSP is not touched.
+- **D-2 — A hardened guest.** Two dedicated persistent partitions, `persist:harnu-browser` for panes the
+  operator opened and `persist:harnu-browser-agent` for panes an agent opened (the operator resolved spec Q1
+  this way on 2026-10-21, amending the single partition of parent decision 7, so an agent pane never carries the
+  operator's logins). `sandbox: true`, context isolation on, Node off, no app preload, a second preload for the
+  overlay's outline and pins and for the `harnu` API of our own pages only. The comment composer is **docked in
+  the app's pane chrome**, not in the guest (spec Q2), so the page cannot read what the operator types. The
+  app's CSP is not touched.
 - **D-3 — The overlay problem is solved once, by freezing.** A native view paints above all renderer DOM and
   cannot be clipped to a region. When any app layer (menu, dialog, palette, popover, toast) overlaps a
   visible pane, or a drag begins, main captures the view with `capturePage()`, the renderer paints that image
@@ -70,7 +74,7 @@ Four substrates are real candidates:
 - **A visible cost, accepted.** While a layer overlaps a pane the operator sees a still image, not the live
   page. The page keeps running; agent verbs keep working. If `capturePage()` is slow the pane will visibly
   flicker under menus; budget 100 ms at 1280×800 (spec assumption A12), proven in the spike. Toasts are the
-  frequent case; spec OQ-13 asks whether toasts should avoid pane rects instead.
+  frequent case; the operator accepted it (spec Q13) rather than making toasts avoid pane rects.
 - **Drags freeze every visible view.** Without that, the pointer enters the native view during a splitter
   drag and the renderer stops receiving `pointermove`.
 - **Keystrokes need forwarding.** A focused view eats keys before the renderer's keybinding engine. Main

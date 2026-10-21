@@ -1,6 +1,6 @@
 # ADR-0022 — Browser-page events go to the owning session only; mods subscribing to them directly is deferred
 
-**Status:** Proposed (decision approved by the operator, 2026-10-21; conditions to revisit for review)
+**Status:** Accepted (approved by the operator, 2026-10-21; conditions to revisit below)
 **Date:** 2026-10-21
 **Author:** agent (T565, design card for T564)
 **Technical context:** `docs/specs/2026-10-21-T564-browser-pane.md` (§5.4, §8.5, §8.7), `docs/prds/T564-browser-pane.md`, ADR-0018, ADR-0019, ADR-0020, `docs/user/mods.md`
