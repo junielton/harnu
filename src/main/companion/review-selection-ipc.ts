@@ -28,7 +28,8 @@ import {
   failure,
   lineSource,
   locateDiffRows,
-  mixedDiffSource,
+  quotesDiffRows,
+  rangeDiffSource,
   noBindingReason,
   pinRefusal,
   validateCoordinates,
@@ -116,20 +117,22 @@ async function composeFor(
   ])
   const pin = pinRefusal(coords, { headSha, baseSha })
   if (pin) return failure(pin.refusal, pin.detail !== undefined ? { detail: pin.detail } : {})
-  const src = lineSource(coords)
-  let blob: string | null = null
-  if (src) {
-    blob = await deps.readBlob(ref.folder, src.sha, src.path)
-    if (blob === null) return failure('BAD_ARGS', { detail: 'blob-unreadable' })
-  }
-  // A mixed-side range is quoted as diff rows: the two ends live in different files, so no one blob
-  // has the rows between them. Rows that cannot be located are a refusal, never a guess.
+  // A multi-row range is checked against the diff the pane renders: a mixed-side one is quoted as
+  // diff rows (its two ends live in different files, so no one blob has the rows between them), and
+  // so is a same-side one whose displayed rows include a row of the other side (file lines of one
+  // side would silently leave it out). Rows that cannot be located are a refusal, never a guess.
   let rows: DiffRow[] | null = null
-  if (mixedDiffSource(coords)) {
+  if (rangeDiffSource(coords)) {
     const diff = await deps.readDiff(ref.folder, `${coords.baseSha}...${coords.headSha}`)
     if (diff === null) return failure('BAD_ARGS', { detail: 'diff-unreadable' })
     rows = locateDiffRows(parseUnifiedDiff(diff), coords)
     if (rows === null) return failure('BAD_ARGS', { detail: 'rows-not-found' })
+  }
+  const src = rows !== null && quotesDiffRows(coords, rows) ? null : lineSource(coords)
+  let blob: string | null = null
+  if (src) {
+    blob = await deps.readBlob(ref.folder, src.sha, src.path)
+    if (blob === null) return failure('BAD_ARGS', { detail: 'blob-unreadable' })
   }
   const composed = composeSelection(coords, blob, rows)
   return composed.ok ? composed : failure('BAD_ARGS', { detail: composed.detail })

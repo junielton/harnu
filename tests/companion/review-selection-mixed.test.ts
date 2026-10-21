@@ -22,7 +22,8 @@ import {
   composeSelection,
   lineSource,
   locateDiffRows,
-  mixedDiffSource,
+  rangeDiffSource,
+  quotesDiffRows,
   type SelectionCoordinates
 } from '../../src/main/companion/review-selection-core'
 
@@ -63,6 +64,7 @@ const coords = (over: Record<string, unknown> = {}): SelectionCoordinates =>
 /**
  * Hunk 1 (old 8-14, new 8-15): three context rows, two deleted, three added, two context.
  * Hunk 2 (old 30-33, new 31-34): an added row, then later a deleted one, around context.
+ * Hunk 3 (old 50-52, new 52-54): a deleted then an added row, an unchanged one, then a pair again.
  */
 const DIFF = [
   'diff --git a/src/main/speech.ts b/src/main/speech.ts',
@@ -86,6 +88,12 @@ const DIFF = [
   '   mid',
   '-  gone',
   '   z',
+  '@@ -50,3 +52,3 @@ function third() {',
+  '-  p',
+  '+  q',
+  '   m',
+  '-  r',
+  '+  s',
   ''
 ].join('\n')
 
@@ -199,9 +207,81 @@ describe('U2c-AC-1 — a mixed range quotes the diff rows between its two ends, 
 
   it('a mixed range is not a line-blob range: no blob is read for it', () => {
     expect(lineSource(coords())).toBeNull()
-    expect(mixedDiffSource(coords())).toEqual({ baseSha: BASE, headSha: HEAD })
-    expect(mixedDiffSource(coords({ startSide: 'RIGHT', side: 'RIGHT' }))).toBeNull()
-    expect(mixedDiffSource(coords({ subjectType: 'FILE' }))).toBeNull()
+    expect(rangeDiffSource(coords())).toEqual({ baseSha: BASE, headSha: HEAD })
+    expect(quotesDiffRows(coords(), [])).toBe(true)
+  })
+
+  it('a single row and a whole file have no rows between their ends', () => {
+    expect(rangeDiffSource(coords({ startSide: undefined, startLine: undefined }))).toBeNull()
+    expect(
+      rangeDiffSource(coords({ startSide: 'RIGHT', side: 'RIGHT', startLine: 9, line: 9 }))
+    ).toBeNull()
+    expect(rangeDiffSource(coords({ subjectType: 'FILE' }))).toBeNull()
+  })
+})
+
+describe('U2c delta — a single-side range that spans rows of the other side is quoted as diff rows', () => {
+  const same = (side: 'LEFT' | 'RIGHT', startLine: number, line: number) =>
+    coords({ startSide: side, side, startLine, line })
+
+  it('RIGHT → RIGHT spanning deleted rows', () => {
+    // new L10 (context `c`) to new L11 (added `d'`), with both deleted rows displayed between them.
+    expect(text(same('RIGHT', 10, 11))).toBe(
+      [
+        ...FRAME_HEAD,
+        'selection: diff rows from line 10 of the new file (RIGHT) to line 11 of the new file (RIGHT)',
+        LEGEND,
+        '```quoted',
+        '  10 10 |   const c = 3',
+        '- 11    |   const d = 4',
+        '- 12    |   const e = 5',
+        '+    11 |   const d = 40',
+        '```',
+        '</harnu-context>'
+      ].join('\n')
+    )
+  })
+
+  it('LEFT → LEFT spanning added rows', () => {
+    // old L50 (deleted `p`) to old L52 (deleted `r`): the added `q` and the unchanged `m` between.
+    expect(text(same('LEFT', 50, 52))).toBe(
+      [
+        ...FRAME_HEAD,
+        'selection: diff rows from line 50 of the old file (LEFT) to line 52 of the old file (LEFT)',
+        LEGEND,
+        '```quoted',
+        '- 50    |   p',
+        '+    52 |   q',
+        '  51 53 |   m',
+        '- 52    |   r',
+        '```',
+        '</harnu-context>'
+      ].join('\n')
+    )
+  })
+
+  it('a pure run on one side keeps the plain file lines, byte for byte', () => {
+    const blob =
+      Array.from({ length: 20 }, (_, i) => `  const v${i + 1} = ${i + 1}`).join('\n') + '\n'
+    for (const c of [same('RIGHT', 8, 10), same('LEFT', 11, 12), same('RIGHT', 13, 15)]) {
+      const rows = rowsFor(c)
+      const out = composeSelection(c, blob, rows)
+      expect(out).toEqual(composeSelection(c, blob))
+      expect(out.ok && out.text).not.toContain('diff rows')
+    }
+  })
+
+  it('an add-only run (new L11-L13) is on one side and stays file lines', () => {
+    const c = same('RIGHT', 11, 13)
+    expect(rowsFor(c).map((r) => r.kind)).toEqual(['add', 'add', 'add'])
+    expect(composeSelection(c, 'x\n'.repeat(20), rowsFor(c))).toEqual(
+      composeSelection(c, 'x\n'.repeat(20))
+    )
+  })
+
+  it('a single row is never diff rows', () => {
+    const c = coords({ startSide: undefined, startLine: undefined, side: 'RIGHT', line: 10 })
+    expect(locateDiffRows(files(), c)).toBeNull()
   })
 })
 
@@ -472,7 +552,7 @@ function gitFake(diff: string | null): GitDeps & { diffs: Array<[string, string]
     resolveCommit: async (_folder: string, ref: string) => (ref === 'origin/main' ? BASE : HEAD),
     readBlob: async () => {
       f.blobs++
-      return 'x\n'
+      return Array.from({ length: 120 }, (_, i) => `line ${i + 1}`).join('\n') + '\n'
     },
     readDiff: async (folder: string, range: string) => {
       diffs.push([folder, range])
@@ -520,11 +600,46 @@ describe('U2c-AC-3 — the handler refuses with a defined code', () => {
     expect(g.diffs).toEqual([])
   })
 
-  it('a single-side range reads no diff at all', async () => {
+  it('a single row reads no diff at all', async () => {
     const g = gitFake(DIFF)
-    await compose(g, coords({ startSide: 'RIGHT', side: 'RIGHT', startLine: 8, line: 10 }))
+    await compose(g, coords({ startSide: undefined, side: 'RIGHT', startLine: undefined, line: 9 }))
     expect(g.diffs).toEqual([])
     expect(g.blobs).toBe(1)
+  })
+
+  it('a pure single-side run reads the diff to know it is pure, then the lines of one file', async () => {
+    const g = gitFake(DIFF)
+    const res = await compose(
+      g,
+      coords({ startSide: 'RIGHT', side: 'RIGHT', startLine: 8, line: 10 })
+    )
+    expect(res.ok).toBe(true)
+    expect(g.diffs).toEqual([['/work/example-web', `${BASE}...${HEAD}`]])
+    expect(g.blobs).toBe(1)
+  })
+
+  it('a single-side run whose rows cannot be located refuses, like a mixed one', async () => {
+    const g = gitFake(DIFF)
+    const res = await compose(
+      g,
+      coords({ startSide: 'RIGHT', side: 'RIGHT', startLine: 8, line: 99 })
+    )
+    expect(res).toMatchObject({ ok: false, refusal: 'BAD_ARGS', detail: 'rows-not-found' })
+    const u = await compose(
+      gitFake(null),
+      coords({ startSide: 'RIGHT', side: 'RIGHT', startLine: 8, line: 10 })
+    )
+    expect(u).toMatchObject({ ok: false, refusal: 'BAD_ARGS', detail: 'diff-unreadable' })
+  })
+
+  it('a single-side run that spans the other side is quoted as diff rows and reads no blob', async () => {
+    const g = gitFake(DIFF)
+    const res = await compose(
+      g,
+      coords({ startSide: 'RIGHT', side: 'RIGHT', startLine: 10, line: 11 })
+    )
+    expect(res.ok && res.text).toContain('- 11    |   const d = 4')
+    expect(g.blobs).toBe(0)
   })
 })
 

@@ -75,6 +75,30 @@ const request = (over: Record<string, unknown> = {}): Record<string, unknown> =>
   ...over
 })
 
+/**
+ * The pane's diff for the selections below (T257 U2c): a multi-row range is checked against it, so
+ * the default RIGHT range sits in a run of unchanged rows and the renamed file's LEFT range in a run
+ * of deleted ones. Both are one-sided, so each is quoted as the lines of its file.
+ */
+const PANE_DIFF = [
+  'diff --git a/src/main/speech.ts b/src/main/speech.ts',
+  'index 1111111..2222222 100644',
+  '--- a/src/main/speech.ts',
+  '+++ b/src/main/speech.ts',
+  '@@ -80,46 +80,46 @@',
+  ...Array.from({ length: 46 }, (_, i) => `   const v${80 + i} = ${80 + i}`),
+  'diff --git a/a.ts b/b.ts',
+  'similarity index 50%',
+  'rename from a.ts',
+  'rename to b.ts',
+  'index 1111111..2222222 100644',
+  '--- a/a.ts',
+  '+++ b/b.ts',
+  '@@ -80,20 +80,0 @@',
+  ...Array.from({ length: 20 }, (_, i) => `-  const v${80 + i} = ${80 + i}`),
+  ''
+].join('\n')
+
 const blob = Array.from({ length: 120 }, (_, i) => `  const v${i + 1} = ${i + 1}`).join('\n') + '\n'
 
 const binding = (over: Partial<BindingView> = {}): BindingView =>
@@ -104,7 +128,7 @@ function fake(over: Partial<SelectionDeps> = {}): Fake {
       reads.push([folder, sha, path])
       return blob
     },
-    readDiff: async () => null,
+    readDiff: async () => PANE_DIFF,
     noBindingReason: () => 'cli-too-old',
     tracker: { track },
     log: () => undefined,
@@ -777,7 +801,12 @@ describe('U2b-AC-2 groundwork — compose needs git and nothing else', () => {
     git('add', '.')
     git('commit', '-q', '-m', 'one')
     const base = git('rev-parse', 'HEAD')
-    writeFileSync(join(dir, 'speech.ts'), blob + 'const tail = 1\n')
+    // Two added rows after line 87 (git keeps three rows of context, so one hunk spans new lines
+    // 85-92): lines 85-92 of the new file are unchanged and added rows only,
+    // so the range is one-sided and is quoted as the lines of its file (T257 U2c).
+    const lines = blob.split('\n')
+    lines.splice(87, 0, 'const insA = 1', 'const insB = 2')
+    writeFileSync(join(dir, 'speech.ts'), lines.join('\n'))
     git('commit', '-q', '-am', 'two')
     return { dir, base, head: git('rev-parse', 'HEAD') }
   }

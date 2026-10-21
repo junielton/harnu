@@ -411,22 +411,40 @@ export function lineSource(
 }
 
 /**
- * The pinned commits whose diff a mixed-side range is quoted from, or `null` when the range is
- * not mixed (it reads a blob instead, or nothing).
+ * The pinned commits whose diff a multi-row line range is read against, or `null` for a single row
+ * (it has no rows between its ends) and a whole-file selection. A mixed-side range is always quoted
+ * from it; a same-side one is, when the rows between its ends include any of the other side.
  */
-export function mixedDiffSource(
+export function rangeDiffSource(
   c: SelectionCoordinates
 ): { baseSha: string; headSha: string } | null {
-  if (c.subjectType !== 'LINE' || c.side === undefined) return null
-  if (c.startSide === undefined || c.startSide === c.side) return null
+  if (c.subjectType !== 'LINE' || c.side === undefined || c.startSide === undefined) return null
+  if (c.startSide === c.side && c.startLine === c.line) return null
   return { baseSha: c.baseSha, headSha: c.headSha }
+}
+
+/** A range whose ends are on different sides of the diff. */
+export const isMixed = (c: SelectionCoordinates): boolean =>
+  c.subjectType === 'LINE' && c.startSide !== undefined && c.startSide !== c.side
+
+/**
+ * Is this range quoted as diff rows rather than as the lines of one file? Yes when it is mixed, and
+ * when the rows it displays include any row of the other side (a deleted row inside a RIGHT range,
+ * an added row inside a LEFT one): the file lines of its own side would silently leave them out.
+ * A run that stays on one side (unchanged and added rows on RIGHT, unchanged and deleted on LEFT)
+ * keeps the plain file lines.
+ */
+export function quotesDiffRows(c: SelectionCoordinates, rows: readonly DiffRow[]): boolean {
+  if (isMixed(c)) return true
+  const other = c.side === 'RIGHT' ? 'del' : 'add'
+  return rows.some((r) => r.kind === other)
 }
 
 const anchors = (r: DiffRow, side: SelectionSide, line: number): boolean =>
   side === 'LEFT' ? r.kind === 'del' && r.oldLine === line : r.kind !== 'del' && r.newLine === line
 
 /**
- * The diff rows from the start end to the end end of a mixed range, inclusive, in the order the
+ * The diff rows from the start end to the end end of a multi-row range, inclusive, in the order the
  * pane displays them, or `null`. `files` is `parseUnifiedDiff` of the pane's diff. A row anchors on
  * the side §3.2 gives its kind (deleted: old; added and unchanged: new), both ends must be in one
  * hunk and the start must not come after the end. Nothing is guessed: any miss is `null`.
@@ -435,7 +453,7 @@ export function locateDiffRows(
   files: readonly DiffFile[],
   c: SelectionCoordinates
 ): DiffRow[] | null {
-  if (mixedDiffSource(c) === null) return null
+  if (rangeDiffSource(c) === null) return null
   const file = files.find((f) => f.path === c.path)
   if (!file) return null
   const start = { side: c.startSide as SelectionSide, line: c.startLine as number }
@@ -492,8 +510,9 @@ function quoteRows(rows: readonly DiffRow[]): { quoted: string[]; chars: number 
 /**
  * Deterministic: the same coordinates, blob and rows give the same bytes. `blob` is the text of
  * {@link lineSource}'s file for a same-side line range. `diffRows` are the rows
- * {@link locateDiffRows} found for a mixed-side range; without them a mixed range names its two
- * ends and quotes nothing (the IPC never composes one that way: it refuses instead).
+ * {@link locateDiffRows} found for a multi-row range; a range that {@link quotesDiffRows} is quoted
+ * from them. Without them a mixed range names its two ends and quotes nothing (the IPC never
+ * composes one that way: it refuses instead).
  */
 export function composeSelection(
   c: SelectionCoordinates,
@@ -529,7 +548,7 @@ export function composeSelection(
   const startSide = c.startSide ?? side
   const startLine = c.startLine ?? line
 
-  if (startSide !== side && diffRows && diffRows.length > 0) {
+  if (diffRows && diffRows.length > 0 && quotesDiffRows(c, diffRows)) {
     const selection = `selection: diff rows from line ${startLine} of the ${fileOf(startSide)} file (${startSide}) to line ${line} of the ${fileOf(side)} file (${side})`
     const count = diffRows.length
     const omitted = (): string =>
