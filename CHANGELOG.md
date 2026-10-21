@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-20
+
+### Fixed
+
+- **The daily budget is no longer wrong the day after a weekly reset.** When your weekly window reset during the previous day, "Today" in the Plan usage panel measured spending against the old week's peak, so it showed too small an allowance and 0% spent (for example 0% of 8% instead of 4% of 15%). It now starts from where the new week stood after the reset. A reset that happens while Harnu is open also refreshes the budget straight away instead of waiting until midnight.
+
 ## 2026-10-19
 
 ### Added
