@@ -269,23 +269,37 @@ describe('BUG-209 — the same canvas open in two panes', () => {
     b.unmount()
   })
 
-  it('AC-3 — the echo of B’s Save then reaches A, and A’s next Save keeps both', async () => {
+  it('AC-3 — the other way round: B saves first, and A’s next Save keeps B’s change', async () => {
     const a = mountPane('pane-a')
     const b = mountPane('pane-b')
     await settle()
-    await operatorDrawsBox(a.element, 'FromA')
-    await operatorSaves(a.element)
-    await watcherSees()
     await operatorDrawsBox(b.element, 'FromB', 300)
     await operatorSaves(b.element)
     await watcherSees()
-
     expect(a.element.textContent).toContain('FromB')
-    await operatorDrawsBox(a.element, 'MoreA', 450)
+
+    await operatorDrawsBox(a.element, 'FromA')
     await operatorSaves(a.element)
 
-    expect(await fileLabels()).toEqual(['FromA', 'FromB', 'Main', 'MoreA', 'Renderer'])
+    expect(await fileLabels()).toEqual(['FromA', 'FromB', 'Main', 'Renderer'])
     a.unmount()
     b.unmount()
+  })
+
+  it('the Save echo is swallowed outright once the other pane closes', async () => {
+    const a = mountPane('pane-a')
+    const b = mountPane('pane-b')
+    await settle()
+    b.unmount()
+    await settle()
+    await operatorDrawsBox(a.element, 'FromA')
+    await operatorSaves(a.element)
+    const readsBefore = readCalls
+
+    await watcherSees()
+
+    expect(readCalls).toBe(readsBefore)
+    expect(staleBanner(a.element)).toBe(false)
+    a.unmount()
   })
 })

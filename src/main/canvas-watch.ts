@@ -11,14 +11,18 @@
  *    `change` event that same rename fires does not loop back to the pane that
  *    just saved as a false "changed on disk" push. Only the pane's own Save
  *    records one; an agent's `draw_canvas` never does, so an open pane always
- *    hears about it (BUG-202).
+ *    hears about it (BUG-202). The fingerprint also names the WRITING pane
+ *    (`writerId`): when another pane has the same file open, the echo is still
+ *    broadcast — tagged with that id — so the writer ignores it and every other
+ *    pane reloads or goes stale (BUG-209).
  *
  * The state is deliberately SEPARATE from the markdown watcher's rather than
  * shared: the two panes have different channels and different reload semantics
  * (§7.3's clean/dirty cases), and a shared ref map would let a markdown pane's
  * unwatch silently stop a canvas pane's watch on the same path.
  *
- * The broadcast carries the PATH ONLY. The renderer re-reads through the
+ * The broadcast carries the path, plus the `writerId` of a Save echo another
+ * pane must still hear. The renderer re-reads through the
  * confined `canvas:read` IPC, so there is one containment/size-cap/validation
  * implementation, not two — and the pane decides what to do with the news
  * based on whether it is dirty (§7.3 cases A and B).
@@ -33,8 +37,8 @@ import { markdownKnownRoots } from './markdown-read'
 import { checkCanvasPathAllowed } from './canvas-read'
 
 const refCounts = new Map<string, number>()
-/** Hash of the bytes the pane's own last Save wrote, per path. */
-const selfWrites = new Map<string, string>()
+/** Hash of the bytes a pane's own last Save wrote, per path, and which pane wrote them. */
+const selfWrites = new Map<string, { hash: string; writerId?: string }>()
 
 function fingerprint(bytes: string | Buffer): string {
   return createHash('sha256').update(bytes).digest('hex')
@@ -82,8 +86,8 @@ export function removeCanvasRef(path: string): 'last' | 'more' | 'none' {
  * an agent's write was part of it — silently losing the agent's change. Judging
  * by what is actually on disk when the event is handled cannot make that mistake.
  */
-export function recordCanvasSelfWrite(path: string, body: string): void {
-  selfWrites.set(path, fingerprint(body))
+export function recordCanvasSelfWrite(path: string, body: string, writerId?: string): void {
+  selfWrites.set(path, { hash: fingerprint(body), writerId })
 }
 
 /**
@@ -95,9 +99,14 @@ export function recordCanvasSelfWrite(path: string, body: string): void {
 export function consumeCanvasSuppression(path: string, current: Buffer | null): boolean {
   const mine = selfWrites.get(path)
   if (mine === undefined) return false
-  if (current !== null && fingerprint(current) === mine) return true
+  if (current !== null && fingerprint(current) === mine.hash) return true
   selfWrites.delete(path)
   return false
+}
+
+/** The pane that wrote the bytes `consumeCanvasSuppression` last matched on `path`. */
+export function canvasSelfWriter(path: string): string | undefined {
+  return selfWrites.get(path)?.writerId
 }
 
 /** Test-only: reset all module state between test cases. */
@@ -129,6 +138,11 @@ function ensureWatcher(): FSWatcher {
  * same gate `canvas:read` uses), then checks the ref map as the sole "is this
  * open anywhere" source of truth. On a real, non-suppressed, in-root, reffed
  * change it broadcasts `{ path: resolvedPath }`.
+ *
+ * A pane's own Save echo is swallowed outright only while that pane is the sole
+ * one on the file. With two or more open, the other panes have not seen the
+ * Save, so the echo is broadcast with the writer's id: the writer drops it, the
+ * rest reload (clean) or show the stale banner (dirty) — BUG-209.
  */
 export async function notifyCanvasChanged(
   resolvedPath: string
@@ -140,9 +154,18 @@ export async function notifyCanvasChanged(
   // still exactly the bytes the pane's Save wrote. A file that has since
   // vanished (or been replaced) is somebody else's change.
   const onDisk = await readFile(resolvedPath).catch(() => null)
-  if (consumeCanvasSuppression(resolvedPath, onDisk)) return 'ok' // our own Save: swallow
+  let writerId: string | undefined
+  if (consumeCanvasSuppression(resolvedPath, onDisk)) {
+    if (canvasRefCount(resolvedPath) <= 1) return 'ok' // our own Save, nobody else listening: swallow
+    writerId = canvasSelfWriter(resolvedPath)
+  }
   const win = windowGetter?.()
-  if (win && !win.isDestroyed()) win.webContents.send('canvas:changed', { path: resolvedPath })
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(
+      'canvas:changed',
+      writerId === undefined ? { path: resolvedPath } : { path: resolvedPath, writerId }
+    )
+  }
   return 'ok'
 }
 

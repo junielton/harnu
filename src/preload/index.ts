@@ -997,6 +997,9 @@ export interface MarkdownChangedWire {
 /** `canvas:changed` payload: a watched DiagramPane's backing canvas changed on disk. */
 export interface CanvasChangedWire {
   path: string
+  /** Set when the change is a pane's own Save echoed to the OTHER panes on the file:
+   *  the pane whose `writerId` this is ignores it (BUG-209). */
+  writerId?: string
 }
 /** Live MCP server status for the Settings pane. */
 export interface McpServerStatus {
@@ -1466,8 +1469,9 @@ const api = {
   // T218 U1: write a canvas document (the pane's explicit Save). Main validates
   // the payload again before any byte lands and writes atomically, so a Save
   // that fails validation writes nothing at all.
-  canvasWrite: (path: string, doc: unknown): Promise<CanvasWriteResult> =>
-    ipcRenderer.invoke('canvas:write', { path, doc }),
+  // `writerId` identifies the saving pane so a second pane on the same file hears the Save.
+  canvasWrite: (path: string, doc: unknown, writerId?: string): Promise<CanvasWriteResult> =>
+    ipcRenderer.invoke('canvas:write', { path, doc, writerId }),
   // T218 U6: externalise pasted/dropped image bytes into the canvas's `assets/`
   // sibling dir and resolve the RELATIVE `assets/<file>` paths to store on the
   // nodes (spec §4.6 — image bytes never enter the canvas file). Runs through

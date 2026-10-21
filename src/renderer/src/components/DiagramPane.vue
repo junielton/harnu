@@ -1612,8 +1612,13 @@ watch(
  *    informed choice rather than a silent loss.
  */
 let unsubscribeCanvasChanged: (() => void) | undefined
-async function handleCanvasChanged(payload: { path: string }): Promise<void> {
+/** This mounted pane's identity for `canvas:write` / `canvas:changed` (BUG-209): two
+ *  panes can hold the same file, so the echo of a Save is told apart per pane. */
+const writerId = `diagram-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
+async function handleCanvasChanged(payload: { path: string; writerId?: string }): Promise<void> {
   if (payload.path !== filePath.value) return
+  // The echo of this pane's own Save — it already holds exactly what it wrote.
+  if (payload.writerId === writerId) return
   if (dirty.value) {
     staleOnDisk.value = true
     return
@@ -1743,7 +1748,7 @@ async function save(): Promise<void> {
   if (state.value.status !== 'ready' || !base || !dirty.value || saving.value) return
   saving.value = true
   const draft = currentDraft(base, new Date().toISOString())
-  const res = await window.api.canvasWrite(filePath.value, draft)
+  const res = await window.api.canvasWrite(filePath.value, draft, writerId)
   saving.value = false
   if (res.ok) {
     doc.value = draft as CanvasDocument
