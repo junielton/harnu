@@ -413,6 +413,8 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
         await tool('hand').click()
         await expect(tool('hand')).toHaveAttribute('aria-pressed', 'true')
         const onDisk = readFileSync(boardPath, 'utf8')
+        await expect(nodes).toHaveCount(6)
+        await expectStableGeometry(idOf.A)
         const before = await allNodeBoxes()
         // Start ON node A: in Hand that pans too, and must not move the node.
         const start = centre(await nodeBox(idOf.A))
@@ -556,15 +558,23 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
         const transformHandles = pane.locator('.x6-widget-transform-resize')
         const handlesFor = async (id: string, when: string): Promise<void> => {
           await expect(selected, `${when}: one selection box`).toHaveCount(1)
-          expect(await selectedIds(), `${when}: the box is A's`).toEqual([id])
+          // Polled: a count of one can still be the previous pick's box for a frame, and
+          // the handles are drawn a beat after the box. The exact selection is still the
+          // only value that passes.
+          await expect.poll(selectedIds, `${when}: the box is A's`).toEqual([id])
           await expect(
             pane.locator('.x6-widget-transform'),
             `${when}: the transform widget`
           ).toHaveCount(1)
-          expect(await transformHandles.count(), `${when}: resize handles`).toBeGreaterThan(0)
+          await expect
+            .poll(() => transformHandles.count(), `${when}: resize handles`)
+            .toBeGreaterThan(0)
         }
 
-        // Select A (Select is the armed tool) and pick every style once.
+        // Select A (Select is the armed tool) and pick every style once. The previous step
+        // left a diamond selected and the panel may be re-laying the pane out, so aim at A
+        // only once its box has stopped moving.
+        await expectStableGeometry(idOf.A)
         await page.mouse.click(...xy(centre(await nodeBox(idOf.A))))
         await handlesFor(idOf.A, 'A selected, before any pick')
         const handleCount = await transformHandles.count()
@@ -1172,6 +1182,12 @@ async function selectedIds(): Promise<string[]> {
 
 /** Poll until a node's screen box stops changing (window re-layout, first-open fit). */
 async function expectStableGeometry(id: string): Promise<void> {
+  // X6 time-slices view rendering, so `any node is on screen` does not mean THIS one is:
+  // wait for its view before measuring it (a bare `nodeBox` throws while it is missing).
+  await expect(
+    page.getByTestId('diagram-pane').locator(`g.x6-node[data-cell-id="${id}"]`),
+    `node ${id} is rendered`
+  ).toHaveCount(1)
   let last = ''
   await expect
     .poll(async () => {
