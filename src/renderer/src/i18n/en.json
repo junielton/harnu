@@ -3830,6 +3830,95 @@
     "binaryBody": "Binary file — there is nothing to render, only the path and its counts.",
     "unchangedLines": "{n} unchanged lines",
     "noNewline": " ⏎ no newline at end of file",
+    "selection": {
+      "barLabel": "Selection",
+      "selectFile": "Select whole file {path}",
+      "selectFileTitle": "Select the whole file",
+      "range": {
+        "file": "whole file",
+        "line": "L{line}",
+        "lines": "L{start}–{end}",
+        "oldLine": "old L{line}",
+        "oldLines": "old L{start}–{end}",
+        "mixed": "{startSide} L{start} – {endSide} L{end}"
+      },
+      "side": {
+        "old": "old",
+        "new": "new"
+      },
+      "hint": {
+        "clamp": "A range stays inside one hunk",
+        "headMoved": "The head moved ({from} → {to}). Selection cleared.",
+        "baseMoved": "The base moved ({from} → {to}). Selection cleared."
+      },
+      "action": {
+        "copy": "Copy as text",
+        "clear": "Clear selection",
+        "dismiss": "Dismiss",
+        "tryAgain": "Try again",
+        "openMods": "Open Mods settings",
+        "reopenCompanion": "Reopen \"Ask a fresh session\"",
+        "refresh": "Refresh",
+        "reselect": "Clear and re-select",
+        "narrow": "Narrow the selection"
+      },
+      "state": {
+        "queued": "Updating…",
+        "delivered": "Companion sees this",
+        "cleared": "The conversation was cleared",
+        "ended": "The companion was closed"
+      },
+      "noBinding": {
+        "off": "The Harnu mod is switched off",
+        "cli-too-old": "This Claude Code version is too old for the Harnu mod",
+        "cli-unknown": "Harnu couldn't read the Claude Code version",
+        "pre-disclosure": "Harnu is waiting for you to see the mod notice",
+        "not-claude": "This session started without the Harnu mod",
+        "unknown": "This session started without the Harnu mod"
+      },
+      "outcome": {
+        "NO_BINDING": "Not connected to the Harnu mod",
+        "NO_LEASE": "Connection to the companion was lost",
+        "STICKY_LEGACY": "The mod channel is off for this session",
+        "HEADLESS": "This session can't receive selections",
+        "EXTERNAL": "This session can't receive selections",
+        "FEATURE_OFF": "Mod delivery is switched off",
+        "MODE_SHADOW": "The mod channel is in observe mode",
+        "ORIGIN_DENIED": "Harnu couldn't send this (internal)",
+        "TARGET_DENIED": "This session can't receive selections",
+        "FOLDER_BLOCKED": "This folder is blocked for agents",
+        "BAD_ARGS": "That selection can't be sent",
+        "QUEUE_FULL": "The companion is busy",
+        "SID_UNSETTLED": "The companion is starting a new conversation",
+        "AUDIT_FAILED": "Couldn't record the send — nothing was sent",
+        "head-moved": "The head moved — this selection is out of date",
+        "base-mismatch": "The base moved — this selection is out of date",
+        "head-unreadable": "Harnu can't read the head commit",
+        "no-companion": "Open \"Ask a fresh session\" first",
+        "CMD_PRECONDITION": "The companion refused that selection",
+        "CMD_UNSUPPORTED": "The Harnu mod in this session is too old for this",
+        "FEATURE_DISABLED": "Mod delivery is switched off",
+        "CMD_FAILED": "The companion couldn't take that selection",
+        "CMD_EXPIRED": "The companion couldn't take that selection",
+        "expired": "Not delivered — the companion didn't pick it up",
+        "lost": "Sent, but Harnu didn't get a confirmation",
+        "dropped": {
+          "lease-lost": "Connection to the companion was lost",
+          "rebound": "The conversation was cleared — send the selection again",
+          "session-end": "The companion has ended",
+          "revoked": "Mod delivery was switched off",
+          "host-shutdown": "Harnu is shutting down",
+          "cancelled": "Cancelled"
+        },
+        "unknown": "Harnu couldn't complete that send"
+      },
+      "copied": "Copied",
+      "copyFailed": "Couldn't copy to the clipboard",
+      "guide": {
+        "refresh": "Use “{action}” in the review header",
+        "freshCompanion": "Close this companion, then use “{action}” in the review header"
+      }
+    },
     "truncated": "This diff was cut to keep the pane responsive: {n} files are not shown, out of {rows} changed lines in total.",
     "receipt": {
       "commits": "commits",

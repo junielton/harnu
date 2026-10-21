@@ -17,7 +17,7 @@ import type {
 } from '../../../src/main/companion/contract'
 import { createCompanionHost } from '../../../src/main/companion/host-core'
 import type { CompanionMode } from '../../../src/main/companion/mode'
-import type { BindingView } from '../../../src/main/companion/session-table'
+import type { BindingView, TrustClass } from '../../../src/main/companion/session-table'
 import { post } from './client'
 import { shortTmp } from './client'
 
@@ -34,6 +34,8 @@ export interface ChannelRigOptions {
   declared?: FeatureId[]
   enable?: FeatureId[]
   interactive?: boolean
+  /** The trust class the spawn token is minted for. Default `operator`; the review companion is `read-only`. */
+  trust?: TrustClass
   pollHoldMs?: number
   debug?: boolean
   /** Real wall clock for `issuedAt` and every deadline: an L4 run's mod reads the real one. */
@@ -123,7 +125,7 @@ export async function channelRig(opts: ChannelRigOptions = {}) {
   async function hello(ptyId = 'pty-1', over: { sid?: string; interactive?: boolean } = {}) {
     const token = core.facade.mintSpawnToken({
       owner: { kind: 'pty', ptyId },
-      trust: 'operator',
+      trust: opts.trust ?? 'operator',
       cwd: '/work/example-web'
     })!
     const r = await post(ep, 'hello', {

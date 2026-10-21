@@ -108,6 +108,28 @@ export function baseMatchesPr(snapshotBase: string, prBase: string | null): bool
   return got === wanted || got === `origin/${wanted}` || got === `refs/remotes/origin/${wanted}`
 }
 
+/**
+ * Is the commit a read was pinned to still the commit now? The one head comparison; the review
+ * selection's send (T257) calls it too, so there is no second copy of this rule to drift.
+ *
+ * No pinned sha and no current sha are the SAME answer here — "the head this was read from cannot
+ * be established" — and both refuse. Treating an absent pin as "probably fine" is exactly how a
+ * guard becomes decorative.
+ */
+export function headPinRefusal(
+  pinnedOid: string | null,
+  currentOid: string | null
+): { refusal: 'head-unreadable' | 'head-moved'; detail?: string } | null {
+  if (!pinnedOid || !currentOid) return { refusal: 'head-unreadable' }
+  if (pinnedOid !== currentOid) {
+    return {
+      refusal: 'head-moved',
+      detail: `${pinnedOid.slice(0, 7)} → ${currentOid.slice(0, 7)}`
+    }
+  }
+  return null
+}
+
 /** `gh pr review <n> …`, with the body deliberately absent from argv. */
 export function ghReviewArgs(prNumber: number, verdict: ReviewVerdict): string[] {
   const flag =
@@ -146,19 +168,8 @@ export function checkSubmittable(input: SubmitGuardInput): SubmitDecision {
     }
   }
 
-  // No pinned sha and no current sha are the SAME answer here — "the head this
-  // was read from cannot be established" — and both refuse. Treating an absent
-  // pin as "probably fine" is exactly how a guard becomes decorative.
-  if (!input.pinnedOid || !input.currentOid) {
-    return { ok: false, refusal: 'head-unreadable' }
-  }
-  if (input.pinnedOid !== input.currentOid) {
-    return {
-      ok: false,
-      refusal: 'head-moved',
-      detail: `${input.pinnedOid.slice(0, 7)} → ${input.currentOid.slice(0, 7)}`
-    }
-  }
+  const pin = headPinRefusal(input.pinnedOid, input.currentOid)
+  if (pin) return { ok: false, refusal: pin.refusal, ...(pin.detail ? { detail: pin.detail } : {}) }
 
   return { ok: true, args: ghReviewArgs(input.prNumber, input.verdict) }
 }

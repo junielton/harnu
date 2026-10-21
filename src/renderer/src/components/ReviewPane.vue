@@ -34,15 +34,18 @@ import {
   ChevronRight,
   GitBranch,
   MessageSquare,
-  RefreshCw
+  RefreshCw,
+  TextSelect
 } from 'lucide-vue-next'
 import { REVIEW_VERDICTS, type ReviewVerdict } from '../../../main/review-submit-core'
 import { useUiStore } from '../stores/ui'
 import { useHelpersStore } from '../stores/helpers'
 import { useReviewStore } from '../stores/review'
+import { useReviewSelectionStore } from '../stores/review-selection'
 import { useRoadmapStore } from '../stores/roadmap'
 import { useSessionsStore } from '../stores/sessions'
 import MarkdownRenderer from './MarkdownRenderer.vue'
+import ReviewSelectionBar from './ReviewSelectionBar.vue'
 import Button from './ui/Button.vue'
 import {
   CONTRACT_LINE_SEVERITY,
@@ -60,10 +63,13 @@ import {
 } from './review-format'
 import type { DiffFile, DiffHunk, DiffRow } from '../../../main/review-core'
 import { correctiveFromSnapshot, UNKNOWN_CORRECTIVE } from '../../../main/review-corrective'
+import { gutterKeyAction, stepRow, type RowPos } from '../lib/review-selection'
+import type { CapturedSelection } from '../stores/review-selection'
 
 const { t } = useI18n()
 const ui = useUiStore()
 const store = useReviewStore()
+const selection = useReviewSelectionStore()
 const roadmap = useRoadmapStore()
 const sessions = useSessionsStore()
 const helpers = useHelpersStore()
@@ -231,6 +237,174 @@ function segmentsFor(file: DiffFile, row: DiffRow): ReturnType<typeof rowSegment
 
 function gapFor(hunks: readonly DiffHunk[], index: number): number {
   return gapBefore(hunks, index)
+}
+
+// ── Selecting lines (T257 U1) ──────────────────────────────────────────────
+
+/**
+ * Every selection gesture lives on the row's GUTTER. The gutter already carries
+ * `select-none`, so a drag in the code column is still an ordinary browser text
+ * selection for copy-paste and never starts a diff selection — the two cannot
+ * fight, because only one of them has handlers.
+ *
+ * The `⋯ N unchanged lines` marker and the `@@` label are not rows: they carry
+ * no role and no handler, so they are never a target.
+ */
+function isRowSelected(path: string, hi: number, ri: number): boolean {
+  const sel = selection.live
+  return (
+    sel !== null &&
+    sel.subjectType === 'LINE' &&
+    sel.path === path &&
+    sel.hunkIndex === hi &&
+    ri >= (sel.rowFrom ?? 0) &&
+    ri <= (sel.rowTo ?? -1)
+  )
+}
+
+/**
+ * The file's one `tabindex="0"` gutter. A diff has thousands of rows, so the
+ * gutters are a roving-tabindex group per file rather than a tab stop each.
+ */
+const focusPos = ref<Record<string, RowPos>>({})
+
+function tabStopOf(file: DiffFile): RowPos | null {
+  const at = focusPos.value[file.path]
+  if (at && file.hunks[at.hunk]?.rows[at.row]) return at
+  const sel = selection.live
+  if (sel && sel.path === file.path && sel.hunkIndex !== null && sel.rowFrom !== null) {
+    return { hunk: sel.hunkIndex, row: sel.rowFrom }
+  }
+  const first = file.hunks.findIndex((h) => h.rows.length > 0)
+  return first < 0 ? null : { hunk: first, row: 0 }
+}
+
+const tabStops = computed<Record<string, RowPos | null>>(() => {
+  const out: Record<string, RowPos | null> = {}
+  for (const f of files.value) out[f.path] = tabStopOf(f)
+  return out
+})
+
+function isTabStop(path: string, hi: number, ri: number): boolean {
+  const at = tabStops.value[path]
+  return at !== null && at !== undefined && at.hunk === hi && at.row === ri
+}
+
+function onGutterFocus(path: string, hi: number, ri: number): void {
+  focusPos.value = { ...focusPos.value, [path]: { hunk: hi, row: ri } }
+}
+
+/** A press that has not been released yet. */
+let drag: {
+  previous: CapturedSelection
+  start: RowPos
+  path: string
+  moved: boolean
+  cancelled: boolean
+} | null = null
+
+function endDrag(): void {
+  const d = drag
+  drag = null
+  window.removeEventListener('mouseup', endDrag)
+  window.removeEventListener('keydown', onDragKey, true)
+  // A click on the only selected row, with no drag, toggles it off.
+  if (d && !d.cancelled && !d.moved && wasOnly(d)) selection.clear('toggle')
+}
+
+/** Was the press made on a row that was already the only selected one? */
+function wasOnly(d: NonNullable<typeof drag>): boolean {
+  const p = d.previous.sel
+  return (
+    !!p &&
+    p.subjectType === 'LINE' &&
+    p.path === d.path &&
+    p.hunkIndex === d.start.hunk &&
+    p.rowFrom === d.start.row &&
+    p.rowTo === d.start.row
+  )
+}
+
+/** `Esc` mid-drag cancels back to the selection the press started from. */
+function onDragKey(e: KeyboardEvent): void {
+  if (gutterKeyAction(e.key, false)?.kind !== 'clear' || !drag) return
+  e.stopPropagation()
+  e.preventDefault()
+  drag.cancelled = true
+  selection.restore(drag.previous)
+  endDrag()
+}
+
+function onGutterDown(e: MouseEvent, file: DiffFile, hi: number, ri: number): void {
+  if (e.button !== 0) return
+  const sel = selection.live
+  // Shift-click extends from the anchor — the same door a drag step uses.
+  if (e.shiftKey && sel && sel.subjectType === 'LINE') {
+    e.preventDefault()
+    selection.extend(file.path, hi, ri)
+    return
+  }
+  drag = {
+    previous: selection.capture(),
+    start: { hunk: hi, row: ri },
+    path: file.path,
+    moved: false,
+    cancelled: false
+  }
+  selection.select(file.path, hi, ri)
+  window.addEventListener('mouseup', endDrag)
+  window.addEventListener('keydown', onDragKey, true)
+}
+
+function onGutterEnter(file: DiffFile, hi: number, ri: number): void {
+  if (!drag || drag.cancelled) return
+  if (file.path === drag.path && hi === drag.start.hunk && ri === drag.start.row) return
+  drag.moved = true
+  selection.extend(file.path, hi, ri)
+}
+
+/** Move focus to a row of `article`'s file and make it the file's tab stop. */
+function focusRow(article: HTMLElement | null, file: DiffFile, to: RowPos): void {
+  focusPos.value = { ...focusPos.value, [file.path]: to }
+  let index = 0
+  for (let h = 0; h < to.hunk; h++) index += file.hunks[h].rows.length
+  index += to.row
+  void nextTick(() => {
+    const gutters = article?.querySelectorAll<HTMLElement>('[data-diff-select]')
+    gutters?.[index]?.focus()
+  })
+}
+
+function onGutterKey(e: KeyboardEvent, file: DiffFile, hi: number, ri: number): void {
+  const action = gutterKeyAction(e.key, e.shiftKey)
+  if (!action) return
+  if (action.kind === 'move') {
+    e.preventDefault()
+    const next = stepRow(file, { hunk: hi, row: ri }, action.delta)
+    if (!next) return
+    if (action.extend) {
+      const sel = selection.live
+      // Start the range at the focused row when nothing in this file anchors it.
+      if (!sel || sel.subjectType !== 'LINE' || sel.path !== file.path) {
+        selection.select(file.path, hi, ri)
+      }
+      selection.extend(file.path, next.hunk, next.row)
+    }
+    focusRow((e.currentTarget as HTMLElement).closest('article'), file, next)
+    return
+  }
+  if (action.kind === 'toggle') {
+    e.preventDefault()
+    selection.toggleRow(file.path, hi, ri)
+    return
+  }
+  // Only swallow Esc when it clears something, so it still closes the takeover
+  // for an operator with nothing selected.
+  if (selection.live) {
+    e.preventDefault()
+    e.stopPropagation()
+    selection.clear('esc')
+  }
 }
 
 // ── Intent rail + the ~1000px breakpoint (AC-8) ─────────────────────────────
@@ -607,6 +781,7 @@ onMounted(() => {
 })
 
 watch([folderPath, cardSlug, prNumber], ([path, slug]) => {
+  selection.clear('context')
   cancelBounce()
   cancelReview()
   void boot(path as string, slug as string)
@@ -615,7 +790,10 @@ watch([folderPath, cardSlug, prNumber], ([path, slug]) => {
 onBeforeUnmount(() => {
   if (clock !== null) clearInterval(clock)
   ro?.disconnect()
+  window.removeEventListener('mouseup', endDrag)
+  window.removeEventListener('keydown', onDragKey, true)
   store.reset()
+  selection.reset()
 })
 </script>
 
@@ -994,7 +1172,10 @@ onBeforeUnmount(() => {
                    (design.md §6). -->
             <header
               class="group sticky top-0 z-[2] flex cursor-pointer select-none items-center gap-[9px] border-b border-border bg-surface-2 px-[11px] py-2"
-              :class="isSensitive(file.path) ? 'relative' : ''"
+              :class="[
+                isSensitive(file.path) ? 'relative' : '',
+                selection.isFileSelected(file.path) ? 'diff-file-selected' : ''
+              ]"
               :aria-expanded="store.isExpanded(file.path)"
               @click="store.toggleFile(file.path)"
             >
@@ -1055,6 +1236,26 @@ onBeforeUnmount(() => {
                 @click.stop="onToggleViewed(file)"
               >
                 <Check :size="11" :stroke-width="2.75" aria-hidden="true" />
+              </button>
+              <!-- Select the whole file (T257). A real button, and a sibling of
+                     the viewed mark with its own `@click.stop`: "I have read
+                     this", "show me this" and "this is what I am asking about"
+                     are three gestures and must not share a hit box. -->
+              <button
+                type="button"
+                data-select-file
+                class="inline-flex h-[18px] w-[18px] flex-none items-center justify-center rounded-sm border transition-colors"
+                :class="
+                  selection.isFileSelected(file.path)
+                    ? 'border-accent-line bg-accent-soft text-accent'
+                    : 'border-border-2 bg-surface text-text-4 hover:border-text-4 hover:text-text-2'
+                "
+                :title="t('review.selection.selectFileTitle')"
+                :aria-label="t('review.selection.selectFile', { path: file.path })"
+                :aria-pressed="selection.isFileSelected(file.path)"
+                @click.stop="selection.toggleFile(file.path)"
+              >
+                <TextSelect :size="11" :stroke-width="2" aria-hidden="true" />
               </button>
               <!-- The expand/collapse state, as the same lucide pair every other
                      collapsible in the repo uses (`SystemMonitorRow`), not a text
@@ -1142,6 +1343,7 @@ onBeforeUnmount(() => {
                     data-diff-row
                     class="flex items-start"
                     :class="{
+                      'diff-row-selected': isRowSelected(file.path, hi, ri),
                       'diff-line-add': row.kind === 'add',
                       'diff-line-del': row.kind === 'del',
                       'text-text': row.kind !== 'context',
@@ -1154,7 +1356,15 @@ onBeforeUnmount(() => {
                            the line numbers at any offset > 0. -->
                     <span
                       data-diff-gutter
-                      class="sticky left-0 z-[1] flex w-[92px] flex-none select-none border-r border-border bg-surface-2 text-[11px] text-text-4"
+                      data-diff-select
+                      role="button"
+                      :tabindex="isTabStop(file.path, hi, ri) ? 0 : -1"
+                      :aria-pressed="isRowSelected(file.path, hi, ri)"
+                      class="sticky left-0 z-[1] flex w-[92px] flex-none cursor-pointer select-none border-r border-border bg-surface-2 text-[11px] text-text-4 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent"
+                      @mousedown="onGutterDown($event, file, hi, ri)"
+                      @mouseenter="onGutterEnter(file, hi, ri)"
+                      @keydown="onGutterKey($event, file, hi, ri)"
+                      @focus="onGutterFocus(file.path, hi, ri)"
                     >
                       <span class="w-[34px] pr-1.5 text-right">{{ row.oldLine ?? '' }}</span>
                       <span class="w-[34px] pr-1.5 text-right">{{ row.newLine ?? '' }}</span>
@@ -1276,6 +1486,12 @@ onBeforeUnmount(() => {
           </span>
         </button>
       </div>
+
+      <!-- The selection bar sits at the bottom of the body, OUTSIDE the evidence
+             header and the discrepancy strip: those are receipts. `-bottom-4`
+             because a sticky child pins inside the scroller's padding (28px),
+             so this leaves the bar 12px off the pane edge. -->
+      <ReviewSelectionBar :narrow="narrow" class="sticky -bottom-4 z-[4]" />
     </template>
   </div>
 

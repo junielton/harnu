@@ -3830,6 +3830,95 @@
     "binaryBody": "Arquivo binário — não há o que renderizar, apenas o caminho e as contagens.",
     "unchangedLines": "{n} linhas inalteradas",
     "noNewline": " ⏎ sem quebra de linha no fim do arquivo",
+    "selection": {
+      "barLabel": "Seleção",
+      "selectFile": "Selecionar o arquivo inteiro {path}",
+      "selectFileTitle": "Selecionar o arquivo inteiro",
+      "range": {
+        "file": "arquivo inteiro",
+        "line": "L{line}",
+        "lines": "L{start}–{end}",
+        "oldLine": "antiga L{line}",
+        "oldLines": "antigas L{start}–{end}",
+        "mixed": "{startSide} L{start} – {endSide} L{end}"
+      },
+      "side": {
+        "old": "antiga",
+        "new": "nova"
+      },
+      "hint": {
+        "clamp": "Um intervalo fica dentro de um hunk",
+        "headMoved": "O head mudou ({from} → {to}). Seleção limpa.",
+        "baseMoved": "A base mudou ({from} → {to}). Seleção limpa."
+      },
+      "action": {
+        "copy": "Copiar como texto",
+        "clear": "Limpar seleção",
+        "dismiss": "Dispensar",
+        "tryAgain": "Tentar de novo",
+        "openMods": "Abrir ajustes de Mods",
+        "reopenCompanion": "Reabrir \"Perguntar a uma sessão nova\"",
+        "refresh": "Atualizar",
+        "reselect": "Limpar e selecionar de novo",
+        "narrow": "Reduzir a seleção"
+      },
+      "state": {
+        "queued": "Atualizando…",
+        "delivered": "O companion vê isto",
+        "cleared": "A conversa foi limpa",
+        "ended": "O companion foi fechado"
+      },
+      "noBinding": {
+        "off": "O Harnu mod está desligado",
+        "cli-too-old": "Esta versão do Claude Code é antiga demais para o Harnu mod",
+        "cli-unknown": "O Harnu não conseguiu ler a versão do Claude Code",
+        "pre-disclosure": "O Harnu está esperando você ver o aviso do mod",
+        "not-claude": "Esta sessão começou sem o Harnu mod",
+        "unknown": "Esta sessão começou sem o Harnu mod"
+      },
+      "outcome": {
+        "NO_BINDING": "Não conectado ao Harnu mod",
+        "NO_LEASE": "A conexão com o companion foi perdida",
+        "STICKY_LEGACY": "O canal do mod está desligado nesta sessão",
+        "HEADLESS": "Esta sessão não pode receber seleções",
+        "EXTERNAL": "Esta sessão não pode receber seleções",
+        "FEATURE_OFF": "A entrega pelo mod está desligada",
+        "MODE_SHADOW": "O canal do mod está em modo de observação",
+        "ORIGIN_DENIED": "O Harnu não conseguiu enviar isto (interno)",
+        "TARGET_DENIED": "Esta sessão não pode receber seleções",
+        "FOLDER_BLOCKED": "Esta pasta está bloqueada para agentes",
+        "BAD_ARGS": "Essa seleção não pode ser enviada",
+        "QUEUE_FULL": "O companion está ocupado",
+        "SID_UNSETTLED": "O companion está começando uma nova conversa",
+        "AUDIT_FAILED": "Não foi possível registrar o envio — nada foi enviado",
+        "head-moved": "O head mudou — esta seleção está desatualizada",
+        "base-mismatch": "A base mudou — esta seleção está desatualizada",
+        "head-unreadable": "O Harnu não consegue ler o commit do head",
+        "no-companion": "Abra \"Perguntar a uma sessão nova\" primeiro",
+        "CMD_PRECONDITION": "O companion recusou essa seleção",
+        "CMD_UNSUPPORTED": "O Harnu mod desta sessão é antigo demais para isto",
+        "FEATURE_DISABLED": "A entrega pelo mod está desligada",
+        "CMD_FAILED": "O companion não conseguiu receber essa seleção",
+        "CMD_EXPIRED": "O companion não conseguiu receber essa seleção",
+        "expired": "Não entregue — o companion não pegou",
+        "lost": "Enviado, mas o Harnu não recebeu confirmação",
+        "dropped": {
+          "lease-lost": "A conexão com o companion foi perdida",
+          "rebound": "A conversa foi limpa — envie a seleção de novo",
+          "session-end": "O companion terminou",
+          "revoked": "A entrega pelo mod foi desligada",
+          "host-shutdown": "O Harnu está encerrando",
+          "cancelled": "Cancelado"
+        },
+        "unknown": "O Harnu não conseguiu concluir esse envio"
+      },
+      "copied": "Copiado",
+      "copyFailed": "Não foi possível copiar para a área de transferência",
+      "guide": {
+        "refresh": "Use “{action}” no cabeçalho da revisão",
+        "freshCompanion": "Feche este companion e use “{action}” no cabeçalho da revisão"
+      }
+    },
     "truncated": "Este diff foi cortado para manter o painel responsivo: {n} arquivos não aparecem, de {rows} linhas alteradas no total.",
     "receipt": {
       "commits": "commits",
