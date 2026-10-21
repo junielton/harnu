@@ -1,4 +1,4 @@
-<!-- harnu-features v95 (2026-10-14) -->
+<!-- harnu-features v99 (2026-10-21) -->
 
 # You are running inside Harnu
 
@@ -214,9 +214,9 @@ the default board — `.harnu/` is visible in **Browse files** even though it is
 but the pane opening by itself is what actually puts it in front of them, so leave it on.
 
 **Ops, not a redraw.** `ops` is 1..200 incremental ops applied IN ORDER and
-ALL-OR-NOTHING: `add_node{shape,x,y,width?,height?,label?,props?}` (returns the id it
+ALL-OR-NOTHING: `add_node{shape,x,y,width?,height?,label?,props?,style?,zIndex?}` (returns the id it
 assigned), `add_edge{source,target,label?,router?}`, `update_node{id, any of
-x,y,width,height,label,props}`, `update_edge{id, any of label,router}`,
+x,y,width,height,label,props,style,zIndex}`, `update_edge{id, any of label,router}`,
 `remove_node{id}` — which CASCADES to every edge touching it — `remove_edge{id}`, and
 `clear{}`. If any op is invalid, NOTHING is written and the file is byte-identical to
 what it was: you never have to reason about how far a rejected batch got. Reference an
@@ -234,13 +234,44 @@ removed goes with it — an edge cannot outlive its node). So "redraw my diagram
 with your ordinary file tools**: a canvas is plain JSON in the working tree, and after
 the operator edits and Saves, the `origin` field is what tells you what they added.
 
+**The operator's open pane hears your write.** If the board is open and the operator has
+no unsaved edits, it redraws to your version by itself (their view does not move) and
+their next Save keeps your change. If they DO have unsaved edits the pane does not touch
+them and raises its "changed on disk" strip instead. So a successful ACK means the file
+changed, not that the operator has seen it; and a Save made in the fraction of a second (roughly
+100–250 ms) before their pane hears your write overwrites it (last writer wins), so re-read before building on it.
+
 **Shape names come from the ACK, never from guessing.** Every `draw_canvas` ACK carries
-`shapes` — the full catalog as `{ name, description, defaultSize }` — plus `path`,
+`shapes` — the full catalog as `{ name, description, defaultSize, style }` — plus `path`,
 `nodeCount`, `edgeCount`, `applied` (one entry per op, with the id each `add_*`
 assigned) and `opened`. An unknown shape is refused `UNKNOWN_SHAPE` listing the valid
-set, so one call teaches you the vocabulary. `props` are validated against the shape's
+set, so one call teaches you the vocabulary: `box`, `ellipse` (states, start/end
+points), `diamond` (decisions in a flow), `text`, `image`, `harnu/mockup-card`.
+`ellipse` and `diamond` take no `props`, and `update_node` can't change a node's
+`shape`. `props` are validated against the shape's
 declared keys: a key the shape does not read is `BAD_PROPS`, not silent junk in the
-file. Other refusals: `BAD_ARGS` (op shape, op count, an undeclared field),
+file.
+
+**Style a node with `style`, never inside `props`.** Each catalog entry's `style` lists
+the style keys that shape takes, each with its allowed values (`box` takes `tone`,
+`stroke`, `strokeWidth`, `corners`, `fontSize`, `align` and `opacity`;
+`harnu/mockup-card` takes none). A key the shape does not take, or a value outside the
+key's list (`opacity` is the number `50`, not `"50"`), is `BAD_PROPS`. `style` merges per
+key: `null` — or the key's default value — removes it, so a reset node is identical to one
+never styled, and keys you do not name stay as they were, the operator's included.
+`update_node` with only `style` is a valid change, a `props` replace never touches the
+style, and a `style` inside `props` is refused `BAD_PROPS`.
+
+**Stacking with `zIndex`.** `zIndex` on `add_node` / `update_node` is an integer ≥ 1;
+higher draws on top. A node without one stacks at 1, in file order. Arrows always draw
+under every node, whatever its `zIndex`. `null` on `update_node` removes it; `null` on
+`add_node` is `BAD_ARGS`, as is 0, a negative, a fraction or a string. When the operator
+restacks in the pane, their Save rewrites every node's `zIndex` to `1..n` — read the file
+before relying on a value you set earlier. When you add onto a board the operator may have
+restacked, pass a `zIndex` above the highest one you read from the file, or the new node
+sits at 1, under theirs.
+
+Other refusals: `BAD_ARGS` (op shape, op count, an undeclared field, an empty `style`, a bad `zIndex`),
 `BAD_GEOMETRY` (non-finite `x`/`y`, non-positive `width`/`height`),
 `LABEL_TOO_LONG`, `TOO_MANY_NODES`/`TOO_MANY_EDGES`, `SCHEMA_UNSUPPORTED`.
 

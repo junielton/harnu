@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { atomicWriteFile } from './mcp/atomic-write'
 import { markdownKnownRoots } from './markdown-read'
 import { checkCanvasPathAllowed } from './canvas-read'
-import { suppressNextCanvasChange } from './canvas-watch'
+import { recordCanvasSelfWrite } from './canvas-watch'
 import {
   MAX_CANVAS_BYTES,
   serializeCanvasDocument,
@@ -73,8 +73,18 @@ function deny(code: CanvasDenyCode, error?: string): CanvasWriteErr {
  *
  * `doc` is typed `unknown` on purpose: this is a trust boundary, and the pure
  * validator is the only thing allowed to decide the payload is a document.
+ *
+ * `selfWrite` is true ONLY for the open pane's own Save (the `canvas:write` IPC):
+ * the write is then recorded so the watcher swallows its echo instead of telling
+ * the pane its own file changed. It defaults to false — every other writer, an
+ * agent's `draw_canvas` first of all, must reach an open pane, which reloads
+ * silently when clean and raises the stale banner when dirty (spec §7.3).
  */
-export async function writeCanvasFile(rawPath: string, doc: unknown): Promise<CanvasWriteResult> {
+export async function writeCanvasFile(
+  rawPath: string,
+  doc: unknown,
+  opts: { selfWrite?: boolean } = {}
+): Promise<CanvasWriteResult> {
   if (typeof rawPath !== 'string' || rawPath.length === 0)
     return deny('invalid-path', 'invalid path')
   const resolved = resolve(rawPath)
@@ -98,9 +108,9 @@ export async function writeCanvasFile(rawPath: string, doc: unknown): Promise<Ca
   }
 
   try {
-    // Arm the suppression BEFORE the write: `atomicWriteFile`'s rename is what
-    // chokidar reports, and arming after it would race the event.
-    suppressNextCanvasChange(resolved)
+    // Record BEFORE the write: `atomicWriteFile`'s rename is what chokidar
+    // reports, and recording after it would race the event.
+    if (opts.selfWrite === true) recordCanvasSelfWrite(resolved, body)
     await atomicWriteFile(resolved, body, 0o644)
     return { ok: true, path: resolved, bytes }
   } catch {
@@ -115,7 +125,7 @@ export function registerCanvasWriteHandlers(): void {
     'canvas:write',
     (_e, args: { path: string; doc: unknown }): Promise<CanvasWriteResult> => {
       const { path, doc } = args ?? ({} as { path: string; doc: unknown })
-      return writeCanvasFile(path, doc)
+      return writeCanvasFile(path, doc, { selfWrite: true })
     }
   )
 }

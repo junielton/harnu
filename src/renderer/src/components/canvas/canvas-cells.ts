@@ -1,5 +1,7 @@
 import type { CanvasDocument, CanvasEdge, CanvasNode } from '../../../../main/canvas-core'
 import type { CanvasPalette } from './canvas-theme'
+import { renderStackZ } from './canvas-layers'
+import { readCanvasStyle, toneColors, type CanvasStyle } from './canvas-style'
 import {
   LEGACY_MOCKUP_CARD_SHAPE,
   MOCKUP_CARD_DEFAULT_SIZE,
@@ -46,6 +48,10 @@ export const DEFAULT_TEXT_SIZE = { width: 160, height: 24 } as const
 /** An `image` node is a picture, so its fallback is a picture's footprint —
  *  not the box's, which would letterbox every un-sized asset. */
 export const DEFAULT_IMAGE_SIZE = { width: 240, height: 160 } as const
+/** An `ellipse` is a wider-than-tall oval; a `diamond` needs more height than a
+ *  box so its label clears the slanted edges (T536 U2). */
+export const DEFAULT_ELLIPSE_SIZE = { width: 132, height: 64 } as const
+export const DEFAULT_DIAMOND_SIZE = { width: 132, height: 80 } as const
 
 /**
  * Per-shape size fallbacks, keyed by DOCUMENT shape. Anything absent from this
@@ -66,12 +72,14 @@ export const DEFAULT_SIZE_BY_SHAPE: Readonly<
   box: DEFAULT_NODE_SIZE,
   text: DEFAULT_TEXT_SIZE,
   image: DEFAULT_IMAGE_SIZE,
+  ellipse: DEFAULT_ELLIPSE_SIZE,
+  diamond: DEFAULT_DIAMOND_SIZE,
   [MOCKUP_CARD_SHAPE]: MOCKUP_CARD_DEFAULT_SIZE,
   [LEGACY_MOCKUP_CARD_SHAPE]: MOCKUP_CARD_DEFAULT_SIZE
 }
 
 /** The §5.1 kinds this unit draws. Anything else falls back to a box (below). */
-const BUILTIN_KINDS = new Set(['box', 'text', 'image'])
+const BUILTIN_KINDS = new Set(['box', 'text', 'image', 'ellipse', 'diamond'])
 
 /**
  * The registered HTML components this build knows (§5.2, T218 U7) — the shape
@@ -153,6 +161,79 @@ function sizeFor(node: CanvasNode): { width: number; height: number } {
   }
 }
 
+/** `style.stroke` → `strokeDasharray`; `solid` (and an absent key) draws none. */
+const DASH_BY_STROKE: Readonly<Record<string, string>> = { dashed: '6 4', dotted: '2 3' }
+/** `style.strokeWidth` → px (`regular` is today's 1.5). */
+const WIDTH_BY_STROKE_WIDTH: Readonly<Record<string, number>> = { thin: 1, regular: 1.5, bold: 2.5 }
+/** `style.fontSize` → px: Caption, today's canvas 12, Subtitle, Title (`design.md` §3). */
+const FONT_PX: Readonly<Record<string, number>> = { s: 11, m: 12, l: 15, xl: 20 }
+/** Corner radius of a rounded box, and so of `corners: "round"` (`--radius`). */
+const BOX_RADIUS = 7
+/** How far `align: left | right` sits from the frame's edge, in world units. */
+const ALIGN_INSET = 8
+/**
+ * A diamond is a point at its bounding box's left and right edges, so an 8px inset
+ * there would put a left/right label past the slanted frame. It aligns to its
+ * inscribed box instead: a quarter of the width in, where the frame is half its
+ * height tall (`design.md` §6 "Node styles").
+ */
+const DIAMOND_ALIGN_REF = { left: '25%', right: '75%' } as const
+
+/**
+ * A node's {@link CanvasStyle} as X6 attributes — the ONE place a style value
+ * becomes a number, a dasharray or a colour. `body` and `label` hold only what the
+ * style actually sets, so a node with no style spreads two empty objects and its
+ * cell is exactly what it was before styles existed. `label` is applied to BOTH
+ * `text` and `label` attribute paths by the caller (§4.5, spike trap 3).
+ *
+ * `kind` decides what a tone means: a bare `text` node has no frame, so its tone
+ * is the label colour alone. Which keys a kind may carry is already settled by
+ * {@link readCanvasStyle}, so nothing here re-checks it.
+ */
+function styledAttrs(
+  style: CanvasStyle,
+  kind: string,
+  palette: CanvasPalette
+): { body: Record<string, unknown>; label: Record<string, unknown> } {
+  const body: Record<string, unknown> = {}
+  const label: Record<string, unknown> = {}
+  if (style.tone !== undefined) {
+    const colors = toneColors(style.tone, kind, palette)
+    label.fill = colors.label
+    if (kind !== 'text') {
+      body.stroke = colors.stroke
+      body.fill = colors.fill
+    }
+  }
+  if (typeof style.stroke === 'string' && style.stroke in DASH_BY_STROKE) {
+    body.strokeDasharray = DASH_BY_STROKE[style.stroke]
+  }
+  if (typeof style.strokeWidth === 'string') {
+    body.strokeWidth = WIDTH_BY_STROKE_WIDTH[style.strokeWidth]
+  }
+  if (style.corners !== undefined) {
+    const radius = style.corners === 'sharp' ? 0 : BOX_RADIUS
+    body.rx = radius
+    body.ry = radius
+  }
+  if (typeof style.fontSize === 'string') label.fontSize = FONT_PX[style.fontSize]
+  if (kind === 'diamond' && (style.align === 'left' || style.align === 'right')) {
+    Object.assign(label, {
+      textAnchor: style.align === 'left' ? 'start' : 'end',
+      refX: DIAMOND_ALIGN_REF[style.align]
+    })
+  } else if (style.align === 'left') {
+    Object.assign(label, { textAnchor: 'start', refX: '0%', refX2: ALIGN_INSET })
+  } else if (style.align === 'right') {
+    Object.assign(label, { textAnchor: 'end', refX: '100%', refX2: -ALIGN_INSET })
+  }
+  if (typeof style.opacity === 'number' && style.opacity !== 100) {
+    body.opacity = style.opacity / 100
+    label.opacity = style.opacity / 100
+  }
+  return { body, label }
+}
+
 /**
  * Node → cell. The label is written through {@link labelAttrsFor}, so BOTH
  * X6 attribute paths carry the normalized value (§4.5, spike trap 3). Setting
@@ -167,6 +248,9 @@ export function toX6Node(
   const { width, height } = sizeFor(node)
   const label = node.label ?? ''
   const labelAttrs = labelAttrsFor(label)
+  // Only what this kind takes and this build knows; `{}` for the mockup card and
+  // for an unknown kind, which therefore render exactly as before styles existed.
+  const styled = styledAttrs(readCanvasStyle(node.props, node.shape), node.shape, palette)
 
   const common: X6CellSpec = {
     id: node.id,
@@ -183,11 +267,12 @@ export function toX6Node(
     // on a round-trip through the pane would erase the "what did the human
     // contribute" answer the field exists to give.
     //
-    // `kind` rides along for the same reason: EVERY document shape except
-    // `image` is drawn as an X6 `rect`, so the graph alone cannot say whether a
-    // cell was a `text` annotation, a `box`, or a `harnu/<name>` this build does
-    // not know. Without it, U3's read-back would flatten every annotation into
-    // a box on the first Save — a silent, permanent edit nobody asked for.
+    // `kind` rides along for the same reason: almost every document shape is
+    // drawn as an X6 `rect` (and `diamond` as a generic `polygon`), so the graph
+    // alone cannot say whether a cell was a `text` annotation, a `box`, or a
+    // `harnu/<name>` this build does not know. Without it, U3's read-back would
+    // flatten every annotation into a box on the first Save — a silent, permanent
+    // edit nobody asked for.
     data: {
       origin: node.origin,
       kind: node.shape,
@@ -198,22 +283,30 @@ export function toX6Node(
   if (node.shape === 'text') {
     // No frame, no fill — a bare label. `--text-2` rather than `--text`: with no
     // body behind it, a callout that shouts competes with the boxes.
+    //
+    // The body is still a full-frame rect filled `transparent`, not `none`: SVG
+    // hit-tests a shape only where its fill is painted, so with `none` a press at
+    // the centre of a left/right aligned label fell through to the board and the
+    // node could not be selected there. `transparent` is painted for hit-testing
+    // and invisible on screen, in every theme.
     return {
       ...common,
       shape: 'rect',
       attrs: {
-        body: { fill: 'none', stroke: 'none' },
+        body: { fill: 'transparent', stroke: 'none', ...styled.body },
         text: {
           ...labelAttrs.text,
           fill: palette.text2,
           fontSize: 12,
-          fontFamily: palette.fontSans
+          fontFamily: palette.fontSans,
+          ...styled.label
         },
         label: {
           ...labelAttrs.label,
           fill: palette.text2,
           fontSize: 12,
-          fontFamily: palette.fontSans
+          fontFamily: palette.fontSans,
+          ...styled.label
         }
       }
     }
@@ -228,7 +321,8 @@ export function toX6Node(
         shape: 'image',
         imageUrl: resolved,
         attrs: {
-          image: { xlinkHref: resolved },
+          // An image takes `opacity` only (`styled.body` carries nothing else).
+          image: { xlinkHref: resolved, ...styled.body },
           // The label sits BELOW the frame so it never covers the picture.
           text: {
             ...labelAttrs.text,
@@ -237,7 +331,8 @@ export function toX6Node(
             fontFamily: palette.fontSans,
             refY: '100%',
             refY2: 4,
-            textVerticalAnchor: 'top'
+            textVerticalAnchor: 'top',
+            ...styled.label
           },
           label: {
             ...labelAttrs.label,
@@ -246,7 +341,8 @@ export function toX6Node(
             fontFamily: palette.fontSans,
             refY: '100%',
             refY2: 4,
-            textVerticalAnchor: 'top'
+            textVerticalAnchor: 'top',
+            ...styled.label
           }
         }
       }
@@ -264,19 +360,22 @@ export function toX6Node(
           strokeWidth: 1,
           strokeDasharray: '3 3',
           rx: 7,
-          ry: 7
+          ry: 7,
+          ...styled.body
         },
         text: {
           text: placeholder,
           fill: palette.text3,
           fontSize: 11,
-          fontFamily: palette.fontSans
+          fontFamily: palette.fontSans,
+          ...styled.label
         },
         label: {
           text: placeholder,
           fill: palette.text3,
           fontSize: 11,
-          fontFamily: palette.fontSans
+          fontFamily: palette.fontSans,
+          ...styled.label
         }
       }
     }
@@ -309,28 +408,66 @@ export function toX6Node(
     }
   }
 
-  // `box` — and the fallback for any shape this unit does not draw, which today
-  // means a `harnu/<name>` component from a NEWER Harnu than this one. Falling
-  // back is not politeness: `graph.addNode({ shape: 'harnu/foo' })` THROWS on an
-  // unregistered name, so an agent-written shape this build does not know would
-  // take the whole pane down instead of rendering as an unremarkable box.
+  // `box`, `ellipse`, `diamond` — and the fallback for any shape this unit does
+  // not draw, which today means a `harnu/<name>` component from a NEWER Harnu
+  // than this one. Falling back is not politeness: `graph.addNode({ shape:
+  // 'harnu/foo' })` THROWS on an unregistered name, so an agent-written shape
+  // this build does not know would take the whole pane down instead of
+  // rendering as an unremarkable box.
   const known = BUILTIN_KINDS.has(node.shape)
+  const bodyAttrs = {
+    fill: palette.surface,
+    stroke: palette.border2,
+    strokeWidth: 1.5,
+    ...styled.body
+  }
+  const labelled = {
+    text: {
+      ...labelAttrs.text,
+      fill: palette.text,
+      fontSize: 12,
+      fontFamily: palette.fontSans,
+      ...styled.label
+    },
+    label: {
+      ...labelAttrs.label,
+      fill: palette.text,
+      fontSize: 12,
+      fontFamily: palette.fontSans,
+      ...styled.label
+    }
+  }
+
+  if (node.shape === 'ellipse') {
+    // Same tokens and ports as a box; only the X6 shape differs. No `rx`/`ry`:
+    // on an ellipse those would be unrelated radii attributes, not a corner.
+    return { ...common, shape: 'ellipse', attrs: { body: bodyAttrs, ...labelled } }
+  }
+
+  if (node.shape === 'diamond') {
+    // A polygon through the four edge midpoints, in the node's own fractional
+    // box (`refPoints`), so it follows a resize without recomputing points.
+    return {
+      ...common,
+      shape: 'polygon',
+      attrs: { body: { ...bodyAttrs, refPoints: '0.5,0 1,0.5 0.5,1 0,0.5' }, ...labelled }
+    }
+  }
+
   return {
     ...common,
     shape: 'rect',
     attrs: {
       body: {
-        fill: palette.surface,
-        stroke: palette.border2,
-        strokeWidth: 1.5,
-        rx: 7,
-        ry: 7,
+        rx: BOX_RADIUS,
+        ry: BOX_RADIUS,
+        // After the default radius: `corners` (box only) arrives in `bodyAttrs`.
+        ...bodyAttrs,
         // An unknown shape reads as a box, but a dashed outline says so rather
         // than pretending the document rendered exactly as written.
         ...(known ? {} : { strokeDasharray: '4 3' })
       },
-      text: { ...labelAttrs.text, fill: palette.text, fontSize: 12, fontFamily: palette.fontSans },
-      label: { ...labelAttrs.label, fill: palette.text, fontSize: 12, fontFamily: palette.fontSans }
+      ...labelled
     }
   }
 }
@@ -347,6 +484,10 @@ export function toX6Node(
  * editing, and the moment a rename can reach `labels[]` the stale-label trap
  * reopens ON EDGES — so U3 must either normalize the edge label on the way out
  * or keep the document authoritative the way this does.
+ *
+ * `data.label` (with `router` and `props`) is the document's own copy, carried
+ * through the graph so an arrow restored by undo after a Save keeps them (U4). It
+ * is never X6's `labels[]`, which stays derived and is never read back.
  */
 export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
   return {
@@ -355,7 +496,12 @@ export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
     source: edge.source,
     target: edge.target,
     zIndex: 0,
-    data: { origin: edge.origin },
+    data: {
+      origin: edge.origin,
+      ...(edge.label === undefined ? {} : { label: edge.label }),
+      ...(edge.router === undefined ? {} : { router: edge.router }),
+      ...(edge.props === undefined ? {} : { props: edge.props })
+    },
     router: { name: edge.router ?? 'manhattan' },
     connector: { name: 'rounded', args: { radius: 8 } },
     attrs: {
@@ -387,15 +533,21 @@ export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
   }
 }
 
-/** The whole document as one `fromJSON` payload — nodes first, then edges. */
+/**
+ * The whole document as one `fromJSON` payload — nodes first, then edges. Every node is
+ * rendered at its {@link renderStackZ} (distinct, always >= 1), so the order on screen
+ * never depends on X6's tie-breaking; edges stay at 0 under the nodes. Those z values
+ * are for the screen only: the file's own `zIndex` is read from the base document.
+ */
 export function toX6Cells(
   doc: CanvasDocument,
   palette: CanvasPalette,
   images: ResolvedImages = {}
 ): { cells: X6CellSpec[] } {
+  const z = renderStackZ(doc.nodes)
   return {
     cells: [
-      ...doc.nodes.map((n) => toX6Node(n, palette, images)),
+      ...doc.nodes.map((n) => toX6Node({ ...n, zIndex: z.get(n.id) }, palette, images)),
       ...doc.edges.map((e) => toX6Edge(e, palette))
     ]
   }

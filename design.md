@@ -430,6 +430,15 @@ _another_ folder.
 | `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                                                                                 |
 | `circle-check`                           | Mission progress — the step rail's `done` glyph (✓ hollow, Mission v3)                                                                                                                                                                 |
 | `flag`                                   | Mission progress — the popover footer's "End mission…" button (Mission v3)                                                                                                                                                             |
+| `palette`                                | Canvas properties panel → the collapsed 28px button that opens it on a narrow pane (T536 U3)                                                                                                                                           |
+| `square-round-corner`                    | Canvas properties panel → Corners: round (`square` is sharp) (T536 U3)                                                                                                                                                                 |
+| `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
+| `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
+| `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
+| `arrow-down-to-line`                     | Canvas properties panel → Layers: Send to back (T536 U4)                                                                                                                                                                               |
+| `arrow-down`                             | Canvas properties panel → Layers: Send backward (T536 U4)                                                                                                                                                                              |
+| `arrow-up`                               | Canvas properties panel → Layers: Bring forward (T536 U4)                                                                                                                                                                              |
+| `arrow-up-to-line`                       | Canvas properties panel → Layers: Bring to front (T536 U4)                                                                                                                                                                             |
 
 ### Novelty dot (on an icon button)
 
@@ -4908,15 +4917,22 @@ document, so it inherits the tokens for free rather than through an iframe.
 
 Node and edge treatment, tokens only — **no raw hex anywhere in the component**:
 
-| Element              | Fill / stroke                                                             |
-| -------------------- | ------------------------------------------------------------------------- |
-| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry |
-| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                       |
-| `text` node          | no body — label only, `--color-text-2`                                    |
-| `image` node         | the asset, on a `--color-surface` ground                                  |
-| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router           |
-| edge label           | `--color-text-3` 11px on a `--color-bg` plate                             |
-| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                   |
+| Element              | Fill / stroke                                                                |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry    |
+| `ellipse` body       | as `box`: `--color-surface` fill, `--color-border-2` 1.5px stroke (T536 U2)  |
+| `diamond` body       | as `box`, on a four-vertex polygon; ports sit at the vertices (T536 U2)      |
+| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                          |
+| `text` node          | no body — label only, `--color-text-2`                                       |
+| `image` node         | the asset, on a `--color-surface` ground                                     |
+| styled node (U3)     | the keys of "Node styles" below; a node with none renders as the rows above  |
+| `text` node tone     | label coloured by the tone's stroke column; `default` stays `--color-text-2` |
+| node `opacity`       | 0.25 / 0.5 / 0.75 / 1 on body, label and image; ports are not dimmed         |
+| node stacking (U4)   | `zIndex` 1..n, higher on top; a node without one stacks at 1 in file order   |
+| edge stacking        | always under every node, never restacked                                     |
+| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router              |
+| edge label           | `--color-text-3` 11px on a `--color-bg` plate                                |
+| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                      |
 
 **Theme (spec §6.4).** The palette is **resolved from CSS variables at mount and
 re-resolved on every theme switch**, then pushed back onto every live cell and onto the
@@ -4932,22 +4948,176 @@ buttons. It holds **Fit** (`scan`), **zoom −** (`minus`), the current percenta
 **0.2–3**; the wheel zooms with `ctrl`/`meta` held and the canvas pans on drag, so a
 plain scroll gesture never fights the pane's own scrolling.
 
-**The three blank-area gestures, and how they are split (U3).** A drag on empty board is
-claimed by three things at once — pan, rubberband select, and draw-a-box — and X6 will
-run two of them over one gesture if they are left to overlap (verified in the real app
-during U2: a single drag panned _and_ left a selection box behind it). The split:
+**Toolbar (T536 U1).** A floating bar of explicit tool modes, **top-centre of the
+viewport**, absolute to the viewport so it neither pans nor zooms. Component:
+`CanvasToolbar.vue`, over the pure `canvas/canvas-tools.ts` state module. Same surface as
+the zoom cluster: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
 
-| Gesture                  | Does                                                               |
-| ------------------------ | ------------------------------------------------------------------ |
-| plain left drag on blank | **draws a box** — the footprint follows the drag, floored at 48×32 |
-| `shift` + left drag      | **rubberband select**                                              |
-| right-button drag        | **pans**                                                           |
-| `ctrl`/`⌘` + wheel       | zooms (0.2–3), unchanged from U2                                   |
+- 28px square buttons, 16px lucide icons, 2px gap, and a 1px `--border` separator
+  between Lock|Hand and the rest.
+- Order: Lock (`Q`), Hand (`H`), then Select (`V`, `1`), Rectangle (`R`, `2`), Diamond
+  (`D`, `3`), Ellipse (`O`, `4`), Arrow (`A`, `5`), Text (`T`, `6`), Eraser (`E`, `0`).
+  `ctrl`/`⌘`+`D` still duplicates the selection; the letter shortcut never fires with a
+  modifier held.
+- Active tool: `bg-accent-soft` + `text-accent`, `aria-pressed="true"`. Idle: `text-text-3`,
+  hover `bg-surface-2 text-text`.
+- Each button shows its key as a tiny `--text-4` corner label (the digit when it has one,
+  else the letter — Excalidraw idiom) and a native tooltip, e.g. "Rectangle — R or 2".
+- Corner key label: 8px / 1, `--text-4`; an exception to the type scale because it sits in a
+  28px hit target beside a 16px glyph; decorative, since the tooltip and `aria-label` carry
+  the real name. Its offset is a second exception: 1px from the button's bottom edge and
+  3px from its right edge (`bottom-px`, `right-[3px]`), so it clears the glyph.
+- Lock pressed: closed padlock, `text-accent`. Lock idle: open padlock.
+- **One muted hint line** under the bar for the active tool (`--text-4`, 11px), e.g.
+  Select: "Drag to select · Space+drag to pan". It hides once that tool has been used
+  successfully in the pane's lifetime.
+- **Narrow panes.** The canvas is a helper pane and can be ~320px wide. The bar never
+  overlaps the zoom cluster and never clips: below the width where both fit on one row,
+  the bar drops to a second row under the zoom cluster, left-aligned. Below the width where
+  the full bar fits (≈297px with the eight tools of U2; the default ~243px split shows two rows), buttons wrap onto additional rows; the bar is never wider
+  than the pane and never clips. The hint wraps to the bar's width.
+- Every button is `@mousedown.stop`, so it never starts a canvas gesture or a pane resize.
+- The tool is per pane, held in memory, never saved to the file. A new pane starts on
+  **Select**. After a creation the tool reverts to Select unless Lock is on. `Esc`
+  cancels a creation in progress, else leaves the tool for Select, else clears the
+  selection. Holding `Space` is a temporary Hand; because the tool switches to Hand,
+  pressing `Space` mid-gesture also cancels the gesture in flight (a rectangle, arrow or
+  erase stroke), exactly as `Esc` does. `Space` on a focused toolbar button activates that
+  button instead and never pans. Right-button drag pans in every tool.
+  Letter shortcuts fire only without `ctrl`/`⌘`/`alt`, only with focus inside this pane,
+  and never while the rename input is focused.
 
-Panning moved to a held **button** rather than a held key because every modifier was
-already spoken for: `shift` by the rubberband, `ctrl`/`⌘` by zoom and multi-select. The
-pane has no context menu for a right-drag to collide with, and **Fit** plus the zoom
-cluster remain the discoverable way to move the view.
+**Per-tool gestures (T536 U1).** The pointer does what the active tool says. This table
+is the contract for the pane and for `canvas-tools.ts`:
+
+| Tool                              | Click blank                                     | Drag on blank                                                                                                                     | Press on a node                                                              | Drag on a node                                                                                                |
+| --------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Select**                        | clear selection                                 | **rubberband select** (no modifier); `shift`+drag adds to the selection                                                           | select it; `shift`+click **or** `ctrl`/`⌘`+click toggles it in the selection | move it (and the rest of the selection)                                                                       |
+| **Hand**                          | nothing                                         | pan                                                                                                                               | nothing                                                                      | pan (nodes do not move)                                                                                       |
+| **Rectangle / Diamond / Ellipse** | place a default-size shape centred on the click | draw it to the drag's footprint (floored at 48×32)                                                                                | same as blank: shapes may overlap                                            | same as blank                                                                                                 |
+| **Arrow**                         | nothing                                         | nothing (no free arrows in v1; the hint reads "Drag from one shape to another")                                                   | start an arrow from that node                                                | rubber-band line follows the pointer; release on another node creates a bound edge, release elsewhere cancels |
+| **Text**                          | place a `text` node with the rename input open  | same as click (drag size ignored)                                                                                                 | if the node is a `text`, edit it; else place a new text on top               | —                                                                                                             |
+| **Eraser**                        | nothing                                         | every node and edge the pointer crosses is marked (dimmed); release deletes them all as **one** undo step; `Esc` mid-drag cancels | delete it                                                                    | as drag on blank                                                                                              |
+
+- **Double-click blank** in Select places a text node (Excalidraw idiom).
+- **Double-click a node** renames it in Select, Hand and Arrow. In Rectangle, Diamond, Ellipse and
+  Text the press itself creates, so a double-click there places and edits a new shape rather than
+  renaming the one underneath; rename an existing shape from Select, Hand or Arrow. In
+  Eraser the first press deletes the node.
+- A newly created shape opens its rename input immediately; an empty commit on a **text**
+  node removes it, on a framed shape keeps it unlabelled.
+- The Arrow tool starts from anywhere on a node, not only from the four ports. The hover
+  ports stay, and dragging from a port still creates an edge in Select mode.
+- **Arrow preview.** While an arrow is in flight, a 1.5px dashed `--accent-line` line runs
+  from the source node's centre to the pointer. It is an overlay above the board, never a
+  graph cell, so it never enters the undo history; it disappears on release, `Esc`, a
+  tool switch and a window blur. The edge a release creates is the same accent edge a
+  port drag creates in Select. A release on blank board, on the source node, or on a
+  node the source already points at creates nothing.
+- **Edges and resize handles outside Select.** In Hand, Rectangle, Text and Arrow, a press
+  on an edge counts as a press on blank board and never selects the edge (the Eraser
+  erases it). A selected node's resize handles show only in Select; switching to any
+  other tool hides them.
+- Right-button drag pans in every tool; `ctrl`/`⌘` + wheel zooms (0.2–3), unchanged.
+- **Eraser mark (`.canvas-erase-mark`).** A node or edge the eraser has crossed but not yet
+  deleted is drawn dimmed: the marked cell gets `opacity: 0.3`, no other change. It is
+  removed when the stroke is cancelled and on release the marked cells are deleted. No new
+  colour — the dimming is the whole treatment.
+
+Panning on a plain left drag is now the Hand tool's job (or `Space` held) rather than
+a held button; the right-button drag is kept so nobody loses the old habit.
+
+**Node styles (T536 U3).** A node carries an optional `style` of seven keys, written to the
+file as the spelling in the first column. A key that is absent renders as its default, so
+a canvas drawn before U3 looks exactly as it did. No new colour: every tone is an
+existing token pair.
+
+| Key           | Values (file spelling)                           | Default   | Renders as                                                         |
+| ------------- | ------------------------------------------------ | --------- | ------------------------------------------------------------------ |
+| `tone`        | `default` `accent` `green` `amber` `red` `muted` | `default` | tone table below                                                   |
+| `stroke`      | `solid` `dashed` `dotted`                        | `solid`   | `strokeDasharray`: none / `6 4` / `2 3`                            |
+| `strokeWidth` | `thin` `regular` `bold`                          | `regular` | 1 / 1.5 / 2.5 px                                                   |
+| `corners`     | `sharp` `round` (box only)                       | `round`   | `rx`/`ry` 0 / 7 (`--radius`)                                       |
+| `fontSize`    | `s` `m` `l` `xl`                                 | `m`       | 11 / 12 / 15 / 20 px (Caption, today's canvas 12, Subtitle, Title) |
+| `align`       | `left` `center` `right`                          | `center`  | `textAnchor` start / middle / end, 8px inset from the frame's edge |
+| `opacity`     | `25` `50` `75` `100` (JSON numbers)              | `100`     | `opacity` 0.25 … 1 on body, label and image; ports unchanged       |
+
+| Tone      | Stroke       | Fill             | Label      |
+| --------- | ------------ | ---------------- | ---------- |
+| `default` | `--border-2` | `--surface`      | `--text`   |
+| `accent`  | `--accent`   | `--accent-soft`  | `--text`   |
+| `green`   | `--green`    | `--green-soft`   | `--text`   |
+| `amber`   | `--warning`  | `--warning-soft` | `--text`   |
+| `red`     | `--red`      | `--red-soft`     | `--text`   |
+| `muted`   | `--border`   | `--bg`           | `--text-3` |
+
+A `text` node has no frame, so its tone colours the **label** with the stroke column:
+`default` keeps `--text-2`, `muted` is `--text-3`, and the other four use `--accent`,
+`--green`, `--warning` and `--red`.
+
+A `diamond` narrows to a point at its bounding box's left and right edges, so its
+`left`/`right` label aligns to the diamond's inscribed box instead of the 8px inset: a
+quarter of its width in (`refX` 25% / 75%), where the frame is still half its height tall.
+
+Which shapes take which keys: `box` all seven; `ellipse` and `diamond` all but `corners`;
+`text` `tone`, `fontSize`, `align` and `opacity`; `image` `opacity` only;
+`harnu/mockup-card` none; an unknown kind none (it keeps the dashed fallback and ignores
+any style).
+
+**Properties panel (T536 U3).** A floating panel that edits the style of the selected
+nodes. Component: `CanvasPropertiesPanel.vue`, over the pure `canvas/canvas-style.ts`
+module. Absolute to the viewport, so it neither pans nor zooms.
+
+- **Placement.** Left edge of the viewport (`left-3`), 8px below the zoom cluster, or 8px
+  below the toolbar when the toolbar has dropped to its own row.
+- **Surface.** The toolbar's: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
+  **184px wide**, 8px padding.
+- **Groups.** One group per key, each headed by an Eyebrow label (`.eyebrow`, `--text-4`).
+  Options are 24px buttons: active `bg-accent-soft text-accent` + `aria-checked="true"`,
+  idle `text-text-3`, hover `bg-surface-2 text-text`.
+- **Option glyphs.** Tone swatches are 16px squares in the tone's own fill and stroke
+  utilities (`bg-green-soft border-green`, …; `bg-bg border-border` for muted). Stroke
+  style and width show a 16px inline line glyph in `currentColor` with the canvas
+  dasharray and width. Corners use `square` / `square-round-corner`; align uses
+  `align-left` / `align-center` / `align-right`; size shows S / M / L / XL; opacity shows
+  the percentage.
+- **Visibility.** Only while the tool is Select (the chosen tool, so holding `Space` does
+  not hide it) and the selection holds **at least one node**. The style groups show only
+  the controls every selected node accepts (U3's rule, unchanged); the Layers group shows
+  for any node selection, every kind included, so a box plus a mockup card, or `Ctrl+A`,
+  shows the Layers group alone. Selected edges are ignored by both.
+- **Mixed selection.** When the selected nodes disagree on a key, no option in that group
+  is checked.
+- **Undo.** Each change is one undo step.
+- **Narrow panes.** Below 184 + 200 = **384px** the panel collapses to a single 28px
+  `palette` button in the panel's slot (`aria-expanded`) that opens the panel in place.
+- Every control is `@mousedown.stop @pointerdown.stop`, so it never starts a canvas gesture
+  or a pane resize.
+
+**Layers (T536 U4).** The last group of the Properties panel, headed "Layers" (Eyebrow
+label, `--text-4`). Component: `CanvasPropertiesPanel.vue`, over the pure
+`canvas/canvas-layers.ts` module. It restacks the selected nodes.
+
+- **Buttons.** Four 24px **action** buttons, in this order: Send to back
+  (`arrow-down-to-line`), Send backward (`arrow-down`), Bring forward (`arrow-up`), Bring to
+  front (`arrow-up-to-line`). They are actions, not radios: nothing is ever "checked", so
+  there is no `aria-checked` and no active state. Idle `text-text-3`, hover
+  `bg-surface-2 text-text`. Each has a native tooltip and an `aria-label`.
+- **Visibility.** Whenever the panel shows and the selection holds a node (see
+  "Properties panel" → Visibility). Every node kind takes it, the mockup card and unknown
+  kinds included.
+- **Front / back.** The selected nodes move above / below every other node and keep their
+  order among themselves.
+- **Forward.** Each selected node, from the top down, moves just above the nearest
+  unselected node above it whose bounds overlap it (overlap by area; boxes that only touch
+  do not overlap). With no such node it stays.
+  **Backward** is the mirror.
+- **Arrows.** Edges always draw under every node and are never restacked.
+- **No-op.** A move that changes nothing writes nothing: no undo step, no dirty dot.
+- **Undo.** Each move that changes something is one undo step.
+- **Persistence.** The order is the node's `zIndex`, 1..n, higher on top. A node without
+  one stacks at 1, in file order.
+- Every control is `@mousedown.stop @pointerdown.stop`, like the rest of the panel.
 
 **Other edit gestures.** Double-click a node to rename it in place (an inline input over
 the node itself, `--surface` on an `--accent-line` border; `Enter` commits, `Esc`

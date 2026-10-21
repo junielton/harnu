@@ -30,10 +30,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **A terminal toggle you can bind** (`terminal.toggle`, no shortcut out of the box): it opens a shell pane if the folder has none, otherwise shows and focuses the existing one, and collapses the split when that shell already has focus. It reuses your shell instead of adding a new one each time, and never takes over a terminal an agent opened. Bind it to ``Ctrl+` ``, not `Ctrl+J`: the toggle's chord never reaches a terminal, and `Ctrl+J` is the newline / Enter key there.
 - **The command palette lists every action.** `Cmd/Ctrl+K` now finds any action from Settings → Keyboard Shortcuts by name — including the ones with no shortcut, like Rename the folder…, Fork the session or Close the open view — whenever it can run right now, and shows each action's shortcut, updated when you rebind it. Empty, it still shows only a short list of everyday actions.
 - **Tooltips show the shortcut.** Hovering a Topbar, sidebar, footer, Fleet rail, view close or split-pane button now reads like "Hide sidebar (Ctrl+B)" (`⌘B` on macOS), following your rebinds; a button whose action has no shortcut keeps its plain tooltip. The session and folder right-click menus show each item's shortcut too, once it has one (Rename folder shows `F2`).
+- **Layer controls in the canvas Properties panel.** Select one or more shapes and use **Send to back**, **Send backward**, **Bring forward** and **Bring to front** at the bottom of the panel. Forward and backward step past the next shape that overlaps the selection, arrows always stay under shapes, and each move is one undo step. Stacking values are written to the file only after you restack, or when you add a shape to a board that already has them; a board without any that you only move, resize, rename or restyle is saved with no new keys.
+- **Sessions can set stacking on the canvas.** `draw_canvas` accepts a `zIndex` (a whole number from 1) when adding or updating a node, so an agent can put one shape in front of another.
 
 ### Changed
 
 - The menu item and shortcut that open the raw shortcuts file now read **Open keybindings.json** (they used to say "Keyboard Shortcuts…", a name that now opens the Settings tab).
+- **The canvas panel is now called Properties, and it shows for every shape.** A card on its own, **Ctrl/⌘ + A**, or a box together with a card now show the Layers buttons instead of no panel at all.
 
 ### Fixed
 
@@ -41,11 +44,36 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - Pressing `Esc` while recording a shortcut now cancels just the recording; it no longer closes Settings.
 - A shortcut now fires only when exactly its modifiers are held: a shortcut on `F7` no longer also fires on `Shift+F7`, nor one on `Ctrl+K` on `Ctrl+Shift+K`.
 - The command palette's **Resume last session** no longer picks a folder terminal; it resumes your most recent Claude session, like `Cmd/Ctrl+Shift+R`.
+- **A session's drawing on an open canvas no longer disappears the next time you Save.** When a session changed a board that was already open in a pane, the pane never heard about it: it kept showing the old drawing, and your next Save wrote that old state back over the session's change (an arrow it added, a label it renamed) without any warning. The pane now redraws to the session's version straight away when you have no unsaved edits, with your view where you left it, and shows the "This canvas changed on disk" strip when you do. Your own Save still doesn't refresh the pane that made it, and a session's write that lands in the same fraction of a second as your Save is now noticed too. One narrow case remains: if you press Save in the fraction of a second (roughly 100–250 ms) before the pane has heard about a session's write, your Save wins, as it does when you Save over the strip.
+- An arrow you delete, save and then bring back with undo is now saved with its label, routing and extra data, instead of losing them.
+- An arrow you draw in the canvas pane now stays under the shapes it connects, instead of painting over them until the board was reopened.
 
 ## 2026-10-19
 
+### Added
+
+- **Style canvas shapes from a new Style panel.** Select one or more shapes in Select and a panel appears at the left edge of the board with six kinds of control: **Color** (default, accent, green, amber, red, muted), **Stroke** style and **width**, **Corners** (boxes only), **Text size** and **Align**, and **Opacity**. The panel only offers what every selected shape accepts, each pick is a single undo step, colours follow the theme, and in a narrow pane the panel folds into a **palette** button.
+- **Sessions can style the shapes they draw.** `draw_canvas` accepts a `style` field on a node (a tone, a dashed or dotted outline, a stroke weight, a font size, an alignment, an opacity). A value Harnu does not know is refused, and styles you set from the panel survive when a session later edits the same shape.
+- **Diamond and Ellipse tools on the canvas toolbar.** Two new buttons sit between Rectangle and Arrow. **Diamond** (**D** or **3**) and **Ellipse** (**O** or **4**) work like Rectangle: click to place a standard-size shape, or drag to draw one to the size you want, then type its name. They are handy for decisions and start/end points in a flow. Arrows connect to them like any other shape.
+- **Sessions can draw ellipses and diamonds on a canvas.** When an agent draws a diagram with `draw_canvas`, it can now use ellipse and diamond shapes alongside boxes, text, cards and images, and you can move, resize and rename them like anything you drew yourself.
+- **Saving a canvas keeps the extra data stored inside an arrow's `props`.** If a board's arrows carry such details (styling, for example), opening the board, editing and saving now writes them back untouched instead of dropping them. Extra data kept anywhere else on an arrow is still not preserved.
+- **The canvas has a toolbar.** A small bar floats at the top of the board: **Hand** (drag to move the board), **Select**, **Rectangle** (click to place a box, or drag to size one), **Arrow** (drag from one shape to another), **Text** (click anywhere and type) and **Eraser** (drag across boxes and arrows to delete them all in a single undo step; **Esc** cancels the stroke). Each has a letter shortcut (**H V R A T E**), and most also have a number shortcut; both are shown on the button and in its tooltip, and a short hint underneath explains the active tool until you have used it once. After you create something the canvas goes back to Select.
+- **Lock keeps a tool active.** The padlock at the left of the toolbar (or **Q**) stops the canvas returning to Select after each shape, so you can place several boxes or labels in a row.
+- **Hold Space to pan from any tool,** and let go to carry on with the tool you had. Right-drag still pans in every tool, and **Ctrl/⌘ + scroll** still zooms.
+- **Double-click empty board in Select to place a text label** and start typing.
+- **The toolbar wraps in narrow panes.** In a pane too narrow for one row, the buttons wrap onto extra rows instead of running off the edge or covering the zoom controls.
+
+### Changed
+
+- **A click or drag on an empty canvas no longer draws a box.** Select is now the default tool, so a drag on empty board draws a selection rectangle; pick Rectangle (or press **R**) to draw a box.
+- **Selecting several things no longer needs Shift.** Dragging on empty board in Select selects everything inside the rectangle; hold **Shift** to add to the current selection.
+- **Shift-click or Ctrl/⌘-click toggles a box** in or out of the selection.
+- **Renaming moved to the non-drawing tools.** Double-click a box in Select, Hand or Arrow to rename it. In Rectangle and Text the first click already places a shape, so a double-click there places and edits a new shape instead.
+
 ### Fixed
 
+- Hovering a canvas shape no longer adds undo steps or empties the redo stack.
+- Switching theme with a canvas open now keeps your selection and its resize handles, instead of clearing them.
 - The footer no longer goes silently blank when a session has no live statusLine telemetry. It now shows the session's last known model, context and cost, dimmed, with how long ago they were seen on hover and a short reason beside them ("telemetry expired" or "no live telemetry"). Sessions Harnu has never heard from still show their model and context, read from the transcript. Stale values are never presented as live.
 - A session that keeps answering but stops sending statusLine telemetry is now flagged in the footer with "Not reporting — restart session"; clicking it restarts the session (the conversation is kept) and the hint clears on the next telemetry.
 - When Harnu finds the `statusLine` setting removed from `~/.claude/settings.json` it re-installs it as before, and now also records what it found (time, the file's last-change time, the running `claude` processes) in `heal-log.ndjson` next to the telemetry cache, and posts one Activity notice naming the sessions that started before the repair and need a restart.

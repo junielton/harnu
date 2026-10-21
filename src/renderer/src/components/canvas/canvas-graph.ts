@@ -1,11 +1,11 @@
-import { Graph, Shape } from '@antv/x6'
+import { Graph, ObjectExt, Shape, type Edge, Node } from '@antv/x6'
 import { Selection } from '@antv/x6-plugin-selection'
 import { History } from '@antv/x6-plugin-history'
 import { Transform } from '@antv/x6-plugin-transform'
 import { Snapline } from '@antv/x6-plugin-snapline'
-import type { CanvasDocument } from '../../../../main/canvas-core'
-import { toX6Cells, type ResolvedImages } from './canvas-cells'
-import { operatorEdgeData } from './canvas-edit'
+import type { CanvasDocument, CanvasNode } from '../../../../main/canvas-core'
+import { toX6Cells, toX6Node, type ResolvedImages } from './canvas-cells'
+import { nodeDraftFromCell, operatorEdgeData } from './canvas-edit'
 import type { CanvasPalette } from './canvas-theme'
 import {
   MOCKUP_CARD_DEFAULT_SIZE,
@@ -75,6 +75,15 @@ export interface CreateCanvasGraphOptions {
    * U2 viewer contract: nothing the pointer does may change the document.
    */
   editable?: boolean
+  /**
+   * Whether nodes take pointer input right now (T536 U1). Read on EVERY
+   * gesture through X6's `interacting` hook, never captured, so a tool switch
+   * (Select → Hand) needs no graph rebuild. `false` means a node does not move
+   * and its ports do not start an edge; the press falls through to whatever
+   * the active tool does with it. Defaults to `() => true`. Ignored on a
+   * read-only graph, where nothing is interactive anyway.
+   */
+  nodesInteractive?: () => boolean
 }
 
 /**
@@ -83,26 +92,6 @@ export interface CreateCanvasGraphOptions {
  * cannot resize back to is an inconsistency the operator would read as a bug.
  */
 export const CANVAS_MIN_NODE_SIZE = { width: 48, height: 32 } as const
-
-/**
- * How the three blank-area gestures are split (T218 U3).
- *
- * A blank drag is claimed by THREE things at once — pan, rubberband select and
- * draw-a-box — and X6 will happily run two of them over the same gesture (U2
- * verified exactly that in the real app: one drag panned AND left a selection
- * box behind it). So the split is explicit and asserted:
- *
- *  - **plain left drag → draw a box** (AC U3-1: "drag on empty canvas creates
- *    a box"). The most-used gesture gets the unmodified drag.
- *  - **shift + left drag → rubberband select** (AC U3-2). X6's Selection
- *    plugin owns this one, gated on the modifier.
- *  - **right-button drag → pan.** design.md's "panning moves to a held
- *    modifier" resolved to a held BUTTON instead: every keyboard modifier was
- *    already spoken for (shift by rubberband, ctrl/meta by zoom and by
- *    multi-select), and the pane has no context menu for a right-drag to
- *    collide with. Fit and the zoom cluster remain the discoverable path.
- */
-export const CANVAS_RUBBERBAND_MODIFIER = 'shift'
 
 /**
  * Build the graph and install the four plugins.
@@ -159,9 +148,18 @@ export function registerCanvasHtmlShapes(): void {
   }
 }
 
+/**
+ * Graphs built with `editable: true`. {@link setCanvasRubberband} consults it
+ * before ARMING the rubberband: X6 cannot tell a viewer from an editor on its
+ * own (see the guard's comment). A WeakSet, so a disposed graph is not kept
+ * alive by being recorded here.
+ */
+const editableGraphs = new WeakSet<Graph>()
+
 export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
   const { container, palette } = opts
   const editable = opts.editable === true
+  const nodesInteractive = opts.nodesInteractive ?? (() => true)
   // Before the graph exists, and therefore before anything can `fromJSON` a
   // document holding one: an unregistered `harnu/<name>` THROWS on add.
   registerCanvasHtmlShapes()
@@ -181,8 +179,10 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
       args: { color: palette.border2, thickness: CANVAS_GRID_DOT }
     },
     // U2: drag-to-pan on empty canvas, because there is nothing to create.
-    // U3: the plain drag DRAWS, so panning moves to the right button — see
-    // {@link CANVAS_RUBBERBAND_MODIFIER} for why not a keyboard modifier.
+    // Editable: the plain left drag belongs to the active tool (T536 §5 —
+    // rubberband in Select, draw in a shape tool), so panning stays on the
+    // right button in EVERY tool. A keyboard modifier would not do: shift is
+    // add-to-selection and ctrl/meta are zoom and multi-select.
     panning: editable ? { enabled: true, eventTypes: ['rightMouseDown'] } : { enabled: true },
     // Ctrl/Cmd-wheel only: a bare wheel belongs to whatever is scrolling around
     // the pane, and stealing it makes the canvas fight the helper stack.
@@ -200,17 +200,21 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
     // an edge as source + target, with no waypoints and no label geometry) —
     // an operator dragging one would watch their work vanish on the next
     // reload.
+    //
+    // A FUNCTION, not an object (T536 U1): X6 calls it per gesture (`CellView.
+    // can`), so `nodesInteractive()` is read live and a tool switch takes
+    // effect on the next press without rebuilding the graph.
     interacting: editable
-      ? {
-          nodeMovable: true,
-          magnetConnectable: true,
+      ? () => ({
+          nodeMovable: nodesInteractive(),
+          magnetConnectable: nodesInteractive(),
           edgeMovable: false,
           edgeLabelMovable: false,
           arrowheadMovable: false,
           vertexMovable: false,
           vertexAddable: false,
           vertexDeletable: false
-        }
+        })
       : false,
     // Edge drawing, armed only when editing. `allowBlank: false` — an edge must
     // land on a node, because §4.3 refuses a dangling edge outright, so letting
@@ -229,35 +233,22 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
             // THE operator-edge creation path (AC U3-3). X6 mints the edge
             // mid-gesture, so the stamp has to go on here — there is no later
             // point where "this edge is new" is still knowable.
-            createEdge: () =>
-              (self as Graph).createEdge({
-                shape: 'edge',
-                data: operatorEdgeData(),
-                router: { name: 'manhattan' },
-                connector: { name: 'rounded', args: { radius: 8 } },
-                attrs: {
-                  line: {
-                    stroke: palette.accent,
-                    strokeWidth: 1.5,
-                    targetMarker: { name: 'block', width: 8, height: 6 }
-                  }
-                }
-              })
+            createEdge: () => (self as Graph).createEdge(operatorEdgeSpec(palette))
           }
         }
       : {})
   })
   self = graph
+  if (editable) editableGraphs.add(graph)
 
   // Rubberband is OFF in U2, and `showNodeSelectionBox` with it. The plugin is
   // still INSTALLED — that is what {@link missingCanvasPlugins} guards, and it
   // is what U3 switches on — but its blank-area drag competes with panning for
   // the same gesture, and selecting a node in a read-only pane leads nowhere.
   // Verified in the real app: with both on, one drag panned AND left a
-  // selection box behind it. U3 resolves the conflict the way the spike did —
-  // rubberband takes the plain drag and panning moves to a held modifier —
-  // which is a change worth making when there is something to do with a
-  // selection, not before.
+  // selection box behind it. Editable, panning lives on the right button, and
+  // the plain left drag is the rubberband — armed or not per tool by the pane
+  // through {@link setCanvasRubberband}.
   graph.use(
     new Selection(
       editable
@@ -265,21 +256,37 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
             enabled: true,
             multiple: true,
             rubberband: true,
-            // Gated on shift so the plain drag stays free for drawing — the
-            // conflict U2 observed live, resolved rather than left to luck.
-            modifiers: CANVAS_RUBBERBAND_MODIFIER,
+            // No modifier: in the Select tool the plain drag IS the
+            // rubberband (T536 §5). Which tool owns the drag is the pane's call,
+            // made through `setCanvasRubberband` — not a key split in here.
+            modifiers: null,
+            // Shift joins ctrl/meta so shift+click toggles a node in the
+            // selection, as in Excalidraw.
+            multipleSelectionModifiers: ['ctrl', 'meta', 'shift'],
             showNodeSelectionBox: true,
             pointerEvents: 'none'
           }
         : { rubberband: false, showNodeSelectionBox: false }
     )
   )
-  graph.use(new History({ enabled: true }))
+  graph.use(
+    new History({
+      enabled: true,
+      // A change marked derived is the pane re-deriving attrs from `data` (T536
+      // U3, {@link restyleCanvasNode}): never a command of its own. Returning
+      // `false` here stops it before X6's `push`, which is also what would
+      // otherwise empty the redo stack.
+      beforeAddCommand: (_event, args) => !isDerivedChange(args)
+    })
+  )
   graph.use(
     new Transform({
       resizing: editable
         ? {
-            enabled: true,
+            // Read per node click, like `interacting`: a node clicked in any
+            // tool but Select gets no handles (T536 U1). Handles already open
+            // when the tool changes are closed by `hideCanvasResizeHandles`.
+            enabled: () => nodesInteractive(),
             minWidth: CANVAS_MIN_NODE_SIZE.width,
             minHeight: CANVAS_MIN_NODE_SIZE.height,
             orthogonal: false,
@@ -295,6 +302,178 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
 }
 
 /**
+ * The option a write carries when it is DERIVED state, not an edit (T536 U3).
+ * Node styles live in `data` (`props.style`); the colours, dasharray and sizes
+ * they turn into are attrs computed from it with the current palette. Only the
+ * `data` write may enter the undo history: if the attrs did too, an undo after a
+ * theme switch would restore colours resolved for the theme before it (U3
+ * Review Focus 1). The History plugin installed by {@link createCanvasGraph}
+ * drops any change whose options carry this key.
+ */
+export const CANVAS_DERIVED_CHANGE = 'harnuDerived'
+
+function isDerivedChange(args: unknown): boolean {
+  if (typeof args !== 'object' || args === null) return false
+  const options = (args as { options?: unknown }).options
+  return (
+    typeof options === 'object' &&
+    options !== null &&
+    (options as Record<string, unknown>)[CANVAS_DERIVED_CHANGE] === true
+  )
+}
+
+/**
+ * Re-derive a node's attrs from its own cell — its `data` (kind, props, style),
+ * its label and its size — exactly as a render from the file would draw it. The
+ * pane calls this on every `cell:change:data`, so a style write, its undo and its
+ * redo all repaint from the style alone, in the palette in force NOW.
+ *
+ * The write is marked {@link CANVAS_DERIVED_CHANGE} (never recorded in history)
+ * and `dirty` (X6 re-renders the view instead of patching it, so an attribute the
+ * new attrs no longer carry — a dasharray after a reset to `solid` — is removed
+ * from the SVG rather than left behind). It runs inside X6's own `change:data`
+ * dispatch, so it also lands during an undo, while History is not recording.
+ */
+export function restyleCanvasNode(
+  node: Node,
+  palette: CanvasPalette,
+  images: ResolvedImages
+): void {
+  const draft = nodeDraftFromCell(node.toJSON() as Record<string, unknown>)
+  // `origin` is only read into `data`, which this does not write: the cast
+  // invents nothing that reaches the file.
+  const attrs = toX6Node(draft as CanvasNode, palette, images).attrs
+  if (typeof attrs !== 'object' || attrs === null) return
+  // `overwrite` replaces the WHOLE attrs object, including what the X6 shape class
+  // itself contributes at construction (a rect's `refWidth`/`refHeight`, an
+  // ellipse's `refRx`, the label's centring `refX`/`refY`): without them a box
+  // collapses to 0×0 and its label jumps to the corner. So lay the derived attrs
+  // over the class defaults, exactly as the constructor does on a fresh render.
+  const defaults = (node.constructor as typeof Node).getDefaults().attrs ?? {}
+  node.setAttrs(ObjectExt.merge({}, defaults, attrs) as Node.Properties['attrs'], {
+    overwrite: true,
+    dirty: true,
+    [CANVAS_DERIVED_CHANGE]: true
+  })
+}
+
+/**
+ * The edge an OPERATOR draws, without its ends: stamped `operator` (AC U3-3),
+ * routed and styled the same way whichever gesture made it. Both creation paths
+ * mint through this one spec, a port drag in Select (`connecting.createEdge`)
+ * and the Arrow tool (T536 U1), so the two can never drift apart. A fresh object
+ * per call, so no two edges share a `data` bag.
+ */
+export function operatorEdgeSpec(palette: CanvasPalette): Edge.Metadata {
+  return {
+    shape: 'edge',
+    data: operatorEdgeData(),
+    // Edges draw under every node (T536 U4), like `toX6Edge`. Without a z, X6's
+    // `prepareCell` would give the new edge max + 1 and paint it over every shape
+    // until the next redraw. A drag's own temporary `toFront` restores this on release.
+    zIndex: 0,
+    router: { name: 'manhattan' },
+    connector: { name: 'rounded', args: { radius: 8 } },
+    attrs: {
+      line: {
+        stroke: palette.accent,
+        strokeWidth: 1.5,
+        targetMarker: { name: 'block', width: 8, height: 6 }
+      }
+    }
+  }
+}
+
+/**
+ * Close any open resize handles. The pane calls it when the tool leaves Select
+ * (T536 U1): a handle left on screen in Arrow or Eraser would still resize the
+ * node on a press, so the press would not belong to the active tool. New
+ * handles stay closed because `resizing.enabled` reads `nodesInteractive()`.
+ */
+export function hideCanvasResizeHandles(graph: Graph): void {
+  const transform = graph.getPlugin('transform') as Transform | undefined
+  transform?.clearWidgets()
+}
+
+/**
+ * The id of the node whose resize handles are open, or `null` (T536 U3). A
+ * redraw (a theme switch) replaces every cell and closes the handles with them;
+ * this is what lets the pane reopen them on the same node. X6 keeps its open
+ * widgets keyed by node in a field it does not type as public, so it is read
+ * defensively: an X6 without it reports none, and the handles simply stay closed.
+ */
+export function openCanvasResizeHandleId(graph: Graph): string | null {
+  const transform = graph.getPlugin('transform') as { widgets?: unknown } | undefined
+  const widgets = transform?.widgets
+  if (!(widgets instanceof Map)) return null
+  for (const node of widgets.keys()) {
+    // A node deleted and brought back by undo is a different instance under the same
+    // id: its stale widget entry is not an open handle on anything on the board.
+    if (node instanceof Node && graph.getCellById(node.id) === node) return node.id
+  }
+  return null
+}
+
+/**
+ * Open the resize handles on node `id`, as a click on it in Select would. The
+ * plugin's own `resizing.enabled` still decides, so outside Select this opens
+ * nothing.
+ */
+export function showCanvasResizeHandles(graph: Graph, id: string): void {
+  const cell = graph.getCellById(id)
+  const transform = graph.getPlugin('transform') as Transform | undefined
+  if (transform && cell?.isNode()) transform.createWidget(cell)
+}
+
+/**
+ * Arm or disarm the rubberband (the blank-area drag-select) at runtime.
+ *
+ * Spike, 2026-10-19 (T536 U1, ≤1h, real app): an isolated second Harnu
+ * instance, a live editable canvas pane, real pointer input through CDP
+ * `Input.dispatchMouseEvent` (not jsdom), with the pane's own draw-a-box
+ * listener detached so only X6 was measured. Findings, on X6 2.19.2 +
+ * x6-plugin-selection 2.x:
+ *
+ *  - **A Selection built with `modifiers: null` rubberbands on a plain left
+ *    drag.** The band rendered mid-drag and the release selected exactly the
+ *    two nodes it covered.
+ *  - **`disableRubberband()` / `enableRubberband()` toggle at runtime.** After
+ *    `disableRubberband()` the same plain drag showed no band and selected
+ *    nothing; after `enableRubberband()` it selected the two nodes again. No
+ *    graph rebuild, no plugin re-install: the plugin reads
+ *    `options.rubberband` on every `blank:mousedown`.
+ *  - **shift + drag still rubberbands with these options, but REPLACES the
+ *    selection.** `Selection.startSelecting` calls `clean()` before the band
+ *    starts, so a shift-drag over A and B with C selected ended on {A, B}, not
+ *    {A, B, C}. "shift+drag adds to the selection" (§5) needs the pane to
+ *    re-add the prior selection itself — X6 will not.
+ *  - shift+click adds a node and ctrl+click toggles it, with
+ *    `multipleSelectionModifiers: ['ctrl', 'meta', 'shift']`.
+ *  - With the pane's current draw-a-box listener still attached, one plain
+ *    drag both drew a box AND ran the band, and ended with nothing selected:
+ *    a blank drag must belong to exactly one tool.
+ *
+ * Disarm it in any tool whose blank drag is not a selection (Hand pans, the
+ * shape tools draw), or X6 runs both over the same gesture — the conflict U2
+ * observed live.
+ *
+ * **Arming is refused on a graph not built `editable`.** X6 alone would not
+ * refuse it: a read-only graph's Selection still has `enabled: true` (the
+ * plugin defaults it on; only `rubberband` is off), so `enableRubberband()`
+ * would switch blank-drag selection on in a viewer and break the U2 contract
+ * that nothing the pointer does may change a read-only board. Disarming is
+ * allowed on any graph — turning an input off can never violate that.
+ */
+export function setCanvasRubberband(graph: Graph, enabled: boolean): void {
+  if (!enabled) {
+    graph.disableRubberband()
+    return
+  }
+  if (!editableGraphs.has(graph)) return
+  graph.enableRubberband()
+}
+
+/**
  * Reveal or hide a node's connection ports. Called from the pane on node hover:
  * the ports are rendered `visibility: hidden` (`canvas-cells.ts`) so a board is
  * not permanently speckled with dots, and this is what makes them grabbable
@@ -305,7 +484,11 @@ export function setCanvasPortsVisible(graph: Graph, nodeId: string, visible: boo
   if (!node || !node.isNode()) return
   for (const port of node.getPorts()) {
     if (!port.id) continue
-    node.setPortProp(port.id, 'attrs/circle/style/visibility', visible ? 'visible' : 'hidden')
+    // Chrome, not an edit: marked derived so a hover never becomes an undo step
+    // (and never empties the redo stack — X6 clears it on every recorded change).
+    node.setPortProp(port.id, 'attrs/circle/style/visibility', visible ? 'visible' : 'hidden', {
+      [CANVAS_DERIVED_CHANGE]: true
+    })
   }
 }
 

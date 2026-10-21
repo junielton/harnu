@@ -1669,6 +1669,7 @@ const drawCanvasHandler: Handler = async (args, ctx) => {
       updatedAt: nowIso
     }
   }
+  // Not the pane's own Save (no `selfWrite`): an open pane must hear about this write.
   const written = await writeCanvasFile(target.path, next)
   if (!written.ok) return errorResult(`${canvasVerbCode(written.code)}: ${written.error}`)
 

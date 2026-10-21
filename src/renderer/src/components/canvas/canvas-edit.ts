@@ -5,7 +5,8 @@ import type {
   CanvasNode,
   CanvasOrigin
 } from '../../../../main/canvas-core'
-import { DEFAULT_NODE_SIZE } from './canvas-cells'
+import { DEFAULT_NODE_SIZE, DEFAULT_SIZE_BY_SHAPE } from './canvas-cells'
+import { CANVAS_LOAD_Z, liveStackOrder, savedZIndexes } from './canvas-layers'
 
 /**
  * PURE edit model for the canvas pane (T218 U3, spec §4.4 + §7.2). No DOM, no
@@ -35,13 +36,15 @@ import { DEFAULT_NODE_SIZE } from './canvas-cells'
  * `canvas-core.ts` reads an edge's label straight from `raw.label` — in-spec,
  * because §4.5 scopes normalization to NODES. U2 kept that safe by rendering
  * `labels[]` from the document and never reading it back. U3 keeps the same
- * property by a different route: the pane offers no edge-label editing, and
- * {@link buildCanvasDocumentFromCells} takes an edge's label from the BASE
- * DOCUMENT by id rather than from the graph. So an agent-written edge label
- * survives an operator's Save untouched, and no rename can ever reach
- * `labels[]` to go stale there. A node label — which the operator CAN edit —
- * goes the other way: it is normalized out of the graph across both attribute
- * paths by {@link normalizeCellLabel}, exactly as §4.5 requires.
+ * property: the pane offers no edge-label editing, and
+ * {@link buildCanvasDocumentFromCells} takes an edge's label from the cell's
+ * `data.label` — the document's own copy, carried through the graph by
+ * `toX6Edge` (U4), so an arrow restored by undo after a Save is not stripped —
+ * and falls back to the BASE DOCUMENT by id, never to `labels[]`. So an
+ * agent-written edge label survives an operator's Save untouched, and no rename
+ * can ever reach `labels[]` to go stale there. A node label — which the operator
+ * CAN edit — goes the other way: it is normalized out of the graph across both
+ * attribute paths by {@link normalizeCellLabel}, exactly as §4.5 requires.
  */
 
 /**
@@ -179,13 +182,31 @@ export function isDrawGesture(x0: number, y0: number, x1: number, y1: number, sc
 }
 
 /**
- * A box the operator just drew. **Stamped `operator` at creation** — the U3-3
- * contract, on the drag-to-create path.
+ * A rect of `shape`'s default size centred on (`cx`, `cy`) — what a click (not
+ * a drag) with a creation tool places (T536 U1, spec §5). Unknown shapes fall
+ * back to the box footprint, as the renderer does.
  */
-export function operatorNode(rect: DrawnRect, taken: ReadonlySet<string>, label = ''): CanvasNode {
+export function placedRect(cx: number, cy: number, shape: string): DrawnRect {
+  const size = DEFAULT_SIZE_BY_SHAPE[shape] ?? DEFAULT_NODE_SIZE
+  return { x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height }
+}
+
+/** The shapes the pane's creation tools can mint. */
+export type OperatorShape = 'box' | 'text' | 'ellipse' | 'diamond'
+
+/**
+ * A node the operator just created — a drawn or placed box, or a text. **Stamped
+ * `operator` at creation** — the U3-3 contract, on every tool's create path.
+ */
+export function operatorNode(
+  rect: DrawnRect,
+  taken: ReadonlySet<string>,
+  label = '',
+  shape: OperatorShape = 'box'
+): CanvasNode {
   return {
     id: mintCanvasId('n', taken),
-    shape: 'box',
+    shape,
     x: Math.round(rect.x),
     y: Math.round(rect.y),
     width: Math.round(rect.width),
@@ -314,7 +335,20 @@ function isEdgeCell(cell: Record<string, unknown>): boolean {
   return cell.shape === 'edge' || cell.source !== undefined || cell.target !== undefined
 }
 
-function nodeFromCell(cell: Record<string, unknown>, base?: CanvasNode): CanvasNodeDraft {
+/** 'save': the Save rule (savedZIndexes). 'live': every node carries its cell's exact z — for a redraw only, never written. */
+export type CanvasStackMode = 'save' | 'live'
+
+/**
+ * One X6 node cell (`node.toJSON()`, or an entry of `graph.toJSON().cells`) → the
+ * document node it stands for. `base` is the node as the document last had it,
+ * for what the graph does not carry (an explicit `zIndex`, and the shape when the
+ * cell lost its `kind` stamp). Exported for the pane's style re-derive (T536 U3),
+ * which rebuilds a node's attrs from exactly what a Save would write.
+ */
+export function nodeDraftFromCell(
+  cell: Record<string, unknown>,
+  base?: CanvasNode
+): CanvasNodeDraft {
   const data = readData(cell)
   const position = isPlainObject(cell.position) ? cell.position : {}
   const size = isPlainObject(cell.size) ? cell.size : {}
@@ -332,10 +366,10 @@ function nodeFromCell(cell: Record<string, unknown>, base?: CanvasNode): CanvasN
     ...(typeof size.height === 'number' ? { height: size.height } : {}),
     ...(label === undefined ? {} : { label }),
     ...readOrigin(data),
-    // zIndex is preserved only when the DOCUMENT already carried one: X6 hands
-    // every cell an automatic z, and writing those back would add a field to
-    // every node on the first Save for a stacking order nothing in U3 can even
-    // change.
+    // zIndex is the BASE document's only: the z a cell renders at is never written
+    // (it would add a field to every node on the first Save). The stacking order
+    // is applied on top of this at the document level, by the Save rule in
+    // `buildCanvasDocumentFromCells`.
     ...(base?.zIndex === undefined ? {} : { zIndex: base.zIndex }),
     ...(props === undefined ? {} : { props })
   }
@@ -343,18 +377,49 @@ function nodeFromCell(cell: Record<string, unknown>, base?: CanvasNode): CanvasN
 
 function edgeFromCell(cell: Record<string, unknown>, base?: CanvasEdge): CanvasEdgeDraft {
   const data = readData(cell)
+  // `toX6Edge` mirrors the document's label, router and props into `data`, so an
+  // arrow absent from `base` (restored by undo after a Save) keeps them. The base
+  // only fills in what a cell's data lacks.
+  const label = typeof data.label === 'string' ? data.label : base?.label
+  const router = typeof data.router === 'string' ? data.router : base?.router
+  // No base fallback for props: every edge cell is rendered by `toX6Edge` or minted
+  // by `operatorEdgeSpec`, so its data is complete, and a reset-to-default (U5)
+  // must be able to remove them.
+  const props = isPlainObject(data.props) ? (data.props as Record<string, unknown>) : undefined
   return {
     id: String(cell.id),
     source: endpointId(cell.source),
     target: endpointId(cell.target),
-    // The document is the author (see this module's header): an edge label comes
-    // from the base document, NEVER from X6's `labels[]`.
-    ...(base?.label === undefined ? {} : { label: base.label }),
+    // The label is the document's own copy from `data.label`, NEVER X6's `labels[]`.
+    ...(label === undefined ? {} : { label }),
     ...readOrigin(data),
     // Same reasoning as zIndex above: an omitted router renders as `manhattan`
     // (`toX6Edge`), so a new edge needs no field written for it.
-    ...(base?.router === undefined ? {} : { router: base.router })
+    ...(router === undefined ? {} : { router }),
+    ...(props === undefined ? {} : { props })
   }
+}
+
+/** A cell's z as X6 holds it; one without (a hand-built cell) sits at the load z. */
+function cellZ(cell: Record<string, unknown>): number {
+  return typeof cell.zIndex === 'number' && Number.isFinite(cell.zIndex)
+    ? cell.zIndex
+    : CANVAS_LOAD_Z
+}
+
+/** Applies the stacking order to the drafted nodes, in place. */
+function stackNodes(
+  nodes: CanvasNodeDraft[],
+  nodeCells: ReadonlyMap<string, Record<string, unknown>>,
+  stack: CanvasStackMode
+): void {
+  if (stack === 'live') {
+    for (const node of nodes) node.zIndex = cellZ(nodeCells.get(node.id)!)
+    return
+  }
+  const live = [...nodeCells].map(([id, cell]) => ({ id, z: cellZ(cell) }))
+  const ranks = savedZIndexes(nodes, liveStackOrder(live))
+  if (ranks) for (const node of nodes) node.zIndex = ranks.get(node.id)
 }
 
 /**
@@ -368,11 +433,18 @@ function edgeFromCell(cell: Record<string, unknown>, base?: CanvasEdge): CanvasE
  * free to hand cells back in whatever order its model holds them; taking that
  * order verbatim would reshuffle a file on a Save that changed nothing, which
  * is exactly the churn AC U3-5 forbids.
+ *
+ * **Stacking (T536 U4).** The live order is read from the node cells as given (X6's
+ * collection order, already sorted by z) and their `zIndex`. `'save'` hands it to the
+ * Save rule ({@link savedZIndexes}): untouched unless the order differs from the one
+ * the file renders in. `'live'` stamps every node with its cell's exact z, for a
+ * redraw only — never for the file.
  */
 export function buildCanvasDocumentFromCells(
   rawCells: readonly unknown[],
   base: CanvasDocument,
-  nowIso: string
+  nowIso: string,
+  stack: CanvasStackMode = 'save'
 ): CanvasDocumentDraft {
   const cells = rawCells.filter(isPlainObject)
   const nodeCells = new Map<string, Record<string, unknown>>()
@@ -391,12 +463,12 @@ export function buildCanvasDocumentFromCells(
   for (const n of base.nodes) {
     const cell = nodeCells.get(n.id)
     if (!cell) continue // deleted in the pane
-    nodes.push(nodeFromCell(cell, n))
+    nodes.push(nodeDraftFromCell(cell, n))
     seenNodes.add(n.id)
   }
   for (const [id, cell] of nodeCells) {
     if (seenNodes.has(id)) continue
-    nodes.push(nodeFromCell(cell, baseNodes.get(id)))
+    nodes.push(nodeDraftFromCell(cell, baseNodes.get(id)))
   }
 
   const edges: CanvasEdgeDraft[] = []
@@ -411,6 +483,8 @@ export function buildCanvasDocumentFromCells(
     if (seenEdges.has(id)) continue
     edges.push(edgeFromCell(cell, baseEdges.get(id)))
   }
+
+  stackNodes(nodes, nodeCells, stack)
 
   const extras: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(base)) {
