@@ -10,6 +10,27 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-21
+
+### Added
+
+- **Browser pane — open a real browser beside your session.** The Split button in the Topbar now has a small
+  arrow beside it: choose **Browser** and a Chromium page opens in the split stack, with back, forward and
+  reload, an address bar (type a URL and press Enter, or `Cmd/Ctrl+L` to jump to it), a title, and the same
+  maximize and close buttons as every other pane. Sessions can open one too — `browser_open` for your dev server
+  on localhost or any site, then `browser_navigate`, `browser_list` and `browser_close`. A site a session opens
+  shows an amber "opened by agent" badge, a local dev server gets a green `local` badge, and the pane menu
+  (the ⋯ button) has **Pause agent for 10 min** and **Open DevTools**. Panes a session opened show who is
+  connected and can be cut off for good with the unplug button, or paused for ten minutes with a countdown and
+  a Resume button. **Allow agents to drive browser panes** in Settings → Control server turns every agent
+  write (open, navigate) off at once. When a menu, dialog, toast or palette opens over a page, the page freezes
+  to a still image so nothing is ever drawn underneath it, and it comes back when the layer closes. Pages run
+  in their own cookie jar, away from Harnu itself: only `http`, `https` and `about:blank` open, popups open as
+  a new pane only after you click, downloads and permission prompts are refused, and a page can't reach Harnu's
+  own files or ports. Panes you opened can't be driven by an agent yet, and the pane does not reopen after a
+  restart — both arrive in later releases, along with opening local `.html` files, reading and acting on the
+  page, and point-and-comment.
+
 ## 2026-10-19
 
 ### Added

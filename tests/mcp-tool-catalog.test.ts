@@ -260,6 +260,10 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'spawn_terminal',
     // T482 B5: free to type into a terminal the agent opened; NOT grantable, NOT always-allowable.
     'send_terminal',
+    // T564 U1: free on a pane the agent opened; never reaches an operator-opened pane before the lease unit.
+    'browser_open',
+    'browser_navigate',
+    'browser_close',
     'adopt_folder',
     'remove_folder',
     'memory_append',
@@ -355,14 +359,15 @@ describe('T120 declarative gate fields — the def is the single source of truth
     expect([...actual].sort()).toEqual([...bootstrapExpected].sort())
   })
 
-  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup/list_terminals:paths, everything else undefined', () => {
+  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup/list_terminals/browser_list:paths, everything else undefined', () => {
     for (const t of MCP_TOOLS) {
       if (t.op === 'get_session') expect(t.discloses).toBe('transcript')
       else if (
         t.op === 'get_fleet' ||
         t.op === 'list_containers' ||
         t.op === 'list_cleanup' ||
-        t.op === 'list_terminals'
+        t.op === 'list_terminals' ||
+        t.op === 'browser_list'
       )
         expect(t.discloses).toBe('paths')
       else expect(t.discloses).toBeUndefined()

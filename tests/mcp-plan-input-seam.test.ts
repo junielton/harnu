@@ -32,6 +32,12 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   create_session: { folder: ALLOWED, prePrompt: 'hi' },
   create_worktree: { folder: ALLOWED, branch: 'test/agumon' },
   spawn_terminal: { folder: ALLOWED },
+  // T564 U1: the browser verbs. open and list carry a folder; navigate and close carry only a paneId (the
+  // shell resolves the gate folder from the pane registry).
+  browser_open: { folder: ALLOWED, url: 'http://localhost:5173/' },
+  browser_list: { folder: ALLOWED },
+  browser_navigate: { paneId: 'bp-1', url: 'http://localhost:5173/' },
+  browser_close: { paneId: 'bp-1' },
   adopt_folder: { folder: ALLOWED },
   remove_folder: { folder: ALLOWED },
   plan_mission: {

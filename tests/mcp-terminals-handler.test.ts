@@ -251,7 +251,7 @@ describe('AC-B1-3 — spawn_terminal is not replayable', () => {
     expect(beginCall(callIdFor(def, folderA, args)!)).toMatchObject({ status: 'applied' })
   })
 
-  it('a read never goes through the registry, and only the two terminal mutations opt out', () => {
+  it('a read never goes through the registry, and only the terminal and browser writes opt out', () => {
     expect(
       callIdFor(
         MCP_TOOLS.find((t) => t.op === 'list_terminals')!,
@@ -261,7 +261,11 @@ describe('AC-B1-3 — spawn_terminal is not replayable', () => {
     ).toBeUndefined()
     expect(MCP_TOOLS.filter((t) => t.replayable === false).map((t) => t.op)).toEqual([
       'spawn_terminal',
-      'send_terminal'
+      'send_terminal',
+      // T564 U1: two identical browser writes act twice (spec §6): a replay would swallow the second.
+      'browser_open',
+      'browser_navigate',
+      'browser_close'
     ])
   })
 })

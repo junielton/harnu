@@ -41,6 +41,7 @@ If a session tells you it was refused, it hit #2 or #3 — those are the only th
 - Say one short line out loud through your speakers, if you've turned voice on — see "Sessions talking out loud" below
 - Draw on a canvas — an infinite whiteboard that opens in a pane beside the session and that you can edit back. See "Drawing on a canvas" below
 - Send a message to another Harnu session — see "Sessions talking to each other" below
+- Open a browser pane on your dev server or a site, navigate it, list and close its panes — see "Browser panes a session opens" below
 - Create a Scheduler worker in `observe` mode — see "Creating a Scheduler worker" below
 - Keep track of a larger piece of work as a **Mission** — see "Tracking a mission's progress" below
 
@@ -96,6 +97,24 @@ If the terminal ends, you disconnect it or you block its folder while a send is 
 **The connection chip.** A terminal a session opened shows who is connected right in its pane header: a small accent pill reading "Connected to ‹session name›" (with "(parked)" if that session is at rest, or "a closed session" if it is gone). Click the pill to jump to that session. While the session reads or types, the pill adds the word **reading** or **typing** and its dot pulses; with reduced motion on there is no pulse, only the word. Next to the pill, the **Disconnect** button (a plug icon) cuts the session off at once — no confirmation, since taking access away is the safe direction — and a small notice confirms it. After that the pill and the button are gone and the pane looks like any other terminal. If Harnu cannot apply the Disconnect, the pill stays and an error notice says the session still has access, so you know to try again. On a terminal you opened yourself the pill only appears while a session you allowed can type in it ("An agent can type here", with Disconnect) or is reading it ("An agent is reading", with no button — turn the folder switch off from the folder's right-click menu instead).
 
 Blocking a folder from its right-click menu also stops a session typing there, along with everything else.
+
+## Browser panes a session opens
+
+A session can open a **browser pane** in a folder's split stack — a real page, so it can show you the dev server it just started, or look something up — and then move it around. The verbs are `browser_open`, `browser_navigate`, `browser_list` and `browser_close`. What you see yourself is described in [Browser pane](browser-pane.md); this section is what a session can and can't do.
+
+- **Opening.** `browser_open` takes an `http` or `https` address (a dev server on `localhost` is the usual one). The pane opens in the background in the folder the session works in, never steals your focus, and gets the same unseen badge and notification as any other pane a session opens in a folder you are not looking at. The session can name itself as the pane's owner, so the pane header says "Connected to ‹session›"; that is a label, not a permission. A folder holds at most four panes a session opened, and a fifth is refused with the panes to reuse. Opening a local `.html` file, inline HTML, or a device preset is not available yet and is refused with a plain message.
+- **Navigating.** `browser_navigate` goes to a new address or back, forward, reload or stop, waits for the page to load (up to the limit the session sets, at most 90 seconds), and tells the session what happened: the title, the status, and a network error if the address didn't load. Running out of time isn't an error. Opening or navigating to a site the pane hadn't shown before sets an amber **"opened by agent · host"** badge in the address bar until you dismiss it or navigate yourself.
+- **Looking and closing.** `browser_list` shows the panes Harnu knows about: which are open, who opened them, whether a session may read or drive each one, and, for a pane a session may read, its address (without the query string) and title. Folder paths are shortened, and a pane in a folder you blocked is left out. `browser_close` closes a pane.
+- **What it can't do.** It can't open `file:`, `chrome:`, `devtools:`, `view-source:` or `javascript:` addresses; the session is told plainly. It can't read or drive **a pane you opened yourself**: such a pane shows in the list as not readable, with no address or title, and every attempt to change it is refused. (Opt-in reading of panes you open, and a one-time permission for a session to drive one, come in later releases.) The page itself is untrusted: everything a session reads from a page is labelled as data written by whoever controls it, never as instructions.
+- **Its own cookies.** Panes a session opens use a separate cookie jar from the panes you open yourself, and start logged out of every site. A login made inside a session's pane stays in that jar.
+
+**Taking it away.** Three one-click controls, all yours:
+
+- **"Allow agents to drive browser panes"** in **Settings → Control server** (on by default). Turn it off and every session attempt to open a pane or navigate one is refused straight away, before any approval prompt, whatever the "Ask before agent actions" setting says. Listing and closing keep working, and a call already under way finishes. The session is told the switch is off, so it asks you rather than retrying.
+- **Disconnect** (the unplug button in the pane header's chip) cuts one pane off from sessions for good: no read, no write, not even closing it, and nothing reconnects it. The pane stays and stays yours; the chip turns red and reads "Disconnected". No confirmation, since taking access away is the safe direction.
+- **Pause agent for 10 min** (the pane's ⋯ menu). For ten minutes, or until you press **Resume**, every change a session tries on that pane is refused and the chip counts down; reading still works. A pause doesn't remove anything, and it doesn't survive a restart.
+
+Blocking a folder from its right-click menu also stops every browser verb there.
 
 ## Sessions talking out loud
 
