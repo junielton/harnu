@@ -113,7 +113,12 @@ describe('the band driver’s output, through the mod’s own functions', () => 
     expect(mod.row(80)).toBe('◆ Harnu ⧉ speech.ts L85–92')
     expect(mod.row(110)).toBe('◆ Harnu ⧉ speech.ts L85–92 · src/main')
     expect(mod.row(144)).toBe('◆ Harnu ⧉ speech.ts L85–92 · src/main · ask your question below')
-    expect(mod.row(39)).toBeNull()
+    // below 40 columns: the range alone, no mark and no file name; below what it needs, nothing
+    expect(mod.row(39)).toBe('⧉ L85–92')
+    expect(mod.row(31)).toBe('⧉ L85–92') // the default narrow companion pane
+    expect(mod.row(20)).toBe('⧉ L85–92')
+    expect(mod.row(8)).toBe('⧉ L85–92')
+    expect(mod.row(7)).toBeNull()
 
     // a turn that answered does not take it away
     host.host.fire('event', B, { t: 'turn.started', turnId: 't1', d: { origin: 'human' } })
@@ -137,6 +142,17 @@ describe('the band driver’s output, through the mod’s own functions', () => 
     deliverB()
     vi.advanceTimersByTime(500)
     expect(mod.row(80)).toBe('◆ Harnu ⧉ voice.ts L3–4')
+    expect(mod.row(31)).toBe('⧉ L3–4')
+
+    // a range across both sides keeps its explicit form while it fits, then shortens
+    host.track('sel_m', { ...SEL, startSide: 'LEFT', startLine: 85, side: 'RIGHT', line: 92 })()
+    vi.advanceTimersByTime(500)
+    expect(mod.row(80)).toBe('◆ Harnu ⧉ speech.ts old L85 – new L92')
+    expect(mod.row(31)).toBe('⧉ old L85 – new L92')
+    expect(mod.row(20)).toBe('⧉ old L85 – new L92')
+    expect(mod.row(18)).toBe('⧉ L85–L92')
+    expect(mod.row(9)).toBe('⧉ L85–L92')
+    expect(mod.row(8)).toBeNull()
 
     // the row that says nothing is selected removes it
     host.track('sel_c', null)()

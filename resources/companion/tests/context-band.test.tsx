@@ -10,6 +10,7 @@ import {
 } from '../hooks/contract'
 import {
   BAND_SWEEP_MS,
+  BAND_MIN_COLUMNS,
   REVIEW_SELECTION_KEY,
   applyBand,
   bandFeatures,
@@ -401,10 +402,10 @@ test('the band row fits bodyColumns and wraps another plugin’s tree without re
       props: props({ bodyColumns })
     } as never)
     expect(await textsOf(ui, /other plugin/)).toBe('other plugin') // wrapped, never replaced
-    rows[bodyColumns] = await textsOf(ui, /Harnu/)
+    rows[bodyColumns] = await textsOf(ui, /Harnu|⧉/)
     await ui.unmount()
   }
-  expect(rows[39]).toBeUndefined()
+  expect(rows[39]).toBe('⧉ L85–92') // below 40: the compact line, no mark, no file name
   expect(rows[40]).toBe(`◆ Harnu ${ROW}`)
   expect(rows[109]).toBe(`◆ Harnu ${ROW}`)
   expect(rows[110]).toBe(`◆ Harnu ${ROW} · …src/main`)
@@ -607,4 +608,83 @@ test('a render that returns early still reads the band, so the engine knows to r
     expect(await textsOf(ui, /Harnu/)).toBeUndefined()
     await ui.unmount()
   }
+})
+
+// ---- the compact band, below BAND_MIN_COLUMNS (U2d) ----------------------------------------------
+
+const bandOf = (lead: string, over: Partial<BandState> = {}): BandState => ({
+  v: 1,
+  lead,
+  n: 1,
+  expiresAt: NOW + BAND_TTL_MS,
+  ...over
+})
+
+test('fitBand: every width boundary of the compact line, for every shape of range', () => {
+  // [lead the host builds, the compact rows it may become from the widest down]
+  const table: Array<[string, string[]]> = [
+    ['⧉ speech.ts L21', ['⧉ L21']],
+    ['⧉ speech.ts L21–24', ['⧉ L21–24']],
+    ['⧉ speech.ts old L21', ['⧉ old L21']],
+    ['⧉ speech.ts old L21–24', ['⧉ old L21–24']],
+    ['⧉ speech.ts (file)', ['⧉ (file)']],
+    ['⧉ …peech.ts old L85 – new L92', ['⧉ old L85 – new L92', '⧉ L85–L92']],
+    ['⧉ old L85 – new L92', ['⧉ old L85 – new L92', '⧉ L85–L92']], // a lead with no name left
+    ['⧉ new L3 – old L7', ['⧉ new L3 – old L7', '⧉ L3–L7']]
+  ]
+  for (const [lead, forms] of table) {
+    const b = bandOf(lead, { detail: 'src/main', hint: 'ask your question below' })
+    // from the narrowest form's width up to just below 40: the widest form that fits, no mark
+    const narrowest = forms[forms.length - 1].length
+    for (let columns = 0; columns < BAND_MIN_COLUMNS; columns++) {
+      const want = columns < narrowest ? null : forms.find((f) => f.length <= columns)
+      expect(fitBand(b, columns), `${lead} @ ${columns}`).toBe(want ?? null)
+    }
+    // never wider than the body, never a mark, a file name, a detail or a hint
+    for (let columns = narrowest; columns < BAND_MIN_COLUMNS; columns++) {
+      const row = fitBand(b, columns)!
+      expect(row.length).toBeLessThanOrEqual(columns)
+      expect(row).not.toMatch(/Harnu|speech|src|ask/)
+    }
+  }
+})
+
+test('fitBand: at BAND_MIN_COLUMNS and above the line is the full one, as before', () => {
+  const b = bandOf(ROW, { detail: '…src/main', hint: 'ask your question below' })
+  expect(BAND_MIN_COLUMNS).toBe(40)
+  expect(fitBand(b, 39)).toBe('⧉ L85–92')
+  expect(fitBand(b, 40)).toBe(`◆ Harnu ${ROW}`)
+  expect(fitBand(b, 80)).toBe(`◆ Harnu ${ROW}`)
+})
+
+test('fitBand: a lead that carries no range the mod recognises shows nothing below 40, never a guess', () => {
+  for (const lead of ['hello', '⧉ speech.ts', '⧉ speech.ts L', '⧉ speech.ts L21 and more', '']) {
+    expect(fitBand(bandOf(lead || 'x'), 30), lead).toBeNull()
+  }
+  // another plugin's junk with a range-shaped tail is still only a range: no file name leaks
+  expect(fitBand(bandOf('<script> L5'), 30)).toBe('⧉ L5')
+})
+
+test('the view draws the compact row in a narrow pane and nothing in a pane too narrow for it', async ($, on) => {
+  installRig(on, { savedState: { band: { ...STORED, lead: '⧉ speech.ts L21–24' } } })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>other plugin</Text>
+  })
+  const row = async (bodyColumns: number) => {
+    const ui = await $.ui.mount({
+      ...ABOVE,
+      surface: 'terminal',
+      props: props({ bodyColumns })
+    } as never)
+    expect(await textsOf(ui, /other plugin/)).toBe('other plugin') // wrapped, never replaced
+    const out = await textsOf(ui, /⧉/)
+    await ui.unmount()
+    return out
+  }
+  expect(await row(31)).toBe('⧉ L21–24')
+  expect(await row(20)).toBe('⧉ L21–24')
+  expect(await row(8)).toBe('⧉ L21–24')
+  expect(await row(7)).toBeUndefined()
+  expect(await row(0)).toBeUndefined()
 })

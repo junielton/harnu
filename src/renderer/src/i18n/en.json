@@ -3856,8 +3856,7 @@
       "guide": {
         "refresh": "Use “{action}” in the review header",
         "freshCompanion": "Close this companion, then use “{action}” in the review header"
-      },
-      "mixedNote": "Lines not included — the range spans both sides"
+      }
     },
     "truncated": "This diff was cut to keep the pane responsive: {n} files are not shown, out of {rows} changed lines in total.",
     "receipt": {

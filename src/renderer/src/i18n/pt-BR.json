@@ -3856,8 +3856,7 @@
       "guide": {
         "refresh": "Use “{action}” no cabeçalho da revisão",
         "freshCompanion": "Feche este companion e use “{action}” no cabeçalho da revisão"
-      },
-      "mixedNote": "Linhas não incluídas — o intervalo abrange os dois lados"
+      }
     },
     "truncated": "Este diff foi cortado para manter o painel responsivo: {n} arquivos não aparecem, de {rows} linhas alteradas no total.",
     "receipt": {

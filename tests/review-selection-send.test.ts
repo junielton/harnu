@@ -25,6 +25,7 @@ import {
   type SelectionStateEvent
 } from '../src/main/companion/review-selection-core'
 import en from '../src/renderer/src/i18n/en.json'
+import ptBR from '../src/renderer/src/i18n/pt-BR.json'
 import { selectionSnapshot, stubReviewApi } from './helpers/review-selection-fixture'
 
 /**
@@ -938,35 +939,20 @@ describe('mixed-side ranges — one range format, and honesty about the lines', 
     }
   })
 
-  it('says plainly that a mixed-side range quotes no lines — live and once the companion has it', async () => {
-    const note = T('review.selection.mixedNote')
-    await choose(sameSideRange)
-    expect(find('selection-mixed').exists()).toBe(false)
-    await settle()
-    await pushEvent(ev('delivered'))
-    expect(find('delivery-mixed').exists()).toBe(false)
-
-    selection().reset()
-    await choose(mixedRange)
-    expect(find('selection-mixed').text()).toBe(note)
-    expect(find('delivery-mixed').exists()).toBe(false) // nothing has been sent yet
-    await settle()
-    expect(find('delivery-mixed').exists()).toBe(false) // queued, not confirmed
-    await pushEvent(ev('delivered'))
-    expect(find('delivery-mixed').text()).toBe(note)
-    await pushEvent(ev('asked'))
-    await pushEvent(ev('answered'))
-    expect(find('delivery-mixed').text()).toBe(note)
-
-    // …and it never claims lines for a send that failed
-    selection().reset()
-    send.mockResolvedValueOnce({ ok: false, refusal: 'QUEUE_FULL', next: REFUSAL_NEXT.QUEUE_FULL })
-    await choose(mixedRange)
-    await settle()
-    expect(find('delivery-mixed').exists()).toBe(false)
+  it('adds no note about the lines: a mixed-side range is sent as the diff rows, so there is nothing to disclaim', async () => {
+    for (const pick of [sameSideRange, mixedRange]) {
+      selection().reset()
+      await choose(pick)
+      await settle()
+      await pushEvent(ev('delivered'))
+      expect(find('selection-mixed').exists()).toBe(false)
+      expect(find('delivery-mixed').exists()).toBe(false)
+      expect(wrapper.text()).not.toMatch(/not included|spans both sides/i)
+    }
+    expect(JSON.stringify(en)).not.toContain('mixedNote')
+    expect(JSON.stringify(ptBR)).not.toContain('mixedNote')
   })
 })
-
 describe('U2b-AC-10 — the narrow layout keeps every action and the chip in the column', () => {
   it('takes a full row by basis only in the row layout; in the column layout 100% would be a height', async () => {
     await choose(mixedRange)
