@@ -17,14 +17,19 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { ipcMain, type BrowserWindow } from 'electron'
+import { parseUnifiedDiff, type DiffRow } from '../review-core'
 import { enqueue as channelEnqueue } from './command-channel'
 import type { CommandCause } from './command-types'
 import {
+  REVIEW_DIFF_FLAGS,
   REVIEW_SELECTION_GESTURE,
   REVIEW_SELECTION_KEY,
   composeSelection,
   failure,
   lineSource,
+  locateDiffRows,
+  quotesDiffRows,
+  rangeDiffSource,
   noBindingReason,
   pinRefusal,
   validateCoordinates,
@@ -47,6 +52,8 @@ const execFileAsync = promisify(execFile)
 
 /** One blob. A file over this is refused as unreadable rather than half-read. */
 const BLOB_MAX_BYTES = 8 * 1024 * 1024
+/** The pane's own bound on a branch-wide diff (`GIT_MAX_BUFFER` in `review-ipc.ts`). */
+const DIFF_MAX_BYTES = 64 << 20
 const GIT_TIMEOUT_MS = 15_000
 
 /**
@@ -58,6 +65,11 @@ export interface GitDeps {
   resolveCommit(folder: string, ref: string): Promise<string | null>
   /** `git show <sha>:<path>` in `folder`, or `null` when it cannot be read. */
   readBlob(folder: string, sha: string, path: string): Promise<string | null>
+  /**
+   * The Review pane's diff for `range` (`<baseSha>...<headSha>`), or `null` when it cannot be read.
+   * Only a mixed-side range reads it: its rows are quoted from the diff, not from one file.
+   */
+  readDiff(folder: string, range: string): Promise<string | null>
 }
 
 /** Everything the send reaches for, injected so the tests run without Electron's app or a repo. */
@@ -105,13 +117,24 @@ async function composeFor(
   ])
   const pin = pinRefusal(coords, { headSha, baseSha })
   if (pin) return failure(pin.refusal, pin.detail !== undefined ? { detail: pin.detail } : {})
-  const src = lineSource(coords)
+  // A multi-row range is checked against the diff the pane renders: a mixed-side one is quoted as
+  // diff rows (its two ends live in different files, so no one blob has the rows between them), and
+  // so is a same-side one whose displayed rows include a row of the other side (file lines of one
+  // side would silently leave it out). Rows that cannot be located are a refusal, never a guess.
+  let rows: DiffRow[] | null = null
+  if (rangeDiffSource(coords)) {
+    const diff = await deps.readDiff(ref.folder, `${coords.baseSha}...${coords.headSha}`)
+    if (diff === null) return failure('BAD_ARGS', { detail: 'diff-unreadable' })
+    rows = locateDiffRows(parseUnifiedDiff(diff), coords)
+    if (rows === null) return failure('BAD_ARGS', { detail: 'rows-not-found' })
+  }
+  const src = rows !== null && quotesDiffRows(coords, rows) ? null : lineSource(coords)
   let blob: string | null = null
   if (src) {
     blob = await deps.readBlob(ref.folder, src.sha, src.path)
     if (blob === null) return failure('BAD_ARGS', { detail: 'blob-unreadable' })
   }
-  const composed = composeSelection(coords, blob)
+  const composed = composeSelection(coords, blob, rows)
   return composed.ok ? composed : failure('BAD_ARGS', { detail: composed.detail })
 }
 
@@ -205,7 +228,9 @@ export const gitDeps: GitDeps = {
     return sha.length > 0 ? sha : null
   },
   // Read-only: `show` of one blob at a pinned commit. Nothing is checked out or written.
-  readBlob: (folder, sha, path) => git(folder, ['show', `${sha}:${path}`], BLOB_MAX_BYTES)
+  readBlob: (folder, sha, path) => git(folder, ['show', `${sha}:${path}`], BLOB_MAX_BYTES),
+  // Read-only: the pane's own `git diff`, same flags, over two pinned full SHAs.
+  readDiff: (folder, range) => git(folder, ['diff', ...REVIEW_DIFF_FLAGS, range], DIFF_MAX_BYTES)
 }
 
 async function liveDeps(emit: (channel: string, payload: unknown) => void): Promise<SelectionDeps> {
