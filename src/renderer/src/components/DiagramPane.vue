@@ -1631,7 +1631,9 @@ onMounted(async () => {
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('keyup', onWindowKeyup)
   window.addEventListener('blur', onWindowBlur)
-  void window.api.canvasWatchStart(filePath.value, writerId)
+  // Read only once the watch is live (BUG-210): a write between the read and the
+  // watch going live would produce no event, and the next Save would revert it.
+  await window.api.canvasWatchStart(filePath.value, writerId)
   await load(filePath.value, true)
   // Follow the pane as the operator drags the inter-pane divider or maximizes.
   // X6 reads its container's size only at construction and then PINS an inline

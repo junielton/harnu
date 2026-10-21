@@ -11,6 +11,7 @@ import {
   __resetCanvasWatchStateForTests,
   registerCanvasWatchHandlers,
   notifyCanvasChanged,
+  startCanvasWatch,
   closeAllCanvasWatchers
 } from '../src/main/canvas-watch'
 import { writeCanvasFile } from '../src/main/canvas-write'
@@ -264,5 +265,63 @@ describe('U1-8 change notification (§4, §7.3)', () => {
     addCanvasRef(file)
     await closeAllCanvasWatchers()
     expect(canvasRefCount(file)).toBe(0)
+  })
+})
+
+/** BUG-210 — `startCanvasWatch` resolves only once chokidar really watches the file. */
+describe('startCanvasWatch readiness (BUG-210)', () => {
+  let dir: string
+  let file: string
+  let sent: { ch: string; p: unknown }[]
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'harnu-canvas-ready-'))
+    mkdirSync(join(dir, '.harnu', 'out', 'canvas'), { recursive: true })
+    file = join(dir, '.harnu', 'out', 'canvas', 'board.harnucanvas.json')
+    writeFileSync(file, JSON.stringify({ capycanvas: 1, meta: {}, nodes: [], edges: [] }), 'utf8')
+    ;(globalThis as Record<string, unknown>).__TEST_ROOT__ = dir
+    sent = []
+    __resetCanvasWatchStateForTests()
+    registerCanvasWatchHandlers(
+      () =>
+        ({
+          isDestroyed: () => false,
+          webContents: { send: (ch: string, p: unknown) => sent.push({ ch, p }) }
+        }) as never
+    )
+  })
+
+  afterEach(async () => {
+    await closeAllCanvasWatchers()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  async function eventually(cond: () => boolean): Promise<void> {
+    for (let i = 0; i < 100 && !cond(); i++) await new Promise((r) => setTimeout(r, 50))
+  }
+
+  it('a write made the instant it resolves is seen by the real watcher', async () => {
+    await startCanvasWatch(file)
+    writeFileSync(file, JSON.stringify({ capycanvas: 1, meta: {}, nodes: [], edges: [], x: 1 }))
+    await eventually(() => sent.length > 0)
+    expect(sent).toEqual([{ ch: 'canvas:changed', p: { path: file } }])
+  })
+
+  it('a second pane on the same file also resolves once it is watched', async () => {
+    await startCanvasWatch(file)
+    await startCanvasWatch(file)
+    expect(canvasRefCount(file)).toBe(2)
+  })
+
+  it('a file that does not exist resolves at once instead of waiting out the timeout', async () => {
+    const t0 = Date.now()
+    await startCanvasWatch(join(dir, '.harnu', 'out', 'canvas', 'missing.harnucanvas.json'))
+    expect(Date.now() - t0).toBeLessThan(1000)
+  })
+
+  it('a path outside the known roots is refused without registering a ref', async () => {
+    const outside = join(tmpdir(), 'harnu-canvas-outside-ready.harnucanvas.json')
+    await startCanvasWatch(outside)
+    expect(canvasRefCount(outside)).toBe(0)
   })
 })

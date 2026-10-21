@@ -240,6 +240,8 @@ Harnu watches the file. What happens next depends on whether you have unsaved ed
 - **No unsaved edits** — the board redraws itself immediately and your view does not move. This is the common case, and it is what you see when a session changes the board while you have it open: there is nothing to reload, and your next Save keeps the session's change.
 - **Unsaved edits** — the pane **does not** touch your work. A warning strip replaces the filename: _This canvas changed on disk._ with a **Reload** action. Reload discards your edits (it asks first); ignoring it and pressing **Save** instead writes your version over whatever changed, and that is the point of telling you.
 
+The same holds while a pane is still opening: it starts reading only once Harnu is watching the file, so a session's write in that moment shows up in the pane (or as the strip) instead of being lost.
+
 Your own Save never triggers either case on the pane that made it. If the **same file is open in two panes**, the pane you saved from stays quiet, but the other pane treats your Save like any other change: it redraws (no unsaved edits) or shows the strip (unsaved edits). So the other pane's next Save does not silently write over yours. If that pane had unsaved edits and you press **Save** there anyway, over the warning strip, its version overwrites your other pane's Save: that is the same choice as saving over any change, and the strip is there to warn you.
 
 Narrow windows exist. Harnu hears about a write only after the file settles, roughly 100–250 ms later, and a Save made in that fraction of a second wins:
