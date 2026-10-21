@@ -7,6 +7,7 @@ import {
   DESCRIPTOR_BY_ID,
   resolveKeybindings,
   canonicalizeChord,
+  defaultKeysFor,
   scopeChordKey,
   type KeybindingGroup
 } from '../src/main/keybindings-core'
@@ -145,8 +146,7 @@ describe('AC-11 — the §3 ids exist with their §3 values', () => {
       expect(d.group).toBe(row.group)
       expect(d.defaultKeys).toBe(row.defaultKeys)
       expect(d.menu).toBe(row.menu)
-      // `shield` arrives as a descriptor field in U5a; until then it is absent.
-      expect((d as { shield?: boolean }).shield ?? false).toBe(row.shield)
+      expect(d.shield ?? false).toBe(row.shield)
       expect(d.reserved).toBe(false)
       expect(d.scope).toBe('global')
     })
@@ -238,13 +238,14 @@ describe('AC-13 — defaults resolve cleanly on both platform folds', () => {
       for (const b of resolved.list) expect(b.conflictsWith, b.id).toEqual([])
 
       const reserved = new Set(
-        KEYBINDINGS.filter((d) => d.reserved && d.defaultKeys).map((d) =>
-          scopeChordKey(d.scope, canonicalizeChord(d.defaultKeys!)!, mac)
+        KEYBINDINGS.filter((d) => d.reserved && defaultKeysFor(d, mac)).map((d) =>
+          scopeChordKey(d.scope, canonicalizeChord(defaultKeysFor(d, mac)!)!, mac)
         )
       )
       for (const d of KEYBINDINGS) {
-        if (d.reserved || !d.defaultKeys) continue
-        const key = scopeChordKey(d.scope, canonicalizeChord(d.defaultKeys)!, mac)
+        const keys = defaultKeysFor(d, mac)
+        if (d.reserved || !keys) continue
+        const key = scopeChordKey(d.scope, canonicalizeChord(keys)!, mac)
         expect(reserved.has(key), `${d.id} lands on a reserved chord`).toBe(false)
       }
     })

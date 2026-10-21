@@ -2,6 +2,11 @@ import { onBeforeUnmount, watch, type WatchStopHandle } from 'vue'
 import { useMagicKeys } from '@vueuse/core'
 import { isMac } from '../lib/platform'
 import {
+  DESCRIPTOR_BY_ID,
+  KEYBINDINGS,
+  canonicalizeChord,
+  chordFromEvent,
+  normalizeChord,
   parseChord,
   scopeChordKey,
   type ResolvedKeybindings,
@@ -25,7 +30,12 @@ import {
  *     declare a `keys` shorthand (`'Cmd+Shift+P'`, `'F2'`, `'Cmd+K'`). The
  *     composable wires a `watch` on the matching `useMagicKeys` ref.
  *
- * Both surfaces ultimately resolve through `dispatch(actionId)`, which picks
+ *  3. **The shield** (T486 §7.4 — {@link createShieldListener}). A shielded
+ *     action's chord is matched in the window CAPTURE phase, before xterm can
+ *     turn it into terminal input. It is the only key path a shielded action
+ *     has: no `useMagicKeys` watcher is wired for it.
+ *
+ * Every surface ultimately resolves through `dispatch(actionId)`, which picks
  * the highest-precedence binding for the **active scope** and calls it.
  *
  * See `findings/07-shortcuts-palette.md` §2/§4 and `design.md §6` for the
@@ -136,7 +146,7 @@ let ipcUnsubscribe: (() => void) | null = null
  * capture-phase terminal shield (T486 U5a) or the command palette (U6). Only
  * `'keys'` consults a binding's `keysGuard`.
  */
-type DispatchSource = 'menu' | 'keys' | 'shield' | 'palette'
+export type DispatchSource = 'menu' | 'keys' | 'shield' | 'palette'
 
 /**
  * De-dup window for the intentional double-bind (BUG-21). Menu-owned chords fire
@@ -209,11 +219,22 @@ const ALIAS_MAP: Record<string, string> = {
  */
 type MagicKeys = ReturnType<typeof useMagicKeys<false>>
 let magic: MagicKeys | null = null
+
+/**
+ * The modifier state of the last `keydown` `useMagicKeys` saw — the press a
+ * chord watcher is reacting to (the watcher runs in the microtask right after
+ * that listener). See {@link modifiersMatchExactly}.
+ */
+let lastKeydown: Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'> | null = null
+
 function getMagic(): MagicKeys {
   if (!magic) {
     magic = useMagicKeys<false>({
       passive: false,
-      aliasMap: ALIAS_MAP
+      aliasMap: ALIAS_MAP,
+      onEventFired: (e) => {
+        if (e.type === 'keydown') lastKeydown = e
+      }
     })
   }
   return magic
@@ -253,16 +274,29 @@ function splitHostileKey(chordStr: string): string | null {
 }
 
 /**
- * True iff the currently-held modifiers EXACTLY match `declared` (none extra, none
- * missing). `useMagicKeys` combos are SUBSET matches — `control+b` stays true while
+ * True iff the held modifiers EXACTLY match `declared` (none extra, none missing).
+ * `useMagicKeys` combos are SUBSET matches — `control+b` stays true while
  * `control+shift+b` is held — so without this Ctrl+Shift+B would spuriously fire the
  * Ctrl+B binding (collapsing the sidebar) on top of `view.fleetRail` (BUG-21).
- * Requiring an exact modifier match keeps each chord to its own binding.
+ *
+ * "Held" is read from the key press itself (`shiftKey`, `ctrlKey`, …), not from
+ * `useMagicKeys`' modifier refs: those drift from the keyboard whenever a modifier's
+ * own keydown or keyup never reaches `window` (a field that stops it, a lost keyup,
+ * a synthesized key event), and then `F7` fired on Shift+F7 (T486 U4a, live). The
+ * refs are the fallback only before any keydown has been seen.
  */
 function modifiersMatchExactly(keys: MagicKeys, declared: ReadonlySet<ModifierKey>): boolean {
+  const e = lastKeydown
+  const held: Record<ModifierKey, boolean> = e
+    ? { control: e.ctrlKey, meta: e.metaKey, shift: e.shiftKey, alt: e.altKey }
+    : {
+        control: keys.control?.value === true,
+        meta: keys.meta?.value === true,
+        shift: keys.shift?.value === true,
+        alt: keys.alt?.value === true
+      }
   for (const mod of MODIFIER_KEYS) {
-    const held = keys[mod]?.value === true
-    if (held !== declared.has(mod)) return false
+    if (held[mod] !== declared.has(mod)) return false
   }
   return true
 }
@@ -319,9 +353,66 @@ export function activeScope(): ShortcutScope {
   return scopeStack[scopeStack.length - 1] ?? 'global'
 }
 
-/** Test-only: run `dispatch` from any source (the shield / palette callers land in U5a / U6). */
+/**
+ * Run the binding for `id` as if it came from `source` — the shield's door
+ * (T486 §7.4) and, from U6, the palette's. Same rules as every dispatch:
+ * active scope, `enabled()`, the menu/keys coalescing; `keysGuard` only for
+ * `'keys'`.
+ */
+export function dispatchShortcut(id: string, source: DispatchSource): void {
+  dispatch(id, source)
+}
+
+/** Test-only alias of {@link dispatchShortcut}. */
 export function dispatchForTests(id: string, source: DispatchSource): void {
   dispatch(id, source)
+}
+
+/**
+ * The shield (T486 §7.4): one window CAPTURE `keydown` listener for every
+ * shielded action. `App.vue` installs it; nothing else catches a shielded chord.
+ *
+ * 1. Stand down unless the global scope is on top — dialogs, the palette and the
+ *    menus keep their keys.
+ * 2. Build the press's chord from the physical key (`chordFromEvent`, `e.code`)
+ *    and compare it, under the platform fold, with each shielded action's
+ *    RESOLVED chord — so a rebind moves the shield with it.
+ * 3. On a match:
+ *    - **menu-backed, off macOS** (`nav.*`): `stopPropagation()` only. xterm never
+ *      sees the key, but it stays UNHANDLED, so Electron runs the native
+ *      accelerator, which dispatches through `shortcut:fired`. Calling
+ *      `preventDefault` would also hide it from Electron's menu-bar logic, which
+ *      then reads the Alt release as a lone Alt press and toggles the auto-hidden
+ *      menu bar.
+ *    - **otherwise**: `preventDefault()` + `stopPropagation()` + a `'shield'`
+ *      dispatch. A menu accelerator twin of the same press is coalesced.
+ */
+export function createShieldListener(
+  resolvedKeybindings: () => ResolvedKeybindings | null
+): (e: KeyboardEvent) => void {
+  const shielded = KEYBINDINGS.filter((d) => d.shield)
+  return (e) => {
+    if (activeScope() !== 'global') return
+    const chord = chordFromEvent(e, { mac: isMac })
+    if (!chord) return
+    const resolved = resolvedKeybindings()
+    for (const d of shielded) {
+      const keys = resolved?.byId[d.id]?.keys
+      const canonical = keys ? canonicalizeChord(keys) : null
+      if (!canonical) continue
+      if (
+        scopeChordKey(d.scope, canonical, isMac) !==
+        scopeChordKey(d.scope, normalizeChord(chord), isMac)
+      ) {
+        continue
+      }
+      e.stopPropagation()
+      if (d.menu && !isMac) return
+      e.preventDefault()
+      dispatch(d.id, 'shield')
+      return
+    }
+  }
 }
 
 /** Test-only: restore the scope stack to its initial `['global']` state. */
@@ -414,7 +505,7 @@ export function popScope(scope: ShortcutScope): void {
  *     useShortcuts([
  *       { id: 'session.new',  scope: 'global', keys: 'Cmd+N',       handler: () => sessions.createNew() },
  *       { id: 'app.search',   scope: 'global', keys: 'Cmd+K',       handler: () => ui.openPalette() },
- *       { id: 'session.rename', scope: 'global', keys: 'F2',        handler: () => sessions.beginRename() },
+ *       { id: 'folder.rename', scope: 'global', keys: 'F2',         handler: () => ui.openRenameFolder(path) },
  *       // Bindings without `keys` rely solely on the OS menu emitting
  *       // `shortcut:fired` over IPC (T-4.1).
  *       { id: 'project.switch', scope: 'global',                    handler: () => ui.openSwitchProject() },
@@ -470,6 +561,9 @@ export function useShortcuts(
     // declaration order, which IS the registration order the spec means.
     const claimedChords = new Set<string>()
     for (const binding of owned) {
+      // A shielded action's only key path is the shield (T486 §7.4), so one press
+      // dispatches once.
+      if (DESCRIPTOR_BY_ID[binding.id as ShortcutActionId]?.shield) continue
       const chordStr = effectiveChord(binding)
       if (!chordStr) continue
       const claimKey = scopeChordKey(binding.scope, chordStr, isMac)

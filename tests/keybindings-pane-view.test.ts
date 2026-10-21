@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import KeybindingsPane from '../src/renderer/src/components/KeybindingsPane.vue'
@@ -11,6 +13,7 @@ import {
   KEYBINDING_GROUPS,
   DESCRIPTOR_BY_ID,
   canonicalizeChord,
+  isNotInTerminal,
   isUnreachableChord,
   matchesShortcutQuery,
   parseShortcutQuery,
@@ -477,5 +480,96 @@ describe('Esc while recording (AC-3)', () => {
     press({ key: 'Escape', code: 'Escape' })
     await flushPromises()
     expect(ui.dialog).toBeNull()
+  })
+})
+
+/* -------------------------------------------------------------------------- */
+/*  T486 U5a — shield hint, terminal-keeps hint, "not in terminal" source     */
+/* -------------------------------------------------------------------------- */
+
+describe('shield hint (AC-9)', () => {
+  it('names the chord on a shielded row that has one', async () => {
+    const w = await mountPane()
+    const hint = w.find('[data-kb-row="nav.back"] [data-kb-shield-hint]')
+    expect(hint.text()).toBe('Taken from the terminal: the program running there never sees Alt+←.')
+    expect(w.find('[data-kb-row="nav.forward"] [data-kb-shield-hint]').text()).toContain('Alt+→')
+  })
+
+  it('follows a rebind and disappears when the row is unbound', async () => {
+    const w = await mountPane([
+      { command: 'nav.back', key: 'Alt+H' },
+      { command: 'nav.forward', key: null }
+    ])
+    expect(w.find('[data-kb-row="nav.back"] [data-kb-shield-hint]').text()).toContain('Alt+H')
+    expect(w.find('[data-kb-row="nav.forward"] [data-kb-shield-hint]').exists()).toBe(false)
+  })
+
+  it('never shows on a row that is not shielded', async () => {
+    const w = await mountPane()
+    const shielded = w
+      .findAll('[data-kb-shield-hint]')
+      .map((h) => h.element.closest('[data-kb-row]')?.getAttribute('data-kb-row'))
+    expect(shielded.sort()).toEqual(['nav.back', 'nav.forward'])
+  })
+
+  it('reads the pt-BR copy in pt-BR', async () => {
+    i18n.global.locale.value = 'pt-BR'
+    const w = await mountPane()
+    const text = w.find('[data-kb-row="nav.back"] [data-kb-shield-hint]').text()
+    expect(text).toContain('Alt+←')
+    expect(text).not.toContain('keybindings.pane')
+  })
+})
+
+describe('terminal-keeps hint (AC-51)', () => {
+  it('shows on a non-shielded row bound to a chord the terminal keymap swallows', async () => {
+    const w = await mountPane([
+      { command: 'view.activity', key: 'Shift+Enter' },
+      { command: 'view.usagePanel', key: 'Ctrl+Shift+C' },
+      { command: 'view.claudeStatus', key: 'Cmd+=' }
+    ])
+    expect(w.find('[data-kb-row="view.activity"] [data-kb-terminal-keeps]').text()).toBe(
+      "The terminal keeps Shift+Enter: it won't fire while a terminal has focus."
+    )
+    // Off macOS Ctrl+Shift+C is the terminal's copy, whichever spelling the file uses.
+    expect(w.find('[data-kb-row="view.usagePanel"] [data-kb-terminal-keeps]').exists()).toBe(true)
+    expect(w.find('[data-kb-row="view.claudeStatus"] [data-kb-terminal-keeps]').exists()).toBe(true)
+  })
+
+  it('is absent for a chord the terminal lets through, and on a shielded row', async () => {
+    const w = await mountPane([{ command: 'nav.back', key: 'Shift+Enter' }])
+    expect(w.findAll('[data-kb-terminal-keeps]')).toHaveLength(0)
+    // The shield takes it first, so the row says that instead.
+    expect(w.find('[data-kb-row="nav.back"] [data-kb-shield-hint]').text()).toContain('Shift+Enter')
+  })
+
+  it('reads the pt-BR copy in pt-BR', async () => {
+    i18n.global.locale.value = 'pt-BR'
+    const w = await mountPane([{ command: 'view.activity', key: 'Shift+Enter' }])
+    const text = w.find('[data-kb-row="view.activity"] [data-kb-terminal-keeps]').text()
+    expect(text).toContain('Shift+Enter')
+    expect(text).not.toContain('keybindings.pane')
+  })
+})
+
+describe('"not in terminal" marker comes from isNotInTerminal (AC-53)', () => {
+  it('marks exactly the rows isNotInTerminal(d) selects', async () => {
+    const w = await mountPane()
+    for (const b of list()) {
+      const marked = w.find(`[data-kb-row="${b.id}"] [data-kb-not-in-terminal]`).exists()
+      expect(marked, b.id).toBe(isNotInTerminal(DESCRIPTOR_BY_ID[b.id]))
+    }
+    // A shielded menu row reaches the terminal; a renderer-only row does not.
+    expect(w.find('[data-kb-row="nav.back"] [data-kb-not-in-terminal]').exists()).toBe(false)
+    expect(w.find('[data-kb-row="inbox.toggle"] [data-kb-not-in-terminal]').exists()).toBe(true)
+  })
+
+  it('the pane has no inline predicate of its own', () => {
+    const src = readFileSync(
+      resolve(__dirname, '../src/renderer/src/components/KeybindingsPane.vue'),
+      'utf8'
+    )
+    expect(src).not.toMatch(/!b\.menu/)
+    expect(src).toContain('isNotInTerminal(')
   })
 })

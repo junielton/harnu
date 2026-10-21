@@ -23,6 +23,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **`Esc` closes the open view** — the Roadmap board, PR Stack, Review, Cleanup, the Scheduler, the System Monitor, Containers or the usage overview — exactly like its close button, one layer at a time: a dialog, menu or popover on top closes first, then the view's own selection or filter (Cleanup's checked blocks and side panel, a PR Stack filter, the Roadmap's dispatch confirm, a canvas selection beside the view), and only the next `Esc` closes the view. `Esc` in a text field or a terminal still goes there. It can be rebound in Settings → Keyboard Shortcuts.
 - **`Cmd/Ctrl+Alt+S` opens Settings on the Keyboard Shortcuts tab**, also as **View → Keyboard Shortcuts…** (on macOS, right after Settings… in the Harnu menu). Every other Settings tab, and the Cleanup, Scheduler, System Monitor and Containers views, can now be given a shortcut too; they ship without one.
 - The shortcut recorder now refuses a combo that could never fire for that action — Shift plus punctuation, or Option plus a letter on macOS, on actions with no menu item — keeps the old one and says why under the row.
+- **Back and Forward can be rebound.** They are listed in Settings → Keyboard Shortcuts (`nav.back` / `nav.forward` in `keybindings.json`) with their per-platform defaults, `Alt+←` / `Alt+→` on Linux and Windows and `⌘[` / `⌘]` on macOS. A new chord updates the Session menu and still works while a terminal has focus, without opening the menu bar on the Alt release.
+- Settings → Keyboard Shortcuts now says when a terminal and a shortcut compete for a key: "Taken from the terminal" under an action whose chord never reaches the program running there, and "The terminal keeps …" under an action bound to a combo the terminal uses itself (copy, paste, `Shift+Enter`, font size…), which won't fire while a terminal has focus.
 
 ### Changed
 
@@ -32,6 +34,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **Settings → Keyboard Shortcuts shows action names again** instead of raw keys like `keybindings.actions.session.new`, in English and Portuguese, including the conflict badges and the screen-reader labels.
 - Pressing `Esc` while recording a shortcut now cancels just the recording; it no longer closes Settings.
+- A shortcut now fires only when exactly its modifiers are held: a shortcut on `F7` no longer also fires on `Shift+F7`, nor one on `Ctrl+K` on `Ctrl+Shift+K`.
 
 ## 2026-10-19
 

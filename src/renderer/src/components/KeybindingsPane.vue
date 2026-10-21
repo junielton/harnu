@@ -5,15 +5,19 @@ import { RotateCcw, Delete, Search } from 'lucide-vue-next'
 import SettingHint from './ui/SettingHint.vue'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { isMac } from '../lib/platform'
+import { TERMINAL_KEYMAP_CHORDS } from '../lib/terminalKeymap'
 import {
   DESCRIPTOR_BY_ID,
   KEYBINDING_GROUPS,
+  canonicalizeChord,
   chordFromEvent,
+  isNotInTerminal,
   isUnreachableChord,
   matchesShortcutQuery,
   normalizeChord,
   parseShortcutQuery,
   renderKeysString,
+  scopeChordKey,
   type KeybindingGroup,
   type ResolvedBinding,
   type ShortcutActionId
@@ -24,8 +28,9 @@ import {
  * hand-editing `keybindings.json` — one row per rebindable action with a
  * record-a-chord capture control, per-row Reset + Unbind, a global Reset all,
  * conflict badges on every participant, and a "not in terminal" marker for the
- * renderer-only (`menu: false`) actions. T486 adds the search (text or chord),
- * the group headers and the Unbound / Conflicts / Customized filter chips.
+ * renderer-only actions (`isNotInTerminal`). T486 adds the search (text or
+ * chord), the group headers, the Unbound / Conflicts / Customized filter chips,
+ * and two hint lines: the shield hint and the terminal-keeps hint.
  *
  * All persistence goes through the store's `setBinding` / `resetBinding` /
  * `resetAll`, which serialize the override set back to `keybindings.json` and
@@ -91,6 +96,25 @@ function label(id: ShortcutActionId): string {
 function chipText(keys: string | null): string {
   const tokens = renderKeysString(keys, { mac: isMac })
   return tokens.join(isMac ? '' : '+')
+}
+
+/** The chords the terminal keymap swallows, folded the way the resolver folds. */
+const terminalKept = new Set(
+  (isMac ? TERMINAL_KEYMAP_CHORDS.mac : TERMINAL_KEYMAP_CHORDS.other).map((c) =>
+    scopeChordKey('global', c, isMac)
+  )
+)
+
+/** Shielded and bound: the shield takes its chord from every terminal (§7.4). */
+function shieldHint(b: ResolvedBinding): boolean {
+  return !!DESCRIPTOR_BY_ID[b.id].shield && b.keys !== null
+}
+
+/** Not shielded, and bound to a chord the terminal keymap keeps for itself. */
+function terminalKeeps(b: ResolvedBinding): boolean {
+  if (DESCRIPTOR_BY_ID[b.id].shield || !b.keys) return false
+  const keys = canonicalizeChord(b.keys)
+  return keys !== null && terminalKept.has(scopeChordKey('global', keys, isMac))
 }
 
 function conflictNames(b: ResolvedBinding): string {
@@ -334,7 +358,12 @@ onBeforeUnmount(stopRecording)
                 {{ t('keybindings.pane.default', { chord: chipText(b.defaultKeys) }) }}
               </span>
 
-              <span v-if="!b.menu" class="shrink-0 text-text-4" style="font-size: 11px">
+              <span
+                v-if="isNotInTerminal(DESCRIPTOR_BY_ID[b.id])"
+                data-kb-not-in-terminal
+                class="shrink-0 text-text-4"
+                style="font-size: 11px"
+              >
                 {{ t('keybindings.pane.notInTerminal') }}
               </span>
 
@@ -385,6 +414,23 @@ onBeforeUnmount(stopRecording)
                 {{ t('keybindings.pane.unbind') }}
               </button>
             </div>
+
+            <p
+              v-if="shieldHint(b)"
+              data-kb-shield-hint
+              class="text-text-4"
+              style="font-size: 11px; margin-top: 3px"
+            >
+              {{ t('keybindings.pane.shieldHint', { chord: chipText(b.keys) }) }}
+            </p>
+            <p
+              v-else-if="terminalKeeps(b)"
+              data-kb-terminal-keeps
+              class="text-text-4"
+              style="font-size: 11px; margin-top: 3px"
+            >
+              {{ t('keybindings.pane.terminalKeepsHint', { chord: chipText(b.keys) }) }}
+            </p>
 
             <p
               v-if="refusal && refusal.id === b.id"

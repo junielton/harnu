@@ -1186,7 +1186,9 @@
         "customized": "Customized"
       },
       "noMatch": "No shortcut matches.",
-      "unreachable": "{chord} can't fire for this action. Pick another shortcut."
+      "unreachable": "{chord} can't fire for this action. Pick another shortcut.",
+      "shieldHint": "Taken from the terminal: the program running there never sees {chord}.",
+      "terminalKeepsHint": "The terminal keeps {chord}: it won't fire while a terminal has focus."
     },
     "actions": {
       "session_new": "New session",
@@ -1290,6 +1292,8 @@
       "view_settings_cleanup": "Open Settings: Cleanup",
       "view_settings_containers": "Open Settings: Containers",
       "view_settings_prStack": "Open Settings: PR Stack",
+      "nav_back": "Back to the previous session",
+      "nav_forward": "Forward to the next session",
       "app_reload": "Reload the window",
       "app_devtools": "Toggle DevTools",
       "app_quit": "Quit Harnu",

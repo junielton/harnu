@@ -138,6 +138,8 @@ export type ShortcutActionId =
   | 'app.quit'
   | 'app.fullscreen'
   | 'app.openKeybindings'
+  | 'nav.back'
+  | 'nav.forward'
 
 export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal'
 
@@ -160,8 +162,18 @@ export const KEYBINDING_GROUPS: readonly KeybindingGroup[] = [
 
 export interface KeyBindingDescriptor {
   id: ShortcutActionId
-  /** Canonical chord string, or `null` for a menu role with no default accelerator. */
+  /**
+   * Canonical chord string, or `null` for a menu role with no default accelerator.
+   * The default on every platform unless `defaultKeysMac` overrides it on macOS —
+   * read it through {@link defaultKeysFor}, never directly.
+   */
   defaultKeys: string | null
+  /**
+   * The macOS default when it differs from `defaultKeys` (T486 §10): `nav.back` is
+   * `Cmd+[` on a Mac (⌥← is word-jump in every macOS text field) and `Alt+ArrowLeft`
+   * elsewhere. Absent ⇒ `defaultKeys` everywhere.
+   */
+  defaultKeysMac?: string | null
   scope: ShortcutScope
   /**
    * Has a native menu item — so the chord fires even while the terminal pane
@@ -171,6 +183,13 @@ export interface KeyBindingDescriptor {
    * marker.
    */
   menu: boolean
+  /**
+   * Shielded (T486 §7.4): the chord is taken on `window` in the CAPTURE phase,
+   * before xterm can turn it into terminal input, so it works while a terminal
+   * holds focus. `App.vue`'s one shield listener is the only key path such an
+   * action has — it gets no renderer watcher.
+   */
+  shield?: boolean
   /** Un-rebindable. An override targeting a reserved id, or landing on a
    * reserved chord, is rejected at parse with a named warning. */
   reserved: boolean
@@ -195,9 +214,35 @@ export function labelKeyFor(id: string): string {
   return 'keybindings.actions.' + id.replace(/\./g, '_')
 }
 
+/**
+ * A row's default chord on this platform (T486 §10). Every reader of a default —
+ * `resolveKeybindings`, `menu.ts`, the Settings pane's "default" reminder,
+ * `EmptyState` — goes through here, so a platform-split row has one answer.
+ */
+export function defaultKeysFor(
+  d: Pick<KeyBindingDescriptor, 'defaultKeys' | 'defaultKeysMac'>,
+  mac: boolean
+): string | null {
+  return mac && d.defaultKeysMac !== undefined ? d.defaultKeysMac : d.defaultKeys
+}
+
+/**
+ * The Settings pane's "not in terminal" marker (T486 §3.1): an action with neither
+ * a native menu item nor the shield is renderer-only, so its chord does not fire
+ * while a terminal holds focus. The pane reads this and nothing else; it is only
+ * accurate on macOS for a menu-backed Ctrl+letter chord (§7.1), so fixing that is
+ * one change here.
+ */
+export function isNotInTerminal(d: { menu: boolean; shield?: boolean }): boolean {
+  return !d.menu && !d.shield
+}
+
 interface DefOpts {
   scope?: ShortcutScope
   menu?: boolean
+  shield?: boolean
+  /** macOS default, when it differs (`defaultKeysMac`). */
+  mac?: string | null
   reserved?: boolean
   palette?: boolean
   paletteFeatured?: boolean
@@ -213,8 +258,10 @@ function def(
   return {
     id,
     defaultKeys,
+    ...(opts.mac !== undefined ? { defaultKeysMac: opts.mac } : {}),
     scope: opts.scope ?? 'global',
     menu: opts.menu ?? false,
+    ...(opts.shield ? { shield: true } : {}),
     reserved: opts.reserved ?? false,
     labelKey: labelKeyFor(id),
     group,
@@ -367,6 +414,13 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.settings.cleanup', 'views', null),
   def('view.settings.containers', 'views', null),
   def('view.settings.prStack', 'views', null),
+  // T486 §10 — session navigation history, the browser convention per platform:
+  // ⌘[ / ⌘] on macOS (⌥← is word-jump in every macOS text field), Alt+← / Alt+→
+  // elsewhere. Menu-backed (`&Session`) and shielded: xterm turns Alt+← into a
+  // word-jump, and off macOS an accelerator fires only for a key the page left
+  // unhandled, so the shield keeps the chord from the terminal (§7.4).
+  def('nav.back', 'app', 'Alt+ArrowLeft', { ...MENU, shield: true, mac: 'Cmd+[' }),
+  def('nav.forward', 'app', 'Alt+ArrowRight', { ...MENU, shield: true, mac: 'Cmd+]' }),
   // Reserved — un-rebindable. Handled entirely in the main process, so none of
   // them has a renderer handler the palette could run.
   def('app.reload', 'app', 'F5', { ...MENU, reserved: true, palette: false }),
@@ -766,11 +820,15 @@ export function matchesShortcutQuery(
  * `useMagicKeys` watcher, which matches on the lowercased `e.code` and `e.key`;
  * Shift rewrites `e.key` for punctuation (`⌘⇧,` arrives as `<`), and on macOS
  * Option rewrites it for letters (`⌥A` arrives as `å`), so neither combo ever
- * matches. A menu-backed action fires through its native accelerator instead.
- * (U5a widens the exemption to shielded actions.)
+ * matches. A menu-backed action fires through its native accelerator instead, and
+ * a shielded one through the shield, which matches the physical key (`e.code`).
  */
-export function isUnreachableChord(chord: Chord, d: { menu: boolean }, mac: boolean): boolean {
-  if (d.menu) return false
+export function isUnreachableChord(
+  chord: Chord,
+  d: { menu: boolean; shield?: boolean },
+  mac: boolean
+): boolean {
+  if (!isNotInTerminal(d)) return false
   if (chord.shift && PUNCT_KEYS.has(chord.key)) return true
   if (mac && chord.alt && /^[A-Z]$/.test(chord.key)) return true
   return false
@@ -887,6 +945,7 @@ export interface ResolvedBinding {
   id: ShortcutActionId
   /** Resolved canonical chord — `null` means the user unbound it. */
   keys: string | null
+  /** This platform's default (`defaultKeysFor`). */
   defaultKeys: string | null
   scope: ShortcutScope
   menu: boolean
@@ -937,8 +996,9 @@ export function scopeChordKey(scope: ShortcutScope, chord: string, mac: boolean)
 function reservedChordKeys(mac: boolean): Set<string> {
   const s = new Set<string>()
   for (const d of KEYBINDINGS) {
-    if (!d.reserved || !d.defaultKeys) continue
-    const c = canonicalizeChord(d.defaultKeys)
+    const keys = defaultKeysFor(d, mac)
+    if (!d.reserved || !keys) continue
+    const c = canonicalizeChord(keys)
     if (c) s.add(scopeChordKey(d.scope, c, mac))
   }
   return s
@@ -1058,7 +1118,8 @@ export function resolveKeybindings(
   // Build the resolved list.
   const list: ResolvedBinding[] = KEYBINDINGS.filter((d) => !d.reserved).map((d) => {
     const has = overridden.has(d.id)
-    const keys = has ? (overrideKeys.get(d.id) ?? null) : d.defaultKeys
+    const defaultKeys = defaultKeysFor(d, mac)
+    const keys = has ? (overrideKeys.get(d.id) ?? null) : defaultKeys
     const source: ResolvedBinding['source'] = !has
       ? 'default'
       : keys === null
@@ -1067,7 +1128,7 @@ export function resolveKeybindings(
     return {
       id: d.id,
       keys,
-      defaultKeys: d.defaultKeys,
+      defaultKeys,
       scope: d.scope,
       menu: d.menu,
       reserved: d.reserved,
