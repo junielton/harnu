@@ -69,7 +69,7 @@ Shortcuts only work while the canvas pane has focus, never while you are typing 
 
 **After you create something, Harnu goes back to Select**, so you draw one thing and are straight back to moving things around. Turn on **Lock** (the padlock, or **Q**) to stay on the tool for as long as you want; press it again to let go.
 
-**Esc** backs out one step at a time: it cancels a shape or arrow you are in the middle of making, otherwise it switches to Select, otherwise it clears the selection.
+**Esc** backs out one step at a time: it cancels a shape or arrow you are in the middle of making, otherwise it switches to Select, otherwise it clears the selection. Beside a Roadmap or Review, each of those Esc presses stays in the canvas; only an Esc with nothing left to back out of closes the view.
 
 In a very narrow pane the toolbar wraps onto extra rows underneath rather than running off the edge or sitting on top of the zoom controls.
 

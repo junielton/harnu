@@ -34,28 +34,33 @@ const chord = (p: Partial<Chord>): Chord => ({
 })
 
 describe('KEYBINDINGS table', () => {
-  it('has 26 rebindable and 5 reserved ids', () => {
-    expect(REBINDABLE_IDS).toHaveLength(26)
+  it('has 108 rebindable and 5 reserved ids', () => {
+    expect(REBINDABLE_IDS).toHaveLength(108)
     expect(RESERVED_IDS).toHaveLength(5)
     expect(RESERVED_IDS).toContain('app.openKeybindings')
     expect(new Set([...REBINDABLE_IDS, ...RESERVED_IDS]).size).toBe(KEYBINDINGS.length)
   })
 
   it('every default chord parses and round-trips to itself', () => {
+    // Both platform defaults (`defaultKeysMac` where a row splits, T486 §10).
     for (const d of KEYBINDINGS) {
-      if (!d.defaultKeys) continue
-      const r = parseChord(d.defaultKeys)
-      expect(r.ok, `${d.id} → ${d.defaultKeys}`).toBe(true)
-      if (r.ok) expect(normalizeChord(r.chord)).toBe(d.defaultKeys)
+      for (const keys of [d.defaultKeys, d.defaultKeysMac]) {
+        if (!keys) continue
+        const r = parseChord(keys)
+        expect(r.ok, `${d.id} → ${keys}`).toBe(true)
+        if (r.ok) expect(normalizeChord(r.chord)).toBe(keys)
+      }
     }
   })
 
   it('every menu-backed default is expressible as an Electron accelerator', () => {
     for (const d of KEYBINDINGS) {
-      if (!d.menu || !d.defaultKeys) continue
-      const r = parseChord(d.defaultKeys)
-      expect(r.ok).toBe(true)
-      if (r.ok) expect(toAccelerator(r.chord)).not.toBeNull()
+      for (const keys of [d.defaultKeys, d.defaultKeysMac]) {
+        if (!d.menu || !keys) continue
+        const r = parseChord(keys)
+        expect(r.ok).toBe(true)
+        if (r.ok) expect(toAccelerator(r.chord)).not.toBeNull()
+      }
     }
   })
 

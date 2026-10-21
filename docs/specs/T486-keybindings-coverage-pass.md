@@ -128,35 +128,39 @@ Two rules for `sidebar.jump`, both required:
 Folder actions target the active folder (§3.10); `folder.rename` targets the cursor row
 first.
 
-| Id                                 | Label (en)                                  | Handler / where it lives                                                                                | Default | Terminal        | Menu |
-| ---------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------- | --------------- | ---- |
-| `folder.add`                       | Add folder                                  | `App.vue:586-591` → `ui.openDialog('addFolder')`                                                        | `Cmd+O` | global          | yes  |
-| `folder.browseFiles`               | Browse files                                | `App.vue:647-653` → `useFolderActions.browseFiles` (`composables/useFolderActions.ts:106`)              | unbound | global          | yes  |
-| `folder.newTerminal`               | Open a terminal                             | `App.vue:654-660` → `useFolderActions.newTerminal` (:118)                                               | unbound | global          | yes  |
-| `folder.openInFileManager`         | Open the active folder in the file manager  | `App.vue:626-632` → `useFolderActions.openInFileManager` (:63)                                          | unbound | global          | yes  |
-| `folder.openInVSCode`              | Open the active folder in VS Code           | `App.vue:633-639` → `useFolderActions.openInVSCode` (:75)                                               | unbound | global          | yes  |
-| `folder.openGithubPulls`           | Open pull requests on GitHub                | `App.vue:640-646` → `useFolderActions.openGithubPulls` (:94)                                            | unbound | global          | yes  |
-| `folder.rename`                    | Rename the folder…                          | `FolderMenu.vue:432-436` → `ui.openRenameFolder` (`stores/ui.ts:626`)                                   | `F2`    | not-in-terminal | no   |
-| `folder.newFolderTerminal`         | New terminal session in the folder          | `FolderMenu.vue:398-405` → `sessions.createFolderTerminal` (`stores/sessions.ts:3453`)                  | unbound | not-in-terminal | no   |
-| `folder.toggleBranchAlias`         | Name the folder after its branch            | `FolderMenu.vue:437-442` (`onToggleAliasFromBranch` :354) → `sessions.setFolderAliasFromBranch` (:3673) | unbound | not-in-terminal | no   |
-| `folder.bootOptions`               | Claude boot options…                        | `FolderMenu.vue:443-448` → `ui.openClaudeBoot` (`stores/ui.ts:590`)                                     | unbound | not-in-terminal | no   |
-| `folder.projectMemory`             | Open project memory                         | `FolderMenu.vue:452-457` (`onProjectMemory` :79) → `helpers.addMemoryHelper` (`stores/helpers.ts:786`)  | unbound | not-in-terminal | no   |
-| `folder.memoryLocation`            | Memory location…                            | `FolderMenu.vue:461-466` → `ui.openMemoryLocation` (`stores/ui.ts:638`)                                 | unbound | not-in-terminal | no   |
-| `folder.newSubfolder`              | New folder…                                 | `FolderMenu.vue:490-496` → `ui.openNewFolder` (`stores/ui.ts:614`)                                      | unbound | not-in-terminal | no   |
-| `folder.openSubfolder`             | Open a subfolder…                           | `FolderMenu.vue:497-502` → `ui.openOpenSubfolder` (`stores/ui.ts:620`)                                  | unbound | not-in-terminal | no   |
-| `folder.newWorktree`               | New worktree…                               | `FolderMenu.vue:506-516` → `ui.openNewWorktree` (`stores/ui.ts:608`)                                    | unbound | not-in-terminal | no   |
-| `folder.worktreeMd`                | Create or open WORKTREE.md                  | `FolderMenu.vue:521-531` (`onWorktreeMd` :112-137)                                                      | unbound | not-in-terminal | no   |
-| `folder.askAgentWorktreeMd`        | Ask an agent to write WORKTREE.md           | `FolderMenu.vue:532-537` → `sessions.dispatchCardSession` (:3104)                                       | unbound | not-in-terminal | no   |
-| `folder.toggleIntercept`           | Toggle intercept here                       | `FolderMenu.vue:575-580` → `sessions.setFolderInterceptActive` (:3636)                                  | unbound | not-in-terminal | no   |
-| `folder.toggleAutoOrganize`        | Toggle auto-organize into cards             | `FolderMenu.vue:583-594` → `sessions.setFolderAutoOrganize` (:3708)                                     | unbound | not-in-terminal | no   |
-| `folder.toggleOrchestratorDefault` | Toggle "new sessions start as Orchestrator" | `FolderMenu.vue:597-604` → `sessions.setFolderOrchestratorDefault` (:3689)                              | unbound | not-in-terminal | no   |
-| `folder.toggleHidden`              | Hide or unhide the folder                   | `FolderMenu.vue:605-617` → `sessions.dismissFolder` (:3599) / `unhideFolder` (:3609)                    | unbound | not-in-terminal | no   |
-| `folder.removeWorktree`            | Remove the worktree…                        | `FolderMenu.vue:620-632` → `ui.openRemoveWorktree` (`stores/ui.ts:602`), which keeps its confirm dialog | unbound | not-in-terminal | no   |
-| `folder.toggleOlder`               | Show or hide older sessions                 | `SidebarFolder.vue:624` (`peek('older')` :357) → `sessions.toggleRevealOlder`                           | unbound | not-in-terminal | no   |
-| `folder.toggleArchived`            | Show or hide archived sessions              | `SidebarFolder.vue:624` (`peek('archived')`) → `sessions.toggleRevealArchived`                          | unbound | not-in-terminal | no   |
-| `repoGroup.rename`                 | Rename the repo group…                      | `RepoGroupHeader.vue:87-90` → `ui.openRenameRepo` (`stores/ui.ts:632`)                                  | unbound | not-in-terminal | no   |
-| `repoGroup.resetName`              | Reset the repo group name                   | `RepoGroupHeader.vue:92-95` → `sessions.setGroupAlias(key, '')` (:980)                                  | unbound | not-in-terminal | no   |
-| `repoGroup.cleanup`                | Clean up this repo                          | `RepoGroupHeader.vue:104-109` → `ui.openCleanup(mainWorktreePath)` (`stores/ui.ts:809`)                 | unbound | not-in-terminal | no   |
+The folder and repo-group labels follow the visible menu wording, so a search types what
+the menu shows; a toggle lists both of its menu labels (operator / orchestrator decision,
+2026-10-20).
+
+| Id                                 | Label (en)                                                                  | Handler / where it lives                                                                                | Default | Terminal        | Menu |
+| ---------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------- | --------------- | ---- |
+| `folder.add`                       | Add folder                                                                  | `App.vue:586-591` → `ui.openDialog('addFolder')`                                                        | `Cmd+O` | global          | yes  |
+| `folder.browseFiles`               | Browse files                                                                | `App.vue:647-653` → `useFolderActions.browseFiles` (`composables/useFolderActions.ts:106`)              | unbound | global          | yes  |
+| `folder.newTerminal`               | Open a terminal                                                             | `App.vue:654-660` → `useFolderActions.newTerminal` (:118)                                               | unbound | global          | yes  |
+| `folder.openInFileManager`         | Open the active folder in the file manager                                  | `App.vue:626-632` → `useFolderActions.openInFileManager` (:63)                                          | unbound | global          | yes  |
+| `folder.openInVSCode`              | Open the active folder in VS Code                                           | `App.vue:633-639` → `useFolderActions.openInVSCode` (:75)                                               | unbound | global          | yes  |
+| `folder.openGithubPulls`           | Open pull requests on GitHub                                                | `App.vue:640-646` → `useFolderActions.openGithubPulls` (:94)                                            | unbound | global          | yes  |
+| `folder.rename`                    | Rename the folder…                                                          | `FolderMenu.vue:432-436` → `ui.openRenameFolder` (`stores/ui.ts:626`)                                   | `F2`    | not-in-terminal | no   |
+| `folder.newFolderTerminal`         | New terminal session in the folder                                          | `FolderMenu.vue:398-405` → `sessions.createFolderTerminal` (`stores/sessions.ts:3453`)                  | unbound | not-in-terminal | no   |
+| `folder.toggleBranchAlias`         | Use branch as name / Use folder name                                        | `FolderMenu.vue:437-442` (`onToggleAliasFromBranch` :354) → `sessions.setFolderAliasFromBranch` (:3673) | unbound | not-in-terminal | no   |
+| `folder.bootOptions`               | Startup options…                                                            | `FolderMenu.vue:443-448` → `ui.openClaudeBoot` (`stores/ui.ts:590`)                                     | unbound | not-in-terminal | no   |
+| `folder.projectMemory`             | Project memory…                                                             | `FolderMenu.vue:452-457` (`onProjectMemory` :79) → `helpers.addMemoryHelper` (`stores/helpers.ts:786`)  | unbound | not-in-terminal | no   |
+| `folder.memoryLocation`            | Store memory in…                                                            | `FolderMenu.vue:461-466` → `ui.openMemoryLocation` (`stores/ui.ts:638`)                                 | unbound | not-in-terminal | no   |
+| `folder.newSubfolder`              | New folder…                                                                 | `FolderMenu.vue:490-496` → `ui.openNewFolder` (`stores/ui.ts:614`)                                      | unbound | not-in-terminal | no   |
+| `folder.openSubfolder`             | Open subfolder…                                                             | `FolderMenu.vue:497-502` → `ui.openOpenSubfolder` (`stores/ui.ts:620`)                                  | unbound | not-in-terminal | no   |
+| `folder.newWorktree`               | New worktree…                                                               | `FolderMenu.vue:506-516` → `ui.openNewWorktree` (`stores/ui.ts:608`)                                    | unbound | not-in-terminal | no   |
+| `folder.worktreeMd`                | Create WORKTREE.md / Open WORKTREE.md                                       | `FolderMenu.vue:521-531` (`onWorktreeMd` :112-137)                                                      | unbound | not-in-terminal | no   |
+| `folder.askAgentWorktreeMd`        | Ask an agent to write WORKTREE.md                                           | `FolderMenu.vue:532-537` → `sessions.dispatchCardSession` (:3104)                                       | unbound | not-in-terminal | no   |
+| `folder.toggleIntercept`           | Intercept tool calls here / Stop intercepting here                          | `FolderMenu.vue:575-580` → `sessions.setFolderInterceptActive` (:3636)                                  | unbound | not-in-terminal | no   |
+| `folder.toggleAutoOrganize`        | Turn on auto-organize / Turn off auto-organize                              | `FolderMenu.vue:583-594` → `sessions.setFolderAutoOrganize` (:3708)                                     | unbound | not-in-terminal | no   |
+| `folder.toggleOrchestratorDefault` | New sessions start as Orchestrator / Stop starting sessions as Orchestrator | `FolderMenu.vue:597-604` → `sessions.setFolderOrchestratorDefault` (:3689)                              | unbound | not-in-terminal | no   |
+| `folder.toggleHidden`              | Hide / Unhide folder                                                        | `FolderMenu.vue:605-617` → `sessions.dismissFolder` (:3599) / `unhideFolder` (:3609)                    | unbound | not-in-terminal | no   |
+| `folder.removeWorktree`            | Remove worktree                                                             | `FolderMenu.vue:620-632` → `ui.openRemoveWorktree` (`stores/ui.ts:602`), which keeps its confirm dialog | unbound | not-in-terminal | no   |
+| `folder.toggleOlder`               | Show older sessions / Hide older sessions                                   | `SidebarFolder.vue:624` (`peek('older')` :357) → `sessions.toggleRevealOlder`                           | unbound | not-in-terminal | no   |
+| `folder.toggleArchived`            | Show archived / Hide archived                                               | `SidebarFolder.vue:624` (`peek('archived')`) → `sessions.toggleRevealArchived`                          | unbound | not-in-terminal | no   |
+| `repoGroup.rename`                 | Rename group                                                                | `RepoGroupHeader.vue:87-90` → `ui.openRenameRepo` (`stores/ui.ts:632`)                                  | unbound | not-in-terminal | no   |
+| `repoGroup.resetName`              | Reset name (group)                                                          | `RepoGroupHeader.vue:92-95` → `sessions.setGroupAlias(key, '')` (:980)                                  | unbound | not-in-terminal | no   |
+| `repoGroup.cleanup`                | Cleanup… (repo)                                                             | `RepoGroupHeader.vue:104-109` → `ui.openCleanup(mainWorktreePath)` (`stores/ui.ts:809`)                 | unbound | not-in-terminal | no   |
 
 ### 3.5 Views (layout and popovers)
 
@@ -658,15 +662,24 @@ focus between the main terminal and helper panes). `useTerminalFocus`
 - Shielded (§7.4) so it works from inside a terminal — the main use. Works from a text
   field too (VS Code does the same). Inert under `'modal'` scope.
 - Takeover open: the main terminal is not in the ring; helper panes beside Roadmap /
-  Review are. A takeover with no helper stack (Usage Dashboard, Cleanup, …) → empty ring.
+  Review are. A takeover with no helper stack (Usage Dashboard, Cleanup, …) → empty ring
+  — superseded, see the note below.
 - Non-xterm panes need a visible focus indicator (`design.md` §6 addition, U5b): a
   1px `--accent-line` inset outline on the pane root when it holds focus. xterm panes
   show their own cursor and need none.
 
+> **Decided 2026-10-20 (U5b ship).** The ring follows `showHelperStack`, i.e. what is
+> on screen: when the operator keeps the helper stack visible beside a takeover
+> (Cleanup, Usage Dashboard, …), those helper panes ARE in the ring; only the covered
+> main terminal leaves it. The ring is empty beside a takeover only when no stack is
+> shown there. AC-23's "excludes a covered main terminal" holds unchanged; its
+> "empty ring is a no-op" applies to that no-stack case.
+
 ### 8.2 `terminal.toggle`
 
 Precondition: `helpers.currentWorktreePath` is set (else no-op). `shell` = the first
-`type: 'shell'` pane in the current stack.
+`type: 'shell'` pane in the current stack that is not an agent terminal (T474) — an
+agent terminal stays in the F6 ring but the toggle never takes it (decided 2026-10-20).
 
 1. **No shell pane** → `helpers.addShellHelper(wt, wt)` (`stores/helpers.ts:696`). The
    add reveals a collapsed panel (`paneRevealTick`, `App.vue:440-443`) and the new

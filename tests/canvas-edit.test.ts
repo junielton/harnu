@@ -49,6 +49,8 @@ import {
 } from '../src/main/canvas-core'
 import { i18n } from '@renderer/i18n'
 import { installJsdomSvgShim, svgHost } from './helpers/jsdom-svg'
+import { useUiStore } from '../src/renderer/src/stores/ui'
+import { mountCloseTakeover, pressEsc } from './helpers/close-takeover-harness'
 
 installJsdomSvgShim()
 
@@ -1052,6 +1054,28 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     w.unmount()
   })
 
+  it('T486 AC-27 — pane.close (closeRegion) on a dirty canvas keeps the discard guard', async () => {
+    const { closeRegion } = await import('../src/renderer/src/composables/useTerminalFocus')
+    const w = mountPane()
+    await settle()
+    const helpers = (await import('../src/renderer/src/stores/helpers')).useHelpersStore()
+    const removed = vi.spyOn(helpers, 'removeHelper')
+
+    armRectangle(w.element)
+    dragOnBlankCanvas(w.element, [200, 200], [400, 320])
+    await settle()
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+
+    expect(closeRegion('h-canvas')).toBe(true)
+    await settle()
+    // Held by the guard: the discard toast decides, not the chord.
+    expect(removed).not.toHaveBeenCalled()
+    const ui = (await import('../src/renderer/src/stores/ui')).useUiStore()
+    expect(ui.toasts.some((t) => t.action)).toBe(true)
+    w.unmount()
+  })
+
   it('pressing Close twice leaves ONE warning, not a stack of permanent ones', async () => {
     const w = mountPane()
     await settle()
@@ -1150,6 +1174,81 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     await settle()
     expect(w.text()).toContain('Pick a shape from the toolbar')
     w.unmount()
+  })
+})
+
+// T486 AC-20 — a Diagram pane beside Roadmap or Review: Esc clears its
+// selection first (document capture, stopped), and only the next Esc reaches
+// `view.closeTakeover`.
+describe('DiagramPane — Esc peels the selection before the takeover', () => {
+  it('first Esc clears the selection, the second closes the Roadmap', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openRoadmap('/wt', 'wt')
+    const w = mountPane()
+    await settle()
+    const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
+    body.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', ctrlKey: true, bubbles: true }))
+    await settle()
+
+    await pressEsc(body)
+    await settle()
+    expect(ui.activeView?.id).toBe('roadmap')
+    // Selection empty now: Delete has nothing to remove, so Save stays absent.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }))
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+
+    await pressEsc(body)
+    expect(ui.activeView).toBeNull()
+    w.unmount()
+    harness.unmount()
+  })
+
+  it('with nothing selected the first Esc closes the takeover', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openReview('/wt', null)
+    const w = mountPane()
+    await settle()
+    const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
+    body.focus()
+    await pressEsc(body)
+    expect(ui.activeView).toBeNull()
+    w.unmount()
+    harness.unmount()
+  })
+
+  // T536 put a tool ladder in front of the selection (tool → Select → clear):
+  // every rung it peels stays in the pane, so the takeover waits for the last Esc.
+  it('a drawing tool is peeled back to Select before the takeover closes', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openRoadmap('/wt', 'wt')
+    const w = mountPane()
+    await settle()
+    const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
+    body.focus()
+    const pressed = (): string[] =>
+      w
+        .findAll('[data-testid^="canvas-tool-"][aria-pressed="true"]')
+        .map((b) => b.attributes('data-testid')!.replace('canvas-tool-', ''))
+        .filter((id) => id !== 'lock')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }))
+    await settle()
+    expect(pressed()).toEqual(['rectangle'])
+
+    await pressEsc(body)
+    await settle()
+    expect(pressed()).toEqual(['select'])
+    expect(ui.activeView?.id).toBe('roadmap')
+
+    await pressEsc(body)
+    expect(ui.activeView).toBeNull()
+    w.unmount()
+    harness.unmount()
   })
 })
 

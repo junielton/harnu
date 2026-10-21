@@ -15,6 +15,7 @@ import {
   selectionSnapshot,
   stubReviewApi
 } from './helpers/review-selection-fixture'
+import { mountCloseTakeover, pressEsc } from './helpers/close-takeover-harness'
 
 /**
  * T257 U1 — the diff's selection, driven through the real pane.
@@ -411,5 +412,53 @@ describe('U1-AC-12 — strings', () => {
   it('the keys carry no client identifier shapes', () => {
     const all = JSON.stringify(en.review.selection)
     expect(all).not.toMatch(/\b[A-Z]{2,6}-\d{3,}\b/)
+  })
+})
+
+// T486 §6.1 — Review is a takeover `view.closeTakeover` closes on Esc. A line
+// selection peels first, wherever focus sits in Review (document capture,
+// stopped only when it cleared something); a text field or a pane beside Review
+// keeps its own Esc.
+describe('T486 — Esc peels the Review selection before the takeover', () => {
+  it('Esc with a line selection clears it and Review stays open; the next Esc closes Review', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    await press(gutters()[2])
+    expect(selection().live).not.toBeNull()
+    expect(document.activeElement).toBe(document.body)
+
+    await pressEsc()
+    expect(selection().live).toBeNull()
+    expect(ui.activeView?.id).toBe('review')
+
+    await pressEsc()
+    expect(ui.activeView).toBeNull()
+    harness.unmount()
+  })
+
+  it('an Esc in a pane beside Review (the companion) is left to that pane', async () => {
+    await press(gutters()[2])
+    const pane = document.createElement('div')
+    pane.setAttribute('data-focus-region', 'h-companion')
+    const inner = document.createElement('button')
+    pane.appendChild(inner)
+    document.body.appendChild(pane)
+    inner.focus()
+    let reached = false
+    inner.addEventListener('keydown', () => (reached = true))
+
+    await pressEsc(inner)
+    expect(reached).toBe(true)
+    expect(selection().live).not.toBeNull()
+  })
+
+  it('an Esc typed in a text field keeps the selection', async () => {
+    await press(gutters()[2])
+    const field = document.createElement('textarea')
+    document.body.appendChild(field)
+    field.focus()
+
+    await pressEsc(field)
+    expect(selection().live).not.toBeNull()
   })
 })

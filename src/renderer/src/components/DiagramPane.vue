@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { useFocusRegion } from '../composables/useTerminalFocus'
 import { useI18n } from 'vue-i18n'
 import {
   Maximize2,
@@ -20,6 +21,7 @@ import CanvasPropertiesPanel from './CanvasPropertiesPanel.vue'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useThemeStore } from '../stores/theme'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import {
   applyCanvasPalette,
   createCanvasGraph,
@@ -135,6 +137,7 @@ const { t } = useI18n()
 const helpers = useHelpersStore()
 const theme = useThemeStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 
 /** The pane's persisted `filePath` (HelperStack guarantees a canvas pane). */
 const filePath = computed<string>(() => (props.pane as HelperPane).filePath ?? '')
@@ -1631,6 +1634,7 @@ async function handleCanvasChanged(payload: { path: string; writerId?: string })
 onMounted(async () => {
   unsubscribeCanvasChanged = window.api.onCanvasChanged(handleCanvasChanged)
   window.addEventListener('keydown', onWindowKeydown)
+  document.addEventListener('keydown', onEscCapture, true)
   window.addEventListener('keyup', onWindowKeyup)
   window.addEventListener('blur', onWindowBlur)
   // Read only once the watch is live (BUG-210): a write between the read and the
@@ -1666,6 +1670,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   unmounted = true
   window.removeEventListener('keydown', onWindowKeydown)
+  document.removeEventListener('keydown', onEscCapture, true)
   window.removeEventListener('keyup', onWindowKeyup)
   window.removeEventListener('blur', onWindowBlur)
   endGesture()
@@ -1907,10 +1912,9 @@ function onWindowKeydown(ev: KeyboardEvent): void {
     return
   }
   if (ev.key === 'Escape') {
-    const outcome = escapeOutcome(toolState.value, gesture !== null)
-    if (outcome === 'cancel-gesture') cancelGesture()
-    else if (outcome === 'to-select') setToolState(selectTool(toolState.value, 'select'))
-    else graph.value?.cleanSelection()
+    // Normally consumed by `onEscCapture` first; reached only by an Esc that
+    // starts at the window (nothing left to peel then — this is a no-op).
+    peelEsc()
     return
   }
   const pick = toolForKey(ev)
@@ -1936,6 +1940,35 @@ function onWindowBlur(): void {
   // another window), so it goes too — no preview left on screen.
   cancelGesture()
   if (toolState.value.spaceHeld) setToolState(releaseSpace(toolState.value))
+}
+
+/**
+ * One step of the Esc ladder (spec §4.3): cancel a gesture in flight, else leave
+ * a drawing tool for Select, else clear the selection. Returns whether it did
+ * anything — `false` means the pane had nothing to peel.
+ */
+function peelEsc(): boolean {
+  const outcome = escapeOutcome(toolState.value, gesture !== null)
+  if (outcome === 'cancel-gesture') cancelGesture()
+  else if (outcome === 'to-select') setToolState(selectTool(toolState.value, 'select'))
+  else {
+    const g = graph.value
+    if (!g || g.getSelectedCells().length === 0) return false
+    g.cleanSelection()
+  }
+  return true
+}
+
+/**
+ * Esc peels this pane — in the document CAPTURE phase, and stopped, so a Roadmap
+ * or Review takeover behind this pane stays open until the pane has nothing left
+ * to peel (T486 §6.1). Document, not window: a dialog or menu opened later listens
+ * in window capture and stops Esc, so it keeps its Esc instead of sharing it with
+ * this pane. With nothing to peel the key passes on to `view.closeTakeover`.
+ */
+function onEscCapture(ev: KeyboardEvent): void {
+  if (ev.key !== 'Escape' || !hasFocus() || rename.value) return
+  if (peelEsc()) ev.stopPropagation()
 }
 
 // ── Header actions ────────────────────────────────────────────────────────
@@ -1977,12 +2010,23 @@ function onClose(): void {
 function onHeaderMouseDown(ev: MouseEvent): void {
   if (props.resizable) emit('headerMouseDown', ev)
 }
+
+// T486 U5b — a region of the pane focus ring: F6 focuses its canvas body (where its own keys live), `pane.close`
+// runs the header X's close (the discard guard holds). The root draws the design.md §6
+// "Pane focus" outline while focus is inside.
+const rootEl = ref<HTMLDivElement | null>(null)
+useFocusRegion(props.pane.id, rootEl, {
+  focus: () => focusBody(),
+  close: onClose
+})
 </script>
 
 <template>
   <div
+    ref="rootEl"
     data-testid="diagram-pane"
-    class="flex h-full w-full flex-col overflow-hidden bg-bg"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg no-default-ring focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    :data-focus-region="pane.id"
     :aria-label="$t('diagramPane.label')"
   >
     <header
@@ -2088,7 +2132,12 @@ function onHeaderMouseDown(ev: MouseEvent): void {
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
+        :title="
+          keybindings.withChord(
+            isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize'),
+            'pane.toggleMaximize'
+          )
+        "
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         @mousedown.stop
         @click="onToggleMaximize"
@@ -2099,7 +2148,7 @@ function onHeaderMouseDown(ev: MouseEvent): void {
       <button
         class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="$t('helperPane.close')"
+        :title="keybindings.withChord($t('helperPane.close'), 'pane.close')"
         :aria-label="$t('helperPane.close')"
         @mousedown.stop
         @click="onClose"
@@ -2114,7 +2163,7 @@ function onHeaderMouseDown(ev: MouseEvent): void {
     <div
       ref="bodyEl"
       tabindex="0"
-      class="relative min-h-0 flex-1 overflow-hidden outline-none"
+      class="no-default-ring relative min-h-0 flex-1 overflow-hidden outline-none"
       :style="{ cursor: bodyCursor }"
       @mousedown.capture="onBodyMouseDownCapture"
       @pointerdown="focusBody"

@@ -544,38 +544,74 @@ session timestamps, chart axes, separators, and icons.
 - **Render for the viewer's platform** (T1). On macOS use the symbols (`⌘`, `⇧`, `⌥`, `⌃`, `↩`, `⌫`) concatenated with no separator (`⌘⇧P`); on every other platform spell the modifiers out (`Ctrl`, `Shift`, `Alt`) and join with `+` (`Ctrl+Shift+P`). `Cmd`/`Mod` resolves to Control off macOS, so a `Cmd+K` binding shows as `⌘K` on a Mac and `Ctrl+K` on Linux — same binding, honest hint. Arrows stay `↑ ↓ ← →` everywhere.
 - **Every displayed chord is derived, never a literal.** The one source of truth is `src/main/keybindings-core.ts` (`KEYBINDINGS` + `renderChord`); `App.vue`, `menu.ts`, `EmptyState.vue` and the `SessionMenu` rename hint all read from it. A `<kbd>` that disagrees with the chord that fires is a bug the structure now prevents. Hints reflect the user's resolved `keybindings.json`, not just the default, and update live on save — the native menu is rebuilt on the same change so its accelerators stay in step.
 
+- **Tooltips carry the chord** (T486 U6). A button whose action has a resolved chord appends it in parentheses to its native `title` — "Hide sidebar (⌘B)" on macOS, "Hide sidebar (Ctrl+B)" elsewhere — through `keybindings.withChord(label, id)` (`keybindings.withChord` = `"{label} ({chord})"`). Never a literal: the chord follows a rebind live, and an unbound action shows the plain label. Only the `title` gains the chord; `aria-label` stays the plain label. Context-menu items show the same resolved chord in their trailing hint slot (mono 10.5px, `--text-4`), and only while the item's action has one.
+
 Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P` / `Ctrl+Shift+P` (switch project), `⌘R` / `Ctrl+R` (rename), `⌫` (delete).
 
 **Shortcut table** (renderer; the app's native menu mirrors the same ones — Mac notation shown, see the platform-rendering rule above):
 
-| Shortcut           | Action                                                                                                                                                                                                                     | Scope    | Notes                                                                                                                                                                                                               |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `⌘K`               | Open command palette                                                                                                                                                                                                       | global   | Also accepts `⌘⇧P` to open pre-filtered to projects                                                                                                                                                                 |
-| `⌘N`               | New session in the current folder                                                                                                                                                                                          | global   | Spawns `claude` in `sessions.selectedPath`                                                                                                                                                                          |
-| `⌘O`               | Add folder                                                                                                                                                                                                                 | global   | Opens `AddFolderDialog`                                                                                                                                                                                             |
-| `⌘R`               | Rename selected session                                                                                                                                                                                                    | global   | Overrides Chromium's default reload; reload moves to `F5`                                                                                                                                                           |
-| `⌘⇧R`              | Resume last session                                                                                                                                                                                                        | global   | Most recent by `lastActivity`                                                                                                                                                                                       |
-| `⌘⇧A`              | Expand/collapse the Inbox rail                                                                                                                                                                                             | global   | 4th column "Needs you"; same helper as the Topbar button. **Never hides** — `minimized`/`hidden` always expand                                                                                                      |
-| `⌘B`               | Hide/show the left sidebar (folders/sessions) — "full screen for the terminal"                                                                                                                                             | global   | Owned by the native menu (`&View`), so the accelerator is consumed **before** xterm (same as `⌘N`/`⌘K`); the renderer double-binds as a fallback. Also reopens via the Topbar's `PanelLeft` button (always visible) |
-| `⌘⌥B`              | Hide/show the right auxiliary panel (helper-stack / split)                                                                                                                                                                 | global   | Same scheme (`&View` menu + fallback). Hides **even with panes**; visual no-op with no panes. Reopens via the Topbar's `PanelRight` button (visible whenever there are panes)                                       |
-| `⌘W`               | Close selected session — **unless the terminal is focused**, in which case the shortcut is forwarded to xterm/PTY (becomes `\u0017`, used by programs like `nano` to delete the previous word). `⌘Q` still closes the app. | global   | Suppressed by `enabled: () => !terminalFocused.value` (T-4.5)                                                                                                                                                       |
-| `⌥←` / `⌘[`        | Back to the previous session you viewed (browser-style history; also mouse button 3 — back)                                                                                                                                | global   | Native menu (`&Session`). Linux/Win: the renderer stops `⌥←` in the capture phase so xterm can't eat it. macOS: renderer fallback. From Folder View/a takeover: back to the session you left                        |
-| `⌥→` / `⌘]`        | Forward through the session history after a Back (also mouse button 4 — forward)                                                                                                                                           | global   | Same scheme. Skips closed sessions; silent at the ends; 50 entries, in memory only. `⌥←`/`⌥→` no longer reach the terminal                                                                                          |
-| `↑ / ↓ / ← / →`    | Sidebar navigation                                                                                                                                                                                                         | sidebar  | Only when the sidebar has focus                                                                                                                                                                                     |
-| `Esc`              | Cancel edit / close overlay                                                                                                                                                                                                | modal    | Priority: palette > popover > input                                                                                                                                                                                 |
-| `⌘⇧B`              | Toggle the Fleet rail                                                                                                                                                                                                      | global   | Renderer-only (no menu item) — does not fire while the terminal pane has focus                                                                                                                                      |
-| `⌘⇧D`              | Review the active folder's branch                                                                                                                                                                                          | global   | Renderer-only; opens the Review pane (T164)                                                                                                                                                                         |
-| `⌘C` / `⌃⇧C`       | Copy terminal selection                                                                                                                                                                                                    | terminal | Only with a selection; reads `term.getSelection()` (xterm's selection isn't a native DOM selection). On Mac, `editMenu` may intercept `⌘C` before xterm — see `menu.ts`                                             |
-| `⌘V` / `⌃⇧V`       | Paste into the terminal                                                                                                                                                                                                    | terminal | Via `term.paste()` — respects _bracketed paste_, so a multi-line paste doesn't auto-submit in the Claude TUI                                                                                                        |
-| `⇧↩`               | Line break (without sending)                                                                                                                                                                                               | terminal | Sends `\u000a` (LF, = Ctrl+J) to the PTY — Claude treats it as a newline; `Enter` alone (`\r`) sends. xterm's default ignores `Shift` and would send                                                                |
-| `⌃⌫`               | Delete the previous word                                                                                                                                                                                                   | terminal | Sends `\u0017` (Ctrl+W) to the PTY; xterm's default for this chord is `\b`, which the Claude TUI ignores                                                                                                            |
-| `⇧⌫`               | Delete the previous character                                                                                                                                                                                              | terminal | Sends `\u007f` (DEL), same as `Backspace`; xterm's default (`\b`) did nothing                                                                                                                                       |
-| `⌘=` / `⌘−` / `⌘0` | Terminal font: bigger / smaller / reset                                                                                                                                                                                    | terminal | `⌃` on Linux/Win. `settings.setFontSize` (8–32); the watcher propagates it to every live terminal                                                                                                                   |
+| Shortcut           | Action                                                                                                                                                                                                                                                                    | Scope    | Notes                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `⌘K`               | Open command palette                                                                                                                                                                                                                                                      | global   | Also accepts `⌘⇧P` to open pre-filtered to projects                                                                                                                                                                                                                                                                                                                                                              |
+| `⌘N`               | New session in the current folder                                                                                                                                                                                                                                         | global   | Spawns `claude` in `sessions.selectedPath`                                                                                                                                                                                                                                                                                                                                                                       |
+| `⌘O`               | Add folder                                                                                                                                                                                                                                                                | global   | Opens `AddFolderDialog`                                                                                                                                                                                                                                                                                                                                                                                          |
+| `⌘R`               | Rename selected session                                                                                                                                                                                                                                                   | global   | Overrides Chromium's default reload; reload moves to `F5`                                                                                                                                                                                                                                                                                                                                                        |
+| `⌘⇧R`              | Resume last session                                                                                                                                                                                                                                                       | global   | Most recent by `lastActivity`                                                                                                                                                                                                                                                                                                                                                                                    |
+| `⌘⇧A`              | Expand/collapse the Inbox rail                                                                                                                                                                                                                                            | global   | 4th column "Needs you"; same helper as the Topbar button. **Never hides** — `minimized`/`hidden` always expand                                                                                                                                                                                                                                                                                                   |
+| `⌘B`               | Hide/show the left sidebar (folders/sessions) — "full screen for the terminal"                                                                                                                                                                                            | global   | Owned by the native menu (`&View`), so the accelerator is consumed **before** xterm (same as `⌘N`/`⌘K`); the renderer double-binds as a fallback. Also reopens via the Topbar's `PanelLeft` button (always visible)                                                                                                                                                                                              |
+| `⌘⌥B`              | Hide/show the right auxiliary panel (helper-stack / split)                                                                                                                                                                                                                | global   | Same scheme (`&View` menu + fallback). Hides **even with panes**; visual no-op with no panes. Reopens via the Topbar's `PanelRight` button (visible whenever there are panes)                                                                                                                                                                                                                                    |
+| `⌘W`               | Close selected session — **unless the terminal is focused**, in which case the shortcut is forwarded to xterm/PTY (becomes `\u0017`, used by programs like `nano` to delete the previous word). `⌘Q` still closes the app.                                                | global   | Suppressed by `enabled: () => !terminalFocused.value` (T-4.5)                                                                                                                                                                                                                                                                                                                                                    |
+| `⌥←` / `⌘[`        | Back to the previous session you viewed (browser-style history; also mouse button 3 — back)                                                                                                                                                                               | global   | Rebindable (`nav.back`, T486 U5a); the default is per platform — `⌥←` / `Alt+←` off macOS, `⌘[` on macOS. Native menu (`&Session`), and **shielded**: the chord is taken in the window capture phase before xterm sees it. Off macOS the shield only stops propagation, so the accelerator still fires and the Alt release never toggles the menu bar. From Folder View/a takeover: back to the session you left |
+| `⌥→` / `⌘]`        | Forward through the session history after a Back (also mouse button 4 — forward)                                                                                                                                                                                          | global   | Same scheme (`nav.forward`). Skips closed sessions; silent at the ends; 50 entries, in memory only. The bound chord no longer reaches the terminal                                                                                                                                                                                                                                                               |
+| `↑ / ↓ / ← / →`    | Sidebar navigation                                                                                                                                                                                                                                                        | sidebar  | Only when the sidebar has focus                                                                                                                                                                                                                                                                                                                                                                                  |
+| `⌘⇧F`              | Jump to a folder or session (the sidebar jump palette)                                                                                                                                                                                                                    | global   | Renderer-only, but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter). Expands a collapsed sidebar first. Not text-entry gated: a second press closes the palette even while its own input has focus                                                                                                                                                                                    |
+| `⌘↩`               | Open the cursor session (else the selected one) to the side, as a resume pane                                                                                                                                                                                             | global   | Renderer-only; a key press in a text field leaves it alone. Inside a terminal the program gets CR                                                                                                                                                                                                                                                                                                                |
+| `⇧F10`             | Open the Session menu or Folder menu for the cursor row (else the selected session, else the active folder), anchored at the row                                                                                                                                          | global   | Renderer-only; the menu opens with its first item focused. A repo-group cursor row is a no-op. Inside a terminal the program gets F10. On a Mac keyboard, `Fn+⇧F10` unless F-keys are standard                                                                                                                                                                                                                   |
+| `F2`               | Rename the cursor folder row (else the active folder) — opens the Rename folder dialog                                                                                                                                                                                    | global   | Renderer-only; a key press in a text field leaves it alone. A session or repo-group cursor row is a no-op (a session renames with `⌘R`). Inside a terminal the program gets F2. On a Mac keyboard, `Fn+F2` unless F-keys are standard                                                                                                                                                                            |
+| `Esc`              | Close the top layer: a dialog, palette, menu or popover; else the takeover's own state (Cleanup selection, PR Stack filter, Roadmap dispatch confirm, a Review line selection, the Diagram's shape in progress, drawing tool or selection); else the open takeover itself | global   | One layer per press. The takeover close is `view.closeTakeover` (rebindable, renderer-only): off while a popover is open, and it ignores a press made in a text field. In a terminal the program gets Esc (Claude Code cancels with it)                                                                                                                                                                          |
+| `⌘⌥S`              | Open Settings on the Keyboard Shortcuts tab                                                                                                                                                                                                                               | global   | Native menu: macOS app menu after Settings…, View elsewhere. Inert while Settings is open. On Windows layouts where Ctrl+Alt is AltGr (Polish: AltGr+S types ś) the chord may type a character instead                                                                                                                                                                                                           |
+| `⌘⇧B`              | Toggle the Fleet rail                                                                                                                                                                                                                                                     | global   | Renderer-only (no menu item), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                                    |
+| `⌘⇧D`              | Review the active folder's branch                                                                                                                                                                                                                                         | global   | Renderer-only; opens the Review pane (T164)                                                                                                                                                                                                                                                                                                                                                                      |
+| `F6` / `⇧F6`       | Focus the next / previous pane: the main terminal, then the helper panes in stack order, wrapping                                                                                                                                                                         | global   | **Shielded** (`pane.focusNext` / `pane.focusPrev`): works while a terminal holds focus, so the program there no longer gets F6. Inert while a dialog, palette or menu is open. On a Mac keyboard: Fn+F6 / Fn+⇧F6. See "Pane focus"                                                                                                                                                                               |
+| `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one                                                                                                                                                                                 | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
+| `⌘C` / `⌃⇧C`       | Copy terminal selection                                                                                                                                                                                                                                                   | terminal | Only with a selection; reads `term.getSelection()` (xterm's selection isn't a native DOM selection). On Mac, `editMenu` may intercept `⌘C` before xterm — see `menu.ts`                                                                                                                                                                                                                                          |
+| `⌘V` / `⌃⇧V`       | Paste into the terminal                                                                                                                                                                                                                                                   | terminal | Via `term.paste()` — respects _bracketed paste_, so a multi-line paste doesn't auto-submit in the Claude TUI                                                                                                                                                                                                                                                                                                     |
+| `⇧↩`               | Line break (without sending)                                                                                                                                                                                                                                              | terminal | Sends `\u000a` (LF, = Ctrl+J) to the PTY — Claude treats it as a newline; `Enter` alone (`\r`) sends. xterm's default ignores `Shift` and would send                                                                                                                                                                                                                                                             |
+| `⌃⌫`               | Delete the previous word                                                                                                                                                                                                                                                  | terminal | Sends `\u0017` (Ctrl+W) to the PTY; xterm's default for this chord is `\b`, which the Claude TUI ignores                                                                                                                                                                                                                                                                                                         |
+| `⇧⌫`               | Delete the previous character                                                                                                                                                                                                                                             | terminal | Sends `\u007f` (DEL), same as `Backspace`; xterm's default (`\b`) did nothing                                                                                                                                                                                                                                                                                                                                    |
+| `⌘=` / `⌘−` / `⌘0` | Terminal font: bigger / smaller / reset                                                                                                                                                                                                                                   | terminal | `⌃` on Linux/Win. `settings.setFontSize` (8–32); the watcher propagates it to every live terminal                                                                                                                                                                                                                                                                                                                |
 
 Shortcuts scoped to `terminal` are handled by `installTerminalKeymap`
 (`src/renderer/src/lib/terminalKeymap.ts`) via xterm's single
 `attachCustomKeyEventHandler` — **not** by the native menu — and only
 fire while the terminal (main or helper) is focused.
+
+**The shield (T486 U5a).** An action marked `shield` (Back / Forward, `F6` / `⇧F6` pane
+focus and the unbound terminal toggle) keeps its
+chord away from every terminal: one window **capture** `keydown` listener in `App.vue`
+matches the press against each shielded action's resolved chord, while no dialog,
+palette or menu holds the keys. A menu-backed action off macOS is only stopped (its
+native accelerator fires); every other match is stopped, `preventDefault`ed and run.
+The row in Settings → Keyboard Shortcuts says so with the shield hint. A chord fires
+only when the held modifiers are **exactly** the chord's — `F7` never fires on `⇧F7`,
+`⌘K` never on `⌘⇧K`.
+
+**Everything else is unbound by default (T486).** Every Session-menu item (fork,
+restart, the four copies, no-flicker, archive, delete, retry, dismiss), closing a
+folder terminal, and the sidebar header buttons (rescan, drill depth, collapse all,
+Hidden), every Folder-menu item except the ones that need a pick or change agent
+access (block agents, let agents read terminals, Modes ▸, Set / Clear parent folder),
+the older / archived peeks and
+the repo-group menu (rename, reset name, Clean up), the Cleanup, Scheduler, System
+Monitor and Containers takeovers, and every Settings tab ("Open Settings: General", …)
+have a keybindings id and can be given a chord in Settings → Keyboard Shortcuts; none
+ships with one except Rename folder (`F2`), closing the open takeover (`Esc`) and the
+Keyboard Shortcuts tab (`⌘⌥S`). Session actions act on the **selected** session and are available only
+when the Session menu would show that item for it; folder actions act on the
+**active** folder, repo-group actions on the cursor's group row else the group of the
+active folder, each only when its menu would show that item. Actions that
+act on the sidebar or a selection ignore a key press made in a text field
+(`keysGuard`); the palette and the native menu still run them.
 
 ### Session status
 
@@ -1134,14 +1170,19 @@ Badges).
 
 ```
 +-------------------------------------------------------------------------+
+| SHORTCUTS                            [ Open keybindings.json ][Reset all]|
 | Rebind any shortcut. Edits save to keybindings.json and apply at once.  |
-|                                                    [ Reset all ]        |
 |                                                                        |
+| [⌕ Search shortcuts or type a key combo                              ]  |
+| ( Unbound 8 ) ( Conflicts 2 ) ( Customized 3 )                          |
+|                                                                        |
+| SESSIONS                                                                |
 | New session               [ ⌘N ]            default ⌘N                 |
-| Open command palette       [ ⌘K ]            default ⌘K                 |
-| Toggle the Fleet rail      [ ⌘⇧B ]  not in terminal    ↺ Reset  ⌫ Unbind|
-| Review the active branch   [ ⌘⇧B ]  conflict: Toggle the Fleet rail    |
 | Resume last session        [ Set a shortcut… ]  unbound  ↺ Reset       |
+| VIEWS                                                                   |
+| Toggle the Fleet rail      [ ⌘⇧B ]  not in terminal    ↺ Reset  ⌫ Unbind|
+| TAKEOVERS                                                               |
+| Review the active branch   [ ⌘⇧B ]  conflict: Toggle the Fleet rail    |
 |  ...                                                                    |
 +-------------------------------------------------------------------------+
 ```
@@ -1150,28 +1191,34 @@ Badges).
 to `keybindings.json` and apply live. A ghost **Reset all** sits top-right, disabled
 when every row is already a default.
 
-**One row per rebindable action** (the 26; the reserved `app.*` five are not shown —
-they cannot be rebound). Seven of them — the Topbar's per-folder actions (`view.roadmap`,
+**One row per rebindable action** — every table id except the reserved `app.*` rows,
+which are not shown because they cannot be rebound. T486 grows the table toward ~108
+visible rows, and most of the actions it adds ship unbound (their rows start on "Set a
+shortcut…"), which is why the pane is searchable, grouped and filterable (below). Seven of the T1 rows — the Topbar's per-folder actions (`view.roadmap`,
 `view.prStack`, `folder.openInFileManager`, `folder.openInVSCode`,
 `folder.openGithubPulls`, `folder.browseFiles`, `folder.newTerminal`) — ship with no
 default chord, so their rows start on the empty "Set a shortcut…" state, as does
 `view.usageDashboard` (View menu). They are `menu: true`, backed by a native **Folder**
 menu, so a bound chord fires over the terminal. `view.settings` defaults to `⌘,` /
 `Ctrl+,` and sits in the app menu on macOS, the File menu elsewhere. Left: the action name (`--text-2` 12px, from
-`keybindings.actions.<id>`). Then the **capture control** — a `<kbd>`-styled button
+the descriptor's `labelKey` — `labelKeyFor(id)`, i.e. `keybindings.actions.<id>` with
+every `.` written as `_`, because vue-i18n reads a dotted key as a path). Then the **capture control** — a `<kbd>`-styled button
 showing the resolved chord; empty rows read "Set a shortcut…" in `--text-4`. Clicking
 it enters **recording**: the button border goes `--accent-line`, the label reads
 "Press a shortcut…", and the next physical key press (via `chordFromEvent`) is captured
-— a lone modifier does not commit, `Esc` cancels, `Backspace` unbinds. On commit the
-new chord is written and the control leaves recording.
+— a lone modifier does not commit, `Esc` cancels (the recording only: Settings stays
+open), `Backspace` unbinds. On commit the new chord is written and the control leaves
+recording. A chord that can never fire for that action is **refused** instead (see the
+recorder's refusal line below): the previous chord stays.
 
 **Trailing metadata**, in this order, each only when it applies:
 
 - **`default ⌘N`** — a muted `--text-4` 11px reminder of the built-in chord, shown
   whenever the row is overridden or unbound.
-- **not in terminal** — a plain `--text-4` marker for a `menu: false` action, whose
-  rebound chord will not fire while the terminal pane holds focus (it has no native
-  menu item). Derived from the descriptor, not user-set.
+- **not in terminal** — a plain `--text-4` marker for an action with neither a native
+  menu item nor the shield, whose chord will not fire while the terminal pane holds
+  focus. Derived from the descriptor by `isNotInTerminal(d)` (`!menu && !shield`,
+  `keybindings-core.ts`) — the pane has no predicate of its own — never user-set.
 - **conflict: {other}** — the **Warning** badge (§6 Badges) naming every other action
   that resolves to the same chord in the same scope. Every participant is badged, so the
   clash is visible; the chord dispatches exactly once — the first-registered action
@@ -1184,6 +1231,68 @@ new chord is written and the control leaves recording.
 goes through `keybindings.json`, so a hand-editor and this pane never disagree —
 whichever wrote last wins, and the chokidar watch reconciles the other.
 
+#### Search, groups and filters (T486)
+
+The same tab, between the intro and the first row. **No new token, no new
+component.**
+
+- **Search field** — full width, the Settings search input anatomy verbatim (§6
+  Settings dialog: `Search` icon 13px `--text-4` at the left, `bg-bg`,
+  `border-border` → `--accent-line` on focus, radius `5px`, padding `7px 10px 7px
+28px`, 12px). Placeholder "Search shortcuts or type a key combo". It takes focus
+  when the tab opens. Two match modes, picked per query:
+  - **Chord mode** — the trimmed query reads as a chord: it has a `+`, a modifier, an
+    F-key or `Esc` (`Ctrl+J`, `ctrl+shift+f`, `F6`), or a macOS modifier symbol
+    (`⌘⇧⌥⌃`, mapped back to tokens: `⌘K`). Rows stay whose **resolved** chord is the
+    same chord under the platform fold (off macOS `Ctrl+B` finds the `⌘B`/`Ctrl+B`
+    default). Answers "what holds Ctrl+J?" exactly.
+  - **Bare named key** — a lone key word (`delete`, `left`, `tab`, `home`, `end`,
+    `space`, `enter`) is both a chord and an ordinary word, so the result is the
+    **union** of the chord-mode and text-mode matches ("delete" still finds "Delete the
+    session…" while that row is unbound).
+  - **Text mode** — otherwise, a case-insensitive substring of the row's label (active
+    locale), its rendered chord or its id.
+- **Filter chips** — one row under the search: **Unbound** (no chord), **Conflicts**
+  (shares its chord with another action), **Customized** (not on its default). The §6
+  Badges anatomy (padding `2px 8px`, radius `999px`, 11px): inactive = **Default**
+  badge, active = **Accent** badge, `aria-pressed` set. Each label carries its count
+  over the **whole** table (not the filtered view), in `tabular-nums`. Chips are
+  independent toggles; active chips AND with each other and with the search.
+- **Group headers** — rows are grouped, in this fixed order: **Sessions, Sidebar,
+  Folders, Views, Panes, Takeovers, App**. Rows keep table order inside a group; a
+  group with no visible row is hidden (no header). The header is the **Settings
+  eyebrow** — Inter 11px/500 UPPERCASE, `letter-spacing 0.06em`, `--text-3`, the style
+  the pane's own "Shortcuts" eyebrow already uses inline — **not** the tokenized §3
+  `.eyebrow`: these headers sit beside that eyebrow inside a Settings tab, and siblings
+  must match. `margin-top 14px` (0 for the first), `margin-bottom 4px`.
+- **Empty result** — when the search and chips leave no row: one `--text-4` 12px line,
+  "No shortcut matches.", in place of the groups.
+
+**Hint lines under a row** — each a muted `--text-4` 11px line (the same style as the
+"default ⌘N" reminder), indented under the action name, shown only when it applies:
+
+- **Recorder refusal** (T486 U1) — "{chord} can't fire for this action. Pick another
+  shortcut." The recorder refuses a chord the renderer watcher can never match for an
+  action that has no other path (no native menu item and no shield — the shield
+  matches the physical key, `e.code`, so it never has this problem):
+  Shift+punctuation (Shift rewrites `e.key`, so `⌘⇧,` arrives as `<`), and on macOS
+  Option+letter (Option rewrites `e.key` too). The previous chord stays; the line goes
+  away on the next recording. A hand-edited `keybindings.json` entry still loads.
+- **Shield hint** (T486 U5a) — on a shielded action with a chord: "Taken from the
+  terminal: the program running there never sees {chord}." `{chord}` is the row's
+  resolved chord, rendered for the platform (`Alt+←` off macOS, `⌘[` on a Mac). Today
+  the shielded rows are Back and Forward (`nav.*`), the pane focus pair
+  (`pane.focusNext` / `pane.focusPrev`) and the terminal toggle (`terminal.toggle`). A
+  user who binds a shielded,
+  renderer-only action to an Alt chord off macOS may see the menu bar toggle on the Alt
+  release — `docs/user/sessions.md` says so.
+- **Terminal-keeps hint** (T486 U5a) — on a non-shielded action bound to a chord the
+  terminal keymap swallows: "The terminal keeps {chord}: it won't fire while a terminal
+  has focus." The chord list is `TERMINAL_KEYMAP_CHORDS`, exported as data by
+  `lib/terminalKeymap.ts` (copy, paste, `⇧↩`, the two Backspace chords, the font
+  chords), so the pane reads the same source the handler uses. A shielded row never
+  shows it: the shield takes the key first.
+
 #### Open + discover (T1 P5)
 
 Three routes, one destination — the raw `keybindings.json` opened in a `MarkdownPane`
@@ -1192,10 +1301,17 @@ helper pane (edit mode), for the reader who prefers JSON to the row editor:
 - **`app.openKeybindings`** — a fifth reserved (un-rebindable) action, default
   `⌘⌥K` / `Ctrl+Alt+K`, `menu: true` so the OS consumes the chord even over the
   terminal pane. Not shown in the pane's rows (reserved), same as the other four.
-- **View → "Keyboard Shortcuts…"** — a native menu item next to the layout toggles,
-  emitting `app.openKeybindings`.
+- **View → "Open keybindings.json"** — a native menu item next to the layout toggles,
+  emitting `app.openKeybindings` (labelled "Keyboard Shortcuts…" before T486, which
+  gave that name to the Settings tab's own item, below).
 - **"Open keybindings.json"** — a ghost button in the pane header, left of **Reset
   all**, calling the same store action.
+
+The pane itself — the row editor — opens from **"Keyboard Shortcuts…"**
+(`view.settings.keybindings`, `⌘⌥S` / `Ctrl+Alt+S`, `menu: true`): right after
+**Settings…** in the macOS app menu, where Mac users look for preferences, and under
+**View** (just above "Open keybindings.json") on Linux and Windows. It runs
+`ui.openSettings('keybindings')`, the door every `view.settings.<tab>` id uses.
 
 The pane lands in the **active folder's** helper stack (`currentWorktreePath`); with
 no folder selected (Onboarding / empty state) it can't — a toast says to open a folder
@@ -1717,7 +1833,7 @@ pill's popover (§6 — "Footer / status bar", already opens `UsagePanel`) gets
 a link/button at the bottom of the popover (`text-11px text-accent`,
 `ExternalLink` icon 12px): "Open full dashboard". Clicking it closes the
 popover and calls `ui.openUsageDashboard()`. Closing: the header's `X`
-button, Esc (via `closeAll()`, same rule as the board), or navigating to
+button, Esc (via the `view.closeTakeover` binding, same rule as the board), or navigating to
 another view.
 
 **Data source: one call, one snapshot.** `window.api.usageBiSnapshot({
@@ -2899,7 +3015,7 @@ replaces the `<main>` content (sidebar and topbar stay visible), fixed 40px
 header (`h-10 border-b border-border bg-surface`), close `X` top-right. It
 joins the SAME single-takeover mutex those three already share (`stores/
 ui.ts`) — opening the meta-board force-closes any other open takeover and
-vice-versa; Esc via `closeAll()`. Entry point: a link in the Footer fleet
+vice-versa; Esc via the `view.closeTakeover` binding. Entry point: a link in the Footer fleet
 pill's popover, alongside the existing "Open full dashboard" — not a
 per-folder `FolderMenu.vue` entry, since the meta-board has no single
 `folderPath` to scope to (exactly like `Usage Dashboard`).
@@ -3386,14 +3502,20 @@ folders at all the popover falls back to the historical one-line
 ### Sidebar jump palette
 
 **Search means "take me there", not "filter the tree".** Opened by the
-one-line header's Search button (never by `⌘K` — that is the
-[Command palette](#command-palette)), the jump palette floats **above** the
+one-line header's Search button or `⌘⇧F` / `Ctrl+Shift+F` (`sidebar.jump`; never by
+`⌘K` — that is the [Command palette](#command-palette)), the jump palette floats **above** the
 tree and leaves it untouched: nothing here writes `filterQuery`, so closing the
 palette never loses the operator's place. Results are **targets**; `↵` goes
 there.
 
 Component: `SidebarJumpPalette.vue`. Rendered INSIDE the sidebar `<aside>`
 (not `<Teleport>`ed to `<body>`) so it tracks the sidebar's width and clipping.
+
+**The chord toggles, exactly like the button.** A second `⌘⇧F` closes the palette,
+even while its own input holds focus (the binding has no text-entry guard, and the
+palette's capture handler stops only Esc / arrows / Enter / Tab). Because the palette
+lives inside the sidebar, the chord **expands a collapsed sidebar first**; closing the
+palette never collapses it again. It fires over a focused terminal too.
 
 **Card:** `position: absolute; left: 8px; right: 8px; top: 46px` (42px header +
 4px), background `--surface`, border `1px --border-2`, radius `--radius`,
@@ -3686,6 +3808,49 @@ directly, no need to restore first. Drag-to-resize is disabled on every pane
 while one is maximized (ratios are meaningless in that state). The maximized
 pane id is **ephemeral, per-worktree state** — never persisted to `helpers.json`
 — so it resets to the normal split on a worktree switch or app restart.
+
+#### Pane focus (T486 U5b)
+
+The main terminal and every helper pane are **focus regions**. Each root carries
+`data-focus-region="<id>"` (`main` for the main terminal, the pane id otherwise) and
+registers with the pane-focus registry (`composables/useTerminalFocus.ts`); the region
+holding `document.activeElement` is the focused one.
+
+- **The ring** (`lib/pane-ring.ts`) is what `F6` / `⇧F6` walk: the main terminal when it
+  is the foreground layer (not covered by a takeover or the Folder View), then the
+  current folder's helper panes in stack order when the panel is shown and not
+  collapsed. While a pane is maximized, the ring holds only that pane (the others are
+  24px headers). Focus outside the ring goes to the first region (`F6`) or the last
+  (`⇧F6`); an empty ring does nothing.
+- **What takes focus.** An xterm pane focuses its terminal (its root, `tabindex="-1"`,
+  while the terminal is not live yet). The Markdown, Memory and Explorer panes focus
+  their scroll body (`tabindex="-1"`; the Markdown editor in edit mode) — never the
+  `overflow-hidden` root, where Chromium would find no scroller for `PageDown` / arrows;
+  the Diagram pane focuses its canvas body, where its own keys live.
+- **Focus indicator.** A focused non-xterm pane (Markdown, Memory, Explorer, Diagram)
+  draws a **1px `--accent-line` outline inset on its root** (`outline-offset: -1px`, so
+  the stack's `overflow-hidden` never clips it) while focus is anywhere inside it
+  (`:focus-within`). Utilities: `focus-within:outline focus-within:outline-1
+focus-within:-outline-offset-1 focus-within:outline-accent-line`. The root (and the
+  Diagram pane's canvas body) carries `.no-default-ring`, opting out of the global
+  `:focus-visible` ring (`main.css`): that ring sits 1px OUTSIDE the box, where the
+  stack's `overflow-hidden` clips it, and it would draw a second ring. No motion — it appears and disappears with focus. xterm
+  panes (shell, `claude`, the main terminal) draw none: their blinking cursor is the
+  indicator. The one exception is a helper pane whose root itself holds focus (its
+  terminal is not live yet): the same outline, on `:focus` rather than `:focus-within`.
+- **Close and maximize from the keyboard.** `⌘⇧M` toggles maximize on the focused
+  helper pane (focus stays in it); with no helper pane focused it restores a maximized
+  pane. `pane.close` (unbound) runs the focused pane's own close — a dirty Markdown or
+  Diagram pane still shows its discard toast first — then focuses the next region.
+- **Terminal toggle** (`terminal.toggle`, unbound, shielded). No shell pane in the
+  current folder → open one. One exists but is not focused → reveal the panel (restore
+  any other maximized pane, close a takeover that does not host the stack) and focus
+  the first shell pane. It already holds focus → collapse the whole helper panel and
+  focus the main terminal, or leave focus on `<body>` when a takeover or the Folder
+  View covers the main terminal. It reuses the first shell pane; Split ▸ New shell still
+  always adds another. "Shell pane" here means an **operator** shell: an agent terminal
+  (T474) stays in the `F6` ring, but the toggle never takes it — with only agent
+  terminals in the stack, the toggle opens a new shell.
 
 #### Agent connection chip (helper pane header)
 
@@ -4338,8 +4503,33 @@ them for free by being added to the registry, not by re-implementing them:
   Only the user-intent path does this; programmatic selection (synth→real migration,
   spawn, closure fallback, the background dispatch drain) never yanks an open view —
   those keep their direct `selectedId.value = …` write.
-- **Esc dismisses it too**, via the App-level `closeAll()` — same shared helper, so the
-  list can't rot the way the hand-kept one did (it never learned about the PR Stack).
+- **Esc dismisses it too**, through the `view.closeTakeover` keybinding (T486 §6.1;
+  default `Esc`, rebindable, `menu: false` — an Esc accelerator in the native menu
+  would take Esc from every terminal). Its handler is `ui.closeAllTakeovers()`, the
+  exact door the header `X` uses, so the Review pane's `onClose` still disposes its
+  companion. Esc peels **one layer per press**, top first:
+  1. a dialog, Settings, the command palette, the jump palette or a context menu —
+     each takes Esc in the window **capture** phase and stops it;
+  2. a footer / Topbar popover (fleet usage, Claude status, pasted images, the image
+     lightbox, Mission pill, Activity, Inbox filter) — it closes on its own bubble
+     listener; the binding is disabled while `ui.anyPopoverOpen` is true (Chromium runs
+     a microtask checkpoint after each listener, so the binding runs **before** the
+     popover's listener and still sees the flag set);
+  3. the takeover's own state — Cleanup's selection then its block panel, a Diagram
+     pane's selection (both a **document capture** listener that stops only what it
+     consumed — document, so a dialog, palette or menu opened over them keeps its
+     own window-capture Esc; Cleanup also steps aside while a popover is open), the
+     PR Stack filter, the Roadmap dispatch confirm (element-level, with
+     `stopPropagation`; the confirm takes focus when it opens so Esc lands on it);
+  4. the takeover itself.
+
+  It never fires from a text field (the binding's key guard reads where the key was
+  **pressed**, so a field that blurs itself on Esc — the Topbar title rename — still
+  keeps the takeover; a focused checkbox, radio, button or other input that takes
+  no typed text is not a text field and does not hold Esc) or from a focused terminal: a helper xterm beside Roadmap or
+  Review sends ESC to its program and cancels the event. The Folder View is not a
+  takeover and ignores it. `ui.closeAll()` is gone: it was never wired.
+
 - **A takeover covers the terminal — it does not unmount it.** `TerminalPane` renders
   unconditionally in `App.vue`, absolutely positioned to fill the main-content
   box; every takeover, plus the Folder View, Onboarding, the Empty state and the Cloud
@@ -5506,7 +5696,7 @@ silently instead.
   flip via `column-reverse`.
 - Card: `role="status"`.
 - Close button: translated `aria-label` (`toast.dismiss`).
-- `closeAll()` (the global Esc handler) does **not** clear toasts by design —
+- Esc (`view.closeTakeover` and each surface's own listener) does **not** clear toasts by design —
   an "Update ready" notification shouldn't be wiped out by an Esc in the
   middle of another task.
 
@@ -7202,6 +7392,7 @@ modal). Opened via `⌘K` (Cmd+K / Ctrl+K).
 - Selected item (keyboard cursor): `bg-accent-soft text-text`, `2px --accent` bar on the left, `padding-left: 14px` to compensate
 - Empty state: `--text-4` 12.5px text, padding `20px 16px`, center-aligned
 - Sections (in order): **Recents** (top 3 sessions by mtime desc, only with empty input) → **Actions** → **Folders** → **Sessions**
+- **Actions come from the keybindings table** (T486 U6). One row per table action with `palette !== false` that has a renderer registration and whose `enabled()` holds right now; a disabled action is not listed. Label = the action's table label; trailing accelerator = its resolved chord (mono 10.5px, `--text-4`, the `<kbd>` platform rendering), live on rebind, absent when unbound. With an empty input only the **featured** actions show (`paletteFeatured`: New session, Toggle the Approval Inbox rail, Add folder, Resume last session, Open approvals); typing searches every listed action. Activating a row runs the action's registered handler (`invokeShortcut`), the same one its chord and menu item run. Icon per group: Sessions `Sparkles`, Sidebar `Search`, Folders `Folder`, Views `LayoutGrid`, Panes `PanelRight`, Takeovers `Maximize2`, App `Command`
 - Filter: fuse.js, `threshold: 0.4`, key `label`. Sessions use their name (§"Session name", fallback: the session id) as the label
 - Internal shortcuts: `↑/↓` moves the cursor; `Enter` activates; `Esc` closes; typing filters
 
@@ -7241,7 +7432,7 @@ the surface:
 | Hover preview        | `FolderPreview.vue`        | 40        | Folder card. Peer of `SessionPreview` — they share the `ui.preview` slot (a `sessionId` **or** a `folderPath`); `pointer-events: auto` (T86 §3.9)                                                                                                                                                                                                                                                                                          |
 | Context menu         | `SessionMenu.vue`          | 50        | Suppresses preview on open                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Split menu           | `SplitMenu.vue`            | 50        | Mutex via `useUiStore.splitMenu`. Dropdown anchored to the Topbar's Split button. Peer of `SessionMenu` — never open simultaneously                                                                                                                                                                                                                                                                                                        |
-| Footer fleet popover | `StatusFooter.vue`         | 50        | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal                                                                                                                                                                                                                                                                                                                                         |
+| Footer fleet popover | `StatusFooter.vue`         | 50        | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal. Open flag in the `ui` store (`ui.popovers.usagePanel`, see "Anchored popovers" below)                                                                                                                                                                                                                                                  |
 | Sidebar jump palette | `SidebarJumpPalette.vue`   | 50        | T288. Peer of the menus in the `ui` mutex (`ui.sidebarJumpPalette`), but the ONLY surface here NOT `<Teleport>`ed to `<body>`: it is `position: absolute` inside the sidebar `<aside>` so it tracks the sidebar's width and clipping. Not modal — closes on Esc / click-outside / the Search button                                                                                                                                        |
 | Dialog (modal)       | `AddFolderDialog.vue`      | 60        | Suppresses menu + preview                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Dialog (modal)       | `SettingsDialog.vue`       | 60        | Peer of `AddFolderDialog` — they share the dialog slot (z-60) via the `ui.dialog` mutex; only one dialog open at a time                                                                                                                                                                                                                                                                                                                    |
@@ -7252,13 +7443,27 @@ the surface:
 | Dialog (modal)       | `NewFolderDialog.vue`      | 60        | Creates + pins a subfolder **non-destructively**. Peer via `ui.dialog === 'newFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `New folder…` item                                                                                                                                                                                                                                                                        |
 | Dialog (modal)       | `OpenSubfolderDialog.vue`  | 60        | Searchable subfolder picker (recursive, depth-capped) → pins the chosen one. Peer via `ui.dialog === 'openSubfolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Open subfolder…` item                                                                                                                                                                                                                                     |
 | Dialog (modal)       | `RenameFolderDialog.vue`   | 60        | Renames a folder's alias. Peer via `ui.dialog === 'renameFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Rename…` item                                                                                                                                                                                                                                                                                                 |
-| Image lightbox       | `ImageLightbox.vue`        | 60        | Full-viewport viewer for one pasted screenshot. State is **local to `StatusFooter.vue`** (not the `ui`-store mutex — a single entry point: a tile in the footer's images popover). While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it                                                                                                                                                          |
+| Image lightbox       | `ImageLightbox.vue`        | 60        | Full-viewport viewer for one pasted screenshot. Its index lives in the `ui` store (`ui.imageLightboxIndex`, T486 U4a) beside the anchored popovers' flags, but **outside the mutex** — a single entry point: a tile in the footer's images popover. While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it, and closing that popover ends it                                                       |
 | Dialog (modal)       | `RenameRepoDialog.vue`     | 60        | Renames a repo-group's alias. Peer via `ui.dialog === 'renameRepo'` (+ `ui.renameRepoTarget`); opened from the `RepoGroupHeader`'s context-menu `Rename repo` item                                                                                                                                                                                                                                                                         |
 | Agent-action confirm | `McpConfirmOverlay.vue`    | 65        | **Fail-CLOSED** confirm for a mutation requested by an MCP agent (`onMcpConfirmPending`). **Auto-shows** from its own local state (doesn't enter the `ui` mutex — it's a security gate, can't be suppressed by another surface) and **doesn't close** on Esc / click-outside: the verdict-producing exits are Allow, Deny, or the timeout (denies) — **Dismiss** is a non-verdict exit, "not now". Reuses the Inbox rail's visual language |
 | Command palette      | `CommandPalette.vue`       | **70**    | Suppresses dialog + menu + preview                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Rule: when introducing a new floating surface, **add a row here
 in the same commit**. Raw `z-index` in components (with no table entry) is a bug.
+
+**Anchored popovers (T486 U4a).** The popovers that hang off a button — the Topbar's
+Activity bell and Mission pill, the footer's pasted images, Claude service status and
+plan usage, and the Fleet rail's state filter — keep their open flag in the `ui` store
+(`ui.popovers[id]`, `POPOVER_IDS`), not in the component, so a keybinding can open each
+one and `ui.anyPopoverOpen` (any of them, or the image lightbox) can tell the App's Esc
+binding that a popover owns this Esc. They stay **outside the mutex** above, exactly as
+before the lift: opening one never closes the palette, a dialog or a menu, and only the
+footer pair (pasted images ↔ plan usage) close each other. Each component keeps its own
+bubble-phase `Esc` and click-outside handlers. Each also reports its **anchor**
+(`ui.setPopoverAnchor`) while its button is rendered: a popover cannot open without one,
+and losing it (the images pill hiding at zero, the rail minimizing, the mission ending)
+closes the popover, so `anyPopoverOpen` is never true with nothing on screen. A new
+anchored popover joins `POPOVER_IDS` in the same commit.
 The rule cuts **both ways**: the Approval Inbox **left** this table in
 T83 (it was `ApprovalInbox.vue`, z-65, `ui.inbox` mutex) because it stopped being an
 overlay — it became the **Inbox rail**, a column (below). It's not a forgotten row.

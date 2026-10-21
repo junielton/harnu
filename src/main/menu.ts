@@ -2,6 +2,7 @@ import { Menu, app, BrowserWindow } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
 import {
   DESCRIPTOR_BY_ID,
+  defaultKeysFor,
   parseChord,
   toAccelerator,
   type ResolvedKeybindings,
@@ -11,11 +12,8 @@ import {
 /**
  * Canonical action IDs emitted over the `shortcut:fired` IPC channel. The
  * rebindable + reserved ids live in `keybindings-core.ts` (shared with the
- * renderer + the `keybindings.json` layer, T1). `nav.back` / `nav.forward`
- * (session navigation history) are added here and are NOT in that table yet:
- * their default chord is platform-split (⌘[ vs Alt+←) and the Linux/Windows
- * chord is caught by a capture-phase handler in `App.vue` (`onNavKeydown`), so
- * they keep fixed accelerators until the table can express both.
+ * renderer + the `keybindings.json` layer, T1), `nav.back` / `nav.forward`
+ * included since T486 U5a: their platform-split default is `defaultKeysMac`.
  *
  * Two items short-circuit the IPC roundtrip:
  *   - `app.reload` calls `webContents.reload()` directly (special case — the
@@ -26,7 +24,7 @@ import {
  * Everything else is emitted as `shortcut:fired` so the renderer's
  * `useShortcuts` dispatch table handles it.
  */
-export type ShortcutActionId = KeybindingActionId | 'nav.back' | 'nav.forward'
+export type ShortcutActionId = KeybindingActionId
 
 const isMac = process.platform === 'darwin'
 
@@ -50,7 +48,7 @@ export function accel(
   resolved?: ResolvedKeybindings | null
 ): string | undefined {
   const rb = resolved?.byId[id]
-  const keys = rb ? rb.keys : DESCRIPTOR_BY_ID[id].defaultKeys
+  const keys = rb ? rb.keys : defaultKeysFor(DESCRIPTOR_BY_ID[id], isMac)
   if (keys === null) return undefined
   if (!keys) throw new Error(`[menu] ${id} has no default chord`)
   const parsed = parseChord(keys)
@@ -87,6 +85,14 @@ export function buildAppMenu(
   // unbound action drops the `accelerator` key entirely.
   const a = (id: KeybindingActionId): string | undefined => accel(id, resolved)
 
+  // T486 §10 — Settings on its Keyboard Shortcuts tab (⌘⌥S / Ctrl+Alt+S). One
+  // item, placed once per platform, so the accelerator has a single owner.
+  const keyboardShortcutsItem: MenuItemConstructorOptions = {
+    label: 'Keyboard Shortcuts…',
+    accelerator: a('view.settings.keybindings'),
+    click: (): void => emit('view.settings.keybindings')
+  }
+
   const template: MenuItemConstructorOptions[] = [
     // macOS application menu — only present on darwin. The `appMenu` role
     // would auto-populate this, but we want the explicit Quit accelerator
@@ -103,6 +109,9 @@ export function buildAppMenu(
                 accelerator: a('view.settings'),
                 click: (): void => emit('view.settings')
               },
+              // T486 §10 — next to Settings…, where Mac users look for
+              // preferences. View holds it on Linux / Windows instead.
+              keyboardShortcutsItem,
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -202,20 +211,20 @@ export function buildAppMenu(
         },
         { type: 'separator' },
         // Session navigation history (docs/specs/2026-10-06-session-nav-history.md
-        // §5.3). The browser convention per platform: ⌘[ / ⌘] on macOS (⌥← is
-        // word-jump in every macOS text field), Alt+← / Alt+→ elsewhere. On
-        // Linux/Windows this accelerator only fires for a key the page left
-        // unhandled, and xterm handles Alt+← / Alt+→, so the renderer stops the
-        // chord in the capture phase before xterm sees it (App.vue `onNavKeydown`)
-        // — accepted trade-off D-4: Alt+← / Alt+→ no longer reach the terminal.
+        // §5.3), rebindable since T486 U5a: ⌘[ / ⌘] on macOS, Alt+← / Alt+→
+        // elsewhere by default. On Linux/Windows this accelerator only fires for a
+        // key the page left unhandled, and xterm handles Alt+← / Alt+→, so the
+        // renderer's shield (App.vue) stops the bound chord in the capture phase
+        // before xterm sees it — accepted trade-off D-4: it no longer reaches the
+        // terminal.
         {
           label: 'Back',
-          accelerator: isMac ? 'Cmd+[' : 'Alt+Left',
+          accelerator: a('nav.back'),
           click: (): void => emit('nav.back')
         },
         {
           label: 'Forward',
-          accelerator: isMac ? 'Cmd+]' : 'Alt+Right',
+          accelerator: a('nav.forward'),
           click: (): void => emit('nav.forward')
         }
       ]
@@ -294,11 +303,13 @@ export function buildAppMenu(
           click: (): void => emit('view.usageDashboard')
         },
         { type: 'separator' },
+        // T486 §10 — the Settings tab itself; in the app menu on macOS.
+        ...(isMac ? [] : [keyboardShortcutsItem]),
         {
           // T1 P5 — opens keybindings.json in the MarkdownPane helper pane. The
           // renderer's `useShortcuts` handler does the actual open; this item
           // just owns the ⌘⌥K / Ctrl+Alt+K accelerator at the OS level.
-          label: 'Keyboard Shortcuts…',
+          label: 'Open keybindings.json',
           accelerator: a('app.openKeybindings'),
           click: (): void => emit('app.openKeybindings')
         },

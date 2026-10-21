@@ -359,6 +359,8 @@ function onCanvasKeydown(e: KeyboardEvent): void {
     filterBar.value?.focus()
   } else if (e.key === 'Escape' && store.filterActive) {
     store.clearFilter()
+    // Consumed: the PR Stack stays open until the next Esc (T486 §6.1).
+    e.stopPropagation()
   }
 }
 

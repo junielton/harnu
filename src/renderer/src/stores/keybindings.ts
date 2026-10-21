@@ -5,6 +5,7 @@ import { isMac } from '../lib/platform'
 import { useUiStore } from './ui'
 import { useHelpersStore } from './helpers'
 import {
+  renderKeysString,
   resolveKeybindings,
   type ResolvedKeybindings,
   type ShortcutActionId
@@ -50,6 +51,13 @@ export const useKeybindingsStore = defineStore('keybindings', () => {
   // resolve so the `Ctrl`/`Cmd` fold matches this platform (keybindings-core).
   const resolved = ref<ResolvedKeybindings>(resolveKeybindings(null, { mac: isMac }))
   const path = ref<string>('')
+  /**
+   * The Settings pane row currently recording a chord, or null (T486 §4). It
+   * lives here, not in the pane, so `SettingsDialog`'s own window-capture Esc
+   * handler — registered first, so it runs first — can stand down while a
+   * recording is armed: Esc then cancels only the recording.
+   */
+  const recordingId = ref<ShortcutActionId | null>(null)
 
   // Serialize `keybindings:save` calls: two quick clicks (Reset all then a
   // rebind) must land on disk in issue order, or the chokidar watch reconciles
@@ -105,6 +113,24 @@ export const useKeybindingsStore = defineStore('keybindings', () => {
   /** The resolved chord for an action id, or `undefined` when unbound / unknown. */
   function chordFor(id: ShortcutActionId): string | undefined {
     return resolved.value.byId[id]?.keys ?? undefined
+  }
+
+  /**
+   * The resolved chord for `id` rendered for this platform (`⌘B` on macOS,
+   * `Ctrl+B` elsewhere — design.md §6 `<kbd>`), or `''` when unbound. Reactive
+   * on `resolved`, so a rebind updates every hint that reads it.
+   */
+  function chordLabel(id: ShortcutActionId): string {
+    return renderKeysString(chordFor(id) ?? null, { mac: isMac }).join(isMac ? '' : '+')
+  }
+
+  /**
+   * A button tooltip with its action's chord appended — "Hide sidebar (Ctrl+B)"
+   * (T486 §9.2) — or the plain label when the action is unbound.
+   */
+  function withChord(label: string, id: ShortcutActionId): string {
+    const chord = chordLabel(id)
+    return chord ? i18n.global.t('keybindings.withChord', { label, chord }) : label
   }
 
   /**
@@ -204,14 +230,18 @@ export const useKeybindingsStore = defineStore('keybindings', () => {
     unsubscribe = null
     started = false
     lastWarningSig = ''
+    recordingId.value = null
   }
 
   return {
     resolved,
     path,
+    recordingId,
     init,
     reload,
     chordFor,
+    chordLabel,
+    withChord,
     setBinding,
     resetBinding,
     resetAll,

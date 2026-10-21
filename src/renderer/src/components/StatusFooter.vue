@@ -64,6 +64,7 @@ import { useContainersStore } from '../stores/containers'
 import { useGcStore } from '../stores/gc'
 import { useStatuslineHealStore } from '../stores/statusline-heal'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useSessionImages } from '../composables/useSessionImages'
 import UsagePanel from './UsagePanel.vue'
 import ClaudeStatusPanel from './ClaudeStatusPanel.vue'
@@ -94,6 +95,7 @@ const scheduler = useSchedulerStore()
 const containers = useContainersStore()
 const gc = useGcStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const statuslineHeal = useStatuslineHealStore()
 
 // Cleanup footer pill (T443, design.md "Workspace GC — unified Cleanup / Footer pill"): ONE pill
@@ -317,24 +319,28 @@ const fleetCost = computed(() =>
 
 // Fleet popover: the full UsagePanel meters (5h/7d + countdown). Closes on
 // click-outside (the ref wraps button + popover, so inner clicks are ignored)
-// and on Esc.
-const popoverOpen = ref(false)
+// and on Esc. The three footer popovers' open flags live in the ui store
+// (T486 U4a) so their keybindings can open them and the App's Esc binding can
+// see them; each anchor is reported while its button renders.
+const popoverOpen = computed(() => ui.popovers.usagePanel)
 const fleetRef = ref<HTMLElement | null>(null)
-onClickOutside(fleetRef, () => (popoverOpen.value = false))
-onKeyStroke('Escape', () => (popoverOpen.value = false))
+onClickOutside(fleetRef, () => ui.closePopover('usagePanel'))
+onKeyStroke('Escape', () => ui.closePopover('usagePanel'))
+watch(fleetVisible, (v) => ui.setPopoverAnchor('usagePanel', v), { immediate: true })
 
 // ── Claude service status (issue #17) ───────────────────────────────────────
 // Always-visible health dot left of the fleet block; click → the status panel
 // popover. A clicked OS alert bumps `openSignal`, which opens the panel here.
 const statusDotClass = computed(() => severityDotClass(status.severity))
 const statusLabel = computed(() => t(severityLabelKey(status.severity)))
-const statusOpen = ref(false)
+const statusOpen = computed(() => ui.popovers.claudeStatus)
 const statusRef = ref<HTMLElement | null>(null)
-onClickOutside(statusRef, () => (statusOpen.value = false))
-onKeyStroke('Escape', () => (statusOpen.value = false))
+ui.setPopoverAnchor('claudeStatus', true)
+onClickOutside(statusRef, () => ui.closePopover('claudeStatus'))
+onKeyStroke('Escape', () => ui.closePopover('claudeStatus'))
 watch(
   () => status.openSignal,
-  () => (statusOpen.value = true)
+  () => ui.openPopover('claudeStatus')
 )
 
 // ── Pasted-images gallery (footer pill + popover) ────────────────────────────
@@ -360,32 +366,48 @@ const {
 } = useSessionImages(imagesUuid, canReattach)
 const imageFolderAlias = computed(() => sessions.selectedPath?.folder ?? '')
 
-const imagesPopoverOpen = ref(false)
+const imagesPopoverOpen = computed(() => ui.popovers.pastedImages)
 const imagesRef = ref<HTMLElement | null>(null)
-// Lightbox state is component-local, like the popovers around it — it has a
-// single entry point (a tile in `FooterImagePopover`) so it doesn't need the
-// `ui` store's cross-component mutex (design.md §6 — Floating surfaces).
-const lightboxIndex = ref<number | null>(null)
+// The pill hides at zero images, and the popover hangs off it.
+watch(imageCount, (n) => ui.setPopoverAnchor('pastedImages', n > 0), { immediate: true })
+// The lightbox's index lives in the ui store next to the popover flags (T486
+// U4a) — `anyPopoverOpen` covers it. It has a single entry point (a tile in
+// `FooterImagePopover`), and closing the popover ends it. It is still outside
+// the floating-surface mutex (design.md §6 — Floating surfaces).
+const lightboxIndex = computed(() => ui.imageLightboxIndex)
 // While the lightbox is open it OWNS Esc and outside-clicks: it's teleported to
 // `body`, so every click inside it (prev/next, the filmstrip) reads as "outside"
 // to the footer — without this guard those clicks would close the popover and
 // `clearThumbs()` the very data-URLs the lightbox is displaying.
 onClickOutside(imagesRef, () => {
-  if (lightboxIndex.value === null) imagesPopoverOpen.value = false
+  if (lightboxIndex.value === null) ui.closePopover('pastedImages')
 })
 onKeyStroke('Escape', () => {
-  if (lightboxIndex.value === null) imagesPopoverOpen.value = false
+  if (lightboxIndex.value === null) ui.closePopover('pastedImages')
 })
-// Free the loaded base64 whenever the popover closes (any path: toggle, Esc,
-// click-outside) — a big gallery is tens of MB not worth keeping resident.
-watch(imagesPopoverOpen, (open) => {
-  if (!open) clearImageThumbs()
+// Every open (the pill's click or `view.pastedImages`) re-lists, then fills the
+// thumbnails (v1 lists on open — no live watcher). Every close (toggle, Esc,
+// click-outside, the pill hiding) frees the loaded base64 — a big gallery is
+// tens of MB not worth keeping resident.
+watch(imagesPopoverOpen, async (open) => {
+  if (!open) {
+    clearImageThumbs()
+    return
+  }
+  await refreshImages()
+  await loadImageThumbs()
+})
+
+// The footer unmounting takes all three anchors (and so any open popover) with it.
+onBeforeUnmount(() => {
+  ui.setPopoverAnchor('usagePanel', false)
+  ui.setPopoverAnchor('claudeStatus', false)
+  ui.setPopoverAnchor('pastedImages', false)
 })
 
 /** One clean exit out of the whole image flow: lightbox AND popover behind it. */
 function closeImageFlow(): void {
-  lightboxIndex.value = null
-  imagesPopoverOpen.value = false
+  ui.closePopover('pastedImages')
 }
 
 // Pill "pop" when a genuinely new screenshot lands (design.md §7 — "Pasted-images
@@ -409,29 +431,13 @@ onBeforeUnmount(() => {
   if (bumpTimer) clearTimeout(bumpTimer)
 })
 
-// Re-list on open (v1 lists on-open — no live watcher) then fill thumbnails.
-async function toggleImagesPopover(): Promise<void> {
-  imagesPopoverOpen.value = !imagesPopoverOpen.value
-  if (!imagesPopoverOpen.value) {
-    lightboxIndex.value = null
-    return
-  }
-  // Local footer mutex: opening the images popover closes the usage one.
-  popoverOpen.value = false
-  await refreshImages()
-  await loadImageThumbs()
-}
-
-// Mutex the other way: opening the usage popover closes the images one.
-function toggleFleetPopover(): void {
-  popoverOpen.value = !popoverOpen.value
-  if (popoverOpen.value) imagesPopoverOpen.value = false
-}
+// The pasted-images and plan-usage popovers close each other when one opens —
+// the footer mutex lives in `ui.openPopover`.
 
 // T47 P6 S2: "Open full dashboard" link at the foot of the fleet popover —
 // closes the popover and takes over the main pane with the Usage Dashboard.
 function openFullDashboard(): void {
-  popoverOpen.value = false
+  ui.closePopover('usagePanel')
   ui.openUsageDashboard()
 }
 </script>
@@ -514,9 +520,11 @@ function openFullDashboard(): void {
           pillBump ? 'anim-pill-bump' : ''
         ]"
         :aria-label="t('images.pillAria', { count: imageCount })"
-        :title="t('images.pillAria', { count: imageCount })"
+        :title="
+          keybindings.withChord(t('images.pillAria', { count: imageCount }), 'view.pastedImages')
+        "
         :aria-expanded="imagesPopoverOpen"
-        @click="toggleImagesPopover"
+        @click="ui.togglePopover('pastedImages')"
       >
         <Image :size="12" :stroke-width="1.6" class="shrink-0" />
         <span class="tabular-nums">{{ imageCount }}</span>
@@ -531,7 +539,7 @@ function openFullDashboard(): void {
           :folder-alias="imageFolderAlias"
           :count="imageCount"
           :can-reattach="canReattach"
-          @open-lightbox="lightboxIndex = $event"
+          @open-lightbox="ui.openImageLightbox($event)"
         />
       </div>
     </div>
@@ -545,7 +553,7 @@ function openFullDashboard(): void {
       :folder-alias="imageFolderAlias"
       :can-reattach="canReattach"
       @close="closeImageFlow"
-      @update:index="lightboxIndex = $event"
+      @update:index="ui.openImageLightbox($event)"
       @reattached="closeImageFlow"
     />
 
@@ -571,9 +579,14 @@ function openFullDashboard(): void {
           type="button"
           class="flex items-center rounded text-text-2 transition-colors hover:text-text"
           :aria-label="t('claudeStatus.a11yDot', { status: statusLabel })"
-          :title="t('claudeStatus.a11yDot', { status: statusLabel })"
+          :title="
+            keybindings.withChord(
+              t('claudeStatus.a11yDot', { status: statusLabel }),
+              'view.claudeStatus'
+            )
+          "
           :aria-expanded="statusOpen"
-          @click="statusOpen = !statusOpen"
+          @click="ui.togglePopover('claudeStatus')"
         >
           <span
             class="shrink-0 rounded-full"
@@ -613,7 +626,7 @@ function openFullDashboard(): void {
                 : 'text-text-2 hover:bg-surface-2 hover:text-text'
         "
         :aria-label="cleanupPill.aria"
-        :title="cleanupPill.aria"
+        :title="keybindings.withChord(cleanupPill.aria, 'view.cleanup')"
         :aria-pressed="ui.cleanupOpen"
         @click="ui.toggleCleanup()"
       >
@@ -644,9 +657,12 @@ function openFullDashboard(): void {
             : t('scheduler.footerPill')
         "
         :title="
-          schedulerRunningCount > 0
-            ? t('scheduler.footerRunning', { n: schedulerRunningCount })
-            : t('scheduler.footerPill')
+          keybindings.withChord(
+            schedulerRunningCount > 0
+              ? t('scheduler.footerRunning', { n: schedulerRunningCount })
+              : t('scheduler.footerPill'),
+            'view.scheduler'
+          )
         "
         :aria-pressed="ui.schedulerOpen"
         @click="ui.toggleScheduler()"
@@ -673,7 +689,7 @@ function openFullDashboard(): void {
           class="flex items-center gap-2 whitespace-nowrap rounded text-text-2 transition-colors hover:text-text"
           :aria-label="t('footer.a11yFleet')"
           :aria-expanded="popoverOpen"
-          @click="toggleFleetPopover"
+          @click="ui.togglePopover('usagePanel')"
         >
           <span
             v-if="fiveHourPct != null"

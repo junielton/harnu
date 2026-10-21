@@ -486,6 +486,9 @@ anywhere.
 - **From the keyboard:** Tab to a file's line numbers, then use the arrow keys to
   move, **Shift+arrow** to extend, **Enter** or **Space** to select, and
   **Esc** to clear. Each file is one Tab stop, not one per row.
+- **Esc clears the selection from anywhere in Review**, not only from the line
+  numbers; the next **Esc** closes Review. An Esc typed in a text box or in the
+  companion's terminal stays there.
 
 The text of the code itself is still ordinary selectable text: drag across the
 code to copy it as usual. Only the line numbers select for the review.
