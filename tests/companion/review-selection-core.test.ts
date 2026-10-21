@@ -234,15 +234,10 @@ describe('U2a-i-AC-2 — the composer is deterministic and its bytes are pinned'
     )
   })
 
-  it('a range across both sides names both ends and quotes nothing', () => {
+  it('a range across both sides without diff rows is refused, never a frame that quotes nothing', () => {
     const c = coords({ startSide: 'LEFT', startLine: 85, side: 'RIGHT', line: 92 })
     expect(lineSource(c)).toBeNull()
-    const out = text(c, null)
-    expect(out).toContain(
-      'selection: from line 85 of the old file (LEFT) to line 92 of the new file (RIGHT)'
-    )
-    expect(out).toContain('This range spans both sides of the diff, so its lines are not included.')
-    expect(out).not.toContain('```quoted')
+    expect(composeSelection(c, null)).toEqual({ ok: false, detail: 'rows-not-found' })
   })
 
   it('stays under the contract cap even with 4,096-character paths and escaping at its worst', () => {
@@ -336,7 +331,7 @@ describe('U2a-i-AC-4 — nothing evaluative, no hunk header, no evidence', () =>
       null
     ],
     ['a capped range', coords({ startLine: 1, line: 250 }), blobOf(300)],
-    ['a mixed range', coords({ startSide: 'LEFT' }), null],
+    // A range across both sides is quoted as diff rows: its neutrality is run in review-selection-mixed.test.ts.
     ['no PR', coords({ prNumber: null }), blobOf(120)]
   ]
   for (const [name, c, blob] of FIXTURES) {

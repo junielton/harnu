@@ -526,9 +526,7 @@ kind. A range on one side is sent as the lines of that file. A range whose two e
 are on **different sides** (`old L85 – new L92`), or a one-sided range with a
 deleted or added row in the middle, is sent as the **diff rows** between its two
 ends, exactly as the pane shows them: each marked `+`, `-` or unchanged, with its old
-and new line numbers. (The bar's one-line note for such a range still reads _Lines
-not included — the range spans both sides_; that wording is out of date, the rows
-are sent.)
+and new line numbers.
 
 **A line above the companion's prompt.** While a selection stands, the Harnu mod
 draws one line above the prompt inside the companion's own terminal

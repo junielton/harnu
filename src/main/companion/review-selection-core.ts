@@ -495,7 +495,8 @@ const PREAMBLE: readonly string[] = [
 ]
 
 export type ComposeResult =
-  { ok: true; text: string } | { ok: false; detail: 'range-out-of-file' | 'text-too-long' }
+  | { ok: true; text: string }
+  | { ok: false; detail: 'range-out-of-file' | 'text-too-long' | 'rows-not-found' }
 
 /** The one sentence that replaces a quote past either cap, for a same-side and a mixed range alike. */
 const capNote = (count: number): string =>
@@ -524,8 +525,7 @@ function quoteRows(rows: readonly DiffRow[]): { quoted: string[]; chars: number 
  * Deterministic: the same coordinates, blob and rows give the same bytes. `blob` is the text of
  * {@link lineSource}'s file for a same-side line range. `diffRows` are the rows
  * {@link locateDiffRows} found for a multi-row range; a range that {@link quotesDiffRows} is quoted
- * from them. Without them a mixed range names its two ends and quotes nothing (the IPC never
- * composes one that way: it refuses instead).
+ * from them. Without them a mixed range is refused `rows-not-found` (the IPC refuses it earlier).
  */
 export function composeSelection(
   c: SelectionCoordinates,
@@ -574,14 +574,10 @@ export function composeSelection(
     return finish(frame(selection, { note: ROW_LEGEND, quoted }), omitted)
   }
 
-  if (startSide !== side) {
-    const selection = `selection: from line ${startLine} of the ${fileOf(startSide)} file (${startSide}) to line ${line} of the ${fileOf(side)} file (${side})`
-    return finish(
-      frame(selection, {
-        note: 'This range spans both sides of the diff, so its lines are not included.'
-      })
-    )
-  }
+  // A range across both sides has no one file to slice: it is quoted as diff rows or not at all.
+  // The IPC refuses before it gets here without them; a caller that skips that gets a refusal, not
+  // a frame that names two ends and quotes nothing.
+  if (startSide !== side) return { ok: false, detail: 'rows-not-found' }
 
   const single = startLine === line
   const selection = single
