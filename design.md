@@ -1124,14 +1124,19 @@ Badges).
 
 ```
 +-------------------------------------------------------------------------+
+| SHORTCUTS                            [ Open keybindings.json ][Reset all]|
 | Rebind any shortcut. Edits save to keybindings.json and apply at once.  |
-|                                                    [ Reset all ]        |
 |                                                                        |
+| [⌕ Search shortcuts or type a key combo                              ]  |
+| ( Unbound 8 ) ( Conflicts 2 ) ( Customized 3 )                          |
+|                                                                        |
+| SESSIONS                                                                |
 | New session               [ ⌘N ]            default ⌘N                 |
-| Open command palette       [ ⌘K ]            default ⌘K                 |
-| Toggle the Fleet rail      [ ⌘⇧B ]  not in terminal    ↺ Reset  ⌫ Unbind|
-| Review the active branch   [ ⌘⇧B ]  conflict: Toggle the Fleet rail    |
 | Resume last session        [ Set a shortcut… ]  unbound  ↺ Reset       |
+| VIEWS                                                                   |
+| Toggle the Fleet rail      [ ⌘⇧B ]  not in terminal    ↺ Reset  ⌫ Unbind|
+| TAKEOVERS                                                               |
+| Review the active branch   [ ⌘⇧B ]  conflict: Toggle the Fleet rail    |
 |  ...                                                                    |
 +-------------------------------------------------------------------------+
 ```
@@ -1140,20 +1145,25 @@ Badges).
 to `keybindings.json` and apply live. A ghost **Reset all** sits top-right, disabled
 when every row is already a default.
 
-**One row per rebindable action** (the 26; the reserved `app.*` five are not shown —
-they cannot be rebound). Seven of them — the Topbar's per-folder actions (`view.roadmap`,
+**One row per rebindable action** — every table id except the reserved `app.*` rows,
+which are not shown because they cannot be rebound. T486 grows the table toward ~108
+visible rows, and most of the actions it adds ship unbound (their rows start on "Set a
+shortcut…"), which is why the pane is searchable, grouped and filterable (below). Seven of the T1 rows — the Topbar's per-folder actions (`view.roadmap`,
 `view.prStack`, `folder.openInFileManager`, `folder.openInVSCode`,
 `folder.openGithubPulls`, `folder.browseFiles`, `folder.newTerminal`) — ship with no
 default chord, so their rows start on the empty "Set a shortcut…" state, as does
 `view.usageDashboard` (View menu). They are `menu: true`, backed by a native **Folder**
 menu, so a bound chord fires over the terminal. `view.settings` defaults to `⌘,` /
 `Ctrl+,` and sits in the app menu on macOS, the File menu elsewhere. Left: the action name (`--text-2` 12px, from
-`keybindings.actions.<id>`). Then the **capture control** — a `<kbd>`-styled button
+the descriptor's `labelKey` — `labelKeyFor(id)`, i.e. `keybindings.actions.<id>` with
+every `.` written as `_`, because vue-i18n reads a dotted key as a path). Then the **capture control** — a `<kbd>`-styled button
 showing the resolved chord; empty rows read "Set a shortcut…" in `--text-4`. Clicking
 it enters **recording**: the button border goes `--accent-line`, the label reads
 "Press a shortcut…", and the next physical key press (via `chordFromEvent`) is captured
-— a lone modifier does not commit, `Esc` cancels, `Backspace` unbinds. On commit the
-new chord is written and the control leaves recording.
+— a lone modifier does not commit, `Esc` cancels (the recording only: Settings stays
+open), `Backspace` unbinds. On commit the new chord is written and the control leaves
+recording. A chord that can never fire for that action is **refused** instead (see the
+recorder's refusal line below): the previous chord stays.
 
 **Trailing metadata**, in this order, each only when it applies:
 
@@ -1173,6 +1183,58 @@ new chord is written and the control leaves recording.
 **Reset all** clears every override at once (writes `[]`). Like the per-row Reset it
 goes through `keybindings.json`, so a hand-editor and this pane never disagree —
 whichever wrote last wins, and the chokidar watch reconciles the other.
+
+#### Search, groups and filters (T486)
+
+The same tab, between the intro and the first row. **No new token, no new
+component.**
+
+- **Search field** — full width, the Settings search input anatomy verbatim (§6
+  Settings dialog: `Search` icon 13px `--text-4` at the left, `bg-bg`,
+  `border-border` → `--accent-line` on focus, radius `5px`, padding `7px 10px 7px
+28px`, 12px). Placeholder "Search shortcuts or type a key combo". It takes focus
+  when the tab opens. Two match modes, picked per query:
+  - **Chord mode** — the trimmed query reads as a chord: it has a `+`, a modifier, an
+    F-key or `Esc` (`Ctrl+J`, `ctrl+shift+f`, `F6`), or a macOS modifier symbol
+    (`⌘⇧⌥⌃`, mapped back to tokens: `⌘K`). Rows stay whose **resolved** chord is the
+    same chord under the platform fold (off macOS `Ctrl+B` finds the `⌘B`/`Ctrl+B`
+    default). Answers "what holds Ctrl+J?" exactly.
+  - **Bare named key** — a lone key word (`delete`, `left`, `tab`, `home`, `end`,
+    `space`, `enter`) is both a chord and an ordinary word, so the result is the
+    **union** of the chord-mode and text-mode matches ("delete" still finds "Delete the
+    session…" while that row is unbound).
+  - **Text mode** — otherwise, a case-insensitive substring of the row's label (active
+    locale), its rendered chord or its id.
+- **Filter chips** — one row under the search: **Unbound** (no chord), **Conflicts**
+  (shares its chord with another action), **Customized** (not on its default). The §6
+  Badges anatomy (padding `2px 8px`, radius `999px`, 11px): inactive = **Default**
+  badge, active = **Accent** badge, `aria-pressed` set. Each label carries its count
+  over the **whole** table (not the filtered view), in `tabular-nums`. Chips are
+  independent toggles; active chips AND with each other and with the search.
+- **Group headers** — rows are grouped, in this fixed order: **Sessions, Sidebar,
+  Folders, Views, Panes, Takeovers, App**. Rows keep table order inside a group; a
+  group with no visible row is hidden (no header). The header is the **Settings
+  eyebrow** — Inter 11px/500 UPPERCASE, `letter-spacing 0.06em`, `--text-3`, the style
+  the pane's own "Shortcuts" eyebrow already uses inline — **not** the tokenized §3
+  `.eyebrow`: these headers sit beside that eyebrow inside a Settings tab, and siblings
+  must match. `margin-top 14px` (0 for the first), `margin-bottom 4px`.
+- **Empty result** — when the search and chips leave no row: one `--text-4` 12px line,
+  "No shortcut matches.", in place of the groups.
+
+**Hint lines under a row** — each a muted `--text-4` 11px line (the same style as the
+"default ⌘N" reminder), indented under the action name, shown only when it applies:
+
+- **Recorder refusal** (T486 U1) — "{chord} can't fire for this action. Pick another
+  shortcut." The recorder refuses a chord the renderer watcher can never match for an
+  action that has no other path (no native menu item, and from U5a no shield):
+  Shift+punctuation (Shift rewrites `e.key`, so `⌘⇧,` arrives as `<`), and on macOS
+  Option+letter (Option rewrites `e.key` too). The previous chord stays; the line goes
+  away on the next recording. A hand-edited `keybindings.json` entry still loads.
+- **Shield hint** (T486 U5a) — on a shielded action with a chord: "Taken from the
+  terminal: the program running there never sees {chord}."
+- **Terminal-keeps hint** (T486 U5a) — on a non-shielded action bound to a chord the
+  terminal keymap swallows: "The terminal keeps {chord}: it won't fire while a terminal
+  has focus."
 
 #### Open + discover (T1 P5)
 

@@ -45,6 +45,7 @@ import { settingsStatusKey } from '../lib/companion-view'
 import { useClaudeChangelogStore } from '../stores/claudeChangelog'
 import { useClaudeStatusStore } from '../stores/claude-status'
 import { useClaudeBootStore } from '../stores/claudeBoot'
+import { useKeybindingsStore } from '../stores/keybindings'
 import type { SettingsTabId } from '../stores/ui'
 
 /**
@@ -79,6 +80,7 @@ function themeLabel(m: ThemeMeta): string {
 const claudeChangelog = useClaudeChangelogStore()
 const claudeStatus = useClaudeStatusStore()
 const boot = useClaudeBootStore()
+const keybindings = useKeybindingsStore()
 const { t } = useI18n()
 
 const isOpen = computed(() => ui.dialog === 'settings')
@@ -869,6 +871,10 @@ function onBackdropMousedown(e: MouseEvent): void {
 
 function onKeydown(e: KeyboardEvent): void {
   if (!isOpen.value) return
+  // A Keyboard Shortcuts row is recording: this listener runs before the pane's
+  // (both window capture, registered first), and Esc must cancel only the
+  // recording — the pane's own handler does that (T486 §4).
+  if (keybindings.recordingId !== null) return
   if (e.key === 'Escape') {
     e.stopPropagation()
     close()
