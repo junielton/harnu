@@ -429,6 +429,30 @@ const translateMission: Translator = (args, gateFolder) => {
   return input
 }
 
+// T564 U1: `browser_open` and `browser_list` carry their own `folder`; the pane-addressed verbs carry only a
+// `paneId`, so the gate anchor `server.ts` resolved from the pane registry rides as `folder`.
+const translateBrowserOpen: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = { ...args }
+  delete input.folder
+  if (gateFolder) input.folder = gateFolder
+  return input
+}
+
+const translateBrowserList: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  const ownerSessionId = strField(args, 'ownerSessionId')
+  if (ownerSessionId) input.ownerSessionId = ownerSessionId
+  return input
+}
+
+const translateBrowserPane: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = { ...args }
+  delete input.folder
+  if (gateFolder) input.folder = gateFolder
+  return input
+}
+
 /**
  * Router-side translator table: every {@link McpOp} maps to exactly ONE
  * translator — a `Record<McpOp, …>` rather than a `switch`, so TypeScript
@@ -446,6 +470,10 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   list_terminals: translateListTerminals,
   read_terminal: translateReadTerminal,
   send_terminal: translateSendTerminal,
+  browser_open: translateBrowserOpen,
+  browser_list: translateBrowserList,
+  browser_navigate: translateBrowserPane,
+  browser_close: translateBrowserPane,
   adopt_folder: translateAdoptFolder,
   // BUG-56: same shape as adopt_folder — `folder` only.
   remove_folder: translateAdoptFolder,

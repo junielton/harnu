@@ -17,7 +17,7 @@
  *
  * The file lives at `<userData>/mcp-prefs.json`:
  * `{ "enabled"?: boolean, "ask"?: boolean, "autoRegister"?: boolean,
- * "agentTerminalWrites"?: boolean }`.
+ * "agentTerminalWrites"?: boolean, "agentBrowserWrites"?: boolean }`.
  *
  * env-bound (electron `app` + `node:fs`) ⇒ e2e-only per ADR-0001 (no unit test;
  * goes in coverage.exclude). The pure policy math lives in `policy-assemble.ts`;
@@ -53,6 +53,11 @@ interface McpPrefsFile {
    * only an explicit `false` makes every `send_terminal` refuse `TERMINAL_WRITES_DISABLED`.
    */
   agentTerminalWrites?: boolean
+  /**
+   * T564 U1: the global browser kill-switch ("Allow agents to drive browser panes"). Default ON — only an
+   * explicit `false` makes every browser write verb refuse `BROWSER_WRITES_DISABLED`.
+   */
+  agentBrowserWrites?: boolean
 }
 
 /** Read + parse the prefs object, or `{}` on a missing/corrupt/unreadable file. */
@@ -157,4 +162,29 @@ export async function readAgentTerminalWrites(): Promise<boolean> {
 export async function writeAgentTerminalWrites(enabled: boolean): Promise<void> {
   await mergePrefs({ agentTerminalWrites: enabled })
   terminalWritesCache = { file: mcpPrefsPath(), value: enabled }
+}
+
+/**
+ * Same in-memory shape as {@link terminalWritesCache}, for the browser kill-switch: asked on every browser
+ * verb at plan level, in the handler and again when the verb logic runs.
+ */
+let browserWritesCache: { file: string; value: boolean } | null = null
+
+/**
+ * Whether agents may drive browser panes at all (T564 U1, spec §7.4: "Allow agents to drive browser panes").
+ * Defaults to **`true`**; only an explicit `{ "agentBrowserWrites": false }` switches every write verb off
+ * (`open`, `navigate`, ... refuse `BROWSER_WRITES_DISABLED`; `list` and `close` keep working).
+ */
+export async function readAgentBrowserWrites(): Promise<boolean> {
+  const file = mcpPrefsPath()
+  if (browserWritesCache?.file === file) return browserWritesCache.value
+  const value = (await readPrefs()).agentBrowserWrites !== false
+  browserWritesCache = { file, value }
+  return value
+}
+
+/** Persist the browser kill-switch (read-merge-write; preserves the rest). */
+export async function writeAgentBrowserWrites(enabled: boolean): Promise<void> {
+  await mergePrefs({ agentBrowserWrites: enabled })
+  browserWritesCache = { file: mcpPrefsPath(), value: enabled }
 }

@@ -66,6 +66,8 @@ import {
 } from '../terminal-registry'
 import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { readAgentTerminalWrites } from './prefs'
+import { makeBrowserVerbDeps } from '../browser/browser-service'
+import { closeVerb, listVerb, navigateVerb, openVerb } from '../browser/verbs-core'
 import { resolveTerminalGate } from '../terminal-gate'
 import { terminalLeases } from '../terminal-lease'
 import { scrubTerminalText } from '../scrub-terminal'
@@ -5133,6 +5135,100 @@ const missionLogHandler: Handler = async (args, ctx) => {
   })
 }
 
+/* ---- T564 U1: the browser verbs ------------------------------------------------------------------- */
+
+/** The bits of this call's context the browser verbs need, over the real singletons. */
+function browserDeps(ctx: ToolHandlerCtx): ReturnType<typeof makeBrowserVerbDeps> {
+  return makeBrowserVerbDeps({
+    bridge: ctx.bridge,
+    sessionKnown: (id) => sessionKnown(id, ctx),
+    folderBlocked: (folder) => isFolderDenied(folder, ctx.denyFolders, os.homedir())
+  })
+}
+
+/** A verb result: `ok:false` is the steering refusal shape of spec §6, returned as an error result. */
+function browserResult(res: Record<string, unknown>): CallToolResult {
+  if (res.ok === false) {
+    return { content: [{ type: 'text', text: JSON.stringify(res) }], isError: true }
+  }
+  return textResult(res)
+}
+
+/** The strings a verb carries, with `undefined` for absent. */
+function optStr(args: Record<string, unknown>, key: string): string | undefined {
+  return typeof args[key] === 'string' ? (args[key] as string) : undefined
+}
+
+const browserOpenHandler: Handler = async (args, ctx) => {
+  if (!ctx.bridge) return errorResult('NO_BRIDGE')
+  const folder = resolvePaneFolder(ctx)
+  if (!folder) return steerError('PANE_FOLDER_UNKNOWN', ctx.folder)
+  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT: do not open a page nobody will be told about.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await openVerb(
+    {
+      folder,
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(optStr(args, 'path') !== undefined ? { path: optStr(args, 'path') } : {}),
+      ...(optStr(args, 'html') !== undefined ? { html: optStr(args, 'html') } : {}),
+      ...(optStr(args, 'name') !== undefined ? { name: optStr(args, 'name') } : {}),
+      ...(optStr(args, 'ownerSessionId') !== undefined
+        ? { ownerSessionId: optStr(args, 'ownerSessionId') }
+        : {}),
+      ...(args.device !== undefined ? { device: args.device } : {}),
+      ...(typeof args.background === 'boolean' ? { background: args.background } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_open', ...res })
+}
+
+const browserListHandler: Handler = async (args, ctx) => {
+  const folderArg = optStr(args, 'folder')
+  const folder =
+    folderArg === undefined
+      ? undefined
+      : (resolveKnownFolder(
+          folderArg,
+          ctx.folders.map((f) => f.path)
+        ) ?? folderArg)
+  const res = await listVerb(
+    {
+      ...(folder !== undefined ? { folder } : {}),
+      ...(optStr(args, 'ownerSessionId') !== undefined
+        ? { ownerSessionId: optStr(args, 'ownerSessionId') }
+        : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult(res)
+}
+
+const browserNavigateHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await navigateVerb(
+    {
+      paneId: optStr(args, 'paneId') ?? '',
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(typeof args.action === 'string'
+        ? { action: args.action as 'back' | 'forward' | 'reload' | 'stop' }
+        : {}),
+      ...(typeof args.hard === 'boolean' ? { hard: args.hard } : {}),
+      ...(typeof args.waitUntil === 'string'
+        ? { waitUntil: args.waitUntil as 'commit' | 'domcontentloaded' | 'load' }
+        : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_navigate', ...res })
+}
+
+const browserCloseHandler: Handler = async (args, ctx) => {
+  const res = await closeVerb({ paneId: optStr(args, 'paneId') ?? '' }, browserDeps(ctx))
+  return browserResult({ op: 'browser_close', ...res })
+}
+
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
   get_fleet: getFleetHandler,
@@ -5145,6 +5241,10 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   list_terminals: listTerminalsHandler,
   read_terminal: readTerminalHandler,
   send_terminal: sendTerminalHandler,
+  browser_open: browserOpenHandler,
+  browser_list: browserListHandler,
+  browser_navigate: browserNavigateHandler,
+  browser_close: browserCloseHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

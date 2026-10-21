@@ -1258,6 +1258,118 @@ function parseMissionVerb(op: McpOp): (input: unknown) => ParseResult<Record<str
   }
 }
 
+/* T564 U1: the browser verbs. Validation here is STRUCTURAL; the scheme, the pane cap and the access rules
+ * are judged by `browser/verbs-core` and `browser/access`. */
+
+/** Validated args for `browser_open` (url form; `path`/`html`/`device` parse but refuse later). */
+export interface BrowserOpenArgs {
+  folder: string
+  url?: string
+  path?: string
+  html?: string
+  name?: string
+  ownerSessionId?: string
+  device?: unknown
+  background?: boolean
+}
+
+const BrowserOpenSchema = z.object({
+  folder: absolutePathSchema,
+  url: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+  html: z.string().optional(),
+  name: z.string().min(1).max(80).optional(),
+  ownerSessionId: z.string().min(1).optional(),
+  device: z.unknown().optional(),
+  background: z.boolean().optional()
+})
+
+export function parseBrowserOpen(input: unknown): ParseResult<BrowserOpenArgs> {
+  const parsed = BrowserOpenSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: BrowserOpenArgs = { folder: parsed.data.folder }
+  for (const key of ['url', 'path', 'html', 'name', 'ownerSessionId'] as const) {
+    if (parsed.data[key] !== undefined) value[key] = parsed.data[key]
+  }
+  if (parsed.data.device !== undefined) value.device = parsed.data.device
+  if (parsed.data.background !== undefined) value.background = parsed.data.background
+  return { ok: true, value }
+}
+
+/** Validated args for `browser_list`: both filters optional. */
+export interface BrowserListArgs {
+  folder?: string
+  ownerSessionId?: string
+}
+
+const BrowserListSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  ownerSessionId: z.string().min(1).optional()
+})
+
+export function parseBrowserList(input: unknown): ParseResult<BrowserListArgs> {
+  const parsed = BrowserListSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: BrowserListArgs = {}
+  if (parsed.data.folder !== undefined) value.folder = parsed.data.folder
+  if (parsed.data.ownerSessionId !== undefined) value.ownerSessionId = parsed.data.ownerSessionId
+  return { ok: true, value }
+}
+
+/** Validated args for `browser_navigate`. `folder` is the pane's own folder, resolved by the shell. */
+export interface BrowserNavigateArgs {
+  folder?: string
+  paneId: string
+  url?: string
+  action?: 'back' | 'forward' | 'reload' | 'stop'
+  hard?: boolean
+  waitUntil?: 'commit' | 'domcontentloaded' | 'load'
+  timeoutMs?: number
+}
+
+const BrowserNavigateSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: z.string().min(1),
+  url: z.string().min(1).optional(),
+  action: z.enum(['back', 'forward', 'reload', 'stop']).optional(),
+  hard: z.boolean().optional(),
+  waitUntil: z.enum(['commit', 'domcontentloaded', 'load']).optional(),
+  timeoutMs: z.number().int().min(100).max(90000).optional()
+})
+
+export function parseBrowserNavigate(input: unknown): ParseResult<BrowserNavigateArgs> {
+  const parsed = BrowserNavigateSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const d = parsed.data
+  const value: BrowserNavigateArgs = { paneId: d.paneId }
+  if (d.folder !== undefined) value.folder = d.folder
+  if (d.url !== undefined) value.url = d.url
+  if (d.action !== undefined) value.action = d.action
+  if (d.hard !== undefined) value.hard = d.hard
+  if (d.waitUntil !== undefined) value.waitUntil = d.waitUntil
+  if (d.timeoutMs !== undefined) value.timeoutMs = d.timeoutMs
+  return { ok: true, value }
+}
+
+/** Validated args for `browser_close`. */
+export interface BrowserCloseArgs {
+  folder?: string
+  paneId: string
+}
+
+const BrowserCloseSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: z.string().min(1)
+})
+
+export function parseBrowserClose(input: unknown): ParseResult<BrowserCloseArgs> {
+  const parsed = BrowserCloseSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: BrowserCloseArgs = { paneId: parsed.data.paneId }
+  if (parsed.data.folder !== undefined) value.folder = parsed.data.folder
+  return { ok: true, value }
+}
+
 /**
  * Router-side dispatch table: validate the args for a given {@link McpOp}.
  * Every op maps to exactly ONE parser — a `Record<McpOp, …>` rather than a
@@ -1275,6 +1387,10 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   list_terminals: parseListTerminals,
   read_terminal: parseReadTerminal,
   send_terminal: parseSendTerminal,
+  browser_open: parseBrowserOpen,
+  browser_list: parseBrowserList,
+  browser_navigate: parseBrowserNavigate,
+  browser_close: parseBrowserClose,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,
