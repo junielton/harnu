@@ -289,12 +289,37 @@
           "red": "Vermelho",
           "muted": "Neutro"
         },
-        "stroke": { "solid": "Contínuo", "dashed": "Tracejado", "dotted": "Pontilhado" },
-        "strokeWidth": { "thin": "Fino", "regular": "Normal", "bold": "Grosso" },
-        "corners": { "sharp": "Retos", "round": "Arredondados" },
-        "fontSize": { "s": "Pequeno", "m": "Médio", "l": "Grande", "xl": "Extra grande" },
-        "align": { "left": "Esquerda", "center": "Centro", "right": "Direita" },
-        "opacity": { "25": "25%", "50": "50%", "75": "75%", "100": "100%" }
+        "stroke": {
+          "solid": "Contínuo",
+          "dashed": "Tracejado",
+          "dotted": "Pontilhado"
+        },
+        "strokeWidth": {
+          "thin": "Fino",
+          "regular": "Normal",
+          "bold": "Grosso"
+        },
+        "corners": {
+          "sharp": "Retos",
+          "round": "Arredondados"
+        },
+        "fontSize": {
+          "s": "Pequeno",
+          "m": "Médio",
+          "l": "Grande",
+          "xl": "Extra grande"
+        },
+        "align": {
+          "left": "Esquerda",
+          "center": "Centro",
+          "right": "Direita"
+        },
+        "opacity": {
+          "25": "25%",
+          "50": "50%",
+          "75": "75%",
+          "100": "100%"
+        }
       }
     }
   },
@@ -1255,7 +1280,16 @@
       "app.devtools": "Alternar o DevTools",
       "app.quit": "Sair do Harnu",
       "app.fullscreen": "Alternar tela cheia",
-      "app.openKeybindings": "Abrir Atalhos de teclado"
+      "app.openKeybindings": "Abrir Atalhos de teclado",
+      "browser.overlay.toggle": "Alternar comentário no navegador (apontar e comentar)",
+      "browser.zoom.in": "Painel do navegador: aumentar zoom",
+      "browser.zoom.out": "Painel do navegador: diminuir zoom",
+      "browser.zoom.reset": "Painel do navegador: restaurar zoom",
+      "browser.devtools": "Painel do navegador: abrir DevTools",
+      "browser.reload": "Painel do navegador: recarregar",
+      "browser.back": "Painel do navegador: voltar",
+      "browser.forward": "Painel do navegador: avançar",
+      "browser.focusAddress": "Painel do navegador: focar na barra de endereço"
     }
   },
   "notifications": {
@@ -1809,7 +1843,9 @@
       "description": "Coloca uma confirmação na frente de toda ação do agente — criar sessão, abrir terminal, worktree, escrever na memória. Desligado por padrão: os agentes agem livremente e toda chamada fica registrada no log de auditoria abaixo. Ligue se preferir aprovar uma a uma."
     },
     "agentTerminalWrites": "Permitir que agentes digitem em terminais",
-    "agentTerminalWritesHint": "Desligado, os agentes ainda podem ler os terminais que você permitir, mas toda tentativa de digitar é recusada."
+    "agentTerminalWritesHint": "Desligado, os agentes ainda podem ler os terminais que você permitir, mas toda tentativa de digitar é recusada.",
+    "agentBrowserWrites": "Permitir que agentes controlem painéis do navegador",
+    "agentBrowserWritesHint": "Desligado, todo comando de escrita do navegador é recusado (abrir, navegar…). Listar e fechar continuam funcionando."
   },
   "bundledSkills": {
     "title": "Skills inclusas",
@@ -4296,5 +4332,55 @@
       },
       "manualRemove": "Para remover à mão, apague {path} de `CLAUDE_CODE_PLUGIN_DIRS`."
     }
+  },
+  "browserPane": {
+    "label": "Navegador",
+    "newTab": "Nova aba",
+    "menu": "Mais ações",
+    "back": "Voltar",
+    "forward": "Avançar",
+    "reload": "Recarregar",
+    "stop": "Parar",
+    "address": "Endereço",
+    "addressPlaceholder": "Digite um endereço",
+    "pauseAgent": "Pausar o agente por 10 min",
+    "resumeAgent": "Retomar o agente",
+    "devtools": "Abrir DevTools",
+    "openFailed": "Não foi possível abrir o navegador",
+    "origin": {
+      "local": "local",
+      "external": "externo",
+      "page": "página"
+    },
+    "flag": {
+      "label": "aberto pelo agente · {host}",
+      "dismiss": "Dispensar o aviso"
+    },
+    "chip": {
+      "connectedTo": "Conectado a {session}",
+      "connectedToAgent": "Conectado a um agente",
+      "paused": "Agente pausado · {time}",
+      "resume": "Retomar",
+      "disconnected": "Desconectado",
+      "disconnect": "Desconectar o agente",
+      "disconnectHint": "Encerra o acesso do agente a este painel para sempre",
+      "disconnectedToast": "Agente desconectado deste painel",
+      "disconnectFailed": "Não foi possível desconectar o agente",
+      "reading": "lendo",
+      "driving": "operando"
+    },
+    "notice": {
+      "blocked": "Bloqueado: endereços {scheme}: não podem ser abertos",
+      "blockedAny": "Bloqueado: este tipo de endereço não pode ser aberto",
+      "certificate": "Certificado autoassinado aceito para {host}",
+      "dialog": "A página abriu um diálogo {dialog} e o Harnu o dispensou",
+      "crashed": "A página parou de responder",
+      "dismiss": "Dispensar"
+    }
+  },
+  "splitMenu": {
+    "label": "Mais opções de divisão",
+    "terminal": "Terminal",
+    "browser": "Navegador"
   }
 }

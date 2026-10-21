@@ -113,5 +113,15 @@ export const paneRegistry: Record<AnyHelperPane['type'], PaneRegistryEntry> = {
     persistable: true,
     dedupKey: (p) => (p as HelperPane).filePath,
     maxInstances: MAX_CANVAS_PANES
+  },
+  // T564 U1 — the browser pane. NOT persistable in this unit: a pane reopened after a restart would have no
+  // main-side view behind its id, and the discarded-placeholder restore is unit U7. URL panes never dedupe
+  // (the spec's page-file dedupe arrives with `harnu-page://` in U2).
+  //
+  // No `maxInstances` on purpose: the registry's cap recycles the OLDEST pane silently, while agent panes need
+  // a REFUSAL ("reuse one", `PANE_LIMIT`) and operator panes are unlimited (decision 28), so the cap lives in
+  // the verb handler (`browser/verbs-core.ts`), not here.
+  browser: {
+    persistable: false
   }
 }

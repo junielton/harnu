@@ -289,12 +289,37 @@
           "red": "Red",
           "muted": "Muted"
         },
-        "stroke": { "solid": "Solid", "dashed": "Dashed", "dotted": "Dotted" },
-        "strokeWidth": { "thin": "Thin", "regular": "Regular", "bold": "Bold" },
-        "corners": { "sharp": "Sharp", "round": "Round" },
-        "fontSize": { "s": "Small", "m": "Medium", "l": "Large", "xl": "Extra large" },
-        "align": { "left": "Left", "center": "Center", "right": "Right" },
-        "opacity": { "25": "25%", "50": "50%", "75": "75%", "100": "100%" }
+        "stroke": {
+          "solid": "Solid",
+          "dashed": "Dashed",
+          "dotted": "Dotted"
+        },
+        "strokeWidth": {
+          "thin": "Thin",
+          "regular": "Regular",
+          "bold": "Bold"
+        },
+        "corners": {
+          "sharp": "Sharp",
+          "round": "Round"
+        },
+        "fontSize": {
+          "s": "Small",
+          "m": "Medium",
+          "l": "Large",
+          "xl": "Extra large"
+        },
+        "align": {
+          "left": "Left",
+          "center": "Center",
+          "right": "Right"
+        },
+        "opacity": {
+          "25": "25%",
+          "50": "50%",
+          "75": "75%",
+          "100": "100%"
+        }
       }
     }
   },
@@ -1255,7 +1280,16 @@
       "app.devtools": "Toggle DevTools",
       "app.quit": "Quit Harnu",
       "app.fullscreen": "Toggle fullscreen",
-      "app.openKeybindings": "Open Keyboard Shortcuts"
+      "app.openKeybindings": "Open Keyboard Shortcuts",
+      "browser.overlay.toggle": "Browser pane: toggle point-and-comment",
+      "browser.zoom.in": "Browser pane: zoom in",
+      "browser.zoom.out": "Browser pane: zoom out",
+      "browser.zoom.reset": "Browser pane: reset zoom",
+      "browser.devtools": "Browser pane: open DevTools",
+      "browser.reload": "Browser pane: reload",
+      "browser.back": "Browser pane: back",
+      "browser.forward": "Browser pane: forward",
+      "browser.focusAddress": "Browser pane: focus the address bar"
     }
   },
   "notifications": {
@@ -1809,7 +1843,9 @@
       "description": "Put a confirmation in front of every agent action — creating a session, spawning a terminal, a worktree, writing to memory. Off by default: agents act freely and every call is recorded in the audit log below. Turn this on if you'd rather approve each one."
     },
     "agentTerminalWrites": "Allow agents to type into terminals",
-    "agentTerminalWritesHint": "When off, agents can still read terminals you allow, but every attempt to type is refused."
+    "agentTerminalWritesHint": "When off, agents can still read terminals you allow, but every attempt to type is refused.",
+    "agentBrowserWrites": "Allow agents to drive browser panes",
+    "agentBrowserWritesHint": "When off, every browser write (open, navigate, …) is refused. Listing and closing still work."
   },
   "bundledSkills": {
     "title": "Bundled skills",
@@ -4296,5 +4332,55 @@
       },
       "manualRemove": "To remove it by hand, delete {path} from `CLAUDE_CODE_PLUGIN_DIRS`."
     }
+  },
+  "browserPane": {
+    "label": "Browser pane",
+    "newTab": "New tab",
+    "menu": "More actions",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "stop": "Stop",
+    "address": "Address",
+    "addressPlaceholder": "Enter an address",
+    "pauseAgent": "Pause agent for 10 min",
+    "resumeAgent": "Resume agent",
+    "devtools": "Open DevTools",
+    "openFailed": "Couldn't open the browser pane",
+    "origin": {
+      "local": "local",
+      "external": "external",
+      "page": "page"
+    },
+    "flag": {
+      "label": "opened by agent · {host}",
+      "dismiss": "Dismiss the notice"
+    },
+    "chip": {
+      "connectedTo": "Connected to {session}",
+      "connectedToAgent": "Connected to an agent",
+      "paused": "Agent paused · {time}",
+      "resume": "Resume",
+      "disconnected": "Disconnected",
+      "disconnect": "Disconnect the agent",
+      "disconnectHint": "Ends the agent's access to this pane for good",
+      "disconnectedToast": "Agent disconnected from this pane",
+      "disconnectFailed": "Couldn't disconnect the agent",
+      "reading": "reading",
+      "driving": "driving"
+    },
+    "notice": {
+      "blocked": "Blocked: {scheme}: addresses cannot be opened",
+      "blockedAny": "Blocked: this kind of address cannot be opened",
+      "certificate": "Accepted the self-signed certificate for {host}",
+      "dialog": "The page opened a {dialog} dialog and Harnu dismissed it",
+      "crashed": "The page stopped responding",
+      "dismiss": "Dismiss"
+    }
+  },
+  "splitMenu": {
+    "label": "More split options",
+    "terminal": "Terminal",
+    "browser": "Browser"
   }
 }

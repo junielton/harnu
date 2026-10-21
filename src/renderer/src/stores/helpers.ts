@@ -188,6 +188,34 @@ export function isAgentTerminalPane(pane: AnyHelperPane): pane is HelperPaneAgen
   return pane.type === 'shell' && (pane as { terminalId?: unknown }).terminalId !== undefined
 }
 
+/**
+ * A browser pane (T564 U1). The pane id IS the main-side `paneId` (main owns the guest view, exactly as it
+ * owns an agent terminal's PTY), and everything else rides in the `payload` bag. Transient in this unit: it is
+ * never written to `helpers.json`, and closing it destroys the view in main (`removeHelper`).
+ */
+export type HelperPaneBrowser = HelperPane & { type: 'browser' }
+
+/** What a browser pane carries in `payload`. */
+export interface BrowserPanePayload {
+  name: string
+  url: string
+  openedBy: 'agent' | 'operator'
+  partition: 'agent' | 'operator'
+  ownerSessionId: string | null
+}
+
+/** Read a browser pane's payload with safe defaults. */
+export function browserPayload(pane: AnyHelperPane): BrowserPanePayload {
+  const p = ((pane as HelperPane).payload ?? {}) as Partial<BrowserPanePayload>
+  return {
+    name: p.name ?? '',
+    url: p.url ?? '',
+    openedBy: p.openedBy === 'agent' ? 'agent' : 'operator',
+    partition: p.partition === 'agent' ? 'agent' : 'operator',
+    ownerSessionId: p.ownerSessionId ?? null
+  }
+}
+
 /** Union of persisted + transient pane shapes. */
 export type AnyHelperPane =
   HelperPane | HelperPanePending | HelperPaneReviewCompanion | HelperPaneAgentTerminal
@@ -917,6 +945,29 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
+   * Show a browser pane main already created (T564 U1): the pane id IS the guest view's `paneId`. Returns the
+   * existing pane when the stack already holds that id (a re-announcement must never double it). An agent open
+   * badges an off-screen folder like any agent pane and never moves the operator's view.
+   */
+  function addBrowserHelper(
+    worktreePath: string,
+    spec: { paneId: string } & BrowserPanePayload,
+    opts?: AddHelperOpts
+  ): string {
+    const held = byWorktree.value.get(worktreePath)?.panes.find((p) => p.id === spec.paneId)
+    if (held) return held.id
+    const { paneId, ...payload } = spec
+    const pane: HelperPane = {
+      id: paneId,
+      type: 'browser',
+      cwd: worktreePath,
+      ratio: 0,
+      payload: { ...payload }
+    }
+    return addHelper(worktreePath, pane, opts)
+  }
+
+  /**
    * Open a folder-backed project-memory viewer pane (T79 S3) in a worktree's
    * stack. Non-PTY like {@link addMarkdownHelper} — cheap, reproducible from
    * `folder`, so it never enters `liveHelpers`.
@@ -1113,6 +1164,11 @@ export const useHelpersStore = defineStore('helpers', () => {
     // the pane ever mounted (an unmounted pane has no live helper to dispose it).
     const removed = byWorktree.value.get(worktreePath)?.panes.find((p) => p.id === helperId)
     if (removed) closeAgentTerminal(removed)
+    // T564 U1: main owns a browser pane's guest view, so removal asks main to destroy it (idempotent: a
+    // `browser_close` already did, and the call just finds nothing).
+    if (removed?.type === 'browser') {
+      void Promise.resolve(window.api.browserDestroy(removed.id)).catch(() => undefined)
+    }
     mutateWorktree(worktreePath, (s) => {
       const remaining = s.panes.filter((p) => p.id !== helperId)
       const updated = rebalanceRatios(remaining) as AnyHelperPane[]
@@ -1495,6 +1551,7 @@ export const useHelpersStore = defineStore('helpers', () => {
     addResumeHelper,
     addMarkdownHelper,
     addCanvasHelper,
+    addBrowserHelper,
     addMemoryHelper,
     addExplorerHelper,
     addReviewCompanionHelper,

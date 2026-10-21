@@ -12,7 +12,15 @@ import * as path from 'node:path'
  * non-PTY and reproducible from its `folder` (the repo whose `.harnu/memory/` it
  * shows).
  */
-export type HelperPaneType = 'shell' | 'claude' | 'markdown' | 'memory' | 'explorer' | 'canvas'
+export type HelperPaneType =
+  | 'shell'
+  | 'claude'
+  | 'markdown'
+  | 'memory'
+  | 'explorer'
+  | 'canvas'
+  // T564 U1: a browser pane. Transient in this unit (`persistable: false`): restart restore is U7.
+  | 'browser'
 
 export interface HelperPane {
   /** Stable id; format: `h-<random>`. Used as the PTY identifier too. */

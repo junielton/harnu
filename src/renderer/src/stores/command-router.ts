@@ -40,6 +40,8 @@ export const COMMAND_OPS = [
   'session.dispatchCard',
   'pane.split',
   'pane.openMarkdown',
+  // T564 U1: show a browser pane main already created (an agent's `browser_open`, or a popup).
+  'pane.browser',
   'pane.closeFile',
   'pane.closePane',
   'roadmap.bootLabels',
@@ -127,6 +129,22 @@ export interface CommandRouterActions {
    * pane id (new, or the existing one on a dedup hit).
    */
   addCanvasHelper(worktreePath: string, filePath: string, cwd: string): string
+  /**
+   * T564 U1: show a browser pane main already created in the TARGET worktree's stack, headlessly (an agent's
+   * `browser_open` never selects the worktree or moves focus). The pane id is main's `paneId`. Returns the
+   * pane id (the existing one when the stack already holds it).
+   */
+  addBrowserHelper?(
+    worktreePath: string,
+    spec: {
+      paneId: string
+      name: string
+      url: string
+      openedBy: 'agent' | 'operator'
+      partition: 'agent' | 'operator'
+      ownerSessionId: string | null
+    }
+  ): string
   /**
    * T171 `close_file`: close the non-PTY, file/folder-backed pane (markdown /
    * memory / explorer) matching `path` in the TARGET worktree's stack.
@@ -436,6 +454,28 @@ function handlePaneOpenMarkdown(actions: CommandRouterActions, payload: unknown)
 }
 
 /**
+ * `pane.browser`: show a browser pane main already created (T564 U1). The payload is validated here; the
+ * pane id comes from main and is returned as it is, never minted renderer-side.
+ */
+function handlePaneBrowser(actions: CommandRouterActions, payload: unknown): DispatchResult {
+  if (!actions.addBrowserHelper) return { ok: false, error: 'addBrowserHelper not wired' }
+  if (!isRecord(payload)) return BAD_ARGS
+  if (!isNonEmptyString(payload.worktreePath)) return BAD_ARGS
+  if (!isNonEmptyString(payload.paneId)) return BAD_ARGS
+  const openedBy = payload.openedBy === 'operator' ? 'operator' : 'agent'
+  const partition = payload.partition === 'operator' ? 'operator' : 'agent'
+  const paneId = actions.addBrowserHelper(payload.worktreePath, {
+    paneId: payload.paneId,
+    name: isNonEmptyString(payload.name) ? payload.name : '',
+    url: isNonEmptyString(payload.url) ? payload.url : '',
+    openedBy,
+    partition,
+    ownerSessionId: isNonEmptyString(payload.ownerSessionId) ? payload.ownerSessionId : null
+  })
+  return { paneId }
+}
+
+/**
  * `pane.closeFile`: close a file/folder-backed pane by `path` in the TARGET
  * worktree's stack. Mirrors `handlePaneOpenMarkdown`'s validation shape.
  */
@@ -633,6 +673,8 @@ export function makeCommandRouter(actions: CommandRouterActions): CommandRouter 
           return handlePaneSplit(actions, payload)
         case 'pane.openMarkdown':
           return handlePaneOpenMarkdown(actions, payload)
+        case 'pane.browser':
+          return handlePaneBrowser(actions, payload)
         case 'pane.closeFile':
           return handlePaneCloseFile(actions, payload)
         case 'pane.closePane':

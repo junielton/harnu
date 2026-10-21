@@ -2,6 +2,7 @@ import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import { useHelpersStore } from '../stores/helpers'
+import { useBrowserStore } from '../stores/browser'
 
 /**
  * The Topbar's per-folder actions, shared by the Topbar buttons and their
@@ -18,6 +19,8 @@ export interface FolderActions {
   openGithubPulls: () => Promise<void>
   browseFiles: () => void
   newTerminal: () => void
+  /** T564 U1: open an operator browser pane in the active folder's split stack. */
+  newBrowser: () => Promise<void>
 }
 
 export function useFolderActions(): FolderActions {
@@ -125,6 +128,30 @@ export function useFolderActions(): FolderActions {
     helpers.addShellHelper(wt, wt)
   }
 
+  /**
+   * "Split → Browser" (T564 U1, spec §2.2): ask main for an operator-class guest view, then show it in the
+   * active folder's stack and put the cursor in its address bar. An operator pane starts at `about:blank`.
+   */
+  async function newBrowser(): Promise<void> {
+    const wt = sessions.activeFolderPath
+    if (!wt) return
+    const res = await window.api.browserOpen({ folder: wt })
+    if (!res.ok) {
+      ui.pushToast({ kind: 'danger', title: t('browserPane.openFailed'), description: res.error })
+      return
+    }
+    helpers.addBrowserHelper(wt, {
+      paneId: res.paneId,
+      name: '',
+      url: 'about:blank',
+      openedBy: 'operator',
+      partition: 'operator',
+      ownerSessionId: null
+    })
+    // The pane mounts on the next tick; its address field takes the focus request when it does.
+    useBrowserStore().requestFocusAddress(res.paneId)
+  }
+
   return {
     folderLabel,
     toggleRoadmap,
@@ -133,6 +160,7 @@ export function useFolderActions(): FolderActions {
     openInVSCode,
     openGithubPulls,
     browseFiles,
-    newTerminal
+    newTerminal,
+    newBrowser
   }
 }

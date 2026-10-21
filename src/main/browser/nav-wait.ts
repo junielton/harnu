@@ -8,8 +8,8 @@ import type { NavigateOutcome } from './verbs-core'
 
 /** The subset of the guest `webContents` the waiter listens to. */
 export interface NavEmitter {
-  on(event: string, listener: (...args: any[]) => void): unknown
-  off(event: string, listener: (...args: any[]) => void): unknown
+  on(event: string, listener: (...args: never[]) => void): unknown
+  off(event: string, listener: (...args: never[]) => void): unknown
 }
 
 export interface NavTimers {
@@ -45,10 +45,11 @@ export function waitForNavigation(
   let finish!: (reason: 'load' | 'timeout') => void
   const settled = new Promise<NavigateOutcome>((resolve) => {
     let done = false
-    let timer: unknown
+    /** The timeout handle, boxed so `cleanup` (defined first) can reach it once it is set. */
+    const timer: { handle?: unknown } = {}
     const cleanup = (): void => {
       done = true
-      opts.timers.clearTimeout(timer)
+      opts.timers.clearTimeout(timer.handle)
       emitter.off('did-navigate', onNavigate)
       emitter.off('dom-ready', onDomReady)
       emitter.off('did-stop-loading', onStop)
@@ -91,7 +92,7 @@ export function waitForNavigation(
     emitter.on('dom-ready', onDomReady)
     emitter.on('did-stop-loading', onStop)
     emitter.on('did-fail-load', onFail)
-    timer = opts.timers.setTimeout(() => finish('timeout'), opts.timeoutMs)
+    timer.handle = opts.timers.setTimeout(() => finish('timeout'), opts.timeoutMs)
   })
   return { settled, cancel: () => finish('timeout') }
 }

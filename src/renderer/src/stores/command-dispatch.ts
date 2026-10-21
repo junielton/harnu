@@ -156,6 +156,9 @@ export function buildDispatchActions(): CommandRouterActions {
     // agent-opened board badges as unseen rather than stealing focus.
     addCanvasHelper: (worktreePath, filePath, cwd) =>
       helpers.addCanvasHelper(worktreePath, filePath, cwd, { origin: 'agent' }),
+    // T564 U1: a browser pane main created for an agent; background and badged like every agent pane.
+    addBrowserHelper: (worktreePath, spec) =>
+      helpers.addBrowserHelper(worktreePath, spec, { origin: 'agent' }),
     closeHelperByPath: (worktreePath, path) => helpers.closeHelperByPath(worktreePath, path),
     closeHelperById: (worktreePath, paneId) => helpers.closeHelperById(worktreePath, paneId),
     // T113 (background drain): the board-dispatch spawn WITHOUT selection — the

@@ -2,9 +2,14 @@
  * Wire types shared by the browser pane's main side and its renderer (T564 U1). Pure types: the preload
  * re-exports them so the renderer never imports main code at runtime.
  */
-import type { OriginClass } from './origin-class'
-import type { BrowserPartition } from './guest-prefs'
-import type { BrowserOpenedBy } from './access'
+
+// Deliberately import-free: the preload re-exports these to the renderer project, which lists main files
+// explicitly. The unions below mirror `origin-class.ts`, `guest-prefs.ts` and `access.ts`; the pure cores'
+// tests pin the values, and `view-host.ts` (which assigns them) is type-checked against them.
+
+export type BrowserOriginClass = 'page' | 'local' | 'external' | 'blank'
+export type BrowserPartitionName = 'operator' | 'agent'
+export type BrowserOpenedByWho = 'agent' | 'operator'
 
 /** One-line notice the pane header shows under the address bar (design.md "Notice strip"). */
 export type BrowserNotice =
@@ -21,9 +26,9 @@ export interface BrowserPaneState {
   loading: boolean
   canGoBack: boolean
   canGoForward: boolean
-  origin: OriginClass
-  openedBy: BrowserOpenedBy
-  partition: BrowserPartition
+  origin: BrowserOriginClass
+  openedBy: BrowserOpenedByWho
+  partition: BrowserPartitionName
   /** The "opened by agent · host" flag, or `null`. */
   flagged: { host: string } | null
   /** Epoch ms the operator's pause ends, or `null`. */
