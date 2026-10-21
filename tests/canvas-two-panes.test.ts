@@ -343,6 +343,36 @@ describe('BUG-209 — the same canvas open in two panes', () => {
     b.unmount()
   })
 
+  it('pinned: two Saves inside one settle window — the later Save wins', async () => {
+    // The two-pane form of BUG-202's residual window. B saves before A's echo is
+    // delivered (the watcher's ~100–250 ms settle time), so B never heard A's
+    // Save and writes its own board over it. The fingerprint now names B, the one
+    // merged event is tagged B, and a clean A reloads B's bytes: last writer wins.
+    // Not closed here on purpose. What IS guaranteed is that both panes and the
+    // file agree afterwards, with no banner and no unsaved edits left behind.
+    const a = mountPane('pane-a')
+    const b = mountPane('pane-b')
+    await settle()
+    await operatorDrawsBox(a.element, 'FromA')
+    await operatorDrawsBox(b.element, 'FromB', 300)
+    await operatorSaves(a.element)
+    await operatorSaves(b.element) // no event delivered in between
+    const readsBefore = readCalls
+
+    await watcherSees() // the one merged event
+
+    expect(await fileLabels()).toEqual(['FromB', 'Main', 'Renderer'])
+    expect(readCalls - readsBefore).toBe(1) // A reloads; B drops its own echo
+    expect(a.element.textContent).toContain('FromB')
+    expect(a.element.textContent).not.toContain('FromA')
+    for (const root of [a.element, b.element]) {
+      expect(staleBanner(root)).toBe(false)
+      expect(dirtyDot(root)).toBe(false)
+    }
+    a.unmount()
+    b.unmount()
+  })
+
   it('the Save echo is swallowed outright once the other pane closes', async () => {
     const a = mountPane('pane-a')
     const b = mountPane('pane-b')

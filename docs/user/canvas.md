@@ -240,7 +240,14 @@ Harnu watches the file. What happens next depends on whether you have unsaved ed
 - **No unsaved edits** — the board redraws itself immediately and your view does not move. This is the common case, and it is what you see when a session changes the board while you have it open: there is nothing to reload, and your next Save keeps the session's change.
 - **Unsaved edits** — the pane **does not** touch your work. A warning strip replaces the filename: _This canvas changed on disk._ with a **Reload** action. Reload discards your edits (it asks first); ignoring it and pressing **Save** instead writes your version over whatever changed, and that is the point of telling you.
 
-Your own Save never triggers either case on the pane that made it. If the **same file is open in two panes**, the pane you saved from stays quiet, but the other pane treats your Save like any other change: it redraws (no unsaved edits) or shows the strip (unsaved edits). So a Save in one pane is never silently written over by the other pane's next Save. One narrow window exists: if you press **Save** in the fraction of a second (roughly 100–250 ms) before the pane has heard about a session's write, your Save wins and the session's change is overwritten — the same last-writer-wins rule as saving over the warning strip. The pane and the file agree afterwards.
+Your own Save never triggers either case on the pane that made it. If the **same file is open in two panes**, the pane you saved from stays quiet, but the other pane treats your Save like any other change: it redraws (no unsaved edits) or shows the strip (unsaved edits). So the other pane's next Save does not silently write over yours. If that pane had unsaved edits and you press **Save** there anyway, over the warning strip, its version overwrites your other pane's Save: that is the same choice as saving over any change, and the strip is there to warn you.
+
+Narrow windows exist. Harnu hears about a write only after the file settles, roughly 100–250 ms later, and a Save made in that fraction of a second wins:
+
+- If you press **Save** before the pane has heard about a session's write, your Save wins and the session's change is overwritten.
+- If you save in one pane and then in the other within that window, the later Save wins, and the first pane redraws to show it.
+
+This is the same last-writer-wins rule as saving over the warning strip. The panes and the file agree afterwards.
 
 Every node and edge records whether **you** or **the agent** created it, and that record is written the moment you draw the thing. Copying an agent's box makes the copy yours; moving or renaming an agent's box does not — the stamp says who first put it there, not who touched it last.
 
