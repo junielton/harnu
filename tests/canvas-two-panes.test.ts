@@ -286,6 +286,62 @@ describe('BUG-209 — the same canvas open in two panes', () => {
     b.unmount()
   })
 
+  it('A saves and closes before the echo arrives: B still hears the Save', async () => {
+    const a = mountPane('pane-a')
+    const b = mountPane('pane-b')
+    await settle()
+    await operatorDrawsBox(a.element, 'FromA')
+    await operatorSaves(a.element)
+    // The ref count drops 2 → 1 between the Save and the watcher's event.
+    a.unmount()
+    await settle()
+
+    await watcherSees()
+
+    expect(b.element.textContent).toContain('FromA')
+    await operatorDrawsBox(b.element, 'FromB', 300)
+    await operatorSaves(b.element)
+    expect(await fileLabels()).toEqual(['FromA', 'FromB', 'Main', 'Renderer'])
+    b.unmount()
+  })
+
+  it('three panes: a Save in A reaches both B and C, and A stays quiet', async () => {
+    const a = mountPane('pane-a')
+    const b = mountPane('pane-b')
+    const c = mountPane('pane-c')
+    await settle()
+    await operatorDrawsBox(a.element, 'FromA')
+    await operatorSaves(a.element)
+    const readsBefore = readCalls
+
+    await watcherSees()
+
+    expect(readCalls - readsBefore).toBe(2)
+    expect(b.element.textContent).toContain('FromA')
+    expect(c.element.textContent).toContain('FromA')
+    expect(staleBanner(a.element)).toBe(false)
+    a.unmount()
+    b.unmount()
+    c.unmount()
+  })
+
+  it('an agent write with two panes open reaches both, even right after a pane Save', async () => {
+    const a = mountPane('pane-a')
+    const b = mountPane('pane-b')
+    await settle()
+    await operatorDrawsBox(a.element, 'FromA')
+    await operatorSaves(a.element)
+    await watcherSees()
+
+    await agentDraws([{ op: 'add_node', shape: 'box', x: 520, y: 0, label: 'Agent' }])
+    await watcherSees()
+
+    expect(a.element.textContent).toContain('Agent')
+    expect(b.element.textContent).toContain('Agent')
+    a.unmount()
+    b.unmount()
+  })
+
   it('the Save echo is swallowed outright once the other pane closes', async () => {
     const a = mountPane('pane-a')
     const b = mountPane('pane-b')
