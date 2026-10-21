@@ -6,13 +6,20 @@ import { nextTick } from 'vue'
 import type { Graph } from '@antv/x6'
 import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
 import {
+  CANVAS_DERIVED_CHANGE,
   CANVAS_MIN_NODE_SIZE,
-  CANVAS_RUBBERBAND_MODIFIER,
   createCanvasGraph,
+  operatorEdgeSpec,
   renderCanvasDocument,
-  setCanvasPortsVisible
+  restyleCanvasNode,
+  setCanvasPortsVisible,
+  setCanvasRubberband
 } from '../src/renderer/src/components/canvas/canvas-graph'
-import { CANVAS_PORT_IDS, toX6Node } from '../src/renderer/src/components/canvas/canvas-cells'
+import {
+  CANVAS_PORT_IDS,
+  DEFAULT_NODE_SIZE,
+  toX6Node
+} from '../src/renderer/src/components/canvas/canvas-cells'
 import {
   DRAW_THRESHOLD,
   MIN_DRAWN_NODE_SIZE,
@@ -21,11 +28,18 @@ import {
   duplicateOperatorNode,
   isDrawGesture,
   mintCanvasId,
+  nodeDraftFromCell,
   normalizeCellLabel,
   operatorEdgeData,
   operatorNode,
+  placedRect,
   rectFromDrag
 } from '../src/renderer/src/components/canvas/canvas-edit'
+import {
+  CANVAS_LOAD_Z,
+  documentStackOrder,
+  renderStackZ
+} from '../src/renderer/src/components/canvas/canvas-layers'
 import { readCanvasPalette } from '../src/renderer/src/components/canvas/canvas-theme'
 import {
   normalizeCanvasLabel,
@@ -97,7 +111,7 @@ const DOC: CanvasDocument = {
 
 const NOW = '2026-08-23T12:00:00.000Z'
 
-function makeGraph(doc: CanvasDocument = DOC): Graph {
+function makeGraph(doc: CanvasDocument = DOC, images: Record<string, string> = {}): Graph {
   const g = createCanvasGraph({
     container: svgHost(),
     palette,
@@ -105,7 +119,7 @@ function makeGraph(doc: CanvasDocument = DOC): Graph {
     height: 600,
     editable: true
   })
-  renderCanvasDocument(g, doc, palette)
+  renderCanvasDocument(g, doc, palette, images)
   return g
 }
 
@@ -345,14 +359,97 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     const g = makeGraph()
     const selection = g.getPlugin('selection') as unknown as { options: Record<string, unknown> }
     expect(selection.options.rubberband).toBe(true)
-    // Shift, so the plain drag stays free to DRAW — the three-way conflict
-    // (pan / rubberband / draw) resolved explicitly rather than by luck.
-    expect(selection.options.modifiers).toBe(CANVAS_RUBBERBAND_MODIFIER)
+    // No modifier: in the Select tool the plain drag IS the rubberband (T536
+    // §5). The pane decides per tool whether it is armed — see
+    // `setCanvasRubberband` — so the graph no longer splits it by a key.
+    expect(selection.options.modifiers).toBeNull()
+    // Shift joins ctrl/meta: shift+click toggles a node in the selection.
+    expect(selection.options.multipleSelectionModifiers).toEqual(['ctrl', 'meta', 'shift'])
     const transform = g.getPlugin('transform') as unknown as {
-      options: { resizing: { enabled: boolean; minWidth: number } }
+      options: { resizing: { enabled: () => boolean; minWidth: number } }
     }
-    expect(transform.options.resizing.enabled).toBe(true)
+    // A function since T536 U1: handles open only while nodes are interactive
+    // (the Select tool). With the default `nodesInteractive`, that is always.
+    expect(transform.options.resizing.enabled()).toBe(true)
     expect(transform.options.resizing.minWidth).toBe(CANVAS_MIN_NODE_SIZE.width)
+    g.dispose()
+  })
+
+  it('resize handles follow nodesInteractive: none while another tool owns the press', () => {
+    let interactive = true
+    const g = createCanvasGraph({
+      container: svgHost(),
+      palette,
+      width: 800,
+      height: 600,
+      editable: true,
+      nodesInteractive: () => interactive
+    })
+    const transform = g.getPlugin('transform') as unknown as {
+      options: { resizing: { enabled: () => boolean } }
+    }
+    expect(transform.options.resizing.enabled()).toBe(true)
+    interactive = false
+    expect(transform.options.resizing.enabled()).toBe(false)
+    g.dispose()
+  })
+
+  it('setCanvasRubberband switches the rubberband off and on again at runtime', () => {
+    const g = makeGraph()
+    expect(g.isRubberbandEnabled()).toBe(true)
+    setCanvasRubberband(g, false)
+    expect(g.isRubberbandEnabled()).toBe(false)
+    setCanvasRubberband(g, true)
+    expect(g.isRubberbandEnabled()).toBe(true)
+    g.dispose()
+  })
+
+  it('nodes are movable and connectable by default', () => {
+    const g = makeGraph()
+    const view = g.findViewByCell(g.getCellById('n-a')!)!
+    expect(view.can('nodeMovable')).toBe(true)
+    expect(view.can('magnetConnectable')).toBe(true)
+    g.dispose()
+  })
+
+  it('nodesInteractive() is read per gesture: false freezes nodes and their ports', () => {
+    let interactive = false
+    const g = createCanvasGraph({
+      container: svgHost(),
+      palette,
+      width: 800,
+      height: 600,
+      editable: true,
+      nodesInteractive: () => interactive
+    })
+    renderCanvasDocument(g, DOC, palette)
+    const view = g.findViewByCell(g.getCellById('n-a')!)!
+    expect(view.can('nodeMovable')).toBe(false)
+    expect(view.can('magnetConnectable')).toBe(false)
+    // Read at gesture time, not captured at construction: a tool switch needs
+    // no graph rebuild.
+    interactive = true
+    expect(view.can('nodeMovable')).toBe(true)
+    expect(view.can('magnetConnectable')).toBe(true)
+    // Edges stay pinned to their endpoints whatever the tool (§4.3 schema).
+    expect(view.can('edgeMovable')).toBe(false)
+    g.dispose()
+  })
+
+  it('setCanvasRubberband never arms a read-only graph, but may still disarm it', () => {
+    const g = createCanvasGraph({ container: svgHost(), palette, width: 400, height: 300 })
+    expect(g.isRubberbandEnabled()).toBe(false)
+    // A viewer's Selection keeps `enabled: true` (only `rubberband` is off), so
+    // X6's own `enableRubberband()` WOULD arm blank-drag selection in it — the
+    // U2 contract says nothing the pointer does may change a read-only board.
+    setCanvasRubberband(g, true)
+    expect(g.isRubberbandEnabled()).toBe(false)
+    expect(
+      (g.getPlugin('selection') as unknown as { options: Record<string, unknown> }).options
+        .rubberband
+    ).toBe(false)
+    setCanvasRubberband(g, false)
+    expect(g.isRubberbandEnabled()).toBe(false)
     g.dispose()
   })
 
@@ -379,6 +476,175 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     expect(draftOf(g).nodes).toHaveLength(3)
     g.redo()
     expect(draftOf(g).nodes).toHaveLength(4)
+    g.dispose()
+  })
+
+  it('history drops a change marked CANVAS_DERIVED_CHANGE and keeps an ordinary one (T536 U3)', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    const node = g.getCellById('n-a')!
+    node.setAttrs({ body: { stroke: '#123456' } }, { [CANVAS_DERIVED_CHANGE]: true })
+    expect(node.attr('body/stroke')).toBe('#123456')
+    expect(g.canUndo()).toBe(false)
+    node.setAttrs({ body: { stroke: '#654321' } })
+    expect(g.canUndo()).toBe(true)
+    g.dispose()
+  })
+
+  it('a derived change neither records nor clears the redo stack (T536 U3)', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    const node = g.getCellById('n-a')!
+    node.setData({ ...node.getData(), props: { style: { tone: 'red' } } }, { overwrite: true })
+    g.undo()
+    expect(g.canRedo()).toBe(true)
+    restyleCanvasNode(node as never, palette, {})
+    expect(g.canRedo()).toBe(true)
+    expect(g.canUndo()).toBe(false)
+    g.dispose()
+  })
+
+  it('restyleCanvasNode re-derives the attrs from the node data, label and all (T536 U3)', () => {
+    const g = makeGraph()
+    const node = g.getCellById('n-a')!
+    node.attr({ text: { text: 'Renamed' }, label: { text: 'Renamed' } })
+    // Written with `silent`, so nothing re-derives behind the test's back.
+    node.setData(
+      { ...node.getData(), props: { style: { tone: 'red', stroke: 'dashed' } } },
+      { overwrite: true, silent: true }
+    )
+    restyleCanvasNode(node as never, palette, {})
+    expect(node.attr('body/stroke')).toBe(palette.red)
+    expect(node.attr('body/strokeDasharray')).toBe('6 4')
+    expect(node.attr('label/text')).toBe('Renamed')
+    expect(nodeDraftFromCell(node.toJSON() as Record<string, unknown>).label).toBe('Renamed')
+    g.dispose()
+  })
+
+  // Live matrix (T536 U3, row S1/S3): `overwrite` dropped the X6 shape's own default
+  // attrs (a rect's `refWidth`/`refHeight`, an ellipse's `refRx`, the label's centring
+  // `refX`/`refY`/`textAnchor`), so a box collapsed to 0×0 and its label jumped to the
+  // corner after any pick — invisible to an attr-only assertion. A restyled node must
+  // carry exactly the attrs a fresh render of the same style gives it.
+  it('a restyled node carries exactly the attrs a fresh render of that style gives it (T536 U3)', () => {
+    const style = { tone: 'green', stroke: 'dashed', fontSize: 'xl', align: 'left', opacity: 50 }
+    const kinds: [string, number, number][] = [
+      ['box', 132, 52],
+      ['ellipse', 132, 64],
+      ['diamond', 132, 80],
+      ['text', 132, 40]
+    ]
+    const plain: CanvasDocument = {
+      ...DOC,
+      nodes: kinds.map(([shape, width, height], i) => ({
+        id: `n-${shape}`,
+        shape,
+        x: 40 + i * 180,
+        y: 40,
+        width,
+        height,
+        label: shape,
+        origin: 'agent' as const
+      })),
+      edges: []
+    }
+    const styledDoc: CanvasDocument = {
+      ...plain,
+      nodes: plain.nodes.map((n) => ({ ...n, props: { style } }))
+    }
+    const g = makeGraph(plain)
+    const fresh = makeGraph(styledDoc)
+    for (const [shape] of kinds) {
+      const node = g.getCellById(`n-${shape}`)!
+      node.setData({ ...node.getData(), props: { style } }, { overwrite: true, silent: true })
+      restyleCanvasNode(node as never, palette, {})
+      expect(node.getAttrs(), shape).toEqual(fresh.getCellById(`n-${shape}`)!.getAttrs())
+    }
+    // The shape defaults themselves, spelled out for the box.
+    const box = g.getCellById('n-box')!
+    expect(box.attr('body/refWidth')).toBe('100%')
+    expect(box.attr('body/refHeight')).toBe('100%')
+    g.dispose()
+    fresh.dispose()
+  })
+
+  // Final review M4: `image` is the one class whose constructor adds something outside the
+  // derived attrs (`xlink:href`, through the `imageUrl` hook), so pin it on its own: the
+  // RENDERED `<image>` is compared, because `xlinkHref` and `xlink:href` differ as keys
+  // but not on screen.
+  it('a restyled image, resolved or not, renders exactly as a fresh render of that style (T536 U3)', async () => {
+    const style = { opacity: 50 }
+    const images = { 'a.png': 'data:image/png;base64,AAAA' }
+    const base = (id: string, src: string): CanvasDocument['nodes'][number] => ({
+      id,
+      shape: 'image',
+      x: 40,
+      y: 40,
+      width: 200,
+      height: 100,
+      label: id,
+      origin: 'agent' as const,
+      props: { src }
+    })
+    const plain: CanvasDocument = {
+      ...DOC,
+      nodes: [base('n-img', 'a.png'), base('n-gone', 'missing.png')],
+      edges: []
+    }
+    const styledDoc: CanvasDocument = {
+      ...plain,
+      nodes: plain.nodes.map((n) => ({ ...n, props: { ...n.props, style } }))
+    }
+    const g = makeGraph(plain, images)
+    const fresh = makeGraph(styledDoc, images)
+    const imageOf = (graph: Graph, id: string): Element | null =>
+      (
+        graph.findViewByCell(graph.getCellById(id)!)?.container as Element | undefined
+      )?.querySelector('image') ?? null
+
+    for (const id of ['n-img', 'n-gone']) {
+      const node = g.getCellById(id)!
+      node.setData(
+        { ...node.getData(), props: { ...node.getData().props, style } },
+        { overwrite: true, silent: true }
+      )
+      restyleCanvasNode(node as never, palette, images)
+    }
+    // X6 paints on a frame: let both graphs flush before reading the SVG.
+    await new Promise((r) => setTimeout(r, 100))
+
+    // Resolved: the same `<image>` element attributes (href, size, opacity).
+    const got = imageOf(g, 'n-img')!
+    const want = imageOf(fresh, 'n-img')!
+    expect(got).not.toBeNull()
+    for (const name of ['xlink:href', 'href', 'width', 'height', 'opacity']) {
+      expect(got.getAttribute(name), name).toBe(want.getAttribute(name))
+    }
+    expect(got.getAttribute('opacity')).toBe('0.5')
+    expect(got.getAttribute('width')).toBe('200')
+    expect(got.getAttribute('height')).toBe('100')
+
+    // Unresolved placeholder: a rect with the same attrs as a fresh render.
+    expect(g.getCellById('n-gone')!.getAttrs()).toEqual(fresh.getCellById('n-gone')!.getAttrs())
+    g.dispose()
+    fresh.dispose()
+  })
+
+  it("applying a style leaves a node's ports exactly as they were (T536 U3)", () => {
+    const g = makeGraph()
+    const node = g.getCellById('n-a') as never as {
+      getPorts: () => unknown[]
+      getData: () => Record<string, unknown>
+      setData: (d: unknown, o: unknown) => void
+    }
+    const before = JSON.parse(JSON.stringify(node.getPorts()))
+    expect(before).toHaveLength(CANVAS_PORT_IDS.length)
+    node.setData(
+      { ...node.getData(), props: { style: { tone: 'red', stroke: 'dashed' } } },
+      { overwrite: true, silent: true }
+    )
+    restyleCanvasNode(node as never, palette, {})
+    expect(JSON.parse(JSON.stringify(node.getPorts()))).toEqual(before)
     g.dispose()
   })
 
@@ -411,6 +677,19 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     expect(
       (g.getCellById('n-c') as never as { getPorts: () => unknown[] }).getPorts()
     ).toHaveLength(0)
+    g.dispose()
+  })
+
+  it('revealing ports on hover is not an undo step, so it never empties the redo stack (T536 U3)', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    g.getCellById('n-b')!.setAttrs({ body: { stroke: '#654321' } })
+    g.undo()
+    expect(g.canRedo()).toBe(true)
+    setCanvasPortsVisible(g, 'n-a', true)
+    setCanvasPortsVisible(g, 'n-a', false)
+    expect(g.canUndo()).toBe(false)
+    expect(g.canRedo()).toBe(true)
     g.dispose()
   })
 
@@ -475,6 +754,66 @@ describe('the pure drag geometry', () => {
 
   it('operatorEdgeData is the stamp and nothing else', () => {
     expect(operatorEdgeData()).toEqual({ origin: 'operator' })
+  })
+
+  it('placedRect centres a shape-default footprint on the click (T536 U1)', () => {
+    expect(placedRect(300, 300, 'box')).toEqual({ x: 234, y: 274, width: 132, height: 52 })
+    expect(placedRect(300, 300, 'text')).toEqual({ x: 220, y: 288, width: 160, height: 24 })
+    // An unknown shape falls back to the box footprint, as the renderer does.
+    expect(placedRect(0, 0, 'nope')).toEqual({ x: -66, y: -26, width: 132, height: 52 })
+  })
+
+  it('placedRect centres the ellipse and diamond default footprints (T536 U2)', () => {
+    expect(placedRect(300, 300, 'ellipse')).toEqual({ x: 234, y: 268, width: 132, height: 64 })
+    expect(placedRect(300, 300, 'diamond')).toEqual({ x: 234, y: 260, width: 132, height: 80 })
+  })
+
+  it('operatorNode mints ellipse and diamond stamped operator (T536 U2)', () => {
+    const rect = { x: 1, y: 2, width: 132, height: 80 }
+    expect(operatorNode(rect, new Set(), '', 'ellipse')).toMatchObject({
+      shape: 'ellipse',
+      origin: 'operator'
+    })
+    expect(operatorNode(rect, new Set(), '', 'diamond')).toMatchObject({
+      shape: 'diamond',
+      origin: 'operator'
+    })
+  })
+
+  it('ellipse and diamond round-trip through a real graph with kind and origin intact (T536 U2)', () => {
+    const doc: CanvasDocument = {
+      ...DOC,
+      nodes: [
+        ...DOC.nodes,
+        { id: 'n-e', shape: 'ellipse', x: 10, y: 400, label: 'Start', origin: 'agent' },
+        { id: 'n-d', shape: 'diamond', x: 200, y: 400, width: 90, height: 60, origin: 'operator' }
+      ]
+    }
+    const g = makeGraph(doc)
+    expect(g.getCellById('n-e')?.shape).toBe('ellipse')
+    expect(g.getCellById('n-d')?.shape).toBe('polygon')
+    const draft = draftOf(g, doc)
+    expect(draft.nodes.find((n) => n.id === 'n-e')).toMatchObject({
+      shape: 'ellipse',
+      label: 'Start',
+      origin: 'agent'
+    })
+    expect(draft.nodes.find((n) => n.id === 'n-d')).toMatchObject({
+      shape: 'diamond',
+      width: 90,
+      height: 60,
+      origin: 'operator'
+    })
+  })
+
+  it('operatorNode mints a box by default and a text when asked, both stamped operator', () => {
+    const rect = { x: 1, y: 2, width: 160, height: 24 }
+    expect(operatorNode(rect, new Set()).shape).toBe('box')
+    expect(operatorNode(rect, new Set(), 'hi', 'text')).toMatchObject({
+      shape: 'text',
+      label: 'hi',
+      origin: 'operator'
+    })
   })
 })
 
@@ -554,6 +893,16 @@ function dragOnBlankCanvas(root: Element, from: [number, number], to: [number, n
   window.dispatchEvent(new MouseEvent('mouseup', { clientX: to[0], clientY: to[1] }))
 }
 
+/**
+ * A plain blank drag no longer draws (T536 U1: Select is the default tool and
+ * the drag belongs to the rubberband). Every test below that drew a box with a
+ * plain drag now arms the Rectangle tool first; its assertions are unchanged.
+ */
+function armRectangle(root: Element): void {
+  ;(root.querySelector('[data-testid="diagram-canvas-host"]')!.parentElement as HTMLElement).focus()
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }))
+}
+
 describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   it('the dirty dot and Save are absent on a freshly loaded board', async () => {
     const w = mountPane()
@@ -567,6 +916,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const w = mountPane()
     await settle()
 
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
 
@@ -607,6 +957,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     }))
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -622,12 +973,26 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   })
 
   it('a short drag on the blank board is a click — it does not litter it with boxes', async () => {
+    // Under Rectangle (T536 U1) a sub-threshold drag is still a CLICK, and a
+    // click places ONE default-size box — not a floored 48×32 "drawn" one, and
+    // not one per jittery pixel.
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [202, 201])
     await settle()
-    expect(w.find('[data-testid="diagram-rename-input"]').exists()).toBe(false)
-    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+    await w.find('[data-testid="diagram-save"]').trigger('click')
+    await settle()
+    const doc = (canvasWrite.mock.calls[0] as unknown as [string, CanvasDocument])[1]
+    const boxes = doc.nodes.filter((n) => !['n-a', 'n-b', 'n-c'].includes(n.id))
+    expect(boxes).toHaveLength(1)
+    expect(boxes[0]).toMatchObject({
+      shape: 'box',
+      width: DEFAULT_NODE_SIZE.width,
+      height: DEFAULT_NODE_SIZE.height
+    })
     w.unmount()
   })
 
@@ -635,6 +1000,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const w = mountPane()
     await settle()
     expect(canvasRead).toHaveBeenCalledTimes(1)
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -667,6 +1033,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const helpers = (await import('../src/renderer/src/stores/helpers')).useHelpersStore()
     const removed = vi.spyOn(helpers, 'removeHelper')
 
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -688,6 +1055,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   it('pressing Close twice leaves ONE warning, not a stack of permanent ones', async () => {
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -723,6 +1091,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   it('U3-2 — Delete removes the selection, and ⌘Z puts it back', async () => {
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -779,7 +1148,110 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     }))
     const w = mountPane()
     await settle()
-    expect(w.text()).toContain('Drag anywhere to draw a box')
+    expect(w.text()).toContain('Pick a shape from the toolbar')
     w.unmount()
+  })
+})
+
+describe('an operator edge is minted at z 0 (T536 U4)', () => {
+  it('operatorEdgeSpec carries zIndex 0, so X6 never stamps it max + 1', () => {
+    expect(operatorEdgeSpec(palette).zIndex).toBe(0)
+  })
+
+  it('a port drag adds the new edge at z 0 (the z X6 restores when the drag ends)', async () => {
+    // The real X6 path: a mousedown on a port runs `startConnectting` →
+    // `createEdgeFromMagnet` → the graph's `connecting.createEdge` hook → `addTo`
+    // the model. X6 then lifts the edge to the front for the drag and restores the z
+    // it had here on release (`beforeArrowheadDragging` / `afterArrowheadDragging`).
+    // jsdom cannot finish the release (the snap search needs layout), so the added z
+    // is what is asserted.
+    const g = makeGraph()
+    const portOf = (): Element | null =>
+      g.findViewByCell(g.getCellById('n-a')!)?.container.querySelector('[magnet="true"]') ?? null
+    // X6 draws the views in time-sliced jobs: wait (bounded) for the ports to exist.
+    const deadline = Date.now() + 2000
+    while (!portOf() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+    const added: number[] = []
+    g.on('edge:added', ({ edge }) => added.push(edge.getZIndex() as number))
+    const port = portOf()
+    expect(port, 'n-a has no port').not.toBeNull()
+    port!.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 60, clientY: 40 })
+    )
+    expect(added).toEqual([0])
+    g.dispose()
+  })
+})
+
+describe('X6 stacking on a fresh render (T536 U4)', () => {
+  const STACKED: CanvasDocument = {
+    ...DOC,
+    nodes: [
+      { ...DOC.nodes[0] },
+      { ...DOC.nodes[1], zIndex: 5 },
+      { ...DOC.nodes[2] },
+      { id: 'n-d', shape: 'box', x: 600, y: 40, label: 'D', origin: 'agent', zIndex: 0 }
+    ]
+  }
+  const nodeZ = (g: Graph): Record<string, number> =>
+    Object.fromEntries(g.getNodes().map((n) => [n.id, n.getZIndex() as number]))
+
+  it('pins what every earlier build passes: a node without zIndex comes up at CANVAS_LOAD_Z', () => {
+    const g = makeGraph(DOC)
+    g.clearCells()
+    g.fromJSON({
+      cells: [
+        { id: 'n-a', shape: 'rect', x: 0, y: 0, width: 10, height: 10 },
+        { id: 'n-b', shape: 'rect', x: 0, y: 0, width: 10, height: 10, zIndex: 5 },
+        { id: 'n-c', shape: 'rect', x: 0, y: 0, width: 10, height: 10 },
+        { id: 'n-d', shape: 'rect', x: 0, y: 0, width: 10, height: 10, zIndex: 0 }
+      ]
+    })
+    const z = nodeZ(g)
+    expect(z['n-a']).toBe(CANVAS_LOAD_Z)
+    expect(z['n-c']).toBe(CANVAS_LOAD_Z)
+    expect(g.getNodes().map((n) => n.id)).toEqual(documentStackOrder(STACKED.nodes))
+  })
+
+  it('renders every node at a distinct z above the edges, in the document stack order', () => {
+    const g = makeGraph(STACKED)
+    const expected = renderStackZ(STACKED.nodes)
+    expect(nodeZ(g)).toEqual(Object.fromEntries(expected))
+    expect(new Set(Object.values(nodeZ(g))).size).toBe(STACKED.nodes.length)
+    expect(g.getEdges()[0].getZIndex()).toBe(0)
+    expect(g.getNodes().map((n) => n.id)).toEqual(documentStackOrder(STACKED.nodes))
+  })
+
+  it('puts a node added afterwards above every other cell', () => {
+    const g = makeGraph(STACKED)
+    const added = g.addNode({ id: 'n-new', shape: 'rect', x: 0, y: 0, width: 10, height: 10 })
+    const others = [...g.getNodes(), ...g.getEdges()].filter((c) => c.id !== 'n-new')
+    expect(added.getZIndex() as number).toBeGreaterThan(
+      Math.max(...others.map((c) => c.getZIndex() as number))
+    )
+  })
+
+  it('keeps the file order after a batched restack is undone (the tie trap)', () => {
+    // The stack is read off `getCells()`, the collection X6 re-sorts on every z
+    // change. `getNodes()` reads an insertion-order cache that never moves on a z
+    // change, so an order claim made with it after a restack could not fail.
+    const stack = (g: Graph): string[] =>
+      g
+        .getCells()
+        .filter((c) => c.isNode())
+        .map((c) => c.id)
+    const g = makeGraph(DOC)
+    const fileOrder = DOC.nodes.map((n) => n.id)
+    expect(stack(g)).toEqual(fileOrder)
+    g.startBatch('layer')
+    g.getCellById('n-a')!.setZIndex(3)
+    g.getCellById('n-b')!.setZIndex(1)
+    g.getCellById('n-c')!.setZIndex(2)
+    g.stopBatch('layer')
+    // The restack really moved the order, so the equality after undo is not trivial.
+    expect(stack(g)).toEqual(['n-b', 'n-c', 'n-a'])
+    g.undo()
+    // Undo restores distinct render z, not ties a stable re-sort would leave as n-b, n-c, n-a.
+    expect(stack(g)).toEqual(fileOrder)
   })
 })

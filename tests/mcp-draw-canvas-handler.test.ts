@@ -115,7 +115,7 @@ describe('drawCanvasHandler — U5-2: a refused batch writes NOTHING', () => {
       y: 0,
       label: `n${i}`
     }))
-    ops[16] = { op: 'add_node', shape: 'diamond', x: 0, y: 0 }
+    ops[16] = { op: 'add_node', shape: 'hexagon', x: 0, y: 0 }
 
     const res = await drawCanvasHandler({ folder, ops }, ctxFor())
 
@@ -262,6 +262,45 @@ describe('drawCanvasHandler — the ACK, and what DOES land', () => {
     expect(onDisk.meta.createdAt).toBe(NOW)
   })
 
+  it('T536 U2: ellipse and diamond land stamped "agent" and the ACK advertises their default sizes', async () => {
+    const res = await drawCanvasHandler(
+      {
+        folder,
+        ops: [
+          { op: 'add_node', shape: 'ellipse', x: 0, y: 100, label: 'Start' },
+          { op: 'add_node', shape: 'diamond', x: 200, y: 100, label: 'Valid?' }
+        ]
+      },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    const shapes = payload(res).shapes as { name: string; defaultSize: object }[]
+    expect(shapes.find((s) => s.name === 'ellipse')?.defaultSize).toEqual({
+      width: 132,
+      height: 64
+    })
+    expect(shapes.find((s) => s.name === 'diamond')?.defaultSize).toEqual({
+      width: 132,
+      height: 80
+    })
+    const onDisk = JSON.parse(readFileSync(canvasPath, 'utf8')) as CanvasDocument
+    expect(onDisk.nodes.slice(1).map((n) => [n.shape, n.origin])).toEqual([
+      ['ellipse', 'agent'],
+      ['diamond', 'agent']
+    ])
+  })
+
+  it('T536 U2: props on a diamond are refused BAD_PROPS and nothing is written', async () => {
+    const before = readFileSync(canvasPath)
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'add_node', shape: 'diamond', x: 0, y: 0, props: { x: 1 } }] },
+      ctxFor()
+    )
+    expect(res.isError).toBe(true)
+    expect(errorText(res)).toContain('BAD_PROPS')
+    expect(readFileSync(canvasPath).equals(before)).toBe(true)
+  })
+
   it('an edge can bind two nodes minted in the SAME call', async () => {
     const res = await drawCanvasHandler(
       {
@@ -325,6 +364,40 @@ describe('drawCanvasHandler — the ACK, and what DOES land', () => {
     )
     expect(payload(res).path).toBe(tracked)
     expect(readFileSync(tracked, 'utf8')).toContain('Gateway')
+  })
+})
+
+describe('drawCanvasHandler — T536 U3 node style', () => {
+  it('every ACK shapes entry carries a style table', async () => {
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'add_node', shape: 'box', x: 0, y: 100 }] },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    const shapes = payload(res).shapes as { name: string; style: Record<string, unknown[]> }[]
+    expect(shapes.length).toBeGreaterThan(0)
+    for (const s of shapes) expect(typeof s.style, s.name).toBe('object')
+    expect(shapes.find((s) => s.name === 'box')?.style.opacity).toEqual([25, 50, 75, 100])
+  })
+
+  it('update_node with style writes the merged style to the file', async () => {
+    const add = await drawCanvasHandler(
+      {
+        folder,
+        ops: [{ op: 'add_node', shape: 'box', x: 0, y: 100, style: { tone: 'green' } }]
+      },
+      ctxFor()
+    )
+    const id = (payload(add).applied as { id: string }[])[0].id
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'update_node', id, style: { stroke: 'dashed' } }] },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    const onDisk = JSON.parse(readFileSync(canvasPath, 'utf8')) as CanvasDocument
+    expect(onDisk.nodes.find((n) => n.id === id)?.props).toEqual({
+      style: { tone: 'green', stroke: 'dashed' }
+    })
   })
 })
 
@@ -633,5 +706,17 @@ describe('drawCanvasHandler — U7-1: a generated image lands as an image node',
     expect(raw).not.toContain('data:image')
     expect(raw).not.toContain('base64')
     expect(raw.length).toBeLessThan(2000)
+  })
+})
+
+describe('drawCanvasHandler — T536 U4: zIndex', () => {
+  it('update_node { id, zIndex } is written to the file on disk', async () => {
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'update_node', id: 'human-1', zIndex: 9 }] },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    const doc = JSON.parse(readFileSync(canvasPath, 'utf8')) as CanvasDocument
+    expect(doc.nodes.find((n) => n.id === 'human-1')!.zIndex).toBe(9)
   })
 })

@@ -215,7 +215,32 @@
     "reload": "Reload canvas",
     "loading": "Loading…",
     "empty": "This canvas is empty.",
-    "emptyHint": "Drag anywhere to draw a box, or paste an image.",
+    "emptyHint": "Pick a shape from the toolbar, or paste an image.",
+    "toolbar": "Canvas tools",
+    "tool": {
+      "hand": "Hand",
+      "select": "Select",
+      "rectangle": "Rectangle",
+      "diamond": "Diamond",
+      "ellipse": "Ellipse",
+      "arrow": "Arrow",
+      "text": "Text",
+      "eraser": "Eraser"
+    },
+    "toolTitle": "{name} — {key}",
+    "toolTitleDigit": "{name} — {key} or {digit}",
+    "lock": "Keep tool active",
+    "unlock": "Return to Select after drawing",
+    "toolHint": {
+      "select": "Drag to select · Space+drag to pan",
+      "hand": "Drag to move the board",
+      "rectangle": "Click to place, or drag to size it",
+      "diamond": "Click to place, or drag to size it",
+      "ellipse": "Click to place, or drag to size it",
+      "arrow": "Drag from one shape to another",
+      "text": "Click anywhere to type",
+      "eraser": "Drag across anything to erase it"
+    },
     "fit": "Fit to view",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
@@ -242,6 +267,42 @@
     "changedOnDisk": {
       "title": "This canvas changed on disk.",
       "reload": "Reload"
+    },
+    "layers": {
+      "group": "Layers",
+      "back": "Send to back",
+      "backward": "Send backward",
+      "forward": "Bring forward",
+      "front": "Bring to front"
+    },
+    "style": {
+      "panel": "Properties",
+      "show": "Show properties",
+      "group": {
+        "tone": "Color",
+        "stroke": "Stroke",
+        "strokeWidth": "Stroke width",
+        "corners": "Corners",
+        "fontSize": "Text size",
+        "align": "Align",
+        "opacity": "Opacity"
+      },
+      "value": {
+        "tone": {
+          "default": "Default",
+          "accent": "Accent",
+          "green": "Green",
+          "amber": "Amber",
+          "red": "Red",
+          "muted": "Muted"
+        },
+        "stroke": { "solid": "Solid", "dashed": "Dashed", "dotted": "Dotted" },
+        "strokeWidth": { "thin": "Thin", "regular": "Regular", "bold": "Bold" },
+        "corners": { "sharp": "Sharp", "round": "Round" },
+        "fontSize": { "s": "Small", "m": "Medium", "l": "Large", "xl": "Extra large" },
+        "align": { "left": "Left", "center": "Center", "right": "Right" },
+        "opacity": { "25": "25%", "50": "50%", "75": "75%", "100": "100%" }
+      }
     }
   },
   "markdownRenderer": {

@@ -215,7 +215,32 @@
     "reload": "Recarregar canvas",
     "loading": "Carregando…",
     "empty": "Este canvas está vazio.",
-    "emptyHint": "Arraste em qualquer lugar para desenhar uma caixa, ou cole uma imagem.",
+    "emptyHint": "Escolha uma forma na barra de ferramentas, ou cole uma imagem.",
+    "toolbar": "Ferramentas do canvas",
+    "tool": {
+      "hand": "Mão",
+      "select": "Selecionar",
+      "rectangle": "Retângulo",
+      "diamond": "Diamante",
+      "ellipse": "Elipse",
+      "arrow": "Seta",
+      "text": "Texto",
+      "eraser": "Borracha"
+    },
+    "toolTitle": "{name} — {key}",
+    "toolTitleDigit": "{name} — {key} ou {digit}",
+    "lock": "Manter a ferramenta ativa",
+    "unlock": "Voltar para Selecionar depois de desenhar",
+    "toolHint": {
+      "select": "Arraste para selecionar · Espaço+arrastar para mover",
+      "hand": "Arraste para mover o quadro",
+      "rectangle": "Clique para posicionar, ou arraste para dimensionar",
+      "diamond": "Clique para posicionar, ou arraste para dimensionar",
+      "ellipse": "Clique para posicionar, ou arraste para dimensionar",
+      "arrow": "Arraste de uma forma até outra",
+      "text": "Clique em qualquer lugar para digitar",
+      "eraser": "Arraste sobre qualquer coisa para apagar"
+    },
     "fit": "Ajustar à tela",
     "zoomIn": "Aproximar",
     "zoomOut": "Afastar",
@@ -242,6 +267,42 @@
     "changedOnDisk": {
       "title": "Este canvas mudou no disco.",
       "reload": "Recarregar"
+    },
+    "layers": {
+      "group": "Camadas",
+      "back": "Enviar para trás",
+      "backward": "Recuar",
+      "forward": "Avançar",
+      "front": "Trazer para a frente"
+    },
+    "style": {
+      "panel": "Propriedades",
+      "show": "Mostrar propriedades",
+      "group": {
+        "tone": "Cor",
+        "stroke": "Traço",
+        "strokeWidth": "Espessura do traço",
+        "corners": "Cantos",
+        "fontSize": "Tamanho do texto",
+        "align": "Alinhamento",
+        "opacity": "Opacidade"
+      },
+      "value": {
+        "tone": {
+          "default": "Padrão",
+          "accent": "Destaque",
+          "green": "Verde",
+          "amber": "Âmbar",
+          "red": "Vermelho",
+          "muted": "Neutro"
+        },
+        "stroke": { "solid": "Contínuo", "dashed": "Tracejado", "dotted": "Pontilhado" },
+        "strokeWidth": { "thin": "Fino", "regular": "Normal", "bold": "Grosso" },
+        "corners": { "sharp": "Retos", "round": "Arredondados" },
+        "fontSize": { "s": "Pequeno", "m": "Médio", "l": "Grande", "xl": "Extra grande" },
+        "align": { "left": "Esquerda", "center": "Centro", "right": "Direita" },
+        "opacity": { "25": "25%", "50": "50%", "75": "75%", "100": "100%" }
+      }
     }
   },
   "markdownRenderer": {
