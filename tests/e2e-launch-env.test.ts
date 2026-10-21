@@ -49,10 +49,10 @@ describe('e2e launch call sites', () => {
       return statSync(p).isDirectory() ? files(p) : p.endsWith('.ts') ? [p] : []
     })
 
-  it('calls electron.launch( only from the shared helper', () => {
+  it('launches Electron only from the shared helper', () => {
     const offenders = files(join(__dirname))
       .filter((f) => !f.endsWith('e2e-launch-env.test.ts'))
-      .filter((f) => /\belectron\.launch\(|_electron\.launch\(/.test(readFileSync(f, 'utf8')))
+      .filter((f) => /electron\.launch\s*\(/.test(readFileSync(f, 'utf8')))
       .map((f) => relative(__dirname, f))
     expect(offenders).toEqual(['e2e/ci/fixtures/launch-app.ts'])
   })
