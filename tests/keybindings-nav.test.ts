@@ -48,10 +48,13 @@ describe('nav.back / nav.forward rows (§10, AC-44)', () => {
     }
   )
 
-  it('only nav.* are shielded so far (pane focus and terminal.toggle land in U5b)', () => {
+  it('the shielded rows are nav.*, pane focus and terminal.toggle (§7.4)', () => {
     expect(KEYBINDINGS.filter((d) => d.shield).map((d) => d.id)).toEqual([
       'nav.back',
-      'nav.forward'
+      'nav.forward',
+      'pane.focusNext',
+      'pane.focusPrev',
+      'terminal.toggle'
     ])
   })
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useFocusRegion } from '../composables/useTerminalFocus'
 import { useI18n } from 'vue-i18n'
 import {
   ArrowUpRight,
@@ -160,13 +161,26 @@ const isMaximized = computed(() => helpers.maximizedPaneId(props.worktreePath) =
 function onToggleMaximize(): void {
   helpers.toggleMaximizePane(props.worktreePath, props.pane.id)
 }
+
+// T486 U5b — a region of the pane focus ring: F6 focuses its scroll body (focusing
+// the overflow-hidden root would leave PageDown / arrows with no scroller to drive),
+// `pane.close` runs the header X's close. The root draws the design.md §6
+// "Pane focus" outline while focus is inside.
+const rootEl = ref<HTMLDivElement | null>(null)
+const bodyEl = ref<HTMLDivElement | null>(null)
+useFocusRegion(props.pane.id, rootEl, {
+  focus: () => bodyEl.value?.focus(),
+  close: onClose
+})
 </script>
 
 <template>
   <!-- Mirrors MarkdownPane's shell: a 24px header, a tab strip, then a padded
        scroll body. Non-PTY, so no xterm padding-top hack. -->
   <div
-    class="flex h-full w-full flex-col overflow-hidden bg-bg"
+    ref="rootEl"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg no-default-ring focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    :data-focus-region="pane.id"
     :aria-label="$t('memoryPane.label')"
   >
     <header
@@ -232,7 +246,12 @@ function onToggleMaximize(): void {
       </button>
     </div>
 
-    <div class="scrollable min-h-0 flex-1 overflow-y-auto" style="padding: 14px 16px">
+    <div
+      ref="bodyEl"
+      class="scrollable no-default-ring min-h-0 flex-1 overflow-y-auto outline-none"
+      tabindex="-1"
+      style="padding: 14px 16px"
+    >
       <!-- Loading / error / empty-memory states -->
       <div v-if="state.status === 'loading'" class="text-text-3" style="font-size: 12px">
         {{ $t('memoryPane.loading') }}

@@ -662,15 +662,24 @@ focus between the main terminal and helper panes). `useTerminalFocus`
 - Shielded (§7.4) so it works from inside a terminal — the main use. Works from a text
   field too (VS Code does the same). Inert under `'modal'` scope.
 - Takeover open: the main terminal is not in the ring; helper panes beside Roadmap /
-  Review are. A takeover with no helper stack (Usage Dashboard, Cleanup, …) → empty ring.
+  Review are. A takeover with no helper stack (Usage Dashboard, Cleanup, …) → empty ring
+  — superseded, see the note below.
 - Non-xterm panes need a visible focus indicator (`design.md` §6 addition, U5b): a
   1px `--accent-line` inset outline on the pane root when it holds focus. xterm panes
   show their own cursor and need none.
 
+> **Decided 2026-10-20 (U5b ship).** The ring follows `showHelperStack`, i.e. what is
+> on screen: when the operator keeps the helper stack visible beside a takeover
+> (Cleanup, Usage Dashboard, …), those helper panes ARE in the ring; only the covered
+> main terminal leaves it. The ring is empty beside a takeover only when no stack is
+> shown there. AC-23's "excludes a covered main terminal" holds unchanged; its
+> "empty ring is a no-op" applies to that no-stack case.
+
 ### 8.2 `terminal.toggle`
 
 Precondition: `helpers.currentWorktreePath` is set (else no-op). `shell` = the first
-`type: 'shell'` pane in the current stack.
+`type: 'shell'` pane in the current stack that is not an agent terminal (T474) — an
+agent terminal stays in the F6 ring but the toggle never takes it (decided 2026-10-20).
 
 1. **No shell pane** → `helpers.addShellHelper(wt, wt)` (`stores/helpers.ts:696`). The
    add reveals a collapsed panel (`paneRevealTick`, `App.vue:440-443`) and the new

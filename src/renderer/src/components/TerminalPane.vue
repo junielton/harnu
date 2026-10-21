@@ -169,6 +169,7 @@ import { DEFAULT_TERMINAL_FONT_SIZE, useSettingsStore } from '../stores/settings
 import {
   registerFocusedPane,
   unregisterFocusedPane,
+  useFocusRegion,
   MAIN_PANE_ID
 } from '../composables/useTerminalFocus'
 import { ensureTerminalFontLoaded, measureCells, measureXtermCells } from '../lib/terminalMetrics'
@@ -198,6 +199,14 @@ const helpers = useHelpersStore()
 // is named `t` (xterm convention) — shadowing collision otherwise.
 const { t: i18n } = useI18n()
 const termEl = ref<HTMLDivElement | null>(null)
+const rootEl = ref<HTMLDivElement | null>(null)
+// T486 U5b — the main terminal is the first region of the pane focus ring (F6).
+// It has no close of its own: `pane.close` leaves it alone (⌘W closes a session).
+useFocusRegion(MAIN_PANE_ID, rootEl, {
+  focus: () => {
+    if (attachedId) liveTerminals.get(attachedId)?.term.focus()
+  }
+})
 
 // WebLinksAddon's default handler calls `window.open()` with no URL, which
 // Electron's `setWindowOpenHandler` always denies (about:blank isn't
@@ -1791,7 +1800,9 @@ onBeforeUnmount(() => {
 
 <template>
   <div
+    ref="rootEl"
     class="relative h-full w-full"
+    :data-focus-region="MAIN_PANE_ID"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"
