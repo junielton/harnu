@@ -1061,6 +1061,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const helpers = (await import('../src/renderer/src/stores/helpers')).useHelpersStore()
     const removed = vi.spyOn(helpers, 'removeHelper')
 
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -1214,6 +1215,36 @@ describe('DiagramPane — Esc peels the selection before the takeover', () => {
     await settle()
     const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
     body.focus()
+    await pressEsc(body)
+    expect(ui.activeView).toBeNull()
+    w.unmount()
+    harness.unmount()
+  })
+
+  // T536 put a tool ladder in front of the selection (tool → Select → clear):
+  // every rung it peels stays in the pane, so the takeover waits for the last Esc.
+  it('a drawing tool is peeled back to Select before the takeover closes', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openRoadmap('/wt', 'wt')
+    const w = mountPane()
+    await settle()
+    const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
+    body.focus()
+    const pressed = (): string[] =>
+      w
+        .findAll('[data-testid^="canvas-tool-"][aria-pressed="true"]')
+        .map((b) => b.attributes('data-testid')!.replace('canvas-tool-', ''))
+        .filter((id) => id !== 'lock')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }))
+    await settle()
+    expect(pressed()).toEqual(['rectangle'])
+
+    await pressEsc(body)
+    await settle()
+    expect(pressed()).toEqual(['select'])
+    expect(ui.activeView?.id).toBe('roadmap')
+
     await pressEsc(body)
     expect(ui.activeView).toBeNull()
     w.unmount()
