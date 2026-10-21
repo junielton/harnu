@@ -43,6 +43,7 @@ import {
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { relativeTime } from '../composables/useRelativeTime'
 import { resolveActionLabel } from '../lib/toast-action-label'
 
@@ -50,6 +51,7 @@ const notifications = useNotificationsStore()
 const sessions = useSessionsStore()
 const missions = useMissionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const { t, te } = useI18n()
 
 const bellRef = ref<HTMLElement | null>(null)
@@ -215,9 +217,12 @@ function actionLabel(n: NotificationRecord): string {
           : $t('activityBell.title')
       "
       :title="
-        notifications.list.length > 0
-          ? $t('activityBell.bellAria', { count: notifications.list.length })
-          : $t('activityBell.title')
+        keybindings.withChord(
+          notifications.list.length > 0
+            ? $t('activityBell.bellAria', { count: notifications.list.length })
+            : $t('activityBell.title'),
+          'view.activity'
+        )
       "
       :aria-expanded="popoverOpen"
       @click="ui.togglePopover('activity')"

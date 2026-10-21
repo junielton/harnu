@@ -1,4 +1,4 @@
-import { onBeforeUnmount, watch, type WatchStopHandle } from 'vue'
+import { onBeforeUnmount, ref, watch, type WatchStopHandle } from 'vue'
 import { useMagicKeys } from '@vueuse/core'
 import { isMac } from '../lib/platform'
 import {
@@ -113,6 +113,13 @@ export interface ShortcutBinding {
  * call only the first". An array gives both behaviors trivially.
  */
 const registrations: ShortcutBinding[] = []
+
+/**
+ * Bumped whenever {@link registrations} changes, so a computed that reads
+ * {@link isShortcutEnabled} (the palette's Actions list) re-evaluates when a
+ * binding is added or removed. The array itself stays non-reactive.
+ */
+const registrationsVersion = ref(0)
 
 /**
  * Stack of active scopes. `'global'` is always at the bottom. `pushScope`
@@ -355,12 +362,43 @@ export function activeScope(): ShortcutScope {
 
 /**
  * Run the binding for `id` as if it came from `source` — the shield's door
- * (T486 §7.4) and, from U6, the palette's. Same rules as every dispatch:
+ * (T486 §7.4); the palette uses {@link invokeShortcut}. Same rules as every dispatch:
  * active scope, `enabled()`, the menu/keys coalescing; `keysGuard` only for
  * `'keys'`.
  */
 export function dispatchShortcut(id: string, source: DispatchSource): void {
   dispatch(id, source)
+}
+
+/** The first `'global'` registration for `id` — the palette's door (T486 §9.1). */
+function globalBinding(id: string): ShortcutBinding | undefined {
+  void registrationsVersion.value
+  return registrations.find((r) => r.id === id && r.scope === 'global')
+}
+
+/**
+ * Whether `id` has a `'global'` registration whose `enabled()` holds right now —
+ * the palette lists only those (T486 §9.1). Context only: `keysGuard` and the
+ * active scope are not consulted, so an action guarded against a text field is
+ * still listed while the palette's own input has focus. Reactive when read in a
+ * computed: `enabled()` reads store state, and a (un)registration bumps a ref.
+ */
+export function isShortcutEnabled(id: string): boolean {
+  const binding = globalBinding(id)
+  return !!binding && (!binding.enabled || binding.enabled())
+}
+
+/**
+ * Run the first `'global'` registration for `id` from the palette (T486 §9.1):
+ * `enabled()` is checked, `keysGuard` and the active scope are not (the
+ * palette's own `'modal'` scope is still on the stack at activation), and no
+ * menu/keys coalescing applies. Returns whether the handler ran.
+ */
+export function invokeShortcut(id: string): boolean {
+  const binding = globalBinding(id)
+  if (!binding || (binding.enabled && !binding.enabled())) return false
+  void binding.handler()
+  return true
 }
 
 /** Test-only alias of {@link dispatchShortcut}. */
@@ -529,6 +567,7 @@ export function useShortcuts(
   //    without ambiguity (in case the caller mutates the input array).
   const owned = [...bindings]
   registrations.push(...owned)
+  registrationsVersion.value++
 
   // 2. Wire renderer-level key watchers for every binding whose effective
   //    chord is non-empty. `useMagicKeys` produces a ComputedRef<boolean>
@@ -637,6 +676,7 @@ export function useShortcuts(
       const i = registrations.indexOf(binding)
       if (i >= 0) registrations.splice(i, 1)
     }
+    registrationsVersion.value++
     installCount--
     if (installCount === 0 && ipcUnsubscribe) {
       ipcUnsubscribe()

@@ -534,6 +534,8 @@ session timestamps, chart axes, separators, and icons.
 - **Render for the viewer's platform** (T1). On macOS use the symbols (`⌘`, `⇧`, `⌥`, `⌃`, `↩`, `⌫`) concatenated with no separator (`⌘⇧P`); on every other platform spell the modifiers out (`Ctrl`, `Shift`, `Alt`) and join with `+` (`Ctrl+Shift+P`). `Cmd`/`Mod` resolves to Control off macOS, so a `Cmd+K` binding shows as `⌘K` on a Mac and `Ctrl+K` on Linux — same binding, honest hint. Arrows stay `↑ ↓ ← →` everywhere.
 - **Every displayed chord is derived, never a literal.** The one source of truth is `src/main/keybindings-core.ts` (`KEYBINDINGS` + `renderChord`); `App.vue`, `menu.ts`, `EmptyState.vue` and the `SessionMenu` rename hint all read from it. A `<kbd>` that disagrees with the chord that fires is a bug the structure now prevents. Hints reflect the user's resolved `keybindings.json`, not just the default, and update live on save — the native menu is rebuilt on the same change so its accelerators stay in step.
 
+- **Tooltips carry the chord** (T486 U6). A button whose action has a resolved chord appends it in parentheses to its native `title` — "Hide sidebar (⌘B)" on macOS, "Hide sidebar (Ctrl+B)" elsewhere — through `keybindings.withChord(label, id)` (`keybindings.withChord` = `"{label} ({chord})"`). Never a literal: the chord follows a rebind live, and an unbound action shows the plain label. Only the `title` gains the chord; `aria-label` stays the plain label. Context-menu items show the same resolved chord in their trailing hint slot (mono 10.5px, `--text-4`), and only while the item's action has one.
+
 Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P` / `Ctrl+Shift+P` (switch project), `⌘R` / `Ctrl+R` (rename), `⌫` (delete).
 
 **Shortcut table** (renderer; the app's native menu mirrors the same ones — Mac notation shown, see the platform-rendering rule above):
@@ -7219,6 +7221,7 @@ modal). Opened via `⌘K` (Cmd+K / Ctrl+K).
 - Selected item (keyboard cursor): `bg-accent-soft text-text`, `2px --accent` bar on the left, `padding-left: 14px` to compensate
 - Empty state: `--text-4` 12.5px text, padding `20px 16px`, center-aligned
 - Sections (in order): **Recents** (top 3 sessions by mtime desc, only with empty input) → **Actions** → **Folders** → **Sessions**
+- **Actions come from the keybindings table** (T486 U6). One row per table action with `palette !== false` that has a renderer registration and whose `enabled()` holds right now; a disabled action is not listed. Label = the action's table label; trailing accelerator = its resolved chord (mono 10.5px, `--text-4`, the `<kbd>` platform rendering), live on rebind, absent when unbound. With an empty input only the **featured** actions show (`paletteFeatured`: New session, Toggle the Approval Inbox rail, Add folder, Resume last session, Open approvals); typing searches every listed action. Activating a row runs the action's registered handler (`invokeShortcut`), the same one its chord and menu item run. Icon per group: Sessions `Sparkles`, Sidebar `Search`, Folders `Folder`, Views `LayoutGrid`, Panes `PanelRight`, Takeovers `Maximize2`, App `Command`
 - Filter: fuse.js, `threshold: 0.4`, key `label`. Sessions use their name (§"Session name", fallback: the session id) as the label
 - Internal shortcuts: `↑/↓` moves the cursor; `Enter` activates; `Esc` closes; typing filters
 

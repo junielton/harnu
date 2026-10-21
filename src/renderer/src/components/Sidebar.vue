@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useLayoutStore } from '../stores/layout'
 import { useClaudeChangelogStore } from '../stores/claudeChangelog'
 import SidebarFolder from './SidebarFolder.vue'
@@ -39,6 +40,7 @@ import { macWindowControlsInset } from '../lib/platform'
 
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const layout = useLayoutStore()
 const claudeChangelog = useClaudeChangelogStore()
 const { t } = useI18n()
@@ -218,7 +220,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
             data-sidebar-rescan
             class="flex items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
             style="width: 26px; height: 26px"
-            :title="$t('sidebar.menu.rescan')"
+            :title="keybindings.withChord($t('sidebar.menu.rescan'), 'sidebar.rescan')"
             :aria-label="$t('sidebar.menu.rescan')"
             @click="rescan()"
           >
@@ -233,7 +235,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
                 : 'text-text-4 hover:bg-surface hover:text-text'
             "
             style="width: 26px; height: 26px"
-            :title="drillLabel"
+            :title="keybindings.withChord(drillLabel, 'sidebar.cycleDrillDepth')"
             :aria-label="drillLabel"
             @click="sessions.cycleDrillDepth()"
           >
@@ -245,7 +247,12 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
             v-if="sessions.drillDepth < 2"
             class="flex items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
             style="width: 26px; height: 26px"
-            :title="anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll')"
+            :title="
+              keybindings.withChord(
+                anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll'),
+                'sidebar.toggleCollapseAll'
+              )
+            "
             :aria-label="
               anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll')
             "
@@ -259,7 +266,12 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
             class="flex items-center rounded text-text-4 transition hover:bg-surface hover:text-text"
             :class="ui.sidebarHiddenPopover.open ? 'bg-surface text-text' : ''"
             style="height: 26px; padding: 0 7px; gap: 4px"
-            :title="$t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length })"
+            :title="
+              keybindings.withChord(
+                $t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length }),
+                'sidebar.hiddenFolders'
+              )
+            "
             :aria-label="$t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length })"
             :aria-expanded="ui.sidebarHiddenPopover.open"
             @click.stop="toggleHiddenFolders"
@@ -290,7 +302,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
               : 'text-text-4 hover:bg-surface hover:text-text'
           "
           style="width: 26px; height: 26px"
-          :title="$t('sidebar.jump.label')"
+          :title="keybindings.withChord($t('sidebar.jump.label'), 'sidebar.jump')"
           :aria-label="$t('sidebar.jump.label')"
           :aria-expanded="ui.sidebarJumpPalette.open"
           @click.stop="toggleJump"
@@ -423,7 +435,10 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
           :title="
-            claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings')
+            keybindings.withChord(
+              claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings'),
+              'view.settings'
+            )
           "
           :aria-label="
             claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings')

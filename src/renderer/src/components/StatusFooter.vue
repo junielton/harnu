@@ -64,6 +64,7 @@ import { useContainersStore } from '../stores/containers'
 import { useGcStore } from '../stores/gc'
 import { useStatuslineHealStore } from '../stores/statusline-heal'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useSessionImages } from '../composables/useSessionImages'
 import UsagePanel from './UsagePanel.vue'
 import ClaudeStatusPanel from './ClaudeStatusPanel.vue'
@@ -94,6 +95,7 @@ const scheduler = useSchedulerStore()
 const containers = useContainersStore()
 const gc = useGcStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const statuslineHeal = useStatuslineHealStore()
 
 // Cleanup footer pill (T443, design.md "Workspace GC — unified Cleanup / Footer pill"): ONE pill
@@ -518,7 +520,9 @@ function openFullDashboard(): void {
           pillBump ? 'anim-pill-bump' : ''
         ]"
         :aria-label="t('images.pillAria', { count: imageCount })"
-        :title="t('images.pillAria', { count: imageCount })"
+        :title="
+          keybindings.withChord(t('images.pillAria', { count: imageCount }), 'view.pastedImages')
+        "
         :aria-expanded="imagesPopoverOpen"
         @click="ui.togglePopover('pastedImages')"
       >
@@ -575,7 +579,12 @@ function openFullDashboard(): void {
           type="button"
           class="flex items-center rounded text-text-2 transition-colors hover:text-text"
           :aria-label="t('claudeStatus.a11yDot', { status: statusLabel })"
-          :title="t('claudeStatus.a11yDot', { status: statusLabel })"
+          :title="
+            keybindings.withChord(
+              t('claudeStatus.a11yDot', { status: statusLabel }),
+              'view.claudeStatus'
+            )
+          "
           :aria-expanded="statusOpen"
           @click="ui.togglePopover('claudeStatus')"
         >
@@ -617,7 +626,7 @@ function openFullDashboard(): void {
                 : 'text-text-2 hover:bg-surface-2 hover:text-text'
         "
         :aria-label="cleanupPill.aria"
-        :title="cleanupPill.aria"
+        :title="keybindings.withChord(cleanupPill.aria, 'view.cleanup')"
         :aria-pressed="ui.cleanupOpen"
         @click="ui.toggleCleanup()"
       >
@@ -648,9 +657,12 @@ function openFullDashboard(): void {
             : t('scheduler.footerPill')
         "
         :title="
-          schedulerRunningCount > 0
-            ? t('scheduler.footerRunning', { n: schedulerRunningCount })
-            : t('scheduler.footerPill')
+          keybindings.withChord(
+            schedulerRunningCount > 0
+              ? t('scheduler.footerRunning', { n: schedulerRunningCount })
+              : t('scheduler.footerPill'),
+            'view.scheduler'
+          )
         "
         :aria-pressed="ui.schedulerOpen"
         @click="ui.toggleScheduler()"

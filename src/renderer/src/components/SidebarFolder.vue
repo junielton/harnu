@@ -9,6 +9,7 @@ import { useHoverPreview } from '../composables/useHoverPreview'
 import { useContextMenu } from '../composables/useContextMenu'
 import { useFolderMenuActions } from '../composables/useFolderMenuActions'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useMissionsStore } from '../stores/missions'
 import { headlineText, TONE_TEXT_CLASS, type MissionModel } from '../lib/mission-view'
 import { relativeTime } from '../composables/useRelativeTime'
@@ -88,6 +89,7 @@ const helpers = useHelpersStore()
 const hoverPreview = useHoverPreview()
 const contextMenu = useContextMenu()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const { t } = useI18n()
 // T486 §3.4: the peeks' function, shared with `folder.toggleOlder` / `.toggleArchived`.
 const folderMenuActions = useFolderMenuActions()
@@ -633,7 +635,7 @@ function onSelectTeammate(session: Session): void {
           role="button"
           tabindex="0"
           class="flex cursor-pointer items-center text-text-4 transition hover:text-accent"
-          :title="$t('sidebar.newSession')"
+          :title="keybindings.withChord($t('sidebar.newSession'), 'session.newInFolder')"
           :aria-label="$t('sidebar.newSession')"
           @click.stop="onNewSession"
           @keydown.enter.stop.prevent="onNewSession"

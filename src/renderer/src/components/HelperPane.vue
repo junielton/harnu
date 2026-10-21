@@ -85,6 +85,7 @@ import {
   useFocusRegion
 } from '../composables/useTerminalFocus'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { DEFAULT_TERMINAL_FONT_SIZE, useSettingsStore } from '../stores/settings'
 import { useHelpersStore, isAgentTerminalPane, type AnyHelperPane } from '../stores/helpers'
 import { adoptTerminal } from '../lib/adopt-pty'
@@ -142,6 +143,7 @@ const emit = defineEmits<{ headerMouseDown: [ev: MouseEvent] }>()
 
 const { t: i18n } = useI18n()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const settings = useSettingsStore()
 const helpers = useHelpersStore()
 const theme = useThemeStore()
@@ -904,7 +906,12 @@ function onPromote(): void {
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
+        :title="
+          keybindings.withChord(
+            isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize'),
+            'pane.toggleMaximize'
+          )
+        "
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         @mousedown.stop
         @click="onToggleMaximize"
@@ -915,7 +922,7 @@ function onPromote(): void {
       <button
         class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="$t('helperPane.close')"
+        :title="keybindings.withChord($t('helperPane.close'), 'pane.close')"
         :aria-label="$t('helperPane.close')"
         @mousedown.stop
         @click="onClose"

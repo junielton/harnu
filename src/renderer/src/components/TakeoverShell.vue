@@ -16,9 +16,12 @@
  */
 import { computed } from 'vue'
 import { X } from 'lucide-vue-next'
+import { useKeybindingsStore } from '../stores/keybindings'
 
 const props = defineProps<{ titleKey: string }>()
 defineEmits<{ close: [] }>()
+
+const keybindings = useKeybindingsStore()
 
 /**
  * Every view's close-button i18n key has always followed this convention
@@ -40,7 +43,7 @@ const closeKey = computed(() => props.titleKey.replace(/\.title$/, '.close'))
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 22px; height: 22px"
-        :title="$t(closeKey)"
+        :title="keybindings.withChord($t(closeKey), 'view.closeTakeover')"
         :aria-label="$t(closeKey)"
         @click="$emit('close')"
       >

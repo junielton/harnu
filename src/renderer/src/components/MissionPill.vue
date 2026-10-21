@@ -14,6 +14,7 @@ import { Check, ListChecks } from 'lucide-vue-next'
 import { headlineText, PILL_TONE_CLASS, type MissionState } from '../lib/mission-view'
 import { useMissionsStore } from '../stores/missions'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import MissionPopover from './MissionPopover.vue'
 
 const props = defineProps<{ sessionId: string }>()
@@ -21,6 +22,7 @@ const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const missions = useMissionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 missions.ensureStarted()
 
 const view = computed(() => missions.viewForSession(props.sessionId))
@@ -119,7 +121,7 @@ const title = computed(() =>
       class="flex shrink-0 cursor-pointer items-center rounded border tabular-nums transition hover:brightness-110"
       :class="PILL_TONE_CLASS[model.tone]"
       style="gap: 4px; padding: 1px 7px; font-size: 10.5px; font-weight: 500; height: 18px"
-      :title="title"
+      :title="keybindings.withChord(title, 'view.missionProgress')"
       :aria-label="label ? `${label} — ${title}` : title"
       :aria-expanded="open"
       :data-dsqa="`topbar-pill--${model.tone}`"

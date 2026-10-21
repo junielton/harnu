@@ -1144,6 +1144,7 @@
     }
   },
   "keybindings": {
+    "withChord": "{label} ({chord})",
     "toast": {
       "warnings": {
         "title": "Alguns atalhos no keybindings.json foram ignorados",
@@ -1754,14 +1755,6 @@
       "actions": "Ações",
       "folders": "Pastas",
       "sessions": "Sessões"
-    },
-    "actions": {
-      "newSession": "Nova sessão",
-      "addFolder": "Adicionar pasta",
-      "switchProject": "Trocar de projeto",
-      "resumeLast": "Resume última sessão",
-      "toggleFleetRail": "Alternar Fleet rail",
-      "openInbox": "Abrir aprovações"
     }
   },
   "sentinel": {

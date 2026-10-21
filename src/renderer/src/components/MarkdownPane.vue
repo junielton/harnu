@@ -53,6 +53,7 @@ import {
 } from 'lucide-vue-next'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useSessionsStore } from '../stores/sessions'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import QuizBlock from './QuizBlock.vue'
@@ -110,6 +111,7 @@ const forceEditOnOpen = computed<boolean>(() => (props.pane as HelperPane).initi
 const { t } = useI18n()
 const helpers = useHelpersStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const sessions = useSessionsStore()
 
 /** Cross-platform basename/dirname — the renderer has no node `path`. */
@@ -685,7 +687,12 @@ useFocusRegion(props.pane.id, rootEl, {
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
+        :title="
+          keybindings.withChord(
+            isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize'),
+            'pane.toggleMaximize'
+          )
+        "
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         @mousedown.stop
         @click="onToggleMaximize"
@@ -696,7 +703,7 @@ useFocusRegion(props.pane.id, rootEl, {
       <button
         class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="$t('helperPane.close')"
+        :title="keybindings.withChord($t('helperPane.close'), 'pane.close')"
         :aria-label="$t('helperPane.close')"
         @mousedown.stop
         @click="onClose"
