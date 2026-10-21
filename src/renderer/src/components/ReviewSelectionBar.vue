@@ -6,8 +6,8 @@
  * evidence header or the discrepancy strip: those are receipts, and this bar
  * will eventually carry a conversation's delivery state (spec §5.3).
  *
- * It names what is selected, offers `Ask about this` / `Copy as text` / `Clear`
- * (U2b), and carries the one chip for the most recent delivery. It renders no
+ * It names what is selected, offers `Copy as text` / `Clear` (U2b), and carries the one
+ * chip for the most recent delivery, which is sent on its own. It renders no
  * count, no ratio and no percentage at any data combination — the only numbers
  * on it are the selected lines' own numbers (PRD D7, T243 AC-8).
  *

@@ -2609,8 +2609,8 @@ const api = {
     cb: (payload: { folder: string; globs: string[] }) => void
   ): (() => void) => subscribe('review:blastRadiusChanged', cb),
   /**
-   * Deliver the review pane's selection to the open review companion (T257). The operator's
-   * "Ask about this" gesture and nothing else: it is not an MCP verb, and the request carries
+   * Keep the open review companion's view of the selection up to date (T257): the selection
+   * store sends every change, debounced, as a hidden context row. It is not an MCP verb, and the request carries
    * coordinates, never text — `main` reads the lines itself. Resolves, never rejects: a refusal
    * is `{ ok:false, refusal }` with a stable code; the delivery that follows arrives as
    * `review:selection:state` events.
