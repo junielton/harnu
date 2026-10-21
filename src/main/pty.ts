@@ -410,6 +410,11 @@ interface PtyRec {
   /** T363: the directory the PTY runs in — locates the repo whose missions it may own. */
   cwd: string
   /**
+   * T257: the `--session-id` a `claude-new` spawn was handed, which is the sid its mod binding
+   * reports. Lets the review selection find the PTY of a companion that has no binding yet.
+   */
+  claudeSessionId?: string
+  /**
    * T480: why the PTY is paused. It runs while neither is set, so a renderer that drained its
    * queue cannot un-pause a PTY whose screen model is still behind, and vice versa (spec §5.5).
    */
@@ -977,6 +982,16 @@ export function parkSessionByKey(sessionKey: string): boolean {
   if (!parkSessionImpl || !sessionIndex.has(sessionKey)) return false
   parkSessionImpl(sessionKey)
   return true
+}
+
+/**
+ * T257: the PTY id of the live `claude-new` spawn that was handed this `--session-id`, or `null`.
+ * The review companion is addressed by that id (it has no session key), and a refused send needs
+ * its PTY to read why the Harnu mod never joined.
+ */
+export function ptyIdForClaudeSession(sid: string): string | null {
+  for (const [id, rec] of ptys) if (rec.claudeSessionId === sid) return id
+  return null
 }
 
 /**
@@ -1649,7 +1664,10 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     lastActivityAt: spawnedAt,
     // T215: fail closed — an unstamped spawn is treated as the operator's.
     spawnedBy: opts.spawnedBy === 'agent' ? 'agent' : 'operator',
-    cwd: runCwd
+    cwd: runCwd,
+    ...(kind === 'claude-new' && opts.claudeSessionId
+      ? { claudeSessionId: opts.claudeSessionId }
+      : {})
   }
   ptys.set(id, rec)
   // T474: a terminal PTY is a plain shell the registry knows about. No `sessionKey`.
