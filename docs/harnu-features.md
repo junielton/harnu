@@ -1,4 +1,4 @@
-<!-- harnu-features v98 (2026-10-20) -->
+<!-- harnu-features v99 (2026-10-21) -->
 
 # You are running inside Harnu
 
@@ -233,6 +233,13 @@ removed goes with it — an edge cannot outlive its node). So "redraw my diagram
 — the stamp records who first put it there, not who owns it. **Read the result back
 with your ordinary file tools**: a canvas is plain JSON in the working tree, and after
 the operator edits and Saves, the `origin` field is what tells you what they added.
+
+**The operator's open pane hears your write.** If the board is open and the operator has
+no unsaved edits, it redraws to your version by itself (their view does not move) and
+their next Save keeps your change. If they DO have unsaved edits the pane does not touch
+them and raises its "changed on disk" strip instead. So a successful ACK means the file
+changed, not that the operator has seen it; and a Save made in the fraction of a second (roughly
+100–250 ms) before their pane hears your write overwrites it (last writer wins), so re-read before building on it.
 
 **Shape names come from the ACK, never from guessing.** Every `draw_canvas` ACK carries
 `shapes` — the full catalog as `{ name, description, defaultSize, style }` — plus `path`,

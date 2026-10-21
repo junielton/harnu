@@ -237,8 +237,10 @@ If a save is refused, the pane says why and **the file on disk is left exactly a
 
 Harnu watches the file. What happens next depends on whether you have unsaved edits:
 
-- **No unsaved edits** — the board redraws itself immediately and your view does not move. This is the common case.
+- **No unsaved edits** — the board redraws itself immediately and your view does not move. This is the common case, and it is what you see when a session changes the board while you have it open: there is nothing to reload, and your next Save keeps the session's change.
 - **Unsaved edits** — the pane **does not** touch your work. A warning strip replaces the filename: _This canvas changed on disk._ with a **Reload** action. Reload discards your edits (it asks first); ignoring it and pressing **Save** instead writes your version over whatever changed, and that is the point of telling you.
+
+Your own Save never triggers either case on the pane that made it. One narrow window exists: if you press **Save** in the fraction of a second (roughly 100–250 ms) before the pane has heard about a session's write, your Save wins and the session's change is overwritten — the same last-writer-wins rule as saving over the warning strip. The pane and the file agree afterwards.
 
 Every node and edge records whether **you** or **the agent** created it, and that record is written the moment you draw the thing. Copying an agent's box makes the copy yours; moving or renaming an agent's box does not — the stamp says who first put it there, not who touched it last.
 

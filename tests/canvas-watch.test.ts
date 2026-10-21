@@ -6,7 +6,7 @@ import {
   canvasRefCount,
   addCanvasRef,
   removeCanvasRef,
-  suppressNextCanvasChange,
+  recordCanvasSelfWrite,
   consumeCanvasSuppression,
   __resetCanvasWatchStateForTests,
   registerCanvasWatchHandlers,
@@ -71,17 +71,53 @@ describe('canvas-watch ref counting', () => {
 })
 
 describe('canvas-watch self-write suppression', () => {
-  it('is false until armed, true exactly once after arming', () => {
-    expect(consumeCanvasSuppression('/repo/a.harnucanvas.json')).toBe(false)
-    suppressNextCanvasChange('/repo/a.harnucanvas.json')
-    expect(consumeCanvasSuppression('/repo/a.harnucanvas.json')).toBe(true)
-    expect(consumeCanvasSuppression('/repo/a.harnucanvas.json')).toBe(false)
+  const A = '/repo/a.harnucanvas.json'
+  const bytes = (t: string): Buffer => Buffer.from(t, 'utf8')
+
+  it('is false until the pane records a write', () => {
+    expect(consumeCanvasSuppression(A, bytes('x'))).toBe(false)
+  })
+
+  it('swallows an event whose file is exactly what the pane wrote', () => {
+    recordCanvasSelfWrite(A, 'saved')
+    expect(consumeCanvasSuppression(A, bytes('saved'))).toBe(true)
+  })
+
+  it('does NOT swallow an event whose file differs — and forgets the old write', () => {
+    recordCanvasSelfWrite(A, 'saved')
+    expect(consumeCanvasSuppression(A, bytes('agent wrote this'))).toBe(false)
+    // Once somebody else has changed the file, the pane's write is history.
+    expect(consumeCanvasSuppression(A, bytes('saved'))).toBe(false)
+  })
+
+  it('treats a vanished file as somebody else’s change', () => {
+    recordCanvasSelfWrite(A, 'saved')
+    expect(consumeCanvasSuppression(A, null)).toBe(false)
   })
 
   it('is scoped per path', () => {
-    suppressNextCanvasChange('/repo/a.harnucanvas.json')
-    expect(consumeCanvasSuppression('/repo/b.harnucanvas.json')).toBe(false)
-    expect(consumeCanvasSuppression('/repo/a.harnucanvas.json')).toBe(true)
+    recordCanvasSelfWrite(A, 'saved')
+    expect(consumeCanvasSuppression('/repo/b.harnucanvas.json', bytes('saved'))).toBe(false)
+    expect(consumeCanvasSuppression(A, bytes('saved'))).toBe(true)
+  })
+
+  it('forgets the pane’s write once the last pane on the path closes', () => {
+    // Pane Saves, closes, the file changes while nothing watches it, the pane
+    // reopens on the new content — then something restores exactly the old
+    // bytes (`git checkout`). That event is NOT the pane's echo and must arrive.
+    addCanvasRef(A)
+    recordCanvasSelfWrite(A, 'saved')
+    expect(removeCanvasRef(A)).toBe('last')
+    addCanvasRef(A)
+    expect(consumeCanvasSuppression(A, bytes('saved'))).toBe(false)
+  })
+
+  it('keeps the pane’s write while another pane still has the path open', () => {
+    addCanvasRef(A)
+    addCanvasRef(A)
+    recordCanvasSelfWrite(A, 'saved')
+    expect(removeCanvasRef(A)).toBe('more')
+    expect(consumeCanvasSuppression(A, bytes('saved'))).toBe(true)
   })
 })
 
@@ -159,13 +195,22 @@ describe('U1-8 change notification (§4, §7.3)', () => {
   it('our OWN Save is swallowed — the pane that just saved gets no false "changed on disk"', async () => {
     win()
     addCanvasRef(file)
-    const w = await writeCanvasFile(file, DOC)
+    const w = await writeCanvasFile(file, DOC, { selfWrite: true })
     expect(w.ok).toBe(true)
-    // The writer armed the suppression before its rename; the event the rename
+    // The writer recorded what it wrote before its rename; the event the rename
     // fires must not loop back to the pane.
     expect(await notifyCanvasChanged(file)).toBe('ok')
     expect(sent).toHaveLength(0)
-    // …and the suppression is one-shot: the NEXT (external) change does notify.
+    // …and it only covers that write: once the file changes, the NEXT event notifies.
+    writeFileSync(file, JSON.stringify({ capycanvas: 1, meta: {}, nodes: [], edges: [] }), 'utf8')
+    expect(await notifyCanvasChanged(file)).toBe('ok')
+    expect(sent).toEqual([{ ch: 'canvas:changed', p: { path: file } }])
+  })
+
+  it('BUG-202 — a write that is NOT the pane’s own Save (an agent’s draw_canvas) is never swallowed', async () => {
+    win()
+    addCanvasRef(file)
+    expect((await writeCanvasFile(file, DOC)).ok).toBe(true)
     expect(await notifyCanvasChanged(file)).toBe('ok')
     expect(sent).toEqual([{ ch: 'canvas:changed', p: { path: file } }])
   })
