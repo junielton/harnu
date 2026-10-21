@@ -160,6 +160,11 @@ function ensureWatcher(): FSWatcher {
   })
   watcher.on('change', (p) => void notifyCanvasChanged(p))
   watcher.on('unlink', (p) => void notifyCanvasChanged(p))
+  // An OS that refuses the watch (inotify limit, ENOSPC) surfaces here, after
+  // chokidar already lists the file: the open wait cannot tell, so say so.
+  watcher.on('error', (err) =>
+    console.warn('[canvas-watch] watcher error; changes may be missed:', err)
+  )
   return watcher
 }
 

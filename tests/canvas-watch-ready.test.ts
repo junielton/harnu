@@ -12,7 +12,9 @@ import { basename, dirname, join } from 'node:path'
 
 const fake = vi.hoisted(() => ({
   /** dir → names, exactly what `getWatched()` returns. */
-  watched: {} as Record<string, string[]>
+  watched: {} as Record<string, string[]>,
+  /** event → handlers the module registered on the watcher. */
+  handlers: {} as Record<string, ((...a: unknown[]) => void)[]>
 }))
 
 vi.mock('chokidar', () => ({
@@ -20,7 +22,10 @@ vi.mock('chokidar', () => ({
     watch: () => ({
       add: (): void => {},
       unwatch: (): void => {},
-      on: (): void => {},
+      on(ev: string, fn: (...a: unknown[]) => void) {
+        ;(fake.handlers[ev] ??= []).push(fn)
+        return this
+      },
       close: async (): Promise<void> => {},
       getWatched: () => fake.watched
     })
@@ -68,6 +73,7 @@ beforeEach(() => {
   writeFileSync(file, JSON.stringify({ capycanvas: 1, meta: {}, nodes: [], edges: [] }), 'utf8')
   ;(globalThis as Record<string, unknown>).__TEST_ROOT__ = dir
   fake.watched = {}
+  fake.handlers = {}
   sent = []
   __resetCanvasWatchStateForTests()
   __setWatchReadyTimeoutForTests(60)
@@ -170,5 +176,19 @@ describe('startCanvasWatch when the watch misses the deadline (BUG-210 review)',
     await new Promise((r) => setTimeout(r, 300))
     expect(readFileSync(file, 'utf8')).not.toContain('agent')
     expect(sent).toEqual([])
+  })
+})
+
+describe('a watch the OS refuses (BUG-210 review)', () => {
+  it('a watcher error is logged instead of thrown', async () => {
+    // chokidar lists the file before fs.watch throws (ENOSPC on Linux) and then
+    // emits 'error'; an EventEmitter with no 'error' listener throws.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    attach()
+    await startCanvasWatch(file)
+    const onError = fake.handlers['error'] ?? []
+    expect(onError).toHaveLength(1)
+    onError[0](Object.assign(new Error('watch limit'), { code: 'ENOSPC' }))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('watcher error'), expect.anything())
   })
 })
