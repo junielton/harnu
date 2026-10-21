@@ -975,7 +975,7 @@ slug. With "Ask before agent actions" OFF (the default) and the folder not
 blocked, every named card is stamped `approved` + the fingerprint IN THE SAME
 CALL — no confirm, no partial-go, since there's no operator present to uncheck
 anything — and the stamped cards drain automatically in the declared order,
-pausing (visibly) at the WIP ceiling; a shadow-log entry and a notification mark
+pausing (visibly) at the WIP ceiling — which counts only LIVE In Progress cards (a card whose session is dead, never started or silent for a week is stale and holds no slot) against a per-repo limit (default 5); a paused pass raises ONE Activity notice naming the ceiling and the cards holding the slots; a shadow-log entry and a notification mark
 the batch so the operator still has a record of what self-approved. With "Ask
 before agent actions" ON, this instead parks the disclosure in the Approval
 Inbox as a checklist, and the operator can partial-go (uncheck cards before

@@ -1984,6 +1984,31 @@
     "wipHint": "WIP limit de In Progress — o teto de 4–5 de supervisão simultânea virando regra do board.",
     "wipExceeded": "Acima do WIP limit de {limit}",
     "wipExceededHint": "Você está supervisionando mais que os 4–5 agentes que dá pra revisar de fato ao mesmo tempo. O card moveu mesmo assim — é só um aviso.",
+    "wipChip": {
+      "title": "Limite de WIP",
+      "holding": "Ocupando as vagas",
+      "holdingEmpty": "Nenhuma sessão ativa ocupa uma vaga.",
+      "staleNote": "{count} card(s) parado(s) não contam — tire-os de Em andamento.",
+      "pausedNote": "O envio está pausado: cards aprovados em Pronto esperam uma vaga livre.",
+      "limit": "Limite",
+      "decrease": "Diminuir o limite",
+      "increase": "Aumentar o limite",
+      "reset": "Voltar para {default}",
+      "hint": "Só sessões ativas contam para o limite. Definido por repositório."
+    },
+    "wipChipPaused": "Pausado · {count}/{limit}",
+    "cardStale": {
+      "badge": "Parado",
+      "moveReview": "Mover para Revisão",
+      "moveBacklog": "Mover para Backlog",
+      "moveFailed": "Não foi possível mover o card ({code}).",
+      "reason": {
+        "no-session": "Nenhuma sessão está ligada a este card, então ele não conta para o limite de WIP.",
+        "unmaterialized": "A sessão dele nunca iniciou, então ele não conta para o limite de WIP.",
+        "unknown-session": "A sessão dele não foi encontrada, então ele não conta para o limite de WIP.",
+        "inactive": "A sessão dele está inativa há mais de uma semana, então ele não conta para o limite de WIP."
+      }
+    },
     "dropBlockedDone": "Done se alcança fechando um card revisado, não arrastando.",
     "closeNoEvidenceTitle": "Fechar sem evidência?",
     "closeNoEvidenceBody": "Este card não tem commits, PR ou gates anexados.",
@@ -2172,7 +2197,7 @@
       "drainCounter": "{done}/{total} despachados",
       "needsConfirm": "{folder}: {cards} caiu/caíram para confirm individual ({reasons}) — abra o board do Roadmap e clique em Despachar.",
       "spawnFailed": "{folder}: {cards} falhou/falharam ao despachar ({reasons}) — qualquer worktree criada para ele(s) foi revertida. Corrija a causa e reenvie o manifest.",
-      "wipPaused": "{folder}: {count} card(s) aprovado(s) aguardando uma vaga de WIP — o drain retoma quando uma sessão terminar."
+      "wipPaused": "{folder}: envio pausado — {live} de {limit} vagas em uso ({cards}). Mova ou finalize um card para retomar."
     },
     "create": {
       "title": "Novo card",

@@ -12,9 +12,18 @@
  * Pure data structure — no node-pty / electron deps — so it is unit-testable
  * in isolation (vitest, node env).
  */
+const ALIAS_CAP = 512
+
 export class PtySessionIndex {
   private byKey = new Map<string, string>()
   private byPty = new Map<string, string>()
+  /**
+   * BUG-197: `fromKey → toKey` for every synthetic → real re-key, kept AFTER the
+   * process exits. A roadmap card stays bound to its `synthetic-…` id forever, so
+   * liveness checks need to follow it to the real key. In memory only (an app
+   * restart drops it), insertion-ordered and capped at {@link ALIAS_CAP}.
+   */
+  private aliases = new Map<string, string>()
 
   /** ptyId for a live session key, or undefined if none is registered. */
   getPtyId(sessionKey: string): string | undefined {
@@ -57,6 +66,27 @@ export class PtySessionIndex {
     this.byKey.delete(fromKey)
     this.byKey.set(toKey, ptyId)
     this.byPty.set(ptyId, toKey)
+    this.aliases.delete(fromKey)
+    this.aliases.set(fromKey, toKey)
+    if (this.aliases.size > ALIAS_CAP) {
+      const oldest = this.aliases.keys().next().value
+      if (oldest !== undefined) this.aliases.delete(oldest)
+    }
+  }
+
+  /**
+   * The current key for a possibly re-keyed one (BUG-197): follows `synthetic →
+   * real` aliases to the end of the chain; a key that was never re-keyed (or whose
+   * alias was evicted) resolves to itself.
+   */
+  resolveAlias(sessionKey: string): string {
+    let key = sessionKey
+    for (let hops = 0; hops < 8; hops++) {
+      const next = this.aliases.get(key)
+      if (next === undefined || next === key) break
+      key = next
+    }
+    return key
   }
 
   /** Drop whatever session key (if any) is bound to this ptyId. */

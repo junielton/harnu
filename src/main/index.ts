@@ -96,6 +96,8 @@ import {
   setUserProjectAliasFromBranch,
   getUserProjectAutoOrganize,
   setUserProjectAutoOrganize,
+  getUserProjectWipLimit,
+  setUserProjectWipLimit,
   getUserProjectOrchestratorDefault,
   setUserProjectOrchestratorDefault,
   setUserProjectTerminalRead,
@@ -181,6 +183,7 @@ import { registerExternal } from './external'
 import { registerCommandBridge, closeCommandBridge } from './command-bridge-ipc'
 import { registerTerminalIpc } from './terminal-ipc'
 import { registerManifestDrain } from './manifest-drain-shell'
+import { pokeManifestDrain } from './manifest-drain'
 import { registerMcpConfirm, closeMcpConfirm } from './mcp/confirm-resolver'
 import { registerWorktreeHandlers, adoptExistingFolder } from './worktree-ipc'
 import { registerReaperHandlers } from './reaper/reaper-ipc'
@@ -971,6 +974,21 @@ app.whenReady().then(async () => {
   ipcMain.handle('userProjects:getAutoOrganize', async (_e, targetPath: string) => {
     return getUserProjectAutoOrganize(targetPath)
   })
+  // BUG-197: the per-repo In Progress WIP ceiling (ADR-0021). `get` resolves the
+  // effective value (own, else the parent repo's for a canonical worktree, else 5);
+  // `set` clamps to 1…10, writes the repo's record and pokes the drain — raising the
+  // limit can free slots a paused pass was waiting on. Returns the effective value.
+  ipcMain.handle('userProjects:getWipLimit', async (_e, targetPath: string) => {
+    return getUserProjectWipLimit(targetPath)
+  })
+  ipcMain.handle(
+    'userProjects:setWipLimit',
+    async (_e, { targetPath, limit }: { targetPath: string; limit: number }) => {
+      await setUserProjectWipLimit(targetPath, Number(limit))
+      pokeManifestDrain(targetPath)
+      return getUserProjectWipLimit(targetPath)
+    }
+  )
   // T191: the folder menu's "Set parent folder" / "Clear parent folder" — the
   // manual override for the `bornFrom` lineage edge (write-time guards apply
   // only to the birth-time path; this is an explicit human choice).

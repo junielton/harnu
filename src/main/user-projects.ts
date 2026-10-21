@@ -5,6 +5,7 @@ import * as os from 'node:os'
 import { removeHelpersForWorktree } from './helpers-store'
 import type { MemoryLocationConfig } from './mcp/memory-core'
 import { canonicalWorktreeParentRepo } from './worktree-core'
+import { WIP_LIMIT, clampWipLimit } from './roadmap-core'
 import { scanFolders } from './claude-reader'
 import { recordRemovedFolder } from './gc/gc-removed-folders'
 import { fsPathExistence } from './gc/gc-orphan-existence'
@@ -128,6 +129,14 @@ export interface UserProject {
    * resolves via `canonicalWorktreeParentRepo`) rather than re-asking.
    */
   autoOrganizeCards?: boolean
+  /**
+   * BUG-197: the per-repo In Progress WIP ceiling the manifest drain and the
+   * roadmap board both read (ADR-0021). Absent = the default
+   * ({@link WIP_LIMIT}). Always clamped to `WIP_LIMIT_MIN…WIP_LIMIT_MAX` on read
+   * and write. A canonical Harnu worktree shares its parent repo's value — the
+   * board is per repo — so the setter writes the parent's record.
+   */
+  wipLimit?: number
   /**
    * T191: the folder whose session asked for this worktree to be cut — the
    * orchestrator. Absolute, normalized path. Optional + fail-safe: absent means
@@ -751,6 +760,70 @@ export async function getUserProjectAutoOrganize(targetPath: string): Promise<bo
     if (main?.autoOrganizeCards !== undefined) return main.autoOrganizeCards
   }
   return AUTO_ORGANIZE_DEFAULT
+}
+
+/**
+ * Resolve the effective WIP ceiling for `folder` (BUG-197, ADR-0021): its own
+ * explicit value, else — for a canonical Harnu worktree — its parent repo's, else
+ * {@link WIP_LIMIT}. Always clamped, so a hand-edited file cannot disable the brake.
+ */
+export async function getUserProjectWipLimit(targetPath: string): Promise<number> {
+  const file = await readUserProjects()
+  const normalizedPath = await normalizePath(targetPath)
+  const own = file.projects.find((p) => p.path === normalizedPath)
+  if (own?.wipLimit !== undefined) return clampWipLimit(own.wipLimit)
+
+  const parentRepo = canonicalWorktreeParentRepo(normalizedPath)
+  if (parentRepo) {
+    const normalizedParent = await normalizePath(parentRepo)
+    const main = file.projects.find((p) => p.path === normalizedParent)
+    if (main?.wipLimit !== undefined) return clampWipLimit(main.wipLimit)
+  }
+  return WIP_LIMIT
+}
+
+/**
+ * Set the per-repo WIP ceiling (BUG-197). The value is clamped. A canonical
+ * Harnu worktree writes its PARENT repo's record (one board, one limit); if no
+ * record exists one is created so the choice survives a restart. Idempotent —
+ * no write when the stored value already matches.
+ */
+export async function setUserProjectWipLimit(
+  targetPath: string,
+  limit: number
+): Promise<UserProjectsFile> {
+  const value = clampWipLimit(limit)
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const requested = await normalizePath(targetPath)
+    const parent = canonicalWorktreeParentRepo(requested)
+    const normalizedPath = parent ? await normalizePath(parent) : requested
+    const idx = file.projects.findIndex((p) => p.path === normalizedPath)
+    if (idx === -1) {
+      const created: UserProject = {
+        path: normalizedPath,
+        alias: path.basename(normalizedPath),
+        addedAt: new Date().toISOString(),
+        worktrees: [],
+        wipLimit: value
+      }
+      const next: UserProjectsFile = {
+        version: 1,
+        projects: [...file.projects, created],
+        hiddenPaths: (file.hiddenPaths ?? []).filter((p) => p !== normalizedPath)
+      }
+      await writeUserProjects(next)
+      return next
+    }
+    if (file.projects[idx].wipLimit === value) return file // unchanged
+    const next: UserProjectsFile = {
+      version: 1,
+      projects: file.projects.map((p, i) => (i === idx ? { ...p, wipLimit: value } : p)),
+      hiddenPaths: file.hiddenPaths ?? []
+    }
+    await writeUserProjects(next)
+    return next
+  })
 }
 
 /**

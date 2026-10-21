@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import type { RoadmapDrainEvent } from '../../../preload'
 import { i18n } from '../i18n'
 import { useUiStore } from './ui'
+import { wipPauseNotice, type WipPauseInfo, type WipPauseMemory } from '../lib/wip-pause'
 
 /**
  * T113 — renderer-side VIEW of the background manifest drain. The drain DRIVER
@@ -14,6 +15,24 @@ import { useUiStore } from './ui'
 export const useRoadmapDrainStore = defineStore('roadmap-drain', () => {
   /** Latest ACTIVE pass per folder; entries clear on the terminal tick. */
   const batches = ref<Record<string, RoadmapDrainEvent>>({})
+  /**
+   * BUG-197: the pause the drain last reported per folder (the ceiling, the live
+   * count, the live cards holding the slots) — the board's WIP chip reads it for its
+   * "paused" state. Cleared when a tick reports no pause or a slot frees.
+   */
+  const wipPauses = ref<Record<string, WipPauseInfo>>({})
+  /** BUG-197: which pause the operator was already told about, per folder (no repeats). */
+  let pauseMemory: WipPauseMemory = {}
+
+  /** The slots freed or nothing waits: forget the pause so the next one notifies again. */
+  function clearWipPause(folder: string): void {
+    if (folder in wipPauses.value) {
+      const next = { ...wipPauses.value }
+      delete next[folder]
+      wipPauses.value = next
+    }
+    pauseMemory = wipPauseNotice(pauseMemory, folder, undefined).memory
+  }
 
   function handleEvent(e: RoadmapDrainEvent): void {
     if (!e || typeof e.folder !== 'string') return
@@ -63,12 +82,27 @@ export const useRoadmapDrainStore = defineStore('roadmap-drain', () => {
         target
       })
     }
-    if (e.wipBlocked > 0) {
+    // BUG-197: ONE notice per pause — naming the ceiling, the live count and the
+    // cards holding the slots — and the board chip's paused state. The same pause
+    // (same ceiling, same holders) never notifies twice, however many passes re-hit it.
+    const pause = e.wipBlocked > 0 ? e.wipPause : undefined
+    const folded = wipPauseNotice(pauseMemory, e.folder, pause)
+    pauseMemory = folded.memory
+    if (pause) {
+      wipPauses.value = { ...wipPauses.value, [e.folder]: pause }
+    } else {
+      const rest = { ...wipPauses.value }
+      delete rest[e.folder]
+      wipPauses.value = rest
+    }
+    if (folded.notify && pause) {
       useUiStore().pushToast({
-        kind: 'info',
+        kind: 'warning',
         title: i18n.global.t('roadmap.manifest.wipPaused', {
           folder: folderName,
-          count: e.wipBlocked
+          live: pause.live,
+          limit: pause.limit,
+          cards: pause.holders.map((h) => h.id).join(', ')
         }),
         target
       })
@@ -82,5 +116,5 @@ export const useRoadmapDrainStore = defineStore('roadmap-drain', () => {
     return sub((payload) => handleEvent(payload))
   }
 
-  return { batches, handleEvent, wire }
+  return { batches, wipPauses, clearWipPause, handleEvent, wire }
 })
