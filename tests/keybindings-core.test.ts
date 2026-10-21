@@ -34,8 +34,8 @@ const chord = (p: Partial<Chord>): Chord => ({
 })
 
 describe('KEYBINDINGS table', () => {
-  it('has 76 rebindable and 5 reserved ids', () => {
-    expect(REBINDABLE_IDS).toHaveLength(76)
+  it('has 101 rebindable and 5 reserved ids', () => {
+    expect(REBINDABLE_IDS).toHaveLength(101)
     expect(RESERVED_IDS).toHaveLength(5)
     expect(RESERVED_IDS).toContain('app.openKeybindings')
     expect(new Set([...REBINDABLE_IDS, ...RESERVED_IDS]).size).toBe(KEYBINDINGS.length)

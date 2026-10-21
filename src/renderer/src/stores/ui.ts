@@ -127,6 +127,36 @@ export type SettingsTabId =
   | 'prStack'
 
 /**
+ * Every `SettingsTabId`, in tab order (T486 §3.5). `App.vue` generates one
+ * `view.settings.<tab>` keybinding per entry, so a new tab cannot ship without
+ * an id. Built from a `Record` over the union: the compiler refuses a missing
+ * tab and a stray one.
+ */
+const SETTINGS_TABS: Record<SettingsTabId, true> = {
+  general: true,
+  keybindings: true,
+  interceptor: true,
+  appearance: true,
+  startup: true,
+  claudeConfig: true,
+  endpoints: true,
+  push: true,
+  voice: true,
+  mcp: true,
+  skills: true,
+  mods: true,
+  memory: true,
+  hibernationPolicy: true,
+  usageHistory: true,
+  changelog: true,
+  claudeCode: true,
+  cleanup: true,
+  containers: true,
+  prStack: true
+}
+export const SETTINGS_TAB_IDS = Object.keys(SETTINGS_TABS) as readonly SettingsTabId[]
+
+/**
  * Right-click context menu state. The menu is anchored at viewport coordinates
  * `(x, y)` and targets a specific session. Only one menu can be open at a time.
  */
@@ -144,7 +174,7 @@ export interface MenuState {
  * targets a project by its absolute path (which is what
  * `userProjectsHide` / `userProjectsUnhide` IPC use for identification).
  * Only one folder menu open at a time; mutually exclusive with the
- * session menu via `closeAll`.
+ * session menu (`openFolderMenu` / `openMenu` close each other).
  */
 export interface FolderMenuState {
   open: boolean
@@ -311,7 +341,8 @@ export interface Toast {
  * - Opening the preview is silently no-op when a palette, dialog, or menu is
  *   already open — previews are decorative and must never overlay an
  *   interactive surface.
- * - `closeAll()` closes all four. Wired to the App-level Esc handler.
+ * - Esc closes each surface on its own listener; an open main-pane takeover
+ *   closes through the `view.closeTakeover` keybinding (`lib/takeover-esc.ts`).
  *
  * The store is intentionally leaf-level: no IPC. The one exception is
  * `notifications.ts` (T83 S1) — `pushToast` funnels every persisted toast through
@@ -589,8 +620,7 @@ export const useUiStore = defineStore('ui', () => {
    * column-reverse` so the newest entry visually piles at the top of the
    * stack while accessibility order (DOM order) stays oldest→newest.
    *
-   * Toasts are NOT modal — `closeAll()` (the App-level Esc handler) leaves
-   * them alone on purpose. They're cleared individually via `dismissToast`
+   * Toasts are NOT modal — Esc leaves them alone on purpose. They're cleared individually via `dismissToast`
    * (X button, action click, or auto-timeout).
    */
   const toasts = ref<Toast[]>([])
@@ -1056,33 +1086,6 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /**
-   * Close every floating surface. Used by the App-level Esc handler.
-   *
-   * Note: this does NOT clear `toasts` — toasts are non-modal and Esc should
-   * not wipe a "Restart now" prompt the user hasn't seen yet. Toasts time
-   * out on their own (default 6 s) or are dismissed via the X / action
-   * button.
-   *
-   * It also does NOT touch the Inbox rail (T83 S0). Esc means "dismiss what's
-   * covering the app", and the rail covers nothing — it's a column. Closing the
-   * approval queue on Esc would hide a blocked session from the operator.
-   */
-  function closeAll(): void {
-    dialog.value = null
-    menu.value = { open: false, sessionId: null, x: 0, y: 0 }
-    folderMenu.value = { open: false, projectPath: null, x: 0, y: 0 }
-    preview.value = { open: false, sessionId: null, folderPath: null, rect: null }
-    palette.value = { open: false }
-    sidebarHiddenPopover.value = { open: false, anchorRect: null }
-    sidebarJumpPalette.value = { open: false }
-    // The takeovers are main-pane views (not floating surfaces), but Esc should
-    // still dismiss them back to the transcript — closeAll is the App-level Esc
-    // handler. Via the shared helper, not a hand-kept list: the hand-kept one
-    // had already rotted (it never learned about the PR Stack, T198).
-    closeAllTakeovers()
-  }
-
-  /**
    * Push a new toast onto the stack. Returns the assigned id so the caller
    * can dismiss it programmatically (e.g. when the underlying condition
    * disappears before the user acted on it).
@@ -1224,7 +1227,6 @@ export const useUiStore = defineStore('ui', () => {
     toggleCleanup,
     toggleContainers,
     openNavigableView,
-    closeAll,
     pushToast,
     dismissToast,
     triggerRenameFocus

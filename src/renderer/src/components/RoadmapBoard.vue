@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Bot,
@@ -852,6 +852,23 @@ function cancelDispatch(): void {
   dispatchConfirm.value = null
 }
 
+// The confirm takes focus when it opens, so Esc lands on it — and stops there,
+// leaving the board open behind it until the next Esc (T486 §6.1). On close,
+// focus goes back to what held it (the card's Dispatch button), if still there.
+const dispatchConfirmEl = ref<HTMLElement | null>(null)
+let confirmReturnFocus: HTMLElement | null = null
+watch(dispatchConfirm, async (dc, prev) => {
+  if (dc && !prev) {
+    confirmReturnFocus = document.activeElement as HTMLElement | null
+    await nextTick()
+    dispatchConfirmEl.value?.focus()
+  } else if (!dc && prev) {
+    const el = confirmReturnFocus
+    confirmReturnFocus = null
+    if (el?.isConnected) el.focus()
+  }
+})
+
 /** On Allow: spawn a fresh session with the boot prompt, bind it, reveal it. */
 async function confirmDispatch(): Promise<void> {
   const dc = dispatchConfirm.value
@@ -1339,9 +1356,11 @@ async function doClose(card: RoadmapCard): Promise<void> {
   <Teleport to="body">
     <div
       v-if="dispatchConfirm"
-      class="anim-overlay-fade fixed inset-0 z-[65] flex items-center justify-center bg-black/40"
+      ref="dispatchConfirmEl"
+      tabindex="-1"
+      class="anim-overlay-fade fixed inset-0 z-[65] flex items-center justify-center bg-black/40 outline-none"
       @click.self="cancelDispatch"
-      @keydown.esc="cancelDispatch"
+      @keydown.esc.stop="cancelDispatch"
     >
       <div
         class="anim-fade-in-scale flex max-h-[80vh] w-[min(560px,92vw)] flex-col gap-3 rounded-lg border border-border bg-bg p-4 shadow-pop"

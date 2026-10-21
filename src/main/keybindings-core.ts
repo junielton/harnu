@@ -103,6 +103,31 @@ export type ShortcutActionId =
   | 'view.pastedImages'
   | 'view.claudeStatus'
   | 'view.usagePanel'
+  | 'view.closeTakeover'
+  | 'view.cleanup'
+  | 'view.scheduler'
+  | 'view.systemMonitor'
+  | 'view.containers'
+  | 'view.settings.general'
+  | 'view.settings.keybindings'
+  | 'view.settings.interceptor'
+  | 'view.settings.appearance'
+  | 'view.settings.startup'
+  | 'view.settings.claudeConfig'
+  | 'view.settings.endpoints'
+  | 'view.settings.push'
+  | 'view.settings.voice'
+  | 'view.settings.mcp'
+  | 'view.settings.skills'
+  | 'view.settings.mods'
+  | 'view.settings.memory'
+  | 'view.settings.hibernationPolicy'
+  | 'view.settings.usageHistory'
+  | 'view.settings.changelog'
+  | 'view.settings.claudeCode'
+  | 'view.settings.cleanup'
+  | 'view.settings.containers'
+  | 'view.settings.prStack'
   | 'sidebar.cursor.down'
   | 'sidebar.cursor.up'
   | 'sidebar.cursor.right'
@@ -310,6 +335,38 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.pastedImages', 'views', null),
   def('view.claudeStatus', 'views', null),
   def('view.usagePanel', 'views', null),
+  // T486 §3.6 — Esc closes the open takeover through the X's own door
+  // (`closeAllTakeovers`). Renderer-only on purpose: an Esc accelerator in the
+  // native menu would take Esc from every terminal. The four footer takeovers
+  // ship unbound and run their button's toggle.
+  def('view.closeTakeover', 'takeovers', 'Escape'),
+  def('view.cleanup', 'takeovers', null),
+  def('view.scheduler', 'takeovers', null),
+  def('view.systemMonitor', 'takeovers', null),
+  def('view.containers', 'takeovers', null),
+  // T486 §3.5 — one id per Settings tab (`SETTINGS_TAB_IDS` in `stores/ui.ts`,
+  // whose registrations `App.vue` generates). Only Keyboard Shortcuts is bound:
+  // ⌘⌥S / Ctrl+Alt+S, menu-backed ("Keyboard Shortcuts…" in `menu.ts`).
+  def('view.settings.keybindings', 'views', 'Cmd+Alt+S', MENU),
+  def('view.settings.general', 'views', null),
+  def('view.settings.interceptor', 'views', null),
+  def('view.settings.appearance', 'views', null),
+  def('view.settings.startup', 'views', null),
+  def('view.settings.claudeConfig', 'views', null),
+  def('view.settings.endpoints', 'views', null),
+  def('view.settings.push', 'views', null),
+  def('view.settings.voice', 'views', null),
+  def('view.settings.mcp', 'views', null),
+  def('view.settings.skills', 'views', null),
+  def('view.settings.mods', 'views', null),
+  def('view.settings.memory', 'views', null),
+  def('view.settings.hibernationPolicy', 'views', null),
+  def('view.settings.usageHistory', 'views', null),
+  def('view.settings.changelog', 'views', null),
+  def('view.settings.claudeCode', 'views', null),
+  def('view.settings.cleanup', 'views', null),
+  def('view.settings.containers', 'views', null),
+  def('view.settings.prStack', 'views', null),
   // Reserved — un-rebindable. Handled entirely in the main process, so none of
   // them has a renderer handler the palette could run.
   def('app.reload', 'app', 'F5', { ...MENU, reserved: true, palette: false }),

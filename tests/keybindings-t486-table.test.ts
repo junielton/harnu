@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { SETTINGS_TAB_IDS } from '../src/renderer/src/stores/ui'
 import {
   KEYBINDINGS,
   DESCRIPTOR_BY_ID,
@@ -22,7 +23,8 @@ import {
  *    chord, on both platform folds.
  *
  * Each later unit appends its own §3 rows to `SPEC_ROWS`.
- * U2 added §3.2 + §3.3, U3 §3.4, U4a §3.5's inbox and popover ids.
+ * U2 added §3.2 + §3.3, U3 §3.4, U4a §3.5's inbox and popover ids, U4b §3.6
+ * and the §3.5 Settings-tab ids.
  */
 
 interface SpecRow {
@@ -100,13 +102,40 @@ const SPEC_ROWS: Record<string, SpecRow> = {
   'view.missionProgress': unbound('views'),
   'view.pastedImages': unbound('views'),
   'view.claudeStatus': unbound('views'),
-  'view.usagePanel': unbound('views')
+  'view.usagePanel': unbound('views'),
+
+  // §3.6 Takeovers — the ids U4b adds. Only Esc has a default.
+  'view.closeTakeover': {
+    group: 'takeovers',
+    defaultKeys: 'Escape',
+    menu: false,
+    shield: false
+  },
+  'view.cleanup': unbound('takeovers'),
+  'view.scheduler': unbound('takeovers'),
+  'view.systemMonitor': unbound('takeovers'),
+  'view.containers': unbound('takeovers'),
+
+  // §3.5 Settings tabs — U4b. Only Keyboard Shortcuts is bound, menu-backed.
+  'view.settings.keybindings': {
+    group: 'views',
+    defaultKeys: 'Cmd+Alt+S',
+    menu: true,
+    shield: false
+  },
+  ...Object.fromEntries(
+    SETTINGS_TAB_IDS.filter((tab) => tab !== 'keybindings').map((tab) => [
+      `view.settings.${tab}`,
+      unbound('views')
+    ])
+  )
 }
 
 /** How many rows each unit adds (§11) — a row dropped from `SPEC_ROWS` fails here. */
 const U2_IDS = 20
 const U3_IDS = 21
 const U4A_IDS = 9
+const U4B_IDS = 5 + 20
 
 describe('AC-11 — the §3 ids exist with their §3 values', () => {
   for (const [id, row] of Object.entries(SPEC_ROWS)) {
@@ -123,8 +152,8 @@ describe('AC-11 — the §3 ids exist with their §3 values', () => {
     })
   }
 
-  it('adds exactly the 20 §3.2 + §3.3 ids, the 21 §3.4 ids and the 9 §3.5 ids', () => {
-    expect(Object.keys(SPEC_ROWS)).toHaveLength(U2_IDS + U3_IDS + U4A_IDS)
+  it('adds the 20 §3.2 + §3.3 ids, 21 §3.4, 9 §3.5 popover, 5 §3.6 and 20 Settings-tab ids', () => {
+    expect(Object.keys(SPEC_ROWS)).toHaveLength(U2_IDS + U3_IDS + U4A_IDS + U4B_IDS)
   })
 
   // §9.1: the palette's empty query keeps today's set, which includes "Open approvals".
@@ -159,19 +188,34 @@ describe('AC-11 — the §3.4 rows T1 already shipped', () => {
 /**
  * The `useShortcuts([...])` registrations in `App.vue`, as `{ id, scope }`. Each
  * registration object is the text between one `id: '…'` and the next; its scope
- * is the first `scope: '…'` inside it.
+ * is the first `scope: '…'` inside it. The Settings-tab ids are one registration
+ * generated from `SETTINGS_TAB_IDS` (§3.5): it counts once per tab.
  */
 function appRegistrations(): Array<{ id: string; scope: string | null }> {
   const src = readFileSync(resolve(__dirname, '../src/renderer/src/App.vue'), 'utf8')
   const start = src.indexOf('useShortcuts(')
   expect(start, 'App.vue calls useShortcuts').toBeGreaterThan(-1)
-  const block = src.slice(start, src.indexOf('() => keybindings.resolved', start))
+  let block = src.slice(start, src.indexOf('() => keybindings.resolved', start))
+
+  const generated: Array<{ id: string; scope: string | null }> = []
+  const gen = /\.\.\.SETTINGS_TAB_IDS\.map\([\s\S]*?\}\)\s*\),?/.exec(block)
+  if (gen) {
+    expect(gen[0]).toContain('id: `view.settings.${tab}`')
+    expect(gen[0]).toContain('ui.openSettings(tab)')
+    const scope = /\bscope: '([a-z]+)'/.exec(gen[0])?.[1] ?? null
+    for (const tab of SETTINGS_TAB_IDS) generated.push({ id: `view.settings.${tab}`, scope })
+    block = block.replace(gen[0], '')
+  }
+
   const chunks = block.split(/\bid: '/).slice(1)
-  return chunks.map((chunk) => {
-    const id = chunk.slice(0, chunk.indexOf("'"))
-    const scope = /\bscope: '([a-z]+)'/.exec(chunk)?.[1] ?? null
-    return { id, scope }
-  })
+  return [
+    ...chunks.map((chunk) => {
+      const id = chunk.slice(0, chunk.indexOf("'"))
+      const scope = /\bscope: '([a-z]+)'/.exec(chunk)?.[1] ?? null
+      return { id, scope }
+    }),
+    ...generated
+  ]
 }
 
 describe('AC-12 — one global registration per non-reserved id', () => {

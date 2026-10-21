@@ -36,7 +36,7 @@ The per-session state is in the hover preview and in the [System Monitor](system
 
 ## Keyboard Shortcuts
 
-**Settings → Keyboard Shortcuts** is a point-and-click editor for the same `keybindings.json` covered in [Sessions → Customizing shortcuts](sessions.md#customizing-shortcuts) — you never have to open the file by hand.
+**Settings → Keyboard Shortcuts** is a point-and-click editor for the same `keybindings.json` covered in [Sessions → Customizing shortcuts](sessions.md#customizing-shortcuts) — you never have to open the file by hand. Open it straight on this tab with `Cmd/Ctrl+Alt+S` or **View → Keyboard Shortcuts…** (on macOS, **Harnu → Keyboard Shortcuts…**, right after Settings…).
 
 - One row per rebindable action, showing its current chord. The Topbar's folder actions (roadmap board, PR Stack, open in file manager, open in VS Code, pull requests on GitHub, Browse files, open a terminal) are listed too, along with the usage overview; they ship with no chord and read **Set a shortcut…** until you give them one. Settings itself opens with `Cmd/Ctrl+,`, which you can rebind here too. **Click the chord, then press the keys you want.** `Esc` cancels the recording (Settings stays open), `Backspace` unbinds the action.
 - **Find a shortcut fast.** The search box at the top takes either words or a key combo. Words match an action's name (in your app language), its chord or its id: `session`, `palette`, `sidebar`. A combo — anything with a `+` or a modifier, an F-key, `Esc`, or a Mac symbol like `⌘K` — lists exactly the actions on that chord, so `Ctrl+K` answers "what is on Ctrl+K?" (on Linux and Windows `Ctrl` and `Cmd` count as the same key). A single key name such as `delete` or `left` does both: it lists actions on that key _and_ actions whose name contains the word.
@@ -47,8 +47,8 @@ The per-session state is in the hover preview and in the [System Monitor](system
 - **Reset all** (top right) clears every override at once.
 - If two actions end up on the same chord, both get a **conflict** badge naming the other. The chord still fires once — the first-registered action wins and the other stays inert — so nothing breaks silently, but you'll want to rebind one.
 - Actions marked **not in terminal** have no native menu item, so a custom chord for them won't fire while the terminal pane has keyboard focus.
-- Five actions — quit, reload, toggle DevTools, fullscreen, and "open Keyboard Shortcuts" (`Cmd/Ctrl+Alt+K`) — are reserved and aren't listed. Session back/forward isn't listed either; it can't be rebound yet.
-- **Open keybindings.json** (top right, or **View → Keyboard Shortcuts…**, or `Cmd/Ctrl+Alt+K`) opens the raw file in a split-pane editor when you'd rather edit the JSON directly. It needs an active folder to open the pane in.
+- Five actions — quit, reload, toggle DevTools, fullscreen, and "Open keybindings.json" (`Cmd/Ctrl+Alt+K`) — are reserved and aren't listed. Session back/forward isn't listed either; it can't be rebound yet.
+- **Open keybindings.json** (top right, or **View → Open keybindings.json**, or `Cmd/Ctrl+Alt+K`) opens the raw file in a split-pane editor when you'd rather edit the JSON directly. It needs an active folder to open the pane in.
 
 Every edit writes `keybindings.json` immediately and applies live, so this pane and a hand-edited file always agree.
 

@@ -126,11 +126,15 @@ async function scanFirst(): Promise<void> {
 }
 
 onMounted(async () => {
-  window.addEventListener('keydown', onKeydown)
+  // Document capture: the selection and the block panel take Esc before the
+  // `view.closeTakeover` binding (a window bubble listener) sees it, but after
+  // every window capture listener — so a dialog, palette or menu opened over
+  // Cleanup (they register later, and stop Esc) keeps its Esc (T486 §6.1).
+  document.addEventListener('keydown', onKeydown, true)
   await Promise.all([gc.init(), reaper.init()])
   if (!reaper.snapshot) await scanFirst()
 })
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown, true))
 
 const model = computed(() => gc.model)
 const prefs = computed(() => gc.prefs)
@@ -938,8 +942,14 @@ function openAutopilotSettings(): void {
 
 // ---- keyboard -----------------------------------------------------------------------------------
 
+/**
+ * Esc peels one layer: the checked set, then the open block panel. Stops only what
+ * it consumed, so the next Esc reaches `view.closeTakeover`. Skipped while a cleanup
+ * dialog is open, and while a footer / Topbar popover is (its bubble listener runs
+ * after this one and owns that Esc).
+ */
 function onKeydown(e: KeyboardEvent): void {
-  if (e.key !== 'Escape' || dialogOpen.value) return
+  if (e.key !== 'Escape' || dialogOpen.value || ui.anyPopoverOpen) return
   if (checked.value.size > 0) {
     clearSelection()
     e.stopPropagation()
