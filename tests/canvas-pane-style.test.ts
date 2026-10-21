@@ -162,6 +162,9 @@ afterEach(() => {
 // ── helpers ─────────────────────────────────────────────────────────────────
 /** Click a cell in Select: the first replaces the selection, the rest add with shift. */
 async function select(w: VueWrapper, ...ids: string[]): Promise<void> {
+  // X6 draws views in time-sliced jobs (an arrow after the shapes it joins), so on a busy
+  // runner a cell can still be missing after a fixed number of ticks: wait until it exists.
+  await settleUntil(() => ids.every((id) => nodeEl(w, id) !== null))
   ids.forEach((id, i) => {
     const init = i === 0 ? {} : { shiftKey: true }
     down(nodeEl(w, id), AT[id], init)
