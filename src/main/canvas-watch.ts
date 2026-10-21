@@ -37,6 +37,8 @@ import { markdownKnownRoots } from './markdown-read'
 import { checkCanvasPathAllowed } from './canvas-read'
 
 const refCounts = new Map<string, number>()
+/** Of those refs, how many each identified pane holds (`paneId` = the pane's `writerId`). */
+const paneRefs = new Map<string, Map<string, number>>()
 /** Hash of the bytes a pane's own last Save wrote, per path, and which pane wrote them. */
 const selfWrites = new Map<string, { hash: string; writerId?: string }>()
 
@@ -50,22 +52,36 @@ export function canvasRefCount(path: string): number {
 }
 
 /** Register one more interest in `path`. Returns 'first' on the 0→1 transition
- *  (the caller should start watching), else 'more'. */
-export function addCanvasRef(path: string): 'first' | 'more' {
+ *  (the caller should start watching), else 'more'. `paneId` names the pane
+ *  holding the ref, so a Save echo can tell whether anyone else is listening. */
+export function addCanvasRef(path: string, paneId?: string): 'first' | 'more' {
   const next = (refCounts.get(path) ?? 0) + 1
   refCounts.set(path, next)
+  if (paneId !== undefined) {
+    const panes = paneRefs.get(path) ?? new Map<string, number>()
+    panes.set(paneId, (panes.get(paneId) ?? 0) + 1)
+    paneRefs.set(path, panes)
+  }
   return next === 1 ? 'first' : 'more'
 }
 
 /** Release one interest in `path`. Returns 'last' on the 1→0 transition (the
  *  caller should stop watching), 'more' if refs remain, 'none' if `path` had no
  *  refs to begin with (defensive — never goes negative). */
-export function removeCanvasRef(path: string): 'last' | 'more' | 'none' {
+export function removeCanvasRef(path: string, paneId?: string): 'last' | 'more' | 'none' {
   const current = refCounts.get(path) ?? 0
   if (current <= 0) return 'none'
+  const panes = paneRefs.get(path)
+  const held = paneId === undefined ? 0 : (panes?.get(paneId) ?? 0)
+  if (panes && paneId !== undefined && held > 0) {
+    if (held === 1) panes.delete(paneId)
+    else panes.set(paneId, held - 1)
+    if (panes.size === 0) paneRefs.delete(path)
+  }
   const next = current - 1
   if (next === 0) {
     refCounts.delete(path)
+    paneRefs.delete(path)
     // Nothing watches the path any more, so changes made from now on are never
     // seen — a fingerprint kept past this point could later swallow somebody
     // else's write that happens to restore the same bytes.
@@ -109,9 +125,24 @@ export function canvasSelfWriter(path: string): string | undefined {
   return selfWrites.get(path)?.writerId
 }
 
+/**
+ * Is anybody other than `writerId` watching `path`? When the panes on the path
+ * named themselves, the writer's own refs are subtracted from the total, so a
+ * writer that has already closed leaves every remaining ref belonging to somebody
+ * else. Without names (an older caller on either side) only the ref count can
+ * answer, and a lone ref is taken to be the writer's.
+ */
+function othersWatching(path: string, writerId: string | undefined): boolean {
+  const total = canvasRefCount(path)
+  const panes = paneRefs.get(path)
+  if (writerId === undefined || panes === undefined) return total > 1
+  return total - (panes.get(writerId) ?? 0) > 0
+}
+
 /** Test-only: reset all module state between test cases. */
 export function __resetCanvasWatchStateForTests(): void {
   refCounts.clear()
+  paneRefs.clear()
   selfWrites.clear()
 }
 
@@ -139,10 +170,12 @@ function ensureWatcher(): FSWatcher {
  * open anywhere" source of truth. On a real, non-suppressed, in-root, reffed
  * change it broadcasts `{ path: resolvedPath }`.
  *
- * A pane's own Save echo is swallowed outright only while that pane is the sole
- * one on the file. With two or more open, the other panes have not seen the
- * Save, so the echo is broadcast with the writer's id: the writer drops it, the
- * rest reload (clean) or show the stale banner (dirty) — BUG-209.
+ * A pane's own Save echo is swallowed outright only while no OTHER pane is on
+ * the file — judged by pane identity, not the ref count, so a writer that closed
+ * before its echo arrived does not hide the Save from the pane left open. When
+ * another pane is listening, the echo is broadcast with the writer's id: the
+ * writer drops it, the rest reload (clean) or show the stale banner (dirty) —
+ * BUG-209.
  */
 export async function notifyCanvasChanged(
   resolvedPath: string
@@ -156,8 +189,8 @@ export async function notifyCanvasChanged(
   const onDisk = await readFile(resolvedPath).catch(() => null)
   let writerId: string | undefined
   if (consumeCanvasSuppression(resolvedPath, onDisk)) {
-    if (canvasRefCount(resolvedPath) <= 1) return 'ok' // our own Save, nobody else listening: swallow
     writerId = canvasSelfWriter(resolvedPath)
+    if (!othersWatching(resolvedPath, writerId)) return 'ok' // our own Save, nobody else listening: swallow
   }
   const win = windowGetter?.()
   if (win && !win.isDestroyed()) {
@@ -176,7 +209,7 @@ export async function notifyCanvasChanged(
  */
 export function registerCanvasWatchHandlers(getWindow: () => BrowserWindow | null): void {
   windowGetter = getWindow
-  ipcMain.handle('canvas:watchStart', async (_e, args: { path: string }) => {
+  ipcMain.handle('canvas:watchStart', async (_e, args: { path: string; paneId?: unknown }) => {
     const raw = args?.path
     if (typeof raw !== 'string' || raw.length === 0) return
     const p = resolve(raw)
@@ -184,14 +217,19 @@ export function registerCanvasWatchHandlers(getWindow: () => BrowserWindow | nul
     // canvas:read before ever subscribing chokidar to a renderer-supplied path.
     const gate = checkCanvasPathAllowed(p, await markdownKnownRoots())
     if (!gate.ok) return
-    if (addCanvasRef(p) === 'first') ensureWatcher().add(p)
+    if (addCanvasRef(p, paneIdOf(args)) === 'first') ensureWatcher().add(p)
   })
-  ipcMain.handle('canvas:watchStop', (_e, args: { path: string }) => {
+  ipcMain.handle('canvas:watchStop', (_e, args: { path: string; paneId?: unknown }) => {
     const raw = args?.path
     if (typeof raw !== 'string' || raw.length === 0) return
     const p = resolve(raw)
-    if (removeCanvasRef(p) === 'last' && watcher) watcher.unwatch(p)
+    if (removeCanvasRef(p, paneIdOf(args)) === 'last' && watcher) watcher.unwatch(p)
   })
+}
+
+/** The renderer-supplied pane id — untrusted, so only a string counts. */
+function paneIdOf(args: { paneId?: unknown } | undefined): string | undefined {
+  return typeof args?.paneId === 'string' ? args.paneId : undefined
 }
 
 /** Close the shared watcher and clear all refs — call from `before-quit`. */

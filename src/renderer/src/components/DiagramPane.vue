@@ -1631,7 +1631,7 @@ onMounted(async () => {
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('keyup', onWindowKeyup)
   window.addEventListener('blur', onWindowBlur)
-  void window.api.canvasWatchStart(filePath.value)
+  void window.api.canvasWatchStart(filePath.value, writerId)
   await load(filePath.value, true)
   // Follow the pane as the operator drags the inter-pane divider or maximizes.
   // X6 reads its container's size only at construction and then PINS an inline
@@ -1659,7 +1659,7 @@ onBeforeUnmount(() => {
   endGesture()
   endPlaceTextBatch()
   unsubscribeCanvasChanged?.()
-  void window.api.canvasWatchStop(filePath.value)
+  void window.api.canvasWatchStop(filePath.value, writerId)
   resizeObserver?.disconnect()
   resizeObserver = null
   graph.value?.dispose()
@@ -1675,8 +1675,8 @@ watch(
     // Re-targeting throws the current board away, so it goes through the same
     // discard guard as Reload and Close.
     withDiscardGuard(async () => {
-      if (prev) await window.api.canvasWatchStop(prev)
-      await window.api.canvasWatchStart(next)
+      if (prev) await window.api.canvasWatchStop(prev, writerId)
+      await window.api.canvasWatchStart(next, writerId)
       await load(next, true)
     })
   }

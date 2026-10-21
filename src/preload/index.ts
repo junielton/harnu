@@ -1481,10 +1481,11 @@ const api = {
     ipcRenderer.invoke('canvas:attachAssets', { path, images }),
   // T218 U1: register/unregister a DiagramPane's live-reload watch. Ref-counted
   // in main (multiple panes on the same path share one watcher).
-  canvasWatchStart: (path: string): Promise<void> =>
-    ipcRenderer.invoke('canvas:watchStart', { path }),
-  canvasWatchStop: (path: string): Promise<void> =>
-    ipcRenderer.invoke('canvas:watchStop', { path }),
+  // `paneId` (the pane's `writerId`) lets main tell whether a Save echo has other listeners.
+  canvasWatchStart: (path: string, paneId?: string): Promise<void> =>
+    ipcRenderer.invoke('canvas:watchStart', { path, paneId }),
+  canvasWatchStop: (path: string, paneId?: string): Promise<void> =>
+    ipcRenderer.invoke('canvas:watchStop', { path, paneId }),
   // T87: probe a git folder for a WORKTREE.md creator — resolves the repo root,
   // reports whether a manifest already exists, and returns the deterministic
   // findings (lockfile/.env/node_modules/default branch) that drive the template.

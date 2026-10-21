@@ -161,11 +161,12 @@ beforeEach(async () => {
     // The real `canvas:write` handler body: the pane's own write, tagged with its writer id.
     canvasWrite: (p: string, doc: unknown, writerId?: string) =>
       writeCanvasFile(p, doc, { selfWrite: true, writerId }),
-    canvasWatchStart: async (p: string) => {
-      addCanvasRef(p)
+    // The real `canvas:watchStart` / `canvas:watchStop` handler bodies, pane id included.
+    canvasWatchStart: async (p: string, paneId?: string) => {
+      addCanvasRef(p, paneId)
     },
-    canvasWatchStop: async (p: string) => {
-      removeCanvasRef(p)
+    canvasWatchStop: async (p: string, paneId?: string) => {
+      removeCanvasRef(p, paneId)
     },
     onCanvasChanged: (cb: (p: Changed) => void) => {
       changedCbs.add(cb)

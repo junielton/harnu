@@ -236,6 +236,29 @@ describe('U1-8 change notification (§4, §7.3)', () => {
     expect(sent).toHaveLength(0)
   })
 
+  it('BUG-209 — a writer that closed before its echo leaves the other pane told', async () => {
+    win()
+    addCanvasRef(file, 'pane-a')
+    addCanvasRef(file, 'pane-b')
+    expect((await writeCanvasFile(file, DOC, { selfWrite: true, writerId: 'pane-a' })).ok).toBe(
+      true
+    )
+    expect(removeCanvasRef(file, 'pane-a')).toBe('more')
+    expect(await notifyCanvasChanged(file)).toBe('ok')
+    expect(sent).toEqual([{ ch: 'canvas:changed', p: { path: file, writerId: 'pane-a' } }])
+  })
+
+  it('BUG-209 — the writer holding two refs on the file is still alone', async () => {
+    win()
+    addCanvasRef(file, 'pane-a')
+    addCanvasRef(file, 'pane-a')
+    expect((await writeCanvasFile(file, DOC, { selfWrite: true, writerId: 'pane-a' })).ok).toBe(
+      true
+    )
+    expect(await notifyCanvasChanged(file)).toBe('ok')
+    expect(sent).toHaveLength(0)
+  })
+
   it('closeAllCanvasWatchers clears every ref', async () => {
     win()
     addCanvasRef(file)
