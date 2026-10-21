@@ -205,16 +205,36 @@ export async function notifyCanvasChanged(
 /** How long `startCanvasWatch` waits for chokidar before giving up and resolving anyway. */
 const WATCH_READY_TIMEOUT_MS = 3000
 const WATCH_READY_POLL_MS = 5
+/** After a missed deadline, how long the background re-check keeps waiting for the watch. */
+const WATCH_LATE_LIMIT_MS = 60_000
+const WATCH_LATE_POLL_MS = 50
+
+let watchReadyTimeoutMs = WATCH_READY_TIMEOUT_MS
+
+/** Test-only: shorten the readiness deadline (`undefined` restores the default). */
+export function __setWatchReadyTimeoutForTests(ms: number | undefined): void {
+  watchReadyTimeoutMs = ms ?? WATCH_READY_TIMEOUT_MS
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 /**
- * Is chokidar actually watching `path` yet? `FSWatcher.add` returns at once and
- * its `ready` event fires only for the FIRST batch of paths, so there is no
- * per-path signal to await. `getWatched()` lists a file under its directory
- * only after chokidar has attached its OS watch, which is the moment a write
- * starts producing events.
+ * Does a `getWatched()` listing include `path`? `FSWatcher.add` returns at once
+ * and its `ready` event fires only for the FIRST batch of paths, so there is no
+ * per-path signal to await. chokidar lists a file under its directory in the
+ * same synchronous step that attaches the OS watch, which is the moment a write
+ * starts producing events. chokidar keys directories with forward slashes on
+ * every platform, so a Windows `C:\…` path is matched in that form too.
  */
+export function isCanvasWatched(watched: Record<string, string[]>, path: string): boolean {
+  if ((watched[dirname(path)] ?? []).includes(basename(path))) return true
+  const unix = path.replace(/\\/g, '/')
+  const cut = unix.lastIndexOf('/')
+  return (watched[unix.slice(0, cut)] ?? []).includes(unix.slice(cut + 1))
+}
+
 function isWatching(w: FSWatcher, path: string): boolean {
-  return (w.getWatched()[dirname(path)] ?? []).includes(basename(path))
+  return isCanvasWatched(w.getWatched(), path)
 }
 
 async function whenWatching(w: FSWatcher, path: string): Promise<void> {
@@ -226,10 +246,37 @@ async function whenWatching(w: FSWatcher, path: string): Promise<void> {
     ))
   )
     return
-  const deadline = Date.now() + WATCH_READY_TIMEOUT_MS
+  const deadline = Date.now() + watchReadyTimeoutMs
   while (watcher === w && !isWatching(w, path) && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, WATCH_READY_POLL_MS))
+    await sleep(WATCH_READY_POLL_MS)
   }
+  if (watcher !== w || isWatching(w, path)) return
+  // The deadline passed: the pane reads now rather than hang, which reopens the
+  // gap a write can fall into. Remember the bytes it is about to read and
+  // compare once the watch is live, so such a write still reaches the panes.
+  console.warn(
+    `[canvas-watch] watch on ${path} not live after ${watchReadyTimeoutMs} ms; reading anyway`
+  )
+  const before = await readFile(path).then(fingerprint, () => null)
+  void recheckOnceWatching(w, path, before)
+}
+
+async function recheckOnceWatching(
+  w: FSWatcher,
+  path: string,
+  before: string | null
+): Promise<void> {
+  const deadline = Date.now() + WATCH_LATE_LIMIT_MS
+  while (watcher === w && canvasRefCount(path) > 0 && !isWatching(w, path)) {
+    if (Date.now() >= deadline) {
+      console.warn(`[canvas-watch] watch on ${path} never went live; changes may be missed`)
+      return
+    }
+    await sleep(WATCH_LATE_POLL_MS)
+  }
+  if (watcher !== w || canvasRefCount(path) <= 0) return
+  const now = await readFile(path).then(fingerprint, () => null)
+  if (now !== before) await notifyCanvasChanged(path)
 }
 
 /**
