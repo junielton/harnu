@@ -128,7 +128,8 @@ test('an outside session still answers its three commands', async ($, on) => {
       cmd(1, 'flush'),
       cmd(2, 'config.update', { config: { heartbeatMs: 5_000 } }),
       cmd(3, 'config.update', { config: { heartbeatMs: 1 } }),
-      cmd(4, 'ui.band.set', { line: 'x' })
+      cmd(4, 'ui.band.set', { line: 'x', parts: { lead: 'x' } }),
+      cmd(5, 'ui.band.set', { line: 'x' })
     ])
   })
   await $.session.start(OUTSIDE)
@@ -143,8 +144,9 @@ test('an outside session still answers its three commands', async ($, on) => {
   expect(byCmd.cmd_1).toMatchObject({ ok: true })
   expect(byCmd.cmd_2).toMatchObject({ ok: true })
   expect(byCmd.cmd_3).toMatchObject({ ok: false }) // outside CONFIG_BOUNDS
-  // No band hook is declared in this build: an outside session simply has no line.
-  expect(byCmd.cmd_4).toMatchObject({ ok: false, code: 'CMD_UNSUPPORTED' })
+  // T257: the band is display-only, so an outside session may set one (contract §9, SEC-3d).
+  expect(byCmd.cmd_4).toMatchObject({ ok: true })
+  expect(byCmd.cmd_5).toMatchObject({ ok: false, code: 'CMD_PRECONDITION' }) // no parts
 })
 
 test('a command is run once: the cursor moves past it', async ($, on) => {
