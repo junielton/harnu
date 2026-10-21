@@ -1,10 +1,5 @@
-import {
-  test,
-  expect,
-  _electron as electron,
-  type ElectronApplication,
-  type Page
-} from '@playwright/test'
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
+import { launchApp } from './fixtures/launch-app'
 import { rmSync } from 'node:fs'
 import { seedDialogWorld, seedLaunchEnv, type DialogSeed } from './fixtures/dialog-seed'
 import { SEEDED_ROUTES, ROUTES, closeRoute } from '../../../scripts/dev/dialog-routes/index.mjs'
@@ -73,15 +68,7 @@ let page: Page
 test.describe('dialog geometry invariants (T460 batch 0)', () => {
   test.beforeAll(async () => {
     seed = seedDialogWorld()
-    app = await electron.launch({
-      args: [
-        'out/main/index.js',
-        `--user-data-dir=${seed.userData}`,
-        '--no-sandbox',
-        '--disable-gpu'
-      ],
-      env: seedLaunchEnv(seed)
-    })
+    app = await launchApp({ userData: seed.userData, env: seedLaunchEnv(seed) })
     page = await app.firstWindow()
     await expect(page.locator('body')).toBeVisible()
     // The first-run "Harnu mod" toast covers the footer; it is not part of any dialog.

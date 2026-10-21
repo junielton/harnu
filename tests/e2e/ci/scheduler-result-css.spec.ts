@@ -1,10 +1,5 @@
-import {
-  test,
-  expect,
-  _electron as electron,
-  type ElectronApplication,
-  type Page
-} from '@playwright/test'
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
+import { launchApp } from './fixtures/launch-app'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -224,10 +219,7 @@ let page: Page
 test.describe('scheduler run-result block — layout guards (T312)', () => {
   test.beforeAll(async () => {
     const userData = seedUserData()
-    app = await electron.launch({
-      args: ['out/main/index.js', `--user-data-dir=${userData}`, '--no-sandbox', '--disable-gpu'],
-      env: { ...process.env, HOME: userData }
-    })
+    app = await launchApp({ userData })
     page = await app.firstWindow()
     await expect(page.locator('body')).toBeVisible()
 

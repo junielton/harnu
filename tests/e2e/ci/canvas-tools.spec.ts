@@ -1,11 +1,5 @@
-import {
-  test,
-  expect,
-  _electron as electron,
-  type ElectronApplication,
-  type Locator,
-  type Page
-} from '@playwright/test'
+import { test, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
+import { launchApp } from './fixtures/launch-app'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -210,14 +204,7 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
     userData = mkdtempSync(join(tmpdir(), 'harnu-ci-canvas-'))
     folder = mkdtempSync(join(tmpdir(), 'harnu-ci-board-'))
     seedTranscript(userData, folder)
-    // X11 only (see the header): without these two, a Wayland session's compositor wins.
-    const env: Record<string, string | undefined> = { ...process.env, HOME: userData }
-    delete env.XDG_SESSION_TYPE
-    delete env.WAYLAND_DISPLAY
-    app = await electron.launch({
-      args: ['out/main/index.js', `--user-data-dir=${userData}`, '--no-sandbox', '--disable-gpu'],
-      env: env as Record<string, string>
-    })
+    app = await launchApp({ userData })
     await app
       .context()
       .tracing.start({ screenshots: true, snapshots: true })
