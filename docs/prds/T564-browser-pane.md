@@ -129,9 +129,9 @@ Harnu ships no product analytics, so success is verifiable by construction and b
   fenced, not trusted.
 - **Risk — the overlay under a native view.** A native view paints above every renderer layer. The freeze
   strategy (spec §2.4) trades a brief still image for correctness; if the capture is slow, panes will flicker
-  under menus. Proven or reopened in U0 (A3, A7, A12).
-- **Risk — assumptions about Electron.** Twelve are listed in spec §13 and none is proven yet. U0 exists so a
-  false one costs a paragraph, not a rewrite.
+  under menus. Tested in U0 (A3, A7, A12): the freeze is encoded as JPEG and a never-painted pane is parked, spec §13.
+- **Risk — assumptions about Electron.** Twelve are listed in spec §13. U0 tested all of them: 7 proven, 5 partial,
+  and the partial ones cost paragraphs in the spec, not a rewrite.
 - **Risk — memory.** A live view is roughly 100–300 MB. Hidden panes are discarded after a timeout and the
   agent cap is 4 per folder, but operator panes are unlimited by decision.
 - **Risk — scope.** Nineteen verbs, a protocol, an overlay, emulation, restore, in one delivery. The units
