@@ -3856,7 +3856,13 @@
           "revoked": "Mod delivery was switched off",
           "host-shutdown": "Harnu is shutting down",
           "cancelled": "Cancelled"
-        }
+        },
+        "unknown": "Harnu couldn't complete that send"
+      },
+      "copied": "Copied",
+      "copyFailed": "Couldn't copy to the clipboard",
+      "guide": {
+        "refresh": "Use “{action}” in the review header"
       }
     },
     "truncated": "This diff was cut to keep the pane responsive: {n} files are not shown, out of {rows} changed lines in total.",

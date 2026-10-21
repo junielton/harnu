@@ -10820,9 +10820,15 @@ right: a 2px accent bar, the path (mono, truncating from the right, full path in
 
 - **Range text** — `L85` (one row), `L85–92` (same side), `old L85–92` (left side),
   `old L85 – new L92` (mixed), `whole file`.
-- **Actions** — U1: `Clear selection` only (a `.btn` ghost, `h-26px`). The `actions`
-  slot before it is empty in U1 and is where `Ask about this` and `Copy as text` land
-  in U2b.
+- **Actions** — `Ask about this` (primary `.btn`), `Copy as text` (default `.btn`) and
+  `Clear selection` (ghost), all `h-26px`, in that order, filling the `actions` slot
+  and the clear button after it. **`Ask about this` is disabled when no review
+  companion is open**, and says why: a `text-3` 11.5px line next to the buttons reads
+  `Open "Ask a fresh session" first` (the button also points at it with
+  `aria-describedby`; a disabled control's `title` is not reliably shown). The bar
+  never opens a companion itself. `Copy as text` needs no companion and no mod; it is
+  disabled only while the delivery record says the head or base moved (the text would
+  be stale), and a successful copy flips its label to `Copied` for 2s.
 - **Hint** — transient, one line, `role="status"`, 11.5px `--text-3` (the same
   size as the submit confirm's boundary line), on its own full-width row and
   absent from layout while empty: `A range stays inside one hunk` after a clamp; `The head moved (a1b2c3d → e4f5a6b). Selection cleared.`
@@ -10833,7 +10839,7 @@ right: a 2px accent bar, the path (mono, truncating from the right, full path in
 - **No number but the line numbers.** The bar never renders a count, a ratio or a
   percentage at any data combination (PRD D7, T243 AC-8).
 
-**Delivery chip and outcome rows (built in U2b, written here).** One chip for the
+**Delivery chip and outcome rows (U2b).** One chip for the
 single most recent delivery, holding one state from a closed vocabulary, in the
 neutral `--text-2` tone for **every** state — no success colour, no dot, no icon: a
 green "Sent" is a verdict the receipts cannot back (§8 "Review selection"). States:
@@ -10845,6 +10851,32 @@ relevant. A failed send renders one closed sentence from spec §7 plus its next 
 (`Try again`, `Open Mods settings`, `Copy as text`, `Reopen "Ask a fresh session"`);
 **no text the mod or the model wrote ever reaches the DOM.** `Copy as text` is
 available in every failure state except a moved head or base.
+
+U2b corrections to what U1 wrote above, each because the build needed a decision the
+first draft left open:
+
+- **The bar also shows when only a delivery record exists.** An answer lands after the
+  operator may have cleared the selection, and "Answered" must still be readable. With
+  no live selection the bar shows the chip and a `Dismiss` button (which drops the
+  record when it is finished, and the one-line hint otherwise). Nothing renders when
+  there is no selection, no hint and no record, as in U1.
+- **The chip names its subject when it is not the live selection.** After the operator
+  selects something else, `speech.ts · L85–92` precedes the chip text (`text-text`,
+  mono, same range wording as the bar), so "Sent" never silently attaches to the new
+  selection. Its only numbers are that selection's own line numbers.
+- **The chip is one `text-2` line, plus at most one `text-3` reason line.** A refused
+  send that has a reason (`Not connected to the Harnu mod`) adds the closed sentence
+  from `review.selection.noBinding.*` below it. No icon, dot or colour change.
+- **Next steps.** A step Harnu can perform from the bar is a ghost `.btn` after the
+  chip: `Try again` (only while the live selection is the one that failed),
+  `Open Mods settings` (opens Settings → Mods), `Clear and re-select`. A step that
+  lives elsewhere is plain `text-3` guidance naming the control, never a button that
+  pretends to do it: `Narrow the selection`, the pane's `Re-read the branch`, and
+  `Reopen "Ask a fresh session"`. `Copy as text` is the persistent action in the row,
+  not a repeated step.
+- **No second source of words.** Every sentence is a `review.selection.*` key picked by
+  a stable code; a code the renderer does not know falls back to
+  `review.selection.outcome.unknown`, never to the code or any text from main.
 
 ---
 
@@ -12132,6 +12164,12 @@ this`, `Copy as text`, `Dismiss`, and the clamp hint `A range stays inside one h
   `L85–92`, `old L85–92`, `old L85 – new L92`. The delivery chip is a **state, never a verdict**:
   "Sent" is said only for a confirmed delivery, "Answered" only for a completed turn, and
   nothing is ever "reviewed", "done" or "ok". `diff`, `hunk`, `head` and `base` stay untranslated.
+  U2b adds `Copied` (the Copy label for 2s), `Couldn't copy to the clipboard`,
+  `Use “Re-read the branch” in the review header` (guidance that names a control Harnu cannot
+  press for the operator) and the fallback `Harnu couldn't complete that send`, which stands in
+  for any failure code this build does not know — a code or message from main is never shown.
+  A sentence that says what to do next is guidance in `text-3`, not a button, unless the bar can
+  do it itself.
 - **Mods audit chips** — facts in the form "can …": "can run processes", "can read every
   prompt". Never a verdict: no "safe", "verified", "trusted", "secure", "malicious" or
   "approved", in any language, and never a colour that grades a mod.

@@ -59,6 +59,13 @@ import type {
   ReviewSubmitResult,
   BlastRadiusConfig
 } from '../main/review-ipc'
+import type {
+  SelectionComposeRequest,
+  SelectionComposeResult,
+  SelectionSendRequest,
+  SelectionSendResult,
+  SelectionStateEvent
+} from '../main/companion/review-selection-core'
 import type { PushChannel, PushConfig, PushSendPayload, PushTestResult } from '../main/push'
 import type { ResolvedKeybindings } from '../main/keybindings-core'
 import type {
@@ -2601,6 +2608,24 @@ const api = {
   onReviewBlastRadiusChanged: (
     cb: (payload: { folder: string; globs: string[] }) => void
   ): (() => void) => subscribe('review:blastRadiusChanged', cb),
+  /**
+   * Deliver the review pane's selection to the open review companion (T257). The operator's
+   * "Ask about this" gesture and nothing else: it is not an MCP verb, and the request carries
+   * coordinates, never text — `main` reads the lines itself. Resolves, never rejects: a refusal
+   * is `{ ok:false, refusal }` with a stable code; the delivery that follows arrives as
+   * `review:selection:state` events.
+   */
+  reviewSelectionSend: (req: SelectionSendRequest): Promise<SelectionSendResult> =>
+    ipcRenderer.invoke('review:selection:send', req),
+  /**
+   * The exact text a send would carry, for "Copy as text". Needs git and nothing else, so it
+   * works with no companion, no mod and no binding. Sends nothing.
+   */
+  reviewSelectionCompose: (req: SelectionComposeRequest): Promise<SelectionComposeResult> =>
+    ipcRenderer.invoke('review:selection:compose', req),
+  /** A delivery moved along (queued → delivered → asked → answered, or an outcome). Codes only. */
+  onReviewSelectionState: (cb: (ev: SelectionStateEvent) => void): (() => void) =>
+    subscribe('review:selection:state', cb),
 
   // ---- Reaper cleanup engine (UI-only; never exposed to an agent) -----------
   /** The last computed snapshot, or `null` before the first scan this session. */
