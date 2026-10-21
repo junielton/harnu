@@ -499,6 +499,7 @@ function onSelectTeammate(session: Session): void {
         ...(folderHidden ? { opacity: 0.5 } : {})
       }"
       :data-focused="folderFocused ? 'true' : null"
+      :data-sidebar-row="`folder:${folder.path}`"
       @click="onFolderClick"
       @contextmenu="(e) => onFolderContext(e, folder.path)"
       @mouseenter="
@@ -658,6 +659,7 @@ function onSelectTeammate(session: Session): void {
               sessions.selectedId === s.sessionId ? 'text-text' : 'text-text-2 hover:text-text'
             "
             :data-session-id="s.sessionId"
+            :data-sidebar-row="`session:${s.sessionId}`"
             :data-focused="sessionFocused(s.sessionId) ? 'true' : null"
             :data-selected="sessions.selectedId === s.sessionId ? 'true' : null"
             :style="{
@@ -1062,6 +1064,7 @@ function onSelectTeammate(session: Session): void {
           :key="term.sessionId"
           data-terminal-row
           :data-session-id="term.sessionId"
+          :data-sidebar-row="`session:${term.sessionId}`"
           :data-focused="sessionFocused(term.sessionId) ? 'true' : null"
           class="sidebar-row group relative flex w-full cursor-pointer items-center text-left transition"
           :class="

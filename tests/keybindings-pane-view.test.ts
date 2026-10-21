@@ -18,7 +18,8 @@ import {
   resolveKeybindings,
   scopeChordKey,
   type RawOverrideEntry,
-  type ResolvedBinding
+  type ResolvedBinding,
+  type ShortcutActionId
 } from '../src/main/keybindings-core'
 
 /**
@@ -222,18 +223,20 @@ describe('search (AC-4, AC-5)', () => {
       i18n.global.t(DESCRIPTOR_BY_ID['session.new'].labelKey, {}, { locale: 'en' })
     )
     await searchFor(w, ptLabel.toUpperCase())
-    expect(rowIds(w)).toEqual(['session.new'])
+    // The pt-BR label of `session.newInFolder` starts with this one — a substring match.
+    expect(rowIds(w)).toEqual(['session.new', 'session.newInFolder'])
   })
 
   it('chord mode keeps exactly the rows on that chord under the platform fold', async () => {
     const w = await mountPane([
-      { command: 'view.roadmap', key: 'Cmd+Shift+F' },
+      // Cmd+Shift+F is `sidebar.jump`'s default (T486 U2); G is free.
+      { command: 'view.roadmap', key: 'Cmd+Shift+G' },
       { command: 'view.review', key: 'F6' }
     ])
     const cases: Array<[string, string[]]> = [
       ['Ctrl+K', ['app.search']],
       ['⌘K', ['app.search']],
-      ['ctrl+shift+f', ['view.roadmap']],
+      ['ctrl+shift+g', ['view.roadmap']],
       ['F6', ['view.review']],
       ['Ctrl+B', ['view.toggleSidebar']],
       ['Ctrl+J', []]
@@ -274,6 +277,18 @@ describe('groups (AC-6)', () => {
     expect(w.find('[data-kb-group="sessions"]').text()).toContain('Sessions')
   })
 
+  it('puts every row under its own group header', async () => {
+    const w = await mountPane()
+    for (const g of groupIds(w)) {
+      const rows = w.findAll(`[data-kb-group="${g}"] [data-kb-row]`)
+      expect(rows.length, g).toBeGreaterThan(0)
+      for (const r of rows) {
+        const id = r.attributes('data-kb-row') as ShortcutActionId
+        expect(DESCRIPTOR_BY_ID[id].group, id).toBe(g)
+      }
+    }
+  })
+
   it('keeps table order inside a group', async () => {
     const w = await mountPane()
     expect(rowIds(w)).toEqual(inGroupOrder(list().map((b) => b.id)))
@@ -300,9 +315,9 @@ describe('chips (AC-7)', () => {
     const unbound = list().filter((b) => b.keys === null).length
     const conflicts = list().filter((b) => b.conflictsWith.length > 0).length
     const customized = list().filter((b) => b.source !== 'default').length
-    expect([unbound, conflicts, customized]).toEqual([8, 2, 3])
+    expect([unbound, conflicts, customized]).toEqual([25, 2, 3])
     await searchFor(w, 'zzz')
-    expect(chip(w, 'unbound').text()).toBe('Unbound 8')
+    expect(chip(w, 'unbound').text()).toBe('Unbound 25')
     expect(chip(w, 'conflicts').text()).toBe('Conflicts 2')
     expect(chip(w, 'customized').text()).toBe('Customized 3')
   })
@@ -339,6 +354,11 @@ describe('chips (AC-7)', () => {
     await chip(w, 'customized').trigger('click')
     await searchFor(w, 'folder')
     expect(rowIds(w)).toEqual([
+      'session.newInFolder',
+      'session.closeTerminal',
+      'sidebar.rescan',
+      'sidebar.toggleCollapseAll',
+      'sidebar.hiddenFolders',
       'folder.openInFileManager',
       'folder.openInVSCode',
       'folder.openGithubPulls',

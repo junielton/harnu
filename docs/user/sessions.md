@@ -79,6 +79,8 @@ Right-click any session row for:
 - Per-session toggles: **No flicker**, **Remote Control** (bridges the session to your phone), **Promote/Demote Orchestrator** (see below)
 - **Archive** (reversible, just hides it from the default view) and **Delete** (destructive — asks for confirmation, removes the transcript from disk)
 
+From the keyboard, `Shift+F10` opens the same menu for the row under the sidebar's keyboard cursor (or, with no cursor, the selected session; with no session, the active folder's menu), anchored at that row, with its first item focused — arrow keys and Enter take it from there. On a repo group row it does nothing. On a Mac keyboard press `Fn+Shift+F10`, unless you set the F-keys to act as standard function keys.
+
 ### Promoting a session to Orchestrator
 
 Any session can be promoted to **Orchestrator** from this menu. Promoting arms a guard that blocks the session from editing files directly outside its own memory/scratch area, and gives it a coordinator-focused system prompt — the idea being it plans and delegates work to other sessions or subagents instead of touching your code itself. A promoted session is marked with a badge on its row and a pill in the topbar. You always have to promote it manually from this menu to get the coordinator system prompt — but the guard half can also be armed live, mid-conversation, by a session Harnu spawned for agent work (on itself or on another such session); a session you opened by hand can't arm it on itself.
@@ -119,24 +121,27 @@ Harnu shows each shortcut in your platform's notation — `⌘⇧P` on macOS,
 `Ctrl+Shift+P` on Linux and Windows. `Cmd` and `Ctrl` are the same key here:
 a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 
-| Shortcut           | Action                                               |
-| ------------------ | ---------------------------------------------------- |
-| `Cmd/Ctrl+N`       | New session                                          |
-| `Cmd/Ctrl+K`       | Open command palette                                 |
-| `Cmd/Ctrl+O`       | Add folder                                           |
-| `Cmd/Ctrl+,`       | Open Settings                                        |
-| `Cmd/Ctrl+R`       | Rename the selected session                          |
-| `Cmd/Ctrl+Shift+R` | Resume your most-recently-modified session           |
-| `Cmd/Ctrl+W`       | Close/deselect the current session tab               |
-| `Cmd/Ctrl+B`       | Toggle the left sidebar                              |
-| `Cmd/Ctrl+Alt+B`   | Toggle the right split panel                         |
-| `Cmd/Ctrl+Shift+A` | Toggle the Approval Inbox rail                       |
-| `Cmd/Ctrl+Shift+B` | Toggle the Fleet rail                                |
-| `Cmd/Ctrl+Shift+D` | Review the active folder's branch                    |
-| `Cmd/Ctrl+Shift+P` | Switch project (currently opens the command palette) |
-| `Alt+←` / `Cmd+[`  | Back to the previous session you viewed              |
-| `Alt+→` / `Cmd+]`  | Forward again after going back                       |
-| Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar |
+| Shortcut           | Action                                                                          |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `Cmd/Ctrl+N`       | New session                                                                     |
+| `Cmd/Ctrl+K`       | Open command palette                                                            |
+| `Cmd/Ctrl+O`       | Add folder                                                                      |
+| `Cmd/Ctrl+,`       | Open Settings                                                                   |
+| `Cmd/Ctrl+R`       | Rename the selected session                                                     |
+| `Cmd/Ctrl+Shift+R` | Resume your most-recently-modified session                                      |
+| `Cmd/Ctrl+W`       | Close/deselect the current session tab                                          |
+| `Cmd/Ctrl+B`       | Toggle the left sidebar                                                         |
+| `Cmd/Ctrl+Alt+B`   | Toggle the right split panel                                                    |
+| `Cmd/Ctrl+Shift+A` | Toggle the Approval Inbox rail                                                  |
+| `Cmd/Ctrl+Shift+B` | Toggle the Fleet rail                                                           |
+| `Cmd/Ctrl+Shift+D` | Review the active folder's branch                                               |
+| `Cmd/Ctrl+Shift+P` | Switch project (currently opens the command palette)                            |
+| `Cmd/Ctrl+Shift+F` | Jump to a folder or session (press again to close)                              |
+| `Cmd/Ctrl+Enter`   | Open the cursor session (or the selected one) in a split beside the current one |
+| `Shift+F10`        | Open the right-click menu for the cursor row (`Fn+Shift+F10` on a Mac)          |
+| `Alt+←` / `Cmd+[`  | Back to the previous session you viewed                                         |
+| `Alt+→` / `Cmd+]`  | Forward again after going back                                                  |
+| Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar                            |
 
 The Topbar's folder actions — roadmap board, PR Stack, open in file manager,
 open in VS Code, pull requests on GitHub, Browse files, and open a terminal —
@@ -145,10 +150,27 @@ can give each one a chord (see
 [Customizing shortcuts](#customizing-shortcuts)). They're also in the native
 **Folder** menu, so a chord you bind works even while the terminal has focus.
 
-Renderer-only shortcuts (`Cmd/Ctrl+Shift+A`, `+Shift+B`, `+Shift+D`, and the
-sidebar arrow keys) don't fire while the terminal pane has keyboard focus —
-the terminal captures those keys. The rest are bound in the native menu and
-work everywhere.
+Every item of the session right-click menu, closing a folder terminal, the
+**+** that starts a new session in the active folder, and the sidebar header's
+buttons (rescan, drill depth, collapse all, hidden folders) can be given a
+shortcut too; none has one out of the box. Their command ids are
+`session.newInFolder`, `session.fork`, `session.restart`, `session.copyId`,
+`session.copyTranscriptPath`, `session.copyResumeCommand`,
+`session.copyContextDigest`, `session.toggleNoFlicker`, `session.toggleArchived`,
+`session.delete`, `session.retryBoot`, `session.dismiss`, `session.closeTerminal`,
+`sidebar.rescan`, `sidebar.cycleDrillDepth`, `sidebar.toggleCollapseAll` and
+`sidebar.hiddenFolders`. A session action works on the **selected** session and
+only when the right-click menu would offer it there (no Fork on a session that is
+still starting, for example). Remote Control and Promote to Orchestrator stay
+click-only on purpose: they show a disclosure you should read first.
+
+`Cmd/Ctrl+Shift+F` opens the jump palette even while a terminal has focus, and
+shows the sidebar first if you had collapsed it. The terminal sends nothing for a
+`Cmd/Ctrl+Shift+letter` chord, so `Cmd/Ctrl+Shift+A`, `+Shift+B` and `+Shift+D`
+also fire over it. `Cmd/Ctrl+Enter`, `Shift+F10` and the sidebar arrow keys don't
+fire while the terminal pane has keyboard focus — the terminal gets those keys. Shortcuts that act on the sidebar or on a
+selection also leave a key you type in a text field alone. The rest are bound in
+the native menu and work everywhere.
 
 ### Customizing shortcuts
 

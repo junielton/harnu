@@ -26,10 +26,9 @@
 /* -------------------------------------------------------------------------- */
 
 /**
- * Every action id that can be dispatched. The 26 rebindable renderer bindings
- * (8 of them — the Topbar's per-folder actions and the usage overview — ship
- * with no default chord)
- * plus the reserved `app.*` menu roles. Kept here (not in `menu.ts`) so both
+ * Every action id that can be dispatched: the rebindable renderer bindings
+ * (most ship with no default chord — T486 gave every user-invokable action an
+ * id) plus the reserved `app.*` menu roles. Kept here (not in `menu.ts`) so both
  * processes share one union; `menu.ts` re-exports it for back-compat.
  */
 export type ShortcutActionId =
@@ -54,6 +53,26 @@ export type ShortcutActionId =
   | 'session.resumeLast'
   | 'session.rename'
   | 'session.close'
+  | 'session.newInFolder'
+  | 'session.fork'
+  | 'session.openToSide'
+  | 'session.contextMenu'
+  | 'session.restart'
+  | 'session.copyId'
+  | 'session.copyTranscriptPath'
+  | 'session.copyResumeCommand'
+  | 'session.copyContextDigest'
+  | 'session.toggleNoFlicker'
+  | 'session.toggleArchived'
+  | 'session.delete'
+  | 'session.retryBoot'
+  | 'session.dismiss'
+  | 'session.closeTerminal'
+  | 'sidebar.jump'
+  | 'sidebar.rescan'
+  | 'sidebar.cycleDrillDepth'
+  | 'sidebar.toggleCollapseAll'
+  | 'sidebar.hiddenFolders'
   | 'sidebar.cursor.down'
   | 'sidebar.cursor.up'
   | 'sidebar.cursor.right'
@@ -192,6 +211,33 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('session.resumeLast', 'sessions', 'Cmd+Shift+R', { ...MENU, paletteFeatured: true }),
   def('session.rename', 'sessions', 'Cmd+R', MENU),
   def('session.close', 'sessions', 'Cmd+W', MENU),
+  // T486 §3.2 — the Session menu's items and the folder `+`. Unbound except two
+  // sidebar-navigation gestures: ⌘↩ / Ctrl+↩ opens to the side, ⇧F10 opens the
+  // context menu. `session.fork` ships unbound (operator decision, 2026-10-14).
+  def('session.newInFolder', 'sessions', null),
+  def('session.fork', 'sessions', null),
+  def('session.openToSide', 'sessions', 'Cmd+Enter'),
+  // Focus-dependent (it targets the cursor row), so never listed in the palette.
+  def('session.contextMenu', 'sessions', 'Shift+F10', { palette: false }),
+  def('session.restart', 'sessions', null),
+  def('session.copyId', 'sessions', null),
+  def('session.copyTranscriptPath', 'sessions', null),
+  def('session.copyResumeCommand', 'sessions', null),
+  def('session.copyContextDigest', 'sessions', null),
+  def('session.toggleNoFlicker', 'sessions', null),
+  def('session.toggleArchived', 'sessions', null),
+  def('session.delete', 'sessions', null),
+  def('session.retryBoot', 'sessions', null),
+  def('session.dismiss', 'sessions', null),
+  def('session.closeTerminal', 'sessions', null),
+  // T486 §3.3 — the sidebar header's buttons. ⌘⇧F / Ctrl+Shift+F toggles the
+  // jump palette; xterm sends nothing for a Ctrl/⌘+Shift+letter chord, so it
+  // fires over a focused terminal although it has no menu item.
+  def('sidebar.jump', 'sidebar', 'Cmd+Shift+F'),
+  def('sidebar.rescan', 'sidebar', null),
+  def('sidebar.cycleDrillDepth', 'sidebar', null),
+  def('sidebar.toggleCollapseAll', 'sidebar', null),
+  def('sidebar.hiddenFolders', 'sidebar', null),
   def('sidebar.cursor.down', 'sidebar', 'ArrowDown', { palette: false }),
   def('sidebar.cursor.up', 'sidebar', 'ArrowUp', { palette: false }),
   def('sidebar.cursor.right', 'sidebar', 'ArrowRight', { palette: false }),

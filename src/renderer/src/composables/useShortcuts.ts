@@ -71,11 +71,19 @@ export interface ShortcutBinding {
    */
   keys?: string
   /**
-   * Optional precondition. Evaluated at dispatch time. If it returns
-   * `false`, the handler is skipped and dispatch falls through to the next
-   * matching binding (if any).
+   * Optional precondition — CONTEXT only (a selection exists, a takeover is
+   * open, …). Evaluated at dispatch time for every source. If it returns
+   * `false`, the handler is skipped.
    */
   enabled?: () => boolean
+  /**
+   * Optional FOCUS-conflict check (T486 §9.1), consulted only for a `'keys'`
+   * dispatch — a press that really came from the focused element. Typically
+   * `notInTextEntry` (`lib/text-entry.ts`), so a text field keeps its own
+   * keys. Never consulted for the native menu, the shield or the palette:
+   * those run the action whatever holds focus.
+   */
+  keysGuard?: () => boolean
   /** The work to perform. Async handlers are awaited only via their promise
    * — `dispatch` is not async itself and does not wait. */
   handler: () => void | Promise<void>
@@ -124,9 +132,11 @@ let ipcUnsubscribe: (() => void) | null = null
 
 /**
  * Which surface a `dispatch` came from — the OS application menu accelerator
- * (`shortcut:fired` IPC) or the renderer-level `useMagicKeys` fallback.
+ * (`shortcut:fired` IPC), the renderer-level `useMagicKeys` fallback, the
+ * capture-phase terminal shield (T486 U5a) or the command palette (U6). Only
+ * `'keys'` consults a binding's `keysGuard`.
  */
-type DispatchSource = 'menu' | 'keys'
+type DispatchSource = 'menu' | 'keys' | 'shield' | 'palette'
 
 /**
  * De-dup window for the intentional double-bind (BUG-21). Menu-owned chords fire
@@ -309,6 +319,11 @@ export function activeScope(): ShortcutScope {
   return scopeStack[scopeStack.length - 1] ?? 'global'
 }
 
+/** Test-only: run `dispatch` from any source (the shield / palette callers land in U5a / U6). */
+export function dispatchForTests(id: string, source: DispatchSource): void {
+  dispatch(id, source)
+}
+
 /** Test-only: restore the scope stack to its initial `['global']` state. */
 export function resetScopesForTests(): void {
   scopeStack.length = 0
@@ -333,6 +348,7 @@ function dispatch(id: string, source: DispatchSource): void {
   }
   const binding = matches[0]
   if (binding.enabled && !binding.enabled()) return
+  if (source === 'keys' && binding.keysGuard && !binding.keysGuard()) return
   lastDispatch.set(id, { source, at: now })
   // Intentionally not awaited — fire-and-forget. Async handlers that need
   // error reporting should `.catch` internally; we don't centralize that
