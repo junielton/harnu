@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
@@ -47,6 +47,7 @@ import {
   registerCanvasWatchHandlers,
   startCanvasWatch
 } from '../src/main/canvas-watch'
+import { writeCanvasFile } from '../src/main/canvas-write'
 
 let dir: string
 let file: string
@@ -145,5 +146,29 @@ describe('startCanvasWatch when the watch misses the deadline (BUG-210 review)',
     attach()
     await startCanvasWatch(file)
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('pinned: on the timeout path a Save before the late watch attaches wins', async () => {
+    // Today's behaviour, not a goal: the pane read the board before an outside
+    // write, the watch is still not live, and the operator saves. Their Save
+    // replaces the outside write on disk (last writer wins), and the late
+    // re-check sees the pane's own Save, so nobody is told.
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await startCanvasWatch(file, 'pane-a')
+    writeFileSync(
+      file,
+      JSON.stringify({ capycanvas: 1, meta: {}, nodes: [], edges: [], agent: true }),
+      'utf8'
+    )
+    const saved = await writeCanvasFile(
+      file,
+      { capycanvas: 1, meta: {}, nodes: [], edges: [] },
+      { selfWrite: true, writerId: 'pane-a' }
+    )
+    expect(saved.ok).toBe(true)
+    attach()
+    await new Promise((r) => setTimeout(r, 300))
+    expect(readFileSync(file, 'utf8')).not.toContain('agent')
+    expect(sent).toEqual([])
   })
 })
