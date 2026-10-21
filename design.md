@@ -10820,15 +10820,23 @@ right: a 2px accent bar, the path (mono, truncating from the right, full path in
 
 - **Range text** — `L85` (one row), `L85–92` (same side), `old L85–92` (left side),
   `old L85 – new L92` (mixed), `whole file`.
-- **Actions** — `Ask about this` (primary `.btn`), `Copy as text` (default `.btn`) and
-  `Clear selection` (ghost), all `h-26px`, in that order, filling the `actions` slot
-  and the clear button after it. **`Ask about this` is disabled when no review
-  companion is open**, and says why: a `text-3` 11.5px line next to the buttons reads
-  `Open "Ask a fresh session" first` (the button also points at it with
-  `aria-describedby`; a disabled control's `title` is not reliably shown). The bar
-  never opens a companion itself. `Copy as text` needs no companion and no mod; it is
-  disabled only while the delivery record says the head or base moved (the text would
-  be stale), and a successful copy flips its label to `Copied` for 2s.
+- **Actions** — `Copy as text` (default `.btn`) and `Clear selection` (ghost), `h-26px`.
+  **There is no send button.** The selection is _reactive and silent_: while a review
+  companion is open, every change of the live selection (a click, a range, a drag, a file)
+  updates what the companion sees, after a 500 ms pause, latest wins. It never starts a
+  turn, never writes to the composer and never sends a message — the operator starts the
+  conversation in the companion (G-3 as amended: _Harnu never volunteers a message and never
+  writes to the composer; while a review companion is open it keeps the companion's view of
+  the operator's current diff selection up to date as a hidden context row through the mod
+  channel, never as a user turn_). While a turn is running in the companion the update is
+  held and only the latest is sent when that turn completes. `Clear selection` and `Esc`
+  clear the pane only: `main` composes a row from coordinates, so it cannot say "nothing is
+  selected", and a row already in the companion cannot be retracted (the band and the row
+  stay until the next selection). With **no companion open nothing is sent**, and a quiet
+  `text-3` line beside the buttons says why — `Open "Ask a fresh session" first` (no error
+  styling; the pane's own button is the next step). `Copy as text` needs no companion and no
+  mod; it is disabled only while the record says the head or base moved (the text would be
+  stale), and a successful copy flips its label to `Copied` for 2s.
 - **Hint** — transient, one line, `role="status"`, 11.5px `--text-3` (the same
   size as the submit confirm's boundary line), on its own full-width row and
   absent from layout while empty: `A range stays inside one hunk` after a clamp; `The head moved (a1b2c3d → e4f5a6b). Selection cleared.`
@@ -10836,46 +10844,65 @@ right: a 2px accent bar, the path (mono, truncating from the right, full path in
   a hint the bar shows the hint and a `Dismiss` button.
 - **Below ~1000px** (`NARROW_PX`, measured on the pane body) the bar wraps to two
   rows — the subject on the first, the actions on the second. **No action hides.**
+  The chip and the hint take a full line with `basis-full` in the row layout **only**: in
+  the column layout (`flex-col flex-wrap`) a 100% basis is a height, and it pushed the chip
+  into a second, clipped column (seen live at a ~400px pane).
 - **No number but the line numbers.** The bar never renders a count, a ratio or a
   percentage at any data combination (PRD D7, T243 AC-8).
 
-**Delivery chip and outcome rows (U2b).** One chip for the
-single most recent delivery, holding one state from a closed vocabulary, in the
-neutral `--text-2` tone for **every** state — no success colour, no dot, no icon: a
-green "Sent" is a verdict the receipts cannot back (§8 "Review selection"). States:
-`Sending…`, `Sent — ask your question in the companion`, `Asked — waiting for the
-answer`, `Answered`, `That turn was stopped` / `The companion declined that turn` /
-`That turn failed`, `The conversation was cleared`, `The companion was closed`.
-"Answered" means a human turn completed after delivery — never that the answer was
-relevant. A failed send renders one closed sentence from spec §7 plus its next step
-(`Try again`, `Open Mods settings`, `Copy as text`, `Reopen "Ask a fresh session"`);
-**no text the mod or the model wrote ever reaches the DOM.** `Copy as text` is
-available in every failure state except a moved head or base.
+**Delivery chip and outcome rows (U2b).** One chip, for the **current** selection only,
+holding one state from a closed vocabulary, in the neutral `--text-2` tone for **every**
+state — no success colour, no dot, no icon: a green tick is a verdict the receipts cannot
+back (§8 "Review selection"). It answers one question — _does the companion see the
+selection that is on screen?_ — and nothing about the conversation:
 
-U2b corrections to what U1 wrote above, each because the build needed a decision the
-first draft left open:
+| State                                                                            | Chip text                                    |
+| -------------------------------------------------------------------------------- | -------------------------------------------- |
+| a change is waiting out the 500 ms pause, held for a running turn, or on its way | `Updating…`                                  |
+| delivered — and every state after it (a question asked, answered, stopped)       | `Companion sees this`                        |
+| the companion's conversation was cleared                                         | `The conversation was cleared` + `Try again` |
+| the companion was closed                                                         | `The companion was closed`                   |
+| a refusal or an outcome (spec §7)                                                | its closed sentence + next steps             |
 
-- **The bar also shows when only a delivery record exists.** An answer lands after the
-  operator may have cleared the selection, and "Answered" must still be readable. With
-  no live selection the bar shows the chip and a `Dismiss` button (which drops the
-  record when it is finished, and the one-line hint otherwise). Nothing renders when
-  there is no selection, no hint and no record, as in U1.
-- **The chip names its subject when it is not the live selection.** After the operator
-  selects something else, `speech.ts · L85–92` precedes the chip text (`text-text`,
-  mono, same range wording as the bar), so "Sent" never silently attaches to the new
-  selection. Its only numbers are that selection's own line numbers.
-- **The chip is one `text-2` line, plus at most one `text-3` reason line.** A refused
-  send that has a reason (`Not connected to the Harnu mod`) adds the closed sentence
-  from `review.selection.noBinding.*` below it. No icon, dot or colour change.
-- **Next steps.** A step Harnu can perform from the bar is a ghost `.btn` after the
-  chip: `Try again` (only while the live selection is the one that failed),
-  `Open Mods settings` (opens Settings → Mods), `Clear and re-select`. A step that
-  lives elsewhere is plain `text-3` guidance naming the control, never a button that
+**Why `Asked` / `Answered` are gone from the bar.** In the reactive model nobody asks to
+send a selection, so "was it asked about, was it answered" no longer says anything about the
+selection's delivery — it describes the _conversation_, which is the companion's, and a
+completed turn read as a badge on the selection invites exactly the "reviewed" reading the
+chip must never earn (T245 PRD §2). The tracker's turn events still drive one thing the
+operator never sees as a word: an update is held while a turn runs. A failed send renders
+one closed sentence from spec §7 plus its next step (`Try again`, `Open Mods settings`,
+`Copy as text`, a fresh companion); **no text the mod or the model wrote ever reaches the
+DOM.** `Copy as text` is available in every failure state except a moved head or base.
+
+Decisions the build needed beyond what U1 wrote:
+
+- **The bar also shows a hint with no selection** (head moved) exactly as before; with no
+  selection and no hint it renders nothing — the chip lives with the live selection.
+- **The chip is one `text-2` line, plus at most one `text-3` reason line.** A refused send
+  with a reason (`Not connected to the Harnu mod`) adds the closed sentence from
+  `review.selection.noBinding.*` below it. No icon, dot or colour change.
+- **Next steps.** A step Harnu can perform from the bar is a ghost `.btn` after the chip:
+  `Try again`, `Open Mods settings` (opens Settings → Mods), `Clear and re-select`. A step
+  that lives elsewhere is plain `text-3` guidance naming the control, never a button that
   pretends to do it: `Narrow the selection`, the pane's `Re-read the branch`, and
-  `Reopen "Ask a fresh session"`. `Copy as text` is the persistent action in the row,
-  not a repeated step.
-- **No second source of words.** Every sentence is a `review.selection.*` key picked by
-  a stable code; a code the renderer does not know falls back to
+  `Close this companion, then use “Ask a fresh session” in the review header`.
+  `Copy as text` is the persistent action in the row, not a repeated step.
+  **A refused `NO_BINDING` leads by its reason, not by main's one list:** the mod binds at
+  spawn, so `Open Mods settings` is offered only when the mod is actually off; a companion
+  that started without a mod that is now on (`not-claude`, `pre-disclosure`, no recorded
+  reason) gets the fresh-companion guidance instead, because Settings cannot fix it; a
+  Claude Code that is too old or unreadable gets neither (Copy stays).
+- **One range format, everywhere.** The bar, the chip and the guidance build range text with
+  the same function: `L85`, `L85–92`, `old L85–92`, `old L85 – new L92`, `whole file`. A range
+  whose two ends are on different sides is always spelled out in full; a same-side range that
+  merely crosses a changed block is `L7–12`, because it names new-file lines.
+- **A mixed-side range is honest about the lines.** `main` cannot recover the rows between a
+  removed line and an added line, so the text it sends (and Copy as text) names both ends and
+  quotes no lines. The bar says so while such a selection is live and the companion sees it:
+  `Lines not included — the range spans both sides` (`text-3`, beside the buttons / after the
+  chip state). A fact about the payload, not a warning: no icon, no colour.
+- **No second source of words.** Every sentence is a `review.selection.*` key picked by a
+  stable code; a code the renderer does not know falls back to
   `review.selection.outcome.unknown`, never to the code or any text from main.
 
 ---
@@ -12158,18 +12185,21 @@ equal.** No artificial enthusiasm, no emoji, no exclamation marks.
   off reads the neutral "turned off by a setting or by your organization's policy", and
   anything else reads "the mod did not load". Never promise protection, and never imply
   the user did something wrong.
-- **Review selection** — short labels with no trailing period (`Clear selection`, `Ask about
-this`, `Copy as text`, `Dismiss`, and the clamp hint `A range stays inside one hunk`); complete
-  sentences keep theirs (`The head moved (a1b2c3d → e4f5a6b). Selection cleared.`). Line ranges are
-  `L85–92`, `old L85–92`, `old L85 – new L92`. The delivery chip is a **state, never a verdict**:
-  "Sent" is said only for a confirmed delivery, "Answered" only for a completed turn, and
-  nothing is ever "reviewed", "done" or "ok". `diff`, `hunk`, `head` and `base` stay untranslated.
-  U2b adds `Copied` (the Copy label for 2s), `Couldn't copy to the clipboard`,
-  `Use “Re-read the branch” in the review header` (guidance that names a control Harnu cannot
-  press for the operator) and the fallback `Harnu couldn't complete that send`, which stands in
-  for any failure code this build does not know — a code or message from main is never shown.
-  A sentence that says what to do next is guidance in `text-3`, not a button, unless the bar can
-  do it itself.
+- **Review selection** — short labels with no trailing period (`Clear selection`, `Copy as
+text`, `Dismiss`, and the clamp hint `A range stays inside one hunk`); complete sentences keep
+  theirs (`The head moved (a1b2c3d → e4f5a6b). Selection cleared.`). Line ranges are `L85–92`,
+  `old L85–92`, `old L85 – new L92`. The delivery chip is a **state, never a verdict**: it says
+  only whether the companion **sees** the selection on screen (`Updating…`, `Companion sees
+this`) — never that a question was asked or answered, and nothing is ever "reviewed", "done"
+  or "ok". `diff`, `hunk`, `head` and `base` stay untranslated. Also `Copied` (the Copy label
+  for 2s), `Couldn't copy to the clipboard`, `Lines not included — the range spans both sides`
+  (a fact about the payload, in `text-3`), `Open "Ask a fresh session" first` (quiet, no error
+  styling), `Use “Re-read the branch” in the review header` and `Close this companion, then use
+“Ask a fresh session” in the review header` (guidance that names a control Harnu cannot press
+  for the operator), and the fallback `Harnu couldn't complete that send`, which stands in for
+  any failure code this build does not know — a code or message from main is never shown. A
+  sentence that says what to do next is guidance in `text-3`, not a button, unless the bar can do
+  it itself.
 - **Mods audit chips** — facts in the form "can …": "can run processes", "can read every
   prompt". Never a verdict: no "safe", "verified", "trusted", "secure", "malicious" or
   "approved", in any language, and never a colour that grades a mod.

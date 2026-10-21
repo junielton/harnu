@@ -102,15 +102,22 @@ export const OUTCOME_KEYS: Readonly<Record<OutcomeCode, string>> = {
   'dropped-cancelled': 'review.selection.outcome.dropped.cancelled'
 }
 
-/** Spec §9.2: the chip text of each state that is not an outcome. */
+/**
+ * Spec §9.2, as built for the reactive selection: the chip answers "does the companion see the
+ * selection on screen?", so every state from *delivered* on — a question asked, answered, stopped,
+ * declined or failed — reads the same: the row is in the companion's context. The turn states stay
+ * in the record (they decide whether an update is held, never what the operator reads): a
+ * completed turn shown as a badge on the selection would invite the "reviewed" reading the chip
+ * must never earn.
+ */
 const STATE_KEYS: Readonly<Record<Exclude<DeliveryState, 'not-delivered'>, string>> = {
   queued: 'review.selection.state.queued',
   delivered: 'review.selection.state.delivered',
-  asked: 'review.selection.state.asked',
-  answered: 'review.selection.state.answered',
-  'turn-stopped': 'review.selection.state.stopped.aborted',
-  'turn-declined': 'review.selection.state.stopped.refusal',
-  'turn-failed': 'review.selection.state.stopped.error',
+  asked: 'review.selection.state.delivered',
+  answered: 'review.selection.state.delivered',
+  'turn-stopped': 'review.selection.state.delivered',
+  'turn-declined': 'review.selection.state.delivered',
+  'turn-failed': 'review.selection.state.delivered',
   cleared: 'review.selection.state.cleared',
   ended: 'review.selection.state.ended'
 }
@@ -148,17 +155,38 @@ function stepsOf(raw: unknown): NextStep[] {
   return raw.filter((s): s is NextStep => typeof s === 'string' && NEXT_STEPS.has(s))
 }
 
+/**
+ * Where a `NO_BINDING` leads depends on WHY (spec §7.1), and main's one list for it cannot say:
+ * the mod binds at SPAWN, so once it is on, a companion that started without it stays without it
+ * and "Open Mods settings" leads nowhere (the operator's no-dead-ends rule). Only a mod that is
+ * actually off is fixed in Settings; a CLI that is too old or unreadable is fixed by neither, and
+ * every other reason is a companion that predates the mod, which only a new companion cures.
+ */
+export function noBindingSteps(reason: NoBindingReason | null): NextStep[] {
+  switch (reason) {
+    case 'off':
+      return ['copy', 'open-mods-settings']
+    case 'cli-too-old':
+    case 'cli-unknown':
+      return ['copy']
+    default: // pre-disclosure, not-claude, unknown
+      return ['copy', 'reopen-companion']
+  }
+}
+
 /** The send (or the compose) was refused before anything was queued. */
 export function refuse(rec: DeliveryRecord, r: RefusalLike): DeliveryRecord {
+  const code = has(REFUSAL_KEYS, r.refusal) ? r.refusal : null
+  const reason =
+    typeof r.reason === 'string' && NO_BINDING_REASONS.has(r.reason)
+      ? (r.reason as NoBindingReason)
+      : null
   return {
     ...rec,
     phase: 'refused',
-    code: has(REFUSAL_KEYS, r.refusal) ? r.refusal : null,
-    reason:
-      typeof r.reason === 'string' && NO_BINDING_REASONS.has(r.reason)
-        ? (r.reason as NoBindingReason)
-        : null,
-    next: stepsOf(r.next)
+    code,
+    reason,
+    next: code === 'NO_BINDING' ? noBindingSteps(reason ?? 'unknown') : stepsOf(r.next)
   }
 }
 
@@ -203,7 +231,18 @@ export function applyStateEvent(rec: DeliveryRecord, ev: SelectionStateEvent): D
       next: stepsOf(ev.next)
     }
   }
-  return { ...rec, phase: ev.state, code: null, reason: null, next: [] }
+  // A cleared conversation no longer holds the row, and nothing re-sends it on its own.
+  const next: NextStep[] = ev.state === 'cleared' ? ['try-again'] : []
+  return { ...rec, phase: ev.state, code: null, reason: null, next }
+}
+
+/**
+ * Whether a turn is running in the companion, as far as this selection's own events say: an update
+ * is held while it is, and only the latest is sent when it completes (LV-3: an append mid-turn
+ * joins the running turn).
+ */
+export function turnRunning(rec: DeliveryRecord | null): boolean {
+  return rec?.phase === 'asked'
 }
 
 // ---- what the chip shows ----------------------------------------------------------------------
@@ -229,11 +268,6 @@ export function chipOf(rec: DeliveryRecord): ChipText {
     return { key, reasonKey: null }
   }
   return { key: STATE_KEYS[rec.phase], reasonKey: null }
-}
-
-/** A record that can still change. The others are final until the next send. */
-export function isFinished(rec: DeliveryRecord): boolean {
-  return rec.phase !== 'queued' && rec.phase !== 'delivered' && rec.phase !== 'asked'
 }
 
 /**

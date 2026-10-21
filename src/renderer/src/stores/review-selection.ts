@@ -10,13 +10,17 @@
  * There is exactly one live selection, never a list, so there is nothing to
  * total (PRD D7). Selecting anything replaces it.
  *
- * U2b adds the delivery (spec §4.1, §6.5, §9): {@link send} hands the open review
- * companion the selection's COORDINATES — never text; `main` reads the lines —
- * and {@link last} is the one record of the most recent delivery, followed
- * through `review:selection:state`. This is the only file in the renderer that
- * calls the review-selection IPC (send, compose, state). It reads the companion's `sessionId`
- * through one helpers getter and nothing else of the pane: what the companion
- * says never comes this way, only that a turn happened (spec §11 G-5).
+ * U2b keeps the open review companion's view of the selection up to date (spec §6.5, §9),
+ * **reactively and silently**: every change of the live selection is delivered after a
+ * {@link SEND_DEBOUNCE_MS} pause, latest wins, as a hidden context row through the mod channel —
+ * COORDINATES only, never text (`main` reads the lines). It never starts a turn, never writes
+ * to the composer and never sends a message; the operator starts the conversation in the
+ * companion. While a turn is running in the companion the update is held and only the latest is
+ * sent when it completes. {@link last} is the one record for the current selection, followed
+ * through `review:selection:state`. This is the only file in the renderer that calls the
+ * review-selection IPC (send, compose, state). It reads the companion's `sessionId` through one
+ * helpers getter and nothing else of the pane: what the companion says never comes this way
+ * (spec §11 G-5).
  *
  * design.md §6 "Review selection (ReviewSelectionBar.vue, T257)".
  */
@@ -43,6 +47,7 @@ import {
   refuse,
   refuseUnknown,
   startDelivery,
+  turnRunning,
   type DeliveryRecord
 } from '../lib/review-selection-delivery'
 
@@ -54,6 +59,9 @@ export interface CapturedSelection {
 
 /** Why the selection went away — recorded so a test (and a reader) can tell. */
 export type ClearReason = 'user' | 'toggle' | 'esc' | 'collapse' | 'snapshot' | 'context' | 'reset'
+
+/** How long the selection must sit still before the companion is told (latest wins). */
+export const SEND_DEBOUNCE_MS = 500
 
 function mintId(): string {
   const uuid =
@@ -220,7 +228,9 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
   /** The takeover closed: nothing may outlive it — the live selection, its notice and `last`. */
   function reset(): void {
     clear('reset')
+    cancelPending()
     last.value = null
+    sentRec = null
   }
 
   /** Drop the hint and the delivery record: the bar's Dismiss when nothing is selected. */
@@ -232,12 +242,34 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
   // ── Delivery (U2b) ──────────────────────────────────────────────────────
 
   let unsubscribe: (() => void) | null = null
+  /** The pause that makes "latest wins" true: at most one send is ever pending. */
+  let timer: ReturnType<typeof setTimeout> | null = null
+  /** The record of the selection actually SENT last — it keeps following events while `last` moves on. */
+  let sentRec: DeliveryRecord | null = null
+  /** A newer selection is waiting for the running turn to complete. */
+  let held = false
+  /** A selection changed while a send was crossing IPC: send the latest when it lands. */
+  let again = false
+
+  function cancelPending(): void {
+    if (timer) clearTimeout(timer)
+    timer = null
+    held = false
+    again = false
+  }
 
   function onState(ev: SelectionStateEvent): void {
+    if (sentRec && ev.selectionId === sentRec.selectionId) sentRec = applyStateEvent(sentRec, ev)
     const cur = last.value
-    if (!cur) return
-    const next = applyStateEvent(cur, ev)
-    if (next !== cur) last.value = next
+    if (cur && ev.selectionId === cur.selectionId) {
+      const next = applyStateEvent(cur, ev)
+      if (next !== cur) last.value = next
+    }
+    // The running turn is over (or the companion went away): send what was held, latest only.
+    if (held && !turnRunning(sentRec)) {
+      held = false
+      void send()
+    }
   }
 
   /** Subscribe once, BEFORE the first send, so no event of it can arrive unheard. */
@@ -265,21 +297,25 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
   }
 
   /**
-   * "Ask about this": deliver the live selection to the open review companion. It never
-   * opens a companion — with none open it records the `no-companion` refusal and sends
-   * nothing (spec §7.2).
+   * Deliver the live selection to the open review companion. Never opens a companion: with none
+   * open it sends nothing and leaves no record, and the bar says so (spec §7.2).
    */
   async function send(): Promise<void> {
     const sel = live.value
     const snap = review.snapshot
-    if (!sel || !snap || sending.value) return
-    const start = startDelivery(sel)
+    if (!sel || !snap) return
+    if (sending.value) {
+      again = true
+      return
+    }
     const sid = companionSid.value
     if (sid === null) {
-      last.value = refuse(start, { refusal: 'no-companion', next: [] })
+      last.value = null
       return
     }
     ensureSubscribed()
+    const start = startDelivery(sel)
+    sentRec = start
     last.value = start
     sending.value = true
     try {
@@ -290,23 +326,64 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
         companionSid: sid,
         selection: coordinatesOf(sel)
       })
-      const cur = last.value
-      // Replaced or reset while the call was out: the record is no longer ours to touch.
-      if (!cur || cur.selectionId !== sel.id) return
       // `ok` only means QUEUED. The tracker's events own every state after it, and one may
-      // already have landed: never move the record back to `queued` here.
-      if (!res.ok) last.value = refuse(cur, res)
+      // already have landed: never move a record back to `queued` here.
+      if (!res.ok) {
+        if (sentRec?.selectionId === sel.id) sentRec = refuse(sentRec, res)
+        const cur = last.value
+        if (cur && cur.selectionId === sel.id) last.value = refuse(cur, res)
+      }
     } catch {
+      if (sentRec?.selectionId === sel.id) sentRec = refuseUnknown(sentRec)
       const cur = last.value
       if (cur && cur.selectionId === sel.id) last.value = refuseUnknown(cur)
     } finally {
       sending.value = false
+      if (again) {
+        again = false
+        flush()
+      }
     }
   }
 
-  /** "Try again": only meaningful while the live selection is the one that failed. */
+  /** The pause is over: send the latest selection — or hold it while a turn runs. */
+  function flush(): void {
+    timer = null
+    if (!live.value) return
+    if (turnRunning(sentRec)) {
+      held = true // latest wins: a later change just replaces what is waiting
+      return
+    }
+    void send()
+  }
+
+  /** Every change of the live selection lands here: say "updating", then send after the pause. */
+  function onLiveChange(sel: LocalSelectionState | null): void {
+    cancelPending()
+    if (!sel) return
+    if (companionSid.value === null) {
+      last.value = null // nothing is sent; the bar says so quietly
+      return
+    }
+    last.value = startDelivery(sel)
+    timer = setTimeout(flush, SEND_DEBOUNCE_MS)
+  }
+
+  watch(live, onLiveChange)
+  // A companion opening while something is selected gets the current selection; one closing
+  // takes the record with it.
+  watch(companionSid, (sid) => {
+    if (sid === null) {
+      cancelPending()
+      last.value = null
+      sentRec = null
+    } else if (live.value) onLiveChange(live.value)
+  })
+
+  /** "Try again": send the live selection now, without waiting out the pause. */
   function retry(): Promise<void> {
-    return last.value && live.value?.id === last.value.selectionId ? send() : Promise.resolve()
+    cancelPending()
+    return send()
   }
 
   /**

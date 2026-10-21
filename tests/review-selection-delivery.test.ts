@@ -15,10 +15,12 @@ import {
   applyStateEvent,
   chipOf,
   copyWithheld,
+  noBindingSteps,
   refuse,
   refuseUnknown,
   startDelivery,
   stepsFor,
+  turnRunning,
   type DeliveryRecord
 } from '../src/renderer/src/lib/review-selection-delivery'
 import { HEAD_SHA, BASE_SHA } from './helpers/review-selection-fixture'
@@ -105,11 +107,27 @@ describe('U2b-AC-3 — every state and outcome has a closed string', () => {
     }
   })
 
-  it('keeps the three turn-ending sentences distinct', () => {
-    const keys = (['turn-stopped', 'turn-declined', 'turn-failed'] as const).map(
-      (s) => chipOf({ ...startDelivery(SEL), phase: s }).key
+  it('reads "Companion sees this" from delivered on, whatever the conversation does next', () => {
+    // The chip answers "does the companion see the selection on screen?" — a question asked,
+    // answered, stopped, declined or failed says nothing more about that, so it says nothing.
+    const sees = 'review.selection.state.delivered'
+    for (const s of [
+      'delivered',
+      'asked',
+      'answered',
+      'turn-stopped',
+      'turn-declined',
+      'turn-failed'
+    ] as const) {
+      expect(chipOf({ ...startDelivery(SEL), phase: s }).key, s).toBe(sees)
+    }
+    expect(chipOf(startDelivery(SEL)).key).toBe('review.selection.state.queued')
+    // …and the vocabulary has no word for a question or an answer at all.
+    const states = en.review.selection.state as Record<string, unknown>
+    expect(Object.keys(states).sort()).toEqual(['cleared', 'delivered', 'ended', 'queued'])
+    expect(JSON.stringify(en.review.selection.state)).not.toMatch(
+      /asked|answered|declined|stopped/i
     )
-    expect(new Set(keys).size).toBe(3)
   })
 
   it('shows one fixed sentence for a code this build does not know — never the code', () => {
@@ -145,7 +163,9 @@ describe('U2b-AC-3 — every state and outcome has a closed string', () => {
       expect(JSON.stringify(r)).not.toContain('onerror')
     }
     expect(refused.reason).toBeNull()
-    expect(refused.next).toEqual(['copy'])
+    // `next` is derived from the (unknown) reason, never copied from main's list: the hostile
+    // entry cannot come through, and an unreadable reason means a companion that predates the mod.
+    expect(refused.next).toEqual(['copy', 'reopen-companion'])
     expect(outcome.next).toEqual(['try-again'])
   })
 })
@@ -263,5 +283,64 @@ describe('copy and next steps', () => {
     expect(
       chipOf(refuse(startDelivery(SEL), { refusal: 'QUEUE_FULL', next: [] })).reasonKey
     ).toBeNull()
+  })
+})
+
+describe('NO_BINDING leads where its reason says (no dead ends)', () => {
+  const noBinding = (reason?: string) =>
+    refuse(startDelivery(SEL), {
+      refusal: 'NO_BINDING',
+      // main's one list always offers Mods settings; the renderer must not trust it blindly
+      next: REFUSAL_NEXT.NO_BINDING,
+      ...(reason ? { reason } : {})
+    })
+
+  it('offers Mods settings only when the mod is actually off', () => {
+    expect(stepsFor(noBinding('off'))).toEqual(['open-mods-settings'])
+  })
+
+  it('a companion that predates the mod needs a NEW companion, not Settings', () => {
+    for (const reason of ['not-claude', 'pre-disclosure', 'unknown', undefined]) {
+      const steps = stepsFor(noBinding(reason))
+      expect(steps, String(reason)).toEqual(['reopen-companion'])
+      expect(steps, String(reason)).not.toContain('open-mods-settings')
+    }
+  })
+
+  it('a CLI the mod cannot use is fixed by neither, and Copy stays', () => {
+    for (const reason of ['cli-too-old', 'cli-unknown']) {
+      expect(stepsFor(noBinding(reason)), reason).toEqual([])
+      expect(noBinding(reason).next, reason).toContain('copy')
+    }
+  })
+
+  it('covers every reason main can name', () => {
+    for (const reason of NO_BINDING_REASONS) {
+      expect(noBindingSteps(reason).includes('copy'), reason).toBe(true)
+    }
+  })
+})
+
+describe('turns and cleared conversations (the hold, and the re-send)', () => {
+  it('a turn is running only between "asked" and its end', () => {
+    let rec = startDelivery(SEL)
+    expect(turnRunning(rec)).toBe(false)
+    rec = applyStateEvent(rec, ev('delivered'))
+    expect(turnRunning(rec)).toBe(false)
+    rec = applyStateEvent(rec, ev('asked'))
+    expect(turnRunning(rec)).toBe(true)
+    for (const end of ['answered', 'turn-stopped', 'turn-declined', 'turn-failed'] as const) {
+      expect(turnRunning(applyStateEvent(rec, ev(end))), end).toBe(false)
+    }
+    expect(turnRunning(null)).toBe(false)
+  })
+
+  it('a cleared conversation no longer holds the row and offers a re-send', () => {
+    const cleared = applyStateEvent(
+      applyStateEvent(startDelivery(SEL), ev('delivered')),
+      ev('cleared')
+    )
+    expect(chipOf(cleared).key).toBe('review.selection.state.cleared')
+    expect(stepsFor(cleared)).toEqual(['try-again'])
   })
 })

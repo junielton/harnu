@@ -2,11 +2,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { i18n } from '@renderer/i18n'
 import ReviewSelectionBar from '../src/renderer/src/components/ReviewSelectionBar.vue'
 import { useReviewStore } from '../src/renderer/src/stores/review'
-import { useReviewSelectionStore } from '../src/renderer/src/stores/review-selection'
+import {
+  SEND_DEBOUNCE_MS,
+  useReviewSelectionStore
+} from '../src/renderer/src/stores/review-selection'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import {
   applyStateEvent,
@@ -25,12 +28,14 @@ import en from '../src/renderer/src/i18n/en.json'
 import { selectionSnapshot, stubReviewApi } from './helpers/review-selection-fixture'
 
 /**
- * T257 U2b — Ask about this, Copy as text and the chip, driven through the real bar and store
- * against a fake IPC. The companion's presence is the one thing stubbed: the helpers store's
- * single getter, so a test can open and close "the companion" without a PTY.
+ * T257 U2b — the selection kept up to date for the open review companion, REACTIVELY and SILENTLY
+ * (operator decision): every change is delivered after a 500 ms pause, latest wins, as a hidden
+ * context row — never a turn, never a message. Driven through the real bar and store against a fake
+ * IPC; the companion's presence is the one stubbed thing (the helpers store's single getter).
  *
- * U2b-AC-1 (ask), -2 (copy), -3 (every outcome renders, nothing from main leaks),
- * -4 (answered only after asked), -5 (no count anywhere).
+ * U2b-AC-1 (send: reactive, debounced, latest-wins, held for a running turn, no companion = nothing
+ * sent), -2 (copy), -3 (every outcome renders, nothing from main leaks), -4 (the chip describes
+ * what the companion SEES — no question/answer words, nothing before delivery), -5 (no count).
  */
 
 const SID = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'
@@ -64,11 +69,12 @@ let writeText: ReturnType<typeof vi.fn>
 const selection = () => useReviewSelectionStore()
 const find = (name: string) => wrapper.find(`[data-test="${name}"]`)
 const chipText = (): string => find('delivery-chip').text()
+const lastId = (): string => selection().last!.selectionId
 const ev = (
   state: DeliveryState,
   extra: Partial<SelectionStateEvent> = {}
 ): SelectionStateEvent => ({
-  selectionId: selection().live?.id ?? selection().last!.selectionId,
+  selectionId: lastId(),
   state,
   at: 1,
   ...extra
@@ -79,12 +85,30 @@ async function pushEvent(e: SelectionStateEvent): Promise<void> {
   await nextTick()
 }
 
-async function clickAsk(): Promise<void> {
-  await find('selection-ask').trigger('click')
+/** Let the watcher run, wait out the pause, and let the send and its result settle. */
+async function settle(ms = SEND_DEBOUNCE_MS): Promise<void> {
+  await nextTick()
+  await vi.advanceTimersByTimeAsync(ms)
   await flushPromises()
 }
 
+/** Change the live selection the way the pane does, then let the watcher react. */
+async function choose(fn: () => void): Promise<void> {
+  fn()
+  await nextTick()
+}
+
+const mixedRange = (): void => {
+  selection().select(SPEECH, 0, 1)
+  selection().extend(SPEECH, 0, 3)
+}
+const sameSideRange = (): void => {
+  selection().select(SPEECH, 0, 2)
+  selection().extend(SPEECH, 0, 3)
+}
+
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   setActivePinia(createPinia())
   stubReviewApi()
   sidBox.ref!.value = SID
@@ -107,47 +131,29 @@ beforeEach(() => {
 
 afterEach(() => {
   wrapper.unmount()
+  // Stop this test's store watchers: they would otherwise react to the NEXT test flipping the
+  // shared companion stub and send through its mock.
+  const pinia = getActivePinia() as unknown as { _s: Map<string, { $dispose(): void }> }
+  pinia._s.forEach((store) => store.$dispose())
   document.body.innerHTML = ''
+  vi.useRealTimers()
 })
 
-async function selectRange(): Promise<void> {
-  selection().select(SPEECH, 0, 1)
-  selection().extend(SPEECH, 0, 3)
-  await nextTick()
-}
-
-describe('U2b-AC-1 — Ask about this', () => {
-  it('is disabled, with the stated reason, when no companion is open — and sends nothing', async () => {
-    sidBox.ref!.value = null
-    await selectRange()
-    const ask = find('selection-ask')
-    expect((ask.element as HTMLButtonElement).disabled).toBe(true)
-    expect(find('selection-ask-reason').text()).toBe(T('review.selection.outcome.no-companion'))
-    expect(ask.attributes('aria-describedby')).toBe(find('selection-ask-reason').attributes('id'))
-    await ask.trigger('click')
-    expect(send).not.toHaveBeenCalled()
-    expect(selection().last).toBeNull()
+describe('U2b-AC-1 — the companion keeps up with the selection, silently', () => {
+  it('has no send button: the selection is the gesture', async () => {
+    await choose(mixedRange)
+    expect(find('selection-ask').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/ask about this/i)
+    expect(find('selection-copy').exists()).toBe(true)
+    expect(find('selection-clear').exists()).toBe(true)
   })
 
-  it('is enabled when a companion is open, and the reason is gone', async () => {
-    await selectRange()
-    expect((find('selection-ask').element as HTMLButtonElement).disabled).toBe(false)
-    expect(find('selection-ask-reason').exists()).toBe(false)
-  })
-
-  it('follows the companion opening and closing', async () => {
-    sidBox.ref!.value = null
-    await selectRange()
-    expect((find('selection-ask').element as HTMLButtonElement).disabled).toBe(true)
-    sidBox.ref!.value = SID
-    await nextTick()
-    expect((find('selection-ask').element as HTMLButtonElement).disabled).toBe(false)
-  })
-
-  it('sends the folder, refs, the companion id and the coordinates — no text', async () => {
-    await selectRange()
+  it('sends the folder, refs, the companion id and the coordinates — no text — after the pause', async () => {
+    await choose(mixedRange)
     const live = selection().live!
-    await clickAsk()
+    await settle(SEND_DEBOUNCE_MS - 1)
+    expect(send).not.toHaveBeenCalled() // the selection has not sat still yet
+    await settle(1)
     expect(send).toHaveBeenCalledTimes(1)
     const req = send.mock.calls[0][0] as Record<string, unknown>
     const snap = useReviewStore().snapshot!
@@ -177,23 +183,45 @@ describe('U2b-AC-1 — Ask about this', () => {
   })
 
   it('sends a whole file without line fields', async () => {
-    selection().selectFile(SPEECH)
-    await nextTick()
-    await clickAsk()
+    await choose(() => selection().selectFile(SPEECH))
+    await settle()
     const sel = (send.mock.calls[0][0] as { selection: Record<string, unknown> }).selection
     expect(sel.subjectType).toBe('FILE')
     for (const k of ['line', 'side', 'startLine', 'startSide']) expect(k in sel).toBe(false)
   })
 
-  it('never opens a companion: the stubbed helpers store has nothing to open one with', async () => {
-    sidBox.ref!.value = null
-    await selectRange()
-    await selection().send()
-    expect(selection().last).toMatchObject({ phase: 'refused', code: 'no-companion' })
+  it('latest wins: a burst of changes inside the pause is ONE send, of the last selection', async () => {
+    for (let row = 0; row < 6; row++) {
+      await choose(() => selection().select(SPEECH, 0, row))
+      await settle(100) // each change lands well inside the 500 ms pause
+    }
     expect(send).not.toHaveBeenCalled()
+    const final = selection().live!
+    await settle()
+    expect(send).toHaveBeenCalledTimes(1)
+    expect((send.mock.calls[0][0] as { selection: { id: string } }).selection.id).toBe(final.id)
   })
 
-  it('shows "Sending…" at once, then follows the events', async () => {
+  it('says "Updating…" while a change waits out the pause, then "Companion sees this"', async () => {
+    await choose(mixedRange)
+    expect(chipText()).toBe(T('review.selection.state.queued'))
+    await settle()
+    await pushEvent(ev('delivered'))
+    expect(chipText()).toContain(T('review.selection.state.delivered'))
+  })
+
+  it('does not move back to "Updating…" when the result lands after the delivered event', async () => {
+    send.mockImplementationOnce(async () => {
+      emit(ev('queued'))
+      emit(ev('delivered'))
+      return { ok: true, selectionId: 'x', cmd: 'c1', n: 1 }
+    })
+    await choose(mixedRange)
+    await settle()
+    expect(selection().last!.phase).toBe('delivered')
+  })
+
+  it('a change while a send is crossing IPC is sent as soon as it lands — the latest, once', async () => {
     let release!: () => void
     send.mockImplementationOnce(
       () =>
@@ -201,32 +229,146 @@ describe('U2b-AC-1 — Ask about this', () => {
           release = () => resolve({ ok: true, selectionId: 'x', cmd: 'c1', n: 1 })
         })
     )
-    await selectRange()
-    const pending = selection().send()
-    await nextTick()
-    expect(chipText()).toContain(T('review.selection.state.queued'))
-    expect((find('selection-ask').element as HTMLButtonElement).disabled).toBe(true)
+    await choose(mixedRange)
+    await settle() // the first send is now in flight
+    await choose(() => selection().select(SPEECH, 0, 4))
+    await choose(() => selection().select(SPEECH, 0, 5))
+    const final = selection().live!
+    await settle() // the pause is over, but the first send has not landed
+    expect(send).toHaveBeenCalledTimes(1)
     release()
-    await pending
-    await pushEvent(ev('delivered'))
-    expect(chipText()).toContain(T('review.selection.state.delivered'))
+    await flushPromises()
+    expect(send).toHaveBeenCalledTimes(2)
+    expect((send.mock.calls[1][0] as { selection: { id: string } }).selection.id).toBe(final.id)
   })
 
-  it('does not move back to "Sending…" when the result lands after the delivered event', async () => {
-    send.mockImplementationOnce(async () => {
-      emit(ev('queued'))
-      emit(ev('delivered'))
-      return { ok: true, selectionId: 'x', cmd: 'c1', n: 1 }
+  it('never has more than one send pending under fast changes', async () => {
+    for (let i = 0; i < 30; i++) {
+      await choose(() => selection().select(SPEECH, 0, i % 6))
+      await settle(120)
+    }
+    await settle()
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  describe('with no companion open', () => {
+    beforeEach(() => {
+      sidBox.ref!.value = null
     })
-    await selectRange()
-    await clickAsk()
-    expect(selection().last!.phase).toBe('delivered')
+
+    it('sends nothing, and says so quietly', async () => {
+      await choose(mixedRange)
+      await settle(SEND_DEBOUNCE_MS * 4)
+      expect(send).not.toHaveBeenCalled()
+      expect(selection().last).toBeNull()
+      expect(find('selection-no-companion').text()).toBe(T('review.selection.outcome.no-companion'))
+      // quiet: the neutral muted tone, no error styling, and nothing announced as a failure
+      expect(find('selection-no-companion').classes()).toContain('text-text-3')
+      expect(find('selection-no-companion').classes().join(' ')).not.toMatch(/red|warning/)
+      expect(find('delivery-chip').text()).toBe('')
+    })
+
+    it('tells the companion the moment one opens', async () => {
+      await choose(mixedRange)
+      await settle(SEND_DEBOUNCE_MS * 2)
+      expect(send).not.toHaveBeenCalled()
+      sidBox.ref!.value = SID
+      await settle()
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(find('selection-no-companion').exists()).toBe(false)
+    })
+  })
+
+  it('drops the record and the pending update when the companion closes', async () => {
+    await choose(mixedRange)
+    sidBox.ref!.value = null
+    await settle(SEND_DEBOUNCE_MS * 2)
+    expect(send).not.toHaveBeenCalled()
+    expect(selection().last).toBeNull()
+  })
+
+  it('Clear selection cancels a pending update and sends nothing (the row cannot be retracted)', async () => {
+    await choose(mixedRange)
+    await find('selection-clear').trigger('click')
+    await settle(SEND_DEBOUNCE_MS * 2)
+    expect(send).not.toHaveBeenCalled()
+    expect(find('review-selection-bar').exists()).toBe(false)
+  })
+
+  it('Clear after a delivery sends no replacement row', async () => {
+    await choose(mixedRange)
+    await settle()
+    await pushEvent(ev('delivered'))
+    await find('selection-clear').trigger('click')
+    await settle(SEND_DEBOUNCE_MS * 2)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  describe('while a turn is running in the companion', () => {
+    async function turnRunningOn(): Promise<void> {
+      await choose(mixedRange)
+      await settle()
+      await pushEvent(ev('delivered'))
+      await pushEvent(ev('asked'))
+    }
+
+    it('holds the update, and sends only the latest when the turn completes', async () => {
+      await turnRunningOn()
+      const first = selection().last!.selectionId
+      await choose(() => selection().select(SPEECH, 0, 4))
+      await settle()
+      await choose(() => selection().select(SPEECH, 0, 5))
+      await settle()
+      expect(send).toHaveBeenCalledTimes(1) // nothing new went out mid-turn
+      expect(chipText()).toBe(T('review.selection.state.queued')) // "Updating…": held
+      const latest = selection().live!
+      // the running turn belongs to the FIRST selection; its end releases the hold
+      await pushEvent({ selectionId: first, state: 'answered', at: 2 })
+      await flushPromises()
+      expect(send).toHaveBeenCalledTimes(2)
+      expect((send.mock.calls[1][0] as { selection: { id: string } }).selection.id).toBe(latest.id)
+    })
+
+    it('is released by a stopped, declined or failed turn just the same', async () => {
+      for (const end of ['turn-stopped', 'turn-declined', 'turn-failed'] as const) {
+        send.mockClear()
+        selection().reset()
+        await turnRunningOn()
+        const first = selection().last!.selectionId
+        await choose(() => selection().select(SPEECH, 0, 5))
+        await settle()
+        expect(send).toHaveBeenCalledTimes(1)
+        await pushEvent({ selectionId: first, state: end, at: 2 })
+        await flushPromises()
+        expect(send, end).toHaveBeenCalledTimes(2)
+      }
+    })
+
+    it('sends nothing at all if the selection is cleared before the turn ends', async () => {
+      await turnRunningOn()
+      const first = selection().last!.selectionId
+      await choose(() => selection().select(SPEECH, 0, 5))
+      await settle()
+      await find('selection-clear').trigger('click')
+      await pushEvent({ selectionId: first, state: 'answered', at: 2 })
+      await flushPromises()
+      expect(send).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not hold for a delivery that is not mid-turn', async () => {
+      await choose(mixedRange)
+      await settle()
+      await pushEvent(ev('delivered')) // delivered, nobody has asked anything
+      await choose(() => selection().select(SPEECH, 0, 5))
+      await settle()
+      expect(send).toHaveBeenCalledTimes(2)
+    })
   })
 })
 
 describe('U2b-AC-2 — Copy as text', () => {
   it('copies exactly what review:selection:compose returns', async () => {
-    await selectRange()
+    await choose(mixedRange)
     await find('selection-copy').trigger('click')
     await flushPromises()
     expect(compose).toHaveBeenCalledTimes(1)
@@ -238,7 +380,7 @@ describe('U2b-AC-2 — Copy as text', () => {
 
   it('works with no companion open, and sends nothing', async () => {
     sidBox.ref!.value = null
-    await selectRange()
+    await choose(mixedRange)
     await find('selection-copy').trigger('click')
     await flushPromises()
     expect(writeText).toHaveBeenCalledTimes(1)
@@ -246,7 +388,8 @@ describe('U2b-AC-2 — Copy as text', () => {
   })
 
   it('stays available in every §7 failure state except a moved head or base', async () => {
-    await selectRange()
+    await choose(mixedRange)
+    await settle()
     const sel = selection().live!
     const disabled = (): boolean => (find('selection-copy').element as HTMLButtonElement).disabled
     for (const code of Object.keys(REFUSAL_NEXT)) {
@@ -274,7 +417,7 @@ describe('U2b-AC-2 — Copy as text', () => {
       next: REFUSAL_NEXT['head-moved'],
       detail: 'a1b2c3d e4f5a6b'
     })
-    await selectRange()
+    await choose(mixedRange)
     await find('selection-copy').trigger('click')
     await flushPromises()
     expect(writeText).not.toHaveBeenCalled()
@@ -285,7 +428,7 @@ describe('U2b-AC-2 — Copy as text', () => {
 
   it('says so when the clipboard refuses, without a stack or an error message', async () => {
     writeText.mockRejectedValueOnce(new Error('NotAllowedError: secret internals'))
-    await selectRange()
+    await choose(mixedRange)
     await find('selection-copy').trigger('click')
     await flushPromises()
     expect(find('copy-failed').text()).toBe(T('review.selection.copyFailed'))
@@ -296,9 +439,15 @@ describe('U2b-AC-2 — Copy as text', () => {
 describe('U2b-AC-3 — every refusal and outcome renders, and nothing from main leaks', () => {
   const LEAK = 'LEAK-ME <b>from the mod</b> {{x}}'
 
+  /** Select, wait out the pause: the send happens and its result decides the chip. */
+  async function sendOnce(): Promise<void> {
+    await choose(mixedRange)
+    await settle()
+  }
+
   it('renders the closed sentence of every refusal returned by the send', async () => {
-    await selectRange()
     for (const code of Object.keys(REFUSAL_NEXT)) {
+      selection().reset()
       send.mockResolvedValueOnce({
         ok: false,
         refusal: code,
@@ -307,8 +456,7 @@ describe('U2b-AC-3 — every refusal and outcome renders, and nothing from main 
         detail: LEAK,
         message: LEAK
       })
-      // `no-companion` is the pre-send refusal of a missing companion; main also reports it.
-      await clickAsk()
+      await sendOnce()
       expect(chipText(), code).toContain(T(`review.selection.outcome.${code}`))
       expect(wrapper.text(), code).not.toContain('LEAK-ME')
       expect(wrapper.html(), code).not.toContain('<b>from the mod')
@@ -316,23 +464,23 @@ describe('U2b-AC-3 — every refusal and outcome renders, and nothing from main 
   })
 
   it('renders every NO_BINDING reason as its own sentence under the refusal', async () => {
-    await selectRange()
     for (const reason of NO_BINDING_REASONS) {
+      selection().reset()
       send.mockResolvedValueOnce({
         ok: false,
         refusal: 'NO_BINDING',
         reason,
         next: REFUSAL_NEXT.NO_BINDING
       })
-      await clickAsk()
+      await sendOnce()
       expect(find('delivery-reason').text(), reason).toBe(T(`review.selection.noBinding.${reason}`))
     }
   })
 
   it('renders every outcome main reports after queueing, including every dropped reason', async () => {
-    await selectRange()
     for (const code of Object.keys(OUTCOME_NEXT)) {
-      await clickAsk()
+      selection().reset()
+      await sendOnce()
       await pushEvent(
         ev('not-delivered', {
           code: code as never,
@@ -348,39 +496,47 @@ describe('U2b-AC-3 — every refusal and outcome renders, and nothing from main 
     }
   })
 
-  it('renders every delivery state', async () => {
-    await selectRange()
-    const expected: Array<[DeliveryState, string]> = [
-      ['queued', 'review.selection.state.queued'],
-      ['delivered', 'review.selection.state.delivered'],
-      ['asked', 'review.selection.state.asked'],
-      ['answered', 'review.selection.state.answered']
-    ]
-    await clickAsk()
-    for (const [state, key] of expected) {
-      if (state !== 'queued') await pushEvent(ev(state))
-      expect(chipText(), state).toContain(T(key))
+  it('renders every delivery state through the closed vocabulary', async () => {
+    const sees = T('review.selection.state.delivered')
+    // delivered, and everything the conversation does after it, reads the same
+    for (const chain of [
+      ['delivered'],
+      ['delivered', 'asked'],
+      ['delivered', 'asked', 'answered'],
+      ['delivered', 'asked', 'turn-stopped'],
+      ['delivered', 'asked', 'turn-declined'],
+      ['delivered', 'asked', 'turn-failed']
+    ] as DeliveryState[][]) {
+      selection().reset()
+      await sendOnce()
+      for (const state of chain) await pushEvent(ev(state))
+      expect(chipText(), chain.join('>')).toContain(sees)
     }
-    const finals: Array<[DeliveryState, string]> = [
-      ['turn-stopped', 'review.selection.state.stopped.aborted'],
-      ['turn-declined', 'review.selection.state.stopped.refusal'],
-      ['turn-failed', 'review.selection.state.stopped.error'],
+    for (const [state, key] of [
       ['cleared', 'review.selection.state.cleared'],
       ['ended', 'review.selection.state.ended']
-    ]
-    for (const [state, key] of finals) {
-      await clickAsk()
+    ] as Array<[DeliveryState, string]>) {
+      selection().reset()
+      await sendOnce()
       await pushEvent(ev('delivered'))
-      if (state.startsWith('turn-')) await pushEvent(ev('asked'))
       await pushEvent(ev(state))
       expect(chipText(), state).toContain(T(key))
     }
   })
 
+  it('a cleared conversation offers a re-send, which sends the live selection again', async () => {
+    await sendOnce()
+    await pushEvent(ev('delivered'))
+    await pushEvent(ev('cleared'))
+    expect(find('step-try-again').exists()).toBe(true)
+    await find('step-try-again').trigger('click')
+    await flushPromises()
+    expect(send).toHaveBeenCalledTimes(2)
+  })
+
   it('shows one fixed sentence when main reports a code this build lacks', async () => {
     send.mockResolvedValueOnce({ ok: false, refusal: 'FROM_THE_FUTURE', next: [], message: LEAK })
-    await selectRange()
-    await clickAsk()
+    await sendOnce()
     expect(chipText()).toContain(T('review.selection.outcome.unknown'))
     expect(wrapper.text()).not.toContain('FROM_THE_FUTURE')
     expect(wrapper.text()).not.toContain('LEAK-ME')
@@ -388,14 +544,12 @@ describe('U2b-AC-3 — every refusal and outcome renders, and nothing from main 
 
   it('shows the same fixed sentence when the call itself rejects', async () => {
     send.mockRejectedValueOnce(new Error('ipc exploded: /home/user/secret'))
-    await selectRange()
-    await clickAsk()
+    await sendOnce()
     expect(chipText()).toContain(T('review.selection.outcome.unknown'))
     expect(wrapper.text()).not.toContain('secret')
   })
 
   it('offers the next steps main named — and none it did not', async () => {
-    await selectRange()
     const cases: Array<[string, string[], string[]]> = [
       // [refusal, buttons expected, guidance expected]
       ['QUEUE_FULL', ['step-try-again'], []],
@@ -415,8 +569,9 @@ describe('U2b-AC-3 — every refusal and outcome renders, and nothing from main 
       'guide-reopen'
     ]
     for (const [code, buttons, guides] of cases) {
+      selection().reset()
       send.mockResolvedValueOnce({ ok: false, refusal: code, next: REFUSAL_NEXT[code as never] })
-      await clickAsk()
+      await sendOnce()
       for (const name of all) {
         expect(find(name).exists(), `${code} → ${name}`).toBe(
           buttons.includes(name) || guides.includes(name)
@@ -425,122 +580,208 @@ describe('U2b-AC-3 — every refusal and outcome renders, and nothing from main 
     }
   })
 
-  it('Try again sends the same selection again; Open Mods settings opens that tab', async () => {
-    await selectRange()
+  it('NO_BINDING: Open Mods settings only when the mod is off; a fresh companion otherwise', async () => {
+    const cases: Array<[string, boolean, boolean]> = [
+      // [reason, shows Open Mods settings, shows the fresh-companion guidance]
+      ['off', true, false],
+      ['not-claude', false, true],
+      ['unknown', false, true],
+      ['pre-disclosure', false, true],
+      ['cli-too-old', false, false],
+      ['cli-unknown', false, false]
+    ]
+    for (const [reason, mods, fresh] of cases) {
+      selection().reset()
+      // main answers with its single list for NO_BINDING every time, Mods settings included.
+      send.mockResolvedValueOnce({
+        ok: false,
+        refusal: 'NO_BINDING',
+        reason,
+        next: REFUSAL_NEXT.NO_BINDING
+      })
+      await sendOnce()
+      expect(find('step-open-mods').exists(), `${reason}: mods`).toBe(mods)
+      expect(find('guide-reopen').exists(), `${reason}: fresh companion`).toBe(fresh)
+      if (fresh) {
+        expect(find('guide-reopen').text()).toBe(
+          T('review.selection.guide.freshCompanion').replace('{action}', T('review.companion'))
+        )
+      }
+      expect(find('selection-copy').exists()).toBe(true)
+    }
+  })
+
+  it('Try again sends the selection again at once; Open Mods settings opens that tab', async () => {
     send.mockResolvedValueOnce({ ok: false, refusal: 'QUEUE_FULL', next: REFUSAL_NEXT.QUEUE_FULL })
-    await clickAsk()
+    await sendOnce()
     await find('step-try-again').trigger('click')
-    await flushPromises()
+    await flushPromises() // no pause: it is the operator's explicit retry
     expect(send).toHaveBeenCalledTimes(2)
     expect((send.mock.calls[1][0] as { selection: { id: string } }).selection.id).toBe(
       selection().live!.id
     )
 
+    selection().reset()
     send.mockResolvedValueOnce({
       ok: false,
       refusal: 'FEATURE_OFF',
       next: REFUSAL_NEXT.FEATURE_OFF
     })
-    await clickAsk()
+    await sendOnce()
     await find('step-open-mods').trigger('click')
     expect(useUiStore().settingsTab).toBe('mods')
   })
-
-  it('does not offer Try again once the live selection is another one', async () => {
-    await selectRange()
-    send.mockResolvedValueOnce({ ok: false, refusal: 'QUEUE_FULL', next: REFUSAL_NEXT.QUEUE_FULL })
-    await clickAsk()
-    selection().select(SPEECH, 1, 1)
-    await nextTick()
-    expect(find('step-try-again').exists()).toBe(false)
-    // The record names its own subject: the file and the range it was sent for.
-    expect(find('delivery-subject').text()).toBe('speech.ts · old L11 – new L12')
-  })
 })
 
-describe('U2b-AC-4 — answered only after asked', () => {
-  it('does not show "Answered" for an answer that skipped "asked"', async () => {
-    await selectRange()
-    await clickAsk()
-    await pushEvent(ev('answered'))
-    expect(chipText()).not.toContain(T('review.selection.state.answered'))
+describe('U2b-AC-4 — the chip says what the companion sees, and only that', () => {
+  async function delivered(): Promise<void> {
+    await choose(mixedRange)
+    await settle()
     await pushEvent(ev('delivered'))
-    await pushEvent(ev('answered'))
-    expect(chipText()).toContain(T('review.selection.state.delivered'))
+  }
+
+  it('says nothing about a question or an answer, however the conversation goes', async () => {
+    await delivered()
+    const words = /ask|answer|declin|stopp|reviewed|done|ok\b/i
+    expect(chipText()).not.toMatch(words)
     await pushEvent(ev('asked'))
+    expect(chipText()).not.toMatch(words)
     await pushEvent(ev('answered'))
-    expect(chipText()).toContain(T('review.selection.state.answered'))
-  })
-
-  it('stops at "Sent" when no turn event ever arrives', async () => {
-    await selectRange()
-    await clickAsk()
-    await pushEvent(ev('delivered'))
-    await flushPromises()
+    expect(chipText()).not.toMatch(words)
     expect(chipText()).toContain(T('review.selection.state.delivered'))
-    expect(chipText()).not.toContain(T('review.selection.state.asked'))
   })
 
-  it('never shows the "Sent" state for expired, lost or dropped', async () => {
-    await selectRange()
+  it('claims delivery only once the mod confirmed it', async () => {
+    await choose(mixedRange)
+    expect(chipText()).not.toContain(T('review.selection.state.delivered'))
+    await settle()
+    expect(chipText()).not.toContain(T('review.selection.state.delivered')) // queued, not confirmed
+    await pushEvent(ev('delivered'))
+    expect(chipText()).toContain(T('review.selection.state.delivered'))
+  })
+
+  it('never claims delivery for expired, lost or dropped', async () => {
     for (const code of Object.keys(OUTCOME_NEXT)) {
-      await clickAsk()
+      selection().reset()
+      await choose(mixedRange)
+      await settle()
       await pushEvent(ev('not-delivered', { code: code as never, next: [] }))
       expect(chipText(), code).not.toContain(T('review.selection.state.delivered'))
     }
   })
 
   it('ignores a state event for a selection that is no longer the record', async () => {
-    await selectRange()
-    await clickAsk()
+    await choose(mixedRange)
+    await settle()
     await pushEvent({ ...ev('delivered'), selectionId: 'sel_someone_else' })
     expect(chipText()).toContain(T('review.selection.state.queued'))
   })
 
-  it('keeps the chip after the selection is cleared — and the takeover closing drops it', async () => {
-    await selectRange()
-    await clickAsk()
-    await pushEvent(ev('delivered'))
-    await pushEvent(ev('asked'))
+  it('shows the chip only with a selection, and the takeover closing drops everything', async () => {
+    await delivered()
     selection().clear('user')
     await nextTick()
-    expect(find('selection-ask').exists()).toBe(false)
-    expect(chipText()).toContain(T('review.selection.state.asked'))
-    expect(find('delivery-subject').exists()).toBe(true)
-    await pushEvent({ selectionId: selection().last!.selectionId, state: 'answered', at: 2 })
-    expect(chipText()).toContain(T('review.selection.state.answered'))
-
+    expect(find('review-selection-bar').exists()).toBe(false)
+    await choose(mixedRange)
     selection().reset()
     await nextTick()
     expect(selection().last).toBeNull()
     expect(find('review-selection-bar').exists()).toBe(false)
-    // …and a late event after the reset has nothing to land on.
-    await pushEvent({ selectionId: 'sel_late', state: 'answered', at: 3 })
+    // a late event after the reset has nothing to land on
+    await pushEvent({ selectionId: 'sel_late', state: 'delivered', at: 3 })
     expect(selection().last).toBeNull()
+    // …and nothing is sent after a reset, even if the pause was running
+    await choose(mixedRange)
+    selection().reset()
+    send.mockClear()
+    await settle(SEND_DEBOUNCE_MS * 2)
+    expect(send).not.toHaveBeenCalled()
+  })
+})
+
+describe('mixed-side ranges — one range format, and honesty about the lines', () => {
+  it('writes a range the same way in the bar everywhere it appears', async () => {
+    for (const [pick, expected] of [
+      [mixedRange, 'old L11 – new L12'],
+      [sameSideRange, 'L11–12'],
+      [() => selection().selectFile(SPEECH), 'whole file']
+    ] as Array<[() => void, string]>) {
+      selection().reset()
+      await choose(pick)
+      expect(find('selection-range').text()).toBe(expected)
+    }
   })
 
-  it('Dismiss drops a finished record when nothing is selected', async () => {
-    await selectRange()
-    await clickAsk()
+  it('says plainly that a mixed-side range quotes no lines — live and once the companion has it', async () => {
+    const note = T('review.selection.mixedNote')
+    await choose(sameSideRange)
+    expect(find('selection-mixed').exists()).toBe(false)
+    await settle()
     await pushEvent(ev('delivered'))
-    selection().clear('user')
-    await nextTick()
-    await find('selection-dismiss').trigger('click')
-    expect(selection().last).toBeNull()
-    expect(find('review-selection-bar').exists()).toBe(false)
+    expect(find('delivery-mixed').exists()).toBe(false)
+
+    selection().reset()
+    await choose(mixedRange)
+    expect(find('selection-mixed').text()).toBe(note)
+    expect(find('delivery-mixed').exists()).toBe(false) // nothing has been sent yet
+    await settle()
+    expect(find('delivery-mixed').exists()).toBe(false) // queued, not confirmed
+    await pushEvent(ev('delivered'))
+    expect(find('delivery-mixed').text()).toBe(note)
+    await pushEvent(ev('asked'))
+    await pushEvent(ev('answered'))
+    expect(find('delivery-mixed').text()).toBe(note)
+
+    // …and it never claims lines for a send that failed
+    selection().reset()
+    send.mockResolvedValueOnce({ ok: false, refusal: 'QUEUE_FULL', next: REFUSAL_NEXT.QUEUE_FULL })
+    await choose(mixedRange)
+    await settle()
+    expect(find('delivery-mixed').exists()).toBe(false)
+  })
+})
+
+describe('U2b-AC-10 — the narrow layout keeps every action and the chip in the column', () => {
+  it('takes a full row by basis only in the row layout; in the column layout 100% would be a height', async () => {
+    await choose(mixedRange)
+    await settle()
+    await pushEvent(ev('delivered'))
+    const classes = (name: string): string[] => find(name).classes()
+    expect(classes('delivery-chip')).toContain('basis-full')
+    expect(classes('selection-hint')).toContain('basis-full')
+
+    // Column layout: the bar is `flex-col flex-wrap`, where `basis-full` is 100% of the HEIGHT and
+    // pushed the chip into a second, clipped column (seen live at a ~400px pane).
+    await wrapper.setProps({ narrow: true })
+    expect(find('review-selection-bar').classes()).toContain('flex-col')
+    expect(classes('delivery-chip')).not.toContain('basis-full')
+    expect(classes('selection-hint')).not.toContain('basis-full')
+    for (const name of ['selection-copy', 'selection-clear']) {
+      expect(find(name).exists(), name).toBe(true)
+      expect(find(name).classes().join(' '), name).not.toMatch(/\bhidden\b|sr-only/)
+    }
   })
 })
 
 describe('U2b-AC-5 — no count, ratio or percentage', () => {
+  const FROM_QUEUED = (state: DeliveryState): ((r: DeliveryRecord) => DeliveryRecord) => {
+    return (r) => {
+      let rec = applyStateEvent(r, { selectionId: r.selectionId, state: 'delivered', at: 1 })
+      if (state === 'delivered') return rec
+      if (state !== 'cleared' && state !== 'ended') {
+        rec = applyStateEvent(rec, { selectionId: r.selectionId, state: 'asked', at: 1 })
+      }
+      return state === 'asked'
+        ? rec
+        : applyStateEvent(rec, { selectionId: r.selectionId, state, at: 1 })
+    }
+  }
   const STATES: Array<[string, (rec: DeliveryRecord) => DeliveryRecord]> = [
     ['no delivery', () => null as never],
     ['queued', (r) => r],
-    [
-      'delivered',
-      (r) => applyStateEvent(r, { selectionId: r.selectionId, state: 'delivered', at: 1 })
-    ],
     ...(
       [
+        'delivered',
         'asked',
         'answered',
         'turn-stopped',
@@ -548,19 +789,8 @@ describe('U2b-AC-5 — no count, ratio or percentage', () => {
         'turn-failed',
         'cleared',
         'ended'
-      ] as const
-    ).map((state): [string, (rec: DeliveryRecord) => DeliveryRecord] => [
-      state,
-      (r) => {
-        let rec = applyStateEvent(r, { selectionId: r.selectionId, state: 'delivered', at: 1 })
-        if (state !== 'cleared' && state !== 'ended') {
-          rec = applyStateEvent(rec, { selectionId: r.selectionId, state: 'asked', at: 1 })
-        }
-        return state === 'asked'
-          ? rec
-          : applyStateEvent(rec, { selectionId: r.selectionId, state, at: 1 })
-      }
-    ]),
+      ] as DeliveryState[]
+    ).map((s): [string, (rec: DeliveryRecord) => DeliveryRecord] => [s, FROM_QUEUED(s)]),
     ...Object.keys(OUTCOME_NEXT).map((code): [string, (rec: DeliveryRecord) => DeliveryRecord] => [
       `outcome ${code}`,
       (r) =>
@@ -577,45 +807,31 @@ describe('U2b-AC-5 — no count, ratio or percentage', () => {
     ])
   ]
 
-  it('holds across {no selection, line, file} × {every delivery state, outcome and refusal}', async () => {
+  it('holds across {no selection, line, range, mixed range, file} × {every delivery state, outcome and refusal}', async () => {
     const shapes: Array<[string, () => void]> = [
       ['no selection', () => selection().clear('user')],
       ['line', () => selection().select(SPEECH, 0, 2)],
-      [
-        'range',
-        () => {
-          selection().select(SPEECH, 0, 1)
-          selection().extend(SPEECH, 0, 3)
-        }
-      ],
+      ['range', sameSideRange],
+      ['mixed range', mixedRange],
       ['file', () => selection().selectFile(SPEECH)]
     ]
     let rendered = 0
     for (const [shapeName, shape] of shapes) {
       for (const [stateName, make] of STATES) {
         selection().reset()
-        selection().select(SPEECH, 0, 1)
-        const base = startDelivery(selection().live!)
-        const record = stateName === 'no delivery' ? null : make(base)
-        selection().last = record
-        shape()
+        await choose(shape)
+        const live = selection().live
+        const record = live && stateName !== 'no delivery' ? make(startDelivery(live)) : null
+        // the watcher has run (it set "Updating…"); now put the state under test in its place
+        if (live) selection().last = record
         await nextTick()
         const text = find('review-selection-bar').exists()
           ? find('review-selection-bar').text()
           : ''
         const own = new Set<number>()
-        const live = selection().live
         if (live?.subjectType === 'LINE') {
           own.add(live.line!)
           own.add(live.startLine ?? live.line!)
-        }
-        if (record && record.range.kind !== 'file') {
-          const r = record.range
-          if (r.kind === 'line') own.add(r.line)
-          else {
-            own.add(r.start)
-            own.add(r.end)
-          }
         }
         expect(text, `${shapeName} × ${stateName}`).not.toMatch(/\d\s*\/\s*\d/)
         expect(text, `${shapeName} × ${stateName}`).not.toContain('%')
@@ -625,13 +841,13 @@ describe('U2b-AC-5 — no count, ratio or percentage', () => {
         if (text) rendered += 1
       }
     }
-    // The matrix actually rendered the bar for most cells (the empty one is the control).
-    expect(rendered).toBeGreaterThan(shapes.length * (STATES.length - 1))
+    // every shape but "no selection" renders the bar, for every state
+    expect(rendered).toBe((shapes.length - 1) * STATES.length)
   })
 
   it('uses the neutral tone for every state: no success or failure colour on the chip', async () => {
-    await selectRange()
-    await clickAsk()
+    await choose(mixedRange)
+    await settle()
     for (const state of ['delivered', 'asked', 'answered'] as const) {
       await pushEvent(ev(state))
       const cls = find('delivery-chip').classes().join(' ')

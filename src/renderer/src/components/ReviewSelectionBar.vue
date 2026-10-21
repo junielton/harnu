@@ -87,35 +87,34 @@ const hint = computed(() => {
 
 // ── Delivery (U2b) ─────────────────────────────────────────────────────────
 
-const rec = computed(() => selection.last)
+const rec = computed(() => (selection.live ? selection.last : null))
 const chip = computed(() => (rec.value ? chipOf(rec.value) : null))
-/** The record is about the live selection (so Try again / Clear and re-select act on it). */
-const aboutLive = computed(() => !!rec.value && selection.live?.id === rec.value.selectionId)
-/** The chip names its subject once it is no longer the selection on screen. */
-const subjectText = computed(() => {
-  const r = rec.value
-  if (!r || aboutLive.value) return ''
-  const name = r.path.split('/').pop() || r.path
-  return `${name} · ${describeRange(r.range)}`
-})
-
-const noCompanion = computed(() => selection.companionSid === null)
-const askDisabled = computed(() => !selection.live || noCompanion.value || selection.sending)
-/** Shown beside the buttons, unless the chip already says the same thing. */
-const askReason = computed(
-  () => !!selection.live && noCompanion.value && rec.value?.code !== 'no-companion'
+/** A mixed-side range sends no lines (main cannot recover the rows between its two ends). */
+const liveMixed = computed(() => !!selection.live && rangeLabelOf(selection.live).kind === 'mixed')
+/** The companion has the row, whatever has happened in its conversation since. */
+const SEEN_PHASES = new Set([
+  'delivered',
+  'asked',
+  'answered',
+  'turn-stopped',
+  'turn-declined',
+  'turn-failed'
+])
+const sentMixed = computed(
+  () => !!rec.value && rec.value.range.kind === 'mixed' && SEEN_PHASES.has(rec.value.phase)
 )
-const copyDisabled = computed(() => !selection.live || (aboutLive.value && copyWithheld(rec.value)))
+
+/** With no companion open nothing is sent: a quiet line says so, no error styling. */
+const noCompanion = computed(() => !!selection.live && selection.companionSid === null)
+const copyDisabled = computed(() => !selection.live || copyWithheld(rec.value))
 
 const steps = computed(() => (rec.value ? stepsFor(rec.value) : []))
 /** `reselect` is a button after a moved head and plain guidance after a refused selection. */
 const reselectIsGuide = computed(
   () => rec.value?.code === 'BAD_ARGS' || rec.value?.code === 'CMD_PRECONDITION'
 )
-const showTryAgain = computed(() => steps.value.includes('try-again') && aboutLive.value)
-const showReselect = computed(
-  () => steps.value.includes('reselect') && !reselectIsGuide.value && aboutLive.value
-)
+const showTryAgain = computed(() => steps.value.includes('try-again'))
+const showReselect = computed(() => steps.value.includes('reselect') && !reselectIsGuide.value)
 const showNarrow = computed(() => steps.value.includes('reselect') && reselectIsGuide.value)
 
 const copyState = ref<'idle' | 'copied' | 'failed'>('idle')
@@ -136,7 +135,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section
-    v-if="selection.live || selection.notice || selection.last"
+    v-if="selection.live || selection.notice"
     data-test="review-selection-bar"
     class="anim-fade-in flex flex-none flex-wrap gap-x-3 gap-y-1.5 rounded border border-border bg-surface px-3 py-2 text-[12px] text-text-2 shadow-pop"
     :class="narrow ? 'flex-col items-stretch' : 'items-center'"
@@ -155,15 +154,6 @@ onBeforeUnmount(() => {
 
     <div class="flex flex-wrap items-center gap-[7px]" :class="narrow ? '' : 'ml-auto'">
       <template v-if="selection.live">
-        <Button
-          variant="primary"
-          data-test="selection-ask"
-          :disabled="askDisabled"
-          :aria-describedby="askReason ? 'review-selection-ask-reason' : undefined"
-          @click="selection.send()"
-        >
-          {{ t('review.selection.action.ask') }}
-        </Button>
         <Button data-test="selection-copy" :disabled="copyDisabled" @click="onCopy()">
           {{
             copyState === 'copied'
@@ -171,14 +161,15 @@ onBeforeUnmount(() => {
               : t('review.selection.action.copy')
           }}
         </Button>
+        <span v-if="liveMixed" class="text-[11.5px] text-text-3" data-test="selection-mixed">{{
+          t('review.selection.mixedNote')
+        }}</span>
         <span
-          v-if="askReason"
-          id="review-selection-ask-reason"
+          v-if="noCompanion"
           class="text-[11.5px] text-text-3"
-          data-test="selection-ask-reason"
+          data-test="selection-no-companion"
+          >{{ t('review.selection.outcome.no-companion') }}</span
         >
-          {{ t('review.selection.outcome.no-companion') }}
-        </span>
       </template>
       <Button
         v-if="selection.live"
@@ -197,19 +188,17 @@ onBeforeUnmount(() => {
          every state (no success colour, no icon). Always in the DOM for the live region. -->
     <div
       role="status"
-      class="flex basis-full flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-text-2 empty:hidden"
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-text-2 empty:hidden"
+      :class="narrow ? '' : 'basis-full'"
       data-test="delivery-chip"
     >
       <template v-if="chip">
-        <span
-          v-if="subjectText"
-          class="truncate font-mono text-text"
-          data-test="delivery-subject"
-          >{{ subjectText }}</span
-        >
         <span data-test="delivery-state">{{ t(chip.key) }}</span>
         <span v-if="chip.reasonKey" class="text-[11.5px] text-text-3" data-test="delivery-reason">{{
           t(chip.reasonKey)
+        }}</span>
+        <span v-if="sentMixed" class="text-[11.5px] text-text-3" data-test="delivery-mixed">{{
+          t('review.selection.mixedNote')
         }}</span>
         <Button
           v-if="showTryAgain"
@@ -248,7 +237,7 @@ onBeforeUnmount(() => {
           v-if="steps.includes('reopen-companion')"
           class="text-[11.5px] text-text-3"
           data-test="guide-reopen"
-          >{{ t('review.selection.action.reopenCompanion') }}</span
+          >{{ t('review.selection.guide.freshCompanion', { action: t('review.companion') }) }}</span
         >
       </template>
       <span
@@ -263,7 +252,8 @@ onBeforeUnmount(() => {
          `empty:hidden` keeps it from taking a row while it has nothing to say. -->
     <p
       role="status"
-      class="basis-full text-[11.5px] text-text-3 empty:hidden"
+      class="text-[11.5px] text-text-3 empty:hidden"
+      :class="narrow ? '' : 'basis-full'"
       data-test="selection-hint"
     >
       {{ hint }}

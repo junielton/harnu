@@ -3791,7 +3791,6 @@
         "baseMoved": "A base mudou ({from} → {to}). Seleção limpa."
       },
       "action": {
-        "ask": "Perguntar sobre isto",
         "copy": "Copiar como texto",
         "clear": "Limpar seleção",
         "dismiss": "Dispensar",
@@ -3803,15 +3802,8 @@
         "narrow": "Reduzir a seleção"
       },
       "state": {
-        "queued": "Enviando…",
-        "delivered": "Enviado — faça sua pergunta no companion",
-        "asked": "Perguntado — aguardando a resposta",
-        "answered": "Respondido",
-        "stopped": {
-          "aborted": "Esse turno foi interrompido",
-          "refusal": "O companion recusou esse turno",
-          "error": "Esse turno falhou"
-        },
+        "queued": "Atualizando…",
+        "delivered": "O companion vê isto",
         "cleared": "A conversa foi limpa",
         "ended": "O companion foi fechado"
       },
@@ -3862,8 +3854,10 @@
       "copied": "Copiado",
       "copyFailed": "Não foi possível copiar para a área de transferência",
       "guide": {
-        "refresh": "Use “{action}” no cabeçalho da revisão"
-      }
+        "refresh": "Use “{action}” no cabeçalho da revisão",
+        "freshCompanion": "Feche este companion e use “{action}” no cabeçalho da revisão"
+      },
+      "mixedNote": "Linhas não incluídas — o intervalo abrange os dois lados"
     },
     "truncated": "Este diff foi cortado para manter o painel responsivo: {n} arquivos não aparecem, de {rows} linhas alteradas no total.",
     "receipt": {
