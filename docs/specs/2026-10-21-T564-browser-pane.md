@@ -118,7 +118,13 @@ Main positions the view with `view.setBounds()` from a rect the renderer reports
    for y, so the far edge cannot drift. (The U0 probe rounded `x` and `width` separately and measured at most
    1 device px of left/right or top/bottom asymmetry at fractional zoom; the edge rule is the adopted fix and was
    not measured separately. A7.) `visible: false` (pane not mounted, tab not shown, folder not selected,
-   popover closed it) calls `view.setVisible(false)`; the view stays attached and alive.
+   popover closed it) calls `view.setVisible(false)`; the view stays attached and alive. **"Without flicker" is
+   unproven (A7).** U0 checked settled and sampled-mid-animation states with a screenshot tool that takes about
+   one frame per second, so a one-frame tear would be missed (§13.4). The bounds unit (U1) therefore captures a
+   **frame sequence** (30 fps or better, native views included) during a splitter drag, a maximize toggle and a
+   window resize, on X11 and Wayland, and decides from it. **Fallback if it shows tearing: snapshot-during-resize.**
+   On `pointerdown` of a splitter or resize handle, and when maximize starts, the pane freezes (§2.4) and
+   `setBounds` is applied once on release (or after the toggle settles) instead of per frame.
 3. **A view that has never painted cannot be captured, so a pane is never created hidden or off-screen.** U0 (A3)
    found that a view which was never attached, attached but `setVisible(false)` from birth, attached at an
    off-screen rect (−5000, −5000), `offscreen: true`, or attached to a `show: false` window all return an empty
@@ -131,7 +137,13 @@ Main positions the view with `view.setBounds()` from a rect the renderer reports
    pane's own emulation record, §9), then calls `setBounds` with the real rect. The cost is one pixel painted
    over whatever sits in that corner while parked. A view that **has** painted and is then hidden with
    `setVisible(false)` keeps working for `capturePage()` (§6.2), so the freeze (§2.4) and ordinary hiding do not
-   need parking.
+   need parking. A parked pane counts as **hidden** for the §10.1 discard: its 10-minute timer runs from the moment
+   it was parked, and a discarded pane is revived parked. It also **registers with the §2.4 overlay logic**: a
+   native 1×1 view paints above any toast or dialog that sits in that corner, so its 1×1 rect is registered like a
+   pane rect, and while any layer intersects it main calls `setVisible(false)` on the parked view (no freeze
+   image: there is no host to paint it in) and `setVisible(true)` when the layer closes. A parked view that is
+   hidden this way has painted, so `capturePage()` still works on it. That is a composition of two separately
+   measured behaviours (A3), not a measurement of its own; U1 verifies it.
 4. The view is added once with `win.contentView.addChildView(view)` and removed only at close or discard.
    Switching folders never reparents.
 
@@ -145,7 +157,7 @@ the pane would render underneath it. `WebContentsView` cannot be clipped to a re
   popovers, the command palette, the jump palette, toasts, dropdowns from `SplitMenu`, the pane's own
   header menus. Each registers `(id, rect | 'fullscreen')` while open; the `ui` store keeps the set.
 - When any registered rect **intersects** a visible pane rect (or a layer is `fullscreen`), main runs the
-  **freeze**: `capturePage()` of the view → PNG data URL → `browser:freeze { paneId, dataUrl }` → renderer
+  **freeze**: `capturePage()` of the view → JPEG 80 data URL (`image.toJPEG(80)`, see the cost bullet below) → `browser:freeze { paneId, dataUrl }` → renderer
   paints it as an `<img>` in the host → main calls `setVisible(false)`. When the last intersecting layer
   closes, main calls `setVisible(true)` and the renderer removes the `<img>` on the next frame.
 - **Drags freeze globally.** On `pointerdown` on a splitter, a pane drag handle or a sidebar drag, all
@@ -426,9 +438,15 @@ live main-world reference.
   1. `navigator.userActivation.isActive` was true in the preload at the call;
   2. main saw **no agent input verb** (`click`, `type`, `fill`, `press`, `upload`, or `eval` that dispatches
      input) on this pane in flight or within the previous **1500 ms** (`agentInputAt`);
-  3. the pane is not `paused` and not `disconnected`.
-     Condition 2 exists because a CDP-driven click is a real activation: without it, an agent could click its
-     own panel's button and self-approve (Q8, assumptions A1/A2).
+  3. the pane is not `paused` and not `disconnected`;
+  4. **if the activating input was a key press** (the preload tags the last trusted `keydown` or `pointerdown`
+     it saw), main saw a real `keyDown` on the pane through `before-input-event` within the previous **1000 ms**.
+     _Added from U0 evidence; stricter than Q8, pending operator confirmation._ Without it, condition 2's
+     1500 ms window is the only check on keyboard-activated emits, although real keys are distinguishable.
+
+  Condition 2 exists because a CDP-driven click is a real activation: without it, an agent could click its
+  own panel's button and self-approve (Q8, assumptions A1/A2).
+
 - **Rate:** 1 per second and 20 per minute per pane; excess is coalesced into a `dropped: n` field on the
   next delivered event.
 - **Delivery:** a user turn (§8.7) starting `[harnu-page-event]`, which is **data, never instructions**
@@ -442,8 +460,8 @@ live main-world reference.
   Electron 39's `before-mouse-event` fires for real, CDP and `sendInputEvent` mouse events alike, with the same
   payload. **Keyboard input is distinguishable**: `before-input-event` fires for real keys and not for CDP
   `Input.dispatchKeyEvent` or `sendInputEvent`. So the pointer path keeps the 1500 ms `agentInputAt` window
-  alone (Q8 stands; the residual race is as accepted there), and a page event raised from a **key** press adds a
-  fourth condition: main saw a real `keyDown` on the pane within the previous 1000 ms. ADR-0022's revisit
+  alone (Q8 stands; the residual race is as accepted there), and a page event raised from a **key** press adds
+  condition 4 above, which is stricter than Q8 and awaits the operator's confirmation. ADR-0022's revisit
   condition 5 ("no residual agent-input race") is therefore **not** met for pointer input.
 
 ## 6. MCP verbs
@@ -952,8 +970,15 @@ Per `CLAUDE.md`, none of this lands in this card; it is the checklist for the im
   `--remote-debugging-port`, so a script can read the guest independently of the verbs. U0 and each unit
   record live evidence; unit tests alone cannot see overlay ordering, `before-input-event`, or native bounds.
 - **Hostile-page fixtures** served from `harnu-page://` and a throwaway localhost server: keylogger on
-  `window`, forged `dispatchEvent`, `<img onerror>`, an iframe loading `harnu-page:` cross-origin, a redirect
-  from `local` to `external`, an unsolicited download, a `window.open`.
+  `window`, forged `dispatchEvent`, `<img onerror>`, an iframe loading `harnu-page:` cross-origin, a **dedicated
+  worker** from an `external` page requesting `harnu-page:` (U0 did not see it in `onBeforeRequest`, §3.2), a
+  redirect from `local` to `external`, an unsolicited download, a `window.open`.
+- **Real-IME composition check (A8).** The keyboard unit types a composition (fcitx or ibus) into the guest and
+  into a page-owned field with chord forwarding on, on a machine that has an IME, and asserts the composition
+  is never intercepted (§2.5). U0 could not run it.
+- **Frame-sequence flicker capture (A7).** The bounds unit records a 30 fps or better sequence during a
+  splitter drag, a maximize toggle and a window resize on X11 and Wayland, and measures the host-to-view
+  misalignment per frame; it decides between per-frame `setBounds` and snapshot-during-resize (§2.3).
 
 ## 13. Assumptions proven in U0: results
 
