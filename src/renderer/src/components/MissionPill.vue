@@ -7,45 +7,64 @@
  * nothing when the selected session owns no open mission (`no-mission` is a
  * state, not a gap).
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Check, ListChecks } from 'lucide-vue-next'
 import { headlineText, PILL_TONE_CLASS, type MissionState } from '../lib/mission-view'
 import { useMissionsStore } from '../stores/missions'
+import { useUiStore } from '../stores/ui'
 import MissionPopover from './MissionPopover.vue'
 
 const props = defineProps<{ sessionId: string }>()
 
 const { t } = useI18n()
 const missions = useMissionsStore()
+const ui = useUiStore()
 missions.ensureStarted()
 
 const view = computed(() => missions.viewForSession(props.sessionId))
 const model = computed(() => missions.modelForSession(props.sessionId))
 
 const rootEl = ref<HTMLElement | null>(null)
-const open = ref(false)
+// The open flag lives in the ui store (T486 U4a) so `view.missionProgress` opens
+// it and the App's Esc binding can see it. The pill is the anchor: it renders
+// only while the session owns an open mission.
+const open = computed(() => ui.popovers.missionProgress)
+watch(
+  () => !!(view.value && model.value),
+  (present) => ui.setPopoverAnchor('missionProgress', present),
+  { immediate: true }
+)
+onBeforeUnmount(() => ui.setPopoverAnchor('missionProgress', false))
 // The end dialog teleports to <body>: a click on it is not "outside".
-onClickOutside(rootEl, () => (open.value = false), { ignore: ['[data-mission-close-confirm]'] })
-onKeyStroke('Escape', () => (open.value = false))
+onClickOutside(rootEl, () => ui.closePopover('missionProgress'), {
+  ignore: ['[data-mission-close-confirm]']
+})
+onKeyStroke('Escape', () => ui.closePopover('missionProgress'))
 // A different session (or its mission going away) closes the popover.
 watch(
   () => `${props.sessionId}|${view.value?.mission.id ?? ''}`,
-  () => (open.value = false)
+  () => ui.closePopover('missionProgress')
 )
 
 /** Popover width (design.md §6) — flip to right-aligned when it would overflow. */
 const POPOVER_W = 400
 const alignRight = ref(false)
 
-function toggle(): void {
-  open.value = !open.value
-  if (!open.value) return
-  const left = rootEl.value?.getBoundingClientRect().left ?? 0
-  alignRight.value = left + POPOVER_W > window.innerWidth - 8
-  void missions.refresh()
-}
+// Every open — the pill's click, `view.missionProgress`, an Activity row — places
+// the popover and refreshes the mission. `sync` so the placement is set before
+// the popover first renders.
+watch(
+  open,
+  (isOpen) => {
+    if (!isOpen) return
+    const left = rootEl.value?.getBoundingClientRect().left ?? 0
+    alignRight.value = left + POPOVER_W > window.innerWidth - 8
+    void missions.refresh()
+  },
+  { flush: 'sync' }
+)
 
 // An Activity row asked for this mission's popover (BUG-173). The request can
 // predate this pill (the owner was just selected) or the mission's view, so the
@@ -57,7 +76,7 @@ watch(
   ([req, id]) => {
     if (!req || !id || req.missionId !== id) return
     if (!missions.consumePopoverRequest()) return
-    if (!open.value) toggle()
+    ui.openPopover('missionProgress')
   },
   { immediate: true, flush: 'post' }
 )
@@ -105,7 +124,7 @@ const title = computed(() =>
       :aria-expanded="open"
       :data-dsqa="`topbar-pill--${model.tone}`"
       :data-state="model.state"
-      @click="toggle"
+      @click="ui.togglePopover('missionProgress')"
     >
       <component :is="done ? Check : ListChecks" :size="10" :stroke-width="1.8" class="shrink-0" />
       <template v-if="label">{{ label }}</template>

@@ -419,6 +419,11 @@ const showHelperStack = computed(
  * Suppressed during Onboarding only, where there is no fleet to have a queue for.
  */
 const showInboxRail = computed(() => !showOnboarding.value && layout.inboxRailState !== 'hidden')
+// The rail's full header (order toggle, filter, "Show all") renders only here —
+// the minimized strip and the hidden rail have none of those buttons.
+const inboxRailExpanded = computed(
+  () => showInboxRail.value && layout.inboxRailState === 'expanded'
+)
 const inboxRailPx = computed(() => inboxRailWidthFor(layout.inboxRailState, layout.inboxRailWidth))
 
 // Reveal-on-appear: spawning the first pane into an empty worktree (Split, fork,
@@ -574,6 +579,76 @@ useShortcuts(
       // T153: the sidebar's folders↔board toggle was removed — retarget this
       // shortcut to the Fleet rail (same helper `⌘⇧A`/`inbox.toggle` calls).
       handler: () => layout.toggleInboxRail()
+    },
+    // --- T486 §3.5: the Fleet rail's header buttons and the Topbar / footer
+    // popovers. Unbound. Each runs its button's own call; a popover is enabled
+    // only while its button is rendered (it anchors there), and its open flag
+    // lives in the ui store, so the popover's own Esc still closes it.
+    {
+      // Expand (never toggle) — the minimized strip's button and "Open approvals".
+      id: 'inbox.open',
+      scope: 'global',
+      keys: kb('inbox.open'),
+      handler: () => layout.setInboxRailState('expanded')
+    },
+    {
+      // Its button is in the expanded rail's header only.
+      id: 'inbox.toggleOrder',
+      scope: 'global',
+      keys: kb('inbox.toggleOrder'),
+      enabled: () => inboxRailExpanded.value,
+      handler: () => layout.toggleInboxRailOrder()
+    },
+    {
+      id: 'inbox.filter',
+      scope: 'global',
+      keys: kb('inbox.filter'),
+      enabled: () => ui.popoverAnchors.inboxFilter,
+      handler: () => ui.togglePopover('inboxFilter')
+    },
+    {
+      // The "Show all" buttons render only in the expanded rail, while a state
+      // is filtered out.
+      id: 'inbox.showAll',
+      scope: 'global',
+      keys: kb('inbox.showAll'),
+      enabled: () => inboxRailExpanded.value && layout.inboxRailHiddenStates.size > 0,
+      handler: () => layout.clearInboxRailStateFilter()
+    },
+    {
+      id: 'view.activity',
+      scope: 'global',
+      keys: kb('view.activity'),
+      enabled: () => ui.popoverAnchors.activity,
+      handler: () => ui.togglePopover('activity')
+    },
+    {
+      id: 'view.missionProgress',
+      scope: 'global',
+      keys: kb('view.missionProgress'),
+      enabled: () => ui.popoverAnchors.missionProgress,
+      handler: () => ui.togglePopover('missionProgress')
+    },
+    {
+      id: 'view.pastedImages',
+      scope: 'global',
+      keys: kb('view.pastedImages'),
+      enabled: () => ui.popoverAnchors.pastedImages,
+      handler: () => ui.togglePopover('pastedImages')
+    },
+    {
+      id: 'view.claudeStatus',
+      scope: 'global',
+      keys: kb('view.claudeStatus'),
+      enabled: () => ui.popoverAnchors.claudeStatus,
+      handler: () => ui.togglePopover('claudeStatus')
+    },
+    {
+      id: 'view.usagePanel',
+      scope: 'global',
+      keys: kb('view.usagePanel'),
+      enabled: () => ui.popoverAnchors.usagePanel,
+      handler: () => ui.togglePopover('usagePanel')
     },
     {
       id: 'view.toggleSidebar',
