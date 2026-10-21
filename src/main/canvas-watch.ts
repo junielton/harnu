@@ -7,7 +7,8 @@
  *    canvas open right now); the watcher only subscribes chokidar to paths with
  *    a ref > 0.
  *  - a self-write fingerprint per path — when the PANE's own Save writes a
- *    canvas, `canvas-write.ts` records a hash of the exact bytes it wrote, so the
+ *    canvas, `canvas-write.ts` records a hash of the exact bytes it wrote (and the
+ *    one before it, until the new Save lands, BUG-214), so the
  *    `change` event that same rename fires does not loop back to the pane that
  *    just saved as a false "changed on disk" push. Only the pane's own Save
  *    records one; an agent's `draw_canvas` never does, so an open pane always
@@ -39,8 +40,21 @@ import { checkCanvasPathAllowed } from './canvas-read'
 const refCounts = new Map<string, number>()
 /** Of those refs, how many each identified pane holds (`paneId` = the pane's `writerId`). */
 const paneRefs = new Map<string, Map<string, number>>()
-/** Hash of the bytes a pane's own last Save wrote, per path, and which pane wrote them. */
-const selfWrites = new Map<string, { hash: string; writerId?: string }>()
+/** One Save by a pane: the hash of the bytes it wrote, and which pane wrote them. */
+interface SavedBytes {
+  hash: string
+  writerId?: string
+}
+/** What the panes' own Saves left on a path (see {@link recordCanvasSelfWrite}). */
+interface SelfWrite {
+  /** The newest Save. */
+  current: SavedBytes
+  /** The Save before it — only meaningful while a newer Save is in flight. */
+  previous?: SavedBytes
+  /** Saves recorded but not yet landed (their rename has not resolved). */
+  inFlight: number
+}
+const selfWrites = new Map<string, SelfWrite>()
 
 function fingerprint(bytes: string | Buffer): string {
   return createHash('sha256').update(bytes).digest('hex')
@@ -103,26 +117,99 @@ export function removeCanvasRef(path: string, paneId?: string): 'last' | 'more' 
  * by what is actually on disk when the event is handled cannot make that mistake.
  */
 export function recordCanvasSelfWrite(path: string, body: string, writerId?: string): void {
-  selfWrites.set(path, { hash: fingerprint(body), writerId })
+  const before = selfWrites.get(path)
+  selfWrites.set(path, {
+    current: { hash: fingerprint(body), writerId },
+    previous: before?.current,
+    inFlight: (before?.inFlight ?? 0) + 1
+  })
 }
 
 /**
- * Is `current` — what is on disk right now — exactly what the pane last wrote to
- * `path`? True means the event is the pane's own echo and should be swallowed.
- * Anything else (including a missing file) is somebody else's change, and it
- * clears the fingerprint: from then on the pane's last write is history.
+ * The Save recorded by {@link recordCanvasSelfWrite} has finished: its rename landed
+ * (`landed`) or it failed and the file still holds the Save before it. From here on only
+ * the newest landed Save counts as a pane's own echo.
+ *
+ * Between the record and this call the file holds either the previous Save or the new
+ * one, and a chokidar event for the previous Save — held back by `awaitWriteFinish` — can
+ * be handled in that window (BUG-214). {@link consumeCanvasSelfWrite} swallows it.
  */
-export function consumeCanvasSuppression(path: string, current: Buffer | null): boolean {
-  const mine = selfWrites.get(path)
-  if (mine === undefined) return false
-  if (current !== null && fingerprint(current) === mine.hash) return true
-  selfWrites.delete(path)
-  return false
+export function settleCanvasSelfWrite(path: string, landed: boolean): void {
+  const entry = selfWrites.get(path)
+  if (!entry) return
+  entry.inFlight = Math.max(0, entry.inFlight - 1)
+  if (!landed) {
+    // The rename never landed, so the file still holds the previous Save (if any).
+    if (entry.previous === undefined) {
+      selfWrites.delete(path)
+      return
+    }
+    entry.current = entry.previous
+  }
+  // With nothing in flight the previous Save is history: its bytes turning up again are
+  // somebody else restoring them, not an echo.
+  if (entry.inFlight === 0) entry.previous = undefined
 }
 
-/** The pane that wrote the bytes `consumeCanvasSuppression` last matched on `path`. */
-export function canvasSelfWriter(path: string): string | undefined {
-  return selfWrites.get(path)?.writerId
+/** What {@link canvasSuppressionSnapshot} saw when a read of the file began. */
+export interface CanvasSuppressionSnapshot {
+  entry: SelfWrite
+  /** The previous Save, set only if a newer Save was in flight at that moment. */
+  previous?: SavedBytes
+}
+
+/**
+ * Take this BEFORE reading the file, and hand it to {@link consumeCanvasSelfWrite}.
+ * The read is async: it can open the file while a newer Save is in flight (and get the
+ * previous Save's bytes) yet finish after that Save settled — judged by the state at the
+ * end of the read alone, the previous Save's echo would look foreign (BUG-214).
+ */
+export function canvasSuppressionSnapshot(path: string): CanvasSuppressionSnapshot | undefined {
+  const entry = selfWrites.get(path)
+  if (entry === undefined) return undefined
+  return { entry, previous: entry.inFlight > 0 ? entry.previous : undefined }
+}
+
+/**
+ * Is `current` — what is on disk right now — exactly what a pane's own Save wrote
+ * to `path`? A match means the event is that pane's echo, and returns the Save it
+ * matched so the echo is tagged with ITS writer. While a newer Save is in flight
+ * the Save before it counts too: its echo can arrive after the newer Save was
+ * recorded and before its rename landed. `atReadStart` extends that to a read that
+ * began inside the window and finished after it (same record only).
+ * Anything else (including a missing file) is somebody else's change, and it
+ * clears the fingerprint: from then on the panes' last writes are history.
+ */
+export function consumeCanvasSelfWrite(
+  path: string,
+  current: Buffer | null,
+  atReadStart?: CanvasSuppressionSnapshot
+): { writerId?: string } | undefined {
+  const mine = selfWrites.get(path)
+  if (mine === undefined) return undefined
+  if (current !== null) {
+    const hash = fingerprint(current)
+    const matched =
+      hash === mine.current.hash
+        ? mine.current
+        : mine.inFlight > 0 && hash === mine.previous?.hash
+          ? mine.previous
+          : atReadStart?.entry === mine && hash === atReadStart.previous?.hash
+            ? atReadStart.previous
+            : undefined
+    if (matched !== undefined) return { writerId: matched.writerId }
+  }
+  selfWrites.delete(path)
+  return undefined
+}
+
+/** {@link consumeCanvasSelfWrite} as a yes/no: should this event be swallowed as an echo? */
+export function consumeCanvasSuppression(
+  path: string,
+  current: Buffer | null,
+  atReadStart?: CanvasSuppressionSnapshot
+): boolean {
+  return consumeCanvasSelfWrite(path, current, atReadStart) !== undefined
 }
 
 /**
@@ -191,12 +278,12 @@ export async function notifyCanvasChanged(
   // Read what is on disk NOW: the event is the pane's own echo only if it is
   // still exactly the bytes the pane's Save wrote. A file that has since
   // vanished (or been replaced) is somebody else's change.
+  const atReadStart = canvasSuppressionSnapshot(resolvedPath)
   const onDisk = await readFile(resolvedPath).catch(() => null)
-  let writerId: string | undefined
-  if (consumeCanvasSuppression(resolvedPath, onDisk)) {
-    writerId = canvasSelfWriter(resolvedPath)
-    if (!othersWatching(resolvedPath, writerId)) return 'ok' // our own Save, nobody else listening: swallow
-  }
+  const echo = consumeCanvasSelfWrite(resolvedPath, onDisk, atReadStart)
+  // Tag the echo with the pane whose Save it matched — not the newest Save's writer (BUG-214).
+  const writerId = echo?.writerId
+  if (echo !== undefined && !othersWatching(resolvedPath, writerId)) return 'ok' // our own Save, nobody else listening: swallow
   const win = windowGetter?.()
   if (win && !win.isDestroyed()) {
     win.webContents.send(

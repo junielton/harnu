@@ -7,7 +7,10 @@ import {
   addCanvasRef,
   removeCanvasRef,
   recordCanvasSelfWrite,
+  settleCanvasSelfWrite,
   consumeCanvasSuppression,
+  consumeCanvasSelfWrite,
+  canvasSuppressionSnapshot,
   __resetCanvasWatchStateForTests,
   registerCanvasWatchHandlers,
   notifyCanvasChanged,
@@ -100,6 +103,98 @@ describe('canvas-watch self-write suppression', () => {
     recordCanvasSelfWrite(A, 'saved')
     expect(consumeCanvasSuppression('/repo/b.harnucanvas.json', bytes('saved'))).toBe(false)
     expect(consumeCanvasSuppression(A, bytes('saved'))).toBe(true)
+  })
+
+  // BUG-214 — two Saves in quick succession. `canvas-write` records Save #2's hash BEFORE
+  // its rename, so the delayed echo of Save #1 (chokidar's `awaitWriteFinish` holds an event
+  // back ~100 ms) can be handled while the file still holds Save #1's bytes. That used to
+  // read as somebody else's write: the pane got a false "changed on disk" and, being clean,
+  // redrew the whole board and lost the operator's selection.
+  it('swallows the stale echo of the previous Save while the next Save is in flight', () => {
+    recordCanvasSelfWrite(A, 'save one', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    recordCanvasSelfWrite(A, 'save two', 'pane-a') // Save #2 recorded, its rename not landed yet
+    expect(consumeCanvasSuppression(A, bytes('save one'))).toBe(true)
+    // …and the file is still the pane's own once Save #2 lands.
+    expect(consumeCanvasSuppression(A, bytes('save two'))).toBe(true)
+  })
+
+  it('swallows Save #2’s echo, but no longer Save #1’s, after Save #2 has settled', () => {
+    recordCanvasSelfWrite(A, 'save one', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    recordCanvasSelfWrite(A, 'save two', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    // Save #2 is on disk: an event that finds Save #1's bytes is not an echo any more.
+    expect(consumeCanvasSuppression(A, bytes('save two'))).toBe(true)
+    expect(consumeCanvasSuppression(A, bytes('save one'))).toBe(false)
+  })
+
+  it('does not let the previous Save’s bytes mask a foreign write once nothing is in flight', () => {
+    recordCanvasSelfWrite(A, 'save one', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    recordCanvasSelfWrite(A, 'save two', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    // An agent restores Save #1's exact bytes: that is a real change the pane must hear about.
+    expect(consumeCanvasSuppression(A, bytes('save one'))).toBe(false)
+  })
+
+  it('a foreign write during the in-flight window still arrives', () => {
+    recordCanvasSelfWrite(A, 'save one', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    recordCanvasSelfWrite(A, 'save two', 'pane-a')
+    expect(consumeCanvasSuppression(A, bytes('agent wrote this'))).toBe(false)
+  })
+
+  it('a Save that fails goes back to the previous Save as the pane’s own write', () => {
+    recordCanvasSelfWrite(A, 'save one', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    recordCanvasSelfWrite(A, 'save two', 'pane-b')
+    settleCanvasSelfWrite(A, false) // the rename never landed: the file still holds 'save one'
+    expect(consumeCanvasSelfWrite(A, bytes('save one'))).toEqual({ writerId: 'pane-a' })
+  })
+
+  it('names the writer of the Save it matched, not the newest one in flight', () => {
+    recordCanvasSelfWrite(A, 'save one', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    recordCanvasSelfWrite(A, 'save two', 'pane-b')
+    expect(consumeCanvasSelfWrite(A, bytes('save one'))).toEqual({ writerId: 'pane-a' })
+    expect(consumeCanvasSelfWrite(A, bytes('save two'))).toEqual({ writerId: 'pane-b' })
+  })
+
+  // The watcher's read is async: it can open the file while Save #2 is in flight (and get
+  // Save #1's bytes) yet finish only after Save #2 has landed and settled. Judged against
+  // the state at the END of the read, that is a foreign write — the BUG-214 reload again.
+  it('a read that began while Save #2 was in flight still swallows Save #1’s echo after Save #2 settles', () => {
+    recordCanvasSelfWrite(A, 'save one', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    recordCanvasSelfWrite(A, 'save two', 'pane-b')
+    const atReadStart = canvasSuppressionSnapshot(A)
+    settleCanvasSelfWrite(A, true)
+    // …and it is Save #1's writer, as the snapshot saw it, that the echo is tagged with.
+    expect(consumeCanvasSelfWrite(A, bytes('save one'), atReadStart)).toEqual({
+      writerId: 'pane-a'
+    })
+    // …and the newest Save is still the pane's own afterwards.
+    expect(consumeCanvasSuppression(A, bytes('save two'))).toBe(true)
+  })
+
+  it('a read that began with nothing in flight never treats the previous Save as an echo', () => {
+    recordCanvasSelfWrite(A, 'save one', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    recordCanvasSelfWrite(A, 'save two', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    const atReadStart = canvasSuppressionSnapshot(A)
+    expect(consumeCanvasSuppression(A, bytes('save one'), atReadStart)).toBe(false)
+  })
+
+  it('a snapshot taken before a foreign write cleared the record does not revive it', () => {
+    recordCanvasSelfWrite(A, 'save one', 'pane-a')
+    settleCanvasSelfWrite(A, true)
+    recordCanvasSelfWrite(A, 'save two', 'pane-a')
+    const atReadStart = canvasSuppressionSnapshot(A)
+    expect(consumeCanvasSuppression(A, bytes('agent wrote this'))).toBe(false) // record cleared
+    recordCanvasSelfWrite(A, 'save three', 'pane-a')
+    expect(consumeCanvasSuppression(A, bytes('save one'), atReadStart)).toBe(false)
   })
 
   it('forgets the pane’s write once the last pane on the path closes', () => {
@@ -204,6 +299,45 @@ describe('U1-8 change notification (§4, §7.3)', () => {
     expect(sent).toHaveLength(0)
     // …and it only covers that write: once the file changes, the NEXT event notifies.
     writeFileSync(file, JSON.stringify({ capycanvas: 1, meta: {}, nodes: [], edges: [] }), 'utf8')
+    expect(await notifyCanvasChanged(file)).toBe('ok')
+    expect(sent).toEqual([{ ch: 'canvas:changed', p: { path: file } }])
+  })
+
+  it('BUG-214 — the stale echo of Save #1, handled while Save #2 is in flight, is swallowed', async () => {
+    win()
+    addCanvasRef(file)
+    expect((await writeCanvasFile(file, DOC, { selfWrite: true })).ok).toBe(true) // Save #1 landed
+    // Save #2 has been recorded but its rename has not landed: the file still holds Save #1.
+    recordCanvasSelfWrite(file, 'the bytes of save two')
+    expect(await notifyCanvasChanged(file)).toBe('ok')
+    expect(sent).toHaveLength(0)
+  })
+
+  it('BUG-214 — with a second pane on the file, Save #1’s stale echo is tagged with Save #1’s writer', async () => {
+    win()
+    addCanvasRef(file, 'pane-a')
+    addCanvasRef(file, 'pane-b')
+    expect((await writeCanvasFile(file, DOC, { selfWrite: true, writerId: 'pane-a' })).ok).toBe(
+      true
+    )
+    // pane-b's Save is recorded, its rename not landed: the file still holds pane-a's Save.
+    recordCanvasSelfWrite(file, 'the bytes of pane-b’s save', 'pane-b')
+    expect(await notifyCanvasChanged(file)).toBe('ok')
+    expect(sent).toEqual([{ ch: 'canvas:changed', p: { path: file, writerId: 'pane-a' } }])
+  })
+
+  it('BUG-214 — an agent restoring the previous Save’s exact bytes is heard once nothing is in flight', async () => {
+    win()
+    addCanvasRef(file)
+    const DOC2: CanvasDocument = {
+      ...DOC,
+      nodes: [...DOC.nodes, { id: 'b', shape: 'box', x: 9, y: 9, origin: 'agent' }]
+    }
+    expect((await writeCanvasFile(file, DOC, { selfWrite: true })).ok).toBe(true) // Save #1
+    expect((await writeCanvasFile(file, DOC2, { selfWrite: true })).ok).toBe(true) // Save #2
+    expect(await notifyCanvasChanged(file)).toBe('ok') // Save #2's echo: the pane's own
+    expect(sent).toHaveLength(0)
+    expect((await writeCanvasFile(file, DOC)).ok).toBe(true) // an agent writes Save #1's bytes
     expect(await notifyCanvasChanged(file)).toBe('ok')
     expect(sent).toEqual([{ ch: 'canvas:changed', p: { path: file } }])
   })

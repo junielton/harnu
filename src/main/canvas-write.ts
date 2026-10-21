@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { atomicWriteFile } from './mcp/atomic-write'
 import { markdownKnownRoots } from './markdown-read'
 import { checkCanvasPathAllowed } from './canvas-read'
-import { recordCanvasSelfWrite } from './canvas-watch'
+import { recordCanvasSelfWrite, settleCanvasSelfWrite } from './canvas-watch'
 import {
   MAX_CANVAS_BYTES,
   serializeCanvasDocument,
@@ -112,7 +112,15 @@ export async function writeCanvasFile(
     // Record BEFORE the write: `atomicWriteFile`'s rename is what chokidar
     // reports, and recording after it would race the event.
     if (opts.selfWrite === true) recordCanvasSelfWrite(resolved, body, opts.writerId)
-    await atomicWriteFile(resolved, body, 0o644)
+    try {
+      await atomicWriteFile(resolved, body, 0o644)
+    } catch (e) {
+      // The rename never landed: the previous Save is the pane's own write again.
+      if (opts.selfWrite === true) settleCanvasSelfWrite(resolved, false)
+      throw e
+    }
+    // Landed: from here only this Save's bytes are an echo, never the one before it (BUG-214).
+    if (opts.selfWrite === true) settleCanvasSelfWrite(resolved, true)
     return { ok: true, path: resolved, bytes }
   } catch {
     // The temp file is already cleaned up by `atomicWriteFile`; the previous
