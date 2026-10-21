@@ -536,7 +536,9 @@ draws one line above the prompt inside the companion's own terminal
 companion has. It stays for as long as that selection is the one the companion has
 — including after it answers you, since the note is still in its context — and it
 changes when you pick something else. It goes away when you clear the selection,
-when you run `/clear` in the companion, or when the companion is closed.
+when you run `/clear` in the companion, or when the companion is closed. It needs a
+companion at least 40 columns wide; in a narrower pane the note is still shared but
+no line is drawn, so widen the pane (or close the sidebar) to see it.
 
 **While the companion is answering, updates wait.** If you change or clear the
 selection while an answer is being written, nothing is sent until that answer
