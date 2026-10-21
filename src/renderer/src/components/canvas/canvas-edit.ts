@@ -188,8 +188,8 @@ export function placedRect(cx: number, cy: number, shape: string): DrawnRect {
   return { x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height }
 }
 
-/** The shapes the pane's creation tools can mint. U2 widens it (diamond, ellipse). */
-export type OperatorShape = 'box' | 'text'
+/** The shapes the pane's creation tools can mint. */
+export type OperatorShape = 'box' | 'text' | 'ellipse' | 'diamond'
 
 /**
  * A node the operator just created — a drawn or placed box, or a text. **Stamped
@@ -371,7 +371,10 @@ function edgeFromCell(cell: Record<string, unknown>, base?: CanvasEdge): CanvasE
     ...readOrigin(data),
     // Same reasoning as zIndex above: an omitted router renders as `manhattan`
     // (`toX6Edge`), so a new edge needs no field written for it.
-    ...(base?.router === undefined ? {} : { router: base.router })
+    ...(base?.router === undefined ? {} : { router: base.router }),
+    // Edge props are the document's too: the pane never edits them, so a Save after
+    // an unrelated edit writes back exactly what the file (or an agent) put there.
+    ...(base?.props === undefined ? {} : { props: base.props })
   }
 }
 

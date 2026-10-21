@@ -109,6 +109,8 @@ export interface CanvasEdge {
   label?: string
   origin: CanvasOrigin
   router?: string
+  /** Free-form plain-JSON props, preserved verbatim like {@link CanvasNode.props}. */
+  props?: Record<string, unknown>
 }
 
 export interface CanvasMeta {
@@ -471,6 +473,9 @@ export function validateCanvasDocument(value: unknown): CanvasValidateResult {
     if (raw.router !== undefined && typeof raw.router !== 'string') {
       return fail('invalid-document', `${what} has a non-string "router"`)
     }
+    if (raw.props !== undefined && (!isPlainObject(raw.props) || !isPlainJson(raw.props))) {
+      return fail('invalid-document', `${what} has "props" that are not plain JSON`)
+    }
 
     const origin = readOrigin(raw, what)
     if (isErr(origin)) return origin
@@ -483,7 +488,8 @@ export function validateCanvasDocument(value: unknown): CanvasValidateResult {
       target: raw.target as string,
       ...label,
       origin,
-      ...(raw.router === undefined ? {} : { router: raw.router as string })
+      ...(raw.router === undefined ? {} : { router: raw.router as string }),
+      ...(raw.props === undefined ? {} : { props: raw.props as Record<string, unknown> })
     })
   }
 
@@ -532,6 +538,7 @@ function orderedEdge(edge: CanvasEdge): Record<string, unknown> {
   if (edge.label !== undefined) out.label = edge.label
   out.origin = edge.origin
   if (edge.router !== undefined) out.router = edge.router
+  if (edge.props !== undefined) out.props = edge.props
   return out
 }
 

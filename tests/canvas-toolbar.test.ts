@@ -15,6 +15,8 @@ const NAMES: Record<CanvasTool, string> = {
   hand: 'Hand',
   select: 'Select',
   rectangle: 'Rectangle',
+  diamond: 'Diamond',
+  ellipse: 'Ellipse',
   arrow: 'Arrow',
   text: 'Text',
   eraser: 'Eraser'
@@ -42,6 +44,38 @@ describe('CanvasToolbar', () => {
       .filter(Boolean)
     expect(ids).toEqual(['canvas-tool-lock', ...CANVAS_TOOLS.map((t) => `canvas-tool-${t.id}`)])
     expect(w.find('[data-testid="canvas-toolbar"]').exists()).toBe(true)
+  })
+
+  it('lists the eight tools in spec order: Hand, Select, Rectangle, Diamond, Ellipse, Arrow, Text, Eraser', () => {
+    const w = mountBar()
+    const ids = w
+      .findAll('button')
+      .map((b) => b.attributes('data-testid'))
+      .filter((id) => id && id !== 'canvas-tool-lock')
+    expect(ids).toEqual(
+      ['hand', 'select', 'rectangle', 'diamond', 'ellipse', 'arrow', 'text', 'eraser'].map(
+        (id) => `canvas-tool-${id}`
+      )
+    )
+  })
+
+  it('titles Diamond and Ellipse with their letter and digit', () => {
+    const w = mountBar()
+    expect(w.get('[data-testid="canvas-tool-diamond"]').attributes('title')).toBe(
+      'Diamond — D or 3'
+    )
+    expect(w.get('[data-testid="canvas-tool-ellipse"]').attributes('title')).toBe(
+      'Ellipse — O or 4'
+    )
+    expect(w.get('[data-testid="canvas-tool-diamond"]').attributes('aria-label')).toBe('Diamond')
+    expect(w.get('[data-testid="canvas-tool-ellipse"]').attributes('aria-label')).toBe('Ellipse')
+  })
+
+  it.each(['diamond', 'ellipse'] as const)('shows the placement hint for %s', (tool) => {
+    const w = mountBar({ tool })
+    expect(w.get('[data-testid="canvas-tool-hint"]').text()).toBe(
+      'Click to place, or drag to size it'
+    )
   })
 
   it('places a separator after Hand and nowhere else', () => {

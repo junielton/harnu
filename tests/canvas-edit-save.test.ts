@@ -93,6 +93,47 @@ function cellsFor(doc: CanvasDocument): unknown[] {
   ]
 }
 
+describe('edge props survive a pane Save (T536 U2)', () => {
+  const WITH_PROPS: CanvasDocument = {
+    ...SAVED,
+    edges: [
+      {
+        id: 'e-1',
+        source: 'n-a',
+        target: 'n-b',
+        label: 'IPC',
+        origin: 'agent',
+        props: { style: { tone: 'green' }, weight: 2 }
+      }
+    ]
+  }
+
+  it('writes the edge props unchanged after an unrelated node move', async () => {
+    const cells = cellsFor(WITH_PROPS) as { id: string; position?: { x: number; y: number } }[]
+    cells.find((c) => c.id === 'n-b')!.position = { x: 500, y: 260 }
+    const draft = buildCanvasDocumentFromCells(cells, WITH_PROPS, NOW)
+    expect(draft.edges[0].props).toEqual({ style: { tone: 'green' }, weight: 2 })
+
+    const r = await writeCanvasFile(file, draft)
+    expect(r.ok).toBe(true)
+    const onDisk = JSON.parse(await bytes()) as CanvasDocument
+    expect(onDisk.edges[0].props).toEqual({ style: { tone: 'green' }, weight: 2 })
+    expect(onDisk.nodes.find((n) => n.id === 'n-b')).toMatchObject({ x: 500, y: 260 })
+  })
+
+  it('leaves an edge without props without a props key', () => {
+    const draft = buildCanvasDocumentFromCells(cellsFor(SAVED), SAVED, NOW)
+    expect('props' in draft.edges[0]).toBe(false)
+  })
+
+  it('takes props from the base document, never from the cell', () => {
+    const cells = cellsFor(WITH_PROPS) as { id: string; data?: Record<string, unknown> }[]
+    cells.find((c) => c.id === 'e-1')!.data!.props = { style: { tone: 'red' } }
+    const draft = buildCanvasDocumentFromCells(cells, WITH_PROPS, NOW)
+    expect(draft.edges[0].props).toEqual({ style: { tone: 'green' }, weight: 2 })
+  })
+})
+
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'harnu-canvas-u3-'))
   file = join(dir, '.harnu', 'out', 'canvas', 'board.harnucanvas.json')

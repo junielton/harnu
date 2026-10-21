@@ -78,7 +78,14 @@ function docWith(
 
 describe('shape manifest (§5.2)', () => {
   it('the catalog carries every built-in kind plus the registered HTML shape', () => {
-    expect(canvasShapeNames()).toEqual(['box', 'text', 'image', 'harnu/mockup-card'])
+    expect(canvasShapeNames()).toEqual([
+      'box',
+      'ellipse',
+      'diamond',
+      'text',
+      'image',
+      'harnu/mockup-card'
+    ])
   })
 
   it('every registered HTML shape is namespaced `harnu/` so it can never collide with a built-in', () => {
@@ -325,6 +332,29 @@ describe('U5-1 — each of the seven ops applies correctly and in order (§8.2)'
     expect(res.ok && res.doc.edges[0]).toMatchObject({ label: 'is', router: 'orth', source: 'a' })
   })
 
+  it('T536 U2 — agent edits leave an edge’s props untouched', () => {
+    const props = { style: { tone: 'green' } }
+    const doc = docWith(
+      [
+        { id: 'a', shape: 'box', x: 0, y: 0, origin: 'agent' },
+        { id: 'b', shape: 'box', x: 9, y: 9, origin: 'agent' }
+      ],
+      [{ id: 'e1', source: 'a', target: 'b', label: 'was', props, origin: 'agent' }]
+    )
+    const relabelled = applyCanvasOps({
+      doc,
+      ops: [{ op: 'update_edge', id: 'e1', label: 'is' }],
+      mintId: counterMinter()
+    })
+    expect(relabelled.ok && relabelled.doc.edges[0]).toMatchObject({ label: 'is', props })
+    const moved = applyCanvasOps({
+      doc,
+      ops: [{ op: 'update_node', id: 'a', x: 40 }],
+      mintId: counterMinter()
+    })
+    expect(moved.ok && moved.doc.edges[0].props).toEqual(props)
+  })
+
   it('remove_edge removes exactly one edge', () => {
     const doc = docWith(
       [
@@ -564,12 +594,12 @@ describe('U5-5 — the ACK carries the catalog; an unknown shape is refused list
   it('refuses an unknown shape by name, listing every valid one', () => {
     const res = applyCanvasOps({
       doc: docWith(),
-      ops: [{ op: 'add_node', shape: 'diamond', x: 0, y: 0 }],
+      ops: [{ op: 'add_node', shape: 'hexagon', x: 0, y: 0 }],
       mintId: counterMinter()
     })
     expect(res).toMatchObject({ ok: false, code: 'UNKNOWN_SHAPE' })
     if (res.ok) return
-    expect(res.error).toContain('"diamond"')
+    expect(res.error).toContain('"hexagon"')
     for (const name of canvasShapeNames()) expect(res.error).toContain(name)
   })
 
@@ -592,6 +622,52 @@ describe('U5-5 — the ACK carries the catalog; an unknown shape is refused list
     })
     expect(res.ok).toBe(true)
     expect(LEGACY_CANVAS_SHAPE_NAMES).toEqual({ 'capy/mockup-card': 'harnu/mockup-card' })
+  })
+
+  it.each([
+    ['ellipse', { width: 132, height: 64 }],
+    ['diamond', { width: 132, height: 80 }]
+  ])(
+    'T536 U2 — %s is a prop-less built-in: added as agent, sized, advertised in the ACK',
+    (shape, size) => {
+      const res = applyCanvasOps({
+        doc: docWith(),
+        ops: [{ op: 'add_node', shape, x: 5, y: 6, label: 'Decide' }],
+        mintId: counterMinter()
+      })
+      expect(res.ok).toBe(true)
+      if (!res.ok) return
+      expect(res.doc.nodes[0]).toEqual({
+        id: 'n-0',
+        shape,
+        x: 5,
+        y: 6,
+        ...size,
+        label: 'Decide',
+        origin: 'agent'
+      })
+      expect(canvasShapeCatalogAck().find((s) => s.name === shape)?.defaultSize).toEqual(size)
+      expect(canvasShapeSpec(shape)?.props).toEqual([])
+    }
+  )
+
+  it.each(['ellipse', 'diamond'])('T536 U2 — props on %s are BAD_PROPS', (shape) => {
+    const res = applyCanvasOps({
+      doc: docWith(),
+      ops: [{ op: 'add_node', shape, x: 0, y: 0, props: { x: 1 } }],
+      mintId: counterMinter()
+    })
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+  })
+
+  it('T536 U2 — update_node cannot change a diamond into another shape (`shape` is BAD_ARGS)', () => {
+    const doc = docWith([{ id: 'd', shape: 'diamond', x: 0, y: 0, origin: 'agent' }])
+    const res = applyCanvasOps({
+      doc,
+      ops: [{ op: 'update_node', id: 'd', shape: 'ellipse' }],
+      mintId: counterMinter()
+    })
+    expect(res).toMatchObject({ ok: false, code: 'BAD_ARGS' })
   })
 
   it('accepts every name the catalog advertises', () => {
@@ -973,7 +1049,7 @@ describe('U5-2 — no partial apply: the FILE is byte-identical after a rejected
       label: `n${i}`
     }))
     // op 17 (index 16) names a shape that does not exist.
-    ops[16] = { op: 'add_node', shape: 'diamond', x: 0, y: 0 }
+    ops[16] = { op: 'add_node', shape: 'hexagon', x: 0, y: 0 }
 
     const res = await drawCanvas(ops)
     expect(res).toMatchObject({ ok: false, code: 'UNKNOWN_SHAPE' })

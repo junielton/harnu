@@ -4718,15 +4718,17 @@ document, so it inherits the tokens for free rather than through an iframe.
 
 Node and edge treatment, tokens only — **no raw hex anywhere in the component**:
 
-| Element              | Fill / stroke                                                             |
-| -------------------- | ------------------------------------------------------------------------- |
-| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry |
-| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                       |
-| `text` node          | no body — label only, `--color-text-2`                                    |
-| `image` node         | the asset, on a `--color-surface` ground                                  |
-| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router           |
-| edge label           | `--color-text-3` 11px on a `--color-bg` plate                             |
-| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                   |
+| Element              | Fill / stroke                                                               |
+| -------------------- | --------------------------------------------------------------------------- |
+| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry   |
+| `ellipse` body       | as `box`: `--color-surface` fill, `--color-border-2` 1.5px stroke (T536 U2) |
+| `diamond` body       | as `box`, on a four-vertex polygon; ports sit at the vertices (T536 U2)     |
+| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                         |
+| `text` node          | no body — label only, `--color-text-2`                                      |
+| `image` node         | the asset, on a `--color-surface` ground                                    |
+| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router             |
+| edge label           | `--color-text-3` 11px on a `--color-bg` plate                               |
+| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                     |
 
 **Theme (spec §6.4).** The palette is **resolved from CSS variables at mount and
 re-resolved on every theme switch**, then pushed back onto every live cell and onto the
@@ -4749,9 +4751,10 @@ the zoom cluster: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
 
 - 28px square buttons, 16px lucide icons, 2px gap, and a 1px `--border` separator
   between Lock|Hand and the rest.
-- Order: Lock (`Q`), Hand (`H`), then Select (`V`, `1`), Rectangle (`R`, `2`), Arrow
-  (`A`, `5`), Text (`T`, `6`), Eraser (`E`, `0`). Digits 3 and 4 are reserved for the
-  Diamond and Ellipse tools (U2); U1 draws no placeholder for them.
+- Order: Lock (`Q`), Hand (`H`), then Select (`V`, `1`), Rectangle (`R`, `2`), Diamond
+  (`D`, `3`), Ellipse (`O`, `4`), Arrow (`A`, `5`), Text (`T`, `6`), Eraser (`E`, `0`).
+  `ctrl`/`⌘`+`D` still duplicates the selection; the letter shortcut never fires with a
+  modifier held.
 - Active tool: `bg-accent-soft` + `text-accent`, `aria-pressed="true"`. Idle: `text-text-3`,
   hover `bg-surface-2 text-text`.
 - Each button shows its key as a tiny `--text-4` corner label (the digit when it has one,
@@ -4767,7 +4770,7 @@ the zoom cluster: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
 - **Narrow panes.** The canvas is a helper pane and can be ~320px wide. The bar never
   overlaps the zoom cluster and never clips: below the width where both fit on one row,
   the bar drops to a second row under the zoom cluster, left-aligned. Below the width where
-  the full bar fits (≈237px), buttons wrap onto additional rows; the bar is never wider
+  the full bar fits (≈297px with the eight tools of U2; the default ~243px split shows two rows), buttons wrap onto additional rows; the bar is never wider
   than the pane and never clips. The hint wraps to the bar's width.
 - Every button is `@mousedown.stop`, so it never starts a canvas gesture or a pane resize.
 - The tool is per pane, held in memory, never saved to the file. A new pane starts on
@@ -4783,18 +4786,18 @@ the zoom cluster: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
 **Per-tool gestures (T536 U1).** The pointer does what the active tool says. This table
 is the contract for the pane and for `canvas-tools.ts`:
 
-| Tool                                   | Click blank                                     | Drag on blank                                                                                                                     | Press on a node                                                              | Drag on a node                                                                                                |
-| -------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Select**                             | clear selection                                 | **rubberband select** (no modifier); `shift`+drag adds to the selection                                                           | select it; `shift`+click **or** `ctrl`/`⌘`+click toggles it in the selection | move it (and the rest of the selection)                                                                       |
-| **Hand**                               | nothing                                         | pan                                                                                                                               | nothing                                                                      | pan (nodes do not move)                                                                                       |
-| **Rectangle** (Diamond, Ellipse in U2) | place a default-size shape centred on the click | draw it to the drag's footprint (floored at 48×32)                                                                                | same as blank: shapes may overlap                                            | same as blank                                                                                                 |
-| **Arrow**                              | nothing                                         | nothing (no free arrows in v1; the hint reads "Drag from one shape to another")                                                   | start an arrow from that node                                                | rubber-band line follows the pointer; release on another node creates a bound edge, release elsewhere cancels |
-| **Text**                               | place a `text` node with the rename input open  | same as click (drag size ignored)                                                                                                 | if the node is a `text`, edit it; else place a new text on top               | —                                                                                                             |
-| **Eraser**                             | nothing                                         | every node and edge the pointer crosses is marked (dimmed); release deletes them all as **one** undo step; `Esc` mid-drag cancels | delete it                                                                    | as drag on blank                                                                                              |
+| Tool                              | Click blank                                     | Drag on blank                                                                                                                     | Press on a node                                                              | Drag on a node                                                                                                |
+| --------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Select**                        | clear selection                                 | **rubberband select** (no modifier); `shift`+drag adds to the selection                                                           | select it; `shift`+click **or** `ctrl`/`⌘`+click toggles it in the selection | move it (and the rest of the selection)                                                                       |
+| **Hand**                          | nothing                                         | pan                                                                                                                               | nothing                                                                      | pan (nodes do not move)                                                                                       |
+| **Rectangle / Diamond / Ellipse** | place a default-size shape centred on the click | draw it to the drag's footprint (floored at 48×32)                                                                                | same as blank: shapes may overlap                                            | same as blank                                                                                                 |
+| **Arrow**                         | nothing                                         | nothing (no free arrows in v1; the hint reads "Drag from one shape to another")                                                   | start an arrow from that node                                                | rubber-band line follows the pointer; release on another node creates a bound edge, release elsewhere cancels |
+| **Text**                          | place a `text` node with the rename input open  | same as click (drag size ignored)                                                                                                 | if the node is a `text`, edit it; else place a new text on top               | —                                                                                                             |
+| **Eraser**                        | nothing                                         | every node and edge the pointer crosses is marked (dimmed); release deletes them all as **one** undo step; `Esc` mid-drag cancels | delete it                                                                    | as drag on blank                                                                                              |
 
 - **Double-click blank** in Select places a text node (Excalidraw idiom).
-- **Double-click a node** renames it in Select, Hand and Arrow. In Rectangle and Text the
-  press itself creates, so a double-click there places and edits a new shape rather than
+- **Double-click a node** renames it in Select, Hand and Arrow. In Rectangle, Diamond, Ellipse and
+  Text the press itself creates, so a double-click there places and edits a new shape rather than
   renaming the one underneath; rename an existing shape from Select, Hand or Arrow. In
   Eraser the first press deletes the node.
 - A newly created shape opens its rename input immediately; an empty commit on a **text**

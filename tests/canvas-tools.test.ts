@@ -35,11 +35,13 @@ describe('tool registry', () => {
     expect(INITIAL_TOOL_STATE).toEqual({ tool: 'select', locked: false, spaceHeld: false })
   })
 
-  it('lists the v1 tools in toolbar order', () => {
+  it('lists the eight tools in toolbar order', () => {
     expect(CANVAS_TOOLS.map((t) => t.id)).toEqual([
       'hand',
       'select',
       'rectangle',
+      'diamond',
+      'ellipse',
       'arrow',
       'text',
       'eraser'
@@ -54,7 +56,11 @@ describe('tool registry', () => {
     expect(byId.arrow.cursor).toBe('crosshair')
     expect(byId.text.cursor).toBe('text')
     expect(byId.eraser.cursor).toBe('cell')
+    expect(byId.diamond.cursor).toBe('crosshair')
+    expect(byId.ellipse.cursor).toBe('crosshair')
     expect(byId.rectangle.creates).toBe('box')
+    expect(byId.diamond.creates).toBe('diamond')
+    expect(byId.ellipse.creates).toBe('ellipse')
     expect(byId.text.creates).toBe('text')
     expect(byId.select.creates).toBeNull()
   })
@@ -71,6 +77,10 @@ describe('toolForKey', () => {
     expect(toolForKey(key('v'))).toBe('select')
     expect(toolForKey(key('1'))).toBe('select')
     expect(toolForKey(key('2'))).toBe('rectangle')
+    expect(toolForKey(key('d'))).toBe('diamond')
+    expect(toolForKey(key('3'))).toBe('diamond')
+    expect(toolForKey(key('o'))).toBe('ellipse')
+    expect(toolForKey(key('4'))).toBe('ellipse')
     expect(toolForKey(key('5'))).toBe('arrow')
     expect(toolForKey(key('6'))).toBe('text')
     expect(toolForKey(key('0'))).toBe('eraser')
@@ -91,9 +101,15 @@ describe('toolForKey', () => {
     expect(toolForKey(key('2', { [mod]: true }))).toBeNull()
   })
 
-  it('leaves 3 and 4 reserved for U2 and ignores unknown keys', () => {
-    expect(toolForKey(key('3'))).toBeNull()
-    expect(toolForKey(key('4'))).toBeNull()
+  // Duplicate is Ctrl/Cmd+D: the Diamond letter must never swallow it.
+  it.each(['ctrlKey', 'metaKey', 'altKey'] as const)('%s+d and %s+o stay free', (mod) => {
+    expect(toolForKey(key('d', { [mod]: true }))).toBeNull()
+    expect(toolForKey(key('o', { [mod]: true }))).toBeNull()
+    expect(toolForKey(key('3', { [mod]: true }))).toBeNull()
+    expect(toolForKey(key('4', { [mod]: true }))).toBeNull()
+  })
+
+  it('ignores unknown keys', () => {
     expect(toolForKey(key('z'))).toBeNull()
     expect(toolForKey(key('Escape'))).toBeNull()
   })
@@ -166,6 +182,12 @@ describe('blankIntent (spec §5)', () => {
     ['rectangle', 'click', 'place-shape'],
     ['rectangle', 'drag', 'draw-shape'],
     ['rectangle', 'dblclick', 'none'],
+    ['diamond', 'click', 'place-shape'],
+    ['diamond', 'drag', 'draw-shape'],
+    ['diamond', 'dblclick', 'none'],
+    ['ellipse', 'click', 'place-shape'],
+    ['ellipse', 'drag', 'draw-shape'],
+    ['ellipse', 'dblclick', 'none'],
     ['arrow', 'click', 'none'],
     ['arrow', 'drag', 'none'],
     ['arrow', 'dblclick', 'none'],
@@ -192,6 +214,12 @@ describe('nodeIntent (spec §5)', () => {
     ['rectangle', 'press', 'box', 'place-shape'],
     ['rectangle', 'drag', 'box', 'draw-shape'],
     ['rectangle', 'dblclick', 'box', 'none'],
+    ['diamond', 'press', 'box', 'place-shape'],
+    ['diamond', 'drag', 'box', 'draw-shape'],
+    ['diamond', 'dblclick', 'box', 'none'],
+    ['ellipse', 'press', 'box', 'place-shape'],
+    ['ellipse', 'drag', 'box', 'draw-shape'],
+    ['ellipse', 'dblclick', 'box', 'none'],
     ['arrow', 'press', 'box', 'start-arrow'],
     ['arrow', 'drag', 'box', 'start-arrow'],
     ['arrow', 'dblclick', 'box', 'rename-node'],

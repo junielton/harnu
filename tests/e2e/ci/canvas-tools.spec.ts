@@ -12,8 +12,10 @@ import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 /**
- * T536 U1 — every canvas tool, driven with REAL mouse input in the BUILT app (spec §9.3,
- * items 1–7).
+ * T536 U1 + U2 — every canvas tool, driven with REAL mouse input in the BUILT app (spec
+ * §9.3, items 1–8). The toolbar holds eight tools — Hand, Select, Rectangle, Diamond,
+ * Ellipse, Arrow, Text, Eraser — and step 8 (U2) covers the two shape tools added after
+ * U1: Ellipse (`o`/`4`) and Diamond (`d`/`3`).
  *
  * jsdom cannot reproduce X6's gesture handling: X6 listens for the release on `document`,
  * takes its own `mousedown` listener away until it sees one, and hit-tests through
@@ -183,7 +185,7 @@ let folder: string
 let boardPath: string
 const idOf: Record<string, string> = {}
 
-test.describe('canvas tools in the built app (T536 U1, spec §9.3)', () => {
+test.describe('canvas tools in the built app (T536 U1 + U2, spec §9.3)', () => {
   test.beforeAll(async () => {
     userData = mkdtempSync(join(tmpdir(), 'harnu-ci-canvas-'))
     folder = mkdtempSync(join(tmpdir(), 'harnu-ci-board-'))
@@ -242,6 +244,38 @@ test.describe('canvas tools in the built app (T536 U1, spec §9.3)', () => {
         }, p)
         expect(what, `(${fx}, ${fy}) of the pane is empty board`).toBe('blank')
         return p
+      }
+
+      /**
+       * The top-left corner (screen px) of a `w`×`h` px rectangle of the pane body that is
+       * EMPTY board all over — sampled on a 4×4 lattice, so no cell, overlay, toast or toolbar
+       * is under it. Scanned top-left first, away from the bottom-right where toasts stack.
+       * Used where a step needs real room (the board is small in a narrow pane).
+       */
+      const blankRect = async (w: number, h: number): Promise<{ x: number; y: number }> => {
+        const r = (await body.boundingBox()) as Box
+        const found = await page.evaluate(
+          ({ r, w, h }) => {
+            const isBlank = (x: number, y: number): boolean => {
+              const el = document.elementFromPoint(x, y)
+              return (
+                !!el?.closest('[data-testid="diagram-canvas-host"]') && !el.closest('g.x6-cell')
+              )
+            }
+            for (let y = r.y + 4; y + h < r.y + r.height; y += 8) {
+              for (let x = r.x + 4; x + w < r.x + r.width; x += 8) {
+                let ok = true
+                for (let i = 0; i <= 3 && ok; i++)
+                  for (let j = 0; j <= 3 && ok; j++) ok = isBlank(x + (w * i) / 3, y + (h * j) / 3)
+                if (ok) return { x, y }
+              }
+            }
+            return null
+          },
+          { r, w, h }
+        )
+        expect(found, `a ${w}x${h} px empty patch of the board`).not.toBeNull()
+        return found as { x: number; y: number }
       }
 
       await test.step('1. Select: click blank creates nothing; drag blank rubberbands', async () => {
@@ -400,6 +434,92 @@ test.describe('canvas tools in the built app (T536 U1, spec §9.3)', () => {
         expect(keyed[0]).toMatchObject({ shape: 'box', origin: 'operator' })
         expect(Math.abs((keyed[0].width ?? 0) - (to.x - from.x) / zoom)).toBeLessThanOrEqual(2)
         expect(Math.abs((keyed[0].height ?? 0) - (to.y - from.y) / zoom)).toBeLessThanOrEqual(2)
+      })
+
+      await test.step('8. Diamond and Ellipse: the toolbar order, o + drag, d + click, Ctrl+D', async () => {
+        const order = await pane
+          .getByTestId('canvas-toolbar')
+          .locator('button[data-testid^="canvas-tool-"]:not([data-testid="canvas-tool-lock"])')
+          .evaluateAll((els) =>
+            els.map((el) => (el.getAttribute('data-testid') ?? '').replace('canvas-tool-', ''))
+          )
+        expect(order).toEqual([
+          'hand',
+          'select',
+          'rectangle',
+          'diamond',
+          'ellipse',
+          'arrow',
+          'text',
+          'eraser'
+        ])
+
+        // The number-row shortcuts reach the new tools too; Escape goes back to Select.
+        await page.keyboard.press('3')
+        await expect(tool('diamond')).toHaveAttribute('aria-pressed', 'true')
+        await page.keyboard.press('4')
+        await expect(tool('ellipse')).toHaveAttribute('aria-pressed', 'true')
+        await page.keyboard.press('Escape')
+        await expect(tool('select')).toHaveAttribute('aria-pressed', 'true')
+
+        // Ellipse: the `o` key, then a drag draws an ellipse of the dragged footprint.
+        await page.keyboard.press('o')
+        await expect(tool('ellipse')).toHaveAttribute('aria-pressed', 'true')
+        const patch = await blankRect(90, 50)
+        const from = { x: patch.x, y: patch.y }
+        const to = { x: patch.x + 90, y: patch.y + 50 }
+        await drag(from, to)
+        await expect(rename).toBeFocused()
+        await rename.fill('Oval')
+        await rename.press('Enter')
+        await expect(tool('select')).toHaveAttribute('aria-pressed', 'true')
+
+        let doc = await saveAndRead()
+        const ovals = doc.nodes.filter((n) => n.label === 'Oval')
+        expect(ovals).toHaveLength(1)
+        expect(ovals[0]).toMatchObject({ shape: 'ellipse', origin: 'operator' })
+        expect(Math.abs((ovals[0].width ?? 0) - (to.x - from.x) / zoom)).toBeLessThanOrEqual(2)
+        expect(Math.abs((ovals[0].height ?? 0) - (to.y - from.y) / zoom)).toBeLessThanOrEqual(2)
+
+        // Diamond: the `d` key, then a click places the default 132x80 centred on the click.
+        const before = doc.nodes.length
+        await page.keyboard.press('d')
+        await expect(tool('diamond')).toHaveAttribute('aria-pressed', 'true')
+        const room = await blankRect(132 * zoom + 8, 80 * zoom + 8)
+        const at = { x: room.x + (132 * zoom + 8) / 2, y: room.y + (80 * zoom + 8) / 2 }
+        await page.mouse.click(at.x, at.y)
+        await expect(rename).toBeFocused()
+        await rename.fill('Choice')
+        await rename.press('Enter')
+        // A created shape drops the tool back to Select (Lock is off).
+        await expect(tool('select')).toHaveAttribute('aria-pressed', 'true')
+
+        doc = await saveAndRead()
+        expect(doc.nodes).toHaveLength(before + 1)
+        const choices = doc.nodes.filter((n) => n.label === 'Choice')
+        expect(choices).toHaveLength(1)
+        expect(choices[0]).toMatchObject({ shape: 'diamond', origin: 'operator' })
+        expect(choices[0].width).toBe(132)
+        expect(choices[0].height).toBe(80)
+        // Centred on the click: its rendered box is centred on the click point, to within
+        // one grid step (placement snaps).
+        const placed = centre(await nodeBox(choices[0].id))
+        expect(Math.abs(placed.x - at.x), 'diamond centred on the click (x)').toBeLessThanOrEqual(
+          10 * zoom
+        )
+        expect(Math.abs(placed.y - at.y), 'diamond centred on the click (y)').toBeLessThanOrEqual(
+          10 * zoom
+        )
+
+        // Ctrl+D with a diamond selected duplicates it, and the copy is the operator's.
+        await page.mouse.click(placed.x, placed.y)
+        expect(await selectedIds()).toEqual([choices[0].id])
+        await page.keyboard.press('Control+d')
+        doc = await saveAndRead()
+        const diamonds = doc.nodes.filter((n) => n.shape === 'diamond')
+        expect(diamonds).toHaveLength(2)
+        expect(diamonds.every((n) => n.origin === 'operator')).toBe(true)
+        expect(diamonds.every((n) => n.width === 132 && n.height === 80)).toBe(true)
       })
     } catch (err) {
       failed = true

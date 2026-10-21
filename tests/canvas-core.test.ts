@@ -371,6 +371,76 @@ describe('geometry and props (§4.3, §5.2)', () => {
     ).toBe(true)
   })
 
+  describe('edge props (T536 U2)', () => {
+    const nodes = [node({ id: 'n-a' }), node({ id: 'n-b' })]
+    const edge = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+      id: 'e-1',
+      source: 'n-a',
+      target: 'n-b',
+      origin: 'agent',
+      ...over
+    })
+
+    it('reads an edge props object', () => {
+      const r = validateCanvasDocument(
+        doc({ nodes, edges: [edge({ props: { style: { tone: 'green' } } })] })
+      )
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.doc.edges[0].props).toEqual({ style: { tone: 'green' } })
+    })
+
+    it('round-trips byte-equivalent, with props after router and absent when absent', () => {
+      const text = serializeCanvasDocument({
+        capycanvas: 1,
+        meta: {},
+        nodes: [
+          { id: 'n-a', shape: 'box', x: 0, y: 0, origin: 'agent' },
+          { id: 'n-b', shape: 'box', x: 10, y: 0, origin: 'agent' }
+        ],
+        edges: [
+          {
+            id: 'e-1',
+            source: 'n-a',
+            target: 'n-b',
+            label: 'IPC',
+            origin: 'agent',
+            router: 'orthogonal',
+            props: { style: { tone: 'green' }, z: [1, { k: null }] }
+          },
+          { id: 'e-2', source: 'n-b', target: 'n-a', origin: 'operator' }
+        ]
+      })
+      const parsed = parseCanvasDocument(text)
+      expect(parsed.ok).toBe(true)
+      if (!parsed.ok) return
+      expect(serializeCanvasDocument(parsed.doc)).toBe(text)
+      const edges = JSON.parse(text).edges as Record<string, unknown>[]
+      expect(Object.keys(edges[0])).toEqual([
+        'id',
+        'source',
+        'target',
+        'label',
+        'origin',
+        'router',
+        'props'
+      ])
+      expect('props' in edges[1]).toBe(false)
+    })
+
+    it('refuses edge props that are not plain JSON', () => {
+      for (const props of [{ f: () => 1 }, { n: NaN }, [1, 2], 'x', null]) {
+        const r = validateCanvasDocument(doc({ nodes, edges: [edge({ props })] }))
+        expect(r.ok).toBe(false)
+        if (!r.ok) expect(r.code).toBe('invalid-document')
+      }
+    })
+
+    it('does not bump the schema version', () => {
+      expect(CANVAS_SCHEMA_VERSION).toBe(1)
+    })
+  })
+
   it('refuses a node with no id or no shape', () => {
     expect(
       validateCanvasDocument(doc({ nodes: [{ shape: 'box', x: 0, y: 0, origin: 'agent' }] })).ok

@@ -43,7 +43,7 @@ Save that as `.harnu/out/canvas/board.harnucanvas.json` inside a worktree and op
 
 ## Reading the board
 
-- **Boxes** are labelled rounded rectangles. **Text** nodes are bare labels with no frame, for annotations. **Image** nodes show a picture stored next to the canvas in `assets/`.
+- **Boxes** are labelled rounded rectangles. **Ellipses** and **diamonds** are labelled too, and look like boxes with a different outline: use an ellipse for a state or a start/end point, and a diamond for a decision in a flow. **Text** nodes are bare labels with no frame, for annotations. **Image** nodes show a picture stored next to the canvas in `assets/`.
 - **Arrows** are routed around your boxes rather than drawn straight through them, and they carry their own label.
 - The dotted grid behind everything is what makes panning legible — without it, dragging an empty area looks like nothing happening.
 
@@ -57,13 +57,15 @@ A small bar floats at the top of the board, next to the zoom controls. Each butt
 | **Hand**      | **H**        | Drag anywhere to move the board. Nothing is selected or moved, even if you start on a box.                        |
 | **Select**    | **V**, **1** | The default. Click to select, drag on empty board to select everything inside a rectangle, drag a box to move it. |
 | **Rectangle** | **R**, **2** | Click to place a box, or drag to draw one to the size you want.                                                   |
+| **Diamond**   | **D**, **3** | Click to place a diamond, or drag to draw one to the size you want.                                               |
+| **Ellipse**   | **O**, **4** | Click to place an ellipse, or drag to draw one to the size you want.                                              |
 | **Arrow**     | **A**, **5** | Drag from one shape to another to connect them.                                                                   |
 | **Text**      | **T**, **6** | Click anywhere to place a bare label and type.                                                                    |
 | **Eraser**    | **E**, **0** | Click a box or arrow to delete it, or drag across several to delete them all.                                     |
 
 Hover a button to see its shortcut. The active tool is highlighted, and a short hint under the bar tells you what it does; each hint goes away after you have used that tool once.
 
-Shortcuts only work while the canvas pane has focus, never while you are typing a name, and never together with **Ctrl/⌘** or **Alt** — so **Ctrl/⌘ + D**, **Ctrl/⌘ + A** and the rest keep their usual meaning.
+Shortcuts only work while the canvas pane has focus, never while you are typing a name, and never together with **Ctrl/⌘** or **Alt** — so **Ctrl/⌘ + D** (duplicate), **Ctrl/⌘ + A** and the rest keep their usual meaning.
 
 **After you create something, Harnu goes back to Select**, so you draw one thing and are straight back to moving things around. Turn on **Lock** (the padlock, or **Q**) to stay on the tool for as long as you want; press it again to let go.
 
@@ -85,23 +87,25 @@ Fit runs when the board first opens, and when you press it. It does **not** run 
 
 What a click or a drag does depends on the tool:
 
-| Tool          | Click on empty board                    | Drag on empty board                                                       | Click a box                                                     | Drag from a box                                                 |
-| ------------- | --------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------- |
-| **Select**    | Clears the selection.                   | Draws a selection rectangle around whatever it touches.                   | Selects it.                                                     | Moves it, and anything else selected.                           |
-| **Hand**      | Nothing.                                | Pans the board.                                                           | Nothing.                                                        | Pans the board; the box does not move.                          |
-| **Rectangle** | Places a standard-size box on the spot. | Draws a box to the size you dragged (never smaller than a small minimum). | Places a new box on top of it.                                  | Draws a new box over it; the old one stays put.                 |
-| **Arrow**     | Nothing.                                | Nothing — an arrow must start on a shape.                                 | Starts an arrow from that box.                                  | Rubber-bands an arrow; let go on another shape to connect them. |
-| **Text**      | Places a label and opens it for typing. | Same as a click.                                                          | On a text label, edits it. On a box, places a new label on top. | Nothing.                                                        |
-| **Eraser**    | Nothing.                                | Everything the pointer crosses fades; letting go deletes all of it.       | Deletes it.                                                     | Same as a drag on empty board.                                  |
+| Tool          | Click on empty board                        | Drag on empty board                                                            | Click a box                                                     | Drag from a box                                                 |
+| ------------- | ------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Select**    | Clears the selection.                       | Draws a selection rectangle around whatever it touches.                        | Selects it.                                                     | Moves it, and anything else selected.                           |
+| **Hand**      | Nothing.                                    | Pans the board.                                                                | Nothing.                                                        | Pans the board; the box does not move.                          |
+| **Rectangle** | Places a standard-size box on the spot.     | Draws a box to the size you dragged (never smaller than a small minimum).      | Places a new box on top of it.                                  | Draws a new box over it; the old one stays put.                 |
+| **Diamond**   | Places a standard-size diamond on the spot. | Draws a diamond to the size you dragged (never smaller than a small minimum).  | Places a new diamond on top of it.                              | Draws a new diamond over it; the old one stays put.             |
+| **Ellipse**   | Places a standard-size ellipse on the spot. | Draws an ellipse to the size you dragged (never smaller than a small minimum). | Places a new ellipse on top of it.                              | Draws a new ellipse over it; the old one stays put.             |
+| **Arrow**     | Nothing.                                    | Nothing — an arrow must start on a shape.                                      | Starts an arrow from that box.                                  | Rubber-bands an arrow; let go on another shape to connect them. |
+| **Text**      | Places a label and opens it for typing.     | Same as a click.                                                               | On a text label, edits it. On a box, places a new label on top. | Nothing.                                                        |
+| **Eraser**    | Nothing.                                    | Everything the pointer crosses fades; letting go deletes all of it.            | Deletes it.                                                     | Same as a drag on empty board.                                  |
 
 A few things worth knowing:
 
-- **A new box or label opens its name field straight away** — just type. **Enter** keeps the name, **Esc** throws it away. Leave a new text label empty and it disappears; a new box stays, unnamed.
+- **A new box, diamond, ellipse or label opens its name field straight away** — just type. **Enter** keeps the name, **Esc** throws it away. Leave a new text label empty and it disappears; a new box, diamond or ellipse stays, unnamed.
 - **An arrow only ever joins two shapes.** Let go anywhere else, or back on the shape you started from, and nothing is made. The arrow can start from anywhere on a shape, not only from its four dots.
 - **The eraser is one undo step.** A single stroke can remove many things at once, arrows attached to erased boxes go with them, and one **Ctrl/⌘ + Z** brings them all back. **Esc** during a stroke cancels it and nothing is deleted. If you let go outside the pane, the stroke still finishes and deletes what it marked.
-- **A rectangle you let go of outside the pane is still drawn**, to the size you dragged. An arrow let go outside is cancelled.
-- **Shapes may overlap.** Placing or drawing a box on top of another one is allowed.
-- **Boxes snap to a grid** as you move them, so a drag lands on the nearest grid step rather than exactly where you let go.
+- **A shape you let go of outside the pane is still drawn**, to the size you dragged. An arrow let go outside is cancelled.
+- **Shapes may overlap.** Placing or drawing a shape on top of another one is allowed.
+- **Shapes snap to a grid** as you move them, so a drag lands on the nearest grid step rather than exactly where you let go.
 
 Everything else:
 
@@ -112,14 +116,14 @@ Everything else:
 | Connect two things    | Use the Arrow tool, or in Select hover a box and drag from one of the four dots on its edge onto another box. |
 | Select several        | Drag a rectangle round them in Select (no modifier needed), or **Ctrl/⌘ + A** for everything.                 |
 | Add to a selection    | **Shift + drag** a rectangle, or **Shift** or **Ctrl/⌘ + click** a box to toggle it in or out.                |
-| Resize                | Select a box and drag one of its handles.                                                                     |
+| Resize                | Select a shape and drag one of its handles.                                                                   |
 | Delete                | Select, then **Delete** or **Backspace** — or use the Eraser. Arrows attached to a deleted box go with it.    |
 | Duplicate             | Select, then **Ctrl/⌘ + D**.                                                                                  |
 | Add an image          | Paste a screenshot onto the board, or drag an image file onto it.                                             |
 | Undo / redo           | **Ctrl/⌘ + Z** and **Ctrl/⌘ + Shift + Z**, or the two arrows in the header.                                   |
 | Clear the selection   | **Esc**, or a plain click on empty board in Select.                                                           |
 
-**Renaming in Rectangle and Text.** In those two tools the very first click already places a shape, so a double-click on an existing box places a new shape and opens it for typing instead of renaming the box underneath. To rename a shape that is already there, double-click it in Select (or Hand, or Arrow). In the Eraser, the first press deletes the box.
+**Renaming in the shape tools and Text.** In Rectangle, Diamond, Ellipse and Text the very first click already places a shape, so a double-click on an existing box places a new shape and opens it for typing instead of renaming the box underneath. To rename a shape that is already there, double-click it in Select (or Hand, or Arrow). In the Eraser, the first press deletes the box.
 
 A short drag counts as a click, not a box — you can click around without littering the canvas. Switching tools never touches your undo history.
 
@@ -143,6 +147,8 @@ A few consequences worth knowing:
 
 Ask a session for a picture — an architecture map, a flow, a plan in boxes, a mockup — and it draws it here instead of into the transcript. What lands on the board is **editable**: move a box, rename it, wire two together, delete the ones that are wrong, then Save. The full agent-side story is in [Agent control](agent-control.md#drawing-on-a-canvas); what matters at this end is what you will see.
 
+**Shapes.** A session can draw boxes, ellipses and diamonds (a flow's decisions are natural diamonds), plus text labels, cards and images. They are the same shapes the toolbar gives you, so anything it draws can be moved, resized and renamed like something you drew yourself.
+
 **Screenshots and generated images.** A session can put a PNG or SVG it produced onto the board as an image node. The bytes are copied into `assets/` next to the canvas exactly like one you paste yourself, and the board keeps only the short pointer — so a board full of screenshots is still a small, fast file.
 
 **Cards.** Some things are not a box with a word in it. A session can also place a **card**: a titled panel with an optional subtitle, a status pill and a paragraph of body text. It is a real piece of Harnu's interface sitting on the board — it uses the app's own type and colours, and it recolours with the rest of the app when you switch theme, because it is drawn by Harnu rather than pasted in as a picture.
@@ -161,6 +167,8 @@ Because nothing is written until you save:
 
 - **Closing a canvas with unsaved edits does not close it.** You get a toast saying there are unsaved edits, with a **Discard** action. Only pressing Discard actually closes the pane. Reload and re-targeting the pane go through the same guard.
 - **An agent reading the file sees the last thing you saved**, never your work in progress. That is deliberate — an unsaved edit is not a decision yet.
+
+Saving also keeps any extra data stored inside an arrow's `props`. If an arrow in the file carries such data (styling, for example), opening the board, editing something else and saving writes it back untouched, rather than quietly dropping it. Extra data anywhere else on an arrow is not kept.
 
 If a save is refused, the pane says why and **the file on disk is left exactly as it was** — your work is still in front of you, nothing was half-written. The usual reason is something the board cannot represent; see the refusal table below.
 
@@ -195,7 +203,8 @@ The pane refuses rather than guessing, and says which of these it is:
 - **You cannot rename an arrow.** Arrow labels can only be written into the file by hand. This is deliberate for now: it keeps Harnu's reading of a label and the drawing library's copy of it from ever disagreeing, which is the bug that would have an agent tell you an arrow says something it no longer says.
 - **Unused images are never cleaned up.** Delete an image node, or paste one and never save, and its file stays in `assets/`. Under `.harnu/out/canvas/` — the default board — that folder is gitignored, so it costs you nothing but disk. Under `docs/canvas/` it is **not**: that is a tracked path, so its `assets/` is tracked too, and stale binaries there will follow you into a commit unless you delete them.
 - **Arrows cannot float free.** An arrow always joins two shapes; there is no way to draw one that starts or ends on empty board.
-- **Boxes and labels only.** There is no ellipse or diamond yet.
+- **A small set of shapes.** Boxes, ellipses, diamonds and text labels; there are no other outlines (triangles, cylinders, and so on) yet.
+- **Diamonds and ellipses are hit as rectangles.** The Eraser and the Arrow treat them as the rectangle around them, so a press or stroke in the empty corner just outside the outline still counts as the shape.
 - **Copy and paste between canvases** isn't there; **Ctrl/⌘ + D** duplicates within one board.
 - **Stacking order** (bring to front / send to back) has no gesture; a board written with one keeps it.
 - **A node kind Harnu doesn't know** — a component from a _newer_ build than yours — renders as a dashed box, so an unfamiliar board still opens instead of failing. You can move and delete it, and saving keeps it the kind it was, so opening it in the newer build shows it properly again.

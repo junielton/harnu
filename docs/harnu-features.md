@@ -1,4 +1,4 @@
-<!-- harnu-features v95 (2026-10-14) -->
+<!-- harnu-features v96 (2026-10-19) -->
 
 # You are running inside Harnu
 
@@ -238,7 +238,10 @@ the operator edits and Saves, the `origin` field is what tells you what they add
 `shapes` — the full catalog as `{ name, description, defaultSize }` — plus `path`,
 `nodeCount`, `edgeCount`, `applied` (one entry per op, with the id each `add_*`
 assigned) and `opened`. An unknown shape is refused `UNKNOWN_SHAPE` listing the valid
-set, so one call teaches you the vocabulary. `props` are validated against the shape's
+set, so one call teaches you the vocabulary: `box`, `ellipse` (states, start/end
+points), `diamond` (decisions in a flow), `text`, `image`, `harnu/mockup-card`.
+`ellipse` and `diamond` take no `props`, and `update_node` can't change a node's
+`shape`. `props` are validated against the shape's
 declared keys: a key the shape does not read is `BAD_PROPS`, not silent junk in the
 file. Other refusals: `BAD_ARGS` (op shape, op count, an undeclared field),
 `BAD_GEOMETRY` (non-finite `x`/`y`, non-positive `width`/`height`),

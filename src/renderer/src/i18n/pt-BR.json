@@ -221,6 +221,8 @@
       "hand": "Mão",
       "select": "Selecionar",
       "rectangle": "Retângulo",
+      "diamond": "Diamante",
+      "ellipse": "Elipse",
       "arrow": "Seta",
       "text": "Texto",
       "eraser": "Borracha"
@@ -233,6 +235,8 @@
       "select": "Arraste para selecionar · Espaço+arrastar para mover",
       "hand": "Arraste para mover o quadro",
       "rectangle": "Clique para posicionar, ou arraste para dimensionar",
+      "diamond": "Clique para posicionar, ou arraste para dimensionar",
+      "ellipse": "Clique para posicionar, ou arraste para dimensionar",
       "arrow": "Arraste de uma forma até outra",
       "text": "Clique em qualquer lugar para digitar",
       "eraser": "Arraste sobre qualquer coisa para apagar"
