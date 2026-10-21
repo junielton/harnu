@@ -519,13 +519,16 @@ latest selection counts, and rapid changes while you drag or click around send
 one update, not one per click.
 
 **What the companion is told.** The file, which commits you are reviewing, whether
-the lines are on the old or the new side, and — for a range on one side — the
-selected lines themselves, read from git (up to 200 lines or 8,000 characters;
-past that it says how many lines were left out). It is told nothing from the
-evidence header and no verdict of any kind. A range whose two ends are on
-**different sides** (`old L85 – new L92`) is different: the companion is told
-both ends but **the lines are not included**, and the bar says so while that
-selection is live — `Lines not included — the range spans both sides`.
+the lines are on the old or the new side, and the selected lines themselves, read
+from git (up to 200 lines or 8,000 characters; past that it says how many lines
+were left out). It is told nothing from the evidence header and no verdict of any
+kind. A range on one side is sent as the lines of that file. A range whose two ends
+are on **different sides** (`old L85 – new L92`), or a one-sided range with a
+deleted or added row in the middle, is sent as the **diff rows** between its two
+ends, exactly as the pane shows them: each marked `+`, `-` or unchanged, with its old
+and new line numbers. (The bar's one-line note for such a range still reads _Lines
+not included — the range spans both sides_; that wording is out of date, the rows
+are sent.)
 
 **A line above the companion's prompt.** While a selection stands, the Harnu mod
 draws one line above the prompt inside the companion's own terminal
@@ -606,8 +609,6 @@ Named here so you know they are missing rather than broken:
 - **Expanding a `⋯ n unchanged lines` gap.** The count is accurate; clicking it
   does nothing, because the pane only has the lines git put in the diff.
 - **An editor for the sensitive-path list** (above).
-- **Quoting a range that spans both sides.** The companion is told where such a
-  range starts and ends but is not sent the lines between (see above).
 - **Inline review comments on specific lines.** The review you submit is a
   single body against the whole pull request; you cannot yet attach a comment to
   a line in the diff. That is a later step, and it will go through the same

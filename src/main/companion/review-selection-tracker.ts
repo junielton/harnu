@@ -18,7 +18,8 @@
  * **The band driver** keeps the one-line band above the companion's prompt in step with it: set
  * when a selection is delivered, re-sent every `BAND_REFRESH_MS` so the mod's `BAND_TTL_MS` never
  * lapses a live line, cleared when the row stops being the companion's current one (or says that
- * nothing is selected), and debounced. A turn that answered does not clear it.
+ * nothing is selected), and debounced. A turn that answered does not clear it, and neither does a
+ * newer selection that has not been delivered yet.
  */
 
 import { enqueue as channelEnqueue, type EnqueueResult } from './command-channel'
@@ -331,7 +332,11 @@ export function createBandDriver(deps: BandDriverDeps = {}): BandDriver {
     attach(tracker) {
       return tracker.onTransition((t) => {
         const rec = t.rec
-        if (t.type === 'replaced') return want(rec.bindingKey, rec.sid, null)
+        // A newer selection took the slot. The companion still holds the old row until the new
+        // one lands, so the band keeps saying so: blanking it here cancelled a pending set and
+        // left it empty for as long as the replacement took. The replacement's own delivery sets
+        // its line (or clears it, for the row that says nothing is selected).
+        if (t.type === 'replaced') return
         switch (t.ev.state) {
           case 'delivered':
           case 'asked':

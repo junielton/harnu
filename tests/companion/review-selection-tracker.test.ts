@@ -553,10 +553,29 @@ describe('U2a-i-AC-13 — the band driver', () => {
     expect(lines.every((l) => l.includes('voice.ts L3–4'))).toBe(true)
     expect(lines.some((l) => l.includes('speech.ts'))).toBe(false)
   })
-  it('a replaced selection that never delivers leaves the band cleared', () => {
+  it('a replaced selection that never delivers leaves the old line standing: the companion still holds the old row', async () => {
     const r = standing()
-    r.track()
-    cleared(r)
+    r.track(Promise.resolve({ state: 'expired' }))
+    await vi.advanceTimersByTimeAsync(5_000)
+    // nothing was sent to take the line away, and the refresh keeps it alive under the mod's TTL
+    expect(r.sent.every((s) => s.args.line !== null)).toBe(true)
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(r.sent.every((s) => s.args.line !== null)).toBe(true)
+    expect(r.sent.length).toBeGreaterThan(1)
+  })
+  it('a re-send inside the debounce keeps the pending line: the band is not blank until the replacement lands', () => {
+    const r = bandRig()
+    const a = r.track()
+    r.ok(a.cmd) // wants A's line, 500 ms from now
+    vi.advanceTimersByTime(200)
+    const b = r.track(undefined, 7, { ...SEL, path: 'src/other/voice.ts', startLine: 3, line: 4 })
+    vi.advanceTimersByTime(2_000) // B is slow: its result has not arrived
+    expect(r.sent).toHaveLength(1)
+    expect(String(r.sent[0].args.line)).toContain('speech.ts L85–92') // A's, set on time
+    r.ok(b.cmd)
+    vi.advanceTimersByTime(500)
+    expect(r.sent).toHaveLength(2)
+    expect(String(r.sent[1].args.line)).toContain('voice.ts L3–4')
   })
   it('stops timers on ended and sends nothing to a binding that is gone', () => {
     const r = standing()
