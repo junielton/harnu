@@ -10,6 +10,7 @@
  * the two can never say different things.
  */
 
+import type { DiffFile, DiffRow } from '../review-core'
 import { sanitizeCorrective } from '../review-corrective'
 import { headPinRefusal } from '../review-submit-core'
 import { CONTROL_PATTERN, frameContext, sanitizeFragment, stripControl } from './context-registry'
@@ -391,15 +392,61 @@ export function pinRefusal(
 
 // ---- composing the text (§6.4) -------------------------------------------------------------------
 
+/**
+ * The flags of the `git diff` the Review pane renders (`loadReview`), in the one place both the
+ * pane and a mixed-side selection read them from. A selection quoted from any other diff could
+ * disagree with what the operator was looking at.
+ */
+export const REVIEW_DIFF_FLAGS = ['--find-renames', '--no-color'] as const
+
 /** The blob to read for a line range, or `null` when the text needs no blob. */
 export function lineSource(
   c: SelectionCoordinates
 ): { sha: string; path: string; side: SelectionSide } | null {
   if (c.subjectType !== 'LINE' || c.side === undefined) return null
-  if (c.startSide !== undefined && c.startSide !== c.side) return null // mixed: no lines are quoted
+  if (c.startSide !== undefined && c.startSide !== c.side) return null // mixed: quoted from the diff
   return c.side === 'RIGHT'
     ? { sha: c.headSha, path: c.path, side: 'RIGHT' }
     : { sha: c.baseSha, path: c.oldPath ?? c.path, side: 'LEFT' }
+}
+
+/**
+ * The pinned commits whose diff a mixed-side range is quoted from, or `null` when the range is
+ * not mixed (it reads a blob instead, or nothing).
+ */
+export function mixedDiffSource(
+  c: SelectionCoordinates
+): { baseSha: string; headSha: string } | null {
+  if (c.subjectType !== 'LINE' || c.side === undefined) return null
+  if (c.startSide === undefined || c.startSide === c.side) return null
+  return { baseSha: c.baseSha, headSha: c.headSha }
+}
+
+const anchors = (r: DiffRow, side: SelectionSide, line: number): boolean =>
+  side === 'LEFT' ? r.kind === 'del' && r.oldLine === line : r.kind !== 'del' && r.newLine === line
+
+/**
+ * The diff rows from the start end to the end end of a mixed range, inclusive, in the order the
+ * pane displays them, or `null`. `files` is `parseUnifiedDiff` of the pane's diff. A row anchors on
+ * the side §3.2 gives its kind (deleted: old; added and unchanged: new), both ends must be in one
+ * hunk and the start must not come after the end. Nothing is guessed: any miss is `null`.
+ */
+export function locateDiffRows(
+  files: readonly DiffFile[],
+  c: SelectionCoordinates
+): DiffRow[] | null {
+  if (mixedDiffSource(c) === null) return null
+  const file = files.find((f) => f.path === c.path)
+  if (!file) return null
+  const start = { side: c.startSide as SelectionSide, line: c.startLine as number }
+  const end = { side: c.side as SelectionSide, line: c.line as number }
+  for (const hunk of file.hunks) {
+    const from = hunk.rows.findIndex((r) => anchors(r, start.side, start.line))
+    const to = hunk.rows.findIndex((r) => anchors(r, end.side, end.line))
+    if (from >= 0 && to >= 0) return from <= to ? hunk.rows.slice(from, to + 1) : null
+    if (from >= 0 || to >= 0) return null // the two ends live in different hunks
+  }
+  return null
 }
 
 const fileOf = (s: SelectionSide): string => (s === 'RIGHT' ? 'new' : 'old')
@@ -419,11 +466,40 @@ const PREAMBLE: readonly string[] = [
 export type ComposeResult =
   { ok: true; text: string } | { ok: false; detail: 'range-out-of-file' | 'text-too-long' }
 
+/** The one sentence that replaces a quote past either cap, for a same-side and a mixed range alike. */
+const capNote = (count: number): string =>
+  `${count} ${count === 1 ? 'line is' : 'lines are'} selected. ${count === 1 ? 'It is' : 'They are'} not included: the limit is ${SELECTION_MAX_LINES} lines and ${SELECTION_MAX_CHARS} characters.`
+
+const ROW_LEGEND =
+  'Each row starts with + (added), - (deleted) or a space (unchanged), then its old and new line numbers.'
+
+/** `+  ` / `-  ` / `   ` marker, old and new line numbers (blank where a row has none), then the text. */
+function quoteRows(rows: readonly DiffRow[]): { quoted: string[]; chars: number } {
+  const num = (n: number | null): number => (n === null ? 0 : String(n).length)
+  const oldW = Math.max(...rows.map((r) => num(r.oldLine)))
+  const newW = Math.max(...rows.map((r) => num(r.newLine)))
+  const marker = { add: '+', del: '-', context: ' ' } as const
+  const texts = rows.map((r) => sanitizeFragment(r.text))
+  return {
+    chars: texts.join('\n').length,
+    quoted: rows.map(
+      (r, i) =>
+        `${marker[r.kind]} ${r.oldLine === null ? ' '.repeat(oldW) : String(r.oldLine).padStart(oldW)} ${r.newLine === null ? ' '.repeat(newW) : String(r.newLine).padStart(newW)} | ${texts[i]}`
+    )
+  }
+}
+
 /**
- * Deterministic: the same coordinates and blob give the same bytes. `blob` is the text of
- * {@link lineSource}'s file for a same-side line range and is ignored otherwise.
+ * Deterministic: the same coordinates, blob and rows give the same bytes. `blob` is the text of
+ * {@link lineSource}'s file for a same-side line range. `diffRows` are the rows
+ * {@link locateDiffRows} found for a mixed-side range; without them a mixed range names its two
+ * ends and quotes nothing (the IPC never composes one that way: it refuses instead).
  */
-export function composeSelection(c: SelectionCoordinates, blob: string | null): ComposeResult {
+export function composeSelection(
+  c: SelectionCoordinates,
+  blob: string | null,
+  diffRows: readonly DiffRow[] | null = null
+): ComposeResult {
   const fields = [
     `review: base ${c.baseSha} head ${c.headSha}${c.prNumber !== null ? ` (PR ${c.prNumber})` : ''}`,
     `file: ${c.path}`,
@@ -453,6 +529,19 @@ export function composeSelection(c: SelectionCoordinates, blob: string | null): 
   const startSide = c.startSide ?? side
   const startLine = c.startLine ?? line
 
+  if (startSide !== side && diffRows && diffRows.length > 0) {
+    const selection = `selection: diff rows from line ${startLine} of the ${fileOf(startSide)} file (${startSide}) to line ${line} of the ${fileOf(side)} file (${side})`
+    const count = diffRows.length
+    const omitted = (): string =>
+      frame(selection, {
+        note: capNote(count)
+      })
+    if (count > SELECTION_MAX_LINES) return finish(omitted())
+    const { quoted, chars } = quoteRows(diffRows)
+    if (chars > SELECTION_MAX_CHARS) return finish(omitted())
+    return finish(frame(selection, { note: ROW_LEGEND, quoted }), omitted)
+  }
+
   if (startSide !== side) {
     const selection = `selection: from line ${startLine} of the ${fileOf(startSide)} file (${startSide}) to line ${line} of the ${fileOf(side)} file (${side})`
     return finish(
@@ -472,7 +561,7 @@ export function composeSelection(c: SelectionCoordinates, blob: string | null): 
   const count = line - startLine + 1
   const omitted = (): string =>
     frame(selection, {
-      note: `${count} ${count === 1 ? 'line is' : 'lines are'} selected. ${count === 1 ? 'It is' : 'They are'} not included: the limit is ${SELECTION_MAX_LINES} lines and ${SELECTION_MAX_CHARS} characters.`
+      note: capNote(count)
     })
   if (count > SELECTION_MAX_LINES) return finish(omitted())
 

@@ -104,6 +104,7 @@ function fake(over: Partial<SelectionDeps> = {}): Fake {
       reads.push([folder, sha, path])
       return blob
     },
+    readDiff: async () => null,
     noBindingReason: () => 'cli-too-old',
     tracker: { track },
     log: () => undefined,
@@ -444,10 +445,12 @@ describe('U2a-i-AC-8 — the gesture is the operator’s, and only this file bui
     ])
   })
 
-  it('the main-process reads are rev-parse and show, nothing that writes', () => {
+  it('the main-process reads are rev-parse, show and the pane’s diff, nothing that writes', () => {
     const src = body(join(REPO, 'src/main/companion/review-selection-ipc.ts'))
     const calls = [...src.matchAll(/git\(\s*[a-zA-Z.]+,\s*\[\s*'([a-z-]+)'/g)].map((m) => m[1])
-    expect(new Set(calls)).toEqual(new Set(['rev-parse', 'show']))
+    // T257 U2c: `diff` joined the pin on purpose, for a mixed-side range (the pane's own diff form,
+    // pinned in tests/companion/review-selection-mixed.test.ts). Nothing else may follow it.
+    expect(new Set(calls)).toEqual(new Set(['rev-parse', 'show', 'diff']))
     for (const verb of [
       'checkout',
       'fetch',
