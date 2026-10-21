@@ -174,6 +174,22 @@ export function noBindingSteps(reason: NoBindingReason | null): NextStep[] {
   }
 }
 
+/**
+ * The record of a clear: the row that says nothing is selected. It is followed through the same
+ * events (that is how a running turn is known), but it names no file, so the chip never shows it.
+ */
+export function startClear(id: string): DeliveryRecord {
+  return {
+    selectionId: id,
+    phase: 'queued',
+    code: null,
+    reason: null,
+    next: [],
+    path: '',
+    range: { kind: 'file' }
+  }
+}
+
 /** The send (or the compose) was refused before anything was queued. */
 export function refuse(rec: DeliveryRecord, r: RefusalLike): DeliveryRecord {
   const code = has(REFUSAL_KEYS, r.refusal) ? r.refusal : null
@@ -198,6 +214,19 @@ export function refuseUnknown(rec: DeliveryRecord): DeliveryRecord {
 // ---- following the tracker's events ------------------------------------------------------------
 
 /**
+ * The states in which the row is in the companion's context and no turn is running. A new question
+ * can start from any of them, so a second question on the same selection is a turn like the first
+ * (U2d): `asked` and the end of a turn alternate for as long as the row lives.
+ */
+const IDLE: readonly DeliveryPhase[] = [
+  'delivered',
+  'answered',
+  'turn-stopped',
+  'turn-declined',
+  'turn-failed'
+]
+
+/**
  * Which state a given one may follow. The tracker only emits forward, and this repeats the rule on
  * the receiving side so that "Answered" is unreachable except through "Asked" (U2b-AC-4) even if an
  * event arrives twice or out of order.
@@ -205,13 +234,13 @@ export function refuseUnknown(rec: DeliveryRecord): DeliveryRecord {
 const MAY_FOLLOW: Readonly<Record<DeliveryState, readonly DeliveryPhase[]>> = {
   queued: [],
   delivered: ['queued'],
-  asked: ['delivered'],
+  asked: IDLE,
   answered: ['asked'],
   'turn-stopped': ['asked'],
   'turn-declined': ['asked'],
   'turn-failed': ['asked'],
-  cleared: ['delivered', 'asked'],
-  ended: ['queued', 'delivered', 'asked'],
+  cleared: [...IDLE, 'asked'],
+  ended: ['queued', ...IDLE, 'asked'],
   'not-delivered': ['queued']
 }
 
@@ -237,9 +266,10 @@ export function applyStateEvent(rec: DeliveryRecord, ev: SelectionStateEvent): D
 }
 
 /**
- * Whether a turn is running in the companion, as far as this selection's own events say: an update
+ * Whether a turn is running in the companion, as far as the live row's own events say: an update
  * is held while it is, and only the latest is sent when it completes (LV-3: an append mid-turn
- * joins the running turn).
+ * joins the running turn). The tracker reports every turn of the binding for as long as the row
+ * lives, not only the first one after a send (U2d).
  */
 export function turnRunning(rec: DeliveryRecord | null): boolean {
   return rec?.phase === 'asked'

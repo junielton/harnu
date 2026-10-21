@@ -15,8 +15,9 @@
  * {@link SEND_DEBOUNCE_MS} pause, latest wins, as a hidden context row through the mod channel —
  * COORDINATES only, never text (`main` reads the lines). It never starts a turn, never writes
  * to the composer and never sends a message; the operator starts the conversation in the
- * companion. While a turn is running in the companion the update is held and only the latest is
- * sent when it completes. {@link last} is the one record for the current selection, followed
+ * companion. When the selection goes away the companion is told that too: the row that says
+ * nothing is selected replaces the old one (U2d). While a turn is running in the companion, any
+ * turn and not only the first, the update is held and only the latest is sent when it completes. {@link last} is the one record for the current selection, followed
  * through `review:selection:state`. This is the only file in the renderer that calls the
  * review-selection IPC (send, compose, state). It reads the companion's `sessionId` through one
  * helpers getter and nothing else of the pane: what the companion says never comes this way
@@ -46,6 +47,7 @@ import {
   applyStateEvent,
   refuse,
   refuseUnknown,
+  startClear,
   startDelivery,
   turnRunning,
   type DeliveryRecord
@@ -231,6 +233,7 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
     cancelPending()
     last.value = null
     sentRec = null
+    rowLive = false
   }
 
   /** Drop the hint and the delivery record: the bar's Dismiss when nothing is selected. */
@@ -250,6 +253,12 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
   let held = false
   /** A selection changed while a send was crossing IPC: send the latest when it lands. */
   let again = false
+  /**
+   * The companion's context holds a row of ours that says something IS selected. Only then does
+   * clearing the selection have anything to retract: with no row, or after the conversation was
+   * cleared, a "nothing is selected" row would tell the companion what it never heard otherwise.
+   */
+  let rowLive = false
 
   function cancelPending(): void {
     if (timer) clearTimeout(timer)
@@ -259,7 +268,11 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
   }
 
   function onState(ev: SelectionStateEvent): void {
-    if (sentRec && ev.selectionId === sentRec.selectionId) sentRec = applyStateEvent(sentRec, ev)
+    if (sentRec && ev.selectionId === sentRec.selectionId) {
+      sentRec = applyStateEvent(sentRec, ev)
+      // The conversation the row lived in is gone (a /clear, the companion ended).
+      if (ev.state === 'cleared' || ev.state === 'ended') rowLive = false
+    }
     const cur = last.value
     if (cur && ev.selectionId === cur.selectionId) {
       const next = applyStateEvent(cur, ev)
@@ -303,7 +316,8 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
   async function send(): Promise<void> {
     const sel = live.value
     const snap = review.snapshot
-    if (!sel || !snap) return
+    if (!sel) return sendClear()
+    if (!snap) return
     if (sending.value) {
       again = true
       return
@@ -328,7 +342,9 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
       })
       // `ok` only means QUEUED. The tracker's events own every state after it, and one may
       // already have landed: never move a record back to `queued` here.
-      if (!res.ok) {
+      if (res.ok) {
+        rowLive = true
+      } else {
         if (sentRec?.selectionId === sel.id) sentRec = refuse(sentRec, res)
         const cur = last.value
         if (cur && cur.selectionId === sel.id) last.value = refuse(cur, res)
@@ -346,10 +362,44 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
     }
   }
 
-  /** The pause is over: send the latest selection — or hold it while a turn runs. */
+  /**
+   * The selection went away: replace the companion's row with the one that says nothing is
+   * selected. Silent like every send, and only when there is a row of ours to replace. A refusal
+   * is not shown (the bar is gone with the selection) and leaves the previous record in place, so
+   * the running turn it tracks is not forgotten.
+   */
+  async function sendClear(): Promise<void> {
+    if (!rowLive) return
+    if (sending.value) {
+      again = true
+      return
+    }
+    const sid = companionSid.value
+    if (sid === null) return
+    ensureSubscribed()
+    const id = mintId()
+    const prev = sentRec
+    sentRec = startClear(id)
+    sending.value = true
+    try {
+      const res = await window.api.reviewSelectionSend({ companionSid: sid, selection: null, id })
+      if (res.ok) rowLive = false
+      else if (sentRec?.selectionId === id) sentRec = prev
+    } catch {
+      if (sentRec?.selectionId === id) sentRec = prev
+    } finally {
+      sending.value = false
+      if (again) {
+        again = false
+        flush()
+      }
+    }
+  }
+
+  /** The pause is over: send the latest state of the selection — or hold it while a turn runs. */
   function flush(): void {
     timer = null
-    if (!live.value) return
+    if (!live.value && !rowLive) return
     if (turnRunning(sentRec)) {
       held = true // latest wins: a later change just replaces what is waiting
       return
@@ -360,7 +410,11 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
   /** Every change of the live selection lands here: say "updating", then send after the pause. */
   function onLiveChange(sel: LocalSelectionState | null): void {
     cancelPending()
-    if (!sel) return
+    if (!sel) {
+      // Cleared: tell the companion after the same pause, if it holds a row to retract.
+      if (rowLive && companionSid.value !== null) timer = setTimeout(flush, SEND_DEBOUNCE_MS)
+      return
+    }
     if (companionSid.value === null) {
       last.value = null // nothing is sent; the bar says so quietly
       return
@@ -371,8 +425,9 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
 
   watch(live, onLiveChange)
   // A companion opening while something is selected gets the current selection; one closing
-  // takes the record with it.
+  // takes the record with it. A different companion has none of our rows.
   watch(companionSid, (sid) => {
+    rowLive = false
     if (sid === null) {
       cancelPending()
       last.value = null

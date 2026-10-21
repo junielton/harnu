@@ -287,7 +287,7 @@ describe('U2b-AC-1 — the companion keeps up with the selection, silently', () 
     expect(selection().last).toBeNull()
   })
 
-  it('Clear selection cancels a pending update and sends nothing (the row cannot be retracted)', async () => {
+  it('Clear selection cancels a pending update; with nothing delivered yet there is nothing to retract', async () => {
     await choose(mixedRange)
     await find('selection-clear').trigger('click')
     await settle(SEND_DEBOUNCE_MS * 2)
@@ -295,13 +295,135 @@ describe('U2b-AC-1 — the companion keeps up with the selection, silently', () 
     expect(find('review-selection-bar').exists()).toBe(false)
   })
 
-  it('Clear after a delivery sends no replacement row', async () => {
-    await choose(mixedRange)
-    await settle()
-    await pushEvent(ev('delivered'))
-    await find('selection-clear').trigger('click')
-    await settle(SEND_DEBOUNCE_MS * 2)
-    expect(send).toHaveBeenCalledTimes(1)
+  describe('U2d-AC-1 — clearing tells the companion nothing is selected', () => {
+    const clearCalls = (): Array<Record<string, unknown>> =>
+      send.mock.calls
+        .map((c) => c[0] as Record<string, unknown>)
+        .filter((r) => r.selection === null)
+
+    it('Clear after a delivery sends the cleared row: the sid and a fresh id, no coordinates', async () => {
+      await choose(mixedRange)
+      await settle()
+      await pushEvent(ev('delivered'))
+      await find('selection-clear').trigger('click')
+      await settle()
+      expect(send).toHaveBeenCalledTimes(2)
+      const [req] = clearCalls()
+      expect(Object.keys(req).sort()).toEqual(['companionSid', 'id', 'selection'])
+      expect(req.companionSid).toBe(SID)
+      expect(String(req.id)).toMatch(/^sel_/)
+      expect(req.id).not.toBe(lastId())
+    })
+
+    it('every way the selection goes away says so: Esc, a collapsed file, a toggle, a moved head', async () => {
+      const ways: Array<[string, () => void]> = [
+        ['esc', () => selection().clear('esc')],
+        ['toggle', () => selection().toggleRow(SPEECH, 0, 1)],
+        [
+          'collapse',
+          () => {
+            const review = useReviewStore()
+            review.expanded = { ...review.expanded, [SPEECH]: false }
+          }
+        ],
+        [
+          'snapshot',
+          () => {
+            useReviewStore().snapshot = selectionSnapshot({ baseSha: 'e'.repeat(40) })
+          }
+        ]
+      ]
+      for (const [name, how] of ways) {
+        send.mockClear()
+        selection().reset()
+        const review = useReviewStore()
+        review.snapshot = selectionSnapshot()
+        review.expanded = Object.fromEntries(review.snapshot!.files.map((f) => [f.path, true]))
+        await choose(() => selection().select(SPEECH, 0, 1))
+        await settle()
+        await pushEvent(ev('delivered'))
+        send.mockClear()
+        await choose(how)
+        await settle()
+        expect(clearCalls(), name).toHaveLength(1)
+      }
+    })
+
+    it('says it once: a second clear with nothing selected sends nothing', async () => {
+      await choose(mixedRange)
+      await settle()
+      await pushEvent(ev('delivered'))
+      await choose(() => selection().clear('esc'))
+      await settle()
+      selection().clear('esc')
+      await settle(SEND_DEBOUNCE_MS * 2)
+      expect(clearCalls()).toHaveLength(1)
+    })
+
+    it('a selection made and cleared inside the pause never reaches the companion at all', async () => {
+      await choose(mixedRange)
+      await choose(() => selection().clear('esc'))
+      await settle(SEND_DEBOUNCE_MS * 2)
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('a new selection inside the pause after a clear replaces it: one send, the selection', async () => {
+      await choose(mixedRange)
+      await settle()
+      await pushEvent(ev('delivered'))
+      send.mockClear()
+      await choose(() => selection().clear('esc'))
+      await choose(() => selection().select(SPEECH, 0, 5))
+      await settle()
+      expect(send).toHaveBeenCalledTimes(1)
+      expect((send.mock.calls[0][0] as { selection: unknown }).selection).not.toBeNull()
+    })
+
+    it('a refused selection left nothing in the companion, so clearing it says nothing', async () => {
+      send.mockResolvedValueOnce({ ok: false, refusal: 'NO_BINDING', next: ['copy'] })
+      await choose(mixedRange)
+      await settle()
+      send.mockClear()
+      await choose(() => selection().clear('esc'))
+      await settle(SEND_DEBOUNCE_MS * 2)
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('with no companion open nothing is sent, and one that opens later is not told about a clear', async () => {
+      await choose(mixedRange)
+      await settle()
+      await pushEvent(ev('delivered'))
+      send.mockClear()
+      sidBox.ref!.value = null
+      await choose(() => selection().clear('esc'))
+      await settle(SEND_DEBOUNCE_MS * 2)
+      sidBox.ref!.value = SID
+      await settle(SEND_DEBOUNCE_MS * 2)
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('after the conversation was cleared the row is gone, so clearing the selection says nothing', async () => {
+      await choose(mixedRange)
+      await settle()
+      await pushEvent(ev('delivered'))
+      await pushEvent(ev('cleared'))
+      send.mockClear()
+      await choose(() => selection().clear('esc'))
+      await settle(SEND_DEBOUNCE_MS * 2)
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('a clear that is refused is not a failure the operator sees: no chip, no record', async () => {
+      await choose(mixedRange)
+      await settle()
+      await pushEvent(ev('delivered'))
+      send.mockResolvedValueOnce({ ok: false, refusal: 'NO_LEASE', next: ['try-again'] })
+      const before = selection().last
+      await choose(() => selection().clear('esc'))
+      await settle()
+      expect(selection().last).toBe(before)
+      expect(find('review-selection-bar').exists()).toBe(false)
+    })
   })
 
   describe('while a turn is running in the companion', () => {
@@ -344,15 +466,18 @@ describe('U2b-AC-1 — the companion keeps up with the selection, silently', () 
       }
     })
 
-    it('sends nothing at all if the selection is cleared before the turn ends', async () => {
+    it('a selection cleared before the turn ends is held too: the cleared row goes when the turn does', async () => {
       await turnRunningOn()
       const first = selection().last!.selectionId
       await choose(() => selection().select(SPEECH, 0, 5))
       await settle()
       await find('selection-clear').trigger('click')
+      await settle()
+      expect(send).toHaveBeenCalledTimes(1) // the old row is still what the companion has
       await pushEvent({ selectionId: first, state: 'answered', at: 2 })
       await flushPromises()
-      expect(send).toHaveBeenCalledTimes(1)
+      expect(send).toHaveBeenCalledTimes(2)
+      expect((send.mock.calls[1][0] as { selection: unknown }).selection).toBeNull()
     })
 
     it('does not hold for a delivery that is not mid-turn', async () => {
@@ -363,6 +488,107 @@ describe('U2b-AC-1 — the companion keeps up with the selection, silently', () 
       await settle()
       expect(send).toHaveBeenCalledTimes(2)
     })
+  })
+})
+
+describe('U2d-AC-4 — the hold covers every turn in the companion, not only the first', () => {
+  async function delivered(): Promise<string> {
+    await choose(mixedRange)
+    await settle()
+    const id = lastId()
+    await pushEvent(ev('delivered'))
+    return id
+  }
+
+  it('a second question on the same selection holds an update just like the first', async () => {
+    const id = await delivered()
+    await pushEvent({ selectionId: id, state: 'asked', at: 2 })
+    await pushEvent({ selectionId: id, state: 'answered', at: 3 })
+    await pushEvent({ selectionId: id, state: 'asked', at: 4 }) // the second question
+    send.mockClear()
+    await choose(() => selection().select(SPEECH, 0, 5))
+    await settle()
+    expect(send).not.toHaveBeenCalled() // mid-answer: held
+    await choose(() => selection().select(SPEECH, 0, 4))
+    await settle()
+    expect(send).not.toHaveBeenCalled()
+    await pushEvent({ selectionId: id, state: 'answered', at: 5 })
+    await flushPromises()
+    expect(send).toHaveBeenCalledTimes(1) // the latest, once
+    expect((send.mock.calls[0][0] as { selection: { id: string } }).selection.id).toBe(
+      selection().live!.id
+    )
+  })
+
+  it('after an answer and before the next question nothing is held', async () => {
+    const id = await delivered()
+    await pushEvent({ selectionId: id, state: 'asked', at: 2 })
+    await pushEvent({ selectionId: id, state: 'answered', at: 3 })
+    send.mockClear()
+    await choose(() => selection().select(SPEECH, 0, 5))
+    await settle()
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it('every kind of ended turn releases a later one just the same', async () => {
+    for (const end of ['turn-stopped', 'turn-declined', 'turn-failed'] as const) {
+      selection().reset()
+      send.mockClear()
+      const id = await delivered()
+      await pushEvent({ selectionId: id, state: 'asked', at: 2 })
+      await pushEvent({ selectionId: id, state: end, at: 3 })
+      await pushEvent({ selectionId: id, state: 'asked', at: 4 })
+      await choose(() => selection().select(SPEECH, 0, 5))
+      await settle()
+      expect(send, end).toHaveBeenCalledTimes(1) // only the first send: the update is held
+      await pushEvent({ selectionId: id, state: end, at: 5 })
+      await flushPromises()
+      expect(send, end).toHaveBeenCalledTimes(2)
+    }
+  })
+
+  it('the chip reads the same through every turn', async () => {
+    const id = await delivered()
+    const sees = T('review.selection.state.delivered')
+    for (const state of ['asked', 'answered', 'asked', 'turn-stopped'] as const) {
+      await pushEvent({ selectionId: id, state, at: 2 })
+      expect(chipText(), state).toContain(sees)
+    }
+  })
+})
+
+describe('U2d-AC-5 — with no companion the store sends nothing, by any door', () => {
+  beforeEach(() => {
+    sidBox.ref!.value = null
+  })
+
+  it('send() and retry() are no-ops: no IPC, no record, no subscription needed', async () => {
+    await choose(mixedRange)
+    await selection().send()
+    await selection().retry()
+    await flushPromises()
+    expect(send).not.toHaveBeenCalled()
+    expect(selection().last).toBeNull()
+    expect(selection().sending).toBe(false)
+  })
+
+  it('a clear sends nothing either, however the row got there', async () => {
+    sidBox.ref!.value = SID
+    await choose(mixedRange)
+    await settle()
+    await pushEvent(ev('delivered'))
+    send.mockClear()
+    sidBox.ref!.value = null
+    await choose(() => selection().clear('esc'))
+    await selection().send()
+    await settle(SEND_DEBOUNCE_MS * 2)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('Copy as text still works, which is the point of the guard', async () => {
+    await choose(mixedRange)
+    expect(await selection().copy()).toBe('copied')
+    expect(send).not.toHaveBeenCalled()
   })
 })
 

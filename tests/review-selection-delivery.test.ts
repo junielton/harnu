@@ -229,12 +229,38 @@ describe('U2b-AC-4 — the forward-only path', () => {
     expect(applyStateEvent(rec, { ...ev('delivered'), selectionId: 'sel_other' })).toBe(rec)
   })
 
-  it('treats a finished record as final', () => {
-    for (const s of ['answered', 'cleared', 'ended', 'turn-failed'] as const) {
+  it('treats a record whose row is gone as final', () => {
+    for (const s of ['cleared', 'ended'] as const) {
       const done: DeliveryRecord = { ...startDelivery(SEL), phase: s }
       for (const next of Object.keys(ALL_STATES) as DeliveryState[]) {
         expect(applyStateEvent(done, ev(next)), `${s} → ${next}`).toBe(done)
       }
+    }
+  })
+
+  it('a turn that ended is not final: only a new question, the conversation clearing or the end follow it (U2d)', () => {
+    for (const s of ['answered', 'turn-stopped', 'turn-declined', 'turn-failed'] as const) {
+      const done: DeliveryRecord = { ...startDelivery(SEL), phase: s }
+      for (const next of Object.keys(ALL_STATES) as DeliveryState[]) {
+        const follows = next === 'asked' || next === 'cleared' || next === 'ended'
+        const got = applyStateEvent(done, ev(next))
+        if (follows) expect(got.phase, `${s} → ${next}`).toBe(next)
+        else expect(got, `${s} → ${next}`).toBe(done)
+      }
+    }
+  })
+
+  it('a second question runs asked → answered → asked → answered, and no turn state skips "asked"', () => {
+    let rec = at('delivered')
+    for (const state of ['asked', 'answered', 'asked', 'turn-stopped', 'asked', 'turn-failed']) {
+      rec = applyStateEvent(rec, ev(state as DeliveryState))
+      expect(rec.phase).toBe(state)
+    }
+    expect(turnRunning(applyStateEvent(rec, ev('asked')))).toBe(true)
+    expect(turnRunning(rec)).toBe(false)
+    for (const end of ['answered', 'turn-stopped', 'turn-declined', 'turn-failed'] as const) {
+      const delivered = at('delivered')
+      expect(applyStateEvent(delivered, ev(end)), end).toBe(delivered)
     }
   })
 

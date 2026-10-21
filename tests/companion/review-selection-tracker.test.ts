@@ -11,6 +11,7 @@ import type {
 import {
   createBandDriver,
   createSelectionTracker,
+  createSidFollower,
   type BandSender,
   type SelectionTracker
 } from '../../src/main/companion/review-selection-tracker'
@@ -78,7 +79,11 @@ function rig() {
   })
   const states = (): string[] => events.map((e) => e.state)
   let n = 0
-  const track = (outcome?: Promise<CommandOutcome>, key = 7, selection: BandSelection = SEL) => {
+  const track = (
+    outcome?: Promise<CommandOutcome>,
+    key = 7,
+    selection: BandSelection | null = SEL
+  ) => {
     const id = `sel_${++n}`
     let resolve!: (o: CommandOutcome) => void
     const settled = outcome ?? new Promise<CommandOutcome>((r) => (resolve = r))
@@ -311,17 +316,74 @@ describe('U2a-i-AC-12 — the tracker emits review:selection:state per §9.2', (
     expect(r.events.filter((e) => e.selectionId === a.id).map((e) => e.state)).toEqual(['queued'])
   })
 
-  it('terminal states end tracking; late events are ignored', () => {
+  it('a turn that ended does not end the tracking: the next question is followed too (U2d-AC-4)', () => {
     const r = rig()
     const t = r.track()
     r.ok(t.cmd)
     r.turnStarted('human', 'turn-1')
     r.turnDone('turn-1', 'answer')
-    const n = r.events.length
+    expect(r.tracker.current(7)?.selectionId).toBe(t.id)
     r.turnStarted('human', 'turn-2')
     r.turnDone('turn-2', 'answer')
-    expect(r.events.length).toBe(n)
-    expect(r.tracker.current(7)).toBeNull()
+    expect(r.states()).toEqual(['queued', 'delivered', 'asked', 'answered', 'asked', 'answered'])
+    expect(r.events.every((e) => e.selectionId === t.id)).toBe(true)
+  })
+
+  it('every kind of ended turn lets the next one start', () => {
+    for (const reason of ['aborted', 'refusal', 'error']) {
+      const r = rig()
+      const t = r.track()
+      r.ok(t.cmd)
+      r.turnStarted('human', 'turn-1')
+      r.turnDone('turn-1', reason)
+      r.turnStarted('human', 'turn-2')
+      expect(r.states().at(-1), reason).toBe('asked')
+    }
+  })
+
+  it('a completion of a turn it did not start, or a second start while one runs, moves nothing', () => {
+    const r = rig()
+    const t = r.track()
+    r.ok(t.cmd)
+    r.turnStarted('human', 'turn-1')
+    r.turnStarted('human', 'turn-2') // overlapping: the running turn is still turn-1
+    r.turnDone('turn-2', 'answer')
+    expect(r.states()).toEqual(['queued', 'delivered', 'asked'])
+    r.turnDone('turn-1', 'answer')
+    expect(r.states().at(-1)).toBe('answered')
+  })
+
+  it('only the row going away ends the tracking: a rebound or the binding ending, after any turn', () => {
+    for (const how of ['rebound', 'end'] as const) {
+      const r = rig()
+      const t = r.track()
+      r.ok(t.cmd)
+      r.turnStarted('human', 'turn-1')
+      r.turnDone('turn-1', 'answer')
+      if (how === 'rebound') {
+        r.host.fire(
+          'event',
+          binding(),
+          ev('session.rebound', { prevSid: 'sid-1', sid: 'sid-2', cause: 'clear' })
+        )
+      } else {
+        r.host.fire('end', binding({ state: 'ended' }), 'bye')
+      }
+      expect(r.states().at(-1), how).toBe(how === 'rebound' ? 'cleared' : 'ended')
+      expect(r.tracker.current(7)).toBeNull()
+      const n = r.events.length
+      r.turnStarted('human', 'turn-2')
+      expect(r.events.length).toBe(n)
+    }
+  })
+
+  it('the row that says nothing is selected is tracked like any other', () => {
+    const r = rig()
+    const t = r.track(undefined, 7, null)
+    r.ok(t.cmd)
+    r.turnStarted('human', 'turn-1')
+    r.turnDone('turn-1', 'answer')
+    expect(r.states()).toEqual(['queued', 'delivered', 'asked', 'answered'])
   })
 
   it('an event of another binding is ignored', () => {
@@ -429,19 +491,36 @@ describe('U2a-i-AC-13 — the band driver', () => {
     return r
   }
 
-  it('clears on answered', () => {
-    const r = standing()
-    r.turnStarted('human', 'turn-1')
-    r.turnDone('turn-1', 'answer')
-    cleared(r)
-  })
-  it('clears on stopped, declined and failed turns', () => {
-    for (const reason of ['aborted', 'refusal', 'error']) {
+  it('stays after an answer, a stop, a refusal or an error: the row is still in the companion (U2d-AC-2)', () => {
+    for (const reason of ['answer', 'aborted', 'refusal', 'error']) {
       const r = standing()
       r.turnStarted('human', 'turn-1')
       r.turnDone('turn-1', reason)
-      cleared(r)
+      vi.advanceTimersByTime(1_000)
+      expect(r.sent, reason).toHaveLength(1)
+      expect(r.sent.every((s) => s.args.line !== null)).toBe(true)
+      // and it keeps refreshing under the mod's lifetime, through a second question as well
+      r.turnStarted('human', 'turn-2')
+      r.turnDone('turn-2', 'answer')
+      vi.advanceTimersByTime(60_000)
+      expect(r.sent.length, reason).toBe(2)
+      expect(r.sent.every((s) => s.args.line !== null)).toBe(true)
     }
+  })
+  it('clears when the row that says nothing is selected is delivered, and stops refreshing', () => {
+    const r = standing()
+    const none = r.track(undefined, 7, null)
+    r.ok(none.cmd)
+    cleared(r)
+  })
+  it('a row that says nothing is selected never sets a line', () => {
+    const r = bandRig()
+    const none = r.track(undefined, 7, null)
+    r.ok(none.cmd)
+    r.turnStarted('human', 'turn-1')
+    r.turnDone('turn-1', 'answer')
+    vi.advanceTimersByTime(180_000)
+    expect(r.sent.every((s) => s.args.line === null)).toBe(true)
   })
   it('clears on cleared (session.rebound), and to the NEW sid', () => {
     const r = standing()
@@ -491,8 +570,8 @@ describe('U2a-i-AC-13 — the band driver', () => {
     const a = r.track()
     r.ok(a.cmd)
     vi.advanceTimersByTime(100)
-    r.turnStarted('human', 'turn-1')
-    r.turnDone('turn-1', 'answer') // wants null
+    const none = r.track(undefined, 7, null) // wants null
+    r.ok(none.cmd)
     vi.advanceTimersByTime(100)
     const b = r.track()
     r.ok(b.cmd) // wants the line again, still inside 500 ms of the first
@@ -518,5 +597,68 @@ describe('U2a-i-AC-13 — the band driver', () => {
     r.track(Promise.resolve({ state: 'expired' }))
     await vi.advanceTimersByTimeAsync(5_000)
     expect(r.sent).toEqual([])
+  })
+})
+
+describe('U2d-AC-3 — the sid follower: a companion is the same companion after /clear', () => {
+  const rebound = (host: ReturnType<typeof fakeHost>, prevSid: string, sid: string, key = 7) =>
+    host.fire(
+      'event',
+      binding({ key, sid }),
+      ev('session.rebound', { prevSid, sid, cause: 'clear' })
+    )
+
+  it('an id it has never heard of is its own answer', () => {
+    const host = fakeHost()
+    const f = createSidFollower({ host })
+    expect(f.resolve('minted')).toBe('minted')
+  })
+
+  it('follows the minted id to the id the conversation has now, across several rebounds', () => {
+    const host = fakeHost()
+    const f = createSidFollower({ host })
+    rebound(host, 'minted', 'second')
+    expect(f.resolve('minted')).toBe('second')
+    rebound(host, 'second', 'third')
+    expect(f.resolve('minted')).toBe('third')
+    expect(f.resolve('second')).toBe('third')
+    expect(f.resolve('third')).toBe('third')
+  })
+
+  it('ignores a rebound that does not name both ids as strings', () => {
+    const host = fakeHost()
+    const f = createSidFollower({ host })
+    host.fire('event', binding(), ev('session.rebound', { sid: 'x' }))
+    host.fire('event', binding(), ev('session.rebound', { prevSid: 3, sid: 'y' }))
+    host.fire('event', binding(), ev('turn.started', { origin: 'human' }, 't'))
+    expect(f.resolve('minted')).toBe('minted')
+  })
+
+  it('forgets a binding once it ends, so a reused id is not followed into a dead conversation', () => {
+    const host = fakeHost()
+    const f = createSidFollower({ host })
+    rebound(host, 'minted', 'second')
+    host.fire('end', binding({ state: 'ended', sid: 'second' }), 'bye')
+    expect(f.resolve('minted')).toBe('minted')
+  })
+
+  it('a loop of rebounds cannot hang it', () => {
+    const host = fakeHost()
+    const f = createSidFollower({ host })
+    rebound(host, 'a', 'b')
+    rebound(host, 'b', 'a')
+    expect(['a', 'b']).toContain(f.resolve('a'))
+  })
+
+  it('dispose unsubscribes', () => {
+    const host = fakeHost()
+    const f = createSidFollower({ host })
+    expect(host.listeners('event')).toBe(1)
+    expect(host.listeners('end')).toBe(1)
+    f.dispose()
+    expect(host.listeners('event')).toBe(0)
+    expect(host.listeners('end')).toBe(0)
+    rebound(host, 'minted', 'second')
+    expect(f.resolve('minted')).toBe('minted')
   })
 })
