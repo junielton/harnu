@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-20
+
+### Added
+
+- **Select lines in the Review diff.** Click a line number to select that row, shift-click or drag across the line numbers to select a range, or use the new select-file button in a file's header to select the whole file — including binary and deleted files. A selection stays inside one hunk (past its edge it stops there and says so), shows an accent bar and tint over the diff's own add/remove colours, and works from the keyboard too: arrow keys move, Shift+arrow extends, Enter or Space selects, Esc clears. A bar at the bottom of the review names what is selected and clears it. The selection clears when its file is collapsed, and when a refresh moves the head or the base (the bar says `The head moved (a1b2c3d → e4f5a6b)`). Sending a selection to the review companion is not part of this release.
+
 ## 2026-10-19
 
 ### Fixed

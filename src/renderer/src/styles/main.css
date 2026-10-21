@@ -412,6 +412,22 @@ textarea,
   border-radius: 2px;
 }
 
+/* Review selection (T257 U1, design.md §6 "Review selection"). The overlay is a
+ * background-IMAGE gradient, never a replacing `background`: the add/del tint
+ * underneath is the semantic channel and has to stay readable through it. The
+ * gutter keeps its opaque base colour (BUG-92) and gets the same gradient plus
+ * a 2px inset accent bar, so a selection is never colour alone. A whole-file
+ * selection puts the same pair on the file header instead of on the rows. */
+.diff-row-selected,
+.diff-row-selected > [data-diff-gutter],
+.diff-file-selected {
+  background-image: linear-gradient(var(--color-accent-soft), var(--color-accent-soft));
+}
+.diff-row-selected > [data-diff-gutter],
+.diff-file-selected {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
 /* ── Syntax buckets ────────────────────────────────────────────────────────
  * Seven buckets, mapped onto the ANSI palette. Adding a language never adds a
  * rule here — it only has to fall into one of these buckets. */

@@ -367,6 +367,7 @@ _another_ folder.
 | `git-pull-request`                       | PR Stack Canvas (FolderMenu + Topbar button + the canvas' own header)                                                                                                                                                                  |
 | `git-pull-request-arrow`                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com)                                                                                                                                      |
 | `message-square`                         | Unresolved review threads on a PR Stack card (T275 — readiness chip at `full`, identity-row badge at `compact`); Review pane companion link                                                                                            |
+| `text-select`                            | Select the whole file (Review pane file header, T257); `lucide-vue-next` ships it as `TextSelect`. The delivery chip (T257 U2b) carries no glyph of its own.                                                                           |
 | `git-branch`                             | Branch badge (git folder) / repo-group header                                                                                                                                                                                          |
 | `chevron-right`                          | Collapse folder / repo-group (rotates 90° when open)                                                                                                                                                                                   |
 | `recycle`                                | Workspace GC: the Cleanup summary line, the single footer pill (replaces `trash-2` + `container` there) and the first-cycle banner. The spec's ♻ glyph, as a Lucide icon (§5 forbids text glyphs); the takeover header keeps `trash-2` |
@@ -10753,6 +10754,98 @@ is no diff rather than reporting a count of zero.
 > direction. "Nothing was read" and "nothing is there" must never share a
 > sentence, a panel, or a receipt value.
 
+#### Review selection (ReviewSelectionBar.vue, T257)
+
+Spec: `docs/specs/2026-10-20-t257-review-selection.md` §3–§5, §7, §9 · PRD
+`docs/prds/T257-review-selection.md`. **One owner for the whole section**: U1 builds
+the gestures, the highlight and the bar; the delivery chip and the outcome rows below
+are written now and built in U2b, so the chip is reviewed once.
+
+**One live selection, never a list.** A selection is a range of rows inside one
+hunk, or a whole file. Selecting anything replaces it, so there is nothing to total
+(and no count to render — PRD D7). It lives in `stores/review-selection.ts`, not in
+`stores/review.ts`.
+
+**Gestures.** Every gesture lives on the row's **gutter**, which already carries
+`select-none`, so a drag in the code column is still an ordinary text selection for
+copy-paste and never starts a diff selection.
+
+| Gesture                               | Result                                                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Click a gutter                        | Select that row. Click the only selected row again to clear                                             |
+| Shift-click another gutter            | Extend to a range in the same hunk; clamp at the hunk edge and say so                                   |
+| Press and drag across gutters         | Extends exactly as shift-click does while the pointer is down. `Esc` mid-drag restores the previous one |
+| Arrow Up/Down on a focused gutter     | Move focus. **Shift+Arrow** extends. **Enter / Space** selects (again: clears). **Esc** clears          |
+| `Select file` button in a file header | Select the whole file. Pressed again, clear                                                             |
+
+The `⋯ N unchanged lines` marker and the `@@` label are not rows: no `role`, no
+handler, never a target.
+
+**Keyboard.** A diff has thousands of rows, so gutters are **not** all tab stops. They
+form one roving-`tabindex` group per file (one gutter is `tabindex="0"`, the rest
+`-1`); each gutter has `role="button"` and `aria-pressed`. The file button is a real
+`<button>` whose accessible name includes the path. Tab order: file header → viewed
+button → select-file button → that file's current gutter → next file. Focus uses the
+standard `focus-visible` accent ring, inset.
+
+**Visual state — no new token, no new keyframe.**
+
+- **Rows** — `.diff-row-selected` (`main.css`) paints `--color-accent-soft` as a
+  `background-image` gradient **over** the row's existing add/del `background-color`.
+  A gradient, not a replacing `background`: the tint is the semantic channel and has
+  to stay readable under the overlay.
+- **Gutter** — keeps its opaque `bg-surface-2` base (BUG-92: the sticky gutter stays
+  opaque or code shows through at any scroll offset), gets the same gradient and a
+  2px `inset` `--color-accent` bar on its left edge. The bar and `aria-pressed` are the
+  second channel: a selection is never colour alone (§2).
+- **Whole file** — the file header takes the same gradient and inset bar
+  (`.diff-file-selected`); the rows get no per-row tint, the header is the subject. On
+  a sensitive file the 2px warning bar (§ "Diff — file box") stays on top of the inset
+  bar; the gradient and `aria-pressed` still carry the state.
+- **Themes** — accent-soft must stay distinguishable over add/del rows in every theme;
+  the four light ones (`light`, `catppuccin-latte`, `github-light`, `gruvbox-light`) are
+  where it washes out first. Verified in at least `dark`, `github-light` and one more.
+
+**The selection bar.** A sibling of the diff split, the last child of the review body,
+`sticky -bottom-4 z-[4]`: `rounded border border-border bg-surface`, `px-3 py-2`,
+12px text, `shadow-pop` (it floats over the diff), `.anim-fade-in` on enter (§7).
+**`-bottom-4`, not `bottom-0`, on purpose:** a sticky child pins inside its scroller's
+padding, and the review body carries `pb-7` (28px), so `bottom-0` would hold the bar
+28px above the pane edge with the diff scrolling visibly through the gap; `-bottom-4`
+leaves it 12px off the edge. `z-[4]` puts it above the sticky file headers (`z-[2]`).
+**Never** inside the evidence header or the discrepancy strip — those are receipts,
+and this bar will eventually carry a conversation's delivery state. Layout, left to
+right: a 2px accent bar, the path (mono, truncating from the right, full path in
+`title`), the range text, then the actions, then the hint on a row of its own.
+
+- **Range text** — `L85` (one row), `L85–92` (same side), `old L85–92` (left side),
+  `old L85 – new L92` (mixed), `whole file`.
+- **Actions** — U1: `Clear selection` only (a `.btn` ghost, `h-26px`). The `actions`
+  slot before it is empty in U1 and is where `Ask about this` and `Copy as text` land
+  in U2b.
+- **Hint** — transient, one line, `role="status"`, 11.5px `--text-3` (the same
+  size as the submit confirm's boundary line), on its own full-width row and
+  absent from layout while empty: `A range stays inside one hunk` after a clamp; `The head moved (a1b2c3d → e4f5a6b). Selection cleared.`
+  after a refresh moved the head (SHAs short, never ref names). With no selection and
+  a hint the bar shows the hint and a `Dismiss` button.
+- **Below ~1000px** (`NARROW_PX`, measured on the pane body) the bar wraps to two
+  rows — the subject on the first, the actions on the second. **No action hides.**
+- **No number but the line numbers.** The bar never renders a count, a ratio or a
+  percentage at any data combination (PRD D7, T243 AC-8).
+
+**Delivery chip and outcome rows (built in U2b, written here).** One chip for the
+single most recent delivery, holding one state from a closed vocabulary, in the
+neutral `--text-2` tone for **every** state — no success colour, no dot, no icon: a
+green "Sent" is a verdict the receipts cannot back (§8 "Review selection"). States:
+`Sending…`, `Sent — ask your question in the companion`, `Asked — waiting for the
+answer`, `Answered`, `That turn was stopped` / `The companion declined that turn` /
+`That turn failed`, `The conversation was cleared`, `The companion was closed`.
+"Answered" means a human turn completed after delivery — never that the answer was
+relevant. A failed send renders one closed sentence from spec §7 plus its next step
+(`Try again`, `Open Mods settings`, `Copy as text`, `Reopen "Ask a fresh session"`);
+**no text the mod or the model wrote ever reaches the DOM.** `Copy as text` is
+available in every failure state except a moved head or base.
+
 ---
 
 ### Scheduler (takeover)
@@ -11855,6 +11948,7 @@ it ran too long.**
 | ----------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hover row               | 100ms        | ease        | Background fade + scale 1.003                                                                                                                                                                             |
 | Select                  | 120ms        | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
+| Review selection bar    | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
 | Expand project          | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
 | Overlay (dialog/menu)   | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
 | Divider hover           | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
@@ -12032,6 +12126,12 @@ equal.** No artificial enthusiasm, no emoji, no exclamation marks.
   off reads the neutral "turned off by a setting or by your organization's policy", and
   anything else reads "the mod did not load". Never promise protection, and never imply
   the user did something wrong.
+- **Review selection** — short labels with no trailing period (`Clear selection`, `Ask about
+this`, `Copy as text`, `Dismiss`, and the clamp hint `A range stays inside one hunk`); complete
+  sentences keep theirs (`The head moved (a1b2c3d → e4f5a6b). Selection cleared.`). Line ranges are
+  `L85–92`, `old L85–92`, `old L85 – new L92`. The delivery chip is a **state, never a verdict**:
+  "Sent" is said only for a confirmed delivery, "Answered" only for a completed turn, and
+  nothing is ever "reviewed", "done" or "ok". `diff`, `hunk`, `head` and `base` stay untranslated.
 - **Mods audit chips** — facts in the form "can …": "can run processes", "can read every
   prompt". Never a verdict: no "safe", "verified", "trusted", "secure", "malicious" or
   "approved", in any language, and never a colour that grades a mod.
