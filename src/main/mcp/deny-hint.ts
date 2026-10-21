@@ -19,6 +19,8 @@
  * only reachable in the opt-in guarded (`ask`) mode now (`permission-core.ts`).
  */
 
+import { isBrowserDenialCode, shapeBrowserDenial } from '../browser/browser-hints'
+
 /** One concrete way for the agent to progress (a verb to call, or a human ask). */
 export interface NextAction {
   /** What to do — an MCP verb to call, or an operator action to request. */
@@ -48,6 +50,8 @@ export function shapeDenial(
   ctx: { folder?: string; syntheticId?: string } = {}
 ): SteerableDenial | null {
   const at = ctx.folder ? ` (${ctx.folder})` : ''
+  // T564 U1: the browser verbs' refusals carry their own hints.
+  if (isBrowserDenialCode(result)) return shapeBrowserDenial(result, { folder: ctx.folder })
   // T482 B5: a refused send names the offending key or line in its detail.
   const content = /^(KEY_UNKNOWN|INPUT_TOO_LARGE|WAIT_PATTERN_INVALID): ([\s\S]*)$/.exec(result)
   if (content) {

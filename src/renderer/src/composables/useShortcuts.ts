@@ -42,7 +42,7 @@ import {
  * The four scopes are sized for v1 — extend the union here when introducing
  * a new top-of-stack surface.
  */
-export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal'
+export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal' | 'browser'
 
 /**
  * Declaration of one keyboard shortcut.
