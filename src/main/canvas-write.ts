@@ -76,14 +76,15 @@ function deny(code: CanvasDenyCode, error?: string): CanvasWriteErr {
  *
  * `selfWrite` is true ONLY for the open pane's own Save (the `canvas:write` IPC):
  * the write is then recorded so the watcher swallows its echo instead of telling
- * the pane its own file changed. It defaults to false — every other writer, an
+ * the pane its own file changed. `writerId` names that pane: when other panes
+ * have the file open too, they still hear the echo (BUG-209). It defaults to false — every other writer, an
  * agent's `draw_canvas` first of all, must reach an open pane, which reloads
  * silently when clean and raises the stale banner when dirty (spec §7.3).
  */
 export async function writeCanvasFile(
   rawPath: string,
   doc: unknown,
-  opts: { selfWrite?: boolean } = {}
+  opts: { selfWrite?: boolean; writerId?: string } = {}
 ): Promise<CanvasWriteResult> {
   if (typeof rawPath !== 'string' || rawPath.length === 0)
     return deny('invalid-path', 'invalid path')
@@ -110,7 +111,7 @@ export async function writeCanvasFile(
   try {
     // Record BEFORE the write: `atomicWriteFile`'s rename is what chokidar
     // reports, and recording after it would race the event.
-    if (opts.selfWrite === true) recordCanvasSelfWrite(resolved, body)
+    if (opts.selfWrite === true) recordCanvasSelfWrite(resolved, body, opts.writerId)
     await atomicWriteFile(resolved, body, 0o644)
     return { ok: true, path: resolved, bytes }
   } catch {
@@ -123,9 +124,14 @@ export async function writeCanvasFile(
 export function registerCanvasWriteHandlers(): void {
   ipcMain.handle(
     'canvas:write',
-    (_e, args: { path: string; doc: unknown }): Promise<CanvasWriteResult> => {
-      const { path, doc } = args ?? ({} as { path: string; doc: unknown })
-      return writeCanvasFile(path, doc, { selfWrite: true })
+    (_e, args: { path: string; doc: unknown; writerId?: unknown }): Promise<CanvasWriteResult> => {
+      const { path, doc, writerId } = args ?? ({} as { path: string; doc: unknown })
+      // `writerId` names the saving pane so the watcher can tell the OTHER panes
+      // on this file about the Save (BUG-209). Untrusted: only a string counts.
+      return writeCanvasFile(path, doc, {
+        selfWrite: true,
+        writerId: typeof writerId === 'string' ? writerId : undefined
+      })
     }
   )
 }
