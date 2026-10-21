@@ -268,9 +268,16 @@
       "title": "This canvas changed on disk.",
       "reload": "Reload"
     },
+    "layers": {
+      "group": "Layers",
+      "back": "Send to back",
+      "backward": "Send backward",
+      "forward": "Bring forward",
+      "front": "Bring to front"
+    },
     "style": {
-      "panel": "Style",
-      "show": "Show style options",
+      "panel": "Properties",
+      "show": "Show properties",
       "group": {
         "tone": "Color",
         "stroke": "Stroke",

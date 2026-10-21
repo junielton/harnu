@@ -268,9 +268,16 @@
       "title": "Este canvas mudou no disco.",
       "reload": "Recarregar"
     },
+    "layers": {
+      "group": "Camadas",
+      "back": "Enviar para trás",
+      "backward": "Recuar",
+      "forward": "Avançar",
+      "front": "Trazer para a frente"
+    },
     "style": {
-      "panel": "Estilo",
-      "show": "Mostrar opções de estilo",
+      "panel": "Propriedades",
+      "show": "Mostrar propriedades",
       "group": {
         "tone": "Cor",
         "stroke": "Traço",

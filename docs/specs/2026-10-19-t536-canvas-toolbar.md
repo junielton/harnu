@@ -508,3 +508,56 @@ Outcomes the live matrix added:
   the slanted edge at every size, so it now aligns to the diamond's inscribed box
   (`refX` 25% / 75%). The ellipse keeps an 8 px inset, which measured inside (worst case
   0.992 of the chord at XL). `design.md` §6 says so.
+
+## Implementation notes (U4)
+
+What shipped in U4 (layers: bring to front, send to back, saved and agent-settable) where
+this spec is silent, or disagrees with itself or the code. The rules above are unchanged.
+
+1. **Ranks for every node once restacked.** A minimal write is not expressible: unstacked
+   nodes all load at z 1 and tie by file order. After the first real restack Save writes
+   `zIndex` 1..n on every node, so an agent's `zIndex: 100` becomes its rank. Order is kept,
+   values are not. Adding a node to a board that already carries `zIndex` also ranks every
+   node (the new node has none, so the file no longer renders in the live order). A board
+   with no `zIndex` at all that is only moved, resized, renamed or restyled is saved with no
+   `zIndex` added.
+2. **Forward and backward step past the nearest overlapping node**, not one slot in the
+   global list. Overlap is by area; boxes that only touch do not overlap.
+3. **Arrows are not layered.** Edges stay at 0, nodes at `>= 1`, so arrows always draw under
+   shapes.
+4. **The agent's `zIndex` is an integer `>= 1`** (`null` removes it on `update_node`),
+   stricter than the reader, so the verb refuses what the pane would never write.
+5. **Visibility widens.** The panel shows Layers alone for any node selection (a card alone,
+   `Ctrl+A`, a box plus a card); style groups still follow the shared-keys rule. Two U3 tests
+   changed on purpose.
+6. **Older builds and new shapes.** An older Harnu opens a restacked board with the same
+   order, but a shape drawn there has no `zIndex`, loads at 1 and reappears near the bottom
+   after reload. Not data loss. A plain move and Save here leaves it without a `zIndex` (Save
+   writes ranks only when the live order differs from the order the file already renders
+   in); it stays near the bottom until the operator restacks in this build, which then ranks
+   every node.
+7. **The edge-data fix lives in U4.** Delete, Save, undo, Save used to drop a restored
+   arrow's `label`, `router` and `props`. U5 is reader-first, so the fix ships before it.
+8. **No keyboard shortcuts for layers.** The panel only; `Ctrl+]` and `Ctrl+[` are left for a
+   follow-up.
+9. **The pane renders with distinct z values it never saves.** Unstacked nodes tie at z 1 and
+   X6 breaks ties by collection order, so undoing a restack would restore numbers but not
+   order. Rendering ranks fixes that without touching the file, because Save compares orders,
+   not values.
+
+Implementation rulings:
+
+- **`renderStackZ`** returns the file's z verbatim only when every node has a finite z > 0
+  and all are distinct; otherwise it returns dense ranks. A hand-written z <= 0 can
+  therefore never draw under the arrows.
+- **The theme redraw uses a `'live'` draft**, so undo and redo stay exact across a theme
+  switch.
+- **Warning for U5: X6 `graph.getNodes()` is insertion order, not stack order.** Use
+  `getCells()` or sort by z when you need the stack.
+- **The `draw_canvas` ACK has no free-text slot**, so the "arrows draw under nodes" rule is
+  stated in the tool description, the refusal message and the docs rather than in the ACK.
+- **The panel toggle and aria label is now "Properties"** ("Show properties"), replacing
+  "Style options".
+- **Pre-existing issue found by the e2e (out of scope):** `draw_canvas` writes arm the
+  pane's self-write suppression, so a clean open pane never reloads the agent's write.
+  Operators use the Reload button.

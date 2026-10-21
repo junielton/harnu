@@ -9,6 +9,7 @@ import {
   CANVAS_DERIVED_CHANGE,
   CANVAS_MIN_NODE_SIZE,
   createCanvasGraph,
+  operatorEdgeSpec,
   renderCanvasDocument,
   restyleCanvasNode,
   setCanvasPortsVisible,
@@ -34,6 +35,11 @@ import {
   placedRect,
   rectFromDrag
 } from '../src/renderer/src/components/canvas/canvas-edit'
+import {
+  CANVAS_LOAD_Z,
+  documentStackOrder,
+  renderStackZ
+} from '../src/renderer/src/components/canvas/canvas-layers'
 import { readCanvasPalette } from '../src/renderer/src/components/canvas/canvas-theme'
 import {
   normalizeCanvasLabel,
@@ -1144,5 +1150,108 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     await settle()
     expect(w.text()).toContain('Pick a shape from the toolbar')
     w.unmount()
+  })
+})
+
+describe('an operator edge is minted at z 0 (T536 U4)', () => {
+  it('operatorEdgeSpec carries zIndex 0, so X6 never stamps it max + 1', () => {
+    expect(operatorEdgeSpec(palette).zIndex).toBe(0)
+  })
+
+  it('a port drag adds the new edge at z 0 (the z X6 restores when the drag ends)', async () => {
+    // The real X6 path: a mousedown on a port runs `startConnectting` →
+    // `createEdgeFromMagnet` → the graph's `connecting.createEdge` hook → `addTo`
+    // the model. X6 then lifts the edge to the front for the drag and restores the z
+    // it had here on release (`beforeArrowheadDragging` / `afterArrowheadDragging`).
+    // jsdom cannot finish the release (the snap search needs layout), so the added z
+    // is what is asserted.
+    const g = makeGraph()
+    const portOf = (): Element | null =>
+      g.findViewByCell(g.getCellById('n-a')!)?.container.querySelector('[magnet="true"]') ?? null
+    // X6 draws the views in time-sliced jobs: wait (bounded) for the ports to exist.
+    const deadline = Date.now() + 2000
+    while (!portOf() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+    const added: number[] = []
+    g.on('edge:added', ({ edge }) => added.push(edge.getZIndex() as number))
+    const port = portOf()
+    expect(port, 'n-a has no port').not.toBeNull()
+    port!.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 60, clientY: 40 })
+    )
+    expect(added).toEqual([0])
+    g.dispose()
+  })
+})
+
+describe('X6 stacking on a fresh render (T536 U4)', () => {
+  const STACKED: CanvasDocument = {
+    ...DOC,
+    nodes: [
+      { ...DOC.nodes[0] },
+      { ...DOC.nodes[1], zIndex: 5 },
+      { ...DOC.nodes[2] },
+      { id: 'n-d', shape: 'box', x: 600, y: 40, label: 'D', origin: 'agent', zIndex: 0 }
+    ]
+  }
+  const nodeZ = (g: Graph): Record<string, number> =>
+    Object.fromEntries(g.getNodes().map((n) => [n.id, n.getZIndex() as number]))
+
+  it('pins what every earlier build passes: a node without zIndex comes up at CANVAS_LOAD_Z', () => {
+    const g = makeGraph(DOC)
+    g.clearCells()
+    g.fromJSON({
+      cells: [
+        { id: 'n-a', shape: 'rect', x: 0, y: 0, width: 10, height: 10 },
+        { id: 'n-b', shape: 'rect', x: 0, y: 0, width: 10, height: 10, zIndex: 5 },
+        { id: 'n-c', shape: 'rect', x: 0, y: 0, width: 10, height: 10 },
+        { id: 'n-d', shape: 'rect', x: 0, y: 0, width: 10, height: 10, zIndex: 0 }
+      ]
+    })
+    const z = nodeZ(g)
+    expect(z['n-a']).toBe(CANVAS_LOAD_Z)
+    expect(z['n-c']).toBe(CANVAS_LOAD_Z)
+    expect(g.getNodes().map((n) => n.id)).toEqual(documentStackOrder(STACKED.nodes))
+  })
+
+  it('renders every node at a distinct z above the edges, in the document stack order', () => {
+    const g = makeGraph(STACKED)
+    const expected = renderStackZ(STACKED.nodes)
+    expect(nodeZ(g)).toEqual(Object.fromEntries(expected))
+    expect(new Set(Object.values(nodeZ(g))).size).toBe(STACKED.nodes.length)
+    expect(g.getEdges()[0].getZIndex()).toBe(0)
+    expect(g.getNodes().map((n) => n.id)).toEqual(documentStackOrder(STACKED.nodes))
+  })
+
+  it('puts a node added afterwards above every other cell', () => {
+    const g = makeGraph(STACKED)
+    const added = g.addNode({ id: 'n-new', shape: 'rect', x: 0, y: 0, width: 10, height: 10 })
+    const others = [...g.getNodes(), ...g.getEdges()].filter((c) => c.id !== 'n-new')
+    expect(added.getZIndex() as number).toBeGreaterThan(
+      Math.max(...others.map((c) => c.getZIndex() as number))
+    )
+  })
+
+  it('keeps the file order after a batched restack is undone (the tie trap)', () => {
+    // The stack is read off `getCells()`, the collection X6 re-sorts on every z
+    // change. `getNodes()` reads an insertion-order cache that never moves on a z
+    // change, so an order claim made with it after a restack could not fail.
+    const stack = (g: Graph): string[] =>
+      g
+        .getCells()
+        .filter((c) => c.isNode())
+        .map((c) => c.id)
+    const g = makeGraph(DOC)
+    const fileOrder = DOC.nodes.map((n) => n.id)
+    expect(stack(g)).toEqual(fileOrder)
+    g.startBatch('layer')
+    g.getCellById('n-a')!.setZIndex(3)
+    g.getCellById('n-b')!.setZIndex(1)
+    g.getCellById('n-c')!.setZIndex(2)
+    g.stopBatch('layer')
+    // The restack really moved the order, so the equality after undo is not trivial.
+    expect(stack(g)).toEqual(['n-b', 'n-c', 'n-a'])
+    g.undo()
+    // Undo restores distinct render z, not ties a stable re-sort would leave as n-b, n-c, n-a.
+    expect(stack(g)).toEqual(fileOrder)
   })
 })

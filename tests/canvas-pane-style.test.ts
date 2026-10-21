@@ -162,6 +162,9 @@ afterEach(() => {
 // ── helpers ─────────────────────────────────────────────────────────────────
 /** Click a cell in Select: the first replaces the selection, the rest add with shift. */
 async function select(w: VueWrapper, ...ids: string[]): Promise<void> {
+  // X6 draws views in time-sliced jobs (an arrow after the shapes it joins), so on a busy
+  // runner a cell can still be missing after a fixed number of ticks: wait until it exists.
+  await settleUntil(() => ids.every((id) => nodeEl(w, id) !== null))
   ids.forEach((id, i) => {
     const init = i === 0 ? {} : { shiftKey: true }
     down(nodeEl(w, id), AT[id], init)
@@ -193,6 +196,7 @@ const groups = (w: VueWrapper): string[] =>
   w
     .findAll('[data-testid^="canvas-prop-group-"]')
     .map((g) => g.attributes('data-testid')!.replace('canvas-prop-group-', ''))
+const layers = (w: VueWrapper): boolean => w.find('[data-testid="canvas-layers"]').exists()
 const isDirty = (w: VueWrapper): boolean => w.find('[data-testid="diagram-dirty-dot"]').exists()
 
 async function pick(w: VueWrapper, key: string, value: string | number): Promise<void> {
@@ -241,6 +245,53 @@ async function switchTheme(w: VueWrapper, vars: Record<string, string>): Promise
   await settleUntil(() => nodeEl(w, 'n-a') !== null && nodeEl(w, 'n-a') !== before)
 }
 
+// ── an arrow through delete, Save and undo ─────────────────────────────────
+describe('DiagramPane — an arrow restored by undo after a Save (T536 U4)', () => {
+  it('keeps its label, router and props in the second Save', async () => {
+    const doc: CanvasDocument = {
+      ...DOC,
+      edges: [
+        {
+          id: 'e-1',
+          source: 'n-a',
+          target: 'n-b',
+          label: 'IPC',
+          router: 'normal',
+          origin: 'agent',
+          props: { weight: 2 }
+        }
+      ]
+    }
+    canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc }))
+    const w = mountPane()
+    await settle()
+    await select(w, 'e-1')
+    expect(selectedIds(w)).toEqual(['e-1'])
+    focusPane(w)
+    key('Delete')
+    await settle()
+    expect((await saveAndRead(w)).edges).toEqual([])
+
+    // Save keeps the undo history, and the pane's own write is not echoed back, so
+    // the graph restores the arrow while the base document no longer has it.
+    focusPane(w)
+    key('z', { ctrlKey: true })
+    await settle()
+    const saved = await saveAndRead(w)
+    expect(saved.edges).toEqual([
+      {
+        id: 'e-1',
+        source: 'n-a',
+        target: 'n-b',
+        label: 'IPC',
+        router: 'normal',
+        origin: 'agent',
+        props: { weight: 2 }
+      }
+    ])
+  })
+})
+
 // ── visibility ──────────────────────────────────────────────────────────────
 describe('DiagramPane properties panel — when it shows', () => {
   it('shows for a selected node in Select only, and holding Space keeps it', async () => {
@@ -273,11 +324,22 @@ describe('DiagramPane properties panel — when it shows', () => {
     await settle()
 
     // Everything, edge included: the mockup card takes no key, so none is shared.
+    // T536 U4 changed this ON PURPOSE: it used to show no panel at all; now the
+    // panel shows for any node selection, with the Layers group and no style group.
     focusPane(w)
     key('a', { ctrlKey: true })
     await settle()
     expect(selectedIds(w)).toContain('n-m')
-    expect(panel(w)).toBe(false)
+    expect(panel(w)).toBe(true)
+    expect(layers(w)).toBe(true)
+    expect(groups(w)).toEqual([])
+
+    // A box plus the mockup card: no shared key, so again Layers alone (T536 U4).
+    await select(w, 'n-a', 'n-m')
+    expect(selectedIds(w)).toEqual(['n-a', 'n-m'])
+    expect(panel(w)).toBe(true)
+    expect(layers(w)).toBe(true)
+    expect(groups(w)).toEqual([])
 
     // A box, an ellipse and the edge: the ellipse has no corners; the edge is ignored.
     await select(w, 'n-a', 'n-e', 'e-1')

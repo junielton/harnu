@@ -1,5 +1,6 @@
 import type { CanvasDocument, CanvasEdge, CanvasNode } from '../../../../main/canvas-core'
 import type { CanvasPalette } from './canvas-theme'
+import { renderStackZ } from './canvas-layers'
 import { readCanvasStyle, toneColors, type CanvasStyle } from './canvas-style'
 import {
   LEGACY_MOCKUP_CARD_SHAPE,
@@ -483,6 +484,10 @@ export function toX6Node(
  * editing, and the moment a rename can reach `labels[]` the stale-label trap
  * reopens ON EDGES — so U3 must either normalize the edge label on the way out
  * or keep the document authoritative the way this does.
+ *
+ * `data.label` (with `router` and `props`) is the document's own copy, carried
+ * through the graph so an arrow restored by undo after a Save keeps them (U4). It
+ * is never X6's `labels[]`, which stays derived and is never read back.
  */
 export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
   return {
@@ -491,7 +496,12 @@ export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
     source: edge.source,
     target: edge.target,
     zIndex: 0,
-    data: { origin: edge.origin },
+    data: {
+      origin: edge.origin,
+      ...(edge.label === undefined ? {} : { label: edge.label }),
+      ...(edge.router === undefined ? {} : { router: edge.router }),
+      ...(edge.props === undefined ? {} : { props: edge.props })
+    },
     router: { name: edge.router ?? 'manhattan' },
     connector: { name: 'rounded', args: { radius: 8 } },
     attrs: {
@@ -523,15 +533,21 @@ export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
   }
 }
 
-/** The whole document as one `fromJSON` payload — nodes first, then edges. */
+/**
+ * The whole document as one `fromJSON` payload — nodes first, then edges. Every node is
+ * rendered at its {@link renderStackZ} (distinct, always >= 1), so the order on screen
+ * never depends on X6's tie-breaking; edges stay at 0 under the nodes. Those z values
+ * are for the screen only: the file's own `zIndex` is read from the base document.
+ */
 export function toX6Cells(
   doc: CanvasDocument,
   palette: CanvasPalette,
   images: ResolvedImages = {}
 ): { cells: X6CellSpec[] } {
+  const z = renderStackZ(doc.nodes)
   return {
     cells: [
-      ...doc.nodes.map((n) => toX6Node(n, palette, images)),
+      ...doc.nodes.map((n) => toX6Node({ ...n, zIndex: z.get(n.id) }, palette, images)),
       ...doc.edges.map((e) => toX6Edge(e, palette))
     ]
   }

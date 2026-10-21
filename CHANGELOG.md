@@ -10,6 +10,22 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-20
+
+### Added
+
+- **Layer controls in the canvas Properties panel.** Select one or more shapes and use **Send to back**, **Send backward**, **Bring forward** and **Bring to front** at the bottom of the panel. Forward and backward step past the next shape that overlaps the selection, arrows always stay under shapes, and each move is one undo step. Stacking values are written to the file only after you restack, or when you add a shape to a board that already has them; a board without any that you only move, resize, rename or restyle is saved with no new keys.
+- **Sessions can set stacking on the canvas.** `draw_canvas` accepts a `zIndex` (a whole number from 1) when adding or updating a node, so an agent can put one shape in front of another.
+
+### Changed
+
+- **The canvas panel is now called Properties, and it shows for every shape.** A card on its own, **Ctrl/⌘ + A**, or a box together with a card now show the Layers buttons instead of no panel at all.
+
+### Fixed
+
+- An arrow you delete, save and then bring back with undo is now saved with its label, routing and extra data, instead of losing them.
+- An arrow you draw in the canvas pane now stays under the shapes it connects, instead of painting over them until the board was reopened.
+
 ## 2026-10-19
 
 ### Added
