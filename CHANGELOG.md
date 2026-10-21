@@ -14,6 +14,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Style canvas shapes from a new Style panel.** Select one or more shapes in Select and a panel appears at the left edge of the board with six kinds of control: **Color** (default, accent, green, amber, red, muted), **Stroke** style and **width**, **Corners** (boxes only), **Text size** and **Align**, and **Opacity**. The panel only offers what every selected shape accepts, each pick is a single undo step, colours follow the theme, and in a narrow pane the panel folds into a **palette** button.
+- **Sessions can style the shapes they draw.** `draw_canvas` accepts a `style` field on a node (a tone, a dashed or dotted outline, a stroke weight, a font size, an alignment, an opacity). A value Harnu does not know is refused, and styles you set from the panel survive when a session later edits the same shape.
 - **Diamond and Ellipse tools on the canvas toolbar.** Two new buttons sit between Rectangle and Arrow. **Diamond** (**D** or **3**) and **Ellipse** (**O** or **4**) work like Rectangle: click to place a standard-size shape, or drag to draw one to the size you want, then type its name. They are handy for decisions and start/end points in a flow. Arrows connect to them like any other shape.
 - **Sessions can draw ellipses and diamonds on a canvas.** When an agent draws a diagram with `draw_canvas`, it can now use ellipse and diamond shapes alongside boxes, text, cards and images, and you can move, resize and rename them like anything you drew yourself.
 - **Saving a canvas keeps the extra data stored inside an arrow's `props`.** If a board's arrows carry such details (styling, for example), opening the board, editing and saving now writes them back untouched instead of dropping them. Extra data kept anywhere else on an arrow is still not preserved.
@@ -32,6 +34,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- Hovering a canvas shape no longer adds undo steps or empties the redo stack.
+- Switching theme with a canvas open now keeps your selection and its resize handles, instead of clearing them.
 - The footer no longer goes silently blank when a session has no live statusLine telemetry. It now shows the session's last known model, context and cost, dimmed, with how long ago they were seen on hover and a short reason beside them ("telemetry expired" or "no live telemetry"). Sessions Harnu has never heard from still show their model and context, read from the transcript. Stale values are never presented as live.
 - A session that keeps answering but stops sending statusLine telemetry is now flagged in the footer with "Not reporting — restart session"; clicking it restarts the session (the conversation is kept) and the hint clears on the next telemetry.
 - When Harnu finds the `statusLine` setting removed from `~/.claude/settings.json` it re-installs it as before, and now also records what it found (time, the file's last-change time, the running `claude` processes) in `heal-log.ndjson` next to the telemetry cache, and posts one Activity notice naming the sessions that started before the repair and need a restart.

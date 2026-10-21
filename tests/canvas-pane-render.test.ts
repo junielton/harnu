@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
-import { nextTick } from 'vue'
 import { Graph } from '@antv/x6'
 import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
 import {
@@ -23,9 +21,9 @@ import {
 import { CANVAS_SUFFIX } from '../src/main/canvas-core'
 import { paneComponents } from '../src/renderer/src/lib/pane-components'
 import { paneRegistry } from '../src/renderer/src/lib/pane-registry'
-import { i18n } from '@renderer/i18n'
 import type { CanvasDocument } from '../src/main/canvas-core'
 import { installJsdomSvgShim, svgHost } from './helpers/jsdom-svg'
+import { mountPane, settle, unmountPanes } from './helpers/canvas-pane-harness'
 
 // jsdom implements the SVG tree but none of its geometry — X6 cannot construct
 // a graph without it. See the shim's header: it polyfills a jsdom gap, it does
@@ -265,14 +263,6 @@ const canvasWatchStop = vi.fn(async () => undefined)
 const markdownRead = vi.fn(async () => ({ ok: false as const, code: 'not-found', error: 'x' }))
 let canvasChangedCb: ((p: { path: string }) => void) | null = null
 
-const PANE = {
-  id: 'h-canvas',
-  type: 'canvas' as const,
-  cwd: '/wt',
-  ratio: 1,
-  filePath: '/wt/board.harnucanvas.json'
-}
-
 beforeEach(() => {
   canvasRead.mockClear()
   canvasWatchStart.mockClear()
@@ -302,20 +292,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-function mountPane(pane = PANE) {
-  return mount(DiagramPane, {
-    props: { pane: { ...pane }, worktreePath: '/wt' },
-    global: { plugins: [i18n] },
-    attachTo: document.body
-  })
-}
-
-async function settle(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await flushPromises()
-    await nextTick()
-  }
-}
+afterEach(unmountPanes)
 
 describe('DiagramPane', () => {
   it('reads the file through the confined canvas IPC and renders it (AC U2-2)', async () => {
@@ -467,7 +444,7 @@ describe('DiagramPane', () => {
   })
 
   it('an invalid pane path fails closed instead of calling the reader', async () => {
-    const w = mountPane({ ...PANE, filePath: '' })
+    const w = mountPane({ filePath: '' })
     await settle()
     expect(canvasRead).not.toHaveBeenCalled()
     expect(w.text()).toContain("isn't a canvas file")

@@ -355,6 +355,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | PR Stack settings pane (Settings tab, T198)        | `src/renderer/src/components/PrStackSettingsPane.vue`                            |
 | Diagram pane (canvas viewer, non-PTY, T218)        | `src/renderer/src/components/DiagramPane.vue` + `components/canvas/*`            |
 | Canvas toolbar (§6 — T536)                         | `src/renderer/src/components/CanvasToolbar.vue` + `canvas/canvas-tools.ts`       |
+| Canvas properties panel (§6 — T536 U3)             | `src/renderer/src/components/CanvasPropertiesPanel.vue` + `canvas-style.ts`      |
 | Scheduler (takeover, T291)                         | `src/renderer/src/components/SchedulerView.vue`                                  |
 | Scheduler worker row                               | `src/renderer/src/components/SchedulerWorkerRow.vue`                             |
 | Scheduler prompt field (skill mentions, T305)      | `src/renderer/src/components/SchedulerPromptField.vue` + `scheduler-mentions.ts` |

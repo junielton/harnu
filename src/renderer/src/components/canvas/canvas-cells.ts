@@ -1,5 +1,6 @@
 import type { CanvasDocument, CanvasEdge, CanvasNode } from '../../../../main/canvas-core'
 import type { CanvasPalette } from './canvas-theme'
+import { readCanvasStyle, toneColors, type CanvasStyle } from './canvas-style'
 import {
   LEGACY_MOCKUP_CARD_SHAPE,
   MOCKUP_CARD_DEFAULT_SIZE,
@@ -159,6 +160,79 @@ function sizeFor(node: CanvasNode): { width: number; height: number } {
   }
 }
 
+/** `style.stroke` → `strokeDasharray`; `solid` (and an absent key) draws none. */
+const DASH_BY_STROKE: Readonly<Record<string, string>> = { dashed: '6 4', dotted: '2 3' }
+/** `style.strokeWidth` → px (`regular` is today's 1.5). */
+const WIDTH_BY_STROKE_WIDTH: Readonly<Record<string, number>> = { thin: 1, regular: 1.5, bold: 2.5 }
+/** `style.fontSize` → px: Caption, today's canvas 12, Subtitle, Title (`design.md` §3). */
+const FONT_PX: Readonly<Record<string, number>> = { s: 11, m: 12, l: 15, xl: 20 }
+/** Corner radius of a rounded box, and so of `corners: "round"` (`--radius`). */
+const BOX_RADIUS = 7
+/** How far `align: left | right` sits from the frame's edge, in world units. */
+const ALIGN_INSET = 8
+/**
+ * A diamond is a point at its bounding box's left and right edges, so an 8px inset
+ * there would put a left/right label past the slanted frame. It aligns to its
+ * inscribed box instead: a quarter of the width in, where the frame is half its
+ * height tall (`design.md` §6 "Node styles").
+ */
+const DIAMOND_ALIGN_REF = { left: '25%', right: '75%' } as const
+
+/**
+ * A node's {@link CanvasStyle} as X6 attributes — the ONE place a style value
+ * becomes a number, a dasharray or a colour. `body` and `label` hold only what the
+ * style actually sets, so a node with no style spreads two empty objects and its
+ * cell is exactly what it was before styles existed. `label` is applied to BOTH
+ * `text` and `label` attribute paths by the caller (§4.5, spike trap 3).
+ *
+ * `kind` decides what a tone means: a bare `text` node has no frame, so its tone
+ * is the label colour alone. Which keys a kind may carry is already settled by
+ * {@link readCanvasStyle}, so nothing here re-checks it.
+ */
+function styledAttrs(
+  style: CanvasStyle,
+  kind: string,
+  palette: CanvasPalette
+): { body: Record<string, unknown>; label: Record<string, unknown> } {
+  const body: Record<string, unknown> = {}
+  const label: Record<string, unknown> = {}
+  if (style.tone !== undefined) {
+    const colors = toneColors(style.tone, kind, palette)
+    label.fill = colors.label
+    if (kind !== 'text') {
+      body.stroke = colors.stroke
+      body.fill = colors.fill
+    }
+  }
+  if (typeof style.stroke === 'string' && style.stroke in DASH_BY_STROKE) {
+    body.strokeDasharray = DASH_BY_STROKE[style.stroke]
+  }
+  if (typeof style.strokeWidth === 'string') {
+    body.strokeWidth = WIDTH_BY_STROKE_WIDTH[style.strokeWidth]
+  }
+  if (style.corners !== undefined) {
+    const radius = style.corners === 'sharp' ? 0 : BOX_RADIUS
+    body.rx = radius
+    body.ry = radius
+  }
+  if (typeof style.fontSize === 'string') label.fontSize = FONT_PX[style.fontSize]
+  if (kind === 'diamond' && (style.align === 'left' || style.align === 'right')) {
+    Object.assign(label, {
+      textAnchor: style.align === 'left' ? 'start' : 'end',
+      refX: DIAMOND_ALIGN_REF[style.align]
+    })
+  } else if (style.align === 'left') {
+    Object.assign(label, { textAnchor: 'start', refX: '0%', refX2: ALIGN_INSET })
+  } else if (style.align === 'right') {
+    Object.assign(label, { textAnchor: 'end', refX: '100%', refX2: -ALIGN_INSET })
+  }
+  if (typeof style.opacity === 'number' && style.opacity !== 100) {
+    body.opacity = style.opacity / 100
+    label.opacity = style.opacity / 100
+  }
+  return { body, label }
+}
+
 /**
  * Node → cell. The label is written through {@link labelAttrsFor}, so BOTH
  * X6 attribute paths carry the normalized value (§4.5, spike trap 3). Setting
@@ -173,6 +247,9 @@ export function toX6Node(
   const { width, height } = sizeFor(node)
   const label = node.label ?? ''
   const labelAttrs = labelAttrsFor(label)
+  // Only what this kind takes and this build knows; `{}` for the mockup card and
+  // for an unknown kind, which therefore render exactly as before styles existed.
+  const styled = styledAttrs(readCanvasStyle(node.props, node.shape), node.shape, palette)
 
   const common: X6CellSpec = {
     id: node.id,
@@ -205,22 +282,30 @@ export function toX6Node(
   if (node.shape === 'text') {
     // No frame, no fill — a bare label. `--text-2` rather than `--text`: with no
     // body behind it, a callout that shouts competes with the boxes.
+    //
+    // The body is still a full-frame rect filled `transparent`, not `none`: SVG
+    // hit-tests a shape only where its fill is painted, so with `none` a press at
+    // the centre of a left/right aligned label fell through to the board and the
+    // node could not be selected there. `transparent` is painted for hit-testing
+    // and invisible on screen, in every theme.
     return {
       ...common,
       shape: 'rect',
       attrs: {
-        body: { fill: 'none', stroke: 'none' },
+        body: { fill: 'transparent', stroke: 'none', ...styled.body },
         text: {
           ...labelAttrs.text,
           fill: palette.text2,
           fontSize: 12,
-          fontFamily: palette.fontSans
+          fontFamily: palette.fontSans,
+          ...styled.label
         },
         label: {
           ...labelAttrs.label,
           fill: palette.text2,
           fontSize: 12,
-          fontFamily: palette.fontSans
+          fontFamily: palette.fontSans,
+          ...styled.label
         }
       }
     }
@@ -235,7 +320,8 @@ export function toX6Node(
         shape: 'image',
         imageUrl: resolved,
         attrs: {
-          image: { xlinkHref: resolved },
+          // An image takes `opacity` only (`styled.body` carries nothing else).
+          image: { xlinkHref: resolved, ...styled.body },
           // The label sits BELOW the frame so it never covers the picture.
           text: {
             ...labelAttrs.text,
@@ -244,7 +330,8 @@ export function toX6Node(
             fontFamily: palette.fontSans,
             refY: '100%',
             refY2: 4,
-            textVerticalAnchor: 'top'
+            textVerticalAnchor: 'top',
+            ...styled.label
           },
           label: {
             ...labelAttrs.label,
@@ -253,7 +340,8 @@ export function toX6Node(
             fontFamily: palette.fontSans,
             refY: '100%',
             refY2: 4,
-            textVerticalAnchor: 'top'
+            textVerticalAnchor: 'top',
+            ...styled.label
           }
         }
       }
@@ -271,19 +359,22 @@ export function toX6Node(
           strokeWidth: 1,
           strokeDasharray: '3 3',
           rx: 7,
-          ry: 7
+          ry: 7,
+          ...styled.body
         },
         text: {
           text: placeholder,
           fill: palette.text3,
           fontSize: 11,
-          fontFamily: palette.fontSans
+          fontFamily: palette.fontSans,
+          ...styled.label
         },
         label: {
           text: placeholder,
           fill: palette.text3,
           fontSize: 11,
-          fontFamily: palette.fontSans
+          fontFamily: palette.fontSans,
+          ...styled.label
         }
       }
     }
@@ -326,11 +417,24 @@ export function toX6Node(
   const bodyAttrs = {
     fill: palette.surface,
     stroke: palette.border2,
-    strokeWidth: 1.5
+    strokeWidth: 1.5,
+    ...styled.body
   }
   const labelled = {
-    text: { ...labelAttrs.text, fill: palette.text, fontSize: 12, fontFamily: palette.fontSans },
-    label: { ...labelAttrs.label, fill: palette.text, fontSize: 12, fontFamily: palette.fontSans }
+    text: {
+      ...labelAttrs.text,
+      fill: palette.text,
+      fontSize: 12,
+      fontFamily: palette.fontSans,
+      ...styled.label
+    },
+    label: {
+      ...labelAttrs.label,
+      fill: palette.text,
+      fontSize: 12,
+      fontFamily: palette.fontSans,
+      ...styled.label
+    }
   }
 
   if (node.shape === 'ellipse') {
@@ -354,9 +458,10 @@ export function toX6Node(
     shape: 'rect',
     attrs: {
       body: {
+        rx: BOX_RADIUS,
+        ry: BOX_RADIUS,
+        // After the default radius: `corners` (box only) arrives in `bodyAttrs`.
         ...bodyAttrs,
-        rx: 7,
-        ry: 7,
         // An unknown shape reads as a box, but a dashed outline says so rather
         // than pretending the document rendered exactly as written.
         ...(known ? {} : { strokeDasharray: '4 3' })

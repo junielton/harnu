@@ -37,6 +37,56 @@
  *     list changes with the code and a doc that drifts is worse than one that points.
  */
 
+/**
+ * The seven keys of a node's `props.style` (T536 U3, `design.md` §6 "Node
+ * styles"), in the order the catalog lists them. A key that is absent renders
+ * as its default, so a board drawn before U3 looks exactly as it did.
+ */
+export const CANVAS_STYLE_KEYS = [
+  'tone',
+  'stroke',
+  'strokeWidth',
+  'corners',
+  'fontSize',
+  'align',
+  'opacity'
+] as const
+export type CanvasStyleKey = (typeof CANVAS_STYLE_KEYS)[number]
+/** A style value as the file spells it — `opacity` is a JSON number, the rest are strings. */
+export type CanvasStyleValue = string | number
+
+/** The allowed values per key, in file spelling. Mirrors the `design.md` table. */
+export const CANVAS_STYLE_VALUES: Readonly<Record<CanvasStyleKey, readonly CanvasStyleValue[]>> = {
+  tone: ['default', 'accent', 'green', 'amber', 'red', 'muted'],
+  stroke: ['solid', 'dashed', 'dotted'],
+  strokeWidth: ['thin', 'regular', 'bold'],
+  corners: ['sharp', 'round'],
+  fontSize: ['s', 'm', 'l', 'xl'],
+  align: ['left', 'center', 'right'],
+  opacity: [25, 50, 75, 100]
+}
+
+/**
+ * What an absent key renders as. Writing a value equal to its default REMOVES
+ * the key, so a reset node is byte-identical to one that was never styled.
+ */
+export const CANVAS_STYLE_DEFAULTS: Readonly<Record<CanvasStyleKey, CanvasStyleValue>> = {
+  tone: 'default',
+  stroke: 'solid',
+  strokeWidth: 'regular',
+  corners: 'round',
+  fontSize: 'm',
+  align: 'center',
+  opacity: 100
+}
+
+/** Build a shape's `style` table from the keys it takes, in {@link CANVAS_STYLE_KEYS} order. */
+function styleOf(...keys: CanvasStyleKey[]): CanvasShapeSpec['style'] {
+  return Object.fromEntries(
+    CANVAS_STYLE_KEYS.filter((k) => keys.includes(k)).map((k) => [k, CANVAS_STYLE_VALUES[k]])
+  )
+}
+
 /** One entry in the shape catalog — what the agent is told about a shape. */
 export interface CanvasShapeSpec {
   /**
@@ -55,6 +105,14 @@ export interface CanvasShapeSpec {
    * accumulate junk no renderer reads.
    */
   props: readonly string[]
+  /**
+   * The `props.style` keys this shape honours, each with its allowed values
+   * (T536 U3). It is separate from {@link props} on purpose: `style` merges per
+   * key and survives a `props` replace, so it is never a `props` key. A key not
+   * listed here is refused `BAD_PROPS`; an empty table means the shape takes no
+   * style at all.
+   */
+  style: Readonly<Partial<Record<CanvasStyleKey, readonly CanvasStyleValue[]>>>
 }
 
 /**
@@ -81,32 +139,37 @@ export const CANVAS_BUILTIN_SHAPES: readonly CanvasShapeSpec[] = [
     name: 'box',
     description: 'Rounded rectangle with a centred label. The default.',
     defaultSize: DEFAULT_FRAMED_SIZE,
-    props: []
+    props: [],
+    style: styleOf(...CANVAS_STYLE_KEYS)
   },
   {
     name: 'ellipse',
     description: 'Ellipse with a centred label — for states, start/end points.',
     defaultSize: { width: 132, height: 64 },
-    props: []
+    props: [],
+    style: styleOf('tone', 'stroke', 'strokeWidth', 'fontSize', 'align', 'opacity')
   },
   {
     name: 'diamond',
     description: 'Diamond with a centred label — for decisions in a flow.',
     defaultSize: { width: 132, height: 80 },
-    props: []
+    props: [],
+    style: styleOf('tone', 'stroke', 'strokeWidth', 'fontSize', 'align', 'opacity')
   },
   {
     name: 'text',
     description: 'A bare label with no frame or fill — for annotations and callouts.',
     defaultSize: DEFAULT_TEXT_SIZE,
-    props: []
+    props: [],
+    style: styleOf('tone', 'fontSize', 'align', 'opacity')
   },
   {
     name: 'image',
     description:
       'Renders an asset by relative path. props.src is "assets/<file>" — never a data URI; attach the bytes with the verb\'s images[] first.',
     defaultSize: { width: 240, height: 160 },
-    props: ['src']
+    props: ['src'],
+    style: styleOf('opacity')
   }
 ] as const
 
@@ -121,7 +184,8 @@ export const CANVAS_HTML_SHAPES: readonly CanvasShapeSpec[] = [
     description:
       'A titled card that renders a live Harnu component on the board — for a mockup or a deliverable summary.',
     defaultSize: { width: 260, height: 160 },
-    props: ['title', 'subtitle', 'status', 'body']
+    props: ['title', 'subtitle', 'status', 'body'],
+    style: styleOf()
   }
 ] as const
 

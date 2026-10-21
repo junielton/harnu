@@ -570,3 +570,79 @@ describe('parseCanvasDocument', () => {
     expect(r.doc).toEqual(empty)
   })
 })
+
+describe('props.style survives the released reader (T536 U3)', () => {
+  // A board written by this build, opened and saved by a reader that knows nothing
+  // about `style`: it must come back byte for byte, unknown value and key included.
+  const text = `${JSON.stringify(
+    {
+      capycanvas: CANVAS_SCHEMA_VERSION,
+      meta: {},
+      nodes: [
+        {
+          id: 'n-box',
+          shape: 'box',
+          x: 0,
+          y: 0,
+          origin: 'agent',
+          props: { style: { tone: 'green', stroke: 'dashed' } }
+        },
+        {
+          id: 'n-ell',
+          shape: 'ellipse',
+          x: 10,
+          y: 0,
+          origin: 'agent',
+          props: { style: { tone: 'purple' } }
+        },
+        {
+          id: 'n-dia',
+          shape: 'diamond',
+          x: 20,
+          y: 0,
+          origin: 'operator',
+          props: { style: { glow: 'max', opacity: 50 } }
+        },
+        {
+          id: 'n-txt',
+          shape: 'text',
+          x: 30,
+          y: 0,
+          origin: 'agent',
+          props: { style: { fontSize: 'xl', align: 'left' } }
+        },
+        {
+          id: 'n-img',
+          shape: 'image',
+          x: 40,
+          y: 0,
+          origin: 'agent',
+          props: { src: 'assets/a.png', style: { opacity: 25 } }
+        }
+      ],
+      edges: []
+    },
+    null,
+    2
+  )}\n`
+
+  it('passes parseCanvasDocument with every style intact', () => {
+    const parsed = parseCanvasDocument(text)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.doc.nodes.map((n) => n.props?.style)).toEqual([
+      { tone: 'green', stroke: 'dashed' },
+      { tone: 'purple' },
+      { glow: 'max', opacity: 50 },
+      { fontSize: 'xl', align: 'left' },
+      { opacity: 25 }
+    ])
+  })
+
+  it('serializes back to the exact input text', () => {
+    const parsed = parseCanvasDocument(text)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(serializeCanvasDocument(parsed.doc)).toBe(text)
+  })
+})

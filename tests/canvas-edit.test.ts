@@ -6,9 +6,11 @@ import { nextTick } from 'vue'
 import type { Graph } from '@antv/x6'
 import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
 import {
+  CANVAS_DERIVED_CHANGE,
   CANVAS_MIN_NODE_SIZE,
   createCanvasGraph,
   renderCanvasDocument,
+  restyleCanvasNode,
   setCanvasPortsVisible,
   setCanvasRubberband
 } from '../src/renderer/src/components/canvas/canvas-graph'
@@ -25,6 +27,7 @@ import {
   duplicateOperatorNode,
   isDrawGesture,
   mintCanvasId,
+  nodeDraftFromCell,
   normalizeCellLabel,
   operatorEdgeData,
   operatorNode,
@@ -102,7 +105,7 @@ const DOC: CanvasDocument = {
 
 const NOW = '2026-08-23T12:00:00.000Z'
 
-function makeGraph(doc: CanvasDocument = DOC): Graph {
+function makeGraph(doc: CanvasDocument = DOC, images: Record<string, string> = {}): Graph {
   const g = createCanvasGraph({
     container: svgHost(),
     palette,
@@ -110,7 +113,7 @@ function makeGraph(doc: CanvasDocument = DOC): Graph {
     height: 600,
     editable: true
   })
-  renderCanvasDocument(g, doc, palette)
+  renderCanvasDocument(g, doc, palette, images)
   return g
 }
 
@@ -470,6 +473,175 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     g.dispose()
   })
 
+  it('history drops a change marked CANVAS_DERIVED_CHANGE and keeps an ordinary one (T536 U3)', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    const node = g.getCellById('n-a')!
+    node.setAttrs({ body: { stroke: '#123456' } }, { [CANVAS_DERIVED_CHANGE]: true })
+    expect(node.attr('body/stroke')).toBe('#123456')
+    expect(g.canUndo()).toBe(false)
+    node.setAttrs({ body: { stroke: '#654321' } })
+    expect(g.canUndo()).toBe(true)
+    g.dispose()
+  })
+
+  it('a derived change neither records nor clears the redo stack (T536 U3)', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    const node = g.getCellById('n-a')!
+    node.setData({ ...node.getData(), props: { style: { tone: 'red' } } }, { overwrite: true })
+    g.undo()
+    expect(g.canRedo()).toBe(true)
+    restyleCanvasNode(node as never, palette, {})
+    expect(g.canRedo()).toBe(true)
+    expect(g.canUndo()).toBe(false)
+    g.dispose()
+  })
+
+  it('restyleCanvasNode re-derives the attrs from the node data, label and all (T536 U3)', () => {
+    const g = makeGraph()
+    const node = g.getCellById('n-a')!
+    node.attr({ text: { text: 'Renamed' }, label: { text: 'Renamed' } })
+    // Written with `silent`, so nothing re-derives behind the test's back.
+    node.setData(
+      { ...node.getData(), props: { style: { tone: 'red', stroke: 'dashed' } } },
+      { overwrite: true, silent: true }
+    )
+    restyleCanvasNode(node as never, palette, {})
+    expect(node.attr('body/stroke')).toBe(palette.red)
+    expect(node.attr('body/strokeDasharray')).toBe('6 4')
+    expect(node.attr('label/text')).toBe('Renamed')
+    expect(nodeDraftFromCell(node.toJSON() as Record<string, unknown>).label).toBe('Renamed')
+    g.dispose()
+  })
+
+  // Live matrix (T536 U3, row S1/S3): `overwrite` dropped the X6 shape's own default
+  // attrs (a rect's `refWidth`/`refHeight`, an ellipse's `refRx`, the label's centring
+  // `refX`/`refY`/`textAnchor`), so a box collapsed to 0×0 and its label jumped to the
+  // corner after any pick — invisible to an attr-only assertion. A restyled node must
+  // carry exactly the attrs a fresh render of the same style gives it.
+  it('a restyled node carries exactly the attrs a fresh render of that style gives it (T536 U3)', () => {
+    const style = { tone: 'green', stroke: 'dashed', fontSize: 'xl', align: 'left', opacity: 50 }
+    const kinds: [string, number, number][] = [
+      ['box', 132, 52],
+      ['ellipse', 132, 64],
+      ['diamond', 132, 80],
+      ['text', 132, 40]
+    ]
+    const plain: CanvasDocument = {
+      ...DOC,
+      nodes: kinds.map(([shape, width, height], i) => ({
+        id: `n-${shape}`,
+        shape,
+        x: 40 + i * 180,
+        y: 40,
+        width,
+        height,
+        label: shape,
+        origin: 'agent' as const
+      })),
+      edges: []
+    }
+    const styledDoc: CanvasDocument = {
+      ...plain,
+      nodes: plain.nodes.map((n) => ({ ...n, props: { style } }))
+    }
+    const g = makeGraph(plain)
+    const fresh = makeGraph(styledDoc)
+    for (const [shape] of kinds) {
+      const node = g.getCellById(`n-${shape}`)!
+      node.setData({ ...node.getData(), props: { style } }, { overwrite: true, silent: true })
+      restyleCanvasNode(node as never, palette, {})
+      expect(node.getAttrs(), shape).toEqual(fresh.getCellById(`n-${shape}`)!.getAttrs())
+    }
+    // The shape defaults themselves, spelled out for the box.
+    const box = g.getCellById('n-box')!
+    expect(box.attr('body/refWidth')).toBe('100%')
+    expect(box.attr('body/refHeight')).toBe('100%')
+    g.dispose()
+    fresh.dispose()
+  })
+
+  // Final review M4: `image` is the one class whose constructor adds something outside the
+  // derived attrs (`xlink:href`, through the `imageUrl` hook), so pin it on its own: the
+  // RENDERED `<image>` is compared, because `xlinkHref` and `xlink:href` differ as keys
+  // but not on screen.
+  it('a restyled image, resolved or not, renders exactly as a fresh render of that style (T536 U3)', async () => {
+    const style = { opacity: 50 }
+    const images = { 'a.png': 'data:image/png;base64,AAAA' }
+    const base = (id: string, src: string): CanvasDocument['nodes'][number] => ({
+      id,
+      shape: 'image',
+      x: 40,
+      y: 40,
+      width: 200,
+      height: 100,
+      label: id,
+      origin: 'agent' as const,
+      props: { src }
+    })
+    const plain: CanvasDocument = {
+      ...DOC,
+      nodes: [base('n-img', 'a.png'), base('n-gone', 'missing.png')],
+      edges: []
+    }
+    const styledDoc: CanvasDocument = {
+      ...plain,
+      nodes: plain.nodes.map((n) => ({ ...n, props: { ...n.props, style } }))
+    }
+    const g = makeGraph(plain, images)
+    const fresh = makeGraph(styledDoc, images)
+    const imageOf = (graph: Graph, id: string): Element | null =>
+      (
+        graph.findViewByCell(graph.getCellById(id)!)?.container as Element | undefined
+      )?.querySelector('image') ?? null
+
+    for (const id of ['n-img', 'n-gone']) {
+      const node = g.getCellById(id)!
+      node.setData(
+        { ...node.getData(), props: { ...node.getData().props, style } },
+        { overwrite: true, silent: true }
+      )
+      restyleCanvasNode(node as never, palette, images)
+    }
+    // X6 paints on a frame: let both graphs flush before reading the SVG.
+    await new Promise((r) => setTimeout(r, 100))
+
+    // Resolved: the same `<image>` element attributes (href, size, opacity).
+    const got = imageOf(g, 'n-img')!
+    const want = imageOf(fresh, 'n-img')!
+    expect(got).not.toBeNull()
+    for (const name of ['xlink:href', 'href', 'width', 'height', 'opacity']) {
+      expect(got.getAttribute(name), name).toBe(want.getAttribute(name))
+    }
+    expect(got.getAttribute('opacity')).toBe('0.5')
+    expect(got.getAttribute('width')).toBe('200')
+    expect(got.getAttribute('height')).toBe('100')
+
+    // Unresolved placeholder: a rect with the same attrs as a fresh render.
+    expect(g.getCellById('n-gone')!.getAttrs()).toEqual(fresh.getCellById('n-gone')!.getAttrs())
+    g.dispose()
+    fresh.dispose()
+  })
+
+  it("applying a style leaves a node's ports exactly as they were (T536 U3)", () => {
+    const g = makeGraph()
+    const node = g.getCellById('n-a') as never as {
+      getPorts: () => unknown[]
+      getData: () => Record<string, unknown>
+      setData: (d: unknown, o: unknown) => void
+    }
+    const before = JSON.parse(JSON.stringify(node.getPorts()))
+    expect(before).toHaveLength(CANVAS_PORT_IDS.length)
+    node.setData(
+      { ...node.getData(), props: { style: { tone: 'red', stroke: 'dashed' } } },
+      { overwrite: true, silent: true }
+    )
+    restyleCanvasNode(node as never, palette, {})
+    expect(JSON.parse(JSON.stringify(node.getPorts()))).toEqual(before)
+    g.dispose()
+  })
+
   it('deleting a node deletes the edges that hung off it, so the file stays valid', () => {
     const g = makeGraph()
     g.removeCell(g.getCellById('n-a')!)
@@ -499,6 +671,19 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     expect(
       (g.getCellById('n-c') as never as { getPorts: () => unknown[] }).getPorts()
     ).toHaveLength(0)
+    g.dispose()
+  })
+
+  it('revealing ports on hover is not an undo step, so it never empties the redo stack (T536 U3)', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    g.getCellById('n-b')!.setAttrs({ body: { stroke: '#654321' } })
+    g.undo()
+    expect(g.canRedo()).toBe(true)
+    setCanvasPortsVisible(g, 'n-a', true)
+    setCanvasPortsVisible(g, 'n-a', false)
+    expect(g.canUndo()).toBe(false)
+    expect(g.canRedo()).toBe(true)
     g.dispose()
   })
 
