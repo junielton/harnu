@@ -113,6 +113,9 @@ function mountPane() {
 
 /** The operator draws a box and names it — an unsaved edit, dirty dot on. */
 async function operatorDrawsBox(root: Element, name: string): Promise<void> {
+  // Select is the default tool (T536 U1): a blank drag only draws a box under Rectangle.
+  root.querySelector<HTMLButtonElement>('[data-testid="canvas-tool-rectangle"]')!.click()
+  await settle()
   const svg = root.querySelector('[data-testid="diagram-canvas-host"] svg')!
   svg.dispatchEvent(
     new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 600, clientY: 400 })
