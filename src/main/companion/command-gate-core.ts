@@ -19,6 +19,14 @@ import {
   type HelloProfile
 } from './contract'
 import type { CommandCause, EnqueueRefusal } from './command-types'
+import type { TrustClass } from './session-table'
+import {
+  REVIEW_BAND_SUBSYSTEM,
+  REVIEW_SELECTION_GESTURE,
+  REVIEW_SELECTION_KEY,
+  validBand,
+  validReviewSelectionAppend
+} from './review-selection-core'
 
 export const COMMAND_NAMES: readonly CommandName[] = [
   'flush',
@@ -44,15 +52,90 @@ export interface GateRow {
   internal?: string[] // subsystem ids
   /** Also admitted under the gesture `debug` while the debug route is registered (§7.6). */
   debug?: boolean
-  /** The owning wave's argument check; this wave's six commands are validated below. */
-  validate?: (args: unknown) => boolean
+  /**
+   * The owning wave's argument check; this wave's six commands are validated below. It receives the
+   * cause too, because a command several waves share (`context.append`) is valid for one cause's
+   * keys and not another's. A validator that does not care ignores the second parameter.
+   */
+  validate?: (args: unknown, cause: CommandCause) => boolean
 }
 
 const rows = new Map<CommandName, GateRow>()
 
-/** A later wave's row. A second registration replaces the first (tests, hot reload in dev). */
+/**
+ * A grant that survives a later registration of the same command (T257 §6.6). A second
+ * `registerGateRow` for the name replaces the row, which would silently remove a gesture another
+ * wave depends on; a reserved grant is merged back in, so P2W4 and P4W2 *extend* the row and cannot
+ * replace it by accident.
+ */
+interface ReservedGrant {
+  operator?: string[]
+  internal?: string[]
+  /**
+   * An argument `key` that only this grant's causes may carry. A later registration's validator
+   * never sees it: shadow admits the key on its own (O-3), so the validator is the second lock.
+   */
+  exclusiveKey?: string
+  /**
+   * The trust class the target binding must have *at enqueue time*, for this grant's causes. A
+   * handler's own check runs before its awaits; this one runs on the binding the channel resolves
+   * itself, so a binding that changes in between is still refused.
+   */
+  requireTrust?: TrustClass
+  validate: (args: unknown, cause: CommandCause) => boolean
+}
+
+const reserved = new Map<CommandName, ReservedGrant>()
+
+const isReservedCause = (g: ReservedGrant, cause: CommandCause): boolean =>
+  (cause.kind === 'operator' && g.operator?.includes(cause.gesture) === true) ||
+  (cause.kind === 'internal' && g.internal?.includes(cause.subsystem) === true)
+
+/**
+ * `TARGET_DENIED` when a reserved grant's cause aims at a binding of the wrong trust class. Read at
+ * enqueue time from the binding the channel just resolved, never from what a caller checked earlier.
+ */
+export function trustRefusal(
+  name: CommandName,
+  cause: CommandCause,
+  trust: TrustClass
+): 'TARGET_DENIED' | null {
+  const g = reserved.get(name)
+  if (!g || g.requireTrust === undefined || !isReservedCause(g, cause)) return null
+  return trust === g.requireTrust ? null : 'TARGET_DENIED'
+}
+
+function withReserved(name: CommandName, row: GateRow): GateRow {
+  const g = reserved.get(name)
+  if (!g) return row
+  const union = (a?: string[], b?: string[]): string[] | undefined =>
+    a || b ? [...new Set([...(a ?? []), ...(b ?? [])])] : undefined
+  const operator = union(row.operator, g.operator)
+  const internal = union(row.internal, g.internal)
+  const own = row.validate
+  return {
+    ...row,
+    ...(operator ? { operator } : {}),
+    ...(internal ? { internal } : {}),
+    validate: (args, cause) => {
+      if (isReservedCause(g, cause)) return g.validate(args, cause)
+      if (
+        g.exclusiveKey !== undefined &&
+        (args as { key?: unknown } | null)?.key === g.exclusiveKey
+      ) {
+        return false
+      }
+      return own?.(args, cause) ?? false
+    }
+  }
+}
+
+/**
+ * A later wave's row. A second registration replaces the first (tests, hot reload in dev), except
+ * for what a reserved grant (the review selection's) puts back.
+ */
 export function registerGateRow(name: CommandName, row: GateRow): void {
-  rows.set(name, row)
+  rows.set(name, withReserved(name, row))
 }
 
 export function gateRowFor(name: CommandName): GateRow | undefined {
@@ -73,9 +156,32 @@ function registerP2W1Rows(): void {
 }
 registerP2W1Rows()
 
+/**
+ * T257: the two rows the review selection needs. `context.append` is limited to one key and one
+ * operator gesture; `ui.band.set` to the band driver's subsystem. `feature` is what the review
+ * companion's `read-only` binding is enabled for (feature-policy.ts).
+ */
+function registerReviewSelectionRows(): void {
+  reserved.set('context.append', {
+    operator: [REVIEW_SELECTION_GESTURE],
+    exclusiveKey: REVIEW_SELECTION_KEY,
+    requireTrust: 'read-only',
+    validate: validReviewSelectionAppend
+  })
+  reserved.set('ui.band.set', {
+    internal: [REVIEW_BAND_SUBSYSTEM],
+    requireTrust: 'read-only',
+    validate: validBand
+  })
+  registerGateRow('context.append', { feature: 'act.context' })
+  registerGateRow('ui.band.set', { feature: 'ui.band' })
+}
+registerReviewSelectionRows()
+
 export function resetGateRowsForTests(): void {
   rows.clear()
   registerP2W1Rows()
+  registerReviewSelectionRows()
 }
 
 export type OriginResult = { ok: true; row: GateRow } | { ok: false; reason: 'ORIGIN_DENIED' }
@@ -140,6 +246,14 @@ export function shadowRefusal(
     return null
   }
   if (name === 'guard.set' && (args as { enforce?: unknown } | null)?.enforce === false) return null
+  // T257 O-3 (option B): the review selection's own key, nothing else. `shadow` exists to measure
+  // poll reliability before an actuator competes with a legacy path, and a selection has none.
+  if (
+    name === 'context.append' &&
+    (args as { key?: unknown } | null)?.key === REVIEW_SELECTION_KEY
+  ) {
+    return null
+  }
   return 'MODE_SHADOW'
 }
 
@@ -205,10 +319,20 @@ const SIX: Partial<Record<CommandName, (a: unknown) => boolean>> = {
     (a.text === null || (typeof a.text === 'string' && UI_TEXT_VALUES.has(a.text)))
 }
 
+/**
+ * The channel always passes the real cause. A caller that checks the shape of arguments alone gets
+ * one no gesture, verb or subsystem can match, so a cause-dependent validator refuses it.
+ */
+const NO_CAUSE: CommandCause = { kind: 'internal', subsystem: '' }
+
 export type ArgsResult = { ok: true } | { ok: false; reason: Extract<EnqueueRefusal, 'BAD_ARGS'> }
 
 /** Schema and bounds. The mod checks the same bounds again: this is the first of two locks. */
-export function validateArgs(name: CommandName, args: unknown): ArgsResult {
+export function validateArgs(
+  name: CommandName,
+  args: unknown,
+  cause: CommandCause = NO_CAUSE
+): ArgsResult {
   const check = SIX[name] ?? rows.get(name)?.validate
-  return check?.(args) ? { ok: true } : { ok: false, reason: 'BAD_ARGS' }
+  return check?.(args, cause) ? { ok: true } : { ok: false, reason: 'BAD_ARGS' }
 }

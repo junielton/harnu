@@ -24,8 +24,9 @@ describe('the Harnu mod row', () => {
     // $.http.fetch, $.fs.read, `prompt.submit`, the permission hooks of the fleet sensors, the
     // `plugin.register` hook of P4W1 part B and the env read: the static read cannot tell an
     // observer from a gate, so the row says "can refuse other mods" like it would for any module
-    // with that hook (P4W1-S4: no special case for the Harnu mod).
-    expect(chips).toEqual(['network', 'files', 'prompts', 'permissions', 'gate', 'env'])
+    // with that hook (P4W1-S4: no special case for the Harnu mod). The `ui.render` hook of the
+    // review selection band (T257) adds `terminal`: the mod now draws one line above the prompt.
+    expect(chips).toEqual(['network', 'files', 'prompts', 'permissions', 'gate', 'env', 'terminal'])
   })
 
   it('is first, labelled harnu, and absent when nothing is staged', async () => {

@@ -12,6 +12,7 @@
 import { normalizeFolder, type RolloutView } from './arbitration-core'
 import { gateForCli } from './enable-policy'
 import type { FeatureId } from './contract'
+import { prefsKey } from './companion-prefs'
 import { familyMode, getCompanionMode } from './mode'
 import type { BindingView, EnablePolicy, TrustClass } from './session-table'
 
@@ -19,13 +20,39 @@ export type FeatureRule = (b: BindingView) => boolean
 
 const rules = new Map<FeatureId, FeatureRule>()
 
+/**
+ * Rules that survive a later registration of the same feature (T257). A second
+ * `registerFeaturePolicy` replaces the first, which would silently switch off a class another wave
+ * depends on; a reserved rule is kept and ORed with the newcomer, so a later wave *extends* the
+ * set of bindings a feature is enabled for and can never take the reserved ones away.
+ */
+const reservedRules = new Map<FeatureId, FeatureRule>()
+
+const merged = (reserved: FeatureRule, rule: FeatureRule): FeatureRule => {
+  return (b) => {
+    try {
+      if (reserved(b)) return true
+    } catch {
+      // a throwing reserved rule enables nothing by itself; the newcomer still decides
+    }
+    return rule(b)
+  }
+}
+
 /** One row of the table (contract §11.1, "Enabled by"). A second registration replaces the first. */
 export function registerFeaturePolicy(feature: FeatureId, rule: FeatureRule): void {
+  const reserved = reservedRules.get(feature)
+  rules.set(feature, reserved ? merged(reserved, rule) : rule)
+}
+
+function reserveFeaturePolicy(feature: FeatureId, rule: FeatureRule): void {
+  reservedRules.set(feature, rule)
   rules.set(feature, rule)
 }
 
 export function resetFeaturePoliciesForTests(): void {
   rules.clear()
+  reservedRules.clear()
 }
 
 const folderOf = (b: BindingView): string | null => (b.cwd ? normalizeFolder(b.cwd) : null)
@@ -43,8 +70,27 @@ export function registerP1FeaturePolicies(): void {
       familyMode('telemetry', folderOf(b)) !== 'off' ||
       familyMode('planUsage', folderOf(b)) !== 'off'
   )
+  registerReviewSelectionPolicies()
 }
 registerP1FeaturePolicies()
+
+/**
+ * T257: the review companion's two actuator features. Both are limited to its binding class on
+ * purpose: an interactive `read-only` binding (the helper-pane `claude` the review pane opens).
+ * An `operator`, `agent` or `tick` binding gets neither, so these rows turn the orchestrator
+ * contract and every mission band on for nobody. Channel `off` is the only key state that closes
+ * `act.context`; under the O-3 carve-out the review key needs no `active`.
+ */
+export function registerReviewSelectionPolicies(): void {
+  const reviewCompanion: FeatureRule = (b) =>
+    b.profile === 'interactive' && b.trust === 'read-only' && getCompanionMode() !== 'off'
+  reserveFeaturePolicy(
+    'act.context',
+    (b) => reviewCompanion(b) && prefsKey<string>('channel') !== 'off'
+  )
+  reserveFeaturePolicy('ui.band', reviewCompanion)
+}
+registerReviewSelectionPolicies()
 
 /** The external profile's ceiling (contract §21 item 3); each rule still has to pass. */
 const EXTERNAL_ALLOWED: ReadonlySet<FeatureId> = new Set([
