@@ -6,7 +6,7 @@ PRD: `docs/prds/T564-browser-pane.md` · ADRs: `docs/adr/0021-browser-pane-singl
 Approved visual reference: `docs/specs/T564-browser-pane-mockup/` (open `index.html`; the five PNGs are its
 scenarios). It shows the **docked** composer (§8). The **floating-at-the-node** variant
 (`1b-comment-floating.png`) was **rejected** in favour of docked (Q2) and is kept only as the record of what
-was not chosen.
+was not chosen. Captions inside the PNGs still say `OQ-n`; they are the same questions as `Qn` here.
 Builds on: ADR-0018 (mod as integration substrate), ADR-0019 (SDK noun transport), ADR-0020 (agent terminals:
 the confirm / lease / disconnect / kill-switch model this spec mirrors), `docs/user/mods.md`,
 `docs/dev/live-verify-second-instance.md`.

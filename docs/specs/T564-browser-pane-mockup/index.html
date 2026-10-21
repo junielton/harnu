@@ -722,7 +722,7 @@
         background: var(--surface);
       }
 
-      /* composer — docked in pane chrome (OQ-2 recommendation) */
+      /* composer — docked in pane chrome (Q2 recommendation) */
       .composer {
         flex-shrink: 0;
         border-top: 1px solid var(--border);
@@ -1270,7 +1270,7 @@
       </div>
       <span class="seg-label">Composer</span>
       <div class="seg" id="seg-composer">
-        <button data-composer="docked" class="on">Docked (OQ-2 rec.)</button>
+        <button data-composer="docked" class="on">Docked (Q2 rec.)</button>
         <button data-composer="floating">Floating at node</button>
       </div>
     </div>
@@ -1576,7 +1576,7 @@
                       <div class="float-warn">
                         <i data-lucide="triangle-alert"></i
                         ><span
-                          >The page can read keystrokes typed here (spec §8.6). This is why OQ-2
+                          >The page can read keystrokes typed here (spec §8.6). This is why Q2
                           recommends docking the composer.</span
                         >
                       </div>
@@ -1654,7 +1654,7 @@
                       ></span
                     >
                   </div>
-                  <span class="origin" title="Network egress from harnu-page:// is blocked (OQ-3)"
+                  <span class="origin" title="Network egress from harnu-page:// is blocked (Q3)"
                     ><i data-lucide="wifi-off"></i>offline</span
                   >
                   <div class="zoom">
@@ -1760,7 +1760,7 @@
                     <span class="origin local"><i data-lucide="house"></i>local</span
                     ><span>http://<span class="host">localhost:5173</span>/checkout</span>
                   </div>
-                  <div class="zoom off" title="Zoom is off in device mode (OQ-15)">
+                  <div class="zoom off" title="Zoom is off in device mode (Q15)">
                     <button class="ib" disabled><i data-lucide="minus"></i></button><span>100%</span
                     ><button class="ib" disabled><i data-lucide="plus"></i></button>
                   </div>
@@ -2022,7 +2022,7 @@
           </p>
         </div>
         <div class="note">
-          <b>Docked vs floating (OQ-2)</b>
+          <b>Docked vs floating (Q2)</b>
           <p>
             Toggle "Composer" above. Docked lives in the app chrome: the page cannot read
             keystrokes, and there is no overlay-under-native-view problem. Floating sits at the
@@ -2045,7 +2045,7 @@
             The session, the <span class="tag">harnu-progress</span> mod and an observe worker all
             write through the same <span class="tag">browser_*</span> verbs. The footer strip shows
             who wrote it. The <span class="tag">offline</span> badge means the page has no network
-            (OQ-3).
+            (Q3).
           </p>
         </div>
         <div class="note">
@@ -2070,7 +2070,7 @@
           <b>Header controls</b>
           <p>
             Preset picker (classes: phone-s/m/l, tablet, laptop, desktop), free size, rotate,
-            light/dark and reduced motion. Zoom is disabled in device mode (OQ-15).
+            light/dark and reduced motion. Zoom is disabled in device mode (Q15).
           </p>
         </div>
         <div class="note">
