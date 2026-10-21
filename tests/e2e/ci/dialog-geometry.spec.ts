@@ -84,10 +84,16 @@ test.describe('dialog geometry invariants (T460 batch 0)', () => {
   test.afterEach(async () => {
     const testInfo = test.info()
     if (testInfo.status === testInfo.expectedStatus || !diag) return
-    await testInfo.attach('app-diagnostics', {
-      body: await diag.report(),
-      contentType: 'text/plain'
-    })
+    // Diagnostics must never add a failure of their own: report() is bounded and never throws,
+    // and an attach error is swallowed so the original failure stays the one reported.
+    try {
+      await testInfo.attach('app-diagnostics', {
+        body: await diag.report(),
+        contentType: 'text/plain'
+      })
+    } catch {
+      // best-effort
+    }
   })
 
   test.afterAll(async () => {

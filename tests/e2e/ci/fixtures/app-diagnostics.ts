@@ -1,4 +1,6 @@
 import type { ElectronApplication, Page } from '@playwright/test'
+import { homedir } from 'node:os'
+import { redactTranscript } from '../../../../src/main/mcp/transcript-redact'
 
 /**
  * What the failing run knew about the app, captured so a red e2e explains itself (BUG-205).
@@ -13,12 +15,19 @@ import type { ElectronApplication, Page } from '@playwright/test'
 export interface AppDiagnostics {
   /** Timestamped events seen so far, oldest first. */
   readonly events: string[]
-  /** The log plus the live state of the app and its window, as one attachable text. */
+  /**
+   * The log plus the live state of the app and its window, as one attachable text. Never throws,
+   * returns within {@link LIVE_STATE_TIMEOUT_MS} plus a few ms even when the main process hangs,
+   * and is scrubbed (home path, tokens, secret-looking `KEY=VALUE`) because it lands in an
+   * uploaded CI artifact.
+   */
   report(): Promise<string>
 }
 
 const MAX_EVENTS = 400
 const MAX_STDERR = 4000
+/** How long the live-state probe may wait on a main process that does not answer. */
+const LIVE_STATE_TIMEOUT_MS = 5000
 
 export function collectAppDiagnostics(app: ElectronApplication, page: Page): AppDiagnostics {
   const t0 = Date.now()
@@ -54,7 +63,14 @@ export function collectAppDiagnostics(app: ElectronApplication, page: Page): App
         `main process: pid=${proc.pid} exitCode=${proc.exitCode} signal=${proc.signalCode}`,
         `page closed: ${page.isClosed()}`
       ]
-      const live = await app
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const timeout = new Promise<string>((resolve) => {
+        timer = setTimeout(
+          () => resolve(`main process did not answer within ${LIVE_STATE_TIMEOUT_MS}ms`),
+          LIVE_STATE_TIMEOUT_MS
+        )
+      })
+      const probe = app
         .evaluate(({ BrowserWindow }) =>
           BrowserWindow.getAllWindows().map((w) => ({
             destroyed: w.isDestroyed(),
@@ -65,14 +81,16 @@ export function collectAppDiagnostics(app: ElectronApplication, page: Page): App
         )
         .then((w) => JSON.stringify(w))
         .catch((e: Error) => `main process did not answer: ${e.message}`)
+      const live = await Promise.race([probe, timeout]).finally(() => clearTimeout(timer))
       state.push(`windows: ${live}`)
-      return [
+      const text = [
         ...state,
         '--- events ---',
         ...events,
         '--- main process stderr (tail) ---',
         stderr || '(empty)'
       ].join('\n')
+      return redactTranscript(text, { home: homedir() }).text
     }
   }
 }
