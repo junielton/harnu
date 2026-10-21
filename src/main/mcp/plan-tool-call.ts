@@ -62,6 +62,7 @@ import {
 } from '../terminal-gate-core'
 import { auditField, checkSendContent, summarizeSend } from '../terminal-keys'
 import { checkWaitFor } from '../terminal-wait'
+import { gateBrowserOp, isBrowserOp, type BrowserGateInput } from '../browser/access'
 import type { SendTerminalArgs } from './validate'
 
 /**
@@ -105,6 +106,12 @@ export interface PlanInput {
    * resolve it can never skip the gate.
    */
   terminal?: TerminalGateState
+  /**
+   * T564 U1: the access state of the browser pane a browser verb addresses, resolved by the shell BEFORE
+   * planning (spec §6.3), so a refusal (unknown pane, Disconnect, kill-switch, Pause) never raises a confirm
+   * first. ABSENT fails closed for a pane-addressed verb: no pane, `PANE_NOT_FOUND`.
+   */
+  browser?: BrowserGateInput
 }
 
 /** The order-sensitive plan {@link planToolCall} returns for one tool call. */
@@ -219,7 +226,8 @@ export function planToolCall({
   grants,
   inheritOnce,
   homeDir,
-  terminal
+  terminal,
+  browser
 }: PlanInput): ToolCallPlan {
   const def = toolByName(tool)
 
@@ -285,6 +293,13 @@ export function planToolCall({
   // `shouldConfirm` and `shouldDispatch` are both false — whatever the `ask` mode says.
   if (verdict !== 'deny' && isTerminalGatedOp(def.op)) {
     const refusal = gateTerminalOp(def.op, terminal ?? UNKNOWN_TERMINAL)
+    if (refusal) return denyPlan(tool, folder ?? '', now, refusal, redact)
+  }
+
+  // T564 U1: browser pane access rules, decided HERE for the same reason: unknown pane, Disconnect, the
+  // kill-switch and Pause refuse before any confirm, in `ask` mode too (spec §6.3).
+  if (verdict !== 'deny' && isBrowserOp(def.op)) {
+    const refusal = gateBrowserOp(def.op, browser ?? { pane: undefined, writesEnabled: true })
     if (refusal) return denyPlan(tool, folder ?? '', now, refusal, redact)
   }
 

@@ -73,6 +73,8 @@ import {
   writeMcpAsk,
   readAgentTerminalWrites,
   writeAgentTerminalWrites,
+  readAgentBrowserWrites,
+  writeAgentBrowserWrites,
   readMcpAutoRegister,
   writeMcpAutoRegister
 } from './prefs'
@@ -125,6 +127,8 @@ import { readUserProjects, setUserProjectInheritAgentControl } from '../user-pro
 import { setMcpArgsProvider } from '../pty'
 import { gateTerminalOp, type TerminalGateState } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
+import { noteMcpPort, resolveBrowserGate } from '../browser/browser-service'
+import { isBrowserOp, type BrowserGateInput } from '../browser/access'
 import { terminalLeases } from '../terminal-lease'
 import { terminalRegistry } from '../terminal-registry'
 import { auditField } from '../terminal-keys'
@@ -1034,6 +1038,7 @@ async function runToolCall(
   // fails CLOSED with FOLDER_NOT_ALLOWED).
   let gateFolder = strField(args, 'folder')
   let terminal: TerminalGateState | undefined
+  let browser: BrowserGateInput | undefined
   if (def.op === 'get_session') {
     gateFolder = findSessionFolder(folders, strField(args, 'sessionId') ?? '')
   } else if (
@@ -1059,6 +1064,16 @@ async function runToolCall(
     const resolved = await resolveTerminalGate(strField(args, 'terminalId') ?? '', projectsFile)
     gateFolder = resolved.rec?.folder
     terminal = resolved.state
+  } else if (isBrowserOp(def.op)) {
+    // T564 U1: the pane-addressed browser verbs carry only a `paneId`, so the gate anchor is the pane's
+    // OWN folder, from the registry, and its access state is resolved HERE so `planToolCall` can refuse at
+    // plan level (spec §6.3). `browser_open` and `browser_list` carry a `folder` of their own and address
+    // no pane; they still need the kill-switch, which rides in the same state.
+    const resolved = await resolveBrowserGate(
+      def.op === 'browser_open' || def.op === 'browser_list' ? undefined : strField(args, 'paneId')
+    )
+    if (def.op !== 'browser_open' && def.op !== 'browser_list') gateFolder = resolved.folder
+    browser = resolved.input
   } else if (def.op === 'update_worker' || def.op === 'delete_worker') {
     // T316: same reasoning as the block above, applied to a worker instead of
     // a session — the verb carries only `id`, so the gate anchor is the
@@ -1076,7 +1091,8 @@ async function runToolCall(
     grants: snapshotGrants(), // T44 S5: live mission grants may auto-allow in scope
     inheritOnce: snapshotInheritOnce(), // T72: worktrees allowed "Only this" this session
     homeDir: os.homedir(),
-    ...(terminal ? { terminal } : {}) // T474 B4: the terminal a terminal verb addresses
+    ...(terminal ? { terminal } : {}), // T474 B4: the terminal a terminal verb addresses
+    ...(browser ? { browser } : {}) // T564 U1: the browser pane a browser verb addresses
   })
   appendAudit(plan.auditRecord)
   auditPersister.schedule()
@@ -1684,6 +1700,7 @@ async function start(): Promise<void> {
     boundPort = await listenOnce(server, 0)
   }
   listeningPort = boundPort
+  noteMcpPort(boundPort)
   httpServer = server
   portFallbackWarning = fellBack
     ? `Stored MCP port ${storedPort} was unavailable — bound a new ephemeral port instead. Sessions spawned before this restart cannot reach the control server; resume them to reconnect.`
@@ -1726,6 +1743,7 @@ async function stop(): Promise<void> {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
   listeningPort = 0
+  noteMcpPort(0)
   await deleteConfigFile()
 }
 
@@ -1839,6 +1857,15 @@ export async function registerMcpServer(
     await writeAgentTerminalWrites(enabled === true)
     if (enabled !== true) terminalLeases.revokeAll()
     return readAgentTerminalWrites()
+  })
+
+  // T564 U1: the browser kill-switch ("Allow agents to drive browser panes"). Default ON. Read live at every
+  // plan, so it takes effect on the next call; every write verb refuses BROWSER_WRITES_DISABLED while it is
+  // off, `list` and `close` keep working, and a verb already in flight completes (spec §7.4).
+  ipcMain.handle('mcp:agentBrowserWrites:get', () => readAgentBrowserWrites())
+  ipcMain.handle('mcp:agentBrowserWrites:set', async (_e, enabled: boolean) => {
+    await writeAgentBrowserWrites(enabled === true)
+    return readAgentBrowserWrites()
   })
 
   // T44 S5: mission-grant management — list live grants + revoke.

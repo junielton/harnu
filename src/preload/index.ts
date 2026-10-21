@@ -20,6 +20,12 @@ import type { TelemetryPayload } from '../main/statusline'
 import type { TaskState, FailureReason } from '../main/hook-state'
 import type { PtyExitReason } from '../main/pty'
 import type { TerminalStatus } from '../main/terminal-lifecycle'
+import type {
+  BrowserActivityWord,
+  BrowserOverlayRect,
+  BrowserPaneState,
+  BrowserRect
+} from '../main/browser/state-types'
 import type { TerminalChipState } from '../main/terminal-registry'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
@@ -198,6 +204,14 @@ export type {
 // `FolderEntry`/`GitMeta` directly. `FolderEntry` is the wire shape; the store
 // enriches it into its own `Folder` (adds `expanded`/`pinned`).
 export type { FolderEntry, GitMeta }
+// T564 U1: the browser pane's wire types, so the renderer imports them from the barrel.
+export type {
+  BrowserActivityWord,
+  BrowserNotice,
+  BrowserOverlayRect,
+  BrowserPaneState,
+  BrowserRect
+} from '../main/browser/state-types'
 
 // Bundled skills (T217). `bundled-skills.ts` is a node module (electron `app` +
 // fs), so the renderer imports the pane's wire types type-only.
@@ -2327,6 +2341,74 @@ const api = {
     ipcRenderer.invoke('mcp:agentTerminalWrites:get'),
   mcpAgentTerminalWritesSet: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('mcp:agentTerminalWrites:set', enabled),
+  // T564 U1: the "Allow agents to drive browser panes" kill-switch (default ON).
+  mcpAgentBrowserWritesGet: (): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentBrowserWrites:get'),
+  mcpAgentBrowserWritesSet: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentBrowserWrites:set', enabled),
+
+  // ---- T564 U1: the browser pane. The renderer owns geometry and chrome, main owns the native view. ----
+  /** The operator opened a pane (Split menu): main creates the guest view and returns its pane id. */
+  browserOpen: (payload: {
+    folder: string
+    url?: string
+  }): Promise<{ ok: true; paneId: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('browser:open', payload),
+  /** The pane host's rect in CSS px (rAF-throttled by the caller); `visible: false` hides the view. */
+  browserBounds: (payload: { paneId: string; rect: BrowserRect; visible: boolean }): void =>
+    ipcRenderer.send('browser:bounds', payload),
+  /** Every app layer that can overlap a pane (menus, dialogs, toasts, ...): rects or 'fullscreen'. */
+  browserOverlays: (overlays: BrowserOverlayRect[]): void =>
+    ipcRenderer.send('browser:overlays', overlays),
+  /** A splitter, pane or sidebar drag started or ended: freeze every visible view meanwhile. */
+  browserDrag: (active: boolean): void => ipcRenderer.send('browser:drag', active),
+  /** The frozen image is on screen; main may hide the native view now. */
+  browserFreezePainted: (paneId: string): void => ipcRenderer.send('browser:freezePainted', paneId),
+  /** The canonical chords the renderer binds in the global and browser scopes. */
+  browserSetChords: (chords: string[]): void => ipcRenderer.send('browser:setChords', chords),
+  browserNavigate: (payload: {
+    paneId: string
+    url?: string
+    action?: 'back' | 'forward' | 'reload' | 'stop'
+  }): Promise<{ ok: true } | { ok: false; scheme: string }> =>
+    ipcRenderer.invoke('browser:navigate', payload),
+  browserState: (paneId: string): Promise<BrowserPaneState | null> =>
+    ipcRenderer.invoke('browser:state', paneId),
+  browserDestroy: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:destroy', paneId),
+  browserDevtools: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:devtools', paneId),
+  browserDismissFlag: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:dismissFlag', paneId),
+  browserDismissNotice: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:dismissNotice', paneId),
+  /** Permanent: the agent loses reads and writes on this pane. No call reconnects it. */
+  browserDisconnect: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:disconnect', paneId),
+  /** Pause agent writes for 10 minutes; resolves the epoch ms the pause ends, or null if refused. */
+  browserPause: (paneId: string): Promise<number | null> =>
+    ipcRenderer.invoke('browser:pause', paneId),
+  browserResume: (paneId: string): Promise<boolean> => ipcRenderer.invoke('browser:resume', paneId),
+  onBrowserState: (cb: (state: BrowserPaneState) => void): (() => void) =>
+    subscribe('browser:state', cb),
+  onBrowserFreeze: (cb: (p: { paneId: string; dataUrl: string | null }) => void): (() => void) =>
+    subscribe('browser:freeze', cb),
+  onBrowserUnfreeze: (cb: (p: { paneId: string }) => void): (() => void) =>
+    subscribe('browser:unfreeze', cb),
+  onBrowserChord: (cb: (p: { paneId: string; chord: string }) => void): (() => void) =>
+    subscribe('browser:chord', cb),
+  onBrowserActivity: (
+    cb: (p: { paneId: string; word: BrowserActivityWord }) => void
+  ): (() => void) => subscribe('browser:activity', cb),
+  /** A popup the operator clicked open: add an operator-class pane (spec §3.2). */
+  onBrowserPopup: (
+    cb: (p: {
+      paneId: string
+      worktreePath: string
+      url: string
+      partition: 'operator' | 'agent'
+    }) => void
+  ): (() => void) => subscribe('browser:popup', cb),
   // T31: the Sentinel auto-denied a catastrophic command — surface it prominently.
   onSentinelBlocked: (cb: (p: { reason: string; sessionId: string }) => void): (() => void) =>
     subscribe('sentinel:blocked', cb),

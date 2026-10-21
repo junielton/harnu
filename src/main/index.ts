@@ -58,6 +58,7 @@ import {
   dropOperatorScreenModels,
   livePtyDescriptors
 } from './pty'
+import { registerBrowserIpc } from './browser/browser-ipc'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
 import {
@@ -497,6 +498,8 @@ app.whenReady().then(async () => {
   })
 
   registerPtyHandlers(() => mainWindow)
+  // T564 U1: the browser pane's view host + IPC (bounds, freeze, navigate, Disconnect/Pause).
+  registerBrowserIpc(() => mainWindow)
   // T127: System Monitor main core. `monitor:heap` heartbeat starts immediately
   // (always-on, negligible cost); `monitor:sample` only runs between a
   // `monitor:start`/`monitor:stop` pair (refcounted, driven by the takeover pane).
