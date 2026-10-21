@@ -315,9 +315,9 @@ describe('chips (AC-7)', () => {
     const unbound = list().filter((b) => b.keys === null).length
     const conflicts = list().filter((b) => b.conflictsWith.length > 0).length
     const customized = list().filter((b) => b.source !== 'default').length
-    expect([unbound, conflicts, customized]).toEqual([25, 2, 3])
+    expect([unbound, conflicts, customized]).toEqual([45, 2, 3])
     await searchFor(w, 'zzz')
-    expect(chip(w, 'unbound').text()).toBe('Unbound 25')
+    expect(chip(w, 'unbound').text()).toBe('Unbound 45')
     expect(chip(w, 'conflicts').text()).toBe('Conflicts 2')
     expect(chip(w, 'customized').text()).toBe('Customized 3')
   })
@@ -362,7 +362,25 @@ describe('chips (AC-7)', () => {
       'folder.openInFileManager',
       'folder.openInVSCode',
       'folder.openGithubPulls',
-      'folder.newTerminal'
+      'folder.newTerminal',
+      // T486 §3.4 — every unbound folder id (`folder.rename` has F2).
+      'folder.newFolderTerminal',
+      'folder.toggleBranchAlias',
+      'folder.bootOptions',
+      'folder.projectMemory',
+      'folder.memoryLocation',
+      'folder.newSubfolder',
+      'folder.openSubfolder',
+      'folder.newWorktree',
+      'folder.worktreeMd',
+      'folder.askAgentWorktreeMd',
+      'folder.toggleIntercept',
+      'folder.toggleAutoOrganize',
+      'folder.toggleOrchestratorDefault',
+      'folder.toggleHidden',
+      'folder.removeWorktree',
+      'folder.toggleOlder',
+      'folder.toggleArchived'
     ])
   })
 })

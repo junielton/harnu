@@ -79,7 +79,9 @@ Right-click any session row for:
 - Per-session toggles: **No flicker**, **Remote Control** (bridges the session to your phone), **Promote/Demote Orchestrator** (see below)
 - **Archive** (reversible, just hides it from the default view) and **Delete** (destructive — asks for confirmation, removes the transcript from disk)
 
-From the keyboard, `Shift+F10` opens the same menu for the row under the sidebar's keyboard cursor (or, with no cursor, the selected session; with no session, the active folder's menu), anchored at that row, with its first item focused — arrow keys and Enter take it from there. On a repo group row it does nothing. On a Mac keyboard press `Fn+Shift+F10`, unless you set the F-keys to act as standard function keys.
+From the keyboard, `Shift+F10` opens the same menu for the row under the sidebar's keyboard cursor (or, with no cursor, the selected session; with no session, the active folder's menu), anchored at that row, with its first item focused — arrow keys and Enter take it from there. On a repo group row it does nothing: the group's menu can't be opened from the keyboard yet, but its three actions (rename, reset name, clean up) are commands you can bind — see [Shortcuts](#shortcuts). On a Mac keyboard press `Fn+Shift+F10`, unless you set the F-keys to act as standard function keys.
+
+`F2` renames a folder: with the keyboard cursor on a folder row it opens **Rename folder** for that folder; with no cursor row, it renames the active folder. On a session row or a repo group row it does nothing — rename a session with `Cmd/Ctrl+R`. On most Mac keyboards `F2` is the brightness key, so press `Fn+F2` unless you set the F-keys to act as standard function keys. (VS Code on macOS renames with Enter; in Harnu, Enter opens the cursor row, so rename stays on `F2` on every platform.)
 
 ### Promoting a session to Orchestrator
 
@@ -139,6 +141,7 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `Cmd/Ctrl+Shift+F` | Jump to a folder or session (press again to close)                              |
 | `Cmd/Ctrl+Enter`   | Open the cursor session (or the selected one) in a split beside the current one |
 | `Shift+F10`        | Open the right-click menu for the cursor row (`Fn+Shift+F10` on a Mac)          |
+| `F2`               | Rename the cursor folder row, or the active folder (`Fn+F2` on a Mac)           |
 | `Alt+←` / `Cmd+[`  | Back to the previous session you viewed                                         |
 | `Alt+→` / `Cmd+]`  | Forward again after going back                                                  |
 | Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar                            |
@@ -164,10 +167,29 @@ only when the right-click menu would offer it there (no Fork on a session that i
 still starting, for example). Remote Control and Promote to Orchestrator stay
 click-only on purpose: they show a disclosure you should read first.
 
+The folder right-click menu works the same way. Its items, the folder row's
+**Show older** / **Show archived** toggles and the repo group menu have these
+command ids, all without a shortcut except `folder.rename` (`F2`):
+`folder.rename`, `folder.newFolderTerminal`, `folder.toggleBranchAlias`,
+`folder.bootOptions`, `folder.projectMemory`, `folder.memoryLocation`,
+`folder.newSubfolder`, `folder.openSubfolder`, `folder.newWorktree`,
+`folder.worktreeMd`, `folder.askAgentWorktreeMd`, `folder.toggleIntercept`,
+`folder.toggleAutoOrganize`, `folder.toggleOrchestratorDefault`,
+`folder.toggleHidden`, `folder.removeWorktree`, `folder.toggleOlder`,
+`folder.toggleArchived`, `repoGroup.rename`, `repoGroup.resetName` and
+`repoGroup.cleanup`. A folder action works on the **active** folder (only
+`folder.rename` follows the keyboard cursor first) and only when the menu would
+offer it there — New worktree only in a git repo, Remove worktree only on a
+linked worktree, which still asks before removing anything. A repo group action
+works on the group under the keyboard cursor, or else the group the active folder
+belongs to. Blocking agents, letting agents read terminals, **Modes** and the
+parent-folder pick stay click-only: the first two change what agents may do, the
+others need you to pick from a list.
+
 `Cmd/Ctrl+Shift+F` opens the jump palette even while a terminal has focus, and
 shows the sidebar first if you had collapsed it. The terminal sends nothing for a
 `Cmd/Ctrl+Shift+letter` chord, so `Cmd/Ctrl+Shift+A`, `+Shift+B` and `+Shift+D`
-also fire over it. `Cmd/Ctrl+Enter`, `Shift+F10` and the sidebar arrow keys don't
+also fire over it. `Cmd/Ctrl+Enter`, `Shift+F10`, `F2` and the sidebar arrow keys don't
 fire while the terminal pane has keyboard focus — the terminal gets those keys. Shortcuts that act on the sidebar or on a
 selection also leave a key you type in a text field alone. The rest are bound in
 the native menu and work everywhere.

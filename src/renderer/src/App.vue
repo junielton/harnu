@@ -51,6 +51,11 @@ import {
   type SessionAction
 } from './composables/useSessionActions'
 import { useSidebarActions } from './composables/useSidebarActions'
+import {
+  useFolderMenuActions,
+  type FolderAction,
+  type RepoGroupAction
+} from './composables/useFolderMenuActions'
 import { notInTextEntry } from './lib/text-entry'
 import { DESCRIPTOR_BY_ID, type ShortcutActionId } from '../../main/keybindings-core'
 import { useTerminalFocus } from './composables/useTerminalFocus'
@@ -74,6 +79,8 @@ const folderActions = useFolderActions()
 // T486 §3.2 / §3.3: the Session menu's and the sidebar header's own functions.
 const sessionActions = useSessionActions()
 const sidebarActions = useSidebarActions()
+// T486 §3.4: the Folder menu's and the repo-group menu's own functions.
+const folderMenuActions = useFolderMenuActions()
 
 // T22: any interactive overlay shadows global shortcuts. One aggregate boolean
 // (NOT per-surface pushes) so exactly one 'modal' is ever on the stack — the
@@ -485,6 +492,34 @@ function onSelected(action: SessionAction): { enabled: () => boolean; handler: (
     handler: () => {
       const id = sessionActions.selectedFor(action)
       if (id) sessionActions.run[action](id)
+    }
+  }
+}
+
+/**
+ * `enabled` + `handler` for a Folder-menu action on the ACTIVE folder: enabled
+ * only when the menu would show that item for it (§3.10).
+ */
+function onActiveFolder(action: FolderAction): { enabled: () => boolean; handler: () => void } {
+  return {
+    enabled: () => folderMenuActions.activeFor(action) !== null,
+    handler: () => {
+      const path = folderMenuActions.activeFor(action)
+      if (path) folderMenuActions.run[action](path)
+    }
+  }
+}
+
+/**
+ * `enabled` + `handler` for a repo-group menu action on the cursor's group row,
+ * else the group holding the active folder (§3.10).
+ */
+function onGroup(action: RepoGroupAction): { enabled: () => boolean; handler: () => void } {
+  return {
+    enabled: () => folderMenuActions.groupFor(action) !== null,
+    handler: () => {
+      const group = folderMenuActions.groupFor(action)
+      if (group) folderMenuActions.group[action](group)
     }
   }
 }
@@ -956,6 +991,163 @@ useShortcuts(
       enabled: () => sessions.keyboardCursor !== null && sidebarCursorNavAllowed(),
       keysGuard: notInTextEntry,
       handler: () => sessions.cursorActivate()
+    },
+    // --- T486 §3.4: the Folder menu's items and the row's peeks, on the ACTIVE
+    // folder, and the repo-group menu's. Unbound except F2. Each runs the menu
+    // item's own function and is enabled only when the menu would show that
+    // item. A key press from a text field is left alone.
+    {
+      // F2 — the cursor's folder row, else the active folder. A session or
+      // group cursor row is a no-op (§3.10).
+      id: 'folder.rename',
+      scope: 'global',
+      keys: kb('folder.rename'),
+      keysGuard: notInTextEntry,
+      enabled: () => folderMenuActions.renameTarget() !== null,
+      handler: () => {
+        const path = folderMenuActions.renameTarget()
+        if (path) folderMenuActions.run.rename(path)
+      }
+    },
+    {
+      id: 'folder.newFolderTerminal',
+      scope: 'global',
+      keys: kb('folder.newFolderTerminal'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('newFolderTerminal')
+    },
+    {
+      id: 'folder.toggleBranchAlias',
+      scope: 'global',
+      keys: kb('folder.toggleBranchAlias'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('toggleBranchAlias')
+    },
+    {
+      id: 'folder.bootOptions',
+      scope: 'global',
+      keys: kb('folder.bootOptions'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('bootOptions')
+    },
+    {
+      id: 'folder.projectMemory',
+      scope: 'global',
+      keys: kb('folder.projectMemory'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('projectMemory')
+    },
+    {
+      id: 'folder.memoryLocation',
+      scope: 'global',
+      keys: kb('folder.memoryLocation'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('memoryLocation')
+    },
+    {
+      id: 'folder.newSubfolder',
+      scope: 'global',
+      keys: kb('folder.newSubfolder'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('newSubfolder')
+    },
+    {
+      id: 'folder.openSubfolder',
+      scope: 'global',
+      keys: kb('folder.openSubfolder'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('openSubfolder')
+    },
+    {
+      id: 'folder.newWorktree',
+      scope: 'global',
+      keys: kb('folder.newWorktree'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('newWorktree')
+    },
+    {
+      id: 'folder.worktreeMd',
+      scope: 'global',
+      keys: kb('folder.worktreeMd'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('worktreeMd')
+    },
+    {
+      id: 'folder.askAgentWorktreeMd',
+      scope: 'global',
+      keys: kb('folder.askAgentWorktreeMd'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('askAgentWorktreeMd')
+    },
+    {
+      id: 'folder.toggleIntercept',
+      scope: 'global',
+      keys: kb('folder.toggleIntercept'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('toggleIntercept')
+    },
+    {
+      id: 'folder.toggleAutoOrganize',
+      scope: 'global',
+      keys: kb('folder.toggleAutoOrganize'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('toggleAutoOrganize')
+    },
+    {
+      id: 'folder.toggleOrchestratorDefault',
+      scope: 'global',
+      keys: kb('folder.toggleOrchestratorDefault'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('toggleOrchestratorDefault')
+    },
+    {
+      id: 'folder.toggleHidden',
+      scope: 'global',
+      keys: kb('folder.toggleHidden'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('toggleHidden')
+    },
+    {
+      id: 'folder.removeWorktree',
+      scope: 'global',
+      keys: kb('folder.removeWorktree'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('removeWorktree')
+    },
+    {
+      id: 'folder.toggleOlder',
+      scope: 'global',
+      keys: kb('folder.toggleOlder'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('toggleOlder')
+    },
+    {
+      id: 'folder.toggleArchived',
+      scope: 'global',
+      keys: kb('folder.toggleArchived'),
+      keysGuard: notInTextEntry,
+      ...onActiveFolder('toggleArchived')
+    },
+    {
+      id: 'repoGroup.rename',
+      scope: 'global',
+      keys: kb('repoGroup.rename'),
+      keysGuard: notInTextEntry,
+      ...onGroup('rename')
+    },
+    {
+      id: 'repoGroup.resetName',
+      scope: 'global',
+      keys: kb('repoGroup.resetName'),
+      keysGuard: notInTextEntry,
+      ...onGroup('resetName')
+    },
+    {
+      id: 'repoGroup.cleanup',
+      scope: 'global',
+      keys: kb('repoGroup.cleanup'),
+      keysGuard: notInTextEntry,
+      ...onGroup('cleanup')
     }
   ],
   () => keybindings.resolved
