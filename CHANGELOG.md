@@ -27,7 +27,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   to a still image so nothing is ever drawn underneath it, and it comes back when the layer closes. Pages run
   in their own cookie jar, away from Harnu itself: only `http`, `https` and `about:blank` open, popups open as
   a new pane only after you click, downloads and permission prompts are refused, and a page can't reach Harnu's
-  own files or ports. Panes you opened can't be driven by an agent yet, and the pane does not reopen after a
+  own windows or files. Panes you opened can't be driven by an agent yet, and the pane does not reopen after a
   restart — both arrive in later releases, along with opening local `.html` files, reading and acting on the
   page, and point-and-comment.
 

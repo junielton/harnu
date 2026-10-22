@@ -22,7 +22,7 @@ A browser page is drawn by the system above everything else in the window, so a 
 
 ## Sessions and the connection chip
 
-A pane a session opened shows a chip in its header — "Connected to ‹session›", or "Connected to an agent" — with the word **reading** or **driving** while the session works. Click the unplug button to **Disconnect** the session from that pane for good: it can no longer read or change it, even close it, and nothing reconnects it. The pane stays and stays yours. Use **Pause agent for 10 min** to stop a session changing the pane for a while: the chip shows "Agent paused · 9:41" counting down, with a **Resume** button. See [Agent control](agent-control.md#browser-panes-a-session-opens) for everything a session can do, and **Settings → Control server → Allow agents to drive browser panes** to switch all of it off.
+A pane a session opened shows a chip in its header — "Connected to ‹session›" (the session name is kept when the pane is narrow; the words "Connected to" go first), or "Connected to an agent" — with the word **driving** while the session is navigating the pane. Click the unplug button to **Disconnect** the session from that pane for good: it can no longer read or change it, even close it, and nothing reconnects it. The pane stays and stays yours. Use **Pause agent for 10 min** to stop a session changing the pane for a while: the chip shows "Agent paused · 9:41" counting down, with a **Resume** button. See [Agent control](agent-control.md#browser-panes-a-session-opens) for everything a session can do, and **Settings → Control server → Allow agents to drive browser panes** to switch all of it off.
 
 Panes you open yourself can't be read or driven by a session at all yet.
 
@@ -30,7 +30,7 @@ Panes you open yourself can't be read or driven by a session at all yet.
 
 A page in a browser pane is treated as untrusted code, even your own dev server:
 
-- It runs in its own sandbox with no access to Harnu's windows, files or ports. Your logins are kept in a separate cookie jar from the one used by panes a session opens, so a session never starts logged in as you.
+- It runs in its own sandbox with no access to Harnu's windows or files. It can still reach network services on your machine, such as a dev server, like any browser; a page on one of Harnu's own ports is simply shown as `external`. Your logins are kept in a separate cookie jar from the one used by panes a session opens, so a session never starts logged in as you.
 - Only `http`, `https` and `about:blank` open. `file:`, `chrome:`, `devtools:`, `view-source:` and `javascript:` addresses are refused.
 - A link or script that tries to open a new window opens a new pane **only if you clicked it**; otherwise it is blocked. Sign-in flows that need to talk back to the window that opened them do not work.
 - Downloads are cancelled, and permission requests (location, notifications, camera, microphone, clipboard reading, and so on) are refused. There is no prompt.

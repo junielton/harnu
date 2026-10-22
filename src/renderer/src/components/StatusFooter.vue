@@ -39,6 +39,7 @@ export function shouldBumpImagePill(args: {
  * The fleet popover is added in a follow-up step.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
+import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useI18n } from 'vue-i18n'
 import { onClickOutside, onKeyStroke, useNow } from '@vueuse/core'
 import {
@@ -319,6 +320,10 @@ const fleetCost = computed(() =>
 // click-outside (the ref wraps button + popover, so inner clicks are ignored)
 // and on Esc.
 const popoverOpen = ref(false)
+// The three footer popovers open UPWARD over the helper stack, so each registers with the native-overlay
+// freeze: a browser pane under one freezes instead of drawing over it (spec §2.4).
+const fleetPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-fleet-popover', fleetPopoverEl)
 const fleetRef = ref<HTMLElement | null>(null)
 onClickOutside(fleetRef, () => (popoverOpen.value = false))
 onKeyStroke('Escape', () => (popoverOpen.value = false))
@@ -329,6 +334,8 @@ onKeyStroke('Escape', () => (popoverOpen.value = false))
 const statusDotClass = computed(() => severityDotClass(status.severity))
 const statusLabel = computed(() => t(severityLabelKey(status.severity)))
 const statusOpen = ref(false)
+const statusPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-status-popover', statusPopoverEl)
 const statusRef = ref<HTMLElement | null>(null)
 onClickOutside(statusRef, () => (statusOpen.value = false))
 onKeyStroke('Escape', () => (statusOpen.value = false))
@@ -361,6 +368,8 @@ const {
 const imageFolderAlias = computed(() => sessions.selectedPath?.folder ?? '')
 
 const imagesPopoverOpen = ref(false)
+const imagesPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-images-popover', imagesPopoverEl)
 const imagesRef = ref<HTMLElement | null>(null)
 // Lightbox state is component-local, like the popovers around it — it has a
 // single entry point (a tile in `FooterImagePopover`) so it doesn't need the
@@ -523,6 +532,7 @@ function openFullDashboard(): void {
       </button>
       <div
         v-if="imagesPopoverOpen"
+        ref="imagesPopoverEl"
         class="anim-fade-in-scale absolute bottom-full left-0 z-50 mb-1.5 w-[320px] rounded-lg border border-border-2 bg-surface-2 shadow-pop"
       >
         <FooterImagePopover
@@ -583,6 +593,7 @@ function openFullDashboard(): void {
         </button>
         <div
           v-if="statusOpen"
+          ref="statusPopoverEl"
           class="anim-fade-in-scale absolute bottom-full right-0 z-50 mb-1.5 w-[300px] rounded-lg border border-border-2 bg-surface-2 shadow-pop"
         >
           <ClaudeStatusPanel />
@@ -711,6 +722,7 @@ function openFullDashboard(): void {
         </button>
         <div
           v-if="popoverOpen"
+          ref="fleetPopoverEl"
           class="anim-fade-in-scale absolute bottom-full right-0 z-50 mb-1.5 w-[280px] rounded-lg border border-border-2 bg-surface-2 p-2 shadow-pop"
         >
           <UsagePanel />
