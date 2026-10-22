@@ -350,7 +350,7 @@ describe('browser_set_data (AC-6)', () => {
     })
   })
 
-  it('works on an OPERATOR-opened page pane with no lease (spec §7.1 live-panel row)', async () => {
+  it('browser_set_data works on an OPERATOR-opened page pane with no lease and no opt-in (it only writes the sidecar)', async () => {
     const r = rig()
     const url = buildPageUrl(folderIdOf(root), 'docs/board.html')
     r.registry.add({
@@ -370,6 +370,27 @@ describe('browser_set_data (AC-6)', () => {
       ok: true,
       rev: 1
     })
+  })
+
+  it('browser_patch on an OPERATOR-opened page pane needs the folder opt-in (it can run script and reads back what matched)', async () => {
+    const r = rig()
+    const url = buildPageUrl(folderIdOf(root), 'docs/board.html')
+    r.registry.add({
+      paneId: 'op-1',
+      folder: root,
+      name: 'op',
+      openedBy: 'operator',
+      partition: 'operator',
+      ownerSessionId: null,
+      createdAt: 1,
+      lastActiveAt: 1,
+      seenHosts: new Set(),
+      flagged: null
+    })
+    r.live.set('op-1', { url, title: '', loading: false, canGoBack: false, canGoForward: false })
+    expect(
+      await patchVerb({ paneId: 'op-1', selector: '#n', mode: 'inner', html: '1' }, r.deps)
+    ).toMatchObject({ ok: false, error: 'BROWSER_READ_NOT_ENABLED' })
   })
 })
 

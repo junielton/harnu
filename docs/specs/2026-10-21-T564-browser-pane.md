@@ -673,10 +673,12 @@ closes, is disconnected, the folder is blocked, the kill-switch flips, or the ap
 > row that says `free` becomes a normal confirm; a mission grant or an "always allow" can never cover a
 > `lease` row.
 
-> **Amended 2026-10-22 (U7, T574) by the orchestrator; pending operator confirmation.** The live-panel verbs
-> (`browser_set_data`, `browser_patch`) are exempt from the folder's read opt-in even on a pane the operator opened:
-> they only write a page file's own data and DOM and read nothing back, and they refuse every non-`page` pane for every
-> caller (`NOT_A_PAGE_PANE`). Every other verb on an operator-opened pane still needs the opt-in.
+> **Amended 2026-10-22 (U7, T574; narrowed after the Delta 1 review) by the orchestrator; pending operator
+> confirmation.** `browser_set_data` is exempt from the folder's read opt-in even on a pane the operator opened: it only
+> writes the panel's sidecar. `browser_patch` is **not**: it sets markup under `script-src 'unsafe-inline'`, so it can
+> run script in the page, and its `matched` count and `SELECTOR_NOT_FOUND` tell the caller what the page holds, so on
+> an operator-opened pane it needs the opt-in like every other verb. Both refuse every non-`page` pane for every caller
+> (`NOT_A_PAGE_PANE`).
 
 **Rows are verb classes; columns are the origin class at call time.**
 

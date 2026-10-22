@@ -158,18 +158,24 @@ describe('the gate around the tier', () => {
     expect(run('browser_patch', pane({ originClass: 'page' }))).toBeNull()
   })
 
-  it('an operator pane needs the folder opt-in for EVERY pane-addressed verb, before content and the kill-switch', () => {
+  it('an operator pane needs the folder opt-in for every pane-addressed verb but browser_set_data, before content and the kill-switch', () => {
     const op = pane({ openedBy: 'operator' })
     for (const verb of [
       'browser_click',
       'browser_navigate',
       'browser_close',
-      'browser_snapshot'
+      'browser_snapshot',
+      'browser_patch'
     ] as const) {
       expect(run(verb, op), verb).toBe('BROWSER_READ_NOT_ENABLED')
       expect(run(verb, op, { writesEnabled: false }), verb).toBe('BROWSER_READ_NOT_ENABLED')
     }
     expect(run('browser_snapshot', { ...op, readOptIn: true })).toBeNull()
+    // set_data only writes the sidecar: exempt. patch can run script and reports what matched: not exempt.
+    const page = pane({ openedBy: 'operator', originClass: 'page' })
+    expect(run('browser_set_data', page)).toBeNull()
+    expect(run('browser_patch', page)).toBe('BROWSER_READ_NOT_ENABLED')
+    expect(run('browser_patch', { ...page, readOptIn: true })).toBeNull()
     expect(run('browser_list', undefined)).toBeNull()
   })
 

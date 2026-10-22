@@ -1002,7 +1002,9 @@ selector, mode, html? })` changes the live DOM now (`inner`, `outer`, `append`, 
 html up to 64 KiB); a patch is ephemeral (a reload drops it, state goes in `set_data`), zero matches or a
 bad selector is `SELECTOR_NOT_FOUND`, the ACK has `matched` and `applied`. Both verbs work only on a `page`
 pane, for every caller, and refuse `NOT_A_PAGE_PANE` on a dev server or an external site; they are free
-there, including on a pane the operator opened, and a read-only Scheduler worker may call them. A page pane
+there on a pane you opened; on a pane the operator opened `browser_set_data` is still free (it only writes the
+sidecar) but `browser_patch` needs the folder's read opt-in (`BROWSER_READ_NOT_ENABLED`), because it can run script
+and tells you what matched. A read-only Scheduler worker may call them. A page pane
 is **offline**: it loads nothing from the network and cannot navigate, redirect or open a popup to any address
 outside its own folder (so patched markup cannot send anything out, by request or by link) unless the operator
 turned on that pane's Allow network switch, which no verb can set; the operator's own address bar can still

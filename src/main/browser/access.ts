@@ -250,11 +250,12 @@ export function gateBrowserOpDetailed(
   const pane = input.pane
   if (addressesPane && !pane) return { reason: 'PANE_NOT_FOUND' }
   if (addressesPane && pane?.disconnected) return { reason: 'BROWSER_DISCONNECTED' }
-  // The live-panel verbs only write a page file's own data and DOM and read nothing back, so they do not need the
-  // folder's read opt-in even on a pane the operator opened (spec §7.1 "Live panel": free on `page`).
+  // `browser_set_data` only writes the panel's sidecar, so it needs no read opt-in even on a pane the operator opened.
+  // `browser_patch` does: it sets markup that can run script (the page allows inline script) and its `matched` count and
+  // SELECTOR_NOT_FOUND tell what the page holds, so on an operator pane it is a read-and-write like any other verb.
   if (
     addressesPane &&
-    !LIVE_PANEL_OPS.has(op) &&
+    op !== 'browser_set_data' &&
     pane?.openedBy === 'operator' &&
     pane.readOptIn !== true
   )
