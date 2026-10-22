@@ -55,6 +55,9 @@ const ALLOWED_VERBS = [
   // T481 (agent terminals B4): the two terminal READ verbs.
   'list_terminals',
   'read_terminal',
+  // T569 U2: the two live-panel verbs (page-class only for every caller).
+  'browser_set_data',
+  'browser_patch',
   'create_card',
   'update_card',
   'notify'

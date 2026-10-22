@@ -264,6 +264,9 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'browser_open',
     'browser_navigate',
     'browser_close',
+    // T569 U2: live panels are free on a page pane (page-class only for every caller).
+    'browser_set_data',
+    'browser_patch',
     'adopt_folder',
     'remove_folder',
     'memory_append',

@@ -38,6 +38,9 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   browser_list: { folder: ALLOWED },
   browser_navigate: { paneId: 'bp-1', url: 'http://localhost:5173/' },
   browser_close: { paneId: 'bp-1' },
+  // T569 U2: the live-panel verbs carry only a paneId too.
+  browser_set_data: { paneId: 'bp-1', data: { count: 3 } },
+  browser_patch: { paneId: 'bp-1', selector: '#n', mode: 'inner', html: '3' },
   adopt_folder: { folder: ALLOWED },
   remove_folder: { folder: ALLOWED },
   plan_mission: {

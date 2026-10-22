@@ -265,7 +265,10 @@ describe('AC-B1-3 — spawn_terminal is not replayable', () => {
       // T564 U1: two identical browser writes act twice (spec §6): a replay would swallow the second.
       'browser_open',
       'browser_navigate',
-      'browser_close'
+      'browser_close',
+      // T569 U2: two identical writes to a live panel write twice.
+      'browser_set_data',
+      'browser_patch'
     ])
   })
 })
