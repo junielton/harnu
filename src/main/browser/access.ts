@@ -13,6 +13,7 @@
  */
 import { checkBrowserContent, type ContentRefusal } from './content-check'
 import type { OriginClass, OriginClassOptions } from './origin-class'
+import { MAX_AGENT_PANES_PER_FOLDER } from './registry'
 
 /** Every `browser_*` op of the spec (§6.1); U1 wires `open`, `list`, `navigate` and `close`. */
 export const BROWSER_OPS = [
@@ -109,6 +110,7 @@ export type BrowserDenyReason =
   | 'BROWSER_PAUSED'
   | 'BROWSER_WRITE_DENIED'
   | 'BROWSER_LEASE_ENDED'
+  | 'PANE_LIMIT'
   | 'NOT_A_PAGE_PANE'
   | 'BROWSER_KEY_UNKNOWN'
   | 'PANE_INPUT_NOT_READY'
@@ -177,6 +179,12 @@ export interface BrowserGateInput {
    * confirm, not a refusal.
    */
   enforceLease?: boolean
+  /**
+   * `browser_open` only: the agent-opened panes the target folder already holds, oldest first (T574, spec §10.1).
+   * With {@link MAX_AGENT_PANES_PER_FOLDER} of them a `url` open refuses `PANE_LIMIT` here, at plan level, before
+   * any confirm. Absent = unknown (the verb judges it again).
+   */
+  agentPaneIds?: readonly string[]
 }
 
 export type BrowserTier = 'free' | 'lease' | 'refused'
@@ -223,6 +231,8 @@ export function browserTier(
 export interface BrowserGateRefusal {
   reason: BrowserDenyReason
   content?: ContentRefusal
+  /** `PANE_LIMIT`: the agent panes to reuse. */
+  reusablePaneIds?: string[]
 }
 
 /**
@@ -268,6 +278,16 @@ export function gateBrowserOpDetailed(
   const write = isBrowserWriteOp(op)
   if (write && op !== 'browser_close' && !input.writesEnabled)
     return { reason: 'BROWSER_WRITES_DISABLED' }
+  // The pane cap (spec §10.1): 4 agent-opened panes per folder, the 5th refuses. A `path` / `html` open may REUSE a
+  // pane already showing that file, which only the verb can tell, so the plan judges the `url` form alone.
+  if (
+    op === 'browser_open' &&
+    input.args?.url !== undefined &&
+    input.agentPaneIds !== undefined &&
+    input.agentPaneIds.length >= MAX_AGENT_PANES_PER_FOLDER
+  ) {
+    return { reason: 'PANE_LIMIT', reusablePaneIds: [...input.agentPaneIds] }
+  }
   // Pause suspends what a session CHANGES. Reading what network capture recorded and ending the capture only
   // ever reduce what is observed, so they work while paused; starting a capture does not.
   const action =

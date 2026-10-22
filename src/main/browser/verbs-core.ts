@@ -8,6 +8,7 @@
 import {
   gateBrowserOpDetailed,
   describePaneAccess,
+  sendsPointerOrKeyEvents,
   type BrowserAccess,
   type BrowserOp,
   type BrowserPaneAccess
@@ -16,6 +17,7 @@ import { shapeBrowserDenial, type BrowserDenialCode } from './browser-hints'
 import { deviceFromPreset, isPresetName, summarizeEmulation } from '../../shared/browser-emulation'
 import { checkBrowserContent, type ContentRefusal } from './content-check'
 import { checkTopLevelNavigation } from './nav-policy'
+import { opNeedsLivePage } from './lifecycle'
 import { flagAfterVerbNavigation } from './view-logic'
 import { classifyOrigin, hostOf, scrubUrl, type OriginClass } from './origin-class'
 import {
@@ -81,6 +83,10 @@ export interface BrowserHost {
   viewToken?(paneId: string): string | undefined
   /** The zoom factor the pane shows now (1 in device mode); absent = 1 (`browser_list`, T572). */
   zoomOf?(paneId: string): number
+  /** The pane's page is discarded (T574, spec §10.1): `info` answers from the record, the view is gone. */
+  isDiscarded?(paneId: string): boolean
+  /** Bring a discarded pane back (resolves true when it is live). Absent = nothing is ever discarded. */
+  revive?(paneId: string, opts?: { primeInput?: boolean }): Promise<boolean>
 }
 
 /** The page-protocol seam the live-panel verbs and `browser_open({ path | html })` use (`page-service.ts`). */
@@ -211,6 +217,30 @@ export function noteAgentWrite(deps: Pick<BrowserVerbDeps, 'leases'>, paneId: st
 }
 
 /**
+ * A pane-addressed verb is starting: the pane must not be discarded under it (spec §10.1). The returned `end` is
+ * idempotent and also drops a revival flag the ACK never claimed (a verb that failed after the revival).
+ */
+export function beginPaneVerb(
+  registry: Pick<BrowserRegistry, 'beginVerb' | 'takeRevived'>,
+  paneId: string
+): () => void {
+  const end = registry.beginVerb(paneId)
+  return () => {
+    end()
+    registry.takeRevived(paneId)
+  }
+}
+
+/** `revived: true` on the ACK of a verb that had to bring its discarded pane back (once). */
+export function withRevivedFlag(
+  registry: Pick<BrowserRegistry, 'takeRevived'>,
+  res: Record<string, unknown>
+): Record<string, unknown> {
+  if (res.ok === false || typeof res.paneId !== 'string') return res
+  return registry.takeRevived(res.paneId) ? { ...res, revived: true } : res
+}
+
+/**
  * Run the access gate for a pane-addressed verb, returning the refusal or the resolved pane. This is the handler's
  * last line of defence, so it also enforces the lease (`BROWSER_LEASE_ENDED`): the plan judged the same state a
  * moment earlier, but a lease can end between the plan and the dispatch. `args` carries the arguments the tier
@@ -244,6 +274,14 @@ export async function gate(
         folder: rec?.folder,
         ...(rec ? { openedBy: rec.openedBy } : {})
       })
+    }
+  }
+  // A discarded pane comes back before a verb that needs a live page runs; the ACK says `revived: true` (spec §10.1).
+  // The gate has already passed, so a refused call never pays for a page load.
+  if (rec && deps.host.isDiscarded?.(rec.paneId) && opNeedsLivePage(op, args)) {
+    if (await deps.host.revive?.(rec.paneId, { primeInput: sendsPointerOrKeyEvents(op, args) })) {
+      deps.registry.noteRevived(rec.paneId)
+      return { rec, live: deps.host.info(rec.paneId), origin }
     }
   }
   // Passing the gate does NOT refresh the lease's idle clock: only a write that actually ran does (`noteAgentWrite`).

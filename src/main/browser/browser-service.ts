@@ -28,7 +28,8 @@ import {
 import { resolveGateInput, type GateResolution } from './gate-resolve'
 import { createBrowserRegistry } from './registry'
 import type { BrowserReadDeps } from './read-verbs'
-import { BrowserViewHost, collectHarnuPorts, type PageHooks } from './view-host'
+import { BrowserViewHost, collectHarnuPorts } from './view-host'
+import { resolveDiscardMs } from './lifecycle'
 import { createPageService, type PageService } from './page-service'
 import { createOverlayBridge, type OverlayBridge } from './overlay-bridge'
 import type { BrowserVerbDeps } from './verbs-core'
@@ -178,22 +179,15 @@ export function getBrowserHost(): BrowserViewHost {
     openPopupPane: ({ folder, partition, url }) =>
       openOperatorPane({ folder, partition, url, popup: true }),
     prefs: browserPrefs(),
-    pageHooks: withOverlayCleanup(getPageService().hooks)
+    pageHooks: getPageService().hooks,
+    // A closed pane's pins go with it; a discarded one keeps them (spec §10.1).
+    onPaneClosed: (paneId) => getOverlayBridge().forget(paneId),
+    onViewDiscarded: (paneId) => getOverlayBridge().onViewDiscarded(paneId),
+    discardMs: resolveDiscardMs(process.env, app.isPackaged)
   })
   // A lease that starts or ends repaints the pane's chip (display only).
   browserLeases.onChange((paneId) => host?.refresh(paneId))
   return host
-}
-
-/** A pane's pins and overlay state go with the pane. */
-function withOverlayCleanup(hooks: PageHooks): PageHooks {
-  return {
-    ...hooks,
-    onDestroyed(paneId) {
-      hooks.onDestroyed(paneId)
-      getOverlayBridge().forget(paneId)
-    }
-  }
 }
 
 export function bindBrowserWindow(getWindow: () => BrowserWindow | null): void {
@@ -293,7 +287,10 @@ export async function resolveBrowserGate(
     writeDenied: rec ? browserLeases.isDenied(rec.paneId) : false,
     inputReady: rec ? getBrowserHost().inputReady(rec.paneId) : true,
     harnuPorts: collectHarnuPorts(mcpPort),
-    trustedHosts: rec ? trustedHostsSync(rec.folder) : []
+    trustedHosts: rec ? trustedHostsSync(rec.folder) : [],
+    ...(op === 'browser_open' && folder !== undefined
+      ? { agentPaneIds: browserRegistry.agentPanesIn(folder).map((p) => p.paneId) }
+      : {})
   })
 }
 

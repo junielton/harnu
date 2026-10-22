@@ -337,11 +337,13 @@ export function planToolCall({
         refusal.reason === 'BAD_ARGS' ||
         (BROWSER_DETAIL_CODES as readonly string[]).includes(refusal.reason)
           ? `${refusal.reason}: ${refusal.content?.detail ?? ''}`
-          : refusal.reason === 'PATH_NOT_ALLOWED'
-            ? `PATH_NOT_ALLOWED: ${refusal.content?.jailReason ?? ''}`
-            : refusal.reason === 'PANE_INPUT_NOT_READY' && browser?.pane?.openedBy === 'operator'
-              ? 'PANE_INPUT_NOT_READY: operator-pane'
-              : refusal.reason
+          : refusal.reason === 'PANE_LIMIT'
+            ? `PANE_LIMIT: ${(refusal.reusablePaneIds ?? []).join(',')}`
+            : refusal.reason === 'PATH_NOT_ALLOWED'
+              ? `PATH_NOT_ALLOWED: ${refusal.content?.jailReason ?? ''}`
+              : refusal.reason === 'PANE_INPUT_NOT_READY' && browser?.pane?.openedBy === 'operator'
+                ? 'PANE_INPUT_NOT_READY: operator-pane'
+                : refusal.reason
       return denyPlan(tool, folder ?? '', now, result, redact)
     }
   }

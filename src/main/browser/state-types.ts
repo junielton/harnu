@@ -96,6 +96,12 @@ export interface BrowserPaneState {
   allowNetwork: boolean
   /** The served page file was deleted: the pane shows the "file removed" placeholder. */
   pageFileRemoved: boolean
+  /**
+   * Set while the pane's page is discarded (T574, spec §10.1): "Paused to save memory — click to reload" is shown
+   * and the view is gone. `reason` is why (`idle`: paused by the timer; `restored`: reopened after a restart) and
+   * `hiddenMs` how long it had been hidden.
+   */
+  discarded: { reason: 'idle' | 'restored'; hiddenMs: number } | null
 }
 
 /** A rectangle in CSS px, as the renderer measures it. */

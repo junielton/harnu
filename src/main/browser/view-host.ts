@@ -106,6 +106,16 @@ import {
   liveUrlOf
 } from './view-logic'
 import type { BrowserAccess } from './access'
+import {
+  DISCARD_SWEEP_INTERVAL_MS,
+  HIDDEN_DISCARD_MS,
+  buildDiscardState,
+  createHiddenTracker,
+  planDiscard,
+  reviveOnShow,
+  type DiscardFacts,
+  type DiscardReason
+} from './lifecycle'
 import type { BrowserRegistry } from './registry'
 import type { BrowserNotice, BrowserOverlayRect, BrowserPaneState } from './state-types'
 import type { BrowserReadHost } from './read-verbs'
@@ -136,6 +146,12 @@ export interface ViewHostDeps {
   prefs: BrowserPrefsStore
   /** The `harnu-page://` side (T569 U2); absent in a unit that never loads a page. */
   pageHooks?: PageHooks
+  /** The pane is closed for good (not discarded): drop what is held for it outside the host (pins, overlay). */
+  onPaneClosed?(paneId: string): void
+  /** The pane's page was discarded: picking ends, the pins stay (spec §10.1). */
+  onViewDiscarded?(paneId: string): void
+  /** How long a pane stays hidden before the sweep discards it. Absent = {@link HIDDEN_DISCARD_MS}. */
+  discardMs?: number
 }
 
 /** What the view host asks of the page service (`page-service.ts`). */
@@ -267,6 +283,13 @@ export class BrowserViewHost implements BrowserReadHost {
   private boundChords: ReadonlySet<string> = new Set()
   private readonly hardenedPartitions = new Set<string>()
   private windowHooked: BrowserWindow | null = null
+  /** When each pane began to be hidden (not mounted, not visible, or parked): the discard clock (spec §10.1). */
+  private readonly hidden = createHiddenTracker()
+  /** The last rect the renderer reported for a pane with no view (discarded), applied when the view returns. */
+  private readonly lastBounds = new Map<string, { rect: Rect; visible: boolean }>()
+  /** A revival already in flight, so two verbs (or a click and a verb) share one load. */
+  private readonly reviving = new Map<string, Promise<boolean>>()
+  private sweepTimer: ReturnType<typeof setInterval> | null = null
   private readonly arms: DownloadArms = createDownloadArms({
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
@@ -394,12 +417,24 @@ export class BrowserViewHost implements BrowserReadHost {
     this.park(entry)
     this.attachGuestHandlers(entry)
     wc.loadURL(opts.url).catch(() => undefined)
+    // A parked pane counts as hidden from the moment it was parked (spec §2.3, §10.1).
+    this.hidden.markHidden(opts.paneId, this.deps.now())
     this.publish(entry)
+    const known = this.lastBounds.get(opts.paneId)
+    if (known) this.applyBounds(opts.paneId, known.rect, known.visible)
+    this.startSweep()
   }
 
   info(paneId: string): LivePaneInfo | undefined {
     const e = this.entries.get(paneId)
-    if (!e || e.wc.isDestroyed()) return undefined
+    if (!e) {
+      // A discarded pane answers from what was recorded, so the gate classifies it exactly as it was.
+      const d = this.deps.registry.get(paneId)?.discarded
+      return d
+        ? { url: d.url, title: d.title, loading: false, canGoBack: false, canGoForward: false }
+        : undefined
+    }
+    if (e.wc.isDestroyed()) return undefined
     return {
       url: liveUrlOf(e.wc.getURL(), e.requestedUrl),
       title: e.wc.getTitle(),
@@ -461,6 +496,15 @@ export class BrowserViewHost implements BrowserReadHost {
   }
 
   destroy(paneId: string): void {
+    // Closing a pane for good: what the host and its neighbours hold for it goes too (a discard keeps it).
+    this.hidden.forget(paneId)
+    this.lastBounds.delete(paneId)
+    this.deps.onPaneClosed?.(paneId)
+    this.release(paneId)
+  }
+
+  /** Tear the view down: webContents, debugger, watchers, readers, held downloads. The pane itself stays known. */
+  private release(paneId: string): void {
     const e = this.entries.get(paneId)
     if (!e) return
     e.gen.bump()
@@ -1002,7 +1046,22 @@ export class BrowserViewHost implements BrowserReadHost {
   /** The renderer reports the pane host's rect (spec §2.3). */
   applyBounds(paneId: string, rect: Rect, visible: boolean): void {
     const e = this.entries.get(paneId)
-    if (!e || e.wc.isDestroyed()) return
+    if (!e) {
+      // A discarded pane has no view to place: keep where the renderer put it for the revival, and let a pane
+      // that is shown for real come back when its reason says so (a restored pane loads, an idle discard waits).
+      const rec = this.deps.registry.get(paneId)
+      if (rec?.discarded) {
+        this.lastBounds.set(paneId, { rect, visible })
+        if (visible) this.hidden.markShown(paneId)
+        else this.hidden.markHidden(paneId, this.deps.now())
+        if (visible && reviveOnShow(rec.discarded.reason)) void this.revive(paneId)
+      }
+      return
+    }
+    if (e.wc.isDestroyed()) return
+    this.lastBounds.set(paneId, { rect, visible })
+    if (visible) this.hidden.markShown(paneId)
+    else this.hidden.markHidden(paneId, this.deps.now())
     e.rectCss = rect
     e.visibleReported = visible
     if (!visible) {
@@ -1115,15 +1174,233 @@ export class BrowserViewHost implements BrowserReadHost {
   refresh(paneId: string): void {
     const e = this.entries.get(paneId)
     if (e) this.publish(e)
+    else this.publishDiscarded(paneId)
   }
 
   state(paneId: string): BrowserPaneState | null {
     const e = this.entries.get(paneId)
-    return e ? this.snapshot(e) : null
+    return e ? this.snapshot(e) : this.snapshotDiscarded(paneId)
   }
 
   has(paneId: string): boolean {
-    return this.entries.has(paneId)
+    return this.entries.has(paneId) || this.isDiscarded(paneId)
+  }
+
+  /* ---------------------------------------------------------------------------------------- */
+  /* Discard and revive (T574, spec §10.1)                                                      */
+  /* ---------------------------------------------------------------------------------------- */
+
+  /** The pane's page is gone (paused to save memory, or restored after a restart) and is waiting to come back. */
+  isDiscarded(paneId: string): boolean {
+    return !this.entries.has(paneId) && this.deps.registry.get(paneId)?.discarded != null
+  }
+
+  /**
+   * A pane that exists only as a record (a restart restored it): no view until it is shown or driven. The caller has
+   * put the {@link DiscardState} on the registry record.
+   */
+  restoreDiscarded(paneId: string): void {
+    this.hidden.markHidden(paneId, this.deps.now())
+    this.publishDiscarded(paneId)
+    this.startSweep()
+  }
+
+  /** Read the page's scroll position; a page that does not answer in time gives `null`. */
+  private async readScroll(e: ViewEntry): Promise<unknown> {
+    if (e.wc.isDestroyed()) return null
+    try {
+      return await Promise.race([
+        e.wc.executeJavaScript('({ x: window.scrollX, y: window.scrollY })', false),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 500))
+      ])
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Discard a live pane: record where it was, destroy its webContents and release the view. The registry record,
+   * its pins and the operator's Disconnect/Pause all stay. Returns false when there was no live view.
+   */
+  async discard(paneId: string, reason: DiscardReason = 'idle'): Promise<boolean> {
+    const e = this.entries.get(paneId)
+    const rec = this.deps.registry.get(paneId)
+    if (!e || !rec || e.wc.isDestroyed()) return false
+    const scroll = await this.readScroll(e)
+    // The pane may have been shown, driven or closed while the scroll was read.
+    if (this.entries.get(paneId) !== e || e.wc.isDestroyed()) return false
+    rec.discarded = buildDiscardState({
+      reason,
+      url: liveUrlOf(e.wc.getURL(), e.requestedUrl),
+      title: e.wc.getTitle(),
+      scroll,
+      zoom: e.wc.getZoomFactor(),
+      now: this.deps.now(),
+      hiddenSince: this.hidden.since(paneId)
+    })
+    this.deps.onViewDiscarded?.(paneId)
+    this.release(paneId)
+    this.hidden.markHidden(paneId, this.deps.now())
+    this.publishDiscarded(paneId)
+    return true
+  }
+
+  /**
+   * Bring a discarded pane back: a new view loads the recorded address, the page zoom and scroll are put back when it
+   * has loaded, and the last rect the renderer reported is applied. Resolves true when the pane is live (it also is
+   * when it already was), after the first load settled or 10 s, whichever comes first.
+   */
+  revive(paneId: string, opts: { primeInput?: boolean } = {}): Promise<boolean> {
+    const running = this.reviving.get(paneId)
+    if (running) return running
+    const rec = this.deps.registry.get(paneId)
+    if (this.entries.has(paneId)) return Promise.resolve(true)
+    if (!rec?.discarded) return Promise.resolve(false)
+    const d = rec.discarded
+    const job = (async (): Promise<boolean> => {
+      try {
+        this.create({ paneId, folder: rec.folder, partition: rec.partition, url: d.url })
+      } catch {
+        return false
+      }
+      rec.discarded = null
+      const e = this.entries.get(paneId)
+      if (!e) return false
+      this.restoreAfterLoad(e, d.zoom, d.scroll)
+      this.publish(e)
+      await this.firstLoad(e, 10_000)
+      // Mouse and key events are dropped on the first document of a view (input-ready.ts). A verb that is about to
+      // send some asks for one Harnu-started reload, which is what makes them arrive, so the revival does not end in
+      // PANE_INPUT_NOT_READY.
+      if (opts.primeInput && !e.inputState.ready && !e.wc.isDestroyed() && e.wc.getURL() !== '') {
+        e.harnuNavigation = true
+        e.wc.reload()
+        await this.firstLoad(e, 10_000)
+      }
+      return true
+    })().finally(() => this.reviving.delete(paneId))
+    this.reviving.set(paneId, job)
+    return job
+  }
+
+  /** The page zoom and the scroll position come back once the page has loaded (best effort). */
+  private restoreAfterLoad(
+    e: ViewEntry,
+    zoom: number,
+    scroll: { x: number; y: number } | null
+  ): void {
+    const wc = e.wc
+    wc.once('did-finish-load', () => {
+      if (wc.isDestroyed()) return
+      if (zoom !== 1 && !e.applied.device) {
+        try {
+          wc.setZoomFactor(zoom)
+        } catch {
+          /* the view went away */
+        }
+      }
+      if (scroll && (scroll.x !== 0 || scroll.y !== 0)) {
+        const script = `window.scrollTo(${scroll.x}, ${scroll.y})`
+        void wc.executeJavaScript(script, false).catch(() => undefined)
+        // A page that lays itself out late: once more after it had a moment.
+        setTimeout(() => {
+          if (!wc.isDestroyed()) void wc.executeJavaScript(script, false).catch(() => undefined)
+        }, 400)
+      }
+    })
+  }
+
+  private firstLoad(e: ViewEntry, timeoutMs: number): Promise<void> {
+    const wc = e.wc
+    return new Promise((resolve) => {
+      if (wc.isDestroyed()) return resolve()
+      const done = (): void => {
+        clearTimeout(timer)
+        wc.removeListener('did-finish-load', done)
+        wc.removeListener('did-fail-load', done)
+        resolve()
+      }
+      const timer = setTimeout(done, timeoutMs)
+      wc.once('did-finish-load', done)
+      wc.once('did-fail-load', done)
+    })
+  }
+
+  /** The facts the sweep judges one live pane by. */
+  private discardFacts(e: ViewEntry): DiscardFacts {
+    const reg = this.deps.registry
+    return {
+      paneId: e.paneId,
+      discarded: false,
+      hiddenSince: this.hidden.since(e.paneId),
+      verbInFlight:
+        reg.verbsInFlight(e.paneId) > 0 ||
+        reg.agentInput(e.paneId).inFlight ||
+        e.activity !== null ||
+        e.loading,
+      captureActive: e.readers.capture.status().expiresAt !== null,
+      operatorAt: reg.operatorInteractionAt(e.paneId),
+      downloadPending: e.prompt !== null || e.agentDownload != null || this.arms.isArmed(e.paneId)
+    }
+  }
+
+  /** One pass of the discard clock: discard every hidden pane that has waited long enough and is idle. */
+  sweep(): void {
+    const facts: DiscardFacts[] = []
+    for (const e of this.entries.values()) if (!e.wc.isDestroyed()) facts.push(this.discardFacts(e))
+    const now = this.deps.now()
+    for (const id of planDiscard(facts, now, this.deps.discardMs ?? HIDDEN_DISCARD_MS)) {
+      void this.discard(id)
+    }
+  }
+
+  private startSweep(): void {
+    if (this.sweepTimer) return
+    const ms = this.deps.discardMs ?? HIDDEN_DISCARD_MS
+    // Check often enough that a shortened test time is honoured within about a second.
+    const every = Math.max(250, Math.min(DISCARD_SWEEP_INTERVAL_MS, Math.floor(ms / 2)))
+    this.sweepTimer = setInterval(() => this.sweep(), every)
+    this.sweepTimer.unref?.()
+  }
+
+  private snapshotDiscarded(paneId: string): BrowserPaneState | null {
+    const r = this.deps.registry.get(paneId)
+    const d = r?.discarded
+    if (!r || !d) return null
+    return {
+      paneId,
+      url: d.url,
+      title: d.title,
+      loading: false,
+      canGoBack: false,
+      canGoForward: false,
+      origin: classifyOrigin(d.url, {
+        extraTrustedHosts: this.deps.trustedHosts(r.folder),
+        harnuPorts: this.deps.harnuPorts()
+      }),
+      openedBy: r.openedBy,
+      partition: r.partition,
+      flagged: r.flagged,
+      pausedUntil: this.deps.access.pausedUntil(paneId),
+      disconnected: this.deps.access.isDisconnected(paneId),
+      ownerSessionId: r.ownerSessionId,
+      notice: null,
+      agentReads: r.openedBy === 'agent' || this.deps.readOptIn(r.folder),
+      leaseActive: false,
+      networkUntil: null,
+      zoom: d.zoom,
+      emulation: r.emulation ?? {},
+      downloadPrompt: null,
+      pagePath: r.pagePath ?? null,
+      allowNetwork: r.allowNetwork === true,
+      pageFileRemoved: false,
+      discarded: { reason: d.reason, hiddenMs: d.hiddenMs }
+    }
+  }
+
+  private publishDiscarded(paneId: string): void {
+    const state = this.snapshotDiscarded(paneId)
+    if (state) this.send('browser:state', state)
   }
 
   /* ---- The page side (T569 U2) ---------------------------------------------------------------- */
@@ -1209,7 +1486,9 @@ export class BrowserViewHost implements BrowserReadHost {
   }
 
   destroyAll(): void {
-    for (const id of [...this.entries.keys()]) this.destroy(id)
+    if (this.sweepTimer) clearInterval(this.sweepTimer)
+    this.sweepTimer = null
+    for (const id of [...this.entries.keys()]) this.release(id)
   }
 
   /** Test and live-proof hook: the number of views the host holds. */
@@ -1693,7 +1972,8 @@ export class BrowserViewHost implements BrowserReadHost {
       downloadPrompt: e.prompt && !e.prompt.answered ? { name: e.prompt.name } : null,
       pagePath: r?.pagePath ?? null,
       allowNetwork: r?.allowNetwork === true,
-      pageFileRemoved: e.fileRemoved
+      pageFileRemoved: e.fileRemoved,
+      discarded: null
     }
   }
 

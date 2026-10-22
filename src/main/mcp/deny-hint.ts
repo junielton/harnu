@@ -70,6 +70,14 @@ export function shapeDenial(
       folder: ctx.folder,
       detail: browserDetail[2]!
     })
+  // T574: the plan-level pane cap names the panes to reuse.
+  const paneLimit = /^PANE_LIMIT: ([A-Za-z0-9_,-]*)$/.exec(result)
+  if (paneLimit) {
+    return shapeBrowserDenial('PANE_LIMIT', {
+      folder: ctx.folder,
+      reusablePaneIds: paneLimit[1] ? paneLimit[1].split(',') : []
+    })
+  }
   // T569 F6: a plan-level path refusal names which jail rule it hit.
   const pathRefusal = /^PATH_NOT_ALLOWED: ([a-z-]*)$/.exec(result)
   if (pathRefusal) {

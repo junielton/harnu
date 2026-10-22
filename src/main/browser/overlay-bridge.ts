@@ -33,7 +33,7 @@ import {
 } from '../../shared/browser-comment'
 import { createCommentDelivery, type CommentDelivery } from './comment-delivery'
 import { cropRect, cropRelPath, scaledCropSize, toRect, validatePicked } from './comment-payload'
-import { createPinStore, paneStateOf, type PinStore } from './comment-pins'
+import { createPinStore, paneStateOf, type PinRecord, type PinStore } from './comment-pins'
 import { agentInputBlocksEmit } from './agent-input-gate'
 import { evaluatePickGate } from './comment-plan'
 import type { BrowserAccess } from './access'
@@ -61,6 +61,10 @@ export interface OverlayBridge {
   onDisconnected(paneId: string): void
   /** A pane closed: forget its pins and overlay state. */
   forget(paneId: string): void
+  /** The pane's page was discarded (T574): picking ends, the pins stay. */
+  onViewDiscarded(paneId: string): void
+  /** Pins read back from `helpers.json` at boot (T574): the store loads them on the pane's first use. */
+  restorePins(paneId: string, pins: PinRecord[]): void
   /** Test and live-proof hook. */
   pins(): PinStore
 }
@@ -82,7 +86,26 @@ function isPaneId(v: unknown): v is string {
 }
 
 export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
-  const pins = createPinStore({ now: deps.now, newId: () => randomBytes(4).toString('hex') })
+  // Pins survive a restart (spec §10.3): every change is pushed to the renderer, which keeps it on the pane in
+  // `helpers.json`; at boot the saved pins come back through `restorePins` before the store's first use.
+  const restored = new Map<string, PinRecord[]>()
+  const pins = createPinStore({
+    now: deps.now,
+    newId: () => randomBytes(4).toString('hex'),
+    persistence: {
+      load(paneId) {
+        const held = restored.get(paneId) ?? null
+        restored.delete(paneId)
+        return held
+      },
+      save(paneId, list) {
+        if (!deps.registry.get(paneId)) return
+        const win = deps.getWindow()
+        if (win && !win.isDestroyed())
+          win.webContents.send('browser:persistPins', { paneId, pins: list })
+      }
+    }
+  })
   const runtime = new Map<string, PaneRuntime>()
 
   const rt = (paneId: string): PaneRuntime => {
@@ -385,6 +408,16 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
     forget(paneId) {
       pins.forget(paneId)
       runtime.delete(paneId)
+      restored.delete(paneId)
+    },
+    onViewDiscarded(paneId) {
+      const r = runtime.get(paneId)
+      if (!r) return
+      r.active = false
+      pushApp(paneId)
+    },
+    restorePins(paneId, list) {
+      restored.set(paneId, list)
     },
     pins: () => pins
   }

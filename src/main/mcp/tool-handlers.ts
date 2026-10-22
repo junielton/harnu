@@ -66,7 +66,9 @@ import {
 } from '../terminal-registry'
 import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { readAgentTerminalWrites } from './prefs'
+import { beginPaneVerb, withRevivedFlag } from '../browser/verbs-core'
 import {
+  browserRegistry,
   makeBrowserActDeps,
   makeBrowserDeviceDeps,
   makeBrowserReadDeps,
@@ -5167,7 +5169,8 @@ function browserDeps(ctx: ToolHandlerCtx): ReturnType<typeof makeBrowserVerbDeps
 }
 
 /** A verb result: `ok:false` is the steering refusal shape of spec §6, returned as an error result. */
-function browserResult(res: Record<string, unknown>): CallToolResult {
+function browserResult(input: Record<string, unknown>): CallToolResult {
+  const res = withRevivedFlag(browserRegistry, input)
   if (res.ok === false) {
     return { content: [{ type: 'text', text: JSON.stringify(res) }], isError: true }
   }
@@ -5317,6 +5320,22 @@ const browserDownloadHandler: Handler = async (args, ctx) => {
     args
   )
   return browserResult({ op: 'browser_download', ...res })
+}
+
+/**
+ * A pane-addressed browser verb is running: its pane is not discarded under it (T574, spec §10.1), and the ACK says
+ * `revived: true` when the verb had to bring the pane back.
+ */
+function paneVerb(handler: Handler): Handler {
+  return async (args, ctx) => {
+    const paneId = typeof args.paneId === 'string' ? args.paneId : ''
+    const end = paneId ? beginPaneVerb(browserRegistry, paneId) : undefined
+    try {
+      return await handler(args, ctx)
+    } finally {
+      end?.()
+    }
+  }
 }
 
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
@@ -5538,23 +5557,23 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   send_terminal: sendTerminalHandler,
   browser_open: browserOpenHandler,
   browser_list: browserListHandler,
-  browser_navigate: browserNavigateHandler,
-  browser_close: browserCloseHandler,
-  browser_snapshot: browserSnapshotHandler,
-  browser_screenshot: browserScreenshotHandler,
-  browser_console: browserConsoleHandler,
-  browser_network: browserNetworkHandler,
-  browser_wait_for: browserWaitForHandler,
-  browser_eval: browserEvalHandler,
-  browser_click: browserClickHandler,
-  browser_type: browserTypeHandler,
-  browser_fill: browserFillHandler,
-  browser_press: browserPressHandler,
-  browser_emulate: browserEmulateHandler,
-  browser_upload: browserUploadHandler,
-  browser_download: browserDownloadHandler,
-  browser_set_data: browserSetDataHandler,
-  browser_patch: browserPatchHandler,
+  browser_navigate: paneVerb(browserNavigateHandler),
+  browser_close: paneVerb(browserCloseHandler),
+  browser_snapshot: paneVerb(browserSnapshotHandler),
+  browser_screenshot: paneVerb(browserScreenshotHandler),
+  browser_console: paneVerb(browserConsoleHandler),
+  browser_network: paneVerb(browserNetworkHandler),
+  browser_wait_for: paneVerb(browserWaitForHandler),
+  browser_eval: paneVerb(browserEvalHandler),
+  browser_click: paneVerb(browserClickHandler),
+  browser_type: paneVerb(browserTypeHandler),
+  browser_fill: paneVerb(browserFillHandler),
+  browser_press: paneVerb(browserPressHandler),
+  browser_emulate: paneVerb(browserEmulateHandler),
+  browser_upload: paneVerb(browserUploadHandler),
+  browser_download: paneVerb(browserDownloadHandler),
+  browser_set_data: paneVerb(browserSetDataHandler),
+  browser_patch: paneVerb(browserPatchHandler),
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

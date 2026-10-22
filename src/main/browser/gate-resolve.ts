@@ -31,9 +31,14 @@ export function resolveGateInput(opts: {
   trustedHosts: readonly string[]
   /** The verb's own arguments, for the content refusals that come before the kill-switch. */
   args?: Record<string, unknown>
+  /** `browser_open`: the agent panes the target folder already holds (the plan-level `PANE_LIMIT`). */
+  agentPaneIds?: readonly string[]
 }): GateResolution {
   const { rec, writesEnabled } = opts
-  const args = opts.args !== undefined ? { args: opts.args } : {}
+  const args = {
+    ...(opts.args !== undefined ? { args: opts.args } : {}),
+    ...(opts.agentPaneIds !== undefined ? { agentPaneIds: opts.agentPaneIds } : {})
+  }
   const classify = { harnuPorts: opts.harnuPorts, extraTrustedHosts: opts.trustedHosts }
   if (!rec)
     return { folder: undefined, input: { pane: undefined, writesEnabled, classify, ...args } }
