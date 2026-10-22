@@ -635,7 +635,7 @@ watch(isFrozen, async (frozen) => {
           aria-hidden="true"
           data-testid="browser-address-view"
         >
-          <span class="text-text-2">{{ addressParts.scheme }}</span
+          <span class="text-text-2 @max-[300px]:hidden">{{ addressParts.scheme }}</span
           ><span class="text-text" data-testid="browser-address-host">{{ addressParts.host }}</span
           ><span class="text-text-2">{{ addressParts.rest }}</span>
         </div>

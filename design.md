@@ -3790,7 +3790,7 @@ must freeze it first (see "Frozen frame").
   (`--accent-line` on focus). It shows the **real URL** (query string included, because the operator typed it
   and must be able to edit it). **Host emphasis:** while the field is not being edited, the scheme and the path
   are drawn in `--text-2` and the host (with its port) in `--text`, so the part that says where you are stands
-  out; the text under it is the real input, made transparent, and it returns to a single `--text` tone the moment
+  out (below 300px the scheme is left out of this view so the host fits, as browsers do); the text under it is the real input, made transparent, and it returns to a single `--text` tone the moment
   the field takes focus (an accent border, `--accent-line`, and a caret). Enter navigates (a bare word with no dot or scheme is treated as `https://` +
   word; a blocked scheme raises the notice strip and never navigates). Escape restores the live URL.
   `browser.focusAddress` focuses and selects it.
