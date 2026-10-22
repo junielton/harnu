@@ -449,7 +449,7 @@ export function shapeBrowserDenial(
     case 'DOWNLOAD_CANCELLED':
       return {
         error: code,
-        message: `The download was cancelled${noDot(ctx.detail) ? `: ${noDot(ctx.detail)}` : ''}.`,
+        message: `The download was cancelled${noDot(ctx.detail) && noDot(ctx.detail) !== 'The download was cancelled' ? `: ${noDot(ctx.detail)}` : ''}.`,
         nextActions: [
           {
             do: 'Tell the operator if you still need the file; do not retry in a loop.',

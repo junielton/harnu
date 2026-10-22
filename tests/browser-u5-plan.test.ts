@@ -9,6 +9,7 @@ import { buildPlanInput } from '../src/main/mcp/plan-input'
 import { checkBrowserContent } from '../src/main/browser/content-check'
 import { resolveGateInput } from '../src/main/browser/gate-resolve'
 import { shapeDenial } from '../src/main/mcp/deny-hint'
+import { shapeBrowserDenial } from '../src/main/browser/browser-hints'
 import type { BrowserGateInput, BrowserPaneAccess } from '../src/main/browser/access'
 import type { BrowserPaneRecord } from '../src/main/browser/registry'
 import { deviceFromPreset } from '../src/shared/browser-emulation'
@@ -174,6 +175,19 @@ describe('the denial the agent reads', () => {
     const up = shapeDenial('UPLOAD_PATH_DENIED: .env: it is an .env file.')
     expect(up?.error).toBe('UPLOAD_PATH_DENIED')
     expect(up?.message).toContain('.env file')
+  })
+
+  it('a cancelled download does not repeat itself, and no message ends in two periods', () => {
+    expect(shapeDenial('DOWNLOAD_CANCELLED')?.message).toBe('The download was cancelled.')
+    for (const code of [
+      'DOWNLOAD_CANCELLED',
+      'DOWNLOAD_FAILED',
+      'UPLOAD_PATH_DENIED',
+      'UPLOAD_TOO_LARGE'
+    ]) {
+      const m = shapeBrowserDenial(code as never, { detail: 'The pane was closed.' }).message
+      expect(m, code).not.toMatch(/\.\.$/)
+    }
   })
 
   it('every new code shapes without a detail too', () => {
