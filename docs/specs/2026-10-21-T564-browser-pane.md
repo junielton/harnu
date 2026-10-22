@@ -183,7 +183,7 @@ A focused guest swallows keystrokes before the renderer's keybinding engine sees
 `before-input-event` on every guest `webContents`, normalizes the chord and forwards it to the renderer
 (`browser:chord`), which runs the normal keybinding dispatcher. The guest keeps a short **page-owns** list
 (copy, paste, cut, select-all, undo/redo, find); everything else is offered to Harnu first. **The zoom chords are
-Harnu-owned (amended in U5, T572):** `Ctrl =`, `Ctrl −` and `Ctrl 0` (and `Ctrl +`, folded onto `Ctrl =`) are
+Harnu-owned (amended in U5, T572 by the orchestrator; pending operator confirmation):** `Ctrl =`, `Ctrl −` and `Ctrl 0` (and `Ctrl +`, folded onto `Ctrl =`) are
 forwarded like any other bound chord and drive the per-origin zoom of §9.1; they are not page-owned, and a page
 never sees them. New action ids for the keybindings table (T486 conventions: every id has a handler and labels in
 both locales): `browser.overlay.toggle`, `browser.zoom.in|out|reset`, `browser.devtools`, `browser.reload`,
@@ -1010,7 +1010,7 @@ session, destroy the `webContents`, remove the view. Page files, sidecars and sa
 scroll position is restored best-effort. Unlike agent terminals (ADR-0020: an id held by an agent must never
 come back bound to a different process), a pane id survives because nothing about it is a process. A pane
 whose owner session no longer exists falls back to "selected session of the folder" for delivery. Leases,
-network capture, `flagged` state and the pause timer **do not** survive a restart.
+network capture, `flagged` state and the pause timer **do not** survive a restart. **Disconnect does** (it is permanent, §7.4): the pane payload keeps it and the pane returns disconnected, so a relaunch never gives an agent back a pane the operator cut it off from.
 
 > **As built (U7, T574).** The renderer owns `helpers.json`, so main keeps each pane's restorable state current on the
 > pane's `payload` through two pushes: the address, zoom, emulation and network switch ride on `browser:state`, and the

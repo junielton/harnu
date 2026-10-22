@@ -54,8 +54,14 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Changed
 
 - **One check decides whether a session's input made a page event or a comment pick.** The page-event gate, the comment
-  pick and the registry check had three copies; they now share one. A click you make within five seconds of a session
-  clicking in the same pane is treated as the session's, the way the longer-lived browser activation requires.
+  pick and the registry check had three copies; they now share one. It follows the moment of your own click: a session's
+  click that overlapped it, or was still running, makes the event or pick ignored, and the pane now says so ("Ignored — a
+  session just acted on this page"). Your own click a moment after a session's goes through.
+- **`browser_patch` on a pane you opened needs the same permission as reading it.** It can run script and tells a session
+  what matched, so it now asks for **Let agents read browser panes I open** like every other verb; `browser_set_data`
+  stays free.
+- **Only folders Harnu knows and you have not blocked get their browser panes back after a restart**, an agent's pane
+  always keeps the agent's own cookie jar, and a pane's saved address no longer includes its query string.
 - **Point-and-comment, tightened.** A browser pane you paused still takes comments (pausing stops the session
   driving the page, not you writing to it); one you disconnected the session from does not, and the comment
   button and composer now say so up front instead of failing after you typed. A comment stays a draft until its
@@ -80,6 +86,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **Disconnecting a session from a browser pane now lasts across a restart.** It used to come back connected.
 - **A browser pane's saved state could stop being written.** Adding a second pane to a folder left the first one's
   saved details in a form the file write refused, so the file silently stopped updating; it now writes plain data.
 
