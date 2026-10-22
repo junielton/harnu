@@ -1,17 +1,27 @@
 name: CI
 
-# Verify the build on every PR and on pushes to main: typecheck, lint, tests,
-# and a full production build. Any failing step fails the job.
+# Verify the build on every PR and on pushes to main: contract gates, typecheck,
+# lint, tests, and a full production build. Any failing job fails the run.
+#
+# The gates run as parallel jobs (T576) so the wall clock is the slowest path,
+# not the sum of every step: `gates`, `typecheck` and `lint` are the static
+# checks, `test` shards the Vitest suite across a matrix and `coverage` merges
+# the shards' blobs and enforces the coverage thresholds, `build` produces `out/`
+# and runs the voice licence gate on it, and `e2e` boots the built app. Each job
+# is a required status check on its own; none of them depends on another except
+# `coverage` (which needs every `test` shard's blob).
 on:
   pull_request:
   push:
     branches: [main]
 
-# Cancel a superseded run of the same ref: a new push to a PR branch (or to
-# main) cancels the in-flight run instead of stacking them (T65 AC4).
+# Cancel a superseded run of the same ref: a new push to a PR branch cancels the
+# in-flight run instead of stacking them (T65 AC4). A run on `main` is keyed on
+# its own run id and never cancelled (T576 AC7): every merge keeps its own
+# verdict, so a red `main` is always attributable to the commit that caused it.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Read-only token: CI checks code, it never writes to the repo. A pull request from
 # a fork gets a read-only token anyway; this makes pushes to main match it.
@@ -19,7 +29,9 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  # Contract gates: formatting and the repo-convention gates. All of them are
+  # pure node and finish in seconds apart from Prettier, which dominates.
+  gates:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -34,25 +46,26 @@ jobs:
           node-version-file: '.nvmrc'
           cache: npm
 
-      # Electron's prebuilt binary download dominates `npm ci` (the postinstall
-      # electron-builder install-app-deps step). Cache it across runs (T65 AC4).
-      - name: Cache Electron binaries
+      # Neither Prettier nor the node gates need Electron's binary or the native
+      # rebuild that `npm ci`'s postinstall does, so skip it (T576).
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # Prettier's cache is keyed on file content (the default keys on mtime,
+      # which every fresh checkout resets), so an unchanged file is never
+      # re-parsed. Restore the newest cache and save a new one per commit.
+      - name: Cache Prettier
         uses: actions/cache@v6
         with:
-          path: ~/.cache/electron
-          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          path: node_modules/.cache/prettier
+          key: ${{ runner.os }}-prettier-${{ hashFiles('package-lock.json', '.prettierrc*', '.prettierignore') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-electron-
-
-      # `npm ci` runs the postinstall hook (electron-builder install-app-deps),
-      # which rebuilds node-pty for Electron. That's expected on CI.
-      - name: Install dependencies
-        run: npm ci
+            ${{ runner.os }}-prettier-${{ hashFiles('package-lock.json', '.prettierrc*', '.prettierignore') }}-
 
       # Contract gate (T65 AC3): `prettier --check .` — formatting drift fails
       # the gate here instead of silently landing and dirtying review diffs.
       - name: Format check
-        run: npm run format:check
+        run: npm run format:check -- --cache --cache-strategy content
 
       # Contract gate (T65 AC2): en.json and pt-BR.json must carry the exact
       # same deep-flattened key set. Fails in seconds listing the missing keys
@@ -99,17 +112,236 @@ jobs:
           USER_DOCS_GATE_BASE: ${{ github.event.pull_request.base.sha }}
           GATE_PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
 
+      # ntfy.sh push via the CI_FAIL_NTFY_TOPIC secret; a no-op until that secret
+      # exists (empty topic short-circuits the curl).
+      - name: Notify main failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          NTFY_TOPIC: ${{ secrets.CI_FAIL_NTFY_TOPIC }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] && curl -fsS -m 10 \
+            -H "Title: CI failed on main" -H "Priority: high" -H "Tags: rotating_light" \
+            -d "${{ github.workflow }}/${{ github.job }} failed on main @ ${{ github.sha }} — https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "https://ntfy.sh/$NTFY_TOPIC" || true
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      # Same Electron binary cache as the other jobs (T65 AC4).
+      - name: Cache Electron binaries
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/electron
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      # `npm ci` runs the postinstall hook (electron-builder install-app-deps),
+      # which rebuilds node-pty for Electron. That's expected on CI.
+      - name: Install dependencies
+        run: npm ci
+
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Lint
-        run: npm run lint
+      # ntfy.sh push via the CI_FAIL_NTFY_TOPIC secret; a no-op until that secret
+      # exists (empty topic short-circuits the curl).
+      - name: Notify main failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          NTFY_TOPIC: ${{ secrets.CI_FAIL_NTFY_TOPIC }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] && curl -fsS -m 10 \
+            -H "Title: CI failed on main" -H "Priority: high" -H "Tags: rotating_light" \
+            -d "${{ github.workflow }}/${{ github.job }} failed on main @ ${{ github.sha }} — https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "https://ntfy.sh/$NTFY_TOPIC" || true
 
-      # Run with coverage so the `thresholds` in vitest.config.mts are enforced:
-      # if a tested surface (esp. the pure security cores) melts below the floor,
-      # this step fails the gate (lesson 004 — a referenced safety net must run).
-      - name: Test
-        run: npm run test:coverage
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      # ESLint resolves types through the installed packages but never loads
+      # Electron's binary, so skip the postinstall rebuild (T576).
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # `.eslintcache` keyed on file content (the default keys on mtime, which
+      # every fresh checkout resets). Restore the newest, save one per commit.
+      - name: Cache ESLint
+        uses: actions/cache@v6
+        with:
+          path: .eslintcache
+          key: ${{ runner.os }}-eslint-${{ hashFiles('package-lock.json', 'eslint.config.*') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-eslint-${{ hashFiles('package-lock.json', 'eslint.config.*') }}-
+
+      - name: Lint
+        run: npm run lint -- --cache-strategy content
+
+      # ntfy.sh push via the CI_FAIL_NTFY_TOPIC secret; a no-op until that secret
+      # exists (empty topic short-circuits the curl).
+      - name: Notify main failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          NTFY_TOPIC: ${{ secrets.CI_FAIL_NTFY_TOPIC }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] && curl -fsS -m 10 \
+            -H "Title: CI failed on main" -H "Priority: high" -H "Tags: rotating_light" \
+            -d "${{ github.workflow }}/${{ github.job }} failed on main @ ${{ github.sha }} — https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "https://ntfy.sh/$NTFY_TOPIC" || true
+
+  # The Vitest suite, sharded across a matrix (T576). Each shard runs its slice
+  # with coverage and the blob reporter, then uploads `.vitest-reports/`; the
+  # `coverage` job merges the blobs. The thresholds in vitest.config.mts are the
+  # gate for the MERGED report, so a shard — which only sees a quarter of the
+  # suite — overrides them to 0 on its own command line and never fails on partial
+  # coverage. The config itself keeps the real floor (lesson 004).
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Let every shard finish: one red shard must not hide a second one.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      # Same Electron binary cache as the other jobs (T65 AC4).
+      - name: Cache Electron binaries
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/electron
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+        run: >-
+          npx vitest run
+          --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          --coverage
+          --reporter=blob
+          --coverage.thresholds.lines=0
+          --coverage.thresholds.statements=0
+          --coverage.thresholds.functions=0
+          --coverage.thresholds.branches=0
+
+      # `.vitest-reports/` starts with a dot, so the artifact action skips it
+      # unless hidden files are included explicitly.
+      - name: Upload shard blob
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-blob-${{ matrix.shard }}
+          path: .vitest-reports/
+          include-hidden-files: true
+          retention-days: 1
+          if-no-files-found: error
+
+      # ntfy.sh push via the CI_FAIL_NTFY_TOPIC secret; a no-op until that secret
+      # exists (empty topic short-circuits the curl).
+      - name: Notify main failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          NTFY_TOPIC: ${{ secrets.CI_FAIL_NTFY_TOPIC }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] && curl -fsS -m 10 \
+            -H "Title: CI failed on main" -H "Priority: high" -H "Tags: rotating_light" \
+            -d "${{ github.workflow }}/${{ github.job }} failed on main @ ${{ github.sha }} — https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "https://ntfy.sh/$NTFY_TOPIC" || true
+
+  # Merge the shards and enforce the coverage thresholds on the whole suite: if a
+  # tested surface (esp. the pure security cores) melts below the floor, this job
+  # fails the gate (lesson 004 — a referenced safety net must run). The merge
+  # re-reads the sources for the coverage report, so it needs the checkout and
+  # the installed vitest, but no native rebuild.
+  coverage:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download shard blobs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: vitest-blob-*
+          path: .vitest-reports
+          merge-multiple: true
+
+      - name: Merge reports and enforce coverage thresholds
+        run: npx vitest run --merge-reports --coverage
+
+      # ntfy.sh push via the CI_FAIL_NTFY_TOPIC secret; a no-op until that secret
+      # exists (empty topic short-circuits the curl).
+      - name: Notify main failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          NTFY_TOPIC: ${{ secrets.CI_FAIL_NTFY_TOPIC }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] && curl -fsS -m 10 \
+            -H "Title: CI failed on main" -H "Priority: high" -H "Tags: rotating_light" \
+            -d "${{ github.workflow }}/${{ github.job }} failed on main @ ${{ github.sha }} — https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "https://ntfy.sh/$NTFY_TOPIC" || true
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      # Same Electron binary cache as the other jobs (T65 AC4).
+      - name: Cache Electron binaries
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/electron
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Build
         run: npm run build
@@ -137,7 +369,7 @@ jobs:
             -d "${{ github.workflow }}/${{ github.job }} failed on main @ ${{ github.sha }} — https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             "https://ntfy.sh/$NTFY_TOPIC" || true
 
-  # Separate, slower job (kept off the fast `verify` gate): boot the built app
+  # Separate, slower job (kept off the fast gates): boot the built app
   # headless under xvfb and run the subscription-free e2e (T05 track 2). Exercises
   # the MCP server + prefs shells in the real process — the env-bound glue that
   # ADR-0001 keeps out of unit tests. Only the specs under tests/e2e/ci/ run here
@@ -154,7 +386,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: npm
 
-      # Same Electron binary cache as the verify job (T65 AC4).
+      # Same Electron binary cache as the other jobs (T65 AC4).
       - name: Cache Electron binaries
         uses: actions/cache@v6
         with:
