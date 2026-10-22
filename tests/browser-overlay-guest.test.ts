@@ -144,6 +144,7 @@ describe('guest overlay controller', () => {
     expect(msg.viewport).toEqual({ width: window.innerWidth, height: window.innerHeight })
     // No composer text, no comment, ever.
     expect(Object.keys(msg).sort()).toEqual([
+      'activationAt',
       'component',
       'outerHTML',
       'rect',
