@@ -4453,6 +4453,13 @@
       "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
       "onHint": "Network on: the page can reach the network. Click to turn it off."
     },
+    "discarded": {
+      "titleIdle": "Paused to save memory",
+      "titleRestored": "Not loaded yet",
+      "hidden": "{address} · hidden {min} min",
+      "reload": "Click to reload",
+      "load": "Load the page"
+    },
     "fileRemoved": {
       "title": "File removed",
       "waiting": "Waiting for it to come back…"

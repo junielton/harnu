@@ -444,6 +444,8 @@ _another_ folder.
 | `shield-check`                           | Folder menu → Trusted dev hosts… (T571 U4, §6 "Trusted dev hosts dialog")                                                                                                                                                              |
 | `wifi-off` / `wifi`                      | Browser pane → "Allow network" switch on a page pane: off = `wifi-off` (default), on = `wifi` (T569 U2)                                                                                                                                |
 | `file-x`                                 | Browser pane → "file removed" placeholder for a page pane whose file is gone (T569 U2)                                                                                                                                                 |
+| `moon`                                   | Browser pane → "Paused to save memory" placeholder of a discarded pane (T574)                                                                                                                                                          |
+| `rotate-cw`                              | Browser pane → "Click to reload" button of the discarded placeholder (T574)                                                                                                                                                            |
 | `message-square-plus`                    | Browser pane → header button: turn point-and-comment on (T564 U6)                                                                                                                                                                      |
 | `message-square`                         | Browser pane → batch bar: "N drafts · M sent" (T564 U6)                                                                                                                                                                                |
 
@@ -3988,6 +3990,16 @@ chrome adds three things and changes one.
   host shows a centred block on `--bg`: `file-x` 20px `--text-4`, the line "File removed" in 13px `--text-2`, the
   path in mono 11px `--text-3`, and "Waiting for it to come back…" in 11px `--text-4`. No spinner and no motion. The
   pane keeps watching: when the file is re-created the placeholder goes and the page reloads.
+
+- **"Paused to save memory" placeholder** (spec §10.1, mockup scenario "States"). A pane hidden for 10 minutes (one
+  named constant, `HIDDEN_DISCARD_MS`) has its page and native view released; the pane keeps its place and the host
+  shows a centred block on `--bg`: `moon` 20px `--text-4`, the line "Paused to save memory" in 13px `--text-2`, the
+  address and "hidden N min" in mono 11px `--text-3`, and a ghost button "Click to reload" (`rotate-cw` 12px, 24px
+  high, `--border-2` outline, `--text-2`, `--text-1`-on-hover, the standard `--accent-line` focus ring). No spinner
+  and no motion. A pane reopened after a restart shows the same block with "Not loaded yet" and "Load the page", and
+  loads by itself as soon as it is shown. Any verb that needs a live page also brings a discarded pane back, with
+  `revived: true` in its ACK. A discarded pane keeps its header chips, its pins and the operator's Disconnect and
+  Pause; it only has no page.
 
 #### Point-and-comment overlay (browser pane)
 

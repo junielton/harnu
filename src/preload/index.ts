@@ -25,6 +25,7 @@ import type {
   BrowserEmulatePatch,
   BrowserOverlayRect,
   BrowserPaneState,
+  BrowserPersistEvent,
   BrowserRect
 } from '../main/browser/state-types'
 import type { TerminalChipState } from '../main/terminal-registry'
@@ -215,6 +216,7 @@ export type {
   BrowserNotice,
   BrowserOverlayRect,
   BrowserPaneState,
+  BrowserPersistEvent,
   BrowserRect
 } from '../main/browser/state-types'
 // T564 U6: the point-and-comment wire types.
@@ -2386,6 +2388,8 @@ const api = {
     ipcRenderer.invoke('browser:navigate', payload),
   browserState: (paneId: string): Promise<BrowserPaneState | null> =>
     ipcRenderer.invoke('browser:state', paneId),
+  /** T574: bring a discarded pane back ("Paused to save memory — click to reload"). Resolves whether it is live. */
+  browserRevive: (paneId: string): Promise<boolean> => ipcRenderer.invoke('browser:revive', paneId),
   browserDestroy: (paneId: string): Promise<boolean> =>
     ipcRenderer.invoke('browser:destroy', paneId),
   browserDevtools: (paneId: string): Promise<boolean> =>
@@ -2453,6 +2457,9 @@ const api = {
     subscribe('browser:commentState', cb),
   onBrowserState: (cb: (state: BrowserPaneState) => void): (() => void) =>
     subscribe('browser:state', cb),
+  /** T574: what to keep on a pane in `helpers.json` so a restart can restore it (pins, scroll). */
+  onBrowserPersist: (cb: (e: BrowserPersistEvent) => void): (() => void) =>
+    subscribe('browser:persist', cb),
   onBrowserFreeze: (cb: (p: { paneId: string; dataUrl: string | null }) => void): (() => void) =>
     subscribe('browser:freeze', cb),
   onBrowserUnfreeze: (cb: (p: { paneId: string }) => void): (() => void) =>

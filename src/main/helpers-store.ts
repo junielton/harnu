@@ -19,7 +19,8 @@ export type HelperPaneType =
   | 'memory'
   | 'explorer'
   | 'canvas'
-  // T564 U1: a browser pane. Transient in this unit (`persistable: false`): restart restore is U7.
+  // T564 U1: a browser pane. Persistable since T574 (spec §10.3): it reopens DISCARDED after a restart; its
+  // `payload` carries the address, zoom, emulation, network switch, scroll and pins.
   | 'browser'
 
 export interface HelperPane {

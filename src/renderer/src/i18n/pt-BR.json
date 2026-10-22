@@ -4453,6 +4453,13 @@
       "offHint": "Offline: a página não alcança a rede. Clique para permitir neste painel.",
       "onHint": "Rede ativa: a página alcança a rede. Clique para desligar."
     },
+    "discarded": {
+      "titleIdle": "Pausado para economizar memória",
+      "titleRestored": "Ainda não carregado",
+      "hidden": "{address} · oculto há {min} min",
+      "reload": "Clique para recarregar",
+      "load": "Carregar a página"
+    },
     "fileRemoved": {
       "title": "Arquivo removido",
       "waiting": "Aguardando ele voltar…"

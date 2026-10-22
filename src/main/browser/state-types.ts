@@ -122,3 +122,15 @@ export interface BrowserOpenResult {
   ok: true
   paneId: string
 }
+
+/**
+ * What main tells the renderer to keep on a pane in `helpers.json` so it can be restored after a restart (T574,
+ * spec §10.3). Each field is sent when it changed; `pins` is the whole list (draft and sent), `scroll` the page's
+ * last scroll position (best effort). The other persisted fields ride in {@link BrowserPaneState}.
+ */
+export interface BrowserPersistEvent {
+  paneId: string
+  /** `PinRecord[]` of `comment-pins.ts`, opaque to the renderer. */
+  pins?: unknown[]
+  scroll?: { x: number; y: number } | null
+}

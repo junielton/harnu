@@ -12,7 +12,8 @@ import {
   enqueuePaneAlert,
   mostRecentlyActive
 } from '../lib/pane-alert'
-import type { WorktreeHelperState, HelperPane } from '../../../preload'
+import type { BrowserEmulationState, WorktreeHelperState, HelperPane } from '../../../preload'
+import type { PersistedPayloadFields } from '../lib/browser-persist'
 import type { AgentTerminalSplit } from './command-router'
 import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-corrective'
 
@@ -190,8 +191,9 @@ export function isAgentTerminalPane(pane: AnyHelperPane): pane is HelperPaneAgen
 
 /**
  * A browser pane (T564 U1). The pane id IS the main-side `paneId` (main owns the guest view, exactly as it
- * owns an agent terminal's PTY), and everything else rides in the `payload` bag. Transient in this unit: it is
- * never written to `helpers.json`, and closing it destroys the view in main (`removeHelper`).
+ * owns an agent terminal's PTY), and everything else rides in the `payload` bag. Persistable since T574 (spec
+ * §10.3): the pane comes back after a restart DISCARDED, at the same address. Closing it destroys the view in main
+ * (`removeHelper`).
  */
 export type HelperPaneBrowser = HelperPane & { type: 'browser' }
 
@@ -204,6 +206,16 @@ export interface BrowserPanePayload {
   ownerSessionId: string | null
   /** The folder-relative page file this pane was opened on (T569 U2), or `null`. */
   pagePath?: string | null
+  /**
+   * What a restart restores (T574, spec §10.3), kept current by main's pushes (`lib/browser-persist.ts`): the page
+   * zoom, the emulation record, the page pane's network switch, the scroll position and the pins (draft and sent).
+   * The pins are opaque here: `PinRecord[]` of main's `comment-pins.ts`, re-validated in main on the way back in.
+   */
+  zoom?: number
+  emulation?: BrowserEmulationState
+  allowNetwork?: boolean
+  scroll?: { x: number; y: number } | null
+  pins?: unknown[]
 }
 
 /** Read a browser pane's payload with safe defaults. */
@@ -971,6 +983,30 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
+   * Keep what main pushed about a browser pane on the pane itself, so `helpers.json` can restore it after a restart
+   * (T574, spec §10.3). `null` from the patch functions means nothing changed: no write is scheduled.
+   */
+  function patchBrowserPayload(
+    paneId: string,
+    makePatch: (saved: PersistedPayloadFields) => PersistedPayloadFields | null
+  ): void {
+    for (const [worktreePath, state] of byWorktree.value) {
+      const pane = state.panes.find((p) => p.id === paneId && p.type === 'browser')
+      if (!pane) continue
+      const saved = ((pane as HelperPane).payload ?? {}) as PersistedPayloadFields
+      const patch = makePatch(saved)
+      if (!patch) return
+      mutateWorktree(worktreePath, (s) => ({
+        ...s,
+        panes: s.panes.map((p) =>
+          p.id === paneId ? { ...p, payload: { ...(p as HelperPane).payload, ...patch } } : p
+        ) as AnyHelperPane[]
+      }))
+      return
+    }
+  }
+
+  /**
    * Open a folder-backed project-memory viewer pane (T79 S3) in a worktree's
    * stack. Non-PTY like {@link addMarkdownHelper} — cheap, reproducible from
    * `folder`, so it never enters `liveHelpers`.
@@ -1558,6 +1594,7 @@ export const useHelpersStore = defineStore('helpers', () => {
     addMarkdownHelper,
     addCanvasHelper,
     addBrowserHelper,
+    patchBrowserPayload,
     addMemoryHelper,
     addExplorerHelper,
     addReviewCompanionHelper,

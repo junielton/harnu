@@ -60,7 +60,11 @@ import {
   livePtyDescriptors
 } from './pty'
 import { registerBrowserIpc } from './browser/browser-ipc'
-import { bindBrowserBridge, refreshBrowserTrustedHosts } from './browser/browser-service'
+import {
+  bindBrowserBridge,
+  refreshBrowserTrustedHosts,
+  restoreBrowserPanes
+} from './browser/browser-service'
 import {
   isFromAppWindow,
   parseBrowserReadPayload,
@@ -1125,6 +1129,13 @@ app.whenReady().then(async () => {
   ipcMain.on('injection:clearUndelivered', (_e, sessionId: unknown) => {
     if (typeof sessionId === 'string' && sessionId) clearInjectionEscalation(sessionId)
   })
+
+  // T574: the browser panes `helpers.json` kept come back DISCARDED before the renderer hydrates its stacks, so the
+  // registry (and `browser_list`) knows them and their pins are ready when a pane mounts. A failure here must never
+  // keep the app from opening.
+  await restoreBrowserPanes().catch((err) =>
+    console.warn('[browser] restoring panes failed — they open empty', err)
+  )
 
   createWindow()
 

@@ -130,6 +130,11 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     return host().operatorNavigate(payload.paneId, target)
   })
 
+  // "Paused to save memory — click to reload" (T574, spec §10.1): the operator brings a discarded pane back.
+  handleApp('browser:revive', async (paneId: unknown) => {
+    if (!isPaneId(paneId)) return false
+    return host().revive(paneId)
+  })
   handleApp('browser:state', (paneId: unknown) => (isPaneId(paneId) ? host().state(paneId) : null))
   handleApp('browser:destroy', (paneId: unknown) => {
     if (isPaneId(paneId)) closePaneFromOperator(paneId)

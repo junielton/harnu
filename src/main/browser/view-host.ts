@@ -113,6 +113,7 @@ import {
   createHiddenTracker,
   planDiscard,
   reviveOnShow,
+  sanitizeScroll,
   type DiscardFacts,
   type DiscardReason
 } from './lifecycle'
@@ -499,6 +500,7 @@ export class BrowserViewHost implements BrowserReadHost {
     // Closing a pane for good: what the host and its neighbours hold for it goes too (a discard keeps it).
     this.hidden.forget(paneId)
     this.lastBounds.delete(paneId)
+    this.sentScroll.delete(paneId)
     this.deps.onPaneClosed?.(paneId)
     this.release(paneId)
   }
@@ -1344,8 +1346,27 @@ export class BrowserViewHost implements BrowserReadHost {
     }
   }
 
+  /** The last scroll position sent for persistence, per pane, so only a change is sent. */
+  private readonly sentScroll = new Map<string, string>()
+
+  /**
+   * Remember where a shown page is scrolled so a restart can put it back (best effort, spec §10.3). Only a pane that
+   * is shown and idle is read, at the sweep's pace, and only a change is sent.
+   */
+  private sampleScroll(e: ViewEntry): void {
+    if (this.hidden.since(e.paneId) !== null || e.wc.isDestroyed() || e.loading) return
+    void this.readScroll(e).then((raw) => {
+      const scroll = sanitizeScroll(raw)
+      const key = JSON.stringify(scroll)
+      if (!this.entries.has(e.paneId) || this.sentScroll.get(e.paneId) === key) return
+      this.sentScroll.set(e.paneId, key)
+      this.send('browser:persist', { paneId: e.paneId, scroll })
+    })
+  }
+
   /** One pass of the discard clock: discard every hidden pane that has waited long enough and is idle. */
   sweep(): void {
+    for (const e of this.entries.values()) this.sampleScroll(e)
     const facts: DiscardFacts[] = []
     for (const e of this.entries.values()) if (!e.wc.isDestroyed()) facts.push(this.discardFacts(e))
     const now = this.deps.now()

@@ -30,6 +30,8 @@ import { createBrowserRegistry } from './registry'
 import type { BrowserReadDeps } from './read-verbs'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import { resolveDiscardMs } from './lifecycle'
+import { planRestore, type PersistedPaneInput } from './restore-plan'
+import { readHelpers } from '../helpers-store'
 import { createPageService, type PageService } from './page-service'
 import { createOverlayBridge, type OverlayBridge } from './overlay-bridge'
 import type { BrowserVerbDeps } from './verbs-core'
@@ -238,6 +240,35 @@ export function openOperatorPane(opts: {
     })
   }
   return { paneId }
+}
+
+/**
+ * Reopen the browser panes `helpers.json` kept, DISCARDED (T574, spec §10.3): the registry knows them again, so
+ * `browser_list` and the verbs see them, but no webContents exists until a pane is shown or driven. Run once at boot,
+ * before the renderer hydrates its stacks. A pane that is already known is left alone.
+ */
+export async function restoreBrowserPanes(): Promise<number> {
+  let file: Awaited<ReturnType<typeof readHelpers>>
+  try {
+    file = await readHelpers()
+  } catch {
+    return 0
+  }
+  const inputs: PersistedPaneInput[] = []
+  for (const [worktreePath, state] of Object.entries(file.byWorktree)) {
+    for (const pane of state.panes ?? []) {
+      inputs.push({ id: pane.id, type: pane.type, worktreePath, payload: pane.payload })
+    }
+  }
+  let restored = 0
+  for (const { rec, pins } of planRestore(inputs, Date.now())) {
+    if (browserRegistry.get(rec.paneId)) continue
+    browserRegistry.add(rec)
+    if (pins.length > 0) getOverlayBridge().restorePins(rec.paneId, pins)
+    getBrowserHost().restoreDiscarded(rec.paneId)
+    restored++
+  }
+  return restored
 }
 
 /** Close a pane from the operator's side (X button, a removed helper): the view, the record, the access state. */

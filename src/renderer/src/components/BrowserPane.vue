@@ -132,9 +132,24 @@ const state = computed<BrowserPaneState>(
       downloadPrompt: null,
       pagePath: payload.value.pagePath ?? null,
       allowNetwork: false,
-      pageFileRemoved: false
+      pageFileRemoved: false,
+      discarded: null
     }
 )
+
+/* ---- Discarded (T574, spec §10.1) ---------------------------------------------------------------- */
+
+/** The line under the title: the address, and for a pane the timer paused how long it had been hidden. */
+const discardedHint = computed(() => {
+  const d = state.value.discarded
+  const address = addressText(state.value.url)
+  if (!d || d.reason !== 'idle') return address
+  return t('browserPane.discarded.hidden', {
+    address,
+    min: Math.max(1, Math.round(d.hiddenMs / 60000))
+  })
+})
+const onReviveClick = (): void => void browser.revive(paneId)
 
 /* ---- Header ---------------------------------------------------------------------------------- */
 
@@ -1451,6 +1466,41 @@ watch(isFrozen, async (frozen) => {
           >{{ addressText(state.url) }}</span
         >
         <span class="text-[11px] text-text-4">{{ $t('browserPane.fileRemoved.waiting') }}</span>
+      </div>
+
+      <!-- "Paused to save memory" placeholder (spec §10.1, design.md "Discarded pane"): the page and its view are
+           gone; the pane keeps its place and one click loads it again. -->
+      <div
+        v-if="state.discarded"
+        class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1.5 bg-bg px-4 text-center"
+        role="status"
+        data-testid="browser-discarded"
+      >
+        <Moon :size="20" :stroke-width="1.5" class="text-text-4" aria-hidden="true" />
+        <span class="text-[13px] text-text-2">{{
+          state.discarded.reason === 'idle'
+            ? $t('browserPane.discarded.titleIdle')
+            : $t('browserPane.discarded.titleRestored')
+        }}</span>
+        <span
+          class="max-w-full truncate font-mono text-[11px] text-text-3"
+          :title="addressText(state.url)"
+          data-testid="browser-discarded-hint"
+          >{{ discardedHint }}</span
+        >
+        <button
+          type="button"
+          class="mt-1 flex h-6 items-center gap-1.5 rounded-sm border border-border-2 px-2.5 text-[11.5px] text-text-2 transition-colors hover:text-text focus-visible:border-accent-line focus-visible:outline-none"
+          data-testid="browser-discarded-reload"
+          @click="onReviveClick"
+        >
+          <RotateCw :size="12" :stroke-width="1.5" aria-hidden="true" />
+          {{
+            state.discarded.reason === 'idle'
+              ? $t('browserPane.discarded.reload')
+              : $t('browserPane.discarded.load')
+          }}
+        </button>
       </div>
 
       <div

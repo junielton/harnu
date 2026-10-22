@@ -102,7 +102,7 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
         if (!deps.registry.get(paneId)) return
         const win = deps.getWindow()
         if (win && !win.isDestroyed())
-          win.webContents.send('browser:persistPins', { paneId, pins: list })
+          win.webContents.send('browser:persist', { paneId, pins: list })
       }
     }
   })

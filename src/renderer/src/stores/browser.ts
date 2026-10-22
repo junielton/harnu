@@ -8,6 +8,7 @@ import { i18n } from '../i18n'
 import { useUiStore } from './ui'
 import { useHelpersStore } from './helpers'
 import { useKeybindingsStore } from './keybindings'
+import { payloadPatchFromPersist, payloadPatchFromState } from '../lib/browser-persist'
 import type {
   BrowserActivityWord,
   BrowserEmulatePatch,
@@ -49,11 +50,18 @@ export const useBrowserStore = defineStore('browser', () => {
 
   function applyState(state: BrowserPaneState): void {
     states.value = { ...states.value, [state.paneId]: state }
+    // Keep what a restart restores on the pane in `helpers.json` (T574, spec §10.3).
+    helpers.patchBrowserPayload(state.paneId, (saved) => payloadPatchFromState(saved, state))
   }
 
   async function refresh(paneId: string): Promise<void> {
     const state = await window.api.browserState(paneId)
     if (state) applyState(state)
+  }
+
+  /** "Paused to save memory — click to reload" (T574, spec §10.1): bring the pane's page back. */
+  async function revive(paneId: string): Promise<boolean> {
+    return window.api.browserRevive(paneId)
   }
 
   /** Forget everything held for a pane that is gone. */
@@ -96,6 +104,9 @@ export const useBrowserStore = defineStore('browser', () => {
         })
       }),
       window.api.onBrowserChord(({ paneId, chord }) => onChord(paneId, chord)),
+      window.api.onBrowserPersist((event) =>
+        helpers.patchBrowserPayload(event.paneId, (saved) => payloadPatchFromPersist(saved, event))
+      ),
       window.api.onBrowserCommentState((state) => {
         comments.value = { ...comments.value, [state.paneId]: state }
       }),
@@ -320,6 +331,7 @@ export const useBrowserStore = defineStore('browser', () => {
     start,
     stop,
     refresh,
+    revive,
     forget,
     navigate,
     pause,
