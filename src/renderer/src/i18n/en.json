@@ -4411,7 +4411,41 @@
       "dialog": "The page opened a {dialog} dialog and Harnu dismissed it",
       "crashed": "The page stopped responding",
       "dismiss": "Dismiss"
-    }
+    },
+    "zoom": {
+      "in": "Zoom in",
+      "out": "Zoom out",
+      "reset": "Reset zoom to 100%",
+      "offInDevice": "Zoom is off while a device is emulated",
+      "label": "Zoom"
+    },
+    "device": {
+      "button": "Device mode",
+      "chipHint": "Change the device",
+      "custom": "Custom size…",
+      "width": "Width",
+      "height": "Height",
+      "dpr": "Pixel ratio",
+      "mobile": "Mobile",
+      "apply": "Apply",
+      "back": "Back",
+      "reset": "Reset device",
+      "rotate": "Rotate",
+      "scheme": "Light or dark",
+      "schemeLight": "Light",
+      "schemeDark": "Dark",
+      "reducedMotion": "Reduced motion",
+      "invalid": "Use 100 to 10000 for the size and 0.5 to 5 for the pixel ratio",
+      "failed": "Couldn't change the device"
+    },
+    "download": {
+      "prompt": "Save {name} to .harnu/out/downloads/?",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "noticeDownloaded": "Saved {name}",
+    "noticeDownloadCancelled": "Download cancelled",
+    "noticeDownloadFailed": "The download failed"
   },
   "splitMenu": {
     "label": "More split options",

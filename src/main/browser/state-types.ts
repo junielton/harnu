@@ -24,7 +24,8 @@ export type BrowserNotice =
 
 /** A device the pane emulates; mirrors `DeviceSpec` in `src/shared/browser-emulation.ts` (a test pins the two). */
 export interface BrowserDeviceState {
-  preset: string | null
+  preset:
+    'phone-s' | 'phone-m' | 'phone-l' | 'tablet' | 'tablet-landscape' | 'laptop' | 'desktop' | null
   width: number
   height: number
   dpr: number

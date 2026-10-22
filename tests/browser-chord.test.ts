@@ -86,10 +86,23 @@ describe('decideForward', () => {
     }
   })
 
-  it("leaves the pane's own zoom chords alone", () => {
+  it('forwards the zoom chords when Harnu binds them, and leaves them to the page when it does not (T572)', () => {
     const zoom = new Set(['Cmd+=', 'Cmd+-', 'Cmd+0'])
     for (const k of ['=', '-', '0']) {
-      expect(decideForward(key({ key: k, control: true }), zoom, false).forward, k).toBe(false)
+      expect(decideForward(key({ key: k, control: true }), zoom, false).forward, k).toBe(true)
+      expect(decideForward(key({ key: k, control: true }), new Set(), false).forward, k).toBe(false)
+    }
+  })
+
+  it('`Ctrl +` (Shift and the plus key) is the zoom-in chord too', () => {
+    const zoom = new Set(['Cmd+='])
+    for (const ev of [
+      key({ key: '+', control: true, shift: true }),
+      key({ key: '+', control: true })
+    ]) {
+      const d = decideForward(ev, zoom, false)
+      expect(d.chord).toBe('Cmd+=')
+      expect(d.forward).toBe(true)
     }
   })
 })

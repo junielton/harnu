@@ -760,22 +760,22 @@ useShortcuts(
       id: 'browser.zoom.in',
       scope: 'browser',
       keys: kb('browser.zoom.in'),
-      enabled: () => false, // U5: zoom
-      handler: () => undefined
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.zoom(browser.chordPaneId!, 'in')
     },
     {
       id: 'browser.zoom.out',
       scope: 'browser',
       keys: kb('browser.zoom.out'),
-      enabled: () => false, // U5: zoom
-      handler: () => undefined
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.zoom(browser.chordPaneId!, 'out')
     },
     {
       id: 'browser.zoom.reset',
       scope: 'browser',
       keys: kb('browser.zoom.reset'),
-      enabled: () => false, // U5: zoom
-      handler: () => undefined
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.zoom(browser.chordPaneId!, 'reset')
     },
     {
       id: 'browser.overlay.toggle',

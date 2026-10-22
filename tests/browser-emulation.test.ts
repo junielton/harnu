@@ -65,7 +65,7 @@ describe('checkEmulateArgs (plan level, spec §6.3)', () => {
   })
 
   it('an unknown preset is BAD_ARGS and names the valid ones', () => {
-    const r = checkEmulateArgs({ device: 'iphone-15' }, none)
+    const r = checkEmulateArgs({ device: 'galaxy' }, none)
     expect(r?.code).toBe('BAD_ARGS')
     expect(r?.detail).toContain('phone-m')
   })

@@ -6,7 +6,7 @@ import { startNativeOverlayWatcher } from '../lib/native-overlay'
 import { dispatchForwardedChord } from '../composables/useShortcuts'
 import { useHelpersStore } from './helpers'
 import { useKeybindingsStore } from './keybindings'
-import type { BrowserActivityWord, BrowserPaneState } from '../../../preload'
+import type { BrowserActivityWord, BrowserEmulatePatch, BrowserPaneState } from '../../../preload'
 
 /**
  * Browser pane store (T564 U1): the live state main pushes for each pane (`browser:state`), the chip's live
@@ -167,6 +167,29 @@ export const useBrowserStore = defineStore('browser', () => {
     return ok
   }
 
+  /** Zoom the pane one ladder step, or back to 100% (main refuses in device mode and answers 1). */
+  async function zoom(paneId: string, action: 'in' | 'out' | 'reset'): Promise<number | null> {
+    const factor = await window.api.browserZoom({ paneId, action })
+    await refresh(paneId)
+    return factor
+  }
+
+  /** The device picker: the same patch shape `browser_emulate` takes (plus `rotate`). */
+  async function emulate(
+    paneId: string,
+    patch: BrowserEmulatePatch
+  ): Promise<{ ok: true } | { ok: false; detail: string }> {
+    const res = await window.api.browserEmulate({ paneId, patch })
+    await refresh(paneId)
+    return res
+  }
+
+  /** Answer the "Save to .harnu/out/downloads/?" prompt. */
+  async function answerDownload(paneId: string, allow: boolean): Promise<void> {
+    await window.api.browserDownloadDecision({ paneId, allow })
+    await refresh(paneId)
+  }
+
   /**
    * Ask a pane to focus its address field. Also recorded as PENDING, because the pane may not be mounted yet
    * (a pane that was just created mounts a tick later): the pane takes the pending request when it mounts.
@@ -202,6 +225,9 @@ export const useBrowserStore = defineStore('browser', () => {
     pause,
     resume,
     disconnect,
+    zoom,
+    emulate,
+    answerDownload,
     requestFocusAddress,
     takeFocusAddressPending
   }

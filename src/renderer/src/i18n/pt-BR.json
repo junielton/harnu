@@ -4411,7 +4411,41 @@
       "dialog": "A página abriu um diálogo {dialog} e o Harnu o dispensou",
       "crashed": "A página parou de responder",
       "dismiss": "Dispensar"
-    }
+    },
+    "zoom": {
+      "in": "Aumentar zoom",
+      "out": "Diminuir zoom",
+      "reset": "Voltar o zoom para 100%",
+      "offInDevice": "O zoom fica desligado enquanto um dispositivo é emulado",
+      "label": "Zoom"
+    },
+    "device": {
+      "button": "Modo dispositivo",
+      "chipHint": "Trocar o dispositivo",
+      "custom": "Tamanho personalizado…",
+      "width": "Largura",
+      "height": "Altura",
+      "dpr": "Densidade de pixels",
+      "mobile": "Mobile",
+      "apply": "Aplicar",
+      "back": "Voltar",
+      "reset": "Resetar dispositivo",
+      "rotate": "Girar",
+      "scheme": "Claro ou escuro",
+      "schemeLight": "Claro",
+      "schemeDark": "Escuro",
+      "reducedMotion": "Movimento reduzido",
+      "invalid": "Use de 100 a 10000 para o tamanho e de 0,5 a 5 para a densidade de pixels",
+      "failed": "Não foi possível trocar o dispositivo"
+    },
+    "download": {
+      "prompt": "Salvar {name} em .harnu/out/downloads/?",
+      "save": "Salvar",
+      "cancel": "Cancelar"
+    },
+    "noticeDownloaded": "{name} salvo",
+    "noticeDownloadCancelled": "Download cancelado",
+    "noticeDownloadFailed": "O download falhou"
   },
   "splitMenu": {
     "label": "Mais opções de divisão",

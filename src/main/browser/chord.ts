@@ -37,9 +37,6 @@ const PAGE_OWNS = new Set([
   'Cmd+G'
 ])
 
-/** The pane's own zoom chords stay with the zoom unit (U5), so they are never intercepted here. */
-const ZOOM_CHORDS = new Set(['Cmd+=', 'Cmd+-', 'Cmd+0', 'Cmd+Shift+='])
-
 /** A bare modifier press (`Control`, `Shift`, …) is never a chord of its own. */
 export function isBareModifier(key: string): boolean {
   return MODIFIER_KEYS.has(key)
@@ -75,7 +72,12 @@ export function chordOf(input: GuestInput, mac: boolean): string | null {
   if (ctrl) parts.push('Ctrl')
   if (input.alt) parts.push('Alt')
   if (input.shift) parts.push('Shift')
-  parts.push(normalizeKey(input.key))
+  // `Ctrl +` is Shift and `=` on most layouts: fold it onto the `=` chord the zoom binding uses (T572).
+  if (input.key === '+') {
+    const at = parts.indexOf('Shift')
+    if (at !== -1) parts.splice(at, 1)
+    parts.push('=')
+  } else parts.push(normalizeKey(input.key))
   return parts.join('+')
 }
 
@@ -100,6 +102,6 @@ export function decideForward(
   if (input.isComposing === true || input.key === 'Process') return none
   const chord = chordOf(input, mac)
   if (chord === null) return none
-  if (PAGE_OWNS.has(chord) || ZOOM_CHORDS.has(chord)) return { forward: false, chord }
+  if (PAGE_OWNS.has(chord)) return { forward: false, chord }
   return { forward: boundChords.has(chord), chord }
 }

@@ -15,15 +15,28 @@ import {
   ArrowRight,
   Bot,
   Bug,
+  Check,
+  Download,
   Globe,
+  Laptop,
   Maximize2,
   Minimize2,
+  Minus,
+  Monitor,
   MoreHorizontal,
+  Moon,
   Pause,
   Play,
+  Plus,
+  RotateCcw,
+  RotateCcwSquare,
   RotateCw,
+  Smartphone,
+  Sun,
+  Tablet,
   TriangleAlert,
   Unplug,
+  Wind,
   X
 } from 'lucide-vue-next'
 import { browserPayload, useHelpersStore, type AnyHelperPane } from '../stores/helpers'
@@ -33,14 +46,26 @@ import { useUiStore } from '../stores/ui'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { createFrameScheduler } from '../lib/frame-scheduler'
 import { sessionTitle } from '../lib/session-label'
+import ToggleSwitch from './ui/ToggleSwitch.vue'
 import {
+  FRAME_BEZEL_PX,
+  FRAME_RING_PX,
+  BACKDROP_PAD_PX,
   chipFor,
+  deviceChipText,
+  deviceIconName,
+  deviceLayout,
   formatCountdown,
+  frameCaption,
+  freeSizePatch,
   headerTitle,
   networkRemainingMs,
+  noticeTone,
   normalizeAddressInput,
   originBadgeKey,
-  splitAddress
+  presetRows,
+  splitAddress,
+  zoomView
 } from '../lib/browser-pane'
 import type { BrowserPaneState } from '../../../preload'
 
@@ -80,7 +105,10 @@ const state = computed<BrowserPaneState>(
       disconnected: false,
       ownerSessionId: payload.value.ownerSessionId,
       notice: null,
-      networkUntil: null
+      networkUntil: null,
+      zoom: 1,
+      emulation: {},
+      downloadPrompt: null
     }
 )
 
@@ -204,8 +232,92 @@ const noticeText = computed(() => {
   }
   if (n.kind === 'certificate') return t('browserPane.notice.certificate', { host: n.host })
   if (n.kind === 'dialog') return t('browserPane.notice.dialog', { dialog: n.dialog })
+  if (n.kind === 'downloaded') return t('browserPane.noticeDownloaded', { name: n.name })
+  if (n.kind === 'download-cancelled') return t('browserPane.noticeDownloadCancelled')
+  if (n.kind === 'download-failed') return t('browserPane.noticeDownloadFailed')
   return t('browserPane.notice.crashed')
 })
+const noticeIsInfo = computed(() =>
+  state.value.notice ? noticeTone(state.value.notice) === 'info' : false
+)
+
+/* ---- Zoom (design.md "Zoom controls") ----------------------------------------------------------- */
+
+const zv = computed(() => zoomView(state.value))
+const onZoom = (action: 'in' | 'out' | 'reset'): void => void browser.zoom(paneId, action)
+
+/* ---- Download prompt (design.md "Download prompt", Q16) ------------------------------------------ */
+
+const downloadPrompt = computed(() => state.value.downloadPrompt)
+const onDownloadAnswer = (allow: boolean): void => void browser.answerDownload(paneId, allow)
+
+/* ---- Device mode (design.md "Device picker", "Device bar", "Device frame") ------------------------ */
+
+const device = computed(() => state.value.emulation.device)
+const deviceIcon = computed(() =>
+  device.value
+    ? ({ smartphone: Smartphone, tablet: Tablet, laptop: Laptop, monitor: Monitor } as const)[
+        deviceIconName(device.value)
+      ]
+    : Smartphone
+)
+const pickerOpen = ref(false)
+const pickerMode = ref<'list' | 'custom'>('list')
+const pickerEl = ref<HTMLElement | null>(null)
+useNativeOverlay(`browser-device-${paneId}`, pickerEl)
+const presets = computed(() => presetRows(device.value))
+const freeSize = ref({ width: '390', height: '844', dpr: '2' })
+const freeMobile = ref(true)
+const freeSizeValid = computed(() => freeSizePatch(freeSize.value, freeMobile.value) !== null)
+const deviceFailed = ref(false)
+
+function togglePicker(): void {
+  menuOpen.value = false
+  pickerOpen.value = !pickerOpen.value
+  pickerMode.value = 'list'
+  const d = device.value
+  if (pickerOpen.value && d) {
+    freeSize.value = { width: String(d.width), height: String(d.height), dpr: String(d.dpr) }
+    freeMobile.value = d.mobile
+  }
+}
+
+/** Send a patch to main (the same shape `browser_emulate` takes) and surface a refusal inline. */
+async function sendDevice(patch: Parameters<typeof browser.emulate>[1]): Promise<boolean> {
+  deviceFailed.value = false
+  const res = await browser.emulate(paneId, patch)
+  if (!res.ok) deviceFailed.value = true
+  return res.ok
+}
+async function pickPreset(name: string): Promise<void> {
+  if (await sendDevice({ device: name })) pickerOpen.value = false
+}
+async function applyFreeSize(): Promise<void> {
+  const patch = freeSizePatch(freeSize.value, freeMobile.value)
+  if (!patch) return
+  if (await sendDevice(patch)) pickerOpen.value = false
+}
+const onRotate = (): Promise<boolean> => sendDevice({ rotate: true })
+const onToggleScheme = (): Promise<boolean> =>
+  sendDevice({ colorScheme: state.value.emulation.colorScheme === 'dark' ? 'light' : 'dark' })
+const onToggleReducedMotion = (): Promise<boolean> =>
+  sendDevice({ reducedMotion: state.value.emulation.reducedMotion !== true })
+async function onResetDevice(): Promise<void> {
+  pickerOpen.value = false
+  await sendDevice({ reset: true })
+}
+
+/** The area under the bars. In device mode it holds the frame; its size is what the fit scale is measured in. */
+const areaEl = ref<HTMLElement | null>(null)
+const areaSize = ref({ width: 0, height: 0 })
+const layout = computed(() => (device.value ? deviceLayout(device.value, areaSize.value) : null))
+const caption = computed(() => (layout.value ? frameCaption(state.value, layout.value.fit) : ''))
+const frameRadius = computed(() =>
+  device.value && Math.max(device.value.width, device.value.height) <= 1100
+    ? 'var(--radius-lg)'
+    : 'var(--radius)'
+)
+let areaObserver: ResizeObserver | null = null
 
 /* ---- The ⋯ menu ------------------------------------------------------------------------------- */
 
@@ -226,8 +338,12 @@ function onDevtools(): void {
   void window.api.browserDevtools(paneId)
 }
 function onWindowPointerDown(ev: MouseEvent): void {
-  if (!menuOpen.value) return
   const target = ev.target as Node | null
+  if (pickerOpen.value) {
+    const trigger = target instanceof Element && target.closest('[data-device-trigger]')
+    if (!(target && pickerEl.value?.contains(target)) && !trigger) pickerOpen.value = false
+  }
+  if (!menuOpen.value) return
   if (target && menuEl.value?.contains(target)) return
   menuOpen.value = false
 }
@@ -332,7 +448,28 @@ function stopTracking(): void {
   document.removeEventListener('visibilitychange', onLayoutEvent)
 }
 
+// The host div is replaced when a device frame comes or goes: follow whichever one is on screen.
+watch(
+  hostEl,
+  (el, old) => {
+    if (!resizeObserver) return
+    if (old) resizeObserver.unobserve(old)
+    if (el) resizeObserver.observe(el)
+    settleFrames = Math.max(settleFrames, 6)
+    schedule()
+  },
+  { flush: 'post' }
+)
+
 onMounted(() => {
+  areaObserver = new ResizeObserver(() => {
+    const el = areaEl.value
+    if (el) areaSize.value = { width: el.clientWidth, height: el.clientHeight }
+  })
+  if (areaEl.value) {
+    areaObserver.observe(areaEl.value)
+    areaSize.value = { width: areaEl.value.clientWidth, height: areaEl.value.clientHeight }
+  }
   browser.start()
   // A request made before this pane mounted (Split → Browser creates the pane, then asks for focus).
   void nextTick(() => {
@@ -344,6 +481,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  areaObserver?.disconnect()
+  areaObserver = null
   stopTracking()
   window.removeEventListener('mousedown', onWindowPointerDown, true)
   // Hidden, not destroyed: switching folders never disposes a pane (spec §2.3).
@@ -374,7 +513,7 @@ watch(isFrozen, async (frozen) => {
 
 <template>
   <div
-    class="@container flex h-full w-full flex-col overflow-hidden bg-bg"
+    class="@container relative flex h-full w-full flex-col overflow-hidden bg-bg"
     :aria-label="$t('browserPane.label')"
     data-testid="browser-pane"
   >
@@ -508,7 +647,7 @@ watch(isFrozen, async (frozen) => {
         :aria-label="$t('browserPane.menu')"
         data-testid="browser-menu-button"
         @mousedown.stop
-        @click="menuOpen = !menuOpen"
+        @click="((menuOpen = !menuOpen), (pickerOpen = false))"
       >
         <MoreHorizontal :size="12" :stroke-width="1.5" />
       </button>
@@ -567,7 +706,9 @@ watch(isFrozen, async (frozen) => {
     </div>
 
     <!-- Address bar (design.md "Address bar"). -->
-    <div class="@container flex h-7 shrink-0 items-center gap-1 border-b border-border bg-bg px-2">
+    <div
+      class="@container relative flex h-7 shrink-0 items-center gap-1 border-b border-border bg-bg px-2"
+    >
       <button
         type="button"
         class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2"
@@ -681,16 +822,337 @@ watch(isFrozen, async (frozen) => {
           ><span class="text-text-2">{{ addressParts.rest }}</span>
         </div>
       </div>
+
+      <!-- Device mode button (design.md "Device button and picker"). -->
+      <button
+        type="button"
+        class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2"
+        :class="
+          device
+            ? 'bg-surface-2 text-accent'
+            : pickerOpen
+              ? 'bg-surface-2 text-text'
+              : 'text-text-3 hover:text-text'
+        "
+        style="width: 18px; height: 18px"
+        :title="$t('browserPane.device.button')"
+        :aria-label="$t('browserPane.device.button')"
+        :aria-expanded="pickerOpen"
+        data-device-trigger
+        data-testid="browser-device-button"
+        @click="togglePicker"
+      >
+        <component :is="deviceIcon" :size="12" :stroke-width="1.5" />
+      </button>
+
+      <!-- Zoom (design.md "Zoom controls"): off, not hidden, in device mode (Q15). -->
+      <div
+        class="flex shrink-0 items-center"
+        :title="zv.disabled ? $t('browserPane.zoom.offInDevice') : $t('browserPane.zoom.label')"
+        data-testid="browser-zoom"
+        :data-disabled="zv.disabled"
+      >
+        <button
+          type="button"
+          class="flex items-center justify-center rounded transition"
+          :class="
+            zv.canZoomOut
+              ? 'text-text-3 hover:bg-surface-2 hover:text-text'
+              : 'cursor-default text-text-disabled'
+          "
+          style="width: 18px; height: 18px"
+          :disabled="!zv.canZoomOut"
+          :title="$t('browserPane.zoom.out')"
+          :aria-label="$t('browserPane.zoom.out')"
+          data-testid="browser-zoom-out"
+          @click="onZoom('out')"
+        >
+          <Minus :size="12" :stroke-width="1.5" />
+        </button>
+        <button
+          type="button"
+          class="min-w-[34px] rounded text-center font-mono transition @max-[330px]:hidden"
+          :class="
+            zv.canReset
+              ? 'text-text-3 hover:bg-surface-2 hover:text-text'
+              : zv.disabled
+                ? 'cursor-default text-text-disabled'
+                : 'cursor-default text-text-3'
+          "
+          style="font-size: 10.5px; line-height: 18px"
+          :disabled="!zv.canReset"
+          :title="$t('browserPane.zoom.reset')"
+          data-testid="browser-zoom-percent"
+          @click="onZoom('reset')"
+        >
+          {{ zv.percent }}%
+        </button>
+        <button
+          type="button"
+          class="flex items-center justify-center rounded transition"
+          :class="
+            zv.canZoomIn
+              ? 'text-text-3 hover:bg-surface-2 hover:text-text'
+              : 'cursor-default text-text-disabled'
+          "
+          style="width: 18px; height: 18px"
+          :disabled="!zv.canZoomIn"
+          :title="$t('browserPane.zoom.in')"
+          :aria-label="$t('browserPane.zoom.in')"
+          data-testid="browser-zoom-in"
+          @click="onZoom('in')"
+        >
+          <Plus :size="12" :stroke-width="1.5" />
+        </button>
+      </div>
+
+      <!-- Device picker: presets, the free-size editor, reset (design.md "Device button and picker"). -->
+      <div
+        v-if="pickerOpen"
+        ref="pickerEl"
+        class="anim-fade-in-scale absolute right-2 top-full z-20 min-w-[220px] rounded border border-border-2 bg-surface py-1 text-[12px] text-text-2"
+        style="box-shadow: var(--shadow-pop); border-radius: var(--radius)"
+        role="menu"
+        data-testid="browser-device-picker"
+      >
+        <template v-if="pickerMode === 'list'">
+          <button
+            v-for="row in presets"
+            :key="row.name"
+            type="button"
+            role="menuitemradio"
+            :aria-checked="row.active"
+            class="flex h-6 w-full items-center gap-2 px-3 text-left font-mono text-[11px] hover:bg-surface-2"
+            :class="row.active ? 'bg-accent-soft' : ''"
+            :data-testid="`browser-device-preset-${row.name}`"
+            @click="pickPreset(row.name)"
+          >
+            <span class="text-text">{{ row.name }}</span>
+            <span class="flex-1 text-text-3">{{ row.size }}</span>
+            <Check v-if="row.active" :size="12" :stroke-width="1.8" class="text-accent" />
+          </button>
+          <div class="my-1 border-t border-border" />
+          <button
+            type="button"
+            role="menuitem"
+            class="flex h-6 w-full items-center px-3 text-left hover:bg-surface-2 hover:text-text"
+            data-testid="browser-device-custom"
+            @click="pickerMode = 'custom'"
+          >
+            {{ $t('browserPane.device.custom') }}
+          </button>
+          <button
+            v-if="device"
+            type="button"
+            role="menuitem"
+            class="flex h-6 w-full items-center gap-2 px-3 text-left text-text-2 hover:bg-surface-2 hover:text-text"
+            data-testid="browser-device-reset-menu"
+            @click="onResetDevice"
+          >
+            <RotateCcw :size="12" :stroke-width="1.5" />
+            {{ $t('browserPane.device.reset') }}
+          </button>
+        </template>
+        <form v-else class="flex flex-col gap-2 px-3 py-2" @submit.prevent="applyFreeSize">
+          <div class="flex items-center gap-2 font-mono text-[11px]">
+            <label class="flex flex-col gap-0.5 text-[10px] text-text-3"
+              >{{ $t('browserPane.device.width') }}
+              <input
+                v-model="freeSize.width"
+                inputmode="numeric"
+                class="h-5 w-14 rounded-sm border border-border bg-bg px-1.5 text-[11px] text-text outline-none focus:border-accent-line"
+                data-testid="browser-device-width"
+              />
+            </label>
+            <label class="flex flex-col gap-0.5 text-[10px] text-text-3"
+              >{{ $t('browserPane.device.height') }}
+              <input
+                v-model="freeSize.height"
+                inputmode="numeric"
+                class="h-5 w-14 rounded-sm border border-border bg-bg px-1.5 text-[11px] text-text outline-none focus:border-accent-line"
+                data-testid="browser-device-height"
+              />
+            </label>
+            <label class="flex flex-col gap-0.5 text-[10px] text-text-3"
+              >{{ $t('browserPane.device.dpr') }}
+              <input
+                v-model="freeSize.dpr"
+                inputmode="decimal"
+                class="h-5 w-12 rounded-sm border border-border bg-bg px-1.5 text-[11px] text-text outline-none focus:border-accent-line"
+                data-testid="browser-device-dpr"
+              />
+            </label>
+          </div>
+          <label class="flex items-center justify-between gap-2 text-[11px]">
+            {{ $t('browserPane.device.mobile') }}
+            <ToggleSwitch v-model="freeMobile" :aria-label="$t('browserPane.device.mobile')" />
+          </label>
+          <p
+            v-if="!freeSizeValid"
+            class="text-[11px] text-red"
+            data-testid="browser-device-invalid"
+          >
+            {{ $t('browserPane.device.invalid') }}
+          </p>
+          <div class="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              class="h-5 rounded px-2 text-[11px] text-text-3 hover:bg-surface-2 hover:text-text"
+              @click="pickerMode = 'list'"
+            >
+              {{ $t('browserPane.device.back') }}
+            </button>
+            <button
+              type="submit"
+              class="h-5 rounded bg-accent px-2 text-[11px] text-accent-ink disabled:cursor-default disabled:opacity-45"
+              :disabled="!freeSizeValid"
+              data-testid="browser-device-apply"
+            >
+              {{ $t('browserPane.device.apply') }}
+            </button>
+          </div>
+        </form>
+        <p
+          v-if="deviceFailed"
+          class="px-3 pb-1 text-[11px] text-red"
+          data-testid="browser-device-failed"
+        >
+          {{ $t('browserPane.device.failed') }}
+        </p>
+      </div>
+    </div>
+
+    <!-- Device bar: only while a device is active (design.md "Device bar"). -->
+    <div
+      v-if="device"
+      class="flex h-7 shrink-0 items-center gap-1 border-b border-border bg-bg px-2"
+      data-testid="browser-device-bar"
+    >
+      <button
+        type="button"
+        class="flex min-w-0 shrink items-center gap-1 rounded-full border border-accent-line bg-accent-soft font-mono text-text-2"
+        style="padding: 1px 8px; font-size: 10.5px"
+        :title="$t('browserPane.device.chipHint')"
+        data-device-trigger
+        data-testid="browser-device-chip"
+        @click="togglePicker"
+      >
+        <component :is="deviceIcon" :size="12" :stroke-width="1.5" class="shrink-0" />
+        <span class="truncate">{{ deviceChipText(device) }}</span>
+      </button>
+      <div class="flex-1" />
+      <button
+        type="button"
+        class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+        style="width: 18px; height: 18px"
+        :title="$t('browserPane.device.rotate')"
+        :aria-label="$t('browserPane.device.rotate')"
+        data-testid="browser-device-rotate"
+        @click="onRotate"
+      >
+        <RotateCcwSquare :size="12" :stroke-width="1.5" />
+      </button>
+      <button
+        type="button"
+        class="flex items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
+        :class="state.emulation.colorScheme === 'dark' ? 'bg-surface-2 text-text' : 'text-text-3'"
+        style="width: 18px; height: 18px"
+        :title="
+          $t('browserPane.device.scheme') +
+          ' · ' +
+          (state.emulation.colorScheme === 'dark'
+            ? $t('browserPane.device.schemeDark')
+            : $t('browserPane.device.schemeLight'))
+        "
+        :aria-label="$t('browserPane.device.scheme')"
+        :aria-pressed="state.emulation.colorScheme === 'dark'"
+        data-testid="browser-device-scheme"
+        @click="onToggleScheme"
+      >
+        <Moon v-if="state.emulation.colorScheme === 'dark'" :size="12" :stroke-width="1.5" />
+        <Sun v-else :size="12" :stroke-width="1.5" />
+      </button>
+      <button
+        type="button"
+        class="flex items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
+        :class="state.emulation.reducedMotion === true ? 'bg-surface-2 text-text' : 'text-text-3'"
+        style="width: 18px; height: 18px"
+        :title="$t('browserPane.device.reducedMotion')"
+        :aria-label="$t('browserPane.device.reducedMotion')"
+        :aria-pressed="state.emulation.reducedMotion === true"
+        data-testid="browser-device-motion"
+        @click="onToggleReducedMotion"
+      >
+        <Wind :size="12" :stroke-width="1.5" />
+      </button>
+      <button
+        type="button"
+        class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+        style="width: 18px; height: 18px"
+        :title="$t('browserPane.device.reset')"
+        :aria-label="$t('browserPane.device.reset')"
+        data-testid="browser-device-reset"
+        @click="onResetDevice"
+      >
+        <X :size="12" :stroke-width="1.5" />
+      </button>
+    </div>
+
+    <!-- Download prompt: the operator's own download waits for a yes (design.md "Download prompt", Q16). -->
+    <div
+      v-if="downloadPrompt"
+      class="flex h-6 shrink-0 items-center gap-1.5 border-b border-accent-line bg-accent-soft px-2 text-[11px] text-text-2"
+      role="alertdialog"
+      data-testid="browser-download-prompt"
+    >
+      <Download :size="12" :stroke-width="1.6" class="shrink-0 text-accent" aria-hidden="true" />
+      <span
+        class="min-w-0 flex-1 truncate"
+        :title="$t('browserPane.download.prompt', { name: downloadPrompt.name })"
+        >{{ $t('browserPane.download.prompt', { name: downloadPrompt.name }) }}</span
+      >
+      <button
+        type="button"
+        class="shrink-0 rounded px-1.5 text-accent hover:bg-surface-2"
+        style="line-height: 18px"
+        data-testid="browser-download-save"
+        @click="onDownloadAnswer(true)"
+      >
+        {{ $t('browserPane.download.save') }}
+      </button>
+      <button
+        type="button"
+        class="shrink-0 rounded px-1.5 text-text-3 hover:bg-surface-2 hover:text-text"
+        style="line-height: 18px"
+        data-testid="browser-download-cancel"
+        @click="onDownloadAnswer(false)"
+      >
+        {{ $t('browserPane.download.cancel') }}
+      </button>
     </div>
 
     <!-- Notice strip: one refusal or intercepted event at a time (design.md "Notice strip"). -->
     <div
       v-if="state.notice"
-      class="flex h-[22px] shrink-0 items-center gap-1.5 bg-warning/10 px-2 text-[11px] text-warning"
+      class="flex h-[22px] shrink-0 items-center gap-1.5 px-2 text-[11px]"
+      :class="noticeIsInfo ? 'bg-accent-soft text-text-2' : 'bg-warning/10 text-warning'"
       role="status"
       data-testid="browser-notice"
     >
-      <TriangleAlert :size="11" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
+      <TriangleAlert
+        v-if="!noticeIsInfo"
+        :size="11"
+        :stroke-width="1.6"
+        class="shrink-0"
+        aria-hidden="true"
+      />
+      <Download
+        v-else
+        :size="11"
+        :stroke-width="1.6"
+        class="shrink-0 text-accent"
+        aria-hidden="true"
+      />
       <span class="min-w-0 flex-1 truncate" :title="noticeText">{{ noticeText }}</span>
       <button
         type="button"
@@ -703,53 +1165,106 @@ watch(isFrozen, async (frozen) => {
       </button>
     </div>
 
-    <!-- The host: EMPTY in the DOM. Main draws the page in a native view bounded to this rectangle. -->
-    <div ref="hostEl" class="relative min-h-0 flex-1 bg-bg" data-testid="browser-host">
-      <!-- Frozen frame (spec §2.4): a still of the page while an app layer overlaps the native view. -->
-      <img
-        v-if="isFrozen && frozenSrc"
-        :src="frozenSrc"
-        alt=""
-        draggable="false"
-        class="absolute inset-0 h-full w-full select-none"
-        style="object-fit: fill"
-        data-testid="browser-frozen"
-        @load="ackFreezePainted"
-        @error="ackFreezePainted"
-      />
-      <div v-else-if="isFrozen" class="absolute inset-0 bg-bg" data-testid="browser-frozen" />
-
-      <!-- ⋯ menu: over the host, above the frozen frame. -->
+    <!-- The area under the bars. Normally it IS the host; in device mode it holds the frame, and the host is the
+         frame's screen (design.md "Device frame"). The host is EMPTY in the DOM: main draws the page in a native
+         view bounded to its rectangle. -->
+    <div
+      ref="areaEl"
+      class="relative min-h-0 flex-1 bg-bg"
+      :class="layout ? 'overflow-auto' : ''"
+      data-testid="browser-area"
+    >
       <div
-        v-if="menuOpen"
-        ref="menuEl"
-        class="anim-fade-in absolute right-1 top-1 z-10 min-w-[190px] rounded border border-border bg-surface py-1 text-[12px] text-text-2"
-        style="box-shadow: var(--shadow-pop)"
-        role="menu"
-        data-testid="browser-menu"
+        v-if="layout && device"
+        class="flex min-h-full min-w-full flex-col items-center justify-center"
+        :style="{ padding: `${BACKDROP_PAD_PX}px`, gap: '8px' }"
+        data-testid="browser-device-backdrop"
       >
-        <button
-          v-if="canPause"
-          type="button"
-          role="menuitem"
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-2 hover:text-text"
-          data-testid="browser-menu-pause"
-          @click="onPauseToggle"
+        <div
+          class="shrink-0"
+          :style="{
+            padding: `${FRAME_BEZEL_PX}px`,
+            background: 'var(--color-surface-2)',
+            boxShadow: `0 0 0 ${FRAME_RING_PX}px var(--color-border-2), var(--shadow-pop)`,
+            borderRadius: frameRadius
+          }"
+          data-testid="browser-device-frame"
         >
-          <component :is="paused ? Play : Pause" :size="13" :stroke-width="1.5" />
-          {{ paused ? $t('browserPane.resumeAgent') : $t('browserPane.pauseAgent') }}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-2 hover:text-text"
-          data-testid="browser-menu-devtools"
-          @click="onDevtools"
+          <div
+            ref="hostEl"
+            class="relative bg-bg"
+            :style="{ width: `${layout.screenWidth}px`, height: `${layout.screenHeight}px` }"
+            data-testid="browser-host"
+          >
+            <img
+              v-if="isFrozen && frozenSrc"
+              :src="frozenSrc"
+              alt=""
+              draggable="false"
+              class="absolute inset-0 h-full w-full select-none"
+              style="object-fit: fill"
+              data-testid="browser-frozen"
+              @load="ackFreezePainted"
+              @error="ackFreezePainted"
+            />
+            <div v-else-if="isFrozen" class="absolute inset-0 bg-bg" data-testid="browser-frozen" />
+          </div>
+        </div>
+        <div
+          class="shrink-0 truncate text-center font-mono text-text-3"
+          style="font-size: 10.5px; line-height: 16px"
+          data-testid="browser-device-caption"
         >
-          <Bug :size="13" :stroke-width="1.5" />
-          {{ $t('browserPane.devtools') }}
-        </button>
+          {{ caption }}
+        </div>
       </div>
+      <div v-else ref="hostEl" class="absolute inset-0 bg-bg" data-testid="browser-host">
+        <!-- Frozen frame (spec §2.4): a still of the page while an app layer overlaps the native view. -->
+        <img
+          v-if="isFrozen && frozenSrc"
+          :src="frozenSrc"
+          alt=""
+          draggable="false"
+          class="absolute inset-0 h-full w-full select-none"
+          style="object-fit: fill"
+          data-testid="browser-frozen"
+          @load="ackFreezePainted"
+          @error="ackFreezePainted"
+        />
+        <div v-else-if="isFrozen" class="absolute inset-0 bg-bg" data-testid="browser-frozen" />
+      </div>
+    </div>
+
+    <!-- ⋯ menu: over the pane, above the frozen frame. -->
+    <div
+      v-if="menuOpen"
+      ref="menuEl"
+      class="anim-fade-in absolute right-1 top-7 z-20 min-w-[190px] rounded border border-border bg-surface py-1 text-[12px] text-text-2"
+      style="box-shadow: var(--shadow-pop)"
+      role="menu"
+      data-testid="browser-menu"
+    >
+      <button
+        v-if="canPause"
+        type="button"
+        role="menuitem"
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-2 hover:text-text"
+        data-testid="browser-menu-pause"
+        @click="onPauseToggle"
+      >
+        <component :is="paused ? Play : Pause" :size="13" :stroke-width="1.5" />
+        {{ paused ? $t('browserPane.resumeAgent') : $t('browserPane.pauseAgent') }}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-2 hover:text-text"
+        data-testid="browser-menu-devtools"
+        @click="onDevtools"
+      >
+        <Bug :size="13" :stroke-width="1.5" />
+        {{ $t('browserPane.devtools') }}
+      </button>
     </div>
   </div>
 </template>

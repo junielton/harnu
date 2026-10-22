@@ -3,7 +3,20 @@
  * chip's states, the pause countdown, the title fallback. Pure — `BrowserPane.vue` renders the answer and owns
  * no logic of its own.
  */
-import type { BrowserPaneState } from '../../../preload'
+import {
+  DEVICE_PRESET_NAMES,
+  DEVICE_PRESETS,
+  DEVICE_MAX_DPR,
+  DEVICE_MAX_SIZE,
+  DEVICE_MIN_DPR,
+  DEVICE_MIN_SIZE,
+  deviceCaption,
+  deviceKind,
+  fitScale,
+  type DeviceKind
+} from '../../../shared/browser-emulation'
+import { ZOOM_MAX, ZOOM_MIN, zoomPercent } from '../../../shared/browser-zoom'
+import type { BrowserDeviceState, BrowserNotice, BrowserPaneState } from '../../../preload'
 
 /**
  * Turn what the operator typed in the address bar into a URL. A bare word with a dot or a host:port gets a
@@ -145,4 +158,140 @@ export function networkRemainingMs(
 ): number | null {
   if (state.networkUntil === null || state.networkUntil <= now) return null
   return state.networkUntil - now
+}
+
+/* ---- Zoom (T572 U5, design.md "Zoom controls") ---------------------------------------------------- */
+
+export interface ZoomView {
+  /** `110` for 1.1; always 100 in device mode, where zoom is off. */
+  percent: number
+  /** Device mode: the group shows but nothing in it works (Q15). */
+  disabled: boolean
+  canZoomIn: boolean
+  canZoomOut: boolean
+  canReset: boolean
+}
+
+export function zoomView(
+  state: Pick<BrowserPaneState, 'zoom' | 'emulation'> | { zoom?: number; emulation?: undefined }
+): ZoomView {
+  const inDevice = state.emulation?.device !== undefined
+  const factor = inDevice ? 1 : (state.zoom ?? 1)
+  return {
+    percent: zoomPercent(factor),
+    disabled: inDevice,
+    canZoomIn: !inDevice && factor < ZOOM_MAX - 1e-6,
+    canZoomOut: !inDevice && factor > ZOOM_MIN + 1e-6,
+    canReset: !inDevice && Math.abs(factor - 1) > 1e-6
+  }
+}
+
+/* ---- Device mode (T572 U5, design.md "Device picker", "Device bar", "Device frame") --------------- */
+
+/** The frame around the screen: an 8px bezel inside a 1px ring, on every side (design.md "Device frame"). */
+export const FRAME_BEZEL_PX = 8
+export const FRAME_RING_PX = 1
+/** The backdrop's padding, and the caption's height plus its gap. */
+export const BACKDROP_PAD_PX = 12
+export const CAPTION_BLOCK_PX = 24
+
+export interface DeviceLayout {
+  /** The fit scale: the largest ≤ 1 at which the frame and the caption fit the backdrop. */
+  fit: number
+  /** The screen (the host the native view is bounded to), in CSS px: device size times the fit. */
+  screenWidth: number
+  screenHeight: number
+}
+
+/**
+ * The device frame's size inside a backdrop of `backdrop` CSS px. The screen is the device size times a fit scale;
+ * the frame, the padding and the caption take their share first. Whole pixels, so the native view's integer bounds
+ * and the page scale never disagree by a fraction.
+ */
+export function deviceLayout(
+  device: Pick<BrowserDeviceState, 'width' | 'height'>,
+  backdrop: { width: number; height: number }
+): DeviceLayout {
+  const chromeW = 2 * (BACKDROP_PAD_PX + FRAME_BEZEL_PX + FRAME_RING_PX)
+  const chromeH = chromeW + CAPTION_BLOCK_PX
+  const fit = fitScale(device, {
+    width: backdrop.width - chromeW,
+    height: backdrop.height - chromeH
+  })
+  return {
+    fit,
+    screenWidth: Math.max(1, Math.round(device.width * fit)),
+    screenHeight: Math.max(1, Math.round(device.height * fit))
+  }
+}
+
+/** The icon of the device chip and button (`smartphone`, `tablet`, `laptop`, `monitor`). */
+export function deviceIconName(
+  device: Pick<BrowserDeviceState, 'preset' | 'width' | 'height' | 'mobile' | 'dpr' | 'rotated'>
+): 'smartphone' | 'tablet' | 'laptop' | 'monitor' {
+  const kind: DeviceKind = deviceKind(device as Parameters<typeof deviceKind>[0])
+  return kind === 'phone' ? 'smartphone' : kind === 'desktop' ? 'monitor' : kind
+}
+
+/** `phone-m · 390×844 @3`, the chip's text. A rotated preset says so, a free size is `custom`. */
+export function deviceChipText(device: BrowserDeviceState): string {
+  const name = device.preset ?? 'custom'
+  return `${name}${device.rotated ? ' ↻' : ''} · ${device.width}×${device.height} @${device.dpr}`
+}
+
+/** One row of the preset list: the class name, then its size. */
+export interface PresetRow {
+  name: string
+  size: string
+  active: boolean
+}
+
+export function presetRows(active: BrowserDeviceState | undefined): PresetRow[] {
+  return DEVICE_PRESET_NAMES.map((name) => {
+    const p = DEVICE_PRESETS[name]
+    return {
+      name,
+      size: `${p.width}×${p.height} @${p.dpr}`,
+      active: active?.preset === name && !active.rotated
+    }
+  })
+}
+
+/** The caption under the frame (`fit 66% · touch on · …`). */
+export function frameCaption(state: Pick<BrowserPaneState, 'emulation'>, fit: number): string {
+  return deviceCaption(state.emulation, fit)
+}
+
+export interface FreeSizeInput {
+  width: string
+  height: string
+  dpr: string
+}
+
+/** The free-size editor's inputs as an emulate patch, or `null` when a value is out of range. */
+export function freeSizePatch(
+  input: FreeSizeInput,
+  mobile: boolean
+): { width: number; height: number; dpr: number; mobile: boolean } | null {
+  const width = Number(input.width)
+  const height = Number(input.height)
+  const dpr = Number(input.dpr === '' ? '1' : input.dpr.replace(',', '.'))
+  const ok =
+    Number.isFinite(width) &&
+    Number.isFinite(height) &&
+    Number.isFinite(dpr) &&
+    width >= DEVICE_MIN_SIZE &&
+    width <= DEVICE_MAX_SIZE &&
+    height >= DEVICE_MIN_SIZE &&
+    height <= DEVICE_MAX_SIZE &&
+    dpr >= DEVICE_MIN_DPR &&
+    dpr <= DEVICE_MAX_DPR
+  return ok ? { width: Math.round(width), height: Math.round(height), dpr, mobile } : null
+}
+
+/* ---- Notices (downloads) ------------------------------------------------------------------------ */
+
+/** Whether a notice is good news or a neutral report (the strip is then not drawn as a warning). */
+export function noticeTone(notice: BrowserNotice): 'warning' | 'info' {
+  return notice.kind === 'downloaded' || notice.kind === 'download-cancelled' ? 'info' : 'warning'
 }
