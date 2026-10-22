@@ -3887,9 +3887,10 @@ same geometry as the other header icons), `aria-pressed` while picking, and the 
 `title`: "Comment on the page (Ctrl+Shift+C)". Operator only: no verb switches it on.
 
 **Guest-drawn layers** (built by the guest preload into a closed shadow root, so they cannot use Tailwind or
-the app's CSS variables; the values below are the literal `themes.css` dark-theme values, kept in ONE constant
-block in `src/preload/overlay/styles.ts` and mirrored here). They are the only place a raw colour is allowed in
-this feature, because the page is another document.
+the app's CSS variables. **`--accent` and `--accent-ink` are the app theme's own values**, read when the mode is
+switched on and pushed with it (validated as plain colours), so the layers match whichever theme is active; the
+other literals below are kept in ONE constant block in `src/preload/overlay/styles.ts` and mirrored here). They
+are the only place a raw colour is allowed in this feature, because the page is another document.
 
 | Layer           | Spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -3923,7 +3924,7 @@ picking click, no hover and no keyboard. Esc exits. A script-dispatched (untrust
 
 - **Panel** — `--surface` fill, `border-t border-border`, `8px` padding, `gap-1.5`.
 - **Context line** — 11px `--text-3`, single line, truncating from the right: a 16×16 round **pin number**
-  (white fill, 2px `--accent` border, `--accent` 9.5px/600 number, the draft pin's look), "Comment on",
+  (`--surface-2` fill, 2px `--accent` border, `--accent` 9.5px/600 number: the draft pin's look, on app tokens), "Comment on",
   the **selector** in mono 11px `--text-2`, "·", the **source component** (`file:line`, mono) when known, "·",
   then what is attached ("crop + HTML + 14 styles attached"). Every page-authored run (selector, component) is
   rendered as **plain text** (`{{ }}`, never `v-html`) with a native `title` holding the full value.

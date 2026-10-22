@@ -13,8 +13,9 @@ import { scrubTerminalText } from '../scrub-terminal'
 import { createBrowserAccess } from './access'
 import { resolveGateInput, type GateResolution } from './gate-resolve'
 import { createBrowserRegistry } from './registry'
-import { BrowserViewHost, collectHarnuPorts } from './view-host'
+import { BrowserViewHost, collectHarnuPorts, type PageHooks } from './view-host'
 import { createPageService, type PageService } from './page-service'
+import { createOverlayBridge, type OverlayBridge } from './overlay-bridge'
 import type { BrowserVerbDeps } from './verbs-core'
 import type { BrowserPartition } from './guest-prefs'
 
@@ -24,6 +25,7 @@ export const browserAccess = createBrowserAccess(() => Date.now())
 let mainWindowGetter: (() => BrowserWindow | null) | null = null
 let host: BrowserViewHost | null = null
 let pages: PageService | null = null
+let overlay: OverlayBridge | null = null
 let mcpPort = 0
 let bridge: { dispatch(command: string, payload: unknown): Promise<unknown> } | undefined
 
@@ -47,6 +49,20 @@ export function getPageService(): PageService {
   return pages
 }
 
+/** The point-and-comment bridge (T573). Created on first use, like the view host. */
+export function getOverlayBridge(): OverlayBridge {
+  if (overlay) return overlay
+  overlay = createOverlayBridge({
+    registry: browserRegistry,
+    access: browserAccess,
+    getHost: () => getBrowserHost(),
+    getWindow: () => mainWindowGetter?.() ?? null,
+    now: () => Date.now(),
+    getBridge: () => bridge
+  })
+  return overlay
+}
+
 /** `server.ts` reports the port it bound, so a page on that port classifies as `external` (spec §7.2). */
 export function noteMcpPort(port: number): void {
   mcpPort = port
@@ -66,9 +82,20 @@ export function getBrowserHost(): BrowserViewHost {
     trustedHosts: () => [],
     openPopupPane: ({ folder, partition, url }) =>
       openOperatorPane({ folder, partition, url, popup: true }),
-    pageHooks: getPageService().hooks
+    pageHooks: withOverlayCleanup(getPageService().hooks)
   })
   return host
+}
+
+/** A pane's pins and overlay state go with the pane. */
+function withOverlayCleanup(hooks: PageHooks): PageHooks {
+  return {
+    ...hooks,
+    onDestroyed(paneId) {
+      hooks.onDestroyed(paneId)
+      getOverlayBridge().forget(paneId)
+    }
+  }
 }
 
 export function bindBrowserWindow(getWindow: () => BrowserWindow | null): void {

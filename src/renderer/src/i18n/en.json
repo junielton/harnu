@@ -4396,6 +4396,40 @@
       "sentComment": "Comment sent to the session",
       "heldTitle": "A page panel sent an event, but no session can take it",
       "heldBody": "Select a session in this folder, or connect the pane to one, and use the panel again."
+    },
+    "comment": {
+      "hint": "Click an element to comment",
+      "toggle": "Comment on the page (Ctrl+Shift+C)",
+      "toggleOff": "Stop commenting (Esc)",
+      "commentOn": "Comment on",
+      "attached": "crop + HTML + {styles} styles attached",
+      "attachedHtmlOnly": "HTML + {styles} styles attached",
+      "attachedNone": "nothing attached",
+      "placeholder": "What should change?",
+      "sendTo": "Send to",
+      "noSession": "No session — copies to clipboard",
+      "owner": "owner",
+      "keepDraft": "Keep as draft",
+      "send": "Send",
+      "composerLabel": "Comment on the selected element",
+      "draftsCount": "no drafts | {n} draft | {n} drafts",
+      "sentCount": "{n} sent",
+      "sendBatch": "Send {n} comment | Send {n} comments",
+      "pin": "Pin {n}",
+      "charsLeft": "{n} left",
+      "refusedTitle": "Comment not sent",
+      "refused": {
+        "BAD_ARGS": "The request was not valid.",
+        "PANE_NOT_FOUND": "This pane no longer exists.",
+        "BROWSER_DISCONNECTED": "The agent is disconnected from this pane.",
+        "BROWSER_PAUSED": "The agent is paused on this pane. Resume it, then send again.",
+        "COMMENT_AGENT_INPUT": "The agent was driving the page a moment ago. Try again in a second.",
+        "NOTHING_TO_SEND": "There is nothing to send: add some text first.",
+        "DELIVERY_FAILED": "The session could not take the message. The draft is kept."
+      },
+      "noSessionTitle": "No session to send to",
+      "noSessionBody": "The comment was copied to your clipboard.",
+      "noSessionLost": "The comment could not be copied. It is still a draft in this pane."
     }
   },
   "splitMenu": {

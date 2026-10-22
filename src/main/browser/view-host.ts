@@ -111,6 +111,8 @@ interface ViewEntry {
   lastRealKeyDownAt: number | null
   /** The address the pane was last asked to load, for a pane that has not committed anything yet (F3). */
   requestedUrl: string
+  /** When `before-mouse-event` last saw a REAL `mouseDown` on the pane (T573: a pick needs one, spec §8.6). */
+  lastRealMouseDownAt: number | null
   /** The served page file is gone (T569 U2): the view is hidden and the pane shows the placeholder. */
   fileRemoved: boolean
   loading: boolean
@@ -159,6 +161,7 @@ export class BrowserViewHost implements BrowserHost {
       gestures: createGestureGate(() => this.deps.now()),
       lastRealKeyDownAt: null,
       requestedUrl: opts.url,
+      lastRealMouseDownAt: null,
       fileRemoved: false,
       loading: false,
       notice: null,
@@ -402,6 +405,10 @@ export class BrowserViewHost implements BrowserHost {
 
   lastRealKeyDownAt(paneId: string): number | null {
     return this.entries.get(paneId)?.lastRealKeyDownAt ?? null
+  }
+
+  lastRealMouseDownAt(paneId: string): number | null {
+    return this.entries.get(paneId)?.lastRealMouseDownAt ?? null
   }
 
   /** Reload a page pane, keeping its scroll position (spec §4.4). */
@@ -816,6 +823,7 @@ export class BrowserViewHost implements BrowserHost {
     wc.on('before-mouse-event', (_event, mouse) => {
       if (mouse.type !== 'mouseDown') return
       e.gestures.note()
+      e.lastRealMouseDownAt = this.deps.now()
       this.deps.registry.noteOperatorInteraction(e.paneId)
     })
   }

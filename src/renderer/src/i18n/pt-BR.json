@@ -4396,6 +4396,40 @@
       "sentComment": "Comentário enviado à sessão",
       "heldTitle": "Um painel enviou um evento, mas nenhuma sessão pode recebê-lo",
       "heldBody": "Selecione uma sessão desta pasta, ou conecte o painel a uma, e use o painel de novo."
+    },
+    "comment": {
+      "hint": "Clique em um elemento para comentar",
+      "toggle": "Comentar na página (Ctrl+Shift+C)",
+      "toggleOff": "Parar de comentar (Esc)",
+      "commentOn": "Comentário em",
+      "attached": "recorte + HTML + {styles} estilos anexados",
+      "attachedHtmlOnly": "HTML + {styles} estilos anexados",
+      "attachedNone": "nada anexado",
+      "placeholder": "O que deve mudar?",
+      "sendTo": "Enviar para",
+      "noSession": "Nenhuma sessão — copia para a área de transferência",
+      "owner": "dono",
+      "keepDraft": "Manter como rascunho",
+      "send": "Enviar",
+      "composerLabel": "Comentar o elemento selecionado",
+      "draftsCount": "nenhum rascunho | {n} rascunho | {n} rascunhos",
+      "sentCount": "{n} enviado | {n} enviados",
+      "sendBatch": "Enviar {n} comentário | Enviar {n} comentários",
+      "pin": "Marcador {n}",
+      "charsLeft": "{n} restantes",
+      "refusedTitle": "Comentário não enviado",
+      "refused": {
+        "BAD_ARGS": "O pedido não era válido.",
+        "PANE_NOT_FOUND": "Este painel não existe mais.",
+        "BROWSER_DISCONNECTED": "O agente está desconectado deste painel.",
+        "BROWSER_PAUSED": "O agente está pausado neste painel. Retome-o e envie de novo.",
+        "COMMENT_AGENT_INPUT": "O agente estava controlando a página há pouco. Tente de novo em um segundo.",
+        "NOTHING_TO_SEND": "Não há nada para enviar: escreva um texto primeiro.",
+        "DELIVERY_FAILED": "A sessão não conseguiu receber a mensagem. O rascunho foi mantido."
+      },
+      "noSessionTitle": "Nenhuma sessão para receber",
+      "noSessionBody": "O comentário foi copiado para a área de transferência.",
+      "noSessionLost": "Não foi possível copiar o comentário. Ele continua como rascunho neste painel."
     }
   },
   "splitMenu": {

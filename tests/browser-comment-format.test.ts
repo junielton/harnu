@@ -22,7 +22,7 @@ function entry(over: Partial<CommentEntry> = {}): CommentEntry {
 }
 
 const base = { paneName: 'Checkout', url: 'https://dev.localhost:3000/checkout' }
-const BIDI = '‮⁦​﻿؜'
+const BIDI = '\u202e\u2066\u200b\ufeff\u061c'
 
 describe('formatComment', () => {
   it('keeps the operator words outside the block and the page data inside, in the spec shape', () => {
@@ -120,7 +120,7 @@ describe('formatComment against a hostile page', () => {
     ])
     // No raw fence or bidi/zero-width character survives anywhere.
     expect(text).not.toMatch(/(?<!\\)```/)
-    expect(text).not.toMatch(/[‮⁦​﻿؜]/)
+    expect(text).not.toMatch(new RegExp('[\u202e\u2066\u200b\ufeff\u061c]'))
     // No page-controlled line begins with the delimiter either.
     for (const l of lines.slice(1, -1))
       expect(l.startsWith('---') && !l.startsWith('--- page data for')).toBe(false)

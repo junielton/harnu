@@ -27,6 +27,7 @@ import type {
   BrowserRect
 } from '../main/browser/state-types'
 import type { TerminalChipState } from '../main/terminal-registry'
+import type { CommentPaneState, CommentSubmitResult, OverlayTheme } from '../shared/browser-comment'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
 import type { ShadowEntry } from '../main/responder-registry'
@@ -212,6 +213,13 @@ export type {
   BrowserPaneState,
   BrowserRect
 } from '../main/browser/state-types'
+// T564 U6: the point-and-comment wire types.
+export type {
+  CommentPaneState,
+  CommentPinView,
+  CommentSubmitResult,
+  OverlayTheme
+} from '../shared/browser-comment'
 
 // Bundled skills (T217). `bundled-skills.ts` is a node module (electron `app` +
 // fs), so the renderer imports the pane's wire types type-only.
@@ -2394,6 +2402,36 @@ const api = {
   /** The operator's per-pane "Allow network" switch on a page pane (T569 U2). Operator only. */
   browserSetAllowNetwork: (payload: { paneId: string; allow: boolean }): Promise<boolean> =>
     ipcRenderer.invoke('browser:setAllowNetwork', payload),
+  /** Switch point-and-comment on or off for a pane (T573). Operator only; no verb reaches it. */
+  browserOverlaySet: (payload: {
+    paneId: string
+    active: boolean
+    hint: string
+    theme: OverlayTheme
+  }): Promise<boolean> => ipcRenderer.invoke('browser:overlaySet', payload),
+  /** The pins and the open composer of a pane (T573). */
+  browserCommentState: (paneId: string): Promise<CommentPaneState | null> =>
+    ipcRenderer.invoke('browser:commentState', paneId),
+  /** Open the docked composer on a pin, or close it (`pinId: null`). */
+  browserCommentOpen: (payload: { paneId: string; pinId: string | null }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:commentOpen', payload),
+  /** Keep the text typed in the composer as a draft on its pin. */
+  browserCommentSave: (payload: {
+    paneId: string
+    pinId: string
+    text: string
+  }): Promise<boolean> => ipcRenderer.invoke('browser:commentSave', payload),
+  /** Drop a draft pin (an empty composer closed with Esc). */
+  browserCommentDiscard: (payload: { paneId: string; pinId: string }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:commentDiscard', payload),
+  /** Send the named pins, or every saved draft, to a session as one `[harnu-comment]` turn. */
+  browserCommentSubmit: (payload: {
+    paneId: string
+    which: string[] | 'drafts'
+    sessionId: string | null
+  }): Promise<CommentSubmitResult> => ipcRenderer.invoke('browser:commentSubmit', payload),
+  onBrowserCommentState: (cb: (state: CommentPaneState) => void): (() => void) =>
+    subscribe('browser:commentState', cb),
   onBrowserState: (cb: (state: BrowserPaneState) => void): (() => void) =>
     subscribe('browser:state', cb),
   onBrowserFreeze: (cb: (p: { paneId: string; dataUrl: string | null }) => void): (() => void) =>

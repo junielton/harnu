@@ -21,6 +21,7 @@ import {
   browserRegistry,
   closePaneFromOperator,
   getBrowserHost,
+  getOverlayBridge,
   getPageService,
   openOperatorPane
 } from './browser-service'
@@ -71,6 +72,9 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
       return fn(...args)
     })
   }
+
+  // Point-and-comment (T573): the guest's private channels and the composer's app channels.
+  getOverlayBridge().registerIpc({ onApp, handleApp })
 
   // The operator opened a pane (Split menu). `folder` is the stack's worktree path.
   handleApp('browser:open', (payload: unknown) => {

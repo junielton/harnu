@@ -68,18 +68,21 @@ describe('actionForChord', () => {
 })
 
 describe('inactive actions are not swallowed (delta 2)', () => {
-  it('the disabled zoom and overlay chords are not in the set main swallows, so they reach the page', () => {
+  it('the disabled zoom chords are not in the set main swallows, so they reach the page', () => {
     const chords = new Set(boundChordsFrom(list, false))
-    for (const c of ['Cmd+Shift+C', 'Cmd+=', 'Cmd+-', 'Cmd+0']) expect(chords.has(c), c).toBe(false)
-    // …while the active browser actions are.
-    for (const c of ['Cmd+R', 'Cmd+L', 'Cmd+[', 'Cmd+]', 'Cmd+Alt+I'])
+    for (const c of ['Cmd+=', 'Cmd+-', 'Cmd+0']) expect(chords.has(c), c).toBe(false)
+    // …while the active browser actions are (the point-and-comment toggle went live with T573).
+    for (const c of ['Cmd+R', 'Cmd+L', 'Cmd+[', 'Cmd+]', 'Cmd+Alt+I', 'Cmd+Shift+C'])
       expect(chords.has(c), c).toBe(true)
   })
 
-  it('does not resolve an inactive chord to an action either', () => {
-    expect(actionForChord(list, 'Cmd+Shift+C', false)).toBeNull()
+  it('does not resolve an inactive chord to an action either, and resolves the overlay toggle', () => {
+    expect(actionForChord(list, 'Cmd+=', false)).toBeNull()
+    expect(actionForChord(list, 'Cmd+Shift+C', false)).toEqual({
+      id: 'browser.overlay.toggle',
+      scope: 'browser'
+    })
     expect([...INACTIVE_BROWSER_ACTIONS].sort()).toEqual([
-      'browser.overlay.toggle',
       'browser.zoom.in',
       'browser.zoom.out',
       'browser.zoom.reset'

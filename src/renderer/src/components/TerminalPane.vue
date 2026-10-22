@@ -13,6 +13,7 @@
  */
 import { Terminal } from '@xterm/xterm'
 import { registerLivePtyResolver } from '../lib/live-pty-resolver'
+import { operatorInput } from '../lib/operator-input'
 
 /**
  * Per-session live state. The Terminal, its PTY, and IPC cleanups stay alive
@@ -747,7 +748,11 @@ function wireLiveTerminal(
     })
   )
 
-  t.onData((data) => window.api.ptyWrite(ptyId, data))
+  t.onData((data) => {
+    // The operator's own typing, for the "do not interleave a delivered user turn" deferral (T573).
+    operatorInput.note(ptyId, data)
+    window.api.ptyWrite(ptyId, data)
+  })
   t.onResize(({ cols, rows }) => window.api.ptyResize(ptyId, cols, rows))
 
   // Clipboard, word/char-delete, and font-size chords (design.md §6). Attached

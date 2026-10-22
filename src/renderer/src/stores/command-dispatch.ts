@@ -32,6 +32,7 @@ import { makeCommandRouter, type CommandRouterActions } from './command-router'
 import { speech } from '../lib/speech'
 import { livePtyIdOf } from '../lib/live-pty-resolver'
 import { pasteAndSubmit } from '../components/prompt-inject'
+import { operatorInput, pasteWhenOperatorQuiet } from '../lib/operator-input'
 
 /**
  * A correlated command pushed from main over `onRendererCommand`. Mirrors
@@ -174,17 +175,31 @@ export function buildDispatchActions(): CommandRouterActions {
         )
       const target = owner ?? (selectedHere ? selected : null)
       if (!target) {
-        // Neither the owner nor a selected session of the folder: the event is held on the pane.
-        useUiStore().pushToast({
-          kind: 'warning',
-          title: i18n.global.t('browserPane.pageEvent.heldTitle'),
-          description: i18n.global.t('browserPane.pageEvent.heldBody')
-        })
+        // Neither the owner nor a selected session of the folder: the event is held on the pane. A comment
+        // has its own answer (main copies it to the clipboard and the composer says so), so no toast here.
+        if (source !== 'overlay') {
+          useUiStore().pushToast({
+            kind: 'warning',
+            title: i18n.global.t('browserPane.pageEvent.heldTitle'),
+            description: i18n.global.t('browserPane.pageEvent.heldBody')
+          })
+        }
         return { held: true }
       }
       const ptyId = livePtyIdOf(target)
       if (!ptyId) return { parked: true, sessionId: target }
-      pasteAndSubmit(ptyId, text)
+      // Never interleave with the operator's own keystrokes in that terminal (spec §8.7 step 5): the paste
+      // waits until they have been quiet for 1500 ms. A busy session still takes it between turns.
+      pasteWhenOperatorQuiet(
+        {
+          tracker: operatorInput,
+          now: () => Date.now(),
+          setTimer: (fn, ms) => setTimeout(fn, ms),
+          paste: (id, body) => pasteAndSubmit(id, body)
+        },
+        ptyId,
+        text
+      )
       notifications.notify({
         ts: Date.now(),
         source: 'agent',
