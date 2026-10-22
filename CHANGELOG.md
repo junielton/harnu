@@ -86,6 +86,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **No more "write EPIPE" error dialog when checking for updates.** If Harnu was started from a terminal or
+  launcher that has since closed, a routine log line from the update check could pop up an "unexpected error" box.
+  Those broken-pipe log writes are now ignored.
 - **New sessions start again on Linux.** Every new or resumed Claude session failed at once with
   "execvp(3) failed.: Argument list too long" once Harnu's built-in guide for sessions grew past what Linux
   allows in a single launch argument. Harnu now hands a large system prompt to Claude through a temporary file,

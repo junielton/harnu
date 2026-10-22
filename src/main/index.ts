@@ -467,6 +467,16 @@ registerKokoroScheme([pageSchemeEntry()])
  * error object is reliable; unhandled rejections are logged silently to avoid
  * spamming dialogs for benign promise races.
  */
+// When launched from a terminal or launcher that later goes away, stdout/stderr
+// become broken pipes and every `console.*` (ours or a dependency's, e.g.
+// electron-updater's logger) emits EPIPE as an unhandled stream error. Logging
+// is best-effort, so swallow EPIPE on the std streams instead of surfacing it.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EPIPE') throw err
+  })
+}
+
 process.on('uncaughtException', (err) => {
   console.error('[main:uncaughtException]', err)
   if (app.isReady()) {
