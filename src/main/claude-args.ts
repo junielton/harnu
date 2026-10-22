@@ -579,3 +579,48 @@ export function buildClaudeArgs(
 
   return args
 }
+
+// ── Oversized prompt values ───────────────────────────────────────────────────
+
+/**
+ * Linux caps a SINGLE argv string at `MAX_ARG_STRLEN` (32 pages = 131072 bytes);
+ * past it `execvp` fails with E2BIG ("Argument list too long") and the session
+ * never starts. The T55 preamble alone crossed that line once the self-awareness
+ * doc grew past ~128 KiB. Any prompt value at or above this threshold is moved
+ * into a file and passed with the CLI's `-file` flag variant instead. Kept well
+ * under the hard cap so a growing doc never lands near the edge.
+ */
+export const PROMPT_ARG_SPILL_BYTES = 64 * 1024
+
+/** Prompt flags that have a `<flag>-file` sibling in the `claude` CLI. */
+const SPILLABLE_PROMPT_FLAGS = ['--append-system-prompt', '--system-prompt'] as const
+
+/**
+ * Replace every oversized `--append-system-prompt <text>` / `--system-prompt <text>`
+ * pair in an OPTION argv with `<flag>-file <path>`, where `write(flag, text)`
+ * persists the text and returns its path. Values under
+ * {@link PROMPT_ARG_SPILL_BYTES} are left inline, so the common case is
+ * byte-identical. Run it inside {@link withOptionArgs} — the positional pre-prompt
+ * tail is not an option and is never touched.
+ */
+export async function spillOversizedPromptArgs(
+  options: readonly string[],
+  write: (flag: string, text: string) => string | Promise<string>
+): Promise<string[]> {
+  const out: string[] = []
+  for (let i = 0; i < options.length; i++) {
+    const flag = options[i]
+    const value = options[i + 1]
+    if (
+      (SPILLABLE_PROMPT_FLAGS as readonly string[]).includes(flag) &&
+      value !== undefined &&
+      Buffer.byteLength(value, 'utf8') >= PROMPT_ARG_SPILL_BYTES
+    ) {
+      out.push(`${flag}-file`, await write(flag, value))
+      i++
+      continue
+    }
+    out.push(flag)
+  }
+  return out
+}

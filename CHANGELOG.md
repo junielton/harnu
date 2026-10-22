@@ -86,6 +86,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **New sessions start again on Linux.** Every new or resumed Claude session failed at once with
+  "execvp(3) failed.: Argument list too long" once Harnu's built-in guide for sessions grew past what Linux
+  allows in a single launch argument. Harnu now hands a large system prompt to Claude through a temporary file,
+  removed when the session ends, and the guide itself is shorter.
 - **Disconnecting a session from a browser pane now lasts across a restart.** It used to come back connected. Panes a
   session has been disconnected from no longer count toward its four-panes-per-folder limit, so they cannot lock it
   out of opening new ones.
