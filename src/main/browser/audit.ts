@@ -49,7 +49,9 @@ export function summarizeBrowserCall(
   if (op === 'browser_list') return 'browser_list'
   const url = args.url
   const origin: OriginClass =
-    typeof url === 'string' ? classifyOrigin(url, opts.classify ?? {}) : (current?.originClass ?? 'blank')
+    typeof url === 'string'
+      ? classifyOrigin(url, opts.classify ?? {})
+      : (current?.originClass ?? 'blank')
   const parts = [op]
   if (op !== 'browser_open') parts.push(`pane=${field(args.paneId)}`)
   parts.push(`origin=${origin}`)
