@@ -470,7 +470,7 @@ describe('idle tracker: orphaned requests', () => {
 describe('network buffers', () => {
   function rigWithSends() {
     const sent: Array<[string, object]> = []
-    let t = 0
+    const t = 0
     const r = createPaneReaders({
       now: () => t,
       send: async (method, params) => void sent.push([method, params ?? {}]),
