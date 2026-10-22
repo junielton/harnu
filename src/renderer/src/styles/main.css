@@ -252,6 +252,9 @@ textarea,
 .anim-pulse-dot--accent::after {
   background: var(--color-accent-soft);
 }
+.anim-pulse-dot--red::after {
+  background: var(--color-red-soft);
+}
 .anim-shimmer-dot {
   animation: shimmer-dot 1.2s ease-in-out infinite;
 }

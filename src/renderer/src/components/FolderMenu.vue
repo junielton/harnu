@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   SquareTerminal,
+  Globe,
   Tag,
   Trash2,
   Unlink,
@@ -304,6 +305,24 @@ async function onToggleTerminalRead(folderPath: string): Promise<void> {
 }
 
 /**
+ * Whether the target folder lets agents read the browser panes the operator opens (T571 — default OFF, per exact
+ * folder, no worktree inheritance — see `browserReadPaths`'s own doc comment).
+ */
+const isBrowserReadOn = computed<boolean>(() => {
+  const path = menuState.value.projectPath
+  return path ? sessions.browserReadPaths.has(path) : false
+})
+
+/** Toggle the `agentBrowserRead` flag for the target folder. Non-destructive. */
+async function onToggleBrowserRead(folderPath: string): Promise<void> {
+  try {
+    await sessions.setFolderBrowserRead(folderPath, !isBrowserReadOn.value)
+  } catch {
+    /* Swallow: the mirror simply won't flip — no destructive state to undo. */
+  }
+}
+
+/**
  * Whether the target folder has the auto-alias opt-in on (T52) — its label falls
  * back to the git branch when the dir-name differs. Mirrors `aliasFromBranchPaths`.
  */
@@ -533,6 +552,21 @@ const entries = computed<MenuItem[]>(() => [
       : t('folderMenu.terminalReadOn'),
     icon: SquareTerminal,
     onSelect: onToggleTerminalRead
+  },
+  // T571: per EXACT folder, never inherited. Lets agents read the browser panes the operator opens; a write
+  // still needs the operator's lease.
+  {
+    id: 'browser-read',
+    label: isBrowserReadOn.value ? t('folderMenu.browserReadOff') : t('folderMenu.browserReadOn'),
+    icon: Globe,
+    onSelect: onToggleBrowserRead
+  },
+  // T571: the folder's trusted dev hosts (spec §7.2) — pages on them count as local. Operator-only.
+  {
+    id: 'trusted-hosts',
+    label: t('folderMenu.trustedHosts'),
+    icon: ShieldCheck,
+    onSelect: (projectPath: string): void => ui.openTrustedHosts(projectPath)
   },
   isHidden.value
     ? {

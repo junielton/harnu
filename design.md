@@ -436,6 +436,19 @@ _another_ folder.
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
 | `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
 | `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
+| `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane")                                                                                                                                                                         |
+| `arrow-left` / `arrow-right`             | Browser pane → back / forward (address bar)                                                                                                                                                                                            |
+| `rotate-cw`                              | Browser pane → reload (swaps to `x` — stop — while a load is in flight)                                                                                                                                                                |
+| `play`                                   | Browser pane → Resume the agent after "Pause agent for 10 min" (chip)                                                                                                                                                                  |
+| `pause`                                  | Browser pane → "Pause agent for 10 min" (⋯ menu)                                                                                                                                                                                       |
+| `bug`                                    | Browser pane → Open DevTools (⋯ menu)                                                                                                                                                                                                  |
+| `shield-check`                           | Folder menu → Trusted dev hosts… (T571 U4, §6 "Trusted dev hosts dialog")                                                                                                                                                              |
+| `wifi-off` / `wifi`                      | Browser pane → "Allow network" switch on a page pane: off = `wifi-off` (default), on = `wifi` (T569 U2)                                                                                                                                |
+| `file-x`                                 | Browser pane → "file removed" placeholder for a page pane whose file is gone (T569 U2)                                                                                                                                                 |
+| `moon`                                   | Browser pane → "Paused to save memory" placeholder of a discarded pane (T574)                                                                                                                                                          |
+| `rotate-cw`                              | Browser pane → "Click to reload" button of the discarded placeholder (T574)                                                                                                                                                            |
+| `message-square-plus`                    | Browser pane → header button: turn point-and-comment on (T564 U6)                                                                                                                                                                      |
+| `message-square`                         | Browser pane → batch bar: "N drafts · M sent" (T564 U6)                                                                                                                                                                                |
 | `arrow-down-to-line`                     | Canvas properties panel → Layers: Send to back (T536 U4)                                                                                                                                                                               |
 | `arrow-down`                             | Canvas properties panel → Layers: Send backward (T536 U4)                                                                                                                                                                              |
 | `arrow-up`                               | Canvas properties panel → Layers: Bring forward (T536 U4)                                                                                                                                                                              |
@@ -686,6 +699,11 @@ scale (0.43 for the 6px default, 5px → 0.38, 8px → 0.5), and non-square elem
 `.anim-pulse-dot--accent::after { background: var(--color-accent-soft) }`. Same keyframe,
 same geometry, same reduced-motion behaviour. Used by the agent connection chip's leading
 dot (§6); the dot itself carries `bg-accent`.
+
+**Red variant** (T570) — `.anim-pulse-dot--red` changes **only** the halo colour:
+`.anim-pulse-dot--red::after { background: var(--color-red-soft) }`. Same keyframe, geometry and
+reduced-motion behaviour. Used by the browser pane's network counter (§6 "Network counter"); the dot
+itself carries `bg-red`.
 
 Attention blink (`needs-input` state) — opacity, not box-shadow, to read as
 "blinking, needs you" without competing with the `active` green halo. Helper
@@ -3921,6 +3939,332 @@ re-checked every 5s.
 activity pulse). Under `prefers-reduced-motion` there is no pulse; the word carries
 the signal.
 
+#### Browser pane
+
+`BrowserPane.vue` (T564 U1, spec `docs/specs/2026-10-21-T564-browser-pane.md` §2 and §7.4; approved mockup
+`docs/specs/T564-browser-pane-mockup/`, scenarios "Comment" for the header and "States" for the chip). A real
+Chromium page inside the helper stack. **The page is not DOM.** It is a native `WebContentsView` that main
+positions over the pane's **host `<div>`**; the renderer only reports that div's rectangle (spec §2.3) and
+draws the chrome around it. Because a native view is drawn above every DOM layer, anything that overlaps it
+must freeze it first (see "Frozen frame").
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│ 🌐 localhost:5173   ● Connected to ‹Fix login bug› · driving   ⋯  ⤢  ✕ │  header, 24px
+├───────────────────────────────────────────────────────────────────────┤
+│ ←  →  ⟳  [local] [⚠ opened by agent · docs.example.com ✕] http://…/   │  address bar, 28px
+├───────────────────────────────────────────────────────────────────────┤
+│ ⚠ Blocked: file:// pages cannot be opened                          ✕  │  notice strip (only when set)
+├───────────────────────────────────────────────────────────────────────┤
+│   host <div>  ← the native view is bounded to this rectangle          │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+- **Header** — the standard pane header (24px, `--surface`, 11px `--text-2`, resize handle, maximize and close as
+  in "Pane header"), with: `globe` 12px `--text-3`; the **page title** (falls back to the host, then to
+  `browserPane.newTab`), `min-w-0 flex-1 truncate`, native `title` = the full URL; the **connection chip**
+  (below); a `more-horizontal` button (18×18) that opens the pane menu; maximize; close. Maximize keeps the same
+  view and re-bounds it (spec decision 26); it never re-parents it.
+- **Address bar** — a 28px row (`h-7`, `--bg`, `border-b border-border`, `px-2`, `gap-1`): back, forward and
+  reload as 18×18 icon buttons (`arrow-left`, `arrow-right`, `rotate-cw`; **disabled** is `text-text-disabled`,
+  never hidden; reload becomes `x` = stop while a load is in flight), then the **origin badge**, then the
+  **URL field**. The field is a single-line input, mono 11px, `--surface` fill, `--radius-sm`, 1px `--border`
+  (`--accent-line` on focus). It shows the **real URL** (query string included, because the operator typed it
+  and must be able to edit it). **Host emphasis:** while the field is not being edited, the scheme and the path
+  are drawn in `--text-2` and the host (with its port) in `--text`, so the part that says where you are stands
+  out (below 360px the scheme is left out of this view so the host fits, as browsers do); the text under it is the real input, made transparent, and it returns to a single `--text` tone the moment
+  the field takes focus (an accent border, `--accent-line`, and a caret). Enter navigates (a bare word with no dot or scheme is treated as `https://` +
+  word; a blocked scheme raises the notice strip and never navigates). Escape restores the live URL.
+  `browser.focusAddress` focuses and selects it.
+- **Origin badge** — a pill with the chip's geometry (`padding 1px 6px`, 10px, `rounded-full`, 1px border) that
+  names the origin class at the moment of the last navigation (spec §1.2): `local` = `--green-soft` fill and
+  `--green` text; `external` = `--surface-2` fill and `--text-3` text; `page` = `--accent-soft` and `--accent`;
+  `blank` shows nothing. Text only, from `$t('browserPane.origin.*')`.
+- **"Opened by agent" flag** (spec §3.2, decision 21) — set when a verb navigated the pane to a host it had not
+  shown before. An amber pill in the address bar, between the origin badge and the field: `--warning` text on a
+  `--warning` 10% fill, 1px `--warning` 30% border, 10px, `triangle-alert` 10px, text "opened by agent · ‹host›",
+  with a 12px `x` that dismisses it. It also clears when the **operator** navigates. **Narrow panes** (the address
+  field must stay readable): below 330px the words "opened by agent ·" go and the pill is icon + host; below
+  250px the host goes too and it is the icon alone (the hover title keeps the full text). The pill never takes
+  more than 35% of the row. While the flag shows, the origin badge is not drawn (the flag already says the site is
+  external, as in the mockup), and below 300px the badge is hidden anyway.
+- **Notice strip** — one optional 22px row under the address bar for a refusal or an intercepted event: a blocked
+  scheme, a certificate error accepted on loopback, a dialog the page raised and Harnu dismissed. `--warning` 10%
+  fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old. The **offline** notice ("Blocked: this panel is offline, so it
+  cannot open other addresses. Turn on Network on to follow links out.") appears when a page pane's own script, link
+  or popup tried to leave its folder while its **Offline** switch is off (T569); the operator's address bar still can.
+- **Pane menu (⋯)** — a standard context menu (§6 "Context menu"): **Pause agent for 10 min** (`pause`; becomes
+  **Resume agent** while paused) and **Open DevTools** (`bug`). Clear browsing data arrives with a later unit;
+  zoom and device mode live in the address bar (below). It registers with the native-overlay composable, so
+  opening it freezes the view.
+- **Host div** — `flex-1 min-h-0`, `--bg`. It is empty in the DOM: the page is drawn by the native view. While
+  the view is hidden for any reason the host shows `--bg`, never a stale paint.
+
+**Connection chip** — the Agent connection chip's geometry and tokens (see the section above), with these states.
+It shows for an agent-opened pane, and while paused or disconnected.
+
+| State                       | Chip                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent-opened, owner known   | accent pill, "Connected to ‹session›", live word `driving` while a navigation verb runs (`reading` arrives with the read verbs of a later unit); **Disconnect** (`unplug`) at its right. The session name is the part that stays: "Connected to" is dropped first (below 300px) and the name truncates last; the hover title keeps the whole text  |
+| Agent-opened, owner unknown | "Connected to an agent"; same Disconnect                                                                                                                                                                                                                                                                                                           |
+| Operator-opened             | no chip until the folder's read opt-in is on. Opt-in on, no lease: "An agent can read here" (no Disconnect: the reader is unidentifiable). A lease active: "An agent can drive here" (a lease records no grantee) with **Disconnect**. Same pill geometry as the agent chip                                                                        |
+| **Paused**                  | `--warning` 10% pill, `--warning` text, "Agent paused · 9:41" (m:ss, counts down each second), then a bordered **Resume** text button (`play` 10px + "Resume", 1px `--warning` 40% border). Below 300px the header has no room for the words, so the same chip (text, Resume, Disconnect) becomes a 22px strip under the header on `--warning` 10% |
+| **Disconnected**            | `--red-soft` pill, `--red` text, "Disconnected" (the mockup's red chip), no button. Permanent; the operator keeps using the pane                                                                                                                                                                                                                   |
+
+The pause countdown is the only chip text that ticks. It is plain text with no animation, so nothing changes under
+`prefers-reduced-motion`. Disconnect needs **no confirm** (revoking is the safe direction) and is **permanent**,
+exactly like the terminal chip.
+
+**Network counter** (T564 U3, spec §6.2 `browser_network`, decision 9; the red "Network 4:12" pill of the approved
+mockup, scenario "Device mode"). Network capture is **off by default**; while an agent has it on for a pane, the
+header shows a recording pill between the connection chip and the ⋯ button, so the operator can always see that
+traffic is being recorded. Geometry and tokens: `inline-flex`, `gap-1` (5px), `padding 0 4px`, mono 10.5px
+`--red` text with **no fill and no border** (it is a status readout, not a control), a 6px `--red` leading dot
+(`.anim-pulse-dot.anim-pulse-dot--red`; under `prefers-reduced-motion` the dot is still and the word carries the signal), then the
+word `$t('browserPane.network.label')` ("Network") and the time **remaining** until capture stops itself, `m:ss`,
+counting down once a second (the same `formatCountdown` as the pause chip). The native `title` reads
+`$t('browserPane.network.hint')` ("Network capture is on. It stops by itself and records no bodies unless the
+agent asked for them."). It is **not interactive**: there is no stop button, because capture ends by itself on its
+timer (10 min by default, 30 at most), on pane close, on Disconnect and when the kill-switch is switched off. The
+operator who wants it gone closes the pane or Disconnects the agent. At narrow widths (`@max-[300px]`) the word
+"Network" gives way and the dot plus the time remain; the countdown never hides. A pane with no active capture
+shows nothing here.
+
+**Lease confirm** (T571 U4, spec §7.1). A browser verb on a `lease` row (an `external` page, or any operator
+pane) raises the standard agent-action confirm (§6 "Agent-action confirm overlay"; same modal, same parked
+Inbox row) with this disclosure, all of it built by main from the pane registry and never from the agent's
+arguments:
+
+```
+An agent wants to drive a browser pane.
+
+Pane: ‹name› (‹short id›)          Opened by: operator | agent
+Site: ‹host› (external | local)     Folder: ‹~/path›
+
+The first thing it would do:
+  click  ‹role "name"›   |   type  (‹n› characters): "‹escaped preview›"   |   eval (‹n› characters): "‹escaped preview›"
+
+Allow lets agents drive this pane until it has had no agent write for 10 minutes. The permission belongs to
+the pane, not to the agent that asked. Nothing happens when you Allow: the agent is told to look at the page
+and call again. What an agent types runs as you on this page. Deny blocks writes to this pane for 5 minutes.
+```
+
+The disclosure is plain `--text` body copy in the existing overlay (no new colour). Page-authored text (an
+element's accessible name, an expression, typed text) is shown **escaped** (invisible and direction-changing
+characters spelled out, as the terminal confirm does) and cut at 200 characters with its true length stated.
+The prompt is built in main like the terminal confirm's (English, not translated); the fixed sentence "What an agent
+types runs as you on this page." is mandatory.
+
+**Trusted dev hosts dialog** (T571 U4, spec §7.2). `TrustedHostsDialog.vue`: a non-destructive `Dialog` (z-60, peer
+via `ui.dialog === 'trustedHosts'` + `ui.folderActionPath`), anatomy and tokens of "Rename folder". Header: title
+"Trusted dev hosts" + folder basename (mono `--text-4`), `X`. Body: an UPPERCASE eyebrow "Always trusted" listing
+the built-ins as read-only mono rows (`localhost`, `*.localhost`, `127.0.0.0/8`, `[::1]`; `--text-3`, no remove
+button); an eyebrow "Added by you" with one mono row per host (`--text-2`, a trailing 12px `x` to remove, 18×18
+target) and, when empty, the muted line "None yet."; below, one single-line input (placeholder
+`app.test or *.test`) with an **Add** button (`plus`, ghost) — Enter adds. A rejected value shows an inline
+`--red` 11px message under the input (never a toast). Muted hint: "Pages on these hosts count as local: agents
+can drive them without asking. Only exact host names and one-level wildcards. A name that merely resolves to
+loopback is never trusted by itself." Footer: **Close** only (each add or remove saves at once, like the
+terminal toggle). Persisted per EXACT folder through `userProjectsSetBrowserTrustedHosts`; **no agent verb edits
+the list**.
+
+**Zoom controls** (T572 U5, spec §9.1). At the right end of the address bar, after the URL field: a group of
+`minus` (18×18 icon button), a **percentage button** and `plus` (18×18). The percentage is mono 10.5px
+`--text-3`, `min-w-[34px]`, centred, a plain text button: clicking it resets to 100% (`$t('browserPane.zoom.reset')`
+is its title). Steps follow the browser ladder (25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300,
+400, 500%); the factor is clamped to 0.25–5. The zoom is **remembered per origin** and applied on every
+navigation, so the percentage shown is the one for the page now on screen. It is per site, not per pane: two panes
+on the same site (and the same cookie jar) change together, because the browser keeps one zoom per site. `Ctrl +`, `Ctrl −` and `Ctrl 0` do the
+same while the pane has focus (`browser.zoom.in|out|reset`). **In device mode the group is disabled, not hidden**
+(`text-text-disabled`, no hover, `cursor-default`, title `$t('browserPane.zoom.offInDevice')`), and shows `100%`
+(Q15). Below 330px the percentage button goes and `minus`/`plus` remain.
+
+**Device button and picker** (T572 U5, spec §9.2; approved mockup scenario "Device mode"). In the address bar, left
+of the zoom group: a `smartphone` 18×18 icon button, **Device mode** (`aria-expanded`, `bg-surface-2 text-text`
+while the picker is open or a device is active, accent text when active). It opens a popover anchored under it
+(§6 "Context menu" geometry: `--surface`, 1px `--border-2`, `--radius`, `--shadow-pop`, `anim-fade-in-scale`,
+`min-w-[220px]`; it registers with the native-overlay composable, so opening it freezes the view). Rows, 24px each:
+the seven presets as `‹name› · ‹w›×‹h› @‹dpr›` (mono 11px, the `‹name›` in `--text`, the rest in `--text-3`; the
+active one carries a `check` 12px `--accent` and an `--accent-soft` fill), a divider, then **Custom size…**, which
+swaps the list for the **free-size editor**: width, height (number inputs, mono 11px, `--bg`, 1px `--border`,
+`--radius-sm`, `--accent-line` on focus, 56px wide, 100–10000), DPR (0.5–5), a **Mobile** toggle (the `ToggleSwitch`
+primitive) and **Apply** (accent) / **Back** (ghost). When a device is active the list ends with **Reset device**
+(`rotate-ccw`, `--text-2`) which clears the whole emulation record. Presets are classes, never product names.
+
+**Device bar** (T572 U5). While a device is active, one more 28px row (`h-7`, `--bg`, `border-b border-border`,
+`px-2`, `gap-1`) sits under the address bar. Left to right: the **device chip** (`smartphone`/`tablet`/`laptop`/
+`monitor` 12px + `phone-m · 390×844 @3`, mono 10.5px `--text-2`, `--accent-soft` fill, 1px `--accent-line`,
+`rounded-full`, `padding 1px 8px`; clicking it opens the picker), then 18×18 icon buttons: **Rotate**
+(`rotate-ccw-square`: swaps width and height), **Light / dark** (`sun` when light, `moon` when dark; toggles
+`prefers-color-scheme`), **Reduced motion** (`wind`; `bg-surface-2 text-text` while on) and **Reset device** (`x`).
+A toggle that has not been set follows the page's own default and shows off. The row sits in the same place the
+mockup puts these controls in the address bar; a separate row is used so a narrow pane never has to hide one.
+`prefers-reduced-motion` needs no special handling here: nothing in the bar animates.
+
+**Device frame** (T572 U5, spec §9.2, §2.3). In device mode the host `<div>` is no longer the whole viewport area.
+The area under the bars becomes a **backdrop** (`--bg`, centred contents, `padding 12px`), holding the frame and a
+**caption** under it. The frame is `border 8px solid var(--color-surface-2)` outside a 1px `--border-2` ring,
+`--shadow-pop`, `--radius-lg` for phones and tablets (preset width ≤ 1100) and `--radius` for laptop and desktop;
+no notch, no status bar (the page paints its own). The frame's **inner box is the host `<div>` the native view is
+bounded to**, sized to the device size times the **fit scale** (the largest scale ≤ 1 at which the frame and the
+caption fit the backdrop; below 25% the backdrop scrolls instead). The caption is mono 10.5px `--text-3`, one
+line, centred: `fit 66% · touch on · mobile UA · prefers-color-scheme: light` (a segment is left out when it does
+not apply). The page renders at device size and is only displayed scaled: it never sees the fit scale.
+
+**Download prompt** (T572 U5, spec §3.2, Q16). When the operator starts a download in a pane (a real click or key
+on a link or button), main holds it and the pane shows one **prompt row** under the bars: 24px, `--accent-soft`
+fill, 1px `--accent-line` bottom border, `download` 12px `--accent`, the text "Save ‹file name› to
+`.harnu/out/downloads/`?" (11px `--text-2`; the file name mono, truncating), then **Save** (accent text button) and
+**Cancel** (ghost) at the right. No answer for 60 seconds cancels it. The file arrives in a private temporary folder and is moved into
+`.harnu/out/downloads/` only when the operator clicks **Save**, so nothing reaches the project before the answer, however
+small the file. One prompt at a time per pane; a second download while one waits is cancelled. After the decision the **notice strip** says "Saved ‹name›" or "Download
+cancelled" for the few seconds it takes to read, then clears itself; these two are reports, not warnings, so
+the strip uses `--accent-soft` fill, `--text-2` text and a `download` 11px `--accent` icon instead of the amber
+warning treatment (a failed download keeps the amber one). A download nobody asked for (a page script, no
+real click) is cancelled silently and never prompts. An agent's `browser_download` needs no prompt: the call itself
+is the request, and its ACK carries the path.
+
+**Frozen frame** (spec §2.4). When any registered overlay rectangle intersects a visible pane's rectangle, or an
+overlay is `fullscreen`, or a splitter or sidebar drag starts, main captures the view as a JPEG, the renderer
+paints it as an `<img>` filling the host (`object-fit: fill`, no border, no filter: it must look like the live
+page), and main hides the view. When the last overlay closes the view returns and the `<img>` is removed on the
+next frame. While frozen the page keeps running and agent verbs keep working; the operator sees a still image.
+No new colour or motion: the swap is instant (no fade, so a menu opening never flashes). Every app layer that can
+overlap a pane registers with the native-overlay composable: context menus, dialogs, popovers, palettes, toasts,
+the Split dropdown, and the pane's own ⋯ menu. A **parked** view (spec §2.3, a 1×1 view in the window's
+bottom-right corner) registers the same way and is hidden while an overlay intersects that corner.
+
+**Open from the Split menu.** The Split dropdown gains a **Browser** item (`globe`) that opens an operator pane at
+`about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
+agent partition (spec §3.4). Operator panes are unlimited; agent panes are capped at 4 per folder.
+
+**Page pane** (T569 U2, spec §4 and §5). A pane showing one of **our own files** served from `harnu-page://`
+(a project `.html`, or a panel an agent wrote). The page is still a native view, so every rule above holds; the
+chrome adds three things and changes one.
+
+- **Address field shows the file, not the address.** For a `page` origin the field shows the folder-relative path
+  (`.harnu/out/panels/status.html`) in the same mono 11px field instead of the opaque `harnu-page://f…/…` URL;
+  the origin badge reads `page` (`--accent-soft` fill, `--accent` text, as above). The header title falls back to
+  the file name. A page pane is **not** a place to type another site: Enter with an `http(s)` address still
+  navigates (and the badge changes with the origin class), a path is not an address.
+- **"Allow network" switch** (spec §4.3, Q3). Operator only: no verb can set it, and the control is rendered only
+  for a `page` origin. A pill button in the address bar, right of the field, `role="switch"` with `aria-checked`,
+  geometry of the origin badge (`padding 1px 6px`, 10px, `rounded-full`, 1px border) with a 10px icon.
+  **Off (default)**: `wifi-off`, `--surface-2` fill, `--text-3` text, 1px `--border`, text "Offline".
+  **On**: `wifi`, `--warning` text on a `--warning` 10% fill with a `--warning` 30% border, text "Network on",
+  because it relaxes the no-egress policy and must not look neutral. Toggling it reloads the page (the policy rides
+  the document response). The state lives on the pane. Native `title`: "Offline: the page cannot reach the
+  network. Click to allow it for this pane." / "Network on: the page can reach the network. Click to turn it
+  off." Focus ring is the standard `--accent-line` 1px.
+- **"File removed" placeholder** (spec §4.4). When the served file is deleted the native view is hidden and the
+  host shows a centred block on `--bg`: `file-x` 20px `--text-4`, the line "File removed" in 13px `--text-2`, the
+  path in mono 11px `--text-3`, and "Waiting for it to come back…" in 11px `--text-4`. No spinner and no motion. The
+  pane keeps watching: when the file is re-created the placeholder goes and the page reloads.
+
+- **"Paused to save memory" placeholder** (spec §10.1, mockup scenario "States"). A pane hidden for 10 minutes (one
+  named constant, `HIDDEN_DISCARD_MS`) has its page and native view released; the pane keeps its place and the host
+  shows a centred block on `--bg`: `moon` 20px `--text-4`, the line "Paused to save memory" in 13px `--text-2`, the
+  address and "hidden N min" in mono 11px `--text-3`, and a ghost button "Click to reload" (`rotate-cw` 12px, 24px
+  high, `--border-2` outline, `--text-2`, `--text-1`-on-hover, the standard `--accent-line` focus ring). No spinner
+  and no motion. A pane reopened after a restart shows the same block with "Not loaded yet" and "Load the page", and
+  loads by itself as soon as it is shown. Any verb that needs a live page also brings a discarded pane back, with
+  `revived: true` in its ACK. A discarded pane keeps its header chips, its pins and the operator's Disconnect and
+  Pause; it only has no page.
+
+#### Point-and-comment overlay (browser pane)
+
+T564 U6, spec `docs/specs/2026-10-21-T564-browser-pane.md` §8; approved mockup
+`docs/specs/T564-browser-pane-mockup/`, scenario "Comment", **Docked** variant. The operator points at a node
+of the page and types a request; it lands in the session as a `[harnu-comment]` turn. The feature is split along
+the one line that matters, **what the page can see**: the outline, the hint pill and the numbered pins are drawn
+**inside the page** (they must sit on its nodes); the composer is **app chrome** and never enters the page.
+
+**Activation.** A `message-square-plus` 18×18 icon button in the pane header (between the chip and the ⋯ menu,
+same geometry as the other header icons), `aria-pressed` while picking, and the `browser.overlay.toggle` action
+(`Ctrl+Shift+C`, browser-pane focus only). While picking, the button reads `bg-accent-soft text-accent`. Native
+`title`: "Comment on the page" followed by the CURRENT binding of `browser.overlay.toggle` in parentheses, rendered
+from the keybindings table (never hardcoded; no parentheses when the action is unbound). **Disconnected pane:** the
+button is `disabled` (`text-text-disabled`) and its title is the reason, "Comments are off here: you disconnected
+the agent from this pane." A **paused** pane still takes comments. Operator only: no verb switches it on.
+
+**Guest-drawn layers** (built by the guest preload into a closed shadow root, so they cannot use Tailwind or
+the app's CSS variables. **`--accent` and `--accent-ink` are the app theme's own values**, read when the mode is
+switched on and pushed with it (validated as plain colours), so the layers match whichever theme is active; the
+other literals below are kept in ONE constant block in `src/preload/overlay/styles.ts` and mirrored here). They
+are the only place a raw colour is allowed in this feature, because the page is another document.
+
+| Layer           | Spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Outline**     | `position: fixed` box over the hovered node: 1.5px `--accent` border, `--accent` at 14% fill, 3px radius, `pointer-events: none`. Follows the node on scroll and resize.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Outline tag** | Under the box's left edge (3px gap): mono 10.5px `--accent-ink` on `--accent`, `2px 6px`, `0 3px 3px 3px` radius, the role or tag plus its size, e.g. `button.btn.primary · 168×40`. Flips above the box when there is no room below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Hint pill**   | Fixed, top centre, 8px from the top: 11px `--text` on `rgba(23,18,14,.92)`, `4px 10px`, `rounded-full`, `--shadow-pop`, a `mouse-pointer-click` glyph, "Click an element to comment", then a `kbd` "Esc" and "to exit". `pointer-events: none`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Pin**         | A 20×20 marker with a pointed lower-left corner (`border-radius: 50% 50% 50% 2px`), its number centred (10.5px, 600), at the node's **top-right corner** as in the approved mockup (its left edge 4px inside the node's right edge, 14px above its top edge, clamped to the viewport), `0 2px 6px` shadow, `tabindex=-1` (pointer only: Tab never lands on it). **Draft:** white fill, 2px `--accent` border, `--accent` number. **Sent:** solid `--accent` fill, `--accent-ink` number, 55% opacity. **Detached** (its selector no longer matches): 2px _dashed_ `--text-3` border, `--text-3` number, drawn at its last rect, never removed. The pin is clickable and opens its comment in the composer. |
+
+No motion beyond the existing 80ms colour transition; under `prefers-reduced-motion` there is none.
+
+**Picking behaviour.** While active, trusted pointer events are consumed by the overlay: the page receives no
+picking click, no hover and no touch (a tap still produces the click that picks). **The keyboard keeps reaching
+the page**, except `Esc`, which is consumed and exits picking. A script-dispatched (untrusted) event is ignored.
+The host element carries every style that could hide or move it (`display`, `position`, `transform`,
+`visibility`, `opacity`, `z-index`, `pointer-events`) inline with `!important`, so page CSS cannot.
+
+**Docked composer** (app chrome, rendered by `BrowserPane.vue` between the host and the pane's bottom edge,
+`flex-shrink: 0`). **The host rect shrinks to make room** (spec §2.1): the composer is a sibling after the host
+`<div>`, never an overlay over it, so the native view is never covered and never needs to freeze.
+
+```
+├───────────────────────────────────────────────────────────────────────┤
+│   host <div>  (shorter while the composer is open)                    │
+├───────────────────────────────────────────────────────────────────────┤  1px --border
+│ ② Comment on div.pay · src/components/PayButton.vue:42 · crop + HTML… │  context line
+│ ┌───────────────────────────────────────────────────────────────────┐ │
+│ │ this corner is too rounded, make it a bit squarer                 │ │  textarea, min 52px
+│ └───────────────────────────────────────────────────────────────────┘ │
+│ Send to [🤖 Checkout polish ▾]        [Keep as draft ⇧↵] [Send ↵]     │  row
+├───────────────────────────────────────────────────────────────────────┤
+│ 💬 1 draft · 1 sent                              [Send 1 comment]     │  batch bar, 26px
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+- **Panel** — `--surface` fill, `border-t border-border`, `8px` padding, `gap-1.5`.
+- **Context line** — 11px `--text-3`, single line, truncating from the right: a 16×16 round **pin number**
+  (`--surface-2` fill, 2px `--accent` border, `--accent` 9.5px/600 number: the draft pin's look, on app tokens), "Comment on",
+  the **selector** in mono 11px `--text-2`, "·", the **source component** (`file:line`, mono) when known, "·",
+  then what is attached ("crop + HTML + 14 styles attached"). Every page-authored run (selector, component) is
+  rendered as **plain text** (`{{ }}`, never `v-html`) with a native `title` holding the full value.
+- **Textarea** — min-height 52px, grows to 8 lines then scrolls, `--bg` fill, 1px `--accent-line` border,
+  `--radius-sm`, 13px/20px `--text`; placeholder "What should change?". The caret is the real one; no fake
+  caret. 4000-character limit (the count appears only in the last 200).
+- **Row** — "Send to" 11px `--text-3`, the **destination picker**, a spacer, **Keep as draft** (ghost: 1px
+  `--border-2`, `--text-2`, a `kbd` "⇧↵") and **Send** (primary: `--accent` fill, `--accent-ink`, weight 500, a
+  `kbd` "↵"). Both buttons 24px, 11.5px, `--radius-sm`. They are disabled while the text is empty.
+- **Destination picker** — a 24px bordered button (`bot` 12px, the session title, `chevron-down`) opening a
+  standard menu (§6 "Context menu") that lists the folder's sessions, the pane's owner marked "owner"; the
+  choice is remembered per pane. The menu registers with the native-overlay composable like the ⋯ menu. With no
+  session at all it reads "No session — copies to clipboard" and is not openable.
+- **Batch bar** — 26px, `--accent-soft` fill, `border-t border-accent-line`, 11.5px `--text-2`, `px-2`:
+  `message-square` 12px, "**1 draft** · 1 sent" (the first count in `--text`, weight 500), a spacer, and a
+  ghost 20px **Send N comments** button. It shows whenever the pane has at least one draft or sent pin, even
+  with the composer closed. **With zero drafts** it shows only "M sent" and the button is not drawn (a disabled
+  "Send 0 comments" is never shown).
+- **Keys** — `Enter` sends this comment now; `Shift+Enter` keeps it as a draft; `Esc` closes the composer **and ends picking** in
+  one press (an empty composer discards its pin; a non-empty one is kept as a draft, so Esc never loses text). Composition (IME)
+  never submits.
+- **Narrow panes** — below 320px the "Send to" caption and the context line's "Comment on" go; the picker
+  shows the bot glyph and truncates the title; the button labels keep their `kbd` hints out (the hover title has
+  them).
+- **Disconnected pane** — said **up front**, never after typing: the header button is disabled (above), and a
+  composer left open shows one `--warning` 11px line with `triangle-alert` ("Comments are off here: you
+  disconnected the agent from this pane."), with Keep as draft, Send and Send N comments disabled. A paused pane
+  takes comments as usual.
+- **Result toasts** — sent: no toast (the Activity row "Comment sent to ‹session name›" is the record). Nowhere to
+  send: `warning` "No session to send to" with "The comment was copied to your clipboard." Refused (only the
+  disconnected case can reach main; the session could not take it): `warning` with the reason, and the draft is
+  kept until the message has really gone into the terminal.
+
+No new §9 token: the composer uses existing tokens only, and the guest layers above are the one documented place
+where literal values stand in for them.
+
 #### Review companion pane
 
 The pane that hosts the fresh session opened from the Review takeover's **Ask a
@@ -5540,6 +5884,20 @@ Right-click menu on a project row (`FolderMenu.vue`). Items:
   toggle: a linked worktree does not pick up its main worktree's value, and
   the entry is shown for every folder, worktree or not, each independently
   toggleable. Non-destructive, no `window.confirm`. No sidebar indicator.
+
+- **Toggle "Let agents read browser panes I open"** (icon `globe`, T571 U4), right after the
+  terminal toggle — the per-FOLDER opt-in that lets an agent read (and, through a lease, drive)
+  the browser panes the operator opens here (an agent-opened pane never needs it). **Default
+  OFF.** Alternates like the items above:
+  - Disabled → **"Let agents read browser panes I open"** → turns it on.
+  - Enabled → **"Stop agents reading browser panes I open"** → back to the default (agents are
+    refused `BROWSER_READ_NOT_ENABLED`); it also ends every browser lease in the folder.
+
+  **Per EXACT folder, never inherited**, like the terminal toggle. Non-destructive, no
+  `window.confirm`.
+
+- **"Trusted dev hosts…"** (icon `shield-check`, T571 U4) — opens the Trusted dev hosts dialog
+  (§6 "Trusted dev hosts dialog"). Per EXACT folder. Shown for every folder.
 
 - Toggle Hide / Unhide, which **flips** according to the project's state:
   - Visible project → **Hide** (icon `eye-off`) → hides the project.

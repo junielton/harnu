@@ -19,6 +19,7 @@ import NewWorktreeDialog from './components/NewWorktreeDialog.vue'
 import NewFolderDialog from './components/NewFolderDialog.vue'
 import OpenSubfolderDialog from './components/OpenSubfolderDialog.vue'
 import RenameFolderDialog from './components/RenameFolderDialog.vue'
+import TrustedHostsDialog from './components/TrustedHostsDialog.vue'
 import RenameRepoDialog from './components/RenameRepoDialog.vue'
 import MemoryLocationDialog from './components/MemoryLocationDialog.vue'
 import MissionsReviewDialog from './components/MissionsReviewDialog.vue'
@@ -52,6 +53,7 @@ import {
 import { closeTakeoverBinding, installKeyOrigin } from './lib/takeover-esc'
 import { isMac } from './lib/platform'
 import { useKeybindingsStore } from './stores/keybindings'
+import { useBrowserStore } from './stores/browser'
 import { useFolderActions } from './composables/useFolderActions'
 import {
   useSessionActions,
@@ -100,6 +102,9 @@ const companion = useCompanionStore()
 // defaults synchronously; `keybindings.init()` (main.ts) loads the file, and
 // `useShortcuts` below re-keys its renderer watchers whenever `resolved` changes.
 const keybindings = useKeybindingsStore()
+const browser = useBrowserStore()
+// T564 U1: main events, the native-overlay watcher and the forwarded-chord set (idempotent).
+browser.start()
 const folderActions = useFolderActions()
 // T486 §3.2 / §3.3: the Session menu's and the sidebar header's own functions.
 const sessionActions = useSessionActions()
@@ -1148,6 +1153,73 @@ useShortcuts(
       enabled: sidebarActions.hiddenFoldersAvailable,
       handler: () => sidebarActions.toggleHiddenFolders()
     },
+    // --- Browser pane (T564 U1, spec §2.5). ---
+    // `browser`-scope bindings run only from a chord a FOCUSED browser pane forwarded (main swallows the key
+    // and hands it over), so each acts on the pane that sent it (`browser.chordPaneId`). Zoom and the overlay
+    // toggle have their ids and labels here and are disabled until the zoom (U5) and overlay (U6) units land.
+    {
+      id: 'browser.back',
+      scope: 'browser',
+      keys: kb('browser.back'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.navigate(browser.chordPaneId!, { action: 'back' })
+    },
+    {
+      id: 'browser.forward',
+      scope: 'browser',
+      keys: kb('browser.forward'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.navigate(browser.chordPaneId!, { action: 'forward' })
+    },
+    {
+      id: 'browser.reload',
+      scope: 'browser',
+      keys: kb('browser.reload'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.navigate(browser.chordPaneId!, { action: 'reload' })
+    },
+    {
+      id: 'browser.focusAddress',
+      scope: 'browser',
+      keys: kb('browser.focusAddress'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => browser.requestFocusAddress(browser.chordPaneId!)
+    },
+    {
+      id: 'browser.devtools',
+      scope: 'browser',
+      keys: kb('browser.devtools'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void window.api.browserDevtools(browser.chordPaneId!)
+    },
+    {
+      id: 'browser.zoom.in',
+      scope: 'browser',
+      keys: kb('browser.zoom.in'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.zoom(browser.chordPaneId!, 'in')
+    },
+    {
+      id: 'browser.zoom.out',
+      scope: 'browser',
+      keys: kb('browser.zoom.out'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.zoom(browser.chordPaneId!, 'out')
+    },
+    {
+      id: 'browser.zoom.reset',
+      scope: 'browser',
+      keys: kb('browser.zoom.reset'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.zoom(browser.chordPaneId!, 'reset')
+    },
+    {
+      id: 'browser.overlay.toggle',
+      scope: 'browser',
+      keys: kb('browser.overlay.toggle'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.toggleOverlay(browser.chordPaneId!)
+    },
     // --- Sidebar arrow-key navigation (T-4.6). ---
     // The four arrow keys + Enter walk the flattened visible tree
     // (`folders → worktrees → sessions`). Scope stays `'global'` rather than
@@ -1740,6 +1812,7 @@ onUnmounted(() => {
       <NewFolderDialog />
       <OpenSubfolderDialog />
       <RenameFolderDialog />
+      <TrustedHostsDialog />
       <RenameRepoDialog />
       <MemoryLocationDialog />
       <MissionsReviewDialog />

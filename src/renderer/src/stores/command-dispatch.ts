@@ -27,8 +27,13 @@ import { i18n } from '../i18n'
 import { useSessionsStore } from './sessions'
 import { useHelpersStore } from './helpers'
 import { useNotificationsStore } from './notifications'
-import { makeCommandRouter, type CommandRouterActions } from './command-router'
+import { useUiStore } from './ui'
+import { makeCommandRouter, type CommandRouterActions, type UserTurnResult } from './command-router'
+import { sessionTitle } from '../lib/session-label'
 import { speech } from '../lib/speech'
+import { livePtyIdOf } from '../lib/live-pty-resolver'
+import { pasteAndSubmit } from '../components/prompt-inject'
+import { operatorInput, pasteWhenOperatorQuiet } from '../lib/operator-input'
 
 /**
  * A correlated command pushed from main over `onRendererCommand`. Mirrors
@@ -156,6 +161,72 @@ export function buildDispatchActions(): CommandRouterActions {
     // agent-opened board badges as unseen rather than stealing focus.
     addCanvasHelper: (worktreePath, filePath, cwd) =>
       helpers.addCanvasHelper(worktreePath, filePath, cwd, { origin: 'agent' }),
+    // T564 U1: a browser pane main created for an agent; background and badged like every agent pane.
+    addBrowserHelper: (worktreePath, spec) =>
+      helpers.addBrowserHelper(worktreePath, spec, { origin: 'agent' }),
+    // T569 U2 `session.userTurn`: a page event (later a comment) becomes a user turn in the owner session, else
+    // the folder's selected one. Same paste + quiescence-submit path as a lesson result (`MarkdownPane`).
+    deliverUserTurn: ({ sessionId, folder, text, source }) => {
+      const owner = sessionId !== null && sessions.findSessionById(sessionId) ? sessionId : null
+      const selected = sessions.selectedId
+      const selectedHere =
+        selected !== null &&
+        sessions.folders.some(
+          (f) => f.path === folder && f.sessions.some((s) => s.sessionId === selected)
+        )
+      const target = owner ?? (selectedHere ? selected : null)
+      if (!target) {
+        // Neither the owner nor a selected session of the folder: the event is held on the pane. A comment
+        // has its own answer (main copies it to the clipboard and the composer says so), so no toast here.
+        if (source !== 'overlay') {
+          useUiStore().pushToast({
+            kind: 'warning',
+            title: i18n.global.t('browserPane.pageEvent.heldTitle'),
+            description: i18n.global.t('browserPane.pageEvent.heldBody')
+          })
+        }
+        return { held: true }
+      }
+      const ptyId = livePtyIdOf(target)
+      if (!ptyId) return { parked: true, sessionId: target }
+      // Never interleave with the operator's own keystrokes in that terminal (spec §8.7 step 5): the paste waits
+      // until they have been quiet for 1500 ms. The ack comes AFTER the paste really happened, so a comment stays
+      // a draft until then; a terminal that died during the wait answers `parked` and main wakes the session.
+      const title = (() => {
+        const found = sessions.findSessionById(target)
+        return found ? sessionTitle(found, sessions.allSessions, i18n.global.t) : ''
+      })()
+      return pasteWhenOperatorQuiet(
+        {
+          tracker: operatorInput,
+          now: () => Date.now(),
+          setTimer: (fn, ms) => setTimeout(fn, ms),
+          paste: (id, body) => {
+            if (livePtyIdOf(target) !== id) return false
+            pasteAndSubmit(id, body)
+            return true
+          }
+        },
+        ptyId,
+        text
+      ).then((pasted): UserTurnResult => {
+        if (!pasted) return { parked: true, sessionId: target }
+        notifications.notify({
+          ts: Date.now(),
+          source: 'agent',
+          kind: 'info',
+          title:
+            source === 'page-event'
+              ? i18n.global.t('browserPane.pageEvent.sent')
+              : i18n.global.t('browserPane.pageEvent.sentComment', {
+                  session: title || target.slice(0, 8)
+                }),
+          sessionId: target,
+          folderPath: folder
+        })
+        return { delivered: true, sessionId: target }
+      })
+    },
     closeHelperByPath: (worktreePath, path) => helpers.closeHelperByPath(worktreePath, path),
     closeHelperById: (worktreePath, paneId) => helpers.closeHelperById(worktreePath, paneId),
     // T113 (background drain): the board-dispatch spawn WITHOUT selection — the
@@ -249,19 +320,27 @@ export function wireCommandDispatch(): () => void {
   const off = api.onRendererCommand((msg) => {
     if (!msg || typeof msg !== 'object') return
     const { requestId, command, payload } = msg as RendererCommandMessage
-    let result: unknown
+    const ack = (result: unknown): void => {
+      try {
+        api.rendererCommandAck?.(requestId, result)
+      } catch {
+        // Bridge torn down mid-flight (window closing) — drop the ack; the
+        // dispatch deadline on the main side evicts the request.
+      }
+    }
+    const failed = (err: unknown): { ok: false; error: string } => ({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err)
+    })
     try {
-      result = dispatch(command, payload)
+      const result = dispatch(command, payload)
+      // `session.userTurn` may wait for the operator to stop typing before it pastes: its ack is a promise.
+      if (result instanceof Promise) result.then(ack, (err) => ack(failed(err)))
+      else ack(result)
     } catch (err) {
       // The router already catches thrown actions; this guards the marshaling
       // itself so a malformed message never escapes the IPC callback.
-      result = { ok: false, error: err instanceof Error ? err.message : String(err) }
-    }
-    try {
-      api.rendererCommandAck?.(requestId, result)
-    } catch {
-      // Bridge torn down mid-flight (window closing) — drop the ack; the
-      // dispatch deadline on the main side evicts the request.
+      ack(failed(err))
     }
   })
 

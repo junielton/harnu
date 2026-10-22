@@ -39,6 +39,7 @@ export function shouldBumpImagePill(args: {
  * The fleet popover is added in a follow-up step.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
+import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useI18n } from 'vue-i18n'
 import { onClickOutside, onKeyStroke, useNow } from '@vueuse/core'
 import {
@@ -323,6 +324,10 @@ const fleetCost = computed(() =>
 // (T486 U4a) so their keybindings can open them and the App's Esc binding can
 // see them; each anchor is reported while its button renders.
 const popoverOpen = computed(() => ui.popovers.usagePanel)
+// The three footer popovers open UPWARD over the helper stack, so each registers with the native-overlay
+// freeze: a browser pane under one freezes instead of drawing over it (spec §2.4).
+const fleetPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-fleet-popover', fleetPopoverEl)
 const fleetRef = ref<HTMLElement | null>(null)
 onClickOutside(fleetRef, () => ui.closePopover('usagePanel'))
 onKeyStroke('Escape', () => ui.closePopover('usagePanel'))
@@ -334,6 +339,8 @@ watch(fleetVisible, (v) => ui.setPopoverAnchor('usagePanel', v), { immediate: tr
 const statusDotClass = computed(() => severityDotClass(status.severity))
 const statusLabel = computed(() => t(severityLabelKey(status.severity)))
 const statusOpen = computed(() => ui.popovers.claudeStatus)
+const statusPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-status-popover', statusPopoverEl)
 const statusRef = ref<HTMLElement | null>(null)
 ui.setPopoverAnchor('claudeStatus', true)
 onClickOutside(statusRef, () => ui.closePopover('claudeStatus'))
@@ -367,6 +374,8 @@ const {
 const imageFolderAlias = computed(() => sessions.selectedPath?.folder ?? '')
 
 const imagesPopoverOpen = computed(() => ui.popovers.pastedImages)
+const imagesPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-images-popover', imagesPopoverEl)
 const imagesRef = ref<HTMLElement | null>(null)
 // The pill hides at zero images, and the popover hangs off it.
 watch(imageCount, (n) => ui.setPopoverAnchor('pastedImages', n > 0), { immediate: true })
@@ -531,6 +540,7 @@ function openFullDashboard(): void {
       </button>
       <div
         v-if="imagesPopoverOpen"
+        ref="imagesPopoverEl"
         class="anim-fade-in-scale absolute bottom-full left-0 z-50 mb-1.5 w-[320px] rounded-lg border border-border-2 bg-surface-2 shadow-pop"
       >
         <FooterImagePopover
@@ -596,6 +606,7 @@ function openFullDashboard(): void {
         </button>
         <div
           v-if="statusOpen"
+          ref="statusPopoverEl"
           class="anim-fade-in-scale absolute bottom-full right-0 z-50 mb-1.5 w-[300px] rounded-lg border border-border-2 bg-surface-2 shadow-pop"
         >
           <ClaudeStatusPanel />
@@ -727,6 +738,7 @@ function openFullDashboard(): void {
         </button>
         <div
           v-if="popoverOpen"
+          ref="fleetPopoverEl"
           class="anim-fade-in-scale absolute bottom-full right-0 z-50 mb-1.5 w-[280px] rounded-lg border border-border-2 bg-surface-2 p-2 shadow-pop"
         >
           <UsagePanel />

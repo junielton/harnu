@@ -15,6 +15,7 @@ import OpenSubfolderDialog from '../../src/renderer/src/components/OpenSubfolder
 import RemoveWorktreeDialog from '../../src/renderer/src/components/RemoveWorktreeDialog.vue'
 import RenameRepoDialog from '../../src/renderer/src/components/RenameRepoDialog.vue'
 import SettingsDialog from '../../src/renderer/src/components/SettingsDialog.vue'
+import TrustedHostsDialog from '../../src/renderer/src/components/TrustedHostsDialog.vue'
 import { useUiStore } from '../../src/renderer/src/stores/ui'
 import type { SurfaceSpec, OpenedSurface } from './harness'
 
@@ -255,6 +256,16 @@ export const settings = storeDriven({
   named: () => ({ headerClose: headerButton, close: () => footerButtons().at(-1) ?? null })
 })
 
+export const trustedHosts = storeDriven({
+  file: 'TrustedHostsDialog.vue',
+  component: TrustedHostsDialog,
+  open: (ui) => ui.openTrustedHosts('/home/dev/org/proj/www'),
+  named: () => ({
+    input: () => q('[role="dialog"] input[type="text"]'),
+    close: headerButton
+  })
+})
+
 export const SURFACES_A: SurfaceSpec[] = [
   addFolder,
   claudeBoot,
@@ -266,5 +277,6 @@ export const SURFACES_A: SurfaceSpec[] = [
   removeWorktree,
   renameFolder,
   renameRepo,
-  settings
+  settings,
+  trustedHosts
 ]

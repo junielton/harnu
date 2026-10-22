@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, session, dialog } from 'electron'
+import { homedir } from 'node:os'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -58,6 +59,18 @@ import {
   dropOperatorScreenModels,
   livePtyDescriptors
 } from './pty'
+import { registerBrowserIpc } from './browser/browser-ipc'
+import {
+  bindBrowserBridge,
+  refreshBrowserTrustedHosts,
+  restoreBrowserPanes
+} from './browser/browser-service'
+import {
+  isFromAppWindow,
+  parseBrowserReadPayload,
+  parseTrustedHostsPayload
+} from './browser/folder-flag-ipc'
+import { pageSchemeEntry } from './browser/page-service'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
 import {
@@ -99,6 +112,8 @@ import {
   getUserProjectOrchestratorDefault,
   setUserProjectOrchestratorDefault,
   setUserProjectTerminalRead,
+  setUserProjectBrowserRead,
+  setUserProjectBrowserTrustedHosts,
   interceptActivePaths,
   setUserProjectBornFrom,
   listBornFromCandidates,
@@ -436,7 +451,9 @@ migrateUserData({
 // privileged-scheme table once at startup, and the mirrored ES modules need
 // `standard` (root-relative imports) + `secure` (module/WASM loading) + CORS
 // (the page itself is on file://). The handler is installed in `whenReady`.
-registerKokoroScheme()
+// T564 U2: the `harnu-page://` scheme is privileged in the SAME call (a second call would strip `secure` from
+// the voice scheme), at the same point (before ready).
+registerKokoroScheme([pageSchemeEntry()])
 
 /**
  * Last-resort crash handlers. The whole point of Harnu is to keep many live
@@ -497,6 +514,8 @@ app.whenReady().then(async () => {
   })
 
   registerPtyHandlers(() => mainWindow)
+  // T564 U1: the browser pane's view host + IPC (bounds, freeze, navigate, Disconnect/Pause).
+  registerBrowserIpc(() => mainWindow)
   // T127: System Monitor main core. `monitor:heap` heartbeat starts immediately
   // (always-on, negligible cost); `monitor:sample` only runs between a
   // `monitor:start`/`monitor:stop` pair (refcounted, driven by the takeover pane).
@@ -736,6 +755,8 @@ app.whenReady().then(async () => {
       /* not a real directory — ignore the CLI arg */
     }
   })
+  // T564 U2: page events ride the command bridge to a session as a user turn.
+  bindBrowserBridge(cmdBridge.bridge)
   void registerMcpServer(() => mainWindow, {
     bridge: cmdBridge.bridge,
     confirm: mcpConfirm.confirm
@@ -1022,6 +1043,49 @@ app.whenReady().then(async () => {
     }
   )
 
+  // T571: the browser pane's two operator-only folder settings. They widen what an agent may do, so (a) only the
+  // app window's own webContents may call them and (b) the payload must be exactly what the editor sends: a folder
+  // Harnu tracks, a boolean, and hosts that each pass `parseTrustedHost` (`browser/folder-flag-ipc.ts`).
+  const knownFoldersForBrowserFlags = async (): Promise<string[]> => {
+    const projects = (await readUserProjects()).projects
+    return [
+      ...projects.map((p) => p.path),
+      ...projects.flatMap((p) => p.worktrees.map((w) => w.path)),
+      ...(await scanFolders()).map((f) => f.path)
+    ]
+  }
+  const browserFlagCaller = (e: Electron.IpcMainInvokeEvent, channel: string): void => {
+    if (!isFromAppWindow(e.sender, mainWindow)) {
+      throw new Error(`${channel}: refused, not sent by the app window`)
+    }
+  }
+
+  // "Let agents read browser panes I open": per-folder opt-in (FolderMenu toggle), EXACT-PATH ONLY. Turning it off
+  // ends the folder's browser leases (done inside the setter).
+  ipcMain.handle('userProjects:setBrowserRead', async (e, raw: unknown) => {
+    browserFlagCaller(e, 'userProjects:setBrowserRead')
+    const parsed = parseBrowserReadPayload(raw, await knownFoldersForBrowserFlags(), homedir())
+    if (!parsed.ok) throw new Error(`userProjects:setBrowserRead: ${parsed.error}`)
+    const payload = toUserProjectsPayload(
+      await setUserProjectBrowserRead(parsed.targetPath, parsed.enabled)
+    )
+    await refreshBrowserTrustedHosts()
+    return payload
+  })
+
+  // The folder's trusted dev hosts (Trusted dev hosts dialog). The operator is the only writer; the edited list is
+  // re-applied to the open panes.
+  ipcMain.handle('userProjects:setBrowserTrustedHosts', async (e, raw: unknown) => {
+    browserFlagCaller(e, 'userProjects:setBrowserTrustedHosts')
+    const parsed = parseTrustedHostsPayload(raw, await knownFoldersForBrowserFlags(), homedir())
+    if (!parsed.ok) throw new Error(`userProjects:setBrowserTrustedHosts: ${parsed.error}`)
+    const payload = toUserProjectsPayload(
+      await setUserProjectBrowserTrustedHosts(parsed.targetPath, parsed.hosts)
+    )
+    await refreshBrowserTrustedHosts()
+    return payload
+  })
+
   // T98: the orchestrator role toggle (SessionMenu "Promote to orchestrator").
   // `arm`/`disarm` delegate straight to `orchestrator-guard.ts` (T109's guard +
   // hook registration); `list` hydrates the renderer's `orchestratorSessionIds`
@@ -1065,6 +1129,13 @@ app.whenReady().then(async () => {
   ipcMain.on('injection:clearUndelivered', (_e, sessionId: unknown) => {
     if (typeof sessionId === 'string' && sessionId) clearInjectionEscalation(sessionId)
   })
+
+  // T574: the browser panes `helpers.json` kept come back DISCARDED before the renderer hydrates its stacks, so the
+  // registry (and `browser_list`) knows them and their pins are ready when a pane mounts. A failure here must never
+  // keep the app from opening.
+  await restoreBrowserPanes().catch((err) =>
+    console.warn('[browser] restoring panes failed — they open empty', err)
+  )
 
   createWindow()
 

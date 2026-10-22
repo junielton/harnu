@@ -145,8 +145,18 @@ export type ShortcutActionId =
   | 'pane.toggleMaximize'
   | 'pane.close'
   | 'terminal.toggle'
+  // T564 U1 (spec §2.5): the browser pane's own actions, scoped to a focused browser pane.
+  | 'browser.overlay.toggle'
+  | 'browser.zoom.in'
+  | 'browser.zoom.out'
+  | 'browser.zoom.reset'
+  | 'browser.devtools'
+  | 'browser.reload'
+  | 'browser.back'
+  | 'browser.forward'
+  | 'browser.focusAddress'
 
-export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal'
+export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal' | 'browser'
 
 /**
  * The Settings pane's group headers (T486 §5.2), in display order. Every
@@ -449,7 +459,19 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   // the OS consumes ⌘⌥K / Ctrl+Alt+K even over the terminal pane; the actual
   // "open a pane" work is done by the renderer's `useShortcuts` handler, which
   // is also why it stays in the palette.
-  def('app.openKeybindings', 'app', 'Cmd+Alt+K', { ...MENU, reserved: true })
+  def('app.openKeybindings', 'app', 'Cmd+Alt+K', { ...MENU, reserved: true }),
+  // T564 U1 (spec §2.5): the browser pane's own actions. `browser` scope, so they only fire from a
+  // focused browser pane and never conflict with a `global` chord (`browser` wins on a forwarded chord). Focus-dependent, so never
+  // listed in the command palette (same reasoning as the `pane.*` rows).
+  def('browser.overlay.toggle', 'panes', 'Cmd+Shift+C', { scope: 'browser', palette: false }),
+  def('browser.zoom.in', 'panes', 'Cmd+=', { scope: 'browser', palette: false }),
+  def('browser.zoom.out', 'panes', 'Cmd+-', { scope: 'browser', palette: false }),
+  def('browser.zoom.reset', 'panes', 'Cmd+0', { scope: 'browser', palette: false }),
+  def('browser.devtools', 'panes', 'Cmd+Alt+I', { scope: 'browser', palette: false }),
+  def('browser.reload', 'panes', 'Cmd+R', { scope: 'browser', palette: false }),
+  def('browser.back', 'panes', 'Cmd+[', { scope: 'browser', palette: false }),
+  def('browser.forward', 'panes', 'Cmd+]', { scope: 'browser', palette: false }),
+  def('browser.focusAddress', 'panes', 'Cmd+L', { scope: 'browser', palette: false })
 ]
 
 export const DESCRIPTOR_BY_ID: Readonly<Record<ShortcutActionId, KeyBindingDescriptor>> =

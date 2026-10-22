@@ -549,6 +549,7 @@ describe('T298 AC-1: the exported open* view functions match the canonical regis
     'openOpenSubfolder',
     'openRenameFolder',
     'openRenameRepo',
+    'openTrustedHosts',
     'openMemoryLocation',
     'openMenu',
     'openFolderMenu',

@@ -20,7 +20,16 @@ import type { TelemetryPayload } from '../main/statusline'
 import type { TaskState, FailureReason } from '../main/hook-state'
 import type { PtyExitReason } from '../main/pty'
 import type { TerminalStatus } from '../main/terminal-lifecycle'
+import type {
+  BrowserActivityWord,
+  BrowserEmulatePatch,
+  BrowserOverlayRect,
+  BrowserPaneState,
+  BrowserPersistEvent,
+  BrowserRect
+} from '../main/browser/state-types'
 import type { TerminalChipState } from '../main/terminal-registry'
+import type { CommentPaneState, CommentSubmitResult, OverlayTheme } from '../shared/browser-comment'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
 import type { ShadowEntry } from '../main/responder-registry'
@@ -205,6 +214,25 @@ export type {
 // `FolderEntry`/`GitMeta` directly. `FolderEntry` is the wire shape; the store
 // enriches it into its own `Folder` (adds `expanded`/`pinned`).
 export type { FolderEntry, GitMeta }
+// T564 U1: the browser pane's wire types, so the renderer imports them from the barrel.
+export type {
+  BrowserActivityWord,
+  BrowserDeviceState,
+  BrowserEmulatePatch,
+  BrowserEmulationState,
+  BrowserNotice,
+  BrowserOverlayRect,
+  BrowserPaneState,
+  BrowserPersistEvent,
+  BrowserRect
+} from '../main/browser/state-types'
+// T564 U6: the point-and-comment wire types.
+export type {
+  CommentPaneState,
+  CommentPinView,
+  CommentSubmitResult,
+  OverlayTheme
+} from '../shared/browser-comment'
 
 // Bundled skills (T217). `bundled-skills.ts` is a node module (electron `app` +
 // fs), so the renderer imports the pane's wire types type-only.
@@ -2340,6 +2368,129 @@ const api = {
     ipcRenderer.invoke('mcp:agentTerminalWrites:get'),
   mcpAgentTerminalWritesSet: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('mcp:agentTerminalWrites:set', enabled),
+  // T564 U1: the "Allow agents to drive browser panes" kill-switch (default ON).
+  mcpAgentBrowserWritesGet: (): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentBrowserWrites:get'),
+  mcpAgentBrowserWritesSet: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentBrowserWrites:set', enabled),
+
+  // ---- T564 U1: the browser pane. The renderer owns geometry and chrome, main owns the native view. ----
+  /** The operator opened a pane (Split menu): main creates the guest view and returns its pane id. */
+  browserOpen: (payload: {
+    folder: string
+    url?: string
+  }): Promise<{ ok: true; paneId: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('browser:open', payload),
+  /** The pane host's rect in CSS px (rAF-throttled by the caller); `visible: false` hides the view. */
+  browserBounds: (payload: { paneId: string; rect: BrowserRect; visible: boolean }): void =>
+    ipcRenderer.send('browser:bounds', payload),
+  /** Every app layer that can overlap a pane (menus, dialogs, toasts, ...): rects or 'fullscreen'. */
+  browserOverlays: (overlays: BrowserOverlayRect[]): void =>
+    ipcRenderer.send('browser:overlays', overlays),
+  /** A splitter, pane or sidebar drag started or ended: freeze every visible view meanwhile. */
+  browserDrag: (active: boolean): void => ipcRenderer.send('browser:drag', active),
+  /** The frozen image is on screen; main may hide the native view now. */
+  browserFreezePainted: (paneId: string): void => ipcRenderer.send('browser:freezePainted', paneId),
+  /** The canonical chords the renderer binds in the global and browser scopes. */
+  browserSetChords: (chords: string[]): void => ipcRenderer.send('browser:setChords', chords),
+  browserNavigate: (payload: {
+    paneId: string
+    url?: string
+    action?: 'back' | 'forward' | 'reload' | 'stop'
+  }): Promise<{ ok: true } | { ok: false; scheme: string }> =>
+    ipcRenderer.invoke('browser:navigate', payload),
+  browserState: (paneId: string): Promise<BrowserPaneState | null> =>
+    ipcRenderer.invoke('browser:state', paneId),
+  /** T574: bring a discarded pane back ("Paused to save memory — click to reload"). Resolves whether it is live. */
+  browserRevive: (paneId: string): Promise<boolean> => ipcRenderer.invoke('browser:revive', paneId),
+  browserDestroy: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:destroy', paneId),
+  browserDevtools: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:devtools', paneId),
+  /** Move the OS keyboard focus from a guest page back to the app (a chord that needs the address bar). */
+  browserFocusApp: (): Promise<boolean> => ipcRenderer.invoke('browser:focusApp'),
+  browserDismissFlag: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:dismissFlag', paneId),
+  browserDismissNotice: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:dismissNotice', paneId),
+  /** Permanent: the agent loses reads and writes on this pane. No call reconnects it. */
+  browserDisconnect: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:disconnect', paneId),
+  /** Pause agent writes for 10 minutes; resolves the epoch ms the pause ends, or null if refused. */
+  browserPause: (paneId: string): Promise<number | null> =>
+    ipcRenderer.invoke('browser:pause', paneId),
+  browserResume: (paneId: string): Promise<boolean> => ipcRenderer.invoke('browser:resume', paneId),
+  /** T572 U5: zoom the pane's page one ladder step, or back to 100% (refused in device mode). Resolves the factor. */
+  browserZoom: (payload: {
+    paneId: string
+    action: 'in' | 'out' | 'reset'
+  }): Promise<number | null> => ipcRenderer.invoke('browser:zoom', payload),
+  /** T572 U5: the device picker: the same argument shape `browser_emulate` takes (plus `rotate`). */
+  browserEmulate: (payload: {
+    paneId: string
+    patch: BrowserEmulatePatch
+  }): Promise<{ ok: true } | { ok: false; detail: string }> =>
+    ipcRenderer.invoke('browser:emulate', payload),
+  /** T572 U5: answer the "Save to .harnu/out/downloads/?" prompt. */
+  browserDownloadDecision: (payload: { paneId: string; allow: boolean }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:downloadDecision', payload),
+  /** The operator's per-pane "Allow network" switch on a page pane (T569 U2). Operator only. */
+  browserSetAllowNetwork: (payload: { paneId: string; allow: boolean }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:setAllowNetwork', payload),
+  /** Switch point-and-comment on or off for a pane (T573). Operator only; no verb reaches it. */
+  browserOverlaySet: (payload: {
+    paneId: string
+    active: boolean
+    hint: string
+    exitHint: string
+    theme: OverlayTheme
+  }): Promise<boolean> => ipcRenderer.invoke('browser:overlaySet', payload),
+  /** The pins and the open composer of a pane (T573). */
+  browserCommentState: (paneId: string): Promise<CommentPaneState | null> =>
+    ipcRenderer.invoke('browser:commentState', paneId),
+  /** Open the docked composer on a pin, or close it (`pinId: null`). */
+  browserCommentOpen: (payload: { paneId: string; pinId: string | null }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:commentOpen', payload),
+  /** Keep the text typed in the composer as a draft on its pin. */
+  browserCommentSave: (payload: {
+    paneId: string
+    pinId: string
+    text: string
+  }): Promise<boolean> => ipcRenderer.invoke('browser:commentSave', payload),
+  /** Drop a draft pin (an empty composer closed with Esc). */
+  browserCommentDiscard: (payload: { paneId: string; pinId: string }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:commentDiscard', payload),
+  /** Send the named pins, or every saved draft, to a session as one `[harnu-comment]` turn. */
+  browserCommentSubmit: (payload: {
+    paneId: string
+    which: string[] | 'drafts'
+    sessionId: string | null
+  }): Promise<CommentSubmitResult> => ipcRenderer.invoke('browser:commentSubmit', payload),
+  onBrowserCommentState: (cb: (state: CommentPaneState) => void): (() => void) =>
+    subscribe('browser:commentState', cb),
+  onBrowserState: (cb: (state: BrowserPaneState) => void): (() => void) =>
+    subscribe('browser:state', cb),
+  /** T574: what to keep on a pane in `helpers.json` so a restart can restore it (pins, scroll). */
+  onBrowserPersist: (cb: (e: BrowserPersistEvent) => void): (() => void) =>
+    subscribe('browser:persist', cb),
+  onBrowserFreeze: (cb: (p: { paneId: string; dataUrl: string | null }) => void): (() => void) =>
+    subscribe('browser:freeze', cb),
+  onBrowserUnfreeze: (cb: (p: { paneId: string }) => void): (() => void) =>
+    subscribe('browser:unfreeze', cb),
+  onBrowserChord: (cb: (p: { paneId: string; chord: string }) => void): (() => void) =>
+    subscribe('browser:chord', cb),
+  onBrowserActivity: (
+    cb: (p: { paneId: string; word: BrowserActivityWord }) => void
+  ): (() => void) => subscribe('browser:activity', cb),
+  /** A popup the operator clicked open: add an operator-class pane (spec §3.2). */
+  onBrowserPopup: (
+    cb: (p: {
+      paneId: string
+      worktreePath: string
+      url: string
+      partition: 'operator' | 'agent'
+    }) => void
+  ): (() => void) => subscribe('browser:popup', cb),
   // T31: the Sentinel auto-denied a catastrophic command — surface it prominently.
   onSentinelBlocked: (cb: (p: { reason: string; sessionId: string }) => void): (() => void) =>
     subscribe('sentinel:blocked', cb),
@@ -2390,6 +2541,18 @@ const api = {
     enabled: boolean
   ): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:setTerminalRead', { targetPath, enabled }),
+  // T571: per-folder "let agents read browser panes I open" opt-in (FolderMenu toggle), exact path only.
+  userProjectsSetBrowserRead: (
+    targetPath: string,
+    enabled: boolean
+  ): Promise<UserProjectsPayload> =>
+    ipcRenderer.invoke('userProjects:setBrowserRead', { targetPath, enabled }),
+  // T571: replace a folder's trusted dev hosts (Trusted dev hosts dialog). Operator-only: no MCP verb exists.
+  userProjectsSetBrowserTrustedHosts: (
+    targetPath: string,
+    hosts: string[]
+  ): Promise<UserProjectsPayload> =>
+    ipcRenderer.invoke('userProjects:setBrowserTrustedHosts', { targetPath, hosts }),
   // T191: "Set parent folder" / "Clear parent folder" (folder menu) — the manual
   // override for the `bornFrom` lineage edge. Pass `null` to clear.
   userProjectsSetBornFrom: (

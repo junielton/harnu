@@ -384,6 +384,19 @@ const OBSERVE_ALLOW_VERBS: readonly string[] = [
   // `send_terminal` stay on the derived deny list below.
   'list_terminals',
   'read_terminal',
+  // T570 (T564 U3): the browser pane READ verbs. `browser_network` can write (it turns capture on) and stays
+  // on the derived deny list with every other browser verb.
+  'browser_list',
+  'browser_snapshot',
+  'browser_screenshot',
+  'browser_console',
+  'browser_wait_for',
+  // T569 U2: the two live-panel verbs. They are `page`-class only for EVERY caller (they refuse NOT_A_PAGE_PANE
+  // on a dev server or an external site), and a page pane is offline unless the operator allowed the network, so
+  // a read-only tick can keep a panel fresh with no way into anything else. Every other browser verb stays on
+  // the derived deny list below.
+  'browser_set_data',
+  'browser_patch',
   'create_card',
   'update_card',
   'notify'

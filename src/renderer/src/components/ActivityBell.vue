@@ -31,6 +31,7 @@
  * below.
  */
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Bell, ChevronDown, X } from 'lucide-vue-next'
@@ -56,6 +57,8 @@ const { t, te } = useI18n()
 
 const bellRef = ref<HTMLElement | null>(null)
 const popoverRef = ref<HTMLElement | null>(null)
+// An in-app popover: registers with the native-overlay freeze so a browser pane under it freezes (spec §2.4).
+useNativeOverlay('activity-popover', popoverRef)
 // The open flag lives in the ui store (T486 U4a) so `view.activity` opens it and
 // the App's Esc binding can see it. The bell is always rendered, so its anchor is
 // present for as long as this component is mounted.

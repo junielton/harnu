@@ -12,6 +12,7 @@ import { useFolderActions } from '../composables/useFolderActions'
 import { macWindowControlsInset } from '../lib/platform'
 import ActivityBell from './ActivityBell.vue'
 import MissionPill from './MissionPill.vue'
+import SplitMenu from './SplitMenu.vue'
 import {
   Terminal,
   Folder as FolderIcon,
@@ -517,6 +518,8 @@ function onKeydown(e: KeyboardEvent): void {
         >
           <Terminal :size="14" :stroke-width="1.5" />
         </button>
+        <!-- T564 U1: the Split dropdown — Terminal (the button above) or a Browser pane. -->
+        <SplitMenu @terminal="folderActions.newTerminal()" @browser="folderActions.newBrowser()" />
         <!-- Right helper-panel toggle (design.md §6 — Colapsar sidebars). Only
              shown when the worktree HAS panes (nothing to toggle otherwise); it
              stays visible while collapsed so the panel is always reopenable. -->

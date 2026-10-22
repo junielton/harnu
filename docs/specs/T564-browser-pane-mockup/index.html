@@ -1,0 +1,2190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser pane mockup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+    <style>
+      /* Tokens mirror src/renderer/src/styles/themes.css (default Ink / Dusk theme). */
+      :root {
+        --bg: #17120e;
+        --sidebar: #211c18;
+        --surface: #251f1b;
+        --surface-2: #29231f;
+        --border: #302a25;
+        --border-2: #38312c;
+        --text: #faf8f6;
+        --text-2: #ada59d;
+        --text-3: #948b80;
+        --text-4: #8e867e;
+        --text-disabled: #4a423c;
+        --accent: #8090b4;
+        --accent-soft: rgba(128, 144, 180, 0.12);
+        --accent-line: rgba(128, 144, 180, 0.35);
+        --accent-ink: #17120e;
+        --green: #7a9455;
+        --green-soft: rgba(122, 148, 85, 0.18);
+        --green-line: rgba(122, 148, 85, 0.35);
+        --red: #d1717c;
+        --red-soft: rgba(209, 113, 124, 0.1);
+        --red-line: rgba(209, 113, 124, 0.3);
+        --warning: #c08a3e;
+        --warning-soft: rgba(192, 138, 62, 0.1);
+        --warning-line: rgba(192, 138, 62, 0.3);
+        --radius-sm: 5px;
+        --radius: 7px;
+        --radius-lg: 10px;
+        --ease: cubic-bezier(0.16, 1, 0.3, 1);
+        --dur: 140ms;
+        --shadow-pop:
+          0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 12px 32px rgba(0, 0, 0, 0.45),
+          0 2px 8px rgba(0, 0, 0, 0.3);
+        --sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #0d0a08;
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 12.5px;
+        font-feature-settings: 'cv11', 'ss01', 'ss03';
+      }
+      svg.lucide {
+        width: 12px;
+        height: 12px;
+        stroke-width: 2;
+        flex-shrink: 0;
+      }
+      .mono {
+        font-family: var(--mono);
+      }
+      .eyebrow {
+        font-size: 10.5px;
+        line-height: 14px;
+        font-weight: 500;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        padding: 0;
+      }
+
+      /* ---------- mockup chrome (not part of the product) ---------- */
+      .mock-bar {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border);
+        background: #120e0b;
+        position: sticky;
+        top: 0;
+        z-index: 50;
+      }
+      .mock-bar h1 {
+        font-size: 15px;
+        font-weight: 500;
+        margin: 0 8px 0 0;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--border-2);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .seg button {
+        padding: 5px 11px;
+        color: var(--text-2);
+        font-size: 12px;
+        border-right: 1px solid var(--border-2);
+        transition: background var(--dur) var(--ease);
+      }
+      .seg button:last-child {
+        border-right: 0;
+      }
+      .seg button.on {
+        background: var(--accent-soft);
+        color: var(--text);
+      }
+      .seg-label {
+        color: var(--text-3);
+        font-size: 11px;
+        margin-right: 6px;
+      }
+      .stage {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        align-items: center;
+      }
+      .notes {
+        width: 1440px;
+        max-width: 100%;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+      .note {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        padding: 10px 12px;
+      }
+      .note b {
+        display: block;
+        font-weight: 500;
+        margin-bottom: 4px;
+        font-size: 12.5px;
+      }
+      .note p {
+        margin: 0;
+        color: var(--text-2);
+        font-size: 12px;
+        line-height: 18px;
+      }
+      .note .tag {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--accent);
+      }
+
+      /* ---------- app shell ---------- */
+      .app {
+        width: 1440px;
+        height: 860px;
+        max-width: 100%;
+        display: flex;
+        background: var(--bg);
+        border: 1px solid var(--border-2);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        box-shadow: var(--shadow-pop);
+      }
+      .sidebar {
+        width: 236px;
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        padding: 12px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex-shrink: 0;
+      }
+      .sb-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 8px 12px;
+        font-weight: 500;
+        font-size: 13px;
+      }
+      .sb-brand i {
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        background: var(--accent);
+        display: inline-block;
+      }
+      .sb-group {
+        color: var(--text-3);
+        padding: 10px 8px 4px;
+      }
+      .sb-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: var(--radius-sm);
+        color: var(--text-2);
+      }
+      .sb-row.sel {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .sb-row .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--text-disabled);
+      }
+      .sb-row .dot.work {
+        background: var(--green);
+      }
+      .sb-row .grow {
+        flex: 1;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .sb-row .meta {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-3);
+      }
+
+      .content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .topbar {
+        height: 40px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .crumb {
+        color: var(--text-3);
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .crumb b {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 11px;
+        border: 1px solid var(--border-2);
+        color: var(--text-2);
+      }
+      .pill.green {
+        border-color: var(--green-line);
+        background: var(--green-soft);
+        color: var(--green);
+      }
+      .pill.accent {
+        border-color: var(--accent-line);
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .pill .d {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .tb-btn {
+        height: 26px;
+        padding: 0 8px;
+        border-radius: var(--radius-sm);
+        color: var(--text-2);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+      }
+      .tb-btn:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+
+      .split {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      .term {
+        width: 520px;
+        flex-shrink: 0;
+        padding: 12px 14px;
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 19px;
+        color: var(--text-2);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .term .u {
+        color: var(--text);
+      }
+      .term .prompt {
+        color: var(--accent);
+      }
+      .term .dim {
+        color: var(--text-3);
+      }
+      .term .ok {
+        color: var(--green);
+      }
+      .term .warn {
+        color: var(--warning);
+      }
+      .term .block {
+        border-left: 2px solid var(--accent-line);
+        padding-left: 10px;
+      }
+      .term .block.data {
+        border-left-color: var(--warning-line);
+      }
+      .term .tool {
+        color: var(--text-3);
+      }
+      .term .tool b {
+        color: var(--text-2);
+        font-weight: 500;
+      }
+      .term .caret {
+        display: inline-block;
+        width: 7px;
+        height: 14px;
+        background: var(--text-2);
+        vertical-align: -2px;
+        animation: blink 1s steps(1) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+      .divider {
+        width: 6px;
+        display: flex;
+        justify-content: center;
+        flex-shrink: 0;
+        cursor: col-resize;
+      }
+      .divider::after {
+        content: '';
+        width: 1px;
+        background: var(--border-2);
+      }
+
+      .stack {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .pane {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        position: relative;
+      }
+      .pane + .pane > .ph {
+        border-top: 1px solid var(--border-2);
+        cursor: row-resize;
+      }
+
+      /* pane header: 24px strip, design.md §6 "Pane header" */
+      .ph {
+        height: 24px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--text-2);
+        white-space: nowrap;
+      }
+      .ph .name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .ph svg.lucide {
+        color: var(--text-3);
+      }
+      .ib {
+        width: 18px;
+        height: 18px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: var(--radius-sm);
+        color: var(--text-3);
+        transition:
+          background var(--dur) var(--ease),
+          color var(--dur) var(--ease);
+      }
+      .ib:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .ib.on {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .ib.on svg.lucide {
+        color: var(--accent);
+      }
+      .ib[disabled] {
+        opacity: 0.35;
+        cursor: default;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border-radius: 999px;
+        border: 1px solid var(--accent-line);
+        background: var(--accent-soft);
+        color: var(--accent);
+        padding: 1px 7px;
+        font-size: 10px;
+        max-width: 260px;
+        overflow: hidden;
+      }
+      .chip svg.lucide {
+        width: 10px;
+        height: 10px;
+        color: var(--accent) !important;
+      }
+      .chip .d {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex-shrink: 0;
+      }
+      .chip .d.live {
+        animation: pulse 1.4s var(--ease) infinite;
+      }
+      .chip .w {
+        color: var(--text-3);
+      }
+      .chip.muted {
+        border-color: var(--border-2);
+        background: transparent;
+        color: var(--text-3);
+      }
+      .chip.muted .d {
+        background: var(--text-disabled);
+      }
+      .chip.warn {
+        border-color: var(--warning-line);
+        background: var(--warning-soft);
+        color: var(--warning);
+      }
+      .chip.warn svg.lucide {
+        color: var(--warning) !important;
+      }
+      .chip.red {
+        border-color: var(--red-line);
+        background: var(--red-soft);
+        color: var(--red);
+      }
+      .chip.red .d {
+        background: var(--red);
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.35;
+        }
+      }
+      .sep {
+        width: 1px;
+        height: 12px;
+        background: var(--border-2);
+        margin: 0 2px;
+      }
+
+      /* address toolbar: second strip, 30px */
+      .tbar {
+        height: 30px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 6px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+      }
+      .url {
+        flex: 1;
+        min-width: 0;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+        border-radius: var(--radius-sm);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-2);
+        overflow: hidden;
+        white-space: nowrap;
+      }
+      .url .host {
+        color: var(--text);
+      }
+      .origin {
+        font-family: var(--sans);
+        font-size: 10px;
+        padding: 0 6px;
+        height: 16px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border-radius: 999px;
+        border: 1px solid var(--border-2);
+        color: var(--text-2);
+        flex-shrink: 0;
+      }
+      .origin.local {
+        border-color: var(--green-line);
+        color: var(--green);
+        background: var(--green-soft);
+      }
+      .origin.page {
+        border-color: var(--accent-line);
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .origin.ext {
+        border-color: var(--warning-line);
+        color: var(--warning);
+        background: var(--warning-soft);
+      }
+      .origin svg.lucide {
+        width: 10px;
+        height: 10px;
+      }
+      .zoom {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        height: 22px;
+      }
+      .zoom .ib {
+        width: 20px;
+        height: 20px;
+      }
+      .zoom span {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--text-2);
+        width: 36px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+      .zoom.off {
+        opacity: 0.4;
+      }
+      .devsel {
+        height: 22px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 0 7px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--text-2);
+      }
+      .devsel.on {
+        border-color: var(--accent-line);
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .devsel.on svg.lucide {
+        color: var(--accent);
+      }
+      .rec {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10.5px;
+        color: var(--red);
+        font-family: var(--mono);
+        padding: 0 4px;
+      }
+      .rec .d {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--red);
+        animation: pulse 1.4s infinite;
+      }
+
+      /* guest viewport */
+      .vp {
+        flex: 1;
+        min-height: 0;
+        position: relative;
+        overflow: hidden;
+        background: #fff;
+      }
+      .vp.dev-backdrop {
+        background: #1b1612;
+        display: grid;
+        place-items: center;
+      }
+
+      /* overlay drawn in the guest (isolated world, closed shadow root) */
+      .hl {
+        position: absolute;
+        border: 1.5px solid var(--accent);
+        background: rgba(128, 144, 180, 0.14);
+        border-radius: 3px;
+        pointer-events: none;
+      }
+      .hl-tag {
+        position: absolute;
+        left: -1.5px;
+        top: calc(100% + 3px);
+        background: var(--accent);
+        color: var(--accent-ink);
+        font-family: var(--mono);
+        font-size: 10.5px;
+        padding: 2px 6px;
+        border-radius: 0 3px 3px 3px;
+        white-space: nowrap;
+      }
+      .pin {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        border-radius: 50% 50% 50% 2px;
+        display: grid;
+        place-items: center;
+        font-size: 10.5px;
+        font-weight: 600;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+      }
+      .pin.draft {
+        background: #fff;
+        color: var(--accent);
+        border: 2px solid var(--accent);
+      }
+      .pin.sent {
+        background: var(--accent);
+        color: var(--accent-ink);
+        opacity: 0.55;
+      }
+      .pick-hint {
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(23, 18, 14, 0.92);
+        color: var(--text);
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        box-shadow: var(--shadow-pop);
+        white-space: nowrap;
+      }
+      .kbd {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        border: 1px solid var(--border-2);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        padding: 0 4px;
+        color: var(--text-2);
+        background: var(--surface);
+      }
+
+      /* composer — docked in pane chrome (Q2 recommendation) */
+      .composer {
+        flex-shrink: 0;
+        border-top: 1px solid var(--border);
+        background: var(--surface);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .composer .ctx {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--text-3);
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .composer .ctx .mono {
+        color: var(--text-2);
+        font-size: 11px;
+      }
+      .composer .ctx .pnum {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        border: 2px solid var(--accent);
+        color: var(--accent);
+        display: grid;
+        place-items: center;
+        font-size: 9.5px;
+        font-weight: 600;
+      }
+      .ta {
+        min-height: 52px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--accent-line);
+        background: var(--bg);
+        padding: 7px 9px;
+        font-size: 13px;
+        line-height: 20px;
+        color: var(--text);
+      }
+      .ta .caret {
+        display: inline-block;
+        width: 1px;
+        height: 15px;
+        background: var(--text);
+        vertical-align: -3px;
+        animation: blink 1s steps(1) infinite;
+      }
+      .composer .row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .dest {
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-2);
+        font-size: 11.5px;
+        color: var(--text-2);
+      }
+      .btn {
+        height: 24px;
+        padding: 0 10px;
+        border-radius: var(--radius-sm);
+        font-size: 11.5px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .btn.ghost {
+        color: var(--text-2);
+        border: 1px solid var(--border-2);
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-ink);
+        font-weight: 500;
+      }
+      .btn .kbd {
+        background: transparent;
+        border-color: rgba(23, 18, 14, 0.3);
+        color: inherit;
+        padding: 0 3px;
+      }
+      .batchbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 26px;
+        padding: 0 8px;
+        background: var(--accent-soft);
+        border-top: 1px solid var(--accent-line);
+        font-size: 11.5px;
+        color: var(--text-2);
+        flex-shrink: 0;
+      }
+      .batchbar b {
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      /* composer — floating variant (decision 15 as written) */
+      .float-composer {
+        position: absolute;
+        width: 340px;
+        background: var(--surface);
+        border: 1px solid var(--border-2);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-pop);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .float-warn {
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        font-size: 11px;
+        line-height: 15px;
+        color: var(--warning);
+        background: var(--warning-soft);
+        border: 1px solid var(--warning-line);
+        border-radius: var(--radius-sm);
+        padding: 5px 7px;
+      }
+
+      /* ---------- fake guest site: Acme checkout (page-owned colors, not Harnu tokens) ---------- */
+      .site {
+        font-family: var(--sans);
+        color: #1f2329;
+        background: #f7f7f8;
+        height: 100%;
+      }
+      .site .nav {
+        height: 52px;
+        display: flex;
+        align-items: center;
+        padding: 0 24px;
+        background: #fff;
+        border-bottom: 1px solid #e6e6ea;
+        gap: 20px;
+        font-size: 13px;
+        color: #59606b;
+      }
+      .site .logo {
+        font-weight: 600;
+        color: #1f2329;
+        font-size: 15px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .site .logo i {
+        width: 18px;
+        height: 18px;
+        background: #e8613c;
+        border-radius: 4px;
+        display: inline-block;
+      }
+      .site .wrap {
+        padding: 24px;
+        display: grid;
+        grid-template-columns: 1fr 300px;
+        gap: 20px;
+      }
+      .site h2 {
+        font-size: 20px;
+        margin: 0 0 14px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .site .card {
+        background: #fff;
+        border: 1px solid #e6e6ea;
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .site label {
+        display: block;
+        font-size: 12px;
+        color: #59606b;
+        margin: 10px 0 4px;
+      }
+      .site .in {
+        height: 36px;
+        border: 1px solid #d9d9df;
+        border-radius: 8px;
+        background: #fff;
+        padding: 0 10px;
+        display: flex;
+        align-items: center;
+        font-size: 13px;
+        color: #1f2329;
+      }
+      .site .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .site .line {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        padding: 6px 0;
+        color: #59606b;
+      }
+      .site .line.total {
+        border-top: 1px solid #e6e6ea;
+        margin-top: 6px;
+        padding-top: 12px;
+        color: #1f2329;
+        font-size: 15px;
+      }
+      .site .pay {
+        margin-top: 14px;
+        height: 40px;
+        border-radius: 12px;
+        background: #e8613c;
+        color: #fff;
+        font-weight: 600;
+        font-size: 14px;
+        display: grid;
+        place-items: center;
+      }
+      .site .item {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 6px 0;
+        font-size: 13px;
+      }
+      .site .thumb {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #f2c6b6, #e8613c);
+      }
+
+      /* phone frame (device mode) */
+      .device {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      .device .meta {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--text-3);
+      }
+      .phone {
+        width: 390px;
+        height: 844px;
+        transform: scale(0.66);
+        transform-origin: top center;
+        margin-bottom: calc(-844px * 0.34);
+        border-radius: 44px;
+        border: 10px solid #0b0907;
+        box-shadow:
+          0 0 0 1px var(--border-2),
+          var(--shadow-pop);
+        overflow: hidden;
+        background: #f7f7f8;
+        position: relative;
+      }
+      .phone .site .nav {
+        height: 56px;
+        padding: 0 16px;
+      }
+      .phone .site .wrap {
+        grid-template-columns: 1fr;
+        padding: 16px;
+        gap: 14px;
+      }
+      .phone .notch {
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 110px;
+        height: 28px;
+        border-radius: 20px;
+        background: #0b0907;
+        z-index: 2;
+      }
+      .phone .status {
+        height: 44px;
+        background: #fff;
+      }
+
+      /* ---------- live panel (harnu-page://, agent-authored) ---------- */
+      .panel {
+        background: var(--bg);
+        color: var(--text);
+        height: 100%;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        font-family: var(--sans);
+        overflow: hidden;
+      }
+      .panel h3 {
+        font-size: 15px;
+        font-weight: 500;
+        margin: 0;
+      }
+      .panel .sub {
+        color: var(--text-3);
+        font-size: 11px;
+      }
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      .kpi {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: var(--radius);
+        padding: 10px 12px;
+      }
+      .kpi .v {
+        font-size: 20px;
+        font-weight: 500;
+        letter-spacing: -0.015em;
+        font-variant-numeric: tabular-nums;
+      }
+      .kpi .l {
+        color: var(--text-3);
+        font-size: 11px;
+      }
+      .bar {
+        height: 6px;
+        border-radius: 999px;
+        background: var(--surface-2);
+        overflow: hidden;
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+        background: var(--accent);
+        border-radius: 999px;
+      }
+      .tbl {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .tbl .tr {
+        display: grid;
+        grid-template-columns: 70px 1fr 110px 90px;
+        gap: 8px;
+        padding: 0 12px;
+        height: 32px;
+        align-items: center;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--text-2);
+      }
+      .tbl .tr:last-child {
+        border-bottom: 0;
+      }
+      .tbl .th {
+        color: var(--text-3);
+        height: 26px;
+        background: var(--surface);
+      }
+      .tbl .flash {
+        animation: flash 2.2s var(--ease) infinite;
+      }
+      @keyframes flash {
+        0%,
+        60%,
+        100% {
+          background: transparent;
+        }
+        10% {
+          background: var(--accent-soft);
+        }
+      }
+      .st {
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+        font-size: 11px;
+      }
+      .st .d {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .panel .actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: auto;
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
+      }
+      .datafoot {
+        flex-shrink: 0;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 8px;
+        background: var(--surface);
+        border-top: 1px solid var(--border);
+        font-size: 10.5px;
+        color: var(--text-3);
+        font-family: var(--mono);
+        white-space: nowrap;
+        overflow: hidden;
+      }
+
+      /* small shell pane under the browser */
+      .shell {
+        padding: 6px 10px;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        line-height: 17px;
+        color: var(--text-2);
+        background: var(--bg);
+        overflow: hidden;
+        flex: 1;
+      }
+
+      .footer {
+        height: 24px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 10px;
+        border-top: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 11px;
+        color: var(--text-3);
+        flex-shrink: 0;
+      }
+
+      /* ---------- states grid ---------- */
+      .states {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 1px;
+        background: var(--border);
+        flex: 1;
+        min-height: 0;
+      }
+      .states > .pane {
+        background: var(--bg);
+        min-width: 0;
+        overflow: hidden;
+      }
+      .placeholder {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+      }
+      .placeholder .box {
+        text-align: center;
+        color: var(--text-2);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+        font-size: 12.5px;
+      }
+      .placeholder .box svg.lucide {
+        width: 20px;
+        height: 20px;
+        color: var(--text-3);
+      }
+      .placeholder .box .h {
+        color: var(--text-3);
+        font-size: 11px;
+      }
+      .frozen-img {
+        position: absolute;
+        inset: 0;
+        filter: saturate(0.6) brightness(0.8);
+      }
+      .menu {
+        position: absolute;
+        background: var(--surface);
+        border: 1px solid var(--border-2);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-pop);
+        padding: 4px;
+        width: 190px;
+        z-index: 3;
+      }
+      .menu .mi {
+        height: 26px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 8px;
+        border-radius: var(--radius-sm);
+        color: var(--text-2);
+        font-size: 12px;
+      }
+      .menu .mi.hov {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .frozen-badge {
+        position: absolute;
+        left: 8px;
+        bottom: 8px;
+        background: rgba(23, 18, 14, 0.9);
+        color: var(--text-3);
+        font-size: 10.5px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border-2);
+      }
+      .hidden {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mock-bar">
+      <h1>Browser pane — mockup</h1>
+      <span class="seg-label">Scenario</span>
+      <div class="seg" id="seg-scene">
+        <button data-scene="comment" class="on">Comment on dev server</button>
+        <button data-scene="panel">Live panel</button>
+        <button data-scene="device">Device mode</button>
+        <button data-scene="states">States</button>
+      </div>
+      <span class="seg-label">Composer</span>
+      <div class="seg" id="seg-composer">
+        <button data-composer="docked" class="on">Docked (Q2 rec.)</button>
+        <button data-composer="floating">Floating at node</button>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <div class="sb-brand"><i></i>Harnu</div>
+          <div class="sb-group eyebrow">Pinned</div>
+          <div class="sb-row">
+            <i data-lucide="folder"></i><span class="grow">acme-store</span
+            ><span class="meta">main</span>
+          </div>
+          <div class="sb-row sel">
+            <span class="dot work"></span><span class="grow">Checkout polish</span
+            ><span class="meta">2m</span>
+          </div>
+          <div class="sb-row">
+            <span class="dot"></span><span class="grow">Fix cart totals</span
+            ><span class="meta">1h</span>
+          </div>
+          <div class="sb-row">
+            <i data-lucide="folder"></i><span class="grow">harnu</span
+            ><span class="meta">main</span>
+          </div>
+          <div class="sb-row">
+            <span class="dot work"></span><span class="grow">Orchestrator</span
+            ><span class="meta">now</span>
+          </div>
+          <div class="sb-row">
+            <span class="dot"></span><span class="grow">T565 browser pane docs</span
+            ><span class="meta">3h</span>
+          </div>
+        </aside>
+
+        <div class="content">
+          <header class="topbar">
+            <div class="crumb">
+              <span id="crumb-folder">acme-store</span><i data-lucide="chevron-right"></i
+              ><b id="crumb-session">Checkout polish</b>
+            </div>
+            <span class="pill green"><span class="d"></span>Working</span>
+            <span class="pill accent" id="mission-pill" style="display: none">Step 1 of 2</span>
+            <div class="spacer"></div>
+            <button class="tb-btn"><i data-lucide="folder-tree"></i>Browse files</button>
+            <button class="tb-btn">
+              <i data-lucide="columns-2"></i>Split<i data-lucide="chevron-down"></i>
+            </button>
+          </header>
+
+          <div class="split">
+            <!-- ===== Session terminal (left) ===== -->
+            <section class="term" id="term-comment">
+              <div class="dim">╭─ Claude Code · acme-store · main</div>
+              <div>
+                <span class="prompt">&gt;</span>
+                <span class="u"
+                  >open the dev server in a browser pane and check the checkout page</span
+                >
+              </div>
+              <div class="tool">
+                ● <b>browser_open</b>({ url: "http://localhost:5173/checkout", ownerSessionId })<br />&nbsp;&nbsp;⎿
+                paneId bp-3 · origin local · opened
+              </div>
+              <div class="tool">
+                ● <b>browser_snapshot</b>({ paneId: "bp-3" })<br />&nbsp;&nbsp;⎿ 42 nodes · 0
+                console errors
+              </div>
+              <div>The checkout renders cleanly. No console errors. Ready for your review.</div>
+              <div class="block">
+                <div class="u">[harnu-comment] localhost:5173 — 1 comment</div>
+                <div class="dim">URL: http://localhost:5173/checkout (page-authored, scrubbed)</div>
+                <div class="u">#1 comment: "the total should be bold"</div>
+                <div class="dim">
+                  #1 selector: .summary .line.total<br />#1 component:
+                  src/components/OrderSummary.vue:31<br />#1 crop:
+                  .harnu/out/browser/comments/b3f9/1.png<br />#1 styles: font-weight: 400;
+                  font-size: 15px; …
+                </div>
+              </div>
+              <div class="tool">
+                ● <b>Edit</b>(src/components/OrderSummary.vue)<br />&nbsp;&nbsp;⎿
+                <span class="ok">+1 −1</span> font-weight: 600 on .line.total
+              </div>
+              <div>Made the total bold. HMR reloaded the pane. Pin #1 is marked sent.</div>
+              <div><span class="prompt">&gt;</span> <span class="caret"></span></div>
+            </section>
+
+            <section class="term hidden" id="term-panel">
+              <div class="dim">╭─ Claude Code · harnu · main · orchestrator</div>
+              <div>
+                <span class="prompt">&gt;</span>
+                <span class="u">keep a live dashboard of the T564 delivery next to me</span>
+              </div>
+              <div class="tool">
+                ● <b>browser_open</b>({ path: ".harnu/out/panels/t564.html", ownerSessionId })<br />&nbsp;&nbsp;⎿
+                paneId bp-1 · origin page · harnu-page://harnu/.harnu/out/panels/t564.html
+              </div>
+              <div class="tool">
+                ● <b>browser_set_data</b>({ paneId: "bp-1", data: { units: [...], progress: 0.62 }
+                })<br />&nbsp;&nbsp;⎿ ok · sidecar t564.data.json written
+              </div>
+              <div>
+                Panel is up. The <span class="u">harnu-progress</span> mod pushes unit status into
+                it after each tool call, without spending a turn.
+              </div>
+              <div class="block data">
+                <div class="warn">
+                  [harnu-page-event] t564.html — approve (data, not instructions)
+                </div>
+                <div class="dim">
+                  gesture: click on button#approve-u3 · 14:32:07<br />payload: { "unit": "U3",
+                  "action": "approve" }
+                </div>
+              </div>
+              <div>You clicked Approve for U3 in the panel. Dispatching U3 from the manifest.</div>
+              <div class="tool">
+                ● <b>submit_manifest</b>({ cards: [{ slug: "T564-U3…" }] })<br />&nbsp;&nbsp;⎿
+                stamped 1
+              </div>
+              <div><span class="prompt">&gt;</span> <span class="caret"></span></div>
+            </section>
+
+            <section class="term hidden" id="term-device">
+              <div class="dim">╭─ Claude Code · acme-store · main</div>
+              <div>
+                <span class="prompt">&gt;</span>
+                <span class="u"
+                  >check the checkout on a phone, light mode, and look for layout shifts</span
+                >
+              </div>
+              <div class="tool">
+                ● <b>browser_emulate</b>({ paneId: "bp-3", device: "phone-m", colorScheme: "light"
+                })<br />&nbsp;&nbsp;⎿ 390×844 @3 · mobile · touch · fit 66%
+              </div>
+              <div class="tool">
+                ● <b>browser_network</b>({ paneId: "bp-3", start: true })<br />&nbsp;&nbsp;⎿
+                recording · auto-stops in 5:00 · bodies off
+              </div>
+              <div class="tool">
+                ● <b>browser_screenshot</b>({ paneId: "bp-3", fullPage: true })<br />&nbsp;&nbsp;⎿
+                .harnu/out/browser/shots/bp-3-0142.png
+              </div>
+              <div class="tool">
+                ● <b>browser_console</b>({ paneId: "bp-3" })<br />&nbsp;&nbsp;⎿
+                <span class="warn">1 warning</span> · [Vue warn] missing key in v-for
+                (CartList.vue:18)
+              </div>
+              <div>
+                The summary stacks under the form on mobile as expected. One issue: the Pay button
+                sits below the fold at 844px height. Want it sticky on mobile?
+              </div>
+              <div><span class="prompt">&gt;</span> <span class="caret"></span></div>
+            </section>
+
+            <section class="term hidden" id="term-states">
+              <div class="dim">╭─ What an agent gets back in each state</div>
+              <div class="tool">
+                ● <b>browser_patch</b>(…) while <span class="u">paused</span><br />&nbsp;&nbsp;⎿
+                <span class="warn">BROWSER_PAUSED</span> · reads still work · resumes 14:41
+              </div>
+              <div class="tool">
+                ● <b>browser_snapshot</b>(…) after <span class="u">Disconnect</span
+                ><br />&nbsp;&nbsp;⎿ <span class="warn">BROWSER_DISCONNECTED</span> · permanent ·
+                open a new pane
+              </div>
+              <div class="tool">
+                ● <b>browser_snapshot</b>(…) on a
+                <span class="u">discarded</span> pane<br />&nbsp;&nbsp;⎿ ok · revived: true ·
+                reloaded http://localhost:5173/
+              </div>
+              <div class="tool">
+                ● <b>browser_eval</b>(…) on <span class="u">external</span> pane<br />&nbsp;&nbsp;⎿
+                confirm raised → Allow types nothing →
+                <span class="warn">BROWSER_APPROVED_RESEND</span>
+              </div>
+              <div class="tool">
+                ● <b>browser_open</b>(…) 5th agent pane in folder<br />&nbsp;&nbsp;⎿
+                <span class="warn">PANE_LIMIT</span> · reuse bp-1, bp-2, bp-3, bp-4
+              </div>
+              <div><span class="prompt">&gt;</span> <span class="caret"></span></div>
+            </section>
+
+            <div class="divider"></div>
+
+            <!-- ===== Helper stack (right) ===== -->
+            <div class="stack">
+              <!-- Scenario 1: comment on dev server -->
+              <div class="pane" style="flex: 1" id="pane-comment">
+                <div class="ph">
+                  <i data-lucide="globe"></i><span class="name">localhost:5173</span>
+                  <span class="chip" title="Connected to Checkout polish — Go to session"
+                    ><span class="d"></span><i data-lucide="bot"></i>Connected to ‹Checkout
+                    polish›</span
+                  >
+                  <button class="ib" title="Disconnect agents from this pane">
+                    <i data-lucide="unplug"></i>
+                  </button>
+                  <div class="spacer"></div>
+                  <button class="ib on" title="Comment on page (Ctrl+Shift+C)">
+                    <i data-lucide="message-square-plus"></i>
+                  </button>
+                  <button class="ib" title="Pause agent for 10 min">
+                    <i data-lucide="pause"></i>
+                  </button>
+                  <button class="ib" title="DevTools"><i data-lucide="square-terminal"></i></button>
+                  <span class="sep"></span>
+                  <button class="ib" title="Maximize"><i data-lucide="maximize-2"></i></button>
+                  <button class="ib" title="Close"><i data-lucide="x"></i></button>
+                </div>
+                <div class="tbar">
+                  <button class="ib"><i data-lucide="arrow-left"></i></button>
+                  <button class="ib" disabled><i data-lucide="arrow-right"></i></button>
+                  <button class="ib"><i data-lucide="rotate-cw"></i></button>
+                  <div class="url">
+                    <span class="origin local"><i data-lucide="house"></i>local</span
+                    ><span>http://<span class="host">localhost:5173</span>/checkout</span>
+                  </div>
+                  <div class="zoom">
+                    <button class="ib"><i data-lucide="minus"></i></button><span>100%</span
+                    ><button class="ib"><i data-lucide="plus"></i></button>
+                  </div>
+                  <button class="devsel">
+                    <i data-lucide="monitor"></i>Responsive<i data-lucide="chevron-down"></i>
+                  </button>
+                </div>
+                <div class="vp" id="vp-comment">
+                  <div class="site">
+                    <div class="nav">
+                      <span class="logo"><i></i>Acme Store</span><span>Shop</span
+                      ><span>Cart (2)</span>
+                      <div style="flex: 1"></div>
+                      <span>Account</span>
+                    </div>
+                    <div class="wrap">
+                      <div>
+                        <h2>Checkout</h2>
+                        <div class="card">
+                          <label>Email</label>
+                          <div class="in">alex@example.com</div>
+                          <label>Card number</label>
+                          <div class="in">4242 4242 4242 4242</div>
+                          <div class="grid2">
+                            <div>
+                              <label>Expiry</label>
+                              <div class="in">12 / 28</div>
+                            </div>
+                            <div>
+                              <label>CVC</label>
+                              <div class="in">•••</div>
+                            </div>
+                          </div>
+                          <label>Name on card</label>
+                          <div class="in">Alex Doe</div>
+                        </div>
+                      </div>
+                      <div>
+                        <h2 style="visibility: hidden">.</h2>
+                        <div class="card summary">
+                          <div class="item">
+                            <span class="thumb"></span><span style="flex: 1">Ceramic mug</span
+                            ><span>$18.00</span>
+                          </div>
+                          <div class="item">
+                            <span
+                              class="thumb"
+                              style="background: linear-gradient(135deg, #c6d4f2, #5b74c4)"
+                            ></span
+                            ><span style="flex: 1">Linen towel</span><span>$24.00</span>
+                          </div>
+                          <div class="line"><span>Subtotal</span><span>$42.00</span></div>
+                          <div class="line"><span>Shipping</span><span>$5.00</span></div>
+                          <div class="line total" id="t-total" style="font-weight: 600">
+                            <span>Total</span><span>$47.00</span>
+                          </div>
+                          <div class="pay" id="t-pay">Pay $47.00</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- overlay, drawn in the guest's isolated world -->
+                  <div class="pick-hint">
+                    <i data-lucide="mouse-pointer-click"></i>Click an element to comment<span
+                      class="kbd"
+                      >Esc</span
+                    >to exit
+                  </div>
+                  <div class="pin sent" id="pin1" title="#1 sent">1</div>
+                  <div class="hl" id="hl"><span class="hl-tag" id="hl-tag">div.pay</span></div>
+                  <div class="pin draft" id="pin2">2</div>
+                  <!-- floating composer variant -->
+                  <div class="float-composer hidden" id="float-composer">
+                    <div class="composer" style="border: 0; padding: 0; background: transparent">
+                      <div class="ctx">
+                        <span class="pnum">2</span><span class="mono">div.pay</span>·<span
+                          >PayButton.vue:42</span
+                        >
+                      </div>
+                      <div class="ta">
+                        this corner is too rounded, make it a bit squarer<span class="caret"></span>
+                      </div>
+                      <div class="float-warn">
+                        <i data-lucide="triangle-alert"></i
+                        ><span
+                          >The page can read keystrokes typed here (spec §8.6). This is why Q2
+                          recommends docking the composer.</span
+                        >
+                      </div>
+                      <div class="row">
+                        <button class="dest">
+                          <i data-lucide="bot"></i>Checkout polish<i data-lucide="chevron-down"></i>
+                        </button>
+                        <div class="spacer"></div>
+                        <button class="btn ghost">Draft <span class="kbd">⇧↵</span></button
+                        ><button class="btn primary">Send <span class="kbd">↵</span></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- docked composer (pane chrome, outside the native view) -->
+                <div class="composer" id="docked-composer">
+                  <div class="ctx">
+                    <span class="pnum">2</span><span>Comment on</span
+                    ><span class="mono">div.pay</span> <span>·</span
+                    ><span class="mono">src/components/PayButton.vue:42</span> <span>·</span
+                    ><span>crop + HTML + 14 styles attached</span>
+                  </div>
+                  <div class="ta">
+                    this corner is too rounded, make it a bit squarer<span class="caret"></span>
+                  </div>
+                  <div class="row">
+                    <span style="color: var(--text-3); font-size: 11px">Send to</span>
+                    <button class="dest">
+                      <i data-lucide="bot"></i>Checkout polish<i data-lucide="chevron-down"></i>
+                    </button>
+                    <div class="spacer"></div>
+                    <button class="btn ghost">Keep as draft <span class="kbd">⇧↵</span></button>
+                    <button class="btn primary">Send <span class="kbd">↵</span></button>
+                  </div>
+                </div>
+                <div class="batchbar">
+                  <i data-lucide="message-square"></i><span><b>1 draft</b> · 1 sent</span>
+                  <div class="spacer" style="flex: 1"></div>
+                  <button class="btn ghost" style="height: 20px">Send 1 comment</button>
+                </div>
+              </div>
+
+              <!-- Scenario 2: live panel -->
+              <div class="pane hidden" style="flex: 1" id="pane-panel">
+                <div class="ph">
+                  <i data-lucide="layout-dashboard"></i><span class="name">t564.html</span>
+                  <span class="chip" title="Connected to Orchestrator"
+                    ><span class="d live"></span><i data-lucide="bot"></i>Connected to
+                    ‹Orchestrator›<span class="w">· writing</span></span
+                  >
+                  <button class="ib" title="Disconnect agents from this pane">
+                    <i data-lucide="unplug"></i>
+                  </button>
+                  <div class="spacer"></div>
+                  <button class="ib" title="Comment on page (Ctrl+Shift+C)">
+                    <i data-lucide="message-square-plus"></i>
+                  </button>
+                  <button class="ib" title="Pause agent for 10 min">
+                    <i data-lucide="pause"></i>
+                  </button>
+                  <button class="ib" title="DevTools"><i data-lucide="square-terminal"></i></button>
+                  <span class="sep"></span>
+                  <button class="ib"><i data-lucide="maximize-2"></i></button>
+                  <button class="ib"><i data-lucide="x"></i></button>
+                </div>
+                <div class="tbar">
+                  <button class="ib" disabled><i data-lucide="arrow-left"></i></button>
+                  <button class="ib" disabled><i data-lucide="arrow-right"></i></button>
+                  <button class="ib"><i data-lucide="rotate-cw"></i></button>
+                  <div class="url">
+                    <span class="origin page"><i data-lucide="file-code"></i>page</span
+                    ><span
+                      >harnu-page://harnu/<span class="host"
+                        >.harnu/out/panels/t564.html</span
+                      ></span
+                    >
+                  </div>
+                  <span class="origin" title="Network egress from harnu-page:// is blocked (Q3)"
+                    ><i data-lucide="wifi-off"></i>offline</span
+                  >
+                  <div class="zoom">
+                    <button class="ib"><i data-lucide="minus"></i></button><span>100%</span
+                    ><button class="ib"><i data-lucide="plus"></i></button>
+                  </div>
+                </div>
+                <div class="vp" style="background: var(--bg)">
+                  <div class="panel">
+                    <div>
+                      <h3>T564 browser pane — delivery</h3>
+                      <div class="sub mono">updated 2s ago by mod harnu-progress · setData #48</div>
+                    </div>
+                    <div class="kpis">
+                      <div class="kpi">
+                        <div class="v">5 / 8</div>
+                        <div class="l">units merged</div>
+                        <div class="bar" style="margin-top: 8px"><i style="width: 62%"></i></div>
+                      </div>
+                      <div class="kpi">
+                        <div class="v">2</div>
+                        <div class="l">sessions working</div>
+                      </div>
+                      <div class="kpi">
+                        <div class="v" style="color: var(--warning)">1</div>
+                        <div class="l">waiting on you</div>
+                      </div>
+                    </div>
+                    <div class="tbl">
+                      <div class="tr th eyebrow">
+                        <span>Unit</span><span>Scope</span><span>State</span><span>PR</span>
+                      </div>
+                      <div class="tr">
+                        <span class="mono">U0</span><span>Assumptions spike</span
+                        ><span class="st"
+                          ><span class="d" style="background: var(--green)"></span>merged</span
+                        ><span class="mono">#122</span>
+                      </div>
+                      <div class="tr">
+                        <span class="mono">U1</span><span>View host + bounds sync</span
+                        ><span class="st"
+                          ><span class="d" style="background: var(--green)"></span>merged</span
+                        ><span class="mono">#124</span>
+                      </div>
+                      <div class="tr flash">
+                        <span class="mono">U2</span><span>harnu-page:// + setData</span
+                        ><span class="st"
+                          ><span class="d" style="background: var(--accent)"></span>verifying</span
+                        ><span class="mono">#127</span>
+                      </div>
+                      <div class="tr">
+                        <span class="mono">U3</span><span>Overlay + comments</span
+                        ><span class="st"
+                          ><span class="d" style="background: var(--warning)"></span>needs
+                          approval</span
+                        ><span class="mono">—</span>
+                      </div>
+                      <div class="tr">
+                        <span class="mono">U4</span><span>Emulation + network</span
+                        ><span class="st"
+                          ><span class="d" style="background: var(--text-disabled)"></span
+                          >queued</span
+                        ><span class="mono">—</span>
+                      </div>
+                    </div>
+                    <div class="actions">
+                      <span class="sub">U3 is ready to dispatch.</span>
+                      <div style="flex: 1"></div>
+                      <button class="btn ghost">Open spec</button>
+                      <button class="btn primary" id="approve-u3">Approve U3</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="datafoot">
+                  <i data-lucide="database"></i>sidecar t564.data.json · 3.1 KB · writers:
+                  Orchestrator, mod harnu-progress, worker T564 watchdog
+                </div>
+              </div>
+
+              <!-- Scenario 3: device mode -->
+              <div class="pane hidden" style="flex: 1" id="pane-device">
+                <div class="ph">
+                  <i data-lucide="globe"></i><span class="name">localhost:5173</span>
+                  <span class="chip"
+                    ><span class="d live"></span><i data-lucide="bot"></i>Connected to ‹Checkout
+                    polish›<span class="w">· driving</span></span
+                  >
+                  <button class="ib"><i data-lucide="unplug"></i></button>
+                  <div class="spacer"></div>
+                  <span class="rec"><span class="d"></span>Network 4:12</span>
+                  <button class="ib"><i data-lucide="message-square-plus"></i></button>
+                  <button class="ib"><i data-lucide="pause"></i></button>
+                  <button class="ib"><i data-lucide="square-terminal"></i></button>
+                  <span class="sep"></span>
+                  <button class="ib"><i data-lucide="maximize-2"></i></button>
+                  <button class="ib"><i data-lucide="x"></i></button>
+                </div>
+                <div class="tbar">
+                  <button class="ib"><i data-lucide="arrow-left"></i></button>
+                  <button class="ib" disabled><i data-lucide="arrow-right"></i></button>
+                  <button class="ib"><i data-lucide="rotate-cw"></i></button>
+                  <div class="url">
+                    <span class="origin local"><i data-lucide="house"></i>local</span
+                    ><span>http://<span class="host">localhost:5173</span>/checkout</span>
+                  </div>
+                  <div class="zoom off" title="Zoom is off in device mode (Q15)">
+                    <button class="ib" disabled><i data-lucide="minus"></i></button><span>100%</span
+                    ><button class="ib" disabled><i data-lucide="plus"></i></button>
+                  </div>
+                  <button class="devsel on">
+                    <i data-lucide="smartphone"></i>phone-m · 390×844 @3<i
+                      data-lucide="chevron-down"
+                    ></i>
+                  </button>
+                  <button class="ib" title="Rotate"><i data-lucide="rotate-ccw-square"></i></button>
+                  <button class="ib on" title="Light / dark"><i data-lucide="sun"></i></button>
+                  <button class="ib" title="Reduced motion"><i data-lucide="wind"></i></button>
+                </div>
+                <div class="vp dev-backdrop">
+                  <div class="device">
+                    <div class="phone">
+                      <div class="notch"></div>
+                      <div class="status"></div>
+                      <div class="site">
+                        <div class="nav">
+                          <span class="logo"><i></i>Acme</span>
+                          <div style="flex: 1"></div>
+                          <span>☰</span>
+                        </div>
+                        <div class="wrap">
+                          <div>
+                            <h2>Checkout</h2>
+                            <div class="card">
+                              <label>Email</label>
+                              <div class="in">alex@example.com</div>
+                              <label>Card number</label>
+                              <div class="in">4242 4242 4242 4242</div>
+                              <div class="grid2">
+                                <div>
+                                  <label>Expiry</label>
+                                  <div class="in">12 / 28</div>
+                                </div>
+                                <div>
+                                  <label>CVC</label>
+                                  <div class="in">•••</div>
+                                </div>
+                              </div>
+                              <label>Name on card</label>
+                              <div class="in">Alex Doe</div>
+                            </div>
+                          </div>
+                          <div class="card">
+                            <div class="line"><span>Subtotal</span><span>$42.00</span></div>
+                            <div class="line"><span>Shipping</span><span>$5.00</span></div>
+                            <div class="line total" style="font-weight: 600">
+                              <span>Total</span><span>$47.00</span>
+                            </div>
+                            <div class="pay">Pay $47.00</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="meta">
+                      fit 66% · touch on · mobile UA · prefers-color-scheme: light
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Scenario 4: states grid -->
+              <div class="pane hidden" style="flex: 1" id="pane-states">
+                <div class="states">
+                  <!-- paused -->
+                  <div class="pane">
+                    <div class="ph">
+                      <i data-lucide="globe"></i><span class="name">localhost:5173</span>
+                      <span class="chip muted"
+                        ><span class="d"></span><i data-lucide="bot"></i>Agent paused · 9:41</span
+                      >
+                      <div class="spacer"></div>
+                      <button
+                        class="btn ghost"
+                        style="height: 18px; font-size: 10.5px; padding: 0 7px"
+                      >
+                        <i data-lucide="play"></i>Resume
+                      </button>
+                      <button class="ib"><i data-lucide="x"></i></button>
+                    </div>
+                    <div class="vp">
+                      <div
+                        class="site"
+                        style="transform: scale(0.6); transform-origin: top left; width: 166%"
+                      >
+                        <div class="nav">
+                          <span class="logo"><i></i>Acme Store</span>
+                        </div>
+                        <div class="wrap">
+                          <div>
+                            <h2>Checkout</h2>
+                            <div class="card">
+                              <label>Email</label>
+                              <div class="in">alex@example.com</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- frozen under app overlay -->
+                  <div class="pane">
+                    <div class="ph">
+                      <i data-lucide="globe"></i><span class="name">localhost:5173</span>
+                      <span class="chip"
+                        ><span class="d"></span><i data-lucide="bot"></i>Connected to ‹Checkout
+                        polish›</span
+                      >
+                      <div class="spacer"></div>
+                      <button class="ib on"><i data-lucide="ellipsis"></i></button>
+                      <button class="ib"><i data-lucide="x"></i></button>
+                    </div>
+                    <div class="vp">
+                      <div class="frozen-img">
+                        <div
+                          class="site"
+                          style="transform: scale(0.6); transform-origin: top left; width: 166%"
+                        >
+                          <div class="nav">
+                            <span class="logo"><i></i>Acme Store</span>
+                          </div>
+                          <div class="wrap">
+                            <div>
+                              <h2>Checkout</h2>
+                              <div class="card">
+                                <label>Email</label>
+                                <div class="in">alex@example.com</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="menu" style="right: 6px; top: 2px">
+                        <div class="mi"><i data-lucide="pause"></i>Pause agent for 10 min</div>
+                        <div class="mi hov"><i data-lucide="smartphone"></i>Device mode…</div>
+                        <div class="mi"><i data-lucide="square-terminal"></i>Open DevTools</div>
+                        <div class="mi"><i data-lucide="activity"></i>Network capture</div>
+                      </div>
+                      <span class="frozen-badge"
+                        >still frame while a menu overlaps the view (§2.4)</span
+                      >
+                    </div>
+                  </div>
+                  <!-- disconnected + external -->
+                  <div class="pane">
+                    <div class="ph">
+                      <i data-lucide="globe"></i><span class="name">docs.example.com</span>
+                      <span class="chip red"><span class="d"></span>Disconnected</span>
+                      <div class="spacer"></div>
+                      <button class="ib"><i data-lucide="x"></i></button>
+                    </div>
+                    <div class="tbar">
+                      <div class="url">
+                        <span class="origin ext"
+                          ><i data-lucide="triangle-alert"></i>opened by agent</span
+                        ><span
+                          >https://<span class="host">docs.example.com</span>/guide/install</span
+                        >
+                      </div>
+                    </div>
+                    <div class="vp">
+                      <div
+                        class="site"
+                        style="
+                          transform: scale(0.6);
+                          transform-origin: top left;
+                          width: 166%;
+                          background: #fff;
+                        "
+                      >
+                        <div class="nav">
+                          <span class="logo"><i style="background: #3c7be8"></i>Example Docs</span>
+                        </div>
+                        <div style="padding: 24px">
+                          <h2>Installation</h2>
+                          <p style="color: #59606b; font-size: 14px; line-height: 22px">
+                            Install the CLI with your package manager, then run the init command in
+                            your project root.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- discarded -->
+                  <div class="pane">
+                    <div class="ph">
+                      <i data-lucide="globe"></i><span class="name">localhost:3000</span>
+                      <span class="chip muted"
+                        ><span class="d"></span><i data-lucide="bot"></i>‹Fix cart totals›</span
+                      >
+                      <div class="spacer"></div>
+                      <button class="ib"><i data-lucide="x"></i></button>
+                    </div>
+                    <div class="placeholder">
+                      <div class="box">
+                        <i data-lucide="moon"></i><span>Paused to save memory</span
+                        ><span class="h mono">http://localhost:3000/cart · hidden 10 min</span
+                        ><button class="btn ghost">
+                          <i data-lucide="rotate-cw"></i>Click to reload
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- shell pane below (dev server) -->
+              <div class="pane" style="height: 150px" id="pane-shell">
+                <div class="ph">
+                  <i data-lucide="terminal"></i><span class="name">acme-store · npm run dev</span>
+                  <div class="spacer"></div>
+                  <button class="ib"><i data-lucide="maximize-2"></i></button
+                  ><button class="ib"><i data-lucide="x"></i></button>
+                </div>
+                <div class="shell">
+                  <div><span style="color: var(--green)">VITE v6.0.3</span> ready in 412 ms</div>
+                  <div>
+                    ➜ Local: <span style="color: var(--accent)">http://localhost:5173/</span>
+                  </div>
+                  <div style="color: var(--text-3)">
+                    14:31:52 [vite] hmr update /src/components/OrderSummary.vue
+                  </div>
+                  <div style="color: var(--text-3)">
+                    14:32:40 [vite] hmr update /src/components/PayButton.vue
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <footer class="footer">
+            <span class="mono">main</span><span>·</span><span>Opus 5.5</span><span>·</span
+            ><span>ctx 38%</span>
+            <div class="spacer" style="flex: 1"></div>
+            <span>3 browser panes · 2 agent-opened / 4</span>
+          </footer>
+        </div>
+      </div>
+
+      <!-- annotations per scenario -->
+      <div class="notes" id="notes-comment">
+        <div class="note">
+          <b>Point and comment</b>
+          <p>
+            The header's <span class="tag">message-square-plus</span> button (or
+            <span class="tag">Ctrl+Shift+C</span> with the pane focused) turns on picking. Hover
+            outlines the node with its tag and size, and a click pins it. Sent pins fade; draft pins
+            stay solid.
+          </p>
+        </div>
+        <div class="note">
+          <b>What the session receives</b>
+          <p>
+            On the left, the turn arrives as <span class="tag">[harnu-comment]</span>. Your text is
+            the request; selector, HTML, styles and URL are labelled as page-authored. The crop goes
+            by path, never as bytes.
+          </p>
+        </div>
+        <div class="note">
+          <b>Docked vs floating (Q2)</b>
+          <p>
+            Toggle "Composer" above. Docked lives in the app chrome: the page cannot read
+            keystrokes, and there is no overlay-under-native-view problem. Floating sits at the
+            node, but a hostile page can keylog it.
+          </p>
+        </div>
+      </div>
+      <div class="notes hidden" id="notes-panel">
+        <div class="note">
+          <b>Live panel = a file</b>
+          <p>
+            An agent or mod writes <span class="tag">.harnu/out/panels/t564.html</span> once, then
+            only sends <span class="tag">setData</span>. The page renders its own state. The
+            highlighted row is the last update.
+          </p>
+        </div>
+        <div class="note">
+          <b>Three writers, one door</b>
+          <p>
+            The session, the <span class="tag">harnu-progress</span> mod and an observe worker all
+            write through the same <span class="tag">browser_*</span> verbs. The footer strip shows
+            who wrote it. The <span class="tag">offline</span> badge means the page has no network
+            (Q3).
+          </p>
+        </div>
+        <div class="note">
+          <b>Page talks back</b>
+          <p>
+            "Approve U3" calls <span class="tag">harnu.emit</span>. It only counts after a real
+            click (gesture gate), and it arrives as <span class="tag">[harnu-page-event]</span>,
+            data rather than an order.
+          </p>
+        </div>
+      </div>
+      <div class="notes hidden" id="notes-device">
+        <div class="note">
+          <b>Real emulation, not a narrow window</b>
+          <p>
+            CDP sets the width, height, DPR, mobile flag, touch and UA. Media queries and
+            <span class="tag">&lt;meta viewport&gt;</span> behave as on a phone. The frame is scaled
+            to fit the pane, and the page never sees that scale.
+          </p>
+        </div>
+        <div class="note">
+          <b>Header controls</b>
+          <p>
+            Preset picker (classes: phone-s/m/l, tablet, laptop, desktop), free size, rotate,
+            light/dark and reduced motion. Zoom is disabled in device mode (Q15).
+          </p>
+        </div>
+        <div class="note">
+          <b>Network capture</b>
+          <p>
+            The red <span class="tag">Network 4:12</span> counter shows recording that the agent
+            turned on. It stops by itself and records no bodies unless they are asked for.
+          </p>
+        </div>
+      </div>
+      <div class="notes hidden" id="notes-states">
+        <div class="note">
+          <b>Pause and Disconnect</b>
+          <p>
+            Pause blocks agent writes for 10 min with a countdown and Resume, and reads keep
+            working. Disconnect is permanent: the chip turns red and the pane stays yours.
+          </p>
+        </div>
+        <div class="note">
+          <b>Frozen frame</b>
+          <p>
+            When a menu or dialog from the app overlaps the native view, the pane shows a still
+            image (<span class="tag">capturePage</span>) until it closes. Without this, the menu
+            would draw under the page.
+          </p>
+        </div>
+        <div class="note">
+          <b>External and discarded</b>
+          <p>
+            A domain opened by an agent gets the amber "opened by agent" badge. A pane hidden for 10
+            min is discarded to free 100–300 MB and reloads with one click, or on its own when a
+            verb needs it.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      lucide.createIcons()
+      const scenes = ['comment', 'panel', 'device', 'states']
+      let setScene = function (s) {
+        scenes.forEach((x) => {
+          document.getElementById('term-' + x).classList.toggle('hidden', x !== s)
+          document.getElementById('pane-' + x).classList.toggle('hidden', x !== s)
+          document.getElementById('notes-' + x).classList.toggle('hidden', x !== s)
+        })
+        document
+          .getElementById('pane-shell')
+          .classList.toggle('hidden', s === 'panel' || s === 'states')
+        document.getElementById('crumb-session').textContent =
+          s === 'panel' ? 'Orchestrator' : 'Checkout polish'
+        document.getElementById('crumb-folder').textContent = s === 'panel' ? 'harnu' : 'acme-store'
+        document.getElementById('mission-pill').style.display = s === 'panel' ? '' : 'none'
+        document
+          .querySelectorAll('#seg-scene button')
+          .forEach((b) => b.classList.toggle('on', b.dataset.scene === s))
+        document.getElementById('seg-composer').style.opacity = s === 'comment' ? 1 : 0.4
+      }
+      function setComposer(c) {
+        document.getElementById('docked-composer').classList.toggle('hidden', c !== 'docked')
+        document.getElementById('float-composer').classList.toggle('hidden', c !== 'floating')
+        document
+          .querySelectorAll('#seg-composer button')
+          .forEach((b) => b.classList.toggle('on', b.dataset.composer === c))
+      }
+      document
+        .querySelectorAll('#seg-scene button')
+        .forEach((b) => (b.onclick = () => setScene(b.dataset.scene)))
+      document
+        .querySelectorAll('#seg-composer button')
+        .forEach((b) => (b.onclick = () => setComposer(b.dataset.composer)))
+      const p = new URLSearchParams(location.search)
+      setScene(p.get('scene') || 'comment')
+      setComposer(p.get('composer') || 'docked')
+      function anchor() {
+        const vp = document.getElementById('vp-comment')
+        if (vp.offsetParent === null) return
+        const v = vp.getBoundingClientRect()
+        const r = (id) => {
+          const b = document.getElementById(id).getBoundingClientRect()
+          return { x: b.left - v.left, y: b.top - v.top, w: b.width, h: b.height }
+        }
+        const pay = r('t-pay'),
+          tot = r('t-total')
+        const hl = document.getElementById('hl')
+        Object.assign(hl.style, {
+          left: pay.x - 3 + 'px',
+          top: pay.y - 3 + 'px',
+          width: pay.w + 6 + 'px',
+          height: pay.h + 6 + 'px'
+        })
+        document.getElementById('hl-tag').textContent =
+          'div.pay · ' + Math.round(pay.w) + '×' + Math.round(pay.h)
+        const p2 = document.getElementById('pin2')
+        Object.assign(p2.style, { left: pay.x + pay.w - 4 + 'px', top: pay.y - 14 + 'px' })
+        const p1 = document.getElementById('pin1')
+        Object.assign(p1.style, { left: tot.x + tot.w - 4 + 'px', top: tot.y - 4 + 'px' })
+        const fc = document.getElementById('float-composer')
+        Object.assign(fc.style, {
+          left: Math.max(8, pay.x - 352) + 'px',
+          top: Math.max(8, pay.y - 150) + 'px'
+        })
+      }
+      const _ss = setScene
+      setScene = (s) => {
+        _ss(s)
+        requestAnimationFrame(anchor)
+      }
+      document
+        .querySelectorAll('#seg-scene button')
+        .forEach((b) => (b.onclick = () => setScene(b.dataset.scene)))
+      addEventListener('resize', anchor)
+      document.fonts.ready.then(anchor)
+      anchor()
+    </script>
+  </body>
+</html>

@@ -110,9 +110,13 @@ function shieldHint(b: ResolvedBinding): boolean {
   return !!DESCRIPTOR_BY_ID[b.id].shield && b.keys !== null
 }
 
-/** Not shielded, and bound to a chord the terminal keymap keeps for itself. */
+/**
+ * Not shielded, and bound to a chord the terminal keymap keeps for itself. A `browser`-scope row
+ * (T564) fires from a focused browser pane, never from a terminal, so the terminal competes for nothing.
+ */
 function terminalKeeps(b: ResolvedBinding): boolean {
-  if (DESCRIPTOR_BY_ID[b.id].shield || !b.keys) return false
+  const d = DESCRIPTOR_BY_ID[b.id]
+  if (d.shield || d.scope === 'browser' || !b.keys) return false
   const keys = canonicalizeChord(b.keys)
   return keys !== null && terminalKept.has(scopeChordKey('global', keys, isMac))
 }

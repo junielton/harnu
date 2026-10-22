@@ -17,8 +17,8 @@ import {
  * (`docs/specs/T486-keybindings-coverage-pass.md` §3). Pure (node env).
  *
  *  - AC-11: every §3 id exists with its §3 group, default, `menu` and `shield`.
- *  - AC-12: every non-reserved table id has exactly one `'global'` registration
- *    in `App.vue` — enumerated from the source, so a row without a handler (or a
+ *  - AC-12: every non-reserved table id has exactly one registration in its own
+ *    scope (`'global'`, or `'browser'` for the T564 rows) in `App.vue` — enumerated from the source, so a row without a handler (or a
  *    handler registered twice) fails here instead of shipping dead.
  *  - AC-13: the defaults resolve with no conflict and never land on a reserved
  *    chord, on both platform folds.
@@ -241,14 +241,15 @@ function appRegistrations(): Array<{ id: string; scope: string | null }> {
   ]
 }
 
-describe('AC-12 — one global registration per non-reserved id', () => {
+describe('AC-12 — one registration per non-reserved id, in its own scope', () => {
   const regs = appRegistrations()
 
   for (const d of KEYBINDINGS.filter((x) => !x.reserved)) {
     it(d.id, () => {
       const mine = regs.filter((r) => r.id === d.id)
       expect(mine, `${d.id} registrations in App.vue`).toHaveLength(1)
-      expect(mine[0].scope).toBe('global')
+      // `global` for every app row; the browser pane's rows (T564) register under `browser`.
+      expect(mine[0].scope).toBe(d.scope)
     })
   }
 })
