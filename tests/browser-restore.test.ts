@@ -11,6 +11,7 @@ import {
   sanitizePin,
   sanitizePins
 } from '../src/main/browser/restore-plan'
+import { createBrowserAccess, gateBrowserOp } from '../src/main/browser/access'
 import { MAX_PINS_PER_PANE } from '../src/shared/browser-comment'
 
 const WT = '/work/acme-store'
@@ -126,6 +127,42 @@ describe('a restored pane', () => {
     const r = restorePane({ id: 'bp-9', type: 'browser', worktreePath: WT }, 1)!
     expect(r.rec).toMatchObject({ openedBy: 'operator', partition: 'operator', name: '' })
     expect(r.rec.discarded?.url).toBe('about:blank')
+  })
+})
+
+describe('Disconnect survives a restart (F1, spec §7.4: for good)', () => {
+  it('a pane saved as disconnected comes back disconnected; the rest come back connected', () => {
+    expect(
+      restorePane(pane({ url: 'http://localhost:1', disconnected: true }), 1)!.disconnected
+    ).toBe(true)
+    expect(restorePane(pane({ url: 'http://localhost:1' }), 1)!.disconnected).toBe(false)
+    expect(restorePane(pane({ disconnected: 'yes' }), 1)!.disconnected).toBe(false)
+  })
+
+  it('applied to the access state it makes every verb refuse BROWSER_DISCONNECTED', () => {
+    const access = createBrowserAccess(() => 1)
+    const r = restorePane(
+      pane({ url: 'http://localhost:1', openedBy: 'agent', disconnected: true }),
+      1
+    )!
+    if (r.disconnected) access.disconnect(r.rec.paneId)
+    const gateInput = {
+      writesEnabled: true,
+      pane: {
+        openedBy: 'agent' as const,
+        originClass: 'local' as const,
+        disconnected: access.isDisconnected(r.rec.paneId),
+        paused: false
+      }
+    }
+    for (const op of [
+      'browser_snapshot',
+      'browser_navigate',
+      'browser_click',
+      'browser_close'
+    ] as const) {
+      expect(gateBrowserOp(op, gateInput), op).toBe('BROWSER_DISCONNECTED')
+    }
   })
 })
 

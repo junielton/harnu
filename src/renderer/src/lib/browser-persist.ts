@@ -15,6 +15,8 @@ export interface PersistableState {
   zoom: number
   emulation: BrowserEmulationState
   allowNetwork: boolean
+  /** The operator disconnected the agent from this pane: permanent, so it is kept across a restart (T574 F1). */
+  disconnected: boolean
 }
 
 /** The persisted fields of a pane payload that main pushes (the rest of the payload is set at creation). */
@@ -24,6 +26,7 @@ export interface PersistedPayloadFields {
   zoom?: number
   emulation?: BrowserEmulationState
   allowNetwork?: boolean
+  disconnected?: boolean
   scroll?: { x: number; y: number } | null
   pins?: unknown[]
 }
@@ -79,6 +82,8 @@ export function payloadPatchFromState(
     patch.emulation = plainCopy(state.emulation)
   }
   if (state.allowNetwork !== (saved.allowNetwork === true)) patch.allowNetwork = state.allowNetwork
+  // Disconnect is permanent and one-way: once saved it is never cleared.
+  if (state.disconnected && saved.disconnected !== true) patch.disconnected = true
   return Object.keys(patch).length > 0 ? patch : null
 }
 

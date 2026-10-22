@@ -85,7 +85,8 @@ describe('a browser pane in helpers.json', () => {
         pagePath: null,
         zoom: 1.25,
         emulation: emulation as never,
-        allowNetwork: false
+        allowNetwork: false,
+        disconnected: false
       })
     )
     helpers.patchBrowserPayload(PANE, (saved) =>
@@ -147,7 +148,8 @@ describe('a browser pane in helpers.json', () => {
         pagePath: null,
         zoom: 1,
         emulation: {},
-        allowNetwork: false
+        allowNetwork: false,
+        disconnected: false
       })
     )
     await flushed()

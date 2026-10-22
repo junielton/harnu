@@ -261,9 +261,11 @@ export async function restoreBrowserPanes(): Promise<number> {
     }
   }
   let restored = 0
-  for (const { rec, pins } of planRestore(inputs, Date.now())) {
+  for (const { rec, pins, disconnected } of planRestore(inputs, Date.now())) {
     if (browserRegistry.get(rec.paneId)) continue
     browserRegistry.add(rec)
+    // Disconnect is "for good" (spec §7.4): it survives a restart, so reads and writes refuse again.
+    if (disconnected) browserAccess.disconnect(rec.paneId)
     if (pins.length > 0) getOverlayBridge().restorePins(rec.paneId, pins)
     getBrowserHost().restoreDiscarded(rec.paneId)
     restored++

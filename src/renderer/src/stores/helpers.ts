@@ -214,6 +214,8 @@ export interface BrowserPanePayload {
   zoom?: number
   emulation?: BrowserEmulationState
   allowNetwork?: boolean
+  /** The operator disconnected the agent from this pane (permanent); restored as disconnected. */
+  disconnected?: boolean
   scroll?: { x: number; y: number } | null
   pins?: unknown[]
 }

@@ -89,6 +89,26 @@ describe('a pushed state', () => {
   })
 })
 
+describe('Disconnect is kept (F1)', () => {
+  it('saves a disconnect once, and never clears it', () => {
+    expect(
+      payloadPatchFromState({ url: 'http://localhost:3000/cart' }, state({ disconnected: true }))
+    ).toEqual({ disconnected: true })
+    expect(
+      payloadPatchFromState(
+        { url: 'http://localhost:3000/cart', disconnected: true },
+        state({ disconnected: true })
+      )
+    ).toBeNull()
+    expect(
+      payloadPatchFromState(
+        { url: 'http://localhost:3000/cart', disconnected: true },
+        state({ disconnected: false })
+      )
+    ).toBeNull()
+  })
+})
+
 describe('what reaches helpers.json is plain data', () => {
   it('copies the emulation record: a reactive proxy of the store can never cross the IPC write', () => {
     const emulation = { colorScheme: 'dark' as const }

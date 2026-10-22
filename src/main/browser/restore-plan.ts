@@ -45,6 +45,8 @@ export interface PersistedPaneInput {
 export interface RestoredPane {
   rec: BrowserPaneRecord
   pins: PinRecord[]
+  /** The operator disconnected the agent from this pane before the restart: it comes back disconnected (spec §7.4). */
+  disconnected: boolean
 }
 
 const PANE_ID = /^[A-Za-z0-9_-]{1,80}$/
@@ -207,7 +209,7 @@ export function restorePane(input: PersistedPaneInput, now: number): RestoredPan
       hiddenSince: null
     })
   }
-  return { rec, pins: sanitizePins(p.pins) }
+  return { rec, pins: sanitizePins(p.pins), disconnected: p.disconnected === true }
 }
 
 /** Every browser pane of every stack, restored; a duplicate pane id keeps its first. */
