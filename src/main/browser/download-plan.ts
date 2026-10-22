@@ -26,7 +26,6 @@ const MAX_NAME_BYTES = 240
  * `invoice‮fdp.exe` that looks like a PDF), the Arabic letter mark, zero-width characters and the byte-order mark.
  * They are removed from every name, so the prompt and the saved file never show one.
  */
-// eslint-disable-next-line no-misleading-character-class
 const INVISIBLE_RE = /[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g
 
 const byteLength = (text: string): number => Buffer.byteLength(text, 'utf8')
