@@ -99,6 +99,9 @@ vi.mock('../src/main/browser/view-host', async () => {
     viewToken(paneId: string): string | undefined {
       return h.pages.has(paneId) ? (h.tokens.get(paneId) ?? 'view-1') : undefined
     }
+    inputReady(): boolean {
+      return true
+    }
     inputScale(): number {
       return 1
     }

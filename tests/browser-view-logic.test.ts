@@ -268,7 +268,8 @@ describe('resolveGateInput (the shell half of the plan gate)', () => {
       // The U4 gate inputs default to "no opt-in, no lease, no cooldown".
       readOptIn: false,
       leaseActive: false,
-      writeDenied: false
+      writeDenied: false,
+      inputReady: true
     })
     expect(
       resolveGateInput({ ...base, rec, liveUrl: 'https://example.com/' }).input.pane?.originClass
