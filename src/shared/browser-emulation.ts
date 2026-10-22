@@ -194,12 +194,11 @@ export function checkEmulateArgs(
   }
   if (args.userAgent !== undefined) {
     const ua = args.userAgent
-    // eslint-disable-next-line no-control-regex
     if (
       typeof ua !== 'string' ||
       ua.length === 0 ||
       ua.length > MAX_USER_AGENT_CHARS ||
-      /[\u0000-\u001f\u007f]/.test(ua)
+      hasControlChars(ua)
     ) {
       return {
         code: 'BAD_ARGS',
@@ -225,6 +224,15 @@ export function checkEmulateArgs(
     }
   }
   return null
+}
+
+/** Any C0 control character or DEL: a user agent is one printable line. */
+function hasControlChars(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    if (c < 0x20 || c === 0x7f) return true
+  }
+  return false
 }
 
 function inSize(n: number): boolean {
