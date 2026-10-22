@@ -27,17 +27,17 @@ export function resolveGateInput(opts: {
 }): GateResolution {
   const { rec, writesEnabled } = opts
   const args = opts.args !== undefined ? { args: opts.args } : {}
-  if (!rec) return { folder: undefined, input: { pane: undefined, writesEnabled, ...args } }
+  const classify = { harnuPorts: opts.harnuPorts, extraTrustedHosts: opts.trustedHosts }
+  if (!rec)
+    return { folder: undefined, input: { pane: undefined, writesEnabled, classify, ...args } }
   return {
     folder: rec.folder,
     input: {
       writesEnabled,
+      classify,
       pane: {
         openedBy: rec.openedBy,
-        originClass: classifyOrigin(opts.liveUrl, {
-          extraTrustedHosts: opts.trustedHosts,
-          harnuPorts: opts.harnuPorts
-        }),
+        originClass: classifyOrigin(opts.liveUrl, classify),
         disconnected: opts.disconnected,
         paused: opts.paused
       },

@@ -127,10 +127,14 @@ export function startNativeOverlayWatcher(
   send = emit
   const observed = new WeakSet<Element>()
   const layerObserver = new MutationObserver(scheduleOverlayUpdate)
+  const sizeObserver =
+    typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleOverlayUpdate)
   const watchLayer = (el: Element): void => {
     if (observed.has(el) || el.id === 'app') return
     observed.add(el)
     layerObserver.observe(el, { childList: true, subtree: true, attributes: true })
+    // A body layer that grows without any DOM mutation (an image decoding, a font loading) re-reports too.
+    sizeObserver?.observe(el)
   }
   const bodyObserver = new MutationObserver(() => {
     for (const el of Array.from(document.body.children)) watchLayer(el)
@@ -139,12 +143,19 @@ export function startNativeOverlayWatcher(
   bodyObserver.observe(document.body, { childList: true })
   for (const el of Array.from(document.body.children)) watchLayer(el)
   window.addEventListener('resize', scheduleOverlayUpdate)
+  // Animated body layers (a toast, a dialog fading in) are read mid-animation the first time: read again when
+  // the animation or transition ends. Both events bubble, so one capture listener covers every layer.
+  window.addEventListener('animationend', scheduleOverlayUpdate, true)
+  window.addEventListener('transitionend', scheduleOverlayUpdate, true)
   scheduleOverlayUpdate()
   return () => {
     started = false
     bodyObserver.disconnect()
     layerObserver.disconnect()
+    sizeObserver?.disconnect()
     window.removeEventListener('resize', scheduleOverlayUpdate)
+    window.removeEventListener('animationend', scheduleOverlayUpdate, true)
+    window.removeEventListener('transitionend', scheduleOverlayUpdate, true)
     if (frame !== 0) cancelAnimationFrame(frame)
     frame = 0
     lastSignature = ''
@@ -152,12 +163,26 @@ export function startNativeOverlayWatcher(
   }
 }
 
-/** Register an in-app layer (one that lives inside `#app`). Returns its unregister function. */
+/**
+ * Register an in-app layer (one that lives inside `#app`). Returns its unregister function.
+ *
+ * The element is observed: a popover that GROWS after it opens (rows load, a section expands) re-reports its
+ * rect, and the rect is re-read when its own entry animation or transition ends: the first read happens
+ * mid `anim-fade-in-scale` (scale 0.97) and would otherwise stay about 3% small.
+ */
 export function registerOverlayElement(id: string, el: HTMLElement): () => void {
   explicit.set(id, el)
+  const observer =
+    typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleOverlayUpdate)
+  observer?.observe(el)
+  el.addEventListener('animationend', scheduleOverlayUpdate)
+  el.addEventListener('transitionend', scheduleOverlayUpdate)
   scheduleOverlayUpdate()
   return () => {
     explicit.delete(id)
+    observer?.disconnect()
+    el.removeEventListener('animationend', scheduleOverlayUpdate)
+    el.removeEventListener('transitionend', scheduleOverlayUpdate)
     scheduleOverlayUpdate()
   }
 }

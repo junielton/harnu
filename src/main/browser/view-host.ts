@@ -28,6 +28,8 @@ import {
 import { classifyOrigin, hostOf } from './origin-class'
 import {
   FreezeGeneration,
+  captureMatchesBounds,
+  freezeImagePlan,
   type GestureGate,
   certificateVerdictFor,
   createGestureGate,
@@ -454,15 +456,26 @@ export class BrowserViewHost implements BrowserHost {
       return
     }
     let dataUrl: string | null = null
-    try {
-      const rect = freezeCaptureRect(e.view.getBounds(), false)
-      const image = rect ? await e.wc.capturePage(rect) : await e.wc.capturePage()
-      // JPEG, not PNG: PNG at DPR 2 was over the 100 ms budget in U0 (A12).
-      if (!image.isEmpty()) {
-        dataUrl = `data:image/jpeg;base64,${image.toJPEG(FREEZE_JPEG_QUALITY).toString('base64')}`
+    const bounds = e.view.getBounds()
+    // Never stretch a tiny or stale capture over the host: a view that is not yet at its reported rect (or is
+    // still parked) is hidden instead, and the pane paints its own background (delta 3).
+    const plan = freezeImagePlan({
+      parked: e.parked,
+      bounds,
+      reported: e.rectCss,
+      zoomFactor: this.zoomFactor()
+    })
+    if (plan === 'capture') {
+      try {
+        const rect = freezeCaptureRect(bounds, false)
+        const image = rect ? await e.wc.capturePage(rect) : await e.wc.capturePage()
+        // JPEG, not PNG: PNG at DPR 2 was over the 100 ms budget in U0 (A12).
+        if (!image.isEmpty() && captureMatchesBounds(image.getSize(), bounds)) {
+          dataUrl = `data:image/jpeg;base64,${image.toJPEG(FREEZE_JPEG_QUALITY).toString('base64')}`
+        }
+      } catch {
+        // A failed capture degrades to a blank rect of the pane background, never to a live view under an overlay.
       }
-    } catch {
-      // A failed capture degrades to a blank rect of the pane background, never to a live view under an overlay.
     }
     if (!e.gen.isCurrent(gen) || !e.frozen) return
     this.send('browser:freeze', { paneId: e.paneId, dataUrl })

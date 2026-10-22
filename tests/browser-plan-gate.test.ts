@@ -219,3 +219,32 @@ describe('browser audit line (spec §3.2, §7.5)', () => {
     expect(summary(navigate(gate({ writesEnabled: false }), false))).toBe('none')
   })
 })
+
+describe("the audit classifies with the gate's own inputs (delta 3)", () => {
+  const nav = (url: string, classify?: BrowserGateInput['classify']): string =>
+    planToolCall({
+      tool: 'browser_navigate',
+      input: buildPlanInput('browser_navigate', { paneId: 'bp-1', url }, '/work/app'),
+      policy: policy(false),
+      now: 1,
+      browser: { ...gate(), ...(classify ? { classify } : {}) }
+    }).auditRecord.disclosedPayloadSummary
+
+  it("a URL on one of Harnu's own ports is audited external, exactly as the gate classifies it", () => {
+    expect(nav('http://localhost:9222/json', { harnuPorts: [9222] })).toBe(
+      'browser_navigate pane=bp-1 origin=external host=localhost:9222'
+    )
+    expect(nav('http://localhost:9222/json')).toBe(
+      'browser_navigate pane=bp-1 origin=local host=localhost:9222'
+    )
+  })
+
+  it('and a folder trusted host is audited local', () => {
+    expect(nav('http://shop.test/', { extraTrustedHosts: ['*.test'] })).toBe(
+      'browser_navigate pane=bp-1 origin=local host=shop.test'
+    )
+    expect(nav('http://shop.test/')).toBe(
+      'browser_navigate pane=bp-1 origin=external host=shop.test'
+    )
+  })
+})

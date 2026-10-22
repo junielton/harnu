@@ -4,7 +4,7 @@
  * which views to freeze or thaw, the freeze-generation race, the one-popup-per-activation gate, the certificate
  * host rule, and when the "opened by agent" flag changes.
  */
-import { needsFreeze, type OverlayRect, type Rect } from './bounds'
+import { needsFreeze, toViewBounds, type OverlayRect, type Rect } from './bounds'
 import { certificateDecision } from './nav-policy'
 import { isLoopbackHost, type OriginClass } from './origin-class'
 
@@ -147,4 +147,44 @@ export function flagAfterVerbNavigation(
 /** The flag after the OPERATOR navigates or dismisses it: gone (the operator picked this site). */
 export function flagAfterOperatorAction(): AgentFlag {
   return null
+}
+
+/* ---- What a freeze may paint (delta 3) ------------------------------------------------------------ */
+
+/**
+ * Whether a view may be captured as a frozen image at all, BEFORE capturing. A parked view (1×1 in the corner)
+ * or one whose bounds are not yet the reported rect (the renderer's rect report is late or lost, for example
+ * while the window is occluded and `requestAnimationFrame` is not running) would give a tiny or stale image
+ * that the pane then stretches over the whole host: a squashed frame. Such a view is only hidden.
+ */
+export function freezeImagePlan(opts: {
+  parked: boolean
+  /** The view's current bounds (window DIP). */
+  bounds: Rect
+  /** The rect the renderer reported for the host (CSS px), or `null` if it never did. */
+  reported: Rect | null
+  zoomFactor: number
+}): 'capture' | 'hide-only' {
+  if (opts.parked || opts.reported === null) return 'hide-only'
+  const want = toViewBounds(opts.reported, opts.zoomFactor)
+  const close = (a: number, b: number): boolean => Math.abs(a - b) <= 4
+  return close(opts.bounds.width, want.width) && close(opts.bounds.height, want.height)
+    ? 'capture'
+    : 'hide-only'
+}
+
+/**
+ * Whether a captured image is the size the view had, AFTER capturing. The image may be larger than the bounds
+ * on a HiDPI display (device pixels), but it must keep the view's aspect ratio and not be smaller than it: a
+ * capture of a view that is mid-resize or still carries a parking override is rejected and painted blank.
+ */
+export function captureMatchesBounds(
+  image: { width: number; height: number },
+  bounds: Rect
+): boolean {
+  if (image.width <= 0 || image.height <= 0 || bounds.width <= 0 || bounds.height <= 0) return false
+  if (image.width < bounds.width * 0.9 || image.height < bounds.height * 0.9) return false
+  const imageRatio = image.width / image.height
+  const boundsRatio = bounds.width / bounds.height
+  return Math.abs(imageRatio - boundsRatio) / boundsRatio <= 0.05
 }

@@ -10,7 +10,7 @@
  * (any write to an operator-opened pane) refuses `NOT_YET_AVAILABLE` rather than running unattended.
  */
 import { checkBrowserContent, type ContentRefusal } from './content-check'
-import type { OriginClass } from './origin-class'
+import type { OriginClass, OriginClassOptions } from './origin-class'
 
 /** Every `browser_*` op of the spec (§6.1); U1 wires `open`, `list`, `navigate` and `close`. */
 export const BROWSER_OPS = [
@@ -88,6 +88,11 @@ export interface BrowserGateInput {
    * `NOT_YET_AVAILABLE`) are judged in the spec §6.3 position: after Disconnect, before the kill-switch.
    */
   args?: Record<string, unknown>
+  /**
+   * The inputs the pane's origin class was computed with (Harnu's own ports, the folder's trusted hosts), so
+   * the audit row classifies a target URL exactly as the gate does.
+   */
+  classify?: OriginClassOptions
 }
 
 /**

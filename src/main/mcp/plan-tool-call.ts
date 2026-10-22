@@ -490,7 +490,8 @@ export function planToolCall({
     disclosedPayloadSummary = summarizeBrowserCall(
       def.op,
       parsed.value as Record<string, unknown>,
-      browser?.pane
+      browser?.pane,
+      browser?.classify
     )
   }
 

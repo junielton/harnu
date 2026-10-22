@@ -2,7 +2,7 @@
  * The audit line of a browser verb (T564 U1, spec §3.2 and §7.5): the pane id, the origin class and the HOST
  * only. Never the path, the query string, the fragment or the userinfo, and never page content. Pure.
  */
-import { classifyOrigin, type OriginClass } from './origin-class'
+import { classifyOrigin, type OriginClass, type OriginClassOptions } from './origin-class'
 
 /** Keep an id to a safe, short alphabet so a hostile value cannot pass for another field of the record. */
 function field(value: unknown): string {
@@ -23,12 +23,17 @@ function hostOnly(url: unknown): string {
 export function summarizeBrowserCall(
   op: string,
   args: Record<string, unknown>,
-  current: { originClass: OriginClass } | undefined
+  current: { originClass: OriginClass } | undefined,
+  /**
+   * The SAME classification inputs the gate uses (Harnu's own ports, the folder's trusted hosts), so the audit
+   * row and the gate never disagree about a URL such as `localhost:9222`.
+   */
+  classify: OriginClassOptions = {}
 ): string {
   if (op === 'browser_list') return 'browser_list'
   const url = args.url
   const origin: OriginClass =
-    typeof url === 'string' ? classifyOrigin(url) : (current?.originClass ?? 'blank')
+    typeof url === 'string' ? classifyOrigin(url, classify) : (current?.originClass ?? 'blank')
   const parts = [op]
   if (op !== 'browser_open') parts.push(`pane=${field(args.paneId)}`)
   parts.push(`origin=${origin}`)

@@ -249,7 +249,11 @@ describe('resolveGateInput (the shell half of the plan gate)', () => {
   it('an unknown pane resolves with no pane and no folder, keeping the kill-switch', () => {
     expect(resolveGateInput({ ...base, rec: undefined, writesEnabled: false })).toEqual({
       folder: undefined,
-      input: { pane: undefined, writesEnabled: false }
+      input: {
+        pane: undefined,
+        writesEnabled: false,
+        classify: { harnuPorts: [41999], extraTrustedHosts: [] }
+      }
     })
   })
 
@@ -287,5 +291,78 @@ describe('resolveGateInput (the shell half of the plan gate)', () => {
     })
     expect(r.input.pane).toMatchObject({ openedBy: 'operator', disconnected: true })
     expect(r.input.args).toEqual({ url: 'http://x.test' })
+  })
+})
+
+import { captureMatchesBounds, freezeImagePlan } from '../src/main/browser/view-logic'
+
+describe('freezeImagePlan (never stretch a tiny capture over the host)', () => {
+  const reported = { x: 400, y: 100, width: 600, height: 500 }
+  const atRect = { x: 400, y: 100, width: 600, height: 500 }
+
+  it('captures a live view that is at its reported rect', () => {
+    expect(freezeImagePlan({ parked: false, bounds: atRect, reported, zoomFactor: 1 })).toBe(
+      'capture'
+    )
+    expect(
+      freezeImagePlan({
+        parked: false,
+        bounds: { x: 500, y: 125, width: 750, height: 625 },
+        reported,
+        zoomFactor: 1.25
+      })
+    ).toBe('capture')
+  })
+
+  it('only hides a PARKED view, whatever rect the renderer reported', () => {
+    expect(
+      freezeImagePlan({
+        parked: true,
+        bounds: { x: 1279, y: 799, width: 1, height: 1 },
+        reported,
+        zoomFactor: 1
+      })
+    ).toBe('hide-only')
+  })
+
+  it('only hides a view the renderer never reported a rect for', () => {
+    expect(freezeImagePlan({ parked: false, bounds: atRect, reported: null, zoomFactor: 1 })).toBe(
+      'hide-only'
+    )
+  })
+
+  it('only hides a view whose bounds are not yet the reported rect (a late or lost report)', () => {
+    expect(
+      freezeImagePlan({
+        parked: false,
+        bounds: { x: 1279, y: 799, width: 1, height: 1 },
+        reported,
+        zoomFactor: 1
+      })
+    ).toBe('hide-only')
+    expect(
+      freezeImagePlan({ parked: false, bounds: { ...atRect, width: 300 }, reported, zoomFactor: 1 })
+    ).toBe('hide-only')
+    // A few px of rounding slack is fine.
+    expect(
+      freezeImagePlan({ parked: false, bounds: { ...atRect, width: 603 }, reported, zoomFactor: 1 })
+    ).toBe('capture')
+  })
+})
+
+describe('captureMatchesBounds', () => {
+  const bounds = { x: 0, y: 0, width: 600, height: 500 }
+
+  it('accepts an image of the view, at 1× or at device pixels', () => {
+    expect(captureMatchesBounds({ width: 600, height: 500 }, bounds)).toBe(true)
+    expect(captureMatchesBounds({ width: 1200, height: 1000 }, bounds)).toBe(true)
+  })
+
+  it('rejects a tiny, stale, or wrong-shaped image', () => {
+    expect(captureMatchesBounds({ width: 1, height: 1 }, bounds)).toBe(false)
+    expect(captureMatchesBounds({ width: 1280, height: 800 }, bounds)).toBe(false)
+    expect(captureMatchesBounds({ width: 300, height: 250 }, bounds)).toBe(false)
+    expect(captureMatchesBounds({ width: 0, height: 0 }, bounds)).toBe(false)
+    expect(captureMatchesBounds({ width: 600, height: 500 }, { ...bounds, width: 0 })).toBe(false)
   })
 })

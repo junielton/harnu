@@ -31,6 +31,7 @@ import { useBrowserStore } from '../stores/browser'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
+import { createFrameScheduler } from '../lib/frame-scheduler'
 import { sessionTitle } from '../lib/session-label'
 import {
   chipFor,
@@ -226,7 +227,6 @@ function onWindowPointerDown(ev: MouseEvent): void {
 /* ---- Host rectangle: what main positions the native view over ------------------------------------ */
 
 const hostEl = ref<HTMLElement | null>(null)
-let rafId = 0
 let last = ''
 /** Frames still to check after the last change, so a transition that moves the pane is followed to its end. */
 let settleFrames = 0
@@ -249,20 +249,34 @@ function report(): boolean {
 }
 
 function frame(): void {
-  rafId = 0
   // While the rect keeps changing (a drag, a transition) keep following it; stop a few frames after it settles.
   settleFrames = report() ? 6 : settleFrames - 1
-  if (settleFrames > 0) schedule()
+  if (settleFrames > 0) scheduler.schedule()
 }
 
 /**
- * Ask for a rect check on the next animation frame. Nothing runs while the layout is idle: the checks are
- * driven by what can move the pane (below), throttled to one per frame, instead of a perpetual rAF loop that
- * would keep the renderer awake. A `ResizeObserver` alone misses a pane that moves without changing size (a
- * sidebar collapse), which is why the triggers also include style/class mutations and transitions ending.
+ * Ask for a rect check soon. Nothing runs while the layout is idle: the checks are driven by what can move the
+ * pane (below), throttled to one per frame, instead of a perpetual rAF loop that would keep the renderer awake.
+ * A `ResizeObserver` alone misses a pane that moves without changing size (a sidebar collapse), which is why the
+ * triggers also include style/class mutations and transitions ending.
+ *
+ * The scheduler is NOT rAF alone: with the window occluded or minimized rAF stops, and a report that never
+ * goes out leaves the pane parked at 1×1 in main. It falls back to a timer after ~100 ms, or at once when the
+ * document is not visible.
  */
+const scheduler = createFrameScheduler(
+  {
+    requestFrame: (cb) => requestAnimationFrame(cb),
+    cancelFrame: (id) => cancelAnimationFrame(id),
+    setTimer: (cb, ms) => setTimeout(cb, ms),
+    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    isVisible: () => document.visibilityState === 'visible'
+  },
+  frame
+)
+
 function schedule(): void {
-  if (rafId === 0) rafId = requestAnimationFrame(frame)
+  scheduler.schedule()
 }
 
 let resizeObserver: ResizeObserver | null = null
@@ -290,6 +304,7 @@ function startTracking(): void {
   window.addEventListener('resize', onLayoutEvent)
   window.addEventListener('transitionend', onLayoutEvent, true)
   window.addEventListener('animationend', onLayoutEvent, true)
+  document.addEventListener('visibilitychange', onLayoutEvent)
 }
 
 function onLayoutEvent(): void {
@@ -298,8 +313,7 @@ function onLayoutEvent(): void {
 }
 
 function stopTracking(): void {
-  cancelAnimationFrame(rafId)
-  rafId = 0
+  scheduler.cancel()
   resizeObserver?.disconnect()
   mutationObserver?.disconnect()
   resizeObserver = null
@@ -307,6 +321,7 @@ function stopTracking(): void {
   window.removeEventListener('resize', onLayoutEvent)
   window.removeEventListener('transitionend', onLayoutEvent, true)
   window.removeEventListener('animationend', onLayoutEvent, true)
+  document.removeEventListener('visibilitychange', onLayoutEvent)
 }
 
 onMounted(() => {
@@ -363,7 +378,7 @@ watch(isFrozen, async (frozen) => {
       @mousedown="onHeaderMouseDown"
     >
       <Globe :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-      <span class="min-w-0 flex-1 truncate" :title="state.url" data-testid="browser-title">{{
+      <span class="min-w-[2rem] flex-1 truncate" :title="state.url" data-testid="browser-title">{{
         title
       }}</span>
 
@@ -421,7 +436,10 @@ watch(isFrozen, async (frozen) => {
             <span class="truncate @max-[300px]:hidden" style="flex-shrink: 8"
               >{{ $t('browserPane.chip.connectedPrefix') }}&nbsp;</span
             >
-            <span class="min-w-0 truncate">‹{{ ownerTitle }}›</span>
+            <span class="flex min-w-0 items-baseline"
+              ><span class="min-w-0 truncate">‹{{ ownerTitle }}</span
+              ><span class="shrink-0">›</span></span
+            >
           </span>
           <span
             v-else
