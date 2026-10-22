@@ -7,7 +7,6 @@ import {
 } from '../src/main/browser/comment-plan'
 import type { PinRecord } from '../src/main/browser/comment-pins'
 
-const NOW = 100_000
 const calm = { agentInputBlocked: false }
 
 describe('evaluatePickGate', () => {
