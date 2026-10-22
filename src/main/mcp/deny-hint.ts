@@ -19,7 +19,12 @@
  * only reachable in the opt-in guarded (`ask`) mode now (`permission-core.ts`).
  */
 
-import { isBrowserDenialCode, shapeBrowserDenial } from '../browser/browser-hints'
+import {
+  BROWSER_DETAIL_CODES,
+  isBrowserDenialCode,
+  shapeBrowserDenial,
+  type BrowserDenialCode
+} from '../browser/browser-hints'
 
 /** One concrete way for the agent to progress (a verb to call, or a human ask). */
 export interface NextAction {
@@ -57,9 +62,14 @@ export function shapeDenial(
     return shapeBrowserDenial('PANE_INPUT_NOT_READY', { folder: ctx.folder, openedBy: 'operator' })
   }
   // T571: a refused key press names the offending key in its detail.
-  const browserKey = /^BROWSER_KEY_UNKNOWN: ([\s\S]*)$/.exec(result)
-  if (browserKey)
-    return shapeBrowserDenial('BROWSER_KEY_UNKNOWN', { folder: ctx.folder, detail: browserKey[1]! })
+  const browserDetail = new RegExp(`^(${BROWSER_DETAIL_CODES.join('|')}): ([\\s\\S]*)$`).exec(
+    result
+  )
+  if (browserDetail)
+    return shapeBrowserDenial(browserDetail[1] as BrowserDenialCode, {
+      folder: ctx.folder,
+      detail: browserDetail[2]!
+    })
   // T482 B5: a refused send names the offending key or line in its detail.
   const content = /^(KEY_UNKNOWN|INPUT_TOO_LARGE|WAIT_PATTERN_INVALID): ([\s\S]*)$/.exec(result)
   if (content) {

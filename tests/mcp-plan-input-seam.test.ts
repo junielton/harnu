@@ -61,6 +61,20 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   browser_type: { paneId: 'bp-1', ref: 's1e3', text: 'hello', delayMs: 10, submit: true },
   browser_fill: { paneId: 'bp-1', fields: [{ ref: 's1e3', value: 'a@b.c' }] },
   browser_press: { paneId: 'bp-1', keys: ['Ctrl+A', 'Enter'] },
+  browser_emulate: {
+    paneId: 'bp-1',
+    device: 'phone-m',
+    colorScheme: 'dark',
+    reducedMotion: true,
+    touch: true
+  },
+  browser_upload: { paneId: 'bp-1', ref: 's1e4', paths: ['fixtures/a.png', 'fixtures/b.png'] },
+  browser_download: {
+    paneId: 'bp-1',
+    url: 'https://example.com/a.zip',
+    name: 'a.zip',
+    timeoutMs: 5000
+  },
   adopt_folder: { folder: ALLOWED },
   remove_folder: { folder: ALLOWED },
   plan_mission: {

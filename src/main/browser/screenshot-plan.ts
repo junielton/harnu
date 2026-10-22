@@ -96,3 +96,33 @@ export function rectFromQuad(
   const y = Math.min(...ys)
   return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }
 }
+
+/**
+ * The factor from the page's CSS px to the pixels of a `capturePage()` image, for cropping an element out of it
+ * (T572 U5, AC-6; the T570 carry-over). The element's box is measured in CSS px of the page's viewport, so the scale
+ * is the image width over the width of the page's CSS viewport:
+ *
+ *   - a device is emulated: the page is laid out at the DEVICE width whatever size the view has and however the fit
+ *     scale shrinks it (the page never sees the scale), and zoom is 1;
+ *   - a parked view carries the 1280-wide parking override;
+ *   - otherwise the viewport is the view's bounds divided by the page zoom.
+ *
+ * Before this, a hidden pane in device mode divided its bounds by the zoom and cropped the wrong rectangle.
+ */
+export function elementCropScale(input: {
+  imageWidth: number
+  boundsWidth: number
+  zoom: number
+  parked: boolean
+  parkedWidth: number
+  /** The emulated device's CSS width, or `null` when no device is active. */
+  deviceWidth: number | null
+}): number {
+  const cssViewportWidth =
+    input.deviceWidth !== null
+      ? input.deviceWidth
+      : input.parked
+        ? input.parkedWidth
+        : input.boundsWidth / (input.zoom > 0 ? input.zoom : 1)
+  return input.imageWidth / Math.max(1, cssViewportWidth)
+}

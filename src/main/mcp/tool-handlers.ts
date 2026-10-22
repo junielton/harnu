@@ -68,10 +68,12 @@ import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { readAgentTerminalWrites } from './prefs'
 import {
   makeBrowserActDeps,
+  makeBrowserDeviceDeps,
   makeBrowserReadDeps,
   makeBrowserVerbDeps
 } from '../browser/browser-service'
 import { clickVerb, evalVerb, fillVerb, pressVerb, typeVerb } from '../browser/act-verbs'
+import { downloadVerb, emulateVerb, uploadVerb } from '../browser/device-verbs'
 import type { ConsoleLevel } from '../browser/console-buffer'
 import {
   consoleVerb,
@@ -5205,7 +5207,7 @@ const browserOpenHandler: Handler = async (args, ctx) => {
       ...(optStr(args, 'ownerSessionId') !== undefined
         ? { ownerSessionId: optStr(args, 'ownerSessionId') }
         : {}),
-      ...(args.device !== undefined ? { device: args.device } : {}),
+      ...(optStr(args, 'device') !== undefined ? { device: optStr(args, 'device') } : {}),
       ...(typeof args.background === 'boolean' ? { background: args.background } : {})
     },
     browserDeps(ctx)
@@ -5257,6 +5259,63 @@ const browserNavigateHandler: Handler = async (args, ctx) => {
 const browserCloseHandler: Handler = async (args, ctx) => {
   const res = await closeVerb({ paneId: optStr(args, 'paneId') ?? '' }, browserDeps(ctx))
   return browserResult({ op: 'browser_close', ...res })
+}
+
+/* ---- T572 (T564 U5): zoom and device emulation, upload from the folder, download into it. ---- */
+
+const browserEmulateHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await emulateVerb(
+    {
+      ...paneArgs(args),
+      ...(typeof args.zoom === 'number' ? { zoom: args.zoom } : {}),
+      ...(optStr(args, 'device') !== undefined ? { device: optStr(args, 'device') } : {}),
+      ...(typeof args.width === 'number' ? { width: args.width } : {}),
+      ...(typeof args.height === 'number' ? { height: args.height } : {}),
+      ...(typeof args.dpr === 'number' ? { dpr: args.dpr } : {}),
+      ...(typeof args.mobile === 'boolean' ? { mobile: args.mobile } : {}),
+      ...(typeof args.touch === 'boolean' ? { touch: args.touch } : {}),
+      ...(optStr(args, 'userAgent') !== undefined ? { userAgent: optStr(args, 'userAgent') } : {}),
+      ...(args.colorScheme === 'light' || args.colorScheme === 'dark'
+        ? { colorScheme: args.colorScheme }
+        : {}),
+      ...(typeof args.reducedMotion === 'boolean' ? { reducedMotion: args.reducedMotion } : {}),
+      ...(typeof args.reset === 'boolean' ? { reset: args.reset } : {})
+    },
+    makeBrowserDeviceDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_emulate', ...res })
+}
+
+const browserUploadHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await uploadVerb(
+    {
+      ...paneArgs(args),
+      ref: optStr(args, 'ref') ?? '',
+      paths: Array.isArray(args.paths) ? (args.paths as unknown[]).map(String) : []
+    },
+    makeBrowserDeviceDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_upload', ...res })
+}
+
+const browserDownloadHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await downloadVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {}),
+      ...(optStr(args, 'name') !== undefined ? { name: optStr(args, 'name') } : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    makeBrowserDeviceDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_download', ...res })
 }
 
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
@@ -5462,6 +5521,9 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   browser_type: browserTypeHandler,
   browser_fill: browserFillHandler,
   browser_press: browserPressHandler,
+  browser_emulate: browserEmulateHandler,
+  browser_upload: browserUploadHandler,
+  browser_download: browserDownloadHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

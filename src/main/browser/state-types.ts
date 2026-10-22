@@ -17,6 +17,44 @@ export type BrowserNotice =
   | { kind: 'certificate'; host: string }
   | { kind: 'dialog'; dialog: string }
   | { kind: 'crashed' }
+  /** A download was saved (design.md "Download prompt"); clears itself after a few seconds. */
+  | { kind: 'downloaded'; name: string }
+  | { kind: 'download-cancelled' }
+  | { kind: 'download-failed' }
+
+/** A device the pane emulates; mirrors `DeviceSpec` in `src/shared/browser-emulation.ts` (a test pins the two). */
+export interface BrowserDeviceState {
+  preset: string | null
+  width: number
+  height: number
+  dpr: number
+  mobile: boolean
+  rotated: boolean
+}
+
+/** The pane's emulation record as the chrome sees it; mirrors `EmulationRecord` in `src/shared/browser-emulation.ts`. */
+export interface BrowserEmulationState {
+  device?: BrowserDeviceState
+  touch?: boolean
+  userAgent?: string
+  colorScheme?: 'light' | 'dark'
+  reducedMotion?: boolean
+}
+
+/** What the operator's device picker sends (the shape of `EmulateArgs` without `zoom`), judged again in main. */
+export interface BrowserEmulatePatch {
+  device?: string
+  width?: number
+  height?: number
+  dpr?: number
+  mobile?: boolean
+  touch?: boolean
+  userAgent?: string
+  colorScheme?: 'light' | 'dark'
+  reducedMotion?: boolean
+  reset?: boolean
+  rotate?: boolean
+}
 
 /** Everything the pane chrome needs to draw, pushed from main as `browser:state`. */
 export interface BrowserPaneState {
@@ -43,6 +81,12 @@ export interface BrowserPaneState {
   leaseActive: boolean
   /** Epoch ms the agent's network capture stops itself, or `null` when none is running (the red counter). */
   networkUntil: number | null
+  /** The zoom factor in effect (1 in device mode, where zoom is off). */
+  zoom: number
+  /** The emulation record: empty when no device or media override is on. */
+  emulation: BrowserEmulationState
+  /** The operator's download is waiting for "Save to .harnu/out/downloads/?" (spec §3.2, Q16). */
+  downloadPrompt: { name: string } | null
 }
 
 /** A rectangle in CSS px, as the renderer measures it. */

@@ -22,6 +22,7 @@ import type { PtyExitReason } from '../main/pty'
 import type { TerminalStatus } from '../main/terminal-lifecycle'
 import type {
   BrowserActivityWord,
+  BrowserEmulatePatch,
   BrowserOverlayRect,
   BrowserPaneState,
   BrowserRect
@@ -207,6 +208,9 @@ export type { FolderEntry, GitMeta }
 // T564 U1: the browser pane's wire types, so the renderer imports them from the barrel.
 export type {
   BrowserActivityWord,
+  BrowserDeviceState,
+  BrowserEmulatePatch,
+  BrowserEmulationState,
   BrowserNotice,
   BrowserOverlayRect,
   BrowserPaneState,
@@ -2391,6 +2395,20 @@ const api = {
   browserPause: (paneId: string): Promise<number | null> =>
     ipcRenderer.invoke('browser:pause', paneId),
   browserResume: (paneId: string): Promise<boolean> => ipcRenderer.invoke('browser:resume', paneId),
+  /** T572 U5: zoom the pane's page one ladder step, or back to 100% (refused in device mode). Resolves the factor. */
+  browserZoom: (payload: {
+    paneId: string
+    action: 'in' | 'out' | 'reset'
+  }): Promise<number | null> => ipcRenderer.invoke('browser:zoom', payload),
+  /** T572 U5: the device picker: the same argument shape `browser_emulate` takes (plus `rotate`). */
+  browserEmulate: (payload: {
+    paneId: string
+    patch: BrowserEmulatePatch
+  }): Promise<{ ok: true } | { ok: false; detail: string }> =>
+    ipcRenderer.invoke('browser:emulate', payload),
+  /** T572 U5: answer the "Save to .harnu/out/downloads/?" prompt. */
+  browserDownloadDecision: (payload: { paneId: string; allow: boolean }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:downloadDecision', payload),
   onBrowserState: (cb: (state: BrowserPaneState) => void): (() => void) =>
     subscribe('browser:state', cb),
   onBrowserFreeze: (cb: (p: { paneId: string; dataUrl: string | null }) => void): (() => void) =>

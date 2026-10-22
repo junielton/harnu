@@ -4,7 +4,8 @@
  * pure modules next to it.
  */
 import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdir, realpath, stat, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { join } from 'node:path'
@@ -14,7 +15,10 @@ import { scrubTerminalText } from '../scrub-terminal'
 import { createBrowserAccess } from './access'
 import { browserLeases } from './lease-singleton'
 import { browserWriteQueue } from './write-queue'
+import { app } from 'electron'
 import type { BrowserActDeps } from './act-verbs'
+import type { BrowserDeviceDeps } from './device-verbs'
+import { createBrowserPrefsStore, type BrowserPrefsStore } from './browser-prefs'
 import {
   browserReadOptIns,
   browserTrustedHostsFor,
@@ -81,6 +85,29 @@ async function readOptInFor(folder: string, file?: UserProjectsFile): Promise<bo
   return on
 }
 
+/** `<userData>/browser-prefs.json`: the zoom remembered per origin (T572, spec §9.1). Read once, on first use. */
+let prefsStore: BrowserPrefsStore | null = null
+function browserPrefs(): BrowserPrefsStore {
+  if (prefsStore) return prefsStore
+  const file = join(app.getPath('userData'), 'browser-prefs.json')
+  prefsStore = createBrowserPrefsStore({
+    read: () => {
+      try {
+        return readFileSync(file, 'utf8')
+      } catch {
+        return null
+      }
+    },
+    // Write beside and rename over: a crash mid-write never leaves half a file.
+    write: (text) => {
+      const tmp = `${file}.${process.pid}.tmp`
+      writeFileSync(tmp, text, { mode: 0o600 })
+      renameSync(tmp, file)
+    }
+  })
+  return prefsStore
+}
+
 let mainWindowGetter: (() => BrowserWindow | null) | null = null
 let host: BrowserViewHost | null = null
 let mcpPort = 0
@@ -110,7 +137,8 @@ export function getBrowserHost(): BrowserViewHost {
     },
     scrub: (text) => scrubTerminalText(text, os.homedir()),
     openPopupPane: ({ folder, partition, url }) =>
-      openOperatorPane({ folder, partition, url, popup: true })
+      openOperatorPane({ folder, partition, url, popup: true }),
+    prefs: browserPrefs()
   })
   // A lease that starts or ends repaints the pane's chip (display only).
   browserLeases.onChange((paneId) => host?.refresh(paneId))
@@ -285,6 +313,25 @@ export function makeBrowserReadDeps(env: BrowserHandlerEnv): BrowserReadDeps {
 /** The dependencies of the acting verbs: the reading set plus the per-pane write queue. */
 export function makeBrowserActDeps(env: BrowserHandlerEnv): BrowserActDeps {
   return { ...makeBrowserReadDeps(env), host: getBrowserHost(), queue: browserWriteQueue }
+}
+
+/** The dependencies of the emulation, upload and download verbs: the acting set plus the real filesystem. */
+export function makeBrowserDeviceDeps(env: BrowserHandlerEnv): BrowserDeviceDeps {
+  return {
+    ...makeBrowserActDeps(env),
+    host: getBrowserHost(),
+    uploadIo: {
+      realpath: (p) => realpath(p),
+      stat: async (p) => {
+        try {
+          const st = await stat(p)
+          return { kind: st.isFile() ? 'file' : 'other', size: st.size }
+        } catch {
+          return null
+        }
+      }
+    }
+  }
 }
 
 /** The kill-switch went off: every pane's network capture ends at once (spec §7.4). */

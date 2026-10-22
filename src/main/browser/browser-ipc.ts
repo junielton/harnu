@@ -24,6 +24,7 @@ import {
   getBrowserHost,
   openOperatorPane
 } from './browser-service'
+import type { EmulateArgs } from '../../shared/browser-emulation'
 import type { BrowserOverlayRect, BrowserRect } from './state-types'
 import type { NavigateTarget } from './verbs-core'
 
@@ -169,6 +170,28 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     if (!isPaneId(paneId) || !browserRegistry.get(paneId)) return false
     browserAccess.resume(paneId)
     host().refresh(paneId)
+    return true
+  })
+
+  // T572 U5: the operator's own zoom (header buttons; the chords arrive here through the renderer's dispatcher).
+  handleApp('browser:zoom', (payload: unknown) => {
+    if (!isRecord(payload) || !isPaneId(payload.paneId)) return null
+    const a = payload.action
+    if (a !== 'in' && a !== 'out' && a !== 'reset') return null
+    return host().operatorZoom(payload.paneId, a)
+  })
+  // The device picker: same argument shape as `browser_emulate`, judged by the same pure rules. The operator is
+  // the human, so no gate; a malformed patch is still refused.
+  handleApp('browser:emulate', async (payload: unknown) => {
+    if (!isRecord(payload) || !isPaneId(payload.paneId) || !isRecord(payload.patch)) {
+      return { ok: false as const, detail: 'BAD_ARGS' }
+    }
+    return host().operatorEmulate(payload.paneId, payload.patch as EmulateArgs)
+  })
+  // The "Save to .harnu/out/downloads/?" prompt (Q16).
+  handleApp('browser:downloadDecision', (payload: unknown) => {
+    if (!isRecord(payload) || !isPaneId(payload.paneId)) return false
+    host().answerDownload(payload.paneId, payload.allow === true)
     return true
   })
 

@@ -105,6 +105,8 @@ export type BrowserDenyReason =
   | 'NOT_A_PAGE_PANE'
   | 'BROWSER_KEY_UNKNOWN'
   | 'PANE_INPUT_NOT_READY'
+  | 'ZOOM_IN_DEVICE_MODE'
+  | 'UPLOAD_PATH_DENIED'
   | 'NOT_YET_AVAILABLE'
 
 /** How a pane was opened (spec §1.2). */
@@ -131,6 +133,8 @@ export interface BrowserPaneAccess {
   leaseActive?: boolean
   /** The operator denied this pane less than 5 minutes ago. Absent = no cooldown. */
   writeDenied?: boolean
+  /** The pane emulates a device (T572): `browser_emulate({ zoom })` is refused while it does. Absent = no. */
+  deviceActive?: boolean
 }
 
 export interface BrowserGateInput {
@@ -220,7 +224,9 @@ export function gateBrowserOpDetailed(
   if (addressesPane && pane?.openedBy === 'operator' && pane.readOptIn !== true)
     return { reason: 'BROWSER_READ_NOT_ENABLED' }
   if (input.args) {
-    const content = checkBrowserContent(op, input.args)
+    const content = checkBrowserContent(op, input.args, {
+      deviceActive: pane?.deviceActive === true
+    })
     if (content) return { reason: content.code, content }
   }
   // Decided here, before the kill-switch and any confirm (spec §6.3): a call that cannot deliver must not first

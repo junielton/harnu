@@ -1675,6 +1675,96 @@ export function parseBrowserPress(input: unknown): ParseResult<BrowserPressArgs>
   return { ok: true, value: dropUndefined(parsed.data) as BrowserPressArgs }
 }
 
+/* ---- T572 (T564 U5): emulate, upload, download. Shapes are checked here; the ranges and the cross-argument rules
+ * (`device` xor a free size, zoom in device mode, forbidden upload names, http(s) only) are judged by
+ * `browser/content-check` in the same §6.3 slot, so the refusal can say what is wrong. ---- */
+
+/** Validated args for `browser_emulate`. */
+export interface BrowserEmulateArgs {
+  folder?: string
+  paneId: string
+  zoom?: number
+  device?: string
+  width?: number
+  height?: number
+  dpr?: number
+  mobile?: boolean
+  touch?: boolean
+  userAgent?: string
+  colorScheme?: 'light' | 'dark'
+  reducedMotion?: boolean
+  reset?: boolean
+}
+
+const BrowserEmulateSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  zoom: z.number().finite().optional(),
+  device: z.string().max(40).optional(),
+  width: z.number().finite().optional(),
+  height: z.number().finite().optional(),
+  dpr: z.number().finite().optional(),
+  mobile: z.boolean().optional(),
+  touch: z.boolean().optional(),
+  userAgent: z.string().max(512).optional(),
+  colorScheme: z.enum(['light', 'dark']).optional(),
+  reducedMotion: z.boolean().optional(),
+  reset: z.boolean().optional()
+})
+
+export function parseBrowserEmulate(input: unknown): ParseResult<BrowserEmulateArgs> {
+  const parsed = BrowserEmulateSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserEmulateArgs }
+}
+
+/** Validated args for `browser_upload`. */
+export interface BrowserUploadArgs {
+  folder?: string
+  paneId: string
+  ref: string
+  paths: string[]
+}
+
+const BrowserUploadSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  ref: refSchema,
+  // The count and the names are judged by `checkBrowserContent` (BAD_ARGS / UPLOAD_PATH_DENIED).
+  paths: z.array(z.string().min(1).max(4096)).min(1).max(10)
+})
+
+export function parseBrowserUpload(input: unknown): ParseResult<BrowserUploadArgs> {
+  const parsed = BrowserUploadSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserUploadArgs }
+}
+
+/** Validated args for `browser_download`. */
+export interface BrowserDownloadArgs {
+  folder?: string
+  paneId: string
+  url?: string
+  ref?: string
+  name?: string
+  timeoutMs?: number
+}
+
+const BrowserDownloadSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  url: z.string().min(1).max(4096).optional(),
+  ref: refSchema.optional(),
+  name: z.string().min(1).max(200).optional(),
+  timeoutMs: z.number().int().min(1000).max(30_000).optional()
+})
+
+export function parseBrowserDownload(input: unknown): ParseResult<BrowserDownloadArgs> {
+  const parsed = BrowserDownloadSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserDownloadArgs }
+}
+
 function dropUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>
 }
@@ -1710,6 +1800,9 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   browser_type: parseBrowserType,
   browser_fill: parseBrowserFill,
   browser_press: parseBrowserPress,
+  browser_emulate: parseBrowserEmulate,
+  browser_upload: parseBrowserUpload,
+  browser_download: parseBrowserDownload,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

@@ -269,7 +269,9 @@ describe('resolveGateInput (the shell half of the plan gate)', () => {
       readOptIn: false,
       leaseActive: false,
       writeDenied: false,
-      inputReady: true
+      inputReady: true,
+      // T572: no emulation record, so no device.
+      deviceActive: false
     })
     expect(
       resolveGateInput({ ...base, rec, liveUrl: 'https://example.com/' }).input.pane?.originClass

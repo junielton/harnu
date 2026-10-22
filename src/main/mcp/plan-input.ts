@@ -484,6 +484,9 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   browser_type: translateBrowserPane,
   browser_fill: translateBrowserPane,
   browser_press: translateBrowserPane,
+  browser_emulate: translateBrowserPane,
+  browser_upload: translateBrowserPane,
+  browser_download: translateBrowserPane,
   adopt_folder: translateAdoptFolder,
   // BUG-56: same shape as adopt_folder — `folder` only.
   remove_folder: translateAdoptFolder,

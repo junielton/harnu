@@ -49,7 +49,8 @@ export function resolveGateInput(opts: {
         readOptIn: opts.readOptIn === true,
         leaseActive: opts.leaseActive === true,
         writeDenied: opts.writeDenied === true,
-        inputReady: opts.inputReady !== false
+        inputReady: opts.inputReady !== false,
+        deviceActive: rec.emulation?.device !== undefined
       },
       ...args
     }

@@ -996,7 +996,10 @@ const QUEUED_BROWSER_OPS: ReadonlySet<string> = new Set([
   'browser_click',
   'browser_type',
   'browser_fill',
-  'browser_press'
+  'browser_press',
+  'browser_emulate',
+  'browser_upload',
+  'browser_download'
 ])
 
 /**

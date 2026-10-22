@@ -120,17 +120,41 @@ describe('browser_open (url form)', () => {
     expect(host.create).toHaveBeenCalledWith(expect.objectContaining({ partition: 'agent' }))
   })
 
-  it('refuses the path and html forms and a device with a clear NOT_YET_AVAILABLE', async () => {
+  it('refuses the path and html forms with a clear NOT_YET_AVAILABLE', async () => {
     const { deps, host } = rig()
     for (const args of [
       { folder: FOLDER, path: 'docs/a.html' },
-      { folder: FOLDER, html: '<h1>x</h1>', name: 'p' },
-      { folder: FOLDER, url: 'http://localhost:3000', device: 'phone-m' }
+      { folder: FOLDER, html: '<h1>x</h1>', name: 'p' }
     ]) {
       const res = await openVerb(args, deps)
       expect(res).toMatchObject({ ok: false, error: 'NOT_YET_AVAILABLE' })
       expect((res.nextActions as unknown[]).length).toBeGreaterThan(0)
     }
+    expect(host.create).not.toHaveBeenCalled()
+  })
+
+  it('opens a pane already in a device (T572): the record is on the pane before the first load', async () => {
+    const { deps, host } = rig()
+    const res = await openVerb(
+      { folder: FOLDER, url: 'http://localhost:3000', device: 'phone-m' },
+      deps
+    )
+    expect(res).toMatchObject({ ok: true })
+    const rec = deps.registry.get(res.paneId as string)
+    expect(rec?.emulation?.device).toMatchObject({
+      preset: 'phone-m',
+      width: 390,
+      height: 844,
+      dpr: 3
+    })
+    expect(host.create).toHaveBeenCalled()
+  })
+
+  it('refuses an unknown device preset as BAD_ARGS', async () => {
+    const { deps, host } = rig()
+    expect(
+      await openVerb({ folder: FOLDER, url: 'http://localhost:3000', device: 'pixel' }, deps)
+    ).toMatchObject({ ok: false, error: 'BAD_ARGS' })
     expect(host.create).not.toHaveBeenCalled()
   })
 

@@ -67,6 +67,22 @@ export function summarizeBrowserCall(
     const fields = Array.isArray(args.fields) ? (args.fields as Array<Record<string, unknown>>) : []
     parts.push(`fields=${fields.length}`)
     parts.push(`values="${auditText(fields.map((f) => String(f.value ?? '')).join(' | '), home)}"`)
+  } else if (op === 'browser_emulate') {
+    // The settings are small, closed vocabulary values: safe to record as they are (the user agent is cut).
+    if (typeof args.device === 'string') parts.push(`device=${auditField(args.device)}`)
+    if (typeof args.zoom === 'number') parts.push(`zoom=${args.zoom}`)
+    if (args.reset === true) parts.push('reset')
+    if (typeof args.colorScheme === 'string')
+      parts.push(`colorScheme=${auditField(args.colorScheme)}`)
+    if (typeof args.userAgent === 'string')
+      parts.push(`userAgent="${auditText(args.userAgent, home)}"`)
+  } else if (op === 'browser_upload') {
+    const paths = Array.isArray(args.paths) ? (args.paths as unknown[]) : []
+    parts.push(`ref=${auditField(typeof args.ref === 'string' ? args.ref : '-')}`)
+    parts.push(`files=${paths.length}`)
+    parts.push(`paths="${auditText(paths.map((p) => String(p)).join(' | '), home)}"`)
+  } else if (op === 'browser_download') {
+    if (typeof args.ref === 'string') parts.push(`ref=${auditField(args.ref)}`)
   } else if (op === 'browser_click')
     parts.push(`ref=${auditField(typeof args.ref === 'string' ? args.ref : '-')}`)
   else if (op === 'browser_press') {

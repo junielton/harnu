@@ -80,6 +80,29 @@ export function describeFirstAction(f: LeaseConfirmFacts): string {
       return typeof a.url === 'string'
         ? `go to ${escapeForConfirm(hostOf(a.url))}`
         : `navigate (${escapeForConfirm(String(a.action ?? ''))})`
+    case 'browser_emulate': {
+      const bits: string[] = []
+      if (typeof a.device === 'string') bits.push(`device ${escapeForConfirm(a.device)}`)
+      else if (typeof a.width === 'number' || typeof a.height === 'number')
+        bits.push(
+          `size ${escapeForConfirm(String(a.width ?? '?'))}x${escapeForConfirm(String(a.height ?? '?'))}`
+        )
+      if (typeof a.zoom === 'number') bits.push(`zoom ${escapeForConfirm(String(a.zoom))}`)
+      if (typeof a.colorScheme === 'string')
+        bits.push(`${escapeForConfirm(a.colorScheme)} colour scheme`)
+      if (typeof a.userAgent === 'string') bits.push('a different user agent')
+      if (a.reset === true) bits.push('reset the emulation')
+      return `change how the page is shown: ${bits.length > 0 ? bits.join(', ') : 'its display settings'}`
+    }
+    case 'browser_upload': {
+      const paths = Array.isArray(a.paths) ? (a.paths as unknown[]).map(String) : []
+      const shown = paths.slice(0, 5).map(escapeForConfirm).join(', ')
+      return `upload ${paths.length} file${paths.length === 1 ? '' : 's'} from this folder to the page: ${shown}${paths.length > 5 ? ', …' : ''}`
+    }
+    case 'browser_download':
+      return typeof a.url === 'string'
+        ? `download a file from ${escapeForConfirm(hostOf(a.url))} into .harnu/out/downloads/`
+        : `click ${targetLabel(f)} to download a file into .harnu/out/downloads/`
     case 'browser_network':
       return `${escapeForConfirm(String(a.action ?? 'read'))} network traffic recording`
     case 'browser_close':

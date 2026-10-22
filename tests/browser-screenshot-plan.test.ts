@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest'
 import {
   clampSize,
   fullPageHeight,
+  elementCropScale,
   planScreenshot,
   rectFromQuad
 } from '../src/main/browser/screenshot-plan'
@@ -92,5 +93,42 @@ describe('rectFromQuad', () => {
     })
     expect(rectFromQuad([1, 2, 3])).toBeNull()
     expect(rectFromQuad([NaN, 0, 0, 0, 0, 0, 0, 0])).toBeNull()
+  })
+})
+
+describe('elementCropScale (AC-6: an element shot on a hidden pane in device mode)', () => {
+  const base = { imageWidth: 195, boundsWidth: 195, zoom: 1, parked: false, parkedWidth: 1280 }
+
+  it('in device mode the page is laid out at the device width, not at the (fit-scaled) bounds', () => {
+    // phone-m (390 wide) drawn in 195 px of window: the capture is 195 px wide and shows 390 CSS px.
+    expect(elementCropScale({ ...base, deviceWidth: 390 })).toBeCloseTo(0.5)
+    // The old rule divided the bounds by the zoom and got 1: the crop would have been twice too large.
+    expect(elementCropScale({ ...base, deviceWidth: null })).toBeCloseTo(1)
+  })
+
+  it('the fit scale cancels: a bigger capture of the same device gives a proportionally bigger scale', () => {
+    expect(elementCropScale({ ...base, imageWidth: 390, deviceWidth: 390 })).toBeCloseTo(1)
+    expect(elementCropScale({ ...base, imageWidth: 585, deviceWidth: 390 })).toBeCloseTo(1.5)
+  })
+
+  it('without a device a parked view uses the parking width, a shown one its bounds over the zoom', () => {
+    expect(
+      elementCropScale({
+        ...base,
+        imageWidth: 1280,
+        boundsWidth: 1,
+        parked: true,
+        deviceWidth: null
+      })
+    ).toBeCloseTo(1)
+    expect(
+      elementCropScale({ ...base, imageWidth: 800, boundsWidth: 800, zoom: 2, deviceWidth: null })
+    ).toBeCloseTo(2)
+  })
+
+  it('a device wins over a parked view (a parked pane in device mode renders at the device size)', () => {
+    expect(
+      elementCropScale({ ...base, imageWidth: 390, parked: true, deviceWidth: 390 })
+    ).toBeCloseTo(1)
   })
 })

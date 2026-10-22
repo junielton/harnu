@@ -69,6 +69,7 @@ import {
   type BrowserGateInput
 } from '../browser/access'
 import { summarizeBrowserCall } from '../browser/audit'
+import { BROWSER_DETAIL_CODES } from '../browser/browser-hints'
 import type { SendTerminalArgs } from './validate'
 
 /**
@@ -333,7 +334,8 @@ export function planToolCall({
     })
     if (refusal) {
       const result =
-        refusal.reason === 'BAD_ARGS' || refusal.reason === 'BROWSER_KEY_UNKNOWN'
+        refusal.reason === 'BAD_ARGS' ||
+        (BROWSER_DETAIL_CODES as readonly string[]).includes(refusal.reason)
           ? `${refusal.reason}: ${refusal.content?.detail ?? ''}`
           : refusal.reason === 'PANE_INPUT_NOT_READY' && browser?.pane?.openedBy === 'operator'
             ? 'PANE_INPUT_NOT_READY: operator-pane'

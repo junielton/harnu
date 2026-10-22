@@ -69,10 +69,14 @@ describe('checkBrowserContent (pure)', () => {
     expect(checkBrowserContent('browser_open', { folder: '/w', html: '<p>' })?.code).toBe(
       'NOT_YET_AVAILABLE'
     )
+    // `device` is a preset name now (T572); anything else is BAD_ARGS.
     expect(
       checkBrowserContent('browser_open', { folder: '/w', url: 'http://a.test', device: 'phone-m' })
+    ).toBeNull()
+    expect(
+      checkBrowserContent('browser_open', { folder: '/w', url: 'http://a.test', device: 'pixel' })
         ?.code
-    ).toBe('NOT_YET_AVAILABLE')
+    ).toBe('BAD_ARGS')
     expect(
       checkBrowserContent('browser_open', { folder: '/w', url: 'javascript:alert(1)' })
     ).toMatchObject({
@@ -121,12 +125,8 @@ describe.each([false, true])('content refusals at plan level, ask=%s', (ask) => 
     }
   })
 
-  it('browser_open path / html / device is NOT_YET_AVAILABLE and never confirms', () => {
-    for (const args of [
-      { path: 'docs/a.html' },
-      { html: '<p>x</p>', name: 'p' },
-      { url: 'http://localhost:3000', device: 'phone-m' }
-    ]) {
+  it('browser_open path / html is NOT_YET_AVAILABLE and never confirms', () => {
+    for (const args of [{ path: 'docs/a.html' }, { html: '<p>x</p>', name: 'p' }]) {
       const plan = open(args, on, ask)
       expect(plan).toMatchObject(never)
       expect(plan.auditRecord.result).toBe('NOT_YET_AVAILABLE')

@@ -92,6 +92,10 @@ export const MCP_OPS = [
   'browser_type',
   'browser_fill',
   'browser_press',
+  // T572 (T564 U5): zoom and device emulation, upload from the folder, download into the folder.
+  'browser_emulate',
+  'browser_upload',
+  'browser_download',
   'adopt_folder',
   // BUG-56: the ghost-cleanup verb — see ADR-0016 for why this does NOT violate
   // invariant #3 above. It never deletes a worktree/branch/file; it only
@@ -1219,6 +1223,95 @@ export const MCP_TOOLS: McpToolDef[] = [
     }),
     mutates: true,
     op: 'browser_press',
+    silentAllowInAgentFolder: true,
+    replayable: false
+  },
+  {
+    name: 'browser_emulate',
+    description:
+      "Change how a browser pane SHOWS its page: zoom, a device, the media features. `zoom` is a factor (1 = 100%, clamped to 0.25..5) and is remembered for the page's site, as the operator's own Ctrl+/- is. `device` is a preset: phone-s 360x800@3, phone-m 390x844@3, phone-l 430x932@3, tablet 768x1024@2, tablet-landscape 1024x768@2, laptop 1440x900@2, desktop 1920x1080@1 — OR give `width` and `height` (100..10000) with optional `dpr` (0.5..5) and `mobile`; the two forms together are BAD_ARGS. A device is REAL mobile emulation, not a narrower window: the page sees that width, height, pixel ratio, a coarse pointer, touch events and (for a mobile device) a mobile user agent with matching client hints, so media queries and `<meta viewport>` behave as on the device. It is drawn scaled to fit the pane, and the page never sees that scale. `touch` forces touch on or off (default: on for a mobile device); turning touch ON for a page that already loaded reloads it, because touch only exists if it was on when the page started. `userAgent` overrides the user agent. `colorScheme` ('light'|'dark') and `reducedMotion` set `prefers-color-scheme` and `prefers-reduced-motion`. `reset: true` clears every emulation setting and the device, restoring the page's own user agent; it can be combined with other settings in the same call. Entering a device resets zoom to 100% and turns zoom off: `zoom` while a device is active (or together with `device`) is ZOOM_IN_DEVICE_MODE — pass `reset: true` first. The operator's device picker shows and edits the same settings, so what you set is what they see, and what they set is what `browser_list` reports. The ACK carries `emulation` (what is in effect: device, size, dpr, mobile, touch, userAgent, colorScheme, reducedMotion), `zoom`, and `fitScale` while a device is drawn. Access: free on an agent-opened pane; a LEASE on a pane the operator opened (the first call raises their confirm, an Allow performs nothing and you get BROWSER_APPROVED_RESEND, then call again). BROWSER_WRITES_DISABLED, BROWSER_PAUSED, BROWSER_BUSY and BROWSER_RATE_LIMIT also apply.",
+    inputSchema: z.object({
+      paneId: z.string().min(1).describe('The `paneId` browser_open or browser_list returned.'),
+      zoom: z
+        .number()
+        .finite()
+        .optional()
+        .describe('Zoom factor (1 = 100%), clamped to 0.25..5. Refused while a device is active.'),
+      device: z
+        .string()
+        .max(40)
+        .optional()
+        .describe(
+          'A preset: phone-s, phone-m, phone-l, tablet, tablet-landscape, laptop or desktop. Not together with width/height.'
+        ),
+      width: z.number().finite().optional().describe('Free size: CSS px wide, 100..10000.'),
+      height: z.number().finite().optional().describe('Free size: CSS px high, 100..10000.'),
+      dpr: z.number().finite().optional().describe('Free size: device pixel ratio, 0.5..5.'),
+      mobile: z
+        .boolean()
+        .optional()
+        .describe('Free size: emulate a mobile device (mobile UA, touch).'),
+      touch: z.boolean().optional().describe('Force touch events on or off.'),
+      userAgent: z.string().max(512).optional().describe('Override the user agent string.'),
+      colorScheme: z.enum(['light', 'dark']).optional().describe('Set prefers-color-scheme.'),
+      reducedMotion: z.boolean().optional().describe('Set prefers-reduced-motion (true = reduce).'),
+      reset: z
+        .boolean()
+        .optional()
+        .describe('Clear every emulation setting and the device first (restores the user agent).')
+    }),
+    mutates: true,
+    op: 'browser_emulate',
+    silentAllowInAgentFolder: true,
+    replayable: false
+  },
+  {
+    name: 'browser_upload',
+    description:
+      "Attach files to an `<input type=file>` of a browser pane, as if the person had picked them. `ref` (from browser_snapshot) must be the file input itself (NOT_A_FILE_INPUT otherwise); `paths` are 1..10 files INSIDE the pane's folder, relative to it or absolute. Every path is resolved through links and refused (UPLOAD_PATH_DENIED) if it leaves the folder, is not a regular file, or is a secret (anything inside .git, .env*, *.pem, *.key, id_*); a file over 50 MiB is UPLOAD_TOO_LARGE. One bad path refuses the whole call and nothing is attached. Files are attached only; the page decides what to do with them (a form still has to be submitted, with browser_click). The ACK lists `files` ({name, bytes}). Same access as browser_click: free on a `page`/`local` pane you opened, a LEASE (confirm, then BROWSER_APPROVED_RESEND, then call again) on an `external` page or any pane the operator opened — an upload can send a file from the operator's folder to whoever runs that site. BROWSER_WRITES_DISABLED, BROWSER_PAUSED, BROWSER_BUSY and BROWSER_RATE_LIMIT also apply. The paths are recorded in the audit log (names only, scrubbed). Two identical calls attach twice.",
+    inputSchema: z.object({
+      paneId: z.string().min(1).describe('The `paneId` browser_open or browser_list returned.'),
+      ref: z.string().min(1).max(40).describe('A ref from browser_snapshot: the file input.'),
+      paths: z
+        .array(z.string().min(1).max(4096))
+        .min(1)
+        .max(10)
+        .describe("1..10 file paths inside the pane's folder.")
+    }),
+    mutates: true,
+    op: 'browser_upload',
+    silentAllowInAgentFolder: true,
+    replayable: false
+  },
+  {
+    name: 'browser_download',
+    description:
+      "Download one file through a browser pane into the folder. Pass `url` (http or https) OR `ref` (an element from browser_snapshot that starts the download when clicked, such as a Download link) — exactly one. Harnu allows ONE download for the duration of the call, starts it (a direct request for `url`, a real click for `ref`), waits for it to finish and saves it under `.harnu/out/downloads/` in the pane's folder: the name comes from the server (or `name`, if you pass one), is cleaned of any path or odd characters, and never replaces an existing file (a numbered copy is made). The ACK carries `path` (relative to the folder), `bytes`, `mime` and `name`. The file is NEVER opened or run. NO_DOWNLOAD_STARTED if nothing began within `timeoutMs` (default 15000, at most 30000); DOWNLOAD_TOO_LARGE over 100 MiB; DOWNLOAD_FAILED / DOWNLOAD_CANCELLED if it broke off. Every other download in any pane stays blocked: a page cannot start one on its own. Access: free on an agent-opened pane (downloading a `url` runs with that pane's cookies, so on a page you opened that is signed in it fetches as that account); a LEASE on a pane the operator opened. BROWSER_WRITES_DISABLED, BROWSER_PAUSED, BROWSER_BUSY and BROWSER_RATE_LIMIT also apply. Two identical calls download twice.",
+    inputSchema: z.object({
+      paneId: z.string().min(1).describe('The `paneId` browser_open or browser_list returned.'),
+      url: z.string().min(1).max(4096).optional().describe('An http(s) address to download.'),
+      ref: z
+        .string()
+        .min(1)
+        .max(40)
+        .optional()
+        .describe('A ref from browser_snapshot of the element that starts the download.'),
+      name: z
+        .string()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe('The file name to save as (default: the server’s). Cleaned of paths.'),
+      timeoutMs: z
+        .number()
+        .int()
+        .min(1000)
+        .max(30000)
+        .optional()
+        .describe('How long to wait for a download to begin (default 15000, at most 30000).')
+    }),
+    mutates: true,
+    op: 'browser_download',
     silentAllowInAgentFolder: true,
     replayable: false
   },

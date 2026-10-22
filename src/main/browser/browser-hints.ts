@@ -34,9 +34,28 @@ export const BROWSER_DENIAL_CODES = [
   'NOT_A_PAGE_PANE',
   'CURSOR_EXPIRED',
   'SCREENSHOT_FAILED',
-  'PAGE_READ_FAILED'
+  'PAGE_READ_FAILED',
+  'ZOOM_IN_DEVICE_MODE',
+  'EMULATION_FAILED',
+  'NOT_A_FILE_INPUT',
+  'UPLOAD_PATH_DENIED',
+  'UPLOAD_TOO_LARGE',
+  'NO_DOWNLOAD_STARTED',
+  'DOWNLOAD_TOO_LARGE',
+  'DOWNLOAD_FAILED',
+  'DOWNLOAD_CANCELLED'
 ] as const
 export type BrowserDenialCode = (typeof BROWSER_DENIAL_CODES)[number]
+
+/**
+ * Refusals whose plan-level message carries the specific problem (`CODE: detail`), because the code alone cannot
+ * say which path or which argument was wrong.
+ */
+export const BROWSER_DETAIL_CODES = [
+  'BROWSER_KEY_UNKNOWN',
+  'ZOOM_IN_DEVICE_MODE',
+  'UPLOAD_PATH_DENIED'
+] as const satisfies readonly BrowserDenialCode[]
 
 export function isBrowserDenialCode(code: string): code is BrowserDenialCode {
   return (BROWSER_DENIAL_CODES as readonly string[]).includes(code)
@@ -52,7 +71,10 @@ export interface BrowserHintContext {
   scheme?: string
   /** `SELECTOR_NOT_FOUND`: the selector that matched nothing. */
   selector?: string
-  /** `SCREENSHOT_FAILED`, `PAGE_READ_FAILED`, `INPUT_FAILED`, `BROWSER_KEY_UNKNOWN`: what went wrong. */
+  /**
+   * `SCREENSHOT_FAILED`, `PAGE_READ_FAILED`, `INPUT_FAILED`, `BROWSER_KEY_UNKNOWN`, `ZOOM_IN_DEVICE_MODE`,
+   * `EMULATION_FAILED`, `UPLOAD_*`, `DOWNLOAD_*`: what went wrong.
+   */
   detail?: string
   /** `ELEMENT_NOT_VISIBLE`: the verb that asked, so the hint speaks of input and not of a capture. */
   during?: 'input'
@@ -329,6 +351,107 @@ export function shapeBrowserDenial(
         ]
       }
     }
+    case 'ZOOM_IN_DEVICE_MODE':
+      return {
+        error: code,
+        message:
+          ctx.detail ??
+          'Zoom is off while a device is emulated: entering device mode resets it to 100%.',
+        nextActions: [
+          {
+            do: 'Call browser_emulate with `reset: true` (and `zoom`, if you still want one) to leave device mode first, or drop `zoom` and use a smaller `device` or `width`/`height` instead.',
+            why: 'In device mode the page is drawn at the device’s own size; a second scale on top would make coordinates and media queries disagree with the device.'
+          }
+        ]
+      }
+    case 'EMULATION_FAILED':
+      return {
+        error: code,
+        message: `The device settings could not be applied${ctx.detail ? `: ${ctx.detail}` : ''}.`,
+        nextActions: [
+          {
+            do: 'Call browser_list to see the emulation the pane actually has, then try again; if the pane crashed, browser_navigate it to reload.',
+            why: 'The page was not ready, or went away, while the settings were being sent.'
+          }
+        ]
+      }
+    case 'NOT_A_FILE_INPUT':
+      return {
+        error: code,
+        message: 'That element is not an `<input type=file>`.',
+        nextActions: [
+          {
+            do: 'Take a browser_snapshot and pass the ref of the file input itself (a button that opens the file dialog is not enough; look for a textbox or button that belongs to the input, or use browser_eval to find it).',
+            why: 'Files are attached to the input element directly; Harnu never opens a native file dialog.'
+          }
+        ]
+      }
+    case 'UPLOAD_PATH_DENIED':
+      return {
+        error: code,
+        message: `That file cannot be uploaded${ctx.detail ? `: ${ctx.detail}` : ''}.`,
+        nextActions: [
+          {
+            do: 'Pass paths that are files inside the pane’s folder. Secrets (.git, .env*, *.pem, *.key, id_*) and anything reached through a link that leaves the folder are never uploaded. Copy a file into the folder first if you need it.',
+            why: 'Nothing outside the folder may leave through a page; the operator’s folder is the boundary.'
+          }
+        ]
+      }
+    case 'UPLOAD_TOO_LARGE':
+      return {
+        error: code,
+        message: `That file is too large to upload${ctx.detail ? `: ${ctx.detail}` : ''}. The limit is 50 MiB per file.`,
+        nextActions: [
+          {
+            do: 'Upload a smaller file, or split it.',
+            why: 'Large uploads would sit in memory while they are attached.'
+          }
+        ]
+      }
+    case 'NO_DOWNLOAD_STARTED':
+      return {
+        error: code,
+        message: 'No download began before the timeout, so nothing was saved.',
+        nextActions: [
+          {
+            do: 'Check the link with browser_snapshot, pass `ref` of the element that starts the download (or `url` of the file), or raise `timeoutMs` (at most 30000).',
+            why: 'The allowance lasts one download and ends when the call does; a download the page starts later is cancelled.'
+          }
+        ]
+      }
+    case 'DOWNLOAD_TOO_LARGE':
+      return {
+        error: code,
+        message: `The download is over the 100 MiB limit and was cancelled${ctx.detail ? ` (${ctx.detail})` : ''}.`,
+        nextActions: [
+          {
+            do: 'Download a smaller file, or ask the operator to fetch it themselves.',
+            why: 'Downloads land in the folder; a huge one would fill the disk.'
+          }
+        ]
+      }
+    case 'DOWNLOAD_FAILED':
+      return {
+        error: code,
+        message: `The download did not complete${ctx.detail ? `: ${ctx.detail}` : ''}. Nothing was kept.`,
+        nextActions: [
+          {
+            do: 'Try again, or check the address with browser_navigate first.',
+            why: 'The connection dropped or the server refused partway.'
+          }
+        ]
+      }
+    case 'DOWNLOAD_CANCELLED':
+      return {
+        error: code,
+        message: `The download was cancelled${ctx.detail ? `: ${ctx.detail}` : ''}.`,
+        nextActions: [
+          {
+            do: 'Tell the operator if you still need the file; do not retry in a loop.',
+            why: 'The operator or the page cancelled it.'
+          }
+        ]
+      }
     case 'BROWSER_APPROVED_RESEND':
       return {
         error: code,

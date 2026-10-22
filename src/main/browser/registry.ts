@@ -8,6 +8,7 @@
  */
 import type { BrowserPartition } from './guest-prefs'
 import type { BrowserOpenedBy } from './access'
+import type { EmulationRecord } from '../../shared/browser-emulation'
 
 /** Agent-opened panes per folder (spec §10.1, decision 28). Enforced in the verb, not here. */
 export const MAX_AGENT_PANES_PER_FOLDER = 4
@@ -28,6 +29,11 @@ export interface BrowserPaneRecord {
   seenHosts: Set<string>
   /** The "opened by agent · host" flag (spec §3.2), or `null`. */
   flagged: { host: string } | null
+  /**
+   * The device-emulation record (T572, spec §9.2): the one truth the operator's picker and the agent's
+   * `browser_emulate` both write and the view host applies. Absent or empty = no emulation.
+   */
+  emulation?: EmulationRecord
 }
 
 /** A write in flight: what the ACK needs to say about concurrent activity. */

@@ -13,6 +13,7 @@ import {
   type BrowserPaneAccess
 } from './access'
 import { shapeBrowserDenial, type BrowserDenialCode } from './browser-hints'
+import { deviceFromPreset, isPresetName } from '../../shared/browser-emulation'
 import { checkBrowserContent, type ContentRefusal } from './content-check'
 import { checkTopLevelNavigation } from './nav-policy'
 import { flagAfterVerbNavigation } from './view-logic'
@@ -228,7 +229,8 @@ export interface OpenArgs {
   html?: string
   name?: string
   ownerSessionId?: string
-  device?: unknown
+  /** A device preset the pane starts in (T572, spec §9.2). */
+  device?: string
   background?: boolean
 }
 
@@ -278,7 +280,12 @@ export async function openVerb(
     lastActiveAt: now,
     seenHosts: new Set<string>(host ? [host] : []),
     // The flag is for sites the operator did not pick; a local dev server is the expected case (spec §7.1).
-    flagged: flagAfterVerbNavigation(null, { origin, host, seenBefore: new Set() })
+    flagged: flagAfterVerbNavigation(null, { origin, host, seenBefore: new Set() }),
+    // A pane opened with a device starts in it: the record is on the pane BEFORE the first load, so touch is on
+    // when the page starts (spec §9.2) and the view host applies the rest as soon as the page can take it.
+    ...(args.device !== undefined && isPresetName(args.device)
+      ? { emulation: { device: deviceFromPreset(args.device) } }
+      : {})
   }
   deps.registry.add(rec)
   try {

@@ -66,7 +66,7 @@ export const EVAL_MAX_TIMEOUT_MS = 30_000
 
 const OBJECT_GROUP = 'harnu-act'
 
-function errorText(err: unknown): string {
+export function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
@@ -79,7 +79,7 @@ function isNodeGone(err: unknown): boolean {
 
 class OffsetOutside extends Error {}
 
-interface ActCtx {
+export interface ActCtx {
   rec: BrowserPaneRecord
   readers: PaneReaders
   scale: number
@@ -97,7 +97,7 @@ function isRefusal(v: unknown): v is Refusal {
 /* The shared run: gate → queue → gate → stamp → work → ACK                                           */
 /* ------------------------------------------------------------------------------------------------ */
 
-async function runWrite(
+export async function runWrite(
   op: BrowserOp,
   args: { paneId: string } & Record<string, unknown>,
   key: object,
@@ -319,36 +319,46 @@ export async function clickVerb(
   deps: BrowserActDeps,
   key: object = args
 ): Promise<Record<string, unknown>> {
-  return runWrite('browser_click', args as never, key, deps, async (ctx) => {
+  return runWrite('browser_click', args as never, key, deps, (ctx) => performClick(args, ctx, deps))
+}
+
+/**
+ * The click itself, inside a run that already holds the pane's place in the write queue. `browser_download({ ref })`
+ * clicks through this too (T572), so it never queues behind itself.
+ */
+export async function performClick(
+  args: Omit<ClickArgs, 'paneId'>,
+  ctx: ActCtx,
+  deps: BrowserActDeps
+): Promise<Record<string, unknown> | Refusal> {
+  try {
+    const loc = await locate(args.ref, ctx, deps, {
+      needsHit: true,
+      ...(args.offset ? { offset: args.offset } : {})
+    })
+    if ('refusal' in loc) return loc.refusal
+    const aim = clickTarget(loc.probe.rect!, args.offset)
+    if (!aim.ok) return refuse('OFFSET_OUTSIDE_BOX', { folder: ctx.rec.folder })
+    const seen = await describe(loc, ctx, deps)
+    const at = toViewPoint(aim.point, ctx.scale)
     try {
-      const loc = await locate(args.ref, ctx, deps, {
-        needsHit: true,
-        ...(args.offset ? { offset: args.offset } : {})
-      })
-      if ('refusal' in loc) return loc.refusal
-      const aim = clickTarget(loc.probe.rect!, args.offset)
-      if (!aim.ok) return refuse('OFFSET_OUTSIDE_BOX', { folder: ctx.rec.folder })
-      const seen = await describe(loc, ctx, deps)
-      const at = toViewPoint(aim.point, ctx.scale)
-      try {
-        for (const ev of clickEvents(at, {
-          ...(args.button ? { button: args.button } : {}),
-          ...(args.clickCount !== undefined ? { clickCount: args.clickCount } : {}),
-          ...(args.modifiers ? { modifiers: args.modifiers } : {})
-        })) {
-          await deps.host.cdp(ctx.rec.paneId, 'Input.dispatchMouseEvent', ev)
-        }
-      } catch (err) {
-        return refuse('INPUT_FAILED', {
-          folder: ctx.rec.folder,
-          detail: deps.scrub(errorText(err))
-        })
+      for (const ev of clickEvents(at, {
+        ...(args.button ? { button: args.button } : {}),
+        ...(args.clickCount !== undefined ? { clickCount: args.clickCount } : {}),
+        ...(args.modifiers ? { modifiers: args.modifiers } : {})
+      })) {
+        await deps.host.cdp(ctx.rec.paneId, 'Input.dispatchMouseEvent', ev)
       }
-      return { target: seen.target, snapshotStale: seen.stale }
-    } finally {
-      await releaseObjects(deps, ctx)
+    } catch (err) {
+      return refuse('INPUT_FAILED', {
+        folder: ctx.rec.folder,
+        detail: deps.scrub(errorText(err))
+      })
     }
-  })
+    return { target: seen.target, snapshotStale: seen.stale }
+  } finally {
+    await releaseObjects(deps, ctx)
+  }
 }
 
 /* ------------------------------------------------------------------------------------------------ */
