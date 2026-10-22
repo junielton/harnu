@@ -4334,6 +4334,10 @@
     }
   },
   "browserPane": {
+    "network": {
+      "label": "Rede",
+      "hint": "A captura de rede está ligada. Ela para sozinha e não grava corpos de resposta, a menos que o agente peça."
+    },
     "label": "Navegador",
     "newTab": "Nova aba",
     "menu": "Mais ações",

@@ -4334,6 +4334,10 @@
     }
   },
   "browserPane": {
+    "network": {
+      "label": "Network",
+      "hint": "Network capture is on. It stops by itself and records no bodies unless the agent asked for them."
+    },
     "label": "Browser pane",
     "newTab": "New tab",
     "menu": "More actions",

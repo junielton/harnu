@@ -121,3 +121,15 @@ export function splitAddress(url: string): AddressParts {
   if (!m) return { scheme: '', host: '', rest: url }
   return { scheme: m[1]!, host: m[2]!, rest: m[3]! }
 }
+
+/**
+ * Milliseconds of network capture left (the red "Network m:ss" counter, design.md "Network counter"), or
+ * `null` when no capture is running or it has already ended.
+ */
+export function networkRemainingMs(
+  state: Pick<BrowserPaneState, 'networkUntil'>,
+  now: number
+): number | null {
+  if (state.networkUntil === null || state.networkUntil <= now) return null
+  return state.networkUntil - now
+}

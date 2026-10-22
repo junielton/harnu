@@ -29,7 +29,7 @@ export const useBrowserStore = defineStore('browser', () => {
   /** Bumped per `browser.focusAddress`, per pane, so a repeat re-fires the pane's watcher. */
   const focusAddressNonce = ref<Record<string, number>>({})
   const focusAddressPending = ref<Record<string, boolean>>({})
-  /** Ticks each second while some pane is paused, so the countdown moves; otherwise static. */
+  /** Ticks each second while some pane is paused or recording network, so the countdowns move; otherwise static. */
   const clock = ref(Date.now())
 
   let started = false
@@ -126,7 +126,11 @@ export const useBrowserStore = defineStore('browser', () => {
       window.removeEventListener('blur', onPointerUp)
     })
     const timer = setInterval(() => {
-      if (Object.values(states.value).some((s) => s.pausedUntil !== null)) clock.value = Date.now()
+      if (
+        Object.values(states.value).some((s) => s.pausedUntil !== null || s.networkUntil !== null)
+      ) {
+        clock.value = Date.now()
+      }
     }, 1000)
     disposers.push(() => clearInterval(timer))
   }

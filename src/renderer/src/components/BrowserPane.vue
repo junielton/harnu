@@ -37,6 +37,7 @@ import {
   chipFor,
   formatCountdown,
   headerTitle,
+  networkRemainingMs,
   normalizeAddressInput,
   originBadgeKey,
   splitAddress
@@ -78,7 +79,8 @@ const state = computed<BrowserPaneState>(
       pausedUntil: null,
       disconnected: false,
       ownerSessionId: payload.value.ownerSessionId,
-      notice: null
+      notice: null,
+      networkUntil: null
     }
 )
 
@@ -128,6 +130,10 @@ async function onDisconnect(): Promise<void> {
       : { kind: 'danger', title: t('browserPane.chip.disconnectFailed') }
   )
 }
+
+/* ---- Network counter (design.md "Network counter") ------------------------------------------- */
+
+const networkMs = computed(() => networkRemainingMs(state.value, browser.clock))
 
 /* ---- Address bar ------------------------------------------------------------------------------ */
 
@@ -476,6 +482,21 @@ watch(isFrozen, async (frozen) => {
         >
           <Unplug :size="12" :stroke-width="1.6" />
         </button>
+      </span>
+
+      <span
+        v-if="networkMs !== null"
+        class="flex shrink-0 items-center gap-1 font-mono text-red"
+        style="padding: 0 4px; font-size: 10.5px"
+        :title="$t('browserPane.network.hint')"
+        data-testid="browser-network"
+      >
+        <span
+          class="anim-pulse-dot anim-pulse-dot--red h-1.5 w-1.5 shrink-0 rounded-full bg-red"
+          aria-hidden="true"
+        />
+        <span class="@max-[300px]:hidden">{{ $t('browserPane.network.label') }}</span>
+        <span data-testid="browser-network-time">{{ formatCountdown(networkMs) }}</span>
       </span>
 
       <button
