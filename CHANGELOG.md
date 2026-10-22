@@ -14,6 +14,20 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Point-and-comment on a page.** In a browser pane, click the new comment button in the header (or press
+  `Ctrl/Cmd+Shift+C` while the pane has focus), hover any element to see its outline and size, and click it. A
+  numbered pin appears on the element and a composer docks under the page: the page gets shorter to make room, and
+  nothing is ever drawn over it. Type what should change and press **Enter** to send it to your session now, or
+  **Shift+Enter** to keep it as a draft and carry on; **Send N comments** in the bar below sends every draft as
+  one message. Pick the session in the **Send to** menu (a session's own pane sends to that session, any other
+  pane to the one you are looking at); with no session at all the comment is copied to your clipboard. The
+  session gets your words plus a cropped picture of the element, its HTML, a short list of its styles and its
+  source file when the page says (Vue, React, Svelte). Whatever the page itself wrote is fenced and marked
+  untrusted, so a page cannot pose as you. The composer lives in Harnu, outside the page, so the page cannot
+  see what you type, and a page cannot fake a click on a pin. Pins stay on the page, find their element again
+  after a reload, sit dashed where they were when it is gone, and go solid and faded once sent. A comment waits
+  while you are typing in that session's terminal, and a parked session is woken in the background first.
+
 - **Live panels in the browser pane.** A session can now open one of your project's `.html` files — or write a
   small panel for you from inline HTML — in a browser pane (`browser_open` with `path`, or `html` and `name`),
   and keep it fresh with `browser_set_data` (the panel's state, saved next to your project and re-read on every
