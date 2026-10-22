@@ -97,6 +97,21 @@ describe('browser_open (url form)', () => {
     )
   })
 
+  it('names the requested address in the ACK while the page has not committed yet', async () => {
+    const { deps, live } = rig()
+    // Before the first commit a real webContents reports an empty URL.
+    deps.host.create = vi.fn(({ paneId }) => {
+      live.set(paneId, { url: '', title: '', loading: true, canGoBack: false, canGoForward: false })
+    })
+    const res = await openVerb({ folder: FOLDER, url: 'http://localhost:5173/a?token=s' }, deps)
+    expect(res).toMatchObject({
+      ok: true,
+      url: 'http://localhost:5173/a',
+      origin: 'local',
+      state: 'loading'
+    })
+  })
+
   it('always uses the agent partition and flags an external host the verb opened', async () => {
     const { deps, host } = rig()
     const res = await openVerb({ folder: FOLDER, url: 'https://docs.example.com/guide' }, deps)
@@ -232,6 +247,22 @@ describe('browser_navigate', () => {
       await navigateVerb({ paneId: 'bp-1', url: 'http://localhost:1', action: 'reload' }, deps)
     ).toMatchObject({ error: 'BAD_ARGS' })
     expect(host.navigate).not.toHaveBeenCalled()
+  })
+
+  it('flags a new external host even though the view host records it as seen while the page loads', async () => {
+    const r = await opened()
+    ;(r.host.navigate as ReturnType<typeof vi.fn>).mockImplementationOnce(async (id, target) => {
+      // The real view host adds the committed host to `seenHosts` on `did-navigate`, DURING the call.
+      r.live.set(id, { ...r.live.get(id)!, url: (target as { url: string }).url, loading: false })
+      r.registry.get(id)!.seenHosts.add('docs.example.com')
+      return { title: 'Docs', status: 200, navigationId: 'n', reason: 'load' as const }
+    })
+    const first = await navigateVerb({ paneId: 'bp-1', url: 'https://docs.example.com/a' }, r.deps)
+    expect(first).toMatchObject({ ok: true, origin: 'external', flagged: true })
+    // A second navigation to the same host is no longer new.
+    r.registry.get('bp-1')!.flagged = null
+    const second = await navigateVerb({ paneId: 'bp-1', url: 'https://docs.example.com/b' }, r.deps)
+    expect(second).toMatchObject({ ok: true, flagged: false })
   })
 
   it('flags a verb navigation to a new external host, and not to one already seen', async () => {

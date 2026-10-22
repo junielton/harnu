@@ -26,10 +26,18 @@ export interface GuestWebPreferences {
   backgroundThrottling: true
   spellcheck: false
   enableWebSQL: false
-  disableDialogs: false
+  disableDialogs: true
 }
 
-/** The §3.1 table as one object. `preloadPath` is the absolute path of `out/preload/browser-guest.js`. */
+/**
+ * The §3.1 table as one object, with ONE measured deviation: `disableDialogs` is `true` (spec §3.1 said `false`
+ * and "intercept"). In the U1 live run a page's `alert()` with `false` plus a CDP `handleJavaScriptDialog`
+ * released the page's script but left Electron's own native dialog window up, modal over the app, until someone
+ * clicked it. A hostile page must not be able to do that, so dialogs are switched off in the guest; the pane
+ * still raises its "dialog dismissed" notice (`view-host.ts`).
+ *
+ * `preloadPath` is the absolute path of `out/preload/browser-guest.js`.
+ */
 export function guestWebPreferences(
   partition: BrowserPartition,
   preloadPath: string
@@ -48,6 +56,6 @@ export function guestWebPreferences(
     backgroundThrottling: true,
     spellcheck: false,
     enableWebSQL: false,
-    disableDialogs: false
+    disableDialogs: true
   }
 }

@@ -28,6 +28,7 @@ export const useBrowserStore = defineStore('browser', () => {
   const chordPaneId = ref<string | null>(null)
   /** Bumped per `browser.focusAddress`, per pane, so a repeat re-fires the pane's watcher. */
   const focusAddressNonce = ref<Record<string, number>>({})
+  const focusAddressPending = ref<Record<string, boolean>>({})
   /** Ticks each second while some pane is paused, so the countdown moves; otherwise static. */
   const clock = ref(Date.now())
 
@@ -162,11 +163,24 @@ export const useBrowserStore = defineStore('browser', () => {
     return ok
   }
 
+  /**
+   * Ask a pane to focus its address field. Also recorded as PENDING, because the pane may not be mounted yet
+   * (a pane that was just created mounts a tick later): the pane takes the pending request when it mounts.
+   */
   function requestFocusAddress(paneId: string): void {
     focusAddressNonce.value = {
       ...focusAddressNonce.value,
       [paneId]: (focusAddressNonce.value[paneId] ?? 0) + 1
     }
+    focusAddressPending.value = { ...focusAddressPending.value, [paneId]: true }
+  }
+
+  /** @returns whether a focus request was waiting for this pane, and clears it. */
+  function takeFocusAddressPending(paneId: string): boolean {
+    if (!focusAddressPending.value[paneId]) return false
+    const { [paneId]: _p, ...rest } = focusAddressPending.value
+    focusAddressPending.value = rest
+    return true
   }
 
   return {
@@ -184,6 +198,7 @@ export const useBrowserStore = defineStore('browser', () => {
     pause,
     resume,
     disconnect,
-    requestFocusAddress
+    requestFocusAddress,
+    takeFocusAddressPending
   }
 })

@@ -69,3 +69,61 @@ export function freezeCaptureRect(bounds: Rect, deviceMode: boolean): Rect | und
 
 /** The freeze image encoding (spec §2.4, U0 A12): JPEG 80, because PNG at DPR 2 was over the 100 ms budget. */
 export const FREEZE_JPEG_QUALITY = 80
+
+/** What the view host knows about one pane when it decides where its native view goes. */
+export interface PlacementInput {
+  /** The pane has never had a real rect: it is attached, visible, 1×1 (spec §2.3). */
+  parked: boolean
+  /** The last rect the renderer reported, in CSS px, or `null` before the pane ever mounted. */
+  rect: Rect | null
+  /** The renderer said the pane host is on screen (mounted, its folder selected). */
+  visible: boolean
+  /** An overlay or a drag currently has the view frozen (hidden under a still image). */
+  frozen: boolean
+  zoomFactor: number
+  /** The window's content area, for the parked corner. */
+  content: { width: number; height: number }
+  /** The bounds the view has now, kept while a painted view is merely hidden. */
+  current: Rect
+}
+
+export interface Placement {
+  bounds: Rect
+  visible: boolean
+  /** Still parked after this placement. */
+  parked: boolean
+  /** The view just got its first real rect: clear the 1280×800 parking override (spec §2.3). */
+  clearParkedMetrics: boolean
+}
+
+/**
+ * Where a pane's native view goes (spec §2.3), as a pure decision so the parking rule is testable:
+ *
+ *  - A pane with no usable rect yet (never mounted, or an agent-opened pane for a folder the operator is not
+ *    viewing) stays PARKED: attached, VISIBLE at 1×1 in the bottom-right corner. It must be visible because a
+ *    view that has never painted cannot be captured (U0 A3). An overlay on that corner hides it (`frozen`).
+ *  - The first real rect UNPARKS it: the parking metrics override is cleared and the view takes the rect,
+ *    rounded by edges.
+ *  - A pane that has painted and is then hidden is simply `visible: false` at the bounds it had; it keeps
+ *    working for `capturePage()`.
+ */
+export function placeView(input: PlacementInput): Placement {
+  const hasRect = input.rect !== null && input.rect.width >= 1 && input.rect.height >= 1
+  if (input.visible && hasRect) {
+    return {
+      bounds: toViewBounds(input.rect as Rect, input.zoomFactor),
+      visible: !input.frozen,
+      parked: false,
+      clearParkedMetrics: input.parked
+    }
+  }
+  if (input.parked) {
+    return {
+      bounds: parkedBounds(input.content),
+      visible: !input.frozen,
+      parked: true,
+      clearParkedMetrics: false
+    }
+  }
+  return { bounds: input.current, visible: false, parked: false, clearParkedMetrics: false }
+}

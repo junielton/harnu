@@ -9,6 +9,7 @@ import {
   freezeCaptureRect,
   needsFreeze,
   parkedBounds,
+  placeView,
   rectsIntersect,
   toViewBounds
 } from '../src/main/browser/bounds'
@@ -113,5 +114,80 @@ describe('freeze capture', () => {
 
   it('encodes as JPEG 80 (U0 A12)', () => {
     expect(FREEZE_JPEG_QUALITY).toBe(80)
+  })
+})
+
+describe('placeView (AC-3: parking, unparking, hiding)', () => {
+  const content = { width: 1280, height: 800 }
+  const real = { x: 400, y: 100, width: 600, height: 500 }
+  const base = {
+    parked: true,
+    rect: null,
+    visible: false,
+    frozen: false,
+    zoomFactor: 1,
+    content,
+    current: { x: 0, y: 0, width: 0, height: 0 }
+  }
+
+  it('keeps an agent-opened pane for an unviewed folder PARKED: attached, visible, 1×1 in the corner', () => {
+    // The pane never mounted, so the renderer never reported a rect.
+    expect(placeView(base)).toEqual({
+      bounds: { x: 1279, y: 799, width: 1, height: 1 },
+      visible: true,
+      parked: true,
+      clearParkedMetrics: false
+    })
+  })
+
+  it('stays parked while the renderer reports it hidden or with no area (a folder that is not selected)', () => {
+    for (const input of [
+      { ...base, rect: real, visible: false },
+      { ...base, rect: { x: 0, y: 0, width: 0, height: 0 }, visible: true }
+    ]) {
+      expect(placeView(input)).toMatchObject({ parked: true, visible: true })
+    }
+  })
+
+  it('unparks on the first real rect: the override is cleared and the view takes the rounded rect', () => {
+    expect(placeView({ ...base, rect: real, visible: true })).toEqual({
+      bounds: { x: 400, y: 100, width: 600, height: 500 },
+      visible: true,
+      parked: false,
+      clearParkedMetrics: true
+    })
+    // Fractional zoom rounds by edges.
+    expect(placeView({ ...base, rect: real, visible: true, zoomFactor: 1.25 }).bounds).toEqual({
+      x: 500,
+      y: 125,
+      width: 750,
+      height: 625
+    })
+  })
+
+  it('a pane that has painted and is then hidden is just hidden, at the bounds it had', () => {
+    const current = { x: 400, y: 100, width: 600, height: 500 }
+    expect(placeView({ ...base, parked: false, rect: real, visible: false, current })).toEqual({
+      bounds: current,
+      visible: false,
+      parked: false,
+      clearParkedMetrics: false
+    })
+  })
+
+  it('an overlay hides a parked corner and a live view alike (frozen)', () => {
+    expect(placeView({ ...base, frozen: true })).toMatchObject({ parked: true, visible: false })
+    expect(
+      placeView({ ...base, parked: false, rect: real, visible: true, frozen: true })
+    ).toMatchObject({
+      visible: false,
+      parked: false
+    })
+  })
+
+  it('never reports an unparked pane as clearing the override twice', () => {
+    expect(
+      placeView({ ...base, parked: false, rect: real, visible: true }).clearParkedMetrics
+    ).toBe(false)
   })
 })

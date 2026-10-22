@@ -166,7 +166,7 @@ function focusAddress(): void {
 watch(
   () => browser.focusAddressNonce[paneId],
   (n) => {
-    if (n) focusAddress()
+    if (n && browser.takeFocusAddressPending(paneId)) focusAddress()
   }
 )
 
@@ -247,6 +247,10 @@ function pump(): void {
 
 onMounted(() => {
   browser.start()
+  // A request made before this pane mounted (Split → Browser creates the pane, then asks for focus).
+  void nextTick(() => {
+    if (browser.takeFocusAddressPending(paneId)) focusAddress()
+  })
   void browser.refresh(paneId)
   window.addEventListener('mousedown', onWindowPointerDown, true)
   rafId = requestAnimationFrame(pump)
@@ -295,7 +299,7 @@ watch(isFrozen, async (frozen) => {
       @mousedown="onHeaderMouseDown"
     >
       <Globe :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-      <span class="min-w-0 flex-1 truncate" :title="state.url" data-testid="browser-title">{{
+      <span class="min-w-[2.5rem] flex-1 truncate" :title="state.url" data-testid="browser-title">{{
         title
       }}</span>
 
@@ -336,9 +340,20 @@ watch(isFrozen, async (frozen) => {
             class="shrink-0"
             aria-hidden="true"
           />
-          <span class="min-w-0 truncate @max-[180px]:hidden" data-testid="browser-chip-label">{{
-            chipLabel
-          }}</span>
+          <!-- A paused chip keeps its countdown at every width: only the words around it give way. -->
+          <span
+            v-if="chip.kind === 'paused'"
+            class="min-w-0 truncate"
+            data-testid="browser-chip-label"
+            ><span class="@max-[300px]:hidden">{{ $t('browserPane.chip.pausedLabel') }} · </span
+            >{{ formatCountdown(chip.pausedMs) }}</span
+          >
+          <span
+            v-else
+            class="min-w-0 truncate @max-[180px]:hidden"
+            data-testid="browser-chip-label"
+            >{{ chipLabel }}</span
+          >
           <span v-if="wordText" class="shrink-0 text-text-3 @max-[180px]:hidden"
             >· {{ wordText }}</span
           >
@@ -349,12 +364,14 @@ watch(isFrozen, async (frozen) => {
           type="button"
           class="flex shrink-0 items-center gap-0.5 rounded text-warning transition-colors hover:bg-surface-2"
           style="padding: 0 4px; font-size: 10px"
+          :aria-label="$t('browserPane.chip.resume')"
+          :title="$t('browserPane.chip.resume')"
           data-testid="browser-resume"
           @mousedown.stop
           @click="browser.resume(paneId)"
         >
           <Play :size="10" :stroke-width="1.6" aria-hidden="true" />
-          {{ $t('browserPane.chip.resume') }}
+          <span class="@max-[300px]:hidden">{{ $t('browserPane.chip.resume') }}</span>
         </button>
         <button
           v-if="chip.disconnectable"
@@ -406,7 +423,7 @@ watch(isFrozen, async (frozen) => {
     </header>
 
     <!-- Address bar (design.md "Address bar"). -->
-    <div class="flex h-7 shrink-0 items-center gap-1 border-b border-border bg-bg px-2">
+    <div class="@container flex h-7 shrink-0 items-center gap-1 border-b border-border bg-bg px-2">
       <button
         type="button"
         class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2"
@@ -452,7 +469,7 @@ watch(isFrozen, async (frozen) => {
 
       <span
         v-if="originKey"
-        class="shrink-0 rounded-full border"
+        class="shrink-0 rounded-full border @max-[200px]:hidden"
         :class="
           originKey === 'local'
             ? 'border-green/30 bg-green-soft text-green'
@@ -472,7 +489,7 @@ watch(isFrozen, async (frozen) => {
         data-testid="browser-flag"
       >
         <TriangleAlert :size="10" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
-        <span class="min-w-0 truncate">{{
+        <span class="min-w-0 truncate @max-[300px]:hidden">{{
           $t('browserPane.flag.label', { host: state.flagged.host })
         }}</span>
         <button
@@ -493,7 +510,7 @@ watch(isFrozen, async (frozen) => {
         type="text"
         spellcheck="false"
         autocomplete="off"
-        class="h-5 min-w-0 flex-1 rounded-sm border border-border bg-surface px-1.5 font-mono text-[11px] text-text outline-none focus:border-accent-line"
+        class="h-5 min-w-[56px] flex-1 rounded-sm border border-border bg-surface px-1.5 font-mono text-[11px] text-text outline-none focus:border-accent-line"
         :placeholder="$t('browserPane.addressPlaceholder')"
         :aria-label="$t('browserPane.address')"
         data-testid="browser-address"

@@ -257,13 +257,18 @@ export async function openVerb(
     throw err
   }
   if (rec.flagged) deps.host.publishFlag(paneId, rec.flagged)
+  // `getURL()` is empty until the first commit, so the ACK names the address that was asked for.
   const live = deps.host.info(paneId)
   return {
-    ...ackBase(rec, live, origin),
+    ...ackBase(rec, live?.url ? live : { ...(live ?? emptyLive()), url }, origin),
     reused: false,
     ownerSessionId: owner,
     openedBy: 'agent'
   }
+}
+
+function emptyLive(): LivePaneInfo {
+  return { url: '', title: '', loading: true, canGoBack: false, canGoForward: false }
 }
 
 function sessionNotFound(): SteerableDenial {
@@ -327,6 +332,9 @@ export async function navigateVerb(
     target = { action: args.action! }
   }
 
+  // The hosts this pane had shown BEFORE the call: the view host adds each committed host to `seenHosts` as the
+  // page loads, so judging "new host" afterwards would never be true (found in the U1 live run).
+  const seenBefore = new Set(rec.seenHosts)
   const token = deps.registry.beginWrite(rec.paneId)
   let outcome: NavigateOutcome
   try {
@@ -346,7 +354,7 @@ export async function navigateVerb(
   const origin = originOf(rec, live, deps)
   // "Opened by agent" (spec §3.2): a verb moved the pane to a site the operator did not pick.
   const host = hostOf(live?.url ?? '')
-  if (host && origin === 'external' && shouldFlagNavigation('verb', host, rec.seenHosts)) {
+  if (host && origin === 'external' && shouldFlagNavigation('verb', host, seenBefore)) {
     rec.flagged = { host }
     deps.host.publishFlag(rec.paneId, rec.flagged)
   }

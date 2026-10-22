@@ -14,7 +14,7 @@ import {
   freezeCaptureRect,
   needsFreeze,
   parkedBounds,
-  toViewBounds,
+  placeView,
   type Rect
 } from './bounds'
 import { decideForward, type GuestInput } from './chord'
@@ -221,20 +221,32 @@ export class BrowserViewHost implements BrowserHost {
     if (!e || e.wc.isDestroyed()) return
     e.rectCss = rect
     e.visibleReported = visible
-    if (!visible || rect.width < 1 || rect.height < 1) {
-      // Hidden panes keep their view alive. A PARKED view stays parked (it counts as hidden for U7).
+    if (!visible) {
+      // Hidden: a freeze no longer applies, and a painted view keeps its bounds (`placeView` hides it).
       if (!e.parked) {
         e.freezeGen++
         e.frozen = false
-        e.view.setVisible(false)
       }
-      this.reconcileFreeze()
-      return
     }
-    if (e.parked) this.unpark(e)
-    e.view.setBounds(toViewBounds(rect, this.zoomFactor()))
-    if (!e.frozen) e.view.setVisible(true)
+    this.place(e)
     this.reconcileFreeze()
+  }
+
+  /** Put the native view where `placeView` says (spec §2.3): parked, unparked, or hidden. */
+  private place(e: ViewEntry): void {
+    const placement = placeView({
+      parked: e.parked,
+      rect: e.rectCss,
+      visible: e.visibleReported,
+      frozen: e.frozen,
+      zoomFactor: this.zoomFactor(),
+      content: this.contentSize(),
+      current: e.view.getBounds()
+    })
+    if (placement.clearParkedMetrics) this.unpark(e)
+    e.parked = placement.parked
+    e.view.setBounds(placement.bounds)
+    e.view.setVisible(placement.visible)
   }
 
   setOverlays(overlays: BrowserOverlayRect[]): void {
@@ -375,7 +387,7 @@ export class BrowserViewHost implements BrowserHost {
     this.windowHooked = win
     const repark = (): void => {
       for (const e of this.entries.values()) {
-        if (e.parked) e.view.setBounds(parkedBounds(this.contentSize()))
+        if (e.parked) this.place(e)
       }
       this.reconcileFreeze()
     }

@@ -4367,7 +4367,8 @@
       "disconnectedToast": "Agente desconectado deste painel",
       "disconnectFailed": "Não foi possível desconectar o agente",
       "reading": "lendo",
-      "driving": "operando"
+      "driving": "operando",
+      "pausedLabel": "Agente pausado"
     },
     "notice": {
       "blocked": "Bloqueado: endereços {scheme}: não podem ser abertos",

@@ -20,7 +20,9 @@ describe('guestWebPreferences', () => {
       backgroundThrottling: true,
       spellcheck: false,
       enableWebSQL: false,
-      disableDialogs: false
+      // Spec §3.1 said false; the U1 live run showed a native alert window left modal over the app, so the
+      // guest runs with dialogs OFF (see guest-prefs.ts).
+      disableDialogs: true
     })
   })
 

@@ -4367,7 +4367,8 @@
       "disconnectedToast": "Agent disconnected from this pane",
       "disconnectFailed": "Couldn't disconnect the agent",
       "reading": "reading",
-      "driving": "driving"
+      "driving": "driving",
+      "pausedLabel": "Agent paused"
     },
     "notice": {
       "blocked": "Blocked: {scheme}: addresses cannot be opened",
