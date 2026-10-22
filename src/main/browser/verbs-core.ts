@@ -539,6 +539,7 @@ export async function listVerb(
     .sort((a, b) => a.createdAt - b.createdAt)
     .map((rec) => {
       const live = deps.host.info(rec.paneId)
+      const discardedNow = deps.host.isDiscarded?.(rec.paneId) === true
       const origin = originOf(rec, live, deps)
       const access = describePaneAccess(
         accessOf(rec, deps, origin, optIn.get(rec.folder) === true),
@@ -553,7 +554,8 @@ export async function listVerb(
         origin,
         url: readable ? scrubUrl(live?.url ?? '') : null,
         title: readable ? deps.scrub(live?.title ?? '') : null,
-        state: live?.loading ? 'loading' : 'live',
+        // `discarded`: the page is released to save memory (spec §10.1); a verb that needs it brings it back.
+        state: discardedNow ? 'discarded' : live?.loading ? 'loading' : 'live',
         openedBy: rec.openedBy,
         ownerSessionId: rec.ownerSessionId,
         readable,

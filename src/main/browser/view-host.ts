@@ -2002,6 +2002,9 @@ export class BrowserViewHost implements BrowserReadHost {
     e: ViewEntry,
     patch: { notice?: BrowserNotice | null; flagged?: { host: string } | null } = {}
   ): void {
+    // A view that was released (closed, or discarded) can still fire a late event: it must not push a live state
+    // over the discarded one the pane now shows.
+    if (this.entries.get(e.paneId) !== e) return
     if ('notice' in patch) e.notice = patch.notice ?? null
     if ('flagged' in patch) {
       const r = this.deps.registry.get(e.paneId)
