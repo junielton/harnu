@@ -66,7 +66,7 @@ import {
 } from '../terminal-registry'
 import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { readAgentTerminalWrites } from './prefs'
-import { beginPaneVerb, withRevivedFlag } from '../browser/verbs-core'
+import { beginPaneVerb, runWithRevival, withRevivedFlag } from '../browser/verbs-core'
 import {
   browserRegistry,
   makeBrowserActDeps,
@@ -5170,7 +5170,7 @@ function browserDeps(ctx: ToolHandlerCtx): ReturnType<typeof makeBrowserVerbDeps
 
 /** A verb result: `ok:false` is the steering refusal shape of spec §6, returned as an error result. */
 function browserResult(input: Record<string, unknown>): CallToolResult {
-  const res = withRevivedFlag(browserRegistry, input)
+  const res = withRevivedFlag(input)
   if (res.ok === false) {
     return { content: [{ type: 'text', text: JSON.stringify(res) }], isError: true }
   }
@@ -5331,7 +5331,7 @@ function paneVerb(handler: Handler): Handler {
     const paneId = typeof args.paneId === 'string' ? args.paneId : ''
     const end = paneId ? beginPaneVerb(browserRegistry, paneId) : undefined
     try {
-      return await handler(args, ctx)
+      return await runWithRevival(() => handler(args, ctx))
     } finally {
       end?.()
     }

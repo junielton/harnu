@@ -346,12 +346,13 @@ export function createPageService(deps: PageServiceDeps): PageService {
       if (rec) rec.pagePath = pagePathForUrl(url)
       void ensureWatch(paneId, url).catch(() => undefined)
     },
-    onDestroyed(paneId) {
+    onDestroyed(paneId, why) {
       boot.forget(paneId)
       pendingRequests.delete(paneId)
       dropWatch(paneId)
       rate.forget(paneId)
-      held.forget(paneId)
+      // A discarded pane keeps its place, so the events no session could take stay held for it.
+      if (why !== 'discard') held.forget(paneId)
     },
     onRequest(partition, paneId, url) {
       // The check allowed this request: let the handler serve it once, and watch the file for its pane.

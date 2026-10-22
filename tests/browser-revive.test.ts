@@ -11,6 +11,7 @@ import {
   closeVerb,
   listVerb,
   navigateVerb,
+  runWithRevival,
   withRevivedFlag,
   type BrowserHost,
   type BrowserVerbDeps,
@@ -118,24 +119,50 @@ function rig() {
 }
 
 describe('a verb that needs a live page', () => {
-  it('revives a discarded pane before it runs, and the ACK says revived once', async () => {
-    const { deps, host, registry, discard } = rig()
+  it('revives a discarded pane before it runs, and the ACK says revived', async () => {
+    const { deps, host, discard } = rig()
     discard()
-    const res = await navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps)
-    expect(res).toMatchObject({ ok: true, paneId: 'bp-1', url: 'http://localhost:3000/cart' })
+    await runWithRevival(async () => {
+      const res = await navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps)
+      expect(res).toMatchObject({ ok: true, paneId: 'bp-1', url: 'http://localhost:3000/cart' })
+      expect(withRevivedFlag(res)).toMatchObject({ revived: true })
+    })
     expect(host.revive).toHaveBeenCalledTimes(1)
     expect(host.navigate).toHaveBeenCalledTimes(1)
-    // the handler layer turns the flag into `revived: true` on that one ACK
-    expect(withRevivedFlag(registry, res)).toMatchObject({ revived: true })
-    expect(withRevivedFlag(registry, res)).not.toHaveProperty('revived')
+  })
+
+  it('the flag belongs to the CALL: a call that revived nothing never says revived, even on the same pane', async () => {
+    const { deps, discard } = rig()
+    discard()
+    const first = runWithRevival(async () => {
+      const res = await navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps)
+      return withRevivedFlag(res)
+    })
+    // a second call on the same pane while the first is in flight: the pane is live by then, it revives nothing
+    const second = runWithRevival(async () => {
+      const res = await navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps)
+      return withRevivedFlag(res)
+    })
+    const [a, b] = await Promise.all([first, second])
+    expect(a).toMatchObject({ revived: true })
+    expect(b).not.toHaveProperty('revived')
+  })
+
+  it('a revival that fails refuses PANE_REVIVE_FAILED and the verb never runs against a pane with no view', async () => {
+    const { deps, host, discard } = rig()
+    discard()
+    ;(host.revive as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false)
+    const res = await navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps)
+    expect(res).toMatchObject({ ok: false, error: 'PANE_REVIVE_FAILED' })
+    expect(host.navigate).not.toHaveBeenCalled()
   })
 
   it('does nothing to a pane that is live', async () => {
-    const { deps, host, registry } = rig()
-    const res = await navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps)
+    const { deps, host } = rig()
+    const res = await runWithRevival(() => navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps))
     expect(res).toMatchObject({ ok: true })
     expect(host.revive).not.toHaveBeenCalled()
-    expect(withRevivedFlag(registry, res)).not.toHaveProperty('revived')
+    expect(withRevivedFlag(res)).not.toHaveProperty('revived')
   })
 
   it('a refused call never revives: a disconnected pane stays discarded', async () => {
@@ -190,22 +217,18 @@ describe('verbs that need no page', () => {
 })
 
 describe('a verb in flight keeps the pane from being discarded', () => {
-  it('counts for the whole run and a leftover revival flag is dropped at the end', () => {
+  it('counts for the whole run and ends once', () => {
     const { registry } = rig()
     const end = beginPaneVerb(registry, 'bp-1')
     expect(registry.verbsInFlight('bp-1')).toBe(1)
-    registry.noteRevived('bp-1') // a verb that failed after the revival never claimed it
+    end()
     end()
     expect(registry.verbsInFlight('bp-1')).toBe(0)
-    expect(registry.takeRevived('bp-1')).toBe(false)
   })
 
-  it('does not add the flag to a refusal or an ACK without a pane', () => {
-    const { registry } = rig()
-    registry.noteRevived('bp-1')
-    expect(withRevivedFlag(registry, { ok: false, error: 'X' })).not.toHaveProperty('revived')
-    expect(withRevivedFlag(registry, { ok: true })).not.toHaveProperty('revived')
-    expect(registry.takeRevived('bp-1')).toBe(true) // still waiting for a call that names the pane
+  it('does not add the flag to a refusal, and a call outside a verb run never says revived', () => {
+    expect(withRevivedFlag({ ok: false, error: 'X' })).not.toHaveProperty('revived')
+    expect(withRevivedFlag({ ok: true })).not.toHaveProperty('revived')
   })
 })
 

@@ -12,6 +12,7 @@ export const BROWSER_DENIAL_CODES = [
   'BROWSER_PAUSED',
   'URL_SCHEME_BLOCKED',
   'PANE_LIMIT',
+  'PANE_REVIVE_FAILED',
   'NOT_YET_AVAILABLE',
   'REF_STALE',
   'REF_NOT_FOUND',
@@ -169,6 +170,17 @@ export function shapeBrowserDenial(
           {
             do: 'Serve the content over http://localhost (a dev server) or use an https URL.',
             why: 'file:, chrome:, devtools:, view-source: and javascript: addresses are blocked so a page can never reach local files or the app itself.'
+          }
+        ]
+      }
+    case 'PANE_REVIVE_FAILED':
+      return {
+        error: code,
+        message: `This pane's page was paused to save memory and could not be loaded again${at}, so nothing was done.`,
+        nextActions: [
+          {
+            do: 'Call browser_list to see the pane, then call again; if it keeps failing, browser_close it and browser_open the address again.',
+            why: 'A discarded pane has no page until it is revived; a verb never runs against a pane with no view.'
           }
         ]
       }

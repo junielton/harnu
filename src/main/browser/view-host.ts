@@ -164,7 +164,8 @@ export interface PageHooks {
   onNavigationStart(paneId: string): void
   /** A pane committed a navigation (to any URL): start, keep or drop its file watcher. */
   onNavigated(paneId: string, url: string): void
-  onDestroyed(paneId: string): void
+  /** The view is gone. `discard`: the pane itself stays (its page events a session could not take stay held). */
+  onDestroyed(paneId: string, why?: 'close' | 'discard'): void
   /**
    * `onBeforeRequest` ALLOWED a `harnu-page:` request: issue its one-shot ticket (the handler serves nothing
    * else, F1) and, when it came from a known pane, watch its file.
@@ -507,7 +508,7 @@ export class BrowserViewHost implements BrowserReadHost {
   }
 
   /** Tear the view down: webContents, debugger, watchers, readers, held downloads. The pane itself stays known. */
-  private release(paneId: string): void {
+  private release(paneId: string, discard = false): void {
     const e = this.entries.get(paneId)
     if (!e) return
     e.gen.bump()
@@ -533,7 +534,7 @@ export class BrowserViewHost implements BrowserReadHost {
     this.entries.delete(paneId)
     this.byWebContentsId.delete(e.wc.id)
     e.readers.dispose()
-    this.deps.pageHooks?.onDestroyed(paneId)
+    this.deps.pageHooks?.onDestroyed(paneId, discard ? 'discard' : 'close')
     const win = this.deps.getWindow()
     try {
       if (e.wc.debugger.isAttached()) e.wc.debugger.detach()
@@ -1262,7 +1263,7 @@ export class BrowserViewHost implements BrowserReadHost {
     this.send('browser:persist', { paneId, scroll: rec.discarded.scroll })
     this.sentScroll.set(paneId, JSON.stringify(rec.discarded.scroll))
     this.deps.onViewDiscarded?.(paneId)
-    this.release(paneId)
+    this.release(paneId, true)
     this.hidden.markHidden(paneId, this.deps.now())
     this.publishDiscarded(paneId)
     return true

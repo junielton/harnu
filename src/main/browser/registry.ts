@@ -76,9 +76,6 @@ export interface BrowserRegistry {
   /** A verb (read or write) is running on the pane, so it must not be discarded under it (spec §10.1). */
   beginVerb(paneId: string): () => void
   verbsInFlight(paneId: string): number
-  /** The pane was revived on behalf of a verb call; the ACK says `revived: true` once (`takeRevived`). */
-  noteRevived(paneId: string): void
-  takeRevived(paneId: string): boolean
   /** When the operator last used the pane, or `null`. */
   operatorInteractionAt(paneId: string): number | null
   beginWrite(paneId: string): WriteToken
@@ -123,7 +120,6 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
   const overlapped = new Map<string, Set<number>>()
   let nextId = 1
   const verbs = new Map<string, number>()
-  const revived = new Set<string>()
   /** Per pane: agent input verbs running now, and when the last one finished. */
   const agentInputs = new Map<
     string,
@@ -142,7 +138,6 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
     get: (id) => panes.get(id),
     remove(id) {
       verbs.delete(id)
-      revived.delete(id)
       operatorAt.delete(id)
       inflight.delete(id)
       overlapped.delete(id)
@@ -201,8 +196,6 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
       }
     },
     verbsInFlight: (id) => verbs.get(id) ?? 0,
-    noteRevived: (id) => void revived.add(id),
-    takeRevived: (id) => revived.delete(id),
     operatorInteractionAt: (id) => operatorAt.get(id) ?? null,
     touch(id) {
       const rec = panes.get(id)

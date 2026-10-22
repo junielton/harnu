@@ -229,16 +229,10 @@ describe('the registry facts the sweep reads', () => {
     expect(reg.verbsInFlight('other')).toBe(0)
   })
 
-  it('reports a revival once, and forgets everything with the pane', () => {
+  it('forgets the verbs in flight with the pane', () => {
     const reg = createBrowserRegistry(() => 1)
-    expect(reg.takeRevived('p')).toBe(false)
-    reg.noteRevived('p')
-    expect(reg.takeRevived('p')).toBe(true)
-    expect(reg.takeRevived('p')).toBe(false)
-    reg.noteRevived('p')
     reg.beginVerb('p')
     reg.remove('p')
-    expect(reg.takeRevived('p')).toBe(false)
     expect(reg.verbsInFlight('p')).toBe(0)
   })
 

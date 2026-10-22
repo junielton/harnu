@@ -420,7 +420,8 @@ export function makeBrowserReadDeps(env: BrowserHandlerEnv): BrowserReadDeps {
       if (!url) return undefined
       const seam = getPageService().seam
       const where = await seam.locate(url)
-      if (!where) return undefined
+      // Only the pane's OWN folder: a page pane showing another folder's file never reads that folder's data.
+      if (!where || where.folder !== browserRegistry.get(paneId)?.folder) return undefined
       return (await seam.state.read(where.folder, where.relPath)).data
     }
   }

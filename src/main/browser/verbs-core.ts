@@ -19,6 +19,7 @@ import { checkBrowserContent, type ContentRefusal } from './content-check'
 import { checkTopLevelNavigation } from './nav-policy'
 import { opNeedsLivePage } from './lifecycle'
 import { flagAfterVerbNavigation } from './view-logic'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { classifyOrigin, hostOf, scrubUrl, type OriginClass } from './origin-class'
 import {
   MAX_AGENT_PANES_PER_FOLDER,
@@ -221,23 +222,27 @@ export function noteAgentWrite(deps: Pick<BrowserVerbDeps, 'leases'>, paneId: st
  * idempotent and also drops a revival flag the ACK never claimed (a verb that failed after the revival).
  */
 export function beginPaneVerb(
-  registry: Pick<BrowserRegistry, 'beginVerb' | 'takeRevived'>,
+  registry: Pick<BrowserRegistry, 'beginVerb'>,
   paneId: string
 ): () => void {
-  const end = registry.beginVerb(paneId)
-  return () => {
-    end()
-    registry.takeRevived(paneId)
-  }
+  return registry.beginVerb(paneId)
 }
 
-/** `revived: true` on the ACK of a verb that had to bring its discarded pane back (once). */
-export function withRevivedFlag(
-  registry: Pick<BrowserRegistry, 'takeRevived'>,
-  res: Record<string, unknown>
-): Record<string, unknown> {
-  if (res.ok === false || typeof res.paneId !== 'string') return res
-  return registry.takeRevived(res.paneId) ? { ...res, revived: true } : res
+/**
+ * Whether THIS call revived its pane, kept per call (an async-local store) and not per pane, so two calls on one pane
+ * never hand each other's `revived`.
+ */
+const revivalOfThisCall = new AsyncLocalStorage<{ revived: boolean }>()
+
+/** Run one pane-addressed verb call with its own revival record. */
+export function runWithRevival<T>(fn: () => T): T {
+  return revivalOfThisCall.run({ revived: false }, fn)
+}
+
+/** `revived: true` on the ACK of a verb call that had to bring its discarded pane back. */
+export function withRevivedFlag(res: Record<string, unknown>): Record<string, unknown> {
+  if (res.ok === false) return res
+  return revivalOfThisCall.getStore()?.revived === true ? { ...res, revived: true } : res
 }
 
 /**
@@ -279,10 +284,14 @@ export async function gate(
   // A discarded pane comes back before a verb that needs a live page runs; the ACK says `revived: true` (spec §10.1).
   // The gate has already passed, so a refused call never pays for a page load.
   if (rec && deps.host.isDiscarded?.(rec.paneId) && opNeedsLivePage(op, args)) {
-    if (await deps.host.revive?.(rec.paneId, { primeInput: sendsPointerOrKeyEvents(op, args) })) {
-      deps.registry.noteRevived(rec.paneId)
-      return { rec, live: deps.host.info(rec.paneId), origin }
-    }
+    const revived = await deps.host.revive?.(rec.paneId, {
+      primeInput: sendsPointerOrKeyEvents(op, args)
+    })
+    // A pane with no view cannot be driven: refuse instead of running the verb against nothing.
+    if (!revived) return { refusal: refuse('PANE_REVIVE_FAILED', { folder: rec.folder }) }
+    const store = revivalOfThisCall.getStore()
+    if (store) store.revived = true
+    return { rec, live: deps.host.info(rec.paneId), origin }
   }
   // Passing the gate does NOT refresh the lease's idle clock: only a write that actually ran does (`noteAgentWrite`).
   return { rec, live, origin }
