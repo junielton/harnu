@@ -30,7 +30,7 @@
  * reflows the row body — see the template comment on `.right-col`-equivalent
  * below.
  */
-import { nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -44,6 +44,7 @@ import {
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { relativeTime } from '../composables/useRelativeTime'
 import { resolveActionLabel } from '../lib/toast-action-label'
 
@@ -51,20 +52,22 @@ const notifications = useNotificationsStore()
 const sessions = useSessionsStore()
 const missions = useMissionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const { t, te } = useI18n()
 
 const bellRef = ref<HTMLElement | null>(null)
 const popoverRef = ref<HTMLElement | null>(null)
 // An in-app popover: registers with the native-overlay freeze so a browser pane under it freezes (spec §2.4).
 useNativeOverlay('activity-popover', popoverRef)
-const popoverOpen = ref(false)
+// The open flag lives in the ui store (T486 U4a) so `view.activity` opens it and
+// the App's Esc binding can see it. The bell is always rendered, so its anchor is
+// present for as long as this component is mounted.
+const popoverOpen = computed(() => ui.popovers.activity)
+ui.setPopoverAnchor('activity', true)
+onBeforeUnmount(() => ui.setPopoverAnchor('activity', false))
 
-onClickOutside(bellRef, () => (popoverOpen.value = false))
-onKeyStroke('Escape', () => (popoverOpen.value = false))
-
-function toggleBell(): void {
-  popoverOpen.value = !popoverOpen.value
-}
+onClickOutside(bellRef, () => ui.closePopover('activity'))
+onKeyStroke('Escape', () => ui.closePopover('activity'))
 
 /** Epoch-ms → relative label (the helper takes an ISO string). */
 function relativeTimeMs(ts: number): string {
@@ -183,13 +186,13 @@ function openItem(item: NotificationItem): void {
   } else {
     missions.openReview(item.id)
   }
-  popoverOpen.value = false
+  ui.closePopover('activity')
 }
 
 /** "Review all {n}" — the rows past {@link MISSION_ROWS_MAX} live in the review. */
 function reviewAll(): void {
   missions.openReview()
-  popoverOpen.value = false
+  ui.closePopover('activity')
 }
 
 function onDismissClick(id: string, e: MouseEvent): void {
@@ -217,12 +220,15 @@ function actionLabel(n: NotificationRecord): string {
           : $t('activityBell.title')
       "
       :title="
-        notifications.list.length > 0
-          ? $t('activityBell.bellAria', { count: notifications.list.length })
-          : $t('activityBell.title')
+        keybindings.withChord(
+          notifications.list.length > 0
+            ? $t('activityBell.bellAria', { count: notifications.list.length })
+            : $t('activityBell.title'),
+          'view.activity'
+        )
       "
       :aria-expanded="popoverOpen"
-      @click="toggleBell"
+      @click="ui.togglePopover('activity')"
     >
       <Bell :size="14" :stroke-width="1.5" />
       <span

@@ -321,9 +321,14 @@ describe('DiagramPane', () => {
   it('starts and stops the disk watch with the pane lifecycle', async () => {
     const w = mountPane()
     await settle()
-    expect(canvasWatchStart).toHaveBeenCalledWith('/wt/board.harnucanvas.json')
+    expect(canvasWatchStart).toHaveBeenCalledWith(
+      '/wt/board.harnucanvas.json',
+      expect.stringMatching(/^diagram-/)
+    )
     w.unmount()
-    expect(canvasWatchStop).toHaveBeenCalledWith('/wt/board.harnucanvas.json')
+    // BUG-209: the stop releases the ref the SAME pane took, so main knows who is still open.
+    const paneId = (canvasWatchStart.mock.calls[0] as unknown[])[1]
+    expect(canvasWatchStop).toHaveBeenCalledWith('/wt/board.harnucanvas.json', paneId)
   })
 
   it('a change on disk reloads silently while the pane is clean (§7.3 case A)', async () => {

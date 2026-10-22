@@ -7,6 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { i18n } from '@renderer/i18n'
 import ReviewPane from '../src/renderer/src/components/ReviewPane.vue'
 import { useUiStore } from '../src/renderer/src/stores/ui'
+import { closeTakeoverBinding } from '../src/renderer/src/lib/takeover-esc'
 import { useHelpersStore } from '../src/renderer/src/stores/helpers'
 import { useReviewStore } from '../src/renderer/src/stores/review'
 import { useRoadmapStore } from '../src/renderer/src/stores/roadmap'
@@ -471,7 +472,7 @@ describe('AC-6 — closing the review disposes the companion', () => {
     for (const close of [
       (ui: ReturnType<typeof useUiStore>) => ui.closeReview(),
       (ui: ReturnType<typeof useUiStore>) => ui.closeAllTakeovers(),
-      (ui: ReturnType<typeof useUiStore>) => ui.closeAll(),
+      (ui: ReturnType<typeof useUiStore>) => closeTakeoverBinding(ui).handler(),
       (ui: ReturnType<typeof useUiStore>) => ui.openRoadmap('/repos/harnu', 'harnu')
     ]) {
       setActivePinia(createPinia())

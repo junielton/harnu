@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { useFocusRegion } from '../composables/useTerminalFocus'
 import { useI18n } from 'vue-i18n'
 import {
   Maximize2,
@@ -20,6 +21,7 @@ import CanvasPropertiesPanel from './CanvasPropertiesPanel.vue'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useThemeStore } from '../stores/theme'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import {
   applyCanvasPalette,
   createCanvasGraph,
@@ -53,8 +55,16 @@ import {
   operatorNode,
   placedRect,
   rectFromDrag,
-  type CanvasDocumentDraft
+  type CanvasDocumentDraft,
+  type CanvasStackMode
 } from './canvas/canvas-edit'
+import {
+  liveStackOrder,
+  reorderStack,
+  stackRanks,
+  type LayerMove,
+  type StackNode
+} from './canvas/canvas-layers'
 import { readCanvasPalette, type CanvasPalette } from './canvas/canvas-theme'
 import {
   mergeCanvasStyle,
@@ -127,6 +137,7 @@ const { t } = useI18n()
 const helpers = useHelpersStore()
 const theme = useThemeStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 
 /** The pane's persisted `filePath` (HelperStack guarantees a canvas pane). */
 const filePath = computed<string>(() => (props.pane as HelperPane).filePath ?? '')
@@ -453,7 +464,7 @@ function nodeProps(node: Node): Record<string, unknown> | undefined {
     : undefined
 }
 
-/** The selected NODES — edges in the selection are ignored in U3. */
+/** The selected NODES — edges in the selection are ignored by the style and Layers groups. */
 const panelNodes = computed<Node[]>(() => {
   void styleRevision.value
   const g = graph.value
@@ -469,13 +480,14 @@ const panelStyleValues = computed(() =>
 )
 /**
  * The CHOSEN tool, not the effective one: holding Space is a temporary Hand, and
- * the panel stays put through it.
+ * the panel stays put through it. Any selected node shows it: the Layers group
+ * (T536 U4) takes every kind, even one with no shared style key.
  */
 const panelVisible = computed<boolean>(
   () =>
     state.value.status === 'ready' &&
     toolState.value.tool === 'select' &&
-    panelKeys.value.length > 0
+    panelNodes.value.length > 0
 )
 
 watch(
@@ -525,6 +537,41 @@ function applyStylePatch(patch: CanvasStylePatch): void {
     for (const [node, data] of writes) node.setData(data, { overwrite: true })
   } finally {
     g.stopBatch(STYLE_BATCH)
+  }
+}
+
+/** The Layers group's history batch: one move, one undo step. */
+const LAYER_BATCH = 'layer'
+
+/**
+ * A Layers move (T536 U4). The new order is computed on node ids by the pure
+ * `reorderStack` and written back as dense ranks 1..n — never X6's `toFront` /
+ * `toBack`, which rank against the edges too (see `canvas-layers.ts`). Only the
+ * nodes whose z actually changes are written, in ONE history batch, so a move is
+ * one undo step and a move that changes nothing writes nothing: no undo step, no
+ * dirty dot. Edges keep z 0 and are never touched.
+ */
+function applyLayerMove(move: LayerMove): void {
+  const g = graph.value
+  if (!g) return
+  const nodes = g.getNodes()
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const live = nodes.map((n) => ({ id: n.id, z: n.getZIndex() ?? 0 }))
+  const stack: StackNode[] = liveStackOrder(live).map((id) => {
+    const node = byId.get(id)!
+    const { x, y, width, height } = node.getBBox()
+    return { id, z: node.getZIndex() ?? 0, bbox: { x, y, width, height } }
+  })
+  const order = reorderStack(stack, new Set(panelNodes.value.map((n) => n.id)), move)
+  if (order === null) return
+  const ranks = stackRanks(order)
+  const writes = order.filter((id) => byId.get(id)!.getZIndex() !== ranks.get(id))
+  if (writes.length === 0) return
+  g.startBatch(LAYER_BATCH)
+  try {
+    for (const id of writes) byId.get(id)!.setZIndex(ranks.get(id)!)
+  } finally {
+    g.stopBatch(LAYER_BATCH)
   }
 }
 
@@ -1464,10 +1511,14 @@ async function draw(source: CanvasDocument, fit = false): Promise<void> {
  * preserved unknown top-level keys, and the edge labels the document rather
  * than X6 is the author of.
  */
-function currentDraft(base: CanvasDocument, nowIso?: string): CanvasDocumentDraft {
+function currentDraft(
+  base: CanvasDocument,
+  nowIso?: string,
+  stack: CanvasStackMode = 'save'
+): CanvasDocumentDraft {
   const g = graph.value
   const cells = g ? ((g.toJSON() as { cells?: unknown[] }).cells ?? []) : []
-  return buildCanvasDocumentFromCells(cells, base, nowIso ?? base.meta.updatedAt ?? '')
+  return buildCanvasDocumentFromCells(cells, base, nowIso ?? base.meta.updatedAt ?? '', stack)
 }
 
 async function load(path: string, fit: boolean): Promise<void> {
@@ -1533,7 +1584,12 @@ watch(
     // The emptied selection would fold the opened panel shut (the length watch);
     // remember it and put it back after the re-select.
     const wasPanelOpen = panelOpen.value
-    await draw(currentDraft(base) as CanvasDocument, false)
+    // `'live'`: every node keeps its exact z, so the undo stack — which records z
+    // values, not an order — still describes the board after the redraw (T536 U4).
+    // That holds only while the live node z are distinct and > 0 (else renderStackZ
+    // re-ranks them), which they are: a load gives 1..n or the file's distinct
+    // positive values, a new node takes max + 1, and undo is LIFO.
+    await draw(currentDraft(base, undefined, 'live') as CanvasDocument, false)
     dirty.value = wasDirty
     repairingSelection = true
     try {
@@ -1559,8 +1615,15 @@ watch(
  *    informed choice rather than a silent loss.
  */
 let unsubscribeCanvasChanged: (() => void) | undefined
-async function handleCanvasChanged(payload: { path: string }): Promise<void> {
+/** Set on unmount, so an open still waiting on the watch does not go on to load. */
+let unmounted = false
+/** This mounted pane's identity for `canvas:write` / `canvas:changed` (BUG-209): two
+ *  panes can hold the same file, so the echo of a Save is told apart per pane. */
+const writerId = `diagram-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
+async function handleCanvasChanged(payload: { path: string; writerId?: string }): Promise<void> {
   if (payload.path !== filePath.value) return
+  // The echo of this pane's own Save — it already holds exactly what it wrote.
+  if (payload.writerId === writerId) return
   if (dirty.value) {
     staleOnDisk.value = true
     return
@@ -1571,9 +1634,19 @@ async function handleCanvasChanged(payload: { path: string }): Promise<void> {
 onMounted(async () => {
   unsubscribeCanvasChanged = window.api.onCanvasChanged(handleCanvasChanged)
   window.addEventListener('keydown', onWindowKeydown)
+  document.addEventListener('keydown', onEscCapture, true)
   window.addEventListener('keyup', onWindowKeyup)
   window.addEventListener('blur', onWindowBlur)
-  void window.api.canvasWatchStart(filePath.value)
+  // Read only once the watch is live (BUG-210): a write between the read and the
+  // watch going live would produce no event, and the next Save would revert it.
+  // A watch that cannot start must not keep the board from showing.
+  try {
+    await window.api.canvasWatchStart(filePath.value, writerId)
+  } catch {
+    // Read anyway: the pane works, it just won't hear outside changes.
+  }
+  // The wait can be long; a pane closed meanwhile has nothing left to build into.
+  if (unmounted) return
   await load(filePath.value, true)
   // Follow the pane as the operator drags the inter-pane divider or maximizes.
   // X6 reads its container's size only at construction and then PINS an inline
@@ -1595,13 +1668,15 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  unmounted = true
   window.removeEventListener('keydown', onWindowKeydown)
+  document.removeEventListener('keydown', onEscCapture, true)
   window.removeEventListener('keyup', onWindowKeyup)
   window.removeEventListener('blur', onWindowBlur)
   endGesture()
   endPlaceTextBatch()
   unsubscribeCanvasChanged?.()
-  void window.api.canvasWatchStop(filePath.value)
+  void window.api.canvasWatchStop(filePath.value, writerId)
   resizeObserver?.disconnect()
   resizeObserver = null
   graph.value?.dispose()
@@ -1617,8 +1692,8 @@ watch(
     // Re-targeting throws the current board away, so it goes through the same
     // discard guard as Reload and Close.
     withDiscardGuard(async () => {
-      if (prev) await window.api.canvasWatchStop(prev)
-      await window.api.canvasWatchStart(next)
+      if (prev) await window.api.canvasWatchStop(prev, writerId)
+      await window.api.canvasWatchStart(next, writerId)
       await load(next, true)
     })
   }
@@ -1690,7 +1765,7 @@ async function save(): Promise<void> {
   if (state.value.status !== 'ready' || !base || !dirty.value || saving.value) return
   saving.value = true
   const draft = currentDraft(base, new Date().toISOString())
-  const res = await window.api.canvasWrite(filePath.value, draft)
+  const res = await window.api.canvasWrite(filePath.value, draft, writerId)
   saving.value = false
   if (res.ok) {
     doc.value = draft as CanvasDocument
@@ -1837,10 +1912,9 @@ function onWindowKeydown(ev: KeyboardEvent): void {
     return
   }
   if (ev.key === 'Escape') {
-    const outcome = escapeOutcome(toolState.value, gesture !== null)
-    if (outcome === 'cancel-gesture') cancelGesture()
-    else if (outcome === 'to-select') setToolState(selectTool(toolState.value, 'select'))
-    else graph.value?.cleanSelection()
+    // Normally consumed by `onEscCapture` first; reached only by an Esc that
+    // starts at the window (nothing left to peel then — this is a no-op).
+    peelEsc()
     return
   }
   const pick = toolForKey(ev)
@@ -1866,6 +1940,35 @@ function onWindowBlur(): void {
   // another window), so it goes too — no preview left on screen.
   cancelGesture()
   if (toolState.value.spaceHeld) setToolState(releaseSpace(toolState.value))
+}
+
+/**
+ * One step of the Esc ladder (spec §4.3): cancel a gesture in flight, else leave
+ * a drawing tool for Select, else clear the selection. Returns whether it did
+ * anything — `false` means the pane had nothing to peel.
+ */
+function peelEsc(): boolean {
+  const outcome = escapeOutcome(toolState.value, gesture !== null)
+  if (outcome === 'cancel-gesture') cancelGesture()
+  else if (outcome === 'to-select') setToolState(selectTool(toolState.value, 'select'))
+  else {
+    const g = graph.value
+    if (!g || g.getSelectedCells().length === 0) return false
+    g.cleanSelection()
+  }
+  return true
+}
+
+/**
+ * Esc peels this pane — in the document CAPTURE phase, and stopped, so a Roadmap
+ * or Review takeover behind this pane stays open until the pane has nothing left
+ * to peel (T486 §6.1). Document, not window: a dialog or menu opened later listens
+ * in window capture and stops Esc, so it keeps its Esc instead of sharing it with
+ * this pane. With nothing to peel the key passes on to `view.closeTakeover`.
+ */
+function onEscCapture(ev: KeyboardEvent): void {
+  if (ev.key !== 'Escape' || !hasFocus() || rename.value) return
+  if (peelEsc()) ev.stopPropagation()
 }
 
 // ── Header actions ────────────────────────────────────────────────────────
@@ -1907,12 +2010,23 @@ function onClose(): void {
 function onHeaderMouseDown(ev: MouseEvent): void {
   if (props.resizable) emit('headerMouseDown', ev)
 }
+
+// T486 U5b — a region of the pane focus ring: F6 focuses its canvas body (where its own keys live), `pane.close`
+// runs the header X's close (the discard guard holds). The root draws the design.md §6
+// "Pane focus" outline while focus is inside.
+const rootEl = ref<HTMLDivElement | null>(null)
+useFocusRegion(props.pane.id, rootEl, {
+  focus: () => focusBody(),
+  close: onClose
+})
 </script>
 
 <template>
   <div
+    ref="rootEl"
     data-testid="diagram-pane"
-    class="flex h-full w-full flex-col overflow-hidden bg-bg"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg no-default-ring focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    :data-focus-region="pane.id"
     :aria-label="$t('diagramPane.label')"
   >
     <header
@@ -2018,7 +2132,12 @@ function onHeaderMouseDown(ev: MouseEvent): void {
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
+        :title="
+          keybindings.withChord(
+            isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize'),
+            'pane.toggleMaximize'
+          )
+        "
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         @mousedown.stop
         @click="onToggleMaximize"
@@ -2029,7 +2148,7 @@ function onHeaderMouseDown(ev: MouseEvent): void {
       <button
         class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="$t('helperPane.close')"
+        :title="keybindings.withChord($t('helperPane.close'), 'pane.close')"
         :aria-label="$t('helperPane.close')"
         @mousedown.stop
         @click="onClose"
@@ -2044,7 +2163,7 @@ function onHeaderMouseDown(ev: MouseEvent): void {
     <div
       ref="bodyEl"
       tabindex="0"
-      class="relative min-h-0 flex-1 overflow-hidden outline-none"
+      class="no-default-ring relative min-h-0 flex-1 overflow-hidden outline-none"
       :style="{ cursor: bodyCursor }"
       @mousedown.capture="onBodyMouseDownCapture"
       @pointerdown="focusBody"
@@ -2202,14 +2321,17 @@ function onHeaderMouseDown(ev: MouseEvent): void {
 
       <!-- Properties panel (T536 U3): left edge of the VIEWPORT, under the zoom
            cluster (or the toolbar, when it has its own row). Shown only in the
-           chosen Select tool, for a selection whose nodes share a style key. -->
+           chosen Select tool, for a selection that holds a node: the style groups
+           it shares, then Layers (T536 U4). -->
       <div v-if="panelVisible" class="absolute left-3" :style="{ top: `${panelTop}px` }">
         <CanvasPropertiesPanel
           :keys="panelKeys"
           :values="panelStyleValues"
           :collapsed="panelCollapsed"
           :open="panelOpen"
+          :layers="panelNodes.length > 0"
           @change="applyStylePatch"
+          @layer="applyLayerMove"
           @toggle="onPanelToggle"
         />
       </div>

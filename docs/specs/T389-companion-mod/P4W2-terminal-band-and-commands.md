@@ -36,7 +36,9 @@ Two small surfaces inside the `claude` terminal, both served by the Harnu mod (t
 
 1. **`/harnu-link status`** and **`/harnu-link open`**, answered by a `command.run` hook. Status prints at most
    three lines of closed-vocabulary text; open focuses the session in Harnu.
-2. **A one-line band** above the prompt (`AbovePrompt`). Inside Harnu it is absent in protocol 1.
+2. **A one-line band** above the prompt (`AbovePrompt`). Inside Harnu it is absent in protocol 1,
+   **except for a binding whose trust class is `read-only` (the review companion), which carries one
+   selection line (T257).**
    Outside Harnu it shows one mission line, and only while a mission is linked to that session.
 
 The band always wraps what other mods drew, never replaces it. Everything fails to "no band, plain
@@ -165,7 +167,9 @@ interface BandLine {
 `bandFor` returns `null` or a `BandLine`. The host enqueues `ui.band.set` (P2W1 `enqueue`, cause
 `surface`) only when the result changes (after `BAND_DEBOUNCE_MS`), plus a keep-alive re-send
 every `BAND_REFRESH_MS` while a line stands. The command's gate row is registered with
-`registerGateRow`: profiles `interactive` and `external`, feature `ui.band` (never `act.ui`: an
+`registerGateRow` (**extend, do not replace**: T257 registered this command first, for the subsystem
+`reviewSelectionBand`, and `registerGateRow` puts that subsystem and its validator back into any later
+registration; keep it listed): profiles `interactive` and `external`, feature `ui.band` (never `act.ui`: an
 external binding gets no `act.*`). **The band needs no `channel: active`.** The band is display-only and has
 no legacy rival, so `ui.band.set` is in the observe-only (housekeeping) set (contract §9, §11.5,
 P2W1 §7.4 step 3): `enqueue` admits it while `channel` is `shadow` (the default), also for an
@@ -173,14 +177,15 @@ external binding. Only `channel: off` refuses it. The `status` ask and `ui.actio
 commands and need no channel. For a binding that does not poll, the command reaches the mod in an
 `events` response through `setCommandSource`.
 
-| #   | Binding                    | Condition                                                                                                                                                                        | Band                                                                                                                                                                                                                |
-| --- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | spawned (inside Harnu)     | anything, protocol 1                                                                                                                                                             | **none.** The Topbar mission pill, the Fleet rail and the footer already say it (§7.7)                                                                                                                              |
-| 2   | spawned or external        | an approval of this session is held and the engine dialog is open                                                                                                                | **none.** The dialog is the terminal's surface; a line under it is not visible (smoke B2)                                                                                                                           |
-| 3   | spawned or external        | an approval is held with **no** dialog                                                                                                                                           | reserved (contract §18): `Held in Harnu · {tool}`. Raised only by the alternative of OD-2                                                                                                                           |
-| 4   | external, **corroborated** | the session owns a mission that is not closed: `owner.sessionId === sid` (`mission-core.ts:115`), the rule the Topbar pill uses (`missionForSession`, `lib/mission-view.ts:271`) | lead = the headline of `progressHeadline` (`mission-progress.ts:130`), e.g. `Step 4 of 5`; detail = `{n} held in Harnu` when the Inbox holds asks for sessions linked to that mission's steps; link = Open in Harnu |
-| 5   | external                   | no mission                                                                                                                                                                       | none                                                                                                                                                                                                                |
-| 6   | any                        | `surface` key off, lease lost, feature not enabled, headless, an external binding not yet corroborated                                                                           | none                                                                                                                                                                                                                |
+| #   | Binding                                           | Condition                                                                                                                                                                        | Band                                                                                                                                                                                                                |
+| --- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | spawned (inside Harnu)                            | anything, protocol 1                                                                                                                                                             | **none**, **except** a `read-only` binding with a delivered review selection: the selection line (T257 §8, row 1a). The Topbar mission pill, the Fleet rail and the footer already say it (§7.7)                    |
+| 1a  | spawned, trust `read-only` (the review companion) | a review selection was delivered and has not been answered, stopped, cleared or replaced                                                                                         | the selection line `⧉ speech.ts L85–92` (lead 32, detail 48, hint 32), **no `link`** (T257 §8). Rows 2–6 still apply: a held approval with the engine dialog open wins (no band under a dialog, smoke B2)           |
+| 2   | spawned or external                               | an approval of this session is held and the engine dialog is open                                                                                                                | **none.** The dialog is the terminal's surface; a line under it is not visible (smoke B2)                                                                                                                           |
+| 3   | spawned or external                               | an approval is held with **no** dialog                                                                                                                                           | reserved (contract §18): `Held in Harnu · {tool}`. Raised only by the alternative of OD-2                                                                                                                           |
+| 4   | external, **corroborated**                        | the session owns a mission that is not closed: `owner.sessionId === sid` (`mission-core.ts:115`), the rule the Topbar pill uses (`missionForSession`, `lib/mission-view.ts:271`) | lead = the headline of `progressHeadline` (`mission-progress.ts:130`), e.g. `Step 4 of 5`; detail = `{n} held in Harnu` when the Inbox holds asks for sessions linked to that mission's steps; link = Open in Harnu |
+| 5   | external                                          | no mission                                                                                                                                                                       | none                                                                                                                                                                                                                |
+| 6   | any                                               | `surface` key off, lease lost, feature not enabled, headless, an external binding not yet corroborated                                                                           | none                                                                                                                                                                                                                |
 
 "Event-only inside Harnu" therefore means row 3 alone, which no shipped wave raises. AC-P4W2-9
 pins the absence.
@@ -433,10 +438,15 @@ AC-P4W2-7 [mod-test] Given band state and `bodyColumns` of 39, 60, 80, 110 and 1
 AC-P4W2-8 [mod-test] Given another plugin's `AbovePrompt` tree, When the band draws, Then that
   tree is present below Harnu's row; and with no band state the result equals `next(e)`.
   Evidence: resources/companion/tests/band.test.tsx › "wraps, never replaces"
-AC-P4W2-9 [unit] Given a spawned binding with a mission and held asks, When `bandFor` runs,
-  Then it returns null.
+AC-P4W2-9 [unit] Given a spawned binding with a mission and held asks, **or a `read-only`
+  binding with no delivered selection**, When `bandFor` runs, Then it returns null.
   Evidence: tests/companion/surface-core.test.ts › "no band inside Harnu"
   Guards: R20
+AC-P4W2-9a [unit] Given a spawned `read-only` binding with a delivered review selection, When the
+  review selection's `bandFor` runs, Then it returns the selection line with no `link`; and for
+  every other spawned binding `bandFor` still returns null (T257 §8.3).
+  Evidence: tests/companion/review-selection-core.test.ts › "U2a-i-AC-13 — bandFor, at every boundary"
+  Guards: R20 (amended by T257)
 AC-P4W2-10 [mod-test] Given a band whose `expiresAt` has passed, When the TTL tick runs,
   Then the key is null and the hook returns `next(e)`.
   Evidence: resources/companion/tests/band.test.tsx › "a stale line clears itself"

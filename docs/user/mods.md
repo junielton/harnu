@@ -92,13 +92,41 @@ chips, same words. It is always the first row. It appears only when Harnu's mod 
 staged by this build of Harnu; when none is staged there is simply no row.
 
 Its row carries the chips **can use the network**, **can read and write files**, **can
-read every prompt**, **can decide permissions**, **can refuse other mods** and **can read
-environment variables**. They are what the source declares: it talks to Harnu on this
-machine, reads session state, and watches prompts, permission requests and mod
-registration. The registration hook only watches which mods a session admits; it never
+read every prompt**, **can decide permissions**, **can refuse other mods**, **can read
+environment variables** and **draws in the terminal**. They are what the source declares:
+it talks to Harnu on this machine, reads session state, watches prompts, permission
+requests and mod registration, and draws one line above the prompt of a review companion
+(the selection you made in the Review pane). The registration hook only watches which mods a session admits; it never
 refuses one, and a test in Harnu's repository fails if it ever does. The static read
 cannot tell a watcher from a gate, so the chips are shown anyway, the same as for any mod
 with those hooks.
+
+## What the mod does for the Review pane
+
+In a review companion (the read-only session beside the diff) the Harnu mod does two
+things, both for the selection you make in the diff:
+
+- **It receives a hidden note.** While the companion is open, Harnu tells the mod which
+  lines you have selected, and the mod adds that to the companion's context. It is not a
+  message and not a turn: nothing is typed into the conversation and the companion does
+  not answer it. A newer selection replaces the note, and clearing the selection replaces
+  it with a note that says nothing is selected.
+- **It draws one line above the companion's prompt** (`⧉ speech.ts L85–92`) while the
+  selection stands, so you can see what the companion has. The line stays through the
+  companion's answers and is cleared when you clear the selection, run `/clear` in the
+  companion, or close it.
+
+Neither works in any other session: the mod only does this for a review companion that
+Harnu started, and only if the mod was **on when that companion started** — a mod joins a
+session at launch, so switching it on later cannot reach a companion already running.
+When that is why a selection is not shared, the Review pane says
+_This session started without the Harnu mod_ and tells you to close the companion and open
+a fresh one; **Open Mods settings** is offered only when the mod is actually off.
+
+What the chip in the Review pane means by **Companion sees this**: the note is in the
+companion's context, nothing more. It never says that the companion read it, used it or
+answered about it. See [Review pane](review-pane.md#sharing-a-selection-with-the-companion)
+for the rest, including **Copy as text**, which works with no mod at all.
 
 ## Harnu mod outside Harnu
 

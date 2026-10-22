@@ -128,6 +128,36 @@ export type SettingsTabId =
   | 'prStack'
 
 /**
+ * Every `SettingsTabId`, in tab order (T486 §3.5). `App.vue` generates one
+ * `view.settings.<tab>` keybinding per entry, so a new tab cannot ship without
+ * an id. Built from a `Record` over the union: the compiler refuses a missing
+ * tab and a stray one.
+ */
+const SETTINGS_TABS: Record<SettingsTabId, true> = {
+  general: true,
+  keybindings: true,
+  interceptor: true,
+  appearance: true,
+  startup: true,
+  claudeConfig: true,
+  endpoints: true,
+  push: true,
+  voice: true,
+  mcp: true,
+  skills: true,
+  mods: true,
+  memory: true,
+  hibernationPolicy: true,
+  usageHistory: true,
+  changelog: true,
+  claudeCode: true,
+  cleanup: true,
+  containers: true,
+  prStack: true
+}
+export const SETTINGS_TAB_IDS = Object.keys(SETTINGS_TABS) as readonly SettingsTabId[]
+
+/**
  * Right-click context menu state. The menu is anchored at viewport coordinates
  * `(x, y)` and targets a specific session. Only one menu can be open at a time.
  */
@@ -145,7 +175,7 @@ export interface MenuState {
  * targets a project by its absolute path (which is what
  * `userProjectsHide` / `userProjectsUnhide` IPC use for identification).
  * Only one folder menu open at a time; mutually exclusive with the
- * session menu via `closeAll`.
+ * session menu (`openFolderMenu` / `openMenu` close each other).
  */
 export interface FolderMenuState {
   open: boolean
@@ -176,6 +206,38 @@ export interface SidebarHiddenPopoverState {
  */
 export interface SidebarJumpPaletteState {
   open: boolean
+}
+
+/**
+ * The anchored popovers whose open flag lives here (T486 U4a, spec §3.5 / §6.1):
+ * the Topbar's Activity bell and Mission pill, the footer's pasted images,
+ * Claude service status and plan usage, and the Fleet rail's state filter. Each
+ * component keeps its own Esc and click-outside handlers; the flag moved here so
+ * a keybinding can open the popover and so `anyPopoverOpen` can tell the App's
+ * Esc binding (U4b `view.closeTakeover`) that a popover owns this Esc.
+ *
+ * They sit OUTSIDE the floating-surface mutex below, as they did when the flags
+ * were component-local: opening one never closes the palette or a dialog, and
+ * only the footer pair (pasted images ↔ plan usage) close each other.
+ */
+export const POPOVER_IDS = [
+  'activity',
+  'missionProgress',
+  'pastedImages',
+  'claudeStatus',
+  'usagePanel',
+  'inboxFilter'
+] as const
+export type PopoverId = (typeof POPOVER_IDS)[number]
+
+function popoverFlags(): Record<PopoverId, boolean> {
+  return Object.fromEntries(POPOVER_IDS.map((id) => [id, false])) as Record<PopoverId, boolean>
+}
+
+/** The footer popovers that close each other when one opens. */
+const POPOVER_MUTEX: Partial<Record<PopoverId, PopoverId>> = {
+  pastedImages: 'usagePanel',
+  usagePanel: 'pastedImages'
 }
 
 /**
@@ -280,7 +342,8 @@ export interface Toast {
  * - Opening the preview is silently no-op when a palette, dialog, or menu is
  *   already open — previews are decorative and must never overlay an
  *   interactive surface.
- * - `closeAll()` closes all four. Wired to the App-level Esc handler.
+ * - Esc closes each surface on its own listener; an open main-pane takeover
+ *   closes through the `view.closeTakeover` keybinding (`lib/takeover-esc.ts`).
  *
  * The store is intentionally leaf-level: no IPC. The one exception is
  * `notifications.ts` (T83 S1) — `pushToast` funnels every persisted toast through
@@ -326,6 +389,19 @@ export const useUiStore = defineStore('ui', () => {
   const palette = ref<PaletteState>({ open: false })
   const sidebarHiddenPopover = ref<SidebarHiddenPopoverState>({ open: false, anchorRect: null })
   const sidebarJumpPalette = ref<SidebarJumpPaletteState>({ open: false })
+
+  // T486 U4a — the anchored popovers (see `POPOVER_IDS`). `popoverAnchors[id]`
+  // is whether the button the popover hangs off is rendered right now; its
+  // component reports it. A popover cannot open without its anchor, and losing
+  // the anchor closes it, so `anyPopoverOpen` never stays true with nothing on
+  // screen (it would swallow every later Esc).
+  const popovers = ref<Record<PopoverId, boolean>>(popoverFlags())
+  const popoverAnchors = ref<Record<PopoverId, boolean>>(popoverFlags())
+  // The pasted-images lightbox (a tile in that popover opens it). `null` = closed.
+  const imageLightboxIndex = ref<number | null>(null)
+  const anyPopoverOpen = computed<boolean>(
+    () => POPOVER_IDS.some((id) => popovers.value[id]) || imageLightboxIndex.value !== null
+  )
 
   // NOTE (T83 S0): the Approval Inbox used to be a first-level floating surface
   // here (`inbox: { open }`). It is now the Inbox rail — a persistent fourth
@@ -545,8 +621,7 @@ export const useUiStore = defineStore('ui', () => {
    * column-reverse` so the newest entry visually piles at the top of the
    * stack while accessibility order (DOM order) stays oldest→newest.
    *
-   * Toasts are NOT modal — `closeAll()` (the App-level Esc handler) leaves
-   * them alone on purpose. They're cleared individually via `dismissToast`
+   * Toasts are NOT modal — Esc leaves them alone on purpose. They're cleared individually via `dismissToast`
    * (X button, action click, or auto-timeout).
    */
   const toasts = ref<Toast[]>([])
@@ -766,6 +841,44 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /**
+   * Open popover `id` — what its button and its keybinding both run (through
+   * {@link togglePopover}). Refused (returns false) while its anchor is not
+   * rendered. Opening a footer popover closes its mutex peer.
+   */
+  function openPopover(id: PopoverId): boolean {
+    if (!popoverAnchors.value[id]) return false
+    const peer = POPOVER_MUTEX[id]
+    if (peer) closePopover(peer)
+    popovers.value[id] = true
+    return true
+  }
+
+  /** Close popover `id`. Closing pasted images ends its lightbox too. */
+  function closePopover(id: PopoverId): void {
+    popovers.value[id] = false
+    if (id === 'pastedImages') imageLightboxIndex.value = null
+  }
+
+  function togglePopover(id: PopoverId): void {
+    if (popovers.value[id]) closePopover(id)
+    else openPopover(id)
+  }
+
+  /** A popover's component reports whether its anchor button is rendered. */
+  function setPopoverAnchor(id: PopoverId, present: boolean): void {
+    popoverAnchors.value[id] = present
+    if (!present && popovers.value[id]) closePopover(id)
+  }
+
+  function openImageLightbox(index: number): void {
+    imageLightboxIndex.value = index
+  }
+
+  function closeImageLightbox(): void {
+    imageLightboxIndex.value = null
+  }
+
+  /**
    * Open the Roadmap Kanban board for a folder (T80 §4). Not part of the floating
    * mutex — it is a main-pane view. Thin wrapper over `openView` (T297/T299):
    * kept as its own named export so the ~47 call sites outside this store never
@@ -980,33 +1093,6 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /**
-   * Close every floating surface. Used by the App-level Esc handler.
-   *
-   * Note: this does NOT clear `toasts` — toasts are non-modal and Esc should
-   * not wipe a "Restart now" prompt the user hasn't seen yet. Toasts time
-   * out on their own (default 6 s) or are dismissed via the X / action
-   * button.
-   *
-   * It also does NOT touch the Inbox rail (T83 S0). Esc means "dismiss what's
-   * covering the app", and the rail covers nothing — it's a column. Closing the
-   * approval queue on Esc would hide a blocked session from the operator.
-   */
-  function closeAll(): void {
-    dialog.value = null
-    menu.value = { open: false, sessionId: null, x: 0, y: 0 }
-    folderMenu.value = { open: false, projectPath: null, x: 0, y: 0 }
-    preview.value = { open: false, sessionId: null, folderPath: null, rect: null }
-    palette.value = { open: false }
-    sidebarHiddenPopover.value = { open: false, anchorRect: null }
-    sidebarJumpPalette.value = { open: false }
-    // The takeovers are main-pane views (not floating surfaces), but Esc should
-    // still dismiss them back to the transcript — closeAll is the App-level Esc
-    // handler. Via the shared helper, not a hand-kept list: the hand-kept one
-    // had already rotted (it never learned about the PR Stack, T198).
-    closeAllTakeovers()
-  }
-
-  /**
    * Push a new toast onto the stack. Returns the assigned id so the caller
    * can dismiss it programmatically (e.g. when the underlying condition
    * disappears before the user acted on it).
@@ -1072,6 +1158,10 @@ export const useUiStore = defineStore('ui', () => {
     palette,
     sidebarHiddenPopover,
     sidebarJumpPalette,
+    popovers,
+    popoverAnchors,
+    imageLightboxIndex,
+    anyPopoverOpen,
     activeView,
     activeViewTitleKey,
     roadmap,
@@ -1112,6 +1202,12 @@ export const useUiStore = defineStore('ui', () => {
     closeSidebarHiddenPopover,
     openSidebarJumpPalette,
     closeSidebarJumpPalette,
+    openPopover,
+    closePopover,
+    togglePopover,
+    setPopoverAnchor,
+    openImageLightbox,
+    closeImageLightbox,
     openRoadmap,
     closeRoadmap,
     openUsageDashboard,
@@ -1139,7 +1235,6 @@ export const useUiStore = defineStore('ui', () => {
     toggleCleanup,
     toggleContainers,
     openNavigableView,
-    closeAll,
     pushToast,
     dismissToast,
     triggerRenameFocus

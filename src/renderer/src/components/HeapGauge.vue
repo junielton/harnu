@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { TriangleAlert } from 'lucide-vue-next'
 import { useMonitorStore } from '../stores/monitor'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { heapPercent, heapBarClass } from './system-monitor-format'
 
 /**
@@ -20,6 +21,7 @@ import { heapPercent, heapBarClass } from './system-monitor-format'
  */
 const monitor = useMonitorStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const { t } = useI18n()
 
 const heapPct = computed(() => heapPercent(monitor.lastHeap))
@@ -39,7 +41,7 @@ function onClick(): void {
     class="flex items-center gap-1.5 whitespace-nowrap rounded font-mono transition-colors"
     :class="ui.systemMonitorOpen ? 'text-accent' : 'text-text-2 hover:text-text'"
     :aria-label="label"
-    :title="label"
+    :title="keybindings.withChord(label, 'view.systemMonitor')"
     :aria-pressed="ui.systemMonitorOpen"
     @click="onClick"
   >

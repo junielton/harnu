@@ -9,6 +9,7 @@ import {
   CANVAS_DERIVED_CHANGE,
   CANVAS_MIN_NODE_SIZE,
   createCanvasGraph,
+  operatorEdgeSpec,
   renderCanvasDocument,
   restyleCanvasNode,
   setCanvasPortsVisible,
@@ -34,6 +35,11 @@ import {
   placedRect,
   rectFromDrag
 } from '../src/renderer/src/components/canvas/canvas-edit'
+import {
+  CANVAS_LOAD_Z,
+  documentStackOrder,
+  renderStackZ
+} from '../src/renderer/src/components/canvas/canvas-layers'
 import { readCanvasPalette } from '../src/renderer/src/components/canvas/canvas-theme'
 import {
   normalizeCanvasLabel,
@@ -43,6 +49,8 @@ import {
 } from '../src/main/canvas-core'
 import { i18n } from '@renderer/i18n'
 import { installJsdomSvgShim, svgHost } from './helpers/jsdom-svg'
+import { useUiStore } from '../src/renderer/src/stores/ui'
+import { mountCloseTakeover, pressEsc } from './helpers/close-takeover-harness'
 
 installJsdomSvgShim()
 
@@ -1046,6 +1054,28 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     w.unmount()
   })
 
+  it('T486 AC-27 — pane.close (closeRegion) on a dirty canvas keeps the discard guard', async () => {
+    const { closeRegion } = await import('../src/renderer/src/composables/useTerminalFocus')
+    const w = mountPane()
+    await settle()
+    const helpers = (await import('../src/renderer/src/stores/helpers')).useHelpersStore()
+    const removed = vi.spyOn(helpers, 'removeHelper')
+
+    armRectangle(w.element)
+    dragOnBlankCanvas(w.element, [200, 200], [400, 320])
+    await settle()
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+
+    expect(closeRegion('h-canvas')).toBe(true)
+    await settle()
+    // Held by the guard: the discard toast decides, not the chord.
+    expect(removed).not.toHaveBeenCalled()
+    const ui = (await import('../src/renderer/src/stores/ui')).useUiStore()
+    expect(ui.toasts.some((t) => t.action)).toBe(true)
+    w.unmount()
+  })
+
   it('pressing Close twice leaves ONE warning, not a stack of permanent ones', async () => {
     const w = mountPane()
     await settle()
@@ -1144,5 +1174,183 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     await settle()
     expect(w.text()).toContain('Pick a shape from the toolbar')
     w.unmount()
+  })
+})
+
+// T486 AC-20 — a Diagram pane beside Roadmap or Review: Esc clears its
+// selection first (document capture, stopped), and only the next Esc reaches
+// `view.closeTakeover`.
+describe('DiagramPane — Esc peels the selection before the takeover', () => {
+  it('first Esc clears the selection, the second closes the Roadmap', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openRoadmap('/wt', 'wt')
+    const w = mountPane()
+    await settle()
+    const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
+    body.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', ctrlKey: true, bubbles: true }))
+    await settle()
+
+    await pressEsc(body)
+    await settle()
+    expect(ui.activeView?.id).toBe('roadmap')
+    // Selection empty now: Delete has nothing to remove, so Save stays absent.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }))
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+
+    await pressEsc(body)
+    expect(ui.activeView).toBeNull()
+    w.unmount()
+    harness.unmount()
+  })
+
+  it('with nothing selected the first Esc closes the takeover', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openReview('/wt', null)
+    const w = mountPane()
+    await settle()
+    const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
+    body.focus()
+    await pressEsc(body)
+    expect(ui.activeView).toBeNull()
+    w.unmount()
+    harness.unmount()
+  })
+
+  // T536 put a tool ladder in front of the selection (tool → Select → clear):
+  // every rung it peels stays in the pane, so the takeover waits for the last Esc.
+  it('a drawing tool is peeled back to Select before the takeover closes', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openRoadmap('/wt', 'wt')
+    const w = mountPane()
+    await settle()
+    const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
+    body.focus()
+    const pressed = (): string[] =>
+      w
+        .findAll('[data-testid^="canvas-tool-"][aria-pressed="true"]')
+        .map((b) => b.attributes('data-testid')!.replace('canvas-tool-', ''))
+        .filter((id) => id !== 'lock')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }))
+    await settle()
+    expect(pressed()).toEqual(['rectangle'])
+
+    await pressEsc(body)
+    await settle()
+    expect(pressed()).toEqual(['select'])
+    expect(ui.activeView?.id).toBe('roadmap')
+
+    await pressEsc(body)
+    expect(ui.activeView).toBeNull()
+    w.unmount()
+    harness.unmount()
+  })
+})
+
+describe('an operator edge is minted at z 0 (T536 U4)', () => {
+  it('operatorEdgeSpec carries zIndex 0, so X6 never stamps it max + 1', () => {
+    expect(operatorEdgeSpec(palette).zIndex).toBe(0)
+  })
+
+  it('a port drag adds the new edge at z 0 (the z X6 restores when the drag ends)', async () => {
+    // The real X6 path: a mousedown on a port runs `startConnectting` →
+    // `createEdgeFromMagnet` → the graph's `connecting.createEdge` hook → `addTo`
+    // the model. X6 then lifts the edge to the front for the drag and restores the z
+    // it had here on release (`beforeArrowheadDragging` / `afterArrowheadDragging`).
+    // jsdom cannot finish the release (the snap search needs layout), so the added z
+    // is what is asserted.
+    const g = makeGraph()
+    const portOf = (): Element | null =>
+      g.findViewByCell(g.getCellById('n-a')!)?.container.querySelector('[magnet="true"]') ?? null
+    // X6 draws the views in time-sliced jobs: wait (bounded) for the ports to exist.
+    const deadline = Date.now() + 2000
+    while (!portOf() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+    const added: number[] = []
+    g.on('edge:added', ({ edge }) => added.push(edge.getZIndex() as number))
+    const port = portOf()
+    expect(port, 'n-a has no port').not.toBeNull()
+    port!.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 60, clientY: 40 })
+    )
+    expect(added).toEqual([0])
+    g.dispose()
+  })
+})
+
+describe('X6 stacking on a fresh render (T536 U4)', () => {
+  const STACKED: CanvasDocument = {
+    ...DOC,
+    nodes: [
+      { ...DOC.nodes[0] },
+      { ...DOC.nodes[1], zIndex: 5 },
+      { ...DOC.nodes[2] },
+      { id: 'n-d', shape: 'box', x: 600, y: 40, label: 'D', origin: 'agent', zIndex: 0 }
+    ]
+  }
+  const nodeZ = (g: Graph): Record<string, number> =>
+    Object.fromEntries(g.getNodes().map((n) => [n.id, n.getZIndex() as number]))
+
+  it('pins what every earlier build passes: a node without zIndex comes up at CANVAS_LOAD_Z', () => {
+    const g = makeGraph(DOC)
+    g.clearCells()
+    g.fromJSON({
+      cells: [
+        { id: 'n-a', shape: 'rect', x: 0, y: 0, width: 10, height: 10 },
+        { id: 'n-b', shape: 'rect', x: 0, y: 0, width: 10, height: 10, zIndex: 5 },
+        { id: 'n-c', shape: 'rect', x: 0, y: 0, width: 10, height: 10 },
+        { id: 'n-d', shape: 'rect', x: 0, y: 0, width: 10, height: 10, zIndex: 0 }
+      ]
+    })
+    const z = nodeZ(g)
+    expect(z['n-a']).toBe(CANVAS_LOAD_Z)
+    expect(z['n-c']).toBe(CANVAS_LOAD_Z)
+    expect(g.getNodes().map((n) => n.id)).toEqual(documentStackOrder(STACKED.nodes))
+  })
+
+  it('renders every node at a distinct z above the edges, in the document stack order', () => {
+    const g = makeGraph(STACKED)
+    const expected = renderStackZ(STACKED.nodes)
+    expect(nodeZ(g)).toEqual(Object.fromEntries(expected))
+    expect(new Set(Object.values(nodeZ(g))).size).toBe(STACKED.nodes.length)
+    expect(g.getEdges()[0].getZIndex()).toBe(0)
+    expect(g.getNodes().map((n) => n.id)).toEqual(documentStackOrder(STACKED.nodes))
+  })
+
+  it('puts a node added afterwards above every other cell', () => {
+    const g = makeGraph(STACKED)
+    const added = g.addNode({ id: 'n-new', shape: 'rect', x: 0, y: 0, width: 10, height: 10 })
+    const others = [...g.getNodes(), ...g.getEdges()].filter((c) => c.id !== 'n-new')
+    expect(added.getZIndex() as number).toBeGreaterThan(
+      Math.max(...others.map((c) => c.getZIndex() as number))
+    )
+  })
+
+  it('keeps the file order after a batched restack is undone (the tie trap)', () => {
+    // The stack is read off `getCells()`, the collection X6 re-sorts on every z
+    // change. `getNodes()` reads an insertion-order cache that never moves on a z
+    // change, so an order claim made with it after a restack could not fail.
+    const stack = (g: Graph): string[] =>
+      g
+        .getCells()
+        .filter((c) => c.isNode())
+        .map((c) => c.id)
+    const g = makeGraph(DOC)
+    const fileOrder = DOC.nodes.map((n) => n.id)
+    expect(stack(g)).toEqual(fileOrder)
+    g.startBatch('layer')
+    g.getCellById('n-a')!.setZIndex(3)
+    g.getCellById('n-b')!.setZIndex(1)
+    g.getCellById('n-c')!.setZIndex(2)
+    g.stopBatch('layer')
+    // The restack really moved the order, so the equality after undo is not trivial.
+    expect(stack(g)).toEqual(['n-b', 'n-c', 'n-a'])
+    g.undo()
+    // Undo restores distinct render z, not ties a stable re-sort would leave as n-b, n-c, n-a.
+    expect(stack(g)).toEqual(fileOrder)
   })
 })

@@ -1,11 +1,12 @@
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
+import { launchApp } from './fixtures/launch-app'
 
 /**
  * The ONE subscription-free e2e that runs in CI (T05 track 2). It launches the
- * BUILT app headless via `_electron.launch()` (no dev server, no CDP attach) and
+ * BUILT app headless via the shared `launchApp()` helper (no dev server, no CDP attach) and
  * exercises the MCP control server's real marshaling in-process: enabling it
  * writes `harnu.mcp.json`/prefs (prefs.ts) and starts the loopback server
  * (server.ts). This turns "covered by a nonexistent e2e" into real per-PR
@@ -20,10 +21,7 @@ import { join } from 'node:path'
 test('boots headless; MCP toggles on; get_fleet redaction holds', async () => {
   const testInfo = test.info()
   const userData = mkdtempSync(join(tmpdir(), 'harnu-ci-'))
-  const app = await electron.launch({
-    args: ['out/main/index.js', `--user-data-dir=${userData}`, '--no-sandbox', '--disable-gpu'],
-    env: { ...process.env, HOME: userData }
-  })
+  const app = await launchApp({ userData })
 
   // Trace the electron context so a CI failure isn't blind — the trace + a
   // screenshot are persisted on failure and uploaded by the e2e job (T65 AC4).

@@ -76,7 +76,13 @@ async function failSpawn(): Promise<void> {
   cb?.(new Error('spawn failed'), '')
 }
 
+// `appimage-env` is mocked to an identity above, so the probe's spawn env is `process.env` as-is.
+// Harnu strips `HARNU_SPAWN_TOKEN` from its own env at startup (`src/main/index.ts`), but a
+// Harnu-spawned shell running this suite carries one — so pin the env to what the app sees.
+const AMBIENT_SPAWN_TOKEN = process.env.HARNU_SPAWN_TOKEN
+
 beforeEach(async () => {
+  delete process.env.HARNU_SPAWN_TOKEN
   vi.resetModules()
   h.appHandlers.clear()
   h.ipcHandlers.clear()
@@ -97,6 +103,8 @@ beforeEach(async () => {
 afterEach(() => {
   // Clear the poll interval + listeners created during the test.
   mod.closeUsagePoller()
+  if (AMBIENT_SPAWN_TOKEN === undefined) delete process.env.HARNU_SPAWN_TOKEN
+  else process.env.HARNU_SPAWN_TOKEN = AMBIENT_SPAWN_TOKEN
 })
 
 describe('registerUsageHandlers', () => {

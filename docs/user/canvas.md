@@ -69,7 +69,7 @@ Shortcuts only work while the canvas pane has focus, never while you are typing 
 
 **After you create something, Harnu goes back to Select**, so you draw one thing and are straight back to moving things around. Turn on **Lock** (the padlock, or **Q**) to stay on the tool for as long as you want; press it again to let go.
 
-**Esc** backs out one step at a time: it cancels a shape or arrow you are in the middle of making, otherwise it switches to Select, otherwise it clears the selection.
+**Esc** backs out one step at a time: it cancels a shape or arrow you are in the middle of making, otherwise it switches to Select, otherwise it clears the selection. Beside a Roadmap or Review, each of those Esc presses stays in the canvas; only an Esc with nothing left to back out of closes the view.
 
 In a very narrow pane the toolbar wraps onto extra rows underneath rather than running off the edge or sitting on top of the zoom controls.
 
@@ -131,7 +131,7 @@ Undo history is **per pane and not saved**. Close the canvas or reload it and th
 
 ## Styling shapes
 
-Select one or more shapes in **Select** and a small **Style** panel appears at the left edge of the board, under the zoom controls (or under the toolbar when the toolbar has wrapped onto its own row). Click an option and it applies to everything you have selected, straight away. It is a floating panel, so it stays put when you pan or zoom.
+Select one or more shapes in **Select** and a small **Properties** panel appears at the left edge of the board, under the zoom controls (or under the toolbar when the toolbar has wrapped onto its own row). Click an option and it applies to everything you have selected, straight away. The panel shows for any selection of shapes, even ones that take no styling: those get the Layers buttons described below. It is a floating panel, so it stays put when you pan or zoom.
 
 | Group            | Options                                         | What it changes                                                                 |
 | ---------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -155,7 +155,7 @@ The first option of each group (Default, Solid, Regular, Round, Medium, Center, 
 | **Image**            | Opacity only.                                           |
 | **Card**             | Nothing: a card always draws in Harnu's own card style. |
 
-Select a box and a text label together and you get Color, Text size, Align and Opacity, the groups both accept. Add a card to that selection and the panel disappears, because a card accepts nothing. Select only arrows and it is not shown either; arrows that are part of a larger selection are simply left out, because arrows cannot be styled yet.
+Select a box and a text label together and you get Color, Text size, Align and Opacity, the groups both accept. Add a card to that selection and the style groups are left out of the panel, because a card accepts nothing; only Layers remains. A card on its own, or **Ctrl/⌘ + A**, shows Layers alone for the same reason. Select only arrows and the panel is not shown; arrows that are part of a larger selection are simply left out, because arrows cannot be styled or restacked yet.
 
 A few things worth knowing:
 
@@ -165,10 +165,30 @@ A few things worth knowing:
 - **Colours follow the theme.** A tone is stored as a name (`green`, not a hex colour), so the same board looks right in dark and light, and switching theme keeps your selection and its resize handles.
 - **Labels do not wrap.** A long label on a small shape can run past its edge, more so at Large and Extra large. Make the shape bigger or the text smaller. A diamond is the tightest: its left and right labels line up inside the diamond's inner area, but a long word can still stick out of its slanted sides.
 - **Tinted shapes are slightly see-through**, so the dot grid, or an arrow passing behind a shape, shows through the tint.
-- **In a narrow pane** (under about 384 px wide) the panel folds into a single **palette** button. Click it to open the panel in place and click it again to fold it away.
+- **In a narrow pane** (under about 384 px wide) the panel folds into a single **palette** button (**Show properties**). Click it to open the panel in place and click it again to fold it away. Layers is in there too.
 - **Hovering is not an edit.** Moving the pointer over shapes adds no undo step and never marks the board as having unsaved changes.
 
 Styles are saved in the board file when you press **Save**, with the shape they belong to. A session can set the same styles when it draws or edits (see [Agent control](agent-control.md#drawing-on-a-canvas)), and it merges them into what is there, so asking it to recolour a box does not undo the dashed outline you gave it. A board with styles still opens in an older Harnu, which shows the shapes in their default look and keeps the styles if you save it there. An agent in an older build that rewrites a shape's `props` wholesale can drop them, though.
+
+### Layers
+
+When shapes overlap, the one drawn on top is the one in front. The **Layers** group, at the bottom of the Properties panel, changes that for whatever you have selected. It has four buttons:
+
+| Button             | What it does                                                 |
+| ------------------ | ------------------------------------------------------------ |
+| **Send to back**   | Puts the selection behind every other shape.                 |
+| **Send backward**  | Moves the selection back past the next shape it overlaps.    |
+| **Bring forward**  | Moves the selection forward past the next shape it overlaps. |
+| **Bring to front** | Puts the selection in front of every other shape.            |
+
+A few things worth knowing:
+
+- **Forward and backward step past a shape you can see.** They skip shapes that do not overlap the selection, so one click always changes what is on screen. Two boxes that only touch along an edge do not count as overlapping.
+- **Arrows always draw under shapes.** They are never restacked, and there is no layer button for them; sending a box to the back still leaves it above every arrow.
+- **One move is one undo step**, also when you restack several shapes at once, and the selection keeps its own order. A move that would change nothing (the shape is already in front, or nothing overlaps it) does nothing: no undo step and no unsaved dot.
+- **Stacking values are written only when they have to be.** They go into the file after you restack something, or when you add a shape to a board that already has stacking values, and then every shape gets one. A board without any stacking values that you only move, resize, rename or restyle is saved with no new keys.
+- **A session can do the same.** `draw_canvas` accepts a `zIndex` on a node; see [Agent control](agent-control.md#drawing-on-a-canvas).
+- **Older Harnu versions keep the order.** A restacked board opens in an older Harnu with the same look. A shape drawn there on such a board has no stacking value and shows up near the bottom after you reload it; restack it here to fix that.
 
 ## Images
 
@@ -209,7 +229,7 @@ Because nothing is written until you save:
 - **Closing a canvas with unsaved edits does not close it.** You get a toast saying there are unsaved edits, with a **Discard** action. Only pressing Discard actually closes the pane. Reload and re-targeting the pane go through the same guard.
 - **An agent reading the file sees the last thing you saved**, never your work in progress. That is deliberate — an unsaved edit is not a decision yet.
 
-Saving also keeps any extra data stored inside an arrow's `props`. If an arrow in the file carries such data (styling, for example), opening the board, editing something else and saving writes it back untouched, rather than quietly dropping it. Extra data anywhere else on an arrow is not kept.
+Saving also keeps any extra data stored inside an arrow's `props`. If an arrow in the file carries such data (styling, for example), opening the board, editing something else and saving writes it back untouched, rather than quietly dropping it. Extra data anywhere else on an arrow is not kept. An arrow you delete, save, and then bring back with undo and save again keeps its label, its routing and that extra data.
 
 If a save is refused, the pane says why and **the file on disk is left exactly as it was** — your work is still in front of you, nothing was half-written. The usual reason is something the board cannot represent; see the refusal table below.
 
@@ -217,8 +237,23 @@ If a save is refused, the pane says why and **the file on disk is left exactly a
 
 Harnu watches the file. What happens next depends on whether you have unsaved edits:
 
-- **No unsaved edits** — the board redraws itself immediately and your view does not move. This is the common case.
+- **No unsaved edits** — the board redraws itself immediately and your view does not move. This is the common case, and it is what you see when a session changes the board while you have it open: there is nothing to reload, and your next Save keeps the session's change.
 - **Unsaved edits** — the pane **does not** touch your work. A warning strip replaces the filename: _This canvas changed on disk._ with a **Reload** action. Reload discards your edits (it asks first); ignoring it and pressing **Save** instead writes your version over whatever changed, and that is the point of telling you.
+
+The same holds while a pane is still opening: it starts reading only once Harnu is watching the file, so a session's write in that moment shows up in the pane (or as the strip) instead of being lost. If the watch is not ready within about 3 seconds, the pane opens anyway rather than leave you waiting, and Harnu checks the file again once the watch is ready: a write that landed in between still shows up. That fallback has limits:
+
+- If the watch is still not ready after a minute, Harnu stops checking. Until you reopen the pane, it can miss writes made from outside it.
+- If a session writes and you press **Save** before the late watch is ready, your Save wins and the session's change is overwritten (last writer wins).
+- If your system refuses to watch the file (for example, Linux has run out of file watches), Harnu can treat the watch as ready when it is not, and the pane can miss writes made from outside it.
+
+Your own Save never triggers either case on the pane that made it. If the **same file is open in two panes**, the pane you saved from stays quiet, but the other pane treats your Save like any other change: it redraws (no unsaved edits) or shows the strip (unsaved edits). So the other pane's next Save does not silently write over yours. If that pane had unsaved edits and you press **Save** there anyway, over the warning strip, its version overwrites your other pane's Save: that is the same choice as saving over any change, and the strip is there to warn you.
+
+Narrow windows exist. Harnu hears about a write only after the file settles, roughly 100–250 ms later, and a Save made in that fraction of a second wins:
+
+- If you press **Save** before the pane has heard about a session's write, your Save wins and the session's change is overwritten.
+- If you save in one pane and then in the other within that window, the later Save wins, and the first pane redraws to show it.
+
+This is the same last-writer-wins rule as saving over the warning strip. The panes and the file agree afterwards.
 
 Every node and edge records whether **you** or **the agent** created it, and that record is written the moment you draw the thing. Copying an agent's box makes the copy yours; moving or renaming an agent's box does not — the stamp says who first put it there, not who touched it last.
 
@@ -248,5 +283,4 @@ The pane refuses rather than guessing, and says which of these it is:
 - **Diamonds and ellipses are hit as rectangles.** The Eraser and the Arrow treat them as the rectangle around them, so a press or stroke in the empty corner just outside the outline still counts as the shape.
 - **Copy and paste between canvases** isn't there; **Ctrl/⌘ + D** duplicates within one board.
 - **Arrows cannot be styled.** Colour, dashes and weight apply to shapes only; an arrow always draws in the accent colour.
-- **Stacking order** (bring to front / send to back) has no gesture, so there are no layer controls in the panel; a board written with one keeps it.
 - **A node kind Harnu doesn't know** — a component from a _newer_ build than yours — renders as a dashed box, so an unfamiliar board still opens instead of failing. You can move and delete it, and saving keeps it the kind it was, so opening it in the newer build shows it properly again.

@@ -368,6 +368,10 @@ export function operatorEdgeSpec(palette: CanvasPalette): Edge.Metadata {
   return {
     shape: 'edge',
     data: operatorEdgeData(),
+    // Edges draw under every node (T536 U4), like `toX6Edge`. Without a z, X6's
+    // `prepareCell` would give the new edge max + 1 and paint it over every shape
+    // until the next redraw. A drag's own temporary `toFront` restores this on release.
+    zIndex: 0,
     router: { name: 'manhattan' },
     connector: { name: 'rounded', args: { radius: 8 } },
     attrs: {

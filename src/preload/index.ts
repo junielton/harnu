@@ -68,6 +68,13 @@ import type {
   ReviewSubmitResult,
   BlastRadiusConfig
 } from '../main/review-ipc'
+import type {
+  SelectionComposeRequest,
+  SelectionComposeResult,
+  SelectionSendRequest,
+  SelectionSendResult,
+  SelectionStateEvent
+} from '../main/companion/review-selection-core'
 import type { PushChannel, PushConfig, PushSendPayload, PushTestResult } from '../main/push'
 import type { ResolvedKeybindings } from '../main/keybindings-core'
 import type {
@@ -1018,6 +1025,9 @@ export interface MarkdownChangedWire {
 /** `canvas:changed` payload: a watched DiagramPane's backing canvas changed on disk. */
 export interface CanvasChangedWire {
   path: string
+  /** Set when the change is a pane's own Save echoed to the OTHER panes on the file:
+   *  the pane whose `writerId` this is ignores it (BUG-209). */
+  writerId?: string
 }
 /** Live MCP server status for the Settings pane. */
 export interface McpServerStatus {
@@ -1487,8 +1497,9 @@ const api = {
   // T218 U1: write a canvas document (the pane's explicit Save). Main validates
   // the payload again before any byte lands and writes atomically, so a Save
   // that fails validation writes nothing at all.
-  canvasWrite: (path: string, doc: unknown): Promise<CanvasWriteResult> =>
-    ipcRenderer.invoke('canvas:write', { path, doc }),
+  // `writerId` identifies the saving pane so a second pane on the same file hears the Save.
+  canvasWrite: (path: string, doc: unknown, writerId?: string): Promise<CanvasWriteResult> =>
+    ipcRenderer.invoke('canvas:write', { path, doc, writerId }),
   // T218 U6: externalise pasted/dropped image bytes into the canvas's `assets/`
   // sibling dir and resolve the RELATIVE `assets/<file>` paths to store on the
   // nodes (spec §4.6 — image bytes never enter the canvas file). Runs through
@@ -1497,11 +1508,13 @@ const api = {
   canvasAttachAssets: (path: string, images: CanvasAttachInput[]): Promise<CanvasAttachResult> =>
     ipcRenderer.invoke('canvas:attachAssets', { path, images }),
   // T218 U1: register/unregister a DiagramPane's live-reload watch. Ref-counted
-  // in main (multiple panes on the same path share one watcher).
-  canvasWatchStart: (path: string): Promise<void> =>
-    ipcRenderer.invoke('canvas:watchStart', { path }),
-  canvasWatchStop: (path: string): Promise<void> =>
-    ipcRenderer.invoke('canvas:watchStop', { path }),
+  // in main (multiple panes on the same path share one watcher). Resolves only
+  // once the file is actually being watched — the pane reads after that (BUG-210).
+  // `paneId` (the pane's `writerId`) lets main tell whether a Save echo has other listeners.
+  canvasWatchStart: (path: string, paneId?: string): Promise<void> =>
+    ipcRenderer.invoke('canvas:watchStart', { path, paneId }),
+  canvasWatchStop: (path: string, paneId?: string): Promise<void> =>
+    ipcRenderer.invoke('canvas:watchStop', { path, paneId }),
   // T87: probe a git folder for a WORKTREE.md creator — resolves the repo root,
   // reports whether a manifest already exists, and returns the deterministic
   // findings (lockfile/.env/node_modules/default branch) that drive the template.
@@ -2764,6 +2777,24 @@ const api = {
   onReviewBlastRadiusChanged: (
     cb: (payload: { folder: string; globs: string[] }) => void
   ): (() => void) => subscribe('review:blastRadiusChanged', cb),
+  /**
+   * Keep the open review companion's view of the selection up to date (T257): the selection
+   * store sends every change, debounced, as a hidden context row. It is not an MCP verb, and the request carries
+   * coordinates, never text — `main` reads the lines itself. Resolves, never rejects: a refusal
+   * is `{ ok:false, refusal }` with a stable code; the delivery that follows arrives as
+   * `review:selection:state` events.
+   */
+  reviewSelectionSend: (req: SelectionSendRequest): Promise<SelectionSendResult> =>
+    ipcRenderer.invoke('review:selection:send', req),
+  /**
+   * The exact text a send would carry, for "Copy as text". Needs git and nothing else, so it
+   * works with no companion, no mod and no binding. Sends nothing.
+   */
+  reviewSelectionCompose: (req: SelectionComposeRequest): Promise<SelectionComposeResult> =>
+    ipcRenderer.invoke('review:selection:compose', req),
+  /** A delivery moved along (queued → delivered → asked → answered, or an outcome). Codes only. */
+  onReviewSelectionState: (cb: (ev: SelectionStateEvent) => void): (() => void) =>
+    subscribe('review:selection:state', cb),
 
   // ---- Reaper cleanup engine (UI-only; never exposed to an agent) -----------
   /** The last computed snapshot, or `null` before the first scan this session. */

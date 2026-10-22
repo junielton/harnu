@@ -54,6 +54,8 @@ import {
   type ReviewHead
 } from './review-head'
 import { checkSubmittable, type ReviewVerdict, type SubmitRefusal } from './review-submit-core'
+import { registerReviewSelectionHandlers } from './companion/review-selection-ipc'
+import { REVIEW_DIFF_FLAGS } from './companion/review-selection-core'
 import {
   planPendingPushes,
   resolveViewed,
@@ -596,7 +598,7 @@ export async function loadReview(args: ReviewLoadArgs): Promise<ReviewSnapshot> 
         git(['rev-list', '--count', `${head.ref}..${base}`]),
         git(['diff', '--numstat', range]),
         git(['diff', '--name-status', '--find-renames', range]),
-        git(['diff', '--find-renames', '--no-color', range])
+        git(['diff', ...REVIEW_DIFF_FLAGS, range])
       ])
     : [null, null, null, null, null]
 
@@ -920,4 +922,6 @@ export function registerReviewHandlers(getWindow: () => BrowserWindow | null): v
       return saved
     }
   )
+  // T257: send a selection to the review companion, or compose the text of one. Operator-only.
+  registerReviewSelectionHandlers(getWindow)
 }
