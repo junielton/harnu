@@ -172,7 +172,7 @@ export class BrowserViewHost implements BrowserHost {
           setTimeout: (fn, ms) => setTimeout(fn, ms),
           clearTimeout: (h) => clearTimeout(h as never)
         },
-        title: () => wc.getTitle()
+        title: () => (wc.isDestroyed() ? '' : wc.getTitle())
       })
       if ('url' in target) {
         e.notice = null
@@ -546,6 +546,8 @@ export class BrowserViewHost implements BrowserHost {
       const gesture = this.deps.now() - e.lastGestureAt <= GESTURE_WINDOW_MS
       const decision = decidePopup(details.url, gesture)
       if (decision.action === 'open-pane') {
+        // One activation buys one popup: a page cannot loop `window.open` inside the gesture window.
+        e.lastGestureAt = 0
         this.deps.openPopupPane({ folder: e.folder, partition: e.partition, url: decision.url })
       } else if (decision.reason === 'scheme-blocked') {
         this.publish(e, { notice: { kind: 'blocked', scheme: schemeOf(details.url) } })

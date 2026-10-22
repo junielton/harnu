@@ -8,6 +8,7 @@
  */
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { PAUSE_MS } from './access'
+import { checkTopLevelNavigation } from './nav-policy'
 import {
   bindBrowserWindow,
   browserAccess,
@@ -49,6 +50,8 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     }
     const url =
       typeof payload.url === 'string' && payload.url.length > 0 ? payload.url : 'about:blank'
+    const verdict = checkTopLevelNavigation(url, 'operator')
+    if (!verdict.ok) return { ok: false as const, error: verdict.code }
     try {
       return { ok: true as const, ...openOperatorPane({ folder: payload.folder, url }) }
     } catch (err) {
