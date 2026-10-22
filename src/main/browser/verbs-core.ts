@@ -8,7 +8,6 @@
 import {
   gateBrowserOpDetailed,
   describePaneAccess,
-  isBrowserWriteOp,
   type BrowserAccess,
   type BrowserOp,
   type BrowserPaneAccess
@@ -171,6 +170,14 @@ export function ackBase(
 }
 
 /**
+ * An agent write ran to completion on the pane: the lease's 10 idle minutes start over (spec §7.1). Called by a verb
+ * after its work succeeded, never at the gate: a refused, failed or timed-out call must not keep a lease alive.
+ */
+export function noteAgentWrite(deps: Pick<BrowserVerbDeps, 'leases'>, paneId: string): void {
+  deps.leases?.noteWrite(paneId)
+}
+
+/**
  * Run the access gate for a pane-addressed verb, returning the refusal or the resolved pane. This is the handler's
  * last line of defence, so it also enforces the lease (`BROWSER_LEASE_ENDED`): the plan judged the same state a
  * moment earlier, but a lease can end between the plan and the dispatch. `args` carries the arguments the tier
@@ -206,7 +213,7 @@ export async function gate(
       })
     }
   }
-  if (rec && isBrowserWriteOp(op)) deps.leases?.noteWrite(rec.paneId)
+  // Passing the gate does NOT refresh the lease's idle clock: only a write that actually ran does (`noteAgentWrite`).
   return { rec, live, origin }
 }
 
@@ -388,6 +395,7 @@ export async function navigateVerb(
     throw err
   }
   const report = deps.registry.endWrite(token)
+  noteAgentWrite(deps, rec.paneId)
 
   const live = deps.host.info(rec.paneId)
   const origin = originOf(rec, live, deps)

@@ -9,6 +9,7 @@
 import {
   BROWSER_NOTE,
   ackBase,
+  noteAgentWrite,
   gate,
   originOf,
   refuse,
@@ -575,6 +576,7 @@ export async function networkVerb(
         headers: args.headers === true
       })
       const report = deps.registry.endWrite(token)
+      noteAgentWrite(deps, rec.paneId)
       return {
         ...ctx.ack,
         active: status.active,
@@ -589,6 +591,7 @@ export async function networkVerb(
     if (args.action === 'stop') {
       const status = ctx.readers.stopCapture('stopped')
       const report = deps.registry.endWrite(token)
+      noteAgentWrite(deps, rec.paneId)
       return {
         ...ctx.ack,
         active: status.active,
@@ -605,6 +608,7 @@ export async function networkVerb(
     })
     const report = deps.registry.endWrite(token)
     if (!res.ok) return refuse('CURSOR_EXPIRED')
+    noteAgentWrite(deps, rec.paneId)
     const status = ctx.readers.capture.status()
     return {
       ...ctx.ack,

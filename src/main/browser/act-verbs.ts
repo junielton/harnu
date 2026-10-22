@@ -34,6 +34,7 @@ import {
   BROWSER_NOTE,
   ackBase,
   gate,
+  noteAgentWrite,
   originOf,
   refuse,
   refuseBadArgs,
@@ -129,6 +130,8 @@ async function runWrite(
       deps.host.drive?.(rec.paneId, false)
     }
     if (isRefusal(result)) return result
+    // The write ran: only now do the lease's 10 idle minutes start over (a refusal or a throw never gets here).
+    noteAgentWrite(deps, rec.paneId)
     return {
       ...result,
       operatorInteracted: report.operatorInteracted,
