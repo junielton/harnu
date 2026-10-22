@@ -20,6 +20,7 @@ export type DialogId =
   | 'newFolder'
   | 'openSubfolder'
   | 'renameFolder'
+  | 'trustedHosts'
   | 'renameRepo'
   | 'memoryLocation'
   | null
@@ -628,6 +629,12 @@ export const useUiStore = defineStore('ui', () => {
     openDialog('renameFolder')
   }
 
+  /** Open the "Trusted dev hosts" dialog for `path` (T571, spec §7.2). */
+  function openTrustedHosts(path: string): void {
+    folderActionPath.value = path
+    openDialog('trustedHosts')
+  }
+
   /** Open the "Rename group" dialog for a sidebar group, by namespaced key (T88). */
   function openRenameRepo(groupKey: string, derivedLabel: string): void {
     renameRepoTarget.value = { groupKey, derivedLabel }
@@ -1088,6 +1095,7 @@ export const useUiStore = defineStore('ui', () => {
     openNewFolder,
     openOpenSubfolder,
     openRenameFolder,
+    openTrustedHosts,
     openRenameRepo,
     openMemoryLocation,
     closeDialog,

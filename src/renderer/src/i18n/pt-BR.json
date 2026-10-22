@@ -387,6 +387,9 @@
     "orchestratorDefaultOff": "Parar de iniciar sessões como Orquestrador",
     "terminalReadOn": "Deixar agentes lerem os terminais que eu abro",
     "terminalReadOff": "Parar de deixar agentes lerem os terminais que eu abro",
+    "browserReadOn": "Deixar agentes lerem os painéis de navegador que abro",
+    "browserReadOff": "Parar de deixar agentes lerem os painéis de navegador que abro",
+    "trustedHosts": "Hosts de desenvolvimento confiáveis…",
     "newWorktree": "Nova worktree…",
     "removeWorktree": "Remover worktree",
     "createWorktreeMd": "Criar WORKTREE.md",
@@ -979,6 +982,29 @@
       "ahead": "{n} à frente",
       "behind": "{n} atrás",
       "memoryLabel": "Onde paramos"
+    }
+  },
+  "trustedHosts": {
+    "title": "Hosts de desenvolvimento confiáveis",
+    "close": "Fechar",
+    "builtInLabel": "Sempre confiáveis",
+    "addedLabel": "Adicionados por você",
+    "none": "Nenhum ainda.",
+    "placeholder": "app.test ou *.test",
+    "add": "Adicionar",
+    "remove": "Remover {host}",
+    "hint": "Páginas nesses hosts contam como locais: agentes podem controlá-las sem pedir. Só nomes exatos e curingas de um nível. Um nome que apenas resolve para loopback nunca é confiável por si só.",
+    "failed": "Não foi possível salvar os hosts confiáveis",
+    "errors": {
+      "EMPTY": "Digite um nome de host.",
+      "TOO_LONG": "Esse nome de host é longo demais.",
+      "HAS_SCHEME_OR_PATH": "Digite só o nome do host, sem http:// nem caminho.",
+      "HAS_PORT": "Deixe a porta de fora; vale para todas as portas.",
+      "BAD_CHARACTERS": "Nomes de host usam letras, dígitos e hífens.",
+      "WILDCARD_TOO_BROAD": "Esse curinga é amplo demais. Use *.test, ou nomeie pelo menos dois níveis.",
+      "WILDCARD_POSITION": "O curinga só pode abrir o nome, como *.test.",
+      "DUPLICATE": "Já está na lista.",
+      "LIST_FULL": "A lista está cheia."
     }
   },
   "renameFolder": {
@@ -4364,6 +4390,8 @@
     "chip": {
       "connectedTo": "Conectado a {session}",
       "connectedToAgent": "Conectado a um agente",
+      "canDrive": "Um agente pode controlar aqui",
+      "canRead": "Um agente pode ler aqui",
       "paused": "Agente pausado · {time}",
       "resume": "Retomar",
       "disconnected": "Desconectado",

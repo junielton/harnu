@@ -116,6 +116,8 @@ const chipLabel = computed(() => {
   if (c.kind === 'paused') {
     return t('browserPane.chip.paused', { time: formatCountdown(c.pausedMs) })
   }
+  if (c.kind === 'operatorLease') return t('browserPane.chip.canDrive')
+  if (c.kind === 'operatorRead') return t('browserPane.chip.canRead')
   if (c.kind === 'connected')
     return t('browserPane.chip.connectedTo', { session: ownerTitle.value })
   return t('browserPane.chip.connectedToAgent')

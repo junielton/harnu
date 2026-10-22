@@ -387,6 +387,9 @@
     "orchestratorDefaultOff": "Stop starting sessions as Orchestrator",
     "terminalReadOn": "Let agents read terminals I open",
     "terminalReadOff": "Stop agents reading terminals I open",
+    "browserReadOn": "Let agents read browser panes I open",
+    "browserReadOff": "Stop agents reading browser panes I open",
+    "trustedHosts": "Trusted dev hosts…",
     "newWorktree": "New worktree…",
     "removeWorktree": "Remove worktree",
     "createWorktreeMd": "Create WORKTREE.md",
@@ -979,6 +982,29 @@
       "ahead": "{n} ahead",
       "behind": "{n} behind",
       "memoryLabel": "Where we left off"
+    }
+  },
+  "trustedHosts": {
+    "title": "Trusted dev hosts",
+    "close": "Close",
+    "builtInLabel": "Always trusted",
+    "addedLabel": "Added by you",
+    "none": "None yet.",
+    "placeholder": "app.test or *.test",
+    "add": "Add",
+    "remove": "Remove {host}",
+    "hint": "Pages on these hosts count as local: agents can drive them without asking. Only exact host names and one-level wildcards. A name that merely resolves to loopback is never trusted by itself.",
+    "failed": "Couldn't save the trusted hosts",
+    "errors": {
+      "EMPTY": "Type a host name.",
+      "TOO_LONG": "That host name is too long.",
+      "HAS_SCHEME_OR_PATH": "Type only the host name, without http:// or a path.",
+      "HAS_PORT": "Leave the port out; it applies to every port.",
+      "BAD_CHARACTERS": "Host names use letters, digits and hyphens.",
+      "WILDCARD_TOO_BROAD": "That wildcard is too broad. Use *.test, or name at least two labels.",
+      "WILDCARD_POSITION": "A wildcard can only start the name, like *.test.",
+      "DUPLICATE": "Already in the list.",
+      "LIST_FULL": "The list is full."
     }
   },
   "renameFolder": {
@@ -4364,6 +4390,8 @@
     "chip": {
       "connectedTo": "Connected to {session}",
       "connectedToAgent": "Connected to an agent",
+      "canDrive": "An agent can drive here",
+      "canRead": "An agent can read here",
       "paused": "Agent paused · {time}",
       "resume": "Resume",
       "disconnected": "Disconnected",

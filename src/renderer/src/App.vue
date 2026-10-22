@@ -19,6 +19,7 @@ import NewWorktreeDialog from './components/NewWorktreeDialog.vue'
 import NewFolderDialog from './components/NewFolderDialog.vue'
 import OpenSubfolderDialog from './components/OpenSubfolderDialog.vue'
 import RenameFolderDialog from './components/RenameFolderDialog.vue'
+import TrustedHostsDialog from './components/TrustedHostsDialog.vue'
 import RenameRepoDialog from './components/RenameRepoDialog.vue'
 import MemoryLocationDialog from './components/MemoryLocationDialog.vue'
 import MissionsReviewDialog from './components/MissionsReviewDialog.vue'
@@ -1223,6 +1224,7 @@ onUnmounted(() => {
       <NewFolderDialog />
       <OpenSubfolderDialog />
       <RenameFolderDialog />
+      <TrustedHostsDialog />
       <RenameRepoDialog />
       <MemoryLocationDialog />
       <MissionsReviewDialog />

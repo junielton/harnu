@@ -1033,12 +1033,14 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     'userProjects:setBrowserRead',
     async (_e, { targetPath, enabled }: { targetPath: string; enabled: boolean }) => {
-      return toUserProjectsPayload(await setUserProjectBrowserRead(targetPath, enabled))
+      const payload = toUserProjectsPayload(await setUserProjectBrowserRead(targetPath, enabled))
+      await refreshBrowserTrustedHosts()
+      return payload
     }
   )
 
   // T571: the folder's trusted dev hosts (Trusted dev hosts dialog). The operator is the only writer; each
-  // entry is validated by `browser/trusted-hosts` and the edited list is re-applied to the open panes.
+  // entry is validated by `shared/browser-trusted-hosts` and the edited list is re-applied to the open panes.
   ipcMain.handle(
     'userProjects:setBrowserTrustedHosts',
     async (_e, { targetPath, hosts }: { targetPath: string; hosts: string[] }) => {

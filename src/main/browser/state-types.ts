@@ -37,6 +37,10 @@ export interface BrowserPaneState {
   disconnected: boolean
   ownerSessionId: string | null
   notice: BrowserNotice | null
+  /** Agents may read this pane: it is agent-opened, or its folder opted in (T571, spec §7.1). */
+  agentReads: boolean
+  /** The operator's lease on this pane is active (T571): an agent can drive it without asking. */
+  leaseActive: boolean
   /** Epoch ms the agent's network capture stops itself, or `null` when none is running (the red counter). */
   networkUntil: number | null
 }

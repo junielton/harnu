@@ -54,18 +54,31 @@ async function loadTrustedHosts(
 }
 
 /**
- * The operator edited a folder's trusted hosts: re-read every cached folder and tell the open panes, so their
- * origin badge and the next verb see the new class at once (spec §7.2: "re-evaluated at every call").
+ * The operator edited a folder's trusted hosts or its read opt-in: re-read every folder that has a pane and tell
+ * the open panes, so their origin badge, their chip and the next verb see it at once (spec §7.2: "re-evaluated at
+ * every call"). Turning the opt-in off already ended the folder's leases in the setter.
  */
 export async function refreshBrowserTrustedHosts(file?: UserProjectsFile): Promise<void> {
   const current = file ?? (await readUserProjects())
-  for (const folder of [...trustedHostsCache.keys()]) await loadTrustedHosts(folder, current)
+  const folders = new Set([
+    ...trustedHostsCache.keys(),
+    ...browserRegistry.list().map((r) => r.folder)
+  ])
+  for (const folder of folders) {
+    await loadTrustedHosts(folder, current)
+    await readOptInFor(folder, current)
+  }
   if (host) for (const rec of browserRegistry.list()) host.refresh(rec.paneId)
 }
 
+/** The folder's browser-read opt-in as last read, for the display-only chip (the gate always reads the file). */
+const readOptInCache = new Map<string, boolean>()
+
 /** Whether the folder's browser-read opt-in is on (exact folder). */
 async function readOptInFor(folder: string, file?: UserProjectsFile): Promise<boolean> {
-  return (await browserReadOptIns(file ?? (await readUserProjects()), [folder])).has(folder)
+  const on = (await browserReadOptIns(file ?? (await readUserProjects()), [folder])).has(folder)
+  readOptInCache.set(folder, on)
+  return on
 }
 
 let mainWindowGetter: (() => BrowserWindow | null) | null = null
@@ -88,11 +101,15 @@ export function getBrowserHost(): BrowserViewHost {
     access: browserAccess,
     now: () => Date.now(),
     harnuPorts: () => collectHarnuPorts(mcpPort),
-    trustedHosts: () => [],
+    trustedHosts: trustedHostsSync,
+    readOptIn: (folder) => readOptInCache.get(folder) === true,
+    leaseActive: (paneId, token) => browserLeases.isActive(paneId, token),
     scrub: (text) => scrubTerminalText(text, os.homedir()),
     openPopupPane: ({ folder, partition, url }) =>
       openOperatorPane({ folder, partition, url, popup: true })
   })
+  // A lease that starts or ends repaints the pane's chip (display only).
+  browserLeases.onChange((paneId) => host?.refresh(paneId))
   return host
 }
 
@@ -125,6 +142,8 @@ export function openOperatorPane(opts: {
     seenHosts: new Set<string>(),
     flagged: null
   })
+  // The chip shows whether agents may read this pane: fetch the folder's opt-in once, then repaint.
+  void readOptInFor(opts.folder).then(() => host?.refresh(paneId))
   try {
     getBrowserHost().create({ paneId, folder: opts.folder, partition, url: opts.url })
   } catch (err) {
@@ -157,7 +176,9 @@ export function closePaneFromOperator(paneId: string): void {
  */
 export async function resolveBrowserGate(
   paneId: string | undefined,
-  file?: UserProjectsFile
+  file?: UserProjectsFile,
+  /** `browser_open` / `browser_list` carry a folder of their own: its trusted hosts are loaded for them. */
+  folder?: string
 ): Promise<GateResolution> {
   const writesEnabled = await readAgentBrowserWrites()
   // Switching agent browser control off ends every lease. The Settings toggle does that itself; doing it here too
@@ -166,6 +187,7 @@ export async function resolveBrowserGate(
   const rec = paneId === undefined ? undefined : browserRegistry.get(paneId)
   const projects = file ?? (await readUserProjects())
   if (rec) await loadTrustedHosts(rec.folder, projects)
+  else if (folder !== undefined) await loadTrustedHosts(folder, projects)
   const readOptIn = rec ? await readOptInFor(rec.folder, projects) : false
   // A lease on an operator pane rides on the folder's opt-in: whenever the opt-in is seen OFF the lease ends,
   // whatever turned it off, so turning it back on can never revive an old approval.

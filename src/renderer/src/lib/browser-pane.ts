@@ -45,7 +45,8 @@ export function headerTitle(state: Pick<BrowserPaneState, 'title' | 'url'>): str
   }
 }
 
-export type ChipKind = 'connected' | 'connectedAgent' | 'paused' | 'disconnected'
+export type ChipKind =
+  'connected' | 'connectedAgent' | 'paused' | 'disconnected' | 'operatorRead' | 'operatorLease'
 
 export interface BrowserChipView {
   kind: ChipKind
@@ -60,12 +61,14 @@ export interface BrowserChipView {
 }
 
 /**
- * The chip to show, or `null` for none (design.md "Connection chip"). An operator-opened pane has no chip: an
- * agent has no standing on it before the lease of a later unit. Disconnected outranks paused, which outranks
- * connected.
+ * The chip to show, or `null` for none (design.md "Connection chip"). An operator-opened pane has no chip until
+ * its folder lets agents read it: then "An agent can read here" (no Disconnect: the reader is unidentifiable),
+ * and "An agent can drive here" with Disconnect while the operator's lease is active (a lease records no
+ * grantee). Disconnected outranks paused, which outranks connected.
  */
 export function chipFor(
-  state: Pick<BrowserPaneState, 'openedBy' | 'disconnected' | 'pausedUntil' | 'ownerSessionId'>,
+  state: Pick<BrowserPaneState, 'openedBy' | 'disconnected' | 'pausedUntil' | 'ownerSessionId'> &
+    Partial<Pick<BrowserPaneState, 'agentReads' | 'leaseActive'>>,
   word: 'reading' | 'driving' | null,
   now: number
 ): BrowserChipView | null {
@@ -78,7 +81,17 @@ export function chipFor(
       disconnectable: false
     }
   }
-  if (state.openedBy !== 'agent') return null
+  if (state.openedBy !== 'agent') {
+    if (state.agentReads !== true) return null
+    const driving = state.leaseActive === true
+    return {
+      kind: driving ? 'operatorLease' : 'operatorRead',
+      ownerSessionId: null,
+      pausedMs: 0,
+      word,
+      disconnectable: driving
+    }
+  }
   if (state.pausedUntil !== null && state.pausedUntil > now) {
     return {
       kind: 'paused',

@@ -11,7 +11,7 @@ import { fsPathExistence } from './gc/gc-orphan-existence'
 import { migrateFolderDataDirLazily } from './migrations/data-dir-boot'
 import { terminalLeases } from './terminal-lease'
 import { browserLeases } from './browser/lease-singleton'
-import { sanitizeTrustedHosts, MAX_TRUSTED_HOSTS } from './browser/trusted-hosts'
+import { sanitizeTrustedHosts, MAX_TRUSTED_HOSTS } from '../shared/browser-trusted-hosts'
 
 /**
  * One worktree entry in a persisted project record. Vestigial under the

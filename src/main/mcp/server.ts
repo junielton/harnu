@@ -1094,7 +1094,8 @@ async function runToolCall(
     // no pane; they still need the kill-switch, which rides in the same state.
     const resolved = await resolveBrowserGate(
       def.op === 'browser_open' || def.op === 'browser_list' ? undefined : strField(args, 'paneId'),
-      projectsFile
+      projectsFile,
+      strField(args, 'folder')
     )
     if (def.op !== 'browser_open' && def.op !== 'browser_list') gateFolder = resolved.folder
     browser = resolved.input

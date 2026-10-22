@@ -1323,6 +1323,15 @@ export const useSessionsStore = defineStore('sessions', () => {
   const terminalReadPaths = ref<Set<string>>(new Set())
 
   /**
+   * Set of normalized absolute paths whose operator-opened BROWSER panes agents may read (the `agentBrowserRead`
+   * flag, T571). Track-the-ON-set, default OFF, EXACT-PATH ONLY like {@link terminalReadPaths}.
+   */
+  const browserReadPaths = ref<Set<string>>(new Set())
+
+  /** path → the folder's trusted dev hosts (T571, spec §7.2). Exact path only; operator-edited only. */
+  const browserTrustedHosts = ref<Map<string, string[]>>(new Map())
+
+  /**
    * Close-handlers registered by panes that own a live xterm for a session.
    * When `closeSession()` fires the store dispatches to every registered
    * handler so each pane can tear down its own resources. Multi-subscriber
@@ -3735,6 +3744,39 @@ export const useSessionsStore = defineStore('sessions', () => {
     return payload.projects
   }
 
+  /** Mirror the two browser flags (T571) out of a `userProjects` payload. */
+  function mirrorBrowserFlags(projects: UserProject[]): void {
+    browserReadPaths.value = new Set(projects.filter((p) => p.agentBrowserRead).map((p) => p.path))
+    browserTrustedHosts.value = new Map(
+      projects
+        .filter((p) => (p.browserTrustedHosts?.length ?? 0) > 0)
+        .map((p) => [p.path, [...(p.browserTrustedHosts ?? [])]])
+    )
+  }
+
+  /**
+   * Toggle the per-folder "let agents read browser panes I open" opt-in (T571). Writes the `agentBrowserRead`
+   * flag through `userProjectsSetBrowserRead` and mirrors the result back. EXACT-PATH ONLY.
+   */
+  async function setFolderBrowserRead(path: string, enabled: boolean): Promise<UserProject[]> {
+    const payload = await window.api.userProjectsSetBrowserRead(path, enabled)
+    mirrorBrowserFlags(payload.projects)
+    return payload.projects
+  }
+
+  /**
+   * Replace a folder's trusted dev hosts (T571, spec §7.2). The Trusted dev hosts dialog is the only caller; no
+   * agent verb edits the list. Mirrors the saved list back.
+   */
+  async function setFolderBrowserTrustedHosts(
+    path: string,
+    hosts: string[]
+  ): Promise<UserProject[]> {
+    const payload = await window.api.userProjectsSetBrowserTrustedHosts(path, hosts)
+    mirrorBrowserFlags(payload.projects)
+    return payload.projects
+  }
+
   /**
    * Toggle the per-repo "auto-organize conversation into draft cards" opt-out
    * (T106/D6). Writes the `autoOrganizeCards` flag through
@@ -4832,6 +4874,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     terminalReadPaths.value = new Set(
       userProjects.filter((p) => p.agentTerminalRead).map((p) => p.path)
     )
+    mirrorBrowserFlags(userProjects)
 
     // Re-inject synthetics into matching folders (match by folder path).
     //
@@ -5809,6 +5852,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     orchestratorSessionIds,
     orchestratorDefaultPaths,
     terminalReadPaths,
+    browserReadPaths,
+    browserTrustedHosts,
     selectedId,
     selectedFolderPath,
     activeFolderPath,
@@ -5927,6 +5972,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     isFolderAutoOrganizeOn,
     setFolderOrchestratorDefault,
     setFolderTerminalRead,
+    setFolderBrowserRead,
+    setFolderBrowserTrustedHosts,
     setFolderBornFrom,
     listBornFromCandidates,
     setSessionSort,

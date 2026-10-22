@@ -64,6 +64,10 @@ export interface ViewHostDeps {
   now(): number
   harnuPorts(): number[]
   trustedHosts(folder: string): readonly string[]
+  /** The folder's browser-read opt-in, from the service's cache (display only; the gate reads the file). */
+  readOptIn(folder: string): boolean
+  /** The operator's lease on the pane is active for the view `token` (display only). */
+  leaseActive(paneId: string, token: string): boolean
   /** Redact page-derived text recorded by the readers (best-effort, the `read_terminal` scrubber). */
   scrub(text: string): string
   /** The operator's click opened a popup: create an operator-class pane in `folder` (spec §3.2). */
@@ -854,6 +858,8 @@ export class BrowserViewHost implements BrowserReadHost {
       disconnected: this.deps.access.isDisconnected(e.paneId),
       ownerSessionId: r?.ownerSessionId ?? null,
       notice: e.notice,
+      agentReads: (r?.openedBy ?? 'operator') === 'agent' || this.deps.readOptIn(e.folder),
+      leaseActive: this.deps.leaseActive(e.paneId, String(e.wc.id)),
       networkUntil: e.readers.capture.status().expiresAt
     }
   }

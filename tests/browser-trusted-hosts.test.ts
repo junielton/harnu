@@ -9,7 +9,7 @@ import {
   parseTrustedHost,
   removeTrustedHost,
   sanitizeTrustedHosts
-} from '../src/main/browser/trusted-hosts'
+} from '../src/shared/browser-trusted-hosts'
 import { classifyOrigin } from '../src/main/browser/origin-class'
 
 describe('parseTrustedHost', () => {
