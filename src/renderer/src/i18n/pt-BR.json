@@ -4354,7 +4354,8 @@
     },
     "flag": {
       "label": "aberto pelo agente · {host}",
-      "dismiss": "Dispensar o aviso"
+      "dismiss": "Dispensar o aviso",
+      "prefix": "aberto pelo agente"
     },
     "chip": {
       "connectedTo": "Conectado a {session}",
@@ -4368,7 +4369,8 @@
       "disconnectFailed": "Não foi possível desconectar o agente",
       "reading": "lendo",
       "driving": "operando",
-      "pausedLabel": "Agente pausado"
+      "pausedLabel": "Agente pausado",
+      "connectedPrefix": "Conectado a"
     },
     "notice": {
       "blocked": "Bloqueado: endereços {scheme}: não podem ser abertos",

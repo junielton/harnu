@@ -3788,7 +3788,10 @@ must freeze it first (see "Frozen frame").
   never hidden; reload becomes `x` = stop while a load is in flight), then the **origin badge**, then the
   **URL field**. The field is a single-line input, mono 11px, `--surface` fill, `--radius-sm`, 1px `--border`
   (`--accent-line` on focus). It shows the **real URL** (query string included, because the operator typed it
-  and must be able to edit it). Enter navigates (a bare word with no dot or scheme is treated as `https://` +
+  and must be able to edit it). **Host emphasis:** while the field is not being edited, the scheme and the path
+  are drawn in `--text-2` and the host (with its port) in `--text`, so the part that says where you are stands
+  out; the text under it is the real input, made transparent, and it returns to a single `--text` tone the moment
+  the field takes focus (an accent border, `--accent-line`, and a caret). Enter navigates (a bare word with no dot or scheme is treated as `https://` +
   word; a blocked scheme raises the notice strip and never navigates). Escape restores the live URL.
   `browser.focusAddress` focuses and selects it.
 - **Origin badge** — a pill with the chip's geometry (`padding 1px 6px`, 10px, `rounded-full`, 1px border) that
@@ -3798,7 +3801,10 @@ must freeze it first (see "Frozen frame").
 - **"Opened by agent" flag** (spec §3.2, decision 21) — set when a verb navigated the pane to a host it had not
   shown before. An amber pill in the address bar, between the origin badge and the field: `--warning` text on a
   `--warning` 10% fill, 1px `--warning` 30% border, 10px, `triangle-alert` 10px, text "opened by agent · ‹host›",
-  with a 12px `x` that dismisses it. It also clears when the **operator** navigates.
+  with a 12px `x` that dismisses it. It also clears when the **operator** navigates. **Narrow panes** (the address
+  field must stay readable): below 330px the words "opened by agent ·" go and the pill is icon + host; below
+  250px the host goes too and it is the icon alone (the hover title keeps the full text). The pill never takes
+  more than 45% of the row, and the origin badge hides below 300px.
 - **Notice strip** — one optional 22px row under the address bar for a refusal or an intercepted event: a blocked
   scheme, a certificate error accepted on loopback, a dialog the page raised and Harnu dismissed. `--warning` 10%
   fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old.
@@ -3811,13 +3817,13 @@ must freeze it first (see "Frozen frame").
 **Connection chip** — the Agent connection chip's geometry and tokens (see the section above), with these states.
 It shows for an agent-opened pane, and while paused or disconnected.
 
-| State                       | Chip                                                                                                                                   |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Agent-opened, owner known   | accent pill, "Connected to ‹session›", live word `reading` / `driving` while a verb runs; **Disconnect** (`unplug`) at its right       |
-| Agent-opened, owner unknown | "Connected to an agent"; same Disconnect                                                                                               |
-| Operator-opened             | no chip (an agent has no standing on it before the lease of a later unit); no Disconnect                                               |
-| **Paused**                  | `--warning` 10% pill, `--warning` text, "Agent paused · 9:41" (mm:ss, counts down each second), then a **Resume** text button (`play`) |
-| **Disconnected**            | `--red-soft` pill, `--red` text, "Disconnected" (the mockup's red chip), no button. Permanent; the operator keeps using the pane       |
+| State                       | Chip                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent-opened, owner known   | accent pill, "Connected to ‹session›", live word `reading` / `driving` while a verb runs; **Disconnect** (`unplug`) at its right. The session name is the part that stays: "Connected to" is dropped first (below 300px) and the name truncates last; the hover title keeps the whole text                                                         |
+| Agent-opened, owner unknown | "Connected to an agent"; same Disconnect                                                                                                                                                                                                                                                                                                           |
+| Operator-opened             | no chip (an agent has no standing on it before the lease of a later unit); no Disconnect                                                                                                                                                                                                                                                           |
+| **Paused**                  | `--warning` 10% pill, `--warning` text, "Agent paused · 9:41" (m:ss, counts down each second), then a bordered **Resume** text button (`play` 10px + "Resume", 1px `--warning` 40% border). Below 300px the header has no room for the words, so the same chip (text, Resume, Disconnect) becomes a 22px strip under the header on `--warning` 10% |
+| **Disconnected**            | `--red-soft` pill, `--red` text, "Disconnected" (the mockup's red chip), no button. Permanent; the operator keeps using the pane                                                                                                                                                                                                                   |
 
 The pause countdown is the only chip text that ticks. It is plain text with no animation, so nothing changes under
 `prefers-reduced-motion`. Disconnect needs **no confirm** (revoking is the safe direction) and is **permanent**,

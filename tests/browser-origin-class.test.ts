@@ -12,7 +12,12 @@ describe('classifyOrigin', () => {
       'http://127.0.0.1:3000',
       'http://127.1.2.3/',
       'http://[::1]:8080/',
-      'http://app.localhost:3000/'
+      'http://app.localhost:3000/',
+      // IPv4-mapped loopback, in every spelling (the URL parser normalizes the dotted form to hex).
+      'http://[::ffff:127.0.0.1]:5188/',
+      'http://[::ffff:7f00:1]:5188/',
+      'http://[::ffff:7f12:3456]/',
+      'http://[0:0:0:0:0:0:0:1]/'
     ]) {
       expect(classifyOrigin(url), url).toBe('local')
     }
@@ -23,6 +28,17 @@ describe('classifyOrigin', () => {
     expect(classifyOrigin('http://127.0.0.1.nip.io/')).toBe('external')
     expect(classifyOrigin('http://0.0.0.0:3000/')).toBe('external')
     expect(classifyOrigin('http://localhost.evil.com/')).toBe('external')
+  })
+
+  it('does not treat IPv4-mapped or other IPv6 literals outside loopback as local', () => {
+    expect(classifyOrigin('http://[::ffff:8.8.8.8]/')).toBe('external')
+    expect(classifyOrigin('http://[::ffff:808:808]/')).toBe('external')
+    expect(classifyOrigin('http://[2001:db8::1]/')).toBe('external')
+    expect(classifyOrigin('http://[::2]/')).toBe('external')
+  })
+
+  it("keeps Harnu's own port external for IPv4-mapped loopback too", () => {
+    expect(classifyOrigin('http://[::ffff:7f00:1]:9222/', { harnuPorts: [9222] })).toBe('external')
   })
 
   it('classifies other literal IPv4 ranges and out-of-range octets as external', () => {

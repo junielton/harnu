@@ -37,7 +37,8 @@ import {
   formatCountdown,
   headerTitle,
   normalizeAddressInput,
-  originBadgeKey
+  originBadgeKey,
+  splitAddress
 } from '../lib/browser-pane'
 import type { BrowserPaneState } from '../../../preload'
 
@@ -143,6 +144,8 @@ watch(
 )
 
 const originKey = computed(() => originBadgeKey(state.value.origin))
+/** The address in three runs: the host is brighter than the scheme and the path (design.md "Address bar"). */
+const addressParts = computed(() => splitAddress(address.value))
 
 async function onAddressEnter(): Promise<void> {
   const url = normalizeAddressInput(address.value)
@@ -287,7 +290,7 @@ watch(isFrozen, async (frozen) => {
 
 <template>
   <div
-    class="flex h-full w-full flex-col overflow-hidden bg-bg"
+    class="@container flex h-full w-full flex-col overflow-hidden bg-bg"
     :aria-label="$t('browserPane.label')"
     data-testid="browser-pane"
   >
@@ -299,13 +302,14 @@ watch(isFrozen, async (frozen) => {
       @mousedown="onHeaderMouseDown"
     >
       <Globe :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-      <span class="min-w-[2.5rem] flex-1 truncate" :title="state.url" data-testid="browser-title">{{
+      <span class="min-w-0 flex-1 truncate" :title="state.url" data-testid="browser-title">{{
         title
       }}</span>
 
       <span
         v-if="chip"
         class="flex min-w-0 shrink items-center gap-1"
+        :class="chip.kind === 'paused' ? '@max-[300px]:hidden' : ''"
         data-testid="browser-chip"
         :data-chip="chip.kind"
       >
@@ -340,14 +344,24 @@ watch(isFrozen, async (frozen) => {
             class="shrink-0"
             aria-hidden="true"
           />
-          <!-- A paused chip keeps its countdown at every width: only the words around it give way. -->
+          <!-- Paused: "Agent paused · m:ss", always whole (on a narrow pane the chip moves to the strip below). -->
           <span
             v-if="chip.kind === 'paused'"
             class="min-w-0 truncate"
             data-testid="browser-chip-label"
-            ><span class="@max-[300px]:hidden">{{ $t('browserPane.chip.pausedLabel') }} · </span
-            >{{ formatCountdown(chip.pausedMs) }}</span
+            >{{ chipLabel }}</span
           >
+          <!-- Connected: the session name is what matters, so "Connected to" gives way first. -->
+          <span
+            v-else-if="chip.kind === 'connected'"
+            class="flex min-w-0 items-baseline"
+            data-testid="browser-chip-label"
+          >
+            <span class="truncate @max-[300px]:hidden" style="flex-shrink: 8"
+              >{{ $t('browserPane.chip.connectedPrefix') }}&nbsp;</span
+            >
+            <span class="min-w-0 truncate">‹{{ ownerTitle }}›</span>
+          </span>
           <span
             v-else
             class="min-w-0 truncate @max-[180px]:hidden"
@@ -362,16 +376,14 @@ watch(isFrozen, async (frozen) => {
         <button
           v-if="chip.kind === 'paused'"
           type="button"
-          class="flex shrink-0 items-center gap-0.5 rounded text-warning transition-colors hover:bg-surface-2"
-          style="padding: 0 4px; font-size: 10px"
-          :aria-label="$t('browserPane.chip.resume')"
-          :title="$t('browserPane.chip.resume')"
+          class="flex shrink-0 items-center gap-0.5 rounded border border-warning/40 text-warning transition-colors hover:bg-surface-2"
+          style="padding: 0 6px; font-size: 10px; line-height: 16px"
           data-testid="browser-resume"
           @mousedown.stop
           @click="browser.resume(paneId)"
         >
           <Play :size="10" :stroke-width="1.6" aria-hidden="true" />
-          <span class="@max-[300px]:hidden">{{ $t('browserPane.chip.resume') }}</span>
+          {{ $t('browserPane.chip.resume') }}
         </button>
         <button
           v-if="chip.disconnectable"
@@ -422,6 +434,36 @@ watch(isFrozen, async (frozen) => {
       </button>
     </header>
 
+    <!-- Paused chip on a narrow pane (below 300px the header has no room for the words): the same chip, full
+         width, as a strip under the header. -->
+    <div
+      v-if="chip && chip.kind === 'paused'"
+      class="hidden h-[22px] shrink-0 items-center gap-1.5 border-b border-border bg-warning/10 px-2 text-[11px] text-warning @max-[300px]:flex"
+      data-testid="browser-paused-strip"
+    >
+      <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" aria-hidden="true" />
+      <span class="min-w-0 flex-1 truncate" :title="chipLabel">{{ chipLabel }}</span>
+      <button
+        type="button"
+        class="flex shrink-0 items-center gap-0.5 rounded border border-warning/40 hover:bg-surface-2"
+        style="padding: 0 6px; font-size: 10px; line-height: 16px"
+        data-testid="browser-resume-strip"
+        @click="browser.resume(paneId)"
+      >
+        <Play :size="10" :stroke-width="1.6" aria-hidden="true" />
+        {{ $t('browserPane.chip.resume') }}
+      </button>
+      <button
+        type="button"
+        class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded text-text-3 hover:bg-surface-2 hover:text-text"
+        :title="$t('browserPane.chip.disconnectHint')"
+        :aria-label="$t('browserPane.chip.disconnect')"
+        @click="onDisconnect"
+      >
+        <Unplug :size="12" :stroke-width="1.6" />
+      </button>
+    </div>
+
     <!-- Address bar (design.md "Address bar"). -->
     <div class="@container flex h-7 shrink-0 items-center gap-1 border-b border-border bg-bg px-2">
       <button
@@ -469,7 +511,7 @@ watch(isFrozen, async (frozen) => {
 
       <span
         v-if="originKey"
-        class="shrink-0 rounded-full border @max-[200px]:hidden"
+        class="shrink-0 rounded-full border @max-[300px]:hidden"
         :class="
           originKey === 'local'
             ? 'border-green/30 bg-green-soft text-green'
@@ -484,14 +526,17 @@ watch(isFrozen, async (frozen) => {
 
       <span
         v-if="state.flagged"
-        class="flex max-w-[50%] min-w-0 shrink items-center gap-1 rounded-full border border-warning/30 bg-warning/10 text-warning"
+        class="flex max-w-[45%] min-w-0 shrink items-center gap-1 rounded-full border border-warning/30 bg-warning/10 text-warning"
         style="padding: 1px 6px; font-size: 10px"
         data-testid="browser-flag"
       >
         <TriangleAlert :size="10" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
-        <span class="min-w-0 truncate @max-[300px]:hidden">{{
-          $t('browserPane.flag.label', { host: state.flagged.host })
-        }}</span>
+        <span
+          class="min-w-0 truncate"
+          :title="$t('browserPane.flag.label', { host: state.flagged.host })"
+          ><span class="@max-[330px]:hidden">{{ $t('browserPane.flag.prefix') }} · </span
+          ><span class="@max-[250px]:hidden">{{ state.flagged.host }}</span></span
+        >
         <button
           type="button"
           class="grid shrink-0 place-items-center rounded hover:bg-surface-2"
@@ -504,21 +549,36 @@ watch(isFrozen, async (frozen) => {
         </button>
       </span>
 
-      <input
-        ref="addressEl"
-        v-model="address"
-        type="text"
-        spellcheck="false"
-        autocomplete="off"
-        class="h-5 min-w-[56px] flex-1 rounded-sm border border-border bg-surface px-1.5 font-mono text-[11px] text-text outline-none focus:border-accent-line"
-        :placeholder="$t('browserPane.addressPlaceholder')"
-        :aria-label="$t('browserPane.address')"
-        data-testid="browser-address"
-        @focus="editing = true"
-        @blur="editing = false"
-        @keydown.enter.prevent="onAddressEnter"
-        @keydown.esc.prevent="onAddressEscape"
-      />
+      <div class="relative h-5 min-w-[70px] flex-1">
+        <input
+          ref="addressEl"
+          v-model="address"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          class="h-5 w-full rounded-sm border border-border bg-surface px-1.5 font-mono text-[11px] outline-none focus:border-accent-line"
+          :class="editing ? 'text-text' : 'text-transparent'"
+          :placeholder="$t('browserPane.addressPlaceholder')"
+          :aria-label="$t('browserPane.address')"
+          data-testid="browser-address"
+          @focus="editing = true"
+          @blur="editing = false"
+          @keydown.enter.prevent="onAddressEnter"
+          @keydown.esc.prevent="onAddressEscape"
+        />
+        <!-- Not editing: the same text, drawn in two tones. The input stays the interactive element. -->
+        <div
+          v-if="!editing && address"
+          class="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-nowrap font-mono text-[11px]"
+          style="padding: 0 calc(0.375rem + 1px)"
+          aria-hidden="true"
+          data-testid="browser-address-view"
+        >
+          <span class="text-text-2">{{ addressParts.scheme }}</span
+          ><span class="text-text" data-testid="browser-address-host">{{ addressParts.host }}</span
+          ><span class="text-text-2">{{ addressParts.rest }}</span>
+        </div>
+      </div>
     </div>
 
     <!-- Notice strip: one refusal or intercepted event at a time (design.md "Notice strip"). -->

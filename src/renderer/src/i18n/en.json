@@ -4354,7 +4354,8 @@
     },
     "flag": {
       "label": "opened by agent · {host}",
-      "dismiss": "Dismiss the notice"
+      "dismiss": "Dismiss the notice",
+      "prefix": "opened by agent"
     },
     "chip": {
       "connectedTo": "Connected to {session}",
@@ -4368,7 +4369,8 @@
       "disconnectFailed": "Couldn't disconnect the agent",
       "reading": "reading",
       "driving": "driving",
-      "pausedLabel": "Agent paused"
+      "pausedLabel": "Agent paused",
+      "connectedPrefix": "Connected to"
     },
     "notice": {
       "blocked": "Blocked: {scheme}: addresses cannot be opened",

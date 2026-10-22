@@ -7,7 +7,8 @@ import {
   formatCountdown,
   headerTitle,
   normalizeAddressInput,
-  originBadgeKey
+  originBadgeKey,
+  splitAddress
 } from '../src/renderer/src/lib/browser-pane'
 
 describe('normalizeAddressInput', () => {
@@ -107,5 +108,29 @@ describe('originBadgeKey', () => {
     expect(originBadgeKey('local')).toBe('local')
     expect(originBadgeKey('external')).toBe('external')
     expect(originBadgeKey('page')).toBe('page')
+  })
+})
+
+describe('splitAddress', () => {
+  it('cuts scheme, host (with port) and the rest', () => {
+    expect(splitAddress('http://localhost:5173/checkout?x=1#a')).toEqual({
+      scheme: 'http://',
+      host: 'localhost:5173',
+      rest: '/checkout?x=1#a'
+    })
+    expect(splitAddress('https://example.com')).toEqual({
+      scheme: 'https://',
+      host: 'example.com',
+      rest: ''
+    })
+    expect(splitAddress('http://[::ffff:7f00:1]:5188/a')).toMatchObject({
+      host: '[::ffff:7f00:1]:5188'
+    })
+  })
+
+  it('treats a non scheme://host text as all rest', () => {
+    expect(splitAddress('about:blank')).toEqual({ scheme: '', host: '', rest: 'about:blank' })
+    expect(splitAddress('exam')).toEqual({ scheme: '', host: '', rest: 'exam' })
+    expect(splitAddress('')).toEqual({ scheme: '', host: '', rest: '' })
   })
 })

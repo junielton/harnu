@@ -103,3 +103,21 @@ export function originBadgeKey(
 ): 'local' | 'external' | 'page' | null {
   return origin === 'blank' ? null : origin
 }
+
+/** A URL cut into the three runs the address field styles differently (design.md "Address bar"). */
+export interface AddressParts {
+  scheme: string
+  host: string
+  rest: string
+}
+
+/**
+ * Split a URL for display: `https://` and the path in the dimmer tone, the host (and port) in the brighter
+ * one, so the part that says WHERE you are stands out. Anything that is not `scheme://host…` (`about:blank`,
+ * a half-typed word) is all `rest`.
+ */
+export function splitAddress(url: string): AddressParts {
+  const m = /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^/?#]*)(.*)$/s.exec(url)
+  if (!m) return { scheme: '', host: '', rest: url }
+  return { scheme: m[1]!, host: m[2]!, rest: m[3]! }
+}
