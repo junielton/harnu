@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Loader2, Recycle } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
+import { freedText } from '../lib/gc-freed'
 import type { HeroState } from '../lib/gc-model'
 
 /**
@@ -33,7 +34,7 @@ const chipLabel = computed(() =>
     ? t('cleanup.gc.hero.chip', {
         done: props.hero.done,
         total: props.hero.total,
-        size: formatBytes(props.hero.freedBytes)
+        freed: freedText(t, props.hero.freedBytes, props.hero.trashedBytes)
       })
     : ''
 )
@@ -59,6 +60,18 @@ const pct = computed(() => {
   >
     <Recycle :size="14" :stroke-width="1.6" class="shrink-0" />
     {{ cleanLabel }}
+  </Button>
+
+  <!-- Scanned while Docker was down: the click would be refused, so say what to do instead. -->
+  <Button
+    v-else-if="hero.kind === 'blind'"
+    variant="soft"
+    disabled
+    :title="t('cleanup.gc.hero.blindTitle')"
+    data-testid="hero-blind"
+  >
+    <Recycle :size="14" :stroke-width="1.6" class="shrink-0" />
+    {{ t('cleanup.gc.hero.blind') }}
   </Button>
 
   <!-- Nothing to clean keeps its label: the state is readable, not just dimmed. -->

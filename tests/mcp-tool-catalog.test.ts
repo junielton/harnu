@@ -40,6 +40,7 @@ const READ_TOOLS = [
   'list_workers',
   'list_containers',
   'list_cleanup',
+  'list_terminals',
   // T358 S3: the Mission reads (design §4 "read, no gate").
   'mission_get',
   'mission_list'
@@ -257,6 +258,26 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'create_session',
     'create_worktree',
     'spawn_terminal',
+    // T482 B5: free to type into a terminal the agent opened; NOT grantable, NOT always-allowable.
+    'send_terminal',
+    // T564 U1: free on a pane the agent opened; never reaches an operator-opened pane before the lease unit.
+    'browser_open',
+    'browser_navigate',
+    'browser_close',
+    // T570: start/stop are writes the agent makes on a pane it opened.
+    'browser_network',
+    // T571 (U4): the acting verbs run free on a local pane; a lease row asks (plan layer).
+    'browser_eval',
+    'browser_click',
+    'browser_type',
+    'browser_fill',
+    'browser_press',
+    'browser_emulate',
+    'browser_upload',
+    'browser_download',
+    // T569 U2: live panels are free on a page pane (page-class only for every caller).
+    'browser_set_data',
+    'browser_patch',
     'adopt_folder',
     'remove_folder',
     'memory_append',
@@ -352,18 +373,26 @@ describe('T120 declarative gate fields — the def is the single source of truth
     expect([...actual].sort()).toEqual([...bootstrapExpected].sort())
   })
 
-  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup:paths, everything else undefined', () => {
+  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup/list_terminals/browser_list:paths, everything else undefined', () => {
     for (const t of MCP_TOOLS) {
       if (t.op === 'get_session') expect(t.discloses).toBe('transcript')
-      else if (t.op === 'get_fleet' || t.op === 'list_containers' || t.op === 'list_cleanup')
+      else if (
+        t.op === 'get_fleet' ||
+        t.op === 'list_containers' ||
+        t.op === 'list_cleanup' ||
+        t.op === 'list_terminals' ||
+        t.op === 'browser_list'
+      )
         expect(t.discloses).toBe('paths')
       else expect(t.discloses).toBeUndefined()
     }
   })
 
-  it('disclosesTranscript is get_session/memory_read/memory_query only', () => {
+  it('disclosesTranscript is get_session/memory_read/memory_query/read_terminal only', () => {
     const actual = MCP_TOOLS.filter((t) => t.disclosesTranscript).map((t) => t.op)
-    expect([...actual].sort()).toEqual(['get_session', 'memory_query', 'memory_read'].sort())
+    expect([...actual].sort()).toEqual(
+      ['get_session', 'memory_query', 'memory_read', 'read_terminal'].sort()
+    )
   })
 
   it('HARD INVARIANT: submit_manifest is NEVER grantable — but IS silently allowed (T187)', () => {
@@ -830,5 +859,46 @@ describe('create_worktree — existingWork collision warning (BUG-40 §3.5 / BUG
     // "warn, never block" is the load-bearing contract (spec §3.5) — a create
     // that finds a slug match still succeeds.
     expect(tool?.description).toMatch(/non-blocking/)
+  })
+})
+
+describe('T571 delta 2 — catalog descriptions stay true to what the verbs return', () => {
+  const desc = (op: string): string => MCP_TOOLS.find((t) => t.op === op)!.description
+  const browserOps = MCP_TOOLS.filter((t) => t.op.startsWith('browser_')).map((t) => t.op)
+
+  it('no browser verb advertises NOT_YET_AVAILABLE: every form of every verb is served since U5', () => {
+    for (const op of browserOps) {
+      expect(desc(op), op).not.toContain('NOT_YET_AVAILABLE')
+    }
+  })
+
+  it('navigate, close and network describe the opt-in and the lease instead', () => {
+    for (const op of ['browser_navigate', 'browser_close']) {
+      expect(desc(op), op).toContain('BROWSER_READ_NOT_ENABLED')
+      expect(desc(op), op).toContain('BROWSER_APPROVED_RESEND')
+    }
+    expect(desc('browser_network')).toContain('BROWSER_APPROVED_RESEND')
+    expect(desc('browser_network')).toContain('stop is always free')
+  })
+
+  it('the first-page input sentence is on exactly click, type and press, and tells an agent not to reload an operator pane', () => {
+    const withIt = MCP_TOOLS.filter((t) => t.description.includes('PANE_INPUT_NOT_READY')).map(
+      (t) => t.op
+    )
+    expect(withIt.sort()).toEqual(['browser_click', 'browser_press', 'browser_type'])
+    for (const op of withIt) expect(desc(op), op).toContain('ask them')
+    expect(desc('browser_type')).toContain('browser_fill work on the first page')
+    expect(desc('browser_click')).toContain('after it moves to another site')
+  })
+
+  it('browser_list names every writableReason it can return', () => {
+    for (const r of ['read-not-enabled', 'kill-switch', 'write-denied', 'disconnected']) {
+      expect(desc('browser_list'), r).toContain(r)
+    }
+  })
+
+  it('browser_eval says the lease holds while the pane stays on one site, and ends when it moves', () => {
+    expect(desc('browser_eval')).toContain('while the pane stays on the site the operator saw')
+    expect(desc('browser_eval')).toContain('moving it to another host ends it')
   })
 })

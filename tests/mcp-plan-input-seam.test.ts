@@ -32,6 +32,52 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   create_session: { folder: ALLOWED, prePrompt: 'hi' },
   create_worktree: { folder: ALLOWED, branch: 'test/agumon' },
   spawn_terminal: { folder: ALLOWED },
+  // T564 U1: the browser verbs. open and list carry a folder; navigate and close carry only a paneId (the
+  // shell resolves the gate folder from the pane registry).
+  browser_open: { folder: ALLOWED, url: 'http://localhost:5173/' },
+  browser_list: { folder: ALLOWED },
+  browser_navigate: { paneId: 'bp-1', url: 'http://localhost:5173/' },
+  browser_close: { paneId: 'bp-1' },
+  // T570 (U3): the reading verbs carry only a paneId plus their own arguments.
+  browser_snapshot: { paneId: 'bp-1', selector: 'main', interactiveOnly: true, maxNodes: 300 },
+  browser_screenshot: { paneId: 'bp-1', ref: 's1e2', format: 'jpeg', quality: 70, maxDim: 1000 },
+  browser_console: { paneId: 'bp-1', mode: 'tail', lines: 50, levels: ['error'] },
+  browser_network: { paneId: 'bp-1', action: 'start', maxMinutes: 5, bodies: true },
+  browser_wait_for: { paneId: 'bp-1', selector: '#done', timeoutMs: 5000 },
+  // T571 (U4): the acting verbs carry only a paneId plus their own arguments.
+  browser_eval: {
+    paneId: 'bp-1',
+    expression: 'document.title',
+    awaitPromise: true,
+    timeoutMs: 5000
+  },
+  browser_click: {
+    paneId: 'bp-1',
+    ref: 's1e2',
+    button: 'left',
+    clickCount: 2,
+    offset: { x: 3, y: 4 }
+  },
+  browser_type: { paneId: 'bp-1', ref: 's1e3', text: 'hello', delayMs: 10, submit: true },
+  browser_fill: { paneId: 'bp-1', fields: [{ ref: 's1e3', value: 'a@b.c' }] },
+  browser_press: { paneId: 'bp-1', keys: ['Ctrl+A', 'Enter'] },
+  browser_emulate: {
+    paneId: 'bp-1',
+    device: 'phone-m',
+    colorScheme: 'dark',
+    reducedMotion: true,
+    touch: true
+  },
+  browser_upload: { paneId: 'bp-1', ref: 's1e4', paths: ['fixtures/a.png', 'fixtures/b.png'] },
+  browser_download: {
+    paneId: 'bp-1',
+    url: 'https://example.com/a.zip',
+    name: 'a.zip',
+    timeoutMs: 5000
+  },
+  // T569 U2: the live-panel verbs carry only a paneId too.
+  browser_set_data: { paneId: 'bp-1', data: { count: 3 } },
+  browser_patch: { paneId: 'bp-1', selector: '#n', mode: 'inner', html: '3' },
   adopt_folder: { folder: ALLOWED },
   remove_folder: { folder: ALLOWED },
   plan_mission: {
@@ -73,6 +119,11 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   },
   list_workers: { folder: ALLOWED },
   list_containers: { folder: ALLOWED },
+  // T474: both filters optional; `folder` gates, `ownerSessionId` is a pure filter.
+  list_terminals: { folder: ALLOWED, ownerSessionId: 'sess-1' },
+  // T474 B3: `folder` is the terminal's own folder, resolved by the server from the registry.
+  read_terminal: { folder: ALLOWED, terminalId: 'h-1', mode: 'since', since: 'm1', maxChars: 500 },
+  send_terminal: { folder: ALLOWED, terminalId: 'h-1', input: 'ls', keys: ['Enter'], paste: false },
   // T445: the cleanup read and the release both gate on the `folder` arg.
   list_cleanup: { folder: ALLOWED },
   release_worktree: { folder: ALLOWED },

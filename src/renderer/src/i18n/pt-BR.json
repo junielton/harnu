@@ -6,7 +6,7 @@
     "titleAttentionPrefix": "({n})"
   },
   "sidebar": {
-    "search": "Buscar (⌘K)",
+    "search": "Buscar",
     "addFolder": "Adicionar pasta",
     "newSession": "Nova sessão",
     "showOlder": "Mostrar {n} sessões mais antigas",
@@ -135,6 +135,22 @@
     "hide": "Ocultar painel",
     "show": "Mostrar painel"
   },
+  "agentTerminal": {
+    "connectedTo": "Conectado a {session}",
+    "connectedToClosed": "Conectado a uma sessão fechada",
+    "connectedToAgent": "Conectado a um agente",
+    "parked": "parada",
+    "canType": "Um agente pode digitar aqui",
+    "readingAnon": "Um agente está lendo",
+    "reading": "lendo",
+    "typing": "digitando",
+    "disconnect": "Desconectar",
+    "disconnectHint": "Impedir o acesso do agente a este terminal",
+    "disconnected": "Agente desconectado deste terminal",
+    "disconnectFailed": "Não foi possível desconectar o agente deste terminal",
+    "disconnectFailedHint": "O agente continua com acesso. Tente de novo.",
+    "goToSession": "Ir para a sessão"
+  },
   "helperPane": {
     "close": "Fechar painel",
     "maximize": "Maximizar",
@@ -143,6 +159,7 @@
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
     "spawnFailed": "Falha ao iniciar painel",
+    "processExited": "Processo encerrado",
     "staleSession": {
       "title": "Sessão do painel não existe mais",
       "remove": "Remover painel"
@@ -189,7 +206,8 @@
       "tooLarge": "Arquivo grande demais para pré-visualizar.",
       "notFound": "Arquivo não encontrado.",
       "readFailed": "Não foi possível ler este arquivo.",
-      "writeFailed": "Não foi possível salvar este arquivo."
+      "writeFailed": "Não foi possível salvar este arquivo.",
+      "symlink": "Este caminho é um symlink — o Harnu não vai segui-lo."
     }
   },
   "diagramPane": {
@@ -197,7 +215,32 @@
     "reload": "Recarregar canvas",
     "loading": "Carregando…",
     "empty": "Este canvas está vazio.",
-    "emptyHint": "Arraste em qualquer lugar para desenhar uma caixa, ou cole uma imagem.",
+    "emptyHint": "Escolha uma forma na barra de ferramentas, ou cole uma imagem.",
+    "toolbar": "Ferramentas do canvas",
+    "tool": {
+      "hand": "Mão",
+      "select": "Selecionar",
+      "rectangle": "Retângulo",
+      "diamond": "Diamante",
+      "ellipse": "Elipse",
+      "arrow": "Seta",
+      "text": "Texto",
+      "eraser": "Borracha"
+    },
+    "toolTitle": "{name} — {key}",
+    "toolTitleDigit": "{name} — {key} ou {digit}",
+    "lock": "Manter a ferramenta ativa",
+    "unlock": "Voltar para Selecionar depois de desenhar",
+    "toolHint": {
+      "select": "Arraste para selecionar · Espaço+arrastar para mover",
+      "hand": "Arraste para mover o quadro",
+      "rectangle": "Clique para posicionar, ou arraste para dimensionar",
+      "diamond": "Clique para posicionar, ou arraste para dimensionar",
+      "ellipse": "Clique para posicionar, ou arraste para dimensionar",
+      "arrow": "Arraste de uma forma até outra",
+      "text": "Clique em qualquer lugar para digitar",
+      "eraser": "Arraste sobre qualquer coisa para apagar"
+    },
     "fit": "Ajustar à tela",
     "zoomIn": "Aproximar",
     "zoomOut": "Afastar",
@@ -224,6 +267,67 @@
     "changedOnDisk": {
       "title": "Este canvas mudou no disco.",
       "reload": "Recarregar"
+    },
+    "layers": {
+      "group": "Camadas",
+      "back": "Enviar para trás",
+      "backward": "Recuar",
+      "forward": "Avançar",
+      "front": "Trazer para a frente"
+    },
+    "style": {
+      "panel": "Propriedades",
+      "show": "Mostrar propriedades",
+      "group": {
+        "tone": "Cor",
+        "stroke": "Traço",
+        "strokeWidth": "Espessura do traço",
+        "corners": "Cantos",
+        "fontSize": "Tamanho do texto",
+        "align": "Alinhamento",
+        "opacity": "Opacidade"
+      },
+      "value": {
+        "tone": {
+          "default": "Padrão",
+          "accent": "Destaque",
+          "green": "Verde",
+          "amber": "Âmbar",
+          "red": "Vermelho",
+          "muted": "Neutro"
+        },
+        "stroke": {
+          "solid": "Contínuo",
+          "dashed": "Tracejado",
+          "dotted": "Pontilhado"
+        },
+        "strokeWidth": {
+          "thin": "Fino",
+          "regular": "Normal",
+          "bold": "Grosso"
+        },
+        "corners": {
+          "sharp": "Retos",
+          "round": "Arredondados"
+        },
+        "fontSize": {
+          "s": "Pequeno",
+          "m": "Médio",
+          "l": "Grande",
+          "xl": "Extra grande"
+        },
+        "align": {
+          "left": "Esquerda",
+          "center": "Centro",
+          "right": "Direita"
+        },
+        "opacity": {
+          "25": "25%",
+          "50": "50%",
+          "75": "75%",
+          "100": "100%"
+        }
+      }
     }
   },
   "markdownRenderer": {
@@ -288,6 +392,11 @@
     "autoOrganizeOff": "Desligar auto-organização",
     "orchestratorDefaultOn": "Novas sessões começam como Orquestrador",
     "orchestratorDefaultOff": "Parar de iniciar sessões como Orquestrador",
+    "terminalReadOn": "Deixar agentes lerem os terminais que eu abro",
+    "terminalReadOff": "Parar de deixar agentes lerem os terminais que eu abro",
+    "browserReadOn": "Deixar agentes lerem os painéis de navegador que abro",
+    "browserReadOff": "Parar de deixar agentes lerem os painéis de navegador que abro",
+    "trustedHosts": "Hosts de desenvolvimento confiáveis…",
     "newWorktree": "Nova worktree…",
     "removeWorktree": "Remover worktree",
     "createWorktreeMd": "Criar WORKTREE.md",
@@ -857,7 +966,8 @@
   "cloudSession": {
     "title": "Esta sessão vive na cloud",
     "body": "A conversa está espelhada no claude.ai e não tem transcript local pra retomar aqui. Abra em claude.ai/code pra continuar.",
-    "bodyNoBridge": "Esta sessão não tem conversa local pra retomar — ainda não há nada gravado em disco."
+    "bodyNoBridge": "Esta sessão não tem conversa local pra retomar — ainda não há nada gravado em disco.",
+    "resumeAnyway": "Retomar mesmo assim"
   },
   "preview": {
     "label": "Prévia da sessão",
@@ -879,6 +989,29 @@
       "ahead": "{n} à frente",
       "behind": "{n} atrás",
       "memoryLabel": "Onde paramos"
+    }
+  },
+  "trustedHosts": {
+    "title": "Hosts de desenvolvimento confiáveis",
+    "close": "Fechar",
+    "builtInLabel": "Sempre confiáveis",
+    "addedLabel": "Adicionados por você",
+    "none": "Nenhum ainda.",
+    "placeholder": "app.test ou *.test",
+    "add": "Adicionar",
+    "remove": "Remover {host}",
+    "hint": "Páginas nesses hosts contam como locais: agentes podem controlá-las sem pedir. Só nomes exatos e curingas de um nível. Um nome que apenas resolve para loopback nunca é confiável por si só.",
+    "failed": "Não foi possível salvar os hosts confiáveis",
+    "errors": {
+      "EMPTY": "Digite um nome de host.",
+      "TOO_LONG": "Esse nome de host é longo demais.",
+      "HAS_SCHEME_OR_PATH": "Digite só o nome do host, sem http:// nem caminho.",
+      "HAS_PORT": "Deixe a porta de fora; vale para todas as portas.",
+      "BAD_CHARACTERS": "Nomes de host usam letras, dígitos e hífens.",
+      "WILDCARD_TOO_BROAD": "Esse curinga é amplo demais. Use *.test, ou uma base de pelo menos três níveis como *.dev.example.org.",
+      "WILDCARD_POSITION": "O curinga só pode abrir o nome, como *.test.",
+      "DUPLICATE": "Já está na lista.",
+      "LIST_FULL": "A lista está cheia."
     }
   },
   "renameFolder": {
@@ -979,6 +1112,7 @@
     },
     "tabs": {
       "general": "Geral",
+      "keybindings": "Atalhos de teclado",
       "interceptor": "Interceptor",
       "appearance": "Aparência",
       "startup": "Inicialização",
@@ -1119,6 +1253,179 @@
     "claudeStatus": {
       "label": "Alertas do serviço Claude",
       "description": "Receba uma notificação nativa quando o status.claude.com reportar um novo incidente, uma piora ou uma recuperação. O dot no footer continua ativo de qualquer forma."
+    }
+  },
+  "keybindings": {
+    "withChord": "{label} ({chord})",
+    "toast": {
+      "warnings": {
+        "title": "Alguns atalhos no keybindings.json foram ignorados",
+        "description": "O keybindings.json tem entradas que o Harnu não conseguiu aplicar ({count} ignoradas). Seus outros atalhos continuam iguais."
+      },
+      "openNeedsFolder": {
+        "title": "Abra uma pasta primeiro",
+        "description": "O keybindings.json abre em um painel dividido, que precisa de uma pasta ativa. Selecione uma e tente de novo."
+      }
+    },
+    "pane": {
+      "eyebrow": "Atalhos",
+      "intro": "Remapeie qualquer atalho abaixo. As edições são salvas no keybindings.json e valem na hora — sem reiniciar.",
+      "resetAll": "Restaurar tudo",
+      "openFile": "Abrir keybindings.json",
+      "capture": "Gravar um novo atalho para {action}",
+      "captureHint": "Clique em um atalho e pressione as teclas. Esc cancela, Backspace remove.",
+      "recording": "Pressione um atalho…",
+      "empty": "Definir um atalho…",
+      "unbound": "Sem atalho",
+      "default": "padrão {chord}",
+      "notInTerminal": "não no terminal",
+      "conflict": "conflito: {names}",
+      "reset": "Restaurar",
+      "unbind": "Remover",
+      "search": "Buscar atalhos ou digitar uma combinação de teclas",
+      "groups": {
+        "sessions": "Sessões",
+        "sidebar": "Barra lateral",
+        "folders": "Pastas",
+        "views": "Exibição",
+        "panes": "Painéis",
+        "takeovers": "Telas",
+        "app": "App"
+      },
+      "chips": {
+        "label": "Filtrar atalhos",
+        "unbound": "Sem atalho",
+        "conflicts": "Conflitos",
+        "customized": "Personalizados"
+      },
+      "noMatch": "Nenhum atalho encontrado.",
+      "unreachable": "{chord} nunca dispara para esta ação. Escolha outro atalho.",
+      "shieldHint": "Tomado do terminal: o programa que roda nele nunca recebe {chord}.",
+      "terminalKeepsHint": "O terminal fica com {chord}: o atalho não dispara enquanto um terminal tem o foco."
+    },
+    "actions": {
+      "session_new": "Nova sessão",
+      "app_search": "Abrir a paleta de comandos",
+      "inbox_toggle": "Alternar a coluna de Aprovações",
+      "view_fleetRail": "Alternar a coluna da Frota",
+      "view_toggleSidebar": "Alternar a barra lateral esquerda",
+      "view_toggleHelper": "Alternar o painel dividido à direita",
+      "project_switch": "Trocar de projeto",
+      "folder_add": "Adicionar pasta",
+      "view_review": "Revisar o branch da pasta ativa",
+      "view_roadmap": "Alternar o quadro de roadmap",
+      "view_prStack": "Alternar o PR Stack",
+      "folder_openInFileManager": "Abrir a pasta ativa no gerenciador de arquivos",
+      "folder_openInVSCode": "Abrir a pasta ativa no VS Code",
+      "folder_openGithubPulls": "Abrir os pull requests no GitHub",
+      "folder_browseFiles": "Navegar pelos arquivos",
+      "folder_newTerminal": "Abrir um terminal",
+      "view_settings": "Abrir as Configurações",
+      "view_usageDashboard": "Alternar a visão geral de uso",
+      "session_resumeLast": "Retomar a última sessão",
+      "session_rename": "Renomear a sessão selecionada",
+      "session_close": "Fechar a aba da sessão atual",
+      "session_newInFolder": "Nova sessão nesta pasta…",
+      "session_fork": "Fazer fork da sessão",
+      "session_openToSide": "Abrir a sessão ao lado",
+      "session_contextMenu": "Abrir o menu de contexto",
+      "session_restart": "Reiniciar a sessão",
+      "session_copyId": "Copiar o ID da sessão",
+      "session_copyTranscriptPath": "Copiar o caminho do transcript",
+      "session_copyResumeCommand": "Copiar o comando --resume",
+      "session_copyContextDigest": "Copiar o digest de contexto",
+      "session_toggleNoFlicker": "Alternar o modo sem flicker",
+      "session_toggleArchived": "Arquivar ou desarquivar a sessão",
+      "session_delete": "Excluir a sessão…",
+      "session_retryBoot": "Tentar de novo um início que falhou",
+      "session_dismiss": "Descartar uma sessão nova que falhou",
+      "session_closeTerminal": "Fechar o terminal da pasta",
+      "sidebar_jump": "Ir para uma pasta ou sessão",
+      "sidebar_rescan": "Reescanear pastas",
+      "sidebar_cycleDrillDepth": "Alternar a profundidade de navegação da barra lateral",
+      "sidebar_toggleCollapseAll": "Recolher ou expandir todas as pastas",
+      "sidebar_hiddenFolders": "Mostrar pastas ocultas",
+      "sidebar_cursor_down": "Cursor da barra lateral: baixo",
+      "sidebar_cursor_up": "Cursor da barra lateral: cima",
+      "sidebar_cursor_right": "Cursor da barra lateral: expandir / entrar",
+      "sidebar_cursor_left": "Cursor da barra lateral: recolher / sair",
+      "sidebar_cursor_activate": "Cursor da barra lateral: abrir",
+      "folder_rename": "Renomear a pasta…",
+      "folder_newFolderTerminal": "Novo terminal na pasta",
+      "folder_toggleBranchAlias": "Usar a branch como nome / Usar o nome da pasta",
+      "folder_bootOptions": "Opções de inicialização…",
+      "folder_projectMemory": "Memória do projeto…",
+      "folder_memoryLocation": "Guardar memória em…",
+      "folder_newSubfolder": "Nova pasta…",
+      "folder_openSubfolder": "Abrir subpasta…",
+      "folder_newWorktree": "Nova worktree…",
+      "folder_worktreeMd": "Criar WORKTREE.md / Abrir WORKTREE.md",
+      "folder_askAgentWorktreeMd": "Pedir a um agente para escrever o WORKTREE.md",
+      "folder_toggleIntercept": "Interceptar tool calls aqui / Parar de interceptar aqui",
+      "folder_toggleAutoOrganize": "Ligar auto-organização / Desligar auto-organização",
+      "folder_toggleOrchestratorDefault": "Novas sessões começam como Orquestrador / Parar de iniciar sessões como Orquestrador",
+      "folder_toggleHidden": "Ocultar / Reexibir pasta",
+      "folder_removeWorktree": "Remover worktree",
+      "folder_toggleOlder": "Mostrar sessões mais antigas / Ocultar sessões antigas",
+      "folder_toggleArchived": "Mostrar arquivadas / Ocultar arquivadas",
+      "repoGroup_rename": "Renomear grupo",
+      "repoGroup_resetName": "Resetar nome (grupo)",
+      "repoGroup_cleanup": "Limpeza… (repositório)",
+      "inbox_open": "Abrir aprovações",
+      "inbox_toggleOrder": "Mais recentes primeiro / Mais antigos primeiro (coluna da Frota)",
+      "inbox_filter": "Filtrar estados (coluna da Frota)",
+      "inbox_showAll": "Mostrar tudo (coluna da Frota)",
+      "view_activity": "Abrir a Atividade",
+      "view_missionProgress": "Abrir o progresso da missão",
+      "view_pastedImages": "Abrir as imagens coladas",
+      "view_claudeStatus": "Abrir o status do serviço Claude",
+      "view_usagePanel": "Abrir o uso do plano",
+      "view_closeTakeover": "Fechar a visualização aberta",
+      "view_cleanup": "Alternar a Limpeza",
+      "view_scheduler": "Alternar o Agendador",
+      "view_systemMonitor": "Alternar o Monitor do sistema",
+      "view_containers": "Alternar os Containers",
+      "view_settings_general": "Abrir Configurações: Geral",
+      "view_settings_keybindings": "Abrir Configurações: Atalhos de teclado",
+      "view_settings_interceptor": "Abrir Configurações: Interceptor",
+      "view_settings_appearance": "Abrir Configurações: Aparência",
+      "view_settings_startup": "Abrir Configurações: Inicialização",
+      "view_settings_claudeConfig": "Abrir Configurações: Config do Claude",
+      "view_settings_endpoints": "Abrir Configurações: Endpoints",
+      "view_settings_push": "Abrir Configurações: Notificações remotas",
+      "view_settings_voice": "Abrir Configurações: Voz",
+      "view_settings_mcp": "Abrir Configurações: MCP",
+      "view_settings_skills": "Abrir Configurações: Skills",
+      "view_settings_mods": "Abrir Configurações: Mods",
+      "view_settings_memory": "Abrir Configurações: Memória",
+      "view_settings_hibernationPolicy": "Abrir Configurações: Política de hibernação",
+      "view_settings_usageHistory": "Abrir Configurações: Histórico de uso",
+      "view_settings_changelog": "Abrir Configurações: Changelog",
+      "view_settings_claudeCode": "Abrir Configurações: Claude Code",
+      "view_settings_cleanup": "Abrir Configurações: Limpeza",
+      "view_settings_containers": "Abrir Configurações: Containers",
+      "view_settings_prStack": "Abrir Configurações: PR Stack",
+      "nav_back": "Voltar à sessão anterior",
+      "nav_forward": "Avançar para a próxima sessão",
+      "pane_focusNext": "Focar o próximo painel",
+      "pane_focusPrev": "Focar o painel anterior",
+      "pane_toggleMaximize": "Maximizar ou restaurar o painel focado",
+      "pane_close": "Fechar o painel focado",
+      "terminal_toggle": "Alternar o painel do terminal",
+      "app_reload": "Recarregar a janela",
+      "app_devtools": "Alternar o DevTools",
+      "app_quit": "Sair do Harnu",
+      "app_fullscreen": "Alternar tela cheia",
+      "app_openKeybindings": "Abrir o keybindings.json",
+      "browser_overlay_toggle": "Alternar comentário no navegador (apontar e comentar)",
+      "browser_zoom_in": "Painel do navegador: aumentar zoom",
+      "browser_zoom_out": "Painel do navegador: diminuir zoom",
+      "browser_zoom_reset": "Painel do navegador: restaurar zoom",
+      "browser_devtools": "Painel do navegador: abrir DevTools",
+      "browser_reload": "Painel do navegador: recarregar",
+      "browser_back": "Painel do navegador: voltar",
+      "browser_forward": "Painel do navegador: avançar",
+      "browser_focusAddress": "Painel do navegador: focar na barra de endereço"
     }
   },
   "notifications": {
@@ -1499,7 +1806,21 @@
     "supervisionLoad": "{count} ativas",
     "supervisionLoadHint": "{count} sessões trabalhando ou te esperando. A supervisão confortável fica em torno de 4–5.",
     "openFullDashboard": "Abrir dashboard completo",
-    "a11yHeapGauge": "Heap {pct}% — clique para abrir o System Monitor"
+    "a11yHeapGauge": "Heap {pct}% — clique para abrir o System Monitor",
+    "lastSeen": "visto há {age}",
+    "reasonExpired": "telemetria expirada",
+    "reasonNone": "sem telemetria ao vivo",
+    "a11yReasonExpired": "Sem telemetria ao vivo há mais de 24 horas — mostrando os últimos valores conhecidos",
+    "a11yReasonNone": "Esta sessão não enviou telemetria — mostrando o que o transcript guarda",
+    "a11yReasonEmpty": "Ainda não chegou telemetria desta sessão",
+    "silentHint": "Sem reportar — reinicie a sessão",
+    "a11ySilentHint": "Esta sessão respondeu, mas não enviou telemetria do statusLine. Clique para reiniciá-la; a conversa é mantida."
+  },
+  "statuslineHeal": {
+    "title": "A configuração statusLine do Claude Code foi removida — reinstalada",
+    "description": "Sessões iniciadas antes de {time} precisam ser reiniciadas: {sessions}.",
+    "descriptionNone": "Nenhuma sessão em execução foi afetada.",
+    "more": "+{n} mais"
   },
   "images": {
     "title": "Imagens coladas",
@@ -1555,14 +1876,6 @@
       "actions": "Ações",
       "folders": "Pastas",
       "sessions": "Sessões"
-    },
-    "actions": {
-      "newSession": "Nova sessão",
-      "addFolder": "Adicionar pasta",
-      "switchProject": "Trocar de projeto",
-      "resumeLast": "Resume última sessão",
-      "toggleFleetRail": "Alternar Fleet rail",
-      "openInbox": "Abrir aprovações"
     }
   },
   "sentinel": {
@@ -1594,6 +1907,10 @@
     "openSessionAria": "Abrir a sessão de {tool}",
     "missionsStrip": {
       "title": "Active missions"
+    },
+    "order": {
+      "newestFirst": "Mais recentes primeiro — clique para os mais antigos primeiro",
+      "oldestFirst": "Mais antigos primeiro — clique para os mais recentes primeiro"
     },
     "filter": {
       "title": "Filtrar estados",
@@ -1652,7 +1969,11 @@
     "ask": {
       "label": "Confirmar antes das ações do agente",
       "description": "Coloca uma confirmação na frente de toda ação do agente — criar sessão, abrir terminal, worktree, escrever na memória. Desligado por padrão: os agentes agem livremente e toda chamada fica registrada no log de auditoria abaixo. Ligue se preferir aprovar uma a uma."
-    }
+    },
+    "agentTerminalWrites": "Permitir que agentes digitem em terminais",
+    "agentTerminalWritesHint": "Desligado, os agentes ainda podem ler os terminais que você permitir, mas toda tentativa de digitar é recusada.",
+    "agentBrowserWrites": "Permitir que agentes controlem painéis do navegador",
+    "agentBrowserWritesHint": "Desligado, todo comando de escrita do navegador é recusado (abrir, navegar…). Listar e fechar continuam funcionando."
   },
   "bundledSkills": {
     "title": "Skills inclusas",
@@ -2273,10 +2594,10 @@
         "blockLabelState": "{name}, {bucket}, {size}, {state}",
         "state": {
           "busy": "limpando",
-          "done": "liberado",
+          "done": "limpo",
           "failed": "falhou"
         },
-        "freed": "liberado",
+        "freed": "limpo",
         "aggregate": "{count} menores",
         "aggregateLabel": "{count} worktrees menores, {bucket}, {size}",
         "selectAll": "Selecionar tudo no repo",
@@ -2305,7 +2626,9 @@
         "ready": "Mesclado, limpo e parado além do período de carência.",
         "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa.",
         "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo.",
+        "checkFailed": "O Harnu não conseguiu olhar dentro deste worktree, então não sabe se removê-lo levaria outro checkout junto.",
         "locked": "Este worktree está bloqueado no git",
+        "operationInProgress": "Um rebase, bisect ou git am ainda está em andamento neste worktree",
         "inUse": {
           "mainCheckout": "O checkout principal do repositório. Nunca é tocado.",
           "neverClean": "Está na sua lista de nunca limpar. Nunca é tocado.",
@@ -2344,7 +2667,8 @@
           "volume": "Volumes: {names}",
           "deps": "Suas pastas de dependências",
           "checkout": "O checkout",
-          "branch": "A branch local {branch}"
+          "branch": "A branch local {branch}",
+          "detached": "O commit dela fica em refs/archive/detached/…"
         },
         "volumesCannotRestore": "Volumes não podem ser restaurados.",
         "copyError": "Copiar erro",
@@ -2365,8 +2689,16 @@
         "stoppedAt": "Parou em “{step}”",
         "nothingChanged": "Nada foi alterado.",
         "genericStop": "O Harnu parou este item por uma verificação de segurança.",
-        "removeBlocked": "Remover não está disponível: esta pasta contém outro worktree. Remova ou mova esse primeiro.",
-        "removeLocked": "Remover não está disponível: o git tem este worktree bloqueado. Desbloqueie primeiro."
+        "removeUnavailable": "Remover não está disponível. {reason}",
+        "cleanUnavailable": "Limpar agora não está disponível. {reason}",
+        "recheck": "Verificar de novo",
+        "removeCommand": "Rode",
+        "refusedNote": "A última limpeza foi recusada. {reason}",
+        "refusedNoteHint": "Ele fica fora de “Limpar prontos” e o piloto automático o pula até a causa ser resolvida. Tentar de novo tenta mais uma vez.",
+        "refusedRepeat": "Recusado {n} vezes seguidas, então foi para Precisa de revisão.",
+        "resumeBody": "A pasta não existe mais, e a limpeza parou em “{step}”, então Tentar de novo não consegue terminar. Rode isto num terminal para fazer o resto:",
+        "resumeUnarchived": "Se o git recusar, esta branch tem commits que não estão na sua branch padrão: mantenha-a ou arquive-a primeiro.",
+        "resumeArchive": "As refs de arquivo mantêm o commit recuperável."
       },
       "list": {
         "label": "Worktrees por grupo",
@@ -2375,7 +2707,9 @@
       "hero": {
         "clean": "Limpar {n} pronto · {size} | Limpar {n} prontos · {size}",
         "empty": "Nada para limpar",
-        "chip": "Limpando {done}/{total} · {size} liberados"
+        "blind": "Inicie o Docker para limpar estes",
+        "blindTitle": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu quais stacks rodam a partir destes worktrees. Inicie o Docker e use Escanear agora.",
+        "chip": "Limpando {done}/{total} · {freed}"
       },
       "selection": {
         "label": "Seleção",
@@ -2385,11 +2719,16 @@
         "keep": "Manter",
         "ask": "Pedir uma opinião",
         "shiftHint": "clique para adicionar mais",
+        "removeNone": "Nada do que foi selecionado pode ser removido",
         "clear": "Limpar seleção"
       },
       "confirm": {
         "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
         "titleItems": "Remover {n} item? | Remover {n} itens?",
+        "nothingRemovable": "Nada do que foi selecionado pode ser removido",
+        "nothingRemovableSeveral": "Estes itens não podem ser removidos, cada um por um motivo. Abra um para ver o porquê.",
+        "refusedTitle": "Não serão removidos ({n})",
+        "refusedSub": "O Harnu recusaria estes, então ficam fora da contagem e da requisição.",
         "listLabel": "Itens a remover",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Volume Docker {name}",
@@ -2417,7 +2756,18 @@
         "totalReady": "{n} prontos · {size}",
         "totalSelected": "{n} selecionados · {size}",
         "close": "Fechar",
-        "branchSub": "branch {branch}"
+        "branchSub": "branch {branch}",
+        "detachedSub": "detached em {sha}",
+        "untrackedMore": "{n} arquivos não rastreados, salvos na ref wip: {names} e mais {more} | {n} arquivos não rastreados, salvos na ref wip: {names} e mais {more}",
+        "untrackedTotal": "{n} arquivo não rastreado no total, cada um salvo na sua ref wip. | {n} arquivos não rastreados no total, cada um salvo na sua ref wip.",
+        "untracked": "{n} arquivo não rastreado, salvo na ref wip: {names} | {n} arquivos não rastreados, salvos na ref wip: {names}",
+        "warnDetached": "{n} worktree detached não tem branch. O commit dela fica em refs/archive/detached/…, e git worktree add traz de volta. | {n} worktrees detached não têm branch. Os commits delas ficam em refs/archive/detached/…, e git worktree add traz de volta.",
+        "remote": {
+          "checking": "Verificando se a branch pode ser excluída no GitHub…",
+          "label": "Excluir também a branch no remoto",
+          "hint": "Roda git push --delete. Branches protegidas e branches que mudaram no remoto são puladas.",
+          "some": "Vale para {n} de {total}"
+        }
       },
       "chip": {
         "stack": "stack",
@@ -2436,8 +2786,20 @@
       "firstCycle": {
         "label": "Primeiro relatório de limpeza",
         "title": "Encontrei {n} item pronto, {size} — ativar o autopilot? | Encontrei {n} itens prontos, {size} — ativar o autopilot?",
-        "sub": "O primeiro ciclo só reporta; nada é apagado até você ativar.",
+        "titleOn": "O autopilot encontrou {n} item pronto, {size} | O autopilot encontrou {n} itens prontos, {size}",
+        "onlyReported": "Até agora ele só reportou.",
+        "willClean": "Ative e o próximo ciclo, em {when}, vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} item, {size}. | Ative e o próximo ciclo, em {when}, vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} itens, {size}.",
+        "willCleanUnscheduled": "Ative e o primeiro ciclo vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} item, {size}. A varredura em segundo plano está desligada, então nenhum está agendado. | Ative e o primeiro ciclo vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} itens, {size}. A varredura em segundo plano está desligada, então nenhum está agendado.",
+        "dockerPrune": "Também vai remover o cache de build do Docker com mais de {n} dia e as imagens dangling. | Também vai remover o cache de build do Docker com mais de {n} dias e as imagens dangling.",
+        "allowWillClean": "Permita e o próximo ciclo, em {when}, vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} item, {size}. | Permita e o próximo ciclo, em {when}, vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} itens, {size}.",
+        "allowWillCleanUnscheduled": "Permita e o próximo ciclo vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} item, {size}. A varredura em segundo plano está desligada, então nenhum está agendado. | Permita e o próximo ciclo vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} itens, {size}. A varredura em segundo plano está desligada, então nenhum está agendado.",
+        "when": {
+          "minute": "{n} min",
+          "hour": "{n} h",
+          "day": "{n} d"
+        },
         "enable": "Ativar autopilot",
+        "allow": "Permitir limpeza",
         "dismiss": "Agora não"
       },
       "docker": {
@@ -2453,6 +2815,24 @@
         "noOrphanVolumes": "Nenhum volume órfão",
         "scope": "Conta apenas o cache de build com mais de {n} dia e as imagens dangling. Imagens em uso e volumes de stacks ativas nunca entram na conta. | Conta apenas o cache de build com mais de {n} dias e as imagens dangling. Imagens em uso e volumes de stacks ativas nunca entram na conta.",
         "cantRestore": "Não pode ser restaurado",
+        "leftovers": {
+          "title": "Deixados por worktrees removidos",
+          "stack": "Contêineres parados: {c} · redes: {n}",
+          "projects": "Projetos: {names}",
+          "clean": "Limpar",
+          "volumesLine": "{n} volume · {size} | {n} volumes · {size}",
+          "volumesNote": "Nunca removidos automaticamente. Só saem depois da confirmação própria deles.",
+          "volumesRemove": "Remover volumes…"
+        },
+        "confirm": {
+          "stackTitle": "Limpar o que {n} worktree removido deixou? | Limpar o que {n} worktrees removidos deixaram?",
+          "volumesTitle": "Remover {n} volume? | Remover {n} volumes?",
+          "listLabel": "Itens a limpar",
+          "stackNote": "Contêineres parados e redes podem ser recriados ao subir a stack de novo. Os volumes não são tocados.",
+          "volumesNote": "Volumes não podem ser restaurados.",
+          "stackConfirm": "Limpar",
+          "volumesConfirm": "Remover {n} volume | Remover {n} volumes"
+        },
         "projects": "Projetos: {names}",
         "more": "+{n} outros",
         "toggleCache": "Limpar o build cache automaticamente",
@@ -2481,7 +2861,7 @@
         "auto": "Pronto para limpar",
         "untouched": "Em uso",
         "count": "{n} item | {n} itens",
-        "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
+        "lastCycle": "Último ciclo {ago}: {n} limpos, {freed}",
         "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)",
         "review": "Precisa de revisão",
         "running": "Limpando agora · faltam {n}",
@@ -2493,6 +2873,8 @@
         "reclaimable": "{size} recuperáveis",
         "autopilotOn": "autopilot ligado",
         "autopilotOff": "autopilot desligado",
+        "autopilotPaused": "autopilot pausado",
+        "autopilotReportOnly": "autopilot só reporta",
         "next": {
           "minute": "próximo ciclo em {n} min",
           "hour": "próximo ciclo em {n} h",
@@ -2500,6 +2882,8 @@
         },
         "badgeOn": "Autopilot ligado · a cada {every}",
         "badgeOff": "Autopilot desligado",
+        "badgeReportOnly": "Autopilot ligado · só reporta",
+        "badgePaused": "Autopilot pausado — a varredura em segundo plano está desligada",
         "everyMinutes": "{n} min",
         "everyHours": "{n} h",
         "everyDay": "dia"
@@ -2522,13 +2906,37 @@
       "loadError": "Não foi possível carregar o relatório de limpeza: {error}",
       "other": {
         "title": "Outros resíduos",
-        "intro": "Branches e pastas que não são worktrees."
+        "intro": "Branches, pastas e transcrições que não são worktrees."
+      },
+      "orphans": {
+        "groupMeta": "{n} pasta · {size} | {n} pastas · {size}",
+        "deleteAll": "Apagar tudo",
+        "deleteAria": "Apagar as transcrições de {name}",
+        "sessions": "{n} sessão | {n} sessões",
+        "last": "última {ago}",
+        "notFound": {
+          "title": "Pasta não encontrada",
+          "note": "O Harnu não consegue confirmar que essas pastas foram apagadas. Elas podem estar em um disco que não está conectado. Confira antes de apagar.",
+          "ack": "Eu conferi: essa pasta realmente não existe mais, não está em um disco desconectado."
+        },
+        "memory": "inclui notas de memória",
+        "confirm": {
+          "title": "Mover {n} pasta de transcrições para a lixeira? | Mover {n} pastas de transcrições para a lixeira?",
+          "subtitle": "As pastas em que essas sessões rodavam não existem mais, então o Claude não consegue mais retomá-las aqui.",
+          "listLabel": "Pastas de transcrições a mover para a lixeira",
+          "recoverable": "Elas vão para a lixeira do sistema, então dá para trazê-las de volta.",
+          "memory": "{n} delas também guarda notas de memória do Claude para essa pasta. | {n} delas também guardam notas de memória do Claude para essa pasta.",
+          "total": "{n} pasta · {size} | {n} pastas · {size}",
+          "confirm": "Mover para a lixeira"
+        }
       },
       "toast": {
-        "success": "{size} liberados · {count} item pronto limpo | {size} liberados · {count} itens prontos limpos",
+        "success": "{freed} · {count} item pronto limpo | {freed} · {count} itens prontos limpos",
         "partial": "{cleaned} limpos · {failed} precisa de revisão | {cleaned} limpos · {failed} precisam de revisão",
         "review": "Revisar",
-        "viewJournal": "Ver diário"
+        "remoteLeft": "A branch continua no remoto: {error} | {count} branches continuam no remoto. Primeiro erro: {error}",
+        "viewJournal": "Ver diário",
+        "successReview": "{freed} · {count} item removido | {freed} · {count} itens removidos"
       },
       "footer": {
         "running": "Limpando {done}/{total}",
@@ -2596,10 +3004,53 @@
           "title": "Os volumes do Docker são sempre mantidos",
           "body": "Limpar uma worktree, à mão ou automaticamente, nunca remove os volumes dela. Quando a worktree some, eles aparecem em Precisa de revisão como volumes órfãos, com tamanho e projeto do compose, e você remove cada um você mesmo.",
           "warning": "Um volume removido e os dados dele não podem ser restaurados."
+        },
+        "archives": {
+          "eyebrow": "Arquivos",
+          "intro": "Toda remoção guarda a ponta da branch e o estado de trabalho no git como refs de arquivo, então nada se perde. Elas se acumulam, então a Limpeza pode apagar as antigas.",
+          "keepDays": {
+            "label": "Manter arquivos por",
+            "hint": "Arquivos mais antigos que isso são oferecidos para exclusão na Limpeza, depois que você confirma a lista."
+          },
+          "autoExpire": {
+            "label": "Expirar arquivos automaticamente",
+            "hint": "Ligado, o piloto automático apaga as refs de arquivo mais antigas que o valor acima. Um arquivo apagado não pode ser restaurado. O git libera o espaço no próximo gc."
+          }
+        }
+      },
+      "recheck": {
+        "cleared": "Verificado de novo: nada o recusa agora",
+        "stillRefused": "Continua recusado",
+        "unchecked": "Não foi possível verificar agora",
+        "failed": "Não foi possível verificar de novo"
+      },
+      "removal": {
+        "reason": {
+          "mainCheckout": "Este é um checkout principal, que nunca é removido.",
+          "neverClean": "Está na sua lista de nunca limpar.",
+          "kept": "Você o marcou como Manter. Tire a marca primeiro.",
+          "inUse": "Está em uso agora.",
+          "unsupportedKind": "O Harnu só remove este tipo de pasta a partir de Precisa de revisão, depois que você confirmar.",
+          "sharedStack": "Outra stack também roda a partir deste worktree. Pare essa primeiro.",
+          "nestedWorktree": "Esta pasta contém outro worktree ou checkout. Remova ou mova esse primeiro.",
+          "checkFailed": "O Harnu não conseguiu olhar dentro desta pasta em busca de outros worktrees ou checkouts. Confira se ela é legível e use Escanear agora.",
+          "folderGone": "A pasta não existe mais e a limpeza parou no meio. Termine com os comandos do painel dela.",
+          "tipUnknown": "O Harnu não conseguiu saber em qual commit este worktree está.",
+          "graceNotElapsed": "Ainda não ficou parado por tempo suficiente.",
+          "pathUnresolved": "Não foi possível resolver um caminho ligado a este worktree, então o Harnu não sabe o que o usa.",
+          "sessionOpen": "Ainda há uma sessão aberta neste worktree. Feche-a primeiro.",
+          "locked": "O git tem este worktree bloqueado. Desbloqueie primeiro.",
+          "operationInProgress": "Um rebase, bisect ou git am ainda está em andamento aqui, e o estado dele se perderia junto com a pasta. Termine ou aborte, depois use Scan now.",
+          "cannotUnregister": "O git não tem um registro único e desbloqueado para este worktree, então o Harnu não consegue desregistrá-lo e o recusou mais de uma vez. Confira git worktree list.",
+          "protectedNow": "Ele está protegido agora (um checkout principal, um caminho de nunca limpar ou uma marca Manter), e o Harnu o recusou mais de uma vez.",
+          "scanBlind": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu as stacks deste worktree. Inicie o Docker e use Escanear agora.",
+          "stackPresent": "Uma stack do Docker está rodando a partir deste worktree, e o Harnu o recusou mais de uma vez. Pare a stack primeiro."
         }
       },
       "refusal": {
         "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
+        "workUnreadable": "O Harnu não conseguiu ler o trabalho não commitado desta worktree ao escanear, então não vai removê-la sem ver. Escaneie de novo e revise.",
+        "workChangedSinceConfirm": "O trabalho não commitado mudou depois que você olhou, então nada foi removido. Escaneie de novo e revise.",
         "needsConfirmation": "Precisa da sua confirmação antes. Selecione e escolha Remover.",
         "missingExpected": "A limpeza não conseguiu comparar com o que você viu. Revise e tente de novo.",
         "noLongerOrphan": "Este volume voltou a ser usado, então foi deixado como está.",
@@ -2617,9 +3068,11 @@
         "notReady": "Ela não está mais pronta para limpar, então foi deixada como está.",
         "pathUnresolved": "Um caminho ligado a esta worktree não pôde ser resolvido, então o Harnu não sabe o que a usa e a deixou como está.",
         "stackPresent": "Uma stack do Docker está rodando a partir desta worktree, então ela foi deixada como está.",
-        "dockerUnavailable": "O Docker não respondeu, então o Harnu não pôde checar esta worktree com segurança e a deixou como está.",
+        "dockerUnavailable": "O Docker não está rodando, então o Harnu não pôde checar esta worktree com segurança e a deixou como está. Inicie o Docker e tente de novo.",
+        "scanBlind": "O Docker não estava rodando quando o Harnu varreu, então ele não pôde ver as stacks deste worktree e o deixou como está. Inicie o Docker e use Escanear agora.",
         "probeFailed": "A checagem desta worktree falhou, então ela foi deixada como está.",
         "nestedWorktree": "Outra worktree vive dentro desta, então ela foi deixada como está.",
+        "checkFailed": "O Harnu não conseguiu olhar dentro desta worktree, então ela foi deixada como está.",
         "sharedStack": "Outra stack também roda a partir desta worktree, então ela foi deixada como está.",
         "headMoved": "Um commit novo chegou nesta worktree, então ela foi deixada como está.",
         "notHarvestable": "A limpeza não a considera mais concluída, então foi deixada como está.",
@@ -2629,7 +3082,18 @@
         "changedMidRun": "Ela mudou durante a limpeza, então o Harnu parou.",
         "dirty": "Agora há alterações não commitadas, então foi deixado como está.",
         "foreignCheckout": "Há outro repositório com checkout dentro desta pasta, então foi deixado como está.",
-        "cannotUnregister": "O Harnu não conseguiu associar este worktree a um único registro do git, então nada foi tocado."
+        "cannotUnregister": "O Harnu não conseguiu associar este worktree a um único registro do git, então nada foi tocado.",
+        "unlockFailed": "O git não quis desbloquear este worktree, então ele foi deixado como estava.",
+        "sessionBusy": "Uma sessão neste worktree está trabalhando ou esperando por você, então o Harnu não a fechou e deixou o worktree como estava.",
+        "sessionNotClosable": "A sessão aberta aqui não é uma que o Harnu possa fechar, então o worktree foi deixado como estava.",
+        "stackStopFailed": "O Docker não conseguiu parar a stack inteira. O Harnu tentou subir de novo o que tinha parado e deixou o worktree como estava.",
+        "stackBindsFolder": "Essa stack usa esta pasta, então não pode ficar rodando. Pare-a ou escolha de novo.",
+        "prepNotApplicable": "O que você escolheu não vale mais para este worktree, então ele foi deixado como estava. Escaneie de novo e revise.",
+        "stackIsMainCheckout": "Essa stack é do checkout principal, então o Harnu não a para e deixou o worktree como estava.",
+        "stackUsedElsewhere": "Outra pasta com uma sessão usa essa stack, então o Harnu não a parou e deixou o worktree como estava.",
+        "rollbackFailed": "O que a ação tinha mudado (um bloqueio, uma stack parada) não pôde ser desfeito: confira.",
+        "prepLeftStack": "O worktree foi removido depois de o Harnu parar a stack compartilhada, então a stack ficou parada porque a pasta dela sumiu.",
+        "operationInProgress": "Um rebase, bisect ou git am está em andamento neste worktree, então ele foi deixado como estava. Termine ou aborte, depois Scan now."
       },
       "opinion": {
         "safe": "Seguro",
@@ -2652,7 +3116,9 @@
         "rowAria": "{name}, {size}",
         "selectRow": "Selecionar {name}",
         "removeAria": "Remover {name}",
+        "resume": "Parou em “{step}”. Abra para ver os comandos para terminar à mão.",
         "dehydrateAria": "Dehydrate {name}",
+        "dehydratedLeft": "Desidratado · {size} restantes",
         "keepAria": "Manter {name}",
         "volumeProject": "Volume Docker · {project}",
         "volumeUnknown": "Volume Docker · projeto desconhecido",
@@ -2662,8 +3128,7 @@
       "error": {
         "clean": "Não foi possível iniciar a limpeza",
         "keep": "Não foi possível manter isso",
-        "autopilot": "Não foi possível ativar o autopilot",
-        "dismiss": "Não foi possível salvar isso"
+        "autopilot": "Não foi possível ativar o autopilot"
       },
       "legend": {
         "ready": "Pronto para limpar · limpo com um clique ou pelo autopilot",
@@ -2677,6 +3142,243 @@
         "sub": "Procurando branches mescladas, sessões paradas e sobras do Docker.",
         "failed": "A primeira varredura não terminou: {error}",
         "hero": "Analisando…"
+      },
+      "freed": {
+        "now": "{freed} liberados agora",
+        "split": "{freed} liberados agora · {trash} na lixeira"
+      },
+      "archives": {
+        "title": "Arquivos",
+        "sub": "{n} arquivo · ≈ {size} | {n} arquivos · ≈ {size}",
+        "subNoSize": "{n} arquivo | {n} arquivos",
+        "toggleRepo": "Mostrar os arquivos de {repo}",
+        "listLabel": "Arquivos de {repo}",
+        "detached": "detached",
+        "unknownSource": "origem desconhecida",
+        "tip": "tip {sha}",
+        "wip": "tem estado de trabalho",
+        "wipTitle": "Os arquivos não commitados e não rastreados da pasta removida também foram arquivados",
+        "reflog": "{n} commit do reflog | {n} commits do reflog",
+        "reflogTitle": "Commits que só o histórico da própria worktree removida alcançava também ficam guardados aqui",
+        "expired": "expirado",
+        "copyRestore": "Copiar comando de restauração",
+        "copyWip": "Copiar comando do wip",
+        "copied": "Copiado",
+        "retention": "Arquivos com mais de {n} dia: {k} | Arquivos com mais de {n} dias: {k}",
+        "deleteOlder": "Apagar {k} com mais de {n} dia… | Apagar {k} com mais de {n} dias…",
+        "gcNow": "Rodar git gc agora…",
+        "note": "Apagar arquivos só libera espaço em disco no próximo gc do git.",
+        "dialog": {
+          "deleteTitle": "Apagar {n} arquivo? | Apagar {n} arquivos?",
+          "deleteWarn": "Isso remove as refs de arquivo. As pontas de branch e os estados de trabalho que elas guardam não poderão mais ser restaurados daqui. O git libera o espaço em disco no próximo gc.",
+          "deleteConfirm": "Apagar {n} arquivo | Apagar {n} arquivos",
+          "listLabel": "Arquivos a apagar",
+          "gcTitle": "Rodar git gc em {repo}?",
+          "gcBody": "Ele apaga objetos git inalcançáveis com mais de uma hora, então o espaço dos arquivos apagados volta. Não rode enquanto outro comando git estiver escrevendo neste repositório.",
+          "gcConfirm": "Rodar git gc",
+          "trashTitle": "Esvaziar o que o Harnu mandou para a lixeira?",
+          "trashBody": "Isso apaga em definitivo {n} pasta que o Harnu mandou para a lixeira, {size}. O resto da sua lixeira fica como está. | Isso apaga em definitivo {n} pastas que o Harnu mandou para a lixeira, {size}. O resto da sua lixeira fica como está.",
+          "trashConfirm": "Esvaziar {size}",
+          "cancel": "Cancelar",
+          "close": "Fechar",
+          "trashListLabel": "Pastas a apagar da lixeira"
+        },
+        "toast": {
+          "deleted": "{n} arquivo apagado | {n} arquivos apagados",
+          "deletedSub": "O git libera o espaço em disco no próximo gc.",
+          "changed": "{n} arquivo mudou desde que você olhou e foi deixado quieto | {n} arquivos mudaram desde que você olhou e foram deixados quietos",
+          "failed": "Não foi possível apagar {n} ref de arquivo | Não foi possível apagar {n} refs de arquivo",
+          "gcDone": "git gc terminou em {repo}",
+          "gcFailed": "git gc falhou em {repo}",
+          "neverClean": "Este repo está na lista de nunca limpar, então os arquivos dele foram deixados quietos.",
+          "protected": "{n} arquivo foi deixado quieto: a pasta dele está na lista de nunca limpar | {n} arquivos foram deixados quietos: as pastas deles estão na lista de nunca limpar"
+        },
+        "ageUnknown": "idade desconhecida",
+        "deleteOne": "Apagar…",
+        "protected": "Está na lista de nunca limpar"
+      },
+      "trash": {
+        "title": "Na lixeira",
+        "strip": "{size} na lixeira · {n} pasta que o Harnu mandou para lá | {size} na lixeira · {n} pastas que o Harnu mandou para lá",
+        "empty": "Esvaziar o que o Harnu mandou para a lixeira ({size})",
+        "cantEmpty": "O Harnu não consegue esvaziá-la para você neste sistema. Abra {location} e esvazie lá.",
+        "toast": {
+          "emptied": "{size} esvaziados da lixeira",
+          "failed": "Não foi possível esvaziar {n} pasta da lixeira | Não foi possível esvaziar {n} pastas da lixeira",
+          "unsupported": "O Harnu não consegue esvaziar a lixeira neste sistema. Abra {location}.",
+          "skippedChanged": "{n} pasta ficou na lixeira: não é mais o que o Harnu moveu | {n} pastas ficaram na lixeira: não são mais o que o Harnu moveu",
+          "skippedUnreachable": "{n} pasta ficou na lixeira: o disco dela não está montado ou não pode ser lido | {n} pastas ficaram na lixeira: o disco delas não está montado ou não pode ser lido",
+          "skippedNoRecord": "{n} pasta ficou na lixeira: o Harnu não tem registro exato dessa movimentação | {n} pastas ficaram na lixeira: o Harnu não tem registro exato dessas movimentações",
+          "nothing": "Nada foi esvaziado: essas pastas não estão mais na lixeira"
+        },
+        "unverified": "{size} que o Harnu mandou para a lixeira (não dá para checar o que ainda está lá)",
+        "recycleBin": "Lixeira"
+      },
+      "guide": {
+        "why": {
+          "none": "{n} não podem ser removidos:",
+          "partial": "Remove {k} · {n} não podem:"
+        },
+        "group": "{count} {cause}",
+        "cause": {
+          "mainCheckout": "checkout principal",
+          "neverClean": "na sua lista de nunca limpar",
+          "kept": "marcado como Manter",
+          "inUse": "em uso",
+          "unsupportedKind": "detached (sem branch)",
+          "sharedStack": "stack Docker compartilhada",
+          "nestedWorktree": "contém outro worktree",
+          "checkFailed": "pasta ilegível",
+          "folderGone": "pasta sumiu",
+          "tipUnknown": "commit desconhecido",
+          "graceNotElapsed": "ainda não ficou quieto o bastante",
+          "pathUnresolved": "caminho não resolvido",
+          "sessionOpen": "sessão aberta",
+          "locked": "bloqueado no git",
+          "cannotUnregister": "o git não consegue desregistrar",
+          "protectedNow": "protegido agora",
+          "stackPresent": "stack Docker rodando",
+          "scanBlind": "escaneado sem o Docker"
+        },
+        "dehydrateWin": "Dehydrate libera {size} e mantém o código",
+        "action": {
+          "unlock-remove": "Desbloquear e remover…",
+          "close-session-remove": "Fechar sessão e remover…",
+          "shared-stack": "Escolher o que fazer com a stack…",
+          "fix-unreadable": "Ver como corrigir…",
+          "scan-again": "Escanear de novo",
+          "check-again": "Conferir de novo",
+          "unkeep": "Tirar a marca Manter",
+          "open-settings": "Abrir Ajustes",
+          "dockerDown": "O Docker não estava rodando — e agora?"
+        },
+        "combined": {
+          "label": "{steps} e remover…",
+          "unlock": "Desbloquear",
+          "stack": "parar a stack",
+          "session": "fechar a sessão"
+        }
+      },
+      "guided": {
+        "title": {
+          "unlockRemove": "Desbloquear e remover",
+          "closeSession": "Fechar a sessão e remover",
+          "sharedStack": "Uma stack é compartilhada com outras pastas",
+          "fixUnreadable": "O Harnu não consegue ler esta pasta",
+          "dockerDown": "O Docker não estava rodando",
+          "combined": "Vários passos, depois a remoção"
+        },
+        "subtitle": {
+          "unlockRemove": "O git bloqueou este worktree. Depois de desbloquear, a remoção é a de sempre: arquivado primeiro, depois movido para a lixeira.",
+          "closeSession": "Ainda há uma sessão aberta aqui. Fechar uma ociosa mantém a conversa em disco; a remoção que segue é a de sempre.",
+          "sharedStack": "Outras pastas rodam contêineres da mesma stack do Docker, então o Harnu não mexe nela a menos que você escolha.",
+          "fixUnreadable": "O Harnu não sabe o que há dentro, então não remove a pasta sem ver. Corrija a permissão e confira de novo.",
+          "dockerDown": "Sem o Docker, o Harnu não viu quais stacks rodam dos seus worktrees, então não os remove.",
+          "combined": "Duas ou mais coisas separam este worktree da remoção. O Harnu as faz nesta ordem e desfaz o que mudou se a remoção ainda for recusada."
+        },
+        "loading": "Lendo o que o git e o Docker dizem agora…",
+        "loadError": "Não deu para ler os fatos atuais. Feche e tente de novo.",
+        "lock": {
+          "reason": "O git registrou este motivo: “{reason}”",
+          "none": "O git bloqueou e não registrou motivo.",
+          "gone": "O git não lista mais como bloqueado.",
+          "leftOut": "{n} não estão mais bloqueados, então ficam de fora."
+        },
+        "sessions": {
+          "idle": "{n} sessão ociosa será fechada. A conversa continua em disco. | {n} sessões ociosas serão fechadas. As conversas continuam em disco.",
+          "busy": "Uma sessão aqui está trabalhando ou esperando por você, então o Harnu não a fecha. Termine ou feche você mesmo antes.",
+          "foreign": "A sessão aberta aqui não foi iniciada pelo Harnu, então ele não pode fechá-la. Feche onde ela roda.",
+          "parkWarning": "Estacionar fecha o terminal; processos em segundo plano que ele iniciou (servidores de dev, shells) param. A conversa é mantida e pode ser retomada.",
+          "userOpened": "{n} delas você abriu por conta própria, não um agente."
+        },
+        "stack": {
+          "runs": "{name} também roda de {folders}",
+          "uses": "Ela usa esta pasta.",
+          "none": "Esta stack não existe mais. Escaneie de novo."
+        },
+        "choice": {
+          "stop": "Parar a stack e remover",
+          "stopBody": "Para estes contêineres: {names}. Eles não são removidos, e os volumes também não.",
+          "leave": "Remover o worktree e deixar a stack",
+          "leaveBody": "A stack continua rodando. Nenhum contêiner dela usa esta pasta.",
+          "leaveUnavailable": "Esta stack usa esta pasta, então não pode ficar rodando.",
+          "stopBlocked": {
+            "main-checkout": "Esta stack é do checkout principal, então o Harnu não a para.",
+            "in-use-elsewhere": "Outra pasta com uma sessão usa esta stack, então o Harnu não a para."
+          }
+        },
+        "unreadable": {
+          "where": "O Harnu não conseguiu ler {path}.",
+          "owner": "Pertence a {owner}.",
+          "ownerUnknown": "O Harnu não soube dizer quem é o dono.",
+          "fix": "Rode isto e confira de novo:",
+          "ok": "O Harnu consegue ler agora. Confira de novo para continuar."
+        },
+        "copy": "Copiar",
+        "copied": "Copiado",
+        "docker": {
+          "down": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu as stacks deste worktree.",
+          "start": "Inicie o Docker e escaneie de novo:",
+          "app": "Abra o Docker pelos seus aplicativos e escaneie de novo."
+        },
+        "confirm": {
+          "unlock": "Desbloquear e remover",
+          "closeSession": "Fechar sessão e remover",
+          "stop": "Parar a stack e remover",
+          "leave": "Remover e deixar a stack",
+          "combined": "{steps} e remover",
+          "word": {
+            "unlock": "desbloquear",
+            "stop": "parar a stack",
+            "leave": "deixar a stack",
+            "session": "fechar a sessão"
+          }
+        },
+        "recheck": "Conferir de novo",
+        "scan": "Escanear de novo",
+        "cancel": "Cancelar",
+        "close": "Fechar",
+        "pending": "Trabalhando…",
+        "stale": "Isto mudou desde que você abriu — abra de novo.",
+        "toast": {
+          "scanned": "Escaneado de novo",
+          "scanStillBlind": "Escaneado de novo, mas o Docker ainda não responde",
+          "scanFailed": "Não deu para escanear de novo",
+          "unkept": "Marca Manter removida | Marcas Manter removidas",
+          "unkeepFailed": "Não deu para tirar a marca Manter",
+          "recheckedOk": "Conferido de novo: o Harnu consegue ler agora",
+          "recheckedStill": "Conferido de novo: o Harnu ainda não consegue ler",
+          "recheckFailed": "Não deu para conferir de novo",
+          "undo": "Desfazer"
+        },
+        "step": {
+          "unlock": "Desbloquear o worktree no git.",
+          "stop": "Parar estes contêineres (eles não são removidos): {names}.",
+          "leave": "Deixar a stack rodando.",
+          "session": "Fechar a sessão ociosa aberta aqui (estacionar; a conversa é mantida).",
+          "remove": "Depois remover o worktree do jeito de sempre: arquivado primeiro, depois movido para a lixeira."
+        }
+      },
+      "recovered": {
+        "relocked": "Recoloquei o bloqueio em {path} depois que o Harnu fechou no meio de uma ação",
+        "stackStopped": "O Harnu parou uma stack durante uma limpeza que não terminou",
+        "lockSkipped": "O Harnu desbloqueou um worktree durante uma limpeza que não terminou",
+        "containersGone": "O Harnu parou contêineres durante uma limpeza que não terminou; eles não existem mais",
+        "failed": "Não deu para fazer isso",
+        "lockFailed": "O Harnu desbloqueou um worktree durante uma limpeza que não terminou e não conseguiu bloquear de novo"
+      },
+      "recovery": {
+        "label": "Limpezas interrompidas",
+        "stackStopped": "O Harnu parou {names} durante uma limpeza que não terminou.",
+        "containersGone": "O Harnu parou {names} durante uma limpeza que não terminou; eles não existem mais.",
+        "lockSkipped": "O Harnu desbloqueou {path} durante uma limpeza que não terminou, e não é mais o mesmo worktree (ou não deu para confirmar), então o bloqueio não foi recolocado.",
+        "start": "Subir de novo",
+        "leave": "Deixar parado",
+        "lock": "Bloquear de novo",
+        "dismiss": "Dispensar",
+        "lockFailed": "O Harnu desbloqueou {path} durante uma limpeza que não terminou e não conseguiu bloquear de novo:",
+        "lockMismatch": "O Harnu desbloqueou {path} durante uma limpeza que não terminou, e a conferência agora diz que não é claramente o mesmo worktree:",
+        "lockAnyway": "Bloquear este worktree mesmo assim"
       }
     }
   },
@@ -3285,6 +3987,95 @@
     "binaryBody": "Arquivo binário — não há o que renderizar, apenas o caminho e as contagens.",
     "unchangedLines": "{n} linhas inalteradas",
     "noNewline": " ⏎ sem quebra de linha no fim do arquivo",
+    "selection": {
+      "barLabel": "Seleção",
+      "selectFile": "Selecionar o arquivo inteiro {path}",
+      "selectFileTitle": "Selecionar o arquivo inteiro",
+      "range": {
+        "file": "arquivo inteiro",
+        "line": "L{line}",
+        "lines": "L{start}–{end}",
+        "oldLine": "antiga L{line}",
+        "oldLines": "antigas L{start}–{end}",
+        "mixed": "{startSide} L{start} – {endSide} L{end}"
+      },
+      "side": {
+        "old": "antiga",
+        "new": "nova"
+      },
+      "hint": {
+        "clamp": "Um intervalo fica dentro de um hunk",
+        "headMoved": "O head mudou ({from} → {to}). Seleção limpa.",
+        "baseMoved": "A base mudou ({from} → {to}). Seleção limpa."
+      },
+      "action": {
+        "copy": "Copiar como texto",
+        "clear": "Limpar seleção",
+        "dismiss": "Dispensar",
+        "tryAgain": "Tentar de novo",
+        "openMods": "Abrir ajustes de Mods",
+        "reopenCompanion": "Reabrir \"Perguntar a uma sessão nova\"",
+        "refresh": "Atualizar",
+        "reselect": "Limpar e selecionar de novo",
+        "narrow": "Reduzir a seleção"
+      },
+      "state": {
+        "queued": "Atualizando…",
+        "delivered": "O companion vê isto",
+        "cleared": "A conversa foi limpa",
+        "ended": "O companion foi fechado"
+      },
+      "noBinding": {
+        "off": "O Harnu mod está desligado",
+        "cli-too-old": "Esta versão do Claude Code é antiga demais para o Harnu mod",
+        "cli-unknown": "O Harnu não conseguiu ler a versão do Claude Code",
+        "pre-disclosure": "O Harnu está esperando você ver o aviso do mod",
+        "not-claude": "Esta sessão começou sem o Harnu mod",
+        "unknown": "Esta sessão começou sem o Harnu mod"
+      },
+      "outcome": {
+        "NO_BINDING": "Não conectado ao Harnu mod",
+        "NO_LEASE": "A conexão com o companion foi perdida",
+        "STICKY_LEGACY": "O canal do mod está desligado nesta sessão",
+        "HEADLESS": "Esta sessão não pode receber seleções",
+        "EXTERNAL": "Esta sessão não pode receber seleções",
+        "FEATURE_OFF": "A entrega pelo mod está desligada",
+        "MODE_SHADOW": "O canal do mod está em modo de observação",
+        "ORIGIN_DENIED": "O Harnu não conseguiu enviar isto (interno)",
+        "TARGET_DENIED": "Esta sessão não pode receber seleções",
+        "FOLDER_BLOCKED": "Esta pasta está bloqueada para agentes",
+        "BAD_ARGS": "Essa seleção não pode ser enviada",
+        "QUEUE_FULL": "O companion está ocupado",
+        "SID_UNSETTLED": "O companion está começando uma nova conversa",
+        "AUDIT_FAILED": "Não foi possível registrar o envio — nada foi enviado",
+        "head-moved": "O head mudou — esta seleção está desatualizada",
+        "base-mismatch": "A base mudou — esta seleção está desatualizada",
+        "head-unreadable": "O Harnu não consegue ler o commit do head",
+        "no-companion": "Abra \"Perguntar a uma sessão nova\" primeiro",
+        "CMD_PRECONDITION": "O companion recusou essa seleção",
+        "CMD_UNSUPPORTED": "O Harnu mod desta sessão é antigo demais para isto",
+        "FEATURE_DISABLED": "A entrega pelo mod está desligada",
+        "CMD_FAILED": "O companion não conseguiu receber essa seleção",
+        "CMD_EXPIRED": "O companion não conseguiu receber essa seleção",
+        "expired": "Não entregue — o companion não pegou",
+        "lost": "Enviado, mas o Harnu não recebeu confirmação",
+        "dropped": {
+          "lease-lost": "A conexão com o companion foi perdida",
+          "rebound": "A conversa foi limpa — envie a seleção de novo",
+          "session-end": "O companion terminou",
+          "revoked": "A entrega pelo mod foi desligada",
+          "host-shutdown": "O Harnu está encerrando",
+          "cancelled": "Cancelado"
+        },
+        "unknown": "O Harnu não conseguiu concluir esse envio"
+      },
+      "copied": "Copiado",
+      "copyFailed": "Não foi possível copiar para a área de transferência",
+      "guide": {
+        "refresh": "Use “{action}” no cabeçalho da revisão",
+        "freshCompanion": "Feche este companion e use “{action}” no cabeçalho da revisão"
+      }
+    },
     "truncated": "Este diff foi cortado para manter o painel responsivo: {n} arquivos não aparecem, de {rows} linhas alteradas no total.",
     "receipt": {
       "commits": "commits",
@@ -3399,6 +4190,7 @@
     "footerNote": "Verifica a cada 30s · no máximo 2 workers por vez · nada roda com o Harnu fechado",
     "emptyTitle": "Nenhum worker ainda",
     "emptyBody": "Um worker roda um prompt em uma pasta, numa cadência, sem abrir uma sessão. Bom para observar um repositório, responder comentários de review ou checar algo periodicamente.",
+    "groupPinned": "Fixados · {n}",
     "groupEnabled": "Ativos · {n}",
     "groupOff": "Desligados · {n}",
     "row": {
@@ -3410,7 +4202,9 @@
       "nextIn": "próxima em {countdown}",
       "failedStreak": "falhou · {n} seguidas",
       "disabledStreak": "desativado · {n} falhas",
-      "off": "desligado"
+      "off": "desligado",
+      "pin": "Fixar worker",
+      "unpin": "Desafixar worker"
     },
     "tabs": {
       "runs": "Execuções",
@@ -3444,7 +4238,9 @@
         "skipped": "pulada",
         "stopped": "parada",
         "running": "rodando"
-      }
+      },
+      "pin": "Fixar worker",
+      "unpin": "Desafixar worker"
     },
     "settings": {
       "identity": "Identidade",
@@ -3640,7 +4436,39 @@
     "sidebarChipNeedsYou": "Missão: {headline} — precisa de você",
     "cue": {
       "one": "A missão “{title}” precisa de você: {what}",
-      "many": "{n} missões precisam de você"
+      "many": "{n} missões precisam de você",
+      "reviewAll": "Revisar todas as {n}",
+      "ownerMissing": "A sessão dona não está aberta aqui — clique para revisar esta missão.",
+      "itemAria": "Abrir a missão {title}"
+    },
+    "review": {
+      "title": "Missões que precisam de você",
+      "intro": "Feche as concluídas de uma vez, ou abra qualquer uma para resolvê-la.",
+      "groups": {
+        "ready": "Prontas para fechar",
+        "finished": "Concluídas, fechamento não pedido",
+        "finishedHint": "Ninguém verificou o fim destas, por isso nenhuma vem selecionada.",
+        "other": "Esperando você por outro motivo"
+      },
+      "selectAllReady": "Selecionar todas as prontas",
+      "selected": "{count} selecionada | {count} selecionadas",
+      "closeSelected": "Fechar {count} como entregue… | Fechar {count} como entregues…",
+      "empty": "Nenhuma missão precisa de você agora.",
+      "openMission": "Abrir",
+      "ownerMissing": "A sessão dona não está aberta aqui, então esta missão não pode ser aberta pela revisão.",
+      "dismiss": "Fechar a revisão"
+    },
+    "bulk": {
+      "title": "Fechar {count} missão como entregue? | Fechar {count} missões como entregues?",
+      "body": "Elas saem da Topbar e da sidebar e não podem ser reabertas. O arquivo de cada missão continua no disco como registro.",
+      "reason": "Motivo (opcional)",
+      "reasonPlaceholder": "Vai para o Log de cada missão",
+      "confirm": "Fechar {count} missão | Fechar {count} missões",
+      "cancel": "Cancelar",
+      "dismiss": "Cancelar e manter as missões abertas",
+      "closing": "Fechando {done} de {total}…",
+      "done": "{count} missão fechada | {count} missões fechadas",
+      "partial": "{failed} de {total} não puderam ser fechadas"
     }
   },
   "harnuMod": {
@@ -3721,5 +4549,157 @@
       },
       "manualRemove": "Para remover à mão, apague {path} de `CLAUDE_CODE_PLUGIN_DIRS`."
     }
+  },
+  "browserPane": {
+    "network": {
+      "label": "Rede",
+      "hint": "A captura de rede está ligada. Ela para sozinha e não grava corpos de resposta, a menos que o agente peça."
+    },
+    "label": "Navegador",
+    "newTab": "Nova aba",
+    "menu": "Mais ações",
+    "back": "Voltar",
+    "forward": "Avançar",
+    "reload": "Recarregar",
+    "stop": "Parar",
+    "address": "Endereço",
+    "addressPlaceholder": "Digite um endereço",
+    "pauseAgent": "Pausar o agente por 10 min",
+    "resumeAgent": "Retomar o agente",
+    "devtools": "Abrir DevTools",
+    "openFailed": "Não foi possível abrir o navegador",
+    "origin": {
+      "local": "local",
+      "external": "externo",
+      "page": "página"
+    },
+    "flag": {
+      "label": "aberto pelo agente · {host}",
+      "dismiss": "Dispensar o aviso",
+      "prefix": "aberto pelo agente"
+    },
+    "chip": {
+      "connectedTo": "Conectado a {session}",
+      "connectedToAgent": "Conectado a um agente",
+      "canDrive": "Um agente pode controlar aqui",
+      "canRead": "Um agente pode ler aqui",
+      "paused": "Agente pausado · {time}",
+      "resume": "Retomar",
+      "disconnected": "Desconectado",
+      "disconnect": "Desconectar o agente",
+      "disconnectHint": "Encerra o acesso do agente a este painel para sempre",
+      "disconnectedToast": "Agente desconectado deste painel",
+      "disconnectFailed": "Não foi possível desconectar o agente",
+      "reading": "lendo",
+      "driving": "operando",
+      "pausedLabel": "Agente pausado",
+      "connectedPrefix": "Conectado a"
+    },
+    "notice": {
+      "blocked": "Bloqueado: endereços {scheme}: não podem ser abertos",
+      "blockedAny": "Bloqueado: este tipo de endereço não pode ser aberto",
+      "certificate": "Certificado autoassinado aceito para {host}",
+      "dialog": "A página abriu um diálogo {dialog} e o Harnu o dispensou",
+      "crashed": "A página parou de responder",
+      "dismiss": "Dispensar",
+      "offline": "Bloqueado: este painel está offline e não pode abrir outros endereços. Ative Rede ativa para seguir links externos.",
+      "agentInput": "Ignorado — uma sessão acabou de agir nesta página"
+    },
+    "zoom": {
+      "in": "Aumentar zoom",
+      "out": "Diminuir zoom",
+      "reset": "Voltar o zoom para 100%",
+      "offInDevice": "O zoom fica desligado enquanto um dispositivo é emulado",
+      "label": "Zoom"
+    },
+    "device": {
+      "button": "Modo dispositivo",
+      "chipHint": "Trocar o dispositivo",
+      "custom": "Tamanho personalizado…",
+      "width": "Largura",
+      "height": "Altura",
+      "dpr": "Densidade de pixels",
+      "mobile": "Mobile",
+      "apply": "Aplicar",
+      "back": "Voltar",
+      "reset": "Resetar dispositivo",
+      "rotate": "Girar",
+      "scheme": "Claro ou escuro",
+      "schemeLight": "Claro",
+      "schemeDark": "Escuro",
+      "reducedMotion": "Movimento reduzido",
+      "invalid": "Use de 100 a 10000 para o tamanho e de 0,5 a 5 para a densidade de pixels",
+      "failed": "Não foi possível trocar o dispositivo"
+    },
+    "download": {
+      "prompt": "Salvar {name} em .harnu/out/downloads/?",
+      "save": "Salvar",
+      "cancel": "Cancelar"
+    },
+    "noticeDownloaded": "{name} salvo",
+    "noticeDownloadCancelled": "Download cancelado",
+    "noticeDownloadFailed": "O download falhou",
+    "network": {
+      "off": "Offline",
+      "on": "Rede ativa",
+      "offHint": "Offline: a página não alcança a rede. Clique para permitir neste painel.",
+      "onHint": "Rede ativa: a página alcança a rede. Clique para desligar."
+    },
+    "discarded": {
+      "titleIdle": "Pausado para economizar memória",
+      "titleRestored": "Ainda não carregado",
+      "hidden": "{address} · oculto há {min} min",
+      "reload": "Clique para recarregar",
+      "load": "Carregar a página"
+    },
+    "fileRemoved": {
+      "title": "Arquivo removido",
+      "waiting": "Aguardando ele voltar…"
+    },
+    "pageEvent": {
+      "sent": "Evento da página enviado à sessão",
+      "sentComment": "Comentário enviado para ‹{session}›",
+      "heldTitle": "Um painel enviou um evento, mas nenhuma sessão pode recebê-lo",
+      "heldBody": "Selecione uma sessão desta pasta, ou conecte o painel a uma, e use o painel de novo."
+    },
+    "comment": {
+      "hint": "Clique em um elemento para comentar",
+      "toggle": "Comentar na página",
+      "toggleOff": "Parar de comentar (Esc)",
+      "commentOn": "Comentário em",
+      "attached": "recorte + HTML + {styles} estilos anexados",
+      "attachedHtmlOnly": "HTML + {styles} estilos anexados",
+      "attachedNone": "nada anexado",
+      "placeholder": "O que deve mudar?",
+      "sendTo": "Enviar para",
+      "noSession": "Nenhuma sessão — copia para a área de transferência",
+      "owner": "dono",
+      "keepDraft": "Manter como rascunho",
+      "send": "Enviar",
+      "composerLabel": "Comentar o elemento selecionado",
+      "draftsCount": "nenhum rascunho | {n} rascunho | {n} rascunhos",
+      "sentCount": "{n} enviado | {n} enviados",
+      "sendBatch": "Enviar {n} comentário | Enviar {n} comentários",
+      "pin": "Marcador {n}",
+      "charsLeft": "{n} restantes",
+      "refusedTitle": "Comentário não enviado",
+      "refused": {
+        "BAD_ARGS": "O pedido não era válido.",
+        "PANE_NOT_FOUND": "Este painel não existe mais.",
+        "BROWSER_DISCONNECTED": "O agente está desconectado deste painel, então os comentários estão desligados.",
+        "NOTHING_TO_SEND": "Não há nada para enviar: escreva um texto primeiro.",
+        "DELIVERY_FAILED": "A sessão não conseguiu receber a mensagem. O rascunho foi mantido."
+      },
+      "noSessionTitle": "Nenhuma sessão para receber",
+      "noSessionBody": "O comentário foi copiado para a área de transferência.",
+      "noSessionLost": "Não foi possível copiar o comentário. Ele continua como rascunho neste painel.",
+      "hintExit": "para sair",
+      "disconnectedHint": "Comentários desligados aqui: você desconectou o agente deste painel."
+    }
+  },
+  "splitMenu": {
+    "label": "Mais opções de divisão",
+    "terminal": "Terminal",
+    "browser": "Navegador"
   }
 }

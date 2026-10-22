@@ -247,6 +247,14 @@ textarea,
   background: inherit;
   z-index: -1;
 }
+/* Accent halo variant (design.md §7 — Agent activity pulse): ONLY the halo colour changes —
+   same keyframe, geometry and reduced-motion behaviour. Used by the agent connection chip. */
+.anim-pulse-dot--accent::after {
+  background: var(--color-accent-soft);
+}
+.anim-pulse-dot--red::after {
+  background: var(--color-red-soft);
+}
 .anim-shimmer-dot {
   animation: shimmer-dot 1.2s ease-in-out infinite;
 }
@@ -405,6 +413,22 @@ textarea,
 .diff-word-del {
   background: var(--diff-del-word);
   border-radius: 2px;
+}
+
+/* Review selection (T257 U1, design.md §6 "Review selection"). The overlay is a
+ * background-IMAGE gradient, never a replacing `background`: the add/del tint
+ * underneath is the semantic channel and has to stay readable through it. The
+ * gutter keeps its opaque base colour (BUG-92) and gets the same gradient plus
+ * a 2px inset accent bar, so a selection is never colour alone. A whole-file
+ * selection puts the same pair on the file header instead of on the rows. */
+.diff-row-selected,
+.diff-row-selected > [data-diff-gutter],
+.diff-file-selected {
+  background-image: linear-gradient(var(--color-accent-soft), var(--color-accent-soft));
+}
+.diff-row-selected > [data-diff-gutter],
+.diff-file-selected {
+  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 /* ── Syntax buckets ────────────────────────────────────────────────────────
@@ -698,6 +722,14 @@ textarea,
 .collapsible > .collapsible-inner {
   overflow: hidden;
   min-height: 0;
+}
+
+/* Canvas Eraser mark (design.md §6 → "Eraser mark", T536 U1). The pane adds
+   the class to a crossed cell's X6 VIEW (its `<g>`), never to the cell's
+   attributes, so marking is not an edit. A class, not a utility, because the
+   element is X6's, outside any Vue template. Dimming is the whole treatment. */
+.canvas-erase-mark {
+  opacity: 0.3;
 }
 
 /* Canvas registered HTML component — `harnu/mockup-card` (design.md §6 →

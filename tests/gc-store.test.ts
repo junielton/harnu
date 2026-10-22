@@ -13,6 +13,7 @@ import type {
 } from '../src/main/gc/gc-wire'
 import type { Bucket, ReviewReason } from '../src/main/gc/bundle-core'
 import { useGcStore } from '../src/renderer/src/stores/gc'
+import { useNotificationsStore } from '../src/renderer/src/stores/notifications'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { captureConfirm } from '../src/renderer/src/lib/gc-model'
 import { CHANGED_SINCE_CONFIRM } from '../src/renderer/src/lib/gc-jobs'
@@ -57,7 +58,12 @@ interface Api {
   gcSetPrefs: ReturnType<typeof vi.fn>
   gcOpinion: ReturnType<typeof vi.fn>
   gcOpinionCached: ReturnType<typeof vi.fn>
+  gcEmptyTrash: ReturnType<typeof vi.fn>
+  gcDeleteArchives: ReturnType<typeof vi.fn>
 }
+
+let recoveryItems: Array<Record<string, unknown>> = []
+let recoveryAnswer: (() => unknown) | null = null
 
 function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
   const push: Api['push'] = {}
@@ -77,11 +83,31 @@ function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
     gcAckFirstReport: vi.fn(async () => ({ ...defaultGcPrefs(), firstReportAcknowledged: true })),
     gcSetPrefs: vi.fn(async (p: unknown) => p),
     gcOpinion: vi.fn(async () => ({ jobId: 'o1' })),
-    gcOpinionCached: vi.fn(async () => ({}))
+    gcOpinionCached: vi.fn(async () => ({})),
+    gcDeleteArchives: vi.fn(async () => ({
+      ok: true,
+      deleted: 0,
+      archives: 0,
+      failed: 0,
+      changed: []
+    })),
+    gcEmptyTrash: vi.fn(async () => ({
+      unsupported: false,
+      emptiedBytes: 0,
+      emptied: 0,
+      missing: 0,
+      skipped: 0,
+      failed: 0,
+      location: null
+    }))
   }
   ;(globalThis as unknown as { window: unknown }).window = {
     api: {
       ...api,
+      gcRecoveryList: vi.fn(async () => (recoveryAnswer ? recoveryAnswer() : recoveryItems)),
+      gcRecoveryAck: vi.fn(async () => undefined),
+      gcRecoveryAct: vi.fn(async () => ({ ok: true })),
+      onGcRecoveryChanged: sub('recovery'),
       onGcProgress: sub('progress'),
       onGcDone: sub('done'),
       onGcCycle: sub('cycle'),
@@ -203,7 +229,13 @@ describe('gc store', () => {
     const api = installApi(snap(), [running])
     const gc = useGcStore()
     await gc.init()
-    expect(gc.hero).toEqual({ kind: 'running', done: 3, total: 12, freedBytes: 1397 * MIB })
+    expect(gc.hero).toEqual({
+      kind: 'running',
+      done: 3,
+      total: 12,
+      freedBytes: 1397 * MIB,
+      trashedBytes: 0
+    })
     api.push.progress(progress({ jobId: 'j9', done: 4, total: 12, freedBytes: 1500 * MIB }))
     expect(gc.hero).toMatchObject({ done: 4 })
     expect(gc.pill).toEqual({ kind: 'running', done: 4, total: 12 })
@@ -249,6 +281,223 @@ describe('gc store', () => {
     expect(toast.mock.calls[0][0]).toMatchObject({ kind: 'success' })
     expect(gc.hero.kind).toBe('empty')
     expect(gc.pill).toEqual({ kind: 'idle' })
+  })
+
+  it('a Needs review removal says what it really did: both byte counts, and never "ready items"', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcSnapshot.mockResolvedValueOnce(snap({ bundles: [] }))
+    // The operator confirmed these two review items by id, so they ran through the force path.
+    await gc.submit({
+      ids: ['x', 'y'],
+      options: { confirmed: ['x', 'y'], expected: {} }
+    } as never)
+    api.push.done(
+      done({
+        freedBytes: 0,
+        trashedBytes: 1_000_000_000,
+        results: [
+          { id: 'x', ok: true, haltedAt: null, freedBytes: 0, trashedBytes: 600_000_000 },
+          { id: 'y', ok: true, haltedAt: null, freedBytes: 0, trashedBytes: 400_000_000 }
+        ]
+      })
+    )
+    await vi.runAllTimersAsync()
+    const title = toast.mock.calls[0][0].title as string
+    // Not "Freed 0 B": the checkouts that went to the trash are counted, as "in the trash".
+    expect(title).toBe('0 B freed now · 1.00 GB in the trash · 2 items removed')
+    expect(title).not.toContain('ready')
+  })
+
+  it('the review wording follows the JOB, not the last request (a ready job queued behind it keeps "ready")', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcSnapshot.mockResolvedValue(snap({ bundles: [] }))
+    api.gcClean
+      .mockResolvedValueOnce({ jobId: 'j-review', queued: false })
+      .mockResolvedValueOnce({ jobId: 'j-ready', queued: true })
+    await gc.submit({ ids: ['r1'], options: { confirmed: ['r1'], expected: {} } } as never)
+    await gc.submit({ ids: ['a'], options: { expected: {} } } as never)
+    const okResult = (id: string) => ({
+      id,
+      ok: true,
+      haltedAt: null,
+      freedBytes: 0,
+      trashedBytes: 10
+    })
+    api.push.done(
+      done({
+        jobId: 'j-review',
+        done: 1,
+        total: 1,
+        freedBytes: 0,
+        trashedBytes: 10,
+        results: [okResult('r1')]
+      })
+    )
+    await vi.runAllTimersAsync()
+    api.push.done(
+      done({
+        jobId: 'j-ready',
+        done: 1,
+        total: 1,
+        freedBytes: 0,
+        trashedBytes: 10,
+        results: [okResult('a')]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].title).toBe('0 B freed now · 10 B in the trash · 1 item removed')
+    expect(toast.mock.calls[1][0].title).toBe(
+      '0 B freed now · 10 B in the trash · 1 ready item cleaned'
+    )
+  })
+
+  it('a ready clean keeps saying "ready items cleaned"', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcSnapshot.mockResolvedValueOnce(snap({ bundles: [] }))
+    await gc.submit({ ids: ['a'], options: { expected: {} } } as never)
+    api.push.done(
+      done({
+        freedBytes: 100,
+        trashedBytes: 0,
+        done: 1,
+        total: 1,
+        results: [{ id: 'a', ok: true, haltedAt: null, freedBytes: 100 }]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].title).toBe('100 B freed now · 1 ready item cleaned')
+  })
+
+  it('empty trash sends exactly the ids the dialog listed, and says what it skipped', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcEmptyTrash.mockResolvedValueOnce({
+      unsupported: false,
+      emptiedBytes: 3_000_000,
+      emptied: 1,
+      missing: 0,
+      skipped: 1,
+      changed: 1,
+      unverifiable: 0,
+      unreachable: 0,
+      failed: 0,
+      location: null
+    })
+    await gc.emptyTrash(['1|/ws/wt-a', '2|/ws/wt-b'])
+    expect(api.gcEmptyTrash).toHaveBeenCalledWith(['1|/ws/wt-a', '2|/ws/wt-b'])
+    expect(toast.mock.calls[0][0]).toMatchObject({ kind: 'warning' })
+    expect(toast.mock.calls[0][0].title).toBe(
+      '1 folder was left in the trash: it is no longer what Harnu moved'
+    )
+  })
+
+  it('the manual archive delete toast names BOTH causes when changed and failed are both non-zero', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcDeleteArchives.mockResolvedValueOnce({
+      ok: false,
+      deleted: 0,
+      archives: 0,
+      failed: 2,
+      changed: ['refs/archive/a/20260101T000000Z'],
+      protectedArchives: 1
+    })
+    await gc.deleteArchives('/ws/repo', [])
+    const titles = toast.mock.calls.map((c) => c[0].title)
+    expect(titles).toEqual([
+      '1 archive changed since you looked and was left alone · Could not delete 2 archive refs · 1 archive was left alone: its folder is on the never-clean list'
+    ])
+  })
+
+  it('the delete toast counts archives, not refs: a tip and a wip are ONE archive', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcDeleteArchives.mockResolvedValueOnce({
+      ok: true,
+      deleted: 6,
+      archives: 3,
+      failed: 0,
+      changed: []
+    })
+    await gc.deleteArchives('/ws/repo', [])
+    expect(toast.mock.calls[0][0].title).toBe('Deleted 3 archives')
+  })
+
+  const emptyAck = (over: Record<string, unknown>) => ({
+    unsupported: false,
+    emptiedBytes: 0,
+    emptied: 0,
+    missing: 0,
+    skipped: 0,
+    changed: 0,
+    unverifiable: 0,
+    unreachable: 0,
+    failed: 0,
+    location: null,
+    ...over
+  })
+
+  it('empty trash that emptied nothing says so: never "Emptied 0 B"', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcEmptyTrash.mockResolvedValueOnce(emptyAck({ missing: 2 }))
+    await gc.emptyTrash(['a', 'b'])
+    expect(toast.mock.calls[0][0].title).toBe(
+      'Nothing was emptied: those folders are no longer in the trash'
+    )
+    expect(JSON.stringify(toast.mock.calls[0][0])).not.toContain('Emptied')
+  })
+
+  it.each([
+    [
+      { skipped: 1, unreachable: 1 },
+      "1 folder was left in the trash: its disk is not mounted or can't be read"
+    ],
+    [
+      { skipped: 1, changed: 1 },
+      '1 folder was left in the trash: it is no longer what Harnu moved'
+    ],
+    [
+      { skipped: 1, unverifiable: 1 },
+      '1 folder was left in the trash: Harnu has no exact record of that move'
+    ],
+    [
+      { skipped: 3, changed: 1, unreachable: 2 },
+      "2 folders were left in the trash: their disk is not mounted or can't be read · 1 folder was left in the trash: it is no longer what Harnu moved"
+    ]
+  ])('empty trash skipped (%j) names the real cause', async (over, title) => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcEmptyTrash.mockResolvedValueOnce(emptyAck(over))
+    await gc.emptyTrash(['a'])
+    expect(toast.mock.calls[0][0].title).toBe(title)
   })
 
   it('a partial failure toasts a warning and the failed item is back in Needs review with what ran', async () => {
@@ -302,6 +551,183 @@ describe('gc store', () => {
     expect(toast.mock.calls[0][0].description).toBeTruthy()
     expect(gc.failureOf('x')?.refusal).toBe('changed-since-confirm')
     expect(toast.mock.calls[0][0].description).toBe(t('cleanup.gc.refusal.changedSinceConfirm'))
+  })
+
+  it('a refusal after a guided prep says whether the prep could be put back (delta 1)', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.push.done(
+      done({
+        done: 0,
+        total: 1,
+        results: [
+          {
+            id: 'x',
+            ok: false,
+            haltedAt: 'reprobe',
+            error: 'cannot-unregister: rollback-failed (git is gone)',
+            freedBytes: 0
+          }
+        ]
+      })
+    )
+    await vi.runAllTimersAsync()
+    const d = toast.mock.calls[0][0].description as string
+    expect(d).toContain(t('cleanup.gc.refusal.cannotUnregister'))
+    expect(d).toContain(t('cleanup.gc.refusal.rollbackFailed'))
+    // What was left, by name, so the operator knows exactly what to put back.
+    expect(d).toContain('git is gone')
+  })
+
+  it('says a stack was left stopped when its worktree was removed anyway (delta 2)', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.push.done(
+      done({
+        done: 0,
+        total: 1,
+        results: [
+          {
+            id: 'x',
+            ok: false,
+            haltedAt: 'prune',
+            error: 'prune: failed; prep-left (stack-stopped)',
+            freedBytes: 0
+          }
+        ]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].description).toContain(t('cleanup.gc.refusal.prepLeftStack'))
+  })
+
+  describe('recovery notices (delta 3)', () => {
+    const item = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+      id: 'n1',
+      state: 'notice',
+      kind: 'stop-stack',
+      notice: 'stack-stopped',
+      path: '/r/wt',
+      detail: 'web-1, web-2',
+      announced: false,
+      ...over
+    })
+    afterEach(() => {
+      recoveryItems = []
+      recoveryAnswer = null
+    })
+    const api = (): Record<string, ReturnType<typeof vi.fn>> =>
+      (globalThis as unknown as { window: { api: Record<string, ReturnType<typeof vi.fn>> } })
+        .window.api
+
+    it('keeps the notices for the view, announces each new one in Activity once, then acknowledges', async () => {
+      recoveryItems = [
+        item(),
+        item({
+          id: 'r1',
+          state: 'resolved',
+          kind: 'unlock',
+          notice: undefined,
+          outcome: 'relocked',
+          detail: ''
+        }),
+        item({ id: 'old', announced: true })
+      ]
+      installApi()
+      const notify = vi.spyOn(useNotificationsStore(), 'notify')
+      const gc = useGcStore()
+      await gc.init()
+      await vi.runAllTimersAsync()
+      expect(gc.recovery.map((i) => i.id)).toEqual(['n1', 'old'])
+      expect(notify).toHaveBeenCalledTimes(2)
+      expect(notify.mock.calls[0][0].description).toContain('web-1, web-2')
+      expect(api().gcRecoveryAck).toHaveBeenCalledWith(['n1', 'r1'])
+    })
+
+    it('never announces the same item twice, even when the list comes back before the ack lands', async () => {
+      recoveryItems = [item()]
+      installApi()
+      const notify = vi.spyOn(useNotificationsStore(), 'notify')
+      const gc = useGcStore()
+      await gc.init()
+      await vi.runAllTimersAsync()
+      await gc.loadRecovery()
+      await gc.loadRecovery()
+      expect(notify).toHaveBeenCalledTimes(1)
+    })
+
+    it('a boot that finishes AFTER the store started is not lost: the changed event lists again', async () => {
+      const handle = installApi()
+      const gc = useGcStore()
+      const notify = vi.spyOn(useNotificationsStore(), 'notify')
+      await gc.init()
+      await vi.runAllTimersAsync()
+      expect(gc.recovery).toEqual([])
+      recoveryItems = [item()]
+      handle.push.recovery(null)
+      await vi.runAllTimersAsync()
+      expect(gc.recovery.map((i) => i.id)).toEqual(['n1'])
+      expect(notify).toHaveBeenCalledTimes(1)
+    })
+
+    it('an acknowledgement that fails is retried at the next listing, not given up on', async () => {
+      recoveryItems = [item()]
+      installApi()
+      api().gcRecoveryAck.mockRejectedValueOnce(new Error('ipc down'))
+      const gc = useGcStore()
+      await gc.init()
+      await vi.runAllTimersAsync()
+      await gc.loadRecovery()
+      expect(api().gcRecoveryAck).toHaveBeenCalledTimes(2)
+    })
+
+    it('an answer that is not a list (an older preload) is ignored, never thrown on', async () => {
+      recoveryAnswer = () => () => undefined
+      installApi()
+      const notify = vi.spyOn(useNotificationsStore(), 'notify')
+      await useGcStore().init()
+      await vi.runAllTimersAsync()
+      expect(notify).not.toHaveBeenCalled()
+    })
+
+    it('a lock refused for a mismatch shows no error toast: the notice itself changes (delta 4)', async () => {
+      recoveryItems = [item({ announced: true, kind: 'unlock', notice: 'lock-skipped' })]
+      installApi()
+      const gc = useGcStore()
+      const toast = vi.spyOn(useUiStore(), 'pushToast')
+      await gc.init()
+      await vi.runAllTimersAsync()
+      api().gcRecoveryAct.mockResolvedValueOnce({
+        ok: false,
+        error: 'x',
+        mismatch: 'the gitdir differs'
+      })
+      await gc.answerRecovery('n1', 'lock')
+      expect(toast).not.toHaveBeenCalled()
+    })
+
+    it('answering a notice asks main, then lists again; a refusal says why in a toast', async () => {
+      recoveryItems = [item({ announced: true })]
+      installApi()
+      const gc = useGcStore()
+      const toast = vi.spyOn(useUiStore(), 'pushToast')
+      await gc.init()
+      await vi.runAllTimersAsync()
+      await gc.answerRecovery('n1', 'dismiss')
+      expect(api().gcRecoveryAct).toHaveBeenCalledWith('n1', 'dismiss')
+      api().gcRecoveryAct.mockResolvedValueOnce({ ok: false, error: 'daemon gone' })
+      await gc.answerRecovery('n1', 'start')
+      expect(toast.mock.calls.at(-1)![0]).toMatchObject({
+        kind: 'danger',
+        description: 'daemon gone'
+      })
+    })
   })
 
   it('names the refusal in the toast when every refused item has the same reason', async () => {
@@ -505,7 +931,8 @@ describe('gc store', () => {
       'done',
       'opinion',
       'opinionDone',
-      'progress'
+      'progress',
+      'recovery'
     ])
   })
 })

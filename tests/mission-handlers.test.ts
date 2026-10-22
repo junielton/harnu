@@ -1011,6 +1011,101 @@ describe('mission_list', () => {
       errText(await handlers.mission_list({ folder: repo.main }, ctxFor(repo.main, [repo.main])))
     ).toMatch(/^FOLDER_NOT_ALLOWED/)
   })
+
+  // BUG-173 S1 (mission cue noise spec §3.1): one row per mission.id.
+  describe('one row per mission id', () => {
+    /** Copy `id` from `from` into `to`'s missions dir, overriding fields — a second clone's copy. */
+    async function copyMission(
+      from: string,
+      to: string,
+      id: string,
+      over: Partial<Mission>,
+      slug?: string
+    ): Promise<void> {
+      const { mission, raw } = await readMissionOnDisk(from, id)
+      const copy = { ...mission, ...over, ...(slug ? { slug } : {}) }
+      await fs.mkdir(missionsDir(to), { recursive: true })
+      await fs.writeFile(
+        path.join(missionsDir(to), `${copy.id}-${copy.slug}.md`),
+        buildMissionFileContent(copy, readMissionLog(raw)),
+        'utf8'
+      )
+    }
+
+    const noFolderCtx = (...roots: string[]): Record<string, unknown> => ({
+      folder: '',
+      folders: roots.map((p) => ({ path: p })),
+      denyFolders: [],
+      bridge: undefined
+    })
+
+    async function listRows(...roots: string[]): Promise<Array<Record<string, unknown>>> {
+      const res = await handlers.mission_list({}, noFolderCtx(...roots))
+      return payloadOf(res).missions as Array<Record<string, unknown>>
+    }
+
+    it('mission_list returns a mission once when two roots hold the same id', async () => {
+      const other = await fakeRepo()
+      const { missionId } = await createMission()
+      await copyMission(repo.main, other.main, missionId, {
+        folder: '/clone-b',
+        updatedAt: '2099-01-01T00:00:00.000Z'
+      })
+      const rows = await listRows(repo.main, other.main)
+      expect(rows.map((r) => r.id)).toEqual([missionId])
+      // `folder` is whatever the winning (newest) file says, not the root that was read.
+      expect(rows[0].folder).toBe('/clone-b')
+      expect(rows[0].updatedAt).toBe('2099-01-01T00:00:00.000Z')
+    })
+
+    it("mission_list reports the newest copy's status, closed included", async () => {
+      const other = await fakeRepo()
+      const { missionId } = await createMission()
+      await copyMission(repo.main, other.main, missionId, {
+        status: 'delivered',
+        updatedAt: '2099-01-01T00:00:00.000Z'
+      })
+      const lone = await createMission({ title: 'Already closed' }, other.main)
+      await setStoredStatus(other.main, lone.missionId, 'closed')
+      const rows = await listRows(repo.main, other.main)
+      expect(Object.fromEntries(rows.map((r) => [r.id, r.status]))).toEqual({
+        [missionId]: 'delivered',
+        [lone.missionId]: 'closed'
+      })
+    })
+
+    it('a closed winner hides an older active twin in mission_list', async () => {
+      const other = await fakeRepo()
+      const { missionId } = await createMission()
+      await copyMission(repo.main, other.main, missionId, {
+        status: 'closed',
+        updatedAt: '2099-01-01T00:00:00.000Z'
+      })
+      const rows = await listRows(repo.main, other.main)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ id: missionId, status: 'closed' })
+    })
+
+    it('a repeated id inside one root is listed once', async () => {
+      const { missionId } = await createMission()
+      // A second file for the same id under another slug (a hand-copied mission).
+      await copyMission(repo.main, repo.main, missionId, {}, 'duplicate-copy')
+      expect(await missionFiles(repo.main)).toHaveLength(2)
+      const rows = await listRows(repo.main)
+      expect(rows.map((r) => r.id)).toEqual([missionId])
+    })
+
+    it("mission_list's ACK has no shadowed field", async () => {
+      const other = await fakeRepo()
+      const { missionId } = await createMission()
+      await copyMission(repo.main, other.main, missionId, {
+        updatedAt: '2099-01-01T00:00:00.000Z'
+      })
+      const p = payloadOf(await handlers.mission_list({}, noFolderCtx(repo.main, other.main)))
+      expect(Object.keys(p).sort()).toEqual(['missions', 'ok', 'op'])
+      expect(p).not.toHaveProperty('shadowed')
+    })
+  })
 })
 
 // ---- Task 3 — step mutation verbs --------------------------------------------

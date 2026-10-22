@@ -3,6 +3,7 @@
 Settings is organized into tabs. Most are covered in depth on their own pages — this page is the map, plus the tabs that don't have a home elsewhere.
 
 - **General** — app-wide preferences that don't fit a more specific tab.
+- **Keyboard Shortcuts** — covered below.
 - **Appearance** — pick a theme. Harnu ships 13: nine dark (including Tokyo Night, Dracula, Catppuccin Mocha, One Dark, GitHub Dark, Gruvbox Dark, Nord) and four light (Light, Catppuccin Latte, GitHub Light, Gruvbox Light), plus a Monospace theme. Your choice is remembered across restarts. A theme installed via an [extension](extensions.md) shows up in the same grid, marked with a small puzzle-piece badge.
 - **Startup** — your global [Claude Boot](claude-boot.md) defaults (model, effort, flags) applied to every session unless a folder or session overrides them.
 - **Claude config** — a focused editor for your global `~/.claude/settings.json`: the handful of settings Harnu understands (model, cleanup period, permission defaults, and a few others) get real form controls with Set/Default indicators; anything else already in the file is still shown, just read-only, so an unfamiliar or newer setting is never silently dropped or overwritten.
@@ -33,6 +34,24 @@ Under the switch you may see the folder the mod is loaded from (with a **Reveal 
 
 The per-session state is in the hover preview and in the [System Monitor](system-monitor.md#what-you-see). If a session says `legacy` and you want to know why, see [Troubleshooting](troubleshooting.md#harnu-mod-legacy).
 
+## Keyboard Shortcuts
+
+**Settings → Keyboard Shortcuts** is a point-and-click editor for the same `keybindings.json` covered in [Sessions → Customizing shortcuts](sessions.md#customizing-shortcuts) — you never have to open the file by hand. Open it straight on this tab with `Cmd/Ctrl+Alt+S` or **View → Keyboard Shortcuts…** (on macOS, **Harnu → Keyboard Shortcuts…**, right after Settings…).
+
+- One row per rebindable action, showing its current chord. The Topbar's folder actions (roadmap board, PR Stack, open in file manager, open in VS Code, pull requests on GitHub, Browse files, open a terminal) are listed too, along with the usage overview; they ship with no chord and read **Set a shortcut…** until you give them one. Settings itself opens with `Cmd/Ctrl+,`, which you can rebind here too. **Click the chord, then press the keys you want.** `Esc` cancels the recording (Settings stays open), `Backspace` unbinds the action.
+- **Find a shortcut fast.** The search box at the top takes either words or a key combo. Words match an action's name (in your app language), its chord or its id: `session`, `palette`, `sidebar`. A combo — anything with a `+` or a modifier, an F-key, `Esc`, or a Mac symbol like `⌘K` — lists exactly the actions on that chord, so `Ctrl+K` answers "what is on Ctrl+K?" (on Linux and Windows `Ctrl` and `Cmd` count as the same key). A single key name such as `delete` or `left` does both: it lists actions on that key _and_ actions whose name contains the word.
+- Rows are grouped under **Sessions, Sidebar, Folders, Views, Panes, Takeovers** and **App**; a group with nothing to show is hidden.
+- The **Unbound**, **Conflicts** and **Customized** chips under the search narrow the list to actions with no chord, actions sharing a chord with another one, or actions you changed. Each chip shows how many such actions exist in total; turn on several and they combine with each other and with the search. When nothing matches you'll see **No shortcut matches.**
+- Some combos can never fire for an action that has no native menu item: Shift plus a punctuation key (Harnu sees the shifted character instead, e.g. `<` for `Ctrl+Shift+,`), and on macOS Option plus a letter. The recorder refuses those, keeps the old chord, and says so under the row. A combo typed by hand into `keybindings.json` still loads.
+- **Reset** on a row drops your override and restores the built-in default; **Unbind** clears the chord entirely. A row already at its default hides **Reset** (nothing to reset) but still offers **Unbind** — unless it has no chord at all.
+- **Reset all** (top right) clears every override at once.
+- If two actions end up on the same chord, both get a **conflict** badge naming the other. The chord still fires once — the first-registered action wins and the other stays inert — so nothing breaks silently, but you'll want to rebind one.
+- Actions marked **not in terminal** have no native menu item, so a custom chord for them won't fire while the terminal pane has keyboard focus.
+- Five actions — quit, reload, toggle DevTools, fullscreen, and "Open keybindings.json" (`Cmd/Ctrl+Alt+K`) — are reserved and aren't listed. Session back/forward isn't listed either; it can't be rebound yet.
+- **Open keybindings.json** (top right, or **View → Open keybindings.json**, or `Cmd/Ctrl+Alt+K`) opens the raw file in a split-pane editor when you'd rather edit the JSON directly. It needs an active folder to open the pane in.
+
+Every edit writes `keybindings.json` immediately and applies live, so this pane and a hand-edited file always agree.
+
 ## Sidebar
 
 The **General** tab has a SIDEBAR section that controls how the folder/session list looks and behaves:
@@ -55,7 +74,7 @@ The alert lives in the other tab: **Settings → General**, in the **OS notifica
 
 ## Cleanup
 
-**Settings → Cleanup** is the one place that controls how Harnu cleans up after finished work. Every change saves as you make it, and the numbers you type are applied about half a second after you stop typing. If you type a value outside the allowed range, Harnu keeps the nearest allowed one and the field shows what it kept. The tab is the settings behind the [Cleanup](cleanup.md) screen, in four groups.
+**Settings → Cleanup** is the one place that controls how Harnu cleans up after finished work. Every change saves as you make it, and the numbers you type are applied about half a second after you stop typing. If you type a value outside the allowed range, Harnu keeps the nearest allowed one and the field shows what it kept. The tab is the settings behind the [Cleanup](cleanup.md) screen, in five groups.
 
 **Autopilot**
 
@@ -77,6 +96,13 @@ The autopilot rides the background scan, so it needs **Automatic background scan
 | Build cache max age                    | 7 days  | Build cache older than this is pruned (1 - 365 days).                                  |
 
 **Docker volumes are always kept.** There is no switch for this: cleaning a worktree, by hand or automatically, never removes its volumes. Once the worktree is gone they appear in Needs review as orphan volumes, with their size and compose project, and you remove each one yourself. A removed volume and its data cannot be restored.
+
+**Archives** (what every removal leaves behind in git; see [Archives and the trash](cleanup.md#archives-and-the-trash--cleanup-cleans-its-own-leftovers))
+
+| Setting                       | Default | What it does                                                                                                                                                                                       |
+| ----------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Keep archives for             | 30 days | Archive refs older than this are offered for deletion on the Cleanup screen, after you confirm the list (1 - 3650 days).                                                                           |
+| Expire archives automatically | off     | On: the autopilot itself deletes the archive refs older than the setting above. A deleted archive cannot be restored, and git frees the space on its next gc (Harnu never runs `git gc` for this). |
 
 **Never clean**
 

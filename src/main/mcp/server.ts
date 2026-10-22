@@ -71,12 +71,16 @@ import {
   writeMcpEnabled,
   readMcpAsk,
   writeMcpAsk,
+  readAgentTerminalWrites,
+  writeAgentTerminalWrites,
+  readAgentBrowserWrites,
+  writeAgentBrowserWrites,
   readMcpAutoRegister,
   writeMcpAutoRegister
 } from './prefs'
 import { appendAudit, getAuditLog, serializeForPersist, parseFromPersist } from './audit-log'
 import { withDeadline, TOOL_CALL_DEADLINE_MS, createDeadlineFlag } from './deadline'
-import { deriveCallId, beginCall, completeCall, wasRecentlyFailed } from './idempotency-registry'
+import { callIdFor, beginCall, completeCall, wasRecentlyFailed } from './idempotency-registry'
 import {
   MCP_SERVER_NAME,
   buildHarnuMcpConfig,
@@ -121,6 +125,30 @@ import type { FolderEntry } from '../folder-model'
 import { scanFolders } from '../claude-reader'
 import { readUserProjects, setUserProjectInheritAgentControl } from '../user-projects'
 import { setMcpArgsProvider } from '../pty'
+import { gateTerminalOp, type TerminalGateState } from '../terminal-gate-core'
+import { resolveTerminalGate } from '../terminal-gate'
+import {
+  browserLeases,
+  browserRegistry,
+  getBrowserHost,
+  noteMcpPort,
+  resolveBrowserGate,
+  stopAllBrowserCaptures,
+  revokeAllBrowserLeases,
+  browserClassifyOptions
+} from '../browser/browser-service'
+import { browserWriteQueue } from '../browser/write-queue'
+import { leaseConfirmPrompt } from '../browser/lease-confirm-text'
+import { classifyOrigin, hostOf } from '../browser/origin-class'
+import { gateBrowserOpDetailed, isBrowserOp, type BrowserGateInput } from '../browser/access'
+import { terminalLeases } from '../terminal-lease'
+import { terminalRegistry } from '../terminal-registry'
+import { auditField } from '../terminal-keys'
+import { terminalWriteQueue } from '../terminal-write-queue'
+import { escapeForConfirm, shortPaneId } from '../terminal-confirm-text'
+import { scrubTerminalText } from '../scrub-terminal'
+import { shapeDenial } from './deny-hint'
+import { isFolderDenied } from './permission-core'
 import { previewWorktreeCommands, worktreeInheritOfferForTarget } from '../worktree-ipc'
 import { writeWorktreeInheritControl } from './worktree-inherit-prefs'
 
@@ -481,6 +509,34 @@ async function buildConfirmDisclosure(
         commands: []
       }
     }
+    case 'send_terminal': {
+      // T474 B6 (spec §6.3): what the operator needs to decide — which terminal, where, and the
+      // exact first send. Everything about the terminal comes from the registry, never from the
+      // agent's arguments, and the program-set title (untrusted, R14) is NEVER shown. The agent's
+      // text is shown IN FULL, with invisible and direction-changing characters spelled out, and
+      // with its length, so a padded or reordered line cannot pass for something shorter.
+      const terminalId = strField(args, 'terminalId') ?? ''
+      const rec = terminalRegistry.get(terminalId)
+      const home = os.homedir()
+      const tilde = (p: string): string =>
+        p === home || p.startsWith(home + path.sep) ? '~' + p.slice(home.length) : p
+      const keys = Array.isArray(args.keys) ? (args.keys as unknown[]).map(String) : []
+      const input = typeof args.input === 'string' ? args.input : ''
+      const where = rec ? rec.folder : folder
+      const prompt =
+        `An agent wants to type into a terminal.\n\n` +
+        `Terminal: ${path.basename(where) || where} (${escapeForConfirm(shortPaneId(terminalId))})\n` +
+        `Working directory: ${tilde(where)}\n` +
+        `Folder: ${tilde(folder)}\n\n` +
+        `The first thing it would type:\n` +
+        `  Text (${[...input].length} characters): ${input === '' ? '(none)' : `"${escapeForConfirm(input)}"`}\n` +
+        `  Keys (${keys.length}): ${keys.length === 0 ? '(none)' : keys.map(escapeForConfirm).join(', ')}\n\n` +
+        `Allow lets agents type into this terminal until it has had no writes for 10 minutes. ` +
+        `The permission belongs to the terminal, not to the agent that asked. ` +
+        `Nothing is typed when you Allow: the agent is told to look at the screen and send again. ` +
+        `Deny blocks sends to this terminal for 5 minutes.`
+      return { prompt, permissionMode: 'default', nonDefaultFlags: [], commands: [] }
+    }
     case 'adopt_folder': {
       // Reachable only in the `ask` mode (this verb runs free by default). The copy
       // must not promise a second gate that no longer exists: pinning IS the grant
@@ -799,7 +855,7 @@ async function folderSettingsAllowsVerb(folder: string, op: McpOp): Promise<bool
  *  - A timed-out mutation writes a distinct `:timeout` shadow entry instead
  *    of the success entry it would otherwise never reach (AC4).
  */
-async function actuate(
+export async function actuate(
   def: McpToolDef,
   args: Record<string, unknown>,
   ctx: ToolHandlerCtx
@@ -808,9 +864,10 @@ async function actuate(
 
   // Reads never mutate, so they never derive a callId and skip the registry
   // entirely — dedup only ever applies to a MUTATING verb's retry.
-  let callId: string | undefined
-  if (def.mutates) {
-    callId = deriveCallId(def.op, ctx.folder, args, strField(args, 'idempotencyKey'))
+  // T474: a verb whose effect is "make another one" (`spawn_terminal`) opts out — a replay
+  // would hand back the ACK of a terminal that may be long dead.
+  const callId = callIdFor(def, ctx.folder, args)
+  if (callId) {
     // Peek BEFORE beginCall — beginCall re-arms a live 'failed' entry to
     // 'in-flight' as a side effect, so the "this is a retry-after-failure"
     // signal only exists to read right now.
@@ -863,11 +920,14 @@ async function actuate(
     const tool = def.name
     const folder = ctx.folder
     const op = def.op
+    // `callId` is the idempotency handle, NOT the "this is a mutation" signal: a verb that opts
+    // out of replay (`replayable: false`) has no callId but still owes its late-completion trail.
+    const mutates = def.mutates
     work
       .then((value) => {
-        if (!callId) return
+        if (!mutates) return
         const ok = ackIsSuccess(value)
-        completeCall(callId, ok ? 'applied' : 'failed', value)
+        if (callId) completeCall(callId, ok ? 'applied' : 'failed', value)
         appendAudit({
           ts: Date.now(),
           tool,
@@ -888,9 +948,9 @@ async function actuate(
       })
       .catch((e) => {
         console.debug(`[mcp] ${tool} rejected after TOOL_TIMEOUT:`, e)
-        if (!callId) return
+        if (!mutates) return
         const failResult = errorResult(`late failure: ${(e as Error).message}`)
-        completeCall(callId, 'failed', failResult)
+        if (callId) completeCall(callId, 'failed', failResult)
         appendAudit({
           ts: Date.now(),
           tool,
@@ -915,7 +975,7 @@ async function actuate(
     // AC4: a distinct timeout shadow entry so the operator sees the ambiguity
     // rather than a false success — the outer grant/silent-allow branches'
     // success-only pushShadowEntry never runs for this non-success ACK.
-    if (callId) {
+    if (def.mutates) {
       pushShadowEntry({
         sessionId: strField(args, 'sessionId') ?? '',
         event: `mcp:${def.op}:timeout`,
@@ -930,8 +990,47 @@ async function actuate(
   return raced.value
 }
 
-async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallToolResult> {
+/** The acting browser verbs that queue behind each other per pane (spec §6.4). */
+const QUEUED_BROWSER_OPS: ReadonlySet<string> = new Set([
+  'browser_eval',
+  'browser_click',
+  'browser_type',
+  'browser_fill',
+  'browser_press',
+  'browser_emulate',
+  'browser_upload',
+  'browser_download'
+])
+
+/**
+ * The whole per-call pipeline: policy snapshot → gate folder → plan → audit → actuate/confirm.
+ * Exported so a test can drive a verb through the REAL gate (the gate-folder resolution above
+ * `planToolCall` is where a read of a blocked folder is stopped).
+ */
+export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallToolResult> {
   const args = asRecord(rawArgs)
+  // T482 F1: a send's place in its terminal's line is decided HERE, synchronously, before the
+  // first `await` of the pipeline (prefs, project file, folder scan). Taken later, two sends could
+  // swap order depending on which one's I/O finished first.
+  const sendTerminalId = def.op === 'send_terminal' ? strField(args, 'terminalId') : undefined
+  if (sendTerminalId) terminalWriteQueue.reserve(args, sendTerminalId)
+  // T571 (spec §6.4): the same for an acting browser verb and its pane's line.
+  const browserPaneId = QUEUED_BROWSER_OPS.has(def.op) ? strField(args, 'paneId') : undefined
+  if (browserPaneId) browserWriteQueue.reserve(args, browserPaneId)
+  try {
+    return await runToolCall(def, args)
+  } finally {
+    browserWriteQueue.drop(args)
+    // A call that never reached the handler (refused, parked for a confirm) must not hold the
+    // sends behind it. A no-op once the handler claimed the place.
+    terminalWriteQueue.drop(args)
+  }
+}
+
+async function runToolCall(
+  def: McpToolDef,
+  args: Record<string, unknown>
+): Promise<CallToolResult> {
   const now = Date.now()
 
   // T63/BUG-10: validate + normalize create_session's bootOverride at the border,
@@ -967,6 +1066,8 @@ async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallTo
   // id, so its owning folder is resolved from the scan (else the transcript gate
   // fails CLOSED with FOLDER_NOT_ALLOWED).
   let gateFolder = strField(args, 'folder')
+  let terminal: TerminalGateState | undefined
+  let browser: BrowserGateInput | undefined
   if (def.op === 'get_session') {
     gateFolder = findSessionFolder(folders, strField(args, 'sessionId') ?? '')
   } else if (
@@ -984,6 +1085,27 @@ async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallTo
     // session the SAME way `message_session` targets a recipient — the TARGET's
     // owning folder is the anchor, never a caller-supplied one.
     gateFolder = resolveSessionGateFolder(folders, strField(args, 'sessionId') ?? '')
+  } else if (def.op === 'read_terminal' || def.op === 'send_terminal') {
+    // T474 B3/B4/B5: the verb carries only a `terminalId`, so the gate anchor is the terminal's OWN
+    // folder, from the registry, and its access state is resolved HERE so `planToolCall` can
+    // refuse at plan level (spec §6.2). An unknown id leaves the folder undefined and resolves
+    // to a state the gate answers `TERMINAL_NOT_FOUND`.
+    const resolved = await resolveTerminalGate(strField(args, 'terminalId') ?? '', projectsFile)
+    gateFolder = resolved.rec?.folder
+    terminal = resolved.state
+  } else if (isBrowserOp(def.op)) {
+    // T564 U1: the pane-addressed browser verbs carry only a `paneId`, so the gate anchor is the pane's
+    // OWN folder, from the registry, and its access state is resolved HERE so `planToolCall` can refuse at
+    // plan level (spec §6.3). `browser_open` and `browser_list` carry a `folder` of their own and address
+    // no pane; they still need the kill-switch, which rides in the same state.
+    const resolved = await resolveBrowserGate(
+      def.op === 'browser_open' || def.op === 'browser_list' ? undefined : strField(args, 'paneId'),
+      projectsFile,
+      strField(args, 'folder'),
+      def.op
+    )
+    if (def.op !== 'browser_open' && def.op !== 'browser_list') gateFolder = resolved.folder
+    browser = resolved.input
   } else if (def.op === 'update_worker' || def.op === 'delete_worker') {
     // T316: same reasoning as the block above, applied to a worker instead of
     // a session — the verb carries only `id`, so the gate anchor is the
@@ -1000,10 +1122,17 @@ async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallTo
     now,
     grants: snapshotGrants(), // T44 S5: live mission grants may auto-allow in scope
     inheritOnce: snapshotInheritOnce(), // T72: worktrees allowed "Only this" this session
-    homeDir: os.homedir()
+    homeDir: os.homedir(),
+    ...(terminal ? { terminal } : {}), // T474 B4: the terminal a terminal verb addresses
+    ...(browser ? { browser } : {}) // T564 U1: the browser pane a browser verb addresses
   })
   appendAudit(plan.auditRecord)
   auditPersister.schedule()
+  // A send that is not going ahead now (denied, or waiting on the operator) has no place in line.
+  if (!plan.shouldDispatch) {
+    terminalWriteQueue.drop(args)
+    browserWriteQueue.drop(args)
+  }
 
   // Reads: dispatch-on-allow. A dispatched MUTATION (grant-allowed T44 S5, or
   // inherit-once-allowed T72) is handled by the branches below, so gate this on the
@@ -1075,6 +1204,64 @@ async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallTo
     return parkMutationConfirm(def, args, folder)
   }
 
+  // T474 B6: a send that the operator's write lease let through (the ask-mode path — in free mode
+  // the silent-allow branch below carries a leased send and the audit row says `LEASE` too).
+  // Actuate directly: no budget (this is not a grant) and no confirm (the earlier Allow created
+  // the lease). It must be its own branch — an `allow` carrying none of the other markers would
+  // fall through to `steerError`. Shadow-logged so the operator sees what ran under the lease.
+  if (plan.shouldDispatch && plan.leaseAllow) {
+    const folder = gateFolder ?? ''
+    const res = await actuate(def, args, {
+      folder,
+      folders,
+      denyFolders: policy.denyFolders ?? [],
+      bridge: deps?.bridge,
+      // The handler re-checks the lease right before it writes, whatever the terminal's origin.
+      opts: { viaLease: true }
+    })
+    // Only a send that actually happened is logged as running under the lease.
+    if (ackIsSuccess(res)) {
+      pushShadowEntry({
+        // `ownerSessionId` is optional on the verb: fall back to who the terminal is connected to.
+        sessionId:
+          strField(args, 'ownerSessionId') ??
+          terminalRegistry.get(plan.leaseAllow.terminalId)?.ownerSessionId ??
+          '',
+        event: `mcp:${def.op}`,
+        by: 'lease',
+        summary: `${def.op} ${auditField(plan.leaseAllow.terminalId)} (write lease)`,
+        ts: Date.now()
+      })
+    }
+    return res
+  }
+
+  // T571 (spec §7.1): a browser call that the operator's lease let through in `ask` mode (in free mode the
+  // silent-allow branch below carries a leased call and the audit row says `LEASE` too). Actuate directly: no
+  // budget (this is not a grant) and no confirm (the earlier Allow created the lease).
+  if (plan.shouldDispatch && plan.browserLeaseAllow) {
+    const folder = gateFolder ?? ''
+    const res = await actuate(def, args, {
+      folder,
+      folders,
+      denyFolders: policy.denyFolders ?? [],
+      bridge: deps?.bridge
+    })
+    if (ackIsSuccess(res)) {
+      pushShadowEntry({
+        sessionId:
+          strField(args, 'ownerSessionId') ??
+          browserRegistry.get(plan.browserLeaseAllow.paneId)?.ownerSessionId ??
+          '',
+        event: `mcp:${def.op}`,
+        by: 'lease',
+        summary: `${def.op} ${auditField(plan.browserLeaseAllow.paneId)} (browser lease)`,
+        ts: Date.now()
+      })
+    }
+    return res
+  }
+
   // T84/T96: a `silentAllowInAgentFolder` verb (open_file's read-only viewer, a
   // board verb's `.md` write) in an agent-allowed folder — silent allow (no
   // per-call confirm; the folder allowlist already permits strictly stronger
@@ -1089,11 +1276,19 @@ async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallTo
       denyFolders: policy.denyFolders ?? [],
       bridge: deps?.bridge
     })
+    // A send to a leased operator terminal rides this path in free mode; its audit row says
+    // LEASE, so the shadow entry must too.
+    const underLease = plan.auditRecord.result.startsWith('LEASE:')
     pushShadowEntry({
-      sessionId: strField(args, 'sessionId') ?? '',
+      sessionId:
+        strField(args, 'sessionId') ??
+        (underLease ? strField(args, 'ownerSessionId') : undefined) ??
+        '',
       event: `mcp:${def.op}`,
-      by: 'agent-allowed',
-      summary: `${def.op} ${folder} (agent-allowed folder)`,
+      by: underLease ? 'lease' : 'agent-allowed',
+      summary: underLease
+        ? `${def.op} ${auditField(strField(args, 'terminalId') ?? strField(args, 'paneId') ?? '')} (write lease)`
+        : `${def.op} ${folder} (agent-allowed folder)`,
       ts: Date.now()
     })
     return res
@@ -1146,7 +1341,13 @@ async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallTo
   // a discovery confirm carries `inheritDiscovery` so the park builds the contextual
   // disclosure and actuates the operator's scope choice.
   if (plan.shouldConfirm) {
-    return parkMutationConfirm(def, args, gateFolder ?? '', plan.inheritDiscovery)
+    return parkMutationConfirm(
+      def,
+      args,
+      gateFolder ?? '',
+      plan.inheritDiscovery,
+      plan.browserLeaseConfirm
+    )
   }
 
   // Denied / malformed / unknown-tool: already audited above. Gate denials with
@@ -1165,7 +1366,9 @@ async function parkMutationConfirm(
   args: Record<string, unknown>,
   folder: string,
   /** T72: set when this is an inheritance-discovery confirm (see planToolCall). */
-  inheritDiscovery?: { repoRoot: string; worktree: string }
+  inheritDiscovery?: { repoRoot: string; worktree: string },
+  /** T571: set when this confirm is a browser LEASE confirm: an Allow performs nothing and grants the lease. */
+  browserLease?: { paneId: string }
 ): Promise<CallToolResult> {
   if (!deps) return errorResult('NOT_READY')
   const disclosure: ConfirmDisclosure = await buildConfirmDisclosure(
@@ -1174,6 +1377,7 @@ async function parkMutationConfirm(
     folder,
     inheritDiscovery
   )
+  if (browserLease) disclosure.prompt = await browserLeasePrompt(def.op, args, folder)
   // T93: offer "always allow this verb here" for an allowable mutation (excludes
   // plan_mission) on the normal confirm path — NOT the T72 discovery variant, which
   // owns its own scope selector. The checkbox defaults unchecked for the dangerous
@@ -1182,6 +1386,13 @@ async function parkMutationConfirm(
     disclosure.alwaysAllowOffer = true
     disclosure.alwaysAllowDefault = !def.dangerousAlwaysAllow
   }
+  // T474 F1: which shell the operator is being asked about, fixed at the moment of asking.
+  const parkedPtyId =
+    def.op === 'send_terminal'
+      ? terminalRegistry.get(strField(args, 'terminalId') ?? '')?.ptyId
+      : undefined
+  // T571: which view the operator is being asked about, fixed at the moment of asking.
+  const parkedViewToken = browserLease ? getBrowserHost().viewToken(browserLease.paneId) : undefined
   const parked = deps.confirm.park(disclosure)
 
   // Immediate fail-closed (no operator surface / saturated) — nothing parked.
@@ -1230,6 +1441,13 @@ async function parkMutationConfirm(
   // privilege; a surface that could not show the selector NEVER turns on the global
   // capability.
   const actuateAllow = async (outcome: ConfirmOutcome): Promise<CallToolResult> => {
+    // T474 B6 (spec §6.3): for a keystroke verb an Allow GRANTS the lease and never types the call
+    // that asked — on the parked path that call may be minutes old, and its keys would land on
+    // whatever the screen shows by then. The agent is told to look and send again.
+    if (def.op === 'send_terminal') return grantTerminalLease(args, folder, parkedPtyId)
+    // T571 (spec §7.1): for a browser lease row an Allow GRANTS the lease and never performs the call that asked.
+    if (browserLease)
+      return grantBrowserLease(def.op, args, folder, browserLease.paneId, parkedViewToken)
     if (inheritDiscovery) {
       await applyInheritDiscoveryScope(outcome.inheritScope ?? 'once', inheritDiscovery)
     }
@@ -1253,6 +1471,12 @@ async function parkMutationConfirm(
   if (raced !== 'PENDING') {
     if (raced.verdict !== 'allow') {
       auditConfirmDeny(def.name, folder, raced.reason)
+      if (def.op === 'send_terminal' && raced.reason === 'RESPONDED') {
+        return denyTerminalWrites(args, folder)
+      }
+      if (browserLease && raced.reason === 'RESPONDED') {
+        return denyBrowserWrites(browserLease.paneId, folder)
+      }
       return errorResult(`denied by operator (${raced.reason})`)
     }
     return actuateAllow(raced)
@@ -1274,6 +1498,14 @@ async function parkMutationConfirm(
     } else {
       mapped = outcomeToStatus(outcome)
       auditConfirmDeny(def.name, folder, outcome.reason)
+      if (def.op === 'send_terminal' && outcome.reason === 'RESPONDED') {
+        denyTerminalWrites(args, folder)
+        mapped = { status: 'denied', reason: 'TERMINAL_WRITE_DENIED' }
+      }
+      if (browserLease && outcome.reason === 'RESPONDED') {
+        denyBrowserWrites(browserLease.paneId, folder)
+        mapped = { status: 'denied', reason: 'BROWSER_WRITE_DENIED' }
+      }
     }
     stashApproval(parked.id, { ...mapped, tool: def.name, folder, ts: Date.now() })
   })
@@ -1281,7 +1513,13 @@ async function parkMutationConfirm(
     status: 'pending',
     approvalId: parked.id,
     message:
-      'Parked in the Approval Inbox — the operator was away. It will actuate when they Allow.',
+      def.op === 'send_terminal'
+        ? // Spec §6.3: the generic text promises the call will run, which is exactly what a
+          // keystroke verb must never do after a delay.
+          'Parked in the Approval Inbox. Nothing will be typed when they Allow — an Allow only grants typing in this terminal; you will then get TERMINAL_APPROVED_RESEND and must send again.'
+        : browserLease
+          ? 'Parked in the Approval Inbox. Nothing will be done when they Allow — an Allow only grants a lease on this pane; you will then get BROWSER_APPROVED_RESEND and must call again.'
+          : 'Parked in the Approval Inbox — the operator was away. It will actuate when they Allow.',
     nextActions: [
       {
         do: `call get_approval({ approvalId: "${parked.id}" }) to poll the operator's decision`,
@@ -1289,6 +1527,184 @@ async function parkMutationConfirm(
       }
     ]
   })
+}
+
+/**
+ * T474 B6: the operator Allowed typing into a terminal. Grant the lease and tell the agent to look
+ * at the screen and send again — nothing is typed here. The state is judged again FIRST: the
+ * confirm may have sat parked while the terminal ended, was disconnected, or its folder was
+ * blocked, and an Allow must never mint a lease the gate would refuse (a lease that outlived a
+ * block would come back to life when the folder is unblocked).
+ */
+async function grantTerminalLease(
+  args: Record<string, unknown>,
+  folder: string,
+  parkedPtyId: string | undefined
+): Promise<CallToolResult> {
+  const terminalId = strField(args, 'terminalId') ?? ''
+  const { rec, state } = await resolveTerminalGate(terminalId)
+  const refusal = gateTerminalOp('send_terminal', state)
+  if (refusal || !rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', folder)
+  // The operator answered about ONE shell. If the id now names a different process (a pane
+  // restored under the same id), that Allow says nothing about the new one.
+  if (parkedPtyId === undefined || rec.ptyId !== parkedPtyId) {
+    return steerError('TERMINAL_EXITED', folder)
+  }
+  const denyFolders = (await readUserProjects()).projects
+    .filter((p) => p.agentDenied === true)
+    .map((p) => p.path)
+  if (isFolderDenied(rec.folder, denyFolders, os.homedir())) {
+    return steerError('FOLDER_NOT_ALLOWED', folder)
+  }
+  terminalLeases.grant(terminalId, rec.folder, rec.ptyId)
+  appendAudit({
+    ts: Date.now(),
+    tool: 'send_terminal',
+    folder,
+    verdict: 'allow',
+    disclosedPayloadSummary: 'none',
+    result: `LEASE_GRANTED: ${auditField(terminalId)}`
+  })
+  auditPersister.schedule()
+  pushShadowEntry({
+    sessionId: strField(args, 'ownerSessionId') ?? '',
+    event: 'mcp:send_terminal',
+    by: 'operator-allow',
+    summary: `send_terminal ${auditField(terminalId)} (write lease granted; nothing typed)`,
+    ts: Date.now()
+  })
+  const denial = shapeDenial('TERMINAL_APPROVED_RESEND', { folder })
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ ok: false, ...denial }) }],
+    isError: true
+  }
+}
+
+/**
+ * T571: the disclosure text of a browser lease confirm, built from the registry and the live page, never from the
+ * agent's arguments. A `click` or `type` target is resolved to its role and name through the pane's own ref table.
+ */
+async function browserLeasePrompt(
+  op: string,
+  args: Record<string, unknown>,
+  folder: string
+): Promise<string> {
+  const paneId = strField(args, 'paneId') ?? ''
+  const rec = browserRegistry.get(paneId)
+  const host = getBrowserHost()
+  const live = host.info(paneId)
+  const home = os.homedir()
+  const tilde = (p: string): string =>
+    p === home || p.startsWith(home + path.sep) ? '~' + p.slice(home.length) : p
+  let target: { role: string; name: string } | null = null
+  const ref = strField(args, 'ref')
+  const readers = host.readers(paneId)
+  if (ref && readers) {
+    const r = readers.refs.resolve(ref)
+    if (r.ok) {
+      try {
+        const res = (await host.cdp(paneId, 'Accessibility.getPartialAXTree', {
+          backendNodeId: r.backendNodeId,
+          fetchRelatives: false
+        })) as { nodes?: Array<{ role?: { value?: unknown }; name?: { value?: unknown } }> }
+        const n = res.nodes?.[0]
+        if (n) {
+          target = {
+            role: typeof n.role?.value === 'string' ? n.role.value : '',
+            name: typeof n.name?.value === 'string' ? n.name.value : ''
+          }
+        }
+      } catch {
+        /* the pane is mid-navigation: the prompt names the ref instead */
+      }
+    }
+  }
+  return leaseConfirmPrompt({
+    op,
+    args,
+    paneName: rec?.name ?? paneId,
+    shortPaneId: paneId.slice(0, 10),
+    openedBy: rec?.openedBy ?? 'operator',
+    host: hostOf(live?.url ?? ''),
+    originClass: classifyOrigin(live?.url ?? '', browserClassifyOptions(rec?.folder ?? folder)),
+    folder: tilde(rec?.folder ?? folder),
+    target,
+    // The audit's own scrubber, so the confirm and the log never differ.
+    scrub: (text) => scrubTerminalText(text, home)
+  })
+}
+
+/**
+ * T571 (spec §7.1): the operator Allowed driving a browser pane. Grant the lease and tell the agent to look at the
+ * page and call again — nothing is done here. The state is judged again FIRST: the confirm may have sat parked
+ * while the pane closed, was disconnected, or its folder was blocked, and an Allow must never mint a lease the
+ * gate would refuse.
+ */
+async function grantBrowserLease(
+  op: McpOp,
+  args: Record<string, unknown>,
+  folder: string,
+  paneId: string,
+  parkedViewToken: string | undefined
+): Promise<CallToolResult> {
+  const resolved = await resolveBrowserGate(paneId, undefined, undefined, op)
+  const refusal =
+    isBrowserOp(op) && resolved.input.pane
+      ? gateBrowserOpDetailed(op, { ...resolved.input })
+      : { reason: 'PANE_NOT_FOUND' as const }
+  if (refusal) return steerError(refusal.reason, folder)
+  const rec = browserRegistry.get(paneId)
+  const token = getBrowserHost().viewToken(paneId)
+  // The operator answered about ONE view. If the id now names a different page (restored under the same id),
+  // that Allow says nothing about the new one.
+  if (!rec || token === undefined || parkedViewToken === undefined) {
+    return steerError('PANE_NOT_FOUND', folder)
+  }
+  if (token.split('|')[0] !== parkedViewToken.split('|')[0])
+    return steerError('PANE_NOT_FOUND', folder)
+  // Same view, other site: the Allow was shown for the page the pane was on when it asked (spec §7.1, amended
+  // 2026-10-22), and says nothing about this one.
+  if (token !== parkedViewToken) return steerError('BROWSER_LEASE_ENDED', folder)
+  const denyFolders = (await readUserProjects()).projects
+    .filter((p) => p.agentDenied === true)
+    .map((p) => p.path)
+  if (isFolderDenied(rec.folder, denyFolders, os.homedir())) {
+    return steerError('FOLDER_NOT_ALLOWED', folder)
+  }
+  browserLeases.grant(paneId, rec.folder, token)
+  appendAudit({
+    ts: Date.now(),
+    tool: op,
+    folder,
+    verdict: 'allow',
+    disclosedPayloadSummary: 'none',
+    result: `LEASE_GRANTED: ${auditField(paneId)}`
+  })
+  auditPersister.schedule()
+  pushShadowEntry({
+    sessionId: strField(args, 'ownerSessionId') ?? rec.ownerSessionId ?? '',
+    event: `mcp:${op}`,
+    by: 'operator-allow',
+    summary: `${op} ${auditField(paneId)} (browser lease granted; nothing done)`,
+    ts: Date.now()
+  })
+  const denial = shapeDenial('BROWSER_APPROVED_RESEND', { folder })
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ ok: false, ...denial }) }],
+    isError: true
+  }
+}
+
+/** T571: the operator Denied driving a browser pane — start the cooldown, refuse the call. */
+function denyBrowserWrites(paneId: string, folder: string): CallToolResult {
+  browserLeases.deny(paneId)
+  return steerError('BROWSER_WRITE_DENIED', folder)
+}
+
+/** T474 B6: the operator Denied typing into a terminal — start the cooldown, refuse the call. */
+function denyTerminalWrites(args: Record<string, unknown>, folder: string): CallToolResult {
+  terminalLeases.deny(strField(args, 'terminalId') ?? '')
+  return steerError('TERMINAL_WRITE_DENIED', folder)
 }
 
 /**
@@ -1489,6 +1905,7 @@ async function start(): Promise<void> {
     boundPort = await listenOnce(server, 0)
   }
   listeningPort = boundPort
+  noteMcpPort(boundPort)
   httpServer = server
   portFallbackWarning = fellBack
     ? `Stored MCP port ${storedPort} was unavailable — bound a new ephemeral port instead. Sessions spawned before this restart cannot reach the control server; resume them to reconnect.`
@@ -1531,6 +1948,7 @@ async function stop(): Promise<void> {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
   listeningPort = 0
+  noteMcpPort(0)
   await deleteConfigFile()
 }
 
@@ -1636,6 +2054,28 @@ export async function registerMcpServer(
     return readMcpAsk()
   })
 
+  // T474 B7: the typing kill-switch ("Allow agents to type into terminals"). Default ON. Read
+  // live at every gate resolution, so it takes effect on the next call; turning it OFF also ends
+  // every write lease (spec §6.5). A send already in flight completes.
+  ipcMain.handle('mcp:agentTerminalWrites:get', () => readAgentTerminalWrites())
+  ipcMain.handle('mcp:agentTerminalWrites:set', async (_e, enabled: boolean) => {
+    await writeAgentTerminalWrites(enabled === true)
+    if (enabled !== true) terminalLeases.revokeAll()
+    return readAgentTerminalWrites()
+  })
+
+  // T564 U1: the browser kill-switch ("Allow agents to drive browser panes"). Default ON. Read live at every
+  // plan, so it takes effect on the next call; every write verb refuses BROWSER_WRITES_DISABLED while it is
+  // off, `list` and `close` keep working, and a verb already in flight completes (spec §7.4).
+  ipcMain.handle('mcp:agentBrowserWrites:get', () => readAgentBrowserWrites())
+  ipcMain.handle('mcp:agentBrowserWrites:set', async (_e, enabled: boolean) => {
+    await writeAgentBrowserWrites(enabled === true)
+    // Switching agent browser control off also ends every network capture an agent had running (spec §7.4).
+    if (enabled !== true) stopAllBrowserCaptures()
+    revokeAllBrowserLeases()
+    return readAgentBrowserWrites()
+  })
+
   // T44 S5: mission-grant management — list live grants + revoke.
   ipcMain.handle('mcp:grants:list', () => listGrants())
   ipcMain.handle('mcp:grants:revoke', (_e, { id }: { id: string }) => ({ ok: revokeGrant(id) }))
@@ -1659,6 +2099,8 @@ export async function registerMcpServer(
 export async function closeMcpServer(): Promise<void> {
   await stop()
   closeGrants() // T44 S5: a grant never outlives the server (in-memory only)
+  terminalLeases.revokeAll() // T474 B6: nor does a terminal write lease
+  browserLeases.revokeAll() // T571: nor does a browser lease
   closeInheritOnce() // T72: an inherit-once allow never outlives the server either
   deps = null
 }

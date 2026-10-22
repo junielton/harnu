@@ -7,7 +7,15 @@ import type { BrowserWindow } from 'electron'
 import type { Dirent } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, resolve as resolveLexically } from 'node:path'
-import { GcStepError, isMainCheckoutByPath, type GcOps, type GcStep } from './pipeline-core'
+import {
+  GcStepError,
+  isMainCheckoutByPath,
+  type CleanGitOptions,
+  type CleanGitOutcome,
+  type GcOps,
+  type GcStep
+} from './pipeline-core'
+import { remoteDeleteRefusal, type RemoteFacts, type RemotePolicy } from './gc-remote-delete'
 import {
   AS_GIVEN,
   canonicalPathKey,
@@ -18,10 +26,12 @@ import {
   type SessionPresence,
   type WorktreeBundle
 } from './bundle-core'
+import { gitOperationOf } from './gc-operation'
 import { cleanItem, type CleanStepId, type ExecutorDeps } from '../reaper/executor-core'
 import { dehydrateItem, type DehydrateDeps } from '../reaper/dehydrate-core'
 import {
   groupStacks,
+  isHolding,
   isInside,
   type InspectedContainer,
   type StackGroup
@@ -30,6 +40,15 @@ import type { DockerBatchResult } from '../containers/containers-actions'
 
 export interface GcShellDeps {
   executor: ExecutorDeps
+  /**
+   * Whether this run may delete a remote branch at all (AC-D5). Only an operator's own clean sets
+   * it (`withActor`); absent means no, so the autopilot cannot reach a remote by any path.
+   */
+  allowRemoteDelete?: boolean
+  /** The Reaper's remote-delete protections, read when a clean asks for it (never cached). */
+  remotePolicy?(): Promise<RemotePolicy>
+  /** What the remote holds of a branch right now (never cached); absent means nothing was verified. */
+  remoteFacts?(b: WorktreeBundle): Promise<RemoteFacts>
   dehydrate: DehydrateDeps
   docker: {
     stop(ids: string[]): Promise<DockerBatchResult>
@@ -70,6 +89,11 @@ export interface GcShellDeps {
    * Rejects when the walk cannot read a folder. The reprobe and the recheck refuse on any.
    */
   findForeignCheckouts(path: string): Promise<string[]>
+  /**
+   * The rebase or bisect in progress in a worktree, or null. Optional: the scan already recorded
+   * what it saw (`bundle.operation`), and this looks again right before the clean.
+   */
+  operationOf?(path: string): Promise<'rebase' | 'bisect' | 'am' | null>
 }
 
 /**
@@ -406,6 +430,22 @@ export function createGcOps(deps: GcShellDeps): GcOps {
   }
 
   /**
+   * The stacks running now. A stopped daemon is no answer for a bundle that had stacks at the scan
+   * (its containers come back with the daemon), but a bundle that had none has nothing a stopped
+   * daemon could be hiding from this clean: it reads as "no stacks", so one outage does not turn
+   * every unrelated clean into a refusal. Any other listing failure still throws.
+   */
+  const stacksNow = async (b: WorktreeBundle): Promise<{ stacks: StackGroup[] }> => {
+    try {
+      return await deps.listStacks()
+    } catch (err) {
+      const hadStacks = b.stackIds.length > 0 || b.sharedStackIds.length > 0
+      if (err instanceof DockerUnavailableError && !hadStacks) return { stacks: [] }
+      throw err
+    }
+  }
+
+  /**
    * Container ids of the named stacks, from a listing taken now rather than at scan time.
    * Throws before any docker call unless each stack passed a reprobe and still has exactly
    * the containers that reprobe saw, all inside its worktree: a container that started in
@@ -435,6 +475,24 @@ export function createGcOps(deps: GcShellDeps): GcOps {
     return [...new Set(out)]
   }
 
+  /**
+   * Why a requested remote delete may not run now (or null), with the facts it was judged on.
+   * Fails closed: a policy or a probe that cannot answer refuses.
+   */
+  async function remoteDecision(
+    b: WorktreeBundle
+  ): Promise<{ refusal: string | null; facts: RemoteFacts | null }> {
+    if (deps.allowRemoteDelete !== true) return { refusal: 'not-allowed-here', facts: null }
+    try {
+      const policy = await deps.remotePolicy?.()
+      if (!policy) return { refusal: 'policy-unknown', facts: null }
+      const facts = (await deps.remoteFacts?.(b)) ?? null
+      return { refusal: remoteDeleteRefusal(b, policy, facts), facts }
+    } catch {
+      return { refusal: 'unverified', facts: null }
+    }
+  }
+
   return {
     async reprobe(b: WorktreeBundle) {
       // Whatever an earlier pass vetted for these stacks no longer stands once we re-ask.
@@ -448,6 +506,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       } catch (err) {
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
       }
+      // The scan could not see Docker, so its "no stacks" proves nothing about this worktree: refuse
+      // before any probe, whatever Docker says now. A scan that saw Docker is what lifts it.
+      if (b.dockerBlind === true) return { ok: false, reason: 'scan-blind' }
       const item = b.item
       // cleanItem refuses a non-harvestable item at its first guard, after the docker steps
       // would already have run, so refuse here before anything destructive.
@@ -470,6 +531,10 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       }
       const path = item.path
       if (!path) return { ok: false, reason: 'changed-since-scan' }
+      // An unfinished rebase or bisect lives in the folder and would be trashed with it.
+      if (b.operation !== undefined || (deps.operationOf && (await deps.operationOf(path)))) {
+        return { ok: false, reason: 'operation-in-progress' }
+      }
       try {
         // Real paths before any comparison: a symlinked worktree may be the main checkout,
         // and one whose path cannot be read may be an alias of anything.
@@ -498,7 +563,10 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // Any running session refuses, even one the scan already saw idle: dehydrateItem
         // refuses a live worktree, which would halt the run after the docker steps.
         const presence = await deps.presenceOf(path)
-        if (presence !== 'none') {
+        // The one tolerated exception: an IDLE session that a guided action is about to close.
+        const closing =
+          b.assume?.closeSession === true && presence === 'open-idle' && b.session === 'open-idle'
+        if (presence !== 'none' && !closing) {
           const changed = sameState(presence) !== sameState(b.session)
           return { ok: false, reason: changed ? 'changed-since-scan' : 'session-open' }
         }
@@ -514,10 +582,16 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         if (foreign) return { ok: false, reason: foreign }
         // A worktree git cannot unregister (locked, no unique registration) would halt at the
         // trash, after the stack was stopped and the deps dropped: refuse before any of that.
-        if (!(await deps.executor.canUnregister(item.repoPath, path))) {
+        // With the unlock assumed (a guided dry run) the lock is waved but the rest of the question is
+        // still asked: a missing or ambiguous registration refuses just the same.
+        const registered =
+          b.assume?.unlock === true
+            ? await deps.executor.canUnregister(item.repoPath, path, { assumeUnlocked: true })
+            : await deps.executor.canUnregister(item.repoPath, path)
+        if (!registered) {
           return { ok: false, reason: 'cannot-unregister' }
         }
-        const { stacks } = await deps.listStacks()
+        const { stacks } = await stacksNow(b)
         // Every container folder on its real path. One that cannot be read and lies inside
         // the worktree or above it may run from it under another name.
         const canonical = await realPaths(folderPathsOf(stacks))
@@ -534,8 +608,14 @@ export function createGcOps(deps: GcShellDeps): GcOps {
           }
           pass.set(id, { root, ids: new Set(s.containers.map((c) => c.id)) })
         }
-        const fresh = stackIdsInside(stacks, root, platform, canonical)
-        const scanned = [...b.stackIds, ...b.sharedStackIds].sort()
+        // Shared stacks a guided action stops (or has stopped) are not a change of the stack set.
+        const stopping = new Set(b.assume?.stoppedStacks ?? [])
+        const fresh = stackIdsInside(stacks, root, platform, canonical).filter(
+          (id) => !stopping.has(id)
+        )
+        const scanned = [...b.stackIds, ...b.sharedStackIds]
+          .filter((id) => !stopping.has(id))
+          .sort()
         if (fresh.length !== scanned.length || fresh.some((id, i) => id !== scanned[i])) {
           return { ok: false, reason: 'changed-since-scan' }
         }
@@ -610,7 +690,7 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // reprobe, so any stack still touching the worktree would run from a folder about to
         // be trashed, whatever its id: a `compose up` during drop-deps brings the same project
         // id back. Same attribution as the scan and the reprobe.
-        const { stacks } = await deps.listStacks()
+        const { stacks } = await stacksNow(b)
         const canonical = await realPaths([path, ...folderPathsOf(stacks)])
         if (!canonical(path).resolved) return { ok: false, reason: 'path-unresolved' }
         const root = canonicalPathKey(canonical(path).path, platform)
@@ -618,7 +698,15 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         if (unresolvedNear(stacks, canonical, roots, platform)) {
           return { ok: false, reason: 'path-unresolved' }
         }
-        if (stackIdsInside(stacks, root, platform, canonical).length > 0) {
+        // A shared stack that was stopped for this removal stays listed (its containers still exist, but
+        // stopped): it is not "present" unless something started it again.
+        const stopped = new Set(b.assume?.stoppedStacks ?? [])
+        const present = stackIdsInside(stacks, root, platform, canonical).filter(
+          (id) =>
+            !stopped.has(id) ||
+            (stacks.find((s) => s.id === id)?.containers ?? []).some((c) => isHolding(c.state))
+        )
+        if (present.length > 0) {
           return { ok: false, reason: 'stack-present' }
         }
         // A worktree nested inside this one may be created mid-run too (delta 6, F1).
@@ -633,16 +721,56 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       }
     },
 
-    async cleanGit(b) {
-      // Remote branch deletion never happens through the cleanup pipeline, so the flag is a
-      // literal rather than anything read from settings or from the item.
-      const result = await cleanItem(b.item, { deleteRemote: false }, deps.executor)
-      if (result.ok) return
-      const failed = result.steps.find((s) => !s.ok)
-      throw new GcStepError(
-        failed ? STEP_OF[failed.id] : 'archive',
-        `${failed?.id ?? 'clean'}: ${failed?.error ?? 'failed'}`
+    async cleanGit(b, opts?: CleanGitOptions): Promise<CleanGitOutcome | void> {
+      // The remote branch goes only when the operator asked, this run is an operator's, and the
+      // protections still allow it right now. Anything else leaves the remote alone and says why.
+      const wants = opts?.deleteRemote === true
+      const decision = wants ? await remoteDecision(b) : null
+      const allowed = decision !== null && decision.refusal === null && decision.facts !== null
+      const result = await cleanItem(
+        b.item,
+        {
+          deleteRemote: allowed,
+          remoteFailureFatal: false,
+          // The branch's own upstream remote and its verified live tip, never an assumed origin.
+          ...(allowed
+            ? { remote: decision!.facts!.remote!, remoteSha: decision!.facts!.remoteSha }
+            : {})
+        },
+        deps.executor
       )
+      // What the folder held when it went to the OS trash, when the executor measured it.
+      const trashed = result.trashedBytes === undefined ? {} : { trashedBytes: result.trashedBytes }
+      if (!result.ok) {
+        const failed = result.steps.find((s) => !s.ok)
+        throw new GcStepError(
+          failed ? STEP_OF[failed.id] : 'archive',
+          `${failed?.id ?? 'clean'}: ${failed?.error ?? 'failed'}`,
+          trashed
+        )
+      }
+      if (!wants) return result.trashedBytes === undefined ? undefined : trashed
+      const branch = b.item.branch ?? ''
+      if (!allowed) {
+        return {
+          ...trashed,
+          remoteDelete: {
+            branch,
+            ok: false,
+            error: `refused: ${decision!.refusal ?? 'unverified'}`
+          }
+        }
+      }
+      const step = result.steps.find((s) => s.id === 'remote-delete')
+      if (!step || step.skipped) {
+        return {
+          ...trashed,
+          remoteDelete: { branch, ok: false, error: 'refused: no-remote-branch' }
+        }
+      }
+      return step.ok
+        ? { ...trashed, remoteDelete: { branch, ok: true } }
+        : { ...trashed, remoteDelete: { branch, ok: false, error: step.error ?? 'failed' } }
     }
   }
 }
@@ -662,6 +790,7 @@ export async function defaultGcShellDeps(
     import('node:fs/promises')
   ])
   const executor = buildDeps(getWindow)
+  const { readPrefs: readReaperPrefs } = await import('../reaper/prefs')
   // Every set member and the queried path on their real paths, so a session reached
   // through a symlink still counts for the worktree it runs in.
   const presenceOf = async (path: string): Promise<SessionPresence> => {
@@ -681,6 +810,16 @@ export async function defaultGcShellDeps(
   }
   return {
     executor,
+    // Probed on every ask, never cached: what the remote holds can change any time.
+    remoteFacts: async (b) => (await import('./gc-remote-shell')).realRemoteFacts(b),
+    // Read on every ask, never cached: the kill switch and the protected list may change any time.
+    remotePolicy: async () => {
+      const prefs = await readReaperPrefs()
+      return {
+        neverDeleteRemote: prefs.neverDeleteRemote,
+        protectedBranches: prefs.protectedBranches
+      }
+    },
     // dehydrateItem's own live check (isFolderInUse) matches the exact folder only; a
     // session in WT/api must keep WT's deps too, so it asks the segment-containing presence.
     dehydrate: {
@@ -709,6 +848,7 @@ export async function defaultGcShellDeps(
     // A git failure rejects, so the reprobe and the recheck refuse as probe-failed.
     listWorktrees: async (repoPath) =>
       parseWorktreeList(await executor.git(repoPath, ['worktree', 'list', '--porcelain'])),
-    findForeignCheckouts
+    findForeignCheckouts,
+    operationOf: gitOperationOf
   }
 }

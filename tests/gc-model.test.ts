@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { bundle, NOW, reapItem } from './gc-fixtures'
+import { removability } from '../src/renderer/src/lib/gc-removability'
 import {
   buildGcModel,
   cleanRequestFor,
+  refusedRows,
   dialogRows,
   captureConfirm,
   dialogBreakdown,
@@ -11,6 +13,8 @@ import {
   expectedFor,
   heroState,
   isCheckable,
+  isRemovable,
+  unremovableIds,
   prunedSelection,
   selectAllInRepo,
   selectionStats,
@@ -21,6 +25,8 @@ import {
 import type { GcSnapshot } from '../src/main/gc/gc-wire'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import { expectedOf, orphanExpectedOf } from '../src/main/gc/gc-confirm'
+import { REVIEW_CLEANABLE_KINDS, refusalFor } from '../src/main/gc/autopilot-core'
+import type { ReapItemKind } from '../src/main/reaper/reaper-core'
 import type { Bucket, ReviewReason } from '../src/main/gc/bundle-core'
 
 const GIB = 1024 ** 3
@@ -198,7 +204,13 @@ describe('heroState', () => {
       { jobId: 'j', done: 3, total: 12, freedBytes: 1397 * MIB },
       true
     )
-    expect(h).toEqual({ kind: 'running', done: 3, total: 12, freedBytes: 1397 * MIB })
+    expect(h).toEqual({
+      kind: 'running',
+      done: 3,
+      total: 12,
+      freedBytes: 1397 * MIB,
+      trashedBytes: 0
+    })
   })
 
   it('is Soft before the first report is acknowledged (Enable autopilot owns the Primary)', () => {
@@ -225,6 +237,13 @@ describe('dialogRows', () => {
     })
   })
 
+  it('carries the untracked paths of a row, sorted, for the dialog to name (delta-1, item 8)', () => {
+    const b = wt('c1', 'review', 1, {}, { reason: reason('dirty') })
+    b.item.untracked = ['z.md', 'a/b.txt']
+    const [row] = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id])
+    expect(row.untracked).toEqual(['a/b.txt', 'z.md'])
+  })
+
   it("never lists a worktree's volumes as removed (D1: they are kept), nor stack/deps chips that are absent", () => {
     const b = wt('c1', 'ready', 1, { ownedVolumes: ['v1'] })
     const rows = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id])
@@ -232,13 +251,15 @@ describe('dialogRows', () => {
     expect(rows[0].chips).not.toContain('volume')
   })
 
-  it('flags rows that hold work no other branch has', () => {
-    const risky = wt('d1', 'review', 1, { reason: reason('closed-unmerged') })
-    const safe = wt('d2', 'review', 1, { reason: reason('open-idle-session') })
-    const m = buildGcModel(snap({ bundles: [risky, safe] }))
-    const rows = dialogRows(m, [risky.item.id, safe.item.id])
+  it('flags every review worktree as one that may hold work no other branch has', () => {
+    const a = wt('d1', 'review', 1, { reason: reason('closed-unmerged') })
+    const b = wt('d2', 'review', 1, { reason: reason('dirty') })
+    const ready = wt('c1', 'ready', 1)
+    const m = buildGcModel(snap({ bundles: [a, b, ready] }))
+    const rows = dialogRows(m, [a.item.id, b.item.id, ready.item.id])
     expect(rows.find((r) => r.name === 'd1')!.risk).toBe(true)
-    expect(rows.find((r) => r.name === 'd2')!.risk).toBe(false)
+    expect(rows.find((r) => r.name === 'd2')!.risk).toBe(true)
+    expect(rows.find((r) => r.name === 'c1')!.risk).toBe(false)
     expect(rows.find((r) => r.name === 'd1')!.reasonCode).toBe('closed-unmerged')
   })
 
@@ -272,8 +293,53 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
       stackIds: ['s1'],
       ownedVolumes: ['v1'],
       bytes: 512 * MIB,
-      path: c.item.path
+      path: c.item.path,
+      workStamp: null
     })
+  })
+
+  it('a failed ready item (review + retryAs ready) is retried through the ready path: no confirmation', () => {
+    const f = bundle('/w/repo/.claude/worktrees/f1', 'review', {
+      reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps: ENOTEMPTY' },
+      retryAs: 'ready'
+    })
+    const m = buildGcModel(snap({ bundles: [f] }))
+    const req = cleanRequestFor(m, [f.item.id], 'ready')
+    expect(req.ids).toEqual([f.item.id])
+    expect(req.options.confirmed).toBeUndefined()
+    // The facts shown are the real ones, so main can tell if the item changed since.
+    expect(req.options.expected[f.item.id]).toMatchObject({
+      bucket: 'review',
+      reasonCode: 'cleanup-failed'
+    })
+  })
+
+  it('a failed ready item main would refuse is dropped from the ready path and listed as refused', () => {
+    const f = bundle('/w/repo/.claude/worktrees/f2', 'review', {
+      reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at prune.' },
+      retryAs: 'ready',
+      locked: true
+    })
+    const m = buildGcModel(snap({ bundles: [f] }))
+    expect(cleanRequestFor(m, [f.item.id], 'ready').ids).toEqual([])
+    expect(refusedRows(m, [f.item.id], 'ready').map((r) => r.refusal)).toEqual(['locked'])
+  })
+
+  it('a review item that was never ready still cannot go through the ready path', () => {
+    const d = bundle('/w/repo/.claude/worktrees/d1', 'review', {
+      reason: { code: 'cleanup-failed', detail: 'x' }
+    })
+    const m = buildGcModel(snap({ bundles: [d] }))
+    expect(cleanRequestFor(m, [d.item.id], 'ready').ids).toEqual([])
+  })
+
+  it('carries the work stamp the scan took into the facts the dialog sends', () => {
+    const d = wt('d1', 'review', 1)
+    d.item.workStamp = 'abc'
+    const m = buildGcModel(snap({ bundles: [d] }))
+    expect(cleanRequestFor(m, [d.item.id], 'review').options.expected[d.item.id]!.workStamp).toBe(
+      'abc'
+    )
   })
 
   it('remove selected: every id is confirmed and has an expected entry, volumes included', () => {
@@ -563,5 +629,274 @@ describe('expectedFor — the worktree path (S3 delta 3: GcExpected.path)', () =
       item: { ...b.item, path: b.item.path.replace(/\/([^/]+)$/, '/./x/../$1') }
     }
     expect(confirmChanged(buildGcModel(snap({ bundles: [same] })), captured)).toBe(false)
+  })
+})
+
+describe('a halted item never shows the raw engine error (F0 delta 1, item 4)', () => {
+  it.each([
+    [
+      'a legacy detail with the error',
+      'Cleanup stopped at trash: EBUSY: resource busy, unlink /x/y'
+    ],
+    ['a detail with the folder', 'Cleanup stopped at prune in /ws/a.'],
+    ['a bare step', 'Cleanup stopped at prune'],
+    ['a folder with dots and spaces', 'Cleanup stopped at prune in /ws/my.repo/a b.']
+  ])('%s reads as the step only, plus the folder when there is one', (_label, detail) => {
+    const b = wt('a', 'review', MIB, { reason: { code: 'cleanup-failed', detail } })
+    const m = buildGcModel(snap({ bundles: [b] }))
+    const shown = m.byId.get(b.item.id)!.reasonDetail!
+    expect(shown).toMatch(/^Cleanup stopped at [a-z-]+( in \/[^:]*)?\.$/)
+    expect(shown).not.toMatch(/EBUSY|unlink|resource busy/)
+  })
+
+  it('other reasons keep their own detail untouched', () => {
+    const b = wt('a', 'review', MIB, { reason: { code: 'dirty', detail: '1 blocker: dirty.' } })
+    expect(buildGcModel(snap({ bundles: [b] })).byId.get(b.item.id)!.reasonDetail).toBe(
+      '1 blocker: dirty.'
+    )
+  })
+})
+
+describe('detached worktrees — removable from review, never from ready', () => {
+  function detached(name: string): ReturnType<typeof wt> {
+    const b = wt(name, 'review', GIB, { reason: reason('detached') })
+    b.item.kind = 'detached-worktree'
+    b.item.branch = null
+    b.item.id = `${b.item.repoPath}::detached-worktree::/ws/${name}`
+    return b
+  }
+
+  it("isRemovable agrees with main's REVIEW_CLEANABLE_KINDS for every worktree kind", () => {
+    const kinds: ReapItemKind[] = [
+      'worktree',
+      'detached-worktree',
+      'hidden-folder',
+      'local-branch',
+      'remote-branch'
+    ]
+    for (const kind of kinds) {
+      const b = wt('k', 'review', GIB)
+      b.item.kind = kind
+      const block = buildGcModel(snap({ bundles: [b] })).byId.get(b.item.id)!
+      expect(isRemovable(block), kind).toBe(REVIEW_CLEANABLE_KINDS.includes(kind))
+    }
+  })
+
+  it('a review request takes a detached worktree: main accepts it once confirmed (NDE-A)', () => {
+    const h = detached('h1')
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const s = snap({ bundles: [h, d] })
+    const m = buildGcModel(s)
+    expect(refusalFor(h, s.prefs, { confirmed: true })).toBeNull()
+    const req = cleanRequestFor(m, [h.item.id, d.item.id], 'review')
+    expect(req.ids).toEqual([h.item.id, d.item.id])
+    expect(req.options.confirmed).toEqual([h.item.id, d.item.id])
+    expect(Object.keys(req.options.expected)).toEqual([h.item.id, d.item.id])
+    expect(unremovableIds(m, [h.item.id, d.item.id, 'ghost'])).toEqual([])
+  })
+
+  it('a detached dialog row shows the 12-character sha the archive ref is built from (delta-1, item 5)', () => {
+    const h = detached('h1')
+    h.localTip = 'abcdef0123456789abcdef0123456789abcdef01'
+    const m = buildGcModel(snap({ bundles: [h] }))
+    const [row] = dialogRows(m, [h.item.id])
+    expect(row.detachedAt).toBe('abcdef012345')
+  })
+
+  it('a ready-mode request never carries a detached worktree', () => {
+    const h = detached('h1')
+    const m = buildGcModel(snap({ bundles: [h] }))
+    expect(cleanRequestFor(m, [h.item.id], 'ready').ids).toEqual([])
+  })
+
+  it('a selection of detached worktrees captures a review dialog', () => {
+    const m = buildGcModel(snap({ bundles: [detached('h1'), detached('h2')] }))
+    const captured = captureConfirm(
+      m,
+      m.review.map((b) => b.id),
+      'review'
+    )
+    expect(captured?.ids).toHaveLength(2)
+    expect(captured?.refused).toEqual([])
+  })
+
+  it('orphan volumes stay removable', () => {
+    const m = buildGcModel(sample())
+    expect(isRemovable(m.byId.get('volume:pg_data')!)).toBe(true)
+  })
+})
+
+describe('honest Remove: what main refuses is never offered, whatever the surface', () => {
+  const lockedB = (name: string): ReturnType<typeof wt> =>
+    wt(name, 'review', GIB, { reason: reason('locked'), locked: true })
+
+  function mixedSnap(): {
+    s: GcSnapshot
+    ok: string
+    locked: string
+    shared: string
+    open: string
+  } {
+    const ok = wt('ok', 'review', 2 * GIB, { reason: reason('dirty') })
+    const locked = wt('locked', 'review', GIB, { reason: reason('locked'), locked: true })
+    const shared = wt('shared', 'review', GIB, {
+      reason: reason('shared-stack'),
+      sharedStackIds: ['other']
+    })
+    const open = wt('open', 'review', GIB, {
+      reason: reason('open-idle-session'),
+      session: 'open-idle'
+    })
+    return {
+      s: snap({ bundles: [ok, locked, shared, open] }),
+      ok: ok.item.id,
+      locked: locked.item.id,
+      shared: shared.item.id,
+      open: open.item.id
+    }
+  }
+
+  it('a review request carries only what main takes, and confirms only those', () => {
+    const { s, ok, locked, shared, open } = mixedSnap()
+    const req = cleanRequestFor(buildGcModel(s), [ok, locked, shared, open], 'review')
+    expect(req.ids).toEqual([ok])
+    expect(req.options.confirmed).toEqual([ok])
+    expect(Object.keys(req.options.expected)).toEqual([ok])
+  })
+
+  it('the captured confirm lists the refused ones apart, with the reason and the command to fix it', () => {
+    const { s, ok, locked, shared, open } = mixedSnap()
+    const c = captureConfirm(buildGcModel(s), [ok, locked, shared, open], 'review')!
+    expect(c.ids).toEqual([ok])
+    expect(c.rows.map((r) => r.id)).toEqual([ok])
+    expect(c.refused.map((r) => [r.id, r.refusal])).toEqual([
+      [locked, 'locked'],
+      [shared, 'shared-stack'],
+      [open, 'session-open']
+    ])
+    expect(c.refused[0].hint).toBe('git worktree unlock /ws/locked')
+    // The refused group is not in the count the dialog shows, nor in the request.
+    expect(dialogBreakdown(c.rows).worktrees).toBe(1)
+    expect(c.request.ids).toEqual([ok])
+  })
+
+  it('no dialog opens when nothing is removable, but the reasons are still there to explain it', () => {
+    const { s, locked, shared, open } = mixedSnap()
+    const m = buildGcModel(s)
+    expect(captureConfirm(m, [locked, shared, open], 'review')).toBeNull()
+    expect(refusedRows(m, [locked, shared, open, 'ghost'], 'review').map((r) => r.refusal)).toEqual(
+      ['locked', 'shared-stack', 'session-open']
+    )
+  })
+
+  it('"Select all" in a repo ticks only what can be removed', () => {
+    const { s, ok } = mixedSnap()
+    const m = buildGcModel(s)
+    expect(selectAllInRepo(m, '/ws/org/proj/www')).toEqual([ok])
+  })
+
+  it('an item that is refused can still be ticked one by one (to Keep or Dehydrate it)', () => {
+    const { s, locked } = mixedSnap()
+    const m = buildGcModel(s)
+    expect(toggleChecked(m, new Set(), locked).has(locked)).toBe(true)
+  })
+
+  it('the hero counts only what a click can clean: not a refused item, not one main refused lately', () => {
+    const fine = wt('c1', 'ready', 500 * MIB)
+    const stuck = wt('c2', 'ready', 400 * MIB)
+    stuck.reprobeRefusal = { code: 'cannot-unregister', count: 1 }
+    const m = buildGcModel(snap({ bundles: [fine, stuck] }))
+    expect(m.cleanable.map((b) => b.id)).toEqual([fine.item.id])
+    expect(m.ready).toHaveLength(2) // the map and the list still show it as ready
+    expect(heroState(m, null, true)).toMatchObject({ kind: 'clean', count: 1, bytes: 500 * MIB })
+  })
+
+  it('the hero is empty when every ready item was refused', () => {
+    const stuck = wt('c2', 'ready', 400 * MIB)
+    stuck.reprobeRefusal = { code: 'tip-unknown', count: 1 }
+    expect(heroState(buildGcModel(snap({ bundles: [stuck] })), null, true)).toEqual({
+      kind: 'empty'
+    })
+  })
+
+  it('a ready request still carries the item the operator retries on purpose', () => {
+    const stuck = wt('c2', 'ready', 400 * MIB)
+    stuck.reprobeRefusal = { code: 'cannot-unregister', count: 1 }
+    const m = buildGcModel(snap({ bundles: [stuck] }))
+    expect(cleanRequestFor(m, [stuck.item.id], 'ready').ids).toEqual([stuck.item.id])
+  })
+
+  it('a locked item keeps removability reason "locked" while its failure says cannot-unregister', () => {
+    const b = lockedB('l')
+    const m = buildGcModel(snap({ bundles: [b] }))
+    expect(removability(m.byId.get(b.item.id)!)).toMatchObject({ ok: false, reason: 'locked' })
+  })
+})
+
+describe('a scan that could not see Docker: the hero says so instead of offering a clean main would refuse', () => {
+  const blind = (name: string): ReturnType<typeof wt> => {
+    const b = wt(name, 'ready', 400 * MIB)
+    b.dockerBlind = true
+    return b
+  }
+
+  it('leaves the blind ones out of what a click cleans', () => {
+    const m = buildGcModel(snap({ bundles: [blind('a'), blind('b')] }))
+    expect(m.cleanable).toEqual([])
+    expect(m.ready).toHaveLength(2)
+  })
+
+  it('the hero is blocked, naming how many wait for Docker', () => {
+    const m = buildGcModel(snap({ bundles: [blind('a'), blind('b')] }))
+    expect(heroState(m, null, true)).toEqual({ kind: 'blind', count: 2, bytes: 800 * MIB })
+  })
+
+  it('a blocked hero never turns into a running one: a clean in flight still shows its chip', () => {
+    const m = buildGcModel(snap({ bundles: [blind('a')] }))
+    expect(heroState(m, { done: 1, total: 2, freedBytes: 5 }, true).kind).toBe('running')
+  })
+
+  it('stays empty when there is nothing ready at all', () => {
+    expect(heroState(buildGcModel(snap()), null, true)).toEqual({ kind: 'empty' })
+  })
+})
+
+describe('Keep and never-clean are read from the current prefs, not the scan-time flags', () => {
+  const prefsWith = (over: Partial<ReturnType<typeof defaultGcPrefs>>): GcSnapshot['prefs'] => ({
+    ...defaultGcPrefs(),
+    ...over
+  })
+
+  it('a Keep mark added since the scan hides Remove at once', () => {
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const m = buildGcModel(
+      snap({ bundles: [d], prefs: prefsWith({ keep: { [d.item.id]: 'merged' as never } }) })
+    )
+    expect(removability(m.byId.get(d.item.id)!)).toEqual({ ok: false, reason: 'kept' })
+    expect(cleanRequestFor(m, [d.item.id], 'review').ids).toEqual([])
+    expect(selectAllInRepo(m, d.item.repoPath)).toEqual([])
+  })
+
+  it('a worktree path added to neverClean since the scan hides Remove at once', () => {
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const m = buildGcModel(snap({ bundles: [d], prefs: prefsWith({ neverClean: ['/ws/d1/'] }) }))
+    expect(removability(m.byId.get(d.item.id)!)).toEqual({ ok: false, reason: 'never-clean' })
+  })
+
+  it('so does the repo path, which covers every worktree of that repo', () => {
+    const a = wt('a', 'ready', GIB)
+    const m = buildGcModel(
+      snap({ bundles: [a], prefs: prefsWith({ neverClean: [a.item.repoPath] }) })
+    )
+    expect(removability(m.byId.get(a.item.id)!)).toEqual({ ok: false, reason: 'never-clean' })
+    expect(m.cleanable).toEqual([])
+  })
+
+  it('leaves everything else removable', () => {
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const m = buildGcModel(
+      snap({ bundles: [d], prefs: prefsWith({ neverClean: ['/elsewhere'], keep: {} }) })
+    )
+    expect(removability(m.byId.get(d.item.id)!)).toEqual({ ok: true })
   })
 })

@@ -6,7 +6,7 @@
     "titleAttentionPrefix": "({n})"
   },
   "sidebar": {
-    "search": "Search (⌘K)",
+    "search": "Search",
     "addFolder": "Add folder",
     "newSession": "New session",
     "showOlder": "Show {n} older sessions",
@@ -135,6 +135,22 @@
     "hide": "Hide panel",
     "show": "Show panel"
   },
+  "agentTerminal": {
+    "connectedTo": "Connected to {session}",
+    "connectedToClosed": "Connected to a closed session",
+    "connectedToAgent": "Connected to an agent",
+    "parked": "parked",
+    "canType": "An agent can type here",
+    "readingAnon": "An agent is reading",
+    "reading": "reading",
+    "typing": "typing",
+    "disconnect": "Disconnect",
+    "disconnectHint": "Stop agent access to this terminal",
+    "disconnected": "Agent disconnected from this terminal",
+    "disconnectFailed": "Could not disconnect the agent from this terminal",
+    "disconnectFailedHint": "The agent still has access. Try again.",
+    "goToSession": "Go to session"
+  },
   "helperPane": {
     "close": "Close helper",
     "maximize": "Maximize",
@@ -143,6 +159,7 @@
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
     "spawnFailed": "Helper failed to start",
+    "processExited": "Process exited",
     "staleSession": {
       "title": "Helper session no longer exists",
       "remove": "Remove helper"
@@ -189,7 +206,8 @@
       "tooLarge": "This file is too large to preview.",
       "notFound": "File not found.",
       "readFailed": "Couldn't read this file.",
-      "writeFailed": "Couldn't save this file."
+      "writeFailed": "Couldn't save this file.",
+      "symlink": "This path is a symlink — Harnu won't follow it."
     }
   },
   "diagramPane": {
@@ -197,7 +215,32 @@
     "reload": "Reload canvas",
     "loading": "Loading…",
     "empty": "This canvas is empty.",
-    "emptyHint": "Drag anywhere to draw a box, or paste an image.",
+    "emptyHint": "Pick a shape from the toolbar, or paste an image.",
+    "toolbar": "Canvas tools",
+    "tool": {
+      "hand": "Hand",
+      "select": "Select",
+      "rectangle": "Rectangle",
+      "diamond": "Diamond",
+      "ellipse": "Ellipse",
+      "arrow": "Arrow",
+      "text": "Text",
+      "eraser": "Eraser"
+    },
+    "toolTitle": "{name} — {key}",
+    "toolTitleDigit": "{name} — {key} or {digit}",
+    "lock": "Keep tool active",
+    "unlock": "Return to Select after drawing",
+    "toolHint": {
+      "select": "Drag to select · Space+drag to pan",
+      "hand": "Drag to move the board",
+      "rectangle": "Click to place, or drag to size it",
+      "diamond": "Click to place, or drag to size it",
+      "ellipse": "Click to place, or drag to size it",
+      "arrow": "Drag from one shape to another",
+      "text": "Click anywhere to type",
+      "eraser": "Drag across anything to erase it"
+    },
     "fit": "Fit to view",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
@@ -224,6 +267,67 @@
     "changedOnDisk": {
       "title": "This canvas changed on disk.",
       "reload": "Reload"
+    },
+    "layers": {
+      "group": "Layers",
+      "back": "Send to back",
+      "backward": "Send backward",
+      "forward": "Bring forward",
+      "front": "Bring to front"
+    },
+    "style": {
+      "panel": "Properties",
+      "show": "Show properties",
+      "group": {
+        "tone": "Color",
+        "stroke": "Stroke",
+        "strokeWidth": "Stroke width",
+        "corners": "Corners",
+        "fontSize": "Text size",
+        "align": "Align",
+        "opacity": "Opacity"
+      },
+      "value": {
+        "tone": {
+          "default": "Default",
+          "accent": "Accent",
+          "green": "Green",
+          "amber": "Amber",
+          "red": "Red",
+          "muted": "Muted"
+        },
+        "stroke": {
+          "solid": "Solid",
+          "dashed": "Dashed",
+          "dotted": "Dotted"
+        },
+        "strokeWidth": {
+          "thin": "Thin",
+          "regular": "Regular",
+          "bold": "Bold"
+        },
+        "corners": {
+          "sharp": "Sharp",
+          "round": "Round"
+        },
+        "fontSize": {
+          "s": "Small",
+          "m": "Medium",
+          "l": "Large",
+          "xl": "Extra large"
+        },
+        "align": {
+          "left": "Left",
+          "center": "Center",
+          "right": "Right"
+        },
+        "opacity": {
+          "25": "25%",
+          "50": "50%",
+          "75": "75%",
+          "100": "100%"
+        }
+      }
     }
   },
   "markdownRenderer": {
@@ -288,6 +392,11 @@
     "autoOrganizeOff": "Turn off auto-organize",
     "orchestratorDefaultOn": "New sessions start as Orchestrator",
     "orchestratorDefaultOff": "Stop starting sessions as Orchestrator",
+    "terminalReadOn": "Let agents read terminals I open",
+    "terminalReadOff": "Stop agents reading terminals I open",
+    "browserReadOn": "Let agents read browser panes I open",
+    "browserReadOff": "Stop agents reading browser panes I open",
+    "trustedHosts": "Trusted dev hosts…",
     "newWorktree": "New worktree…",
     "removeWorktree": "Remove worktree",
     "createWorktreeMd": "Create WORKTREE.md",
@@ -857,7 +966,8 @@
   "cloudSession": {
     "title": "This session lives in the cloud",
     "body": "Its conversation is mirrored to claude.ai and has no local transcript to resume here. Open it on claude.ai/code to continue.",
-    "bodyNoBridge": "This session has no local conversation to resume — there's nothing recorded on disk yet."
+    "bodyNoBridge": "This session has no local conversation to resume — there's nothing recorded on disk yet.",
+    "resumeAnyway": "Resume anyway"
   },
   "preview": {
     "label": "Session preview",
@@ -879,6 +989,29 @@
       "ahead": "{n} ahead",
       "behind": "{n} behind",
       "memoryLabel": "Where we left off"
+    }
+  },
+  "trustedHosts": {
+    "title": "Trusted dev hosts",
+    "close": "Close",
+    "builtInLabel": "Always trusted",
+    "addedLabel": "Added by you",
+    "none": "None yet.",
+    "placeholder": "app.test or *.test",
+    "add": "Add",
+    "remove": "Remove {host}",
+    "hint": "Pages on these hosts count as local: agents can drive them without asking. Only exact host names and one-level wildcards. A name that merely resolves to loopback is never trusted by itself.",
+    "failed": "Couldn't save the trusted hosts",
+    "errors": {
+      "EMPTY": "Type a host name.",
+      "TOO_LONG": "That host name is too long.",
+      "HAS_SCHEME_OR_PATH": "Type only the host name, without http:// or a path.",
+      "HAS_PORT": "Leave the port out; it applies to every port.",
+      "BAD_CHARACTERS": "Host names use letters, digits and hyphens.",
+      "WILDCARD_TOO_BROAD": "That wildcard is too broad. Use *.test, or a base of at least three labels like *.dev.example.org.",
+      "WILDCARD_POSITION": "A wildcard can only start the name, like *.test.",
+      "DUPLICATE": "Already in the list.",
+      "LIST_FULL": "The list is full."
     }
   },
   "renameFolder": {
@@ -979,6 +1112,7 @@
     },
     "tabs": {
       "general": "General",
+      "keybindings": "Keyboard Shortcuts",
       "interceptor": "Interceptor",
       "appearance": "Appearance",
       "startup": "Startup",
@@ -1119,6 +1253,179 @@
     "claudeStatus": {
       "label": "Claude service alerts",
       "description": "Get a native notification when status.claude.com reports a new incident, a worsening outage, or a recovery. The footer dot stays live regardless."
+    }
+  },
+  "keybindings": {
+    "withChord": "{label} ({chord})",
+    "toast": {
+      "warnings": {
+        "title": "Some shortcuts in keybindings.json were ignored",
+        "description": "keybindings.json has entries Harnu couldn't apply ({count} skipped). Your other shortcuts are unchanged."
+      },
+      "openNeedsFolder": {
+        "title": "Open a folder first",
+        "description": "keybindings.json opens in a split pane, which needs an active folder. Select one, then try again."
+      }
+    },
+    "pane": {
+      "eyebrow": "Shortcuts",
+      "intro": "Rebind any shortcut below. Edits save to keybindings.json and apply right away — no restart.",
+      "resetAll": "Reset all",
+      "openFile": "Open keybindings.json",
+      "capture": "Record a new shortcut for {action}",
+      "captureHint": "Click a shortcut, then press the keys. Esc cancels, Backspace unbinds.",
+      "recording": "Press a shortcut…",
+      "empty": "Set a shortcut…",
+      "unbound": "Unbound",
+      "default": "default {chord}",
+      "notInTerminal": "not in terminal",
+      "conflict": "conflict: {names}",
+      "reset": "Reset",
+      "unbind": "Unbind",
+      "search": "Search shortcuts or type a key combo",
+      "groups": {
+        "sessions": "Sessions",
+        "sidebar": "Sidebar",
+        "folders": "Folders",
+        "views": "Views",
+        "panes": "Panes",
+        "takeovers": "Takeovers",
+        "app": "App"
+      },
+      "chips": {
+        "label": "Filter shortcuts",
+        "unbound": "Unbound",
+        "conflicts": "Conflicts",
+        "customized": "Customized"
+      },
+      "noMatch": "No shortcut matches.",
+      "unreachable": "{chord} can't fire for this action. Pick another shortcut.",
+      "shieldHint": "Taken from the terminal: the program running there never sees {chord}.",
+      "terminalKeepsHint": "The terminal keeps {chord}: it won't fire while a terminal has focus."
+    },
+    "actions": {
+      "session_new": "New session",
+      "app_search": "Open command palette",
+      "inbox_toggle": "Toggle the Approval Inbox rail",
+      "view_fleetRail": "Toggle the Fleet rail",
+      "view_toggleSidebar": "Toggle the left sidebar",
+      "view_toggleHelper": "Toggle the right split panel",
+      "project_switch": "Switch project",
+      "folder_add": "Add folder",
+      "view_review": "Review the active folder's branch",
+      "view_roadmap": "Toggle the roadmap board",
+      "view_prStack": "Toggle the PR Stack",
+      "folder_openInFileManager": "Open the active folder in the file manager",
+      "folder_openInVSCode": "Open the active folder in VS Code",
+      "folder_openGithubPulls": "Open pull requests on GitHub",
+      "folder_browseFiles": "Browse files",
+      "folder_newTerminal": "Open a terminal",
+      "view_settings": "Open Settings",
+      "view_usageDashboard": "Toggle the usage overview",
+      "session_resumeLast": "Resume last session",
+      "session_rename": "Rename the selected session",
+      "session_close": "Close the current session tab",
+      "session_newInFolder": "New session in this folder…",
+      "session_fork": "Fork the session",
+      "session_openToSide": "Open the session to the side",
+      "session_contextMenu": "Open the context menu",
+      "session_restart": "Restart the session",
+      "session_copyId": "Copy session id",
+      "session_copyTranscriptPath": "Copy transcript path",
+      "session_copyResumeCommand": "Copy resume command",
+      "session_copyContextDigest": "Copy context digest",
+      "session_toggleNoFlicker": "Toggle no-flicker mode",
+      "session_toggleArchived": "Archive or unarchive the session",
+      "session_delete": "Delete the session…",
+      "session_retryBoot": "Retry a failed start",
+      "session_dismiss": "Dismiss a failed new session",
+      "session_closeTerminal": "Close the folder terminal",
+      "sidebar_jump": "Jump to a folder or session",
+      "sidebar_rescan": "Rescan folders",
+      "sidebar_cycleDrillDepth": "Cycle the sidebar drill depth",
+      "sidebar_toggleCollapseAll": "Collapse or expand all folders",
+      "sidebar_hiddenFolders": "Show hidden folders",
+      "sidebar_cursor_down": "Sidebar cursor: down",
+      "sidebar_cursor_up": "Sidebar cursor: up",
+      "sidebar_cursor_right": "Sidebar cursor: expand / into",
+      "sidebar_cursor_left": "Sidebar cursor: collapse / out",
+      "sidebar_cursor_activate": "Sidebar cursor: open",
+      "folder_rename": "Rename the folder…",
+      "folder_newFolderTerminal": "New terminal session in the folder",
+      "folder_toggleBranchAlias": "Use branch as name / Use folder name",
+      "folder_bootOptions": "Startup options…",
+      "folder_projectMemory": "Project memory…",
+      "folder_memoryLocation": "Store memory in…",
+      "folder_newSubfolder": "New folder…",
+      "folder_openSubfolder": "Open subfolder…",
+      "folder_newWorktree": "New worktree…",
+      "folder_worktreeMd": "Create WORKTREE.md / Open WORKTREE.md",
+      "folder_askAgentWorktreeMd": "Ask an agent to write WORKTREE.md",
+      "folder_toggleIntercept": "Intercept tool calls here / Stop intercepting here",
+      "folder_toggleAutoOrganize": "Turn on auto-organize / Turn off auto-organize",
+      "folder_toggleOrchestratorDefault": "New sessions start as Orchestrator / Stop starting sessions as Orchestrator",
+      "folder_toggleHidden": "Hide / Unhide folder",
+      "folder_removeWorktree": "Remove worktree",
+      "folder_toggleOlder": "Show older sessions / Hide older sessions",
+      "folder_toggleArchived": "Show archived / Hide archived",
+      "repoGroup_rename": "Rename group",
+      "repoGroup_resetName": "Reset name (group)",
+      "repoGroup_cleanup": "Cleanup… (repo)",
+      "inbox_open": "Open approvals",
+      "inbox_toggleOrder": "Newest first / Oldest first (Fleet rail)",
+      "inbox_filter": "Filter states (Fleet rail)",
+      "inbox_showAll": "Show all (Fleet rail)",
+      "view_activity": "Open Activity",
+      "view_missionProgress": "Open mission progress",
+      "view_pastedImages": "Open pasted images",
+      "view_claudeStatus": "Open Claude service status",
+      "view_usagePanel": "Open plan usage",
+      "view_closeTakeover": "Close the open view",
+      "view_cleanup": "Toggle Cleanup",
+      "view_scheduler": "Toggle the Scheduler",
+      "view_systemMonitor": "Toggle the System Monitor",
+      "view_containers": "Toggle Containers",
+      "view_settings_general": "Open Settings: General",
+      "view_settings_keybindings": "Open Settings: Keyboard Shortcuts",
+      "view_settings_interceptor": "Open Settings: Interceptor",
+      "view_settings_appearance": "Open Settings: Appearance",
+      "view_settings_startup": "Open Settings: Startup",
+      "view_settings_claudeConfig": "Open Settings: Claude config",
+      "view_settings_endpoints": "Open Settings: Endpoints",
+      "view_settings_push": "Open Settings: Remote notifications",
+      "view_settings_voice": "Open Settings: Voice",
+      "view_settings_mcp": "Open Settings: MCP",
+      "view_settings_skills": "Open Settings: Skills",
+      "view_settings_mods": "Open Settings: Mods",
+      "view_settings_memory": "Open Settings: Memory",
+      "view_settings_hibernationPolicy": "Open Settings: Hibernation policy",
+      "view_settings_usageHistory": "Open Settings: Usage history",
+      "view_settings_changelog": "Open Settings: Changelog",
+      "view_settings_claudeCode": "Open Settings: Claude Code",
+      "view_settings_cleanup": "Open Settings: Cleanup",
+      "view_settings_containers": "Open Settings: Containers",
+      "view_settings_prStack": "Open Settings: PR Stack",
+      "nav_back": "Back to the previous session",
+      "nav_forward": "Forward to the next session",
+      "pane_focusNext": "Focus the next pane",
+      "pane_focusPrev": "Focus the previous pane",
+      "pane_toggleMaximize": "Maximize or restore the focused pane",
+      "pane_close": "Close the focused pane",
+      "terminal_toggle": "Toggle the terminal pane",
+      "app_reload": "Reload the window",
+      "app_devtools": "Toggle DevTools",
+      "app_quit": "Quit Harnu",
+      "app_fullscreen": "Toggle fullscreen",
+      "app_openKeybindings": "Open keybindings.json",
+      "browser_overlay_toggle": "Browser pane: toggle point-and-comment",
+      "browser_zoom_in": "Browser pane: zoom in",
+      "browser_zoom_out": "Browser pane: zoom out",
+      "browser_zoom_reset": "Browser pane: reset zoom",
+      "browser_devtools": "Browser pane: open DevTools",
+      "browser_reload": "Browser pane: reload",
+      "browser_back": "Browser pane: back",
+      "browser_forward": "Browser pane: forward",
+      "browser_focusAddress": "Browser pane: focus the address bar"
     }
   },
   "notifications": {
@@ -1499,7 +1806,21 @@
     "supervisionLoad": "{count} active",
     "supervisionLoadHint": "{count} sessions working or awaiting you. Comfortable supervision tops out around 4–5.",
     "openFullDashboard": "Open full dashboard",
-    "a11yHeapGauge": "Heap {pct}% — click to open System Monitor"
+    "a11yHeapGauge": "Heap {pct}% — click to open System Monitor",
+    "lastSeen": "last seen {age} ago",
+    "reasonExpired": "telemetry expired",
+    "reasonNone": "no live telemetry",
+    "a11yReasonExpired": "No live telemetry for over 24 hours — showing the last known values",
+    "a11yReasonNone": "This session has not reported telemetry — showing what its transcript holds",
+    "a11yReasonEmpty": "No telemetry has arrived for this session yet",
+    "silentHint": "Not reporting — restart session",
+    "a11ySilentHint": "This session answered but sent no statusLine telemetry. Click to restart it; the conversation is kept."
+  },
+  "statuslineHeal": {
+    "title": "Claude Code's statusLine setting was removed — re-installed",
+    "description": "Sessions started before {time} need a restart: {sessions}.",
+    "descriptionNone": "No running session was affected.",
+    "more": "+{n} more"
   },
   "images": {
     "title": "Pasted images",
@@ -1555,14 +1876,6 @@
       "actions": "Actions",
       "folders": "Folders",
       "sessions": "Sessions"
-    },
-    "actions": {
-      "newSession": "New session",
-      "addFolder": "Add folder",
-      "switchProject": "Switch project",
-      "resumeLast": "Resume last session",
-      "toggleFleetRail": "Toggle Fleet rail",
-      "openInbox": "Open approvals"
     }
   },
   "sentinel": {
@@ -1594,6 +1907,10 @@
     "openSessionAria": "Open the session for {tool}",
     "missionsStrip": {
       "title": "Active missions"
+    },
+    "order": {
+      "newestFirst": "Newest first — click for oldest first",
+      "oldestFirst": "Oldest first — click for newest first"
     },
     "filter": {
       "title": "Filter states",
@@ -1652,7 +1969,11 @@
     "ask": {
       "label": "Ask before agent actions",
       "description": "Put a confirmation in front of every agent action — creating a session, spawning a terminal, a worktree, writing to memory. Off by default: agents act freely and every call is recorded in the audit log below. Turn this on if you'd rather approve each one."
-    }
+    },
+    "agentTerminalWrites": "Allow agents to type into terminals",
+    "agentTerminalWritesHint": "When off, agents can still read terminals you allow, but every attempt to type is refused.",
+    "agentBrowserWrites": "Allow agents to drive browser panes",
+    "agentBrowserWritesHint": "When off, every browser write (open, navigate, …) is refused. Listing and closing still work."
   },
   "bundledSkills": {
     "title": "Bundled skills",
@@ -2273,10 +2594,10 @@
         "blockLabelState": "{name}, {bucket}, {size}, {state}",
         "state": {
           "busy": "cleaning",
-          "done": "freed",
+          "done": "cleaned",
           "failed": "failed"
         },
-        "freed": "freed",
+        "freed": "cleaned",
         "aggregate": "{count} smaller",
         "aggregateLabel": "{count} smaller worktrees, {bucket}, {size}",
         "selectAll": "Select all in repo",
@@ -2305,7 +2626,9 @@
         "ready": "Merged, clean and idle past the grace period.",
         "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it.",
         "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too.",
+        "checkFailed": "Harnu could not look inside this worktree, so it cannot tell whether removing it would take another checkout along.",
         "locked": "This worktree is locked in git",
+        "operationInProgress": "A rebase, bisect or git am is still in progress in this worktree",
         "inUse": {
           "mainCheckout": "The repo's main checkout. Never touched.",
           "neverClean": "On your never-clean list. Never touched.",
@@ -2344,7 +2667,8 @@
           "volume": "Volumes: {names}",
           "deps": "Its dependency folders",
           "checkout": "The checkout",
-          "branch": "The local branch {branch}"
+          "branch": "The local branch {branch}",
+          "detached": "Its commit stays under refs/archive/detached/…"
         },
         "volumesCannotRestore": "Volumes cannot be restored.",
         "copyError": "Copy error",
@@ -2365,8 +2689,16 @@
         "stoppedAt": "Stopped at “{step}”",
         "nothingChanged": "Nothing was changed.",
         "genericStop": "Harnu stopped this item for a safety check.",
-        "removeBlocked": "Remove is unavailable: this folder holds another worktree. Remove or move that one first.",
-        "removeLocked": "Remove is unavailable: git has this worktree locked. Unlock it first."
+        "removeUnavailable": "Remove is unavailable. {reason}",
+        "cleanUnavailable": "Clean now is unavailable. {reason}",
+        "recheck": "Check again",
+        "removeCommand": "Run",
+        "refusedNote": "The last clean was refused. {reason}",
+        "refusedNoteHint": "It stays out of “Clean ready” and the autopilot skips it until the cause is fixed. Retry tries once more.",
+        "refusedRepeat": "Refused {n} times in a row, so it moved to Needs review.",
+        "resumeBody": "The folder is gone, and the clean stopped at “{step}”, so Retry cannot finish it. Run these in a terminal to do the rest:",
+        "resumeUnarchived": "If git refuses, this branch has commits that aren't in your default branch: keep it, or archive it first.",
+        "resumeArchive": "The archive refs keep the commit recoverable."
       },
       "list": {
         "label": "Worktrees by bucket",
@@ -2375,7 +2707,9 @@
       "hero": {
         "clean": "Clean {n} ready · {size} | Clean {n} ready · {size}",
         "empty": "Nothing to clean",
-        "chip": "Cleaning {done}/{total} · {size} freed"
+        "blind": "Start Docker to clean these",
+        "blindTitle": "Docker wasn't running when Harnu scanned, so it could not see which stacks run from these worktrees. Start Docker, then Scan now.",
+        "chip": "Cleaning {done}/{total} · {freed}"
       },
       "selection": {
         "label": "Selection",
@@ -2385,11 +2719,16 @@
         "keep": "Keep",
         "ask": "Ask for an opinion",
         "shiftHint": "click to add more",
+        "removeNone": "Nothing selected can be removed",
         "clear": "Clear selection"
       },
       "confirm": {
         "titleWorktrees": "Remove {n} worktree? | Remove {n} worktrees?",
         "titleItems": "Remove {n} item? | Remove {n} items?",
+        "nothingRemovable": "Nothing selected can be removed",
+        "nothingRemovableSeveral": "These items can't be removed, each for its own reason. Open one to see why.",
+        "refusedTitle": "Won't be removed ({n})",
+        "refusedSub": "Harnu would refuse these, so they are left out of the count and of the request.",
         "listLabel": "Items to remove",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Docker volume {name}",
@@ -2417,7 +2756,18 @@
         "totalReady": "{n} ready · {size}",
         "totalSelected": "{n} selected · {size}",
         "close": "Close",
-        "branchSub": "branch {branch}"
+        "branchSub": "branch {branch}",
+        "detachedSub": "detached at {sha}",
+        "untrackedMore": "{n} untracked files, saved in the wip ref: {names} and {more} more | {n} untracked files, saved in the wip ref: {names} and {more} more",
+        "untrackedTotal": "{n} untracked file in total, each saved in its wip ref. | {n} untracked files in total, each saved in its wip ref.",
+        "untracked": "{n} untracked file, saved in the wip ref: {names} | {n} untracked files, saved in the wip ref: {names}",
+        "warnDetached": "{n} detached worktree has no branch. Its commit stays under refs/archive/detached/…, and git worktree add brings it back. | {n} detached worktrees have no branch. Their commits stay under refs/archive/detached/…, and git worktree add brings them back.",
+        "remote": {
+          "checking": "Checking whether the branch can be deleted on GitHub…",
+          "label": "Also delete the branch on the remote",
+          "hint": "Runs git push --delete. Protected branches and branches that moved on the remote are skipped.",
+          "some": "Applies to {n} of {total}"
+        }
       },
       "chip": {
         "stack": "stack",
@@ -2436,8 +2786,20 @@
       "firstCycle": {
         "label": "First cleanup report",
         "title": "Found {n} ready item, {size} — enable autopilot? | Found {n} ready items, {size} — enable autopilot?",
-        "sub": "The first cycle only reports; nothing is deleted until you turn it on.",
+        "titleOn": "Autopilot found {n} ready item, {size} | Autopilot found {n} ready items, {size}",
+        "onlyReported": "It has only reported so far.",
+        "willClean": "Enable it and the next cycle, in {when}, will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} item, {size}. | Enable it and the next cycle, in {when}, will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} items, {size}.",
+        "willCleanUnscheduled": "Enable it and its first cycle will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} item, {size}. The background scan is off, so none is scheduled. | Enable it and its first cycle will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} items, {size}. The background scan is off, so none is scheduled.",
+        "dockerPrune": "It will also prune Docker build cache older than {n} day and dangling images. | It will also prune Docker build cache older than {n} days and dangling images.",
+        "allowWillClean": "Allow it and the next cycle, in {when}, will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} item, {size}. | Allow it and the next cycle, in {when}, will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} items, {size}.",
+        "allowWillCleanUnscheduled": "Allow it and its next cycle will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} item, {size}. The background scan is off, so none is scheduled. | Allow it and its next cycle will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} items, {size}. The background scan is off, so none is scheduled.",
+        "when": {
+          "minute": "{n} min",
+          "hour": "{n} h",
+          "day": "{n} d"
+        },
         "enable": "Enable autopilot",
+        "allow": "Allow cleaning",
         "dismiss": "Not now"
       },
       "docker": {
@@ -2453,6 +2815,24 @@
         "noOrphanVolumes": "No orphan volumes",
         "scope": "Counts only build cache older than {n} day and dangling images. Images in use and the volumes of live stacks are never counted. | Counts only build cache older than {n} days and dangling images. Images in use and the volumes of live stacks are never counted.",
         "cantRestore": "Can't be restored",
+        "leftovers": {
+          "title": "Left by removed worktrees",
+          "stack": "Stopped containers: {c} · networks: {n}",
+          "projects": "Projects: {names}",
+          "clean": "Clean up",
+          "volumesLine": "{n} volume · {size} | {n} volumes · {size}",
+          "volumesNote": "Never removed automatically. They go only after their own confirm.",
+          "volumesRemove": "Remove volumes…"
+        },
+        "confirm": {
+          "stackTitle": "Clean up the leftovers of {n} removed worktree? | Clean up the leftovers of {n} removed worktrees?",
+          "volumesTitle": "Remove {n} volume? | Remove {n} volumes?",
+          "listLabel": "Items to clean up",
+          "stackNote": "Stopped containers and networks can be recreated by starting the stack again. Volumes are not touched.",
+          "volumesNote": "Volumes cannot be restored.",
+          "stackConfirm": "Clean up",
+          "volumesConfirm": "Remove {n} volume | Remove {n} volumes"
+        },
         "projects": "Projects: {names}",
         "more": "+{n} more",
         "toggleCache": "Clean build cache automatically",
@@ -2481,7 +2861,7 @@
         "auto": "Ready to clean",
         "untouched": "In use",
         "count": "{n} item | {n} items",
-        "lastCycle": "Last cycle {ago}: cleaned {n}, freed {size}",
+        "lastCycle": "Last cycle {ago}: cleaned {n}, {freed}",
         "lastCycleReport": "Last cycle {ago}: found {n} ready item, {size} (report only) | Last cycle {ago}: found {n} ready items, {size} (report only)",
         "review": "Needs review",
         "running": "Cleaning now · {n} left",
@@ -2493,6 +2873,8 @@
         "reclaimable": "{size} reclaimable",
         "autopilotOn": "autopilot on",
         "autopilotOff": "autopilot off",
+        "autopilotPaused": "autopilot paused",
+        "autopilotReportOnly": "autopilot report only",
         "next": {
           "minute": "next cycle in {n} min",
           "hour": "next cycle in {n} h",
@@ -2500,6 +2882,8 @@
         },
         "badgeOn": "Autopilot on · every {every}",
         "badgeOff": "Autopilot off",
+        "badgeReportOnly": "Autopilot on · report only",
+        "badgePaused": "Autopilot paused — background scan is off",
         "everyMinutes": "{n} min",
         "everyHours": "{n} h",
         "everyDay": "day"
@@ -2522,13 +2906,37 @@
       "loadError": "Could not load the cleanup report: {error}",
       "other": {
         "title": "Other leftovers",
-        "intro": "Branches and folders that are not worktrees."
+        "intro": "Branches, folders and transcripts that are not worktrees."
+      },
+      "orphans": {
+        "groupMeta": "{n} folder · {size} | {n} folders · {size}",
+        "deleteAll": "Delete all",
+        "deleteAria": "Delete the transcripts of {name}",
+        "sessions": "{n} session | {n} sessions",
+        "last": "last {ago}",
+        "notFound": {
+          "title": "Folder not found",
+          "note": "Harnu can't confirm these folders were deleted. They may be on a drive that is not connected. Check before you delete.",
+          "ack": "I checked: this folder is really gone, not on a drive that's unplugged."
+        },
+        "memory": "includes memory notes",
+        "confirm": {
+          "title": "Move {n} transcript folder to the trash? | Move {n} transcript folders to the trash?",
+          "subtitle": "The folders these sessions ran in are gone, so Claude can no longer resume them here.",
+          "listLabel": "Transcript folders to move to the trash",
+          "recoverable": "They go to the OS trash, so you can bring them back.",
+          "memory": "{n} of them also holds Claude memory notes for that folder. | {n} of them also hold Claude memory notes for that folder.",
+          "total": "{n} folder · {size} | {n} folders · {size}",
+          "confirm": "Move to trash"
+        }
       },
       "toast": {
-        "success": "Freed {size} · {count} ready item cleaned | Freed {size} · {count} ready items cleaned",
+        "success": "{freed} · {count} ready item cleaned | {freed} · {count} ready items cleaned",
         "partial": "{cleaned} cleaned · {failed} needs review | {cleaned} cleaned · {failed} need review",
         "review": "Review",
-        "viewJournal": "View journal"
+        "remoteLeft": "The branch is still on the remote: {error} | {count} branches are still on the remote. First error: {error}",
+        "viewJournal": "View journal",
+        "successReview": "{freed} · {count} item removed | {freed} · {count} items removed"
       },
       "footer": {
         "running": "Cleaning {done}/{total}",
@@ -2596,10 +3004,53 @@
           "title": "Docker volumes are always kept",
           "body": "Cleaning a worktree, by hand or automatically, never removes its volumes. Once the worktree is gone they show up in Needs review as orphan volumes, with their size and compose project, and you remove each one yourself.",
           "warning": "A removed volume and its data cannot be restored."
+        },
+        "archives": {
+          "eyebrow": "Archives",
+          "intro": "Every removal keeps the branch tip and the working state in git as archive refs, so nothing is lost. They pile up, so Cleanup can delete the old ones.",
+          "keepDays": {
+            "label": "Keep archives for",
+            "hint": "Archives older than this are offered for deletion in Cleanup, after you confirm the list."
+          },
+          "autoExpire": {
+            "label": "Expire archives automatically",
+            "hint": "When on, the autopilot deletes the archive refs older than the setting above. A deleted archive can't be restored. Git frees the space on its next gc."
+          }
+        }
+      },
+      "recheck": {
+        "cleared": "Checked again: nothing refuses it now",
+        "stillRefused": "Still refused",
+        "unchecked": "Couldn't check it right now",
+        "failed": "Couldn't check again"
+      },
+      "removal": {
+        "reason": {
+          "mainCheckout": "This is a main checkout, which is never removed.",
+          "neverClean": "It is on your never-clean list.",
+          "kept": "You marked it Keep. Remove the mark first.",
+          "inUse": "It is in use right now.",
+          "unsupportedKind": "Harnu only removes this kind of folder from Needs review, after you confirm it.",
+          "sharedStack": "Another stack also runs from this worktree. Stop that one first.",
+          "nestedWorktree": "This folder holds another worktree or checkout. Remove or move that one first.",
+          "checkFailed": "Harnu could not look inside this folder for other worktrees or checkouts. Make sure it is readable, then use Scan now.",
+          "folderGone": "The folder is gone and the clean stopped partway. Finish it with the commands in its panel.",
+          "tipUnknown": "Harnu could not tell which commit this worktree is on.",
+          "graceNotElapsed": "It has not been quiet long enough yet.",
+          "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it.",
+          "sessionOpen": "A session is still open in this worktree. Close it first.",
+          "locked": "Git has this worktree locked. Unlock it first.",
+          "operationInProgress": "A rebase, bisect or git am is still in progress here, and its state would be lost with the folder. Finish or abort it, then use Scan now.",
+          "cannotUnregister": "Git has no single, unlocked registration for this worktree, so Harnu cannot unregister it and refused it more than once. Check git worktree list.",
+          "protectedNow": "It is protected now (a main checkout, a never-clean path or a Keep mark), and Harnu refused it more than once.",
+          "scanBlind": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks. Start Docker, then Scan now.",
+          "stackPresent": "A Docker stack is running from this worktree, and Harnu refused it more than once. Stop the stack first."
         }
       },
       "refusal": {
         "changedSinceConfirm": "Changed since you confirmed — review it again.",
+        "workUnreadable": "Harnu could not read this worktree's uncommitted work when it scanned, so it will not remove it unseen. Scan again, then review it.",
+        "workChangedSinceConfirm": "Its uncommitted work changed after you looked, so nothing was removed. Scan again and review it.",
         "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
         "missingExpected": "Cleanup could not check it against what you were shown. Review it and try again.",
         "noLongerOrphan": "This volume is in use again, so it was left alone.",
@@ -2617,9 +3068,11 @@
         "notReady": "It is no longer ready to clean, so it was left alone.",
         "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it and left it alone.",
         "stackPresent": "A Docker stack is running from this worktree, so it was left alone.",
-        "dockerUnavailable": "Docker did not answer, so Harnu could not check this worktree safely and left it alone.",
+        "dockerUnavailable": "Docker is not running, so Harnu could not check this worktree safely and left it alone. Start Docker, then Retry.",
+        "scanBlind": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks and left it alone. Start Docker, then Scan now.",
         "probeFailed": "Checking this worktree failed, so it was left alone.",
         "nestedWorktree": "Another worktree lives inside this one, so it was left alone.",
+        "checkFailed": "Harnu could not look inside this worktree, so it was left alone.",
         "sharedStack": "Another stack also runs from this worktree, so it was left alone.",
         "headMoved": "A new commit landed on this worktree, so it was left alone.",
         "notHarvestable": "Cleanup no longer considers it finished, so it was left alone.",
@@ -2629,7 +3082,18 @@
         "changedMidRun": "It changed while the clean was running, so Harnu stopped.",
         "dirty": "It has uncommitted changes now, so it was left alone.",
         "foreignCheckout": "Another repository is checked out inside this folder, so it was left alone.",
-        "cannotUnregister": "Harnu couldn't match this worktree to a single git registration, so nothing was touched."
+        "cannotUnregister": "Harnu couldn't match this worktree to a single git registration, so nothing was touched.",
+        "unlockFailed": "Git would not unlock this worktree, so it was left alone.",
+        "sessionBusy": "A session in this worktree is working or waiting for you, so Harnu did not close it and left the worktree alone.",
+        "sessionNotClosable": "The session open here is not one Harnu can close, so the worktree was left alone.",
+        "stackStopFailed": "Docker could not stop the whole stack. Harnu tried to restart what it had stopped, then left the worktree alone.",
+        "stackBindsFolder": "That stack uses this folder, so it cannot be left running. Stop it or choose again.",
+        "prepNotApplicable": "What you chose no longer applies to this worktree, so it was left alone. Scan again and review it.",
+        "stackIsMainCheckout": "That stack belongs to the main checkout, so Harnu does not stop it and left the worktree alone.",
+        "stackUsedElsewhere": "Another folder with a session uses that stack, so Harnu did not stop it and left the worktree alone.",
+        "rollbackFailed": "What the action had changed (a lock, a stopped stack) could not be put back: check it.",
+        "prepLeftStack": "The worktree was removed after Harnu stopped its shared stack, so the stack was left stopped because its folder is gone.",
+        "operationInProgress": "A rebase, bisect or git am is in progress in this worktree, so it was left alone. Finish or abort it, then Scan now."
       },
       "opinion": {
         "safe": "Safe",
@@ -2652,7 +3116,9 @@
         "rowAria": "{name}, {size}",
         "selectRow": "Select {name}",
         "removeAria": "Remove {name}",
+        "resume": "Stopped at “{step}”. Open it for the commands to finish by hand.",
         "dehydrateAria": "Dehydrate {name}",
+        "dehydratedLeft": "Dehydrated · {size} left",
         "keepAria": "Keep {name}",
         "volumeProject": "Docker volume · {project}",
         "volumeUnknown": "Docker volume · unknown project",
@@ -2662,8 +3128,7 @@
       "error": {
         "clean": "Could not start the clean",
         "keep": "Could not keep that",
-        "autopilot": "Could not enable the autopilot",
-        "dismiss": "Could not save that"
+        "autopilot": "Could not enable the autopilot"
       },
       "legend": {
         "ready": "Ready to clean · cleaned by one click or the autopilot",
@@ -2677,6 +3142,243 @@
         "sub": "Looking for merged branches, idle sessions and Docker leftovers.",
         "failed": "The first scan didn't finish: {error}",
         "hero": "Scanning…"
+      },
+      "freed": {
+        "now": "{freed} freed now",
+        "split": "{freed} freed now · {trash} in the trash"
+      },
+      "archives": {
+        "title": "Archives",
+        "sub": "{n} archive · ≈ {size} | {n} archives · ≈ {size}",
+        "subNoSize": "{n} archive | {n} archives",
+        "toggleRepo": "Show the archives of {repo}",
+        "listLabel": "Archives of {repo}",
+        "detached": "detached",
+        "unknownSource": "unknown source",
+        "tip": "tip {sha}",
+        "wip": "has working state",
+        "wipTitle": "The uncommitted and untracked files of the removed folder are archived too",
+        "reflog": "{n} reflog commit | {n} reflog commits",
+        "reflogTitle": "Commits that only the removed worktree's own history reached are kept here too",
+        "expired": "expired",
+        "copyRestore": "Copy restore command",
+        "copyWip": "Copy wip command",
+        "copied": "Copied",
+        "retention": "Archives older than {n} day: {k} | Archives older than {n} days: {k}",
+        "deleteOlder": "Delete {k} older than {n} day… | Delete {k} older than {n} days…",
+        "gcNow": "Run git gc now…",
+        "note": "Deleting archives frees disk space only after git's next gc.",
+        "dialog": {
+          "deleteTitle": "Delete {n} archive? | Delete {n} archives?",
+          "deleteWarn": "This removes the archive refs. The branch tips and working states they keep can no longer be restored from here. Git frees the disk space on its next gc.",
+          "deleteConfirm": "Delete {n} archive | Delete {n} archives",
+          "listLabel": "Archives to delete",
+          "gcTitle": "Run git gc in {repo}?",
+          "gcBody": "It deletes unreachable git objects older than an hour, so the space of deleted archives comes back. Don't run it while another git command is writing in this repository.",
+          "gcConfirm": "Run git gc",
+          "trashTitle": "Empty what Harnu moved to the trash?",
+          "trashBody": "This permanently deletes {n} folder Harnu moved to the trash, {size}. Anything else in your trash stays. | This permanently deletes {n} folders Harnu moved to the trash, {size}. Anything else in your trash stays.",
+          "trashConfirm": "Empty {size}",
+          "cancel": "Cancel",
+          "close": "Close",
+          "trashListLabel": "Folders to delete from the trash"
+        },
+        "toast": {
+          "deleted": "Deleted {n} archive | Deleted {n} archives",
+          "deletedSub": "Git frees their disk space on its next gc.",
+          "changed": "{n} archive changed since you looked and was left alone | {n} archives changed since you looked and were left alone",
+          "failed": "Could not delete {n} archive ref | Could not delete {n} archive refs",
+          "gcDone": "git gc finished in {repo}",
+          "gcFailed": "git gc failed in {repo}",
+          "neverClean": "This repo is on the never-clean list, so its archives were left alone.",
+          "protected": "{n} archive was left alone: its folder is on the never-clean list | {n} archives were left alone: their folders are on the never-clean list"
+        },
+        "ageUnknown": "age unknown",
+        "deleteOne": "Delete…",
+        "protected": "On the never-clean list"
+      },
+      "trash": {
+        "title": "In the trash",
+        "strip": "{size} in the trash · {n} folder Harnu moved there | {size} in the trash · {n} folders Harnu moved there",
+        "empty": "Empty what Harnu moved to the trash ({size})",
+        "cantEmpty": "Harnu can't empty it for you on this system. Open {location} and empty it there.",
+        "toast": {
+          "emptied": "Emptied {size} from the trash",
+          "failed": "Could not empty {n} folder from the trash | Could not empty {n} folders from the trash",
+          "unsupported": "Harnu can't empty the trash on this system. Open {location}.",
+          "skippedChanged": "{n} folder was left in the trash: it is no longer what Harnu moved | {n} folders were left in the trash: they are no longer what Harnu moved",
+          "skippedUnreachable": "{n} folder was left in the trash: its disk is not mounted or can't be read | {n} folders were left in the trash: their disk is not mounted or can't be read",
+          "skippedNoRecord": "{n} folder was left in the trash: Harnu has no exact record of that move | {n} folders were left in the trash: Harnu has no exact record of those moves",
+          "nothing": "Nothing was emptied: those folders are no longer in the trash"
+        },
+        "unverified": "{size} moved to the trash by Harnu (can't check what's still there)",
+        "recycleBin": "Recycle Bin"
+      },
+      "guide": {
+        "why": {
+          "none": "{n} can't be removed:",
+          "partial": "Removes {k} · {n} can't:"
+        },
+        "group": "{count} {cause}",
+        "cause": {
+          "mainCheckout": "main checkout",
+          "neverClean": "on your never-clean list",
+          "kept": "marked Keep",
+          "inUse": "in use",
+          "unsupportedKind": "detached (no branch)",
+          "sharedStack": "shared Docker stack",
+          "nestedWorktree": "holds another worktree",
+          "checkFailed": "unreadable folder",
+          "folderGone": "folder gone",
+          "tipUnknown": "commit unknown",
+          "graceNotElapsed": "not quiet long enough",
+          "pathUnresolved": "path unresolved",
+          "sessionOpen": "session open",
+          "locked": "locked in git",
+          "cannotUnregister": "git can't unregister it",
+          "protectedNow": "protected now",
+          "stackPresent": "Docker stack running",
+          "scanBlind": "scanned without Docker"
+        },
+        "dehydrateWin": "Dehydrate frees {size} and keeps the code",
+        "action": {
+          "unlock-remove": "Unlock and remove…",
+          "close-session-remove": "Close session and remove…",
+          "shared-stack": "Choose what to do with the stack…",
+          "fix-unreadable": "Show how to fix it…",
+          "scan-again": "Scan again",
+          "check-again": "Check again",
+          "unkeep": "Remove the Keep mark",
+          "open-settings": "Open Settings",
+          "dockerDown": "Docker wasn't running — what now?"
+        },
+        "combined": {
+          "label": "{steps} and remove…",
+          "unlock": "Unlock",
+          "stack": "stop stack",
+          "session": "close session"
+        }
+      },
+      "guided": {
+        "title": {
+          "unlockRemove": "Unlock and remove",
+          "closeSession": "Close the session and remove",
+          "sharedStack": "A stack is shared with other folders",
+          "fixUnreadable": "Harnu can't read this folder",
+          "dockerDown": "Docker wasn't running",
+          "combined": "Several steps, then the removal"
+        },
+        "subtitle": {
+          "unlockRemove": "Git has this worktree locked. After the unlock the remove is the usual one: archived first, then moved to the trash.",
+          "closeSession": "A session is still open here. Closing an idle one keeps its conversation on disk; the remove that follows is the usual one.",
+          "sharedStack": "Other folders run containers from the same Docker stack, so Harnu will not touch it unless you choose to.",
+          "fixUnreadable": "Harnu can't tell what is inside, so it won't remove the folder unseen. Fix the permission, then check again.",
+          "dockerDown": "Without Docker, Harnu could not see which stacks run from your worktrees, so it won't remove them.",
+          "combined": "Two or more things stand between this worktree and its removal. Harnu does them in this order, and puts back what it changed if the removal is still refused."
+        },
+        "loading": "Reading what git and Docker say right now…",
+        "loadError": "Couldn't read the current facts. Close this and try again.",
+        "lock": {
+          "reason": "Git recorded this reason: “{reason}”",
+          "none": "Git has it locked and recorded no reason.",
+          "gone": "Git no longer lists it as locked.",
+          "leftOut": "{n} no longer locked, so they are left out."
+        },
+        "sessions": {
+          "idle": "{n} idle session will be closed. Its conversation stays on disk. | {n} idle sessions will be closed. Their conversations stay on disk.",
+          "busy": "A session here is working or waiting for you, so Harnu will not close it. Finish or close it yourself first.",
+          "foreign": "The session open here is not one Harnu started, so Harnu cannot close it. Close it where it runs.",
+          "parkWarning": "Parking closes its terminal; background processes it started (dev servers, shells) stop. The conversation is kept and can be resumed.",
+          "userOpened": "{n} of them you opened yourself, not an agent."
+        },
+        "stack": {
+          "runs": "{name} also runs from {folders}",
+          "uses": "It uses this folder.",
+          "none": "This stack is gone now. Scan again."
+        },
+        "choice": {
+          "stop": "Stop stack and remove",
+          "stopBody": "Stops these containers: {names}. They are not removed, and neither are its volumes.",
+          "leave": "Remove the worktree and leave the stack",
+          "leaveBody": "The stack keeps running. None of its containers uses this folder.",
+          "leaveUnavailable": "This stack uses this folder, so it cannot be left running.",
+          "stopBlocked": {
+            "main-checkout": "This stack belongs to the main checkout, so Harnu will not stop it.",
+            "in-use-elsewhere": "Another folder with a session uses this stack, so Harnu will not stop it."
+          }
+        },
+        "unreadable": {
+          "where": "Harnu couldn't read {path}.",
+          "owner": "It belongs to {owner}.",
+          "ownerUnknown": "Harnu couldn't tell who owns it.",
+          "fix": "Run this, then check again:",
+          "ok": "Harnu can read it now. Check again to continue."
+        },
+        "copy": "Copy",
+        "copied": "Copied",
+        "docker": {
+          "down": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks.",
+          "start": "Start Docker, then scan again:",
+          "app": "Open Docker from your applications, then scan again."
+        },
+        "confirm": {
+          "unlock": "Unlock and remove",
+          "closeSession": "Close session and remove",
+          "stop": "Stop stack and remove",
+          "leave": "Remove and leave the stack",
+          "combined": "{steps} and remove",
+          "word": {
+            "unlock": "unlock",
+            "stop": "stop stack",
+            "leave": "leave the stack",
+            "session": "close session"
+          }
+        },
+        "recheck": "Check again",
+        "scan": "Scan again",
+        "cancel": "Cancel",
+        "close": "Close",
+        "pending": "Working…",
+        "stale": "This changed since you opened it — open it again.",
+        "toast": {
+          "scanned": "Scanned again",
+          "scanStillBlind": "Scanned again, but Docker still isn't answering",
+          "scanFailed": "Couldn't scan again",
+          "unkept": "Keep mark removed | Keep marks removed",
+          "unkeepFailed": "Couldn't remove the Keep mark",
+          "recheckedOk": "Checked again: Harnu can read it now",
+          "recheckedStill": "Checked again: Harnu still can't read it",
+          "recheckFailed": "Couldn't check again",
+          "undo": "Undo"
+        },
+        "step": {
+          "unlock": "Unlock the worktree in git.",
+          "stop": "Stop these containers (they are not removed): {names}.",
+          "leave": "Leave the stack running.",
+          "session": "Close the idle session open here (parking; its conversation is kept).",
+          "remove": "Then remove the worktree the usual way: archived first, then moved to the trash."
+        }
+      },
+      "recovered": {
+        "relocked": "Put the lock back on {path} after Harnu quit mid-action",
+        "stackStopped": "Harnu stopped a stack during a clean that didn't finish",
+        "lockSkipped": "Harnu unlocked a worktree during a clean that didn't finish",
+        "containersGone": "Harnu stopped containers during a clean that didn't finish; they are gone now",
+        "failed": "Couldn't do that",
+        "lockFailed": "Harnu unlocked a worktree during a clean that didn't finish and could not lock it again"
+      },
+      "recovery": {
+        "label": "Interrupted cleans",
+        "stackStopped": "Harnu stopped {names} during a clean that didn't finish.",
+        "containersGone": "Harnu stopped {names} during a clean that didn't finish; they no longer exist.",
+        "lockSkipped": "Harnu unlocked {path} during a clean that didn't finish, and it is not the same worktree any more (or that could not be confirmed), so the lock was not put back.",
+        "start": "Start again",
+        "leave": "Leave stopped",
+        "lock": "Lock again",
+        "dismiss": "Dismiss",
+        "lockFailed": "Harnu unlocked {path} during a clean that didn't finish and could not lock it again:",
+        "lockMismatch": "Harnu unlocked {path} during a clean that didn't finish, and the check just now says this is not clearly the same worktree:",
+        "lockAnyway": "Lock this worktree anyway"
       }
     }
   },
@@ -3285,6 +3987,95 @@
     "binaryBody": "Binary file — there is nothing to render, only the path and its counts.",
     "unchangedLines": "{n} unchanged lines",
     "noNewline": " ⏎ no newline at end of file",
+    "selection": {
+      "barLabel": "Selection",
+      "selectFile": "Select whole file {path}",
+      "selectFileTitle": "Select the whole file",
+      "range": {
+        "file": "whole file",
+        "line": "L{line}",
+        "lines": "L{start}–{end}",
+        "oldLine": "old L{line}",
+        "oldLines": "old L{start}–{end}",
+        "mixed": "{startSide} L{start} – {endSide} L{end}"
+      },
+      "side": {
+        "old": "old",
+        "new": "new"
+      },
+      "hint": {
+        "clamp": "A range stays inside one hunk",
+        "headMoved": "The head moved ({from} → {to}). Selection cleared.",
+        "baseMoved": "The base moved ({from} → {to}). Selection cleared."
+      },
+      "action": {
+        "copy": "Copy as text",
+        "clear": "Clear selection",
+        "dismiss": "Dismiss",
+        "tryAgain": "Try again",
+        "openMods": "Open Mods settings",
+        "reopenCompanion": "Reopen \"Ask a fresh session\"",
+        "refresh": "Refresh",
+        "reselect": "Clear and re-select",
+        "narrow": "Narrow the selection"
+      },
+      "state": {
+        "queued": "Updating…",
+        "delivered": "Companion sees this",
+        "cleared": "The conversation was cleared",
+        "ended": "The companion was closed"
+      },
+      "noBinding": {
+        "off": "The Harnu mod is switched off",
+        "cli-too-old": "This Claude Code version is too old for the Harnu mod",
+        "cli-unknown": "Harnu couldn't read the Claude Code version",
+        "pre-disclosure": "Harnu is waiting for you to see the mod notice",
+        "not-claude": "This session started without the Harnu mod",
+        "unknown": "This session started without the Harnu mod"
+      },
+      "outcome": {
+        "NO_BINDING": "Not connected to the Harnu mod",
+        "NO_LEASE": "Connection to the companion was lost",
+        "STICKY_LEGACY": "The mod channel is off for this session",
+        "HEADLESS": "This session can't receive selections",
+        "EXTERNAL": "This session can't receive selections",
+        "FEATURE_OFF": "Mod delivery is switched off",
+        "MODE_SHADOW": "The mod channel is in observe mode",
+        "ORIGIN_DENIED": "Harnu couldn't send this (internal)",
+        "TARGET_DENIED": "This session can't receive selections",
+        "FOLDER_BLOCKED": "This folder is blocked for agents",
+        "BAD_ARGS": "That selection can't be sent",
+        "QUEUE_FULL": "The companion is busy",
+        "SID_UNSETTLED": "The companion is starting a new conversation",
+        "AUDIT_FAILED": "Couldn't record the send — nothing was sent",
+        "head-moved": "The head moved — this selection is out of date",
+        "base-mismatch": "The base moved — this selection is out of date",
+        "head-unreadable": "Harnu can't read the head commit",
+        "no-companion": "Open \"Ask a fresh session\" first",
+        "CMD_PRECONDITION": "The companion refused that selection",
+        "CMD_UNSUPPORTED": "The Harnu mod in this session is too old for this",
+        "FEATURE_DISABLED": "Mod delivery is switched off",
+        "CMD_FAILED": "The companion couldn't take that selection",
+        "CMD_EXPIRED": "The companion couldn't take that selection",
+        "expired": "Not delivered — the companion didn't pick it up",
+        "lost": "Sent, but Harnu didn't get a confirmation",
+        "dropped": {
+          "lease-lost": "Connection to the companion was lost",
+          "rebound": "The conversation was cleared — send the selection again",
+          "session-end": "The companion has ended",
+          "revoked": "Mod delivery was switched off",
+          "host-shutdown": "Harnu is shutting down",
+          "cancelled": "Cancelled"
+        },
+        "unknown": "Harnu couldn't complete that send"
+      },
+      "copied": "Copied",
+      "copyFailed": "Couldn't copy to the clipboard",
+      "guide": {
+        "refresh": "Use “{action}” in the review header",
+        "freshCompanion": "Close this companion, then use “{action}” in the review header"
+      }
+    },
     "truncated": "This diff was cut to keep the pane responsive: {n} files are not shown, out of {rows} changed lines in total.",
     "receipt": {
       "commits": "commits",
@@ -3399,6 +4190,7 @@
     "footerNote": "Checks every 30s · max 2 workers at once · nothing runs while Harnu is closed",
     "emptyTitle": "No workers yet",
     "emptyBody": "A worker runs one prompt in one folder, on a cadence, without opening a session. Good for watching a repo, answering review comments, or checking something on a timer.",
+    "groupPinned": "Pinned · {n}",
     "groupEnabled": "Enabled · {n}",
     "groupOff": "Off · {n}",
     "row": {
@@ -3410,7 +4202,9 @@
       "nextIn": "next in {countdown}",
       "failedStreak": "failed · {n} in a row",
       "disabledStreak": "disabled · {n} failures",
-      "off": "off"
+      "off": "off",
+      "pin": "Pin worker",
+      "unpin": "Unpin worker"
     },
     "tabs": {
       "runs": "Runs",
@@ -3444,7 +4238,9 @@
         "skipped": "skipped",
         "stopped": "stopped",
         "running": "running"
-      }
+      },
+      "pin": "Pin worker",
+      "unpin": "Unpin worker"
     },
     "settings": {
       "identity": "Identity",
@@ -3640,7 +4436,39 @@
     "sidebarChipNeedsYou": "Mission: {headline} — needs you",
     "cue": {
       "one": "Mission “{title}” needs you: {what}",
-      "many": "{n} missions need you"
+      "many": "{n} missions need you",
+      "reviewAll": "Review all {n}",
+      "ownerMissing": "The owner session isn’t open here — click to review this mission instead.",
+      "itemAria": "Open mission {title}"
+    },
+    "review": {
+      "title": "Missions that need you",
+      "intro": "Close the finished ones in one go, or open any of them to handle it.",
+      "groups": {
+        "ready": "Ready to close",
+        "finished": "Finished, close never requested",
+        "finishedHint": "Nobody verified the end of these, so none is pre-selected.",
+        "other": "Waiting on you for something else"
+      },
+      "selectAllReady": "Select all ready",
+      "selected": "{count} selected",
+      "closeSelected": "Close {count} as delivered…",
+      "empty": "No mission needs you right now.",
+      "openMission": "Open",
+      "ownerMissing": "The owner session isn’t open here, so this mission can’t be opened from the review.",
+      "dismiss": "Close the review"
+    },
+    "bulk": {
+      "title": "Close {count} mission as delivered? | Close {count} missions as delivered?",
+      "body": "They leave the Topbar and the sidebar and can’t be reopened. Each mission file stays on disk as the record.",
+      "reason": "Reason (optional)",
+      "reasonPlaceholder": "Goes to every mission’s Log",
+      "confirm": "Close {count} mission | Close {count} missions",
+      "cancel": "Cancel",
+      "dismiss": "Cancel and keep the missions open",
+      "closing": "Closing {done} of {total}…",
+      "done": "{count} mission closed | {count} missions closed",
+      "partial": "{failed} of {total} could not be closed"
     }
   },
   "harnuMod": {
@@ -3721,5 +4549,157 @@
       },
       "manualRemove": "To remove it by hand, delete {path} from `CLAUDE_CODE_PLUGIN_DIRS`."
     }
+  },
+  "browserPane": {
+    "network": {
+      "label": "Network",
+      "hint": "Network capture is on. It stops by itself and records no bodies unless the agent asked for them."
+    },
+    "label": "Browser pane",
+    "newTab": "New tab",
+    "menu": "More actions",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "stop": "Stop",
+    "address": "Address",
+    "addressPlaceholder": "Enter an address",
+    "pauseAgent": "Pause agent for 10 min",
+    "resumeAgent": "Resume agent",
+    "devtools": "Open DevTools",
+    "openFailed": "Couldn't open the browser pane",
+    "origin": {
+      "local": "local",
+      "external": "external",
+      "page": "page"
+    },
+    "flag": {
+      "label": "opened by agent · {host}",
+      "dismiss": "Dismiss the notice",
+      "prefix": "opened by agent"
+    },
+    "chip": {
+      "connectedTo": "Connected to {session}",
+      "connectedToAgent": "Connected to an agent",
+      "canDrive": "An agent can drive here",
+      "canRead": "An agent can read here",
+      "paused": "Agent paused · {time}",
+      "resume": "Resume",
+      "disconnected": "Disconnected",
+      "disconnect": "Disconnect the agent",
+      "disconnectHint": "Ends the agent's access to this pane for good",
+      "disconnectedToast": "Agent disconnected from this pane",
+      "disconnectFailed": "Couldn't disconnect the agent",
+      "reading": "reading",
+      "driving": "driving",
+      "pausedLabel": "Agent paused",
+      "connectedPrefix": "Connected to"
+    },
+    "notice": {
+      "blocked": "Blocked: {scheme}: addresses cannot be opened",
+      "blockedAny": "Blocked: this kind of address cannot be opened",
+      "certificate": "Accepted the self-signed certificate for {host}",
+      "dialog": "The page opened a {dialog} dialog and Harnu dismissed it",
+      "crashed": "The page stopped responding",
+      "dismiss": "Dismiss",
+      "offline": "Blocked: this panel is offline, so it cannot open other addresses. Turn on Network on to follow links out.",
+      "agentInput": "Ignored — a session just acted on this page"
+    },
+    "zoom": {
+      "in": "Zoom in",
+      "out": "Zoom out",
+      "reset": "Reset zoom to 100%",
+      "offInDevice": "Zoom is off while a device is emulated",
+      "label": "Zoom"
+    },
+    "device": {
+      "button": "Device mode",
+      "chipHint": "Change the device",
+      "custom": "Custom size…",
+      "width": "Width",
+      "height": "Height",
+      "dpr": "Pixel ratio",
+      "mobile": "Mobile",
+      "apply": "Apply",
+      "back": "Back",
+      "reset": "Reset device",
+      "rotate": "Rotate",
+      "scheme": "Light or dark",
+      "schemeLight": "Light",
+      "schemeDark": "Dark",
+      "reducedMotion": "Reduced motion",
+      "invalid": "Use 100 to 10000 for the size and 0.5 to 5 for the pixel ratio",
+      "failed": "Couldn't change the device"
+    },
+    "download": {
+      "prompt": "Save {name} to .harnu/out/downloads/?",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "noticeDownloaded": "Saved {name}",
+    "noticeDownloadCancelled": "Download cancelled",
+    "noticeDownloadFailed": "The download failed",
+    "network": {
+      "off": "Offline",
+      "on": "Network on",
+      "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
+      "onHint": "Network on: the page can reach the network. Click to turn it off."
+    },
+    "discarded": {
+      "titleIdle": "Paused to save memory",
+      "titleRestored": "Not loaded yet",
+      "hidden": "{address} · hidden {min} min",
+      "reload": "Click to reload",
+      "load": "Load the page"
+    },
+    "fileRemoved": {
+      "title": "File removed",
+      "waiting": "Waiting for it to come back…"
+    },
+    "pageEvent": {
+      "sent": "Page event sent to the session",
+      "sentComment": "Comment sent to ‹{session}›",
+      "heldTitle": "A page panel sent an event, but no session can take it",
+      "heldBody": "Select a session in this folder, or connect the pane to one, and use the panel again."
+    },
+    "comment": {
+      "hint": "Click an element to comment",
+      "toggle": "Comment on the page",
+      "toggleOff": "Stop commenting (Esc)",
+      "commentOn": "Comment on",
+      "attached": "crop + HTML + {styles} styles attached",
+      "attachedHtmlOnly": "HTML + {styles} styles attached",
+      "attachedNone": "nothing attached",
+      "placeholder": "What should change?",
+      "sendTo": "Send to",
+      "noSession": "No session — copies to clipboard",
+      "owner": "owner",
+      "keepDraft": "Keep as draft",
+      "send": "Send",
+      "composerLabel": "Comment on the selected element",
+      "draftsCount": "no drafts | {n} draft | {n} drafts",
+      "sentCount": "{n} sent",
+      "sendBatch": "Send {n} comment | Send {n} comments",
+      "pin": "Pin {n}",
+      "charsLeft": "{n} left",
+      "refusedTitle": "Comment not sent",
+      "refused": {
+        "BAD_ARGS": "The request was not valid.",
+        "PANE_NOT_FOUND": "This pane no longer exists.",
+        "BROWSER_DISCONNECTED": "The agent is disconnected from this pane, so comments are off.",
+        "NOTHING_TO_SEND": "There is nothing to send: add some text first.",
+        "DELIVERY_FAILED": "The session could not take the message. The draft is kept."
+      },
+      "noSessionTitle": "No session to send to",
+      "noSessionBody": "The comment was copied to your clipboard.",
+      "noSessionLost": "The comment could not be copied. It is still a draft in this pane.",
+      "hintExit": "to exit",
+      "disconnectedHint": "Comments are off here: you disconnected the agent from this pane."
+    }
+  },
+  "splitMenu": {
+    "label": "More split options",
+    "terminal": "Terminal",
+    "browser": "Browser"
   }
 }

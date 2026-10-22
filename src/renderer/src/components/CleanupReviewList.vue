@@ -15,7 +15,11 @@ import type { GcBlock } from '../lib/gc-model'
 import type { BlockJobState, ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate } from './cleanup-row'
-import { reasonKey, refusalKey } from './cleanup-gc-copy'
+import { reasonKey, refusalKey, removalKey, stepKey } from './cleanup-gc-copy'
+import { removability, removabilityAll, type RemovalRefusal } from '../lib/gc-removability'
+import { depsOf, guideFor, guideLabel, hasGuideButton, type GuidedAction } from '../lib/gc-guidance'
+import { resumeHint } from '../lib/gc-resume'
+import type { GcStep } from '../../../main/gc/pipeline-core'
 import Button from './ui/Button.vue'
 import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
@@ -37,6 +41,8 @@ const props = defineProps<{
   isAsking: (id: string) => boolean
   /** How many current opinions say safe: "Remove the {n} marked safe" shows only above zero. */
   safeCount: number
+  /** A guided action that is not a dialog (scan, unmark) is running: the row links wait. */
+  guideBusy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +54,8 @@ const emit = defineEmits<{
   keep: [id: string]
   askAll: []
   removeSafe: []
+  /** The guided action that clears this row's refusal ("No dead ends"). */
+  guide: [id: string, action: GuidedAction, reason: RemovalRefusal]
 }>()
 
 const { t } = useI18n()
@@ -66,7 +74,32 @@ function failed(b: GcBlock): boolean {
 function reasonOf(b: GcBlock): string {
   const refusal = props.failureOf(b.id)?.refusal
   if (refusal) return t(refusalKey(refusal))
+  // Demoted after repeated refusals: say what main kept refusing.
+  const v = removability(b)
+  if (b.bundle?.reprobeRefusal && !v.ok) return t(removalKey(v.reason))
   return t(reasonKey(b.reasonCode))
+}
+
+/** Why Remove is not offered for this row, or null when it is. Main would refuse it, so it is not a button. */
+function removeBlockedText(b: GcBlock): string | null {
+  const v = removability(b)
+  return v.ok ? null : t(removalKey(v.reason))
+}
+
+/** The way out of a refusal, when it needs a button of its own (Dehydrate and the manual command have theirs). */
+function guideOf(
+  b: GcBlock
+): { action: GuidedAction; reason: RemovalRefusal; label: string } | null {
+  const all = removabilityAll(b)
+  if (all.length === 0 || resumeHint(b)) return null
+  // Every cause counts: a cause no prep fixes comes first, and stacked fixable ones are one action.
+  const g = guideFor(
+    all.map((r) => r.reason),
+    { hasDeps: depsOf(b) > 0 }
+  )
+  return hasGuideButton(g.action)
+    ? { action: g.action, reason: g.reason, label: guideLabel(t, g.action, g.reason, g.causes) }
+    : null
 }
 
 function canDehydrateBlock(b: GcBlock): boolean {
@@ -193,6 +226,35 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           <span class="min-w-0 text-ui text-text-2" data-testid="review-reason">
             {{ reasonOf(b) }}
           </span>
+          <span
+            v-if="resumeHint(b)"
+            class="text-caption leading-4 text-text-3"
+            data-testid="review-resume"
+          >
+            {{ t('cleanup.gc.review.resume', { step: t(stepKey(resumeHint(b)!.step as GcStep)) }) }}
+          </span>
+          <span
+            v-if="b.hydration"
+            class="inline-flex items-center gap-1 text-caption leading-4 text-text-3"
+            data-testid="review-dehydrated"
+          >
+            <PackageMinus :size="11" :stroke-width="1.7" aria-hidden="true" />
+            {{
+              t('cleanup.gc.review.dehydratedLeft', {
+                size: b.hydration.bytesLeft === null ? '—' : formatBytes(b.hydration.bytesLeft)
+              })
+            }}
+          </span>
+          <button
+            v-if="removeBlockedText(b) !== null && guideOf(b)"
+            type="button"
+            class="cursor-pointer whitespace-nowrap rounded-sm px-1 text-caption text-accent underline-offset-2 hover:underline disabled:cursor-wait disabled:opacity-60"
+            :disabled="guideBusy"
+            data-testid="review-guide"
+            @click.stop="emit('guide', b.id, guideOf(b)!.action, guideOf(b)!.reason)"
+          >
+            {{ guideOf(b)!.label }}
+          </button>
           <CleanupOpinionChip :opinion="opinionOf(b.id)" :pending="isAsking(b.id)" />
         </span>
 
@@ -200,7 +262,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
 
         <span class="flex items-center justify-end gap-1" @click.stop>
           <button
-            v-if="canDehydrateBlock(b)"
+            v-if="canDehydrateBlock(b) && !resumeHint(b)"
             type="button"
             class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:bg-surface-2 hover:text-text"
             :aria-label="t('cleanup.gc.review.dehydrateAria', { name: b.name })"
@@ -222,6 +284,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
             <Bookmark :size="13" :stroke-width="1.7" />
           </button>
           <button
+            v-if="removeBlockedText(b) === null"
             type="button"
             class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red"
             :aria-label="t('cleanup.gc.review.removeAria', { name: b.name })"
@@ -231,6 +294,17 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           >
             <Trash2 :size="13" :stroke-width="1.7" />
           </button>
+          <!-- A gone folder's row already says how to finish it: no Remove, dimmed or not. -->
+          <span
+            v-else-if="!resumeHint(b)"
+            class="flex h-6.5 w-6.5 cursor-not-allowed items-center justify-center rounded-sm border border-border text-text-disabled"
+            role="img"
+            :aria-label="removeBlockedText(b) ?? undefined"
+            :title="removeBlockedText(b) ?? undefined"
+            data-testid="review-remove-blocked"
+          >
+            <Trash2 :size="13" :stroke-width="1.7" />
+          </span>
         </span>
       </div>
 

@@ -39,6 +39,7 @@ export function shouldBumpImagePill(args: {
  * The fleet popover is added in a follow-up step.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
+import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useI18n } from 'vue-i18n'
 import { onClickOutside, onKeyStroke, useNow } from '@vueuse/core'
 import {
@@ -51,7 +52,8 @@ import {
   Image,
   ExternalLink,
   Recycle,
-  Clock
+  Clock,
+  RotateCw
 } from 'lucide-vue-next'
 import { useUsageStore } from '../stores/usage'
 import { useSessionsStore } from '../stores/sessions'
@@ -61,7 +63,9 @@ import { useReaperStore } from '../stores/reaper'
 import { useSchedulerStore } from '../stores/scheduler'
 import { useContainersStore } from '../stores/containers'
 import { useGcStore } from '../stores/gc'
+import { useStatuslineHealStore } from '../stores/statusline-heal'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useSessionImages } from '../composables/useSessionImages'
 import UsagePanel from './UsagePanel.vue'
 import ClaudeStatusPanel from './ClaudeStatusPanel.vue'
@@ -75,7 +79,12 @@ import {
   type FooterChip,
   type FooterChipKey
 } from './footer-format'
-import { footerPctClass, footerWindowCountdown, formatCostUsd } from './usage-format'
+import {
+  footerPctClass,
+  footerWindowCountdown,
+  formatCostUsd,
+  humanizeDuration
+} from './usage-format'
 import { formatBytes } from './system-monitor-format'
 
 const { t } = useI18n()
@@ -87,6 +96,8 @@ const scheduler = useSchedulerStore()
 const containers = useContainersStore()
 const gc = useGcStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
+const statuslineHeal = useStatuslineHealStore()
 
 // Cleanup footer pill (T443, design.md "Workspace GC — unified Cleanup / Footer pill"): ONE pill
 // replaces the old Cleanup and Containers pills and is fed by the Workspace GC store, so the footer
@@ -106,6 +117,8 @@ onMounted(() => {
   void scheduler.init()
   void containers.init()
   void gc.init()
+  // The Activity notice for a statusLine self-heal must fire whatever view is open (BUG-196).
+  statuslineHeal.init()
 })
 
 /** The single Cleanup pill's content; null hides it (nothing to reclaim, nothing running or failed). */
@@ -155,17 +168,64 @@ watch(
 )
 const schedulerRunningCount = computed(() => scheduler.runningIds.length)
 
+// Tick once a minute so the fleet-chip countdowns stay live-ish — same
+// granularity UsagePanel's "resets in X" lines use, no second timer. Declared before the
+// footer state below, which reads it inside an immediate watcher (BUG-196).
+const now = useNow({ interval: 60_000 })
 const sess = computed(() => sessions.selectedSession)
 // Correlate by the Session object, not the raw id: a still-synthetic new session
 // has telemetry keyed by the real Claude uuid, so a fallback-by-cwd inside
 // `telemetryForSession` surfaces the footer chips before the synth→real migration
 // (BUG-8 — otherwise the footer is empty until the first turn).
-const tele = computed(() => usage.telemetryForSession(sess.value))
+//
+// BUG-196: the left cluster never goes silently blank. `footerState` is the live record, else the
+// last-known one (dimmed, aged), else what the transcript holds; the 24 h TTL is judged against the
+// minute clock below, so a record that ages out while the app runs turns dimmed instead of staying
+// "live".
+const footerState = computed(() => usage.footerStateFor(sess.value, now.value.getTime()))
+const tele = computed(() => (footerState.value.kind === 'none' ? null : footerState.value.tele))
+const dimmed = computed(() => footerState.value.kind === 'stale')
 const chips = computed(() => footerSessionChips(tele.value, sess.value))
+// Why the chips are dimmed (or absent): a one-word label after them, with a sentence as tooltip.
+// A synthetic session is about to receive its first blob, so no reason is shown for it.
+const reason = computed<{ label: string; aria: string } | null>(() => {
+  const st = footerState.value
+  if (st.kind === 'stale') {
+    return st.reason === 'expired'
+      ? { label: t('footer.reasonExpired'), aria: t('footer.a11yReasonExpired') }
+      : { label: t('footer.reasonNone'), aria: t('footer.a11yReasonNone') }
+  }
+  if (st.kind === 'none' && sessions.selectedId && !sess.value?.synthetic) {
+    return { label: t('footer.reasonNone'), aria: t('footer.a11yReasonEmpty') }
+  }
+  return null
+})
+const ageSuffix = computed(() => {
+  const st = footerState.value
+  return st.kind === 'stale' ? t('footer.lastSeen', { age: humanizeDuration(st.ageMs) }) : ''
+})
+// With no record at all, ask main for what the transcript holds (once a minute at most).
+watch(
+  () => [sess.value?.sessionId, footerState.value.kind] as const,
+  () => {
+    if (footerState.value.kind === 'none') void usage.ensureTranscriptFallback(sess.value)
+  },
+  { immediate: true }
+)
+// A live session that answered but whose telemetry did not follow: offer the restart.
+const silent = computed(
+  () =>
+    !!sess.value &&
+    sessions.isSessionLive(sess.value.sessionId) &&
+    usage.isSessionSilent(sess.value, now.value.getTime())
+)
+function restartSilentSession(): void {
+  if (sess.value) sessions.reloadSession(sess.value.sessionId)
+}
 // Which `/compact`-proximity condition fired (or null) — drives the warning
 // chip's visible label, color, and tooltip. `'pct'` → red "near /compact",
 // `'over200k'` → accent ">200k tokens".
-const warnReason = computed(() => nearCompactReason(tele.value))
+const warnReason = computed(() => (dimmed.value ? null : nearCompactReason(tele.value)))
 const warnLabel = computed(() =>
   warnReason.value === 'pct' ? t('footer.nearCompact') : t('footer.over200k')
 )
@@ -193,10 +253,16 @@ function chipClass(key: FooterChipKey): string {
   // Every chip sits at the model tone (`text-text-2`); context only diverges to
   // a signal color (accent/red) near the `/compact` ceiling — same rule as the
   // 5h/7d fleet chips on the right (`footerPctClass`).
+  // Last-known values read quiet and carry no alarm color: a stale percentage must not raise one.
+  if (dimmed.value) return 'text-text-4'
   if (key === 'context') return footerPctClass(tele.value?.contextPercent ?? 0)
   return 'text-text-2'
 }
 function chipAria(chip: FooterChip): string {
+  const base = chipAriaBase(chip)
+  return ageSuffix.value ? `${base} · ${ageSuffix.value}` : base
+}
+function chipAriaBase(chip: FooterChip): string {
   switch (chip.key) {
     case 'model':
       return t('footer.a11yModel', { model: chip.value })
@@ -222,9 +288,6 @@ const fleet = computed(() => usage.fleetSummary)
 const rl = computed(() => usage.rateLimits)
 const fiveHourPct = computed(() => rl.value?.fiveHour?.usedPercent ?? null)
 const sevenDayPct = computed(() => rl.value?.sevenDay?.usedPercent ?? null)
-// Tick once a minute so the fleet-chip countdowns stay live-ish — same
-// granularity UsagePanel's "resets in X" lines use, no second timer.
-const now = useNow({ interval: 60_000 })
 const fiveHourCountdown = computed(() =>
   footerWindowCountdown(rl.value?.fiveHour?.resetsAtMs ?? null, now.value.getTime())
 )
@@ -257,24 +320,34 @@ const fleetCost = computed(() =>
 
 // Fleet popover: the full UsagePanel meters (5h/7d + countdown). Closes on
 // click-outside (the ref wraps button + popover, so inner clicks are ignored)
-// and on Esc.
-const popoverOpen = ref(false)
+// and on Esc. The three footer popovers' open flags live in the ui store
+// (T486 U4a) so their keybindings can open them and the App's Esc binding can
+// see them; each anchor is reported while its button renders.
+const popoverOpen = computed(() => ui.popovers.usagePanel)
+// The three footer popovers open UPWARD over the helper stack, so each registers with the native-overlay
+// freeze: a browser pane under one freezes instead of drawing over it (spec §2.4).
+const fleetPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-fleet-popover', fleetPopoverEl)
 const fleetRef = ref<HTMLElement | null>(null)
-onClickOutside(fleetRef, () => (popoverOpen.value = false))
-onKeyStroke('Escape', () => (popoverOpen.value = false))
+onClickOutside(fleetRef, () => ui.closePopover('usagePanel'))
+onKeyStroke('Escape', () => ui.closePopover('usagePanel'))
+watch(fleetVisible, (v) => ui.setPopoverAnchor('usagePanel', v), { immediate: true })
 
 // ── Claude service status (issue #17) ───────────────────────────────────────
 // Always-visible health dot left of the fleet block; click → the status panel
 // popover. A clicked OS alert bumps `openSignal`, which opens the panel here.
 const statusDotClass = computed(() => severityDotClass(status.severity))
 const statusLabel = computed(() => t(severityLabelKey(status.severity)))
-const statusOpen = ref(false)
+const statusOpen = computed(() => ui.popovers.claudeStatus)
+const statusPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-status-popover', statusPopoverEl)
 const statusRef = ref<HTMLElement | null>(null)
-onClickOutside(statusRef, () => (statusOpen.value = false))
-onKeyStroke('Escape', () => (statusOpen.value = false))
+ui.setPopoverAnchor('claudeStatus', true)
+onClickOutside(statusRef, () => ui.closePopover('claudeStatus'))
+onKeyStroke('Escape', () => ui.closePopover('claudeStatus'))
 watch(
   () => status.openSignal,
-  () => (statusOpen.value = true)
+  () => ui.openPopover('claudeStatus')
 )
 
 // ── Pasted-images gallery (footer pill + popover) ────────────────────────────
@@ -300,32 +373,50 @@ const {
 } = useSessionImages(imagesUuid, canReattach)
 const imageFolderAlias = computed(() => sessions.selectedPath?.folder ?? '')
 
-const imagesPopoverOpen = ref(false)
+const imagesPopoverOpen = computed(() => ui.popovers.pastedImages)
+const imagesPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-images-popover', imagesPopoverEl)
 const imagesRef = ref<HTMLElement | null>(null)
-// Lightbox state is component-local, like the popovers around it — it has a
-// single entry point (a tile in `FooterImagePopover`) so it doesn't need the
-// `ui` store's cross-component mutex (design.md §6 — Floating surfaces).
-const lightboxIndex = ref<number | null>(null)
+// The pill hides at zero images, and the popover hangs off it.
+watch(imageCount, (n) => ui.setPopoverAnchor('pastedImages', n > 0), { immediate: true })
+// The lightbox's index lives in the ui store next to the popover flags (T486
+// U4a) — `anyPopoverOpen` covers it. It has a single entry point (a tile in
+// `FooterImagePopover`), and closing the popover ends it. It is still outside
+// the floating-surface mutex (design.md §6 — Floating surfaces).
+const lightboxIndex = computed(() => ui.imageLightboxIndex)
 // While the lightbox is open it OWNS Esc and outside-clicks: it's teleported to
 // `body`, so every click inside it (prev/next, the filmstrip) reads as "outside"
 // to the footer — without this guard those clicks would close the popover and
 // `clearThumbs()` the very data-URLs the lightbox is displaying.
 onClickOutside(imagesRef, () => {
-  if (lightboxIndex.value === null) imagesPopoverOpen.value = false
+  if (lightboxIndex.value === null) ui.closePopover('pastedImages')
 })
 onKeyStroke('Escape', () => {
-  if (lightboxIndex.value === null) imagesPopoverOpen.value = false
+  if (lightboxIndex.value === null) ui.closePopover('pastedImages')
 })
-// Free the loaded base64 whenever the popover closes (any path: toggle, Esc,
-// click-outside) — a big gallery is tens of MB not worth keeping resident.
-watch(imagesPopoverOpen, (open) => {
-  if (!open) clearImageThumbs()
+// Every open (the pill's click or `view.pastedImages`) re-lists, then fills the
+// thumbnails (v1 lists on open — no live watcher). Every close (toggle, Esc,
+// click-outside, the pill hiding) frees the loaded base64 — a big gallery is
+// tens of MB not worth keeping resident.
+watch(imagesPopoverOpen, async (open) => {
+  if (!open) {
+    clearImageThumbs()
+    return
+  }
+  await refreshImages()
+  await loadImageThumbs()
+})
+
+// The footer unmounting takes all three anchors (and so any open popover) with it.
+onBeforeUnmount(() => {
+  ui.setPopoverAnchor('usagePanel', false)
+  ui.setPopoverAnchor('claudeStatus', false)
+  ui.setPopoverAnchor('pastedImages', false)
 })
 
 /** One clean exit out of the whole image flow: lightbox AND popover behind it. */
 function closeImageFlow(): void {
-  lightboxIndex.value = null
-  imagesPopoverOpen.value = false
+  ui.closePopover('pastedImages')
 }
 
 // Pill "pop" when a genuinely new screenshot lands (design.md §7 — "Pasted-images
@@ -349,29 +440,13 @@ onBeforeUnmount(() => {
   if (bumpTimer) clearTimeout(bumpTimer)
 })
 
-// Re-list on open (v1 lists on-open — no live watcher) then fill thumbnails.
-async function toggleImagesPopover(): Promise<void> {
-  imagesPopoverOpen.value = !imagesPopoverOpen.value
-  if (!imagesPopoverOpen.value) {
-    lightboxIndex.value = null
-    return
-  }
-  // Local footer mutex: opening the images popover closes the usage one.
-  popoverOpen.value = false
-  await refreshImages()
-  await loadImageThumbs()
-}
-
-// Mutex the other way: opening the usage popover closes the images one.
-function toggleFleetPopover(): void {
-  popoverOpen.value = !popoverOpen.value
-  if (popoverOpen.value) imagesPopoverOpen.value = false
-}
+// The pasted-images and plan-usage popovers close each other when one opens —
+// the footer mutex lives in `ui.openPopover`.
 
 // T47 P6 S2: "Open full dashboard" link at the foot of the fleet popover —
 // closes the popover and takes over the main pane with the Usage Dashboard.
 function openFullDashboard(): void {
-  popoverOpen.value = false
+  ui.closePopover('usagePanel')
   ui.openUsageDashboard()
 }
 </script>
@@ -419,6 +494,28 @@ function openFullDashboard(): void {
     </template>
     <span v-else-if="sessions.selectedId" class="truncate text-text-4">{{ fallbackLabel }}</span>
     <span v-else class="text-text-4">{{ t('footer.noSession') }}</span>
+    <!-- BUG-196: why the chips are dimmed or absent (design.md §6 — Last-known state) -->
+    <span
+      v-if="reason"
+      class="whitespace-nowrap text-text-4"
+      data-testid="footer-telemetry-reason"
+      :aria-label="reason.aria"
+      :title="reason.aria"
+      >{{ reason.label }}</span
+    >
+    <!-- BUG-196: a live session that answered but sent no telemetry — restart it -->
+    <button
+      v-if="silent"
+      type="button"
+      data-testid="footer-silent-hint"
+      class="flex items-center gap-1 whitespace-nowrap rounded-sm px-1.5 text-warning transition-colors hover:bg-surface-2"
+      :aria-label="t('footer.a11ySilentHint')"
+      :title="t('footer.a11ySilentHint')"
+      @click="restartSilentSession"
+    >
+      <RotateCw :size="12" :stroke-width="1.6" class="shrink-0" />
+      <span>{{ t('footer.silentHint') }}</span>
+    </button>
 
     <!-- Pasted-images pill (hide-when-zero) — left of the ml-auto cluster -->
     <div v-if="imageCount > 0" ref="imagesRef" class="relative">
@@ -432,15 +529,18 @@ function openFullDashboard(): void {
           pillBump ? 'anim-pill-bump' : ''
         ]"
         :aria-label="t('images.pillAria', { count: imageCount })"
-        :title="t('images.pillAria', { count: imageCount })"
+        :title="
+          keybindings.withChord(t('images.pillAria', { count: imageCount }), 'view.pastedImages')
+        "
         :aria-expanded="imagesPopoverOpen"
-        @click="toggleImagesPopover"
+        @click="ui.togglePopover('pastedImages')"
       >
         <Image :size="12" :stroke-width="1.6" class="shrink-0" />
         <span class="tabular-nums">{{ imageCount }}</span>
       </button>
       <div
         v-if="imagesPopoverOpen"
+        ref="imagesPopoverEl"
         class="anim-fade-in-scale absolute bottom-full left-0 z-50 mb-1.5 w-[320px] rounded-lg border border-border-2 bg-surface-2 shadow-pop"
       >
         <FooterImagePopover
@@ -449,7 +549,7 @@ function openFullDashboard(): void {
           :folder-alias="imageFolderAlias"
           :count="imageCount"
           :can-reattach="canReattach"
-          @open-lightbox="lightboxIndex = $event"
+          @open-lightbox="ui.openImageLightbox($event)"
         />
       </div>
     </div>
@@ -463,7 +563,7 @@ function openFullDashboard(): void {
       :folder-alias="imageFolderAlias"
       :can-reattach="canReattach"
       @close="closeImageFlow"
-      @update:index="lightboxIndex = $event"
+      @update:index="ui.openImageLightbox($event)"
       @reattached="closeImageFlow"
     />
 
@@ -489,9 +589,14 @@ function openFullDashboard(): void {
           type="button"
           class="flex items-center rounded text-text-2 transition-colors hover:text-text"
           :aria-label="t('claudeStatus.a11yDot', { status: statusLabel })"
-          :title="t('claudeStatus.a11yDot', { status: statusLabel })"
+          :title="
+            keybindings.withChord(
+              t('claudeStatus.a11yDot', { status: statusLabel }),
+              'view.claudeStatus'
+            )
+          "
           :aria-expanded="statusOpen"
-          @click="statusOpen = !statusOpen"
+          @click="ui.togglePopover('claudeStatus')"
         >
           <span
             class="shrink-0 rounded-full"
@@ -501,6 +606,7 @@ function openFullDashboard(): void {
         </button>
         <div
           v-if="statusOpen"
+          ref="statusPopoverEl"
           class="anim-fade-in-scale absolute bottom-full right-0 z-50 mb-1.5 w-[300px] rounded-lg border border-border-2 bg-surface-2 shadow-pop"
         >
           <ClaudeStatusPanel />
@@ -531,7 +637,7 @@ function openFullDashboard(): void {
                 : 'text-text-2 hover:bg-surface-2 hover:text-text'
         "
         :aria-label="cleanupPill.aria"
-        :title="cleanupPill.aria"
+        :title="keybindings.withChord(cleanupPill.aria, 'view.cleanup')"
         :aria-pressed="ui.cleanupOpen"
         @click="ui.toggleCleanup()"
       >
@@ -562,9 +668,12 @@ function openFullDashboard(): void {
             : t('scheduler.footerPill')
         "
         :title="
-          schedulerRunningCount > 0
-            ? t('scheduler.footerRunning', { n: schedulerRunningCount })
-            : t('scheduler.footerPill')
+          keybindings.withChord(
+            schedulerRunningCount > 0
+              ? t('scheduler.footerRunning', { n: schedulerRunningCount })
+              : t('scheduler.footerPill'),
+            'view.scheduler'
+          )
         "
         :aria-pressed="ui.schedulerOpen"
         @click="ui.toggleScheduler()"
@@ -591,7 +700,7 @@ function openFullDashboard(): void {
           class="flex items-center gap-2 whitespace-nowrap rounded text-text-2 transition-colors hover:text-text"
           :aria-label="t('footer.a11yFleet')"
           :aria-expanded="popoverOpen"
-          @click="toggleFleetPopover"
+          @click="ui.togglePopover('usagePanel')"
         >
           <span
             v-if="fiveHourPct != null"
@@ -629,6 +738,7 @@ function openFullDashboard(): void {
         </button>
         <div
           v-if="popoverOpen"
+          ref="fleetPopoverEl"
           class="anim-fade-in-scale absolute bottom-full right-0 z-50 mb-1.5 w-[280px] rounded-lg border border-border-2 bg-surface-2 p-2 shadow-pop"
         >
           <UsagePanel />

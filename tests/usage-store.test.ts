@@ -11,6 +11,7 @@ import type { SessionTelemetry } from '../src/main/statusline-parse'
 type UpdatedCb = (s: unknown) => void
 let updatedCb: UpdatedCb | null = null
 let telemetryCb: UpdatedCb | null = null
+let sessionUpdatedCb: UpdatedCb | null = null
 
 const EMPTY_TELEMETRY = {
   perSession: [],
@@ -100,6 +101,12 @@ function makeApi(overrides: Record<string, unknown> = {}): Record<string, unknow
       telemetryCb = cb
       return () => {}
     }),
+    onSessionUpdated: vi.fn((cb: UpdatedCb) => {
+      sessionUpdatedCb = cb
+      return () => {}
+    }),
+    statuslineStatus: vi.fn(async () => ({ enabled: true, foreignPreserved: false })),
+    telemetryTranscriptFallback: vi.fn(async () => null),
     ...overrides
   }
 }
@@ -109,6 +116,7 @@ describe('useUsageStore', () => {
     setActivePinia(createPinia())
     updatedCb = null
     telemetryCb = null
+    sessionUpdatedCb = null
     vi.stubGlobal('window', { api: makeApi() })
   })
 
@@ -298,5 +306,145 @@ describe('useUsageStore', () => {
     const store = useUsageStore()
     await store.init()
     expect(store.telemetryForSession(null)).toBeNull()
+  })
+
+  // --- BUG-196: last-known fallback + silent-session hint ---------------------
+  describe('footer state (BUG-196)', () => {
+    const NOW = 1_790_000_000_000
+    const HOUR = 3_600_000
+    const sess: Sess = { sessionId: 'real-uuid', projectPath: '/home/u/repo' }
+
+    it('serves a fresh record as live', async () => {
+      const store = useUsageStore()
+      await store.init()
+      telemetryCb!(
+        telemetry({ perSession: [sessTele({ sessionId: 'real-uuid', updatedAtMs: NOW - 1_000 })] })
+      )
+      expect(store.footerStateFor(sess, NOW).kind).toBe('live')
+    })
+
+    it("shows main's retained record as stale, never live", async () => {
+      const store = useUsageStore()
+      await store.init()
+      telemetryCb!(
+        telemetry({
+          lastKnown: [sessTele({ sessionId: 'real-uuid', updatedAtMs: NOW - 72 * HOUR })]
+        })
+      )
+      const state = store.footerStateFor(sess, NOW)
+      expect(state.kind).toBe('stale')
+      expect(state.kind === 'stale' && state.ageMs).toBe(72 * HOUR)
+      expect(store.telemetryForSession(sess)).toBeNull() // the live lookup is untouched
+    })
+
+    it('a live-map record that ages past the TTL while the app runs turns stale', async () => {
+      const store = useUsageStore()
+      await store.init()
+      telemetryCb!(
+        telemetry({ perSession: [sessTele({ sessionId: 'real-uuid', updatedAtMs: NOW })] })
+      )
+      expect(store.footerStateFor(sess, NOW + 23 * HOUR).kind).toBe('live')
+      expect(store.footerStateFor(sess, NOW + 25 * HOUR).kind).toBe('stale')
+    })
+
+    it('BUG-8 still holds: a synthetic session correlates by cwd and is live', async () => {
+      const store = useUsageStore()
+      await store.init()
+      telemetryCb!(
+        telemetry({
+          perSession: [
+            sessTele({ sessionId: 'real-uuid', cwd: '/home/u/repo', updatedAtMs: NOW - 500 })
+          ]
+        })
+      )
+      const synth: Sess = {
+        sessionId: 'synthetic-abc',
+        projectPath: '/home/u/repo',
+        synthetic: true
+      }
+      expect(store.footerStateFor(synth, NOW).kind).toBe('live')
+    })
+
+    it('falls back to the transcript reading when there is no record', async () => {
+      const api = makeApi({
+        telemetryTranscriptFallback: vi.fn(async () => ({
+          modelId: 'claude-opus-4-8',
+          contextPercent: 31,
+          atMs: Date.now() - HOUR
+        }))
+      })
+      vi.stubGlobal('window', { api })
+      const store = useUsageStore()
+      await store.init()
+      expect(store.footerStateFor(sess, Date.now()).kind).toBe('none')
+      await store.ensureTranscriptFallback({ ...sess, fullPath: '/p/real-uuid.jsonl' })
+      const state = store.footerStateFor(sess, Date.now())
+      expect(state.kind).toBe('stale')
+      expect(state.kind === 'stale' && state.tele.contextPercent).toBe(31)
+      expect(state.kind === 'stale' && state.reason).toBe('none')
+    })
+
+    it('does not read a transcript for a synthetic session', async () => {
+      const store = useUsageStore()
+      await store.init()
+      await store.ensureTranscriptFallback({
+        sessionId: 'synthetic-x',
+        projectPath: '/p',
+        fullPath: '',
+        synthetic: true
+      })
+      expect(window.api.telemetryTranscriptFallback).not.toHaveBeenCalled()
+    })
+
+    describe('silent session', () => {
+      beforeEach(() => vi.useFakeTimers({ now: NOW }))
+      afterEach(() => vi.useRealTimers())
+
+      it('flags a session whose assistant turn got no payload within the grace, and clears on one', async () => {
+        const store = useUsageStore()
+        await store.init()
+        sessionUpdatedCb!({ sessionId: 'real-uuid', assistantTurn: true })
+        expect(store.isSessionSilent(sess, NOW + 60_000)).toBe(false) // inside the grace
+        expect(store.isSessionSilent(sess, NOW + 3 * 60_000)).toBe(true)
+        telemetryCb!(
+          telemetry({
+            perSession: [sessTele({ sessionId: 'real-uuid', updatedAtMs: NOW + 3 * 60_000 })]
+          })
+        )
+        expect(store.isSessionSilent(sess, NOW + 3 * 60_000 + 1)).toBe(false)
+      })
+
+      it('ignores an update that holds no assistant turn', async () => {
+        const store = useUsageStore()
+        await store.init()
+        sessionUpdatedCb!({ sessionId: 'real-uuid', ctxPct: 4 })
+        expect(store.isSessionSilent(sess, NOW + 10 * 60_000)).toBe(false)
+      })
+
+      it('is never silent while the statusLine switch is off or a foreign one is preserved', async () => {
+        vi.stubGlobal('window', {
+          api: makeApi({
+            statuslineStatus: vi.fn(async () => ({ enabled: true, foreignPreserved: true }))
+          })
+        })
+        const store = useUsageStore()
+        await store.init()
+        await vi.waitFor(() => expect(store.telemetryExpected).toBe(false))
+        sessionUpdatedCb!({ sessionId: 'real-uuid', assistantTurn: true })
+        expect(store.isSessionSilent(sess, NOW + 10 * 60_000)).toBe(false)
+      })
+
+      it('is never silent for a synthetic session', async () => {
+        const store = useUsageStore()
+        await store.init()
+        sessionUpdatedCb!({ sessionId: 'synthetic-abc', assistantTurn: true })
+        expect(
+          store.isSessionSilent(
+            { sessionId: 'synthetic-abc', projectPath: '/p', synthetic: true },
+            NOW + 10 * 60_000
+          )
+        ).toBe(false)
+      })
+    })
   })
 })

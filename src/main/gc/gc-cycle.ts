@@ -7,14 +7,15 @@
 // bundles the planner called ready items, through ops built for the `autopilot` actor.
 
 import type { InspectedContainer } from '../containers/containers-core'
-import type { WorktreeBundle } from './bundle-core'
 import {
   applyFailures,
   planCycle,
   pruneFailures,
+  rememberReprobeRefusal,
   type CycleFailure,
   type CyclePlan
 } from './autopilot-core'
+import type { WorktreeBundle } from './bundle-core'
 import type { JobQueue } from './gc-jobs-core'
 import type { GcPrefs } from './gc-prefs'
 import type { CycleRecord } from './gc-wire'
@@ -71,6 +72,16 @@ export interface GcCycleDeps {
   emitCycle(r: CycleRecord): void
   /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
   rememberLeftovers?(entries: Leftover[]): void
+  /**
+   * Deletes the archive refs older than `keepDays` in every known repo (never `git gc`). Called
+   * only when the operator turned "Expire archives automatically" on, the autopilot is on and the
+   * first report was acknowledged: it is the one place the autopilot deletes refs.
+   */
+  expireArchives?(
+    keepDays: number,
+    now: number,
+    neverClean: readonly string[]
+  ): Promise<{ deleted: number; failed: number }>
   /** Called with every gather, whether or not the cycle cleans: the Containers feed reads it. */
   onGathered?(g: GcGather): void
   state: CycleState
@@ -84,8 +95,14 @@ export interface GcCycleDeps {
  * the cycle agree; applying it again is a no-op.
  */
 export function withFailures<G extends GcGather>(g: G, state: CycleState, now: number): G {
-  pruneFailures(state.failures, g.bundles, now)
-  return { ...g, bundles: applyFailures(g.bundles, state.failures) }
+  // No pruning of the shared notes here: forgetting a note belongs to the gatherer, which does it
+  // only from a gather that is still current. A prune on this side ran against a gather that a
+  // manual clean could overlap, and deleted the note of an item that clean had just halted. The
+  // same rules run on a copy instead, so an expired note or a refusal the scan has moved past is
+  // only skipped, never deleted: after its TTL the autopilot may try again.
+  const live = new Map(state.failures)
+  pruneFailures(live, g.bundles, now)
+  return { ...g, bundles: applyFailures(g.bundles, live, now) }
 }
 
 /**
@@ -101,6 +118,16 @@ export function formatBytes(bytes: number): string {
   if (n >= 1e6) return Math.round(n / 1e6) + ' MB'
   if (n >= 1e3) return Math.round(n / 1e3) + ' KB'
   return Math.round(n) + ' B'
+}
+
+/**
+ * "400 MB freed now · 2.00 GB in the trash": what a clean really returned, next to what only moved
+ * to the OS trash. The renderer says the same words (`cleanup.gc.freed.*`), so the screen and the
+ * notification never give two amounts for one clean.
+ */
+export function freedSplit(freedBytes: number, trashedBytes: number): string {
+  const now = `${formatBytes(freedBytes)} freed now`
+  return trashedBytes > 0 ? `${now} · ${formatBytes(trashedBytes)} in the trash` : now
 }
 
 const NOTICE_TITLE = 'Workspace cleanup'
@@ -184,16 +211,43 @@ export async function runGcCycle(
     if (r.ok) {
       deps.state.failures.delete(r.id)
       const done = toClean.find((b) => b.item.id === r.id)
-      if (done) deps.rememberLeftovers?.(leftBehind(done, gathered.housekeeping.volumes))
+      if (done)
+        deps.rememberLeftovers?.(
+          leftBehind(done, gathered.housekeeping.volumes, gathered.housekeeping.containers)
+        )
     }
-    // A refusal at the reprobe changed nothing: that item just re-buckets on the next scan.
-    if (!r.ok && r.haltedAt !== 'reprobe' && r.haltedAt !== null) {
+    // A refusal at the reprobe changed nothing. One that describes the item (a locked worktree, an
+    // unknown tip) is remembered, so the item leaves the hero and the next cycle spends its cap
+    // elsewhere; the rest just re-bucket on the next scan.
+    if (!r.ok && r.haltedAt === 'reprobe') {
+      const done = toClean.find((b) => b.item.id === r.id)
+      rememberReprobeRefusal(deps.state.failures, r, now, done?.localTip ?? null)
+    } else if (!r.ok && r.haltedAt !== null) {
       deps.state.failures.set(r.id, { step: r.haltedAt, error: r.error ?? 'failed', at: now })
+      console.warn('[gc] cleanup halted', r.id, r.haltedAt, r.error)
+    }
+  }
+
+  // The one place the autopilot deletes refs: only on the operator's explicit, separate setting,
+  // and never in report-only mode. A failure is logged and never fails the cycle.
+  let archivesExpired = 0
+  const expireOn =
+    prefs.autopilot &&
+    prefs.firstReportAcknowledged &&
+    prefs.archiveAutoExpire &&
+    !!deps.expireArchives
+  if (expireOn) {
+    try {
+      archivesExpired = (await deps.expireArchives!(prefs.archiveKeepDays, now, prefs.neverClean))
+        .deleted
+    } catch (err) {
+      console.warn('[gc] archive expiry failed', messageOf(err))
     }
   }
 
   const doneCount = cleaned.filter((r) => r.ok).length
   const freedBytes = cleaned.reduce((sum, r) => sum + r.freedBytes, 0) + reclaimed(housekeeping)
+  const trashedBytes = cleaned.reduce((sum, r) => sum + (r.trashedBytes ?? 0), 0)
 
   let notice: string | null = null
   if (plan.mode === 'report') {
@@ -204,11 +258,18 @@ export async function runGcCycle(
     deps.state.lastReportKey = key
   } else {
     deps.state.lastReportKey = null
+    let cleaning: string | null = null
     if (doneCount > 0) {
-      notice = `Cleaned ${doneCount} ${plural(doneCount, 'worktree')}, freed ${formatBytes(freedBytes)}`
+      cleaning = `Cleaned ${doneCount} ${plural(doneCount, 'worktree')}, ${freedSplit(freedBytes, trashedBytes)}`
     } else if (reclaimed(housekeeping) > 0) {
-      notice = `Freed ${formatBytes(reclaimed(housekeeping))} of Docker cache`
+      cleaning = `Freed ${formatBytes(reclaimed(housekeeping))} of Docker cache`
     }
+    // Always said when it happened, whatever else the cycle did: refs were deleted.
+    const expiry =
+      archivesExpired > 0
+        ? `Deleted ${archivesExpired} ${plural(archivesExpired, 'archive')} older than ${prefs.archiveKeepDays} ${plural(prefs.archiveKeepDays, 'day')}. Git reclaims their space on its next gc.`
+        : null
+    notice = cleaning && expiry ? `${cleaning}. ${expiry}` : (cleaning ?? expiry)
   }
   if (notice) deps.notify({ title: NOTICE_TITLE, body: notice })
 
@@ -220,6 +281,8 @@ export async function runGcCycle(
     foundBytes: plan.reportBytes,
     cleaned,
     freedBytes,
+    trashedBytes,
+    archivesExpired,
     deferred: plan.deferred,
     housekeeping,
     notified: notice !== null,

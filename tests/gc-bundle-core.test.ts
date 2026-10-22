@@ -2050,14 +2050,16 @@ describe('bucketOf — a worktree nested inside this one (delta 6, F1)', () => {
   it.each([undefined, null, 'x'])('fails closed when the list is %s', (bad) => {
     const r = bucketOf(readyFacts({ nestedWorktrees: bad as unknown as string[] }), NOW, GRACE_DAYS)
     expect(r.bucket).toBe('review')
-    expect(r.reason?.code).toBe('nested-worktree')
+    // Nothing was found inside: the probe did not answer, which is its own reason.
+    expect(r.reason?.code).toBe('check-failed')
   })
 
   it('fails closed when the field is absent', () => {
     const { nestedWorktrees: _omit, ...rest } = readyFacts()
     const r = bucketOf(rest as BundleFacts, NOW, GRACE_DAYS)
     expect(r.bucket).toBe('review')
-    expect(r.reason?.code).toBe('nested-worktree')
+    expect(r.reason?.code).toBe('check-failed')
+    expect(r.reason?.detail).toContain(WT_A)
   })
 
   it('the in-use rules still win', () => {
@@ -2212,8 +2214,9 @@ describe('bucketOf — a foreign checkout inside the worktree (delta 7)', () => 
       GRACE_DAYS
     )
     expect(r.bucket).toBe('review')
-    expect(r.reason?.code).toBe('nested-worktree')
-    expect(r.reason?.detail).toMatch(/could not be checked/)
+    expect(r.reason?.code).toBe('check-failed')
+    expect(r.reason?.detail).toMatch(/could not look inside/)
+    expect(r.reason?.detail).not.toMatch(/lives inside|live inside/)
   })
 
   it('sits with the nested-worktree rule: after shared-stack, before path-unresolved', () => {
@@ -2245,9 +2248,9 @@ describe('buildBundles — foreign checkouts from the shell scan (delta 7)', () 
   it.each<[string, ReadonlyMap<string, string[]>]>([
     ['missing', new Map()],
     ['not a list', new Map([[item().id, 'x' as unknown as string[]]])]
-  ])('an entry that is %s fails closed as review nested-worktree', (_label, map) => {
+  ])('an entry that is %s fails closed as review check-failed', (_label, map) => {
     const b = only(build({ foreignCheckouts: map }))
     expect(b.bucket).toBe('review')
-    expect(b.reason?.code).toBe('nested-worktree')
+    expect(b.reason?.code).toBe('check-failed')
   })
 })

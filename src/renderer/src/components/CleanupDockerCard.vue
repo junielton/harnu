@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Container, EyeOff } from 'lucide-vue-next'
+import { Container, EyeOff, Recycle, Trash2 } from 'lucide-vue-next'
+import Button from './ui/Button.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import { formatBytes } from './system-monitor-format'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
-import type { CycleRecord, GcDockerCard, OrphanVolumeItem } from '../../../main/gc/gc-wire'
+import type {
+  CycleRecord,
+  GcDockerCard,
+  OrphanVolumeItem,
+  StackLeftoverItem
+} from '../../../main/gc/gc-wire'
 
 /**
  * Docker region of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Docker card").
@@ -20,10 +26,16 @@ const props = defineProps<{
   volumes: OrphanVolumeItem[]
   lastCycle: CycleRecord | null
   prefs: GcPrefs
+  /** What removed worktrees left in Docker (AC-D3); the block shows only when this is not empty. */
+  leftovers?: StackLeftoverItem[]
 }>()
 const emit = defineEmits<{
   toggle: [category: 'dockerCache', value: boolean]
   inspect: []
+  /** Clean up the stopped containers and networks of these leftovers (ids `stack-leftover:<project>`). */
+  cleanLeftovers: [ids: string[]]
+  /** Remove these leftover volumes (ids `volume:<name>`), each behind its own confirm. */
+  removeLeftoverVolumes: [ids: string[]]
 }>()
 const { t } = useI18n()
 
@@ -78,6 +90,27 @@ const hidden = computed(() => {
 
 /** The folder names stay folded away until asked for, so the hint is two lines, not a wall of names. */
 const foldersOpen = ref(false)
+
+/** The leftovers block: containers and networks apart from volumes, which never ride with them. */
+const leftovers = computed(() => props.leftovers ?? [])
+const stackItems = computed(() =>
+  leftovers.value.filter((l) => l.containers.length + l.networks.length > 0)
+)
+const leftoverContainers = computed(() =>
+  stackItems.value.reduce((a, l) => a + l.containers.length, 0)
+)
+const leftoverNetworks = computed(() => stackItems.value.reduce((a, l) => a + l.networks.length, 0))
+const leftoverVolumes = computed(() => leftovers.value.flatMap((l) => l.volumes))
+const leftoverVolumeBytes = computed(() =>
+  leftoverVolumes.value.reduce((a, v) => a + (v.sizeBytes ?? 0), 0)
+)
+const leftoverNames = computed(() => {
+  const names = leftovers.value.map((l) => l.project)
+  const shown = names.slice(0, 3).join(', ')
+  return names.length > 3
+    ? `${shown} ${t('cleanup.gc.docker.more', { n: names.length - 3 })}`
+    : shown
+})
 
 const MAX_PROJECTS = 3
 const projects = computed(() => [
@@ -294,6 +327,80 @@ const splitSegments = computed(() =>
         </span>
         <div class="text-caption leading-4 text-text-3" data-testid="docker-volumes-note">
           {{ t('cleanup.gc.docker.volumesNote') }}
+        </div>
+      </div>
+
+      <div
+        v-if="leftovers.length > 0"
+        :class="blockClass(true, 'review')"
+        class="col-span-full"
+        data-testid="docker-leftovers"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-ui font-medium text-text">{{
+            t('cleanup.gc.docker.leftovers.title')
+          }}</span>
+          <span class="truncate text-caption text-text-3" data-testid="docker-leftovers-projects">{{
+            t('cleanup.gc.docker.leftovers.projects', { names: leftoverNames })
+          }}</span>
+        </div>
+        <div
+          v-if="stackItems.length > 0"
+          class="flex items-center gap-3"
+          data-testid="docker-leftovers-stack"
+        >
+          <span class="text-ui text-text">{{
+            t('cleanup.gc.docker.leftovers.stack', {
+              c: leftoverContainers,
+              n: leftoverNetworks
+            })
+          }}</span>
+          <Button
+            class="ml-auto"
+            variant="soft"
+            data-testid="docker-leftovers-clean"
+            @click="
+              emit(
+                'cleanLeftovers',
+                stackItems.map((l) => l.id)
+              )
+            "
+          >
+            <Recycle :size="12" :stroke-width="1.7" />
+            {{ t('cleanup.gc.docker.leftovers.clean') }}
+          </Button>
+        </div>
+        <div
+          v-if="leftoverVolumes.length > 0"
+          class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2"
+          data-testid="docker-leftovers-volumes"
+        >
+          <span class="text-ui text-warning">{{
+            t('cleanup.gc.docker.leftovers.volumesLine', leftoverVolumes.length, {
+              named: { n: leftoverVolumes.length, size: formatBytes(leftoverVolumeBytes) }
+            })
+          }}</span>
+          <span
+            class="inline-flex items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-caption text-warning"
+            >{{ t('cleanup.gc.docker.cantRestore') }}</span
+          >
+          <span class="text-caption text-text-3">{{
+            t('cleanup.gc.docker.leftovers.volumesNote')
+          }}</span>
+          <Button
+            class="ml-auto"
+            variant="soft"
+            data-testid="docker-leftovers-volumes-remove"
+            @click="
+              emit(
+                'removeLeftoverVolumes',
+                leftoverVolumes.map((v) => v.id)
+              )
+            "
+          >
+            <Trash2 :size="12" :stroke-width="1.7" />
+            {{ t('cleanup.gc.docker.leftovers.volumesRemove') }}
+          </Button>
         </div>
       </div>
     </div>

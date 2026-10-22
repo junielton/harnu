@@ -30,35 +30,44 @@
  * reflows the row body — see the template comment on `.right-col`-equivalent
  * below.
  */
-import { nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Bell, ChevronDown, X } from 'lucide-vue-next'
 import {
   useNotificationsStore,
+  type NotificationItem,
   type NotificationKind,
   type NotificationRecord
 } from '../stores/notifications'
+import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { relativeTime } from '../composables/useRelativeTime'
 import { resolveActionLabel } from '../lib/toast-action-label'
 
 const notifications = useNotificationsStore()
 const sessions = useSessionsStore()
+const missions = useMissionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const { t, te } = useI18n()
 
 const bellRef = ref<HTMLElement | null>(null)
 const popoverRef = ref<HTMLElement | null>(null)
-const popoverOpen = ref(false)
+// An in-app popover: registers with the native-overlay freeze so a browser pane under it freezes (spec §2.4).
+useNativeOverlay('activity-popover', popoverRef)
+// The open flag lives in the ui store (T486 U4a) so `view.activity` opens it and
+// the App's Esc binding can see it. The bell is always rendered, so its anchor is
+// present for as long as this component is mounted.
+const popoverOpen = computed(() => ui.popovers.activity)
+ui.setPopoverAnchor('activity', true)
+onBeforeUnmount(() => ui.setPopoverAnchor('activity', false))
 
-onClickOutside(bellRef, () => (popoverOpen.value = false))
-onKeyStroke('Escape', () => (popoverOpen.value = false))
-
-function toggleBell(): void {
-  popoverOpen.value = !popoverOpen.value
-}
+onClickOutside(bellRef, () => ui.closePopover('activity'))
+onKeyStroke('Escape', () => ui.closePopover('activity'))
 
 /** Epoch-ms → relative label (the helper takes an ISO string). */
 function relativeTimeMs(ts: number): string {
@@ -156,6 +165,36 @@ function activateAndDismiss(n: NotificationRecord): void {
   notifications.dismiss(n.id)
 }
 
+/** Item rows a grouped entry shows before "Review all" takes over (spec §3.4). */
+const MISSION_ROWS_MAX = 5
+
+/** An item whose owner session is not one this window can open (spec §3.4). */
+function ownerMissing(item: NotificationItem): boolean {
+  return !!item.sessionId && sessions.findSessionById(item.sessionId) === null
+}
+
+/**
+ * Item row click (BUG-173): open the row's owner session, then its `target`
+ * through the one `openNavigableView` door — so this stays free of per-view
+ * branches. An owner that is not loaded would be a dead click, so the row opens
+ * the Missions review focused on it instead. The entry is NOT dismissed: it is
+ * a list, and its other rows are still owed (the quiet sync keeps it truthful).
+ */
+function openItem(item: NotificationItem): void {
+  if (item.sessionId && sessions.activateSession(item.sessionId)) {
+    if (item.target) ui.openNavigableView(item.target.view, item.target)
+  } else {
+    missions.openReview(item.id)
+  }
+  ui.closePopover('activity')
+}
+
+/** "Review all {n}" — the rows past {@link MISSION_ROWS_MAX} live in the review. */
+function reviewAll(): void {
+  missions.openReview()
+  ui.closePopover('activity')
+}
+
 function onDismissClick(id: string, e: MouseEvent): void {
   e.stopPropagation()
   notifications.dismiss(id)
@@ -181,12 +220,15 @@ function actionLabel(n: NotificationRecord): string {
           : $t('activityBell.title')
       "
       :title="
-        notifications.list.length > 0
-          ? $t('activityBell.bellAria', { count: notifications.list.length })
-          : $t('activityBell.title')
+        keybindings.withChord(
+          notifications.list.length > 0
+            ? $t('activityBell.bellAria', { count: notifications.list.length })
+            : $t('activityBell.title'),
+          'view.activity'
+        )
       "
       :aria-expanded="popoverOpen"
-      @click="toggleBell"
+      @click="ui.togglePopover('activity')"
     >
       <Bell :size="14" :stroke-width="1.5" />
       <span
@@ -289,6 +331,44 @@ function actionLabel(n: NotificationRecord): string {
             >
               {{ n.description }}
             </span>
+            <div v-if="n.items?.length" class="flex w-full flex-col" style="margin-top: 4px">
+              <button
+                v-for="item in n.items.slice(0, MISSION_ROWS_MAX)"
+                :key="item.id"
+                type="button"
+                data-dsqa="activity-item"
+                :data-owner-missing="ownerMissing(item) ? 'true' : undefined"
+                :aria-label="$t('mission.cue.itemAria', { title: item.title })"
+                :title="ownerMissing(item) ? $t('mission.cue.ownerMissing') : undefined"
+                class="flex w-full cursor-pointer flex-col items-start border-t border-border text-left transition hover:bg-surface"
+                style="gap: 1px; padding: 5px 0"
+                @click.stop="openItem(item)"
+              >
+                <span
+                  class="max-w-full truncate"
+                  :class="ownerMissing(item) ? 'text-text-3' : 'text-text'"
+                  style="font-size: 12px; font-weight: 500; line-height: 1.4"
+                  >{{ item.title }}</span
+                >
+                <span
+                  v-if="item.description"
+                  class="max-w-full truncate"
+                  :class="ownerMissing(item) ? 'text-text-4' : 'text-text-3'"
+                  style="font-size: 11px; line-height: 1.4"
+                  >{{ item.description }}</span
+                >
+              </button>
+              <button
+                v-if="n.items.length > MISSION_ROWS_MAX"
+                type="button"
+                data-dsqa="activity-review-all"
+                class="cursor-pointer self-start rounded-sm text-accent transition hover:opacity-80"
+                style="padding: 3px 0; font-size: 11px; font-weight: 500"
+                @click.stop="reviewAll()"
+              >
+                {{ $t('mission.cue.reviewAll', { n: n.items.length }) }}
+              </button>
+            </div>
             <div v-if="n.action" class="flex flex-wrap" style="gap: 6px; margin-top: 4px">
               <button
                 type="button"

@@ -13,17 +13,33 @@ const channels = (src: string, re: RegExp): string[] =>
 
 const REQUESTS = [
   'gc:ackFirstReport',
+  'gc:archives:delete',
+  'gc:archives:gc',
   'gc:clean',
+  'gc:guide',
   'gc:jobs',
   'gc:keep',
   'gc:opinion',
   'gc:opinion:cached',
   'gc:prefs:get',
   'gc:prefs:set',
+  'gc:recheck',
+  'gc:recovery:ack',
+  'gc:recovery:act',
+  'gc:recovery:list',
+  'gc:remoteFacts',
   'gc:snapshot',
+  'gc:trash:empty',
   'gc:unkeep'
 ]
-const EVENTS = ['gc:cycle', 'gc:done', 'gc:opinion:done', 'gc:opinion:result', 'gc:progress']
+const EVENTS = [
+  'gc:cycle',
+  'gc:done',
+  'gc:opinion:done',
+  'gc:opinion:result',
+  'gc:progress',
+  'gc:recovery:changed'
+]
 
 describe('workspace GC IPC surface (AC-10)', () => {
   it('registers exactly the request channels the card names', () => {
@@ -44,6 +60,10 @@ describe('workspace GC IPC surface (AC-10)', () => {
     expect(index).toContain("import { registerGcHandlers } from './gc/gc-ipc'")
     expect(index).toMatch(/const reaperControl = registerReaperHandlers\(/)
     expect(index).toMatch(/registerGcHandlers\(\(\) => mainWindow, reaperControl, icon\)/)
+  })
+
+  it('hands the screen a snapshot whose never-clean flag is read on real paths from the current prefs', () => {
+    expect(ipc).toMatch(/withCurrentNeverClean\(g\.bundles, prefs, canonical\)/)
   })
 
   it("answers the reprobe's protection question from the live prefs, not the scan-time flags", () => {

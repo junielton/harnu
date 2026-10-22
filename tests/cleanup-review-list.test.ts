@@ -49,6 +49,35 @@ const reviewModel = () =>
 
 const rows = (w: ReturnType<typeof mountList>) => w.findAll('[data-testid="review-row"]')
 
+describe('CleanupReviewList: a halted item whose folder is gone (F0 delta 2)', () => {
+  const goneModel = () => {
+    const b = wt(
+      'g',
+      'review',
+      1 * GIB,
+      { branch: 'feat/g' },
+      {
+        reason: reviewReason(
+          'cleanup-failed',
+          'Cleanup stopped at prune in /w/repo/.claude/worktrees/g.'
+        )
+      }
+    )
+    ;(b as unknown as { folderGone: boolean }).folderGone = true
+    return modelOf([b, wt('d', 'review', 1 * MIB, {}, { reason: reviewReason('dirty') })])
+  }
+
+  it('offers no Remove for it, and says what to do next; other rows keep theirs', () => {
+    const m = goneModel()
+    const w = mountList(m.review)
+    const [gone, other] = rows(w)
+    expect(gone.find('[data-testid="review-remove"]').exists()).toBe(false)
+    expect(gone.get('[data-testid="review-resume"]').text()).toContain(t('cleanup.gc.step.prune'))
+    expect(other.find('[data-testid="review-remove"]').exists()).toBe(true)
+    expect(other.find('[data-testid="review-resume"]').exists()).toBe(false)
+  })
+})
+
 describe('CleanupReviewList', () => {
   it('lists Needs review items biggest first with their translated reason and size', () => {
     const m = reviewModel()
@@ -281,5 +310,51 @@ describe('CleanupListView (the List fallback)', () => {
     await unmeasured.trigger('click')
     expect(w.emitted('select')).toEqual([[m.blocks.find((b) => b.name === 'c1')!.id]])
     expect(r.find((x) => x.text().includes('c2'))!.attributes('disabled')).toBeDefined()
+  })
+})
+
+// "No dead ends" (unit B): a row whose Remove main would refuse is not a dimmed icon with a tooltip —
+// it names the way out as a link and opens the same guided action as the panel and the selection bar.
+describe('CleanupReviewList: a refused row offers its guided action', () => {
+  const lockedModel = () =>
+    modelOf([wt('l', 'review', GIB, {}, { reason: reviewReason('locked' as never), locked: true })])
+
+  it('shows the action next to the inert Remove and emits it with the reason', async () => {
+    const m = lockedModel()
+    const w = mountList(m.review)
+    const guide = w.get('[data-testid="review-guide"]')
+    expect(guide.text()).toBe('Unlock and remove…')
+    await guide.trigger('click')
+    expect(w.emitted('guide')).toEqual([[m.review[0].id, 'unlock-remove', 'locked']])
+    // The click is the guide's own: it does not select the row.
+    expect(w.emitted('select')).toBeUndefined()
+  })
+
+  it('a row Remove takes has no guide', () => {
+    const w = mountList(reviewModel().review)
+    expect(w.find('[data-testid="review-guide"]').exists()).toBe(false)
+  })
+})
+
+describe('CleanupReviewList — stacked causes (delta 2)', () => {
+  it('a row with a shared stack and a lock offers the combined action', async () => {
+    const m = modelOf([
+      wt(
+        's',
+        'review',
+        GIB,
+        {},
+        {
+          reason: reviewReason('shared-stack'),
+          sharedStackIds: ['web'],
+          locked: true
+        }
+      )
+    ])
+    const w = mountList(m.review)
+    const guide = w.get('[data-testid="review-guide"]')
+    expect(guide.text()).toBe('Unlock, stop stack and remove…')
+    await guide.trigger('click')
+    expect(w.emitted('guide')).toEqual([[m.review[0].id, 'combined', 'locked']])
   })
 })

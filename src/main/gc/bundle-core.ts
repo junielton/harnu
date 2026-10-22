@@ -66,7 +66,9 @@ export type ReviewCode =
   | 'cleanup-failed'
   | 'path-unresolved'
   | 'nested-worktree'
+  | 'check-failed'
   | 'locked'
+  | 'operation-in-progress'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
 export interface ReviewReason {
@@ -123,11 +125,59 @@ export interface BundleFacts {
    * ready. Optional, and absent means unlocked: the reprobe asks git again before any step.
    */
   locked?: boolean
+  /**
+   * A rebase, a bisect or a `git am` is in progress in this worktree: its state would go with the
+   * folder, so it is never ready and Remove is refused until it is finished or aborted. Optional,
+   * and absent means none; the reprobe looks again before any step.
+   */
+  operation?: 'rebase' | 'bisect' | 'am'
 }
 
 export interface WorktreeBundle extends BundleFacts {
   bucket: Bucket
   reason: ReviewReason | null
+  /**
+   * Set when a cleanup of a proven ready item halted and the item is shown as `cleanup-failed`
+   * review: the facts still say ready, so a Retry takes the SAME guarded path the autopilot
+   * uses, not the operator's force path. Never set by the scan itself.
+   */
+  retryAs?: 'ready'
+  /**
+   * Set when the folder is already gone but a halted cleanup left git steps undone. Retry and
+   * Remove cannot finish those (the engine refuses a folder that is not there), so the screen
+   * offers the commands instead.
+   */
+  folderGone?: boolean
+  /**
+   * Set by the gatherer (never the scan) on a ready item that main refused at the reprobe: `code` is
+   * the refusal, `count` how many times in a row. The hero and the autopilot leave such an item out.
+   */
+  reprobeRefusal?: { code: string; count: number }
+  /**
+   * Set when the scan ran while the Docker daemon was down. Its empty `stackIds` then mean "could
+   * not see", not "none", so the reprobe refuses the bundle (`scan-blind`) whatever Docker says at
+   * clean time, until a scan that saw Docker replaces it. Absent when Docker answered, and when
+   * there is no Docker CLI at all (nothing to stop).
+   */
+  dockerBlind?: boolean
+  /**
+   * Set only by `gc-manual` for a guided action, never by a gather: what the action's prep fixes (the dry
+   * run, before it runs) or has just fixed. The reprobe and the recheck skip exactly that one check, so
+   * the dry run judges everything else; any other refusal still refuses.
+   */
+  assume?: {
+    /** The worktree's git lock is the cause being fixed. */
+    unlock?: boolean
+    /** An idle Harnu session open in the worktree is the cause being fixed. */
+    closeSession?: boolean
+    /** Shared stacks that are being (or have been) stopped; their stopped containers are not "present". */
+    stoppedStacks?: string[]
+  }
+}
+
+/** Every bundle of a gather that could not see Docker, marked so none is cleaned on a blind "no stacks". */
+export function withDockerBlind(bundles: readonly WorktreeBundle[]): WorktreeBundle[] {
+  return bundles.map((b) => ({ ...b, dockerBlind: true }))
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
@@ -270,12 +320,15 @@ export function bucketOf(
   // A worktree nested inside this one (Claude Code's worktree command run from inside a
   // linked worktree puts it at `.claude/worktrees/*`) would be trashed with it, and its git
   // status shows only `?? .claude/`, so the parent reads clean (delta 6, F1). A list that
-  // is missing or not a list cannot show there is none.
-  if (!Array.isArray(f.nestedWorktrees))
-    return review(
-      'nested-worktree',
-      'Whether another worktree lives inside this one could not be checked.'
+  // is missing or not a list cannot show there is none: that is a probe that did not answer
+  // (`check-failed`), a different fact from one that found something inside.
+  const where = f.item.path ?? f.item.repoPath
+  const unchecked = (): { bucket: Bucket; reason: ReviewReason } =>
+    review(
+      'check-failed',
+      `Harnu could not look inside ${where} for other worktrees or checkouts, so it cannot tell whether removing it would take one along.`
     )
+  if (!Array.isArray(f.nestedWorktrees)) return unchecked()
   if (f.nestedWorktrees.length > 0) {
     const n = f.nestedWorktrees.length
     return review(
@@ -285,12 +338,7 @@ export function bucketOf(
   }
 
   // A worktree of another repo or a plain clone inside this one (delta 7) goes with it too.
-  // Same code as above, so the UI needs no new label.
-  if (!Array.isArray(f.foreignCheckouts))
-    return review(
-      'nested-worktree',
-      'Whether a checkout of another repo lives inside this worktree could not be checked.'
-    )
+  if (!Array.isArray(f.foreignCheckouts)) return unchecked()
   if (f.foreignCheckouts.length > 0) {
     const n = f.foreignCheckouts.length
     return review(
@@ -300,6 +348,12 @@ export function bucketOf(
   }
 
   if (f.locked === true) return review('locked', 'This worktree is locked in git.')
+
+  if (f.operation !== undefined)
+    return review(
+      'operation-in-progress',
+      `${f.operation === 'am' ? 'A git am' : `A ${f.operation}`} is in progress in this worktree. Finish or abort it before removing it.`
+    )
 
   if (f.pathsResolved !== true)
     return review(
@@ -388,6 +442,8 @@ export interface BuildBundlesInput {
   foreignCheckouts: ReadonlyMap<string, string[]>
   /** Ids of the items git lists as locked (delta 6); absent means none. See {@link lockedItemIds}. */
   locked?: ReadonlySet<string>
+  /** The rebase, bisect or git am in progress in each worktree, by item id; absent means none. */
+  operations?: ReadonlyMap<string, 'rebase' | 'bisect' | 'am'>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -638,7 +694,8 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       // Passed through as given: a missing or malformed entry stays so, and bucketOf and
       // refusalOf both fail closed on it.
       foreignCheckouts: input.foreignCheckouts.get(item.id) as string[],
-      ...(input.locked?.has(item.id) ? { locked: true } : {})
+      ...(input.locked?.has(item.id) ? { locked: true } : {}),
+      ...(input.operations?.has(item.id) ? { operation: input.operations.get(item.id) } : {})
     }
     return { ...facts, ...bucketOf(facts, input.now, graceDays) }
   })

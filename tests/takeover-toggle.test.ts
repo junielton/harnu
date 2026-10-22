@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useUiStore } from '../src/renderer/src/stores/ui'
+import { closeTakeoverBinding } from '../src/renderer/src/lib/takeover-esc'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 
 /**
@@ -90,10 +91,10 @@ describe('takeover toggles', () => {
     expect(ui.anyTakeoverOpen).toBe(true)
   })
 
-  it('closeAll (Esc) dismisses every takeover, including the PR Stack', () => {
+  it('Esc (view.closeTakeover) dismisses every takeover, including the PR Stack', () => {
     const ui = useUiStore()
     ui.openPrStack('/repos/alpha', 'alpha')
-    ui.closeAll()
+    closeTakeoverBinding(ui).handler()
     expect(ui.prStack.open).toBe(false)
     expect(ui.anyTakeoverOpen).toBe(false)
   })
@@ -115,7 +116,7 @@ describe('takeover toggles', () => {
 
     // Esc.
     ui.openReview('/repos/alpha', 'card-a')
-    ui.closeAll()
+    closeTakeoverBinding(ui).handler()
     expect(ui.review.open).toBe(false)
     expect(ui.anyTakeoverOpen).toBe(false)
 

@@ -64,6 +64,8 @@ function rig(
     volumeError?: string
     /** What a gather started right before the removal sees; defaults to the job's own orphans. */
     freshOrphans?: () => Promise<OrphanVolumeItem[]>
+    /** What a fresh probe of a worktree's uncommitted work reads right now; default: the scan's stamp. */
+    workStamp?: (path: string) => Promise<string | null>
   } = {}
 ): Rig {
   const normal: string[] = []
@@ -82,6 +84,9 @@ function rig(
     opsFor: (_actor, isForced) =>
       isForced ? fakeOps(forced, opts.forcedOps) : fakeOps(normal, opts.normalOps),
     freshOrphans: async () => (opts.freshOrphans ? opts.freshOrphans() : (opts.orphans ?? [])),
+    workStampOf:
+      opts.workStamp ??
+      (async (p) => bundles.find((b) => b.item.path === p)?.item.workStamp ?? null),
     removeOrphanVolumes: async (names) => {
       removedVolumes.push(names)
       return {
@@ -532,5 +537,206 @@ describe('failure bookkeeping shared with the autopilot', () => {
     submitManualClean(r.deps, [a.item.id], shown([a]))
     await settle(r)
     expect(r.deps.state.failures.size).toBe(0)
+  })
+})
+
+describe('retry of a failed ready item keeps the safe path', () => {
+  const failed = (path: string): WorktreeBundle =>
+    bundle(path, 'review', {
+      reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps: ENOTEMPTY' },
+      retryAs: 'ready'
+    })
+
+  it('runs the normal ops with the guards on, not the forced ones, and needs no confirmation', async () => {
+    const b = failed('/ws/wt/a')
+    const r = rig([b])
+    submitManualClean(r.deps, [b.item.id], shown([b], [], []))
+    await settle(r)
+    expect(r.forced).toEqual([])
+    expect(r.normal).toContain('cleanGit /ws/wt/a')
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
+  })
+
+  it('hands the executor a ready bundle, since the pipeline only runs ready or confirmed ones', async () => {
+    const b = failed('/ws/wt/a')
+    const seen: string[] = []
+    const r = rig([b], {
+      normalOps: {
+        reprobe: async (x) => {
+          seen.push(x.bucket)
+          return { ok: true }
+        }
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b], [], []))
+    await settle(r)
+    expect(seen).toEqual(['ready'])
+  })
+
+  it('still refuses a plain cleanup-failed review item that was never ready', async () => {
+    const b = bundle('/ws/wt/a', 'review', {
+      reason: { code: 'cleanup-failed', detail: 'x' }
+    })
+    const r = rig([b])
+    submitManualClean(r.deps, [b.item.id], shown([b], [], []))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: false, error: 'needs-confirmation' })
+    expect(r.forced).toEqual([])
+  })
+})
+
+describe('the forced path refuses work edited after the operator looked', () => {
+  const dirty = (path: string, stamp: string | null): WorktreeBundle => {
+    const b = bundle(path, 'review', { reason: { code: 'dirty', detail: 'x' } })
+    b.item = reapItem(path, { workStamp: stamp })
+    return b
+  }
+
+  it('halts with work-changed-since-confirm and runs nothing when the work stamp moved', async () => {
+    const b = dirty('/ws/wt/a', 'stamp-1')
+    const r = rig([b], { workStamp: async () => 'stamp-2' })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({
+      ok: false,
+      haltedAt: 'reprobe',
+      error: 'work-changed-since-confirm'
+    })
+    expect(r.forced).toEqual([])
+  })
+
+  it('proceeds when the work is exactly what the dialog showed', async () => {
+    const b = dirty('/ws/wt/a', 'stamp-1')
+    const r = rig([b], { workStamp: async () => 'stamp-1' })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
+    expect(r.forced).toContain('cleanGit /ws/wt/a')
+  })
+
+  it('a worktree that was clean when shown and has uncommitted work now is refused too', async () => {
+    const b = bundle('/ws/wt/a', 'review', { reason: { code: 'closed-unmerged', detail: 'x' } })
+    const r = rig([b], { workStamp: async () => 'edited' })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({ error: 'work-changed-since-confirm' })
+  })
+
+  it('a probe that cannot read the work refuses (fail closed)', async () => {
+    const b = dirty('/ws/wt/a', 'stamp-1')
+    const r = rig([b], {
+      workStamp: async () => {
+        throw new Error('git exploded')
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]!.error).toContain('probe-failed')
+    expect(r.forced).toEqual([])
+  })
+
+  it('the stamp travels in the facts the dialog sends, through a real structuredClone', () => {
+    const b = dirty('/ws/wt/a', 'stamp-1')
+    expect(structuredClone(expectedOf(b)).workStamp).toBe('stamp-1')
+  })
+})
+
+describe('an edit made WHILE the clean runs halts it too', () => {
+  const dirty = (stackIds: string[] = []): WorktreeBundle => {
+    const b = bundle('/ws/wt/a', 'review', { reason: { code: 'dirty', detail: 'x' }, stackIds })
+    b.item = reapItem('/ws/wt/a', { workStamp: 'stamp-1' })
+    return b
+  }
+
+  it('an edit while the stacks stop halts before any dependency is dropped', async () => {
+    const b = dirty(['s1'])
+    let stamp = 'stamp-1'
+    const r = rig([b], {
+      workStamp: async () => stamp,
+      forcedOps: {
+        stopStacks: async () => {
+          stamp = 'edited-meanwhile'
+        },
+        dropDeps: async () => {
+          r.forced.push('dropDeps')
+          return 1
+        }
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({
+      ok: false,
+      haltedAt: 'drop-deps',
+      error: 'work-changed-since-confirm'
+    })
+    expect(r.forced).not.toContain('dropDeps')
+    expect(r.forced.some((l) => l.startsWith('cleanGit'))).toBe(false)
+  })
+
+  it('an edit while the dependencies are dropped halts before the checkout is trashed', async () => {
+    const b = dirty()
+    let stamp = 'stamp-1'
+    const r = rig([b], {
+      workStamp: async () => stamp,
+      forcedOps: {
+        dropDeps: async () => {
+          stamp = 'edited-meanwhile'
+          return 7
+        }
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({
+      ok: false,
+      haltedAt: 'archive',
+      error: 'work-changed-since-confirm',
+      freedBytes: 7
+    })
+    expect(r.forced.some((l) => l.startsWith('cleanGit'))).toBe(false)
+  })
+
+  it('an unchanged stamp lets the same run finish', async () => {
+    const b = dirty(['s1'])
+    const r = rig([b], { workStamp: async () => 'stamp-1' })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
+  })
+
+  it('the guarded retry path does not run the work check (the guards already cover it)', async () => {
+    const b = bundle('/ws/wt/a', 'review', {
+      reason: { code: 'cleanup-failed', detail: 'x' },
+      retryAs: 'ready'
+    })
+    const r = rig([b], {
+      workStamp: async () => {
+        throw new Error('must not be asked')
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b], [], []))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
+  })
+})
+
+describe('a worktree whose work the scan could not read is refused with a way forward', () => {
+  it('refuses with work-unreadable instead of comparing against nothing, and never probes', async () => {
+    const b = bundle('/ws/wt/a', 'review', { reason: { code: 'dirty', detail: 'x' } })
+    b.item = reapItem('/ws/wt/a', { workStamp: 'unknown' })
+    const r = rig([b], {
+      workStamp: async () => {
+        throw new Error('must not matter')
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({
+      ok: false,
+      haltedAt: 'reprobe',
+      error: 'work-unreadable'
+    })
+    expect(r.forced).toEqual([])
   })
 })

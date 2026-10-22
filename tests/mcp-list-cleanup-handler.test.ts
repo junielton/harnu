@@ -206,7 +206,13 @@ describe('list_cleanup handler (T445)', () => {
       reviewBytes: 700,
       inUse: 1,
       orphanVolumes: 2,
-      orphanVolumeBytes: 123
+      orphanVolumeBytes: 123,
+      archives: 0,
+      archiveBytes: 0,
+      inTrashBytes: 0,
+      inTrashCount: 0,
+      trashUnverifiedBytes: 0,
+      trashUnverifiedCount: 0
     })
   })
 
@@ -489,7 +495,9 @@ describe('list_cleanup handler (T445)', () => {
         'shared-stack',
         'path-unresolved',
         'nested-worktree',
-        'locked'
+        'check-failed',
+        'locked',
+        'operation-in-progress'
       ] as const
       const bundles = codes.map((code, i) =>
         bundle(`${MAIN}/.claude/worktrees/PROJ-${i}-c`, {

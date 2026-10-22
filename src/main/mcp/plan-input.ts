@@ -87,12 +87,57 @@ const translateCreateWorktree: Translator = (args, gateFolder) => {
   return input
 }
 
-const translateSpawnTerminal: Translator = (_args, gateFolder) => {
+const translateSpawnTerminal: Translator = (args, gateFolder) => {
   const input: Record<string, unknown> = {}
   if (gateFolder) {
     input.worktreePath = gateFolder
     input.folder = gateFolder
   }
+  // T474: attribution only — carried through so the validator and the confirm disclosure see it.
+  const ownerSessionId = strField(args, 'ownerSessionId')
+  if (ownerSessionId) input.ownerSessionId = ownerSessionId
+  return input
+}
+
+// T474: an optional `folder` gates the read; `ownerSessionId` is a pure filter the handler applies.
+const translateListTerminals: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  const ownerSessionId = strField(args, 'ownerSessionId')
+  if (ownerSessionId) input.ownerSessionId = ownerSessionId
+  return input
+}
+
+// T474 B3: `folder` is the terminal's OWN folder, resolved by `server.ts` from the registry (the
+// verb carries only an id); the rest passes through so the validator sees the full call.
+const translateReadTerminal: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  for (const key of ['terminalId', 'mode', 'since'] as const) {
+    const v = strField(args, key)
+    if (v !== undefined) input[key] = v
+  }
+  for (const key of ['lines', 'maxChars'] as const) {
+    if (typeof args[key] === 'number') input[key] = args[key]
+  }
+  return input
+}
+
+// T482 B5: like `read_terminal`, `folder` is the terminal's OWN folder from the registry. `input`
+// is passed through untouched (it is typed text: an empty or whitespace-only value is real), and so
+// is `keys`, so the validator and `checkSendContent` see the full call.
+const translateSendTerminal: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  for (const key of ['terminalId', 'ownerSessionId'] as const) {
+    const v = strField(args, key)
+    if (v !== undefined) input[key] = v
+  }
+  if (typeof args.input === 'string') input.input = args.input
+  if (Array.isArray(args.keys)) input.keys = args.keys
+  if (typeof args.paste === 'boolean') input.paste = args.paste
+  // Passed whole so the validator sees every key (a stray one is BAD_ARGS, not silently dropped).
+  if (args.waitFor !== undefined) input.waitFor = args.waitFor
   return input
 }
 
@@ -384,6 +429,30 @@ const translateMission: Translator = (args, gateFolder) => {
   return input
 }
 
+// T564 U1: `browser_open` and `browser_list` carry their own `folder`; the pane-addressed verbs carry only a
+// `paneId`, so the gate anchor `server.ts` resolved from the pane registry rides as `folder`.
+const translateBrowserOpen: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = { ...args }
+  delete input.folder
+  if (gateFolder) input.folder = gateFolder
+  return input
+}
+
+const translateBrowserList: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  const ownerSessionId = strField(args, 'ownerSessionId')
+  if (ownerSessionId) input.ownerSessionId = ownerSessionId
+  return input
+}
+
+const translateBrowserPane: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = { ...args }
+  delete input.folder
+  if (gateFolder) input.folder = gateFolder
+  return input
+}
+
 /**
  * Router-side translator table: every {@link McpOp} maps to exactly ONE
  * translator — a `Record<McpOp, …>` rather than a `switch`, so TypeScript
@@ -398,6 +467,28 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   create_session: translateCreateSession,
   create_worktree: translateCreateWorktree,
   spawn_terminal: translateSpawnTerminal,
+  list_terminals: translateListTerminals,
+  read_terminal: translateReadTerminal,
+  send_terminal: translateSendTerminal,
+  browser_open: translateBrowserOpen,
+  browser_list: translateBrowserList,
+  browser_navigate: translateBrowserPane,
+  browser_close: translateBrowserPane,
+  browser_snapshot: translateBrowserPane,
+  browser_screenshot: translateBrowserPane,
+  browser_console: translateBrowserPane,
+  browser_network: translateBrowserPane,
+  browser_wait_for: translateBrowserPane,
+  browser_eval: translateBrowserPane,
+  browser_click: translateBrowserPane,
+  browser_type: translateBrowserPane,
+  browser_fill: translateBrowserPane,
+  browser_press: translateBrowserPane,
+  browser_emulate: translateBrowserPane,
+  browser_upload: translateBrowserPane,
+  browser_download: translateBrowserPane,
+  browser_set_data: translateBrowserPane,
+  browser_patch: translateBrowserPane,
   adopt_folder: translateAdoptFolder,
   // BUG-56: same shape as adopt_folder — `folder` only.
   remove_folder: translateAdoptFolder,

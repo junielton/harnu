@@ -12,6 +12,8 @@
  * main pane; helper cells are the separate HelperPane with its own cache).
  */
 import { Terminal } from '@xterm/xterm'
+import { registerLivePtyResolver } from '../lib/live-pty-resolver'
+import { operatorInput } from '../lib/operator-input'
 
 /**
  * Per-session live state. The Terminal, its PTY, and IPC cleanups stay alive
@@ -139,6 +141,8 @@ const wakeIds = new Set<string>()
 export function livePtyIdFor(sessionKey: string): string | null {
   return liveTerminals.get(sessionKey)?.ptyId ?? null
 }
+// Stores that deliver text to a session ask for the PTY through this registration, not by importing this file.
+registerLivePtyResolver(livePtyIdFor)
 
 /**
  * A park is a resource decision, not a lifecycle outcome (BUG-70 §3.3): only a
@@ -169,6 +173,7 @@ import { DEFAULT_TERMINAL_FONT_SIZE, useSettingsStore } from '../stores/settings
 import {
   registerFocusedPane,
   unregisterFocusedPane,
+  useFocusRegion,
   MAIN_PANE_ID
 } from '../composables/useTerminalFocus'
 import { ensureTerminalFontLoaded, measureCells, measureXtermCells } from '../lib/terminalMetrics'
@@ -177,6 +182,7 @@ import { dedupeAfterSeq } from '../lib/adoptDedupe'
 import { installTerminalKeymap } from '../lib/terminalKeymap'
 import { registerWriter, unregisterWriter } from '../lib/terminal-bus'
 import { pasteAndSubmit } from './prompt-inject'
+import { isSpawnRefused } from '../lib/cloud-session'
 import {
   acquireInjectionTargetWithRetry,
   createInjectGate,
@@ -197,6 +203,14 @@ const helpers = useHelpersStore()
 // is named `t` (xterm convention) — shadowing collision otherwise.
 const { t: i18n } = useI18n()
 const termEl = ref<HTMLDivElement | null>(null)
+const rootEl = ref<HTMLDivElement | null>(null)
+// T486 U5b — the main terminal is the first region of the pane focus ring (F6).
+// It has no close of its own: `pane.close` leaves it alone (⌘W closes a session).
+useFocusRegion(MAIN_PANE_ID, rootEl, {
+  focus: () => {
+    if (attachedId) liveTerminals.get(attachedId)?.term.focus()
+  }
+})
 
 // WebLinksAddon's default handler calls `window.open()` with no URL, which
 // Electron's `setWindowOpenHandler` always denies (about:blank isn't
@@ -566,7 +580,8 @@ async function createLiveTerminal(
   // already routes these to `CloudSessionPanel` instead of mounting us, but if
   // some other path (e.g. open-in-new-tab) ever asks us to mount one, refuse to
   // spawn rather than thrash a doomed process. Dispose the xterm we just opened.
-  if (sessionEntry && sessionEntry.resumable === false) {
+  // "Resume anyway" (BUG-198 G4) is the operator overriding exactly this.
+  if (isSpawnRefused(sessionEntry)) {
     t.dispose()
     return undefined
   }
@@ -742,7 +757,11 @@ function wireLiveTerminal(
     })
   )
 
-  t.onData((data) => window.api.ptyWrite(ptyId, data))
+  t.onData((data) => {
+    // The operator's own typing, for the "do not interleave a delivered user turn" deferral (T573).
+    operatorInput.note(ptyId, data)
+    window.api.ptyWrite(ptyId, data)
+  })
   t.onResize(({ cols, rows }) => window.api.ptyResize(ptyId, cols, rows))
 
   // Clipboard, word/char-delete, and font-size chords (design.md §6). Attached
@@ -1678,6 +1697,20 @@ watch(
   { immediate: true }
 )
 
+// BUG-198 G4/G5: `activate()` above refuses to spawn a cloud-stub row, and it only
+// runs when the selection changes. When the SAME selected row stops being refused
+// — the operator pressed "Resume anyway", or the next disk reconcile says the
+// transcript gained its first turn — activate it again: a cached `LiveTerminal`
+// re-attaches, otherwise `claude --resume` spawns.
+watch(
+  () => [sessions.selectedId, !isSpawnRefused(sessions.selectedSession ?? undefined)] as const,
+  async ([id, allowed], [prevId, prevAllowed]) => {
+    if (!id || id !== prevId || !allowed || prevAllowed) return
+    if (!termEl.value) await nextTick()
+    await activate(id)
+  }
+)
+
 /**
  * Theme reapply (T-3.5). When the user toggles themes, push the new CSS-var
  * resolved palette to EVERY live terminal — attached or detached — and force
@@ -1775,7 +1808,9 @@ onBeforeUnmount(() => {
 
 <template>
   <div
+    ref="rootEl"
     class="relative h-full w-full"
+    :data-focus-region="MAIN_PANE_ID"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"

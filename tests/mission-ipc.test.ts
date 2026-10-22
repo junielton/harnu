@@ -231,8 +231,82 @@ describe('listMissionViews', () => {
   })
 
   it('returns nothing for no folders or a repo with no missions dir', async () => {
-    expect(await ipc.listMissionViews([])).toEqual({ views: [], unreadable: [] })
-    expect(await ipc.listMissionViews([root])).toEqual({ views: [], unreadable: [] })
+    expect(await ipc.listMissionViews([])).toEqual({ views: [], unreadable: [], shadowed: [] })
+    expect(await ipc.listMissionViews([root])).toEqual({ views: [], unreadable: [], shadowed: [] })
+  })
+})
+
+// BUG-173 S1 (mission cue noise spec §3.1): missions are unique by `mission.id`.
+describe('listMissionViews — one entry per mission id', () => {
+  /** A second repo root: a temp dir with a `.git` directory, like a separate clone. */
+  async function cloneRoot(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-mission-ipc-clone-'))
+    await fs.mkdir(path.join(dir, '.git'))
+    return fs.realpath(dir)
+  }
+
+  beforeEach(async () => {
+    await fs.mkdir(path.join(root, '.git'), { recursive: true })
+    root = await fs.realpath(root)
+  })
+
+  it('lists a mission once when two roots hold the same id', async () => {
+    const other = await cloneRoot()
+    await createMissionFile(root, mission('mnt-0000d001', { status: 'active' }), '# Twin\n')
+    await createMissionFile(other, mission('mnt-0000d001', { status: 'active' }), '# Twin\n')
+    const { views, shadowed } = await ipc.listMissionViews([root, other])
+    expect(views.map((v) => v.mission.id)).toEqual(['mnt-0000d001'])
+    // Same updatedAt: the root that sorts first by path wins; the other is reported.
+    const [winner, loser] = [root, other].sort()
+    expect(views[0].root).toBe(winner)
+    expect(shadowed).toEqual([{ missionId: 'mnt-0000d001', root: loser }])
+    expect(h.deriveCalls).toBe(1)
+  })
+
+  it('newest updatedAt wins and a tie breaks on root path', async () => {
+    const other = await cloneRoot()
+    const [first, second] = [root, other].sort()
+    const older = '2026-09-28T10:00:00.000Z'
+    const newer = '2026-09-29T10:00:00.000Z'
+    // The root that sorts LAST holds the newer copy: recency beats path order.
+    await createMissionFile(first, mission('mnt-0000d002', { status: 'active', updatedAt: older }))
+    await createMissionFile(second, mission('mnt-0000d002', { status: 'active', updatedAt: newer }))
+    // Folder order must not matter.
+    for (const order of [
+      [first, second],
+      [second, first]
+    ]) {
+      const { views, shadowed } = await ipc.listMissionViews(order)
+      expect(views).toHaveLength(1)
+      expect(views[0].root).toBe(second)
+      expect(views[0].mission.updatedAt).toBe(newer)
+      expect(shadowed).toEqual([{ missionId: 'mnt-0000d002', root: first }])
+    }
+  })
+
+  it('a closed winner drops the id even if an older copy is active', async () => {
+    const other = await cloneRoot()
+    await createMissionFile(
+      root,
+      mission('mnt-0000d003', { status: 'active', updatedAt: '2026-09-28T10:00:00.000Z' })
+    )
+    await createMissionFile(
+      other,
+      mission('mnt-0000d003', { status: 'closed', updatedAt: '2026-09-29T10:00:00.000Z' })
+    )
+    const { views, shadowed } = await ipc.listMissionViews([root, other])
+    expect(views).toEqual([])
+    expect(shadowed).toEqual([{ missionId: 'mnt-0000d003', root }])
+  })
+
+  it('two spellings of one directory are one root', async () => {
+    await createMissionFile(root, mission('mnt-0000d004', { status: 'active' }))
+    const alias = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-mission-ipc-ln-')), 'l')
+    await fs.symlink(root, alias)
+    const { views, shadowed } = await ipc.listMissionViews([root, alias])
+    expect(views.map((v) => v.mission.id)).toEqual(['mnt-0000d004'])
+    expect(shadowed).toEqual([])
+    expect(h.deriveCalls).toBe(1)
   })
 })
 

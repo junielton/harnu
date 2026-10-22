@@ -6,7 +6,12 @@ import { removeHelpersForWorktree } from './helpers-store'
 import type { MemoryLocationConfig } from './mcp/memory-core'
 import { canonicalWorktreeParentRepo } from './worktree-core'
 import { scanFolders } from './claude-reader'
+import { recordRemovedFolder } from './gc/gc-removed-folders'
+import { fsPathExistence } from './gc/gc-orphan-existence'
 import { migrateFolderDataDirLazily } from './migrations/data-dir-boot'
+import { terminalLeases } from './terminal-lease'
+import { browserLeases } from './browser/lease-singleton'
+import { sanitizeTrustedHosts, MAX_TRUSTED_HOSTS } from '../shared/browser-trusted-hosts'
 
 /**
  * One worktree entry in a persisted project record. Vestigial under the
@@ -166,6 +171,29 @@ export interface UserProject {
    * excludes every agent-dispatched spawn regardless of this flag).
    */
   orchestratorDefault?: boolean
+  /**
+   * T481 (agent terminals B4): agents may `read_terminal` the shell panes the OPERATOR opens in
+   * this folder. Default OFF. It says nothing about typing — the write gate is a separate,
+   * later layer — and agent-spawned terminals never need it.
+   *
+   * EXACT-PATH ONLY, like {@link orchestratorDefault}: a linked worktree of an opted-in repo is
+   * NOT itself opted in (`getUserProjectTerminalRead` never consults
+   * `canonicalWorktreeParentRepo`). Reading someone's terminal is a per-folder consent; a
+   * worktree is a different place with its own shells.
+   */
+  agentTerminalRead?: boolean
+  /**
+   * T571 (browser pane U4, spec §7.1): agents may read — and, through the operator's lease, drive — the browser
+   * panes the OPERATOR opens in this folder. Default OFF, EXACT-PATH ONLY (like {@link agentTerminalRead}): a
+   * linked worktree of an opted-in repo is NOT itself opted in. Agent-opened panes never need it.
+   */
+  agentBrowserRead?: boolean
+  /**
+   * T571 (spec §7.2): hosts the operator says are THEIR dev servers (`app.test`, `*.test`, a docker service
+   * name). A page on one classifies as `local`. EXACT-PATH ONLY. Edited only from the folder menu; no verb
+   * touches it. Always read through `sanitizeTrustedHosts`.
+   */
+  browserTrustedHosts?: string[]
 }
 
 /** On-disk schema for `<userData>/projects.json`. */
@@ -418,6 +446,12 @@ export async function setUserProjectAgentDenied(
     const normalizedPath = await normalizePath(targetPath)
     const idx = file.projects.findIndex((p) => p.path === normalizedPath)
     if (idx === -1) return file // not a tracked project — nothing to flag
+    // T474 B6: a block ends every terminal write lease in the folder and below it, even when the
+    // flag was already set — a lease must never survive to be revived by a later unblock.
+    if (denied) {
+      terminalLeases.revokeUnder(normalizedPath)
+      browserLeases.revokeUnder(normalizedPath)
+    }
     if ((file.projects[idx].agentDenied ?? false) === denied) return file // unchanged
     const next: UserProjectsFile = {
       version: 1,
@@ -842,6 +876,178 @@ export async function setUserProjectOrchestratorDefault(
 }
 
 /**
+ * Resolve the `agentTerminalRead` flag (T481) for `targetPath` — its own explicit value, else
+ * `false`. EXACT-PATH ONLY (see the field's doc comment on {@link UserProject}).
+ */
+export async function getUserProjectTerminalRead(targetPath: string): Promise<boolean> {
+  return (await terminalReadOptIns(await readUserProjects(), [targetPath])).has(targetPath)
+}
+
+/**
+ * Which of `folders` have the operator's terminal-read opt-in on (T481). Both sides go through
+ * {@link normalizePath}, so a symlinked or `~`-spelled folder still matches its record; the
+ * returned set holds the folders EXACTLY as the caller spelled them. Exact path only — no
+ * worktree inheritance.
+ */
+export async function terminalReadOptIns(
+  file: UserProjectsFile,
+  folders: readonly string[]
+): Promise<Set<string>> {
+  const on = new Set(file.projects.filter((p) => p.agentTerminalRead === true).map((p) => p.path))
+  const out = new Set<string>()
+  if (on.size === 0) return out
+  for (const folder of folders) {
+    if (on.has(await normalizePath(folder))) out.add(folder)
+  }
+  return out
+}
+
+/**
+ * Set the `agentTerminalRead` flag (T481) on a project by `path` — always the folder the user
+ * right-clicked, never resolved to a parent repo (per exact folder, no propagation to
+ * worktrees). If NO record exists (an auto-discovered folder) one is CREATED, same contract as
+ * {@link setUserProjectOrchestratorDefault}, so the opt-in survives a restart. Idempotent: no
+ * write when the value already matches. Returns the new (or unchanged) file.
+ */
+export async function setUserProjectTerminalRead(
+  targetPath: string,
+  enabled: boolean
+): Promise<UserProjectsFile> {
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const normalizedPath = await normalizePath(targetPath)
+    // T484 F5: closing the read door ends the write leases behind it, so turning it back on
+    // can never revive an approval the operator gave before they changed their mind.
+    if (!enabled) terminalLeases.revokeFolder(normalizedPath)
+    const idx = file.projects.findIndex((p) => p.path === normalizedPath)
+    if (idx === -1) {
+      const created: UserProject = {
+        path: normalizedPath,
+        alias: path.basename(normalizedPath),
+        addedAt: new Date().toISOString(),
+        worktrees: [],
+        agentTerminalRead: enabled
+      }
+      const next: UserProjectsFile = {
+        version: 1,
+        projects: [...file.projects, created],
+        hiddenPaths: (file.hiddenPaths ?? []).filter((p) => p !== normalizedPath)
+      }
+      await writeUserProjects(next)
+      return next
+    }
+    if ((file.projects[idx].agentTerminalRead ?? false) === enabled) return file // unchanged
+    const next: UserProjectsFile = {
+      version: 1,
+      projects: file.projects.map((p, i) => (i === idx ? { ...p, agentTerminalRead: enabled } : p)),
+      hiddenPaths: file.hiddenPaths ?? []
+    }
+    await writeUserProjects(next)
+    return next
+  })
+}
+
+/**
+ * Which of `folders` have the operator's browser-read opt-in on (T571). Same matching as
+ * {@link terminalReadOptIns}: both sides go through {@link normalizePath}, the returned set holds the folders
+ * EXACTLY as the caller spelled them, exact path only.
+ */
+export async function browserReadOptIns(
+  file: UserProjectsFile,
+  folders: readonly string[]
+): Promise<Set<string>> {
+  const on = new Set(file.projects.filter((p) => p.agentBrowserRead === true).map((p) => p.path))
+  const out = new Set<string>()
+  if (on.size === 0) return out
+  for (const folder of folders) {
+    if (on.has(await normalizePath(folder))) out.add(folder)
+  }
+  return out
+}
+
+/**
+ * Set the browser-read opt-in on a project by `path` (T571), the folder the user right-clicked. Creates the record
+ * of an auto-discovered folder, like {@link setUserProjectTerminalRead}. Turning it OFF ends every browser lease in
+ * the folder, because a lease on an operator pane rides on the opt-in.
+ */
+export async function setUserProjectBrowserRead(
+  targetPath: string,
+  enabled: boolean
+): Promise<UserProjectsFile> {
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const normalizedPath = await normalizePath(targetPath)
+    if (!enabled) browserLeases.revokeFolder(normalizedPath)
+    return setBrowserField(
+      file,
+      normalizedPath,
+      { agentBrowserRead: enabled },
+      (p) => (p.agentBrowserRead ?? false) === enabled
+    )
+  })
+}
+
+/** The trusted dev hosts of `folder` (T571), cleaned; `[]` when none. Exact path only. */
+export async function browserTrustedHostsFor(
+  file: UserProjectsFile,
+  folder: string
+): Promise<string[]> {
+  const normalized = await normalizePath(folder)
+  const rec = file.projects.find((p) => p.path === normalized)
+  return rec ? sanitizeTrustedHosts(rec.browserTrustedHosts) : []
+}
+
+/** Replace the trusted dev hosts of a folder (T571). The caller validated; the list is cleaned again here. */
+export async function setUserProjectBrowserTrustedHosts(
+  targetPath: string,
+  hosts: readonly string[]
+): Promise<UserProjectsFile> {
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const normalizedPath = await normalizePath(targetPath)
+    const clean = sanitizeTrustedHosts(hosts).slice(0, MAX_TRUSTED_HOSTS)
+    return setBrowserField(file, normalizedPath, { browserTrustedHosts: clean }, (p) => {
+      const cur = sanitizeTrustedHosts(p.browserTrustedHosts)
+      return cur.length === clean.length && cur.every((h, i) => h === clean[i])
+    })
+  })
+}
+
+/** Shared write of one browser field: create the record of an auto-discovered folder, skip an unchanged write. */
+async function setBrowserField(
+  file: UserProjectsFile,
+  normalizedPath: string,
+  patch: Partial<UserProject>,
+  unchanged: (p: UserProject) => boolean
+): Promise<UserProjectsFile> {
+  const idx = file.projects.findIndex((p) => p.path === normalizedPath)
+  if (idx === -1) {
+    const created: UserProject = {
+      path: normalizedPath,
+      alias: path.basename(normalizedPath),
+      addedAt: new Date().toISOString(),
+      worktrees: [],
+      ...patch
+    }
+    const next: UserProjectsFile = {
+      version: 1,
+      projects: [...file.projects, created],
+      hiddenPaths: (file.hiddenPaths ?? []).filter((p) => p !== normalizedPath)
+    }
+    await writeUserProjects(next)
+    return next
+  }
+  if (unchanged(file.projects[idx]!)) return file
+  const next: UserProjectsFile = {
+    version: 1,
+    projects: file.projects.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
+    hiddenPaths: file.hiddenPaths ?? []
+  }
+  await writeUserProjects(next)
+  return next
+}
+
+/**
  * The per-folder BUNDLED-skill overrides for `targetPath` (T217), or `{}` when the
  * folder has no record or no overrides. Tri-state by ABSENCE: a key that is not
  * here inherits the global value — this function deliberately does NOT merge the
@@ -1128,6 +1334,12 @@ export async function removeUserProject(targetPath: string): Promise<UserProject
 
   if (!removedProject) return next
 
+  // T474: the folder's read opt-in went with it, and a write lease rides on that opt-in. Ending
+  // the leases here means removing the folder, re-adding it and opting in again cannot revive an
+  // approval the operator gave before they removed it.
+  terminalLeases.revokeFolder(removedProject.path)
+  browserLeases.revokeFolder(removedProject.path)
+
   // Cascade: helpers entries for this project's root path AND each of
   // its worktrees must also go. Best-effort — failures here are logged
   // but do not roll back the project removal (the user already saw the
@@ -1188,12 +1400,21 @@ export async function removeGhostFolder(
   if (existsSync(normalizedPath)) {
     return { ok: false, error: 'DIRECTORY_STILL_EXISTS' }
   }
+  return reconcileGhost(getWindow, normalizedPath, await readUserProjects(), await scanFolders())
+}
 
-  const file = await readUserProjects()
+/**
+ * The reconcile of one already-normalized, already-missing path against a snapshot of the pinned
+ * file and of the known folders. Split out so a tree of ghosts reads both once, not once per row.
+ */
+async function reconcileGhost(
+  getWindow: () => BrowserWindow | null,
+  normalizedPath: string,
+  file: UserProjectsFile,
+  known: Awaited<ReturnType<typeof scanFolders>>
+): Promise<RemoveGhostFolderResult> {
   const wasPinned = file.projects.some((p) => p.path === normalizedPath)
   const wasHidden = (file.hiddenPaths ?? []).includes(normalizedPath)
-
-  const known = await scanFolders()
   const knownEntry = known.find((f) => f.path === normalizedPath)
   const sessionsDropped = knownEntry?.sessions.length ?? 0
 
@@ -1213,4 +1434,96 @@ export async function removeGhostFolder(
     ok: true,
     removed: { path: normalizedPath, unpinned: wasPinned, sessionsDropped }
   }
+}
+
+/**
+ * Every spelling of a (possibly missing) folder: as given, and with its nearest existing ancestor
+ * resolved through symlinks. Rows are stored under either, depending on how the folder was reached.
+ */
+async function spellingsOf(rootPath: string): Promise<string[]> {
+  const expanded = rootPath.startsWith('~') ? path.join(os.homedir(), rootPath.slice(1)) : rootPath
+  const given = stripTrailingSeparator(path.normalize(path.resolve(expanded)))
+  const rest: string[] = []
+  let cur = given
+  for (;;) {
+    try {
+      const real = await fs.realpath(cur)
+      return [...new Set([given, stripTrailingSeparator(path.join(real, ...rest))])]
+    } catch {
+      const parent = path.dirname(cur)
+      if (parent === cur) return [given]
+      rest.unshift(path.basename(cur))
+      cur = parent
+    }
+  }
+}
+
+/** True when `child` is `parent` or lies under it, by path segment (a sibling `parent-x` is not). */
+function isPathInside(child: string, parent: string): boolean {
+  return (
+    child === parent || child.startsWith(parent.endsWith(path.sep) ? parent : parent + path.sep)
+  )
+}
+
+/**
+ * The one door every removal path uses to tell the sidebar a worktree is gone: the engine's
+ * sidebar-detach step and the sidebar's own Remove both end here (unit D, AC-D2), so neither can
+ * leave a subfolder ghost behind. Never throws on a refused candidate.
+ */
+export async function detachFromSidebar(
+  getWindow: () => BrowserWindow | null,
+  removedPath: string,
+  opts: {
+    /**
+     * Whether the folder was really there right before the removal. A plain `git worktree remove` of a
+     * directory somebody had already deleted exits 0, and that is not a removal by Harnu: pass false and
+     * nothing is recorded. Absent means yes (the engine only detaches after it trashed the folder).
+     */
+    existedBefore?: boolean
+  } = {}
+): Promise<void> {
+  // Harnu's own record that this folder is gone (proof for the orphan-transcript listing): only when it
+  // was there before and is missing now, in both spellings (transcripts name it as the session saw it).
+  if (opts.existedBefore !== false) {
+    for (const spelling of await spellingsOf(removedPath)) {
+      if ((await fsPathExistence(spelling)) === 'missing') await recordRemovedFolder(spelling)
+    }
+  }
+  await removeGhostFoldersUnder(getWindow, removedPath)
+}
+
+/**
+ * Reconciles a removed folder AND every gone folder under it (unit D, AC-D2). A session started
+ * in a subfolder (`WT/api`, `WT/.claude/worktrees/x`) is its own path-keyed folder, pinned, hidden
+ * or known only from its transcripts, so reconciling the worktree's own path alone left those as
+ * ghost rows. Each candidate goes through {@link removeGhostFolder}, so one that still exists on
+ * disk is never touched. Returns what was actually removed; never throws on a refused candidate.
+ */
+export async function removeGhostFoldersUnder(
+  getWindow: () => BrowserWindow | null,
+  rootPath: string
+): Promise<RemoveGhostFolderSuccess['removed'][]> {
+  const roots = await spellingsOf(rootPath)
+  const file = await readUserProjects()
+  const known = await scanFolders()
+  // A row matches when any spelling of it lies under any spelling of the root: a row stored through
+  // a link and a root given by its real path (or the other way round) are the same folder.
+  const candidates = new Set<string>(roots)
+  const stored = [
+    ...file.projects.map((p) => p.path),
+    ...(file.hiddenPaths ?? []),
+    ...known.map((f) => f.path)
+  ]
+  for (const c of new Set(stored)) {
+    const forms = await spellingsOf(c)
+    if (forms.some((f) => roots.some((r) => isPathInside(f, r)))) candidates.add(c)
+  }
+  const removed: RemoveGhostFolderSuccess['removed'][] = []
+  for (const candidate of candidates) {
+    const normalized = await normalizePath(candidate)
+    if (existsSync(normalized)) continue
+    const result = await reconcileGhost(getWindow, normalized, file, known)
+    if (result.ok) removed.push(result.removed)
+  }
+  return removed
 }

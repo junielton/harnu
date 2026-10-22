@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, session, dialog } from 'electron'
+import { homedir } from 'node:os'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -54,8 +55,22 @@ import {
   setHarnuPreambleProvider,
   setHookSettingsProvider,
   setBundledSkillsArgsProvider,
-  setCompanionSpawnProvider
+  setCompanionSpawnProvider,
+  dropOperatorScreenModels,
+  livePtyDescriptors
 } from './pty'
+import { registerBrowserIpc } from './browser/browser-ipc'
+import {
+  bindBrowserBridge,
+  refreshBrowserTrustedHosts,
+  restoreBrowserPanes
+} from './browser/browser-service'
+import {
+  isFromAppWindow,
+  parseBrowserReadPayload,
+  parseTrustedHostsPayload
+} from './browser/folder-flag-ipc'
+import { pageSchemeEntry } from './browser/page-service'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
 import {
@@ -79,7 +94,8 @@ import { registerFolderOpsHandlers } from './folder-ops'
 import { registerExplorerHandlers } from './explorer-ipc'
 import { startClaudeWatcher, type WatcherHandle } from './claude-watcher'
 import { registerWorktreeTracker } from './worktree-tracker-wiring'
-import { registerAppMenu } from './menu'
+import { registerAppMenu, rebuildAppMenu } from './menu'
+import { registerKeybindings, closeKeybindingsWatcher, getResolvedKeybindings } from './keybindings'
 import { registerUpdater } from './updater'
 import {
   addUserProject,
@@ -95,6 +111,9 @@ import {
   setUserProjectAutoOrganize,
   getUserProjectOrchestratorDefault,
   setUserProjectOrchestratorDefault,
+  setUserProjectTerminalRead,
+  setUserProjectBrowserRead,
+  setUserProjectBrowserTrustedHosts,
   interceptActivePaths,
   setUserProjectBornFrom,
   listBornFromCandidates,
@@ -175,6 +194,7 @@ import { registerExternal } from './external'
 // server composes; `worktree-ipc` owns git worktree add + auto-adopt; `mcp/server`
 // is the loopback HTTP MCP surface itself. Registration order matters — see below.
 import { registerCommandBridge, closeCommandBridge } from './command-bridge-ipc'
+import { registerTerminalIpc } from './terminal-ipc'
 import { registerManifestDrain } from './manifest-drain-shell'
 import { registerMcpConfirm, closeMcpConfirm } from './mcp/confirm-resolver'
 import { registerWorktreeHandlers, adoptExistingFolder } from './worktree-ipc'
@@ -431,7 +451,9 @@ migrateUserData({
 // privileged-scheme table once at startup, and the mirrored ES modules need
 // `standard` (root-relative imports) + `secure` (module/WASM loading) + CORS
 // (the page itself is on file://). The handler is installed in `whenReady`.
-registerKokoroScheme()
+// T564 U2: the `harnu-page://` scheme is privileged in the SAME call (a second call would strip `secure` from
+// the voice scheme), at the same point (before ready).
+registerKokoroScheme([pageSchemeEntry()])
 
 /**
  * Last-resort crash handlers. The whole point of Harnu is to keep many live
@@ -445,6 +467,16 @@ registerKokoroScheme()
  * error object is reliable; unhandled rejections are logged silently to avoid
  * spamming dialogs for benign promise races.
  */
+// When launched from a terminal or launcher that later goes away, stdout/stderr
+// become broken pipes and every `console.*` (ours or a dependency's, e.g.
+// electron-updater's logger) emits EPIPE as an unhandled stream error. Logging
+// is best-effort, so swallow EPIPE on the std streams instead of surfacing it.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EPIPE') throw err
+  })
+}
+
 process.on('uncaughtException', (err) => {
   console.error('[main:uncaughtException]', err)
   if (app.isReady()) {
@@ -492,6 +524,8 @@ app.whenReady().then(async () => {
   })
 
   registerPtyHandlers(() => mainWindow)
+  // T564 U1: the browser pane's view host + IPC (bounds, freeze, navigate, Disconnect/Pause).
+  registerBrowserIpc(() => mainWindow)
   // T127: System Monitor main core. `monitor:heap` heartbeat starts immediately
   // (always-on, negligible cost); `monitor:sample` only runs between a
   // `monitor:start`/`monitor:stop` pair (refcounted, driven by the takeover pane).
@@ -576,6 +610,16 @@ app.whenReady().then(async () => {
   registerRoadmapHandlers(() => mainWindow)
   registerHelpersHandlers()
   registerSettingsHandlers(() => mainWindow)
+  // T1: the `keybindings.json` override layer. Sits next to settings.json and
+  // follows its relocation. The renderer store calls `keybindings:load` at boot;
+  // a hand-edit re-resolves and pushes `keybindings:changed`. P3: the resolved
+  // table is seeded synchronously here and every change rebuilds the native menu
+  // so its accelerators track the user's overrides (`registerAppMenu` below
+  // reads the seeded table).
+  registerKeybindings(
+    () => mainWindow,
+    (resolved) => rebuildAppMenu(() => mainWindow, resolved)
+  )
   // "Claude Boot" launch-options config (global + per-folder). Read by the PTY
   // spawn path to build the `claude` argv.
   registerClaudeConfigHandlers()
@@ -679,6 +723,9 @@ app.whenReady().then(async () => {
   // it overrides pty's `--mcp-config` provider, so it must run AFTER
   // `registerPtyHandlers` set the default (order satisfied above).
   const cmdBridge = registerCommandBridge(() => mainWindow)
+  // T474: terminal lifecycle IPC. After the bridge, so its `renderer:ready` listener runs once
+  // the bridge's own has opened the dispatch gate.
+  registerTerminalIpc(cmdBridge.bridge, isRendererUrl)
   const dataDirNotices = { dispatch: (c: string, p: unknown) => cmdBridge.bridge.dispatch(c, p) }
   setDataDirNoticeSink(dataDirNotices)
   void flushDataDirConflictNotices(dataDirNotices)
@@ -718,6 +765,8 @@ app.whenReady().then(async () => {
       /* not a real directory — ignore the CLI arg */
     }
   })
+  // T564 U2: page events ride the command bridge to a session as a user turn.
+  bindBrowserBridge(cmdBridge.bridge)
   void registerMcpServer(() => mainWindow, {
     bridge: cmdBridge.bridge,
     confirm: mcpConfirm.confirm
@@ -726,9 +775,14 @@ app.whenReady().then(async () => {
   // statusLine command into ~/.claude/settings.json that dumps per-turn JSON to
   // <userData>/statusline/inbox/; we tail it for zero-token per-tab cost/context/
   // rate-limit telemetry. Opt-out, async, best-effort (degrades to the /usage poll).
-  void registerStatusLineHandlers(() => mainWindow).catch((err) =>
-    console.error('[statusline] register failed', err)
-  )
+  void registerStatusLineHandlers(() => mainWindow, {
+    liveProcs: () =>
+      livePtyDescriptors().map((d) => ({
+        sessionKey: d.sessionKey,
+        pid: d.pid,
+        startedAtMs: d.startedAt
+      }))
+  }).catch((err) => console.error('[statusline] register failed', err))
   // Usage-history + BI (issue #19). Persists the per-turn statusLine telemetry
   // (otherwise discarded) to daily-rotated JSONL; serves rollups, a deterministic
   // plan-fit projection, and an on-demand chat over the aggregated data. Capture
@@ -781,7 +835,9 @@ app.whenReady().then(async () => {
   // intercept. On macOS this is the visible menubar; on Linux/Windows the
   // bar stays hidden via the window's `autoHideMenuBar: true` setting but
   // the accelerators still fire. See `findings/07-shortcuts-palette.md` §3.
-  registerAppMenu(() => mainWindow)
+  // Built from the resolved keybindings table (seeded synchronously by
+  // `registerKeybindings` above); a later `keybindings.json` edit rebuilds it.
+  registerAppMenu(() => mainWindow, getResolvedKeybindings())
   // Auto-update via GitHub Releases. No-op in dev (the function itself
   // guards on `app.isPackaged`); in packaged builds it polls 5s after ready
   // and then hourly. Per finding 06 §8: AppImage updates in place, the
@@ -985,6 +1041,61 @@ app.whenReady().then(async () => {
     }
   )
 
+  // T481: "let agents read terminals I open" per-folder opt-in (FolderMenu toggle). EXACT-PATH
+  // ONLY, like the Orchestrator default above. The gate that reads it is `terminal-gate-core.ts`.
+  ipcMain.handle(
+    'userProjects:setTerminalRead',
+    async (_e, { targetPath, enabled }: { targetPath: string; enabled: boolean }) => {
+      const payload = toUserProjectsPayload(await setUserProjectTerminalRead(targetPath, enabled))
+      // Turning it off ends the lazy screen models of the operator's terminals there at once.
+      if (!enabled) await dropOperatorScreenModels(targetPath)
+      return payload
+    }
+  )
+
+  // T571: the browser pane's two operator-only folder settings. They widen what an agent may do, so (a) only the
+  // app window's own webContents may call them and (b) the payload must be exactly what the editor sends: a folder
+  // Harnu tracks, a boolean, and hosts that each pass `parseTrustedHost` (`browser/folder-flag-ipc.ts`).
+  const knownFoldersForBrowserFlags = async (): Promise<string[]> => {
+    const projects = (await readUserProjects()).projects
+    return [
+      ...projects.map((p) => p.path),
+      ...projects.flatMap((p) => p.worktrees.map((w) => w.path)),
+      ...(await scanFolders()).map((f) => f.path)
+    ]
+  }
+  const browserFlagCaller = (e: Electron.IpcMainInvokeEvent, channel: string): void => {
+    if (!isFromAppWindow(e.sender, mainWindow)) {
+      throw new Error(`${channel}: refused, not sent by the app window`)
+    }
+  }
+
+  // "Let agents read browser panes I open": per-folder opt-in (FolderMenu toggle), EXACT-PATH ONLY. Turning it off
+  // ends the folder's browser leases (done inside the setter).
+  ipcMain.handle('userProjects:setBrowserRead', async (e, raw: unknown) => {
+    browserFlagCaller(e, 'userProjects:setBrowserRead')
+    const parsed = parseBrowserReadPayload(raw, await knownFoldersForBrowserFlags(), homedir())
+    if (!parsed.ok) throw new Error(`userProjects:setBrowserRead: ${parsed.error}`)
+    const payload = toUserProjectsPayload(
+      await setUserProjectBrowserRead(parsed.targetPath, parsed.enabled)
+    )
+    await refreshBrowserTrustedHosts()
+    return payload
+  })
+
+  // The folder's trusted dev hosts (Trusted dev hosts dialog). The operator is the only writer; the edited list is
+  // re-applied to the open panes.
+  ipcMain.handle('userProjects:setBrowserTrustedHosts', async (e, raw: unknown) => {
+    browserFlagCaller(e, 'userProjects:setBrowserTrustedHosts')
+    const parsed = parseTrustedHostsPayload(raw, await knownFoldersForBrowserFlags(), homedir())
+    if (!parsed.ok) throw new Error(`userProjects:setBrowserTrustedHosts: ${parsed.error}`)
+    const payload = toUserProjectsPayload(
+      await setUserProjectBrowserTrustedHosts(parsed.targetPath, parsed.hosts)
+    )
+    await refreshBrowserTrustedHosts()
+    return payload
+  })
+
   // T98: the orchestrator role toggle (SessionMenu "Promote to orchestrator").
   // `arm`/`disarm` delegate straight to `orchestrator-guard.ts` (T109's guard +
   // hook registration); `list` hydrates the renderer's `orchestratorSessionIds`
@@ -1028,6 +1139,13 @@ app.whenReady().then(async () => {
   ipcMain.on('injection:clearUndelivered', (_e, sessionId: unknown) => {
     if (typeof sessionId === 'string' && sessionId) clearInjectionEscalation(sessionId)
   })
+
+  // T574: the browser panes `helpers.json` kept come back DISCARDED before the renderer hydrates its stacks, so the
+  // registry (and `browser_list`) knows them and their pins are ready when a pane mounts. A failure here must never
+  // keep the app from opening.
+  await restoreBrowserPanes().catch((err) =>
+    console.warn('[browser] restoring panes failed — they open empty', err)
+  )
 
   createWindow()
 
@@ -1098,6 +1216,7 @@ app.on('before-quit', async (event) => {
       /* swallow — best effort */
     }
     await closeSettingsWatcher()
+    await closeKeybindingsWatcher()
     app.quit()
   } else {
     // No claude watcher running (e.g. renderer never called `folders:load`),
@@ -1105,6 +1224,7 @@ app.on('before-quit', async (event) => {
     // best-effort (the config file is force-rewritten on next boot regardless).
     void closeMcpServer()
     void closeSettingsWatcher()
+    void closeKeybindingsWatcher()
   }
 })
 

@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   SquareTerminal,
+  Globe,
   Tag,
   Trash2,
   Unlink,
@@ -30,8 +31,10 @@ import {
 import { useI18n } from 'vue-i18n'
 import { useUiStore } from '../stores/ui'
 import { useSessionsStore } from '../stores/sessions'
-import { useHelpersStore } from '../stores/helpers'
 import { useModesStore } from '../stores/modes'
+import { useKeybindingsStore } from '../stores/keybindings'
+import type { ShortcutActionId } from '../../../main/keybindings-core'
+import { useFolderMenuActions, type FolderAction } from '../composables/useFolderMenuActions'
 
 /**
  * Lucide glyph by icon name (T138: the documented subset an extension's
@@ -63,23 +66,12 @@ const MODE_ICONS: Record<string, typeof EyeOff> = {
  */
 
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const sessions = useSessionsStore()
-const helpers = useHelpersStore()
 const modes = useModesStore()
 const { t } = useI18n()
-
-/**
- * Open the folder's project memory (T79 S3) as a Memory pane in the split. It
- * attaches to the currently-selected worktree's stack (so it shows in the visible
- * split immediately) when one is selected; otherwise it attaches to the target
- * folder's own stack and appears the next time a session there is opened. `folder`
- * (the menu target) is what the pane resolves memory for — the repo's shared
- * `.harnu/memory/`.
- */
-function onProjectMemory(folderPath: string): void {
-  const worktree = sessions.selectedSession?.projectPath || folderPath
-  helpers.addMemoryHelper(worktree, folderPath)
-}
+// T486 §3.4: the items' functions, shared with their keybindings (AC-37).
+const folderActions = useFolderMenuActions()
 
 /**
  * WORKTREE.md creator (T87). Probed when the menu opens so the item reads
@@ -101,49 +93,6 @@ async function probeWorktreeMd(folderPath: string): Promise<void> {
   } catch {
     worktreeMdState.value = null
   }
-}
-
-/**
- * Create-or-open the repo's WORKTREE.md and open it in the markdown pane. The
- * create IPC is idempotent (an existing manifest is opened, never overwritten) so
- * this one handler serves both the Create and Open labels. A freshly-written
- * proposal opens in EDIT mode for review; a pre-existing manifest opens in view.
- */
-async function onWorktreeMd(folderPath: string): Promise<void> {
-  const worktree = sessions.selectedSession?.projectPath || folderPath
-  try {
-    const res = await window.api.worktreeMdCreate(folderPath)
-    if (!res.ok || !res.path) {
-      ui.pushToast({
-        kind: 'danger',
-        title: t('folderMenu.worktreeMdFailed'),
-        description: res.error ?? ''
-      })
-      return
-    }
-    helpers.addMarkdownHelper(
-      worktree,
-      res.path,
-      worktree,
-      res.created ? { initialMode: 'edit' } : undefined
-    )
-  } catch (e) {
-    ui.pushToast({
-      kind: 'danger',
-      title: t('folderMenu.worktreeMdFailed'),
-      description: e instanceof Error ? e.message : String(e)
-    })
-  }
-}
-
-/**
- * Secondary (option C): dispatch a session in the folder whose boot prompt asks an
- * agent to study the repo and PROPOSE a WORKTREE.md. Reuses the T80 card-dispatch
- * engine (`dispatchCardSession`) — a plain, human-initiated synthetic session with
- * the prompt injected once the REPL is ready. The human still reviews + commits.
- */
-function onWorktreeMdAgent(folderPath: string): void {
-  sessions.dispatchCardSession(folderPath, t('folderMenu.worktreeMdAgentPrompt'))
 }
 
 /**
@@ -207,6 +156,36 @@ interface MenuItem {
   onSelect?: (projectPath: string) => void | Promise<void>
 }
 
+/**
+ * The table action each item runs (T486 §3.4) — its resolved chord shows in the
+ * item's trailing hint (§9.2), and only while it has one. Roadmap / PR Stack
+ * open this menu's folder, not the active one, so they carry no hint.
+ */
+const SHORTCUT_OF: Record<string, ShortcutActionId> = {
+  'new-terminal': 'folder.newFolderTerminal',
+  rename: 'folder.rename',
+  'alias-from-branch': 'folder.toggleBranchAlias',
+  boot: 'folder.bootOptions',
+  'project-memory': 'folder.projectMemory',
+  'memory-location': 'folder.memoryLocation',
+  'new-folder': 'folder.newSubfolder',
+  'open-subfolder': 'folder.openSubfolder',
+  'new-worktree': 'folder.newWorktree',
+  'worktree-md': 'folder.worktreeMd',
+  'worktree-md-agent': 'folder.askAgentWorktreeMd',
+  intercept: 'folder.toggleIntercept',
+  'auto-organize': 'folder.toggleAutoOrganize',
+  'orchestrator-default': 'folder.toggleOrchestratorDefault',
+  hide: 'folder.toggleHidden',
+  unhide: 'folder.toggleHidden',
+  'remove-worktree': 'folder.removeWorktree'
+}
+
+function shortcutFor(itemId: string): string {
+  const id = SHORTCUT_OF[itemId]
+  return id ? keybindings.chordLabel(id) : ''
+}
+
 /** Id of the row whose flyout is open (T123). Only one at a time. */
 const openFlyout = ref<string | null>(null)
 /** Roving-focus index WITHIN the open flyout's children (fix: keyboard trap). */
@@ -222,39 +201,31 @@ const isHidden = computed<boolean>(() => {
   return path ? sessions.manuallyHiddenPaths.has(path) : false
 })
 
-/**
- * The folder this menu targets, resolved by absolute path. Additive git
- * metadata (`repoId`/`isMainWorktree`/`gitBranch`) is what gates the
- * "Remove worktree" entry below.
- */
+/** The folder this menu targets, resolved by absolute path. */
 const targetFolder = computed(() => {
   const path = menuState.value.projectPath
   return path ? sessions.findFolderByPath(path) : null
 })
 
 /**
- * Whether the target is a **linked** git worktree — i.e. it belongs to a repo
- * (`repoId` set) but does NOT own that repo's common-dir (`isMainWorktree !==
- * true`). Removing a worktree only makes sense for a linked one; the main
- * worktree is the repo itself and is never offered for removal (AC-T32.2).
+ * Whether the Folder menu shows `action` for its target — the rule lives in
+ * `useFolderMenuActions` (`folderActionVisible`), shared with the keybindings:
+ * the git-only items, Remove worktree only on a linked worktree (AC-T32.2),
+ * auto-organize never on one.
  */
-const isLinkedWorktree = computed<boolean>(() => {
-  const f = targetFolder.value
-  return !!f && typeof f.repoId === 'string' && f.repoId.length > 0 && f.isMainWorktree !== true
-})
+function shows(action: FolderAction): boolean {
+  const path = menuState.value.projectPath
+  return path ? folderActions.visible(action, path) : false
+}
 
 /**
  * Whether the target is a git folder at all — i.e. it belongs to a repo
  * (`repoId` set) OR the git probe resolved a branch for it (`gitBranch`
- * non-empty). Gates the non-destructive "New worktree…" entry, which only
- * makes sense inside a git repo (any worktree of it can spawn siblings).
+ * non-empty). Gates the lineage entries (Set / Clear parent folder).
  */
 const isGitFolder = computed<boolean>(() => {
-  const f = targetFolder.value
-  if (!f) return false
-  const hasRepoId = typeof f.repoId === 'string' && f.repoId.length > 0
-  const hasBranch = typeof f.gitBranch === 'string' && f.gitBranch.length > 0
-  return hasRepoId || hasBranch
+  const path = menuState.value.projectPath
+  return path ? folderActions.isGitFolder(path) : false
 })
 
 /**
@@ -292,35 +263,17 @@ const isInterceptActive = computed<boolean>(() => {
   return path ? sessions.interceptFolders.has(path) : false
 })
 
-/** Toggle the `interceptActive` ramp flag for the target folder. Non-destructive. */
-async function onToggleIntercept(folderPath: string): Promise<void> {
-  try {
-    await sessions.setFolderInterceptActive(folderPath, !sessions.interceptFolders.has(folderPath))
-  } catch {
-    /* Swallow: the ramp mirror simply won't flip — no destructive state to undo. */
-  }
-}
-
 /**
  * Whether the menu's target folder currently has "auto-organize conversation
  * into draft cards" ON (T106/D6 — default ON, see `autoOrganizeOffPaths`'s
  * own doc comment). Per REPO only — a linked worktree never gets this entry
- * (see `isLinkedWorktree` gating the entries array below); it inherits its
+ * (see `shows('toggleAutoOrganize')` gating the entries array below); it inherits its
  * main worktree's value server-side.
  */
 const isAutoOrganizeOn = computed<boolean>(() => {
   const path = menuState.value.projectPath
   return path ? sessions.isFolderAutoOrganizeOn(path) : true
 })
-
-/** Toggle the `autoOrganizeCards` flag for the target folder. Non-destructive. */
-async function onToggleAutoOrganize(folderPath: string): Promise<void> {
-  try {
-    await sessions.setFolderAutoOrganize(folderPath, !isAutoOrganizeOn.value)
-  } catch {
-    /* Swallow: the mirror simply won't flip — no destructive state to undo. */
-  }
-}
 
 /**
  * Whether the menu's target folder currently has "new sessions start as
@@ -332,10 +285,38 @@ const isOrchestratorDefaultOn = computed<boolean>(() => {
   return path ? sessions.orchestratorDefaultPaths.has(path) : false
 })
 
-/** Toggle the `orchestratorDefault` flag for the target folder. Non-destructive. */
-async function onToggleOrchestratorDefault(folderPath: string): Promise<void> {
+/**
+ * Whether the menu's target folder lets agents read the terminals the operator opens
+ * (T481 — default OFF, per exact folder, no worktree inheritance — see
+ * `terminalReadPaths`'s own doc comment).
+ */
+const isTerminalReadOn = computed<boolean>(() => {
+  const path = menuState.value.projectPath
+  return path ? sessions.terminalReadPaths.has(path) : false
+})
+
+/** Toggle the `agentTerminalRead` flag for the target folder. Non-destructive. */
+async function onToggleTerminalRead(folderPath: string): Promise<void> {
   try {
-    await sessions.setFolderOrchestratorDefault(folderPath, !isOrchestratorDefaultOn.value)
+    await sessions.setFolderTerminalRead(folderPath, !isTerminalReadOn.value)
+  } catch {
+    /* Swallow: the mirror simply won't flip — no destructive state to undo. */
+  }
+}
+
+/**
+ * Whether the target folder lets agents read the browser panes the operator opens (T571 — default OFF, per exact
+ * folder, no worktree inheritance — see `browserReadPaths`'s own doc comment).
+ */
+const isBrowserReadOn = computed<boolean>(() => {
+  const path = menuState.value.projectPath
+  return path ? sessions.browserReadPaths.has(path) : false
+})
+
+/** Toggle the `agentBrowserRead` flag for the target folder. Non-destructive. */
+async function onToggleBrowserRead(folderPath: string): Promise<void> {
+  try {
+    await sessions.setFolderBrowserRead(folderPath, !isBrowserReadOn.value)
   } catch {
     /* Swallow: the mirror simply won't flip — no destructive state to undo. */
   }
@@ -350,44 +331,6 @@ const isAliasFromBranch = computed<boolean>(() => {
   return path ? sessions.aliasFromBranchPaths.has(path) : false
 })
 
-/** Toggle the `aliasFromBranch` opt-in for the target folder. Non-destructive. */
-async function onToggleAliasFromBranch(folderPath: string): Promise<void> {
-  try {
-    await sessions.setFolderAliasFromBranch(
-      folderPath,
-      !sessions.aliasFromBranchPaths.has(folderPath)
-    )
-  } catch {
-    /* Swallow: the mirror simply won't flip — no destructive state to undo. */
-  }
-}
-
-async function onHide(folderPath: string): Promise<void> {
-  try {
-    await sessions.dismissFolder(folderPath)
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    ui.pushToast({
-      kind: 'danger',
-      title: t('folderMenu.hideFailed'),
-      description: message
-    })
-  }
-}
-
-async function onUnhide(folderPath: string): Promise<void> {
-  try {
-    await sessions.unhideFolder(folderPath)
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    ui.pushToast({
-      kind: 'danger',
-      title: t('folderMenu.unhideFailed'),
-      description: message
-    })
-  }
-}
-
 /** A folder's display label (alias, else basename) — the board header title. */
 function folderLabel(path: string): string {
   const f = sessions.findFolderByPath(path)
@@ -399,9 +342,7 @@ const entries = computed<MenuItem[]>(() => [
     id: 'new-terminal',
     label: t('folderMenu.newTerminal'),
     icon: SquareTerminal,
-    onSelect: (projectPath: string) => {
-      sessions.createFolderTerminal(projectPath)
-    }
+    onSelect: folderActions.run.newFolderTerminal
   },
   // T123: boots a session ALREADY carrying a role's contract (Modes ▸ Learning).
   // Sibling of "New terminal" — both create a session; this one picks WHICH KIND
@@ -432,19 +373,19 @@ const entries = computed<MenuItem[]>(() => [
     id: 'rename',
     label: t('folderMenu.rename'),
     icon: PencilLine,
-    onSelect: (projectPath: string): void => ui.openRenameFolder(projectPath)
+    onSelect: folderActions.run.rename
   },
   {
     id: 'alias-from-branch',
     label: isAliasFromBranch.value ? t('folderMenu.useFolderName') : t('folderMenu.useBranchName'),
     icon: Tag,
-    onSelect: onToggleAliasFromBranch
+    onSelect: folderActions.run.toggleBranchAlias
   },
   {
     id: 'boot',
     label: t('folderMenu.bootOptions'),
     icon: SlidersHorizontal,
-    onSelect: (projectPath: string) => ui.openClaudeBoot(projectPath)
+    onSelect: folderActions.run.bootOptions
   },
   // T79 S3: open this repo's project memory (hot/decisions/timeline) in the split.
   // Always available — every folder has memory (repo-shared, or folder-local when
@@ -453,7 +394,7 @@ const entries = computed<MenuItem[]>(() => [
     id: 'project-memory',
     label: t('folderMenu.projectMemory'),
     icon: NotebookText,
-    onSelect: onProjectMemory
+    onSelect: folderActions.run.projectMemory
   },
   // T89: per-project override for WHERE this repo's memory is stored (in-project
   // vs a central root), with the assisted "move existing memory now" migration.
@@ -462,7 +403,7 @@ const entries = computed<MenuItem[]>(() => [
     id: 'memory-location',
     label: t('folderMenu.memoryLocation'),
     icon: FolderCog,
-    onSelect: (projectPath: string): void => ui.openMemoryLocation(projectPath)
+    onSelect: folderActions.run.memoryLocation
   },
   // T80 S1: open the per-repo Roadmap Kanban board (a wide main-pane view over
   // `.harnu/memory/roadmap/`). Its own block; available for any folder (the memory
@@ -492,25 +433,25 @@ const entries = computed<MenuItem[]>(() => [
     label: t('folderMenu.newFolder'),
     icon: FolderPlus,
     separatorBefore: true,
-    onSelect: (projectPath: string): void => ui.openNewFolder(projectPath)
+    onSelect: folderActions.run.newSubfolder
   },
   {
     id: 'open-subfolder',
     label: t('folderMenu.openSubfolder'),
     icon: FolderSearch,
-    onSelect: (projectPath: string): void => ui.openOpenSubfolder(projectPath)
+    onSelect: folderActions.run.openSubfolder
   },
   // Non-destructive: only inside a git repo. Its own block (separator above),
   // opens the plan/preview dialog (`NewWorktreeDialog`) — never runs anything
   // itself. See design.md §6 → "New worktree".
-  ...(isGitFolder.value
+  ...(shows('newWorktree')
     ? [
         {
           id: 'new-worktree',
           label: t('folderMenu.newWorktree'),
           icon: GitBranch,
           separatorBefore: true,
-          onSelect: (projectPath: string): void => ui.openNewWorktree(projectPath)
+          onSelect: folderActions.run.newWorktree
         } satisfies MenuItem
       ]
     : []),
@@ -518,7 +459,7 @@ const entries = computed<MenuItem[]>(() => [
   // plus the option-C "ask an agent" secondary. Its own block, git-only. The
   // primary label flips Create↔Open on the existence probe; the create IPC is
   // idempotent so it never clobbers an existing manifest.
-  ...(isGitFolder.value
+  ...(shows('worktreeMd')
     ? [
         {
           id: 'worktree-md',
@@ -527,13 +468,13 @@ const entries = computed<MenuItem[]>(() => [
             : t('folderMenu.createWorktreeMd'),
           icon: FileCog,
           separatorBefore: true,
-          onSelect: onWorktreeMd
+          onSelect: folderActions.run.worktreeMd
         } satisfies MenuItem,
         {
           id: 'worktree-md-agent',
           label: t('folderMenu.askAgentWorktreeMd'),
           icon: Sparkles,
-          onSelect: onWorktreeMdAgent
+          onSelect: folderActions.run.askAgentWorktreeMd
         } satisfies MenuItem
       ]
     : []),
@@ -576,11 +517,11 @@ const entries = computed<MenuItem[]>(() => [
     id: 'intercept',
     label: isInterceptActive.value ? t('folderMenu.stopIntercept') : t('folderMenu.interceptHere'),
     icon: ShieldCheck,
-    onSelect: onToggleIntercept
+    onSelect: folderActions.run.toggleIntercept
   },
   // T106 (D6): per-repo only — a linked worktree inherits its main worktree's
   // value server-side and never gets this entry (no re-asking per worktree).
-  ...(!isLinkedWorktree.value
+  ...(shows('toggleAutoOrganize')
     ? [
         {
           id: 'auto-organize',
@@ -588,7 +529,7 @@ const entries = computed<MenuItem[]>(() => [
             ? t('folderMenu.autoOrganizeOff')
             : t('folderMenu.autoOrganizeOn'),
           icon: LayoutList,
-          onSelect: onToggleAutoOrganize
+          onSelect: folderActions.run.toggleAutoOrganize
         } satisfies MenuItem
       ]
     : []),
@@ -600,24 +541,49 @@ const entries = computed<MenuItem[]>(() => [
       ? t('folderMenu.orchestratorDefaultOff')
       : t('folderMenu.orchestratorDefaultOn'),
     icon: Crown,
-    onSelect: onToggleOrchestratorDefault
+    onSelect: folderActions.run.toggleOrchestratorDefault
+  },
+  // T481: per EXACT folder, never inherited — same rule as the entry above. Lets agents
+  // `read_terminal` the shells the operator opens here; says nothing about typing.
+  {
+    id: 'terminal-read',
+    label: isTerminalReadOn.value
+      ? t('folderMenu.terminalReadOff')
+      : t('folderMenu.terminalReadOn'),
+    icon: SquareTerminal,
+    onSelect: onToggleTerminalRead
+  },
+  // T571: per EXACT folder, never inherited. Lets agents read the browser panes the operator opens; a write
+  // still needs the operator's lease.
+  {
+    id: 'browser-read',
+    label: isBrowserReadOn.value ? t('folderMenu.browserReadOff') : t('folderMenu.browserReadOn'),
+    icon: Globe,
+    onSelect: onToggleBrowserRead
+  },
+  // T571: the folder's trusted dev hosts (spec §7.2) — pages on them count as local. Operator-only.
+  {
+    id: 'trusted-hosts',
+    label: t('folderMenu.trustedHosts'),
+    icon: ShieldCheck,
+    onSelect: (projectPath: string): void => ui.openTrustedHosts(projectPath)
   },
   isHidden.value
     ? {
         id: 'unhide',
         label: t('folderMenu.unhide'),
         icon: Eye,
-        onSelect: onUnhide
+        onSelect: folderActions.run.toggleHidden
       }
     : {
         id: 'hide',
         label: t('folderMenu.hide'),
         icon: EyeOff,
-        onSelect: onHide
+        onSelect: folderActions.run.toggleHidden
       },
   // Destructive: only for a LINKED worktree (never the main worktree). Its own
   // block, separated above, styled in `--red` (design.md §6 — Item destrutivo).
-  ...(isLinkedWorktree.value
+  ...(shows('removeWorktree')
     ? [
         {
           id: 'remove-worktree',
@@ -625,8 +591,7 @@ const entries = computed<MenuItem[]>(() => [
           icon: Trash2,
           separatorBefore: true,
           destructive: true,
-          onSelect: (projectPath: string): void =>
-            ui.openRemoveWorktree(projectPath, targetFolder.value?.gitBranch ?? '')
+          onSelect: folderActions.run.removeWorktree
         } satisfies MenuItem
       ]
     : [])
@@ -965,6 +930,13 @@ onBeforeUnmount(() => {
         >
           <component :is="entry.icon" :size="13" :stroke-width="1.6" class="shrink-0" />
           <span class="flex-1 truncate">{{ entry.label }}</span>
+          <span
+            v-if="shortcutFor(entry.id)"
+            data-menu-shortcut
+            class="font-mono text-text-4 tabular-nums"
+            style="font-size: 10.5px; letter-spacing: 0.02em"
+            >{{ shortcutFor(entry.id) }}</span
+          >
         </button>
       </template>
     </div>

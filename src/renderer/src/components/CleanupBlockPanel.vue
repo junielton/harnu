@@ -13,7 +13,7 @@ import {
   X
 } from 'lucide-vue-next'
 import type { GcOpinion } from '../../../main/gc/gc-wire'
-import type { GcBlock } from '../lib/gc-model'
+import { isDetachedBlock, type GcBlock } from '../lib/gc-model'
 import { haltOf, type BlockJobState, type ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { identText } from './cleanup-ident'
@@ -25,7 +25,12 @@ import {
   SKIP_REASON_KEYS,
   type HydrationOp
 } from './cleanup-row'
-import { reasonKey, refusalKey, stepKey } from './cleanup-gc-copy'
+import { reasonKey, refusalKey, removalKey, stepKey } from './cleanup-gc-copy'
+import { removability, removabilityAll, type RemovalRefusal } from '../lib/gc-removability'
+import { depsOf, guideFor, guideLabel, hasGuideButton, type GuidedAction } from '../lib/gc-guidance'
+import { resumeHint } from '../lib/gc-resume'
+import type { RefusalCode } from '../lib/gc-jobs'
+import type { GcStep } from '../../../main/gc/pipeline-core'
 import Button from './ui/Button.vue'
 import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
@@ -49,8 +54,16 @@ const props = withDefaults(
     opinion?: GcOpinion | null
     /** A request for this item's opinion is in flight. */
     asking?: boolean
+    /** A guided action that is not a dialog (scan, unmark) is running elsewhere. */
+    guideBusy?: boolean
   }>(),
-  { dehydrateIdleDays: 7, hydrationBusy: null, opinion: null, asking: false }
+  {
+    dehydrateIdleDays: 7,
+    hydrationBusy: null,
+    opinion: null,
+    asking: false,
+    guideBusy: false
+  }
 )
 
 const emit = defineEmits<{
@@ -62,6 +75,9 @@ const emit = defineEmits<{
   ask: [id: string]
   cleanNow: [id: string]
   retry: [id: string]
+  recheck: [id: string]
+  /** The guided action that clears the refusal ("No dead ends"); the screen opens it. */
+  guide: [id: string, action: GuidedAction, reason: RemovalRefusal]
 }>()
 
 const { t } = useI18n()
@@ -116,6 +132,8 @@ const takes = computed<string[]>(() => {
   if ((b.depsBytes ?? 0) > 0) out.push(t('cleanup.gc.panel.takes.deps'))
   out.push(t('cleanup.gc.panel.takes.checkout'))
   if (b.branch) out.push(t('cleanup.gc.panel.takes.branch', { branch: b.branch }))
+  // No branch to keep: the commit stays reachable under the sha-keyed archive refs instead.
+  if (isDetachedBlock(b)) out.push(t('cleanup.gc.panel.takes.detached'))
   return out
 })
 /** Only an orphan volume's own removal loses data; a worktree's volumes are kept, never removed with it. */
@@ -130,33 +148,87 @@ const inUse = computed(() => props.block.bucket === 'in-use')
 const hasFailure = computed(() => props.failure !== null)
 
 /**
- * Main always refuses a worktree that holds another one (removing it would trash the inner one too) and one
- * git has locked. `locked` is compared by string: its main-side type has not reached this branch yet.
+ * Whether main would take this item, read from its facts (see gc-removability.ts). The same answer
+ * the list row, the selection bar and the dialog use, so Remove is never offered for a click that
+ * ends in "0 cleaned".
  */
-const REMOVE_REFUSED: Readonly<Record<string, string>> = {
-  'nested-worktree': 'cleanup.gc.panel.removeBlocked',
-  locked: 'cleanup.gc.panel.removeLocked'
-}
-const removeBlockedKey = computed(() =>
-  review.value ? (REMOVE_REFUSED[props.block.reasonCode ?? ''] ?? null) : null
+/**
+ * A halted clean whose folder is already gone: Retry and Remove cannot finish the git steps (the engine
+ * refuses a folder that is not there), so the panel says which step stopped and the commands instead.
+ */
+const resume = computed(() => resumeHint(props.block))
+const verdict = computed(() => removability(props.block))
+// Both buttons that start a clean (Remove for review, Clean now for ready) wait on the same answer.
+// A gone folder's panel shows the resume commands instead of an "unavailable" sentence.
+const removeBlocked = computed(
+  () => (review.value || ready.value) && !verdict.value.ok && !resume.value
 )
-const removeBlocked = computed(() => removeBlockedKey.value !== null)
-const showRemove = computed(() => review.value && !removeBlocked.value)
+const removeBlockedText = computed(() => {
+  const v = verdict.value
+  if (v.ok) return ''
+  const key = review.value
+    ? 'cleanup.gc.panel.removeUnavailable'
+    : 'cleanup.gc.panel.cleanUnavailable'
+  return t(key, { reason: t(removalKey(v.reason)) })
+})
+/** What Dehydrate would free here: promoted next to a refusal Remove cannot lift. */
+const dehydrateBytes = computed(() => depsOf(props.block))
+/** The guided action for this refusal, when it needs a button of its own. */
+const guide = computed(() => {
+  const all = removabilityAll(props.block)
+  if (!removeBlocked.value || all.length === 0) return null
+  // Every cause counts: a cause no prep fixes comes first, and stacked fixable ones are one action.
+  const g = guideFor(
+    all.map((r) => r.reason),
+    { hasDeps: dehydrateBytes.value > 0 }
+  )
+  if (!hasGuideButton(g.action)) return null
+  return {
+    action: g.action,
+    reason: g.reason,
+    label: guideLabel(t, g.action, g.reason, g.causes)
+  }
+})
+const removeHint = computed(() => {
+  const v = verdict.value
+  return !v.ok && v.hint ? v.hint : null
+})
+/** Main refused the last clean at its pre-flight; the gatherer marks the ready item (see `reprobeRefusal`). */
+const refusalMark = computed(() => props.block.bundle?.reprobeRefusal ?? null)
+const showRemove = computed(() => review.value && verdict.value.ok && !resume.value)
+/**
+ * A demoted item (refused again and again) has no Retry, and its cause may have been fixed outside
+ * Harnu since: "Check again" forgets the remembered refusal and looks once more.
+ */
+const showRecheck = computed(() => review.value && refusalMark.value !== null)
 const showKeep = computed(() => review.value && !isVolume.value)
 const showAsk = computed(() => review.value)
 const showOpinion = computed(() => review.value && (props.asking || props.opinion !== null))
-const showCleanNow = computed(() => ready.value && !hasFailure.value)
-/** Retry re-opens the confirm for the item's CURRENT bucket, so an in-use item has nothing to retry. */
-const showRetry = computed(() => hasFailure.value && !inUse.value)
+const showCleanNow = computed(
+  () => ready.value && !hasFailure.value && !refusalMark.value && verdict.value.ok
+)
+/**
+ * Retry re-opens the confirm for the item's CURRENT bucket, so an in-use item has nothing to retry,
+ * and neither has one main refuses on its facts: that needs a fix first, not another click. Nor a
+ * halted item whose folder is gone: the engine refuses it, so the panel offers the commands instead.
+ */
+const showRetry = computed(
+  () =>
+    (hasFailure.value || refusalMark.value !== null) &&
+    !inUse.value &&
+    verdict.value.ok &&
+    !resume.value
+)
 const showDehydrate = computed(() => {
   const it = item.value
-  if (!it || isVolume.value || ready.value) return false
+  // A folder that is already gone has nothing to dehydrate.
+  if (!it || isVolume.value || ready.value || resume.value) return false
   if (inUse.value) return isIdleDehydratable(it, props.dehydrateIdleDays)
   return canDehydrate(it)
 })
 const showRehydrate = computed(() => {
   const it = item.value
-  return !!it && !isVolume.value && canRehydrate(it)
+  return !!it && !isVolume.value && !resume.value && canRehydrate(it)
 })
 const hydrationDisabled = computed(() => locked.value || props.hydrationBusy !== null)
 
@@ -233,7 +305,28 @@ onBeforeUnmount(() => {
   if (copiedTimer) clearTimeout(copiedTimer)
 })
 
-const reasonText = computed(() => t(reasonKey(props.block.reasonCode, ready.value)))
+const reasonText = computed(() => {
+  // A demoted item says what main kept refusing, not the generic "cleanup failed".
+  const v = verdict.value
+  if (review.value && refusalMark.value && !v.ok) return t(removalKey(v.reason))
+  return t(reasonKey(props.block.reasonCode, ready.value))
+})
+
+/**
+ * The sentence for a refusal. A locked worktree is refused by main as `cannot-unregister`, whose catalog
+ * line says git "couldn't match" a single registration: true for a worktree with no registration, wrong
+ * for one that is plainly locked. When the facts say locked, the real reason is shown.
+ */
+function refusalText(code: RefusalCode): string {
+  const v = verdict.value
+  if (code === 'cannot-unregister' && !v.ok && v.reason === 'locked') {
+    return t(removalKey('locked'))
+  }
+  return t(refusalKey(code))
+}
+const refusalMarkText = computed(() =>
+  refusalMark.value ? refusalText(refusalMark.value.code as RefusalCode) : ''
+)
 const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
 </script>
 
@@ -330,6 +423,32 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       >
         {{ block.reasonDetail }}
       </p>
+      <div
+        v-if="resume"
+        class="flex flex-col gap-1.5 rounded-sm border border-border-2 bg-surface-2 p-2"
+        data-testid="panel-resume"
+      >
+        <p class="text-caption leading-4 text-text-2">
+          {{ t('cleanup.gc.panel.resumeBody', { step: t(stepKey(resume.step as GcStep)) }) }}
+        </p>
+        <code
+          v-for="cmd in resume.commands"
+          :key="cmd"
+          class="select-all break-all font-mono text-caption text-text"
+          data-testid="panel-resume-command"
+          >{{ cmd }}</code
+        >
+        <p
+          v-if="resume.unarchivedWarning"
+          class="text-caption leading-4 text-warning"
+          data-testid="panel-resume-warning"
+        >
+          {{ t('cleanup.gc.panel.resumeUnarchived') }}
+        </p>
+        <p v-if="resume.archived" class="text-caption leading-4 text-text-3">
+          {{ t('cleanup.gc.panel.resumeArchive') }}
+        </p>
+      </div>
       <p v-if="inUse" class="text-caption leading-4 text-text-3" data-testid="panel-in-use-note">
         {{ t('cleanup.gc.panel.inUseNote') }}
       </p>
@@ -381,6 +500,26 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       </p>
     </section>
 
+    <!-- the last clean was refused at the pre-flight: the item left "Clean ready", and this says why -->
+    <section
+      v-if="refusalMark"
+      class="flex flex-col gap-1 border-t border-border pt-3"
+      data-testid="panel-refused"
+      :data-refusal="refusalMark.code"
+    >
+      <p class="flex items-start gap-1.5 text-ui text-warning">
+        <TriangleAlert :size="13" :stroke-width="1.8" class="mt-0.5 shrink-0" />
+        {{ t('cleanup.gc.panel.refusedNote', { reason: refusalMarkText }) }}
+      </p>
+      <p class="text-caption leading-4 text-text-3" data-testid="panel-refused-hint">
+        {{
+          review
+            ? t('cleanup.gc.panel.refusedRepeat', { n: refusalMark.count })
+            : t('cleanup.gc.panel.refusedNoteHint')
+        }}
+      </p>
+    </section>
+
     <!-- failure: what happened — the step it stopped at and why; never a reconstructed history -->
     <section
       v-if="failure"
@@ -394,7 +533,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         :data-refusal="failure.refusal"
       >
         <TriangleAlert :size="13" :stroke-width="1.8" class="mt-0.5 shrink-0" />
-        {{ t(refusalKey(failure.refusal)) }}
+        {{ refusalText(failure.refusal) }}
       </p>
       <div class="eyebrow text-text-4">{{ t('cleanup.gc.panel.happenedTitle') }}</div>
       <p
@@ -444,6 +583,17 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       </Button>
 
       <Button
+        v-if="showRecheck"
+        variant="soft"
+        class="!justify-start"
+        :disabled="locked"
+        data-testid="panel-recheck"
+        @click="emit('recheck', block.id)"
+      >
+        <RotateCcw :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.recheck') }}
+      </Button>
+
+      <Button
         v-if="showRetry"
         variant="soft"
         class="!justify-start"
@@ -454,9 +604,25 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         <RotateCcw :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.retry') }}
       </Button>
 
-      <p v-if="removeBlocked" class="text-caption text-text-3" data-testid="panel-remove-blocked">
-        {{ removeBlockedKey ? t(removeBlockedKey) : '' }}
-      </p>
+      <div v-if="removeBlocked" class="flex flex-col gap-1" data-testid="panel-remove-blocked-box">
+        <p class="text-caption text-text-3" data-testid="panel-remove-blocked">
+          {{ removeBlockedText }}
+        </p>
+        <p v-if="removeHint" class="text-caption text-text-3" data-testid="panel-remove-hint">
+          {{ t('cleanup.gc.panel.removeCommand') }}
+          <code class="select-all break-all font-mono text-text-2">{{ removeHint }}</code>
+        </p>
+        <Button
+          v-if="guide"
+          variant="soft"
+          class="!justify-start"
+          :disabled="locked || guideBusy"
+          data-testid="panel-guide"
+          @click="emit('guide', block.id, guide.action, guide.reason)"
+        >
+          {{ guide.label }}
+        </Button>
+      </div>
 
       <Button
         v-if="showRemove"
@@ -480,7 +646,11 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         data-testid="panel-dehydrate"
         @click="emit('dehydrate', block.id)"
       >
-        <PackageMinus :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.dehydrate') }}
+        <PackageMinus :size="13" :stroke-width="1.7" />{{
+          removeBlocked && dehydrateBytes > 0
+            ? t('cleanup.gc.guide.dehydrateWin', { size: formatBytes(dehydrateBytes) })
+            : t('cleanup.gc.panel.dehydrate')
+        }}
         <kbd class="ml-auto font-mono text-eyebrow text-text-3">D</kbd>
       </Button>
 

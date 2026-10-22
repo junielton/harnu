@@ -277,6 +277,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Brand mark (§1)                                    | `src/renderer/src/components/BrandMark.vue`                                      |
 | Helper stack (split right side)                    | `src/renderer/src/components/HelperStack.vue`                                    |
 | Helper pane (one cell)                             | `src/renderer/src/components/HelperPane.vue`                                     |
+| Agent connection chip (pane header, T474 U1)       | `src/renderer/src/components/AgentConnectionChip.vue` + `lib/agent-chip.ts`      |
 | Image lightbox (Pasted-images gallery, §6)         | `src/renderer/src/components/ImageLightbox.vue`                                  |
 | Markdown pane (file-backed viewer, §6 — T74)       | `src/renderer/src/components/MarkdownPane.vue`                                   |
 | Markdown renderer (string→prose, reusable)         | `src/renderer/src/components/MarkdownRenderer.vue` + `lib/markdown.ts` seam      |
@@ -328,9 +329,17 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Cleanup hero button / progress chip (T443)         | `src/renderer/src/components/CleanupHeroButton.vue`                              |
 | Cleanup selection bar (T443)                       | `src/renderer/src/components/CleanupSelectionBar.vue`                            |
 | Cleanup bulk-clean confirm dialog (T443)           | `src/renderer/src/components/CleanupBulkConfirmDialog.vue`                       |
+| Cleanup guided dialog — "No dead ends" (unit B)    | `src/renderer/src/components/CleanupGuidedDialog.vue` + `lib/gc-guidance.ts`     |
 | Cleanup first-cycle banner (T443)                  | `src/renderer/src/components/CleanupFirstCycleBanner.vue`                        |
+| Cleanup interrupted-cleans notices (unit B)        | `src/renderer/src/components/CleanupRecoveryNotices.vue`                         |
 | Cleanup Docker card (T443)                         | `src/renderer/src/components/CleanupDockerCard.vue`                              |
+| Cleanup Docker confirm — leftovers (unit D)        | `src/renderer/src/components/CleanupDockerConfirmDialog.vue`                     |
+| Cleanup transcripts confirm (unit D)               | `src/renderer/src/components/CleanupTranscriptsConfirmDialog.vue`                |
+| Cleanup leftovers view helpers (unit D)            | `src/renderer/src/lib/gc-orphans.ts`                                             |
 | Cleanup split bar (T443)                           | `src/renderer/src/components/CleanupSplitBar.vue`                                |
+| Cleanup Archives card (unit C)                     | `src/renderer/src/components/CleanupArchivesCard.vue`                            |
+| Cleanup in-the-trash strip (unit C)                | `src/renderer/src/components/CleanupTrashCard.vue`                               |
+| Cleanup archives / git gc / empty-trash confirm    | `src/renderer/src/components/CleanupExhaustDialog.vue`                           |
 | Cleanup legend row (T443)                          | `src/renderer/src/components/CleanupLegend.vue`                                  |
 | Cleanup "Other leftovers" (branches/folders, T443) | `src/renderer/src/components/CleanupOtherItems.vue`                              |
 | Workspace GC store + view model (T443)             | `src/renderer/src/stores/gc.ts` + `lib/gc-model.ts` + `lib/gc-jobs.ts`           |
@@ -345,6 +354,8 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | PR Stack filter bar (T387)                         | `src/renderer/src/components/PrStackFilterBar.vue` + `pr-stack-filter.ts`        |
 | PR Stack settings pane (Settings tab, T198)        | `src/renderer/src/components/PrStackSettingsPane.vue`                            |
 | Diagram pane (canvas viewer, non-PTY, T218)        | `src/renderer/src/components/DiagramPane.vue` + `components/canvas/*`            |
+| Canvas toolbar (§6 — T536)                         | `src/renderer/src/components/CanvasToolbar.vue` + `canvas/canvas-tools.ts`       |
+| Canvas properties panel (§6 — T536 U3)             | `CanvasPropertiesPanel.vue` + `canvas/canvas-{style,layers}.ts`                  |
 | Scheduler (takeover, T291)                         | `src/renderer/src/components/SchedulerView.vue`                                  |
 | Scheduler worker row                               | `src/renderer/src/components/SchedulerWorkerRow.vue`                             |
 | Scheduler prompt field (skill mentions, T305)      | `src/renderer/src/components/SchedulerPromptField.vue` + `scheduler-mentions.ts` |
@@ -353,6 +364,9 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission progress popover (§6 — T370)               | `src/renderer/src/components/MissionPopover.vue` + `stores/missions.ts`          |
 | Mission step rail (§6 — T370)                      | `src/renderer/src/components/MissionStepRail.vue`                                |
 | Mission close confirm (§6 — T370 AC-S9-8)          | `src/renderer/src/components/MissionCloseConfirmDialog.vue`                      |
+| Missions review dialog (§6 — BUG-173 S5)           | `src/renderer/src/components/MissionsReviewDialog.vue`                           |
+| Bulk close confirm (§6 — BUG-173 S5)               | `src/renderer/src/components/MissionBulkCloseConfirmDialog.vue`                  |
+| Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
 | Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                              |
 
 ## Process for UI work

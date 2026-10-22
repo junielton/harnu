@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { useFocusRegion } from '../composables/useTerminalFocus'
 import { useI18n } from 'vue-i18n'
 import {
   Maximize2,
@@ -14,20 +15,37 @@ import {
   Undo2,
   X
 } from 'lucide-vue-next'
-import type { Graph } from '@antv/x6'
+import { ObjectExt, type Cell, type Graph, type Node } from '@antv/x6'
+import CanvasToolbar from './CanvasToolbar.vue'
+import CanvasPropertiesPanel from './CanvasPropertiesPanel.vue'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useThemeStore } from '../stores/theme'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import {
   applyCanvasPalette,
   createCanvasGraph,
   fitCanvas,
+  hideCanvasResizeHandles,
   missingCanvasPlugins,
+  openCanvasResizeHandleId,
+  operatorEdgeSpec,
   renderCanvasDocument,
+  restyleCanvasNode,
   setCanvasPortsVisible,
+  showCanvasResizeHandles,
+  setCanvasRubberband,
   zoomCanvasBy
 } from './canvas/canvas-graph'
 import { canvasImageSources, toX6Node, type ResolvedImages } from './canvas/canvas-cells'
+import { arrowEdgeEnds, pointInRect, topmostNodeId } from './canvas/canvas-arrow'
+import {
+  ERASE_REACH_PX,
+  edgeWithinReach,
+  eraseReach,
+  eraseRemovalOrder,
+  strokeSamples
+} from './canvas/canvas-erase'
 import {
   buildCanvasDocumentFromCells,
   duplicateOperatorNode,
@@ -35,10 +53,49 @@ import {
   isDrawGesture,
   operatorImageNode,
   operatorNode,
+  placedRect,
   rectFromDrag,
-  type CanvasDocumentDraft
+  type CanvasDocumentDraft,
+  type CanvasStackMode
 } from './canvas/canvas-edit'
+import {
+  liveStackOrder,
+  reorderStack,
+  stackRanks,
+  type LayerMove,
+  type StackNode
+} from './canvas/canvas-layers'
 import { readCanvasPalette, type CanvasPalette } from './canvas/canvas-theme'
+import {
+  mergeCanvasStyle,
+  panelValues,
+  sharedStyleKeys,
+  stylePanelCollapsed,
+  stylePanelTop,
+  styleKeysFor,
+  type CanvasStyleKey,
+  type CanvasStylePatch
+} from './canvas/canvas-style'
+import {
+  CANVAS_TOOLS,
+  INITIAL_TOOL_STATE,
+  afterCreate,
+  blankIntent,
+  effectiveTool,
+  escapeOutcome,
+  isShapeTool,
+  nodeIntent,
+  pressSpace,
+  releaseSpace,
+  selectTool,
+  shapeForTool,
+  toggleLock,
+  toolForKey,
+  toolbarNeedsOwnRow,
+  type CanvasTool,
+  type ShapeTool,
+  type ToolState
+} from './canvas/canvas-tools'
 import type { CanvasDocument } from '../../../main/canvas-core'
 import type { HelperPane } from '../../../preload'
 
@@ -80,6 +137,7 @@ const { t } = useI18n()
 const helpers = useHelpersStore()
 const theme = useThemeStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 
 /** The pane's persisted `filePath` (HelperStack guarantees a canvas pane). */
 const filePath = computed<string>(() => (props.pane as HelperPane).filePath ?? '')
@@ -204,6 +262,10 @@ function ensureGraph(): Graph | null {
     container: host,
     palette,
     editable: true,
+    // Read per gesture by X6: nodes move and their ports connect only in
+    // Select (spec §5) — in every other tool a press on a node belongs to that
+    // tool, and Space-held Hand must pan over a node rather than drag it.
+    nodesInteractive: () => activeTool.value === 'select',
     // Explicit size from the PARENT: X6 would otherwise read the host's own
     // `clientWidth`, which is 0 before layout settles and would leave the graph
     // sized to nothing.
@@ -223,6 +285,7 @@ function ensureGraph(): Graph | null {
 
   wireEditing(g)
   graph.value = g
+  applyToolToGraph()
   return g
 }
 
@@ -256,8 +319,46 @@ function wireEditing(g: Graph): void {
     withoutTracking(() => setCanvasPortsVisible(g, node.id, false))
   })
 
-  g.on('node:dblclick', ({ node }) => startRename(node.id))
+  g.on('node:dblclick', ({ node }) => {
+    if (nodeIntent(activeTool.value, 'dblclick', nodeKind(node)) === 'rename-node') {
+      startRename(node.id)
+    }
+  })
+  g.on('blank:dblclick', onBlankDblClick)
   g.on('blank:mousedown', onBlankMouseDown)
+  g.on('node:mousedown', onNodeMouseDown)
+  g.on('edge:mousedown', onEdgeMouseDown)
+
+  // These run AFTER the Selection plugin's own listeners on the same events
+  // (it registered at graph construction, before this function), which is the
+  // whole point: they repair what the plugin just did to the selection.
+  g.on('blank:mouseup', onBlankMouseUp)
+  g.on('blank:click', restorePendingSelection)
+  g.on('cell:mouseup', restorePendingSelection)
+  g.on('selection:changed', ({ selected }: { selected: Cell[] }) => {
+    selectedIds.value = selected.map((c) => c.id)
+    if (!repairingSelection && activeTool.value === 'select' && selected.length > 0) {
+      markUsed('select')
+    }
+  })
+
+  // Node styles (T536 U3): `data` is the only style state, and the only part of
+  // a style change History records. The attrs are re-derived from it here on
+  // every data write — the panel's, its undo and its redo alike — in the palette
+  // in force now, and that re-derive never enters the undo stack (see
+  // `restyleCanvasNode`). So undo after a theme switch restores a STYLE, never
+  // the colours the previous theme resolved it to (U3 Review Focus 1).
+  g.on('cell:change:data', ({ cell }: { cell: Cell }) => {
+    if (cell.isNode() && styleKeysFor(nodeKind(cell)).length > 0) {
+      restyleCanvasNode(cell, palette, images.value)
+    }
+    styleRevision.value++
+  })
+  const restyled = (): void => {
+    styleRevision.value++
+  }
+  g.on('history:undo', restyled)
+  g.on('history:redo', restyled)
 }
 
 function refreshHistoryFlags(): void {
@@ -273,8 +374,315 @@ function takenIds(): Set<string> {
   return new Set(g.getCells().map((c) => c.id))
 }
 
-// ── Drag on blank canvas draws a box (AC U3-1) ────────────────────────────
-/** The in-flight draw, in graph-local coordinates; `null` when not drawing. */
+// ── Tool modes (T536 U1, spec §4.3, §5) ───────────────────────────────────
+/**
+ * The pane's tool, in memory and never saved to the file. One per pane
+ * instance, so two canvases open side by side keep independent tools.
+ */
+const toolState = ref<ToolState>({ ...INITIAL_TOOL_STATE })
+/** Tools used successfully in this pane's lifetime; the toolbar hides their hint. */
+const usedTools = ref(new Set<CanvasTool>())
+/** The tool that actually owns gestures — Space held is a temporary Hand. */
+const activeTool = computed<CanvasTool>(() => effectiveTool(toolState.value))
+/** A Hand gesture is in flight (the cursor reads `grabbing`). */
+const panning = ref(false)
+const bodyCursor = computed<string>(() =>
+  panning.value
+    ? 'grabbing'
+    : (CANVAS_TOOLS.find((t) => t.id === activeTool.value)?.cursor ?? 'default')
+)
+
+/**
+ * Every tool change goes through here. A change of the EFFECTIVE tool cancels
+ * whatever gesture was in flight (Review Focus 2: no preview left behind) and
+ * re-arms the graph for the new owner of a blank drag.
+ */
+function setToolState(next: ToolState): void {
+  const before = effectiveTool(toolState.value)
+  toolState.value = next
+  if (effectiveTool(next) !== before) {
+    cancelGesture()
+    applyToolToGraph()
+  }
+}
+
+/**
+ * A blank drag goes to EXACTLY ONE owner. X6's rubberband starts on any plain
+ * left drag while it is armed (`modifiers: null`) and is checked before
+ * panning, so every tool but Select must switch it off — or one drag would
+ * both rubberband and draw/pan (the Task 2 spike, measured live).
+ */
+function applyToolToGraph(): void {
+  const g = graph.value
+  if (!g) return
+  const select = activeTool.value === 'select'
+  setCanvasRubberband(g, select)
+  // Resize handles belong to Select too: one left open in another tool would
+  // resize the node on a press that should go to that tool.
+  if (!select) hideCanvasResizeHandles(g)
+}
+
+function markUsed(tool: CanvasTool): void {
+  if (!usedTools.value.has(tool)) usedTools.value.add(tool)
+}
+
+function onToolbarSelect(tool: CanvasTool): void {
+  setToolState(selectTool(toolState.value, tool))
+  focusBody()
+}
+function onToolbarToggleLock(): void {
+  setToolState(toggleLock(toolState.value))
+  focusBody()
+}
+
+/** The document shape of a node (`box`, `text`, …), as `canvas-cells` stamps it. */
+function nodeKind(node: Node): string {
+  const data = node.getData() as { kind?: unknown } | undefined
+  return typeof data?.kind === 'string' ? data.kind : node.shape
+}
+
+// ── Properties panel (T536 U3, design.md §6 "Properties panel") ───────────
+/** The selection, mirrored from X6's `selection:changed` so the panel can react. */
+const selectedIds = ref<string[]>([])
+/**
+ * Bumped on every `data` write and every undo/redo. The graph is not reactive,
+ * so this is what makes the panel re-read the selected nodes' styles — after a
+ * pick, and after an undo puts an old one back.
+ */
+const styleRevision = ref(0)
+/** Collapsed form only: whether the `palette` button has opened the panel. */
+const panelOpen = ref(false)
+/** The pane is too narrow for the panel beside a usable board. */
+const panelCollapsed = ref(false)
+/** Measured top offset, in px from the top of the body. */
+const panelTop = ref(stylePanelTop(0, false, 0))
+
+function nodeProps(node: Node): Record<string, unknown> | undefined {
+  const props = (node.getData() as { props?: unknown } | undefined)?.props
+  return typeof props === 'object' && props !== null && !Array.isArray(props)
+    ? (props as Record<string, unknown>)
+    : undefined
+}
+
+/** The selected NODES — edges in the selection are ignored by the style and Layers groups. */
+const panelNodes = computed<Node[]>(() => {
+  void styleRevision.value
+  const g = graph.value
+  if (!g) return []
+  return selectedIds.value
+    .map((id) => g.getCellById(id))
+    .filter((c): c is Node => c !== null && c.isNode())
+})
+/** Only the keys EVERY selected node takes (U3 Review Focus 4). */
+const panelKeys = computed<CanvasStyleKey[]>(() => sharedStyleKeys(panelNodes.value.map(nodeKind)))
+const panelStyleValues = computed(() =>
+  panelValues(panelNodes.value.map((n) => ({ kind: nodeKind(n), props: nodeProps(n) })))
+)
+/**
+ * The CHOSEN tool, not the effective one: holding Space is a temporary Hand, and
+ * the panel stays put through it. Any selected node shows it: the Layers group
+ * (T536 U4) takes every kind, even one with no shared style key.
+ */
+const panelVisible = computed<boolean>(
+  () =>
+    state.value.status === 'ready' &&
+    toolState.value.tool === 'select' &&
+    panelNodes.value.length > 0
+)
+
+watch(
+  () => selectedIds.value.length,
+  (n) => {
+    if (n === 0) panelOpen.value = false
+  }
+)
+watch(panelVisible, async (visible) => {
+  if (!visible) return
+  await nextTick()
+  measureStylePanel()
+})
+
+/** The properties panel's history batch: one pick, one undo step. */
+const STYLE_BATCH = 'style'
+
+/**
+ * A panel pick. Each node keeps only the patch keys its kind takes, so a mixed
+ * selection never writes `corners` onto an ellipse or anything onto a mockup
+ * card; a node whose props would come out unchanged is skipped. Whatever does
+ * change is written in ONE history batch: one pick, one undo step, however many
+ * nodes it styled. The attrs follow through `cell:change:data`.
+ */
+function applyStylePatch(patch: CanvasStylePatch): void {
+  const g = graph.value
+  if (!g) return
+  const writes: [Node, Record<string, unknown>][] = []
+  for (const node of panelNodes.value) {
+    const allowed = styleKeysFor(nodeKind(node))
+    const own: CanvasStylePatch = {}
+    for (const key of Object.keys(patch) as CanvasStyleKey[]) {
+      if (allowed.includes(key)) own[key] = patch[key]
+    }
+    if (Object.keys(own).length === 0) continue
+    const props = nodeProps(node)
+    const next = mergeCanvasStyle(props, own)
+    if (ObjectExt.isEqual(next, props)) continue
+    const data: Record<string, unknown> = { ...(node.getData() as Record<string, unknown>) }
+    if (next === undefined) delete data.props
+    else data.props = next
+    writes.push([node, data])
+  }
+  if (writes.length === 0) return
+  g.startBatch(STYLE_BATCH)
+  try {
+    for (const [node, data] of writes) node.setData(data, { overwrite: true })
+  } finally {
+    g.stopBatch(STYLE_BATCH)
+  }
+}
+
+/** The Layers group's history batch: one move, one undo step. */
+const LAYER_BATCH = 'layer'
+
+/**
+ * A Layers move (T536 U4). The new order is computed on node ids by the pure
+ * `reorderStack` and written back as dense ranks 1..n — never X6's `toFront` /
+ * `toBack`, which rank against the edges too (see `canvas-layers.ts`). Only the
+ * nodes whose z actually changes are written, in ONE history batch, so a move is
+ * one undo step and a move that changes nothing writes nothing: no undo step, no
+ * dirty dot. Edges keep z 0 and are never touched.
+ */
+function applyLayerMove(move: LayerMove): void {
+  const g = graph.value
+  if (!g) return
+  const nodes = g.getNodes()
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const live = nodes.map((n) => ({ id: n.id, z: n.getZIndex() ?? 0 }))
+  const stack: StackNode[] = liveStackOrder(live).map((id) => {
+    const node = byId.get(id)!
+    const { x, y, width, height } = node.getBBox()
+    return { id, z: node.getZIndex() ?? 0, bbox: { x, y, width, height } }
+  })
+  const order = reorderStack(stack, new Set(panelNodes.value.map((n) => n.id)), move)
+  if (order === null) return
+  const ranks = stackRanks(order)
+  const writes = order.filter((id) => byId.get(id)!.getZIndex() !== ranks.get(id))
+  if (writes.length === 0) return
+  g.startBatch(LAYER_BATCH)
+  try {
+    for (const id of writes) byId.get(id)!.setZIndex(ranks.get(id)!)
+  } finally {
+    g.stopBatch(LAYER_BATCH)
+  }
+}
+
+function onPanelToggle(): void {
+  panelOpen.value = !panelOpen.value
+}
+
+// ── Selection bookkeeping around X6's own mouseup handling ────────────────
+/**
+ * The selection as it stood just BEFORE this press, captured on the body in
+ * the capture phase — i.e. before X6 sees the event. It has to be that early:
+ * X6's rubberband `clean()`s the selection as it starts, inside the very
+ * `blank:mousedown` dispatch the pane listens to.
+ */
+let preGestureSelection: string[] = []
+/** `shift`+drag in Select: union this back in once the rubberband finishes. */
+let additiveSelection: string[] | null = null
+/**
+ * What the selection must be once X6 finishes the current release. A tool
+ * other than Select owns its gesture, but X6's Selection plugin still reacts
+ * to the same mouseup — `cell:mouseup` selects the pressed node and
+ * `blank:click` clears everything. Both run after the pane's capture-phase
+ * release, so the pane re-applies its answer after them.
+ */
+let pendingSelection: string[] | null = null
+/** The pane, not the operator, is re-selecting: not a use of the Select tool. */
+let repairingSelection = false
+/**
+ * The press point in CLIENT pixels, read off the native event. The point X6
+ * hands its `blank:mousedown`/`node:mousedown` listeners is snapped to the
+ * 16px grid, which would put a placed shape up to 8px off the click and make a
+ * pan jump on its first move — so every tool gesture starts from this instead.
+ */
+let pressClient = { x: 0, y: 0 }
+
+function onBodyMouseDownCapture(ev: MouseEvent): void {
+  const g = graph.value
+  pressClient = { x: ev.clientX, y: ev.clientY }
+  preGestureSelection = g ? g.getSelectedCells().map((c) => c.id) : []
+  additiveSelection = null
+  pendingSelection = null
+}
+
+function selectIds(g: Graph, ids: readonly string[]): void {
+  const cells = ids.map((id) => g.getCellById(id)).filter((c) => c !== null)
+  if (cells.length > 0) g.select(cells)
+}
+
+function restorePendingSelection(): void {
+  const g = graph.value
+  const ids = pendingSelection
+  // NOT consumed here: one release can reach X6 as BOTH `cell:mouseup` and
+  // `blank:click` — an Eraser press removes the very view it landed on, so X6
+  // reads the rest of that release as blank board and clears the selection
+  // again after the first repair. It is reset by the next press instead
+  // (`onBodyMouseDownCapture`).
+  if (!g || !ids) return
+  repairingSelection = true
+  try {
+    g.cleanSelection()
+    selectIds(g, ids)
+  } finally {
+    repairingSelection = false
+  }
+}
+
+/** The rubberband has just replaced the selection; with shift, add the old one back. */
+function onBlankMouseUp(): void {
+  const g = graph.value
+  const ids = additiveSelection
+  additiveSelection = null
+  if (g && ids) selectIds(g, ids)
+}
+
+// ── Gestures: draw, place, pan ────────────────────────────────────────────
+/** A tool gesture in flight, in graph-local coordinates where it matters. */
+type Gesture =
+  | {
+      kind: 'create'
+      tool: ShapeTool | 'text'
+      start: { x: number; y: number }
+      /** The node the press landed on, or `null` for empty board. */
+      node: { id: string; shape: string } | null
+    }
+  | {
+      kind: 'pan'
+      client: { x: number; y: number }
+      origin: { tx: number; ty: number }
+      moved: boolean
+    }
+  | {
+      kind: 'arrow'
+      /** The node the arrow starts from. */
+      source: string
+    }
+  | {
+      kind: 'erase'
+      /** What the press landed on: a blank press that never drags erases nothing. */
+      on: 'blank' | 'cell'
+      /** The press, graph-local, for the click-or-drag test. */
+      start: { x: number; y: number }
+      /** The last CLIENT point the stroke was probed at. */
+      last: { x: number; y: number }
+      /** Past the click threshold: from here on every move is probed. */
+      dragged: boolean
+      /** Everything the stroke has crossed, in marking order. */
+      marked: Map<string, 'node' | 'edge'>
+    }
+let gesture: Gesture | null = null
+
+/** The in-flight Rectangle draw, in graph-local coordinates; `null` when not drawing. */
 const drawStart = ref<{ x: number; y: number } | null>(null)
 const drawNow = ref<{ x: number; y: number } | null>(null)
 
@@ -302,6 +710,32 @@ const drawPreviewStyle = computed<Record<string, string> | null>(() => {
 })
 
 /**
+ * The in-flight Arrow, in graph-local coordinates: from the source node's
+ * centre to the pointer. Drawn as an overlay, never as a graph cell, so the
+ * preview can never enter the undo history or reach a Save.
+ */
+const arrowFrom = ref<{ x: number; y: number } | null>(null)
+const arrowNow = ref<{ x: number; y: number } | null>(null)
+
+/** The preview line in the BODY's coordinate space, projected like the draw preview. */
+const arrowPreviewLine = computed<{ x1: number; y1: number; x2: number; y2: number } | null>(() => {
+  const g = graph.value
+  const a = arrowFrom.value
+  const b = arrowNow.value
+  const box = bodyEl.value
+  if (!g || !a || !b || !box) return null
+  const from = g.localToClient(a.x, a.y)
+  const to = g.localToClient(b.x, b.y)
+  const host = box.getBoundingClientRect()
+  return {
+    x1: from.x - host.left,
+    y1: from.y - host.top,
+    x2: to.x - host.left,
+    y2: to.y - host.top
+  }
+})
+
+/**
  * CAPTURE phase, and that is not a detail. X6 handles the drag's `mouseup` on
  * `document` and stops its propagation, so a bubble-phase listener on `window`
  * — the last hop in the bubble chain — never sees the release: the preview rect
@@ -309,56 +743,424 @@ const drawPreviewStyle = computed<Record<string, string> | null>(() => {
  * → target, so it lands before X6 can swallow it. Found in the real app;
  * jsdom's dispatch reaches the listener either way, so it does not reproduce
  * there. `removeEventListener` must be given the same flag or it removes
- * nothing.
+ * nothing. Every tool gesture (draw, place, pan) ends through it.
  */
 const DRAW_LISTENER = { capture: true } as const
 
-function onBlankMouseDown({ e, x, y }: { e: MouseEvent; x: number; y: number }): void {
-  // Left button only, and never while shift is held: shift+drag belongs to the
-  // rubberband, right-drag belongs to panning (see `canvas-graph.ts`).
-  if (e.button !== 0 || e.shiftKey) return
-  focusBody()
-  drawStart.value = { x, y }
-  drawNow.value = { x, y }
-  window.addEventListener('mousemove', onDrawMove, DRAW_LISTENER)
-  window.addEventListener('mouseup', onDrawUp, DRAW_LISTENER)
+function beginGesture(next: Gesture): void {
+  // A press after a lost release: end the old gesture first, or its listeners
+  // stay doubled and an erase stroke's marks are left on the board for good.
+  cancelGesture()
+  gesture = next
+  window.addEventListener('mousemove', onGestureMove, DRAW_LISTENER)
+  window.addEventListener('mouseup', onGestureUp, DRAW_LISTENER)
 }
 
-function onDrawMove(ev: MouseEvent): void {
-  const g = graph.value
-  if (!g || !drawStart.value) return
-  const p = g.clientToLocal(ev.clientX, ev.clientY)
-  drawNow.value = { x: p.x, y: p.y }
-}
-
-function onDrawUp(ev: MouseEvent): void {
-  window.removeEventListener('mousemove', onDrawMove, DRAW_LISTENER)
-  window.removeEventListener('mouseup', onDrawUp, DRAW_LISTENER)
-  const g = graph.value
-  const a = drawStart.value
+function endGesture(): void {
+  window.removeEventListener('mousemove', onGestureMove, DRAW_LISTENER)
+  window.removeEventListener('mouseup', onGestureUp, DRAW_LISTENER)
+  if (gesture?.kind === 'erase') clearEraseMarks(gesture)
+  gesture = null
   drawStart.value = null
   drawNow.value = null
-  if (!g || !a) return
-  const p = g.clientToLocal(ev.clientX, ev.clientY)
-  // A short drag is a CLICK on empty board: clear the selection, draw nothing.
-  // BOTH ends are world coordinates measured through the graph's own transform,
-  // and the threshold is converted with `g.zoom()`. Reading `e.clientX` off the
-  // mousedown instead is what the first version did, and X6's wrapped event
-  // object carries no `clientX` in Electron — the comparison silently became
-  // `NaN >= 6`, so every drag was classified as a click and no box was ever
-  // created. jsdom did not reproduce it; the real app did.
-  if (!isDrawGesture(a.x, a.y, p.x, p.y, g.zoom())) {
-    g.cleanSelection()
+  arrowFrom.value = null
+  arrowNow.value = null
+  panning.value = false
+}
+
+/** Esc mid-gesture, or a tool switch: drop the gesture, create nothing. */
+function cancelGesture(): void {
+  if (gesture) endGesture()
+}
+
+function onBlankMouseDown({ e }: { e: MouseEvent }): void {
+  // Left button only: right-drag belongs to panning in every tool (see
+  // `canvas-graph.ts`).
+  if (e.button !== 0) return
+  focusBody()
+  const tool = activeTool.value
+  if (tool === 'select') {
+    // The plugin owns the drag (rubberband) and the click (clear selection).
+    // `shift` makes the drag ADD to the selection — X6 replaces it natively.
+    if (e.shiftKey) additiveSelection = [...preGestureSelection]
     return
   }
-  const node = operatorNode(rectFromDrag(a.x, a.y, p.x, p.y), takenIds())
+  startToolGesture(tool, null)
+}
+
+function onNodeMouseDown({ e, node }: { e: MouseEvent; node: Node }): void {
+  if (e.button !== 0) return
+  const tool = activeTool.value
+  // Select: X6's own select/move — nodes are interactive only in this tool.
+  if (tool === 'select') return
+  focusBody()
+  startToolGesture(tool, { id: node.id, shape: nodeKind(node) })
+}
+
+/**
+ * A press on an EDGE. Select keeps X6's own handling (select the edge). The
+ * Eraser erases it. In every other tool an edge is not a target, so the press
+ * is a press on blank board: Hand pans, Rectangle and Text place, Arrow does
+ * nothing. Either way the tool owns it, so X6 must not select the edge on the
+ * release (`pendingSelection`, set in `startToolGesture`).
+ */
+function onEdgeMouseDown({ e, edge }: { e: MouseEvent; edge: Cell }): void {
+  if (e.button !== 0) return
+  const tool = activeTool.value
+  if (tool === 'select') return
+  focusBody()
+  startToolGesture(tool, null, tool === 'eraser' ? edge.id : null)
+}
+
+function startToolGesture(
+  tool: CanvasTool,
+  node: { id: string; shape: string } | null,
+  edgeId: string | null = null
+): void {
+  const g = graph.value
+  if (!g) return
+  // Whatever X6's Selection plugin does on this release, a non-Select tool
+  // leaves the selection as it was unless it creates something.
+  pendingSelection = [...preGestureSelection]
+  const { x, y } = g.clientToLocal(pressClient.x, pressClient.y)
+  switch (tool) {
+    case 'hand': {
+      const t = g.translate()
+      beginGesture({
+        kind: 'pan',
+        client: { ...pressClient },
+        origin: { tx: t.tx, ty: t.ty },
+        moved: false
+      })
+      panning.value = true
+      return
+    }
+    case 'rectangle':
+    case 'diamond':
+    case 'ellipse':
+      beginGesture({ kind: 'create', tool, start: { x, y }, node })
+      drawStart.value = { x, y }
+      drawNow.value = { x, y }
+      return
+    case 'text':
+      // No preview: a text is placed at the press point whatever the drag.
+      beginGesture({ kind: 'create', tool, start: { x, y }, node })
+      return
+    case 'arrow': {
+      // Only a node starts an arrow (spec §5: no free arrows in v1). A press
+      // on blank board shows nothing; the toolbar hint already says why.
+      if (!node || nodeIntent(tool, 'press', node.shape) !== 'start-arrow') return
+      const cell = g.getCellById(node.id)
+      if (!cell || !cell.isNode()) return
+      const centre = cell.getBBox().getCenter()
+      beginGesture({ kind: 'arrow', source: node.id })
+      arrowFrom.value = { x: centre.x, y: centre.y }
+      arrowNow.value = { x, y }
+      return
+    }
+    case 'eraser': {
+      const gs: Gesture = {
+        kind: 'erase',
+        on: node || edgeId ? 'cell' : 'blank',
+        start: { x, y },
+        last: { ...pressClient },
+        dragged: false,
+        marked: new Map()
+      }
+      beginGesture(gs)
+      // A press on a node or an edge erases it even without a drag (spec §5),
+      // so it is marked at once. A blank press marks nothing until it drags.
+      const pressedCell = g.getCellById(node?.id ?? edgeId ?? '')
+      if (pressedCell) markForErase(g, gs, pressedCell)
+      return
+    }
+    default:
+      return
+  }
+}
+
+// ── Eraser (spec §5) ──────────────────────────────────────────────────────
+/**
+ * The dimming a crossed-but-not-yet-erased cell gets (`design.md` §6, Eraser
+ * mark). A class on the cell's VIEW, never a cell attribute: marking is not an
+ * edit, so it never lights the dirty dot or enters the undo history.
+ */
+const ERASE_MARK = 'canvas-erase-mark'
+/** The eraser's history batch: one stroke, one undo step. */
+const ERASE_BATCH = 'erase'
+
+type EraseGesture = Extract<Gesture, { kind: 'erase' }>
+
+function markForErase(g: Graph, gs: EraseGesture, cell: Cell): void {
+  if (gs.marked.has(cell.id)) return
+  const view = g.findViewByCell(cell)
+  if (!view) return
+  view.addClass(ERASE_MARK)
+  gs.marked.set(cell.id, cell.isEdge() ? 'edge' : 'node')
+}
+
+function clearEraseMarks(gs: EraseGesture): void {
+  const g = graph.value
+  if (!g) return
+  for (const id of gs.marked.keys()) {
+    const cell = g.getCellById(id)
+    const view = cell ? g.findViewByCell(cell) : null
+    view?.removeClass(ERASE_MARK)
+  }
+}
+
+/**
+ * Mark what lies under one CLIENT point of the stroke: every node there, and
+ * every edge whose rendered path passes within `ERASE_REACH_PX` screen pixels.
+ * A point outside the pane's body probes nothing — what lies there in world
+ * space is hidden past the pane's edge, so the operator cannot mean it.
+ */
+function probeErase(g: Graph, gs: EraseGesture, client: { x: number; y: number }): void {
+  const box = bodyEl.value
+  if (!box || !pointInRect(client, box.getBoundingClientRect())) return
+  const p = g.clientToLocal(client.x, client.y)
+  for (const n of g.getNodesFromPoint(p.x, p.y)) markForErase(g, gs, n)
+  const reach = eraseReach(g.zoom())
+  for (const edge of g.getEdges()) {
+    if (gs.marked.has(edge.id)) continue
+    const view = g.findViewByCell(edge)
+    const closest = view?.isEdgeView() ? view.getClosestPoint(p) : null
+    if (edgeWithinReach(p, closest, reach)) markForErase(g, gs, edge)
+  }
+}
+
+function moveErase(g: Graph, gs: EraseGesture, ev: MouseEvent): void {
+  const client = { x: ev.clientX, y: ev.clientY }
+  if (!gs.dragged) {
+    const p = g.clientToLocal(client.x, client.y)
+    // Under the click threshold the stroke is still a press: nothing beyond
+    // the pressed cell is marked, so a plain press erases just that.
+    if (!isDrawGesture(gs.start.x, gs.start.y, p.x, p.y, g.zoom())) return
+    gs.dragged = true
+    probeErase(g, gs, gs.last)
+  }
+  for (const s of strokeSamples(gs.last, client, ERASE_REACH_PX)) probeErase(g, gs, s)
+  gs.last = client
+}
+
+/**
+ * The release: remove everything the stroke marked as ONE undo step, edges
+ * attached to an erased node included (X6 removes them with it, inside the
+ * same batch). A blank press that never dragged erases nothing. The release
+ * may land outside the pane or the window: the marks were made while the
+ * operator could see them, so they are honoured either way.
+ */
+function finishErase(g: Graph, gs: EraseGesture): void {
+  if (gs.on === 'blank' && blankIntent('eraser', gs.dragged ? 'drag' : 'click') !== 'erase') return
+  const ids = eraseRemovalOrder(gs.marked)
+  if (ids.length === 0) return
+  // Never nest: a placed text's batch is closed by its rename, which a press
+  // elsewhere has already blurred — this only guards the impossible case.
+  endPlaceTextBatch()
+  g.startBatch(ERASE_BATCH)
+  try {
+    for (const id of ids) {
+      const cell = g.getCellById(id)
+      if (cell) g.removeCell(cell)
+    }
+  } finally {
+    g.stopBatch(ERASE_BATCH)
+  }
+  // X6's Selection drops removed cells itself; the repair it runs after this
+  // release must not bring one back.
+  if (pendingSelection) pendingSelection = pendingSelection.filter((id) => g.getCellById(id))
+  markUsed('eraser')
+}
+
+function onGestureMove(ev: MouseEvent): void {
+  const g = graph.value
+  const gs = gesture
+  if (!g || !gs) return
+  if (gs.kind === 'pan') {
+    const dx = ev.clientX - gs.client.x
+    const dy = ev.clientY - gs.client.y
+    if (dx !== 0 || dy !== 0) gs.moved = true
+    g.translate(gs.origin.tx + dx, gs.origin.ty + dy)
+    return
+  }
+  if (gs.kind === 'arrow') {
+    const p = g.clientToLocal(ev.clientX, ev.clientY)
+    arrowNow.value = { x: p.x, y: p.y }
+    return
+  }
+  if (gs.kind === 'erase') {
+    // No button held: the release landed somewhere the pane never heard about
+    // (a native menu, say). Hovering on must not keep marking, and the next
+    // release must not commit a stroke the operator already let go of.
+    if (ev.buttons === 0) {
+      cancelGesture()
+      return
+    }
+    moveErase(g, gs, ev)
+    return
+  }
+  if (isShapeTool(gs.tool)) {
+    const p = g.clientToLocal(ev.clientX, ev.clientY)
+    drawNow.value = { x: p.x, y: p.y }
+  }
+}
+
+function onGestureUp(ev: MouseEvent): void {
+  const gs = gesture
+  // A right or middle release mid-stroke is not the end of an erase: only the
+  // primary button that started it can commit it.
+  if (gs?.kind === 'erase' && ev.button !== 0) return
+  endGesture()
+  const g = graph.value
+  if (!g || !gs) return
+  if (gs.kind === 'pan') {
+    if (gs.moved) markUsed('hand')
+    return
+  }
+  if (gs.kind === 'arrow') {
+    finishArrow(g, gs.source, ev)
+    return
+  }
+  if (gs.kind === 'erase') {
+    finishErase(g, gs)
+    return
+  }
+  const a = gs.start
+  const p = g.clientToLocal(ev.clientX, ev.clientY)
+  // Click or drag? BOTH ends are world coordinates measured through the
+  // graph's own transform from NATIVE client points, and the threshold is
+  // converted with `g.zoom()`. X6's wrapped event object is not a reliable
+  // source of `clientX` in Electron — an earlier version read it there and
+  // the comparison silently became `NaN >= 6`, so every drag was classified as
+  // a click. jsdom did not reproduce it; the real app did.
+  const dragged = isDrawGesture(a.x, a.y, p.x, p.y, g.zoom())
+  const intent = gs.node
+    ? nodeIntent(gs.tool, dragged ? 'drag' : 'press', gs.node.shape)
+    : blankIntent(gs.tool, dragged ? 'drag' : 'click')
+  switch (intent) {
+    case 'place-shape':
+      if (gs.tool === 'text') return
+      createNode(
+        operatorNode(
+          placedRect(a.x, a.y, shapeForTool(gs.tool)),
+          takenIds(),
+          '',
+          shapeForTool(gs.tool)
+        ),
+        gs.tool
+      )
+      return
+    case 'draw-shape':
+      if (gs.tool === 'text') return
+      createNode(
+        operatorNode(rectFromDrag(a.x, a.y, p.x, p.y), takenIds(), '', shapeForTool(gs.tool)),
+        gs.tool
+      )
+      return
+    case 'place-text':
+      createNode(operatorNode(placedRect(a.x, a.y, 'text'), takenIds(), '', 'text'), gs.tool)
+      return
+    case 'edit-text':
+      // On the RELEASE, not the press: a press's default action moves focus to
+      // the body, which would blur — and so commit — a rename opened on it.
+      if (gs.node) startRename(gs.node.id)
+      return
+    default:
+      return
+  }
+}
+
+/**
+ * The Arrow's release: an operator edge from `source` to the node on top under
+ * the pointer, or nothing (see `arrowEdgeEnds`). A release outside the pane's
+ * body is "elsewhere" even when a node lies under that point in world space,
+ * hidden past the pane's edge: the operator cannot see it, so cannot mean it.
+ */
+function finishArrow(g: Graph, source: string, ev: MouseEvent): void {
+  const box = bodyEl.value
+  if (!box || !pointInRect({ x: ev.clientX, y: ev.clientY }, box.getBoundingClientRect())) return
+  const p = g.clientToLocal(ev.clientX, ev.clientY)
+  const hits = g.getNodesFromPoint(p.x, p.y).map((n) => ({ id: n.id, zIndex: n.getZIndex() ?? 0 }))
+  const sourceCell = g.getCellById(source)
+  // The source can vanish mid-drag: a reload keeps an Arrow in flight (an
+  // agent's write, a Save's echo), and the new document may no longer hold
+  // it. An edge from a missing node would dangle. The preview is already gone
+  // (`endGesture` ran before this).
+  if (!sourceCell || !sourceCell.isNode()) return
+  const outgoing = g.getOutgoingEdges(sourceCell) ?? []
+  const ends = arrowEdgeEnds(
+    source,
+    topmostNodeId(hits),
+    outgoing.map((e) => ({ source: e.getSourceCellId(), target: e.getTargetCellId() }))
+  )
+  if (!ends) return
+  const edge = g.addEdge({
+    ...operatorEdgeSpec(palette),
+    source: { cell: ends.source },
+    target: { cell: ends.target }
+  })
+  // Selected, like a new shape: a Delete right after takes a mistake back.
+  g.cleanSelection()
+  g.select(edge)
+  pendingSelection = [edge.id]
+  markUsed('arrow')
+  setToolState(afterCreate(toolState.value))
+}
+
+/**
+ * Add a node the operator just made, select it, and open its rename: a new
+ * shape is always unlabelled, and making them double-click the thing they are
+ * already looking at is a step with no decision in it. Then the tool reverts
+ * to Select unless Lock is on (spec §4.3).
+ */
+function createNode(node: ReturnType<typeof operatorNode>, tool: CanvasTool): void {
+  const g = graph.value
+  if (!g) return
+  // A text is only finished once it has a label, so the add and whatever its
+  // rename does (label it, or remove it again) are ONE undo step.
+  if (node.shape === 'text') beginPlaceTextBatch(g)
   const cell = g.addNode(toX6Node(node, palette, images.value))
   g.cleanSelection()
   g.select(cell)
-  // Straight into rename: a box the operator just drew is always unlabelled,
-  // and making them double-click the thing they are already looking at is a
-  // step with no decision in it.
+  pendingSelection = [node.id]
+  markUsed(tool)
+  setToolState(afterCreate(toolState.value))
   void nextTick(() => startRename(node.id))
+}
+
+/**
+ * The history batch a placed text holds open until its rename ends. Without
+ * it the add and the rename's label (or its removal, on an empty commit) are
+ * two undo steps, and one ⌘Z brings back an invisible empty text that a Save
+ * would then write. Closed by `commitRename`/`cancelRename`, and defensively
+ * by every path that could otherwise leave it open: a re-render (reload, a
+ * disk change, a theme switch) and unmount.
+ */
+const PLACE_TEXT_BATCH = 'place-text'
+let placeTextBatch: Graph | null = null
+
+function beginPlaceTextBatch(g: Graph): void {
+  endPlaceTextBatch()
+  g.startBatch(PLACE_TEXT_BATCH)
+  placeTextBatch = g
+}
+
+function endPlaceTextBatch(): void {
+  const g = placeTextBatch
+  placeTextBatch = null
+  g?.stopBatch(PLACE_TEXT_BATCH)
+}
+
+/**
+ * Double-click on empty board: in Select, place a text (Excalidraw idiom),
+ * centred on the second press — the raw point, not X6's grid-snapped one.
+ */
+function onBlankDblClick(): void {
+  const g = graph.value
+  if (!g || rename.value) return
+  if (blankIntent(activeTool.value, 'dblclick') !== 'place-text') return
+  const { x, y } = g.clientToLocal(pressClient.x, pressClient.y)
+  createNode(operatorNode(placedRect(x, y, 'text'), takenIds(), '', 'text'), 'text')
 }
 
 // ── Double-click renames (AC U3-1) ────────────────────────────────────────
@@ -404,6 +1206,14 @@ function startRename(nodeId: string): void {
  * operator two presses of undo to take back one rename.
  */
 function commitRename(): void {
+  try {
+    applyRename()
+  } finally {
+    endPlaceTextBatch()
+  }
+}
+
+function applyRename(): void {
   const r = rename.value
   rename.value = null
   // The input is about to leave the DOM, taking focus to `<body>` with it —
@@ -415,12 +1225,29 @@ function commitRename(): void {
   if (!g || !r) return
   const cell = g.getCellById(r.id)
   if (!cell || !cell.isNode()) return
+  // A text node IS its label: committed empty, it would be an invisible node
+  // nobody can find again, so it goes (spec §5). A framed shape stays,
+  // unlabelled.
+  if (nodeKind(cell) === 'text' && r.value.trim() === '') {
+    g.removeCell(cell)
+    return
+  }
   cell.attr({ text: { text: r.value }, label: { text: r.value } })
 }
 
 function cancelRename(): void {
+  const r = rename.value
   rename.value = null
   void nextTick(focusBody)
+  // Esc on a text that was never given a label (a fresh Text-tool placement)
+  // leaves nothing behind, for the same reason an empty commit does not.
+  const g = graph.value
+  const cell = g && r ? g.getCellById(r.id) : null
+  if (g && cell && cell.isNode() && nodeKind(cell) === 'text') {
+    const label = String(cell.attr('label/text') ?? cell.attr('text/text') ?? '')
+    if (label.trim() === '') g.removeCell(cell)
+  }
+  endPlaceTextBatch()
 }
 
 // ── Selection, delete, duplicate, undo/redo ───────────────────────────────
@@ -654,6 +1481,14 @@ async function resolveImages(document_: CanvasDocument, dir: string): Promise<Re
 async function draw(source: CanvasDocument, fit = false): Promise<void> {
   const g = ensureGraph()
   if (!g) return
+  // A render recreates every cell view. An Eraser stroke's dimming dies with
+  // the old views while its marked ids survive, so its release would delete
+  // cells the operator sees undimmed: it ends here. Every other gesture
+  // survives — a reload keeps the viewport (`fit=false`), so a draw, an arrow
+  // or a pan in flight is still valid across an agent's write or the echo of
+  // a Save.
+  if (gesture?.kind === 'erase') cancelGesture()
+  endPlaceTextBatch()
   // A render REPLACES every cell, so it must never reach dirty tracking or the
   // undo stack: rebuilding the board is the pane's own bookkeeping, not an edit
   // the operator made and could take back.
@@ -676,10 +1511,14 @@ async function draw(source: CanvasDocument, fit = false): Promise<void> {
  * preserved unknown top-level keys, and the edge labels the document rather
  * than X6 is the author of.
  */
-function currentDraft(base: CanvasDocument, nowIso?: string): CanvasDocumentDraft {
+function currentDraft(
+  base: CanvasDocument,
+  nowIso?: string,
+  stack: CanvasStackMode = 'save'
+): CanvasDocumentDraft {
   const g = graph.value
   const cells = g ? ((g.toJSON() as { cells?: unknown[] }).cells ?? []) : []
-  return buildCanvasDocumentFromCells(cells, base, nowIso ?? base.meta.updatedAt ?? '')
+  return buildCanvasDocumentFromCells(cells, base, nowIso ?? base.meta.updatedAt ?? '', stack)
 }
 
 async function load(path: string, fit: boolean): Promise<void> {
@@ -737,8 +1576,29 @@ watch(
     // unsaved edit the operator has made. `dirty` is untouched: recolouring is
     // not an edit.
     const wasDirty = dirty.value
-    await draw(currentDraft(base) as CanvasDocument, false)
+    // The redraw replaces every cell, which empties the selection and closes any
+    // resize handles — and would close the properties panel under the operator.
+    // Put them back: same ids.
+    const kept = g.getSelectedCells().map((c) => c.id)
+    const handles = openCanvasResizeHandleId(g)
+    // The emptied selection would fold the opened panel shut (the length watch);
+    // remember it and put it back after the re-select.
+    const wasPanelOpen = panelOpen.value
+    // `'live'`: every node keeps its exact z, so the undo stack — which records z
+    // values, not an order — still describes the board after the redraw (T536 U4).
+    // That holds only while the live node z are distinct and > 0 (else renderStackZ
+    // re-ranks them), which they are: a load gives 1..n or the file's distinct
+    // positive values, a new node takes max + 1, and undo is LIFO.
+    await draw(currentDraft(base, undefined, 'live') as CanvasDocument, false)
     dirty.value = wasDirty
+    repairingSelection = true
+    try {
+      selectIds(g, kept)
+    } finally {
+      repairingSelection = false
+    }
+    panelOpen.value = wasPanelOpen
+    if (handles !== null) showCanvasResizeHandles(g, handles)
   }
 )
 
@@ -755,8 +1615,15 @@ watch(
  *    informed choice rather than a silent loss.
  */
 let unsubscribeCanvasChanged: (() => void) | undefined
-async function handleCanvasChanged(payload: { path: string }): Promise<void> {
+/** Set on unmount, so an open still waiting on the watch does not go on to load. */
+let unmounted = false
+/** This mounted pane's identity for `canvas:write` / `canvas:changed` (BUG-209): two
+ *  panes can hold the same file, so the echo of a Save is told apart per pane. */
+const writerId = `diagram-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
+async function handleCanvasChanged(payload: { path: string; writerId?: string }): Promise<void> {
   if (payload.path !== filePath.value) return
+  // The echo of this pane's own Save — it already holds exactly what it wrote.
+  if (payload.writerId === writerId) return
   if (dirty.value) {
     staleOnDisk.value = true
     return
@@ -767,7 +1634,19 @@ async function handleCanvasChanged(payload: { path: string }): Promise<void> {
 onMounted(async () => {
   unsubscribeCanvasChanged = window.api.onCanvasChanged(handleCanvasChanged)
   window.addEventListener('keydown', onWindowKeydown)
-  void window.api.canvasWatchStart(filePath.value)
+  document.addEventListener('keydown', onEscCapture, true)
+  window.addEventListener('keyup', onWindowKeyup)
+  window.addEventListener('blur', onWindowBlur)
+  // Read only once the watch is live (BUG-210): a write between the read and the
+  // watch going live would produce no event, and the next Save would revert it.
+  // A watch that cannot start must not keep the board from showing.
+  try {
+    await window.api.canvasWatchStart(filePath.value, writerId)
+  } catch {
+    // Read anyway: the pane works, it just won't hear outside changes.
+  }
+  // The wait can be long; a pane closed meanwhile has nothing left to build into.
+  if (unmounted) return
   await load(filePath.value, true)
   // Follow the pane as the operator drags the inter-pane divider or maximizes.
   // X6 reads its container's size only at construction and then PINS an inline
@@ -780,17 +1659,24 @@ onMounted(async () => {
       if (g && box.clientWidth > 0 && box.clientHeight > 0) {
         g.resize(box.clientWidth, box.clientHeight)
       }
+      measureToolbar()
     })
     resizeObserver.observe(box)
   }
+  await nextTick()
+  measureToolbar()
 })
 
 onBeforeUnmount(() => {
+  unmounted = true
   window.removeEventListener('keydown', onWindowKeydown)
-  window.removeEventListener('mousemove', onDrawMove, DRAW_LISTENER)
-  window.removeEventListener('mouseup', onDrawUp, DRAW_LISTENER)
+  document.removeEventListener('keydown', onEscCapture, true)
+  window.removeEventListener('keyup', onWindowKeyup)
+  window.removeEventListener('blur', onWindowBlur)
+  endGesture()
+  endPlaceTextBatch()
   unsubscribeCanvasChanged?.()
-  void window.api.canvasWatchStop(filePath.value)
+  void window.api.canvasWatchStop(filePath.value, writerId)
   resizeObserver?.disconnect()
   resizeObserver = null
   graph.value?.dispose()
@@ -806,8 +1692,8 @@ watch(
     // Re-targeting throws the current board away, so it goes through the same
     // discard guard as Reload and Close.
     withDiscardGuard(async () => {
-      if (prev) await window.api.canvasWatchStop(prev)
-      await window.api.canvasWatchStart(next)
+      if (prev) await window.api.canvasWatchStop(prev, writerId)
+      await window.api.canvasWatchStart(next, writerId)
       await load(next, true)
     })
   }
@@ -879,7 +1765,7 @@ async function save(): Promise<void> {
   if (state.value.status !== 'ready' || !base || !dirty.value || saving.value) return
   saving.value = true
   const draft = currentDraft(base, new Date().toISOString())
-  const res = await window.api.canvasWrite(filePath.value, draft)
+  const res = await window.api.canvasWrite(filePath.value, draft, writerId)
   saving.value = false
   if (res.ok) {
     doc.value = draft as CanvasDocument
@@ -890,6 +1776,69 @@ async function save(): Promise<void> {
   } else {
     ui.pushToast({ kind: 'danger', title: t(errorKey(res.code)) })
   }
+}
+
+// ── Toolbar placement (design.md §6 "Diagram pane → Toolbar") ────────────
+const clusterEl = ref<HTMLElement | null>(null)
+const toolbarEl = ref<HTMLElement | null>(null)
+/** The pane is too narrow for bar and zoom cluster on one row. */
+const toolbarOwnRow = ref(false)
+
+/**
+ * Measured on the body's existing ResizeObserver: the bar is centred, and drops
+ * to its own row under the zoom cluster once its left edge would come within
+ * 8px of the cluster. The BAR is measured, not the hint under it, so the hint
+ * appearing or hiding never flips the row.
+ */
+function measureToolbar(): void {
+  try {
+    const box = bodyEl.value
+    const cluster = clusterEl.value
+    const bar = toolbarEl.value?.querySelector<HTMLElement>('[role="toolbar"]')
+    if (!box || !cluster || !bar) return
+    toolbarOwnRow.value = toolbarNeedsOwnRow(
+      box.clientWidth,
+      bar.offsetWidth,
+      cluster.offsetLeft + cluster.offsetWidth
+    )
+  } finally {
+    // AFTER the row write, on every path: the `nextTick` inside then chains behind
+    // the re-render that write queued, so the panel measures the toolbar where it
+    // now sits rather than where it was (it would overlap a freshly own-row bar).
+    measureStylePanel()
+  }
+}
+watch(
+  () => state.value.status,
+  async (status) => {
+    if (status !== 'ready') return
+    await nextTick()
+    measureToolbar()
+  }
+)
+
+/**
+ * The properties panel's slot (design.md §6): collapsed below 384px of pane, and
+ * 8px under the zoom cluster — or under the toolbar once it has its own row. The
+ * width is read now; the top after a tick. Callers that change `toolbarOwnRow`
+ * must call this AFTER that write (see `measureToolbar`): Vue's `nextTick` then
+ * resolves after the re-render the write queued, so the toolbar's offsets are
+ * its new ones. A body with no layout (0 wide) collapses nothing: there is no
+ * width to judge by.
+ */
+function measureStylePanel(): void {
+  const box = bodyEl.value
+  if (box && box.clientWidth > 0) panelCollapsed.value = stylePanelCollapsed(box.clientWidth)
+  void nextTick(() => {
+    const cluster = clusterEl.value
+    if (!cluster) return
+    const bar = toolbarEl.value
+    panelTop.value = stylePanelTop(
+      cluster.offsetTop + cluster.offsetHeight,
+      toolbarOwnRow.value,
+      bar ? bar.offsetTop + bar.offsetHeight : 0
+    )
+  })
 }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────
@@ -906,6 +1855,10 @@ function focusBody(): void {
 
 function onWindowKeydown(ev: KeyboardEvent): void {
   if (!hasFocus()) return
+  // Already handled on its way here — the rename input's own Enter/Esc
+  // (`.prevent`). Without this an Esc that cancels a rename would ALSO run
+  // `escapeOutcome` below and drop a locked tool back to Select.
+  if (ev.defaultPrevented) return
   const mod = ev.metaKey || ev.ctrlKey
   if (mod && (ev.key === 's' || ev.key === 'S')) {
     ev.preventDefault()
@@ -942,7 +1895,80 @@ function onWindowKeydown(ev: KeyboardEvent): void {
     deleteSelection()
     return
   }
-  if (ev.key === 'Escape') graph.value?.cleanSelection()
+  // Space held = a temporary Hand from any tool (spec §4.3). Below the rename
+  // early return, so typing a space into a label never pans.
+  if (ev.key === ' ') {
+    // Space on a focused toolbar or properties-panel button activates that
+    // button, as a keyboard user expects — it never pans.
+    const focused = document.activeElement
+    if (
+      focused instanceof HTMLElement &&
+      focused.closest('[role="toolbar"], [data-canvas-chrome]')
+    ) {
+      return
+    }
+    ev.preventDefault()
+    if (!toolState.value.spaceHeld) setToolState(pressSpace(toolState.value))
+    return
+  }
+  if (ev.key === 'Escape') {
+    // Normally consumed by `onEscCapture` first; reached only by an Esc that
+    // starts at the window (nothing left to peel then — this is a no-op).
+    peelEsc()
+    return
+  }
+  const pick = toolForKey(ev)
+  if (!pick) return
+  ev.preventDefault()
+  // Ignored while Space is held: switching then would make the release
+  // "restore" a tool the operator never chose to return to.
+  if (toolState.value.spaceHeld) return
+  setToolState(pick === 'lock' ? toggleLock(toolState.value) : selectTool(toolState.value, pick))
+}
+
+/** Releasing Space restores the tool. Not focus-gated: a release must always land. */
+function onWindowKeyup(ev: KeyboardEvent): void {
+  if (ev.key !== ' ' || !toolState.value.spaceHeld) return
+  ev.preventDefault()
+  setToolState(releaseSpace(toolState.value))
+}
+
+/** The window lost focus: a Space keyup will never arrive here (Review Focus 3),
+ *  so the pane must not stay stuck in Hand. */
+function onWindowBlur(): void {
+  // A gesture in flight may never see its release either (it can land in
+  // another window), so it goes too — no preview left on screen.
+  cancelGesture()
+  if (toolState.value.spaceHeld) setToolState(releaseSpace(toolState.value))
+}
+
+/**
+ * One step of the Esc ladder (spec §4.3): cancel a gesture in flight, else leave
+ * a drawing tool for Select, else clear the selection. Returns whether it did
+ * anything — `false` means the pane had nothing to peel.
+ */
+function peelEsc(): boolean {
+  const outcome = escapeOutcome(toolState.value, gesture !== null)
+  if (outcome === 'cancel-gesture') cancelGesture()
+  else if (outcome === 'to-select') setToolState(selectTool(toolState.value, 'select'))
+  else {
+    const g = graph.value
+    if (!g || g.getSelectedCells().length === 0) return false
+    g.cleanSelection()
+  }
+  return true
+}
+
+/**
+ * Esc peels this pane — in the document CAPTURE phase, and stopped, so a Roadmap
+ * or Review takeover behind this pane stays open until the pane has nothing left
+ * to peel (T486 §6.1). Document, not window: a dialog or menu opened later listens
+ * in window capture and stops Esc, so it keeps its Esc instead of sharing it with
+ * this pane. With nothing to peel the key passes on to `view.closeTakeover`.
+ */
+function onEscCapture(ev: KeyboardEvent): void {
+  if (ev.key !== 'Escape' || !hasFocus() || rename.value) return
+  if (peelEsc()) ev.stopPropagation()
 }
 
 // ── Header actions ────────────────────────────────────────────────────────
@@ -984,12 +2010,23 @@ function onClose(): void {
 function onHeaderMouseDown(ev: MouseEvent): void {
   if (props.resizable) emit('headerMouseDown', ev)
 }
+
+// T486 U5b — a region of the pane focus ring: F6 focuses its canvas body (where its own keys live), `pane.close`
+// runs the header X's close (the discard guard holds). The root draws the design.md §6
+// "Pane focus" outline while focus is inside.
+const rootEl = ref<HTMLDivElement | null>(null)
+useFocusRegion(props.pane.id, rootEl, {
+  focus: () => focusBody(),
+  close: onClose
+})
 </script>
 
 <template>
   <div
+    ref="rootEl"
     data-testid="diagram-pane"
-    class="flex h-full w-full flex-col overflow-hidden bg-bg"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg no-default-ring focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    :data-focus-region="pane.id"
     :aria-label="$t('diagramPane.label')"
   >
     <header
@@ -1095,7 +2132,12 @@ function onHeaderMouseDown(ev: MouseEvent): void {
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
+        :title="
+          keybindings.withChord(
+            isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize'),
+            'pane.toggleMaximize'
+          )
+        "
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         @mousedown.stop
         @click="onToggleMaximize"
@@ -1106,7 +2148,7 @@ function onHeaderMouseDown(ev: MouseEvent): void {
       <button
         class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="$t('helperPane.close')"
+        :title="keybindings.withChord($t('helperPane.close'), 'pane.close')"
         :aria-label="$t('helperPane.close')"
         @mousedown.stop
         @click="onClose"
@@ -1121,7 +2163,9 @@ function onHeaderMouseDown(ev: MouseEvent): void {
     <div
       ref="bodyEl"
       tabindex="0"
-      class="relative min-h-0 flex-1 overflow-hidden outline-none"
+      class="no-default-ring relative min-h-0 flex-1 overflow-hidden outline-none"
+      :style="{ cursor: bodyCursor }"
+      @mousedown.capture="onBodyMouseDownCapture"
       @pointerdown="focusBody"
       @paste="onPaste"
       @dragover="onDragOver"
@@ -1173,6 +2217,24 @@ function onHeaderMouseDown(ev: MouseEvent): void {
         :style="drawPreviewStyle"
       ></div>
 
+      <!-- The in-flight Arrow: a dashed line from the source's centre to the
+           pointer. An overlay, not a cell, so it never reaches the undo history. -->
+      <svg
+        v-if="arrowPreviewLine"
+        data-testid="diagram-arrow-preview"
+        class="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+      >
+        <line
+          :x1="arrowPreviewLine.x1"
+          :y1="arrowPreviewLine.y1"
+          :x2="arrowPreviewLine.x2"
+          :y2="arrowPreviewLine.y2"
+          class="stroke-accent-line"
+          stroke-width="1.5"
+          stroke-dasharray="4 3"
+        />
+      </svg>
+
       <!-- Inline rename. Positioned over the node itself rather than in a
            dialog: renaming a box is a one-word edit, and moving the operator's
            eyes off the board for it is more disruptive than the edit is. -->
@@ -1199,6 +2261,7 @@ function onHeaderMouseDown(ev: MouseEvent): void {
            pans nor scales — the anatomy PrStackCanvas established (design.md §6). -->
       <div
         v-if="state.status === 'ready'"
+        ref="clusterEl"
         class="absolute left-3 top-3 inline-flex items-center gap-0.5 rounded border border-border bg-surface p-1 shadow-pop"
         @pointerdown.stop
         @mousedown.stop
@@ -1233,6 +2296,44 @@ function onHeaderMouseDown(ev: MouseEvent): void {
         >
           <Plus :size="13" />
         </button>
+      </div>
+
+      <!-- Tool bar: top-centre of the VIEWPORT (neither pans nor zooms), or its
+           own row under the zoom cluster when the pane is too narrow for both
+           (design.md §6). 56px = the cluster's 12px inset + 36px height + 8px.
+           Capped at the pane minus its 12px left inset, so the full bar fits down
+           to ≈237px; below that its buttons wrap onto more rows instead of
+           clipping (design.md §6 "Narrow panes"). -->
+      <div
+        v-if="state.status === 'ready'"
+        ref="toolbarEl"
+        class="absolute max-w-[calc(100%-var(--spacing)*3)]"
+        :class="toolbarOwnRow ? 'left-3 top-14' : 'left-1/2 top-3 -translate-x-1/2'"
+      >
+        <CanvasToolbar
+          :tool="toolState.tool"
+          :locked="toolState.locked"
+          :used="usedTools"
+          @select="onToolbarSelect"
+          @toggle-lock="onToolbarToggleLock"
+        />
+      </div>
+
+      <!-- Properties panel (T536 U3): left edge of the VIEWPORT, under the zoom
+           cluster (or the toolbar, when it has its own row). Shown only in the
+           chosen Select tool, for a selection that holds a node: the style groups
+           it shares, then Layers (T536 U4). -->
+      <div v-if="panelVisible" class="absolute left-3" :style="{ top: `${panelTop}px` }">
+        <CanvasPropertiesPanel
+          :keys="panelKeys"
+          :values="panelStyleValues"
+          :collapsed="panelCollapsed"
+          :open="panelOpen"
+          :layers="panelNodes.length > 0"
+          @change="applyStylePatch"
+          @layer="applyLayerMove"
+          @toggle="onPanelToggle"
+        />
       </div>
     </div>
   </div>

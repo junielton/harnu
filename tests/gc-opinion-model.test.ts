@@ -314,11 +314,46 @@ describe('an item main always refuses to remove is never marked-safe material', 
     return { m, ok: ok.item.id, nested: nested.item.id, locked: locked.item.id }
   }
 
+  it('safeIds leaves out an item Harnu could not look inside', () => {
+    const ok = wt('ok', 'review', 900 * MIB)
+    const unchecked = refused('unchecked', 'check-failed')
+    const m = buildGcModel(snap([ok, unchecked]))
+    let map: OpinionMap = new Map()
+    for (const id of [ok.item.id, unchecked.item.id]) map = recordOpinion(map, op(id, 'safe'), m)
+    expect(safeIds(map, m)).toEqual([ok.item.id])
+  })
+
   it('safeIds leaves out a nested-worktree and a locked item even when their chip says safe', () => {
     const { m, ok, nested, locked } = mixed()
     let map: OpinionMap = new Map()
     for (const id of [ok, nested, locked]) map = recordOpinion(map, op(id, 'safe'), m)
     expect(safeIds(map, m)).toEqual([ok])
+  })
+
+  it('safeIds leaves out every other item main refuses, judged on its facts', () => {
+    const shared = wt('sh', 'review', 400 * MIB, {
+      reason: { code: 'shared-stack', detail: 'x' },
+      sharedStackIds: ['other']
+    })
+    const open = wt('op', 'review', 400 * MIB, {
+      reason: { code: 'open-idle-session', detail: 'x' },
+      session: 'open-idle'
+    })
+    const ok = wt('ok', 'review', 900 * MIB)
+    const m = buildGcModel(snap([ok, shared, open]))
+    let map: OpinionMap = new Map()
+    for (const b of [ok, shared, open]) map = recordOpinion(map, op(b.item.id, 'safe'), m)
+    expect(safeIds(map, m)).toEqual([ok.item.id])
+  })
+
+  it('a detached worktree is no longer refused: main archives it by sha and takes it once confirmed', () => {
+    const detached = wt('det', 'review', 400 * MIB, { reason: { code: 'detached', detail: 'x' } })
+    detached.item.kind = 'detached-worktree'
+    const ok = wt('ok', 'review', 900 * MIB)
+    const m = buildGcModel(snap([ok, detached]))
+    let map: OpinionMap = new Map()
+    for (const b of [ok, detached]) map = recordOpinion(map, op(b.item.id, 'safe'), m)
+    expect(safeIds(map, m)).toEqual([ok.item.id, detached.item.id])
   })
 
   it('still records and shows their opinion: it is advice, only the removal shortcut skips them', () => {

@@ -1,12 +1,9 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { nextTick } from 'vue'
-import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
-import { i18n } from '@renderer/i18n'
 import type { CanvasDocument } from '../src/main/canvas-core'
 import { installJsdomSvgShim, svgHost } from './helpers/jsdom-svg'
+import { mountPane as mountCanvasPane, settle, unmountPanes } from './helpers/canvas-pane-harness'
 import {
   IMAGE_NODE_MAX_EXTENT,
   IMAGE_NODE_MIN_EXTENT,
@@ -44,14 +41,6 @@ const markdownRead = vi.fn(async () => ({
   content: 'data:image/png;base64,AAAA'
 }))
 
-const PANE = {
-  id: 'h-canvas',
-  type: 'canvas' as const,
-  cwd: '/wt',
-  ratio: 1,
-  filePath: '/wt/board.harnucanvas.json'
-}
-
 /** A real `File` carrying real bytes — what a clipboard hands the pane. */
 function pngFile(name = 'shot.png', type = 'image/png'): File {
   return new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], name, { type })
@@ -78,18 +67,10 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-function mountPane() {
-  return mount(DiagramPane, {
-    props: { pane: { ...PANE }, worktreePath: '/wt' },
-    global: { plugins: [i18n] },
-    attachTo: host()
-  })
-}
+afterEach(unmountPanes)
 
-async function settle(): Promise<void> {
-  await flushPromises()
-  await nextTick()
-  await flushPromises()
+function mountPane() {
+  return mountCanvasPane({}, { attachTo: host() })
 }
 
 /** Fire a paste carrying `files`. jsdom has no `ClipboardEvent` with a usable

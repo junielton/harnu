@@ -367,6 +367,7 @@ _another_ folder.
 | `git-pull-request`                       | PR Stack Canvas (FolderMenu + Topbar button + the canvas' own header)                                                                                                                                                                  |
 | `git-pull-request-arrow`                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com)                                                                                                                                      |
 | `message-square`                         | Unresolved review threads on a PR Stack card (T275 — readiness chip at `full`, identity-row badge at `compact`); Review pane companion link                                                                                            |
+| `text-select`                            | Select the whole file (Review pane file header, T257); `lucide-vue-next` ships it as `TextSelect`. The delivery chip (T257 U2b) carries no glyph of its own.                                                                           |
 | `git-branch`                             | Branch badge (git folder) / repo-group header                                                                                                                                                                                          |
 | `chevron-right`                          | Collapse folder / repo-group (rotates 90° when open)                                                                                                                                                                                   |
 | `recycle`                                | Workspace GC: the Cleanup summary line, the single footer pill (replaces `trash-2` + `container` there) and the first-cycle banner. The spec's ♻ glyph, as a Lucide icon (§5 forbids text glyphs); the takeover header keeps `trash-2` |
@@ -405,7 +406,8 @@ _another_ folder.
 | `clock`                                  | History, recents                                                                                                                                                                                                                       |
 | `cloud`                                  | Cloud/bridge session (conversation lives on claude.ai, no resumable local transcript)                                                                                                                                                  |
 | `check`                                  | Confirmation, checkbox, agent completed (`done`) / transient "copied" state on a `copy` button                                                                                                                                         |
-| `bot`                                    | Subagent (agent row nested under the session) / agent-control badge on the folder row                                                                                                                                                  |
+| `bot`                                    | Subagent (agent row nested under the session) / agent-control badge on the folder row / agent connection chip (T474)                                                                                                                   |
+| `unplug`                                 | Agent connection chip → Disconnect (T474)                                                                                                                                                                                              |
 | `puzzle`                                 | Extension-origin badge (theme picker swatch, T137)                                                                                                                                                                                     |
 | `users`                                  | Teammate count chip (leader row) / icon on the synthetic "Team session-… · N" header                                                                                                                                                   |
 | `corner-down-right`                      | Nesting connector (agent → parent session / teammate → leader)                                                                                                                                                                         |
@@ -429,6 +431,28 @@ _another_ folder.
 | `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                                                                                 |
 | `circle-check`                           | Mission progress — the step rail's `done` glyph (✓ hollow, Mission v3)                                                                                                                                                                 |
 | `flag`                                   | Mission progress — the popover footer's "End mission…" button (Mission v3)                                                                                                                                                             |
+| `palette`                                | Canvas properties panel → the collapsed 28px button that opens it on a narrow pane (T536 U3)                                                                                                                                           |
+| `square-round-corner`                    | Canvas properties panel → Corners: round (`square` is sharp) (T536 U3)                                                                                                                                                                 |
+| `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
+| `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
+| `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
+| `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane")                                                                                                                                                                         |
+| `arrow-left` / `arrow-right`             | Browser pane → back / forward (address bar)                                                                                                                                                                                            |
+| `rotate-cw`                              | Browser pane → reload (swaps to `x` — stop — while a load is in flight)                                                                                                                                                                |
+| `play`                                   | Browser pane → Resume the agent after "Pause agent for 10 min" (chip)                                                                                                                                                                  |
+| `pause`                                  | Browser pane → "Pause agent for 10 min" (⋯ menu)                                                                                                                                                                                       |
+| `bug`                                    | Browser pane → Open DevTools (⋯ menu)                                                                                                                                                                                                  |
+| `shield-check`                           | Folder menu → Trusted dev hosts… (T571 U4, §6 "Trusted dev hosts dialog")                                                                                                                                                              |
+| `wifi-off` / `wifi`                      | Browser pane → "Allow network" switch on a page pane: off = `wifi-off` (default), on = `wifi` (T569 U2)                                                                                                                                |
+| `file-x`                                 | Browser pane → "file removed" placeholder for a page pane whose file is gone (T569 U2)                                                                                                                                                 |
+| `moon`                                   | Browser pane → "Paused to save memory" placeholder of a discarded pane (T574)                                                                                                                                                          |
+| `rotate-cw`                              | Browser pane → "Click to reload" button of the discarded placeholder (T574)                                                                                                                                                            |
+| `message-square-plus`                    | Browser pane → header button: turn point-and-comment on (T564 U6)                                                                                                                                                                      |
+| `message-square`                         | Browser pane → batch bar: "N drafts · M sent" (T564 U6)                                                                                                                                                                                |
+| `arrow-down-to-line`                     | Canvas properties panel → Layers: Send to back (T536 U4)                                                                                                                                                                               |
+| `arrow-down`                             | Canvas properties panel → Layers: Send backward (T536 U4)                                                                                                                                                                              |
+| `arrow-up`                               | Canvas properties panel → Layers: Bring forward (T536 U4)                                                                                                                                                                              |
+| `arrow-up-to-line`                       | Canvas properties panel → Layers: Bring to front (T536 U4)                                                                                                                                                                             |
 
 ### Novelty dot (on an icon button)
 
@@ -530,39 +554,77 @@ session timestamps, chart axes, separators, and icons.
 - Border-radius: 3px
 - Padding: `2px 6px`
 - Line-height: 14px
-- Always use the **Mac symbol** (`⌘`, `⇧`, `⌥`, `⌃`, `↩`, `⌫`) — we assume macOS as primary, but the app supports Linux/Win via Electron
+- **Render for the viewer's platform** (T1). On macOS use the symbols (`⌘`, `⇧`, `⌥`, `⌃`, `↩`, `⌫`) concatenated with no separator (`⌘⇧P`); on every other platform spell the modifiers out (`Ctrl`, `Shift`, `Alt`) and join with `+` (`Ctrl+Shift+P`). `Cmd`/`Mod` resolves to Control off macOS, so a `Cmd+K` binding shows as `⌘K` on a Mac and `Ctrl+K` on Linux — same binding, honest hint. Arrows stay `↑ ↓ ← →` everywhere.
+- **Every displayed chord is derived, never a literal.** The one source of truth is `src/main/keybindings-core.ts` (`KEYBINDINGS` + `renderChord`); `App.vue`, `menu.ts`, `EmptyState.vue` and the `SessionMenu` rename hint all read from it. A `<kbd>` that disagrees with the chord that fires is a bug the structure now prevents. Hints reflect the user's resolved `keybindings.json`, not just the default, and update live on save — the native menu is rebuilt on the same change so its accelerators stay in step.
 
-Examples: `⌘K` (search), `⌘N` (new session), `⌘⇧P` (switch project), `F2` (rename), `⌫` (delete).
+- **Tooltips carry the chord** (T486 U6). A button whose action has a resolved chord appends it in parentheses to its native `title` — "Hide sidebar (⌘B)" on macOS, "Hide sidebar (Ctrl+B)" elsewhere — through `keybindings.withChord(label, id)` (`keybindings.withChord` = `"{label} ({chord})"`). Never a literal: the chord follows a rebind live, and an unbound action shows the plain label. Only the `title` gains the chord; `aria-label` stays the plain label. Context-menu items show the same resolved chord in their trailing hint slot (mono 10.5px, `--text-4`), and only while the item's action has one.
 
-**Shortcut table** (renderer; the app's native menu mirrors the same ones):
+Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P` / `Ctrl+Shift+P` (switch project), `⌘R` / `Ctrl+R` (rename), `⌫` (delete).
 
-| Shortcut           | Action                                                                                                                                                                                                                     | Scope    | Notes                                                                                                                                                                                                               |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `⌘K`               | Open command palette                                                                                                                                                                                                       | global   | Also accepts `⌘⇧P` to open pre-filtered to projects                                                                                                                                                                 |
-| `⌘N`               | New session in the current folder                                                                                                                                                                                          | global   | Spawns `claude` in `sessions.selectedPath`                                                                                                                                                                          |
-| `⌘O`               | Add folder                                                                                                                                                                                                                 | global   | Opens `AddFolderDialog`                                                                                                                                                                                             |
-| `⌘R`               | Rename selected session                                                                                                                                                                                                    | global   | Overrides Chromium's default reload; reload moves to `F5`                                                                                                                                                           |
-| `⌘⇧R`              | Resume last session                                                                                                                                                                                                        | global   | Most recent by `lastActivity`                                                                                                                                                                                       |
-| `⌘⇧A`              | Expand/collapse the Inbox rail                                                                                                                                                                                             | global   | 4th column "Needs you"; same helper as the Topbar button. **Never hides** — `minimized`/`hidden` always expand                                                                                                      |
-| `⌘B`               | Hide/show the left sidebar (folders/sessions) — "full screen for the terminal"                                                                                                                                             | global   | Owned by the native menu (`&View`), so the accelerator is consumed **before** xterm (same as `⌘N`/`⌘K`); the renderer double-binds as a fallback. Also reopens via the Topbar's `PanelLeft` button (always visible) |
-| `⌘⌥B`              | Hide/show the right auxiliary panel (helper-stack / split)                                                                                                                                                                 | global   | Same scheme (`&View` menu + fallback). Hides **even with panes**; visual no-op with no panes. Reopens via the Topbar's `PanelRight` button (visible whenever there are panes)                                       |
-| `⌘W`               | Close selected session — **unless the terminal is focused**, in which case the shortcut is forwarded to xterm/PTY (becomes `\u0017`, used by programs like `nano` to delete the previous word). `⌘Q` still closes the app. | global   | Suppressed by `enabled: () => !terminalFocused.value` (T-4.5)                                                                                                                                                       |
-| `⌥←` / `⌘[`        | Back to the previous session you viewed (browser-style history; also mouse button 3 — back)                                                                                                                                | global   | Native menu (`&Session`). Linux/Win: the renderer stops `⌥←` in the capture phase so xterm can't eat it. macOS: renderer fallback. From Folder View/a takeover: back to the session you left                        |
-| `⌥→` / `⌘]`        | Forward through the session history after a Back (also mouse button 4 — forward)                                                                                                                                           | global   | Same scheme. Skips closed sessions; silent at the ends; 50 entries, in memory only. `⌥←`/`⌥→` no longer reach the terminal                                                                                          |
-| `↑ / ↓ / ← / →`    | Sidebar navigation                                                                                                                                                                                                         | sidebar  | Only when the sidebar has focus                                                                                                                                                                                     |
-| `Esc`              | Cancel edit / close overlay                                                                                                                                                                                                | modal    | Priority: palette > popover > input                                                                                                                                                                                 |
-| `F2`               | Rename (Linux/Win)                                                                                                                                                                                                         | global   | Alias for `⌘R`                                                                                                                                                                                                      |
-| `⌘C` / `⌃⇧C`       | Copy terminal selection                                                                                                                                                                                                    | terminal | Only with a selection; reads `term.getSelection()` (xterm's selection isn't a native DOM selection). On Mac, `editMenu` may intercept `⌘C` before xterm — see `menu.ts`                                             |
-| `⌘V` / `⌃⇧V`       | Paste into the terminal                                                                                                                                                                                                    | terminal | Via `term.paste()` — respects _bracketed paste_, so a multi-line paste doesn't auto-submit in the Claude TUI                                                                                                        |
-| `⇧↩`               | Line break (without sending)                                                                                                                                                                                               | terminal | Sends `\u000a` (LF, = Ctrl+J) to the PTY — Claude treats it as a newline; `Enter` alone (`\r`) sends. xterm's default ignores `Shift` and would send                                                                |
-| `⌃⌫`               | Delete the previous word                                                                                                                                                                                                   | terminal | Sends `\u0017` (Ctrl+W) to the PTY; xterm's default for this chord is `\b`, which the Claude TUI ignores                                                                                                            |
-| `⇧⌫`               | Delete the previous character                                                                                                                                                                                              | terminal | Sends `\u007f` (DEL), same as `Backspace`; xterm's default (`\b`) did nothing                                                                                                                                       |
-| `⌘=` / `⌘−` / `⌘0` | Terminal font: bigger / smaller / reset                                                                                                                                                                                    | terminal | `⌃` on Linux/Win. `settings.setFontSize` (8–32); the watcher propagates it to every live terminal                                                                                                                   |
+**Shortcut table** (renderer; the app's native menu mirrors the same ones — Mac notation shown, see the platform-rendering rule above):
+
+| Shortcut           | Action                                                                                                                                                                                                                                                                    | Scope    | Notes                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `⌘K`               | Open command palette                                                                                                                                                                                                                                                      | global   | Also accepts `⌘⇧P` to open pre-filtered to projects                                                                                                                                                                                                                                                                                                                                                              |
+| `⌘N`               | New session in the current folder                                                                                                                                                                                                                                         | global   | Spawns `claude` in `sessions.selectedPath`                                                                                                                                                                                                                                                                                                                                                                       |
+| `⌘O`               | Add folder                                                                                                                                                                                                                                                                | global   | Opens `AddFolderDialog`                                                                                                                                                                                                                                                                                                                                                                                          |
+| `⌘R`               | Rename selected session                                                                                                                                                                                                                                                   | global   | Overrides Chromium's default reload; reload moves to `F5`                                                                                                                                                                                                                                                                                                                                                        |
+| `⌘⇧R`              | Resume last session                                                                                                                                                                                                                                                       | global   | Most recent by `lastActivity`                                                                                                                                                                                                                                                                                                                                                                                    |
+| `⌘⇧A`              | Expand/collapse the Inbox rail                                                                                                                                                                                                                                            | global   | 4th column "Needs you"; same helper as the Topbar button. **Never hides** — `minimized`/`hidden` always expand                                                                                                                                                                                                                                                                                                   |
+| `⌘B`               | Hide/show the left sidebar (folders/sessions) — "full screen for the terminal"                                                                                                                                                                                            | global   | Owned by the native menu (`&View`), so the accelerator is consumed **before** xterm (same as `⌘N`/`⌘K`); the renderer double-binds as a fallback. Also reopens via the Topbar's `PanelLeft` button (always visible)                                                                                                                                                                                              |
+| `⌘⌥B`              | Hide/show the right auxiliary panel (helper-stack / split)                                                                                                                                                                                                                | global   | Same scheme (`&View` menu + fallback). Hides **even with panes**; visual no-op with no panes. Reopens via the Topbar's `PanelRight` button (visible whenever there are panes)                                                                                                                                                                                                                                    |
+| `⌘W`               | Close selected session — **unless the terminal is focused**, in which case the shortcut is forwarded to xterm/PTY (becomes `\u0017`, used by programs like `nano` to delete the previous word). `⌘Q` still closes the app.                                                | global   | Suppressed by `enabled: () => !terminalFocused.value` (T-4.5)                                                                                                                                                                                                                                                                                                                                                    |
+| `⌥←` / `⌘[`        | Back to the previous session you viewed (browser-style history; also mouse button 3 — back)                                                                                                                                                                               | global   | Rebindable (`nav.back`, T486 U5a); the default is per platform — `⌥←` / `Alt+←` off macOS, `⌘[` on macOS. Native menu (`&Session`), and **shielded**: the chord is taken in the window capture phase before xterm sees it. Off macOS the shield only stops propagation, so the accelerator still fires and the Alt release never toggles the menu bar. From Folder View/a takeover: back to the session you left |
+| `⌥→` / `⌘]`        | Forward through the session history after a Back (also mouse button 4 — forward)                                                                                                                                                                                          | global   | Same scheme (`nav.forward`). Skips closed sessions; silent at the ends; 50 entries, in memory only. The bound chord no longer reaches the terminal                                                                                                                                                                                                                                                               |
+| `↑ / ↓ / ← / →`    | Sidebar navigation                                                                                                                                                                                                                                                        | sidebar  | Only when the sidebar has focus                                                                                                                                                                                                                                                                                                                                                                                  |
+| `⌘⇧F`              | Jump to a folder or session (the sidebar jump palette)                                                                                                                                                                                                                    | global   | Renderer-only, but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter). Expands a collapsed sidebar first. Not text-entry gated: a second press closes the palette even while its own input has focus                                                                                                                                                                                    |
+| `⌘↩`               | Open the cursor session (else the selected one) to the side, as a resume pane                                                                                                                                                                                             | global   | Renderer-only; a key press in a text field leaves it alone. Inside a terminal the program gets CR                                                                                                                                                                                                                                                                                                                |
+| `⇧F10`             | Open the Session menu or Folder menu for the cursor row (else the selected session, else the active folder), anchored at the row                                                                                                                                          | global   | Renderer-only; the menu opens with its first item focused. A repo-group cursor row is a no-op. Inside a terminal the program gets F10. On a Mac keyboard, `Fn+⇧F10` unless F-keys are standard                                                                                                                                                                                                                   |
+| `F2`               | Rename the cursor folder row (else the active folder) — opens the Rename folder dialog                                                                                                                                                                                    | global   | Renderer-only; a key press in a text field leaves it alone. A session or repo-group cursor row is a no-op (a session renames with `⌘R`). Inside a terminal the program gets F2. On a Mac keyboard, `Fn+F2` unless F-keys are standard                                                                                                                                                                            |
+| `Esc`              | Close the top layer: a dialog, palette, menu or popover; else the takeover's own state (Cleanup selection, PR Stack filter, Roadmap dispatch confirm, a Review line selection, the Diagram's shape in progress, drawing tool or selection); else the open takeover itself | global   | One layer per press. The takeover close is `view.closeTakeover` (rebindable, renderer-only): off while a popover is open, and it ignores a press made in a text field. In a terminal the program gets Esc (Claude Code cancels with it)                                                                                                                                                                          |
+| `⌘⌥S`              | Open Settings on the Keyboard Shortcuts tab                                                                                                                                                                                                                               | global   | Native menu: macOS app menu after Settings…, View elsewhere. Inert while Settings is open. On Windows layouts where Ctrl+Alt is AltGr (Polish: AltGr+S types ś) the chord may type a character instead                                                                                                                                                                                                           |
+| `⌘⇧B`              | Toggle the Fleet rail                                                                                                                                                                                                                                                     | global   | Renderer-only (no menu item), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                                    |
+| `⌘⇧D`              | Review the active folder's branch                                                                                                                                                                                                                                         | global   | Renderer-only; opens the Review pane (T164)                                                                                                                                                                                                                                                                                                                                                                      |
+| `F6` / `⇧F6`       | Focus the next / previous pane: the main terminal, then the helper panes in stack order, wrapping                                                                                                                                                                         | global   | **Shielded** (`pane.focusNext` / `pane.focusPrev`): works while a terminal holds focus, so the program there no longer gets F6. Inert while a dialog, palette or menu is open. On a Mac keyboard: Fn+F6 / Fn+⇧F6. See "Pane focus"                                                                                                                                                                               |
+| `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one                                                                                                                                                                                 | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
+| `⌘C` / `⌃⇧C`       | Copy terminal selection                                                                                                                                                                                                                                                   | terminal | Only with a selection; reads `term.getSelection()` (xterm's selection isn't a native DOM selection). On Mac, `editMenu` may intercept `⌘C` before xterm — see `menu.ts`                                                                                                                                                                                                                                          |
+| `⌘V` / `⌃⇧V`       | Paste into the terminal                                                                                                                                                                                                                                                   | terminal | Via `term.paste()` — respects _bracketed paste_, so a multi-line paste doesn't auto-submit in the Claude TUI                                                                                                                                                                                                                                                                                                     |
+| `⇧↩`               | Line break (without sending)                                                                                                                                                                                                                                              | terminal | Sends `\u000a` (LF, = Ctrl+J) to the PTY — Claude treats it as a newline; `Enter` alone (`\r`) sends. xterm's default ignores `Shift` and would send                                                                                                                                                                                                                                                             |
+| `⌃⌫`               | Delete the previous word                                                                                                                                                                                                                                                  | terminal | Sends `\u0017` (Ctrl+W) to the PTY; xterm's default for this chord is `\b`, which the Claude TUI ignores                                                                                                                                                                                                                                                                                                         |
+| `⇧⌫`               | Delete the previous character                                                                                                                                                                                                                                             | terminal | Sends `\u007f` (DEL), same as `Backspace`; xterm's default (`\b`) did nothing                                                                                                                                                                                                                                                                                                                                    |
+| `⌘=` / `⌘−` / `⌘0` | Terminal font: bigger / smaller / reset                                                                                                                                                                                                                                   | terminal | `⌃` on Linux/Win. `settings.setFontSize` (8–32); the watcher propagates it to every live terminal                                                                                                                                                                                                                                                                                                                |
 
 Shortcuts scoped to `terminal` are handled by `installTerminalKeymap`
 (`src/renderer/src/lib/terminalKeymap.ts`) via xterm's single
 `attachCustomKeyEventHandler` — **not** by the native menu — and only
 fire while the terminal (main or helper) is focused.
+
+**The shield (T486 U5a).** An action marked `shield` (Back / Forward, `F6` / `⇧F6` pane
+focus and the unbound terminal toggle) keeps its
+chord away from every terminal: one window **capture** `keydown` listener in `App.vue`
+matches the press against each shielded action's resolved chord, while no dialog,
+palette or menu holds the keys. A menu-backed action off macOS is only stopped (its
+native accelerator fires); every other match is stopped, `preventDefault`ed and run.
+The row in Settings → Keyboard Shortcuts says so with the shield hint. A chord fires
+only when the held modifiers are **exactly** the chord's — `F7` never fires on `⇧F7`,
+`⌘K` never on `⌘⇧K`.
+
+**Everything else is unbound by default (T486).** Every Session-menu item (fork,
+restart, the four copies, no-flicker, archive, delete, retry, dismiss), closing a
+folder terminal, and the sidebar header buttons (rescan, drill depth, collapse all,
+Hidden), every Folder-menu item except the ones that need a pick or change agent
+access (block agents, let agents read terminals, Modes ▸, Set / Clear parent folder),
+the older / archived peeks and
+the repo-group menu (rename, reset name, Clean up), the Cleanup, Scheduler, System
+Monitor and Containers takeovers, and every Settings tab ("Open Settings: General", …)
+have a keybindings id and can be given a chord in Settings → Keyboard Shortcuts; none
+ships with one except Rename folder (`F2`), closing the open takeover (`Esc`) and the
+Keyboard Shortcuts tab (`⌘⌥S`). Session actions act on the **selected** session and are available only
+when the Session menu would show that item for it; folder actions act on the
+**active** folder, repo-group actions on the cursor's group row else the group of the
+active folder, each only when its menu would show that item. Actions that
+act on the sidebar or a selection ignore a key press made in a text field
+(`keysGuard`); the palette and the native menu still run them.
 
 ### Session status
 
@@ -632,6 +694,16 @@ scale (0.43 for the 6px default, 5px → 0.38, 8px → 0.5), and non-square elem
   z-index: -1;
 }
 ```
+
+**Accent variant** (T474) — `.anim-pulse-dot--accent` changes **only** the halo colour:
+`.anim-pulse-dot--accent::after { background: var(--color-accent-soft) }`. Same keyframe,
+same geometry, same reduced-motion behaviour. Used by the agent connection chip's leading
+dot (§6); the dot itself carries `bg-accent`.
+
+**Red variant** (T570) — `.anim-pulse-dot--red` changes **only** the halo colour:
+`.anim-pulse-dot--red::after { background: var(--color-red-soft) }`. Same keyframe, geometry and
+reduced-motion behaviour. Used by the browser pane's network counter (§6 "Network counter"); the dot
+itself carries `bg-red`.
 
 Attention blink (`needs-input` state) — opacity, not box-shadow, to read as
 "blinking, needs you" without competing with the `active` green halo. Helper
@@ -734,12 +806,31 @@ store's existing 20 s poll — no per-mission timer):
   count (a blocker and a re-scope key on their reason / target, so a different
   blocker is a new key). A cue fires when a key **appears** or its **count
   grows** — due checks going 1 → 2 cue; 2 → 1, a tick, a resolution or any
-  decrease never does. A later poll that sees the same keys stays silent.
-- **Re-nudge every 30 min** (fixed, no Setting) while the mission still owes
-  anything — the list as a whole, not per key. A mission that stops owing is
-  forgotten; it never re-nudges.
-- **Start/restart:** the first poll gives **one combined cue** for every
-  mission already owed — never one per mission, never one per poll.
+  decrease never does. A later poll that sees the same keys stays silent. Growth
+  or a new key restarts that key's schedule.
+- **Standing vs blocking kinds** (BUG-173, spec §3.2). _Standing_ kinds —
+  `close`, `checks`, `review-import` — are a to-do nobody is waiting on: they
+  cue once when they appear (or `checks` grows) and **never re-nudge**; the
+  pill, the bell entry and the review dialog keep showing them. _Blocking_
+  kinds — `rescope`, `blocker`, `human-steps` — are something an agent or a
+  later step waits on: they re-nudge with **back-off**, **30 min, 1 h, 2 h,
+  4 h** after the key's last cue, then go **silent** until the key changes (one
+  fixed constant, `BLOCKING_NUDGE_MS`, no Setting). Each key keeps its own clock.
+- **One sound per poll.** Every key that cues in the same poll, across all
+  missions, produces ONE chime, ONE `requestAttention()` and ONE Activity
+  post.
+- **Start/restart:** the cue memory is **persisted** (`localStorage`
+  `om2tab.missionCues`), so a restart continues where the last run stopped: the
+  first poll cues only what is **new or grown** since the app last ran — the
+  same backlog as yesterday is silent, and a blocker that came due while the app
+  was closed fires once, not once per missed interval. With **no memory at all**
+  (first run of this version, or a corrupt value) the first poll **seeds** it
+  silently from the current lists — no chime, no entry — because the operator
+  already has that backlog on screen.
+- **Stable within a run.** No cue decision is made while the sidebar folders
+  are not loaded or the read failed. A mission absent from a poll keeps its
+  memory for 24 h, is never cued while absent, and returns without re-cueing
+  the backlog.
 - **Only what a poll sees.** A blocker raised and cleared between two polls
   never cues.
 - **Excluded:** pending **approvals** and a child's **needs-input** — the
@@ -747,12 +838,13 @@ store's existing 20 s poll — no per-mission timer):
   closed mission is gone from the list, so nothing fires after close. There is
   no draft kind: a dead legacy draft reads `active` + stale, and stale is not
   owed, so it never cues.
-- **Copy** (`mission.cue.*`): one mission → "Mission “{title}” needs you:
-  {what}", where `{what}` is the first owed item in words (the blocker's
-  reason, "re-scope awaiting your approval", "delivered, awaiting your close",
-  "2 due checks", …); clicking it opens the owner session (where the pill
-  lives). Several → "{n} missions need you", with the titles as the
-  description.
+- **Copy** (`mission.cue.*`): the cue posts **one** Activity entry, in place —
+  a snapshot of everything currently owed (see _Activity bell → Grouped
+  entry_). One mission owed → "Mission “{title}” needs you: {what}", where
+  `{what}` is the first owed item in words (the blocker's reason, "re-scope
+  awaiting your approval", "delivered, awaiting your close", "2 due checks", …);
+  several → "{n} missions need you". Each owed mission is its own clickable row
+  inside the entry.
 
 **Agent-opened pane alert (2026-07-13 agent-pane-routing design).** A pane an
 agent opens (`open_file`, `spawn_terminal`, …) into a
@@ -1083,6 +1175,174 @@ installed.
 
 Technical nouns (`kokoro`, `en-US`, `{folder}`, the command, the path) stay
 untranslated (§8).
+
+### Keyboard Shortcuts (Settings → Keyboard Shortcuts, T1 P4)
+
+Dedicated **Keyboard Shortcuts** tab of the Settings dialog (`KeybindingsPane.vue`),
+entering the `tabs` array right after **General** — it is a global preference, not a
+feature of its own. It is the mouse-reachable twin of hand-editing `keybindings.json`
+(Q5's un-brick guarantee: the file can always be fixed from here). **No new token, no
+new component** — the row reuses the `<kbd>` chip (`§6` → "Keyboard shortcuts"), the
+ghost/accent buttons, `SettingHint`, the eyebrow, and the Accent/Warning badges (§6
+Badges).
+
+```
++-------------------------------------------------------------------------+
+| SHORTCUTS                            [ Open keybindings.json ][Reset all]|
+| Rebind any shortcut. Edits save to keybindings.json and apply at once.  |
+|                                                                        |
+| [⌕ Search shortcuts or type a key combo                              ]  |
+| ( Unbound 8 ) ( Conflicts 2 ) ( Customized 3 )                          |
+|                                                                        |
+| SESSIONS                                                                |
+| New session               [ ⌘N ]            default ⌘N                 |
+| Resume last session        [ Set a shortcut… ]  unbound  ↺ Reset       |
+| VIEWS                                                                   |
+| Toggle the Fleet rail      [ ⌘⇧B ]  not in terminal    ↺ Reset  ⌫ Unbind|
+| TAKEOVERS                                                               |
+| Review the active branch   [ ⌘⇧B ]  conflict: Toggle the Fleet rail    |
+|  ...                                                                    |
++-------------------------------------------------------------------------+
+```
+
+**Intro line** — one `--text-3` 11.5px paragraph: rebinding is the point, edits write
+to `keybindings.json` and apply live. A ghost **Reset all** sits top-right, disabled
+when every row is already a default.
+
+**One row per rebindable action** — every table id except the reserved `app.*` rows,
+which are not shown because they cannot be rebound. T486 grows the table toward ~108
+visible rows, and most of the actions it adds ship unbound (their rows start on "Set a
+shortcut…"), which is why the pane is searchable, grouped and filterable (below). Seven of the T1 rows — the Topbar's per-folder actions (`view.roadmap`,
+`view.prStack`, `folder.openInFileManager`, `folder.openInVSCode`,
+`folder.openGithubPulls`, `folder.browseFiles`, `folder.newTerminal`) — ship with no
+default chord, so their rows start on the empty "Set a shortcut…" state, as does
+`view.usageDashboard` (View menu). They are `menu: true`, backed by a native **Folder**
+menu, so a bound chord fires over the terminal. `view.settings` defaults to `⌘,` /
+`Ctrl+,` and sits in the app menu on macOS, the File menu elsewhere. Left: the action name (`--text-2` 12px, from
+the descriptor's `labelKey` — `labelKeyFor(id)`, i.e. `keybindings.actions.<id>` with
+every `.` written as `_`, because vue-i18n reads a dotted key as a path). Then the **capture control** — a `<kbd>`-styled button
+showing the resolved chord; empty rows read "Set a shortcut…" in `--text-4`. Clicking
+it enters **recording**: the button border goes `--accent-line`, the label reads
+"Press a shortcut…", and the next physical key press (via `chordFromEvent`) is captured
+— a lone modifier does not commit, `Esc` cancels (the recording only: Settings stays
+open), `Backspace` unbinds. On commit the new chord is written and the control leaves
+recording. A chord that can never fire for that action is **refused** instead (see the
+recorder's refusal line below): the previous chord stays.
+
+**Trailing metadata**, in this order, each only when it applies:
+
+- **`default ⌘N`** — a muted `--text-4` 11px reminder of the built-in chord, shown
+  whenever the row is overridden or unbound.
+- **not in terminal** — a plain `--text-4` marker for an action with neither a native
+  menu item nor the shield, whose chord will not fire while the terminal pane holds
+  focus. Derived from the descriptor by `isNotInTerminal(d)` (`!menu && !shield`,
+  `keybindings-core.ts`) — the pane has no predicate of its own — never user-set.
+- **conflict: {other}** — the **Warning** badge (§6 Badges) naming every other action
+  that resolves to the same chord in the same scope. Every participant is badged, so the
+  clash is visible; the chord dispatches exactly once — the first-registered action
+  (`App.vue` declaration order) fires and the others stay inert until you resolve it.
+- **↺ Reset** — ghost button, drops this row's override. Hidden on a default row.
+- **⌫ Unbind** — ghost button, sets the chord to `null`. Hidden whenever the row has no
+  chord (already unbound, or a no-default action not yet bound).
+
+**Reset all** clears every override at once (writes `[]`). Like the per-row Reset it
+goes through `keybindings.json`, so a hand-editor and this pane never disagree —
+whichever wrote last wins, and the chokidar watch reconciles the other.
+
+#### Search, groups and filters (T486)
+
+The same tab, between the intro and the first row. **No new token, no new
+component.**
+
+- **Search field** — full width, the Settings search input anatomy verbatim (§6
+  Settings dialog: `Search` icon 13px `--text-4` at the left, `bg-bg`,
+  `border-border` → `--accent-line` on focus, radius `5px`, padding `7px 10px 7px
+28px`, 12px). Placeholder "Search shortcuts or type a key combo". It takes focus
+  when the tab opens. Two match modes, picked per query:
+  - **Chord mode** — the trimmed query reads as a chord: it has a `+`, a modifier, an
+    F-key or `Esc` (`Ctrl+J`, `ctrl+shift+f`, `F6`), or a macOS modifier symbol
+    (`⌘⇧⌥⌃`, mapped back to tokens: `⌘K`). Rows stay whose **resolved** chord is the
+    same chord under the platform fold (off macOS `Ctrl+B` finds the `⌘B`/`Ctrl+B`
+    default). Answers "what holds Ctrl+J?" exactly.
+  - **Bare named key** — a lone key word (`delete`, `left`, `tab`, `home`, `end`,
+    `space`, `enter`) is both a chord and an ordinary word, so the result is the
+    **union** of the chord-mode and text-mode matches ("delete" still finds "Delete the
+    session…" while that row is unbound).
+  - **Text mode** — otherwise, a case-insensitive substring of the row's label (active
+    locale), its rendered chord or its id.
+- **Filter chips** — one row under the search: **Unbound** (no chord), **Conflicts**
+  (shares its chord with another action), **Customized** (not on its default). The §6
+  Badges anatomy (padding `2px 8px`, radius `999px`, 11px): inactive = **Default**
+  badge, active = **Accent** badge, `aria-pressed` set. Each label carries its count
+  over the **whole** table (not the filtered view), in `tabular-nums`. Chips are
+  independent toggles; active chips AND with each other and with the search.
+- **Group headers** — rows are grouped, in this fixed order: **Sessions, Sidebar,
+  Folders, Views, Panes, Takeovers, App**. Rows keep table order inside a group; a
+  group with no visible row is hidden (no header). The header is the **Settings
+  eyebrow** — Inter 11px/500 UPPERCASE, `letter-spacing 0.06em`, `--text-3`, the style
+  the pane's own "Shortcuts" eyebrow already uses inline — **not** the tokenized §3
+  `.eyebrow`: these headers sit beside that eyebrow inside a Settings tab, and siblings
+  must match. `margin-top 14px` (0 for the first), `margin-bottom 4px`.
+- **Empty result** — when the search and chips leave no row: one `--text-4` 12px line,
+  "No shortcut matches.", in place of the groups.
+
+**Hint lines under a row** — each a muted `--text-4` 11px line (the same style as the
+"default ⌘N" reminder), indented under the action name, shown only when it applies:
+
+- **Recorder refusal** (T486 U1) — "{chord} can't fire for this action. Pick another
+  shortcut." The recorder refuses a chord the renderer watcher can never match for an
+  action that has no other path (no native menu item and no shield — the shield
+  matches the physical key, `e.code`, so it never has this problem):
+  Shift+punctuation (Shift rewrites `e.key`, so `⌘⇧,` arrives as `<`), and on macOS
+  Option+letter (Option rewrites `e.key` too). The previous chord stays; the line goes
+  away on the next recording. A hand-edited `keybindings.json` entry still loads.
+- **Shield hint** (T486 U5a) — on a shielded action with a chord: "Taken from the
+  terminal: the program running there never sees {chord}." `{chord}` is the row's
+  resolved chord, rendered for the platform (`Alt+←` off macOS, `⌘[` on a Mac). Today
+  the shielded rows are Back and Forward (`nav.*`), the pane focus pair
+  (`pane.focusNext` / `pane.focusPrev`) and the terminal toggle (`terminal.toggle`). A
+  user who binds a shielded,
+  renderer-only action to an Alt chord off macOS may see the menu bar toggle on the Alt
+  release — `docs/user/sessions.md` says so.
+- **Terminal-keeps hint** (T486 U5a) — on a non-shielded action bound to a chord the
+  terminal keymap swallows: "The terminal keeps {chord}: it won't fire while a terminal
+  has focus." The chord list is `TERMINAL_KEYMAP_CHORDS`, exported as data by
+  `lib/terminalKeymap.ts` (copy, paste, `⇧↩`, the two Backspace chords, the font
+  chords), so the pane reads the same source the handler uses. A shielded row never
+  shows it: the shield takes the key first.
+
+#### Open + discover (T1 P5)
+
+Three routes, one destination — the raw `keybindings.json` opened in a `MarkdownPane`
+helper pane (edit mode), for the reader who prefers JSON to the row editor:
+
+- **`app.openKeybindings`** — a fifth reserved (un-rebindable) action, default
+  `⌘⌥K` / `Ctrl+Alt+K`, `menu: true` so the OS consumes the chord even over the
+  terminal pane. Not shown in the pane's rows (reserved), same as the other four.
+- **View → "Open keybindings.json"** — a native menu item next to the layout toggles,
+  emitting `app.openKeybindings` (labelled "Keyboard Shortcuts…" before T486, which
+  gave that name to the Settings tab's own item, below).
+- **"Open keybindings.json"** — a ghost button in the pane header, left of **Reset
+  all**, calling the same store action.
+
+The pane itself — the row editor — opens from **"Keyboard Shortcuts…"**
+(`view.settings.keybindings`, `⌘⌥S` / `Ctrl+Alt+S`, `menu: true`): right after
+**Settings…** in the macOS app menu, where Mac users look for preferences, and under
+**View** (just above "Open keybindings.json") on Linux and Windows. It runs
+`ui.openSettings('keybindings')`, the door every `view.settings.<tab>` id uses.
+
+The pane lands in the **active folder's** helper stack (`currentWorktreePath`); with
+no folder selected (Onboarding / empty state) it can't — a toast says to open a folder
+first. `keybindings.json` lives beside `settings.json`, outside every known Harnu root,
+so the confined file gate (`isPathAllowed`) would refuse it: the three channels the
+pane uses (`markdown:read` / `markdown:write` / `markdown:watch`) take an **exact-path
+exception** for this one path. The MCP `open_file` validator does **not** — an agent
+still can't reach the file, which is why this ships with no `docs/harnu-features.md`
+bump.
+
+This is the un-brick guarantee (Q5): a `keybindings.json` so broken it drops every
+chord still leaves this tab reachable by mouse from the gear menu, and the file itself
+one click from an editor.
 
 ### Badges
 
@@ -1591,7 +1851,7 @@ pill's popover (§6 — "Footer / status bar", already opens `UsagePanel`) gets
 a link/button at the bottom of the popover (`text-11px text-accent`,
 `ExternalLink` icon 12px): "Open full dashboard". Clicking it closes the
 popover and calls `ui.openUsageDashboard()`. Closing: the header's `X`
-button, Esc (via `closeAll()`, same rule as the board), or navigating to
+button, Esc (via the `view.closeTakeover` binding, same rule as the board), or navigating to
 another view.
 
 **Data source: one call, one snapshot.** `window.api.usageBiSnapshot({
@@ -2773,7 +3033,7 @@ replaces the `<main>` content (sidebar and topbar stay visible), fixed 40px
 header (`h-10 border-b border-border bg-surface`), close `X` top-right. It
 joins the SAME single-takeover mutex those three already share (`stores/
 ui.ts`) — opening the meta-board force-closes any other open takeover and
-vice-versa; Esc via `closeAll()`. Entry point: a link in the Footer fleet
+vice-versa; Esc via the `view.closeTakeover` binding. Entry point: a link in the Footer fleet
 pill's popover, alongside the existing "Open full dashboard" — not a
 per-folder `FolderMenu.vue` entry, since the meta-board has no single
 `folderPath` to scope to (exactly like `Usage Dashboard`).
@@ -3260,14 +3520,20 @@ folders at all the popover falls back to the historical one-line
 ### Sidebar jump palette
 
 **Search means "take me there", not "filter the tree".** Opened by the
-one-line header's Search button (never by `⌘K` — that is the
-[Command palette](#command-palette)), the jump palette floats **above** the
+one-line header's Search button or `⌘⇧F` / `Ctrl+Shift+F` (`sidebar.jump`; never by
+`⌘K` — that is the [Command palette](#command-palette)), the jump palette floats **above** the
 tree and leaves it untouched: nothing here writes `filterQuery`, so closing the
 palette never loses the operator's place. Results are **targets**; `↵` goes
 there.
 
 Component: `SidebarJumpPalette.vue`. Rendered INSIDE the sidebar `<aside>`
 (not `<Teleport>`ed to `<body>`) so it tracks the sidebar's width and clipping.
+
+**The chord toggles, exactly like the button.** A second `⌘⇧F` closes the palette,
+even while its own input holds focus (the binding has no text-entry guard, and the
+palette's capture handler stops only Esc / arrows / Enter / Tab). Because the palette
+lives inside the sidebar, the chord **expands a collapsed sidebar first**; closing the
+palette never collapses it again. It fires over a focused terminal too.
 
 **Card:** `position: absolute; left: 8px; right: 8px; top: 46px` (42px header +
 4px), background `--surface`, border `1px --border-2`, radius `--radius`,
@@ -3561,6 +3827,444 @@ while one is maximized (ratios are meaningless in that state). The maximized
 pane id is **ephemeral, per-worktree state** — never persisted to `helpers.json`
 — so it resets to the normal split on a worktree switch or app restart.
 
+#### Pane focus (T486 U5b)
+
+The main terminal and every helper pane are **focus regions**. Each root carries
+`data-focus-region="<id>"` (`main` for the main terminal, the pane id otherwise) and
+registers with the pane-focus registry (`composables/useTerminalFocus.ts`); the region
+holding `document.activeElement` is the focused one.
+
+- **The ring** (`lib/pane-ring.ts`) is what `F6` / `⇧F6` walk: the main terminal when it
+  is the foreground layer (not covered by a takeover or the Folder View), then the
+  current folder's helper panes in stack order when the panel is shown and not
+  collapsed. While a pane is maximized, the ring holds only that pane (the others are
+  24px headers). Focus outside the ring goes to the first region (`F6`) or the last
+  (`⇧F6`); an empty ring does nothing.
+- **What takes focus.** An xterm pane focuses its terminal (its root, `tabindex="-1"`,
+  while the terminal is not live yet). The Markdown, Memory and Explorer panes focus
+  their scroll body (`tabindex="-1"`; the Markdown editor in edit mode) — never the
+  `overflow-hidden` root, where Chromium would find no scroller for `PageDown` / arrows;
+  the Diagram pane focuses its canvas body, where its own keys live.
+- **Focus indicator.** A focused non-xterm pane (Markdown, Memory, Explorer, Diagram)
+  draws a **1px `--accent-line` outline inset on its root** (`outline-offset: -1px`, so
+  the stack's `overflow-hidden` never clips it) while focus is anywhere inside it
+  (`:focus-within`). Utilities: `focus-within:outline focus-within:outline-1
+focus-within:-outline-offset-1 focus-within:outline-accent-line`. The root (and the
+  Diagram pane's canvas body) carries `.no-default-ring`, opting out of the global
+  `:focus-visible` ring (`main.css`): that ring sits 1px OUTSIDE the box, where the
+  stack's `overflow-hidden` clips it, and it would draw a second ring. No motion — it appears and disappears with focus. xterm
+  panes (shell, `claude`, the main terminal) draw none: their blinking cursor is the
+  indicator. The one exception is a helper pane whose root itself holds focus (its
+  terminal is not live yet): the same outline, on `:focus` rather than `:focus-within`.
+- **Close and maximize from the keyboard.** `⌘⇧M` toggles maximize on the focused
+  helper pane (focus stays in it); with no helper pane focused it restores a maximized
+  pane. `pane.close` (unbound) runs the focused pane's own close — a dirty Markdown or
+  Diagram pane still shows its discard toast first — then focuses the next region.
+- **Terminal toggle** (`terminal.toggle`, unbound, shielded). No shell pane in the
+  current folder → open one. One exists but is not focused → reveal the panel (restore
+  any other maximized pane, close a takeover that does not host the stack) and focus
+  the first shell pane. It already holds focus → collapse the whole helper panel and
+  focus the main terminal, or leave focus on `<body>` when a takeover or the Folder
+  View covers the main terminal. It reuses the first shell pane; Split ▸ New shell still
+  always adds another. "Shell pane" here means an **operator** shell: an agent terminal
+  (T474) stays in the `F6` ring, but the toggle never takes it — with only agent
+  terminals in the stack, the toggle opens a new shell.
+
+#### Agent connection chip (helper pane header)
+
+`AgentConnectionChip.vue`. A terminal an agent can reach shows **who** is connected,
+**when** the agent reads or types, and a one-click way to cut it off (T474, spec
+`docs/specs/T474-agent-terminals/spec.md` §7). It sits in the default pane header
+(the 24px strip above), between the cwd label and the maximize button:
+
+```
+▸_ app-api   ● Connected to ‹Fix login bug› · typing   ⏏  ⤢ ✕
+```
+
+- **Chip** — a `<button>` (a plain `<span>` when there is nothing to click through to),
+  `rounded-full border border-accent-line bg-accent-soft text-accent`,
+  `padding: 1px 7px`, 10px: the review-companion pill's geometry with **accent**
+  tokens (accent, **not** green — green means "working"). A 6px leading dot (it
+  pulses only while the live word shows), then the `bot` glyph 10px.
+- **Label** — `$t('agentTerminal.connectedTo')`, the session's display title,
+  truncating. The chip's native `title` carries the full label (with "(parked)")
+  plus "— Go to session" when it is clickable, so a truncated name can be
+  recovered on hover. **Click → select that session** (an explicit operator
+  gesture; an _agent_ still never moves the view). With no known session the chip
+  renders the same pill without a click action.
+- **Live word** — a 10px `--text-3` suffix after a `·`: empty when idle, `reading`
+  or `typing` while active (and omitted when the label already says "reading").
+  A word, never a glyph alone. An `aria-live="polite"` visually hidden node
+  announces it; it sits **outside** the button so the button's accessible name
+  does not repeat the word.
+- **Disconnect** — an 18×18 icon-only button, `unplug` glyph 12px, `--text-3` →
+  `hover:bg-surface-2 hover:text-text`, `mousedown.stop`, `aria-label` =
+  `$t('agentTerminal.disconnect')`, `title` = `$t('agentTerminal.disconnectHint')`.
+  **No confirm** — revoking is the safe direction — and it is **permanent** for
+  that terminal. The chip goes at once and a toast (`agentTerminal.disconnected`)
+  confirms, with no undo. It stops **reads and writes**; the shell keeps running.
+  **If main does not confirm** (it answers `false`, or the call throws), the agent
+  still has access: the chip comes back and a `danger` toast
+  (`agentTerminal.disconnectFailed`) says so — never the success toast.
+- **After Disconnect** — chip and button disappear; the header reads as an ordinary
+  terminal.
+- **Overflow** — the cwd label truncates first, the chip second, the buttons never.
+  The cwd label is `min-w-0 flex-1 truncate`; the chip is `min-w-0 shrink
+overflow-hidden` with a `truncate` label; Disconnect, maximize and close are
+  `shrink-0`. The header is a container (`@container`): below **180px** of header
+  width the label, "(parked)" and the live word are hidden (`@max-[180px]:hidden`),
+  leaving dot + glyph, so the chip never shows half a glyph — the `title` still
+  carries the full label.
+
+| State                                         | Chip                                                                                                                               |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Agent-spawned, owner known                    | "Connected to ‹session›" (+ "(parked)" when the owner's PTY is parked); clicks through to the session                              |
+| Agent-spawned, owner gone / unknown           | "Connected to a closed session" / "Connected to an agent" — no click target                                                        |
+| Operator-opened, an agent holds a write lease | always "An agent can type here" (a lease records no grantee); Disconnect ends it for good                                          |
+| Operator-opened, an agent reads (opt-in on)   | transient "An agent is reading" while reads happen; **no** Disconnect (the reader is unidentifiable; opt-in is in the folder menu) |
+| Disconnected, or exited                       | no chip                                                                                                                            |
+
+**Live signal.** Main emits `terminal:activity { terminalId, kind, at }` per agent
+read/write, coalesced to one event per 250ms per terminal. The word is held for at
+least **1.2s** and clears **3s** after the last event; `write` outranks `read`.
+Typing is also visible for free: the bytes echo through the PTY into the pane.
+
+**Lease changes.** Main also emits `terminal:chipChanged { terminalId }` whenever a write
+lease is granted or ends (Disconnect, folder block, kill-switch, Deny), and the chip
+re-reads its state, so "An agent can type here" never outlives the lease. A lease that
+idles out after 10 minutes has no such moment; while a lease chip is shown it is
+re-checked every 5s.
+
+**Motion.** The leading dot uses `.anim-pulse-dot.anim-pulse-dot--accent` (§7 — Agent
+activity pulse). Under `prefers-reduced-motion` there is no pulse; the word carries
+the signal.
+
+#### Browser pane
+
+`BrowserPane.vue` (T564 U1, spec `docs/specs/2026-10-21-T564-browser-pane.md` §2 and §7.4; approved mockup
+`docs/specs/T564-browser-pane-mockup/`, scenarios "Comment" for the header and "States" for the chip). A real
+Chromium page inside the helper stack. **The page is not DOM.** It is a native `WebContentsView` that main
+positions over the pane's **host `<div>`**; the renderer only reports that div's rectangle (spec §2.3) and
+draws the chrome around it. Because a native view is drawn above every DOM layer, anything that overlaps it
+must freeze it first (see "Frozen frame").
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│ 🌐 localhost:5173   ● Connected to ‹Fix login bug› · driving   ⋯  ⤢  ✕ │  header, 24px
+├───────────────────────────────────────────────────────────────────────┤
+│ ←  →  ⟳  [local] [⚠ opened by agent · docs.example.com ✕] http://…/   │  address bar, 28px
+├───────────────────────────────────────────────────────────────────────┤
+│ ⚠ Blocked: file:// pages cannot be opened                          ✕  │  notice strip (only when set)
+├───────────────────────────────────────────────────────────────────────┤
+│   host <div>  ← the native view is bounded to this rectangle          │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+- **Header** — the standard pane header (24px, `--surface`, 11px `--text-2`, resize handle, maximize and close as
+  in "Pane header"), with: `globe` 12px `--text-3`; the **page title** (falls back to the host, then to
+  `browserPane.newTab`), `min-w-0 flex-1 truncate`, native `title` = the full URL; the **connection chip**
+  (below); a `more-horizontal` button (18×18) that opens the pane menu; maximize; close. Maximize keeps the same
+  view and re-bounds it (spec decision 26); it never re-parents it.
+- **Address bar** — a 28px row (`h-7`, `--bg`, `border-b border-border`, `px-2`, `gap-1`): back, forward and
+  reload as 18×18 icon buttons (`arrow-left`, `arrow-right`, `rotate-cw`; **disabled** is `text-text-disabled`,
+  never hidden; reload becomes `x` = stop while a load is in flight), then the **origin badge**, then the
+  **URL field**. The field is a single-line input, mono 11px, `--surface` fill, `--radius-sm`, 1px `--border`
+  (`--accent-line` on focus). It shows the **real URL** (query string included, because the operator typed it
+  and must be able to edit it). **Host emphasis:** while the field is not being edited, the scheme and the path
+  are drawn in `--text-2` and the host (with its port) in `--text`, so the part that says where you are stands
+  out (below 360px the scheme is left out of this view so the host fits, as browsers do); the text under it is the real input, made transparent, and it returns to a single `--text` tone the moment
+  the field takes focus (an accent border, `--accent-line`, and a caret). Enter navigates (a bare word with no dot or scheme is treated as `https://` +
+  word; a blocked scheme raises the notice strip and never navigates). Escape restores the live URL.
+  `browser.focusAddress` focuses and selects it.
+- **Origin badge** — a pill with the chip's geometry (`padding 1px 6px`, 10px, `rounded-full`, 1px border) that
+  names the origin class at the moment of the last navigation (spec §1.2): `local` = `--green-soft` fill and
+  `--green` text; `external` = `--surface-2` fill and `--text-3` text; `page` = `--accent-soft` and `--accent`;
+  `blank` shows nothing. Text only, from `$t('browserPane.origin.*')`.
+- **"Opened by agent" flag** (spec §3.2, decision 21) — set when a verb navigated the pane to a host it had not
+  shown before. An amber pill in the address bar, between the origin badge and the field: `--warning` text on a
+  `--warning` 10% fill, 1px `--warning` 30% border, 10px, `triangle-alert` 10px, text "opened by agent · ‹host›",
+  with a 12px `x` that dismisses it. It also clears when the **operator** navigates. **Narrow panes** (the address
+  field must stay readable): below 330px the words "opened by agent ·" go and the pill is icon + host; below
+  250px the host goes too and it is the icon alone (the hover title keeps the full text). The pill never takes
+  more than 35% of the row. While the flag shows, the origin badge is not drawn (the flag already says the site is
+  external, as in the mockup), and below 300px the badge is hidden anyway.
+- **Notice strip** — one optional 22px row under the address bar for a refusal or an intercepted event: a blocked
+  scheme, a certificate error accepted on loopback, a dialog the page raised and Harnu dismissed. `--warning` 10%
+  fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old. The **offline** notice ("Blocked: this panel is offline, so it
+  cannot open other addresses. Turn on Network on to follow links out.") appears when a page pane's own script, link
+  or popup tried to leave its folder while its **Offline** switch is off (T569); the operator's address bar still can.
+- **Pane menu (⋯)** — a standard context menu (§6 "Context menu"): **Pause agent for 10 min** (`pause`; becomes
+  **Resume agent** while paused) and **Open DevTools** (`bug`). Clear browsing data arrives with a later unit;
+  zoom and device mode live in the address bar (below). It registers with the native-overlay composable, so
+  opening it freezes the view.
+- **Host div** — `flex-1 min-h-0`, `--bg`. It is empty in the DOM: the page is drawn by the native view. While
+  the view is hidden for any reason the host shows `--bg`, never a stale paint.
+
+**Connection chip** — the Agent connection chip's geometry and tokens (see the section above), with these states.
+It shows for an agent-opened pane, and while paused or disconnected.
+
+| State                       | Chip                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent-opened, owner known   | accent pill, "Connected to ‹session›", live word `driving` while a navigation verb runs (`reading` arrives with the read verbs of a later unit); **Disconnect** (`unplug`) at its right. The session name is the part that stays: "Connected to" is dropped first (below 300px) and the name truncates last; the hover title keeps the whole text  |
+| Agent-opened, owner unknown | "Connected to an agent"; same Disconnect                                                                                                                                                                                                                                                                                                           |
+| Operator-opened             | no chip until the folder's read opt-in is on. Opt-in on, no lease: "An agent can read here" (no Disconnect: the reader is unidentifiable). A lease active: "An agent can drive here" (a lease records no grantee) with **Disconnect**. Same pill geometry as the agent chip                                                                        |
+| **Paused**                  | `--warning` 10% pill, `--warning` text, "Agent paused · 9:41" (m:ss, counts down each second), then a bordered **Resume** text button (`play` 10px + "Resume", 1px `--warning` 40% border). Below 300px the header has no room for the words, so the same chip (text, Resume, Disconnect) becomes a 22px strip under the header on `--warning` 10% |
+| **Disconnected**            | `--red-soft` pill, `--red` text, "Disconnected" (the mockup's red chip), no button. Permanent; the operator keeps using the pane                                                                                                                                                                                                                   |
+
+The pause countdown is the only chip text that ticks. It is plain text with no animation, so nothing changes under
+`prefers-reduced-motion`. Disconnect needs **no confirm** (revoking is the safe direction) and is **permanent**,
+exactly like the terminal chip.
+
+**Network counter** (T564 U3, spec §6.2 `browser_network`, decision 9; the red "Network 4:12" pill of the approved
+mockup, scenario "Device mode"). Network capture is **off by default**; while an agent has it on for a pane, the
+header shows a recording pill between the connection chip and the ⋯ button, so the operator can always see that
+traffic is being recorded. Geometry and tokens: `inline-flex`, `gap-1` (5px), `padding 0 4px`, mono 10.5px
+`--red` text with **no fill and no border** (it is a status readout, not a control), a 6px `--red` leading dot
+(`.anim-pulse-dot.anim-pulse-dot--red`; under `prefers-reduced-motion` the dot is still and the word carries the signal), then the
+word `$t('browserPane.network.label')` ("Network") and the time **remaining** until capture stops itself, `m:ss`,
+counting down once a second (the same `formatCountdown` as the pause chip). The native `title` reads
+`$t('browserPane.network.hint')` ("Network capture is on. It stops by itself and records no bodies unless the
+agent asked for them."). It is **not interactive**: there is no stop button, because capture ends by itself on its
+timer (10 min by default, 30 at most), on pane close, on Disconnect and when the kill-switch is switched off. The
+operator who wants it gone closes the pane or Disconnects the agent. At narrow widths (`@max-[300px]`) the word
+"Network" gives way and the dot plus the time remain; the countdown never hides. A pane with no active capture
+shows nothing here.
+
+**Lease confirm** (T571 U4, spec §7.1). A browser verb on a `lease` row (an `external` page, or any operator
+pane) raises the standard agent-action confirm (§6 "Agent-action confirm overlay"; same modal, same parked
+Inbox row) with this disclosure, all of it built by main from the pane registry and never from the agent's
+arguments:
+
+```
+An agent wants to drive a browser pane.
+
+Pane: ‹name› (‹short id›)          Opened by: operator | agent
+Site: ‹host› (external | local)     Folder: ‹~/path›
+
+The first thing it would do:
+  click  ‹role "name"›   |   type  (‹n› characters): "‹escaped preview›"   |   eval (‹n› characters): "‹escaped preview›"
+
+Allow lets agents drive this pane until it has had no agent write for 10 minutes. The permission belongs to
+the pane, not to the agent that asked. Nothing happens when you Allow: the agent is told to look at the page
+and call again. What an agent types runs as you on this page. Deny blocks writes to this pane for 5 minutes.
+```
+
+The disclosure is plain `--text` body copy in the existing overlay (no new colour). Page-authored text (an
+element's accessible name, an expression, typed text) is shown **escaped** (invisible and direction-changing
+characters spelled out, as the terminal confirm does) and cut at 200 characters with its true length stated.
+The prompt is built in main like the terminal confirm's (English, not translated); the fixed sentence "What an agent
+types runs as you on this page." is mandatory.
+
+**Trusted dev hosts dialog** (T571 U4, spec §7.2). `TrustedHostsDialog.vue`: a non-destructive `Dialog` (z-60, peer
+via `ui.dialog === 'trustedHosts'` + `ui.folderActionPath`), anatomy and tokens of "Rename folder". Header: title
+"Trusted dev hosts" + folder basename (mono `--text-4`), `X`. Body: an UPPERCASE eyebrow "Always trusted" listing
+the built-ins as read-only mono rows (`localhost`, `*.localhost`, `127.0.0.0/8`, `[::1]`; `--text-3`, no remove
+button); an eyebrow "Added by you" with one mono row per host (`--text-2`, a trailing 12px `x` to remove, 18×18
+target) and, when empty, the muted line "None yet."; below, one single-line input (placeholder
+`app.test or *.test`) with an **Add** button (`plus`, ghost) — Enter adds. A rejected value shows an inline
+`--red` 11px message under the input (never a toast). Muted hint: "Pages on these hosts count as local: agents
+can drive them without asking. Only exact host names and one-level wildcards. A name that merely resolves to
+loopback is never trusted by itself." Footer: **Close** only (each add or remove saves at once, like the
+terminal toggle). Persisted per EXACT folder through `userProjectsSetBrowserTrustedHosts`; **no agent verb edits
+the list**.
+
+**Zoom controls** (T572 U5, spec §9.1). At the right end of the address bar, after the URL field: a group of
+`minus` (18×18 icon button), a **percentage button** and `plus` (18×18). The percentage is mono 10.5px
+`--text-3`, `min-w-[34px]`, centred, a plain text button: clicking it resets to 100% (`$t('browserPane.zoom.reset')`
+is its title). Steps follow the browser ladder (25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300,
+400, 500%); the factor is clamped to 0.25–5. The zoom is **remembered per origin** and applied on every
+navigation, so the percentage shown is the one for the page now on screen. It is per site, not per pane: two panes
+on the same site (and the same cookie jar) change together, because the browser keeps one zoom per site. `Ctrl +`, `Ctrl −` and `Ctrl 0` do the
+same while the pane has focus (`browser.zoom.in|out|reset`). **In device mode the group is disabled, not hidden**
+(`text-text-disabled`, no hover, `cursor-default`, title `$t('browserPane.zoom.offInDevice')`), and shows `100%`
+(Q15). Below 330px the percentage button goes and `minus`/`plus` remain.
+
+**Device button and picker** (T572 U5, spec §9.2; approved mockup scenario "Device mode"). In the address bar, left
+of the zoom group: a `smartphone` 18×18 icon button, **Device mode** (`aria-expanded`, `bg-surface-2 text-text`
+while the picker is open or a device is active, accent text when active). It opens a popover anchored under it
+(§6 "Context menu" geometry: `--surface`, 1px `--border-2`, `--radius`, `--shadow-pop`, `anim-fade-in-scale`,
+`min-w-[220px]`; it registers with the native-overlay composable, so opening it freezes the view). Rows, 24px each:
+the seven presets as `‹name› · ‹w›×‹h› @‹dpr›` (mono 11px, the `‹name›` in `--text`, the rest in `--text-3`; the
+active one carries a `check` 12px `--accent` and an `--accent-soft` fill), a divider, then **Custom size…**, which
+swaps the list for the **free-size editor**: width, height (number inputs, mono 11px, `--bg`, 1px `--border`,
+`--radius-sm`, `--accent-line` on focus, 56px wide, 100–10000), DPR (0.5–5), a **Mobile** toggle (the `ToggleSwitch`
+primitive) and **Apply** (accent) / **Back** (ghost). When a device is active the list ends with **Reset device**
+(`rotate-ccw`, `--text-2`) which clears the whole emulation record. Presets are classes, never product names.
+
+**Device bar** (T572 U5). While a device is active, one more 28px row (`h-7`, `--bg`, `border-b border-border`,
+`px-2`, `gap-1`) sits under the address bar. Left to right: the **device chip** (`smartphone`/`tablet`/`laptop`/
+`monitor` 12px + `phone-m · 390×844 @3`, mono 10.5px `--text-2`, `--accent-soft` fill, 1px `--accent-line`,
+`rounded-full`, `padding 1px 8px`; clicking it opens the picker), then 18×18 icon buttons: **Rotate**
+(`rotate-ccw-square`: swaps width and height), **Light / dark** (`sun` when light, `moon` when dark; toggles
+`prefers-color-scheme`), **Reduced motion** (`wind`; `bg-surface-2 text-text` while on) and **Reset device** (`x`).
+A toggle that has not been set follows the page's own default and shows off. The row sits in the same place the
+mockup puts these controls in the address bar; a separate row is used so a narrow pane never has to hide one.
+`prefers-reduced-motion` needs no special handling here: nothing in the bar animates.
+
+**Device frame** (T572 U5, spec §9.2, §2.3). In device mode the host `<div>` is no longer the whole viewport area.
+The area under the bars becomes a **backdrop** (`--bg`, centred contents, `padding 12px`), holding the frame and a
+**caption** under it. The frame is `border 8px solid var(--color-surface-2)` outside a 1px `--border-2` ring,
+`--shadow-pop`, `--radius-lg` for phones and tablets (preset width ≤ 1100) and `--radius` for laptop and desktop;
+no notch, no status bar (the page paints its own). The frame's **inner box is the host `<div>` the native view is
+bounded to**, sized to the device size times the **fit scale** (the largest scale ≤ 1 at which the frame and the
+caption fit the backdrop; below 25% the backdrop scrolls instead). The caption is mono 10.5px `--text-3`, one
+line, centred: `fit 66% · touch on · mobile UA · prefers-color-scheme: light` (a segment is left out when it does
+not apply). The page renders at device size and is only displayed scaled: it never sees the fit scale.
+
+**Download prompt** (T572 U5, spec §3.2, Q16). When the operator starts a download in a pane (a real click or key
+on a link or button), main holds it and the pane shows one **prompt row** under the bars: 24px, `--accent-soft`
+fill, 1px `--accent-line` bottom border, `download` 12px `--accent`, the text "Save ‹file name› to
+`.harnu/out/downloads/`?" (11px `--text-2`; the file name mono, truncating), then **Save** (accent text button) and
+**Cancel** (ghost) at the right. No answer for 60 seconds cancels it. The file arrives in a private temporary folder and is moved into
+`.harnu/out/downloads/` only when the operator clicks **Save**, so nothing reaches the project before the answer, however
+small the file. One prompt at a time per pane; a second download while one waits is cancelled. After the decision the **notice strip** says "Saved ‹name›" or "Download
+cancelled" for the few seconds it takes to read, then clears itself; these two are reports, not warnings, so
+the strip uses `--accent-soft` fill, `--text-2` text and a `download` 11px `--accent` icon instead of the amber
+warning treatment (a failed download keeps the amber one). A download nobody asked for (a page script, no
+real click) is cancelled silently and never prompts. An agent's `browser_download` needs no prompt: the call itself
+is the request, and its ACK carries the path.
+
+**Frozen frame** (spec §2.4). When any registered overlay rectangle intersects a visible pane's rectangle, or an
+overlay is `fullscreen`, or a splitter or sidebar drag starts, main captures the view as a JPEG, the renderer
+paints it as an `<img>` filling the host (`object-fit: fill`, no border, no filter: it must look like the live
+page), and main hides the view. When the last overlay closes the view returns and the `<img>` is removed on the
+next frame. While frozen the page keeps running and agent verbs keep working; the operator sees a still image.
+No new colour or motion: the swap is instant (no fade, so a menu opening never flashes). Every app layer that can
+overlap a pane registers with the native-overlay composable: context menus, dialogs, popovers, palettes, toasts,
+the Split dropdown, and the pane's own ⋯ menu. A **parked** view (spec §2.3, a 1×1 view in the window's
+bottom-right corner) registers the same way and is hidden while an overlay intersects that corner.
+
+**Open from the Split menu.** The Split dropdown gains a **Browser** item (`globe`) that opens an operator pane at
+`about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
+agent partition (spec §3.4). Operator panes are unlimited; agent panes are capped at 4 per folder.
+
+**Page pane** (T569 U2, spec §4 and §5). A pane showing one of **our own files** served from `harnu-page://`
+(a project `.html`, or a panel an agent wrote). The page is still a native view, so every rule above holds; the
+chrome adds three things and changes one.
+
+- **Address field shows the file, not the address.** For a `page` origin the field shows the folder-relative path
+  (`.harnu/out/panels/status.html`) in the same mono 11px field instead of the opaque `harnu-page://f…/…` URL;
+  the origin badge reads `page` (`--accent-soft` fill, `--accent` text, as above). The header title falls back to
+  the file name. A page pane is **not** a place to type another site: Enter with an `http(s)` address still
+  navigates (and the badge changes with the origin class), a path is not an address.
+- **"Allow network" switch** (spec §4.3, Q3). Operator only: no verb can set it, and the control is rendered only
+  for a `page` origin. A pill button in the address bar, right of the field, `role="switch"` with `aria-checked`,
+  geometry of the origin badge (`padding 1px 6px`, 10px, `rounded-full`, 1px border) with a 10px icon.
+  **Off (default)**: `wifi-off`, `--surface-2` fill, `--text-3` text, 1px `--border`, text "Offline".
+  **On**: `wifi`, `--warning` text on a `--warning` 10% fill with a `--warning` 30% border, text "Network on",
+  because it relaxes the no-egress policy and must not look neutral. Toggling it reloads the page (the policy rides
+  the document response). The state lives on the pane. Native `title`: "Offline: the page cannot reach the
+  network. Click to allow it for this pane." / "Network on: the page can reach the network. Click to turn it
+  off." Focus ring is the standard `--accent-line` 1px.
+- **"File removed" placeholder** (spec §4.4). When the served file is deleted the native view is hidden and the
+  host shows a centred block on `--bg`: `file-x` 20px `--text-4`, the line "File removed" in 13px `--text-2`, the
+  path in mono 11px `--text-3`, and "Waiting for it to come back…" in 11px `--text-4`. No spinner and no motion. The
+  pane keeps watching: when the file is re-created the placeholder goes and the page reloads.
+
+- **"Paused to save memory" placeholder** (spec §10.1, mockup scenario "States"). A pane hidden for 10 minutes (one
+  named constant, `HIDDEN_DISCARD_MS`) has its page and native view released; the pane keeps its place and the host
+  shows a centred block on `--bg`: `moon` 20px `--text-4`, the line "Paused to save memory" in 13px `--text-2`, the
+  address and "hidden N min" in mono 11px `--text-3`, and a ghost button "Click to reload" (`rotate-cw` 12px, 24px
+  high, `--border-2` outline, `--text-2`, `--text-1`-on-hover, the standard `--accent-line` focus ring). No spinner
+  and no motion. A pane reopened after a restart shows the same block with "Not loaded yet" and "Load the page", and
+  loads by itself as soon as it is shown. Any verb that needs a live page also brings a discarded pane back, with
+  `revived: true` in its ACK. A discarded pane keeps its header chips, its pins and the operator's Disconnect and
+  Pause; it only has no page.
+
+#### Point-and-comment overlay (browser pane)
+
+T564 U6, spec `docs/specs/2026-10-21-T564-browser-pane.md` §8; approved mockup
+`docs/specs/T564-browser-pane-mockup/`, scenario "Comment", **Docked** variant. The operator points at a node
+of the page and types a request; it lands in the session as a `[harnu-comment]` turn. The feature is split along
+the one line that matters, **what the page can see**: the outline, the hint pill and the numbered pins are drawn
+**inside the page** (they must sit on its nodes); the composer is **app chrome** and never enters the page.
+
+**Activation.** A `message-square-plus` 18×18 icon button in the pane header (between the chip and the ⋯ menu,
+same geometry as the other header icons), `aria-pressed` while picking, and the `browser.overlay.toggle` action
+(`Ctrl+Shift+C`, browser-pane focus only). While picking, the button reads `bg-accent-soft text-accent`. Native
+`title`: "Comment on the page" followed by the CURRENT binding of `browser.overlay.toggle` in parentheses, rendered
+from the keybindings table (never hardcoded; no parentheses when the action is unbound). **Disconnected pane:** the
+button is `disabled` (`text-text-disabled`) and its title is the reason, "Comments are off here: you disconnected
+the agent from this pane." A **paused** pane still takes comments. Operator only: no verb switches it on.
+
+**Guest-drawn layers** (built by the guest preload into a closed shadow root, so they cannot use Tailwind or
+the app's CSS variables. **`--accent` and `--accent-ink` are the app theme's own values**, read when the mode is
+switched on and pushed with it (validated as plain colours), so the layers match whichever theme is active; the
+other literals below are kept in ONE constant block in `src/preload/overlay/styles.ts` and mirrored here). They
+are the only place a raw colour is allowed in this feature, because the page is another document.
+
+| Layer           | Spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Outline**     | `position: fixed` box over the hovered node: 1.5px `--accent` border, `--accent` at 14% fill, 3px radius, `pointer-events: none`. Follows the node on scroll and resize.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Outline tag** | Under the box's left edge (3px gap): mono 10.5px `--accent-ink` on `--accent`, `2px 6px`, `0 3px 3px 3px` radius, the role or tag plus its size, e.g. `button.btn.primary · 168×40`. Flips above the box when there is no room below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Hint pill**   | Fixed, top centre, 8px from the top: 11px `--text` on `rgba(23,18,14,.92)`, `4px 10px`, `rounded-full`, `--shadow-pop`, a `mouse-pointer-click` glyph, "Click an element to comment", then a `kbd` "Esc" and "to exit". `pointer-events: none`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Pin**         | A 20×20 marker with a pointed lower-left corner (`border-radius: 50% 50% 50% 2px`), its number centred (10.5px, 600), at the node's **top-right corner** as in the approved mockup (its left edge 4px inside the node's right edge, 14px above its top edge, clamped to the viewport), `0 2px 6px` shadow, `tabindex=-1` (pointer only: Tab never lands on it). **Draft:** white fill, 2px `--accent` border, `--accent` number. **Sent:** solid `--accent` fill, `--accent-ink` number, 55% opacity. **Detached** (its selector no longer matches): 2px _dashed_ `--text-3` border, `--text-3` number, drawn at its last rect, never removed. The pin is clickable and opens its comment in the composer. |
+
+No motion beyond the existing 80ms colour transition; under `prefers-reduced-motion` there is none.
+
+**Picking behaviour.** While active, trusted pointer events are consumed by the overlay: the page receives no
+picking click, no hover and no touch (a tap still produces the click that picks). **The keyboard keeps reaching
+the page**, except `Esc`, which is consumed and exits picking. A script-dispatched (untrusted) event is ignored.
+The host element carries every style that could hide or move it (`display`, `position`, `transform`,
+`visibility`, `opacity`, `z-index`, `pointer-events`) inline with `!important`, so page CSS cannot.
+
+**Docked composer** (app chrome, rendered by `BrowserPane.vue` between the host and the pane's bottom edge,
+`flex-shrink: 0`). **The host rect shrinks to make room** (spec §2.1): the composer is a sibling after the host
+`<div>`, never an overlay over it, so the native view is never covered and never needs to freeze.
+
+```
+├───────────────────────────────────────────────────────────────────────┤
+│   host <div>  (shorter while the composer is open)                    │
+├───────────────────────────────────────────────────────────────────────┤  1px --border
+│ ② Comment on div.pay · src/components/PayButton.vue:42 · crop + HTML… │  context line
+│ ┌───────────────────────────────────────────────────────────────────┐ │
+│ │ this corner is too rounded, make it a bit squarer                 │ │  textarea, min 52px
+│ └───────────────────────────────────────────────────────────────────┘ │
+│ Send to [🤖 Checkout polish ▾]        [Keep as draft ⇧↵] [Send ↵]     │  row
+├───────────────────────────────────────────────────────────────────────┤
+│ 💬 1 draft · 1 sent                              [Send 1 comment]     │  batch bar, 26px
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+- **Panel** — `--surface` fill, `border-t border-border`, `8px` padding, `gap-1.5`.
+- **Context line** — 11px `--text-3`, single line, truncating from the right: a 16×16 round **pin number**
+  (`--surface-2` fill, 2px `--accent` border, `--accent` 9.5px/600 number: the draft pin's look, on app tokens), "Comment on",
+  the **selector** in mono 11px `--text-2`, "·", the **source component** (`file:line`, mono) when known, "·",
+  then what is attached ("crop + HTML + 14 styles attached"). Every page-authored run (selector, component) is
+  rendered as **plain text** (`{{ }}`, never `v-html`) with a native `title` holding the full value.
+- **Textarea** — min-height 52px, grows to 8 lines then scrolls, `--bg` fill, 1px `--accent-line` border,
+  `--radius-sm`, 13px/20px `--text`; placeholder "What should change?". The caret is the real one; no fake
+  caret. 4000-character limit (the count appears only in the last 200).
+- **Row** — "Send to" 11px `--text-3`, the **destination picker**, a spacer, **Keep as draft** (ghost: 1px
+  `--border-2`, `--text-2`, a `kbd` "⇧↵") and **Send** (primary: `--accent` fill, `--accent-ink`, weight 500, a
+  `kbd` "↵"). Both buttons 24px, 11.5px, `--radius-sm`. They are disabled while the text is empty.
+- **Destination picker** — a 24px bordered button (`bot` 12px, the session title, `chevron-down`) opening a
+  standard menu (§6 "Context menu") that lists the folder's sessions, the pane's owner marked "owner"; the
+  choice is remembered per pane. The menu registers with the native-overlay composable like the ⋯ menu. With no
+  session at all it reads "No session — copies to clipboard" and is not openable.
+- **Batch bar** — 26px, `--accent-soft` fill, `border-t border-accent-line`, 11.5px `--text-2`, `px-2`:
+  `message-square` 12px, "**1 draft** · 1 sent" (the first count in `--text`, weight 500), a spacer, and a
+  ghost 20px **Send N comments** button. It shows whenever the pane has at least one draft or sent pin, even
+  with the composer closed. **With zero drafts** it shows only "M sent" and the button is not drawn (a disabled
+  "Send 0 comments" is never shown).
+- **Keys** — `Enter` sends this comment now; `Shift+Enter` keeps it as a draft; `Esc` closes the composer **and ends picking** in
+  one press (an empty composer discards its pin; a non-empty one is kept as a draft, so Esc never loses text). Composition (IME)
+  never submits.
+- **Narrow panes** — below 320px the "Send to" caption and the context line's "Comment on" go; the picker
+  shows the bot glyph and truncates the title; the button labels keep their `kbd` hints out (the hover title has
+  them).
+- **Disconnected pane** — said **up front**, never after typing: the header button is disabled (above), and a
+  composer left open shows one `--warning` 11px line with `triangle-alert` ("Comments are off here: you
+  disconnected the agent from this pane."), with Keep as draft, Send and Send N comments disabled. A paused pane
+  takes comments as usual.
+- **Result toasts** — sent: no toast (the Activity row "Comment sent to ‹session name›" is the record). Nowhere to
+  send: `warning` "No session to send to" with "The comment was copied to your clipboard." Refused (only the
+  disconnected case can reach main; the session could not take it): `warning` with the reason, and the draft is
+  kept until the message has really gone into the terminal.
+
+No new §9 token: the composer uses existing tokens only, and the guest layers above are the one documented place
+where literal values stand in for them.
+
 #### Review companion pane
 
 The pane that hosts the fresh session opened from the Review takeover's **Ask a
@@ -3714,7 +4418,9 @@ animation (it's removed the instant Reload or a save resolves the conflict).
 
 **Body (prose).** A container with vertical scroll (`.scrollable`, `overflow-y-auto`),
 `padding: 14px 16px`, below the header (the host carries `padding-top: 24px` like the
-other panes). The sanitized HTML is injected via `v-html` into a `.md-prose` wrapper;
+other panes). The body is **`user-select: text`** (`select-text`) for every file
+kind — prose, plain text, lessons — overriding the app-wide `user-select: none` on
+`body`, so the reader can highlight and copy any part of the file. The sanitized HTML is injected via `v-html` into a `.md-prose` wrapper;
 the styles below are **CSS scoped with `:deep()`** (`v-html` doesn't get the scope
 attribute), mapped **only to §9 tokens** — no raw color:
 
@@ -4141,8 +4847,33 @@ them for free by being added to the registry, not by re-implementing them:
   Only the user-intent path does this; programmatic selection (synth→real migration,
   spawn, closure fallback, the background dispatch drain) never yanks an open view —
   those keep their direct `selectedId.value = …` write.
-- **Esc dismisses it too**, via the App-level `closeAll()` — same shared helper, so the
-  list can't rot the way the hand-kept one did (it never learned about the PR Stack).
+- **Esc dismisses it too**, through the `view.closeTakeover` keybinding (T486 §6.1;
+  default `Esc`, rebindable, `menu: false` — an Esc accelerator in the native menu
+  would take Esc from every terminal). Its handler is `ui.closeAllTakeovers()`, the
+  exact door the header `X` uses, so the Review pane's `onClose` still disposes its
+  companion. Esc peels **one layer per press**, top first:
+  1. a dialog, Settings, the command palette, the jump palette or a context menu —
+     each takes Esc in the window **capture** phase and stops it;
+  2. a footer / Topbar popover (fleet usage, Claude status, pasted images, the image
+     lightbox, Mission pill, Activity, Inbox filter) — it closes on its own bubble
+     listener; the binding is disabled while `ui.anyPopoverOpen` is true (Chromium runs
+     a microtask checkpoint after each listener, so the binding runs **before** the
+     popover's listener and still sees the flag set);
+  3. the takeover's own state — Cleanup's selection then its block panel, a Diagram
+     pane's selection (both a **document capture** listener that stops only what it
+     consumed — document, so a dialog, palette or menu opened over them keeps its
+     own window-capture Esc; Cleanup also steps aside while a popover is open), the
+     PR Stack filter, the Roadmap dispatch confirm (element-level, with
+     `stopPropagation`; the confirm takes focus when it opens so Esc lands on it);
+  4. the takeover itself.
+
+  It never fires from a text field (the binding's key guard reads where the key was
+  **pressed**, so a field that blurs itself on Esc — the Topbar title rename — still
+  keeps the takeover; a focused checkbox, radio, button or other input that takes
+  no typed text is not a text field and does not hold Esc) or from a focused terminal: a helper xterm beside Roadmap or
+  Review sends ESC to its program and cancels the event. The Folder View is not a
+  takeover and ignores it. `ui.closeAll()` is gone: it was never wired.
+
 - **A takeover covers the terminal — it does not unmount it.** `TerminalPane` renders
   unconditionally in `App.vue`, absolutely positioned to fill the main-content
   box; every takeover, plus the Folder View, Onboarding, the Empty state and the Cloud
@@ -4531,15 +5262,22 @@ document, so it inherits the tokens for free rather than through an iframe.
 
 Node and edge treatment, tokens only — **no raw hex anywhere in the component**:
 
-| Element              | Fill / stroke                                                             |
-| -------------------- | ------------------------------------------------------------------------- |
-| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry |
-| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                       |
-| `text` node          | no body — label only, `--color-text-2`                                    |
-| `image` node         | the asset, on a `--color-surface` ground                                  |
-| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router           |
-| edge label           | `--color-text-3` 11px on a `--color-bg` plate                             |
-| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                   |
+| Element              | Fill / stroke                                                                |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry    |
+| `ellipse` body       | as `box`: `--color-surface` fill, `--color-border-2` 1.5px stroke (T536 U2)  |
+| `diamond` body       | as `box`, on a four-vertex polygon; ports sit at the vertices (T536 U2)      |
+| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                          |
+| `text` node          | no body — label only, `--color-text-2`                                       |
+| `image` node         | the asset, on a `--color-surface` ground                                     |
+| styled node (U3)     | the keys of "Node styles" below; a node with none renders as the rows above  |
+| `text` node tone     | label coloured by the tone's stroke column; `default` stays `--color-text-2` |
+| node `opacity`       | 0.25 / 0.5 / 0.75 / 1 on body, label and image; ports are not dimmed         |
+| node stacking (U4)   | `zIndex` 1..n, higher on top; a node without one stacks at 1 in file order   |
+| edge stacking        | always under every node, never restacked                                     |
+| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router              |
+| edge label           | `--color-text-3` 11px on a `--color-bg` plate                                |
+| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                      |
 
 **Theme (spec §6.4).** The palette is **resolved from CSS variables at mount and
 re-resolved on every theme switch**, then pushed back onto every live cell and onto the
@@ -4555,22 +5293,176 @@ buttons. It holds **Fit** (`scan`), **zoom −** (`minus`), the current percenta
 **0.2–3**; the wheel zooms with `ctrl`/`meta` held and the canvas pans on drag, so a
 plain scroll gesture never fights the pane's own scrolling.
 
-**The three blank-area gestures, and how they are split (U3).** A drag on empty board is
-claimed by three things at once — pan, rubberband select, and draw-a-box — and X6 will
-run two of them over one gesture if they are left to overlap (verified in the real app
-during U2: a single drag panned _and_ left a selection box behind it). The split:
+**Toolbar (T536 U1).** A floating bar of explicit tool modes, **top-centre of the
+viewport**, absolute to the viewport so it neither pans nor zooms. Component:
+`CanvasToolbar.vue`, over the pure `canvas/canvas-tools.ts` state module. Same surface as
+the zoom cluster: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
 
-| Gesture                  | Does                                                               |
-| ------------------------ | ------------------------------------------------------------------ |
-| plain left drag on blank | **draws a box** — the footprint follows the drag, floored at 48×32 |
-| `shift` + left drag      | **rubberband select**                                              |
-| right-button drag        | **pans**                                                           |
-| `ctrl`/`⌘` + wheel       | zooms (0.2–3), unchanged from U2                                   |
+- 28px square buttons, 16px lucide icons, 2px gap, and a 1px `--border` separator
+  between Lock|Hand and the rest.
+- Order: Lock (`Q`), Hand (`H`), then Select (`V`, `1`), Rectangle (`R`, `2`), Diamond
+  (`D`, `3`), Ellipse (`O`, `4`), Arrow (`A`, `5`), Text (`T`, `6`), Eraser (`E`, `0`).
+  `ctrl`/`⌘`+`D` still duplicates the selection; the letter shortcut never fires with a
+  modifier held.
+- Active tool: `bg-accent-soft` + `text-accent`, `aria-pressed="true"`. Idle: `text-text-3`,
+  hover `bg-surface-2 text-text`.
+- Each button shows its key as a tiny `--text-4` corner label (the digit when it has one,
+  else the letter — Excalidraw idiom) and a native tooltip, e.g. "Rectangle — R or 2".
+- Corner key label: 8px / 1, `--text-4`; an exception to the type scale because it sits in a
+  28px hit target beside a 16px glyph; decorative, since the tooltip and `aria-label` carry
+  the real name. Its offset is a second exception: 1px from the button's bottom edge and
+  3px from its right edge (`bottom-px`, `right-[3px]`), so it clears the glyph.
+- Lock pressed: closed padlock, `text-accent`. Lock idle: open padlock.
+- **One muted hint line** under the bar for the active tool (`--text-4`, 11px), e.g.
+  Select: "Drag to select · Space+drag to pan". It hides once that tool has been used
+  successfully in the pane's lifetime.
+- **Narrow panes.** The canvas is a helper pane and can be ~320px wide. The bar never
+  overlaps the zoom cluster and never clips: below the width where both fit on one row,
+  the bar drops to a second row under the zoom cluster, left-aligned. Below the width where
+  the full bar fits (≈297px with the eight tools of U2; the default ~243px split shows two rows), buttons wrap onto additional rows; the bar is never wider
+  than the pane and never clips. The hint wraps to the bar's width.
+- Every button is `@mousedown.stop`, so it never starts a canvas gesture or a pane resize.
+- The tool is per pane, held in memory, never saved to the file. A new pane starts on
+  **Select**. After a creation the tool reverts to Select unless Lock is on. `Esc`
+  cancels a creation in progress, else leaves the tool for Select, else clears the
+  selection. Holding `Space` is a temporary Hand; because the tool switches to Hand,
+  pressing `Space` mid-gesture also cancels the gesture in flight (a rectangle, arrow or
+  erase stroke), exactly as `Esc` does. `Space` on a focused toolbar button activates that
+  button instead and never pans. Right-button drag pans in every tool.
+  Letter shortcuts fire only without `ctrl`/`⌘`/`alt`, only with focus inside this pane,
+  and never while the rename input is focused.
 
-Panning moved to a held **button** rather than a held key because every modifier was
-already spoken for: `shift` by the rubberband, `ctrl`/`⌘` by zoom and multi-select. The
-pane has no context menu for a right-drag to collide with, and **Fit** plus the zoom
-cluster remain the discoverable way to move the view.
+**Per-tool gestures (T536 U1).** The pointer does what the active tool says. This table
+is the contract for the pane and for `canvas-tools.ts`:
+
+| Tool                              | Click blank                                     | Drag on blank                                                                                                                     | Press on a node                                                              | Drag on a node                                                                                                |
+| --------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Select**                        | clear selection                                 | **rubberband select** (no modifier); `shift`+drag adds to the selection                                                           | select it; `shift`+click **or** `ctrl`/`⌘`+click toggles it in the selection | move it (and the rest of the selection)                                                                       |
+| **Hand**                          | nothing                                         | pan                                                                                                                               | nothing                                                                      | pan (nodes do not move)                                                                                       |
+| **Rectangle / Diamond / Ellipse** | place a default-size shape centred on the click | draw it to the drag's footprint (floored at 48×32)                                                                                | same as blank: shapes may overlap                                            | same as blank                                                                                                 |
+| **Arrow**                         | nothing                                         | nothing (no free arrows in v1; the hint reads "Drag from one shape to another")                                                   | start an arrow from that node                                                | rubber-band line follows the pointer; release on another node creates a bound edge, release elsewhere cancels |
+| **Text**                          | place a `text` node with the rename input open  | same as click (drag size ignored)                                                                                                 | if the node is a `text`, edit it; else place a new text on top               | —                                                                                                             |
+| **Eraser**                        | nothing                                         | every node and edge the pointer crosses is marked (dimmed); release deletes them all as **one** undo step; `Esc` mid-drag cancels | delete it                                                                    | as drag on blank                                                                                              |
+
+- **Double-click blank** in Select places a text node (Excalidraw idiom).
+- **Double-click a node** renames it in Select, Hand and Arrow. In Rectangle, Diamond, Ellipse and
+  Text the press itself creates, so a double-click there places and edits a new shape rather than
+  renaming the one underneath; rename an existing shape from Select, Hand or Arrow. In
+  Eraser the first press deletes the node.
+- A newly created shape opens its rename input immediately; an empty commit on a **text**
+  node removes it, on a framed shape keeps it unlabelled.
+- The Arrow tool starts from anywhere on a node, not only from the four ports. The hover
+  ports stay, and dragging from a port still creates an edge in Select mode.
+- **Arrow preview.** While an arrow is in flight, a 1.5px dashed `--accent-line` line runs
+  from the source node's centre to the pointer. It is an overlay above the board, never a
+  graph cell, so it never enters the undo history; it disappears on release, `Esc`, a
+  tool switch and a window blur. The edge a release creates is the same accent edge a
+  port drag creates in Select. A release on blank board, on the source node, or on a
+  node the source already points at creates nothing.
+- **Edges and resize handles outside Select.** In Hand, Rectangle, Text and Arrow, a press
+  on an edge counts as a press on blank board and never selects the edge (the Eraser
+  erases it). A selected node's resize handles show only in Select; switching to any
+  other tool hides them.
+- Right-button drag pans in every tool; `ctrl`/`⌘` + wheel zooms (0.2–3), unchanged.
+- **Eraser mark (`.canvas-erase-mark`).** A node or edge the eraser has crossed but not yet
+  deleted is drawn dimmed: the marked cell gets `opacity: 0.3`, no other change. It is
+  removed when the stroke is cancelled and on release the marked cells are deleted. No new
+  colour — the dimming is the whole treatment.
+
+Panning on a plain left drag is now the Hand tool's job (or `Space` held) rather than
+a held button; the right-button drag is kept so nobody loses the old habit.
+
+**Node styles (T536 U3).** A node carries an optional `style` of seven keys, written to the
+file as the spelling in the first column. A key that is absent renders as its default, so
+a canvas drawn before U3 looks exactly as it did. No new colour: every tone is an
+existing token pair.
+
+| Key           | Values (file spelling)                           | Default   | Renders as                                                         |
+| ------------- | ------------------------------------------------ | --------- | ------------------------------------------------------------------ |
+| `tone`        | `default` `accent` `green` `amber` `red` `muted` | `default` | tone table below                                                   |
+| `stroke`      | `solid` `dashed` `dotted`                        | `solid`   | `strokeDasharray`: none / `6 4` / `2 3`                            |
+| `strokeWidth` | `thin` `regular` `bold`                          | `regular` | 1 / 1.5 / 2.5 px                                                   |
+| `corners`     | `sharp` `round` (box only)                       | `round`   | `rx`/`ry` 0 / 7 (`--radius`)                                       |
+| `fontSize`    | `s` `m` `l` `xl`                                 | `m`       | 11 / 12 / 15 / 20 px (Caption, today's canvas 12, Subtitle, Title) |
+| `align`       | `left` `center` `right`                          | `center`  | `textAnchor` start / middle / end, 8px inset from the frame's edge |
+| `opacity`     | `25` `50` `75` `100` (JSON numbers)              | `100`     | `opacity` 0.25 … 1 on body, label and image; ports unchanged       |
+
+| Tone      | Stroke       | Fill             | Label      |
+| --------- | ------------ | ---------------- | ---------- |
+| `default` | `--border-2` | `--surface`      | `--text`   |
+| `accent`  | `--accent`   | `--accent-soft`  | `--text`   |
+| `green`   | `--green`    | `--green-soft`   | `--text`   |
+| `amber`   | `--warning`  | `--warning-soft` | `--text`   |
+| `red`     | `--red`      | `--red-soft`     | `--text`   |
+| `muted`   | `--border`   | `--bg`           | `--text-3` |
+
+A `text` node has no frame, so its tone colours the **label** with the stroke column:
+`default` keeps `--text-2`, `muted` is `--text-3`, and the other four use `--accent`,
+`--green`, `--warning` and `--red`.
+
+A `diamond` narrows to a point at its bounding box's left and right edges, so its
+`left`/`right` label aligns to the diamond's inscribed box instead of the 8px inset: a
+quarter of its width in (`refX` 25% / 75%), where the frame is still half its height tall.
+
+Which shapes take which keys: `box` all seven; `ellipse` and `diamond` all but `corners`;
+`text` `tone`, `fontSize`, `align` and `opacity`; `image` `opacity` only;
+`harnu/mockup-card` none; an unknown kind none (it keeps the dashed fallback and ignores
+any style).
+
+**Properties panel (T536 U3).** A floating panel that edits the style of the selected
+nodes. Component: `CanvasPropertiesPanel.vue`, over the pure `canvas/canvas-style.ts`
+module. Absolute to the viewport, so it neither pans nor zooms.
+
+- **Placement.** Left edge of the viewport (`left-3`), 8px below the zoom cluster, or 8px
+  below the toolbar when the toolbar has dropped to its own row.
+- **Surface.** The toolbar's: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
+  **184px wide**, 8px padding.
+- **Groups.** One group per key, each headed by an Eyebrow label (`.eyebrow`, `--text-4`).
+  Options are 24px buttons: active `bg-accent-soft text-accent` + `aria-checked="true"`,
+  idle `text-text-3`, hover `bg-surface-2 text-text`.
+- **Option glyphs.** Tone swatches are 16px squares in the tone's own fill and stroke
+  utilities (`bg-green-soft border-green`, …; `bg-bg border-border` for muted). Stroke
+  style and width show a 16px inline line glyph in `currentColor` with the canvas
+  dasharray and width. Corners use `square` / `square-round-corner`; align uses
+  `align-left` / `align-center` / `align-right`; size shows S / M / L / XL; opacity shows
+  the percentage.
+- **Visibility.** Only while the tool is Select (the chosen tool, so holding `Space` does
+  not hide it) and the selection holds **at least one node**. The style groups show only
+  the controls every selected node accepts (U3's rule, unchanged); the Layers group shows
+  for any node selection, every kind included, so a box plus a mockup card, or `Ctrl+A`,
+  shows the Layers group alone. Selected edges are ignored by both.
+- **Mixed selection.** When the selected nodes disagree on a key, no option in that group
+  is checked.
+- **Undo.** Each change is one undo step.
+- **Narrow panes.** Below 184 + 200 = **384px** the panel collapses to a single 28px
+  `palette` button in the panel's slot (`aria-expanded`) that opens the panel in place.
+- Every control is `@mousedown.stop @pointerdown.stop`, so it never starts a canvas gesture
+  or a pane resize.
+
+**Layers (T536 U4).** The last group of the Properties panel, headed "Layers" (Eyebrow
+label, `--text-4`). Component: `CanvasPropertiesPanel.vue`, over the pure
+`canvas/canvas-layers.ts` module. It restacks the selected nodes.
+
+- **Buttons.** Four 24px **action** buttons, in this order: Send to back
+  (`arrow-down-to-line`), Send backward (`arrow-down`), Bring forward (`arrow-up`), Bring to
+  front (`arrow-up-to-line`). They are actions, not radios: nothing is ever "checked", so
+  there is no `aria-checked` and no active state. Idle `text-text-3`, hover
+  `bg-surface-2 text-text`. Each has a native tooltip and an `aria-label`.
+- **Visibility.** Whenever the panel shows and the selection holds a node (see
+  "Properties panel" → Visibility). Every node kind takes it, the mockup card and unknown
+  kinds included.
+- **Front / back.** The selected nodes move above / below every other node and keep their
+  order among themselves.
+- **Forward.** Each selected node, from the top down, moves just above the nearest
+  unselected node above it whose bounds overlap it (overlap by area; boxes that only touch
+  do not overlap). With no such node it stays.
+  **Backward** is the mirror.
+- **Arrows.** Edges always draw under every node and are never restacked.
+- **No-op.** A move that changes nothing writes nothing: no undo step, no dirty dot.
+- **Undo.** Each move that changes something is one undo step.
+- **Persistence.** The order is the node's `zIndex`, 1..n, higher on top. A node without
+  one stacks at 1, in file order.
+- Every control is `@mousedown.stop @pointerdown.stop`, like the rest of the panel.
 
 **Other edit gestures.** Double-click a node to rename it in place (an inline input over
 the node itself, `--surface` on an `--accent-line` border; `Enter` commits, `Esc`
@@ -4979,6 +5871,34 @@ Right-click menu on a project row (`FolderMenu.vue`). Items:
   operator-started `claude-new` session is eligible
   (`shouldArmAtSpawn`, `orchestrator-guard.ts`).
 
+- **Toggle "Let agents read terminals I open"** (icon `square-terminal`, T481), right
+  after the Orchestrator toggle — the per-FOLDER opt-in that lets an agent
+  `read_terminal` the shell panes the operator opens here (an agent-spawned
+  terminal never needs it). It says nothing about typing. **Default OFF.**
+  Alternates like the items above:
+  - Disabled → **"Let agents read terminals I open"** → turns it on.
+  - Enabled → **"Stop agents reading terminals I open"** → back to the
+    default (agents are refused `TERMINAL_READ_NOT_ENABLED`).
+
+  **Per EXACT folder, never inherited** — same rule as the Orchestrator
+  toggle: a linked worktree does not pick up its main worktree's value, and
+  the entry is shown for every folder, worktree or not, each independently
+  toggleable. Non-destructive, no `window.confirm`. No sidebar indicator.
+
+- **Toggle "Let agents read browser panes I open"** (icon `globe`, T571 U4), right after the
+  terminal toggle — the per-FOLDER opt-in that lets an agent read (and, through a lease, drive)
+  the browser panes the operator opens here (an agent-opened pane never needs it). **Default
+  OFF.** Alternates like the items above:
+  - Disabled → **"Let agents read browser panes I open"** → turns it on.
+  - Enabled → **"Stop agents reading browser panes I open"** → back to the default (agents are
+    refused `BROWSER_READ_NOT_ENABLED`); it also ends every browser lease in the folder.
+
+  **Per EXACT folder, never inherited**, like the terminal toggle. Non-destructive, no
+  `window.confirm`.
+
+- **"Trusted dev hosts…"** (icon `shield-check`, T571 U4) — opens the Trusted dev hosts dialog
+  (§6 "Trusted dev hosts dialog"). Per EXACT folder. Shown for every folder.
+
 - Toggle Hide / Unhide, which **flips** according to the project's state:
   - Visible project → **Hide** (icon `eye-off`) → hides the project.
   - Already hidden project → **Unhide** (icon `eye`) → reveals the project.
@@ -5134,7 +6054,7 @@ silently instead.
   flip via `column-reverse`.
 - Card: `role="status"`.
 - Close button: translated `aria-label` (`toast.dismiss`).
-- `closeAll()` (the global Esc handler) does **not** clear toasts by design —
+- Esc (`view.closeTakeover` and each surface's own listener) does **not** clear toasts by design —
   an "Update ready" notification shouldn't be wiped out by an Esc in the
   middle of another task.
 
@@ -5221,18 +6141,59 @@ own border without colliding with the row divider below):
   — replaced by the dismiss × on row hover (above).
 - Rows separated by a `1px --border` top rule; **order: most-recent-first**.
 
+**Grouped entry (BUG-173).** A record that carries `items` is a **list
+entry**, not a single message — today only the mission cue posts one, under the
+single `group: 'mission-cue'`, so the bell holds **at most one mission entry**.
+Anatomy, inside the normal row (kind-bar, title, relative timestamp, hover ×):
+
+- **Title** — the record's `title` ("{n} missions need you", or the single
+  mission's sentence). The title is a label, not a destination: clicking the
+  entry's body or title does nothing.
+- **Item rows** — up to **5** (`MISSION_ROWS_MAX`), one per subject, under the
+  title, separated by the same `1px --border` rule as the rows. Each row is a
+  `button` (`cursor-pointer`, `hover:bg-surface-2`, `aria-label`
+  `mission.cue.itemAria`): the subject's title (`text-text`, 12px / 500, one
+  line, truncated) and what it owes (`text-text-3`, 11px, one line, truncated).
+  Tokens and spacing are the Activity row's; no new color, radius or row height.
+- **"Review all {n}"** — when there are more than 5, the rest collapse into a
+  `text-accent` text button (`mission.cue.reviewAll`, 11px / 500) below the rows.
+  It opens the Missions review (`useMissionsStore().openReview()`).
+- **Item click** — with the owner session loaded: `activateSession(sessionId)`
+  (the BUG-31 reveal), then the item's `target` through
+  `openNavigableView('mission', { missionId })`, which asks the missions store to
+  have the selected session's pill open that mission's popover (the request
+  expires after 5 s). With the owner **not loaded** the row carries a muted
+  owner hint (`text-text-4`, tooltip `mission.cue.ownerMissing`) and the click
+  opens the review focused on that mission (`openReview(missionId)`) — never a
+  dead click. **An item click never dismisses the entry**: it is a list, and the
+  other rows are still owed. The bell popover closes once a row or "Review all" has opened
+  its destination.
+- **Replaced in place, kept truthful.** `notify({ group })` is an upsert: the
+  first call appends, later calls replace the record's content and keep its
+  `id`, so the row state does not flicker and the badge does not grow. `ts`
+  moves only when a poll **cued** (the entry's "this is news" signal). After
+  **every** poll a quiet sync rewrites the title and rows from what is owed now
+  **without** touching `ts`, and removes the entry when nothing is owed. A sync
+  never resurrects an entry the operator dismissed.
+- Records without `items` render and behave exactly as before.
+
 **Empty state:** "You're all caught up" (`--text-4`, centered, 28px vertical
 padding) — the popover header also drops its count and Clear all button in
 this state, matching the mockup's `activity-popover--empty` variant.
 
 **Store.** `stores/notifications.ts` — a `NotificationRecord` (`id`, `ts`,
 `source`, `kind`, `title`, `description?`, `sessionId?`, `folderPath?`,
-`notificationType?`, `action?`) ring buffer, persisted to `localStorage` the
+`notificationType?`, `action?`, `group?`, `items?`) ring buffer, persisted to `localStorage` the
 same way as `theme`/`layout` (`persistedRef`), capped by **count (200)** and
 **age (7 days)** — whichever trims more wins. `useUiStore`'s `pushToast` is
 the funnel: every toast becomes a record by default (`persist: true`); a call
 site opts out (`persist: false`) for trivia not worth a history row (e.g.
 "copied to clipboard").
+`group?` is an upsert key (at most one record per group; `notify` replaces in
+place, `updateGroup` patches without moving `ts`, `removeGroup` removes) and
+`items?` are the per-subject rows of a grouped entry (`id`, `title`,
+`description?`, `sessionId?`, `target?`). Both are optional, so every record
+persisted before them stays valid.
 
 **Not virtualized.** Unlike the old rail section (BUG-36, `useVirtualList`,
 needed because the rail was _always mounted_), the popover only exists in the
@@ -5248,6 +6209,11 @@ no virtualization dependency needed here.
 - ❌ Show the expand chevron on a row whose text actually fits — that's a
   minor cosmetic miss, not a contract break, but the reverse (hiding a
   chevron a truly-clamped row needs) is a text-loss bug.
+- ❌ Stack a new row per cue for the same subject. A subject that keeps
+  re-cueing (a mission) lives in ONE grouped entry that is replaced in place.
+- ❌ Dismiss a grouped entry on an item click, or give it a mission-specific
+  branch in `ActivityBell.vue`: rows are generic `items`, and the click goes
+  through `openNavigableView` / the store's `openReview`.
 
 ### Mission progress (pill, popover, sidebar indicator)
 
@@ -5280,9 +6246,13 @@ There is **no draft** and no Approve door (spec §3.4): a legacy `draft` file
 reads `active`. No surface shows a draft state, callout or button.
 
 **Cue (Mission v3 §3.12).** Each poll decides whether a mission newly owes the
-operator something — chime + OS attention + one Activity entry, re-nudged
-every 30 min. Rules under Notifications, "Mission owes the operator — sound +
-attention + Activity".
+operator something — chime + OS attention + **one** Activity entry that lists
+every owed mission as its own clickable row (Activity bell → _Grouped entry_);
+blocking kinds re-nudge with back-off and then stop, standing kinds never do.
+A row opens the owner session and this popover (`missions.popoverRequest`,
+consumed by the pill, 5 s expiry); an orphaned owner opens the review instead
+(`missions.openReview`). Rules under Notifications, "Mission owes the operator —
+sound + attention + Activity".
 
 #### The headline — "Step N of M"
 
@@ -5527,6 +6497,104 @@ bg-accent-soft`): **Close as delivered** ("The work is done.") and
   (`playNotificationSound()`) and calls `window.api.requestAttention()` — the
   "Safety confirms — sound + attention" pair, independent of the Sound switch.
   Once per opening.
+
+#### Missions review dialog (`MissionsReviewDialog.vue`, BUG-173 S5, spec §3.5)
+
+"Missions that need you": the whole pile of missions that owe the operator
+something, plus every finished mission nobody asked to close, in one place, and the only bulk action Harnu offers — **close
+finished missions as delivered**. It is opened from the grouped Activity entry's
+**Review all {n}** button and from an orphan row (a mission whose owner session
+is not loaded), through `useMissionsStore().openReview(focusMissionId?)`. It is
+mounted once in `App.vue` and consumes `missions.reviewRequest`, so it works with
+no session selected. It is **not** a Topbar control (a rare chore does not earn an
+always-on affordance).
+
+- **Anatomy:** the End dialog's `Dialog` variant — Teleport to `<body>`, z-60,
+  backdrop `rgba(0,0,0,0.55)` + `.anim-overlay-fade`, card `bg-surface
+border-border-2`, radius 9px, `--shadow-pop`, `.anim-fade-in-scale`, focus trap
+  — at width `min(560px, 92vw)`, `max-height: 80vh`. No new token, size or keyframe.
+- **Header** (`padding: 14px 18px 10px`, `border-b border-border`): title
+  "Missions that need you" (`13.5px / 600`) + the `X` button.
+- **Intro + selection bar** (`padding: 10px 18px`, `border-b border-border`): a
+  one-line intro (`12px`, `text-text-3`), then a row with the **Select all ready**
+  checkbox (shown only when group 1 is non-empty) on the left and the
+  **{count} selected** counter (`11px`, `tabular-nums`, `text-text-3`) on the right.
+- **Body** (scrollable, `padding: 6px 18px 12px`): up to three groups, each an
+  eyebrow heading (`9.5px / 700`, uppercase, `letter-spacing: 0.06em`,
+  `text-text-3`, `padding: 10px 0 4px`) over its rows. An empty group renders
+  nothing; with all three empty the body shows the empty line.
+  1. **Ready to close** — `status: 'delivered'` with `pendingClose`: the owner
+     verified the end and asked. **Pre-selected.**
+  2. **Finished, close never requested** — `status: 'active'` and
+     `progress.allDone`, nothing asked — listed whether or not it owes anything else
+     (its row then reads its headline, "Step N of N ✓"). **Not** pre-selected, with a hint
+     under the heading ("Nobody verified the end of these") and each row's
+     `closeWarnings` inline (Warning callout look, below).
+  3. **Waiting on you for something else** — every other owed mission. **No
+     checkbox**; the row's **Open** action (Button `ghost`, `11px`) selects the
+     owner and opens its popover like an Activity row, closing the review; when the
+     owner is not loaded the action is disabled and its tooltip says why. The
+     dialog never offers to close these in bulk.
+- **Row** (`border-t border-border` between rows, `padding: 7px 0`, `gap: 8px`): a
+  checkbox (`accent-color: var(--color-accent)`) for groups 1 and 2, the mission
+  title (`12px / 500`, `text-text`, truncated) with what it owes under it
+  (`11px`, `text-text-3`, truncated). A **focused** row (the request named a
+  mission) is scrolled into view once and wears `border-accent-line bg-accent-soft`
+  with `rounded-sm` and a `padding: 7px 8px` inset; the highlight clears when the
+  operator toggles anything.
+- **Inline warnings (group 2):** under the row, `text-warning` `11px`, one line per
+  warning with the same copy as the End dialog (`mission.end.warnings.*`: step
+  titles, never ids). They are information; they never disable a row.
+- **Footer** (`border-t border-border`, `padding: 12px 18px`, `gap: 8px`,
+  right-aligned): **Cancel** (Button `ghost`) + **Close {count} as delivered…**
+  (Button `success`, `check` 14px). The primary is **disabled at 0 selected**. It
+  only **opens** the confirm; it never closes anything itself.
+- **Exits:** Cancel, `X`, `Esc` and a backdrop click dismiss it (not while a bulk
+  close is running, and `Esc` goes to the confirm first when that is open). It also
+  closes itself when the pile is empty after a successful close.
+- **Selection state:** local to the dialog. Group 1 starts selected, group 2
+  unselected. A poll that removes a mission drops it from the selection; one that
+  adds a mission never selects it (no surprise pre-selection mid-review).
+
+#### Bulk close confirm (`MissionBulkCloseConfirmDialog.vue`, BUG-173 S5)
+
+The irreversible step of the review. The **End dialog's anatomy, copied**
+(Teleport, z-60 above the review, overlay fade, fade-in-scale card, focus trap,
+`Esc` and backdrop cancel, **initial focus on Cancel**, the confirm chime and
+`requestAttention()` once on open — an irreversible decision is never silent),
+at width `min(480px, 90vw)`.
+
+- **Header:** "Close {count} missions as delivered?" (plural) + the `X` button.
+- **Body:** one sentence ("They leave the Topbar and the sidebar and can't be
+  reopened. Each mission file stays on disk as the record."), then a list with one
+  block per mission: the title (`12px / 500`, `text-text`) and, when the server
+  returned `closeWarnings`, the same Warning callout look as the End dialog
+  (`triangle-alert` 13px, one line per warning with the step titles beneath, never
+  ids). Then **Reason (optional)** — a single label + a 2-row textarea that
+  applies to every mission and goes to every Log, prefixed `bulk close` so an
+  owner reading its Log can tell it was a batch decision. Warnings **never**
+  disable the confirm.
+- **Footer:** **Cancel** (Button `ghost`) + **Close {count} missions** (Button
+  `success`, `check` 14px). The only outcome is `closedAs: 'delivered'`. **There is
+  no Discard here**: discarding says "dead or abandoned", a per-mission judgment
+  that stays on the End dialog.
+- **In flight:** the confirm button reads "Closing {done} of {total}…" and
+  everything is disabled. Doors run **one after another**, never in parallel, and
+  never abort on the first error; rows leave the review as each answer lands.
+- **Outcome:** all closed → a **success** toast ("{count} missions closed") and the
+  confirm closes (the review closes with it when nothing is left). Any failure → a
+  **danger** toast ("{failed} of {total} could not be closed"); the confirm closes,
+  the review stays open on the failed rows with their selection kept, so the
+  operator can retry or open the mission. A mission closed elsewhere meanwhile
+  (`MISSION_CLOSED`) counts as closed.
+- **Operator-only:** no MCP verb reaches this path, now or later. An agent can only
+  stage a close (`mission_request_close`).
+
+**Don't**
+
+- ❌ Pre-select group 2, or offer a bulk **discard**.
+- ❌ Add a bulk IPC door: the batch is N calls of the existing `end` door.
+- ❌ Let the review's primary button close anything without the confirm.
 
 #### Sidebar indicator (`SidebarFolder.vue`)
 
@@ -5971,6 +7039,14 @@ connected }`, never the secret, so the pane cannot reveal or copy the raw
   freely; every call is in the audit log below) and what ON buys (a confirmation in
   front of every action). Writes the global `ask` pref (`mcpAskSet`), read live at
   every gate decision — no restart.
+- **Allow agents to type into terminals** (`mcpServer.agentTerminalWrites`, T474 B7):
+  a second **`ToggleSwitch`** row directly below "Ask before agent actions" — same
+  row anatomy, no new variant — **default ON**. Label + a `SettingHint`
+  (`mcpServer.agentTerminalWritesHint`) saying what OFF means: agents can still read
+  the terminals you allow, but every attempt to type is refused. Writes the global
+  `agentTerminalWrites` pref (`mcpAgentTerminalWritesSet`), read live at every gate
+  decision — no restart. Turning it OFF also ends every write lease; a send already
+  in flight completes.
 - **Per-folder block list** (`mcpServer.allowFolders`): sub-block titled "Folders the
   agent can act in", with a `SettingHint` stating the default ("Agents can act in
   every folder by default. Turn one off to block them there and in everything under
@@ -6674,21 +7750,32 @@ modal). Opened via `⌘K` (Cmd+K / Ctrl+K).
 - Selected item (keyboard cursor): `bg-accent-soft text-text`, `2px --accent` bar on the left, `padding-left: 14px` to compensate
 - Empty state: `--text-4` 12.5px text, padding `20px 16px`, center-aligned
 - Sections (in order): **Recents** (top 3 sessions by mtime desc, only with empty input) → **Actions** → **Folders** → **Sessions**
+- **Actions come from the keybindings table** (T486 U6). One row per table action with `palette !== false` that has a renderer registration and whose `enabled()` holds right now; a disabled action is not listed. Label = the action's table label; trailing accelerator = its resolved chord (mono 10.5px, `--text-4`, the `<kbd>` platform rendering), live on rebind, absent when unbound. With an empty input only the **featured** actions show (`paletteFeatured`: New session, Toggle the Approval Inbox rail, Add folder, Resume last session, Open approvals); typing searches every listed action. Activating a row runs the action's registered handler (`invokeShortcut`), the same one its chord and menu item run. Icon per group: Sessions `Sparkles`, Sidebar `Search`, Folders `Folder`, Views `LayoutGrid`, Panes `PanelRight`, Takeovers `Maximize2`, App `Command`
 - Filter: fuse.js, `threshold: 0.4`, key `label`. Sessions use their name (§"Session name", fallback: the session id) as the label
 - Internal shortcuts: `↑/↓` moves the cursor; `Enter` activates; `Esc` closes; typing filters
 
 ### Cloud session panel
 
 Shown in place of the terminal when the selected session is **cloud/bridge with no
-a resumable local transcript** (`resumable === false`; see §6 Session status →
+resumable local transcript** (`resumable === false`; see §6 Session status →
 **cloud**). Avoids firing a doomed `claude --resume` (which would return
 "No conversation found …" and end the PTY).
+
+The panel is **never** shown for a session whose terminal is alive in this app run
+(a fresh session's transcript briefly reads as zero-turn — BUG-198), and it is never
+a dead end: the "Resume anyway" action below always lets the operator through.
 
 - Container: vertical+horizontal centered in the right panel (`--bg`), same as the Empty state.
 - `cloud` icon 28px `--text-4`, `margin-bottom: 14px`.
 - Title: the session's name (§"Session name"), Inter 15px 500, `--text-2`.
 - Body: 1–2 lines `--text-4` 12.5px, centered, `max-width: 420px` — explains that the conversation lives on claude.ai and there's no local transcript to resume.
-- No clickable actions in v1 (informational). Copy via i18n (`cloudSession.*`).
+- Action: one **Ghost** `Button` (§6 Buttons), label **Resume anyway** (`cloudSession.resumeAnyway`),
+  `margin-top: 16px`, centered under the body. It is the only action — secondary by
+  design, because the panel's default reading is "nothing to resume here". Pressing it
+  marks the row as overridden for this app run (renderer-only; the next disk scan does
+  not undo it) and the panel yields to the terminal, which spawns `claude --resume` and
+  shows the CLI's own output — including its error, if there is one.
+- Copy via i18n (`cloudSession.*`).
 
 ### Floating surfaces (z-order)
 
@@ -6703,7 +7790,7 @@ the surface:
 | Hover preview        | `FolderPreview.vue`        | 40        | Folder card. Peer of `SessionPreview` — they share the `ui.preview` slot (a `sessionId` **or** a `folderPath`); `pointer-events: auto` (T86 §3.9)                                                                                                                                                                                                                                                                                          |
 | Context menu         | `SessionMenu.vue`          | 50        | Suppresses preview on open                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Split menu           | `SplitMenu.vue`            | 50        | Mutex via `useUiStore.splitMenu`. Dropdown anchored to the Topbar's Split button. Peer of `SessionMenu` — never open simultaneously                                                                                                                                                                                                                                                                                                        |
-| Footer fleet popover | `StatusFooter.vue`         | 50        | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal                                                                                                                                                                                                                                                                                                                                         |
+| Footer fleet popover | `StatusFooter.vue`         | 50        | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal. Open flag in the `ui` store (`ui.popovers.usagePanel`, see "Anchored popovers" below)                                                                                                                                                                                                                                                  |
 | Sidebar jump palette | `SidebarJumpPalette.vue`   | 50        | T288. Peer of the menus in the `ui` mutex (`ui.sidebarJumpPalette`), but the ONLY surface here NOT `<Teleport>`ed to `<body>`: it is `position: absolute` inside the sidebar `<aside>` so it tracks the sidebar's width and clipping. Not modal — closes on Esc / click-outside / the Search button                                                                                                                                        |
 | Dialog (modal)       | `AddFolderDialog.vue`      | 60        | Suppresses menu + preview                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Dialog (modal)       | `SettingsDialog.vue`       | 60        | Peer of `AddFolderDialog` — they share the dialog slot (z-60) via the `ui.dialog` mutex; only one dialog open at a time                                                                                                                                                                                                                                                                                                                    |
@@ -6714,13 +7801,27 @@ the surface:
 | Dialog (modal)       | `NewFolderDialog.vue`      | 60        | Creates + pins a subfolder **non-destructively**. Peer via `ui.dialog === 'newFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `New folder…` item                                                                                                                                                                                                                                                                        |
 | Dialog (modal)       | `OpenSubfolderDialog.vue`  | 60        | Searchable subfolder picker (recursive, depth-capped) → pins the chosen one. Peer via `ui.dialog === 'openSubfolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Open subfolder…` item                                                                                                                                                                                                                                     |
 | Dialog (modal)       | `RenameFolderDialog.vue`   | 60        | Renames a folder's alias. Peer via `ui.dialog === 'renameFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Rename…` item                                                                                                                                                                                                                                                                                                 |
-| Image lightbox       | `ImageLightbox.vue`        | 60        | Full-viewport viewer for one pasted screenshot. State is **local to `StatusFooter.vue`** (not the `ui`-store mutex — a single entry point: a tile in the footer's images popover). While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it                                                                                                                                                          |
+| Image lightbox       | `ImageLightbox.vue`        | 60        | Full-viewport viewer for one pasted screenshot. Its index lives in the `ui` store (`ui.imageLightboxIndex`, T486 U4a) beside the anchored popovers' flags, but **outside the mutex** — a single entry point: a tile in the footer's images popover. While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it, and closing that popover ends it                                                       |
 | Dialog (modal)       | `RenameRepoDialog.vue`     | 60        | Renames a repo-group's alias. Peer via `ui.dialog === 'renameRepo'` (+ `ui.renameRepoTarget`); opened from the `RepoGroupHeader`'s context-menu `Rename repo` item                                                                                                                                                                                                                                                                         |
 | Agent-action confirm | `McpConfirmOverlay.vue`    | 65        | **Fail-CLOSED** confirm for a mutation requested by an MCP agent (`onMcpConfirmPending`). **Auto-shows** from its own local state (doesn't enter the `ui` mutex — it's a security gate, can't be suppressed by another surface) and **doesn't close** on Esc / click-outside: the verdict-producing exits are Allow, Deny, or the timeout (denies) — **Dismiss** is a non-verdict exit, "not now". Reuses the Inbox rail's visual language |
 | Command palette      | `CommandPalette.vue`       | **70**    | Suppresses dialog + menu + preview                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Rule: when introducing a new floating surface, **add a row here
 in the same commit**. Raw `z-index` in components (with no table entry) is a bug.
+
+**Anchored popovers (T486 U4a).** The popovers that hang off a button — the Topbar's
+Activity bell and Mission pill, the footer's pasted images, Claude service status and
+plan usage, and the Fleet rail's state filter — keep their open flag in the `ui` store
+(`ui.popovers[id]`, `POPOVER_IDS`), not in the component, so a keybinding can open each
+one and `ui.anyPopoverOpen` (any of them, or the image lightbox) can tell the App's Esc
+binding that a popover owns this Esc. They stay **outside the mutex** above, exactly as
+before the lift: opening one never closes the palette, a dialog or a menu, and only the
+footer pair (pasted images ↔ plan usage) close each other. Each component keeps its own
+bubble-phase `Esc` and click-outside handlers. Each also reports its **anchor**
+(`ui.setPopoverAnchor`) while its button is rendered: a popover cannot open without one,
+and losing it (the images pill hiding at zero, the rail minimizing, the mission ending)
+closes the popover, so `anyPopoverOpen` is never true with nothing on screen. A new
+anchored popover joins `POPOVER_IDS` in the same commit.
 The rule cuts **both ways**: the Approval Inbox **left** this table in
 T83 (it was `ApprovalInbox.vue`, z-65, `ui.inbox` mutex) because it stopped being an
 overlay — it became the **Inbox rail**, a column (below). It's not a forgotten row.
@@ -6836,15 +7937,32 @@ global shortcut would die).
     `needs-input → errored → stuck → working → done` — a lower tier can
     **never** render above a higher one, so a session that just turned
     `working` can never push above something that still needs attention.
-    Within the three **attention tiers** (`needs-input`/`errored`/`stuck`),
-    cards sort **oldest-waiting first** (most neglected on top) — the
-    inverse of `working`/`done`, which stay most-recent-first. This flip
-    happens inside `sessions.boardBuckets` (`stores/sessions.ts`) by
-    re-sorting `buildBoard`'s per-tier output for those three states;
-    `buildBoard` itself (`fleet-board.ts`) is untouched. It applies to every
-    `boardBuckets` consumer (the old sidebar board included) — "most
-    neglected on top" is a universal improvement for any attention-tier
-    bucket, not a rail-only rule.
+    **Inside a tier, cards are in creation order** (T459) — by the
+    session's `created` time, **never** by `modified`, so a transcript write
+    can no longer move a card. **Newest on top** by default; the
+    [order toggle](#fleet-rail-order-toggle) inverts it. The same rule covers
+    every tier, the three attention tiers (`needs-input`/`errored`/`stuck`)
+    included — the old "oldest-waiting first" flip is gone. A session with a
+    missing/invalid `created` sorts after every valid one in both directions;
+    ties break on `sessionId`. A synthetic placeholder that is replaced by its
+    disk twin keeps the placeholder's creation time as its sort key, so the
+    card does not jump when the real transcript lands. The sort lives in
+    `buildBoard(sessions, order)` (`fleet-board.ts`); `sessions.boardBuckets`
+    passes it `layout.inboxRailOrder`, and the expanded cards and the
+    minimized minicards both flatten that one projection.
+  - <a id="fleet-rail-order-toggle"></a>**Order toggle.** A `22×22` icon
+    button in the header, immediately left of the state filter (same anatomy as
+    the minimize button). Icon (Lucide, §5): `ArrowDownWideNarrow` while
+    **newest first**, `ArrowUpNarrowWide` while **oldest first** — the icon
+    shows the _current_ order. `title` and `aria-label` carry the same string,
+    naming the current order and what a click does (`approvalInbox.order.*`:
+    "Newest first — click for oldest first"). It inverts the order inside
+    **every** state group; the groups themselves stay in tier order. No accent
+    dot: oldest-first is a preference, not hidden content. Persistence:
+    `om2tab.inboxRailOrder` (`'newest-first'` default / `'oldest-first'`,
+    `stores/layout.ts` next to `inboxRailHiddenStates`; an unknown stored value
+    falls back to newest-first). The minimized strip has no header, so it just
+    follows the persisted direction.
   - **Card inset:** 8px left/right margin + 4px bottom margin per card
     (`FleetBoardCard.vue`, not a wrapper's padding) + 6px top padding on the
     scroll body, so the first card's ring never touches the header's
@@ -7167,6 +8285,40 @@ appear as soon as the first statusLine blob for that `cwd` lands in the inbox �
 seconds after spawn, via `telemetryForSession`'s `cwd` fallback, without
 waiting for the 1st-turn synth→real migration. At the migration, the exact-id
 path takes over, without flicker.
+
+**Last-known state (BUG-196) — the left cluster never goes silently blank.** When the
+selected session has no _fresh_ statusLine telemetry (the record is older than the 24 h TTL,
+or none arrived in this run) the chips do not vanish; they render the last known values in a
+**dimmed** state, followed by a one-word reason:
+
+- **Source order:** fresh live record → newest retained record for the session (kept past the
+  TTL, never served as live) → values derived from the session transcript (model and
+  context % only; no branch/effort/cost, since the transcript does not carry them). A
+  transcript-derived chip set is dimmed exactly like a stale record.
+- **Dimmed chip:** same icon and layout as a live chip, tone `text-text-4` (the existing
+  quiet tone — no new token). The context chip drops its 80/95 signal colors when dimmed:
+  a stale percentage must not raise an alarm. The near-/compact chip is **not** shown for
+  dimmed values.
+- **Age tooltip:** every dimmed chip's `title`/`aria-label` appends the age, e.g.
+  `Opus 4.8 · last seen 3 days ago` (`footer.lastSeen`, via `humanizeDuration`).
+- **Reason label:** one trailing `text-text-4` label after the chips, `footer.reasonExpired`
+  ("telemetry expired") for a retained record older than the TTL, `footer.reasonNone`
+  ("no live telemetry") when only the transcript could supply values. Its tooltip explains
+  in a sentence. It is a label, not a button.
+- With **nothing** to show (no record, an empty transcript) the session title stays, followed
+  by the same `footer.reasonNone` label, so the footer is never an unexplained title.
+
+**Silent-session hint (BUG-196).** A live session whose transcript gained an assistant turn
+but whose statusLine telemetry has not updated within **2 minutes** of it is flagged. The
+hint is a button in the left cluster, after the chips and the reason label:
+`RotateCw` icon 12px + `footer.silentHint` ("Not reporting — restart session"), tone
+`text-warning`, `hover:bg-surface-2`, `rounded-sm px-1.5`, no animation (a persistent
+fault, not a transient event). Click restarts the session through the existing "Restart
+session" path (`reloadSession`, `claude --resume`). The flag clears on the next telemetry
+payload for the session. It is not shown for synthetic sessions, parked/non-live sessions,
+or when the statusLine switch is off or a foreign statusLine is preserved (no telemetry
+is expected then). When the hint is shown the near-/compact chip and the dimmed reason
+label stay as they are; the hint is additive.
 
 **Images pill** (left of the `ml-auto` cluster): `🖼 N` for the active session
 (`~/.claude/image-cache/<uuid>/`), **hide-when-zero** — disappears when N === 0 / the session is
@@ -8322,14 +9474,17 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    `layout-grid` / `list`, 12px) and a **rescan icon button** (Ghost, icon-only, `RefreshCw` — it spins while
    a scan runs; `aria-label` "Scan now").
    - Summary line: `Recycle` icon (`--green`), 13px/20px `--text-2`, then
-     `{n} GB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
+     `{n} GB reclaimable · autopilot on|report only|paused|off · next cycle in {t}` (the same state as the badge below; one computed drives both); the size is 600-weight `--text`.
      "Reclaimable" is everything not In use plus orphan volumes (ready + needs review + orphan volumes);
      Docker build cache is added only when the engine reports it (see "Docker card").
-   - Autopilot badge: Badge Success "Autopilot on · every {interval}" or Default "Autopilot off".
+   - Autopilot badge (says what the autopilot is really doing, F1), first match wins: Default
+     "Autopilot off"; **Warning-text** "Autopilot paused — background scan is off" (the Reaper's automatic scan
+     is off, so no cycle runs; `snapshot.backgroundScan`); **Accent-soft** "Autopilot on · report only" (the first
+     report is unacknowledged, so cycles only report); Success "Autopilot on · every {interval}".
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
    count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger,
-   `trash-2`), **Dehydrate** (Soft, `package-minus`), **Keep** (Ghost, `bookmark`) — the same icons as the side
+   `trash-2`), **Dehydrate** (Soft, `package-minus`; reads "Dehydrate frees {size} and keeps the code" when the refused items carry deps), **Keep** (Ghost, `bookmark`) — the same icons as the side
    panel's actions — **Ask for an opinion** (Soft, `sparkles`; enabled whenever the selection
    holds Needs review items — see "Opinion chip"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
@@ -8345,7 +9500,8 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    word in the bucket ink + a short gloss ("Ready to clean · cleaned by one click or the autopilot",
    "Needs review · your call", "In use · never touched") — then, pushed right in `--text-3`,
    **"Block area = size on disk · click a block to act"**. Without byte sizes the area note is dropped.
-6. **Map** (or the List fallback), then the **Docker card**, then **Needs review**, then **Other leftovers**
+6. **Map** (or the List fallback), then the **Docker card**, then the **Archives card** and the **in-the-trash
+   strip** (both drawn only when there is something to show), then **Needs review**, then **Other leftovers**
    and **Recent cleanups** (the existing tombstone footer).
 
 #### Treemap
@@ -8398,16 +9554,16 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 
 - **States** (the block's whole state machine; the row in Needs review mirrors it):
 
-  | State        | Look                                                                                                                                              |
-  | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | rest         | bucket triple                                                                                                                                     |
-  | hover-linked | `box-shadow: 0 0 0 1px var(--color-text-2)` — the list row under the pointer outlines its block                                                   |
-  | selected     | single block whose panel is open: `border-color: --accent` + `box-shadow: 0 0 0 1px --accent`, **no badge**                                       |
-  | checked      | multi-select: the selected outline **plus** a 16px check badge (top-right, `--accent` fill, `--accent-ink` `check` glyph) — never colour alone    |
-  | planned      | dashed border (first cycle)                                                                                                                       |
-  | busy         | `--accent-soft` fill, `--accent-line` border, a 6px `--accent` dot with a 3px `--accent-soft` halo, and a 2px determinate sliver along the bottom |
-  | done         | `opacity: 0.45`, dashed border, word "freed" + `check`; after `--dur-slow` it is removed and the layout is recomputed                             |
-  | failed       | `--color-red-line` border + `triangle-alert` in `--red`; it is a Needs review block again                                                         |
+  | State        | Look                                                                                                                                                                          |
+  | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | rest         | bucket triple                                                                                                                                                                 |
+  | hover-linked | `box-shadow: 0 0 0 1px var(--color-text-2)` — the list row under the pointer outlines its block                                                                               |
+  | selected     | single block whose panel is open: `border-color: --accent` + `box-shadow: 0 0 0 1px --accent`, **no badge**                                                                   |
+  | checked      | multi-select: the selected outline **plus** a 16px check badge (top-right, `--accent` fill, `--accent-ink` `check` glyph) — never colour alone                                |
+  | planned      | dashed border (first cycle)                                                                                                                                                   |
+  | busy         | `--accent-soft` fill, `--accent-line` border, a 6px `--accent` dot with a 3px `--accent-soft` halo, and a 2px determinate sliver along the bottom                             |
+  | done         | `opacity: 0.45`, dashed border, word "cleaned" + `check` (never "freed": the checkout only moved to the trash); after `--dur-slow` it is removed and the layout is recomputed |
+  | failed       | `--color-red-line` border + `triangle-alert` in `--red`; it is a Needs review block again                                                                                     |
 
   Only **Needs review** blocks are checkable; ready items are cleaned by the hero, In use blocks are never touched.
 
@@ -8436,7 +9592,8 @@ much" and "do it" read as one sentence: `Clean 12 ready · 6.0 GB`. It acts on p
 - **Before the first scan:** disabled Soft button reading **"Scanning…"** with a spinning `Loader2` (see "First scan"); never "Nothing to clean", which would claim a result.
 - **First-cycle state:** the hero is a **Soft** button, because "Enable autopilot" owns the one Primary.
 - **Running** (the hero stops being a button): a **progress chip** — Badge Accent triple at button height
-  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GB freed`, a
+  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GB freed now · 2.1 GB in the trash`
+  (the **freed split**, see below; `· … in the trash` is left out while nothing has been trashed), a
   **40 × 4px determinate bar** (`--accent` on `--border-2`, radius full) counting items, not bytes.
   `aria-live="polite"`, announcing at most once per finished item. The chip has no control: the engine
   has no cancel, so "Cancel after current" is **not drawn**.
@@ -8462,9 +9619,9 @@ only the step an item halted at and why, so the panel says **"Stopped at {step}"
 for the reason, or, for a refusal made before anything ran (the pre-flight re-probe), **"Nothing was
 changed"** plus the sentence. **A raw engine error is never visible text**: a code the catalog knows gets
 its own sentence, anything else reads "Harnu stopped this item for a safety check." and the raw text travels
-only with the **Copy error** action. A review item whose reason is `nested-worktree` or `locked` has **no Remove (and no
-R)** — main always refuses it (removing the folder would trash the inner worktree too; git has the worktree
-locked) — and an 11px `--text-3` line says which. It never draws ✓ for a step it was not told
+only with the **Copy error** action. A halted item whose folder is already gone (`folderGone`) has **no Retry and no Remove**: the panel shows a bordered `--surface-2` note with the step it stopped at, the exact shell commands (`git -C <repo> worktree prune`, plus `branch -D` while the branch remains and is archived, else the safe `branch -d` and a `--warning` line) in mono, and the line that the archive refs keep the commit recoverable; its list row shows a one-line hint instead of the Remove and Dehydrate buttons. A review item whose reason is `nested-worktree`, `check-failed` or `locked` has **no Remove (and no
+R)** — main always refuses it (removing the folder would trash the inner worktree too; Harnu could not look
+inside the folder to tell; git has the worktree locked) — and an 11px `--text-3` line says which. It never draws ✓ for a step it was not told
 ran, and it never shows volumes as removed — a worktree clean never removes one. Actions: **Retry**,
 **Keep**, **Remove**. **Retry follows the item's _current_ bucket**: a ready item re-opens the ready
 (bulk-style) confirm for that one id, a review item the review confirm — never a dialog that would send
@@ -8482,6 +9639,14 @@ the count, and two header buttons that act on the **whole list** — "Ask for an
 (Soft, `sparkles`) and "Remove the {n} marked safe" (Success, hidden until at least one safe opinion
 is current). Each row carries its **opinion chip** under the reason (see "Opinion chip"). Hovering a row
 outlines its block. Footer: the keyboard hints (`kbd`).
+
+**Dehydrated rows (unit D, AC-D4).** A worktree whose dependencies were dropped (`hydration.state ===
+'dehydrated'`) is still judged by its branch fate, exactly like a hydrated one: merged and past grace it is
+Ready, otherwise it carries its ordinary review reason. In Needs review its row adds one 11px `--text-3`
+line under the reason, **"Dehydrated · {size} left"** (`data-testid="review-dehydrated"`, `PackageMinus`
+icon at 11px; `{size}` is what the checkout still holds on disk), and keeps the normal **Remove**
+(same guarded path, same confirm). A dehydrated row never offers Dehydrate again. The block panel's
+existing `dehydrated` marker stays as it is.
 
 #### Opinion chip ("Ask for an opinion", T444)
 
@@ -8587,6 +9752,149 @@ volume), size right.
   dialog changes (an autopilot cycle or a job refresh), the dialog shows "This changed since you opened it —
   review again" in `--warning` and **disables the confirm until it is reopened**; the confirm never sends facts
   newer than the ones the operator was shown. A rejected `gc:clean` call shows an error toast.
+- **Only what `gc:clean` can remove is offered — one predicate decides it.** `removability(block)`
+  (`lib/gc-removability.ts`) answers from the bundle's own facts, mirroring what main refuses: a detached
+  worktree that is not in Needs review (`unsupported-kind`, with no command: a detached worktree in
+  review **is** removable, see "Detached worktrees" below), a locked one, a shared stack, a nested or foreign checkout, an idle session
+  still open, an unknown tip, an unresolved path, and the protections (main checkout, never-clean, Keep,
+  In use). The panel, the list row, the selection bar, "Select all in repo", "Remove the ones marked safe",
+  Retry and the **R** shortcut all ask it, so none of them offers a click that ends in "0 cleaned".
+  `tests/gc-removability.test.ts` pins every rule against main's real refusal functions.
+- **"Won't be removed (n)" group.** A selection that mixes removable and refused items still opens ONE
+  dialog. The refused ones sit in their own section under the list (`--bg` fill, `--border`, 8px radius,
+  eyebrow title in `--text-3`, one row per item): the mono `repo › worktree` title, the reason in 11px
+  `--text-3`, and — when a command clears the cause — that command in 11px mono `--text-2`
+  (`git worktree unlock <path>`), selectable in one click. The group is
+  excluded from the breakdown, the footer total, the confirm label and the `gc:clean` request.
+- **Detached worktrees (NDE-A).** A worktree with a detached HEAD has no branch to name an archive ref
+  after, so Harnu names it after what it has: the folder and the commit. A confirmed Remove from Needs
+  review first writes `refs/archive/detached/<time>/<folder>-<shortsha>/tip` (the commit) and, beside it, `/wip`
+  (every uncommitted and untracked file), then trashes the folder and unregisters it from git. There is no
+  branch step. It is **review-only**: it is never a ready item, never part of the hero or the autopilot, and
+  `unsupported-kind` is what main answers for one that somehow is. In the dialog a detached row has no
+  `branch` chip and its mono sub-line reads `detached at {shortsha}` (11px `--text-4`). The dialog's
+  Warning callout gains one paragraph while any detached row is listed, in `--warning`, bold lead: _{n}
+  detached worktree has no branch. Its commit stays under refs/archive/detached/…, and `git worktree add
+<path> <ref>` brings it back._ The confirm is the Danger button already used for remove-selected. The
+  panel's **Takes with it** list swaps the branch line for _Its commit stays under refs/archive/detached/…_.
+- **Untracked files are named.** A row whose folder holds untracked files lists them in the dialog,
+  under the reason (11px/16px `--text-3`, `break-words`, comma-separated): _{n} untracked files, saved
+  in the wip ref: a.md, b/c.txt_. A row names at most **10**, then _and N more_; the full list is the
+  element's tooltip, and one line in the callout totals them across the dialog (_{n} untracked files in
+  total, each saved in its wip ref._). Nothing is dropped: every path is in the wip ref whether it is
+  named or not. A detached worktree carries them too (its scan probes the status, as a branch
+  worktree's does).
+- **A rebase, bisect or `git am` in progress refuses the removal (delta-1, delta-2).** Its state lives
+  in the folder and would go with it, so a worktree mid-operation is not offered, detached or on a
+  branch (`git am` keeps HEAD on its branch; a bisect that was only started has not moved it yet): the
+  panel says _A rebase, bisect or git am is still in progress here… Finish or abort it, then use Scan
+  now_ and names the command (`git -C <path> rebase --abort` / `bisect reset` / `am --abort`); the
+  reason chip reads _A rebase, bisect or git am is still in progress in this worktree_. A refusal
+  remembered twice keeps the item in Needs review with the same reason. Commits only its HEAD reflog
+  reaches are archived under `…/reflog/<sha12>`, one ref per chain **tip**, before anything else is
+  written; a history with more than 500 such tips is refused (`reflog-limit`, nothing removed, no tip
+  or wip ref either) rather than archived in part.
+- **Nothing removable → no dialog.** The selection bar's **Remove selected** is disabled (tooltip "Nothing
+  selected can be removed", and the inline "{n} can't be removed: …" line above says why) when no ticked item can be removed; the list row swaps its Remove button for an
+  inert, dimmed `Trash2` carrying the reason as its tooltip and `aria-label`. Any path that still reaches
+  the open step (a marked-safe pre-selection that went stale) raises a Warning toast with the reason — the
+  one sentence when every item shares it, "each for its own reason" otherwise — and opens no dialog.
+- **Panel.** A review item main refuses shows no Remove button; under the actions a 11px `--text-3` line says
+  "Remove is unavailable. {reason}", followed by "Run `{command}`" when there is one. After a refusal a locked
+  item keeps its real reason ("Git has this worktree locked. Unlock it first.") instead of the engine's
+  "couldn't match a single git registration".
+- **A ready item main refused lately** (`bundle.reprobeRefusal`, set by the gatherer) stays on the map but
+  leaves the hero count, the hero's confirm and the autopilot. Its panel carries a Warning-toned note — "The
+  last clean was refused. {reason}" — with **Retry** in place of **Clean now**. After two identical refusals it
+  moves to Needs review with that reason ("Refused {n} times in a row…"); there the panel and the list row
+  show the real cause, and neither Remove nor Retry is offered. The count outlives the pause.
+  A **Check again** soft button (`RotateCcw`, `data-testid="panel-recheck"`) sits among the panel actions for a
+  demoted item: it asks main (`gc:recheck`) to forget that item's remembered refusal and reprobe it once, then
+  a Success toast ("Checked again: nothing refuses it now"), or a Warning toast ("Still refused" + the
+  reason, or "Couldn't check it right now" when the check itself could not answer).
+- **Docker down.** A scan that ran with the daemon down marks every bundle `dockerBlind`: its empty stack
+  list means "unseen", so main refuses it (`scan-blind`) in the autopilot and in a manual clean alike, with
+  no override. The hero becomes a **disabled soft button** — "Start Docker to clean these", tooltip
+  "Docker wasn't running when Harnu scanned … Start Docker, then Scan now." (`data-testid="hero-blind"`) —
+  and a panel for a ready item swaps **Clean now** for the line "Clean now is unavailable. {reason}". No
+  Docker CLI at all is not blind. A refusal for `docker-unavailable` (the daemon stopped after a scan that
+  saw it, for a bundle that had stacks) reads "Docker is not running … Start Docker, then Retry." and offers
+  Retry.
+- **No dead ends — every refusal names its cause and offers a way out (unit B).** A bare disabled button
+  pushes the operator to `rm -rf`, which skips the archive ref, the trash and every guard. So wherever Remove
+  is unavailable or partial, the reason is **inline text**, never only a tooltip, and each cause links to the
+  guided action that clears it. `lib/gc-guidance.ts` (`removalSummary`) derives all of it from
+  `removability()` and nothing else: no UI file names a cause of its own (a detached worktree in review is no
+  group at all, since main archives and removes it; one outside review is still refused as an unsupported
+  kind, with no command).
+  - **Selection bar.** A second line (`basis-full`, `text-caption`, `--text-3`, `data-testid="sel-why"`)
+    under the buttons. Nothing removable: "{n} can't be removed: {groups}". Partly removable: "Removes {k} ·
+    {n} can't: {groups}". Each group is "{count} {cause}" (e.g. "11 locked in git", "2 session open")
+    as a link-style button (`--accent`, underline on hover, `data-testid="sel-guide-<reason>"`) that opens
+    its guided action; groups run biggest first and are separated by " · ". When the refused items carry
+    installed dependencies the **Dehydrate** button promotes its real bytes: "Dehydrate frees {size} and
+    keeps the code" (Soft, `package-minus`). **Remove selected** stays Danger and is disabled only when
+    nothing in the selection can go — the line above is then what the operator reads, the tooltip repeats it.
+  - **Panel.** Under "Remove is unavailable. {reason}" a **guided action** button (Soft, `data-testid="panel-guide"`)
+    carries the cause's action: "Unlock and remove…", "Close session and remove…", "Choose what to do with
+    the stack…", "Show how to fix it…", "Scan again", "Dehydrate — frees {size}", "Remove the Keep mark",
+    "Open Settings"; a cause with no action in Harnu (a main checkout) states the reason as the answer.
+  - **Guided dialog** (`CleanupGuidedDialog.vue`, `data-testid="guided-dialog"`): the standard 480px confirm
+    dialog. Eyebrow = the cause; body = the facts main read just now (`gc:guide`): the lock reason git
+    recorded, the idle sessions that would be parked, each shared stack with the other folders using it,
+    the unreadable path with its owner and a copyable fix command (`sudo chown -R $USER <path>`, mono
+    `--text-2`, one-click copy), or the Docker hint. Buttons: Cancel (focused first), then the action — Danger
+    when it ends in a removal ("Unlock and remove", "Close session and remove", "Stop stack and remove"),
+    Soft otherwise ("Check again", "Scan again"). A shared stack offers a choice of two radio rows: **Stop
+    stack and remove** (stops and removes that stack's containers, never its volumes) and **Remove the
+    worktree and leave the stack** (offered only when no container of the stack bind-mounts this folder;
+    otherwise the row is absent and one line says why).
+  - **The prep is the LAST step, and it is undone when the removal still refuses.** Main runs a dry run of
+    everything else first (the work-stamp guards, the pipeline's refusals, the reprobe with the prep's own
+    cause assumed fixed), and the prep runs only when nothing else refuses. A refusal afterwards locks the
+    worktree again with its original reason and starts again exactly the containers it stopped; a failed
+    undo is said in the toast. **Stop stack** only stops (never removes), lists the containers by name in the
+    choice, and is not offered for the main checkout's own stack or a stack another folder uses with a live
+    or parked session (one line says which). **Close session** treats only idle / completed / stopped as
+    idle, warns "Parking closes its terminal; background processes it started (dev servers, shells) stop.
+    The conversation is kept and can be resumed." and adds "{n} of them you opened yourself, not an agent."
+    when it applies. **Unlock** sends only the rows still locked and says how many were left out.
+  - **Stacked causes are one combined action.** `removabilityAll()` lists every cause; a cause no step can fix
+    is shown first, alone; when every cause is fixable and there are several, the bar group reads
+    "{n} locked in git + shared Docker stack", the button "Unlock, stop stack and remove…", and the dialog
+    shows an ordered list of the steps (unlock, stop/leave the stack, close the session) ending in the
+    removal, behind a single confirm. Steps run in that order (closing a session, which cannot be undone,
+    last) and are undone in reverse. A rollback happens only while the folder still exists; Scan again and
+    removing a Keep mark disable their links while they run, and the unmark's toast has **Undo**.
+  - **Interrupted cleans** (`CleanupRecoveryNotices.vue`, `data-testid="recovery-notices"`): above the
+    first-cycle banner, one warning-toned row per notice (`bg-warning-soft`, `border-warning-line`, 14px
+    `triangle-alert`), text in `--text-2`, then the answers: Soft **Start again** / Ghost **Leave stopped** for
+    a stack stop, Soft **Lock again** / Ghost **Dismiss** for a lock, Ghost **Dismiss** for containers that
+    are gone. A notice stays until answered; Harnu never starts containers on its own.
+  - **Every guided action ends in a toast.** While it runs the confirm shows a spinner and disables;
+    success is a Success toast with the bytes freed ("Removed 1 worktree · 3.4 GB freed"); failure is a
+    Danger toast naming the cause in one sentence. Nothing a guided action does is silent.
+- **Marks are read from the current prefs.** Keep and never-clean come from the snapshot's prefs, not the
+  bundle's scan-time flags, so a mark added since the scan hides Remove (and the hero count) at once.
+- **"Also delete the branch on the remote" (unit D, AC-D5).** A checkbox row between the warning callout
+  and the footer (`data-testid="bulk-remote-delete"`, native checkbox, 13px `--text`, **unchecked by
+  default**, label "Also delete the branch on the remote", a `GitBranch` 12px icon, and an 11px `--text-3`
+  hint "git push --delete. Skipped for protected branches."). It is drawn **only when at least one row
+  qualifies**: its branch is merged by strong proof **recorded by a merged pull request** (an ancestor of
+  `main` with no PR, such as `staging` or `release/x`, never qualifies), no OPEN pull request has it as head
+  or base, GitHub does not protect it (branch protection or an active ruleset), it tracks an upstream
+  remote whose tip is the local tip or one of its ancestors, it is not in the Reaper's protected list, and
+  the remote-delete kill switch (Settings → Cleanup) is off. Any answer Harnu could not get (`gh`
+  missing, a non-GitHub remote, a failed call) means the box is not drawn. The answers are **asked when
+  the dialog opens**, never on a scan, and only for the rows that could qualify: until main answers, an
+  11px `--text-3` line "Checking whether the branch can be deleted on GitHub…" (`data-testid=
+"bulk-remote-checking"`, `role="status"`) stands where the box will be, then the box appears or nothing
+  does. Answers are shared and kept ten minutes; main asks again when you confirm. The delete goes to the
+  branch's own upstream remote, never an assumed `origin`. When only some rows
+  qualify, an 11px `--text-3` count under it reads "Applies to {n} of {total}". Confirm then sends
+  `deleteRemote: [ids of the qualifying rows]`; unticked it sends nothing. A remote that refuses is
+  reported on the item's result (a Warning toast "Cleaned, but the branch is still on the remote: {error}")
+  and never undoes or blocks the local clean. The autopilot never has this option.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
   inside (focus trap); ↩ activates only the focused control.
 
@@ -8627,13 +9935,182 @@ cycle has run, a second 11px `--text-3` line adds "Last cycle reclaimed {size}".
 summary line and in the split bar's Ready segment while `categories.dockerCache` is on. Zero state: real
 zeros when Docker says so.
 
+#### Other leftovers — transcripts of folders that are gone (unit D, AC-D1)
+
+Removing a worktree takes the folder and never the Claude transcripts under `~/.claude/projects/<slug>/`,
+so Cleanup lists them itself, in the **Other leftovers** section under the Reaper rows (the section shows
+when either has something; its `intro` line reads "Branches, folders and transcripts that are not
+worktrees."). A project folder is listed only when **every** transcript in it names a folder that is gone,
+no session in it is live or parked, nothing in it was written in the last 24 hours (a session still writing
+from a terminal outside Harnu), the folder is provably gone (a folder on a drive that is not mounted right
+now is not), and no existing folder spells the same slug.
+
+- **Group header** (`data-testid="orphan-group"`), one per repo, biggest first: eyebrow label (the repo
+  name, `data-testid="orphan-group-label"`), then `{n} folders · {size}` in 11px `--text-4`, and a ghost
+  button **Delete all** (`data-testid="orphan-delete-all"`, `Trash2` 12px) on the right.
+- **Row** (`data-testid="orphan-row"`): grid `20px 1fr 90px 40px`, `min-h-12`, the Reaper row's hover. A
+  `MessagesSquare` icon (`--text-4`, 14px); the folder's name in 12px mono `--text` (`orphan-folder`, full
+  path as the tooltip) over a one-line meta in 11px `--text-4`: "{n} sessions · last {ago}"; when the project
+  folder also holds Claude's auto-memory notes, a `Warning`-ink chip **"includes memory notes"**
+  (`orphan-memory`, 10.5px, `--warning-soft` / `--warning-line`). The size right (13px, tabular), then an
+  icon-only **Delete** button (`Trash2`, red on hover, `aria-label` "Delete the transcripts of {name}",
+  `orphan-delete`), disabled while that row's delete is running.
+- **Confirm dialog** (`CleanupTranscriptsConfirmDialog.vue`, `data-testid="orphan-dialog"`, the bulk
+  dialog's anatomy and width (`--gc-dialog-w`), Danger confirm): title "Move {n} transcript folder to the trash? |
+  Move {n} transcript folders to the trash?", subtitle "The folders these sessions ran in are gone, so Claude
+  can no longer resume them here."; a bounded list of rows (mono folder, `{n} sessions`, size); a Warning
+  callout "They go to the OS trash, so you can bring them back." (`orphan-dialog-recoverable`); when any row
+  has memory notes a second line "{n} of them also hold Claude memory notes for that folder."
+  (`orphan-dialog-memory`); footer "{n} folders · {size}" (`orphan-dialog-total`), **Cancel**
+  (focused first) and **Move to trash** (`Trash2`, Danger). Esc closes the dialog only.
+- **Proven gone, or only "Folder not found".** A folder counts as gone only when that is **positively
+  proven**: Harnu removed it itself (its own ledger), git lists it as prunable in a repo that still exists,
+  or it sits under a known worktrees parent (`<repo>/.claude/worktrees`, `<repo>-worktrees`) that exists
+  and can be read. The proof holds only while the worktree's own folder (the segment directly under that parent, the folder Harnu removed, the worktree git lists) is itself **missing**: a dangling link or an empty mount point there, or a folder that exists again, proves nothing. A folder that is merely missing (an sshfs share or a USB disk that is not connected looks
+  the same) is listed apart under a **"Folder not found"** eyebrow in `--warning`, with a 11px `--text-3`
+  note ("Harnu can't confirm these folders were deleted. They may be on a drive that is not connected.
+  Check before you delete."), **the full path** of each folder in 12px mono `--text` (`data-testid=
+"orphan-fullpath"`, wrapping, no ellipsis) and its own **Delete all** (`orphan-notfound-delete-all`).
+  Its confirm dialog shows the full paths too and adds a checkbox, "I checked: this folder is really gone,
+  not on a drive that's unplugged." (`orphan-dialog-ack`); **Move to trash stays disabled until it is
+  ticked**. The recency rule (nothing written in the last 24 hours) applies to both groups, and both go to
+  the trash.
+- Confirming sends `gc:clean(ids, { confirmed, expected })` (plus `confirmedNotFound` for the ticked
+  not-found ids), each id `transcripts:<slug>` confirmed by its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
+  or is no longer an orphan. A refusal is shown by the usual toast.
+
+**Left by removed worktrees (unit D, AC-D3).** A fourth block on the Docker card, drawn only when the
+snapshot's `stackLeftovers` is not empty (`data-testid="docker-leftovers"`, the Needs review (warning)
+triple, spanning the card's width). It lists what a removed worktree's stack left in Docker, project by
+project: header "Left by removed worktrees" with the project names (3 then "+n more") in 11px
+`--text-3`. Two parts, never mixed:
+
+- **Stopped containers and networks** (`docker-leftovers-stack`): "{c} stopped containers · {n} networks"
+  (13px `--text`), and a Soft **Clean up** button (`docker-leftovers-clean`, `Recycle` 12px) that opens
+  the confirm. Hidden when the projects hold only volumes.
+- **Volumes** (`docker-leftovers-volumes`, set apart by a 1px `--border` rule): "{v} volumes · {size}",
+  the Warning badge "can't be restored" and the line "Never removed automatically. They go only after
+  their own confirm." with a Soft **Remove volumes…** button (`docker-leftovers-volumes-remove`,
+  `Trash2` 12px). Hidden when there are none.
+
+Only a compose project the cleanup remembers is ever listed, and only while none of its folders exists
+and nothing of it runs (no running, restarting or paused container).
+
+**Docker confirm (`CleanupDockerConfirmDialog.vue`, `data-testid="docker-confirm"`).** The bulk dialog's
+anatomy and width. Props `kind: 'stack' | 'volumes'`. Title "Clean up the leftovers of {n} removed
+worktree? | …of {n} removed worktrees?" (stack) or "Remove {n} volume? | Remove {n} volumes?" (volumes);
+one row per project (mono project name, 11px `--text-4` "{c} containers · {n} networks", or per volume
+its name, project and size). Callout in Warning: stack — "Stopped containers and networks can be
+recreated by starting the stack again. Volumes are not touched."; volumes — "Volumes cannot be
+restored." in `--warning` weight 600. Footer: **Cancel** (focused first) and the confirm — Success "Clean
+up" (stack) or Danger "Remove {n} volumes" (volumes). Esc closes only this dialog. Confirming sends
+`gc:clean` with every id in `confirmed` and the facts shown in `expected`; a project's containers and
+networks are removed one at a time without force, and a refusal from Docker (a container that turned out
+to be running, a network with active endpoints) is reported in the toast while the rest still go.
+
+#### The freed split — "freed now" vs "in the trash" (unit C, AC-C4)
+
+A clean does not delete a checkout: it moves it to the OS trash, so that space is still on disk until
+the trash is emptied. Claiming it as "freed" was a lie, so every surface that reports a clean's bytes
+says **two** numbers, in **one** wording, built from one pair of i18n keys (`cleanup.gc.freed.*`):
+
+- **`{freed} freed now · {trash} in the trash`** — _freed now_ is what was really deleted (the dependency
+  folders, Docker volumes and Docker cache); _in the trash_ is the checkout that only moved.
+  Nothing in the trash: **`{freed} freed now`** alone, never a "0 B in the trash".
+- It appears in exactly four places and they must agree: the **hero's progress chip**, the **success toast**,
+  the split bar's **last-cycle line** (`Last cycle {ago}: cleaned {n}, {freed split}`) and the autopilot's
+  native notification (`Cleaned {n} worktrees, {freed split}`). Same decimal units as every Cleanup size.
+- `list_cleanup` carries the same pair (`lastCycle.freedNowBytes` / `trashedBytes`) plus what Harnu still
+  has in the trash (`totals.inTrashBytes` / `inTrashCount`).
+
+#### Archives card (unit C, AC-C1..C3)
+
+Cleanup cleans its own exhaust. Every removal writes `refs/archive/<branch>/<stamp>/{tip,wip}`; they keep
+git objects alive forever and a `wip` can hold a large binary or an `.env`. Own region under the Docker card
+(`data-testid="archives-card"`, same card anatomy: `border-border`, radius 7, `bg-surface`; header `Archive`
+icon 14px, title **Archives**, an 11px `--text-4` subtitle).
+
+- **Header numbers:** `{n} archives · ≈ {size}` where the size is **estimated** (the objects reachable only
+  from `refs/archive/*`, `git rev-list --objects --disk-usage`) and so always carries a leading **≈**. When git
+  cannot say (older than git 2.31) the size is dropped, never invented. Zero archives: the card is **not
+  drawn**.
+- **One row per repo** (`{repo} · {n} archives · ≈ {size}`), each a disclosure (`aria-expanded`) that lists
+  that repo's archives newest first. Over 8 rows the list scrolls inside (`max-h-64`).
+- **Archive row (browse):** the **source** — the removed folder's name when the journal remembers it, the
+  branch (mono), or the word **detached** — the date (relative, absolute on hover), the **tip SHA** (mono,
+  7 chars, full on hover), a **wip** badge (Default badge, `has working state`) when a working-state ref exists,
+  a **reflog** badge (same Default badge, `{n} reflog commits`, only when n > 0; hover explains that they are
+  commits only the removed worktree's history reached), and a copy button **"Copy restore command"** (`Copy` icon, ghost) that puts `git branch <name> <sha>` on the
+  clipboard (a hostile branch name is shell-quoted); a wip row has a second **"Copy wip command"** (`git
+worktree add --detach ../restored-… <sha>`). A row past the retention has a Warning-text "expired" word.
+- **A detached removal is ONE row** (unit E): the tip, the working state, the earlier-wip siblings and every
+  `reflog/*` ref a detached worktree's removal writes share one namespace
+  (`refs/archive/detached/<stamp>/<folder>-<sha12>/…`), and the row stands for all of them: the date comes from
+  the stamp, retention and "Delete {k} older…" apply to the row as a whole, **Delete** removes every ref of it,
+  and the confirm dialog lists it as one line. Refs an older Harnu wrote without a stamp
+  (`refs/archive/detached/<folder>-<sha12>/…`) are one row too, with **age unknown**.
+- **Retention note** under the header: one 11px `--text-4` line, "Deleting archives frees disk space only after
+  git's next gc. Archives older than {n} days: {k}". Each **repo row** that has archives past the retention
+  carries a Soft button **"Delete {k} older than {n} days…"** that opens the **archive confirm dialog**
+  (`CleanupExhaustDialog.vue`, mode `delete`); a repo row never mixes another repo's refs into its list.
+- **Archive confirm dialog** (`CleanupExhaustDialog.vue`, the Bulk dialog's chrome and focus rules:
+  Esc/Cancel closes, focus starts on **Cancel**, Tab trapped): title **"Delete {k} archives?"**, a note in
+  `--warning-soft` — "This removes the archive refs. The branch tips and working states they keep can no
+  longer be restored from here. Git frees the disk space on its next gc." — then the **list** (one line each:
+  source, date, tip SHA, wip badge; scrolls past 8) and a Danger **"Delete {k} archives"**. It never runs `git gc`.
+- **Run git gc now…** — a ghost link on each repo row, with **its own confirm** (the same dialog, mode `gc`): "Run git gc in {repo}? It deletes unreachable git objects older
+  than an hour, so the deleted archives' space comes back. Don't run it while another git command is
+  writing in this repository." Primary **"Run git gc"**, Cancel first in focus.
+- **Never clean:** a repo on the never-clean list (or under a path on it) keeps its archives: the autopilot's expiry
+  skips it and deleting by hand is refused with a toast. An archive whose removed folder stood under such a path is
+  skipped too. The row of an archive with no stamp reads **age unknown** (also in the confirm list), never a dash.
+- **Autopilot:** the card says nothing about it; it is the setting **Expire archives automatically** (Settings →
+  Cleanup, off by default). The autopilot never deletes a ref otherwise.
+
+#### In-the-trash card (unit C, AC-C5)
+
+A strip under the Archives card (`data-testid="trash-card"`, `Trash2` icon). Line one, drawn when Harnu has
+verified entries still in the trash: **"{size} in the trash · {n} folders Harnu moved there"** and the Soft button
+**"Empty what Harnu moved to the trash ({size})"**. Line two, drawn when it has entries it can no longer check:
+11px `--text-3`, **"{size} moved to the trash by Harnu (can't check what's still there)"**, never added to line one.
+
+- It empties **only the exact entries Harnu created**. At trash time Harnu lists the trash before and after the move
+  and records the one new entry with a fingerprint (name, the record's date, inode and mtime, the folder's inode and
+  change time); "Empty" deletes an entry only while all of it still matches. It never matches by original path and
+  time: a folder the user restored and trashed again is theirs. Two new entries at once record nothing.
+- The confirm dialog (`CleanupExhaustDialog.vue`, mode `trash`) **lists the folders** (name, size) and the button
+  sends exactly their ids; anything trashed after the dialog opened is not in the list and stays. Title **"Empty
+  what Harnu moved to the trash?"**, "This permanently deletes {n} folders Harnu moved to the trash, {size}. Anything
+  else in your trash stays." Danger **"Empty {size}"**, Cancel first in focus. The autopilot never does this.
+- Where Harnu cannot empty it safely (macOS, Windows) the button is not drawn; a 11px `--text-3` line says "Harnu
+  can't empty it for you on this system. Open {location} and empty it there." The location is a path, or the
+  translated **Recycle Bin** on Windows (i18n, never a literal).
+- A skipped entry is said in the toast with its REAL cause, once per cause: its disk is not mounted or can't be read,
+  it is no longer what Harnu moved, or Harnu has no exact record of that move. When nothing was emptied the toast
+  says "Nothing was emptied: those folders are no longer in the trash", never "Emptied 0 B". An entry that changed
+  stays on the line-two list ("can't check"); only a missing one is forgotten.
+
 #### First-cycle banner
 
 `.fc`: `--accent-soft` fill, `--accent-line` border, radius 7, `padding: 12px 16px`, `Recycle` icon in
 `--accent`. Text 13px/500: "Found {n} ready items, {size} — enable autopilot?", 11px sub-line "The first cycle only
 reports; nothing is deleted until you turn it on." Buttons: **Enable autopilot** (the screen's one
-Primary) and **Not now** (Ghost). Enable calls `gc:ackFirstReport` **and** `gc:prefs:set({ autopilot: true })`.
+Primary) and **Not now** (Ghost). Enable calls `gc:prefs:set({ autopilot: true })` **and** `gc:ackFirstReport`.
 Ready blocks are dashed ("planned, not done"); the summary reads "autopilot off".
+
+**The promise (decided 2026-10-09, F1): the banner discloses, and Not now only snoozes.** The 11px
+sub-line states what the next cycle may clean (a cap, and today's count — a snapshot, not a promise) — "Enable it and the next cycle, in 40 min, will clean the
+ready items it finds then, up to 20 per cycle. Right now that is 2 items, 944 MB." (`snapshot.nextClean` is only
+today's count, the cap is the bound; same eligibility and order as a clean cycle); with no timer
+scheduled: "…its first cycle will clean … The background scan is off, so none is scheduled."). Enable is the
+informed consent, so it acknowledges. The acknowledgement also turns on the Docker housekeeping, so when the
+Docker category is on and Docker answered for at least one figure, the sub-line adds "It will also prune Docker
+build cache older than {n} days and dangling images."; with the category off or Docker silent it says nothing
+about Docker. **Not now** hides the banner for the session and acknowledges
+nothing; the ready blocks stay dashed. Turning the autopilot **on** from anywhere (banner or Settings)
+resets the acknowledgement in main, so the first cycle after enabling only reports. When the autopilot was
+turned on in Settings and has only reported, the same banner reads "Autopilot found {n} ready items, {size}"
+with "It has only reported so far." and the button **Allow cleaning**.
 
 #### First scan — never "All clean" before anything was scanned
 
@@ -8671,10 +10148,11 @@ nothing running and nothing needing attention. An optional hover popover (the fo
 
 The documented Toast with an optional description and an action link — no new variant.
 
-| Outcome         | Kind      | Title                                    | Action         |
-| --------------- | --------- | ---------------------------------------- | -------------- |
-| all ok          | `success` | `Freed {size} · {n} ready items cleaned` | "View journal" |
-| partial failure | `warning` | `{n} cleaned · {m} needs review`         | "Review"       |
+| Outcome                           | Kind      | Title                                                              | Action         |
+| --------------------------------- | --------- | ------------------------------------------------------------------ | -------------- |
+| all ok                            | `success` | `{freed split} · {n} ready items cleaned`                          | "View journal" |
+| all ok, removed from Needs review | `success` | `{freed split} · {n} items removed` (never "ready": they were not) | "View journal" |
+| partial failure                   | `warning` | `{n} cleaned · {m} needs review`                                   | "Review"       |
 
 The count behind **attention** is the items that need operator action: a failed item, or a refusal the
 operator did not choose. A refusal that is the operator's own setting (`kept`, `never-clean`) is not counted.
@@ -8736,6 +10214,10 @@ control-right rows with `SettingHint`). Groups, 16px apart, every control writin
   age** (days); and, instead of a volumes switch, a `--warning-soft` note: **Docker volumes are always
   kept** — cleaning a worktree never removes its volumes; they show up in Needs review as orphan volumes
   and each one is removed by hand — with "a removed volume cannot be restored" in `--warning`.
+- **Archives** — **Keep archives for** (days, default 30; `archiveKeepDays`) and **Expire archives
+  automatically** (toggle, off by default; `archiveAutoExpire`): when on, and only then, the autopilot deletes
+  the archive refs older than the retention (never `git gc`). The hint says the refs go, the git objects go
+  on git's next gc, and that a deleted archive cannot be restored.
 - **Never clean** — a list of absolute repo or worktree paths (`neverClean`), add/remove.
 - **Scan** (Reaper-only, kept): scan in the background, notify, never delete remote branches, protected
   branches, minimum age. These are not GC prefs and are not duplicated anywhere.
@@ -8748,6 +10230,8 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
 `CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` · `CleanupListView.vue` ·
 `CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
+`CleanupTranscriptsConfirmDialog.vue` · `CleanupDockerConfirmDialog.vue` · `lib/gc-orphans.ts` ·
+`CleanupArchivesCard.vue` · `CleanupExhaustDialog.vue` · `CleanupTrashCard.vue` ·
 `CleanupOpinionChip.vue` · `lib/gc-opinion.ts` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)
@@ -10003,6 +11487,156 @@ is no diff rather than reporting a count of zero.
 > direction. "Nothing was read" and "nothing is there" must never share a
 > sentence, a panel, or a receipt value.
 
+#### Review selection (ReviewSelectionBar.vue, T257)
+
+Spec: `docs/specs/2026-10-20-t257-review-selection.md` §3–§5, §7, §9 · PRD
+`docs/prds/T257-review-selection.md`. **One owner for the whole section**: U1 builds
+the gestures, the highlight and the bar; the delivery chip and the outcome rows below
+are written now and built in U2b, so the chip is reviewed once.
+
+**One live selection, never a list.** A selection is a range of rows inside one
+hunk, or a whole file. Selecting anything replaces it, so there is nothing to total
+(and no count to render — PRD D7). It lives in `stores/review-selection.ts`, not in
+`stores/review.ts`.
+
+**Gestures.** Every gesture lives on the row's **gutter**, which already carries
+`select-none`, so a drag in the code column is still an ordinary text selection for
+copy-paste and never starts a diff selection.
+
+| Gesture                               | Result                                                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Click a gutter                        | Select that row. Click the only selected row again to clear                                             |
+| Shift-click another gutter            | Extend to a range in the same hunk; clamp at the hunk edge and say so                                   |
+| Press and drag across gutters         | Extends exactly as shift-click does while the pointer is down. `Esc` mid-drag restores the previous one |
+| Arrow Up/Down on a focused gutter     | Move focus. **Shift+Arrow** extends. **Enter / Space** selects (again: clears). **Esc** clears          |
+| `Select file` button in a file header | Select the whole file. Pressed again, clear                                                             |
+
+The `⋯ N unchanged lines` marker and the `@@` label are not rows: no `role`, no
+handler, never a target.
+
+**Keyboard.** A diff has thousands of rows, so gutters are **not** all tab stops. They
+form one roving-`tabindex` group per file (one gutter is `tabindex="0"`, the rest
+`-1`); each gutter has `role="button"` and `aria-pressed`. The file button is a real
+`<button>` whose accessible name includes the path. Tab order: file header → viewed
+button → select-file button → that file's current gutter → next file. Focus uses the
+standard `focus-visible` accent ring, inset.
+
+**Visual state — no new token, no new keyframe.**
+
+- **Rows** — `.diff-row-selected` (`main.css`) paints `--color-accent-soft` as a
+  `background-image` gradient **over** the row's existing add/del `background-color`.
+  A gradient, not a replacing `background`: the tint is the semantic channel and has
+  to stay readable under the overlay.
+- **Gutter** — keeps its opaque `bg-surface-2` base (BUG-92: the sticky gutter stays
+  opaque or code shows through at any scroll offset), gets the same gradient and a
+  2px `inset` `--color-accent` bar on its left edge. The bar and `aria-pressed` are the
+  second channel: a selection is never colour alone (§2).
+- **Whole file** — the file header takes the same gradient and inset bar
+  (`.diff-file-selected`); the rows get no per-row tint, the header is the subject. On
+  a sensitive file the 2px warning bar (§ "Diff — file box") stays on top of the inset
+  bar; the gradient and `aria-pressed` still carry the state.
+- **Themes** — accent-soft must stay distinguishable over add/del rows in every theme;
+  the four light ones (`light`, `catppuccin-latte`, `github-light`, `gruvbox-light`) are
+  where it washes out first. Verified in at least `dark`, `github-light` and one more.
+
+**The selection bar.** A sibling of the diff split, the last child of the review body,
+`sticky -bottom-4 z-[4]`: `rounded border border-border bg-surface`, `px-3 py-2`,
+12px text, `shadow-pop` (it floats over the diff), `.anim-fade-in` on enter (§7).
+**`-bottom-4`, not `bottom-0`, on purpose:** a sticky child pins inside its scroller's
+padding, and the review body carries `pb-7` (28px), so `bottom-0` would hold the bar
+28px above the pane edge with the diff scrolling visibly through the gap; `-bottom-4`
+leaves it 12px off the edge. `z-[4]` puts it above the sticky file headers (`z-[2]`).
+**Never** inside the evidence header or the discrepancy strip — those are receipts,
+and this bar will eventually carry a conversation's delivery state. Layout, left to
+right: a 2px accent bar, the path (mono, truncating from the right, full path in
+`title`), the range text, then the actions, then the hint on a row of its own.
+
+- **Range text** — `L85` (one row), `L85–92` (same side), `old L85–92` (left side),
+  `old L85 – new L92` (mixed), `whole file`.
+- **Actions** — `Copy as text` (default `.btn`) and `Clear selection` (ghost), `h-26px`.
+  **There is no send button.** The selection is _reactive and silent_: while a review
+  companion is open, every change of the live selection (a click, a range, a drag, a file)
+  updates what the companion sees, after a 500 ms pause, latest wins. It never starts a
+  turn, never writes to the composer and never sends a message — the operator starts the
+  conversation in the companion (G-3 as amended: _Harnu never volunteers a message and never
+  writes to the composer; while a review companion is open it keeps the companion's view of
+  the operator's current diff selection up to date as a hidden context row through the mod
+  channel, never as a user turn_). While a turn is running in the companion the update is
+  held and only the latest is sent when that turn completes. `Clear selection` and `Esc`
+  clear the pane only: `main` composes a row from coordinates, so it cannot say "nothing is
+  selected", and a row already in the companion cannot be retracted (the band and the row
+  stay until the next selection). With **no companion open nothing is sent**, and a quiet
+  `text-3` line beside the buttons says why — `Open "Ask a fresh session" first` (no error
+  styling; the pane's own button is the next step). `Copy as text` needs no companion and no
+  mod; it is disabled only while the record says the head or base moved (the text would be
+  stale), and a successful copy flips its label to `Copied` for 2s.
+- **Hint** — transient, one line, `role="status"`, 11.5px `--text-3` (the same
+  size as the submit confirm's boundary line), on its own full-width row and
+  absent from layout while empty: `A range stays inside one hunk` after a clamp; `The head moved (a1b2c3d → e4f5a6b). Selection cleared.`
+  after a refresh moved the head (SHAs short, never ref names). With no selection and
+  a hint the bar shows the hint and a `Dismiss` button.
+- **Below ~1000px** (`NARROW_PX`, measured on the pane body) the bar wraps to two
+  rows — the subject on the first, the actions on the second. **No action hides.**
+  The chip and the hint take a full line with `basis-full` in the row layout **only**: in
+  the column layout (`flex-col flex-wrap`) a 100% basis is a height, and it pushed the chip
+  into a second, clipped column (seen live at a ~400px pane).
+- **No number but the line numbers.** The bar never renders a count, a ratio or a
+  percentage at any data combination (PRD D7, T243 AC-8).
+
+**Delivery chip and outcome rows (U2b).** One chip, for the **current** selection only,
+holding one state from a closed vocabulary, in the neutral `--text-2` tone for **every**
+state — no success colour, no dot, no icon: a green tick is a verdict the receipts cannot
+back (§8 "Review selection"). It answers one question — _does the companion see the
+selection that is on screen?_ — and nothing about the conversation:
+
+| State                                                                            | Chip text                                    |
+| -------------------------------------------------------------------------------- | -------------------------------------------- |
+| a change is waiting out the 500 ms pause, held for a running turn, or on its way | `Updating…`                                  |
+| delivered — and every state after it (a question asked, answered, stopped)       | `Companion sees this`                        |
+| the companion's conversation was cleared                                         | `The conversation was cleared` + `Try again` |
+| the companion was closed                                                         | `The companion was closed`                   |
+| a refusal or an outcome (spec §7)                                                | its closed sentence + next steps             |
+
+**Why `Asked` / `Answered` are gone from the bar.** In the reactive model nobody asks to
+send a selection, so "was it asked about, was it answered" no longer says anything about the
+selection's delivery — it describes the _conversation_, which is the companion's, and a
+completed turn read as a badge on the selection invites exactly the "reviewed" reading the
+chip must never earn (T245 PRD §2). The tracker's turn events still drive one thing the
+operator never sees as a word: an update is held while a turn runs. A failed send renders
+one closed sentence from spec §7 plus its next step (`Try again`, `Open Mods settings`,
+`Copy as text`, a fresh companion); **no text the mod or the model wrote ever reaches the
+DOM.** `Copy as text` is available in every failure state except a moved head or base.
+
+Decisions the build needed beyond what U1 wrote:
+
+- **The bar also shows a hint with no selection** (head moved) exactly as before; with no
+  selection and no hint it renders nothing — the chip lives with the live selection.
+- **The chip is one `text-2` line, plus at most one `text-3` reason line.** A refused send
+  with a reason (`Not connected to the Harnu mod`) adds the closed sentence from
+  `review.selection.noBinding.*` below it. No icon, dot or colour change.
+- **Next steps.** A step Harnu can perform from the bar is a ghost `.btn` after the chip:
+  `Try again`, `Open Mods settings` (opens Settings → Mods), `Clear and re-select`. A step
+  that lives elsewhere is plain `text-3` guidance naming the control, never a button that
+  pretends to do it: `Narrow the selection`, the pane's `Re-read the branch`, and
+  `Close this companion, then use “Ask a fresh session” in the review header`.
+  `Copy as text` is the persistent action in the row, not a repeated step.
+  **A refused `NO_BINDING` leads by its reason, not by main's one list:** the mod binds at
+  spawn, so `Open Mods settings` is offered only when the mod is actually off; a companion
+  that started without a mod that is now on (`not-claude`, `pre-disclosure`, no recorded
+  reason) gets the fresh-companion guidance instead, because Settings cannot fix it; a
+  Claude Code that is too old or unreadable gets neither (Copy stays).
+- **One range format, everywhere.** The bar, the chip and the guidance build range text with
+  the same function: `L85`, `L85–92`, `old L85–92`, `old L85 – new L92`, `whole file`. A range
+  whose two ends are on different sides is always spelled out in full; a same-side range that
+  merely crosses a changed block is `L7–12`, because it names new-file lines.
+- **A mixed-side range needs no note.** `main` reads the diff rows between a removed line and
+  an added line and quotes them (U2c), so the text it sends (and Copy as text) carries the
+  lines. The bar adds nothing beside the buttons or the chip for it: the range reads
+  `old L85 – new L92`, like any other.
+- **No second source of words.** Every sentence is a `review.selection.*` key picked by a
+  stable code; a code the renderer does not know falls back to
+  `review.selection.outcome.unknown`, never to the code or any text from main.
+
 ---
 
 ### Scheduler (takeover)
@@ -10060,9 +11694,26 @@ still catches it.
 `width: 300px; border-right border-border; bg-sidebar; overflow-y: auto` —
 the same shell as the sidebar itself, because a worker list reads like a
 second sidebar, not a table. Grouped under two `wgroup` headers (`24px`,
-`bg-surface`, 11px uppercase `--text-3`, `0.04em` tracking): **Enabled · {n}**
-then **Off · {n}** — off workers sink into their own group instead of
-interleaving, so a quiet list reads at a glance.
+`bg-surface`, 11px uppercase `--text-3`, `0.04em` tracking): **Pinned · {n}**
+(T483), then **Enabled · {n}**, then **Off · {n}** — off workers sink into
+their own group instead of interleaving, so a quiet list reads at a glance.
+
+**Pinned group (T483).** Holds every pinned worker, enabled or off, ordered by
+`pinnedAt` ascending (first pinned stays first — no drag-reorder in v1). A
+worker appears in exactly ONE group: pinning moves it out of Enabled/Off, so
+counts never double-count. A pinned **off** worker keeps its own row state —
+`off` label and the 55% dim — it just lives on top. The **Pinned** header is
+not rendered at all when nothing is pinned, so an uncurated Scheduler looks
+exactly as before. The default selection is the first visible row (the first
+pinned worker when any).
+
+**Collapsible Off group (T483).** The **Off · {n}** header is a `<button>`
+(same 24px / `bg-surface` / 11px uppercase `--text-3` strip) with a leading
+`ChevronDown` (11px, `--text-4`; rotated −90° when collapsed, `--dur-fast`
+`--ease`). Collapsed, only the header and its count remain. State is a
+per-viewer convenience in `localStorage` (`om2tab.scheduler.offCollapsed`,
+try/catch, default expanded). Collapsing never changes the selection: the
+detail stays on the selected worker even when its row is hidden.
 
 **Row anatomy** (`46px`, `padding: 0 10px 0 12px`, `border-bottom
 border-border`, `cursor: pointer`, `position: relative`):
@@ -10111,10 +11762,12 @@ the list column has no per-row rounding — would still shift every row's
 content box by its own width the instant it toggled on. The rail is a sibling
 layer instead, so selecting a row costs zero reflow.
 
-**Row actions — hover-revealed, two icon buttons.** `.wrow-actions { opacity:
+**Row actions — hover-revealed, three icon buttons.** `.wrow-actions { opacity:
 0; transition: opacity var(--dur) var(--ease) }`, revealed on `:hover` or
 `.is-hovered` (keyboard/touch parity, the same idiom every other hover-gated
-row action in this app follows): **Run now** (`Play`, `.iconbtn`) and
+row action in this app follows): **Pin / Unpin** (T483 — `Pin` when unpinned,
+`PinOff` when pinned, `.iconbtn`, `--text-3` at rest, `--text` on hover),
+**Run now** (`Play`, `.iconbtn`) and
 **Delete** (`Trash2`, `.iconbtn.is-danger` — `--text-3` at rest, `--red` on
 hover). `22×22px`, `hover:bg-surface-2`. The actions cluster and the state
 column share the same slot at the row's trailing edge; hovering (or the
@@ -10127,8 +11780,11 @@ column share the same slot at the row's trailing edge; hovering (or the
 
 - **Title row:** the worker's name (13px/600) + its mode badge (`observe`
   shown in the frozen spec → Badge **Accent**, §6 Badges) + a model·effort
-  badge (Badge **Default**, e.g. `haiku · low`) → spacer → **Run now**
-  (`btn-sm`) → the enable `ToggleSwitch`.
+  badge (Badge **Default**, e.g. `haiku · low`) → spacer → **Pin / Unpin**
+  (T483 — a 24×24 `.iconbtn`, `Pin` icon; pinned state is the filled-accent
+  variant: `--accent` icon on `bg-accent-soft` with a `border-accent-line`
+  border, so the detail tells the truth about the pin even when the row is
+  out of view) → **Run now** (`btn-sm`) → the enable `ToggleSwitch`.
 - **Tabs:** `Runs` / `Settings`, `border-bottom border-border`, the active tab
   underlined in `--accent` (`margin-bottom: -1px`, overlapping the row's own
   border) — the standard tab idiom, no new pattern.
@@ -11083,10 +12739,12 @@ it ran too long.**
 | ----------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hover row               | 100ms        | ease        | Background fade + scale 1.003                                                                                                                                                                             |
 | Select                  | 120ms        | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
+| Review selection bar    | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
 | Expand project          | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
 | Overlay (dialog/menu)   | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
 | Divider hover           | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
 | Pulse (active status)   | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
+| Agent activity pulse    | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
 | Terminal cursor         | 1s           | steps(1)    | Blinking accent block                                                                                                                                                                                     |
 | Chart bar (BI)          | `--dur`      | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
 | Copy button reveal      | `--dur-fast` | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
@@ -11259,6 +12917,20 @@ equal.** No artificial enthusiasm, no emoji, no exclamation marks.
   off reads the neutral "turned off by a setting or by your organization's policy", and
   anything else reads "the mod did not load". Never promise protection, and never imply
   the user did something wrong.
+- **Review selection** — short labels with no trailing period (`Clear selection`, `Copy as
+text`, `Dismiss`, and the clamp hint `A range stays inside one hunk`); complete sentences keep
+  theirs (`The head moved (a1b2c3d → e4f5a6b). Selection cleared.`). Line ranges are `L85–92`,
+  `old L85–92`, `old L85 – new L92`. The delivery chip is a **state, never a verdict**: it says
+  only whether the companion **sees** the selection on screen (`Updating…`, `Companion sees
+this`) — never that a question was asked or answered, and nothing is ever "reviewed", "done"
+  or "ok". `diff`, `hunk`, `head` and `base` stay untranslated. Also `Copied` (the Copy label
+  for 2s), `Couldn't copy to the clipboard`, `Open "Ask a fresh session" first` (quiet, no error
+  styling), `Use “Re-read the branch” in the review header` and `Close this companion, then use
+“Ask a fresh session” in the review header` (guidance that names a control Harnu cannot press
+  for the operator), and the fallback `Harnu couldn't complete that send`, which stands in for
+  any failure code this build does not know — a code or message from main is never shown. A
+  sentence that says what to do next is guidance in `text-3`, not a button, unless the bar can do
+  it itself.
 - **Mods audit chips** — facts in the form "can …": "can run processes", "can read every
   prompt". Never a verdict: no "safe", "verified", "trusted", "secure", "malicious" or
   "approved", in any language, and never a colour that grades a mod.

@@ -4,12 +4,15 @@ import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useHelpersStore } from '../stores/helpers'
 import { useLayoutStore } from '../stores/layout'
 import { useClaudeBootStore } from '../stores/claudeBoot'
+import { useFolderActions } from '../composables/useFolderActions'
 import { macWindowControlsInset } from '../lib/platform'
 import ActivityBell from './ActivityBell.vue'
 import MissionPill from './MissionPill.vue'
+import SplitMenu from './SplitMenu.vue'
 import {
   Terminal,
   Folder as FolderIcon,
@@ -32,6 +35,7 @@ import {
 
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const helpers = useHelpersStore()
 const layout = useLayoutStore()
 const boot = useClaudeBootStore()
@@ -79,6 +83,10 @@ const isOrchestrator = computed<boolean>(() => {
  * `true`. We focus the contenteditable title and immediately reset the flag
  * — the signal is single-shot, not a sticky toggle. See T-4.4 spec + the
  * Pinia ref pattern documented in `stores/ui.ts`.
+ *
+ * `flush: 'post'`: run from the command palette, the palette closes in the
+ * same tick and its focus trap restores the previously focused element in a
+ * pre-flush watcher. Focusing after that flush keeps the title focused.
  */
 watch(
   () => ui.requestRenameFocus,
@@ -86,7 +94,8 @@ watch(
     if (!focus) return
     titleEl.value?.focus()
     ui.requestRenameFocus = false
-  }
+  },
+  { flush: 'post' }
 )
 
 // Display title: the shared `sessionTitle` (BUG-78) — the same name the sidebar
@@ -155,69 +164,12 @@ function onTitleLeave(e: MouseEvent): void {
 }
 
 /**
- * Topbar Split button → spawn a fresh shell pane in the active session's split
- * stack. Clicking acts immediately (no dropdown): the only split action is
- * "new shell", so the menu was redundant. The shell's cwd is the selected
- * session's worktree path. No-op when nothing is selected.
+ * The per-folder actions behind the right-cluster buttons (Split, Browse files,
+ * Roadmap board, PR Stack, Open folder, Open in VS Code). Shared with their
+ * keyboard shortcuts in `App.vue` so both routes run the same code.
  */
-function onSplitClick(): void {
-  const wt = sessions.activeFolderPath
-  if (!wt) return
-  // T212 — with a folder selected there is no session split stack to attach to;
-  // `createFolderTerminal` is the folder-level equivalent and already exists.
-  if (!sessions.selectedSession) {
-    sessions.createFolderTerminal(wt)
-    return
-  }
-  helpers.addShellHelper(wt, wt)
-}
-
-/**
- * Topbar "Browse files" (Cluster D/E) → open the in-app project file-tree pane in
- * the active worktree's split stack, confined to that worktree's root. Dedup by
- * root means clicking again focuses the existing pane. No-op when nothing is
- * selected. This is the sole entry to markdown files now: clicking a `.md` row in
- * the pane opens it (Cluster E), and the pane's `+` creates a new one — both
- * replace the retired native OS dialogs (unusable on Linux/Wayland, where the XDG
- * portal ignores defaultPath and opens far from the project).
- */
-function onOpenExplorerClick(): void {
-  const wt = sessions.activeFolderPath
-  if (!wt) return
-  helpers.addExplorerHelper(wt, wt)
-}
-
-/**
- * The label the per-repo takeovers carry in their header — the folder's alias
- * when the operator set one, else its basename. Same resolution `FolderMenu`
- * uses, so both entry points title the view identically.
- */
-function folderLabel(path: string): string {
-  const f = sessions.findFolderByPath(path)
-  return f?.alias || path.replace(/\/+$/, '').split('/').pop() || path
-}
-
-/**
- * Topbar "Roadmap board" / "PR Stack" / "Review" → the three per-repo main-pane
- * takeovers, scoped to the SELECTED session's folder (design.md §6 "Topbar
- * per-repo view buttons"). Same views the folder's context menu opens; this only
- * removes the right-click-the-correct-row detour.
- *
- * These are TOGGLES (`ui.toggle*`, not `ui.open*`): the button that opened the
- * view closes it again, and while it's open the button carries an active state.
- * The context-menu entries stay `open*` — a menu item must open, never close.
- */
-function onRoadmapClick(): void {
-  const wt = sessions.activeFolderPath
-  if (!wt) return
-  ui.toggleRoadmap(wt, folderLabel(wt))
-}
-
-function onPrStackClick(): void {
-  const wt = sessions.activeFolderPath
-  if (!wt) return
-  ui.togglePrStack(wt, folderLabel(wt))
-}
+const folderActions = useFolderActions()
+const { folderLabel } = folderActions
 
 /**
  * T164 / PRD §9 Q3 — the review pane's first affordance outside `Cmd+Shift+D`.
@@ -268,36 +220,6 @@ function onNewSessionClick(): void {
   const wt = sessions.activeFolderPath
   if (!wt) return
   ui.openNewSession(wt)
-}
-
-/**
- * Topbar "Open folder" → reveal the selected session's worktree in the OS file
- * manager via the main process (`shell.openPath`). No-op when nothing is
- * selected. `openPath` resolves with an error string on failure (never throws).
- */
-function onOpenFolderClick(): void {
-  const wt = sessions.activeFolderPath
-  if (!wt) return
-  void window.api.openPath(wt)
-}
-
-/**
- * Topbar "Open in VS Code" → spawn `code <cwd>` in the main process. The IPC
- * resolves `{ ok, error? }` and never rejects; on failure (e.g. `code` isn't
- * resolvable anywhere the main process looks) we surface a toast instead of
- * failing silently. No-op when nothing is selected.
- */
-async function onOpenInVSCodeClick(): Promise<void> {
-  const wt = sessions.activeFolderPath
-  if (!wt) return
-  const res = await window.api.openInVSCode(wt)
-  if (!res.ok) {
-    ui.pushToast({
-      kind: 'danger',
-      title: t('topbar.openInVSCodeFailed'),
-      description: res.error ?? ''
-    })
-  }
 }
 
 /**
@@ -362,7 +284,12 @@ function onKeydown(e: KeyboardEvent): void {
     <button
       class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
       style="width: 26px; height: 26px; margin-left: -4px; -webkit-app-region: no-drag"
-      :title="layout.sidebarCollapsed ? $t('sidebar.show') : $t('sidebar.hide')"
+      :title="
+        keybindings.withChord(
+          layout.sidebarCollapsed ? $t('sidebar.show') : $t('sidebar.hide'),
+          'view.toggleSidebar'
+        )
+      "
       :aria-label="layout.sidebarCollapsed ? $t('sidebar.show') : $t('sidebar.hide')"
       @click="layout.toggleSidebar()"
     >
@@ -479,7 +406,7 @@ function onKeydown(e: KeyboardEvent): void {
           v-if="folderOnly"
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.newSessionHere')"
+          :title="keybindings.withChord($t('topbar.newSessionHere'), 'session.newInFolder')"
           :aria-label="$t('topbar.newSessionHere')"
           data-test="topbar-new-session"
           @click="onNewSessionClick"
@@ -496,11 +423,11 @@ function onKeydown(e: KeyboardEvent): void {
               : 'text-text-3 hover:bg-surface hover:text-text'
           "
           style="width: 26px; height: 26px"
-          :title="$t('topbar.roadmapBoard')"
+          :title="keybindings.withChord($t('topbar.roadmapBoard'), 'view.roadmap')"
           :aria-label="$t('topbar.roadmapBoard')"
           :aria-pressed="roadmapActive"
           data-test="topbar-roadmap"
-          @click="onRoadmapClick"
+          @click="folderActions.toggleRoadmap()"
         >
           <KanbanSquare :size="14" :stroke-width="1.5" />
         </button>
@@ -512,11 +439,11 @@ function onKeydown(e: KeyboardEvent): void {
               : 'text-text-3 hover:bg-surface hover:text-text'
           "
           style="width: 26px; height: 26px"
-          :title="$t('topbar.prStack')"
+          :title="keybindings.withChord($t('topbar.prStack'), 'view.prStack')"
           :aria-label="$t('topbar.prStack')"
           :aria-pressed="prStackActive"
           data-test="topbar-pr-stack"
-          @click="onPrStackClick"
+          @click="folderActions.togglePrStack()"
         >
           <GitPullRequest :size="14" :stroke-width="1.5" />
         </button>
@@ -530,7 +457,7 @@ function onKeydown(e: KeyboardEvent): void {
               : 'text-text-3 hover:bg-surface hover:text-text'
           "
           style="width: 26px; height: 26px"
-          :title="$t('topbar.review')"
+          :title="keybindings.withChord($t('topbar.review'), 'view.review')"
           :aria-label="$t('topbar.review')"
           :aria-pressed="reviewActive"
           data-test="topbar-review"
@@ -541,20 +468,20 @@ function onKeydown(e: KeyboardEvent): void {
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.openFolder')"
+          :title="keybindings.withChord($t('topbar.openFolder'), 'folder.openInFileManager')"
           :aria-label="$t('topbar.openFolder')"
           data-test="topbar-open-folder"
-          @click="onOpenFolderClick"
+          @click="folderActions.openInFileManager()"
         >
           <FolderOpen :size="14" :stroke-width="1.5" />
         </button>
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.openInVSCode')"
+          :title="keybindings.withChord($t('topbar.openInVSCode'), 'folder.openInVSCode')"
           :aria-label="$t('topbar.openInVSCode')"
           data-test="topbar-vscode"
-          @click="onOpenInVSCodeClick"
+          @click="folderActions.openInVSCode()"
         >
           <Code :size="14" :stroke-width="1.5" />
         </button>
@@ -564,7 +491,7 @@ function onKeydown(e: KeyboardEvent): void {
           v-if="githubPullsUrl"
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.githubPulls')"
+          :title="keybindings.withChord($t('topbar.githubPulls'), 'folder.openGithubPulls')"
           :aria-label="$t('topbar.githubPulls')"
           data-test="topbar-github-pulls"
           @click="onGithubPullsClick"
@@ -574,23 +501,25 @@ function onKeydown(e: KeyboardEvent): void {
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.openExplorer')"
+          :title="keybindings.withChord($t('topbar.openExplorer'), 'folder.browseFiles')"
           :aria-label="$t('topbar.openExplorer')"
           data-test="topbar-explorer"
-          @click="onOpenExplorerClick"
+          @click="folderActions.browseFiles()"
         >
           <FolderTree :size="14" :stroke-width="1.5" />
         </button>
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.split')"
+          :title="keybindings.withChord($t('topbar.split'), 'folder.newTerminal')"
           :aria-label="$t('topbar.split')"
           data-test="topbar-split"
-          @click="onSplitClick"
+          @click="folderActions.newTerminal()"
         >
           <Terminal :size="14" :stroke-width="1.5" />
         </button>
+        <!-- T564 U1: the Split dropdown — Terminal (the button above) or a Browser pane. -->
+        <SplitMenu @terminal="folderActions.newTerminal()" @browser="folderActions.newBrowser()" />
         <!-- Right helper-panel toggle (design.md §6 — Colapsar sidebars). Only
              shown when the worktree HAS panes (nothing to toggle otherwise); it
              stays visible while collapsed so the panel is always reopenable. -->
@@ -598,7 +527,12 @@ function onKeydown(e: KeyboardEvent): void {
           v-if="helpers.hasHelpersForCurrentWorktree"
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="layout.helperCollapsed ? $t('helperStack.show') : $t('helperStack.hide')"
+          :title="
+            keybindings.withChord(
+              layout.helperCollapsed ? $t('helperStack.show') : $t('helperStack.hide'),
+              'view.toggleHelper'
+            )
+          "
           :aria-label="layout.helperCollapsed ? $t('helperStack.show') : $t('helperStack.hide')"
           @click="layout.toggleHelper()"
         >

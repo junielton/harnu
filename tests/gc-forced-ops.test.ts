@@ -14,6 +14,7 @@ import {
   type StackGroup
 } from '../src/main/containers/containers-core'
 import { bundle, DAY, NOW, reapItem } from './gc-fixtures'
+import { formatArchiveStamp } from '../src/main/reaper/archive-core'
 
 const WT = '/ws/org/proj/worktrees/PROJ-0000-slug'
 const TIP = 'a'.repeat(40)
@@ -76,6 +77,7 @@ function rig(
     presence?: SessionPresence
     head?: string | null
     archiveWipThrows?: boolean
+    archiveReflogThrows?: boolean
     trackedDirty?: boolean
   } = {}
 ): Rig {
@@ -106,6 +108,11 @@ function rig(
       if (over.archiveWipThrows) throw new Error('disk full')
       archived.push(ref)
       return ref
+    },
+    archiveReflog: async (_repo, prefix) => {
+      order.push('archiveReflog')
+      if (over.archiveReflogThrows) throw new Error('reflog-limit: too many')
+      return [`${prefix}/aaaaaaaaaaaa`]
     },
     detachSidebar: async () => undefined,
     canUnregister: async () => true,
@@ -232,6 +239,90 @@ describe('the forced path archives before anything destructive (AC-8)', () => {
     const result = await run(noBranch, r)
     expect(result.ok).toBe(false)
     expect(result.error).toContain('nothing would preserve')
+    expect(r.order).toEqual([])
+  })
+})
+
+describe('a detached worktree is archived by its HEAD sha, then removed (NDE-A, AC-A1/A2)', () => {
+  const HEAD_NS = `refs/archive/detached/${formatArchiveStamp(NOW)}/PROJ-0000-slug-${TIP.slice(0, 12)}`
+
+  /** A review bundle the scan called detached: no branch, the checked-out commit is its tip. */
+  const detachedBundle = (): WorktreeBundle =>
+    reviewBundle({
+      reason: { code: 'detached', detail: 'x' },
+      item: reapItem(WT, {
+        kind: 'detached-worktree',
+        branch: undefined,
+        headSha: TIP,
+        verdict: 'blocked',
+        blockers: ['detached-head'],
+        justifiedBy: null
+      })
+    })
+
+  it('writes the sha-keyed tip and wip before anything destructive, with no branch command', async () => {
+    const r = rig()
+    const result = await run(detachedBundle(), r)
+    expect(result).toMatchObject({ ok: true, haltedAt: null })
+    const at = (what: string): number => r.order.indexOf(what)
+    expect(at('archiveTip')).toBeGreaterThanOrEqual(0)
+    expect(at('archiveWip')).toBeGreaterThan(at('archiveTip'))
+    for (const destructive of ['docker stop', 'docker rm', 'removeDir', 'trash']) {
+      expect(at(destructive), destructive).toBeGreaterThan(at('archiveWip'))
+    }
+    // The reprobe wrote them, the executor's own archive step rewrote the very same two.
+    expect(r.archived).toEqual([
+      `${HEAD_NS}/tip`,
+      `${HEAD_NS}/wip`,
+      `${HEAD_NS}/tip`,
+      `${HEAD_NS}/wip`
+    ])
+    expect(r.git.filter((a) => a[0] === 'branch')).toEqual([])
+    expect(r.tombstones[0]).toMatchObject({
+      kind: 'detached-worktree',
+      branch: null,
+      archiveTipRef: `${HEAD_NS}/tip`,
+      archiveWipRef: `${HEAD_NS}/wip`
+    })
+  })
+
+  it('a reflog refusal stops the run before ANY archive ref is written (delta-3)', async () => {
+    const r = rig({ archiveReflogThrows: true })
+    const result = await run(detachedBundle(), r)
+    expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe' })
+    expect(result.error).toContain('archive-failed: reflog-limit')
+    expect(r.order).toEqual(['archiveReflog'])
+    expect(r.archived).toEqual([])
+  })
+
+  it('also archives the reflog-only commits in the reprobe, before anything destructive (delta-1, item 6)', async () => {
+    const r = rig()
+    await run(detachedBundle(), r)
+    const at = (what: string): number => r.order.indexOf(what)
+    // first: a reflog refusal (too many commits) must leave no tip or wip ref behind
+    expect(at('archiveReflog')).toBeGreaterThanOrEqual(0)
+    expect(at('archiveReflog')).toBeLessThan(at('archiveTip'))
+    for (const destructive of ['docker stop', 'docker rm', 'removeDir', 'trash']) {
+      expect(at(destructive), destructive).toBeGreaterThan(at('archiveReflog'))
+    }
+  })
+
+  it('refuses without touching docker or the disk when the archive fails', async () => {
+    const r = rig({ archiveWipThrows: true })
+    const result = await run(detachedBundle(), r)
+    expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe' })
+    expect(result.error).toContain('archive-failed: disk full')
+    for (const destructive of ['docker stop', 'docker rm', 'removeDir', 'trash']) {
+      expect(r.order, destructive).not.toContain(destructive)
+    }
+  })
+
+  it('refuses a detached worktree whose scan recorded no HEAD: nothing would preserve it', async () => {
+    const r = rig()
+    const noHead = detachedBundle()
+    noHead.item = { ...noHead.item, headSha: null }
+    const result = await run(noHead, r)
+    expect(result.ok).toBe(false)
     expect(r.order).toEqual([])
   })
 })

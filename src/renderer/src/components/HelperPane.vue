@@ -20,6 +20,11 @@ import { Terminal } from '@xterm/xterm'
 interface LiveHelper {
   term: Terminal
   ptyId: string
+  /**
+   * Set for an agent terminal (T474): main owns its PTY, so unload and removal never destroy it
+   * from here — see `releaseHelperPty`.
+   */
+  terminalId?: string
   /** IPC `onPtyData` / `onPtyExit` disposers — kept across detach so the PTY
    * keeps streaming into the xterm buffer while the pane is hidden. */
   ioDisposers: Array<() => void>
@@ -74,10 +79,17 @@ import {
   X,
   type LucideIcon
 } from 'lucide-vue-next'
-import { registerFocusedPane, unregisterFocusedPane } from '../composables/useTerminalFocus'
+import {
+  registerFocusedPane,
+  unregisterFocusedPane,
+  useFocusRegion
+} from '../composables/useTerminalFocus'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { DEFAULT_TERMINAL_FONT_SIZE, useSettingsStore } from '../stores/settings'
-import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
+import { useHelpersStore, isAgentTerminalPane, type AnyHelperPane } from '../stores/helpers'
+import { adoptTerminal } from '../lib/adopt-pty'
+import { releaseHelperPty } from '../lib/helper-pty-release'
 import { paneRegistry, type HelperPtyKind } from '../lib/pane-registry'
 import { useThemeStore } from '../stores/theme'
 import { ensureTerminalFontLoaded, measureCells, measureXtermCells } from '../lib/terminalMetrics'
@@ -85,6 +97,7 @@ import { themeFromCss } from '../lib/terminalTheme'
 import { installTerminalKeymap } from '../lib/terminalKeymap'
 import { composeReviewCorrective, type ReviewCorrective } from '../../../main/review-corrective'
 import { registerFileLinkProvider } from '../lib/terminal-file-links'
+import AgentConnectionChip from './AgentConnectionChip.vue'
 
 /**
  * Per-helper xterm host. One instance per pane in the right-side split
@@ -130,10 +143,24 @@ const emit = defineEmits<{ headerMouseDown: [ev: MouseEvent] }>()
 
 const { t: i18n } = useI18n()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const settings = useSettingsStore()
 const helpers = useHelpersStore()
 const theme = useThemeStore()
 const hostRef = useTemplateRef<HTMLDivElement>('host')
+const rootRef = useTemplateRef<HTMLDivElement>('root')
+// T486 U5b — a region of the pane focus ring: F6 focuses the terminal (or the
+// root while its terminal is not live yet), `pane.close` runs the header X's close.
+// The root itself draws the design.md §6 "Pane focus" outline only while IT holds
+// focus (`focus:`, not `focus-within:`): a focused xterm shows its cursor instead.
+useFocusRegion(props.pane.id, rootRef, {
+  focus: () => {
+    const live = liveHelpers.get(props.pane.id)
+    if (live) live.term.focus()
+    else rootRef.value?.focus()
+  },
+  close: onClose
+})
 
 // WebLinksAddon's default handler calls `window.open()` with no URL, which
 // Electron's `setWindowOpenHandler` always denies (about:blank isn't
@@ -299,7 +326,7 @@ function disposeLiveHelper(live: LiveHelper, paneId: string): void {
   }
   live.ioDisposers = []
   try {
-    window.api.ptyDestroy(live.ptyId)
+    releaseHelperPty(live, window.api)
   } catch {
     /* already dead */
   }
@@ -311,10 +338,12 @@ function disposeLiveHelper(live: LiveHelper, paneId: string): void {
 }
 
 /**
- * Window-unload disposer: kill every live helper PTY and dispose its xterm.
- * Unlike `TerminalPane` there is no re-adoption path for helper PTYs across a
- * renderer reload, so leaving them running would orphan them. Bound once (see
- * `unloadHandlerRegistered`) and covers every cached pane.
+ * Window-unload disposer: dispose every live helper xterm, and kill the PTY of each one the
+ * operator opened. Unlike `TerminalPane` there is no re-adoption path for those across a
+ * renderer reload, so leaving them running would orphan them. An agent terminal's PTY is
+ * main's: it stays alive, main re-announces its pane on `renderer:ready`, and the new pane
+ * adopts it (T474 §8 case 11). Bound once (see `unloadHandlerRegistered`) and covers every
+ * cached pane.
  */
 function onBeforeUnload(): void {
   for (const [paneId, live] of liveHelpers) {
@@ -378,23 +407,32 @@ async function createLiveHelper(
   const kind = paneKindToPtyKind(props.pane)
   const claudeSessionId = paneClaudeSessionId(props.pane)
 
+  // T474: an agent terminal's PTY already exists (main spawned it at `spawn_terminal`), so the
+  // pane adopts it instead of creating one — a second PTY here would orphan the first.
+  const agentTerminal = isAgentTerminalPane(props.pane) ? props.pane : undefined
+
   let ptyId: string
   try {
-    ptyId = await window.api.ptyCreate({
-      kind,
-      cwd: props.pane.cwd,
-      cols: term.cols,
-      rows: term.rows,
-      claudeSessionId,
-      // T245: read from the REGISTRY, not from a `type === 'review-companion'`
-      // literal here — the pane type is what knows it is read-only, and a
-      // future read-only type must not have to remember this call site.
-      readOnly: paneRegistry[props.pane.type]?.readOnly === true,
-      // T247: what the read-only stranger is told about the review it is sitting
-      // beside. Pane DATA, so it is read off the pane rather than the registry —
-      // a registry entry describes a type, and this differs per companion.
-      reviewCorrective: paneReviewCorrective(props.pane)
-    })
+    ptyId = agentTerminal
+      ? agentTerminal.ptyId
+      : await window.api.ptyCreate({
+          kind,
+          cwd: props.pane.cwd,
+          cols: term.cols,
+          rows: term.rows,
+          claudeSessionId,
+          // T245: read from the REGISTRY, not from a `type === 'review-companion'`
+          // literal here — the pane type is what knows it is read-only, and a
+          // future read-only type must not have to remember this call site.
+          readOnly: paneRegistry[props.pane.type]?.readOnly === true,
+          // T247: what the read-only stranger is told about the review it is sitting
+          // beside. Pane DATA, so it is read off the pane rather than the registry —
+          // a registry entry describes a type, and this differs per companion.
+          reviewCorrective: paneReviewCorrective(props.pane),
+          // T481: an operator-opened shell registers under its pane id, so an agent can read it
+          // once the folder opts in. Every other pane type is not a terminal.
+          ...(props.pane.type === 'shell' ? { terminal: { terminalId: props.pane.id } } : {})
+        })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     ui.pushToast({
@@ -409,6 +447,7 @@ async function createLiveHelper(
   const live: LiveHelper = {
     term,
     ptyId,
+    ...(agentTerminal ? { terminalId: agentTerminal.terminalId } : {}),
     ioDisposers: [],
     resizeObserver: null,
     focusCleanup: null
@@ -429,23 +468,45 @@ async function createLiveHelper(
     })
   )
 
+  if (agentTerminal?.exited) {
+    // The PTY ended before the operator ever looked (T474 §8 case 5): there is nothing to adopt.
+    // Paint what it last printed and say it ended, then leave the pane for the operator to read
+    // and close. The stale toast was already raised when the exit happened.
+    if (agentTerminal.exited.snapshot) term.write(agentTerminal.exited.snapshot)
+    term.write(`\r\n\x1b[2m[${i18n('helperPane.processExited')}]\x1b[0m\r\n`)
+    liveHelpers.set(paneId, live)
+    attachResizeObserver(live, host)
+    live.focusCleanup = installFocusListeners(live, paneId)
+    return live
+  }
+
   // Data wiring — single-channel pty:data multiplexer is in preload; the
   // returned disposer removes our callback from the per-id Set. Kept on
   // `ioDisposers` so it survives detach (the PTY keeps filling the buffer).
-  live.ioDisposers.push(
-    window.api.onPtyData(ptyId, (data) => {
-      term.write(data)
-    })
-  )
-  // Exit handling lives in the store: a deliberate exit (the user typed
-  // `exit` / Ctrl-D / quit Claude) auto-closes the pane instead of parking it
-  // on a dead `[session ended]` line; an exit inside the first 2 s surfaces the
-  // stale-session toast and keeps the pane. The returned disposer is kept on
-  // `ioDisposers` so an explicit close (X button) tears the watch down too.
-  live.ioDisposers.push(helpers.watchPaneForExit(props.worktreePath, paneId, ptyId))
+  if (agentTerminal) {
+    // Adopt: subscribe first, replay, dedupe (see `adoptTerminal`). The store armed this
+    // terminal's exit watch when its pane landed, so none is wired here. `adoptTerminal` also
+    // wires the pane's input and keeps its xterm's query replies out of the PTY while the
+    // replay parses (main's screen model already answered those, spec §5.4).
+    live.ioDisposers.push(await adoptTerminal(window.api, ptyId, term))
+    // Main spawned it at 120x30; tell it the size this pane really has.
+    window.api.ptyResize(ptyId, term.cols, term.rows)
+  } else {
+    live.ioDisposers.push(
+      window.api.onPtyData(ptyId, (data) => {
+        term.write(data)
+      })
+    )
+    // Exit handling lives in the store: a deliberate exit (the user typed
+    // `exit` / Ctrl-D / quit Claude) auto-closes the pane instead of parking it
+    // on a dead `[session ended]` line; an exit inside the first 2 s surfaces the
+    // stale-session toast and keeps the pane. The returned disposer is kept on
+    // `ioDisposers` so an explicit close (X button) tears the watch down too.
+    live.ioDisposers.push(helpers.watchPaneForExit(props.worktreePath, paneId, ptyId))
+  }
 
   // Match TerminalPane's call style: positional args, not an object payload.
-  term.onData((data) => window.api.ptyWrite(ptyId, data))
+  if (!agentTerminal) term.onData((data) => window.api.ptyWrite(ptyId, data))
   term.onResize(({ cols, rows }) => window.api.ptyResize(ptyId, cols, rows))
 
   // Clipboard, word/char-delete, and font-size chords (design.md §6) — same
@@ -684,6 +745,11 @@ const paneIcon = computed<LucideIcon>(() => {
  * whether the thing beside the diff can change the diff is exactly the
  * uncertainty this feature exists to remove.
  */
+/** The pane as an agent terminal (T474), or null for an operator-opened one. */
+const agentTerminalPane = computed(() =>
+  isAgentTerminalPane(props.pane) && props.pane.origin === 'agent' ? props.pane : null
+)
+
 const isReviewCompanion = computed<boolean>(() => props.pane.type === 'review-companion')
 
 /**
@@ -748,7 +814,10 @@ function onPromote(): void {
     the grid still sizes correctly below the bar.
   -->
   <div
-    class="relative h-full w-full overflow-hidden bg-bg"
+    ref="root"
+    class="no-default-ring relative h-full w-full overflow-hidden bg-bg focus:outline focus:outline-1 focus:-outline-offset-1 focus:outline-accent-line"
+    tabindex="-1"
+    :data-focus-region="pane.id"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"
@@ -771,7 +840,7 @@ function onPromote(): void {
       </span>
     </div>
     <header
-      class="absolute inset-x-0 top-0 z-10 flex h-6 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
+      class="@container absolute inset-x-0 top-0 z-10 flex h-6 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
       :class="
         resizable ? 'cursor-row-resize border-t border-t-border-2 hover:border-t-accent-line' : ''
       "
@@ -824,11 +893,25 @@ function onPromote(): void {
       <template v-else>
         <component :is="paneIcon" :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
         <span class="min-w-0 flex-1 truncate" :title="pane.cwd">{{ paneName }}</span>
+        <!-- T474 U1: who is connected to this terminal, what they are doing, and Disconnect.
+             Shell panes only: the chip renders nothing unless an agent can reach the terminal. -->
+        <AgentConnectionChip
+          v-if="pane.type === 'shell'"
+          :terminal-id="pane.id"
+          :origin="agentTerminalPane ? 'agent' : undefined"
+          :owner-session-id="agentTerminalPane?.ownerSessionId ?? null"
+          :exited="!!agentTerminalPane?.exited"
+        />
       </template>
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
+        :title="
+          keybindings.withChord(
+            isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize'),
+            'pane.toggleMaximize'
+          )
+        "
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         @mousedown.stop
         @click="onToggleMaximize"
@@ -839,7 +922,7 @@ function onPromote(): void {
       <button
         class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="$t('helperPane.close')"
+        :title="keybindings.withChord($t('helperPane.close'), 'pane.close')"
         :aria-label="$t('helperPane.close')"
         @mousedown.stop
         @click="onClose"

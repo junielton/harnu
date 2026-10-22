@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { writeFileSync } from 'node:fs'
 import {
   foldFleetTelemetry,
+  LAST_KNOWN_RETENTION_MS,
   TELEMETRY_TTL_MS,
   type FleetTelemetry,
   type SessionTelemetry
@@ -23,7 +24,14 @@ import { compose, mergePart, type CompanionPart } from './telemetry-compose-core
  */
 
 export interface TelemetryPayload {
+  /** LIVE records only: updated within {@link TELEMETRY_TTL_MS}. */
   perSession: SessionTelemetry[]
+  /**
+   * Records older than the TTL, kept (up to {@link LAST_KNOWN_RETENTION_MS}) so the footer can show
+   * a session's last known values, dimmed and aged, instead of going blank (BUG-196). Never to be
+   * presented as live and never part of `fleet`.
+   */
+  lastKnown: SessionTelemetry[]
   fleet: FleetTelemetry
 }
 
@@ -75,12 +83,24 @@ export function createTelemetryStore(deps: TelemetryStoreDeps): TelemetryStore {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
   let cacheTimer: ReturnType<typeof setTimeout> | null = null
 
-  const payload = (): TelemetryPayload => ({
-    perSession: [...telemetry.values()],
-    fleet: foldFleetTelemetry(telemetry, deps.now())
-  })
+  const payload = (): TelemetryPayload => {
+    const now = deps.now()
+    const perSession: SessionTelemetry[] = []
+    const lastKnown: SessionTelemetry[] = []
+    for (const t of telemetry.values()) {
+      if (now - t.updatedAtMs <= TELEMETRY_TTL_MS) perSession.push(t)
+      else if (now - t.updatedAtMs <= LAST_KNOWN_RETENTION_MS) lastKnown.push(t)
+    }
+    return { perSession, lastKnown, fleet: foldFleetTelemetry(telemetry, now) }
+  }
 
-  const serialize = (): string => JSON.stringify([...telemetry.values()])
+  /** Persisted: every record still inside the last-known retention, expired ones included. */
+  const serialize = (): string => {
+    const now = deps.now()
+    return JSON.stringify(
+      [...telemetry.values()].filter((t) => now - t.updatedAtMs <= LAST_KNOWN_RETENTION_MS)
+    )
+  }
 
   function scheduleCacheWrite(): void {
     if (cacheTimer) clearTimeout(cacheTimer)
@@ -166,10 +186,11 @@ export function createTelemetryStore(deps: TelemetryStoreDeps): TelemetryStore {
     },
 
     /**
-     * Seed the maps from the persisted cache (TTL-filtered). Without this every restart blanked
-     * the per-session HUD until each session's NEXT turn. A restored record stands in for the
-     * statusLine's, so a lease loss falls back to the last known values; the companion groups
-     * re-prove after the re-hello.
+     * Seed the maps from the persisted cache. Without this every restart blanked the per-session
+     * HUD until each session's NEXT turn. Records past the TTL are restored too (up to the
+     * last-known retention) but are served only as `lastKnown`, never as live. A restored record
+     * stands in for the statusLine's, so a lease loss falls back to the last known values; the
+     * companion groups re-prove after the re-hello.
      */
     async hydrate() {
       const path = deps.cachePath()
@@ -182,7 +203,7 @@ export function createTelemetryStore(deps: TelemetryStoreDeps): TelemetryStore {
           if (!entry || typeof entry !== 'object') continue
           const t = entry as SessionTelemetry
           if (typeof t.sessionId !== 'string' || typeof t.updatedAtMs !== 'number') continue
-          if (now - t.updatedAtMs > TELEMETRY_TTL_MS) continue
+          if (now - t.updatedAtMs > LAST_KNOWN_RETENTION_MS) continue
           telemetry.set(t.sessionId, t)
           statusline.set(t.sessionId, t)
         }

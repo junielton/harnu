@@ -102,6 +102,20 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     return worker
   }
 
+  /**
+   * T483: pin or unpin. Flips the worker locally first so it moves groups at once, then adopts
+   * what main returns (main stamps `pinnedAt`, and is the only door that moves it).
+   */
+  async function setPinned(id: string, pinned: boolean): Promise<void> {
+    workers.value = workers.value.map((w) => {
+      if (w.id !== id) return w
+      const { pinnedAt: _old, ...rest } = w
+      void _old
+      return pinned ? { ...rest, pinnedAt: w.pinnedAt ?? Date.now() } : rest
+    })
+    workers.value = await window.api.schedulerSetPinned(id, pinned)
+  }
+
   async function remove(id: string): Promise<void> {
     saveTimers.get(id) && clearTimeout(saveTimers.get(id))
     saveTimers.delete(id)
@@ -137,6 +151,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     save,
     flush,
     create,
+    setPinned,
     remove,
     runNow,
     stop,

@@ -16,7 +16,7 @@
 import * as path from 'node:path'
 import * as os from 'node:os'
 import { promises as fs, constants as fsConstants } from 'node:fs'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import { MCP_TOOLS, type McpOp, type McpToolDef } from './tool-catalog'
@@ -50,11 +50,67 @@ import {
 import type { PrEntry } from '../pr-stack-core'
 import { getScreenStates, getShellSessions } from '../detect/screen-detect'
 import {
+  createTerminalPty,
+  discardTerminalPty,
+  ensureTerminalScreenModel,
   liveSessionKeys,
   sessionOwnedByHarnu,
   spawnOriginForSession,
-  waitForSessionReady
+  waitForSessionReady,
+  writeTerminalPty
 } from '../pty'
+import {
+  AGENT_TERMINAL_SIZE,
+  MAX_AGENT_TERMINALS_PER_FOLDER,
+  terminalRegistry
+} from '../terminal-registry'
+import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
+import { readAgentTerminalWrites } from './prefs'
+import { beginPaneVerb, runWithRevival, withRevivedFlag } from '../browser/verbs-core'
+import {
+  browserRegistry,
+  makeBrowserActDeps,
+  makeBrowserDeviceDeps,
+  makeBrowserReadDeps,
+  makeBrowserVerbDeps
+} from '../browser/browser-service'
+import { clickVerb, evalVerb, fillVerb, pressVerb, typeVerb } from '../browser/act-verbs'
+import { downloadVerb, emulateVerb, uploadVerb } from '../browser/device-verbs'
+import type { ConsoleLevel } from '../browser/console-buffer'
+import {
+  consoleVerb,
+  networkVerb,
+  screenshotVerb,
+  snapshotVerb,
+  waitForVerb
+} from '../browser/read-verbs'
+import { closeVerb, listVerb, navigateVerb, openVerb } from '../browser/verbs-core'
+import { patchVerb, setDataVerb } from '../browser/page-verbs'
+import { resolveTerminalGate } from '../terminal-gate'
+import { terminalLeases } from '../terminal-lease'
+import { scrubTerminalText } from '../scrub-terminal'
+import { paneSplitFor } from '../terminal-lifecycle'
+import { buildSend } from '../terminal-keys'
+import {
+  SETTLE_CAP_MS,
+  settleAfterSend,
+  terminalWriteQueue,
+  writeSegments
+} from '../terminal-write-queue'
+import { BARRIER_TIMEOUT_MS } from '../terminal-screen'
+import {
+  matchSurface,
+  redactMatch,
+  TIMEOUT_DEFAULT_MS,
+  waitForOutput,
+  type WaitSpec
+} from '../terminal-wait'
+import {
+  TERMINAL_NOTE,
+  pruneScreenModels,
+  type ReadMode,
+  type ReadOptions
+} from '../terminal-screen'
 import { peerAddressForSession, sendPeerMessage } from '../messaging'
 import {
   activityDescription,
@@ -105,6 +161,8 @@ import {
   buildFleetSnapshot,
   buildMissionFleetProjection,
   filterFleetSnapshot,
+  terminalsOfSession,
+  toTerminalListing,
   type FleetFolderInput,
   type MissionChildState,
   type FleetSessionInput,
@@ -119,7 +177,7 @@ import {
 } from '../worktree-ipc'
 import { toWorktreeListing } from '../worktree-core'
 import { provisionErrorPayload, WorktreeProvisionError } from '../worktree-manifest'
-import { readUserProjects } from '../user-projects'
+import { readUserProjects, terminalReadOptIns } from '../user-projects'
 import {
   appendMemoryEntry,
   queryMemory,
@@ -260,6 +318,11 @@ export interface ToolHandlerCtx {
    * `server.ts`'s `parkMutationConfirm`/`runOptsFor` for how these are built.
    */
   opts?: {
+    /**
+     * T474 B6: the call was let through by the operator's write lease (the ask-mode path). The
+     * handler checks that lease again right before it writes, for any terminal origin.
+     */
+    viaLease?: boolean
     worktreeInherit?: { optedOut: boolean }
     manifest?: {
       resolved: ManifestCardDisclosure[]
@@ -547,7 +610,12 @@ const getSessionHandler: Handler = async (args, ctx) => {
     const inFlightFolder = inFlightFolderFor(sessionId)
     if (inFlightFolder) {
       return textResult({
-        session: { sessionId, status: 'spawning', folderAlias: path.basename(inFlightFolder) },
+        session: {
+          sessionId,
+          status: 'spawning',
+          folderAlias: path.basename(inFlightFolder),
+          terminals: sessionTerminals(sessionId, ctx)
+        },
         preview: ''
       })
     }
@@ -568,7 +636,22 @@ const getSessionHandler: Handler = async (args, ctx) => {
   const found = ctx.folders.flatMap((f) => f.sessions).find((s) => s.sessionId === sessionId)
   const raw = found ? [found.firstPrompt, found.summary].filter(Boolean).join('\n') : ''
   const preview = redactTranscript(raw, { home: os.homedir() }).text
-  return textResult({ session: snap.sessions[0] ?? null, preview })
+  const row = snap.sessions[0]
+  return textResult({
+    session: row ? { ...row, terminals: sessionTerminals(sessionId, ctx) } : null,
+    preview
+  })
+}
+
+/** T474: the connected terminals a session owns, none from a folder the operator blocked. */
+function sessionTerminals(
+  sessionId: string,
+  ctx: ToolHandlerCtx
+): ReturnType<typeof terminalsOfSession> {
+  return terminalsOfSession(terminalRegistry.list(), sessionId, {
+    denyFolders: ctx.denyFolders,
+    home: os.homedir()
+  })
 }
 
 const getFleetHandler: Handler = async (args, ctx) => {
@@ -916,17 +999,440 @@ const createSessionHandler: Handler = async (args, ctx) => {
   )
 }
 
-const spawnTerminalHandler: Handler = async (_args, ctx) => {
+/** Whether Harnu knows `sessionId`: the scan, or either in-flight registry (a live born-synthetic). */
+function sessionKnown(sessionId: string, ctx: ToolHandlerCtx): boolean {
+  const onDisk = ctx.folders.some((f) => f.sessions.some((sn) => sn.sessionId === sessionId))
+  return (
+    onDisk ||
+    listInflightSessions().some((e) => e.syntheticId === sessionId) ||
+    inFlightFolderFor(sessionId) !== undefined
+  )
+}
+
+/**
+ * T474: open a shell terminal an agent can address. Main spawns the PTY itself (the pane
+ * cannot back a `terminalId` for a folder nobody is viewing), registers it, then asks the
+ * renderer to show it. Any failure after the PTY exists kills it and leaves no record.
+ */
+const spawnTerminalHandler: Handler = async (args, ctx) => {
   if (!ctx.bridge) return errorResult('NO_BRIDGE')
   const targetFolder = resolvePaneFolder(ctx)
   if (!targetFolder) return steerError('PANE_FOLDER_UNKNOWN', ctx.folder)
-  const result = await ctx.bridge.dispatch('pane.split', {
-    target: 'split',
-    worktreePath: targetFolder,
-    cwd: targetFolder,
-    kind: 'shell'
+  const ownerSessionId = strField(args, 'ownerSessionId') ?? null
+  // Attribution only (spec §3.3): any KNOWN session may be named, the operator's own included.
+  if (ownerSessionId !== null && !sessionKnown(ownerSessionId, ctx)) {
+    return steerError('SESSION_NOT_FOUND', ctx.folder)
+  }
+  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — do not spawn a shell nobody
+  // will ever be told about.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  // The slot is claimed synchronously: `createTerminalPty` is async, and `spawn_terminal` is not
+  // replayable, so parallel calls would otherwise all pass a count that only moves on register.
+  if (!terminalRegistry.reserveSlot(targetFolder, MAX_AGENT_TERMINALS_PER_FOLDER)) {
+    return steerError('TERMINAL_LIMIT', ctx.folder)
+  }
+
+  const terminalId = `h-${randomUUID()}`
+  let ptyId: string
+  try {
+    ptyId = await createTerminalPty({ terminalId, folder: targetFolder, ownerSessionId })
+  } finally {
+    // Registered by now (or the spawn failed): the record, not the reservation, holds the slot.
+    terminalRegistry.releaseSlot(targetFolder)
+  }
+  let result: unknown
+  try {
+    const rec = terminalRegistry.get(terminalId)
+    if (!rec) throw new Error('terminal record missing right after its PTY was created')
+    result = await ctx.bridge.dispatch('pane.split', paneSplitFor(rec))
+  } catch (err) {
+    discardTerminalPty(ptyId)
+    throw err
+  }
+  if (!dispatchSucceeded(result)) {
+    discardTerminalPty(ptyId)
+    return textResult({ ok: true, op: 'spawn_terminal', result })
+  }
+  return textResult({
+    ok: true,
+    op: 'spawn_terminal',
+    terminalId,
+    ownerSessionId,
+    state: 'running',
+    size: { ...AGENT_TERMINAL_SIZE },
+    result
   })
-  return textResult({ ok: true, op: 'spawn_terminal', result })
+}
+
+/** T474: the terminals Harnu knows about, redacted like every fleet read. */
+const listTerminalsHandler: Handler = async (args, ctx) => {
+  const folderArg = strField(args, 'folder')
+  const folder =
+    folderArg === undefined
+      ? undefined
+      : (resolveKnownFolder(
+          folderArg,
+          ctx.folders.map((f) => f.path)
+        ) ?? folderArg)
+  const records = terminalRegistry.list()
+  // The folder opt-in (T481): which of these terminals' folders let agents read what the
+  // operator opens. Exact folder only.
+  const optedIn = await terminalReadOptIns(
+    await readUserProjects(),
+    records.map((r) => r.folder)
+  )
+  const terminals = toTerminalListing(records, {
+    denyFolders: ctx.denyFolders,
+    home: os.homedir(),
+    readOptIn: (f) => optedIn.has(f),
+    // The global kill-switch (spec §6.5): off reads `writable: 'off'` + `writableReason`.
+    writesEnabled: await readAgentTerminalWrites(),
+    leaseActive: (r) => terminalLeases.isActive(r.terminalId, r.ptyId),
+    ...(folder !== undefined ? { folder } : {}),
+    ...(strField(args, 'ownerSessionId') !== undefined
+      ? { ownerSessionId: strField(args, 'ownerSessionId') }
+      : {})
+  })
+  return textResult({ terminals })
+}
+
+/**
+ * T474 B3/B4: read the resolved screen of a terminal (spec §4.3). The access rules run at PLAN
+ * level first (`terminal-gate-core`, spec §6.2); the same pure gate runs again here as the
+ * last line, because the state it judged can change between the plan and the dispatch (the
+ * operator turns the opt-in off, a terminal ends and is swept). The text is scrubbed (§4.5) on
+ * every terminal, whoever opened it.
+ */
+const readTerminalHandler: Handler = async (args, ctx) => {
+  const terminalId = strField(args, 'terminalId') ?? ''
+  const mode = (strField(args, 'mode') ?? 'tail') as ReadMode
+  const since = strField(args, 'since')
+  if (mode === 'since' && since === undefined) {
+    return errorResult("BAD_ARGS: since is required when mode is 'since'")
+  }
+  // A swept tombstone's model has no reader left; drop it before looking one up.
+  pruneScreenModels((id) => terminalRegistry.get(id) !== undefined)
+  const { rec, state } = await resolveTerminalGate(terminalId)
+  const refusal = gateTerminalOp('read_terminal', state)
+  if (refusal || !rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', ctx.folder)
+  // An agent terminal is born with its model (spec §5.2); an operator one is built now, from the
+  // ring. Neither exists only if the record is being torn down.
+  const model = ensureTerminalScreenModel(terminalId)
+  if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
+  const home = os.homedir()
+
+  const numArg = (key: string): number | undefined =>
+    typeof args[key] === 'number' ? (args[key] as number) : undefined
+  const read = await model.read({
+    mode,
+    ...(since !== undefined ? { since } : {}),
+    ...(numArg('lines') !== undefined ? { lines: numArg('lines') } : {}),
+    ...(numArg('maxChars') !== undefined ? { maxChars: numArg('maxChars') } : {}),
+    scrub: (text) => scrubTerminalText(text, home)
+  })
+  if (!read.ok) return steerError(read.error, ctx.folder)
+  terminalRegistry.noteAgentRead(terminalId)
+  const { ok: _ok, ...screen } = read
+  return textResult({
+    ok: true,
+    terminalId,
+    state: rec.state,
+    ...(rec.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
+    ...screen,
+    note: TERMINAL_NOTE
+  })
+}
+
+/**
+ * T484: whether a send to `rec` must be covered by the operator's lease. Always for a terminal
+ * the operator opened; for an agent terminal only when the plan let the call through on a lease
+ * (`ask` mode). A free agent terminal needs none.
+ */
+const needsLease = (rec: { origin: string }, ctx: ToolHandlerCtx): boolean =>
+  rec.origin === 'operator' || ctx.opts?.viaLease === true
+
+const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * T482 B5: type into a terminal (spec §4.4). The access rules ran at PLAN level; the same pure gate
+ * runs again here as the last line, and once more after the queue wait, because the terminal can
+ * end or be disconnected while a call waits its turn. Right before EACH `pty.write` the state is
+ * judged once more (exited, disconnected, folder blocked since, deadline fired): the barrier and
+ * the 50 ms gap after an `Esc` are real time in which the operator can act.
+ *
+ * Order: take the place in line (synchronously, on entry: arrival order) → admit (rate limit) →
+ * wait for the head of this terminal's line (≤ 10 s) → barrier, read the input modes and mark the
+ * cursor line → write (ONE `pty.write`, two when an `Esc` is followed by more bytes) → release the
+ * line → settle → read the screen since the mark. The line is held only while bytes go out;
+ * settling does not hold it. Output is scrubbed on every terminal. Without `waitFor` the call
+ * returns after the settle (≤ 1 s); with it, on the first of pattern / idle / timeout / exit /
+ * disconnect (unit B8, spec §4.4). The matcher sees unscrubbed text, the result never does.
+ *
+ * A send that stopped after some of its bytes went out (the terminal ended or was disconnected
+ * between two writes) says so: `SEND_INCOMPLETE`, with `sent` listing only what was written.
+ */
+const sendTerminalHandler: Handler = async (args, ctx) => {
+  const terminalId = strField(args, 'terminalId') ?? ''
+  // First, before any `await`: this call's place in the line is when it ARRIVED (see the queue).
+  const ticket = terminalWriteQueue.claim(args, terminalId)
+  const input = typeof args.input === 'string' ? args.input : undefined
+  const keys = Array.isArray(args.keys) ? (args.keys as string[]) : []
+  const known = (id: string): boolean => terminalRegistry.get(id) !== undefined
+  let model: ReturnType<typeof ensureTerminalScreenModel>
+  let sendMark: string | null = null
+  try {
+    pruneScreenModels(known)
+    terminalWriteQueue.prune(known)
+    terminalLeases.prune(known)
+
+    const first = await resolveTerminalGate(terminalId)
+    const refusal = gateTerminalOp('send_terminal', first.state)
+    if (refusal || !first.rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', ctx.folder)
+    // Last line of defence for the operator's say-so (spec §6.3): the plan lets a send through
+    // only under an active lease. If it ended in the gap between the plan and now, nothing is typed.
+    if (needsLease(first.rec, ctx) && !first.state.leaseActive) {
+      return steerError('TERMINAL_LEASE_ENDED', ctx.folder)
+    }
+    model = ensureTerminalScreenModel(terminalId)
+    if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
+
+    const admitted = terminalWriteQueue.admit(terminalId, ticket)
+    if (!admitted.ok) return steerError(admitted.error, ctx.folder)
+    const scope = admitted.scope
+    try {
+      if (!(await terminalWriteQueue.acquire(terminalId, scope))) {
+        return steerError('TERMINAL_BUSY', ctx.folder)
+      }
+      let sentAt = 0
+      let prep: Awaited<ReturnType<typeof model.prepareSend>>
+      let built: Extract<ReturnType<typeof buildSend>, { ok: true }>
+      let stopped = null as string | null
+      let written: { written: number; complete: boolean }
+      try {
+        // The terminal may have ended or been disconnected while this call waited its turn.
+        const again = await resolveTerminalGate(terminalId)
+        const lateRefusal = gateTerminalOp('send_terminal', again.state)
+        if (lateRefusal) return steerError(lateRefusal, ctx.folder)
+        // …and the lease may have ended while this call waited its turn (after the ticket wait).
+        if (again.rec && needsLease(again.rec, ctx) && !again.state.leaseActive) {
+          return steerError('TERMINAL_LEASE_ENDED', ctx.folder)
+        }
+        prep = await model.prepareSend()
+        sendMark = prep.cursor
+        const b = buildSend(
+          { input, keys, paste: args.paste === true },
+          {
+            applicationCursorKeys: prep.applicationCursorKeys,
+            bracketedPaste: prep.bracketedPaste
+          }
+        )
+        if (!b.ok) return errorResult(`${b.error}: ${b.detail}`)
+        built = b
+        // The state judged right before one `pty.write`: it is read fresh, every time, because the
+        // plan, the queue wait and the barrier all ran before it.
+        const mayWrite = async (): Promise<boolean> => {
+          const file = await readUserProjects()
+          const folder = terminalRegistry.get(terminalId)?.folder
+          const optedIn =
+            folder === undefined ? new Set<string>() : await terminalReadOptIns(file, [folder])
+          // Nothing awaits between here and the `pty.write`: the record is read last.
+          const writesEnabled = await readAgentTerminalWrites()
+          const rec = terminalRegistry.get(terminalId)
+          const blocked = file.projects.filter((p) => p.agentDenied === true).map((p) => p.path)
+          stopped = canStillWrite(rec, {
+            folderBlocked: rec !== undefined && isFolderDenied(rec.folder, blocked, os.homedir()),
+            deadlineFired: ctx.deadlineFlag?.fired === true,
+            readOptIn: rec !== undefined && optedIn.has(rec.folder),
+            // The kill-switch, read just now with the record (spec §6.5).
+            writesEnabled,
+            // The lease table answers synchronously, so it is read here, last, with the record.
+            leaseNeeded: rec !== undefined && needsLease(rec, ctx),
+            leaseActive: rec !== undefined && terminalLeases.isActive(terminalId, rec.ptyId)
+          })
+          return stopped === null
+        }
+        written = await writeSegments(built.segments, {
+          write: async (data) => {
+            if (!(await mayWrite())) return false
+            const ok = writeTerminalPty(terminalId, data)
+            if (ok) {
+              terminalWriteQueue.noteWrite(terminalId, scope)
+              // A write under a lease keeps it alive: it ends 10 minutes after the LAST write.
+              terminalLeases.noteWrite(terminalId)
+            } else {
+              // The PTY ended, or the operator disconnected, between the check and the write.
+              stopped = terminalRegistry.get(terminalId)?.disconnected
+                ? 'TERMINAL_DISCONNECTED'
+                : 'TERMINAL_EXITED'
+            }
+            return ok
+          },
+          sleep: sleepMs
+        })
+        sentAt = Date.now()
+      } finally {
+        terminalWriteQueue.release(terminalId, scope)
+      }
+
+      // What actually reached the PTY, never what was asked for.
+      const wrote = built.parts.slice(0, written.written)
+      const inputWritten = wrote.some((part) => part.input)
+      const sent = {
+        inputChars: inputWritten && input !== undefined ? [...input].length : 0,
+        keys: keys.slice(
+          0,
+          wrote.reduce((n, part) => n + part.keys, 0)
+        ),
+        pasted: inputWritten && built.pasted
+      }
+      if (!written.complete) {
+        const reason = stopped ?? 'TERMINAL_EXITED'
+        // Nothing reached the PTY: an ordinary refusal.
+        if (written.written === 0) {
+          return reason === 'DEADLINE_FIRED'
+            ? errorResult('DEADLINE_FIRED')
+            : steerError(reason, ctx.folder)
+        }
+        // Some bytes are out and the rest is not (e.g. an `Esc`, then the terminal ended).
+        return {
+          ...textResult({
+            ok: false,
+            error: 'SEND_INCOMPLETE',
+            reason,
+            terminalId,
+            sent,
+            message:
+              'Only part of this send reached the terminal; `sent` lists exactly what did. ' +
+              'Read the terminal before sending again.'
+          }),
+          isError: true
+        }
+      }
+
+      const home = os.homedir()
+      const scrub = (text: string): string => scrubTerminalText(text, home)
+      const waitSpec = (args.waitFor ?? undefined) as WaitSpec | undefined
+      // Everything after the write has to fit inside this: the settle's 1 s, or the caller's
+      // `timeoutMs`. A stalled model may not push the call past it (spec §4.4, the total bound).
+      const postDeadline =
+        sentAt + (waitSpec ? (waitSpec.timeoutMs ?? TIMEOUT_DEFAULT_MS) : SETTLE_CAP_MS)
+      const barrierBudget = (): number =>
+        Math.max(50, Math.min(BARRIER_TIMEOUT_MS, postDeadline - Date.now()))
+      // The line the cursor sat on at the send, read back to the end. A full-screen program has no
+      // such line: its whole screen is the answer (spec §4.4, "Alternate screen").
+      const readOpts = (barrierMs?: number): ReadOptions => ({
+        ...(prep.altScreen || prep.cursor === null
+          ? { mode: 'screen' as const }
+          : { mode: 'since' as const, since: prep.cursor }),
+        scrub,
+        ...(barrierMs !== undefined ? { barrierMs } : {})
+      })
+
+      // Disconnect while the call is waiting for output (spec §6.4): the wait ends at once and the
+      // output is what the screen showed AT THAT INSTANT, so the read is started inside the
+      // listener, in the same tick as the disconnect, not after the call has woken up. It keeps the
+      // full barrier: a short budget would resolve it late, and a late read shows later output.
+      const liveModel = model
+      const cut: {
+        read: ReturnType<typeof liveModel.read> | null
+        /** The tail read, started at the same instant, for when the send's line scrolled away. */
+        tail: ReturnType<typeof liveModel.read> | null
+      } = { read: null, tail: null }
+      let wake: () => void = () => {}
+      const woken = new Promise<void>((resolve) => {
+        wake = resolve
+      })
+      const unwatch = terminalRegistry.onDisconnect(terminalId, () => {
+        cut.read ??= liveModel.read(readOpts())
+        cut.tail ??= liveModel.read({ mode: 'tail', lines: 500, scrub })
+        wake()
+      })
+      const abort = { is: () => cut.read !== null, wake: () => woken }
+      let wait: { reason: string; waitedMs: number; match?: string; patternDisabled?: true }
+      try {
+        if (waitSpec) {
+          // What a pattern may match: the program's output after the send, minus the echo of
+          // `input`, read without scrubbing and without taking a cursor.
+          const surface = async (budgetMs: number): Promise<string> => {
+            const barrierMs = Math.min(BARRIER_TIMEOUT_MS, budgetMs)
+            const r = await liveModel.matchText({
+              since: prep.cursor,
+              altRows: prep.altRows,
+              barrierMs
+            })
+            if (!r.ok) return '' // the send's anchor is gone: nothing is safely "since the send"
+            return r.altScreen
+              ? r.text
+              : matchSurface(r.text, r.onCursorRow ? prep.cursorOffset : 0, input)
+          }
+          const result = await waitForOutput(
+            {
+              now: Date.now,
+              sleep: sleepMs,
+              sentAt,
+              lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
+              hasExited: () => (terminalRegistry.get(terminalId)?.state ?? 'exited') === 'exited',
+              surface,
+              abort
+            },
+            waitSpec
+          )
+          wait = {
+            reason: result.reason,
+            waitedMs: result.waitedMs,
+            ...(result.match !== undefined
+              ? { match: redactMatch(result.match, result.matchLine ?? result.match, scrub) }
+              : {}),
+            ...(result.patternDisabled ? { patternDisabled: true as const } : {})
+          }
+        } else {
+          const waitedMs = await settleAfterSend({
+            now: Date.now,
+            sleep: sleepMs,
+            lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
+            sentAt,
+            abort
+          })
+          wait = { reason: cut.read !== null ? 'disconnected' : 'none', waitedMs }
+        }
+      } finally {
+        unwatch()
+      }
+
+      let read = await (cut.read ?? model.read(readOpts(barrierBudget())))
+      // The send's anchor is gone: the last 500 lines are the best left, and not exact.
+      const lostAnchor = !read.ok
+      if (!read.ok) read = await (cut.tail ?? model.read({ mode: 'tail', lines: 500, scrub }))
+      if (!read.ok) return steerError('CURSOR_EXPIRED', ctx.folder)
+
+      const rec = terminalRegistry.get(terminalId)
+      const { ok: _ok, cursorPos: _cursorPos, size: _size, ...screen } = read
+      return textResult({
+        ok: true,
+        terminalId,
+        state: rec?.state ?? 'exited',
+        ...(rec?.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
+        sent,
+        wait,
+        output: screen.text,
+        truncated: screen.truncated,
+        droppedLines: screen.droppedLines,
+        altScreen: screen.altScreen,
+        approximate: screen.approximate || prep.approximate || lostAnchor,
+        othersWrote: scope.othersWrote,
+        operatorTyped:
+          rec?.lastOperatorWriteAt != null && rec.lastOperatorWriteAt >= scope.startedAt,
+        note: TERMINAL_NOTE,
+        cursor: screen.cursor
+      })
+    } finally {
+      terminalWriteQueue.finish(terminalId, scope)
+    }
+  } finally {
+    // The mark was private to this call; the agent's cursor is the one the read returned.
+    model?.releaseSend(sendMark)
+    terminalWriteQueue.abandonTicket(terminalId, ticket)
+  }
 }
 
 const createWorktreeHandler: Handler = async (args, ctx) => {
@@ -1183,6 +1689,7 @@ const drawCanvasHandler: Handler = async (args, ctx) => {
       updatedAt: nowIso
     }
   }
+  // Not the pane's own Save (no `selfWrite`): an open pane must hear about this write.
   const written = await writeCanvasFile(target.path, next)
   if (!written.ok) return errorResult(`${canvasVerbCode(written.code)}: ${written.error}`)
 
@@ -1871,11 +2378,7 @@ const messageSessionHandler: Handler = async (args, ctx) => {
   // 1. Known at all? The scan lists sessions with a transcript on disk; a
   //    live born-synthetic has none, so both in-flight registries are consulted
   //    too — the same widening the gate folder needed.
-  const onDisk = ctx.folders.some((f) => f.sessions.some((sn) => sn.sessionId === sessionId))
-  const inflight =
-    listInflightSessions().some((e) => e.syntheticId === sessionId) ||
-    inFlightFolderFor(sessionId) !== undefined
-  if (!onDisk && !inflight) return steerError('SESSION_NOT_FOUND', ctx.folder)
+  if (!sessionKnown(sessionId, ctx)) return steerError('SESSION_NOT_FOUND', ctx.folder)
 
   // 3. The recipient predicate. An index hit is causal proof Harnu spawned the
   //    process and it is still alive; the parked arm covers the gap
@@ -3906,6 +4409,91 @@ export async function readAllMissions(root: string): Promise<{
   return { missions, unreadable }
 }
 
+/** One readable mission copy with the repo root it was read from. */
+export interface RootedMission {
+  root: string
+  mission: Mission
+  log: string
+  file: string
+}
+
+/** `(id, root)` pairs already warned about, so a 20 s poll logs each shadowed copy once. */
+const warnedShadowed = new Set<string>()
+
+/**
+ * Every readable mission across `roots`, at most ONE per `mission.id` (BUG-173 S1).
+ * Two clones of one repo can hold the same mission files; both the renderer's
+ * `mission:list` and the agent's `mission_list` read through here so neither lists
+ * a mission twice.
+ *
+ * - Roots are canonicalised with `realpath` (the resolved string when that fails),
+ *   so one directory reached through two spellings is read once. The root reported
+ *   back is the first spelling given.
+ * - The winner of an id is the copy with the newest `updatedAt`; a tie goes to the
+ *   root that sorts first by path, so the answer never depends on poll order.
+ * - The status rule runs on the WINNER: with `includeClosed: false` a closed winner
+ *   drops the id even when an older twin elsewhere still says `active`.
+ * - Losing copies in another root come back as `shadowed` (one `console.warn` per
+ *   process per pair). Nothing is deleted or rewritten.
+ */
+export async function readMissionsDeduped(
+  roots: readonly string[],
+  { includeClosed }: { includeClosed: boolean }
+): Promise<{
+  missions: RootedMission[]
+  unreadable: Array<{ root: string; name: string }>
+  shadowed: Array<{ missionId: string; root: string }>
+}> {
+  const canonOf = new Map<string, string>() // canonical path → first spelling given
+  for (const root of roots) {
+    const canon = await fs.realpath(root).catch(() => path.resolve(root))
+    if (!canonOf.has(canon)) canonOf.set(canon, root)
+  }
+  const reads = await Promise.all(
+    [...canonOf].map(async ([canon, root]) => ({ canon, root, read: await readAllMissions(root) }))
+  )
+  const unreadable = reads.flatMap(({ root, read }) =>
+    read.unreadable.map((name) => ({ root, name }))
+  )
+
+  const all = reads.flatMap(({ canon, root, read }) =>
+    read.missions.map((m) => ({ canon, copy: { root, ...m } }))
+  )
+  const winners = new Map<string, (typeof all)[number]>()
+  for (const entry of all) {
+    const best = winners.get(entry.copy.mission.id)
+    if (!best) {
+      winners.set(entry.copy.mission.id, entry)
+      continue
+    }
+    const a = entry.copy.mission.updatedAt
+    const b = best.copy.mission.updatedAt
+    if (a > b || (a === b && entry.canon < best.canon)) winners.set(entry.copy.mission.id, entry)
+  }
+
+  const shadowed: Array<{ missionId: string; root: string }> = []
+  const missions: RootedMission[] = []
+  for (const entry of all) {
+    const winner = winners.get(entry.copy.mission.id)!
+    if (winner === entry) {
+      if (includeClosed || entry.copy.mission.status !== 'closed') missions.push(entry.copy)
+      continue
+    }
+    // A repeated id inside ONE root is the same mission twice, not a second clone.
+    if (winner.canon === entry.canon) continue
+    const { id } = entry.copy.mission
+    shadowed.push({ missionId: id, root: entry.copy.root })
+    const key = `${id}\u0000${entry.canon}`
+    if (!warnedShadowed.has(key)) {
+      warnedShadowed.add(key)
+      console.warn(
+        `[missions] ${id} in ${entry.copy.root} is shadowed by a newer copy in ${winner.copy.root}`
+      )
+    }
+  }
+  return { missions, unreadable, shadowed }
+}
+
 const missionGetHandler: Handler = async (args, ctx) => {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -3974,34 +4562,28 @@ const missionListHandler: Handler = async (_args, ctx) => {
       (root) => !isFolderDenied(root, ctx.denyFolders)
     )
   }
-  const missions: Record<string, unknown>[] = []
-  const unreadable: string[] = []
-  for (const root of roots) {
-    const read = await readAllMissions(root)
-    unreadable.push(...read.unreadable.map((n) => path.join(missionsDir(root), n)))
-    for (const { mission: m, log } of read.missions) {
-      missions.push({
-        id: m.id,
-        slug: m.slug,
-        title: missionTitle(log, m.slug),
-        status: m.status,
-        folder: m.folder,
-        ownerSessionId: m.owner.sessionId,
-        ...(m.linkedCard ? { linkedCard: m.linkedCard } : {}),
-        // Mission v3 §3.10: the last derive's progress (null before any derive);
-        // read mission_get for exact numbers.
-        progress: lastProgress.get(m.id) ?? null,
-        // Deprecated (kept one release): proof counts, a legacy fixed start excluded.
-        steps: {
-          total: progressSteps(m).length,
-          verified: progressSteps(m).filter((s) => s.proof === 'verified').length,
-          claimed: progressSteps(m).filter((s) => s.proof === 'claimed').length
-        },
-        blocked: m.blockers.length > 0 || m.steps.some((s) => s.blockers.length > 0),
-        updatedAt: m.updatedAt
-      })
-    }
-  }
+  const read = await readMissionsDeduped(roots, { includeClosed: true })
+  const unreadable = read.unreadable.map((u) => path.join(missionsDir(u.root), u.name))
+  const missions: Record<string, unknown>[] = read.missions.map(({ mission: m, log }) => ({
+    id: m.id,
+    slug: m.slug,
+    title: missionTitle(log, m.slug),
+    status: m.status,
+    folder: m.folder,
+    ownerSessionId: m.owner.sessionId,
+    ...(m.linkedCard ? { linkedCard: m.linkedCard } : {}),
+    // Mission v3 §3.10: the last derive's progress (null before any derive);
+    // read mission_get for exact numbers.
+    progress: lastProgress.get(m.id) ?? null,
+    // Deprecated (kept one release): proof counts, a legacy fixed start excluded.
+    steps: {
+      total: progressSteps(m).length,
+      verified: progressSteps(m).filter((s) => s.proof === 'verified').length,
+      claimed: progressSteps(m).filter((s) => s.proof === 'claimed').length
+    },
+    blocked: m.blockers.length > 0 || m.steps.some((s) => s.blockers.length > 0),
+    updatedAt: m.updatedAt
+  }))
   return textResult({
     ok: true,
     op: 'mission_list',
@@ -4572,6 +5154,396 @@ const missionLogHandler: Handler = async (args, ctx) => {
   })
 }
 
+/* ---- T564 U1: the browser verbs ------------------------------------------------------------------- */
+
+/** The bits of this call's context the browser verbs need, over the real singletons. */
+function browserEnv(ctx: ToolHandlerCtx): Parameters<typeof makeBrowserVerbDeps>[0] {
+  return {
+    bridge: ctx.bridge,
+    sessionKnown: (id) => sessionKnown(id, ctx),
+    folderBlocked: (folder) => isFolderDenied(folder, ctx.denyFolders, os.homedir())
+  }
+}
+
+function browserDeps(ctx: ToolHandlerCtx): ReturnType<typeof makeBrowserVerbDeps> {
+  return makeBrowserVerbDeps(browserEnv(ctx))
+}
+
+/** A verb result: `ok:false` is the steering refusal shape of spec §6, returned as an error result. */
+function browserResult(input: Record<string, unknown>): CallToolResult {
+  const res = withRevivedFlag(input)
+  if (res.ok === false) {
+    return { content: [{ type: 'text', text: JSON.stringify(res) }], isError: true }
+  }
+  // A screenshot rides as an image content block; the JSON beside it never repeats the bytes.
+  const { image, ...rest } = res as { image?: { data: string; mimeType: string } } & Record<
+    string,
+    unknown
+  >
+  if (image) {
+    return {
+      content: [
+        { type: 'image', data: image.data, mimeType: image.mimeType },
+        { type: 'text', text: JSON.stringify(rest) }
+      ]
+    }
+  }
+  return textResult(res)
+}
+
+/** The strings a verb carries, with `undefined` for absent. */
+function optStr(args: Record<string, unknown>, key: string): string | undefined {
+  return typeof args[key] === 'string' ? (args[key] as string) : undefined
+}
+
+const browserOpenHandler: Handler = async (args, ctx) => {
+  if (!ctx.bridge) return errorResult('NO_BRIDGE')
+  const folder = resolvePaneFolder(ctx)
+  if (!folder) return steerError('PANE_FOLDER_UNKNOWN', ctx.folder)
+  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT: do not open a page nobody will be told about.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await openVerb(
+    {
+      folder,
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(optStr(args, 'path') !== undefined ? { path: optStr(args, 'path') } : {}),
+      ...(optStr(args, 'html') !== undefined ? { html: optStr(args, 'html') } : {}),
+      ...(optStr(args, 'name') !== undefined ? { name: optStr(args, 'name') } : {}),
+      ...(optStr(args, 'ownerSessionId') !== undefined
+        ? { ownerSessionId: optStr(args, 'ownerSessionId') }
+        : {}),
+      ...(optStr(args, 'device') !== undefined ? { device: optStr(args, 'device') } : {}),
+      ...(typeof args.background === 'boolean' ? { background: args.background } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_open', ...res })
+}
+
+const browserListHandler: Handler = async (args, ctx) => {
+  const folderArg = optStr(args, 'folder')
+  const folder =
+    folderArg === undefined
+      ? undefined
+      : (resolveKnownFolder(
+          folderArg,
+          ctx.folders.map((f) => f.path)
+        ) ?? folderArg)
+  const res = await listVerb(
+    {
+      ...(folder !== undefined ? { folder } : {}),
+      ...(optStr(args, 'ownerSessionId') !== undefined
+        ? { ownerSessionId: optStr(args, 'ownerSessionId') }
+        : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult(res)
+}
+
+const browserNavigateHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await navigateVerb(
+    {
+      paneId: optStr(args, 'paneId') ?? '',
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(typeof args.action === 'string'
+        ? { action: args.action as 'back' | 'forward' | 'reload' | 'stop' }
+        : {}),
+      ...(typeof args.hard === 'boolean' ? { hard: args.hard } : {}),
+      ...(typeof args.waitUntil === 'string'
+        ? { waitUntil: args.waitUntil as 'commit' | 'domcontentloaded' | 'load' }
+        : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_navigate', ...res })
+}
+
+const browserCloseHandler: Handler = async (args, ctx) => {
+  const res = await closeVerb({ paneId: optStr(args, 'paneId') ?? '' }, browserDeps(ctx))
+  return browserResult({ op: 'browser_close', ...res })
+}
+
+/* ---- T572 (T564 U5): zoom and device emulation, upload from the folder, download into it. ---- */
+
+const browserEmulateHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await emulateVerb(
+    {
+      ...paneArgs(args),
+      ...(typeof args.zoom === 'number' ? { zoom: args.zoom } : {}),
+      ...(optStr(args, 'device') !== undefined ? { device: optStr(args, 'device') } : {}),
+      ...(typeof args.width === 'number' ? { width: args.width } : {}),
+      ...(typeof args.height === 'number' ? { height: args.height } : {}),
+      ...(typeof args.dpr === 'number' ? { dpr: args.dpr } : {}),
+      ...(typeof args.mobile === 'boolean' ? { mobile: args.mobile } : {}),
+      ...(typeof args.touch === 'boolean' ? { touch: args.touch } : {}),
+      ...(optStr(args, 'userAgent') !== undefined ? { userAgent: optStr(args, 'userAgent') } : {}),
+      ...(args.colorScheme === 'light' || args.colorScheme === 'dark'
+        ? { colorScheme: args.colorScheme }
+        : {}),
+      ...(typeof args.reducedMotion === 'boolean' ? { reducedMotion: args.reducedMotion } : {}),
+      ...(typeof args.reset === 'boolean' ? { reset: args.reset } : {})
+    },
+    makeBrowserDeviceDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_emulate', ...res })
+}
+
+const browserUploadHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await uploadVerb(
+    {
+      ...paneArgs(args),
+      ref: optStr(args, 'ref') ?? '',
+      paths: Array.isArray(args.paths) ? (args.paths as unknown[]).map(String) : []
+    },
+    makeBrowserDeviceDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_upload', ...res })
+}
+
+const browserDownloadHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await downloadVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {}),
+      ...(optStr(args, 'name') !== undefined ? { name: optStr(args, 'name') } : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    makeBrowserDeviceDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_download', ...res })
+}
+
+/**
+ * A pane-addressed browser verb is running: its pane is not discarded under it (T574, spec §10.1), and the ACK says
+ * `revived: true` when the verb had to bring the pane back.
+ */
+function paneVerb(handler: Handler): Handler {
+  return async (args, ctx) => {
+    const paneId = typeof args.paneId === 'string' ? args.paneId : ''
+    const end = paneId ? beginPaneVerb(browserRegistry, paneId) : undefined
+    try {
+      return await runWithRevival(() => handler(args, ctx))
+    } finally {
+      end?.()
+    }
+  }
+}
+
+/** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
+/** The pane-addressed reading verbs share one shape: a `paneId` and the verb's own arguments. */
+function paneArgs(args: Record<string, unknown>): { paneId: string } {
+  return { paneId: optStr(args, 'paneId') ?? '' }
+}
+
+const browserSnapshotHandler: Handler = async (args, ctx) => {
+  const res = await snapshotVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(typeof args.interactiveOnly === 'boolean'
+        ? { interactiveOnly: args.interactiveOnly }
+        : {}),
+      ...(typeof args.maxNodes === 'number' ? { maxNodes: args.maxNodes } : {}),
+      ...(Array.isArray(args.include) ? { include: args.include as string[] } : {}),
+      ...(typeof args.frames === 'boolean' ? { frames: args.frames } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_snapshot', ...res })
+}
+
+const browserScreenshotHandler: Handler = async (args, ctx) => {
+  const res = await screenshotVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {}),
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(typeof args.fullPage === 'boolean' ? { fullPage: args.fullPage } : {}),
+      ...(args.format === 'png' || args.format === 'jpeg' ? { format: args.format } : {}),
+      ...(typeof args.quality === 'number' ? { quality: args.quality } : {}),
+      ...(typeof args.maxDim === 'number' ? { maxDim: args.maxDim } : {}),
+      ...(typeof args.save === 'boolean' ? { save: args.save } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_screenshot', ...res })
+}
+
+const browserConsoleHandler: Handler = async (args, ctx) => {
+  const res = await consoleVerb(
+    {
+      ...paneArgs(args),
+      ...(args.mode === 'tail' || args.mode === 'since' ? { mode: args.mode } : {}),
+      ...(typeof args.lines === 'number' ? { lines: args.lines } : {}),
+      ...(optStr(args, 'since') !== undefined ? { since: optStr(args, 'since') } : {}),
+      ...(Array.isArray(args.levels) ? { levels: args.levels as ConsoleLevel[] } : {}),
+      ...(typeof args.clear === 'boolean' ? { clear: args.clear } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_console', ...res })
+}
+
+const browserNetworkHandler: Handler = async (args, ctx) => {
+  const res = await networkVerb(
+    {
+      ...paneArgs(args),
+      action: args.action as 'start' | 'read' | 'stop',
+      ...(typeof args.maxMinutes === 'number' ? { maxMinutes: args.maxMinutes } : {}),
+      ...(typeof args.bodies === 'boolean' ? { bodies: args.bodies } : {}),
+      ...(typeof args.headers === 'boolean' ? { headers: args.headers } : {}),
+      ...(optStr(args, 'filter') !== undefined ? { filter: optStr(args, 'filter') } : {}),
+      ...(optStr(args, 'since') !== undefined ? { since: optStr(args, 'since') } : {}),
+      ...(typeof args.limit === 'number' ? { limit: args.limit } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_network', ...res })
+}
+
+const browserWaitForHandler: Handler = async (args, ctx) => {
+  const res = await waitForVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(optStr(args, 'text') !== undefined ? { text: optStr(args, 'text') } : {}),
+      ...(optStr(args, 'textGone') !== undefined ? { textGone: optStr(args, 'textGone') } : {}),
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(typeof args.networkIdleMs === 'number' ? { networkIdleMs: args.networkIdleMs } : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_wait_for', ...res })
+}
+
+/* ---- T571 (T564 U4): the acting verbs. `args` rides along as the write-queue key: the server reserved the
+ * pane's place in line with that very object, on entry, before any await (spec §6.4). ---- */
+
+const browserEvalHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await evalVerb(
+    {
+      ...paneArgs(args),
+      expression: optStr(args, 'expression') ?? '',
+      ...(typeof args.awaitPromise === 'boolean' ? { awaitPromise: args.awaitPromise } : {}),
+      ...(optStr(args, 'frame') !== undefined ? { frame: optStr(args, 'frame') } : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_eval', ...res })
+}
+
+const browserClickHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const offset = args.offset as { x?: unknown; y?: unknown } | undefined
+  const res = await clickVerb(
+    {
+      ...paneArgs(args),
+      ref: optStr(args, 'ref') ?? '',
+      ...(args.button === 'left' || args.button === 'middle' || args.button === 'right'
+        ? { button: args.button }
+        : {}),
+      ...(typeof args.clickCount === 'number' ? { clickCount: args.clickCount } : {}),
+      ...(Array.isArray(args.modifiers)
+        ? { modifiers: args.modifiers as Array<'Alt' | 'Control' | 'Meta' | 'Shift'> }
+        : {}),
+      ...(offset && typeof offset.x === 'number' && typeof offset.y === 'number'
+        ? { offset: { x: offset.x, y: offset.y } }
+        : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_click', ...res })
+}
+
+const browserTypeHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await typeVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {}),
+      text: optStr(args, 'text') ?? '',
+      ...(typeof args.delayMs === 'number' ? { delayMs: args.delayMs } : {}),
+      ...(typeof args.submit === 'boolean' ? { submit: args.submit } : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_type', ...res })
+}
+
+const browserFillHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const fields = Array.isArray(args.fields)
+    ? (args.fields as Array<Record<string, unknown>>).map((f) => ({
+        ref: typeof f.ref === 'string' ? f.ref : '',
+        value: typeof f.value === 'string' ? f.value : ''
+      }))
+    : []
+  const res = await fillVerb(
+    { ...paneArgs(args), fields },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_fill', ...res })
+}
+
+const browserPressHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await pressVerb(
+    {
+      ...paneArgs(args),
+      keys: Array.isArray(args.keys) ? (args.keys as unknown[]).map(String) : [],
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_press', ...res })
+}
+
+const browserSetDataHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await setDataVerb(
+    {
+      paneId: optStr(args, 'paneId') ?? '',
+      data: args.data,
+      ...(typeof args.merge === 'boolean' ? { merge: args.merge } : {}),
+      ...(typeof args.expectRev === 'number' ? { expectRev: args.expectRev } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_set_data', ...res })
+}
+
+const browserPatchHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await patchVerb(
+    {
+      paneId: optStr(args, 'paneId') ?? '',
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(optStr(args, 'mode') !== undefined ? { mode: optStr(args, 'mode') } : {}),
+      ...(optStr(args, 'html') !== undefined ? { html: optStr(args, 'html') } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_patch', ...res })
+}
+
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
   get_fleet: getFleetHandler,
@@ -4581,6 +5553,28 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   create_session: createSessionHandler,
   create_worktree: createWorktreeHandler,
   spawn_terminal: spawnTerminalHandler,
+  list_terminals: listTerminalsHandler,
+  read_terminal: readTerminalHandler,
+  send_terminal: sendTerminalHandler,
+  browser_open: browserOpenHandler,
+  browser_list: browserListHandler,
+  browser_navigate: paneVerb(browserNavigateHandler),
+  browser_close: paneVerb(browserCloseHandler),
+  browser_snapshot: paneVerb(browserSnapshotHandler),
+  browser_screenshot: paneVerb(browserScreenshotHandler),
+  browser_console: paneVerb(browserConsoleHandler),
+  browser_network: paneVerb(browserNetworkHandler),
+  browser_wait_for: paneVerb(browserWaitForHandler),
+  browser_eval: paneVerb(browserEvalHandler),
+  browser_click: paneVerb(browserClickHandler),
+  browser_type: paneVerb(browserTypeHandler),
+  browser_fill: paneVerb(browserFillHandler),
+  browser_press: paneVerb(browserPressHandler),
+  browser_emulate: paneVerb(browserEmulateHandler),
+  browser_upload: paneVerb(browserUploadHandler),
+  browser_download: paneVerb(browserDownloadHandler),
+  browser_set_data: paneVerb(browserSetDataHandler),
+  browser_patch: paneVerb(browserPatchHandler),
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

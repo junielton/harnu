@@ -3,7 +3,8 @@
  * Settings → MCP tab (design §6 → "Control server (MCP)"). The operator surface
  * for the loopback MCP control server: the kill switch, the live status (port +
  * agent-connection dot), a "Copy config" affordance for the loopback endpoint, the
- * "Ask before agent actions" friction toggle, the per-folder BLOCK list, and a
+ * "Ask before agent actions" friction toggle, the "Allow agents to type into terminals"
+ * kill-switch (T474 B7), the per-folder BLOCK list, and a
  * read-only audit log of every gated tool call.
  *
  * This pane is where the free-by-default posture is made visible and reversible:
@@ -13,7 +14,8 @@
  * surface for everything that ran unattended.
  *
  * Consumes ONLY the existing preload surface — `mcpStatus` / `mcpSetEnabled` /
- * `mcpAskGet` / `mcpAskSet` / `mcpGetAudit` for the server, and the sessions store
+ * `mcpAskGet` / `mcpAskSet` / `mcpAgentTerminalWritesGet` / `mcpAgentTerminalWritesSet` /
+ * `mcpGetAudit` for the server, and the sessions store
  * (`agentDeniedPaths` / `setFolderAgentDenied`, backed by
  * `userProjectsSetAgentDenied`) for the block list. The bearer token never crosses
  * into the renderer (it lives 0600 in `harnu.mcp.json` and is auto-injected into
@@ -56,6 +58,9 @@ const ask = ref(false)
 // T93: auto-register opt-out — inject Harnu's MCP server into spawned `claude`
 // sessions. Default ON; main-side authoritative.
 const autoRegister = ref(true)
+// T474 B7: the typing kill-switch — "Allow agents to type into terminals". Default ON;
+// main-side authoritative. Off refuses every send_terminal; reads and the chip are untouched.
+const agentTerminalWrites = ref(true)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -153,6 +158,43 @@ async function toggleAsk(next: boolean): Promise<void> {
   }
 }
 
+async function loadAgentTerminalWrites(): Promise<void> {
+  try {
+    agentTerminalWrites.value = await window.api.mcpAgentTerminalWritesGet()
+  } catch {
+    agentTerminalWrites.value = true // default ON
+  }
+}
+
+// T564 U1: the browser kill-switch. Default ON; off refuses every browser write verb.
+const agentBrowserWrites = ref(true)
+
+async function loadAgentBrowserWrites(): Promise<void> {
+  try {
+    agentBrowserWrites.value = await window.api.mcpAgentBrowserWritesGet()
+  } catch {
+    agentBrowserWrites.value = true // default ON
+  }
+}
+
+async function toggleAgentBrowserWrites(next: boolean): Promise<void> {
+  agentBrowserWrites.value = next // optimistic
+  try {
+    agentBrowserWrites.value = await window.api.mcpAgentBrowserWritesSet(next)
+  } catch {
+    agentBrowserWrites.value = !next // revert
+  }
+}
+
+async function toggleAgentTerminalWrites(next: boolean): Promise<void> {
+  agentTerminalWrites.value = next // optimistic
+  try {
+    agentTerminalWrites.value = await window.api.mcpAgentTerminalWritesSet(next)
+  } catch {
+    agentTerminalWrites.value = !next // revert
+  }
+}
+
 async function loadAutoRegister(): Promise<void> {
   try {
     autoRegister.value = await window.api.mcpAutoRegisterGet()
@@ -189,6 +231,8 @@ onMounted(() => {
   void refreshAudit()
   void loadProjects()
   void loadAsk()
+  void loadAgentTerminalWrites()
+  void loadAgentBrowserWrites()
   void loadAutoRegister()
   // Light poll keeps the connection dot + audit log fresh while the pane is open.
   pollTimer = setInterval(() => {
@@ -283,6 +327,37 @@ const eyebrowStyle =
           :model-value="ask"
           :aria-label="$t('mcpServer.ask.label')"
           @update:model-value="toggleAsk($event)"
+        />
+      </div>
+
+      <!-- T474 B7: the typing kill-switch. Default ON; off refuses every send_terminal. -->
+      <div class="flex items-start justify-between" style="gap: 12px; margin-top: 14px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ $t('mcpServer.agentTerminalWrites') }}
+          </div>
+          <SettingHint>{{ $t('mcpServer.agentTerminalWritesHint') }}</SettingHint>
+        </div>
+        <ToggleSwitch
+          :model-value="agentTerminalWrites"
+          :aria-label="$t('mcpServer.agentTerminalWrites')"
+          @update:model-value="toggleAgentTerminalWrites($event)"
+        />
+      </div>
+
+      <!-- T564 U1: the browser kill-switch. Default ON; off refuses every browser write verb. -->
+      <div class="flex items-start justify-between" style="gap: 12px; margin-top: 14px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ $t('mcpServer.agentBrowserWrites') }}
+          </div>
+          <SettingHint>{{ $t('mcpServer.agentBrowserWritesHint') }}</SettingHint>
+        </div>
+        <ToggleSwitch
+          :model-value="agentBrowserWrites"
+          :aria-label="$t('mcpServer.agentBrowserWrites')"
+          data-testid="mcp-agent-browser-writes"
+          @update:model-value="toggleAgentBrowserWrites($event)"
         />
       </div>
     </section>

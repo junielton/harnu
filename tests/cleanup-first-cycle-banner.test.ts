@@ -4,8 +4,19 @@ import { mount } from '@vue/test-utils'
 import CleanupFirstCycleBanner from '../src/renderer/src/components/CleanupFirstCycleBanner.vue'
 import { i18n } from '@renderer/i18n'
 
-const mountBanner = (count = 12, bytes = 6_000_000_000) =>
-  mount(CleanupFirstCycleBanner, { props: { count, bytes }, global: { plugins: [i18n] } })
+const mountBanner = (count = 12, bytes = 6_000_000_000, extra: Record<string, unknown> = {}) =>
+  mount(CleanupFirstCycleBanner, {
+    props: {
+      count,
+      bytes,
+      cleanCount: 2,
+      cleanBytes: 6_000_000,
+      maxItems: 20,
+      when: '58 min',
+      ...extra
+    },
+    global: { plugins: [i18n] }
+  })
 
 describe('CleanupFirstCycleBanner', () => {
   it('asks to enable autopilot with the count and the bytes it found', () => {
@@ -13,8 +24,45 @@ describe('CleanupFirstCycleBanner', () => {
     expect(mountBanner(1, 5_000_000).text()).toContain('Found 1 ready item, 5 MB')
   })
 
-  it('says the first cycle deletes nothing', () => {
-    expect(mountBanner().text()).toContain('nothing is deleted until you turn it on')
+  it("says what the next cycle may clean once enabled: a cap and today's count, not a promise", () => {
+    const text = mountBanner().text()
+    expect(text).toContain(
+      'next cycle, in 58 min, will clean the ready items it finds then, up to 20 per cycle. Right now that is 2 items, 6 MB'
+    )
+    expect(text).not.toContain('nothing is deleted')
+  })
+
+  it('discloses the Docker housekeeping the ack also turns on, when it is on and Docker answers', () => {
+    const text = mountBanner(12, 1, { dockerDays: 7 }).text()
+    expect(text).toContain('also prune Docker build cache older than 7 days and dangling images')
+    expect(mountBanner(12, 1, { dockerDays: 1 }).text()).toContain('older than 1 day and')
+  })
+
+  it('says nothing about Docker when there is nothing Docker-side to do', () => {
+    expect(mountBanner().text()).not.toContain('Docker')
+    expect(mountBanner(12, 1, { dockerDays: null }).text()).not.toContain('Docker')
+  })
+
+  it('also discloses Docker in the "Allow cleaning" variant', () => {
+    const text = mountBanner(12, 1, { autopilotOn: true, dockerDays: 7 }).text()
+    expect(text).toContain('also prune Docker build cache')
+  })
+
+  it('says so when no cycle is scheduled because the background scan is off', () => {
+    const text = mountBanner(12, 1, { when: null }).text()
+    expect(text).toContain('up to 20 per cycle. Right now that is 2 items, 6 MB')
+    expect(text).toContain('background scan is off')
+  })
+
+  it('with autopilot already on it asks to allow cleaning, and says it has only reported', () => {
+    const w = mountBanner(12, 6_000_000_000, { autopilotOn: true })
+    expect(w.text()).toContain('Autopilot found 12 ready items')
+    expect(w.text()).toContain('only reported so far')
+    expect(w.text()).toContain(
+      'Allow it and the next cycle, in 58 min, will clean the ready items it finds then, up to 20 per cycle. Right now that is 2 items, 6 MB'
+    )
+    expect(w.text()).not.toContain('Enable it')
+    expect(w.get('[data-testid="first-enable"]').text()).toBe('Allow cleaning')
   })
 
   it('Enable autopilot is the one Primary; Not now is Ghost', () => {

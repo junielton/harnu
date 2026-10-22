@@ -81,6 +81,25 @@ export interface Worker {
   systemPrompt?: string
   /** Consecutive failures. Three disables the worker. */
   failureStreak: number
+  /**
+   * T483: epoch-ms the operator pinned this worker; present = pinned, and the value orders the
+   * Pinned group. Pure curation — it never changes whether, when or how the worker runs. Only the
+   * operator sets it (`scheduler:setPinned`); `update_worker` can neither set nor clear it.
+   */
+  pinnedAt?: number
+}
+
+/** T483: pin `w` at `now`. Already pinned keeps its original time, so the order never jumps. */
+export function pinWorker(w: Worker, now: number): Worker {
+  return typeof w.pinnedAt === 'number' ? w : { ...w, pinnedAt: now }
+}
+
+/** T483: unpin `w` — the key is removed, not set to `undefined`, so it never reaches the file. */
+export function unpinWorker(w: Worker): Worker {
+  if (!('pinnedAt' in w)) return w
+  const { pinnedAt: _pinnedAt, ...rest } = w
+  void _pinnedAt
+  return rest
 }
 
 export interface Run {
@@ -360,6 +379,24 @@ const OBSERVE_ALLOW_VERBS: readonly string[] = [
   // `stale` flag. Every mission WRITE verb is on the deny list below.
   'mission_get',
   'mission_list',
+  // T481 (agent terminals B4, D5): the two terminal READ verbs. What a tick gets is scrubbed, and
+  // an operator-opened terminal still needs its folder's opt-in. `spawn_terminal` and
+  // `send_terminal` stay on the derived deny list below.
+  'list_terminals',
+  'read_terminal',
+  // T570 (T564 U3): the browser pane READ verbs. `browser_network` can write (it turns capture on) and stays
+  // on the derived deny list with every other browser verb.
+  'browser_list',
+  'browser_snapshot',
+  'browser_screenshot',
+  'browser_console',
+  'browser_wait_for',
+  // T569 U2: the two live-panel verbs. They are `page`-class only for EVERY caller (they refuse NOT_A_PAGE_PANE
+  // on a dev server or an external site), and a page pane is offline unless the operator allowed the network, so
+  // a read-only tick can keep a panel fresh with no way into anything else. Every other browser verb stays on
+  // the derived deny list below.
+  'browser_set_data',
+  'browser_patch',
   'create_card',
   'update_card',
   'notify'

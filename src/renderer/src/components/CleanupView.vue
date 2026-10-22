@@ -27,12 +27,33 @@ import { canDehydrate, canRehydrate } from './cleanup-row'
 import { identText } from './cleanup-ident'
 import {
   captureConfirm,
+  dialogRows,
+  withRemoteDelete,
   confirmChanged,
+  guidedChanged,
+  guidedRequestFor,
+  isRemovable,
+  isRetryAsReady,
+  refusedRows,
+  selectAllInRepo,
   selectionStats,
   toggleChecked,
-  type CapturedConfirm
+  type CapturedConfirm,
+  type CleanRequest
 } from '../lib/gc-model'
+import {
+  combinedSteps,
+  removalSummary,
+  type GuidedAction,
+  type RefusalGroup
+} from '../lib/gc-guidance'
 import { nextCycleIn } from '../lib/gc-format'
+import { remoteDeleteCandidate } from '../lib/gc-remote-delete'
+import { leftoverVolumeRequest, stackCleanRequest, transcriptCleanRequest } from '../lib/gc-orphans'
+import type { OrphanTranscriptItem, StackLeftoverItem } from '../../../main/gc/gc-wire'
+import { refusalKey, removalKey } from './cleanup-gc-copy'
+import { removability, removabilityAll, type RemovalRefusal } from '../lib/gc-removability'
+import type { RefusalCode } from '../lib/gc-jobs'
 import CleanupTreemap from './CleanupTreemap.vue'
 import CleanupListView from './CleanupListView.vue'
 import CleanupBlockPanel from './CleanupBlockPanel.vue'
@@ -40,15 +61,28 @@ import CleanupReviewList from './CleanupReviewList.vue'
 import CleanupHeroButton from './CleanupHeroButton.vue'
 import CleanupSelectionBar from './CleanupSelectionBar.vue'
 import CleanupFirstCycleBanner from './CleanupFirstCycleBanner.vue'
+import CleanupRecoveryNotices from './CleanupRecoveryNotices.vue'
 import CleanupDockerCard from './CleanupDockerCard.vue'
+import CleanupArchivesCard from './CleanupArchivesCard.vue'
+import CleanupTrashCard from './CleanupTrashCard.vue'
+import CleanupExhaustDialog from './CleanupExhaustDialog.vue'
 import CleanupSplitBar from './CleanupSplitBar.vue'
 import CleanupLegend from './CleanupLegend.vue'
 import CleanupBulkConfirmDialog from './CleanupBulkConfirmDialog.vue'
+import CleanupGuidedDialog, {
+  type GuidedDialogAction,
+  type GuidedRow,
+  type GuidedStepKind
+} from './CleanupGuidedDialog.vue'
 import CleanupOtherItems from './CleanupOtherItems.vue'
+import CleanupTranscriptsConfirmDialog from './CleanupTranscriptsConfirmDialog.vue'
+import CleanupDockerConfirmDialog from './CleanupDockerConfirmDialog.vue'
 import DehydrateConfirmDialog from './DehydrateConfirmDialog.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import Button from './ui/Button.vue'
+import type { GcGuidance, GcPrep } from '../../../main/gc/gc-wire'
 import type { ReapItem, Tombstone } from '../../../preload'
+import type { ArchiveEntry, ArchiveRepoGroup, TrashListEntry } from '../../../main/gc/gc-wire'
 
 /**
  * Cleanup takeover — the single home of cleaning (design.md "Workspace GC — unified Cleanup").
@@ -92,11 +126,15 @@ async function scanFirst(): Promise<void> {
 }
 
 onMounted(async () => {
-  window.addEventListener('keydown', onKeydown)
+  // Document capture: the selection and the block panel take Esc before the
+  // `view.closeTakeover` binding (a window bubble listener) sees it, but after
+  // every window capture listener — so a dialog, palette or menu opened over
+  // Cleanup (they register later, and stop Esc) keeps its Esc (T486 §6.1).
+  document.addEventListener('keydown', onKeydown, true)
   await Promise.all([gc.init(), reaper.init()])
   if (!reaper.snapshot) await scanFirst()
 })
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown, true))
 
 const model = computed(() => gc.model)
 const prefs = computed(() => gc.prefs)
@@ -114,6 +152,17 @@ const checked = ref<Set<string>>(new Set())
 
 const selectedBlock = computed(() =>
   selectedId.value && model.value ? (model.value.byId.get(selectedId.value) ?? null) : null
+)
+/** Remove is offered while at least one ticked item can be removed; the rest go in the dialog's refused group. */
+const canRemoveSelection = computed(() =>
+  [...checked.value].some((id) => {
+    const b = model.value?.byId.get(id)
+    return !!b && isRemovable(b)
+  })
+)
+/** What Remove would take from the ticked items and why it would not take the rest ("No dead ends"). */
+const removal = computed(() =>
+  model.value ? removalSummary(model.value, [...checked.value], now.value.getTime()) : null
 )
 const stats = computed(() =>
   model.value ? selectionStats(model.value, checked.value) : { count: 0, bytes: 0 }
@@ -154,9 +203,8 @@ function onToggle(id: string): void {
 function onSelectAllInRepo(repoPath: string): void {
   const m = model.value
   if (!m) return
-  const next = new Set(checked.value)
-  for (const b of m.blocks) if (b.repoPath === repoPath && b.bucket === 'review') next.add(b.id)
-  checked.value = next
+  // Only what main would take: a bulk tick never picks up a locked or detached worktree.
+  checked.value = new Set([...checked.value, ...selectAllInRepo(m, repoPath)])
 }
 function clearSelection(): void {
   checked.value = new Set()
@@ -203,28 +251,107 @@ async function removeMarkedSafe(): Promise<void> {
 /** What the open dialog showed — rows AND the exact request — frozen at the moment it opened. */
 const confirmDialog = ref<CapturedConfirm | null>(null)
 const dehydrateItems = ref<ReapItem[] | null>(null)
-const dialogOpen = computed(() => confirmDialog.value !== null || dehydrateItems.value !== null)
+const dialogOpen = computed(
+  () => confirmDialog.value !== null || dehydrateItems.value !== null || guided.value !== null
+)
 
 /** The data behind the open dialog moved (a cycle or a job refreshed it): block the confirm. */
 const confirmStale = computed(
   () => !!confirmDialog.value && !!model.value && confirmChanged(model.value, confirmDialog.value)
 )
 
-function openReady(ids?: string[]): void {
+/**
+ * Opens the one confirm. Whatever main would refuse is listed apart in the dialog (never counted, never
+ * sent); when nothing is left to remove no dialog opens, and a toast says why instead.
+ */
+function openConfirm(ids: string[], mode: 'ready' | 'review'): void {
   if (dialogOpen.value || !model.value) return
-  const c = captureConfirm(model.value, ids ?? model.value.ready.map((b) => b.id), 'ready')
-  if (c) confirmDialog.value = c
+  const c = captureConfirm(model.value, ids, mode, reaper.remotePolicy)
+  if (c) {
+    confirmDialog.value = c
+    void probeRemoteFor(c)
+    return
+  }
+  const refused = refusedRows(model.value, ids, mode)
+  if (refused.length === 0) return
+  const reasons = new Set(refused.map((r) => r.refusal))
+  ui.pushToast({
+    kind: 'warning',
+    title: t('cleanup.gc.confirm.nothingRemovable'),
+    description:
+      reasons.size === 1
+        ? t(removalKey(refused[0].refusal))
+        : t('cleanup.gc.confirm.nothingRemovableSeveral'),
+    timeoutMs: 8000
+  })
+}
+/**
+ * "Also delete the branch on the remote" is decided from what GitHub and the remote say, which costs
+ * network calls, so it is asked here, when the confirm opens, only for the branches it lists and
+ * only those a merged PR vouches for. Until it answers the dialog says it is checking; if the dialog
+ * closed or was replaced meanwhile the answer is dropped.
+ */
+const remoteChecking = ref(false)
+let remoteProbeSeq = 0
+async function probeRemoteFor(c: CapturedConfirm): Promise<void> {
+  const m = model.value
+  if (!m) return
+  const ids = c.ids.filter((id) => {
+    const b = m.byId.get(id)
+    return !!b && remoteDeleteCandidate(b, reaper.remotePolicy)
+  })
+  if (ids.length === 0) return
+  const seq = ++remoteProbeSeq
+  remoteChecking.value = true
+  const facts = await gc.probeRemote(ids)
+  if (seq !== remoteProbeSeq) return
+  remoteChecking.value = false
+  const open = confirmDialog.value
+  if (!open || open.request.ids.join() !== c.request.ids.join()) return
+  confirmDialog.value = { ...c, rows: dialogRows(m, c.ids, reaper.remotePolicy, facts) }
+}
+function openReady(ids?: string[]): void {
+  openConfirm(ids ?? model.value?.cleanable.map((b) => b.id) ?? [], 'ready')
 }
 function openRemove(ids: string[]): void {
-  if (dialogOpen.value || !model.value) return
-  const c = captureConfirm(model.value, ids, 'review')
-  if (c) confirmDialog.value = c
+  openConfirm(ids, 'review')
 }
 /** Retry re-opens the confirm for the item's CURRENT bucket — never a dialog that would send nothing. */
 function retry(id: string): void {
-  const bucket = model.value?.byId.get(id)?.bucket
-  if (bucket === 'ready') openReady([id])
-  else if (bucket === 'review') openRemove([id])
+  const block = model.value?.byId.get(id)
+  // A ready item that halted mid-clean is listed under review, but its retry is the guarded ready path.
+  if (block?.bucket === 'ready' || (block && isRetryAsReady(block))) openReady([id])
+  else if (block?.bucket === 'review') openRemove([id])
+}
+/** "Check again" on a demoted item: main re-asks, the screen refreshes, and the toast says what it found. */
+async function recheck(id: string): Promise<void> {
+  try {
+    const r = await gc.recheck(id)
+    if (r.outcome === 'cleared') {
+      ui.pushToast({ kind: 'success', title: t('cleanup.gc.recheck.cleared'), timeoutMs: 6000 })
+    } else if (r.outcome === 'still-refused') {
+      const block = model.value?.byId.get(id)
+      const v = block ? removability(block) : null
+      ui.pushToast({
+        kind: 'warning',
+        title: t('cleanup.gc.recheck.stillRefused'),
+        description:
+          !v || v.ok
+            ? t(refusalKey((r.code ?? 'not-ready') as RefusalCode))
+            : t(removalKey(v.reason)),
+        timeoutMs: 8000
+      })
+    } else {
+      ui.pushToast({
+        kind: 'warning',
+        title: t('cleanup.gc.recheck.unchecked'),
+        description: r.code ? t(refusalKey(r.code as RefusalCode)) : undefined,
+        timeoutMs: 8000
+      })
+    }
+  } catch (e) {
+    errorToast(t('cleanup.gc.recheck.failed'), e)
+  }
 }
 function errorToast(title: string, e: unknown): void {
   ui.pushToast({
@@ -250,13 +377,363 @@ async function runFirstCycle(action: () => Promise<void>, failureTitle: string):
   }
 }
 
-async function confirmClean(): Promise<void> {
+/** The orphaned transcript folders (unit D, AC-D1) and the confirm that moves them to the trash. */
+const orphanTranscripts = computed(() => gc.snapshot?.orphanTranscripts ?? [])
+/** What the open transcript dialog listed, frozen when it opened (the request is built from it). */
+const transcriptItems = ref<OrphanTranscriptItem[] | null>(null)
+const busyTranscriptIds = ref<string[]>([])
+function openTranscripts(ids: string[]): void {
+  if (dialogOpen.value || transcriptItems.value) return
+  const items = orphanTranscripts.value.filter((i) => ids.includes(i.id))
+  if (items.length > 0) transcriptItems.value = items
+}
+/**
+ * What removed worktrees left in Docker (unit D, AC-D3). `stack` cleans stopped containers and
+ * networks; `volumes` removes volumes, which has its own, stronger confirm and goes through the
+ * ordinary orphan-volume request. The dialog freezes the items it showed; the request is built from them.
+ */
+const stackLeftovers = computed(() => gc.snapshot?.stackLeftovers ?? [])
+const dockerConfirm = ref<{ kind: 'stack' | 'volumes'; items: StackLeftoverItem[] } | null>(null)
+function openDockerConfirm(kind: 'stack' | 'volumes', ids: string[]): void {
+  if (dialogOpen.value || transcriptItems.value || dockerConfirm.value) return
+  const items = stackLeftovers.value.filter((l) =>
+    kind === 'stack' ? ids.includes(l.id) : l.volumes.some((v) => ids.includes(v.id))
+  )
+  if (items.length > 0) dockerConfirm.value = { kind, items }
+}
+async function confirmDocker(): Promise<void> {
+  const d = dockerConfirm.value
+  if (!d || !model.value) return
+  dockerConfirm.value = null
+  try {
+    await gc.submit(
+      d.kind === 'stack'
+        ? stackCleanRequest(d.items)
+        : leftoverVolumeRequest(
+            model.value,
+            d.items.flatMap((l) => l.volumes.map((v) => v.id))
+          )
+    )
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.clean'), e)
+  }
+}
+async function confirmTranscripts(opts: { notFoundAck: boolean }): Promise<void> {
+  const items = transcriptItems.value
+  if (!items) return
+  transcriptItems.value = null
+  const ids = items.map((i) => i.id)
+  busyTranscriptIds.value = [...busyTranscriptIds.value, ...ids]
+  try {
+    await gc.submit(transcriptCleanRequest(items, opts.notFoundAck))
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.clean'), e)
+  } finally {
+    // The job runs in the background and the next snapshot drops what it removed; this only
+    // stops a second click while the request is being handed over.
+    busyTranscriptIds.value = busyTranscriptIds.value.filter((x) => !ids.includes(x))
+  }
+}
+
+/** Closes the confirm and drops any remote answer still on its way. */
+function closeConfirm(): void {
+  remoteProbeSeq++
+  remoteChecking.value = false
+  confirmDialog.value = null
+}
+
+// ---- guided actions ("No dead ends") --------------------------------------------------------------
+// Where Remove is refused, the refusal names its cause and offers the action that clears it. The ones
+// that end in a removal run as ONE `gc:clean` job whose items each carry a prep (unlock, close an idle
+// session, stop or leave a stack); main checks what the operator was shown, prepares, then judges the
+// item again on a fresh gather and removes it the ordinary guarded way.
+
+interface GuidedState {
+  action: GuidedDialogAction
+  /** What the action does, in running order (one for a single action, several for a combined one). */
+  steps: GuidedStepKind[]
+  ids: string[]
+  rows: GuidedRow[]
+  guidance: Record<string, GcGuidance> | null
+  loadError: boolean
+  pending: boolean
+  /** The facts the dialog opened on; null for the two that remove nothing (unreadable, Docker). */
+  captured: { ids: string[]; request: CleanRequest } | null
+}
+const guided = ref<GuidedState | null>(null)
+/** Stands in for the real prep while the facts are captured; the confirm replaces it per item. */
+const PLACEHOLDER_PREP: GcPrep = { kind: 'unlock' }
+
+/** The data behind the open guided dialog moved: block its confirm. */
+const guidedStale = computed(
+  () =>
+    !!guided.value?.captured && !!model.value && guidedChanged(model.value, guided.value.captured)
+)
+
+const SINGLE_STEPS: Partial<Record<GuidedDialogAction, GuidedStepKind[]>> = {
+  'unlock-remove': ['unlock'],
+  'close-session-remove': ['close-session'],
+  'shared-stack': ['shared-stack']
+}
+
+/** The steps THIS item needs, from its own causes (a combined dialog may hold items with different ones). */
+function stepsOfItem(id: string): GuidedStepKind[] {
+  const b = model.value?.byId.get(id)
+  return b ? combinedSteps(removabilityAll(b).map((r) => r.reason)) : []
+}
+
+/**
+ * The preps one item carries: each step of the action that the item itself needs. An item git no longer
+ * lists as locked gets no unlock (it is left out when nothing else remains); a stack that is gone makes
+ * the whole confirm impossible (null).
+ */
+function prepsFor(
+  steps: readonly GuidedStepKind[],
+  choice: 'stop' | 'leave' | null,
+  g: GcGuidance | undefined,
+  id: string
+): GcPrep[] | null {
+  const own = stepsOfItem(id)
+  const out: GcPrep[] = []
+  for (const s of steps) {
+    if (!own.includes(s)) continue
+    if (s === 'unlock') {
+      if (g?.lock != null) out.push({ kind: 'unlock' })
+    } else if (s === 'close-session') {
+      out.push({ kind: 'close-session' })
+    } else {
+      const stackIds = g?.stacks.map((x) => x.id) ?? []
+      if (stackIds.length === 0) return null
+      out.push({ kind: choice === 'leave' ? 'leave-stack' : 'stop-stack', stackIds })
+    }
+  }
+  return out
+}
+
+async function loadGuidance(g: GuidedState): Promise<void> {
+  g.loadError = false
+  try {
+    const list = await Promise.all(g.ids.map((id) => window.api.gcGuide(id)))
+    if (guided.value?.ids !== g.ids) return
+    g.guidance = Object.fromEntries(list.map((x) => [x.id, x]))
+  } catch {
+    if (guided.value?.ids === g.ids) g.loadError = true
+  }
+}
+
+async function openGuided(
+  action: GuidedDialogAction,
+  ids: readonly string[],
+  steps: GuidedStepKind[] = SINGLE_STEPS[action] ?? []
+): Promise<void> {
+  const m = model.value
+  if (dialogOpen.value || !m) return
+  const blocks = ids.map((id) => m.byId.get(id)).filter((b) => !!b && b.kind === 'worktree')
+  if (blocks.length === 0) return
+  const removes = action !== 'fix-unreadable' && action !== 'docker-down'
+  const request = removes
+    ? guidedRequestFor(m, ids, () => PLACEHOLDER_PREP, now.value.getTime())
+    : null
+  if (request && request.ids.length === 0) return
+  const rowIds = request ? request.ids : blocks.map((b) => b!.id)
+  guided.value = {
+    action,
+    steps,
+    ids: rowIds,
+    rows: rowIds.map((id) => {
+      const b = m.byId.get(id)!
+      return {
+        id,
+        title: b.repoLabel
+          ? t('cleanup.gc.confirm.worktreeRow', { repo: b.repoLabel, name: b.name })
+          : b.name,
+        sub: b.branch ?? undefined
+      }
+    }),
+    guidance: null,
+    loadError: false,
+    pending: false,
+    captured: request ? { ids: request.ids, request } : null
+  }
+  await loadGuidance(guided.value)
+}
+
+async function confirmGuided(choice: 'stop' | 'leave' | null): Promise<void> {
+  const g = guided.value
+  if (!g || g.pending || guidedStale.value || !g.captured || !g.guidance) return
+  // Each row carries only the steps it needs; one git no longer lists as locked, with nothing else to
+  // do, is left out rather than sent to fail.
+  const prepare: Record<string, GcPrep | GcPrep[]> = {}
+  const expected: CleanRequest['options']['expected'] = {}
+  const sendIds: string[] = []
+  for (const id of g.captured.ids) {
+    const preps = prepsFor(g.steps, choice, g.guidance[id], id)
+    if (!preps) return
+    if (preps.length === 0) continue
+    sendIds.push(id)
+    expected[id] = g.captured.request.options.expected[id]
+    prepare[id] = preps.length === 1 ? preps[0]! : preps
+  }
+  if (sendIds.length === 0) return
+  const req: CleanRequest = {
+    ids: sendIds,
+    options: { expected, confirmed: [...sendIds], prepare }
+  }
+  g.pending = true
+  try {
+    await gc.submit(req)
+  } catch (e) {
+    g.pending = false
+    errorToast(t('cleanup.gc.error.clean'), e)
+    return
+  }
+  guided.value = null
+  const rest = new Set(checked.value)
+  for (const id of req.ids) rest.delete(id)
+  checked.value = rest
+}
+
+/** "Check again" after the operator fixed the folder outside Harnu: rescan, then read the facts again. */
+async function recheckGuided(): Promise<void> {
+  const g = guided.value
+  if (!g || g.pending) return
+  g.pending = true
+  try {
+    await reaper.scanNow()
+    await gc.refresh()
+    await loadGuidance(g)
+    const stillBad = Object.values(g.guidance ?? {}).some((x) => x.unreadable !== null)
+    ui.pushToast({
+      kind: stillBad ? 'warning' : 'success',
+      title: t(`cleanup.gc.guided.toast.${stillBad ? 'recheckedStill' : 'recheckedOk'}`),
+      timeoutMs: stillBad ? 8000 : 6000
+    })
+  } catch (e) {
+    errorToast(t('cleanup.gc.guided.toast.recheckFailed'), e)
+  } finally {
+    g.pending = false
+  }
+}
+
+/** "Scan again": the Reaper scans, Cleanup gathers, and a toast says what came of it. */
+async function scanAgain(ids: readonly string[]): Promise<void> {
+  try {
+    await reaper.scanNow()
+    await gc.refresh()
+    const blind = ids.some((id) => model.value?.byId.get(id)?.bundle?.dockerBlind === true)
+    ui.pushToast({
+      kind: blind ? 'warning' : 'success',
+      title: t(`cleanup.gc.guided.toast.${blind ? 'scanStillBlind' : 'scanned'}`),
+      timeoutMs: blind ? 8000 : 6000
+    })
+  } catch (e) {
+    errorToast(t('cleanup.gc.guided.toast.scanFailed'), e)
+  }
+}
+
+async function scanFromDialog(): Promise<void> {
+  const g = guided.value
+  if (!g || g.pending) return
+  g.pending = true
+  const ids = g.ids
+  try {
+    await scanAgain(ids)
+  } finally {
+    g.pending = false
+  }
+  guided.value = null
+}
+
+/** One guided action that is not a dialog (scan, unmark) runs at a time; its buttons wait meanwhile. */
+const guideBusy = ref(false)
+async function whileBusy(work: () => Promise<void>): Promise<void> {
+  if (guideBusy.value) return
+  guideBusy.value = true
+  try {
+    await work()
+  } finally {
+    guideBusy.value = false
+  }
+}
+
+async function removeKeepMarks(ids: readonly string[]): Promise<void> {
+  try {
+    for (const id of ids) await gc.unkeep(id)
+    ui.pushToast({
+      kind: 'success',
+      title: t('cleanup.gc.guided.toast.unkept', ids.length, { named: { n: ids.length } }),
+      timeoutMs: 8000,
+      // The mark was the operator's own choice: taking it off can be taken back.
+      action: {
+        label: t('cleanup.gc.guided.toast.undo'),
+        handler: () => void keepIds(ids)
+      }
+    })
+  } catch (e) {
+    errorToast(t('cleanup.gc.guided.toast.unkeepFailed'), e)
+  }
+}
+
+/** The one door every guided action goes through: the selection bar's groups, the panel, a list row. */
+function openGuide(action: GuidedAction, ids: readonly string[], reason: RemovalRefusal): void {
+  switch (action) {
+    case 'unlock-remove':
+    case 'close-session-remove':
+    case 'shared-stack':
+    case 'fix-unreadable':
+      void openGuided(action, ids)
+      break
+    case 'combined': {
+      // Every cause the items share, as steps in the order they run.
+      const causes = ids.flatMap((id) => {
+        const b = model.value?.byId.get(id)
+        return b ? removabilityAll(b).map((r) => r.reason) : []
+      })
+      void openGuided('combined', ids, combinedSteps(causes))
+      break
+    }
+    case 'scan-again':
+      if (reason === 'scan-blind') void openGuided('docker-down', ids)
+      else void whileBusy(() => scanAgain(ids))
+      break
+    case 'check-again': {
+      // A demoted item remembers its refusal: asking main to forget it and look again is the real check.
+      const demoted = ids.filter((id) => model.value?.byId.get(id)?.bundle?.reprobeRefusal)
+      if (demoted.length > 0) {
+        void whileBusy(async () => {
+          for (const id of demoted) await recheck(id)
+        })
+      } else void whileBusy(() => scanAgain(ids))
+      break
+    }
+    case 'dehydrate':
+      openDehydrate([...ids])
+      break
+    case 'unkeep':
+      void whileBusy(() => removeKeepMarks(ids))
+      break
+    case 'open-settings':
+      ui.openSettings('cleanup')
+      break
+    case 'manual':
+    case 'explain':
+      // The panel carries the reason and the command to run by hand.
+      selectedId.value = ids[0] ?? null
+      break
+  }
+}
+function onGuideGroup(group: RefusalGroup): void {
+  openGuide(group.action, group.ids, group.reason)
+}
+
+async function confirmClean(opts: { deleteRemote: boolean }): Promise<void> {
   const d = confirmDialog.value
   if (!d || confirmStale.value) return
   // Close first, then start: the clean is a background job, the view is never blocked on it.
   confirmDialog.value = null
   try {
-    await gc.submit(d.request)
+    // "Also delete the branch on the remote": only the rows that qualified, only when ticked.
+    await gc.submit(withRemoteDelete(d.request, d.rows, opts.deleteRemote))
   } catch (e) {
     errorToast(t('cleanup.gc.error.clean'), e)
     return
@@ -369,10 +846,81 @@ const nextText = computed(() => {
   return t(`cleanup.gc.status.next.${n.unit}`, { n: n.n })
 })
 
-const showFirstCycle = computed(
+/** A report exists that nothing has acted on: the ready blocks read "planned, not done". */
+const firstCyclePlanned = computed(
   () =>
-    !!prefs.value && !prefs.value.firstReportAcknowledged && (model.value?.ready.length ?? 0) > 0
+    !!prefs.value &&
+    !prefs.value.firstReportAcknowledged &&
+    (model.value?.cleanable.length ?? 0) > 0
 )
+/** The banner itself; "Not now" hides it for the session without acknowledging anything. */
+/**
+ * What the autopilot is really doing, not just whether the pref is on: paused when the
+ * background scan is off (no timer, so nothing runs), report only until the first report is
+ * acknowledged, otherwise on.
+ */
+const autopilotState = computed<'off' | 'paused' | 'report-only' | 'on'>(() => {
+  const p = prefs.value
+  if (!p?.autopilot) return 'off'
+  if (gc.snapshot && !gc.snapshot.backgroundScan) return 'paused'
+  if (!p.firstReportAcknowledged) return 'report-only'
+  return 'on'
+})
+
+/** The badge and the summary line both read `autopilotState`, so they can never disagree. */
+const badge = computed(() => {
+  switch (autopilotState.value) {
+    case 'off':
+      return {
+        text: t('cleanup.gc.status.badgeOff'),
+        classes: 'border-border bg-surface text-text-3'
+      }
+    case 'paused':
+      return {
+        text: t('cleanup.gc.status.badgePaused'),
+        classes: 'border-border bg-surface text-warning'
+      }
+    case 'report-only':
+      return {
+        text: t('cleanup.gc.status.badgeReportOnly'),
+        classes: 'border-accent-line bg-accent-soft text-accent'
+      }
+    default:
+      return {
+        text: t('cleanup.gc.status.badgeOn', { every: intervalText.value }),
+        classes: 'border-green-line bg-green-soft text-green'
+      }
+  }
+})
+const summaryAutopilot = computed(() =>
+  t(
+    {
+      off: 'cleanup.gc.status.autopilotOff',
+      paused: 'cleanup.gc.status.autopilotPaused',
+      'report-only': 'cleanup.gc.status.autopilotReportOnly',
+      on: 'cleanup.gc.status.autopilotOn'
+    }[autopilotState.value]
+  )
+)
+
+/**
+ * The acknowledgement also turns on the Docker housekeeping (build cache past the age limit plus dangling
+ * images), so the banner names it: only when that category is on and Docker answered for at least one figure.
+ */
+const firstCycleDockerDays = computed(() => {
+  const p = prefs.value
+  const d = gc.snapshot?.docker
+  if (!p?.categories.dockerCache || !d) return null
+  const answered = d.buildCacheReclaimableBytes !== null || d.danglingImages !== null
+  return answered ? p.cacheMaxAgeDays : null
+})
+
+const showFirstCycle = computed(() => firstCyclePlanned.value && !gc.firstReportSnoozed)
+/** "58 min" / "2 h" / "1 d" until the next timer tick, whatever the autopilot says; null when none is scheduled. */
+const firstCycleWhen = computed(() => {
+  const n = nextCycleIn(gc.snapshot?.nextCycleAt ?? null, now.value.getTime())
+  return n ? t(`cleanup.gc.firstCycle.when.${n.unit}`, { n: n.n }) : null
+})
 const allClean = computed(() => {
   const tt = model.value?.totals
   return !!tt && tt.ready.count + tt.review.count + tt.orphanVolumes.count === 0
@@ -394,8 +942,14 @@ function openAutopilotSettings(): void {
 
 // ---- keyboard -----------------------------------------------------------------------------------
 
+/**
+ * Esc peels one layer: the checked set, then the open block panel. Stops only what
+ * it consumed, so the next Esc reaches `view.closeTakeover`. Skipped while a cleanup
+ * dialog is open, and while a footer / Topbar popover is (its bubble listener runs
+ * after this one and owns that Esc).
+ */
 function onKeydown(e: KeyboardEvent): void {
-  if (e.key !== 'Escape' || dialogOpen.value) return
+  if (e.key !== 'Escape' || dialogOpen.value || ui.anyPopoverOpen) return
   if (checked.value.size > 0) {
     clearSelection()
     e.stopPropagation()
@@ -427,6 +981,39 @@ function agoText(atMs: number): string {
 async function copyRestoreHint(hint: string): Promise<void> {
   await navigator.clipboard.writeText(hint)
 }
+
+// ---- Cleanup's own exhaust: archive refs, git gc, and what Harnu put in the trash --------------
+/** The one open confirm of those three; what it lists is captured when it opens. */
+type ExhaustDialog =
+  | { mode: 'delete'; group: ArchiveRepoGroup; entries: ArchiveEntry[] }
+  | { mode: 'gc'; group: ArchiveRepoGroup }
+  | { mode: 'trash'; entries: TrashListEntry[] }
+const exhaustDialog = ref<ExhaustDialog | null>(null)
+const archives = computed(() => gc.snapshot?.archives ?? null)
+const trash = computed(() => gc.snapshot?.trash ?? null)
+
+async function confirmExhaust(): Promise<void> {
+  const d = exhaustDialog.value
+  exhaustDialog.value = null
+  if (!d) return
+  if (d.mode === 'delete') {
+    await gc.deleteArchives(
+      d.group.repoPath,
+      d.entries.map((e) => ({
+        namespace: e.namespace,
+        tipSha: e.tipSha,
+        wipSha: e.wipSha,
+        // Every ref and sha the dialog listed: what is deleted is exactly that.
+        members: e.members.map((m) => ({ ref: m.ref, sha: m.sha }))
+      }))
+    )
+  } else if (d.mode === 'gc') {
+    await gc.runArchiveGc(d.group.repoPath, d.group.repoAlias)
+  } else {
+    // The ids the dialog LISTED: whatever was trashed since is not in them.
+    await gc.emptyTrash(d.entries.map((e) => e.id))
+  }
+}
 </script>
 
 <template>
@@ -446,11 +1033,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
           </template>
         </i18n-t>
         <span class="text-text-4">·</span>
-        <span>{{
-          prefs?.autopilot
-            ? t('cleanup.gc.status.autopilotOn')
-            : t('cleanup.gc.status.autopilotOff')
-        }}</span>
+        <span data-testid="cleanup-summary-autopilot">{{ summaryAutopilot }}</span>
         <template v-if="nextText">
           <span class="text-text-4">·</span>
           <span>{{ nextText }}</span>
@@ -462,18 +1045,10 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
     <span
       class="inline-flex items-center rounded-full border px-2 py-0.5 text-caption"
-      :class="
-        prefs?.autopilot
-          ? 'border-green-line bg-green-soft text-green'
-          : 'border-border bg-surface text-text-3'
-      "
+      :class="badge.classes"
       data-testid="cleanup-autopilot-badge"
     >
-      {{
-        prefs?.autopilot
-          ? t('cleanup.gc.status.badgeOn', { every: intervalText })
-          : t('cleanup.gc.status.badgeOff')
-      }}
+      {{ badge.text }}
     </span>
     <Button
       variant="ghost"
@@ -517,9 +1092,13 @@ async function copyRestoreHint(hint: string): Promise<void> {
     :count="stats.count"
     :bytes="stats.bytes"
     :can-keep="canKeepSelection"
+    :can-remove="canRemoveSelection"
+    :summary="removal"
+    :busy="guideBusy"
     :asking="askingSelection"
+    @guide="onGuideGroup"
     @remove="openRemove([...checked])"
-    @dehydrate="openDehydrate([...checked])"
+    @dehydrate="openDehydrate(removal?.dehydrate?.ids ?? [...checked])"
     @keep="keepIds([...checked])"
     @ask="askOpinion([...checked])"
     @clear="clearSelection()"
@@ -555,13 +1134,24 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
     <div v-else-if="model && prefs" class="relative">
       <div class="px-5.5 pt-3">
+        <CleanupRecoveryNotices
+          :items="gc.recovery"
+          class="mb-3"
+          @answer="(id, action) => void gc.answerRecovery(id, action)"
+        />
         <CleanupFirstCycleBanner
           v-if="showFirstCycle"
-          :count="model.ready.length"
-          :bytes="model.totals.ready.bytes"
+          :count="model.cleanable.length"
+          :bytes="model.cleanable.reduce((a, b) => a + b.bytes, 0)"
+          :clean-count="gc.snapshot?.nextClean?.count ?? 0"
+          :clean-bytes="gc.snapshot?.nextClean?.bytes ?? 0"
+          :max-items="prefs.maxItemsPerCycle"
+          :when="firstCycleWhen"
+          :docker-days="firstCycleDockerDays"
+          :autopilot-on="prefs.autopilot"
           :pending="firstCyclePending"
           @enable="runFirstCycle(() => gc.enableAutopilot(), t('cleanup.gc.error.autopilot'))"
-          @dismiss="runFirstCycle(() => gc.dismissFirstReport(), t('cleanup.gc.error.dismiss'))"
+          @dismiss="gc.dismissFirstReport()"
         />
       </div>
 
@@ -605,7 +1195,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :checked="checked"
             :selected-id="selectedId"
             :linked-id="linkedId"
-            :planned="showFirstCycle"
+            :planned="firstCyclePlanned"
             :drill-repo="drillRepo"
             @select="onSelect"
             @toggle="onToggle"
@@ -621,11 +1211,27 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :docker="model.docker"
             :last-cycle="gc.snapshot?.lastCycle ?? null"
             :prefs="prefs"
+            :leftovers="stackLeftovers"
+            @clean-leftovers="openDockerConfirm('stack', $event)"
+            @remove-leftover-volumes="openDockerConfirm('volumes', $event)"
             @inspect="ui.openContainers()"
             @toggle="
               (category, value) =>
                 gc.savePrefs({ categories: { ...prefs!.categories, [category]: value } })
             "
+          />
+
+          <CleanupArchivesCard
+            v-if="archives && archives.count > 0"
+            :archives="archives"
+            :never-clean="prefs?.neverClean ?? []"
+            @delete="(group, entries) => (exhaustDialog = { mode: 'delete', group, entries })"
+            @gc="(group) => (exhaustDialog = { mode: 'gc', group })"
+          />
+          <CleanupTrashCard
+            v-if="trash && (trash.inTrashCount > 0 || trash.unverifiedCount > 0)"
+            :trash="trash"
+            @empty="exhaustDialog = { mode: 'trash', entries: [...trash.entries] }"
           />
 
           <CleanupReviewList
@@ -638,6 +1244,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :opinion-of="gc.opinionFor"
             :is-asking="gc.isAsking"
             :safe-count="gc.safeOpinionIds.length"
+            :guide-busy="guideBusy"
             @toggle="onToggle"
             @select="onSelect"
             @hover="linkedId = $event"
@@ -646,6 +1253,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @keep="keepIds([$event])"
             @ask-all="askAllOpinions()"
             @remove-safe="removeMarkedSafe()"
+            @guide="(id, action, reason) => openGuide(action, [id], reason)"
           />
         </div>
 
@@ -664,19 +1272,26 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :hydration-busy="hydrationBusy(selectedBlock.id)"
             :opinion="gc.opinionFor(selectedBlock.id)"
             :asking="gc.isAsking(selectedBlock.id)"
+            :guide-busy="guideBusy"
             @close="selectedId = null"
             @remove="openRemove([$event])"
             @retry="retry($event)"
+            @recheck="recheck($event)"
             @clean-now="openReady([$event])"
             @dehydrate="openDehydrate([$event])"
             @rehydrate="rehydrate($event)"
             @keep="keepIds([$event])"
             @ask="askOpinion([$event])"
+            @guide="(id, action, reason) => openGuide(action, [id], reason)"
           />
         </aside>
       </div>
 
-      <CleanupOtherItems />
+      <CleanupOtherItems
+        :transcripts="orphanTranscripts"
+        :busy="busyTranscriptIds"
+        @delete-transcripts="openTranscripts($event)"
+      />
 
       <template v-if="reaper.journal.length > 0">
         <div
@@ -721,13 +1336,51 @@ async function copyRestoreHint(hint: string): Promise<void> {
   <CleanupBulkConfirmDialog
     v-if="confirmDialog"
     :rows="confirmDialog.rows"
+    :refused="confirmDialog.refused"
     :mode="confirmDialog.mode"
     :stale="confirmStale"
+    :remote-checking="remoteChecking"
     :opinion-of="gc.opinionFor"
-    @confirm="confirmClean()"
-    @cancel="confirmDialog = null"
+    @confirm="confirmClean($event)"
+    @cancel="closeConfirm()"
+  />
+  <CleanupGuidedDialog
+    v-if="guided"
+    :action="guided.action"
+    :steps="guided.steps"
+    :rows="guided.rows"
+    :guidance="guided.guidance"
+    :load-error="guided.loadError"
+    :pending="guided.pending"
+    :stale="guidedStale"
+    @confirm="confirmGuided($event)"
+    @recheck="recheckGuided()"
+    @scan="scanFromDialog()"
+    @cancel="guided = null"
   />
   <DehydrateConfirmDialog v-if="dehydrateItems" :items="dehydrateItems" @close="closeDehydrate()" />
+  <CleanupDockerConfirmDialog
+    v-if="dockerConfirm"
+    :kind="dockerConfirm.kind"
+    :items="dockerConfirm.items"
+    @confirm="confirmDocker()"
+    @cancel="dockerConfirm = null"
+  />
+  <CleanupTranscriptsConfirmDialog
+    v-if="transcriptItems"
+    :items="transcriptItems"
+    @confirm="confirmTranscripts($event)"
+    @cancel="transcriptItems = null"
+  />
+  <CleanupExhaustDialog
+    v-if="exhaustDialog"
+    :mode="exhaustDialog.mode"
+    :entries="exhaustDialog.mode === 'delete' ? exhaustDialog.entries : undefined"
+    :repo="exhaustDialog.mode === 'trash' ? undefined : exhaustDialog.group.repoAlias"
+    :trash-entries="exhaustDialog.mode === 'trash' ? exhaustDialog.entries : undefined"
+    @confirm="confirmExhaust()"
+    @cancel="exhaustDialog = null"
+  />
 
   <!-- T300/U3: header markup rendered into the shared TakeoverShell (design.md §6
        "TakeoverShell — shared chrome") via Teleport. Placed after the real body content so this

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { stripPaths, reviewReason } from '../src/main/mcp/cleanup-listing'
 import { bucketOf } from '../src/main/gc/bundle-core'
-import { explainFailedWalks } from '../src/main/gc/gc-foreign'
 import { bundle, NOW, WT_READY } from './gc-snapshot-fixtures'
 
 /**
@@ -66,34 +65,22 @@ describe('stripPaths: the shapes that must not leak', () => {
   })
 })
 
-describe('reviewReason: a nested-worktree that could not be checked has its own sentence', () => {
+describe('reviewReason: a worktree that could not be checked has its own code and sentence', () => {
   const FOUND = /lives inside/
   const COULD_NOT = /could not check this worktree for other checkouts/
 
-  it('the S2 wordings for "could not be checked" read as the could-not-check sentence', () => {
+  it('the bucket rule words "could not be checked" as check-failed, never as nested-worktree', () => {
     const base = bundle(WT_READY)
-    // Built by the real bucket rule, so a rewording in S2 fails here instead of drifting.
+    // Built by the real bucket rule, so a rewording there fails here instead of drifting.
     const noNested = bucketOf({ ...base, nestedWorktrees: undefined as never }, NOW, 2)
     const noForeign = bucketOf({ ...base, foreignCheckouts: undefined as never }, NOW, 2)
     for (const r of [noNested.reason, noForeign.reason]) {
-      expect(r?.code).toBe('nested-worktree')
-      expect(reviewReason(r)!.sentence).toMatch(COULD_NOT)
+      expect(r?.code).toBe('check-failed')
+      const out = reviewReason(r)!
+      expect(out.sentence).toMatch(COULD_NOT)
+      expect(out.sentence).not.toMatch(FOUND)
+      expect(out.sentence).not.toContain('/srv')
     }
-  })
-
-  it('S3’s explained failed walk (with its cause, even a path) reads as the could-not-check sentence', () => {
-    const base = bundle(WT_READY, { bucket: 'review' })
-    const generic = bucketOf({ ...base, foreignCheckouts: undefined as never }, NOW, 2)
-    const [explained] = explainFailedWalks(
-      [{ ...base, bucket: generic.bucket, reason: generic.reason }],
-      new Map([[base.item.id, "EACCES: permission denied, scandir '/srv/ws/org/proj/www/secret'"]])
-    )
-    expect(explained!.reason?.detail).toContain('EACCES')
-    const out = reviewReason(explained!.reason)!
-    expect(out.code).toBe('nested-worktree')
-    expect(out.sentence).toMatch(COULD_NOT)
-    expect(out.sentence).not.toContain('EACCES')
-    expect(out.sentence).not.toContain('/srv')
   })
 
   it('a worktree or checkout that was found inside keeps the "lives inside" sentence', () => {

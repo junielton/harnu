@@ -1,13 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import {
+  CLEANABLE_KINDS,
+  REVIEW_CLEANABLE_KINDS,
   isNeverClean,
   FAILURE_TTL_MS,
   applyFailures,
   isProtectedNow,
   planCycle,
+  planNextClean,
   pruneFailures,
   refusalFor
 } from '../src/main/gc/autopilot-core'
+import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import { bundle, DAY, NOW, reapItem } from './gc-fixtures'
 
@@ -189,10 +193,46 @@ describe('refusalFor: what a manual clean may take (AC-8)', () => {
     expect(refusalFor(bundle('/ws/wt/k', 'in-use', { keep: true }), prefs(), confirm)).toBe('kept')
   })
 
-  it('refuses a detached worktree: the executor cannot clean one', () => {
-    const d = bundle('/ws/wt/x', 'review', {
-      item: reapItem('/ws/wt/x', { kind: 'detached-worktree' })
+  describe('a detached worktree (NDE-A, AC-A3): review-only, and only on an explicit confirm', () => {
+    const detached = (bucket: 'ready' | 'review' | 'in-use' = 'review'): WorktreeBundle =>
+      bundle('/ws/wt/x', bucket, {
+        item: reapItem('/ws/wt/x', { kind: 'detached-worktree', branch: undefined })
+      })
+
+    it('is taken from review once the operator confirmed it', () => {
+      expect(refusalFor(detached(), prefs(), confirm)).toBeNull()
     })
+
+    it('needs that confirmation: an unconfirmed click never removes it', () => {
+      expect(refusalFor(detached(), prefs(), { confirmed: false })).toBe('needs-confirmation')
+    })
+
+    it('is never taken as a ready item, whatever a hand-built bundle says', () => {
+      expect(refusalFor(detached('ready'), prefs(), confirm)).toBe('unsupported-kind')
+      expect(refusalFor(detached('ready'), prefs(), { confirmed: false })).toBe('unsupported-kind')
+    })
+
+    it('keeps every hard refusal: in-use, kept, neverClean, main checkout', () => {
+      expect(refusalFor(detached('in-use'), prefs(), confirm)).toBe('in-use')
+      expect(refusalFor({ ...detached(), keep: true }, prefs(), confirm)).toBe('kept')
+      expect(refusalFor({ ...detached(), neverClean: true }, prefs(), confirm)).toBe('never-clean')
+      expect(refusalFor({ ...detached(), isMainCheckout: true }, prefs(), confirm)).toBe(
+        'main-checkout'
+      )
+    })
+
+    it('stays out of the autopilot: not a cleanable kind, so no cycle ever plans it', () => {
+      expect(CLEANABLE_KINDS).not.toContain('detached-worktree')
+      expect(REVIEW_CLEANABLE_KINDS).toContain('detached-worktree')
+      const acked = { ...prefs(), autopilot: true, firstReportAcknowledged: true }
+      const plan = planCycle([detached('ready')], acked)
+      expect(plan.toClean).toEqual([])
+      expect(plan.found).toBe(0)
+    })
+  })
+
+  it('refuses a kind that is neither a worktree nor a hidden folder', () => {
+    const d = bundle('/ws/wt/x', 'review', { item: reapItem('/ws/wt/x', { kind: 'local-branch' }) })
     expect(refusalFor(d, prefs(), confirm)).toBe('unsupported-kind')
   })
 })
@@ -201,11 +241,16 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
   const failure = { step: 'trash', error: 'EBUSY', at: NOW }
 
   it('turns a failed ready item into a cleanup-failed decision', () => {
+    const [b] = applyFailures([ready('a', 5)], new Map([[ready('a', 5).item.id, failure]]), NOW)
+    expect(b).toMatchObject({ bucket: 'review', reason: { code: 'cleanup-failed' } })
+    // The step and the folder, never the raw error (design.md: a raw engine error is not visible text).
+    expect(b!.reason!.detail).toBe(`Cleanup stopped at trash in ${ready('a', 5).item.path}.`)
+    expect(b!.reason!.detail).not.toContain('EBUSY')
+  })
+
+  it('remembers that the item was ready, so a retry can take the safe path', () => {
     const [b] = applyFailures([ready('a', 5)], new Map([[ready('a', 5).item.id, failure]]))
-    expect(b).toMatchObject({
-      bucket: 'review',
-      reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at trash: EBUSY' }
-    })
+    expect(b!.retryAs).toBe('ready')
   })
 
   it('leaves other bundles and items that are not ready alone', () => {
@@ -215,7 +260,50 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
       [d.item.id, failure],
       ['unrelated', failure]
     ])
-    expect(applyFailures([a, d], failures)).toEqual([a, d])
+    expect(applyFailures([a, d], failures, NOW)).toEqual([a, d])
+  })
+
+  it('a halted item whose folder is already gone reads cleanup-failed whatever its bucket', () => {
+    // The trash ran, then prune or branch-delete halted: the folder is gone, so the probes
+    // fail and the bundle is review (or anything), never ready. It must still say what stopped.
+    const d = bundle('/ws/wt/d', 'review')
+    const [out] = applyFailures(
+      [d],
+      new Map([[d.item.id, { step: 'prune', error: 'index.lock exists', at: NOW }]]),
+      NOW,
+      new Set([d.item.id])
+    )
+    expect(out).toMatchObject({ bucket: 'review', reason: { code: 'cleanup-failed' } })
+    // The screen needs to know: Retry cannot resume a clean whose folder is already gone.
+    expect(out).toMatchObject({ folderGone: true })
+    // Nor is it rewritten as a ready item to retry: its scan does not say ready any more.
+    expect(out).not.toHaveProperty('retryAs')
+  })
+
+  it('a reprobe refusal on an item whose folder is gone since is not a halted clean', () => {
+    // A refusal changed nothing: there is no step left to finish, so no resume note either.
+    const d = bundle('/ws/wt/d', 'review')
+    const notes = new Map([
+      [d.item.id, { step: 'reprobe', error: 'tip-unknown', at: NOW, count: 1 }]
+    ])
+    expect(applyFailures([d], notes, NOW, new Set([d.item.id]))).toEqual([d])
+  })
+
+  it('a halted item whose folder is still there is not marked folderGone', () => {
+    const [out] = applyFailures(
+      [ready('a', 5)],
+      new Map([[ready('a', 5).item.id, { step: 'trash', error: 'EBUSY', at: NOW }]]),
+      NOW
+    )
+    expect(out).not.toHaveProperty('folderGone')
+    expect(out).toMatchObject({ retryAs: 'ready' })
+  })
+
+  it('a gone-folder id with no failure note, or a failure on a live folder, is left alone', () => {
+    const d = bundle('/ws/wt/d', 'review')
+    const e = bundle('/ws/wt/e', 'review')
+    const notes = new Map([[e.item.id, failure]])
+    expect(applyFailures([d, e], notes, NOW, new Set([d.item.id]))).toEqual([d, e])
   })
 
   it('prunes missing worktrees and failures older than a day', () => {
@@ -282,5 +370,33 @@ describe('never-clean is judged on real paths (delta 3b, item 12)', () => {
     const here = bundle('/real/wt', 'ready')
     expect(isProtectedNow(here, prefs({ neverClean: ['/link/wt'] }), canonical)).toBe(true)
     expect(isProtectedNow(here, prefs({ neverClean: ['/link/wt'] }))).toBe(false)
+  })
+})
+
+describe('planNextClean: what the next cycle would delete once cleaning is allowed', () => {
+  it('counts the ready items a clean cycle would take, oldest first, up to the cap', () => {
+    const plan = planNextClean(
+      [ready('a', 5, 2_000), ready('b', 9, 3_000), ready('c', 7, 4_000)],
+      prefs({ firstReportAcknowledged: false, maxItemsPerCycle: 2 })
+    )
+    expect(plan).toEqual({ count: 2, bytes: 7_000 })
+  })
+
+  it('ignores the acknowledgement: it answers "if I enable it now"', () => {
+    const bundles = [ready('a', 5, 2_000)]
+    expect(planNextClean(bundles, prefs({ firstReportAcknowledged: false }))).toEqual({
+      count: 1,
+      bytes: 2_000
+    })
+    expect(planNextClean(bundles, prefs({ autopilot: false }))).toEqual({ count: 1, bytes: 2_000 })
+  })
+
+  it('skips neverClean items and is null when the worktrees category is off', () => {
+    expect(
+      planNextClean([ready('a', 5), ready('b', 6)], prefs({ neverClean: ['/ws/wt/a'] }))?.count
+    ).toBe(1)
+    expect(
+      planNextClean([ready('a', 5)], prefs({ categories: { worktrees: false, dockerCache: true } }))
+    ).toBeNull()
   })
 })

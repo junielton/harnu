@@ -7,6 +7,7 @@
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { matchAdminDir } from './executor-core'
+import { rawRm } from '../raw-fs'
 
 /**
  * The admin directory of the worktree at `worktreePath`, or null: nothing is registered for it,
@@ -17,7 +18,12 @@ import { matchAdminDir } from './executor-core'
 export async function findAdminDir(
   repoPath: string,
   worktreePath: string,
-  git: (repo: string, args: string[]) => Promise<string>
+  git: (repo: string, args: string[]) => Promise<string>,
+  /**
+   * `assumeUnlocked`: judge the target's own registration as if its lock were already gone (a guided
+   * "Unlock and remove" dry run). Ambiguity, a stale duplicate, a missing registration still refuse.
+   */
+  opts: { assumeUnlocked?: boolean } = {}
 ): Promise<string | null> {
   const common = (
     await git(repoPath, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
@@ -43,7 +49,12 @@ export async function findAdminDir(
       const written = (await fs.readFile(path.join(dir, 'gitdir'), 'utf8')).trim()
       const absolute = path.isAbsolute(written) ? written : path.resolve(dir, written)
       // `<worktree>/.git`: resolve the worktree part, which is the one that can be a symlink.
-      entries.push({ dir, gitdir: `${await realOrGiven(path.dirname(absolute))}/.git`, locked })
+      const gitdir = `${await realOrGiven(path.dirname(absolute))}/.git`
+      entries.push({
+        dir,
+        gitdir,
+        locked: locked && !(opts.assumeUnlocked === true && gitdir === `${target}/.git`)
+      })
     } catch {
       // Not an admin dir we can read: it is not ours to remove.
     }
@@ -69,9 +80,10 @@ async function realOrGiven(p: string): Promise<string> {
 export async function canUnregister(
   repoPath: string,
   worktreePath: string,
-  git: (repo: string, args: string[]) => Promise<string>
+  git: (repo: string, args: string[]) => Promise<string>,
+  opts: { assumeUnlocked?: boolean } = {}
 ): Promise<boolean> {
-  return (await findAdminDir(repoPath, worktreePath, git)) !== null
+  return (await findAdminDir(repoPath, worktreePath, git, opts)) !== null
 }
 
 /** Removes the worktree's own admin dir; false when there is none to remove. */
@@ -82,6 +94,6 @@ export async function removeWorktreeAdmin(
 ): Promise<boolean> {
   const mine = await findAdminDir(repoPath, worktreePath, git)
   if (!mine) return false
-  await fs.rm(mine, { recursive: true, force: true })
+  await rawRm(mine, { recursive: true, force: true })
   return true
 }

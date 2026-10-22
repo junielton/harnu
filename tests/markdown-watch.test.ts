@@ -16,8 +16,14 @@ import {
 
 // markdown-watch imports `ipcMain` from `electron` directly (registerMarkdownWatchHandlers)
 // — stub it the same way tests/markdown-write-containment.test.ts does, since
-// this suite runs outside a real Electron process.
+// this suite runs outside a real Electron process. `app.getPath` is needed too:
+// T1 P5 threads the `keybindings.json` exact-path exception through the watch
+// gate, and resolving that path walks `settingsDir()` → `app.getPath('userData')`.
 vi.mock('electron', () => ({
+  app: { getPath: (): string => tmpdir() },
+  dialog: {},
+  shell: {},
+  BrowserWindow: class {},
   ipcMain: { handle: (): void => {}, on: (): void => {} }
 }))
 

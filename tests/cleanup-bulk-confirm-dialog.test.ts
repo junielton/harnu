@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import CleanupBulkConfirmDialog from '../src/renderer/src/components/CleanupBulkConfirmDialog.vue'
 import { i18n } from '@renderer/i18n'
 import type { DialogRow } from '../src/renderer/src/lib/gc-model'
+import { reasonKey } from '../src/renderer/src/components/cleanup-gc-copy'
 
 const MB = 1_000_000
 
@@ -23,6 +24,8 @@ function row(over: Partial<DialogRow> = {}): DialogRow {
     reasonDetail: null,
     project: null,
     risk: false,
+    detachedAt: null,
+    untracked: [],
     ...over
   }
 }
@@ -384,5 +387,113 @@ describe('CleanupBulkConfirmDialog — parity with the approved mockup', () => {
     wrapper?.unmount()
     await open([reviewRow()], 'review')
     expect(q('[data-testid="bulk-confirm"] svg')!.getAttribute('class')).toContain('trash')
+  })
+})
+
+describe('CleanupBulkConfirmDialog: the reason is the translated one for every code (F0 delta 1, item 6)', () => {
+  const CODES = [
+    'dirty',
+    'unpushed',
+    'open-idle-session',
+    'closed-unmerged',
+    'remote-gone',
+    'detached',
+    'unknown-fate',
+    'weak-merge-signal',
+    'shared-stack',
+    'cleanup-failed',
+    'path-unresolved',
+    'nested-worktree',
+    'check-failed',
+    'locked',
+    'operation-in-progress',
+    'no-known-worktree'
+  ]
+  const locale = i18n.global.locale as unknown as { value: string }
+  const original = locale.value
+  afterEach(() => {
+    locale.value = original
+  })
+
+  for (const lang of ['en', 'pt-BR']) {
+    it.each(CODES)(
+      `${lang}: %s reads as its i18n sentence, not the English engine detail`,
+      async (code) => {
+        locale.value = lang
+        await open(
+          [reviewRow({ reasonCode: code as never, reasonDetail: 'ENGINE-DETAIL' })],
+          'review'
+        )
+        const text = q('[data-testid="bulk-reason"]')!.textContent!.trim()
+        expect(text).toBe(i18n.global.t(reasonKey(code as never)))
+        expect(text).not.toBe('ENGINE-DETAIL')
+      }
+    )
+  }
+
+  describe('untracked files are named, never counted away (delta-1, item 8)', () => {
+    it('lists every untracked path of a row by name, with where they go', async () => {
+      await open(
+        [reviewRow({ untracked: ['notes.md', 'sketch/a.png', 'deep/er/b.txt'] })],
+        'review'
+      )
+      const el = q('[data-testid="bulk-untracked"]')!
+      expect(el).not.toBeNull()
+      for (const p of ['notes.md', 'sketch/a.png', 'deep/er/b.txt'])
+        expect(el.textContent).toContain(p)
+      expect(el.textContent).toContain('3')
+    })
+
+    it('shows nothing for a row with no untracked files', async () => {
+      await open([reviewRow()], 'review')
+      expect(q('[data-testid="bulk-untracked"]')).toBeNull()
+    })
+
+    const files = (n: number, from = 1): string[] =>
+      Array.from({ length: n }, (_, i) => `f${String(from + i).padStart(2, '0')}.md`)
+
+    it('names at most 10 per row and says how many more, the full list on hover (delta-2, item 4)', async () => {
+      await open([reviewRow({ untracked: files(25) })], 'review')
+      const el = q('[data-testid="bulk-untracked"]')!
+      for (const p of files(10)) expect(el.textContent).toContain(p)
+      expect(el.textContent).not.toContain('f11.md')
+      expect(el.textContent).toContain('25')
+      expect(el.textContent).toMatch(/15 more/)
+      for (const p of files(25)) expect(el.getAttribute('title')).toContain(p)
+    })
+
+    it('exactly 10 names fit: no "more"', async () => {
+      await open([reviewRow({ untracked: files(10) })], 'review')
+      const el = q('[data-testid="bulk-untracked"]')!
+      expect(el.textContent).toContain('f10.md')
+      expect(el.textContent).not.toMatch(/more/)
+    })
+
+    it('gives the dialog one total across its rows, only when there are untracked files', async () => {
+      await open(
+        [
+          reviewRow({ id: 'a', untracked: files(25) }),
+          reviewRow({ id: 'b', untracked: files(3) }),
+          reviewRow({ id: 'c' })
+        ],
+        'review'
+      )
+      const total = q('[data-testid="bulk-untracked-total"]')!
+      expect(total.textContent).toContain('28')
+    })
+
+    it('has no total when nothing is untracked', async () => {
+      await open([reviewRow()], 'review')
+      expect(q('[data-testid="bulk-untracked-total"]')).toBeNull()
+    })
+
+    it('a row without the new fields is neither detached nor untracked', async () => {
+      const legacy = { ...reviewRow() } as Partial<DialogRow>
+      delete legacy.detachedAt
+      delete legacy.untracked
+      await open([legacy as DialogRow], 'review')
+      expect(q('[data-testid="bulk-detached"]')).toBeNull()
+      expect(q('[data-testid="bulk-untracked"]')).toBeNull()
+    })
   })
 })

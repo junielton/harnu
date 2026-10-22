@@ -2,6 +2,7 @@ import type { GcStep } from '../../../main/gc/pipeline-core'
 import type { WorktreeBundle } from '../../../main/gc/bundle-core'
 import type { ReasonCode } from '../lib/gc-model'
 import type { RefusalCode } from '../lib/gc-jobs'
+import type { RemovalRefusal } from '../lib/gc-removability'
 
 /**
  * Copy keys shared by the Cleanup map, panel, list and Needs-you list (design.md "Workspace GC —
@@ -13,6 +14,7 @@ import type { RefusalCode } from '../lib/gc-jobs'
 // merged the main-side type that names it.
 const REASON_SUFFIX: Record<string, string> = {
   locked: 'locked',
+  'operation-in-progress': 'operationInProgress',
   dirty: 'dirty',
   unpushed: 'unpushed',
   'open-idle-session': 'openIdleSession',
@@ -25,6 +27,7 @@ const REASON_SUFFIX: Record<string, string> = {
   'cleanup-failed': 'cleanupFailed',
   'path-unresolved': 'pathUnresolved',
   'nested-worktree': 'nestedWorktree',
+  'check-failed': 'checkFailed',
   'no-known-worktree': 'noKnownWorktree'
 }
 
@@ -100,4 +103,14 @@ export function ticketParts(
 /** `cleanup.gc.refusal.*` key: one human sentence per refusal code. */
 export function refusalKey(code: RefusalCode): string {
   return `cleanup.gc.refusal.${code.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}`
+}
+
+/** `cleanup.gc.removal.reason.*` key: why a Remove cannot go ahead, in one sentence. */
+export function removalKey(reason: RemovalRefusal): string {
+  return `cleanup.gc.removal.reason.${reason.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}`
+}
+
+/** `cleanup.gc.guide.cause.*` key: the short noun phrase a refusal wears in the selection bar. */
+export function guideCauseKey(reason: RemovalRefusal): string {
+  return `cleanup.gc.guide.cause.${reason.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}`
 }

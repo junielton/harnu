@@ -214,3 +214,41 @@ describe('useLayoutStore inbox rail', () => {
     expect(useLayoutStore().inboxRailState).toBe('expanded')
   })
 })
+
+describe('useLayoutStore inbox rail order (T459)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', makeLocalStorage())
+    setActivePinia(createPinia())
+  })
+
+  it('defaults to newest-first and does not write storage until toggled', async () => {
+    const s = useLayoutStore()
+    expect(s.inboxRailOrder).toBe('newest-first')
+    await nextTick()
+    expect(localStorage.getItem('om2tab.inboxRailOrder')).toBeNull()
+  })
+
+  it('toggleInboxRailOrder flips the direction and persists it', async () => {
+    const s = useLayoutStore()
+    s.toggleInboxRailOrder()
+    expect(s.inboxRailOrder).toBe('oldest-first')
+    await nextTick()
+    expect(localStorage.getItem('om2tab.inboxRailOrder')).toBe('oldest-first')
+    s.toggleInboxRailOrder()
+    expect(s.inboxRailOrder).toBe('newest-first')
+    await nextTick()
+    expect(localStorage.getItem('om2tab.inboxRailOrder')).toBe('newest-first')
+  })
+
+  it('reads the persisted direction back on a fresh store', () => {
+    vi.stubGlobal('localStorage', makeLocalStorage({ 'om2tab.inboxRailOrder': 'oldest-first' }))
+    setActivePinia(createPinia())
+    expect(useLayoutStore().inboxRailOrder).toBe('oldest-first')
+  })
+
+  it('rejects a corrupt persisted value (falls back to newest-first)', () => {
+    vi.stubGlobal('localStorage', makeLocalStorage({ 'om2tab.inboxRailOrder': 'sideways' }))
+    setActivePinia(createPinia())
+    expect(useLayoutStore().inboxRailOrder).toBe('newest-first')
+  })
+})

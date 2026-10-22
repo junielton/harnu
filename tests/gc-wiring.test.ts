@@ -306,12 +306,12 @@ describe('the bundle builder gets only the folders that cannot fake a nested wor
 })
 
 describe('foreign checkouts are walked in the gather (S2 delta 7)', () => {
-  it('feeds the bundle builder the walk results and explains a failed walk', () => {
+  it('feeds the bundle builder the walk results; a failed walk leaves no entry, so it reads check-failed', () => {
     expect(scan).toMatch(/await collectForeignCheckouts\(/)
     expect(between(scan, 'const input = {', 'let bundles')).toMatch(
       /foreignCheckouts: foreign\.found/
     )
-    expect(scan).toMatch(/explainFailedWalks\(/)
+    expect(scan).not.toMatch(/explainFailedWalks/)
   })
 })
 
@@ -375,5 +375,17 @@ describe('a locked worktree is review at scan time (delta 6, item 2)', () => {
     expect(scan).toMatch(/listLockedWorktreePaths\(/)
     expect(scan).toMatch(/lockedItemIds\(/)
     expect(scan).toMatch(/locked: /)
+  })
+})
+
+describe('a finished job runs afterJob with the real seams (F0)', () => {
+  // The behaviour (forget, invalidate, then refresh from a fresh gather) is pinned in
+  // tests/gc-ghosts.test.ts and tests/gc-gatherer.test.ts; this only checks the wiring hands
+  // afterJob the real forget, the gatherer's invalidate and its gather.
+  it('emitDone passes forgetItems, the gatherer invalidate and gather', () => {
+    const done = between(ipc, 'emitDone: (d) => {', 'const shellDeps')
+    expect(done).toMatch(
+      /afterJob\(d, \{ forgetItems, invalidate: \(\) => gatherer\.invalidate\(\), refresh: gather \}\)/
+    )
   })
 })

@@ -67,8 +67,18 @@ export interface FleetTelemetry {
   sevenDayAtMs: number | null
 }
 
-/** Drop telemetry older than this (orphaned/closed sessions). */
+/**
+ * Telemetry older than this is no longer served as LIVE (orphaned/closed sessions, a machine that
+ * was off): it drops out of the per-session map and the fleet aggregate.
+ */
 export const TELEMETRY_TTL_MS = 24 * 3600_000
+
+/**
+ * How long an expired record is still kept as the session's LAST KNOWN values (BUG-196): the
+ * footer shows them dimmed with their age instead of going blank. Past this, a record is dropped
+ * on restore and on persist, which bounds the cache file.
+ */
+export const LAST_KNOWN_RETENTION_MS = 30 * 24 * 3600_000
 
 function numOrNull(x: unknown): number | null {
   return typeof x === 'number' && Number.isFinite(x) ? x : null

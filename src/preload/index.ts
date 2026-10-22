@@ -19,6 +19,17 @@ import type { UsageSnapshot } from '../main/usage-parse'
 import type { TelemetryPayload } from '../main/statusline'
 import type { TaskState, FailureReason } from '../main/hook-state'
 import type { PtyExitReason } from '../main/pty'
+import type { TerminalStatus } from '../main/terminal-lifecycle'
+import type {
+  BrowserActivityWord,
+  BrowserEmulatePatch,
+  BrowserOverlayRect,
+  BrowserPaneState,
+  BrowserPersistEvent,
+  BrowserRect
+} from '../main/browser/state-types'
+import type { TerminalChipState } from '../main/terminal-registry'
+import type { CommentPaneState, CommentSubmitResult, OverlayTheme } from '../shared/browser-comment'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
 import type { ShadowEntry } from '../main/responder-registry'
@@ -57,7 +68,15 @@ import type {
   ReviewSubmitResult,
   BlastRadiusConfig
 } from '../main/review-ipc'
+import type {
+  SelectionComposeRequest,
+  SelectionComposeResult,
+  SelectionSendRequest,
+  SelectionSendResult,
+  SelectionStateEvent
+} from '../main/companion/review-selection-core'
 import type { PushChannel, PushConfig, PushSendPayload, PushTestResult } from '../main/push'
+import type { ResolvedKeybindings } from '../main/keybindings-core'
 import type {
   ClaudeSettingsRead,
   ClaudeSettingsWire,
@@ -138,9 +157,14 @@ import type { Tombstone } from '../main/reaper/journal'
 import type { ReaperPrefs } from '../main/reaper/prefs'
 import type { HarvestableAlert } from '../main/reaper/reaper-ipc'
 import type { GcPrefs } from '../main/gc/gc-prefs'
+import type { RemoteFacts } from '../main/gc/gc-remote-delete'
 import type {
   CycleRecord as GcCycleRecord,
   GcCleanAck,
+  GcRecheckResult,
+  GcGuidance,
+  GcRecoveryItem,
+  GcRecoveryAction,
   GcCleanOptions,
   GcJobDone,
   GcJobInfo,
@@ -190,6 +214,25 @@ export type {
 // `FolderEntry`/`GitMeta` directly. `FolderEntry` is the wire shape; the store
 // enriches it into its own `Folder` (adds `expanded`/`pinned`).
 export type { FolderEntry, GitMeta }
+// T564 U1: the browser pane's wire types, so the renderer imports them from the barrel.
+export type {
+  BrowserActivityWord,
+  BrowserDeviceState,
+  BrowserEmulatePatch,
+  BrowserEmulationState,
+  BrowserNotice,
+  BrowserOverlayRect,
+  BrowserPaneState,
+  BrowserPersistEvent,
+  BrowserRect
+} from '../main/browser/state-types'
+// T564 U6: the point-and-comment wire types.
+export type {
+  CommentPaneState,
+  CommentPinView,
+  CommentSubmitResult,
+  OverlayTheme
+} from '../shared/browser-comment'
 
 // Bundled skills (T217). `bundled-skills.ts` is a node module (electron `app` +
 // fs), so the renderer imports the pane's wire types type-only.
@@ -550,6 +593,13 @@ interface PtyCreateOpts {
    * treats it as `'operator'` (fail closed).
    */
   spawnedBy?: 'operator' | 'agent'
+  /**
+   * T481: the operator's shell pane naming itself, so main's terminal registry knows it and an
+   * agent may read it once the folder opts in. Only honored for `kind === 'shell'` with a `cwd`;
+   * main forces the origin to `operator`, takes the folder from `cwd`, and refuses an id it holds
+   * unless that is a dead operator record (a pane restored after a reload).
+   */
+  terminal?: { terminalId: string }
   /**
    * BUG-70 §4 park ledger: how this session is being woken. Threaded through
    * so an AGENT-driven wake (`message_session` on a parked recipient, T215) is
@@ -975,6 +1025,9 @@ export interface MarkdownChangedWire {
 /** `canvas:changed` payload: a watched DiagramPane's backing canvas changed on disk. */
 export interface CanvasChangedWire {
   path: string
+  /** Set when the change is a pane's own Save echoed to the OTHER panes on the file:
+   *  the pane whose `writerId` this is ignores it (BUG-209). */
+  writerId?: string
 }
 /** Live MCP server status for the Settings pane. */
 export interface McpServerStatus {
@@ -1154,6 +1207,45 @@ const api = {
   /** Snapshot a PTY's scrollback by sessionKey (Fleet status board last-line). */
   ptyReplayForSession: (sessionKey: string): Promise<PtyReplay> =>
     ipcRenderer.invoke('pty:replayForSession', sessionKey),
+  /**
+   * T474: what main knows about an agent terminal — whether its PTY already ended, and the
+   * tail of its output if so. Asked right after subscribing to the PTY's exit, so an exit that
+   * happened before the pane landed is never lost.
+   */
+  terminalStatus: (terminalId: string): Promise<TerminalStatus> =>
+    ipcRenderer.invoke('terminal:status', terminalId),
+  /** T474: main owns teardown — kill the terminal's PTY whether or not its pane ever mounted. */
+  terminalClose: (terminalId: string): Promise<boolean> =>
+    ipcRenderer.invoke('terminal:close', terminalId),
+  /**
+   * T474 B7: the operator's Disconnect — permanent, stops agent reads AND writes on this
+   * terminal; the PTY keeps running. Resolves false for an unknown terminal. There is no
+   * reconnect. (The pane's button is unit U1's.)
+   */
+  terminalDisconnect: (terminalId: string): Promise<boolean> =>
+    ipcRenderer.invoke('terminal:disconnect', terminalId),
+  /**
+   * T474 U1: what the pane's connection chip renders for a terminal — origin, owner, whether it
+   * was disconnected or exited, and whether an agent holds a write lease. Null for an unknown id.
+   */
+  terminalChip: (terminalId: string): Promise<TerminalChipState | null> =>
+    ipcRenderer.invoke('terminal:chip', terminalId),
+  /**
+   * T474 U1: a terminal's write lease was granted or ended — re-read its chip. Main sends it from
+   * the lease table, so a lease that ends with no agent activity still clears the pane chip.
+   */
+  onTerminalChipChanged: (cb: (e: { terminalId: string }) => void): (() => void) =>
+    subscribe('terminal:chipChanged', cb),
+  /**
+   * T474 B7: an agent read or typed into a terminal — coalesced by main to one event per
+   * terminal per 250 ms. Feeds the pane chip's live signal (unit U1).
+   */
+  onTerminalActivity: (
+    cb: (e: { terminalId: string; kind: 'read' | 'write'; at: number }) => void
+  ): (() => void) => subscribe('terminal:activity', cb),
+  /** T474: this terminal's renderer xterm was disposed (the PTY stays alive). */
+  terminalXtermGone: (terminalId: string): void =>
+    ipcRenderer.send('terminal:xtermGone', terminalId),
   onPtyData: (id: string, cb: (data: string, seq: number) => void): (() => void) => {
     let set = ptyDataListeners.get(id)
     if (!set) {
@@ -1405,8 +1497,9 @@ const api = {
   // T218 U1: write a canvas document (the pane's explicit Save). Main validates
   // the payload again before any byte lands and writes atomically, so a Save
   // that fails validation writes nothing at all.
-  canvasWrite: (path: string, doc: unknown): Promise<CanvasWriteResult> =>
-    ipcRenderer.invoke('canvas:write', { path, doc }),
+  // `writerId` identifies the saving pane so a second pane on the same file hears the Save.
+  canvasWrite: (path: string, doc: unknown, writerId?: string): Promise<CanvasWriteResult> =>
+    ipcRenderer.invoke('canvas:write', { path, doc, writerId }),
   // T218 U6: externalise pasted/dropped image bytes into the canvas's `assets/`
   // sibling dir and resolve the RELATIVE `assets/<file>` paths to store on the
   // nodes (spec §4.6 — image bytes never enter the canvas file). Runs through
@@ -1415,11 +1508,13 @@ const api = {
   canvasAttachAssets: (path: string, images: CanvasAttachInput[]): Promise<CanvasAttachResult> =>
     ipcRenderer.invoke('canvas:attachAssets', { path, images }),
   // T218 U1: register/unregister a DiagramPane's live-reload watch. Ref-counted
-  // in main (multiple panes on the same path share one watcher).
-  canvasWatchStart: (path: string): Promise<void> =>
-    ipcRenderer.invoke('canvas:watchStart', { path }),
-  canvasWatchStop: (path: string): Promise<void> =>
-    ipcRenderer.invoke('canvas:watchStop', { path }),
+  // in main (multiple panes on the same path share one watcher). Resolves only
+  // once the file is actually being watched — the pane reads after that (BUG-210).
+  // `paneId` (the pane's `writerId`) lets main tell whether a Save echo has other listeners.
+  canvasWatchStart: (path: string, paneId?: string): Promise<void> =>
+    ipcRenderer.invoke('canvas:watchStart', { path, paneId }),
+  canvasWatchStop: (path: string, paneId?: string): Promise<void> =>
+    ipcRenderer.invoke('canvas:watchStop', { path, paneId }),
   // T87: probe a git folder for a WORKTREE.md creator — resolves the repo root,
   // reports whether a manifest already exists, and returns the deterministic
   // findings (lockfile/.env/node_modules/default branch) that drive the template.
@@ -1788,6 +1883,21 @@ const api = {
   onSettingsChanged: (cb: (p: { data?: SettingsData; error?: boolean }) => void): (() => void) =>
     subscribe('settings:changed', cb),
 
+  // ---- Keybindings (T1 — keybindings.json override layer) ------------------
+  // Main owns the file (next to settings.json, follows its relocation) + the
+  // chokidar watch. `keybindingsLoad` reads + resolves it and (re)starts the
+  // watch; `onKeybindingsChanged` streams a re-resolved table after a hand-edit;
+  // `keybindingsSave` writes a body verbatim (the Settings pane serializes it).
+  /** Read + resolve keybindings.json (defaults ← overrides) and start the watch. */
+  keybindingsLoad: (): Promise<{ path: string; resolved: ResolvedKeybindings }> =>
+    ipcRenderer.invoke('keybindings:load'),
+  /** Overwrite keybindings.json with `body` verbatim. */
+  keybindingsSave: (body: string): Promise<void> =>
+    ipcRenderer.invoke('keybindings:save', { body }),
+  /** Subscribe to re-resolved keybindings after an external edit. */
+  onKeybindingsChanged: (cb: (p: { resolved: ResolvedKeybindings }) => void): (() => void) =>
+    subscribe('keybindings:changed', cb),
+
   // ---- Plan usage (claude -p "/usage" poller) ------------------------------
   // Main spawns the official client and parses its panel; the renderer store
   // (`stores/usage.ts`) calls `usageGet()` at init and subscribes to pushes.
@@ -1803,6 +1913,19 @@ const api = {
   telemetryGet: (): Promise<TelemetryPayload> => ipcRenderer.invoke('telemetry:get'),
   onTelemetryUpdated: (cb: (payload: TelemetryPayload) => void): (() => void) =>
     subscribe('telemetry:updated', cb),
+  /**
+   * Model + context % read from the tail of a session's own transcript (BUG-196): what the footer
+   * shows, dimmed, when no telemetry record exists. `null` when it cannot be read or has no turn.
+   */
+  telemetryTranscriptFallback: (
+    sessionId: string,
+    fullPath: string
+  ): Promise<{ modelId: string; contextPercent: number | null; atMs: number } | null> =>
+    ipcRenderer.invoke('telemetry:transcriptFallback', sessionId, fullPath),
+  /** The self-heal re-installed a removed statusLine; these sessions started before it (BUG-196). */
+  onStatuslineHealed: (
+    cb: (payload: { atMs: number; sessionKeys: string[] }) => void
+  ): (() => void) => subscribe('statusline:healed', cb),
   statuslineStatus: (): Promise<{ enabled: boolean; foreignPreserved: boolean }> =>
     ipcRenderer.invoke('statusline:status'),
   statuslineSetEnabled: (enabled: boolean): Promise<{ enabled: boolean }> =>
@@ -2240,6 +2363,134 @@ const api = {
   // action. Default OFF (agents act freely). Global — not per folder.
   mcpAskGet: (): Promise<boolean> => ipcRenderer.invoke('mcp:ask:get'),
   mcpAskSet: (ask: boolean): Promise<boolean> => ipcRenderer.invoke('mcp:ask:set', ask),
+  // T474 B7: the global "Allow agents to type into terminals" kill-switch (default ON).
+  mcpAgentTerminalWritesGet: (): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentTerminalWrites:get'),
+  mcpAgentTerminalWritesSet: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentTerminalWrites:set', enabled),
+  // T564 U1: the "Allow agents to drive browser panes" kill-switch (default ON).
+  mcpAgentBrowserWritesGet: (): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentBrowserWrites:get'),
+  mcpAgentBrowserWritesSet: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentBrowserWrites:set', enabled),
+
+  // ---- T564 U1: the browser pane. The renderer owns geometry and chrome, main owns the native view. ----
+  /** The operator opened a pane (Split menu): main creates the guest view and returns its pane id. */
+  browserOpen: (payload: {
+    folder: string
+    url?: string
+  }): Promise<{ ok: true; paneId: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('browser:open', payload),
+  /** The pane host's rect in CSS px (rAF-throttled by the caller); `visible: false` hides the view. */
+  browserBounds: (payload: { paneId: string; rect: BrowserRect; visible: boolean }): void =>
+    ipcRenderer.send('browser:bounds', payload),
+  /** Every app layer that can overlap a pane (menus, dialogs, toasts, ...): rects or 'fullscreen'. */
+  browserOverlays: (overlays: BrowserOverlayRect[]): void =>
+    ipcRenderer.send('browser:overlays', overlays),
+  /** A splitter, pane or sidebar drag started or ended: freeze every visible view meanwhile. */
+  browserDrag: (active: boolean): void => ipcRenderer.send('browser:drag', active),
+  /** The frozen image is on screen; main may hide the native view now. */
+  browserFreezePainted: (paneId: string): void => ipcRenderer.send('browser:freezePainted', paneId),
+  /** The canonical chords the renderer binds in the global and browser scopes. */
+  browserSetChords: (chords: string[]): void => ipcRenderer.send('browser:setChords', chords),
+  browserNavigate: (payload: {
+    paneId: string
+    url?: string
+    action?: 'back' | 'forward' | 'reload' | 'stop'
+  }): Promise<{ ok: true } | { ok: false; scheme: string }> =>
+    ipcRenderer.invoke('browser:navigate', payload),
+  browserState: (paneId: string): Promise<BrowserPaneState | null> =>
+    ipcRenderer.invoke('browser:state', paneId),
+  /** T574: bring a discarded pane back ("Paused to save memory — click to reload"). Resolves whether it is live. */
+  browserRevive: (paneId: string): Promise<boolean> => ipcRenderer.invoke('browser:revive', paneId),
+  browserDestroy: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:destroy', paneId),
+  browserDevtools: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:devtools', paneId),
+  /** Move the OS keyboard focus from a guest page back to the app (a chord that needs the address bar). */
+  browserFocusApp: (): Promise<boolean> => ipcRenderer.invoke('browser:focusApp'),
+  browserDismissFlag: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:dismissFlag', paneId),
+  browserDismissNotice: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:dismissNotice', paneId),
+  /** Permanent: the agent loses reads and writes on this pane. No call reconnects it. */
+  browserDisconnect: (paneId: string): Promise<boolean> =>
+    ipcRenderer.invoke('browser:disconnect', paneId),
+  /** Pause agent writes for 10 minutes; resolves the epoch ms the pause ends, or null if refused. */
+  browserPause: (paneId: string): Promise<number | null> =>
+    ipcRenderer.invoke('browser:pause', paneId),
+  browserResume: (paneId: string): Promise<boolean> => ipcRenderer.invoke('browser:resume', paneId),
+  /** T572 U5: zoom the pane's page one ladder step, or back to 100% (refused in device mode). Resolves the factor. */
+  browserZoom: (payload: {
+    paneId: string
+    action: 'in' | 'out' | 'reset'
+  }): Promise<number | null> => ipcRenderer.invoke('browser:zoom', payload),
+  /** T572 U5: the device picker: the same argument shape `browser_emulate` takes (plus `rotate`). */
+  browserEmulate: (payload: {
+    paneId: string
+    patch: BrowserEmulatePatch
+  }): Promise<{ ok: true } | { ok: false; detail: string }> =>
+    ipcRenderer.invoke('browser:emulate', payload),
+  /** T572 U5: answer the "Save to .harnu/out/downloads/?" prompt. */
+  browserDownloadDecision: (payload: { paneId: string; allow: boolean }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:downloadDecision', payload),
+  /** The operator's per-pane "Allow network" switch on a page pane (T569 U2). Operator only. */
+  browserSetAllowNetwork: (payload: { paneId: string; allow: boolean }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:setAllowNetwork', payload),
+  /** Switch point-and-comment on or off for a pane (T573). Operator only; no verb reaches it. */
+  browserOverlaySet: (payload: {
+    paneId: string
+    active: boolean
+    hint: string
+    exitHint: string
+    theme: OverlayTheme
+  }): Promise<boolean> => ipcRenderer.invoke('browser:overlaySet', payload),
+  /** The pins and the open composer of a pane (T573). */
+  browserCommentState: (paneId: string): Promise<CommentPaneState | null> =>
+    ipcRenderer.invoke('browser:commentState', paneId),
+  /** Open the docked composer on a pin, or close it (`pinId: null`). */
+  browserCommentOpen: (payload: { paneId: string; pinId: string | null }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:commentOpen', payload),
+  /** Keep the text typed in the composer as a draft on its pin. */
+  browserCommentSave: (payload: {
+    paneId: string
+    pinId: string
+    text: string
+  }): Promise<boolean> => ipcRenderer.invoke('browser:commentSave', payload),
+  /** Drop a draft pin (an empty composer closed with Esc). */
+  browserCommentDiscard: (payload: { paneId: string; pinId: string }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:commentDiscard', payload),
+  /** Send the named pins, or every saved draft, to a session as one `[harnu-comment]` turn. */
+  browserCommentSubmit: (payload: {
+    paneId: string
+    which: string[] | 'drafts'
+    sessionId: string | null
+  }): Promise<CommentSubmitResult> => ipcRenderer.invoke('browser:commentSubmit', payload),
+  onBrowserCommentState: (cb: (state: CommentPaneState) => void): (() => void) =>
+    subscribe('browser:commentState', cb),
+  onBrowserState: (cb: (state: BrowserPaneState) => void): (() => void) =>
+    subscribe('browser:state', cb),
+  /** T574: what to keep on a pane in `helpers.json` so a restart can restore it (pins, scroll). */
+  onBrowserPersist: (cb: (e: BrowserPersistEvent) => void): (() => void) =>
+    subscribe('browser:persist', cb),
+  onBrowserFreeze: (cb: (p: { paneId: string; dataUrl: string | null }) => void): (() => void) =>
+    subscribe('browser:freeze', cb),
+  onBrowserUnfreeze: (cb: (p: { paneId: string }) => void): (() => void) =>
+    subscribe('browser:unfreeze', cb),
+  onBrowserChord: (cb: (p: { paneId: string; chord: string }) => void): (() => void) =>
+    subscribe('browser:chord', cb),
+  onBrowserActivity: (
+    cb: (p: { paneId: string; word: BrowserActivityWord }) => void
+  ): (() => void) => subscribe('browser:activity', cb),
+  /** A popup the operator clicked open: add an operator-class pane (spec §3.2). */
+  onBrowserPopup: (
+    cb: (p: {
+      paneId: string
+      worktreePath: string
+      url: string
+      partition: 'operator' | 'agent'
+    }) => void
+  ): (() => void) => subscribe('browser:popup', cb),
   // T31: the Sentinel auto-denied a catastrophic command — surface it prominently.
   onSentinelBlocked: (cb: (p: { reason: string; sessionId: string }) => void): (() => void) =>
     subscribe('sentinel:blocked', cb),
@@ -2283,6 +2534,25 @@ const api = {
     enabled: boolean
   ): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:setOrchestratorDefault', { targetPath, enabled }),
+  // T481: per-folder "let agents read terminals I open" opt-in (FolderMenu toggle).
+  // EXACT-PATH ONLY — a linked worktree never inherits its parent repo's value.
+  userProjectsSetTerminalRead: (
+    targetPath: string,
+    enabled: boolean
+  ): Promise<UserProjectsPayload> =>
+    ipcRenderer.invoke('userProjects:setTerminalRead', { targetPath, enabled }),
+  // T571: per-folder "let agents read browser panes I open" opt-in (FolderMenu toggle), exact path only.
+  userProjectsSetBrowserRead: (
+    targetPath: string,
+    enabled: boolean
+  ): Promise<UserProjectsPayload> =>
+    ipcRenderer.invoke('userProjects:setBrowserRead', { targetPath, enabled }),
+  // T571: replace a folder's trusted dev hosts (Trusted dev hosts dialog). Operator-only: no MCP verb exists.
+  userProjectsSetBrowserTrustedHosts: (
+    targetPath: string,
+    hosts: string[]
+  ): Promise<UserProjectsPayload> =>
+    ipcRenderer.invoke('userProjects:setBrowserTrustedHosts', { targetPath, hosts }),
   // T191: "Set parent folder" / "Clear parent folder" (folder menu) — the manual
   // override for the `bornFrom` lineage edge. Pass `null` to clear.
   userProjectsSetBornFrom: (
@@ -2507,6 +2777,24 @@ const api = {
   onReviewBlastRadiusChanged: (
     cb: (payload: { folder: string; globs: string[] }) => void
   ): (() => void) => subscribe('review:blastRadiusChanged', cb),
+  /**
+   * Keep the open review companion's view of the selection up to date (T257): the selection
+   * store sends every change, debounced, as a hidden context row. It is not an MCP verb, and the request carries
+   * coordinates, never text — `main` reads the lines itself. Resolves, never rejects: a refusal
+   * is `{ ok:false, refusal }` with a stable code; the delivery that follows arrives as
+   * `review:selection:state` events.
+   */
+  reviewSelectionSend: (req: SelectionSendRequest): Promise<SelectionSendResult> =>
+    ipcRenderer.invoke('review:selection:send', req),
+  /**
+   * The exact text a send would carry, for "Copy as text". Needs git and nothing else, so it
+   * works with no companion, no mod and no binding. Sends nothing.
+   */
+  reviewSelectionCompose: (req: SelectionComposeRequest): Promise<SelectionComposeResult> =>
+    ipcRenderer.invoke('review:selection:compose', req),
+  /** A delivery moved along (queued → delivered → asked → answered, or an outcome). Codes only. */
+  onReviewSelectionState: (cb: (ev: SelectionStateEvent) => void): (() => void) =>
+    subscribe('review:selection:state', cb),
 
   // ---- Reaper cleanup engine (UI-only; never exposed to an agent) -----------
   /** The last computed snapshot, or `null` before the first scan this session. */
@@ -2557,6 +2845,29 @@ const api = {
     ipcRenderer.invoke('gc:clean', ids, opts),
   gcKeep: (id: string): Promise<GcPrefs> => ipcRenderer.invoke('gc:keep', id),
   gcUnkeep: (id: string): Promise<GcPrefs> => ipcRenderer.invoke('gc:unkeep', id),
+  /** "Check again" on a demoted item: forgets its remembered refusal and reprobes it once (read-only). */
+  gcRecheck: (id: string): Promise<GcRecheckResult> => ipcRenderer.invoke('gc:recheck', id),
+  /**
+   * What GitHub and the remote say about these branches, asked when the remove dialog opens (a gather
+   * never asks): by bundle id, for branches a merged PR vouches for. Cached ten minutes in main.
+   */
+  gcRemoteFacts: (ids: string[]): Promise<Record<string, RemoteFacts>> =>
+    ipcRenderer.invoke('gc:remoteFacts', ids),
+  /** What main sees about a refused item right now: the data a guided Cleanup action shows. */
+  gcGuide: (id: string): Promise<GcGuidance> => ipcRenderer.invoke('gc:guide', id),
+  /** What the prep journal wants the operator to know: notices until answered, put-back reports until acknowledged. */
+  gcRecoveryList: (): Promise<GcRecoveryItem[]> => ipcRenderer.invoke('gc:recovery:list'),
+  /** The renderer showed these in Activity: they are not announced again. */
+  gcRecoveryAck: (ids: string[]): Promise<void> => ipcRenderer.invoke('gc:recovery:ack', ids),
+  /** The operator's answer to a notice: start the containers again, lock the worktree again, or dismiss. */
+  gcRecoveryAct: (
+    id: string,
+    action: GcRecoveryAction
+  ): Promise<{ ok: true } | { ok: false; error: string; mismatch?: string }> =>
+    ipcRenderer.invoke('gc:recovery:act', { id, action }),
+  /** The journal changed (boot recovery finished, a notice was answered). */
+  onGcRecoveryChanged: (cb: () => void): (() => void) =>
+    subscribe('gc:recovery:changed', () => cb()),
   gcPrefs: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:get'),
   /** Whole-object write, clamped in main. `keep` and the acknowledgement are not writable here. */
   gcSetPrefs: (prefs: GcPrefs): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:set', prefs),
@@ -2578,6 +2889,49 @@ const api = {
    */
   gcOpinionCached: (ids: string[]): Promise<Record<string, GcOpinion>> =>
     ipcRenderer.invoke('gc:opinion:cached', ids),
+  /**
+   * Deletes the archive refs (`refs/archive/**`) the operator confirmed in one repo. Each is
+   * deleted only if it still has the shas it was listed with. Never runs `git gc`.
+   */
+  gcDeleteArchives: (req: {
+    repoPath: string
+    archives: Array<{
+      namespace: string
+      tipSha: string | null
+      wipSha: string | null
+      members?: Array<{ ref: string; sha: string }>
+    }>
+  }): Promise<{
+    ok: boolean
+    deleted: number
+    archives: number
+    failed: number
+    changed: string[]
+    unknownRepo?: boolean
+    neverClean?: boolean
+    protectedArchives?: number
+  }> => ipcRenderer.invoke('gc:archives:delete', req),
+  /** "Run git gc now" in one repo, after its own confirm. */
+  gcRunArchiveGc: (repoPath: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('gc:archives:gc', repoPath),
+  /**
+   * "Empty what Harnu moved to the trash": only the entries named by `ids` (the ones the confirm
+   * listed), each only while it is still exactly the entry Harnu recorded. Never the user's other trash.
+   */
+  gcEmptyTrash: (
+    ids: string[]
+  ): Promise<{
+    unsupported: boolean
+    emptiedBytes: number
+    emptied: number
+    missing: number
+    skipped: number
+    changed: number
+    unverifiable: number
+    unreachable: number
+    failed: number
+    location: string | null
+  }> => ipcRenderer.invoke('gc:trash:empty', ids),
   onGcOpinionResult: (cb: (r: GcOpinionResult) => void): (() => void) =>
     subscribe('gc:opinion:result', cb),
   onGcOpinionDone: (cb: (d: GcOpinionDone) => void): (() => void) =>
@@ -2629,6 +2983,9 @@ const api = {
   schedulerList: (): Promise<Worker[]> => ipcRenderer.invoke('scheduler:list'),
   schedulerSave: (worker: Partial<Worker>): Promise<Worker[]> =>
     ipcRenderer.invoke('scheduler:save', worker),
+  // T483: pin/unpin is its own call — `schedulerSave` never moves a pin.
+  schedulerSetPinned: (id: string, pinned: boolean): Promise<Worker[]> =>
+    ipcRenderer.invoke('scheduler:setPinned', id, pinned),
   schedulerDelete: (id: string): Promise<Worker[]> => ipcRenderer.invoke('scheduler:delete', id),
   schedulerRunNow: (id: string): Promise<void> => ipcRenderer.invoke('scheduler:runNow', id),
   schedulerStop: (id: string): Promise<void> => ipcRenderer.invoke('scheduler:stop', id),

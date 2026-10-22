@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { mkdtempSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
 
 /**
  * Containment hardening for the T74 markdown reader (AC5/AC6), broadened by
@@ -23,6 +24,7 @@ vi.mock('electron', () => ({
 
 import {
   checkMarkdownReadAllowed,
+  isExactPathSymlink,
   isProseExt,
   PROSE_EXTENSIONS,
   MAX_MARKDOWN_BYTES
@@ -105,6 +107,56 @@ describe('markdown read — path containment', () => {
     expect(checkMarkdownReadAllowed('/etc/passwd', [root])).toEqual({
       ok: false,
       code: 'outside-roots'
+    })
+  })
+
+  describe('exact-path exception (T1 P5 — keybindings.json editor pane)', () => {
+    const kb = path.resolve('/home/user/.config/Harnu/keybindings.json')
+
+    it('admits the one exact out-of-root path when it is passed', () => {
+      expect(checkMarkdownReadAllowed(kb, [root], kb)).toEqual({ ok: true })
+    })
+
+    it('does not admit that path without the exception (the open_file validator path)', () => {
+      expect(checkMarkdownReadAllowed(kb, [root])).toEqual({ ok: false, code: 'outside-roots' })
+    })
+
+    it('the exception is exact — a sibling in the same dir is still refused', () => {
+      const sibling = path.resolve('/home/user/.config/Harnu/settings.json')
+      expect(checkMarkdownReadAllowed(sibling, [root], kb)).toEqual({
+        ok: false,
+        code: 'outside-roots'
+      })
+    })
+
+    it('still admits an in-root path when an exception is also supplied', () => {
+      expect(checkMarkdownReadAllowed(path.join(root, 'design.md'), [root], kb)).toEqual({
+        ok: true
+      })
+    })
+  })
+
+  describe('isExactPathSymlink (T1 P5 — refuse a symlink at the exact-path exception)', () => {
+    it('true only when the exact-path exception admitted a real symlink', async () => {
+      const tmp = mkdtempSync(path.join(os.tmpdir(), 'kb-symlink-'))
+      try {
+        const real = path.join(tmp, 'real.json')
+        const link = path.join(tmp, 'keybindings.json')
+        writeFileSync(real, '[]\n', 'utf8')
+        symlinkSync(real, link)
+
+        // Admitted by the exact-path exception AND a symlink → refuse.
+        expect(await isExactPathSymlink(link, link)).toBe(true)
+        // A plain file at the exact path → fine.
+        expect(await isExactPathSymlink(real, real)).toBe(false)
+        // The symlink, but NOT the passed exact path → not our concern here
+        // (containment already handled it).
+        expect(await isExactPathSymlink(link, real)).toBe(false)
+        // No exception supplied at all.
+        expect(await isExactPathSymlink(link, null)).toBe(false)
+      } finally {
+        rmSync(tmp, { recursive: true, force: true })
+      }
     })
   })
 })

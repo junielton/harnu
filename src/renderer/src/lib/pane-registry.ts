@@ -113,5 +113,17 @@ export const paneRegistry: Record<AnyHelperPane['type'], PaneRegistryEntry> = {
     persistable: true,
     dedupKey: (p) => (p as HelperPane).filePath,
     maxInstances: MAX_CANVAS_PANES
+  },
+  // T564 U1 — the browser pane. Persistable since T574 (spec §10.3): after a restart main reopens it DISCARDED (no
+  // webContents until it is shown or driven) at the same address, with its zoom, emulation, network switch, scroll
+  // and pins, which main keeps current on the pane's `payload` (`lib/browser-persist.ts`). Leases, network capture,
+  // the "opened by agent" flag and the pause timer are not restored. URL panes never dedupe; a page pane's
+  // dedupe is by file and lives in the `browser_open` verb.
+  //
+  // No `maxInstances` on purpose: the registry's cap recycles the OLDEST pane silently, while agent panes need
+  // a REFUSAL ("reuse one", `PANE_LIMIT`) and operator panes are unlimited (decision 28), so the cap lives in
+  // the verb handler (`browser/verbs-core.ts`) and the plan layer, not here.
+  browser: {
+    persistable: true
   }
 }

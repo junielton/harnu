@@ -32,6 +32,20 @@ export interface CanvasPalette {
   text3: string
   /** `--color-accent` — edges, and the selection halo the plugins draw. */
   accent: string
+  /** `--color-accent-soft` — the `accent` node tone's fill (T536 U3). */
+  accentSoft: string
+  /** `--color-green` — the `green` node tone's outline, and a green text label. */
+  green: string
+  /** `--color-green-soft` — the `green` node tone's fill. */
+  greenSoft: string
+  /** `--color-warning` — the `amber` node tone's outline, and an amber text label. */
+  warning: string
+  /** `--color-warning-soft` — the `amber` node tone's fill. */
+  warningSoft: string
+  /** `--color-red` — the `red` node tone's outline, and a red text label. */
+  red: string
+  /** `--color-red-soft` — the `red` node tone's fill. */
+  redSoft: string
   /** `--font-sans` — labels match the app's own type, not the browser default. */
   fontSans: string
 }
@@ -49,6 +63,13 @@ const TOKENS: ReadonlyArray<readonly [keyof CanvasPalette, string]> = [
   ['text2', '--color-text-2'],
   ['text3', '--color-text-3'],
   ['accent', '--color-accent'],
+  ['accentSoft', '--color-accent-soft'],
+  ['green', '--color-green'],
+  ['greenSoft', '--color-green-soft'],
+  ['warning', '--color-warning'],
+  ['warningSoft', '--color-warning-soft'],
+  ['red', '--color-red'],
+  ['redSoft', '--color-red-soft'],
   ['fontSans', '--font-sans']
 ]
 
@@ -68,6 +89,13 @@ const FALLBACK: CanvasPalette = {
   text2: 'currentColor',
   text3: 'currentColor',
   accent: 'currentColor',
+  accentSoft: 'transparent',
+  green: 'currentColor',
+  greenSoft: 'transparent',
+  warning: 'currentColor',
+  warningSoft: 'transparent',
+  red: 'currentColor',
+  redSoft: 'transparent',
   fontSans: 'inherit'
 }
 

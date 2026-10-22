@@ -40,6 +40,8 @@ export const COMMAND_OPS = [
   'session.dispatchCard',
   'pane.split',
   'pane.openMarkdown',
+  // T564 U1: show a browser pane main already created (an agent's `browser_open`, or a popup).
+  'pane.browser',
   'pane.closeFile',
   'pane.closePane',
   'roadmap.bootLabels',
@@ -53,7 +55,10 @@ export const COMMAND_OPS = [
   // a live process to reach. HEADLESS — it must never select the session, for
   // the same reason `pane.split`/`pane.openMarkdown` never do: an agent's
   // message cannot yank an operator who is looking somewhere else.
-  'session.wake'
+  'session.wake',
+  // T569 U2: put text into a session as a USER turn (a page event from a live panel; the overlay's comments
+  // reuse it). The renderer resolves the destination and the live PTY; main wakes a parked one first.
+  'session.userTurn'
 ] as const
 
 /** A router-dispatchable command op — one of {@link COMMAND_OPS}. */
@@ -103,8 +108,12 @@ export interface CommandRouterActions {
     prePrompt?: string,
     bootOverride?: { model?: string; effort?: string }
   ): void
-  /** Headless: append a shell helper to a worktree's stack; returns the pane id. */
-  addShellHelper(worktreePath: string, cwd: string): string
+  /**
+   * Headless: append a shell helper to a worktree's stack; returns the pane id. `terminal` is
+   * present when main already spawned the PTY (T474): the pane takes that id and adopts that PTY
+   * instead of minting its own, and an id the stack already holds is returned, not duplicated.
+   */
+  addShellHelper(worktreePath: string, cwd: string, terminal?: AgentTerminalSplit): string
   /** Headless: append a `claude --resume` helper to a worktree; returns the pane id. */
   addResumeHelper(worktreePath: string, sessionId: string, cwd: string): string
   /**
@@ -123,6 +132,34 @@ export interface CommandRouterActions {
    * pane id (new, or the existing one on a dedup hit).
    */
   addCanvasHelper(worktreePath: string, filePath: string, cwd: string): string
+  /**
+   * T564 U1: show a browser pane main already created in the TARGET worktree's stack, headlessly (an agent's
+   * `browser_open` never selects the worktree or moves focus). The pane id is main's `paneId`. Returns the
+   * pane id (the existing one when the stack already holds it).
+   */
+  addBrowserHelper?(
+    worktreePath: string,
+    spec: {
+      paneId: string
+      name: string
+      url: string
+      openedBy: 'agent' | 'operator'
+      partition: 'agent' | 'operator'
+      ownerSessionId: string | null
+      pagePath?: string | null
+    }
+  ): string
+  /**
+   * T569 U2 `session.userTurn`: deliver `text` to a session as a user turn through the paste+quiescence-submit
+   * path (`pasteAndSubmit`). Destination: `sessionId` when it exists, else the folder's selected session.
+   * Answers `delivered`, `parked` (no live PTY: main wakes it and asks again) or `held` (no destination).
+   */
+  deliverUserTurn?(turn: {
+    sessionId: string | null
+    folder: string
+    text: string
+    source: 'page-event' | 'overlay'
+  }): UserTurnResult | Promise<UserTurnResult>
   /**
    * T171 `close_file`: close the non-PTY, file/folder-backed pane (markdown /
    * memory / explorer) matching `path` in the TARGET worktree's stack.
@@ -219,6 +256,20 @@ export interface SessionCreatedResult {
   correlationId: string
 }
 
+/**
+ * What main hands over with a `pane.split` for an agent terminal (T474 §4.1 step 5): the pane
+ * id IS the `terminalId`, and the PTY already exists.
+ */
+export interface AgentTerminalSplit {
+  paneId: string
+  ptyId: string
+  ownerSessionId: string | null
+  /** Epoch ms the PTY was spawned; the 2 s "exited too soon" window starts here. */
+  spawnedAt: number
+  /** A reload re-announcing a terminal that may already be known: no badge, no alert. */
+  redispatch?: true
+}
+
 /** Success of `pane.split`: the appended helper pane's id. */
 export interface PaneSplitResult {
   paneId: string
@@ -275,6 +326,10 @@ export interface ThrownError {
   error: string
 }
 
+/** Success of `session.userTurn` (T569 U2): delivered, parked (main wakes it and asks again) or held. */
+export type UserTurnResult =
+  { delivered: true; sessionId: string } | { parked: true; sessionId: string } | { held: true }
+
 /** Every shape `dispatch` can return; discriminated by key presence. */
 export type DispatchResult =
   | SessionCreatedResult
@@ -284,13 +339,17 @@ export type DispatchResult =
   | NotifyPushResult
   | SpeechSayResult
   | SessionWakeResult
+  | UserTurnResult
   | CloseFileResult
   | ClosePaneResult
   | CommandError
   | ThrownError
 
 /** A bound dispatcher: maps `(command, payload)` to a {@link DispatchResult}. */
-export type CommandRouter = (command: string, payload: unknown) => DispatchResult
+export type CommandRouter = (
+  command: string,
+  payload: unknown
+) => DispatchResult | Promise<DispatchResult>
 
 const BAD_ARGS: CommandError = { error: 'BAD_ARGS' }
 
@@ -331,6 +390,29 @@ function handleSessionCreate(actions: CommandRouterActions, payload: unknown): D
 }
 
 /**
+ * The T474 fields of a shell `pane.split`. None present → a plain shell pane (`undefined`).
+ * `paneId` and `ptyId` travel together: one without the other is a malformed call, not a
+ * half-adopted terminal.
+ */
+function parseAgentTerminalSplit(
+  payload: Record<string, unknown>
+): AgentTerminalSplit | undefined | 'invalid' {
+  const { paneId, ptyId } = payload
+  if (paneId === undefined && ptyId === undefined) return undefined
+  if (!isNonEmptyString(paneId) || !isNonEmptyString(ptyId)) return 'invalid'
+  const owner = payload.ownerSessionId
+  if (owner !== undefined && owner !== null && !isNonEmptyString(owner)) return 'invalid'
+  const spawnedAt = payload.spawnedAt
+  return {
+    paneId,
+    ptyId,
+    ownerSessionId: typeof owner === 'string' ? owner : null,
+    spawnedAt: typeof spawnedAt === 'number' && Number.isFinite(spawnedAt) ? spawnedAt : Date.now(),
+    ...(payload.redispatch === true ? { redispatch: true as const } : {})
+  }
+}
+
+/**
  * `pane.split`: append a helper to the TARGET worktree's stack HEADLESSLY — the
  * worktree need not be (and usually isn't) the selected one; the router calls
  * the helper action directly and never selects it first. `kind:'claude'`
@@ -346,7 +428,13 @@ function handlePaneSplit(actions: CommandRouterActions, payload: unknown): Dispa
   const cwd = isNonEmptyString(payload.cwd) ? payload.cwd : worktreePath
 
   if (payload.kind === 'shell') {
-    return { paneId: actions.addShellHelper(worktreePath, cwd) }
+    const terminal = parseAgentTerminalSplit(payload)
+    if (terminal === 'invalid') return BAD_ARGS
+    return {
+      paneId: terminal
+        ? actions.addShellHelper(worktreePath, cwd, terminal)
+        : actions.addShellHelper(worktreePath, cwd)
+    }
   }
   if (payload.kind === 'claude') {
     if (!isNonEmptyString(payload.sessionId)) return BAD_ARGS
@@ -386,6 +474,55 @@ function handlePaneOpenMarkdown(actions: CommandRouterActions, payload: unknown)
   const cwd = isNonEmptyString(payload.cwd) ? payload.cwd : worktreePath
   const open = hasCanvasSuffix(filePath) ? actions.addCanvasHelper : actions.addMarkdownHelper
   return { paneId: open(worktreePath, filePath, cwd) }
+}
+
+/**
+ * `pane.browser`: show a browser pane main already created (T564 U1). The payload is validated here; the
+ * pane id comes from main and is returned as it is, never minted renderer-side.
+ */
+function handlePaneBrowser(actions: CommandRouterActions, payload: unknown): DispatchResult {
+  if (!actions.addBrowserHelper) return { ok: false, error: 'addBrowserHelper not wired' }
+  if (!isRecord(payload)) return BAD_ARGS
+  if (!isNonEmptyString(payload.worktreePath)) return BAD_ARGS
+  if (!isNonEmptyString(payload.paneId)) return BAD_ARGS
+  const openedBy = payload.openedBy === 'operator' ? 'operator' : 'agent'
+  const partition = payload.partition === 'operator' ? 'operator' : 'agent'
+  const paneId = actions.addBrowserHelper(payload.worktreePath, {
+    paneId: payload.paneId,
+    name: isNonEmptyString(payload.name) ? payload.name : '',
+    url: isNonEmptyString(payload.url) ? payload.url : '',
+    openedBy,
+    partition,
+    ownerSessionId: isNonEmptyString(payload.ownerSessionId) ? payload.ownerSessionId : null,
+    pagePath: isNonEmptyString(payload.pagePath) ? payload.pagePath : null
+  })
+  return { paneId }
+}
+
+/** `session.userTurn` (T569 U2): see {@link CommandRouterActions.deliverUserTurn}. */
+function handleSessionUserTurn(
+  actions: CommandRouterActions,
+  payload: unknown
+): DispatchResult | Promise<DispatchResult> {
+  if (!actions.deliverUserTurn) return { ok: false, error: 'deliverUserTurn not wired' }
+  if (!isRecord(payload)) return BAD_ARGS
+  if (!isNonEmptyString(payload.folder) || !isNonEmptyString(payload.text)) return BAD_ARGS
+  const source = payload.source === 'overlay' ? 'overlay' : 'page-event'
+  const out = actions.deliverUserTurn({
+    sessionId: isNonEmptyString(payload.sessionId) ? payload.sessionId : null,
+    folder: payload.folder,
+    text: payload.text,
+    source
+  })
+  // The paste can wait for the operator to stop typing: the ack is a promise then, and a rejection must still
+  // become an error ack, as a throw does for every other command.
+  if (out instanceof Promise) {
+    return out.catch((err): ThrownError => ({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err)
+    }))
+  }
+  return out
 }
 
 /**
@@ -575,7 +712,10 @@ function handleSessionWake(actions: CommandRouterActions, payload: unknown): Dis
  * @returns a bound {@link CommandRouter}.
  */
 export function makeCommandRouter(actions: CommandRouterActions): CommandRouter {
-  return function dispatch(command: string, payload: unknown): DispatchResult {
+  return function dispatch(
+    command: string,
+    payload: unknown
+  ): DispatchResult | Promise<DispatchResult> {
     try {
       switch (command) {
         case 'session.create':
@@ -586,6 +726,8 @@ export function makeCommandRouter(actions: CommandRouterActions): CommandRouter 
           return handlePaneSplit(actions, payload)
         case 'pane.openMarkdown':
           return handlePaneOpenMarkdown(actions, payload)
+        case 'pane.browser':
+          return handlePaneBrowser(actions, payload)
         case 'pane.closeFile':
           return handlePaneCloseFile(actions, payload)
         case 'pane.closePane':
@@ -598,6 +740,8 @@ export function makeCommandRouter(actions: CommandRouterActions): CommandRouter 
           return handleSpeechSay(actions, payload)
         case 'session.wake':
           return handleSessionWake(actions, payload)
+        case 'session.userTurn':
+          return handleSessionUserTurn(actions, payload)
         default:
           return BAD_ARGS
       }

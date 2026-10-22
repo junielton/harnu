@@ -77,6 +77,8 @@ export interface Rig {
   clock: MockClock
   sent: Sent[]
   state: Map<string, unknown>
+  /** Every key `$.state.get` was asked for, in order (a hook that subscribes reads before it draws). */
+  stateReads: string[]
   /** What `$.session.id()` answers; change it to simulate a drift. */
   sid: { value: string }
   /** What the engine's own `tool.check` answers (P1W5). */
@@ -115,6 +117,7 @@ export function installRig(on: On, opts: RigOptions = {}): Rig {
     clock,
     sent: [],
     state: new Map(Object.entries(opts.savedState ?? {})),
+    stateReads: [],
     sid: { value: FIXTURE_SID },
     verdict: { value: 'allow' },
     script: { fn: opts.script ?? defaultScript },
@@ -158,9 +161,10 @@ export function installRig(on: On, opts: RigOptions = {}): Rig {
     if (e.path !== RENDEZVOUS_PATH || rig.endpoint.text === null) throw new Error('ENOENT')
     return { value: rig.endpoint.text }
   })
-  on('state.get', async (_$, e) => ({
-    value: { value: rig.state.get(e.key), version: rig.state.has(e.key) ? 1 : 0 }
-  }))
+  on('state.get', async (_$, e) => {
+    rig.stateReads.push(e.key)
+    return { value: { value: rig.state.get(e.key), version: rig.state.has(e.key) ? 1 : 0 } }
+  })
   on('state.set', async (_$, e) => {
     rig.state.set(e.key, e.value)
     return { value: { isSet: true, version: 1 } }

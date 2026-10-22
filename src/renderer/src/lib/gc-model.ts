@@ -3,10 +3,14 @@
 // the `gc:clean` payload. No DOM, no Vue, no i18n — unit-tested in tests/gc-model.test.ts.
 
 import type { Bucket, ReviewCode, WorktreeBundle } from '../../../main/gc/bundle-core'
+import { removability, removabilityAll, type RemovalRefusal } from './gc-removability'
+import { remoteDeleteOffered, type RemotePolicy } from './gc-remote-delete'
+import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import type {
   GcCleanOptions,
   GcDockerCard,
   GcExpected,
+  GcPrep,
   GcSnapshot,
   OrphanVolumeItem
 } from '../../../main/gc/gc-wire'
@@ -32,6 +36,16 @@ export interface GcBlock {
   stackIds: string[]
   ownedVolumes: string[]
   depsBytes: number | null
+  /**
+   * Set for a worktree whose dependencies were dropped (AC-D4): `bytesLeft` is what the checkout
+   * still holds on disk. Dehydration never moves the bucket, so this only changes what a row says.
+   */
+  hydration: { state: 'dehydrated'; bytesLeft: number | null } | null
+  /**
+   * What the CURRENT prefs say protects this worktree: a Keep mark or a never-clean path added since
+   * the scan is not in the bundle's flags, but Remove must stop being offered at once.
+   */
+  protection: 'never-clean' | 'kept' | null
   bundle: WorktreeBundle | null
   volume: OrphanVolumeItem | null
 }
@@ -67,6 +81,12 @@ export interface GcModel {
   /** Needs review items, biggest first — the "Needs review" list. Orphan volumes included. */
   review: GcBlock[]
   ready: GcBlock[]
+  /**
+   * The ready items one click can clean: ready, not refused on its facts, and not refused by main at
+   * the reprobe lately. The hero, its count and the first-cycle prompt read this; the map and the list
+   * still show every ready item, so one that main keeps refusing stays visible, with the reason.
+   */
+  cleanable: GcBlock[]
   totals: {
     ready: BucketTotal
     review: BucketTotal
@@ -108,7 +128,39 @@ export function repoDisplayLabel(repoPath: string): string {
 const bigFirst = (a: GcBlock, b: GcBlock): number =>
   b.bytes - a.bytes || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 
-function worktreeBlock(b: WorktreeBundle): GcBlock {
+/**
+ * The detail line under a reason. A halted cleanup reads "Cleanup stopped at <step>" and, when
+ * known, the folder; anything after that (the raw git or file-system error) is cut, so no
+ * producer can put engine text on screen. Other reasons keep their own sentence.
+ */
+export function shownDetail(reason: { code: string; detail: string } | null): string | null {
+  if (!reason) return null
+  if (reason.code !== 'cleanup-failed') return reason.detail
+  const m = /^Cleanup stopped at ([a-z][a-z-]*)(.*)$/s.exec(reason.detail)
+  if (!m) return null
+  // Only the exact shape main writes carries a folder; a ": <error>" tail is cut.
+  const folder = /^ in (\/.+?)\.?$/s.exec(m[2]!)?.[1]
+  return `Cleanup stopped at ${m[1]}${folder ? ` in ${folder}` : ''}.`
+}
+
+const looseKey = (p: string): string =>
+  p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '')
+
+/**
+ * Keep and never-clean as the prefs say now, so a mark made since the scan hides Remove at once. A
+ * never-clean repo covers every worktree of it. Paths are compared as written, which is a SUBSET of what
+ * main decides on real paths (a symlinked entry): that wider answer arrives with the next snapshot, whose
+ * bundles main brings up to date (`withCurrentNeverClean`), so this can only be early, never wrong.
+ */
+function protectionOf(b: WorktreeBundle, prefs: GcSnapshot['prefs']): GcBlock['protection'] {
+  const listed = new Set((prefs.neverClean ?? []).map(looseKey))
+  const paths = [b.item.path, b.item.repoPath].filter((p): p is string => !!p)
+  if (paths.some((p) => listed.has(looseKey(p)))) return 'never-clean'
+  if (prefs.keep?.[b.item.id] !== undefined) return 'kept'
+  return null
+}
+
+function worktreeBlock(b: WorktreeBundle, prefs: GcSnapshot['prefs']): GcBlock {
   const { item } = b
   const bytes = item.diskBytes
   return {
@@ -122,11 +174,16 @@ function worktreeBlock(b: WorktreeBundle): GcBlock {
     bytes: bytes ?? 0,
     hasBytes: bytes !== null && bytes !== undefined,
     reasonCode: b.reason?.code ?? null,
-    reasonDetail: b.reason?.detail ?? null,
+    reasonDetail: shownDetail(b.reason),
     project: null,
     stackIds: b.stackIds,
     ownedVolumes: b.ownedVolumes,
     depsBytes: b.depsBytes,
+    hydration:
+      item.hydration?.state === 'dehydrated'
+        ? { state: 'dehydrated', bytesLeft: bytes ?? null }
+        : null,
+    protection: protectionOf(b, prefs),
     bundle: b,
     volume: null
   }
@@ -149,6 +206,8 @@ function volumeBlock(v: OrphanVolumeItem): GcBlock {
     stackIds: [],
     ownedVolumes: [v.name],
     depsBytes: null,
+    hydration: null,
+    protection: null,
     bundle: null,
     volume: v
   }
@@ -157,7 +216,7 @@ function volumeBlock(v: OrphanVolumeItem): GcBlock {
 const emptyTotal = (): BucketTotal => ({ count: 0, bytes: 0 })
 
 export function buildGcModel(snapshot: GcSnapshot): GcModel {
-  const worktrees = snapshot.bundles.map(worktreeBlock)
+  const worktrees = snapshot.bundles.map((b) => worktreeBlock(b, snapshot.prefs))
   const volumes = snapshot.orphanVolumes.map(volumeBlock)
 
   const byRepo = new Map<string, GcBlock[]>()
@@ -224,6 +283,9 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
     byId,
     review: [...worktrees.filter((b) => b.bucket === 'review'), ...volumes].sort(bigFirst),
     ready: worktrees.filter((b) => b.bucket === 'ready').sort(bigFirst),
+    cleanable: worktrees
+      .filter((b) => b.bucket === 'ready' && !b.bundle?.reprobeRefusal && isRemovable(b))
+      .sort(bigFirst),
     totals,
     docker,
     reclaimableBytes:
@@ -252,9 +314,15 @@ export function toggleChecked(
   return next
 }
 
-/** "Select all in repo": that repo's Needs review worktrees. Orphan volumes belong to no repo. */
+/**
+ * "Select all in repo": that repo's Needs review worktrees that can be removed. One main would refuse
+ * can still be ticked by hand (to Keep or Dehydrate it), but a bulk tick never picks it up. Orphan
+ * volumes belong to no repo.
+ */
 export function selectAllInRepo(model: GcModel, repoPath: string): string[] {
-  return model.blocks.filter((b) => b.repoPath === repoPath && isCheckable(b)).map((b) => b.id)
+  return model.blocks
+    .filter((b) => b.repoPath === repoPath && isCheckable(b) && isRemovable(b))
+    .map((b) => b.id)
 }
 
 export function selectionStats(
@@ -286,12 +354,14 @@ export function prunedSelection(model: GcModel, selection: ReadonlySet<string>):
 
 export type HeroState =
   | { kind: 'clean'; count: number; bytes: number; soft: boolean }
+  /** Ready items exist, but the scan could not see Docker: cleaning waits for Docker and a new scan. */
+  | { kind: 'blind'; count: number; bytes: number }
   | { kind: 'empty' }
-  | { kind: 'running'; done: number; total: number; freedBytes: number }
+  | { kind: 'running'; done: number; total: number; freedBytes: number; trashedBytes: number }
 
 export function heroState(
   model: GcModel,
-  running: { done: number; total: number; freedBytes: number } | null,
+  running: { done: number; total: number; freedBytes: number; trashedBytes?: number } | null,
   firstReportAcknowledged: boolean
 ): HeroState {
   if (running) {
@@ -299,14 +369,21 @@ export function heroState(
       kind: 'running',
       done: running.done,
       total: running.total,
-      freedBytes: running.freedBytes
+      freedBytes: running.freedBytes,
+      trashedBytes: running.trashedBytes ?? 0
     }
   }
-  if (model.ready.length === 0) return { kind: 'empty' }
+  if (model.cleanable.length === 0) {
+    const blind = model.ready.filter((b) => b.bundle?.dockerBlind === true)
+    if (blind.length > 0) {
+      return { kind: 'blind', count: blind.length, bytes: blind.reduce((a, b) => a + b.bytes, 0) }
+    }
+    return { kind: 'empty' }
+  }
   return {
     kind: 'clean',
-    count: model.ready.length,
-    bytes: model.totals.ready.bytes,
+    count: model.cleanable.length,
+    bytes: model.cleanable.reduce((a, b) => a + b.bytes, 0),
     soft: !firstReportAcknowledged
   }
 }
@@ -330,15 +407,27 @@ export interface DialogRow {
   project: string | null
   /** The worktree may hold work no other branch has. */
   risk: boolean
+  /** "Also delete the branch on the remote" can apply to this row (AC-D5). Absent means no. */
+  remoteEligible?: boolean
+  /** The 12-character HEAD sha (the one its archive ref is named with) of a detached worktree, whose commit is archived by it; null for any other row. */
+  detachedAt: string | null
+  /** Every untracked path in the folder, sorted: named in the confirm, archived in the wip ref. */
+  untracked: string[]
 }
 
-/**
- * Needs review reasons under which the removed code is NOT unique to this worktree. Everything else —
- * including an unknown or failed state — is treated as a risk and gets the stronger warning.
- */
-const NOT_RISKY: ReadonlySet<string> = new Set(['open-idle-session', 'shared-stack'])
+/** A worktree with no branch: its commit is archived by sha when it is removed. */
+export function isDetachedBlock(b: Pick<GcBlock, 'bundle'>): boolean {
+  return b.bundle?.item.kind === 'detached-worktree'
+}
 
-export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] {
+export function dialogRows(
+  model: GcModel,
+  ids: readonly string[],
+  /** The Reaper's remote-delete protections; unknown (null) offers no remote delete at all. */
+  remotePolicy: RemotePolicy | null = null,
+  /** What the probe found, by block id; a row nobody probed is never offered the remote delete. */
+  remoteFacts: Readonly<Record<string, RemoteFacts>> = {}
+): DialogRow[] {
   const rows: DialogRow[] = []
   for (const id of ids) {
     const b = model.byId.get(id)
@@ -364,7 +453,12 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
       reasonCode: b.reasonCode,
       reasonDetail: b.reasonDetail,
       project: b.project,
-      risk: b.kind === 'worktree' && b.bucket === 'review' && !NOT_RISKY.has(b.reasonCode ?? '')
+      // Any review worktree may hold work no other branch has. The reasons that once read as safe
+      // (an idle session, a shared stack) are refused outright now and never reach this dialog.
+      risk: b.kind === 'worktree' && b.bucket === 'review',
+      remoteEligible: remoteDeleteOffered(b, remotePolicy, remoteFacts[id]),
+      detachedAt: isDetachedBlock(b) ? (b.bundle?.localTip ?? '').slice(0, 12) || null : null,
+      untracked: [...(b.bundle?.item.untracked ?? [])].sort()
     })
   }
   return rows
@@ -391,10 +485,80 @@ export function dialogBreakdown(rows: readonly DialogRow[]): DialogBreakdown {
 
 export interface CleanRequest {
   ids: string[]
-  options: Required<Pick<GcCleanOptions, 'expected'>> & Pick<GcCleanOptions, 'confirmed'>
+  options: Required<Pick<GcCleanOptions, 'expected'>> &
+    Pick<GcCleanOptions, 'confirmed' | 'deleteRemote' | 'confirmedNotFound' | 'prepare'>
 }
 
 const sorted = (xs: readonly string[]): string[] => [...xs].sort()
+
+/**
+ * The request with the operator's "Also delete the branch on the remote" choice applied: the ids
+ * of the rows that qualified, or the request unchanged when the box is unticked.
+ */
+export function withRemoteDelete(
+  req: CleanRequest,
+  rows: readonly DialogRow[],
+  checked: boolean
+): CleanRequest {
+  if (!checked) return req
+  const ids = rows
+    .filter((r) => r.remoteEligible === true && req.ids.includes(r.id))
+    .map((r) => r.id)
+  if (ids.length === 0) return req
+  return { ...req, options: { ...req.options, deleteRemote: ids } }
+}
+
+/** Whether `gc:clean` can take this block, judged from its facts (see gc-removability.ts). */
+export function isRemovable(b: GcBlock, now: number = Date.now()): boolean {
+  return removability(b, now).ok
+}
+
+/** The ids among `ids` the model knows but `gc:clean` would refuse. */
+export function unremovableIds(model: GcModel, ids: readonly string[]): string[] {
+  return ids.filter((id) => {
+    const b = model.byId.get(id)
+    return !!b && !isRemovable(b)
+  })
+}
+
+/** An item left out of a confirm because main would refuse it: the reason, and the command that clears it. */
+export interface RefusedRow {
+  id: string
+  kind: BlockKind
+  repo: string | null
+  name: string
+  refusal: RemovalRefusal
+  hint?: string
+}
+
+/**
+ * The items among `ids` that belong to this mode's bucket and that main would refuse, in the order
+ * given. Ids the model does not know, or that sit in another bucket, are not "refused": they are
+ * dropped, as `cleanRequestFor` drops them.
+ */
+export function refusedRows(
+  model: GcModel,
+  ids: readonly string[],
+  mode: 'ready' | 'review',
+  now: number = Date.now()
+): RefusedRow[] {
+  const rows: RefusedRow[] = []
+  for (const id of ids) {
+    const b = model.byId.get(id)
+    if (!b || !inMode(b, mode)) continue
+    const v = removability(b, now)
+    if (v.ok) continue
+    rows.push({
+      id,
+      kind: b.kind,
+      repo: b.repoLabel,
+      name: b.name,
+      refusal: v.reason,
+      ...(v.hint === undefined ? {} : { hint: v.hint })
+    })
+  }
+  return rows
+}
 
 /**
  * The facts a row showed for one item, in the shape `gc:clean` compares them with a fresh gather.
@@ -423,26 +587,39 @@ export function expectedFor(b: GcBlock): GcExpected {
     stackIds: sorted(b.stackIds),
     ownedVolumes: sorted(b.ownedVolumes),
     bytes: b.hasBytes ? b.bytes : null,
-    path: b.bundle?.item.path ?? null
+    path: b.bundle?.item.path ?? null,
+    workStamp: b.bundle?.item.workStamp ?? null
   }
+}
+
+/** A halted ready item: shown as review (`cleanup-failed`), retried as the ready item it still is. */
+export function isRetryAsReady(b: GcBlock): boolean {
+  return b.kind === 'worktree' && b.bucket === 'review' && b.bundle?.retryAs === 'ready'
+}
+
+/** Whether a confirm in `mode` takes this block: its bucket, or a halted ready item on the ready path. */
+function inMode(b: GcBlock, mode: 'ready' | 'review'): boolean {
+  return b.bucket === mode || (mode === 'ready' && isRetryAsReady(b))
 }
 
 /**
  * The single place that builds the `gc:clean` payload, so a change of the wire contract is one edit.
  * `ready` is the hero's bulk clean (expected facts, nothing confirmed); `review` is Remove selected
- * (every id confirmed, expected for each). Ids the model no longer knows are dropped, never sent blind.
+ * (every id confirmed, expected for each). Ids the model no longer knows, and ids main would refuse
+ * (a detached or locked worktree, a shared stack, an open session…), are dropped, never sent blind.
  */
 export function cleanRequestFor(
   model: GcModel,
   ids: readonly string[],
   mode: 'ready' | 'review'
 ): CleanRequest {
-  const want: Bucket = mode === 'ready' ? 'ready' : 'review'
   const kept: string[] = []
   const expected: Record<string, GcExpected> = {}
   for (const id of ids) {
     const b = model.byId.get(id)
-    if (!b || b.bucket !== want) continue
+    // A ready item whose cleanup halted is listed as review (`retryAs`), but its Retry is the
+    // ready path: guarded, and needing no confirmation of its own.
+    if (!b || !inMode(b, mode) || !isRemovable(b)) continue
     kept.push(id)
     expected[id] = expectedFor(b)
   }
@@ -459,6 +636,8 @@ export interface CapturedConfirm {
   /** The ids that survived capture (unknown or wrong-bucket ids are dropped, never sent blind). */
   ids: string[]
   rows: DialogRow[]
+  /** What was asked for but main would refuse: shown apart in the dialog, never counted or sent. */
+  refused: RefusedRow[]
   request: CleanRequest
 }
 
@@ -466,11 +645,18 @@ export interface CapturedConfirm {
 export function captureConfirm(
   model: GcModel,
   ids: readonly string[],
-  mode: 'ready' | 'review'
+  mode: 'ready' | 'review',
+  remotePolicy: RemotePolicy | null = null
 ): CapturedConfirm | null {
   const request = cleanRequestFor(model, ids, mode)
   if (request.ids.length === 0) return null
-  return { mode, ids: request.ids, rows: dialogRows(model, request.ids), request }
+  return {
+    mode,
+    ids: request.ids,
+    rows: dialogRows(model, request.ids, remotePolicy),
+    refused: refusedRows(model, ids, mode),
+    request
+  }
 }
 
 const sameList = (a: readonly string[], b: readonly string[]): boolean =>
@@ -513,4 +699,57 @@ export function confirmChanged(model: GcModel, captured: CapturedConfirm): boole
   return captured.ids.some(
     (id) => !sameFacts(fresh.options.expected[id], captured.request.options.expected[id])
   )
+}
+
+// ---- guided "…and remove": the request carries each item's prep ------------------------------------
+
+/** What no prep can lift: the operator's own protections and an item that is working right now. */
+const NOT_GUIDABLE: ReadonlySet<RemovalRefusal> = new Set([
+  'main-checkout',
+  'never-clean',
+  'kept',
+  'in-use'
+])
+
+/**
+ * The `gc:clean` payload of a guided "…and remove" ("No dead ends"). Built although `removability()`
+ * refuses these items today: the prep (unlock, close the idle session, stop or leave a stack) is what
+ * lifts the refusal, and main re-judges the item on a fresh gather after it. Still every id is confirmed
+ * by name and bound to the facts shown; an id the model lost, one with no prep, or one a prep cannot
+ * lift (a Keep mark, a main checkout, a working session) is dropped, never sent.
+ */
+export function guidedRequestFor(
+  model: GcModel,
+  ids: readonly string[],
+  prepFor: (id: string) => GcPrep | GcPrep[] | null,
+  now: number = Date.now()
+): CleanRequest {
+  const kept: string[] = []
+  const expected: Record<string, GcExpected> = {}
+  const prepare: Record<string, GcPrep | GcPrep[]> = {}
+  for (const id of ids) {
+    const b = model.byId.get(id)
+    if (!b || b.kind !== 'worktree') continue
+    // Any cause a prep cannot lift (a Keep mark, a main checkout, a working session) rules the item out,
+    // whatever other causes are stacked with it.
+    if (removabilityAll(b, now).some((r) => NOT_GUIDABLE.has(r.reason))) continue
+    const prep = prepFor(id)
+    if (!prep) continue
+    kept.push(id)
+    expected[id] = expectedFor(b)
+    prepare[id] = prep
+  }
+  return { ids: kept, options: { expected, confirmed: [...kept], prepare } }
+}
+
+/** Whether what a guided dialog captured is no longer what the model shows (it blocks its confirm). */
+export function guidedChanged(
+  model: GcModel,
+  captured: { ids: readonly string[]; request: CleanRequest }
+): boolean {
+  return captured.ids.some((id) => {
+    const b = model.byId.get(id)
+    const before = captured.request.options.expected[id]
+    return !b || !before || !sameFacts(expectedFor(b), before)
+  })
 }

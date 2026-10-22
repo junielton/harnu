@@ -3,21 +3,43 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { Clock } from 'lucide-vue-next'
 import { relativeTime } from '../composables/useRelativeTime'
+import {
+  DESCRIPTOR_BY_ID,
+  defaultKeysFor,
+  renderKeysString,
+  type ShortcutActionId
+} from '../../../main/keybindings-core'
+import { isMac } from '../lib/platform'
 
 interface Shortcut {
   key: string
   keys: string[]
 }
 
-const shortcuts: Shortcut[] = [
-  { key: 'newSession', keys: ['⌘', 'N'] },
-  { key: 'search', keys: ['⌘', 'K'] },
-  { key: 'switchProject', keys: ['⌘', '⇧', 'P'] },
-  { key: 'addFolder', keys: ['⌘', 'O'] },
-  { key: 'resumeLast', keys: ['⌘', '⇧', 'R'] }
+// The `<kbd>` hints derive from the one canonical chord table
+// (`keybindings-core.ts`) and render for the current platform. They read the
+// RESOLVED table from the keybindings store (T1 P3), so a `keybindings.json`
+// edit updates them live; an unbound action renders no keys.
+const SHORTCUT_ACTIONS: Array<{ key: string; id: ShortcutActionId }> = [
+  { key: 'newSession', id: 'session.new' },
+  { key: 'search', id: 'app.search' },
+  { key: 'switchProject', id: 'project.switch' },
+  { key: 'addFolder', id: 'folder.add' },
+  { key: 'resumeLast', id: 'session.resumeLast' }
 ]
+
+const keybindings = useKeybindingsStore()
+
+const shortcuts = computed<Shortcut[]>(() =>
+  SHORTCUT_ACTIONS.map((s) => {
+    const rb = keybindings.resolved.byId[s.id]
+    const chord = rb ? rb.keys : defaultKeysFor(DESCRIPTOR_BY_ID[s.id], isMac)
+    return { key: s.key, keys: renderKeysString(chord, { mac: isMac }) }
+  })
+)
 
 const sessions = useSessionsStore()
 const { t } = useI18n()
@@ -87,6 +109,9 @@ const recents = computed<RecentRow[]>(() => {
         >
           <span class="text-text-2">{{ $t(`empty.shortcuts.${s.key}`) }}</span>
           <span class="flex items-center gap-1">
+            <!-- An unbound action keeps its row but has no chord to show — a
+                 muted dash, so the row doesn't read as a rendering gap. -->
+            <span v-if="s.keys.length === 0" class="text-text-4" style="font-size: 11px">—</span>
             <kbd
               v-for="k in s.keys"
               :key="k"

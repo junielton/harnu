@@ -14,6 +14,8 @@ export function withActor(
 ): GcShellDeps {
   return {
     ...base,
+    // Only an operator's own click may delete a remote branch (AC-D5); the autopilot never.
+    allowRemoteDelete: actor === 'operator',
     // The live prefs, not the flags the bundle was built with: the operator may have pressed
     // Keep or listed a path since the scan, and the reprobe asks this before it does anything.
     isProtectedNow: async (b) => {

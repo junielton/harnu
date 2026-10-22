@@ -19,8 +19,10 @@ import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import type { GcOpinion } from '../../../main/gc/gc-wire'
-import { dialogBreakdown, type DialogRow, type RemovalChip } from '../lib/gc-model'
+import { dialogBreakdown, type DialogRow, type RefusedRow, type RemovalChip } from '../lib/gc-model'
+import { removalKey } from './cleanup-gc-copy'
 import CleanupOpinionChip from './CleanupOpinionChip.vue'
+import { reasonKey } from './cleanup-gc-copy'
 
 /**
  * The one confirm of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Bulk-clean and
@@ -35,15 +37,19 @@ import CleanupOpinionChip from './CleanupOpinionChip.vue'
 const props = withDefaults(
   defineProps<{
     rows: DialogRow[]
+    /** Items main would refuse, left out of `rows`, the count and the request: listed apart, with why. */
+    refused?: RefusedRow[]
     mode: 'ready' | 'review'
     /** The facts behind the open dialog moved since it opened: confirm stays disabled until it is reopened. */
     stale?: boolean
+    /** The remote facts are still being asked (the box shows "Checking…" instead of nothing). */
+    remoteChecking?: boolean
     /** The advisor's verdict on a row, when it was asked. Shown with its evidence; never decides. */
     opinionOf?: (id: string) => GcOpinion | null
   }>(),
-  { stale: false }
+  { stale: false, refused: () => [], remoteChecking: false }
 )
-const emit = defineEmits<{ confirm: []; cancel: [] }>()
+const emit = defineEmits<{ confirm: [opts: { deleteRemote: boolean }]; cancel: [] }>()
 const { t, te } = useI18n()
 
 const count = computed(() => props.rows.length)
@@ -71,9 +77,34 @@ const totalText = computed(() =>
     size: formatBytes(totalBytes.value)
   })
 )
+/** "Also delete the branch on the remote" (AC-D5): offered only when a row qualifies, off by default. */
+const remoteRows = computed(() =>
+  props.rows.filter((r) => r.kind === 'worktree' && r.remoteEligible === true)
+)
+const deleteRemote = ref(false)
+
 const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
 /** A worktree's volumes are never removed with it (they become orphan volumes, reviewed one by one). */
 const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
+/** Names shown per row; the rest read "and N more", the whole list on hover. */
+const UNTRACKED_SHOWN = 10
+const untrackedTotal = computed(() =>
+  props.rows.reduce((a, r) => a + (r.untracked?.length ?? 0), 0)
+)
+
+function untrackedText(row: DialogRow): string {
+  const all = row.untracked ?? []
+  const n = all.length
+  if (n <= UNTRACKED_SHOWN) {
+    return t('cleanup.gc.confirm.untracked', n, { named: { n, names: all.join(', ') } })
+  }
+  return t('cleanup.gc.confirm.untrackedMore', n, {
+    named: { n, names: all.slice(0, UNTRACKED_SHOWN).join(', '), more: n - UNTRACKED_SHOWN }
+  })
+}
+
+/** Detached worktrees have no branch: their commit is kept under refs/archive/detached/… instead. */
+const detachedCount = computed(() => props.rows.filter((r) => !!r.detachedAt).length)
 
 const title = computed(() => {
   if (props.mode === 'ready') {
@@ -93,8 +124,17 @@ const confirmLabel = computed(() => {
 /** The engine's reason code, translated; its English sentence is the fallback for a code we lack. */
 function reasonText(row: DialogRow): string {
   if (!row.reasonCode) return ''
-  const key = `cleanup.gc.reason.${row.reasonCode}`
+  // The same code → key map as the panel and the list (the codes are hyphenated, the keys are not).
+  const key = reasonKey(row.reasonCode)
   return te(key) ? t(key) : (row.reasonDetail ?? '')
+}
+
+function refusedTitle(row: RefusedRow): string {
+  return row.kind === 'volume'
+    ? t('cleanup.gc.confirm.volumeRow', { name: row.name })
+    : row.repo
+      ? t('cleanup.gc.confirm.worktreeRow', { repo: row.repo, name: row.name })
+      : row.name
 }
 
 function rowTitle(row: DialogRow): string {
@@ -111,6 +151,7 @@ function rowSub(row: DialogRow): string {
       ? t('cleanup.gc.confirm.volumeProject', { project: row.project })
       : t('cleanup.gc.confirm.noWorktree')
   }
+  if (row.detachedAt) return t('cleanup.gc.confirm.detachedSub', { sha: row.detachedAt })
   return row.branch ? t('cleanup.gc.confirm.branchSub', { branch: row.branch }) : ''
 }
 
@@ -260,6 +301,13 @@ function onBackdropMousedown(e: MouseEvent): void {
                 :pending="false"
                 show-evidence
               />
+              <span
+                v-if="row.untracked?.length"
+                class="break-words text-caption leading-4 text-text-3"
+                :title="row.untracked.join('\n')"
+                data-testid="bulk-untracked"
+                >{{ untrackedText(row) }}</span
+              >
               <span class="mt-1 flex flex-wrap gap-1">
                 <span
                   v-for="chip in row.chips"
@@ -283,6 +331,39 @@ function onBackdropMousedown(e: MouseEvent): void {
           </div>
         </div>
 
+        <section
+          v-if="refused.length > 0"
+          class="mx-5 mt-3 flex flex-col gap-1.5 rounded-sm border border-border bg-bg px-3 py-2.5"
+          data-testid="bulk-refused"
+        >
+          <div class="flex items-baseline gap-2">
+            <span class="eyebrow text-text-3" data-testid="bulk-refused-title">{{
+              t('cleanup.gc.confirm.refusedTitle', { n: refused.length })
+            }}</span>
+            <span class="text-caption text-text-4">{{ t('cleanup.gc.confirm.refusedSub') }}</span>
+          </div>
+          <ul class="m-0 flex list-none flex-col gap-1.5 p-0">
+            <li
+              v-for="row in refused"
+              :key="row.id"
+              class="flex flex-col gap-0.5"
+              data-testid="bulk-refused-row"
+              :data-refusal="row.refusal"
+            >
+              <span class="truncate font-mono text-ui text-text-2">{{ refusedTitle(row) }}</span>
+              <span class="text-caption leading-4 text-text-3" data-testid="bulk-refused-reason">{{
+                t(removalKey(row.refusal))
+              }}</span>
+              <code
+                v-if="row.hint"
+                class="select-all break-all font-mono text-caption text-text-2"
+                data-testid="bulk-refused-hint"
+                >{{ row.hint }}</code
+              >
+            </li>
+          </ul>
+        </section>
+
         <div
           class="mx-5 mt-3 flex items-start gap-2.5 rounded-sm border border-warning-line bg-warning-soft px-3 py-2.5"
           data-testid="bulk-warning"
@@ -298,6 +379,24 @@ function onBackdropMousedown(e: MouseEvent): void {
               <b class="font-semibold text-warning">{{
                 t('cleanup.gc.confirm.warnRisk', riskCount, { named: { n: riskCount } })
               }}</b>
+            </p>
+            <p
+              v-if="mode === 'review' && detachedCount > 0"
+              class="m-0 mb-1"
+              data-testid="bulk-detached"
+            >
+              <b class="font-semibold text-warning">{{
+                t('cleanup.gc.confirm.warnDetached', detachedCount, {
+                  named: { n: detachedCount }
+                })
+              }}</b>
+            </p>
+            <p v-if="untrackedTotal > 0" class="m-0 mb-1" data-testid="bulk-untracked-total">
+              {{
+                t('cleanup.gc.confirm.untrackedTotal', untrackedTotal, {
+                  named: { n: untrackedTotal }
+                })
+              }}
             </p>
             <p class="m-0">
               <b
@@ -316,6 +415,44 @@ function onBackdropMousedown(e: MouseEvent): void {
             </p>
           </div>
         </div>
+
+        <p
+          v-if="remoteChecking && remoteRows.length === 0"
+          class="mx-5 mt-3 text-caption text-text-3"
+          role="status"
+          data-testid="bulk-remote-checking"
+        >
+          {{ t('cleanup.gc.confirm.remote.checking') }}
+        </p>
+        <label
+          v-if="remoteRows.length > 0"
+          class="mx-5 mt-3 flex cursor-pointer items-start gap-2.5"
+          data-testid="bulk-remote-label"
+        >
+          <input
+            v-model="deleteRemote"
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+            data-testid="bulk-remote-delete"
+          />
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="inline-flex items-center gap-1.5 text-ui text-text">
+              <GitBranch :size="12" :stroke-width="1.7" class="shrink-0" aria-hidden="true" />
+              {{ t('cleanup.gc.confirm.remote.label') }}
+            </span>
+            <span class="text-caption leading-4 text-text-3">{{
+              t('cleanup.gc.confirm.remote.hint')
+            }}</span>
+            <span
+              v-if="remoteRows.length < rows.length"
+              class="text-caption leading-4 text-text-3"
+              data-testid="bulk-remote-count"
+              >{{
+                t('cleanup.gc.confirm.remote.some', { n: remoteRows.length, total: rows.length })
+              }}</span
+            >
+          </span>
+        </label>
 
         <p
           v-if="stale"
@@ -350,7 +487,9 @@ function onBackdropMousedown(e: MouseEvent): void {
             :variant="mode === 'ready' ? 'success' : 'danger'"
             :disabled="stale"
             data-testid="bulk-confirm"
-            @click="!stale && emit('confirm')"
+            @click="
+              !stale && emit('confirm', { deleteRemote: remoteRows.length > 0 && deleteRemote })
+            "
           >
             <Recycle v-if="mode === 'ready'" :size="14" :stroke-width="1.6" class="shrink-0" />
             <Trash2 v-else :size="14" :stroke-width="1.6" class="shrink-0" />

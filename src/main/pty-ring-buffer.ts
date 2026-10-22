@@ -19,11 +19,17 @@
 export class RingBuffer {
   private chunks: string[] = []
   private total = 0
+  private evicted = false
 
   constructor(private readonly maxBytes: number) {}
 
   get byteLength(): number {
     return this.total
+  }
+
+  /** Output older than what {@link snapshot} holds has been dropped (T474 B4). */
+  get wrapped(): boolean {
+    return this.evicted
   }
 
   push(chunk: string): void {
@@ -34,6 +40,7 @@ export class RingBuffer {
     while (this.chunks.length > 1 && this.total > this.maxBytes) {
       const dropped = this.chunks.shift() as string
       this.total -= Buffer.byteLength(dropped, 'utf8')
+      this.evicted = true
     }
   }
 

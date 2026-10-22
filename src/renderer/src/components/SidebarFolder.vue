@@ -7,7 +7,9 @@ import { sessionTitle } from '../lib/session-label'
 import { useHelpersStore } from '../stores/helpers'
 import { useHoverPreview } from '../composables/useHoverPreview'
 import { useContextMenu } from '../composables/useContextMenu'
+import { useFolderMenuActions } from '../composables/useFolderMenuActions'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useMissionsStore } from '../stores/missions'
 import { headlineText, TONE_TEXT_CLASS, type MissionModel } from '../lib/mission-view'
 import { relativeTime } from '../composables/useRelativeTime'
@@ -87,7 +89,10 @@ const helpers = useHelpersStore()
 const hoverPreview = useHoverPreview()
 const contextMenu = useContextMenu()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const { t } = useI18n()
+// T486 §3.4: the peeks' function, shared with `folder.toggleOlder` / `.toggleArchived`.
+const folderMenuActions = useFolderMenuActions()
 
 /**
  * Whether this folder is currently dismissed (manually hidden). Only ever true
@@ -349,16 +354,12 @@ function toggleLineage(): void {
 }
 
 /**
- * Inline folder-row peek (older / archived). A collapsed folder expands first
- * (revealing inside a closed folder would be invisible); the toggle then reveals.
- * Collapsing clears the peek (store `forgetPeeks`), so a collapsed folder is
- * always un-revealed here and the toggle stays unambiguous (spec 2026-06-24 §4).
+ * Inline folder-row peek (older / archived): expands a collapsed folder, then
+ * reveals (spec 2026-06-24 §4). The same function its keybinding runs.
  */
 function peek(kind: 'older' | 'archived'): void {
-  const path = props.folder.path
-  if (!props.folder.expanded) sessions.toggleFolder(path)
-  if (kind === 'older') sessions.toggleRevealOlder(path)
-  else sessions.toggleRevealArchived(path)
+  if (kind === 'older') folderMenuActions.run.toggleOlder(props.folder.path)
+  else folderMenuActions.run.toggleArchived(props.folder.path)
 }
 
 /** Inline "+" — expand the folder so the new synthetic row is visible, then open. */
@@ -499,6 +500,7 @@ function onSelectTeammate(session: Session): void {
         ...(folderHidden ? { opacity: 0.5 } : {})
       }"
       :data-focused="folderFocused ? 'true' : null"
+      :data-sidebar-row="`folder:${folder.path}`"
       @click="onFolderClick"
       @contextmenu="(e) => onFolderContext(e, folder.path)"
       @mouseenter="
@@ -633,7 +635,7 @@ function onSelectTeammate(session: Session): void {
           role="button"
           tabindex="0"
           class="flex cursor-pointer items-center text-text-4 transition hover:text-accent"
-          :title="$t('sidebar.newSession')"
+          :title="keybindings.withChord($t('sidebar.newSession'), 'session.newInFolder')"
           :aria-label="$t('sidebar.newSession')"
           @click.stop="onNewSession"
           @keydown.enter.stop.prevent="onNewSession"
@@ -658,6 +660,7 @@ function onSelectTeammate(session: Session): void {
               sessions.selectedId === s.sessionId ? 'text-text' : 'text-text-2 hover:text-text'
             "
             :data-session-id="s.sessionId"
+            :data-sidebar-row="`session:${s.sessionId}`"
             :data-focused="sessionFocused(s.sessionId) ? 'true' : null"
             :data-selected="sessions.selectedId === s.sessionId ? 'true' : null"
             :style="{
@@ -1062,6 +1065,7 @@ function onSelectTeammate(session: Session): void {
           :key="term.sessionId"
           data-terminal-row
           :data-session-id="term.sessionId"
+          :data-sidebar-row="`session:${term.sessionId}`"
           :data-focused="sessionFocused(term.sessionId) ? 'true' : null"
           class="sidebar-row group relative flex w-full cursor-pointer items-center text-left transition"
           :class="

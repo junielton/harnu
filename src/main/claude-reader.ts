@@ -112,13 +112,13 @@ export interface SessionEntry {
    */
   agents: SubagentEntry[]
   /**
-   * `true` when the local JSONL holds at least one real conversation turn so
-   * `claude --resume <id>` can actually replay it. `false` for metadata-only
-   * stubs (Claude Code 2.1.x cloud-bridge writes a header with `custom-title`,
-   * `ai-title`, `bridge-session` but **zero** `user`/`assistant` lines when the
-   * conversation lives in the cloud). Resuming such a session locally fails
+   * `false` only for a cloud-bridge stub: a metadata-only JSONL (`custom-title`,
+   * `ai-title`, `bridge-session`, **zero** `user`/`assistant` lines) that has sat
+   * untouched past `CLOUD_STUB_GRACE_MS`. Resuming such a session locally fails
    * with "No conversation found …", so the UI marks it instead of spawning a
-   * doomed PTY. Index-path sessions infer this from `messageCount > 0`.
+   * doomed PTY. A zero-turn file that is young, or has no bridge line, is a
+   * session about to start and stays `true` (BUG-198). Index-path sessions carry
+   * no bridge data, so they are always `true`.
    */
   resumable: boolean
   /**
@@ -245,6 +245,31 @@ function tryParseJSON<T>(raw: string): T | null {
   }
 }
 
+/**
+ * How long a zero-turn, bridged transcript may sit untouched before it is
+ * treated as a cloud stub (BUG-198 G3). A fresh session's JSONL exists 0–7 s
+ * before its first `user` line, so a young file is a session about to start.
+ */
+export const CLOUD_STUB_GRACE_MS = 60_000
+
+/**
+ * Whether `claude --resume` should be attempted for a transcript (BUG-198 G3).
+ * Zero local turns alone does not make a cloud stub: that needs a
+ * `bridge-session` line AND a file untouched for `CLOUD_STUB_GRACE_MS`. Anything
+ * else is resumable — if the CLI then refuses, its own error is visible in the
+ * terminal, which beats a silent panel.
+ */
+function isResumableTranscript(
+  turnCount: number,
+  bridged: boolean,
+  mtimeMs: number,
+  now: number = Date.now()
+): boolean {
+  if (turnCount > 0) return true
+  if (!bridged) return true
+  return now - mtimeMs < CLOUD_STUB_GRACE_MS
+}
+
 /** Map one on-disk entry into the renderer-facing `SessionEntry`. */
 function toSessionEntry(e: SessionIndexEntry): SessionEntry {
   return {
@@ -264,10 +289,14 @@ function toSessionEntry(e: SessionIndexEntry): SessionEntry {
     status: 'idle',
     // Filled by `attachSubagents` once the project tree is built.
     agents: [],
-    // Index entries predate the cloud-bridge era; infer resumability from the
-    // recorded message count and assume not-bridged (we don't scrape the JSONL
-    // on the fast path).
-    resumable: (typeof e.messageCount === 'number' ? e.messageCount : 0) > 0,
+    // Index entries predate the cloud-bridge era and the fast path never scrapes
+    // the JSONL, so there is no bridge line to read: by the G3 rule a zero-turn
+    // entry without one is resumable (BUG-198).
+    resumable: isResumableTranscript(
+      typeof e.messageCount === 'number' ? e.messageCount : 0,
+      false,
+      typeof e.fileMtime === 'number' ? e.fileMtime : 0
+    ),
     bridged: false,
     // Transcript-truth fields (T91) require a JSONL scrape — unavailable on the
     // index fast path. Defaults keep the classifier on its quiet-timer fallback
@@ -1163,9 +1192,7 @@ async function readProjectFromJsonls(
           isSidechain: false,
           status: 'idle',
           agents: [],
-          // No local conversation turns ⇒ `claude --resume` would fail with
-          // "No conversation found …" (the transcript lives in the cloud bridge).
-          resumable: header.turnCount > 0,
+          resumable: isResumableTranscript(header.turnCount, header.bridged, stat.mtimeMs),
           bridged: header.bridged,
           // Transcript ground truth (T91): the turn-state feeds the fleet
           // classifier; away_summary/whatsHappening/ctxPct feed previews + HUD.

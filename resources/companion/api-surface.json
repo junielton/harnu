@@ -20,7 +20,8 @@
     "session.start",
     "tool.check",
     "turn.complete",
-    "turn.start"
+    "turn.start",
+    "ui.render"
   ],
   "calls": [
     "$.clock.after",
@@ -30,6 +31,7 @@
     "$.env.get",
     "$.fs.read",
     "$.http.fetch",
+    "$.session.append",
     "$.session.compact",
     "$.session.id",
     "$.session.model",
@@ -38,9 +40,21 @@
     "$.state.get",
     "$.state.set",
     "$.turn.abort",
+    "$.ui.invalidate",
+    "$.ui.resolve",
     "$.ui.status",
     "$.ui.toast"
   ],
   "envReads": ["HARNU_SPAWN_TOKEN"],
-  "stateKeys": ["boot", "bootId", "channel", "conn", "fleet", "permissionMode", "probes", "sid"]
+  "stateKeys": [
+    "band",
+    "boot",
+    "bootId",
+    "channel",
+    "conn",
+    "fleet",
+    "permissionMode",
+    "probes",
+    "sid"
+  ]
 }

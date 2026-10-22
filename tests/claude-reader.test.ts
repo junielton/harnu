@@ -396,23 +396,94 @@ describe('scanFolders — bridge/cloud + large-file naming', () => {
     expect(folderFor(folders, ROOT_CWD).sessions[0].summary).toBe('user-renamed')
   })
 
-  it('marks a metadata-only bridge session (0 local turns) as non-resumable + bridged', async () => {
-    // Mirrors the real a3e4b100 case: only metadata lines, conversation is in the cloud.
-    const id = 'ffff6666-0000-0000-0000-000000000005'
+  /** Write a zero-turn transcript (metadata lines only), optionally with a bridge line. */
+  async function writeZeroTurn(
+    id: string,
+    opts: { bridge: boolean; ageMs: number }
+  ): Promise<void> {
+    const file = join(slugDir, `${id}.jsonl`)
     await fs.writeFile(
-      join(slugDir, `${id}.jsonl`),
+      file,
       JSON.stringify({ type: 'last-prompt', sessionId: id, cwd: ROOT_CWD, gitBranch: 'master' }) +
         '\n' +
         titleLine(id, 'session-persistence-behavior') +
         '\n' +
-        bridgeLine(id, 931) +
-        '\n'
+        (opts.bridge ? bridgeLine(id, 931) + '\n' : '')
     )
+    const when = new Date(Date.now() - opts.ageMs)
+    await fs.utimes(file, when, when)
+  }
+
+  it('marks a settled metadata-only bridge session (0 local turns) as non-resumable + bridged', async () => {
+    // Mirrors the real a3e4b100 case: only metadata lines, conversation is in the cloud.
+    const id = 'ffff6666-0000-0000-0000-000000000005'
+    await writeZeroTurn(id, { bridge: true, ageMs: 10 * 60_000 })
     const folders = await scanFolders({ rootDir: root })
     const s = folderFor(folders, ROOT_CWD).sessions[0]
     expect(s.summary).toBe('session-persistence-behavior')
     expect(s.resumable).toBe(false)
     expect(s.bridged).toBe(true)
+  })
+
+  // BUG-198 G3 — zero turns alone is not a cloud stub: a fresh session's JSONL
+  // exists 0–7 s before its first `user` line.
+  it('BUG-198 AC-3: a zero-turn transcript without a bridge line is resumable, however old', async () => {
+    const fresh = 'ffff6666-0000-0000-0000-000000000007'
+    const old = 'ffff6666-0000-0000-0000-000000000008'
+    await writeZeroTurn(fresh, { bridge: false, ageMs: 0 })
+    await writeZeroTurn(old, { bridge: false, ageMs: 10 * 60_000 })
+    const folders = await scanFolders({ rootDir: root })
+    const byId = new Map(folderFor(folders, ROOT_CWD).sessions.map((s) => [s.sessionId, s]))
+    expect(byId.get(fresh)?.resumable).toBe(true)
+    expect(byId.get(old)?.resumable).toBe(true)
+    expect(byId.get(old)?.bridged).toBe(false)
+  })
+
+  it('BUG-198 AC-3: a zero-turn bridged transcript younger than the grace window is resumable', async () => {
+    const id = 'ffff6666-0000-0000-0000-000000000009'
+    await writeZeroTurn(id, { bridge: true, ageMs: 30_000 })
+    const folders = await scanFolders({ rootDir: root })
+    const s = folderFor(folders, ROOT_CWD).sessions[0]
+    expect(s.bridged).toBe(true)
+    expect(s.resumable).toBe(true)
+  })
+
+  it('BUG-198 AC-3: a zero-turn bridged transcript at or past the grace window is a cloud stub', async () => {
+    const id = 'ffff6666-0000-0000-0000-00000000000a'
+    await writeZeroTurn(id, { bridge: true, ageMs: 61_000 })
+    const folders = await scanFolders({ rootDir: root })
+    const s = folderFor(folders, ROOT_CWD).sessions[0]
+    expect(s.bridged).toBe(true)
+    expect(s.resumable).toBe(false)
+  })
+
+  it('BUG-198 AC-3: the sessions-index.json path mirrors the rule (no bridge data there → resumable)', async () => {
+    await fs.writeFile(
+      join(slugDir, 'sessions-index.json'),
+      JSON.stringify({
+        version: 1,
+        originalPath: ROOT_CWD,
+        entries: [
+          {
+            sessionId: 'idx-zero-turns',
+            fullPath: `${ROOT_CWD}/idx-zero-turns.jsonl`,
+            fileMtime: 1000,
+            firstPrompt: '',
+            summary: '',
+            messageCount: 0,
+            created: '2026-06-01T00:00:00.000Z',
+            modified: '2026-06-01T00:00:00.000Z',
+            gitBranch: 'master',
+            projectPath: ROOT_CWD,
+            isSidechain: false
+          }
+        ]
+      })
+    )
+    const folders = await scanFolders({ rootDir: root })
+    const s = folderFor(folders, ROOT_CWD).sessions[0]
+    expect(s.sessionId).toBe('idx-zero-turns')
+    expect(s.resumable).toBe(true)
   })
 
   it('marks a session with real conversation turns as resumable', async () => {

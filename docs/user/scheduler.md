@@ -12,7 +12,16 @@ Nothing carries over from one run to the next. A worker has no memory of its pre
 
 Click the **Scheduler** pill in the footer. It reads quietly ("Scheduler") when nothing is running, and turns green with a live count ("2 running") the moment a tick is in flight — click it from either state to open the takeover. The × in the header, or selecting a session in the sidebar, closes it again.
 
-Inside: a worker list on the left, grouped **Enabled** and **Off**, and the selected worker's detail on the right, with **Runs** and **Settings** tabs.
+Inside: a worker list on the left, grouped **Pinned**, **Enabled** and **Off**, and the selected worker's detail on the right, with **Runs** and **Settings** tabs.
+
+### Pinning your own workers
+
+A Scheduler that agents also write into fills up with workers you didn't make by hand. Pin the ones you use every day so they sit on top:
+
+- Hover a worker's row and click the pin icon (before **Run now**), or click the pin button in the worker's detail header, next to **Run now**. The worker moves into a **Pinned** group at the top of the list, in the order you pinned them — whether it is on or off. A pinned worker that is off keeps its dimmed "off" look.
+- Click the pin again to unpin it: it goes back to **Enabled** or **Off**, depending on its switch.
+- The **Pinned** header is not shown until you pin something, and pins survive a restart. Pinning is only your choice of order — it never changes whether, when or how a worker runs. A session can't pin or unpin a worker, and an edit a session makes to a pinned worker leaves it pinned.
+- Click the **Off** header to collapse that group (click again to expand). Harnu remembers the choice, and collapsing it never changes which worker is selected. When you open the Scheduler with nothing selected, it lands on the first worker in the list — the first pinned one if you have any.
 
 ## Creating a worker
 

@@ -3,6 +3,7 @@
 // unit-tested in tests/gc-pipeline-core.test.ts without touching docker, git or disk.
 
 import { canonicalPathKey, type WorktreeBundle } from './bundle-core'
+import type { RemoteDeleteOutcome } from './gc-remote-delete'
 
 export type GcStep =
   | 'reprobe'
@@ -36,8 +37,23 @@ export interface GcOps {
    * refuses, a scanned one included: by then the run removed every stack it may remove.
    */
   recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
-  /** archive → trash → prune → branch-delete → detach, remote branch deletion forced off. */
-  cleanGit(b: WorktreeBundle): Promise<void>
+  /**
+   * archive → trash → prune → branch-delete → (remote delete) → detach. The remote branch is only
+   * deleted when `opts.deleteRemote` is set, which only an operator's manual clean ever does; its
+   * outcome comes back instead of failing the clean (AC-D5).
+   * May answer the bytes the folder held when it went to the OS trash; without an answer the
+   * pipeline estimates them from the scan.
+   */
+  cleanGit(b: WorktreeBundle, opts?: CleanGitOptions): Promise<void | CleanGitOutcome>
+}
+
+export interface CleanGitOptions {
+  deleteRemote?: boolean
+}
+
+export interface CleanGitOutcome {
+  remoteDelete?: RemoteDeleteOutcome
+  trashedBytes?: number
 }
 
 /** A volume the run left in place because a container still mounted it at execution time. */
@@ -51,9 +67,18 @@ export interface GcItemResult {
   ok: boolean
   haltedAt: GcStep | null
   error?: string
+  /** Bytes actually deleted from disk: the dependency folders. Docker volumes count here too. */
   freedBytes: number
+  /**
+   * Bytes the checkout held when it moved to the OS trash. They are still on disk until the
+   * trash is emptied, so they are never part of `freedBytes`. Absent on a result that trashed
+   * nothing, and on a manual volume removal.
+   */
+  trashedBytes?: number
   /** Present only when non-empty, on success and on a later failure alike. */
   skippedVolumes?: SkippedVolume[]
+  /** Present only when the operator asked for the remote branch to go too: what happened to it. */
+  remoteDelete?: RemoteDeleteOutcome
 }
 
 /**
@@ -63,12 +88,21 @@ export interface GcItemResult {
 export class GcStepError extends Error {
   constructor(
     readonly step: GcStep,
-    message: string
+    message: string,
+    /**
+     * What had already gone to the trash when the step failed: a halt after the trash (prune,
+     * branch-delete) leaves the folder there, and the report must still say so.
+     */
+    readonly detail: { trashedBytes?: number } = {}
   ) {
     super(message)
     this.name = 'GcStepError'
   }
 }
+
+/** A byte count an op reported: finite and not negative, or nothing. */
+const validBytes = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 0
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -119,6 +153,8 @@ function skippedOf(r: unknown): SkippedVolume[] {
 }
 
 export interface GcRunOptions {
+  /** Also delete the branch on the remote. Set only by an operator's manual clean, never by the autopilot. */
+  deleteRemote?: boolean
   removeVolumes: boolean
   /** The operator explicitly chose to clean `review` bundles too. Never set by default. */
   confirmReview?: boolean
@@ -145,16 +181,21 @@ export function isMainCheckoutByPath(b: WorktreeBundle): boolean {
  * stacks, so the folder would be trashed under a foreign stack that still runs from it.
  * Returns the refusal, or null when the bundle may run.
  */
-function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
+export function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
   if (b.isMainCheckout || b.neverClean || b.keep || isMainCheckoutByPath(b)) return 'not-ready'
-  if (b.sharedStackIds.length > 0) return 'shared-stack'
+  // A shared stack a guided action is stopping is the cause being fixed, not a second refusal.
+  const stopping = new Set(b.assume?.stoppedStacks ?? [])
+  if (b.sharedStackIds.some((id) => !stopping.has(id))) return 'shared-stack'
   // A nested worktree refuses even a confirmed `review` (delta 6, F1). The reprobe sees this
   // repo's `git worktree list` and, since delta 7, every `.git` on disk inside the worktree,
   // but a nested folder known only as a known folder (no `.git` of its own) passes both. A
-  // list that is missing or not a list cannot show there is none.
-  if (!Array.isArray(b.nestedWorktrees) || b.nestedWorktrees.length > 0) return 'nested-worktree'
+  // list that is missing or not a list cannot show there is none: the probe did not answer
+  // (`check-failed`), which refuses just the same but is not "something lives inside".
+  if (!Array.isArray(b.nestedWorktrees)) return 'check-failed'
+  if (b.nestedWorktrees.length > 0) return 'nested-worktree'
   // So does a foreign checkout the scan found (delta 7), whatever the operator confirmed.
-  if (!Array.isArray(b.foreignCheckouts) || b.foreignCheckouts.length > 0) return 'nested-worktree'
+  if (!Array.isArray(b.foreignCheckouts)) return 'check-failed'
+  if (b.foreignCheckouts.length > 0) return 'nested-worktree'
   const runs = b.bucket === 'ready' || (opts.confirmReview === true && b.bucket === 'review')
   return runs ? null : 'not-ready'
 }
@@ -178,7 +219,7 @@ export async function runBundle(
 ): Promise<GcItemResult> {
   // Where the run is, so a throw nobody expected still reports the step it happened in and
   // the bytes already freed, never "nothing was touched" after the docker steps ran.
-  const progress: { step: GcStep; freedBytes: number } = { step: 'reprobe', freedBytes: 0 }
+  const progress: Progress = { step: 'reprobe', freedBytes: 0, trashedBytes: 0 }
   try {
     return await runChecked(b, ops, opts, progress)
   } catch {
@@ -188,16 +229,27 @@ export async function runBundle(
       ok: false,
       haltedAt: progress.step,
       error: PROBE_FAILED,
-      freedBytes: progress.freedBytes
+      freedBytes: progress.freedBytes,
+      ...trashedOf(progress.trashedBytes)
     }
   }
 }
+
+interface Progress {
+  step: GcStep
+  freedBytes: number
+  trashedBytes: number
+}
+
+/** The optional field, present only when something went to the trash. */
+const trashedOf = (bytes: number): Pick<GcItemResult, 'trashedBytes'> =>
+  bytes > 0 ? { trashedBytes: bytes } : {}
 
 async function runChecked(
   b: WorktreeBundle,
   ops: GcOps,
   opts: GcRunOptions,
-  progress: { step: GcStep; freedBytes: number }
+  progress: Progress
 ): Promise<GcItemResult> {
   // Throws on a malformed bundle, which runBundle reports as probe-failed at the reprobe.
   if (!wellFormed(b)) throw new TypeError('malformed bundle')
@@ -206,6 +258,7 @@ async function runChecked(
     return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: refused, freedBytes: 0 }
   }
   let freedBytes = 0
+  let trashedBytes = 0
   let skippedVolumes: SkippedVolume[] = []
   const skipped = (): Pick<GcItemResult, 'skippedVolumes'> =>
     skippedVolumes.length > 0 ? { skippedVolumes } : {}
@@ -215,6 +268,7 @@ async function runChecked(
     haltedAt,
     error,
     freedBytes,
+    ...trashedOf(trashedBytes),
     ...skipped()
   })
   /** Runs one step; returns the failure when it throws, null otherwise. */
@@ -258,7 +312,8 @@ async function runChecked(
   // folder under it, must keep its deps. dehydrateItem's own live check matches the exact
   // folder only, so the full recheck runs first.
   progress.step = 'drop-deps'
-  if (!(await rechecked(ops, b))) return fail('drop-deps', 'changed-mid-run')
+  const beforeDeps = await rechecked(ops, b)
+  if (beforeDeps) return fail('drop-deps', beforeDeps)
 
   // Accepted spec §4 deviation: cleanItem is one call, and its archive skips the ignored dirs.
   halted = await step('drop-deps', async () => {
@@ -273,27 +328,59 @@ async function runChecked(
 
   // The deps are already gone, so their bytes stay counted whatever the recheck says.
   progress.step = 'archive'
-  if (!(await rechecked(ops, b))) return fail('archive', 'changed-mid-run')
+  const beforeGit = await rechecked(ops, b)
+  if (beforeGit) return fail('archive', beforeGit)
 
+  // The checkout is moved to the OS trash, not deleted: its bytes are reported apart from what the
+  // deps freed. The executor's own measurement wins; without one the scan's disk size, less the
+  // deps just dropped, stands in for it.
+  const estimate = Math.max(0, (b.item.diskBytes ?? 0) - freedBytes)
+  let remoteDelete: RemoteDeleteOutcome | undefined
   try {
-    await ops.cleanGit(b)
+    const out = await ops.cleanGit(
+      b,
+      opts.deleteRemote === true ? { deleteRemote: true } : undefined
+    )
+    const answer = out && typeof out === 'object' ? out : undefined
+    if (answer?.remoteDelete) remoteDelete = answer.remoteDelete
+    const reported = (answer as { trashedBytes?: unknown } | undefined)?.trashedBytes
+    trashedBytes = validBytes(reported) ? reported : estimate
+    progress.trashedBytes = trashedBytes
   } catch (err) {
-    // The deps are already gone, so their bytes stay counted.
+    // The deps are already gone, so their bytes stay counted; so are the bytes of a folder that
+    // reached the trash before the step failed.
+    if (err instanceof GcStepError && validBytes(err.detail.trashedBytes)) {
+      trashedBytes = err.detail.trashedBytes
+    }
     return fail(err instanceof GcStepError ? err.step : 'archive', messageOf(err))
   }
-  return { id: b.item.id, ok: true, haltedAt: null, freedBytes, ...skipped() }
+  return {
+    id: b.item.id,
+    ok: true,
+    haltedAt: null,
+    freedBytes,
+    trashedBytes,
+    ...skipped(),
+    ...(remoteDelete ? { remoteDelete } : {})
+  }
 }
 
+/** The one refusal a recheck may name itself: the operator's confirmed work changed mid-run. */
+export const WORK_CHANGED = 'work-changed-since-confirm'
+
 /**
- * True only for a recheck that answered a real `ok: true`. One that throws, or answers in
- * any other shape, cannot show nothing changed, so it is not a green light.
+ * Null only for a recheck that answered a real `ok: true`. One that throws, or answers in any
+ * other shape, cannot show nothing changed, so it is not a green light: the error is
+ * `changed-mid-run`, or `work-changed-since-confirm` when the recheck says the uncommitted
+ * work moved (the force path's own check).
  */
-async function rechecked(ops: GcOps, b: WorktreeBundle): Promise<boolean> {
+async function rechecked(ops: GcOps, b: WorktreeBundle): Promise<string | null> {
   try {
     const r: unknown = await ops.recheck(b)
-    return isProbeAnswer(r) && r.ok === true
+    if (isProbeAnswer(r) && r.ok === true) return null
+    return isProbeAnswer(r) && r.reason === WORK_CHANGED ? WORK_CHANGED : 'changed-mid-run'
   } catch {
-    return false
+    return 'changed-mid-run'
   }
 }
 

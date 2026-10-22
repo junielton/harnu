@@ -7,7 +7,7 @@
 // a different head, reason or bucket, so a stale "safe" never feeds "Remove the ones marked safe".
 
 import type { GcOpinion } from '../../../main/gc/gc-wire'
-import type { GcBlock, GcModel } from './gc-model'
+import { isRemovable, type GcBlock, type GcModel } from './gc-model'
 
 export interface StoredOpinion {
   opinion: GcOpinion
@@ -99,13 +99,6 @@ export const opinionOf = (map: OpinionMap, id: string): GcOpinion | null =>
   map.get(id)?.opinion ?? null
 
 /**
- * Reasons for which main always refuses a removal (a worktree that holds another one, a worktree git
- * has locked); the panel hides Remove for them. An opinion on such an item is still shown, but it is
- * never material for the "marked safe" shortcut, which would only pre-select a removal main refuses.
- */
-export const REMOVE_REFUSED_REASONS: ReadonlySet<string> = new Set(['nested-worktree', 'locked'])
-
-/**
  * The items "Remove the ones marked safe" pre-selects: current Needs review items whose opinion
  * is `safe` and still matches, in the list's order (biggest first). Orphan volumes can be marked
  * safe like any other item; the confirm dialog still asks about each one.
@@ -113,7 +106,9 @@ export const REMOVE_REFUSED_REASONS: ReadonlySet<string> = new Set(['nested-work
 export function safeIds(map: OpinionMap, model: GcModel): string[] {
   return model.review
     .filter((b) => {
-      if (REMOVE_REFUSED_REASONS.has(b.reasonCode ?? '')) return false
+      // An opinion on an item main refuses is still shown, but never material for the shortcut: it
+      // would only pre-select a removal that ends in "0 cleaned".
+      if (!isRemovable(b)) return false
       const stored = map.get(b.id)
       return stored?.opinion.verdict === 'safe' && stored.fingerprint === fingerprintOf(b)
     })

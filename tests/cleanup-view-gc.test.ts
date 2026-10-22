@@ -7,8 +7,10 @@ import { i18n } from '@renderer/i18n'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import type { GcJobInfo, GcSnapshot } from '../src/main/gc/gc-wire'
+import { refusalFor } from '../src/main/gc/autopilot-core'
 import { ipcFn } from './helpers/ipc-clone'
 import { GIB, MIB, reviewReason, snapshotOf, volume, wt } from './helpers/cleanup-gc-fixtures'
+import { mountCloseTakeover, pressEsc } from './helpers/close-takeover-harness'
 
 /**
  * The assembled Cleanup screen against a stubbed `window.api`: the hero's one confirm, the selection
@@ -42,6 +44,7 @@ interface Api {
   gcKeep: ReturnType<typeof vi.fn>
   gcJobs: ReturnType<typeof vi.fn>
   gcAckFirstReport: ReturnType<typeof vi.fn>
+  gcRecheck: ReturnType<typeof vi.fn>
   gcSetPrefs: ReturnType<typeof vi.fn>
   push: Record<string, (p: unknown) => void>
 }
@@ -67,6 +70,7 @@ function install(first: GcSnapshot, jobs: GcJobInfo[] = [], reaper: ReaperStubs 
     gcKeep: ipcFn(async () => defaultGcPrefs()),
     gcJobs: ipcFn(async () => jobs),
     gcAckFirstReport: ipcFn(async () => defaultGcPrefs()),
+    gcRecheck: ipcFn(async (id: string) => ({ id, outcome: 'cleared' })),
     gcSetPrefs: ipcFn(async (p: unknown) => p)
   }
   const full = {
@@ -240,13 +244,76 @@ describe('Cleanup screen — multi-select on Needs review', () => {
     await review[0].trigger('click', { shiftKey: true })
     await review[1].trigger('click')
     await flushPromises()
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
     expect(dom('[data-testid="sel-remove"]').exists()).toBe(false)
     expect(dom('[data-testid="block-panel"]').exists()).toBe(true)
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
     expect(dom('[data-testid="block-panel"]').exists()).toBe(false)
+  })
+
+  // T486 AC-20: the selection and the panel each take one Esc; only then does
+  // `view.closeTakeover` close the takeover. Cleanup listens in the document
+  // capture phase and stops what it consumed, so the binding never sees it.
+  it('Esc peels the selection, then the panel, then closes Cleanup', async () => {
+    install(snap())
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openCleanup()
+    await mountView()
+    const review = domAll('[data-testid="treemap-block"][data-bucket="review"]')
+    await review[0].trigger('click', { shiftKey: true })
+    await review[1].trigger('click')
+    await flushPromises()
+
+    await pressEsc(document.body)
+    expect(dom('[data-testid="sel-remove"]').exists()).toBe(false)
+    expect(ui.activeView?.id).toBe('cleanup')
+    await pressEsc(document.body)
+    expect(dom('[data-testid="block-panel"]').exists()).toBe(false)
+    expect(ui.activeView?.id).toBe('cleanup')
+    await pressEsc(document.body)
+    expect(ui.activeView).toBeNull()
+    harness.unmount()
+  })
+
+  // A surface opened OVER Cleanup (Settings from "Autopilot settings", the command
+  // palette, a context menu) registers its window capture listener after Cleanup's
+  // and stops Esc. Its Esc must close that surface only, keeping the checked set.
+  it('Esc owned by a later window-capture surface leaves the selection alone', async () => {
+    install(snap())
+    await mountView()
+    const review = domAll('[data-testid="treemap-block"][data-bucket="review"]')
+    await review[0].trigger('click', { shiftKey: true })
+    await review[1].trigger('click')
+    await flushPromises()
+    let surfaceOpen = true
+    const surface = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      surfaceOpen = false
+      e.stopPropagation()
+    }
+    window.addEventListener('keydown', surface, true)
+    await pressEsc(document.body)
+    window.removeEventListener('keydown', surface, true)
+    expect(surfaceOpen).toBe(false)
+    expect(dom('[data-testid="sel-remove"]').exists()).toBe(true)
+  })
+
+  it('Esc with a footer / Topbar popover open closes the popover, not the selection', async () => {
+    install(snap())
+    await mountView()
+    const ui = useUiStore()
+    const review = domAll('[data-testid="treemap-block"][data-bucket="review"]')
+    await review[0].trigger('click', { shiftKey: true })
+    await review[1].trigger('click')
+    await flushPromises()
+    ui.setPopoverAnchor('usagePanel', true)
+    expect(ui.openPopover('usagePanel')).toBe(true)
+    await pressEsc(document.body)
+    expect(dom('[data-testid="sel-remove"]').exists()).toBe(true)
+    ui.closePopover('usagePanel')
   })
 })
 
@@ -286,6 +353,78 @@ describe('Cleanup screen — panel', () => {
     ;(body('bulk-confirm') as HTMLButtonElement).click()
     await flushPromises()
     expect(api.gcClean.mock.calls[0][1].confirmed).toHaveLength(1)
+  })
+})
+
+describe('Cleanup screen — the autopilot badge tells the truth', () => {
+  const badge = (): string => domGet('[data-testid="cleanup-autopilot-badge"]').text()
+
+  it('on and acknowledged: "Autopilot on · every 1 h"', async () => {
+    install(snap({}, { autopilot: true, firstReportAcknowledged: true }))
+    await mountView()
+    expect(badge()).toBe(
+      t('cleanup.gc.status.badgeOn', { every: t('cleanup.gc.status.everyHours', { n: 1 }) })
+    )
+  })
+
+  it('on but the first report is unacknowledged: it says report only, not "on"', async () => {
+    install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgeReportOnly'))
+    expect(badge()).toContain('report only')
+  })
+
+  it('on but the background scan is off: it says paused, because nothing will run', async () => {
+    install(snap({ backgroundScan: false }, { autopilot: true, firstReportAcknowledged: true }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgePaused'))
+    expect(badge()).toContain('background scan is off')
+  })
+
+  it('paused wins over report only: with the scan off no report is produced either', async () => {
+    install(snap({ backgroundScan: false }, { autopilot: true, firstReportAcknowledged: false }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgePaused'))
+  })
+
+  describe('the summary line and the badge never disagree', () => {
+    const summary = (): string => domGet('[data-testid="cleanup-summary"]').text()
+
+    it('on and acknowledged: both say on', async () => {
+      install(snap({}, { autopilot: true, firstReportAcknowledged: true }))
+      await mountView()
+      expect(summary()).toContain('autopilot on')
+      expect(badge()).toContain('Autopilot on · every')
+    })
+
+    it('unacknowledged: the summary says report only, not on', async () => {
+      install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
+      await mountView()
+      expect(summary()).toContain('autopilot report only')
+      expect(summary()).not.toContain('autopilot on')
+      expect(badge()).toContain('report only')
+    })
+
+    it('scan off: the summary says paused, not on', async () => {
+      install(snap({ backgroundScan: false }, { autopilot: true, firstReportAcknowledged: true }))
+      await mountView()
+      expect(summary()).toContain('autopilot paused')
+      expect(summary()).not.toContain('autopilot on')
+      expect(badge()).toContain('paused')
+    })
+
+    it('off: both say off', async () => {
+      install(snap({}, { autopilot: false }))
+      await mountView()
+      expect(summary()).toContain('autopilot off')
+      expect(badge()).toBe('Autopilot off')
+    })
+  })
+
+  it('off stays "Autopilot off" whatever the scan does', async () => {
+    install(snap({ backgroundScan: false }, { autopilot: false }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgeOff'))
   })
 })
 
@@ -351,14 +490,68 @@ describe('Cleanup screen — first cycle and background run', () => {
     await flushPromises()
   })
 
-  it('"Not now" acknowledges through a real clone and reports a failure', async () => {
+  it('"Not now" snoozes the banner and does NOT acknowledge the report', async () => {
     const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))
     await mountView()
-    const toast = vi.spyOn(useUiStore(), 'pushToast')
-    api.gcAckFirstReport.mockRejectedValueOnce(new Error('nope'))
     await domGet('[data-testid="first-dismiss"]').trigger('click')
     await flushPromises()
-    expect(toast.mock.calls[0][0]).toMatchObject({ title: t('cleanup.gc.error.dismiss') })
+    expect(api.gcAckFirstReport).not.toHaveBeenCalled()
+    expect(dom('[data-testid="first-enable"]').exists()).toBe(false)
+  })
+
+  it('the banner states what the next cycle will clean, from the snapshot', async () => {
+    install(
+      snap(
+        { nextClean: { count: 2, bytes: 900 * MIB }, nextCycleAt: Date.now() + 40 * 60_000 },
+        { autopilot: false, firstReportAcknowledged: false }
+      )
+    )
+    await mountView()
+    const text = domGet('[data-testid="first-cycle-banner"]').text()
+    expect(text).toMatch(
+      /next cycle, in \d+ min, will clean the ready items it finds then, up to 20 per cycle\. Right now that is 2 items, 944 MB/
+    )
+  })
+
+  describe('the banner names the Docker prune only when the category is on and Docker answered', () => {
+    const up = {
+      buildCacheReclaimableBytes: 5 * MIB,
+      danglingImages: { count: 1, bytes: MIB },
+      orphanVolumesHidden: null
+    }
+    const first = { autopilot: false, firstReportAcknowledged: false }
+    const banner = (): string => domGet('[data-testid="first-cycle-banner"]').text()
+
+    it('names it when the category is on and Docker answered', async () => {
+      install(snap({ docker: up }, first))
+      await mountView()
+      expect(banner()).toContain(
+        'also prune Docker build cache older than 7 days and dangling images'
+      )
+    })
+
+    it('does not claim it when the category is off: the ack would not turn it on', async () => {
+      install(
+        snap({ docker: up }, { ...first, categories: { worktrees: true, dockerCache: false } })
+      )
+      await mountView()
+      expect(banner()).not.toContain('Docker')
+    })
+
+    it('does not claim it when Docker did not answer', async () => {
+      install(snap({}, first))
+      await mountView()
+      expect(banner()).not.toContain('Docker')
+    })
+  })
+
+  it('with autopilot on and the report unacknowledged the banner offers "Allow cleaning"', async () => {
+    const api = install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
+    await mountView()
+    expect(domGet('[data-testid="first-enable"]').text()).toBe('Allow cleaning')
+    await domGet('[data-testid="first-enable"]').trigger('click')
+    await flushPromises()
+    expect(api.gcAckFirstReport).toHaveBeenCalledTimes(1)
   })
 
   it('no banner once the first report is acknowledged', async () => {
@@ -514,6 +707,31 @@ describe('Cleanup screen — Retry follows the bucket', () => {
     expect(ids).toEqual([id])
     expect(opts.confirmed).toBeUndefined() // a ready item needs no confirmation of its own
     expect(opts.expected[id].bucket).toBe('ready')
+  })
+
+  it('a failed READY item (halted mid-clean) retries through the ready confirm, not the review one', async () => {
+    const f = wt(
+      'halted',
+      'review',
+      500 * MIB,
+      {},
+      {
+        reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps: ENOTEMPTY' },
+        retryAs: 'ready'
+      }
+    )
+    const api = install(snap({ bundles: [f] }))
+    await mountView()
+    const id = f.item.id
+    await failed(api, id)
+    await dom(`[data-block-id="${id}"]`).trigger('click')
+    await dom('[data-testid="panel-retry"]').trigger('click')
+    expect(body('bulk-confirm')!.className).not.toContain('text-red')
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual([id])
+    expect(opts.confirmed).toBeUndefined() // the guarded path needs no force confirmation
   })
 
   it('a failed review item opens the review confirm — Danger, and confirmed', async () => {
@@ -696,5 +914,338 @@ describe('Cleanup screen — toolbar and legend parity with the mockup', () => {
     const bar = document.body.querySelector('[data-testid="split-bar"]')!
     const legend = document.body.querySelector('[data-testid="legend"]')!
     expect(bar.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+describe('Cleanup screen — Remove is honest: what main refuses is never offered', () => {
+  // Main refuses a Remove for a locked worktree, a shared stack, an open session… (a detached one is
+  // taken from review, archived by its HEAD sha first).
+  // The fake `gc:clean` here judges each id with main's own `refusalFor`, as `submitManualClean` does,
+  // so a click that would have ended in "0 cleaned" fails the test instead of the operator.
+  const detached = (name: string): ReturnType<typeof wt> =>
+    wt(
+      name,
+      'review',
+      GIB,
+      { kind: 'detached-worktree', branch: null, id: `/w/repo::detached-worktree::${name}` },
+      { reason: reviewReason('detached') }
+    )
+  const locked = (name: string): ReturnType<typeof wt> =>
+    wt(name, 'review', GIB, {}, { reason: reviewReason('locked'), locked: true })
+  const sharedStack = (name: string): ReturnType<typeof wt> =>
+    wt(name, 'review', GIB, {}, { reason: reviewReason('shared-stack'), sharedStackIds: ['o'] })
+  const sessionOpen = (name: string): ReturnType<typeof wt> =>
+    wt(name, 'review', GIB, {}, { reason: reviewReason('open-idle-session'), session: 'open-idle' })
+  const fine = (name: string): ReturnType<typeof wt> =>
+    wt(name, 'review', 2 * GIB, {}, { reason: reviewReason('dirty') })
+
+  function installJudged(s: GcSnapshot): Api {
+    const api = install(s)
+    api.gcClean.mockImplementation(async (ids: string[]) => {
+      const results = ids.map((id) => {
+        const b = s.bundles.find((x) => x.item.id === id)!
+        const hard = refusalFor(b, s.prefs, { confirmed: true })
+        return hard
+          ? { id, ok: false, haltedAt: 'reprobe', error: hard, freedBytes: 0 }
+          : { id, ok: true, haltedAt: null, freedBytes: 0 }
+      })
+      queueMicrotask(() =>
+        api.push.done({
+          jobId: 'j1',
+          kind: 'manual',
+          done: ids.length,
+          total: ids.length,
+          freedBytes: 0,
+          results,
+          error: null
+        })
+      )
+      return { jobId: 'j1', queued: false }
+    })
+    return api
+  }
+
+  async function tickAll(): Promise<void> {
+    for (const c of domAll('[data-testid="review-check"]')) await c.setValue(true)
+  }
+  async function removeSelected(): Promise<void> {
+    await domGet('[data-testid="sel-remove"]').trigger('click')
+    await flushPromises()
+  }
+
+  it('the selection bar disables Remove when nothing ticked can be removed, and says why', async () => {
+    const api = installJudged(snapshotOf([sharedStack('s1'), locked('l1')]))
+    await mountView()
+    await tickAll()
+    const remove = domGet('[data-testid="sel-remove"]')
+    expect(remove.attributes('disabled')).toBeDefined()
+    await remove.trigger('click')
+    expect(body('bulk-dialog')).toBeNull()
+    expect(api.gcClean).not.toHaveBeenCalled()
+    expect(remove.el!.parentElement!.getAttribute('title')).toBe(
+      t('cleanup.gc.selection.removeNone')
+    )
+  })
+
+  it('a mixed selection opens ONE dialog: what main takes counted and sent, the rest listed apart with why', async () => {
+    const s = snapshotOf([locked('l1'), sharedStack('s1'), sessionOpen('o1'), fine('d1')])
+    const api = installJudged(s)
+    await mountView()
+    await tickAll()
+    await removeSelected()
+    // counted: only the one that main takes
+    expect(document.body.querySelectorAll('[data-testid="bulk-row"]')).toHaveLength(1)
+    expect(body('bulk-confirm')!.textContent).toContain('1')
+    // listed apart: each refused item, its reason, and the fix when there is a command
+    const refused = domAll('[data-testid="bulk-refused-row"]')
+    expect(refused).toHaveLength(3)
+    expect(domGet('[data-testid="bulk-refused-title"]').text()).toBe(
+      t('cleanup.gc.confirm.refusedTitle', { n: 3 })
+    )
+    const byRefusal = (r: string): Q =>
+      new Q(document.body.querySelector(`[data-testid="bulk-refused-row"][data-refusal="${r}"]`))
+    expect(byRefusal('locked').text()).toContain(t('cleanup.gc.removal.reason.locked'))
+    expect(byRefusal('locked').text()).toContain('git worktree unlock /w/repo/.claude/worktrees/l1')
+    expect(byRefusal('shared-stack').text()).toContain(t('cleanup.gc.removal.reason.sharedStack'))
+    expect(byRefusal('session-open').text()).toContain(t('cleanup.gc.removal.reason.sessionOpen'))
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    // not in the request
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual(['/w/repo::worktree::d1'])
+    expect(opts.confirmed).toEqual(['/w/repo::worktree::d1'])
+    for (const id of ids as string[]) {
+      const b = s.bundles.find((x) => x.item.id === id)!
+      expect(refusalFor(b, s.prefs, { confirmed: true })).toBeNull()
+    }
+  })
+
+  it('a dialog with nothing refused has no "Won\'t be removed" group', async () => {
+    installJudged(snapshotOf([fine('d1'), fine('d2')]))
+    await mountView()
+    await tickAll()
+    await removeSelected()
+    expect(body('bulk-refused')).toBeNull()
+  })
+
+  it('when nothing is removable no dialog opens and a toast says why', async () => {
+    installJudged(snapshotOf([locked('l1'), locked('l2')]))
+    const w = await mountView()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    ;(w.vm as unknown as { openRemove(ids: string[]): void }).openRemove([
+      '/w/repo::worktree::l1',
+      '/w/repo::worktree::l2'
+    ])
+    await flushPromises()
+    expect(body('bulk-dialog')).toBeNull()
+    expect(toast).toHaveBeenCalledTimes(1)
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'warning',
+      title: t('cleanup.gc.confirm.nothingRemovable'),
+      description: t('cleanup.gc.removal.reason.locked')
+    })
+  })
+
+  it('different reasons get the "each for its own reason" description', async () => {
+    installJudged(snapshotOf([locked('l1'), sharedStack('s1')]))
+    const w = await mountView()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    ;(w.vm as unknown as { openRemove(ids: string[]): void }).openRemove([
+      '/w/repo::worktree::l1',
+      '/w/repo::worktree::s1'
+    ])
+    await flushPromises()
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      description: t('cleanup.gc.confirm.nothingRemovableSeveral')
+    })
+  })
+
+  it('the list row shows no Remove button for an item main refuses, and the reason as its tooltip', async () => {
+    installJudged(snapshotOf([locked('l1'), fine('d1')]))
+    await mountView()
+    expect(domAll('[data-testid="review-remove"]')).toHaveLength(1)
+    const blocked = domGet('[data-testid="review-remove-blocked"]')
+    expect(blocked.attributes('title')).toBe(t('cleanup.gc.removal.reason.locked'))
+  })
+
+  it('"Select all" in a repo ticks only the items main takes — a detached worktree is one of them', async () => {
+    installJudged(snapshotOf([locked('l1'), detached('h1'), fine('d1')]))
+    const w = await mountView()
+    ;(w.vm as unknown as { onSelectAllInRepo(repo: string): void }).onSelectAllInRepo('/w/repo')
+    await flushPromises()
+    const ticked = domAll('[data-testid="review-check"]').filter(
+      (c) => (c.el as HTMLInputElement).checked
+    )
+    expect(ticked).toHaveLength(2)
+    expect(domGet('[data-testid="sel-count"]').text()).toContain('2')
+  })
+
+  it('a detached worktree opens a Danger dialog that says its commit is kept under refs/archive/detached', async () => {
+    const s = snapshotOf([detached('h1')])
+    const api = installJudged(s)
+    await mountView()
+    await tickAll()
+    await removeSelected()
+    // the row names the commit that will be archived, and there is no branch chip
+    const row = domGet('[data-testid="bulk-row"]')
+    expect(row.text()).toContain(t('cleanup.gc.confirm.detachedSub', { sha: 'aaaaaaaaaaaa' }))
+    expect(row.el!.querySelector('[data-chip="branch"]')).toBeNull()
+    expect(row.el!.querySelector('[data-chip="checkout"]')).not.toBeNull()
+    // the warning says where the commit stays and how it comes back
+    const warn = domGet('[data-testid="bulk-detached"]').text()
+    expect(warn).toContain('refs/archive/detached/')
+    expect(warn).toContain('git worktree add')
+    expect(warn).toBe(t('cleanup.gc.confirm.warnDetached', 1, { named: { n: 1 } }))
+    // the confirm is the red one, and sends the id as an explicit confirmation
+    expect(body('bulk-confirm')!.className).toMatch(/danger|red/)
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual(['/w/repo::detached-worktree::h1'])
+    expect(opts.confirmed).toEqual(['/w/repo::detached-worktree::h1'])
+  })
+
+  it('a dialog with no detached worktree carries no detached paragraph', async () => {
+    installJudged(snapshotOf([fine('d1')]))
+    await mountView()
+    await tickAll()
+    await removeSelected()
+    expect(body('bulk-detached')).toBeNull()
+  })
+
+  it('a demoted item shows its real reason in the list and a blocked Remove', async () => {
+    const b = wt('x1', 'review', GIB, {}, { reason: reviewReason('cleanup-failed') })
+    b.reprobeRefusal = { code: 'cannot-unregister', count: 2 }
+    installJudged(snapshotOf([b]))
+    await mountView()
+    expect(domGet('[data-testid="review-reason"]').text()).toBe(
+      t('cleanup.gc.removal.reason.cannotUnregister')
+    )
+    expect(dom('[data-testid="review-remove"]').exists()).toBe(false)
+    expect(dom('[data-testid="review-remove-blocked"]').exists()).toBe(true)
+  })
+
+  it('the panel of a locked item offers no Remove and names the command', async () => {
+    installJudged(snapshotOf([locked('l1')]))
+    await mountView()
+    await domGet('[data-testid="review-row"]').trigger('click')
+    expect(dom('[data-testid="panel-remove"]').exists()).toBe(false)
+    expect(domGet('[data-testid="panel-remove-hint"]').text()).toContain('git worktree unlock')
+  })
+})
+
+describe('Cleanup screen — a ready item main refused leaves the hero', () => {
+  it('the hero counts and sends only the items main did not refuse', async () => {
+    const stuck = wt('c2', 'ready', 400 * MIB)
+    stuck.reprobeRefusal = { code: 'cannot-unregister', count: 1 }
+    const api = install(snapshotOf([wt('c1', 'ready', 500 * MIB), stuck]))
+    await mountView()
+    const hero = domGet('[data-testid="hero-clean"]')
+    expect(hero.text()).toContain('1')
+    await hero.trigger('click')
+    await flushPromises()
+    expect(document.body.querySelectorAll('[data-testid="bulk-row"]')).toHaveLength(1)
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(api.gcClean.mock.calls[0][0]).toEqual(['/w/repo::worktree::c1'])
+  })
+
+  it('with only refused items left the hero is empty', async () => {
+    const stuck = wt('c2', 'ready', 400 * MIB)
+    stuck.reprobeRefusal = { code: 'tip-unknown', count: 1 }
+    install(snapshotOf([stuck]))
+    await mountView()
+    expect(dom('[data-testid="hero-empty"]').exists()).toBe(true)
+  })
+
+  it('Retry from its panel tries it again on purpose', async () => {
+    const stuck = wt('c2', 'ready', 400 * MIB)
+    stuck.reprobeRefusal = { code: 'cannot-unregister', count: 1 }
+    const api = install(snapshotOf([stuck]))
+    await mountView()
+    // the block is on the map; select it through the list view of the model
+    const w = wrapper!
+    ;(w.vm as unknown as { selectedId: string | null }).selectedId = '/w/repo::worktree::c2'
+    await flushPromises()
+    await domGet('[data-testid="panel-retry"]').trigger('click')
+    await flushPromises()
+    expect(body('bulk-dialog')).not.toBeNull()
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(api.gcClean.mock.calls[0][0]).toEqual(['/w/repo::worktree::c2'])
+  })
+})
+
+describe('Cleanup screen — scanned while Docker was down', () => {
+  it('the hero is disabled and says to start Docker; no clean can be opened', async () => {
+    const a = wt('c1', 'ready', 500 * MIB)
+    a.dockerBlind = true
+    const api = install(snapshotOf([a, { ...wt('c2', 'ready', 400 * MIB), dockerBlind: true }]))
+    await mountView()
+    const hero = domGet('[data-testid="hero-blind"]')
+    expect(hero.attributes('disabled')).toBeDefined()
+    expect(hero.text()).toContain(t('cleanup.gc.hero.blind'))
+    await hero.trigger('click')
+    expect(body('bulk-dialog')).toBeNull()
+    expect(api.gcClean).not.toHaveBeenCalled()
+    expect(dom('[data-testid="hero-clean"]').exists()).toBe(false)
+  })
+})
+
+describe('Cleanup screen — Check again on a demoted item', () => {
+  const demoted = (): ReturnType<typeof wt> => {
+    const b = wt('x1', 'review', GIB, {}, { reason: reviewReason('cleanup-failed') })
+    b.reprobeRefusal = { code: 'cannot-unregister', count: 2 }
+    return b
+  }
+  const ID = '/w/repo::worktree::x1'
+
+  async function openPanel(api: Api): Promise<void> {
+    void api
+    await mountView()
+    await domGet('[data-testid="review-row"]').trigger('click')
+  }
+
+  it('asks main to recheck that one item and refreshes the snapshot; a fixed item says so', async () => {
+    const api = install(snapshotOf([demoted()]))
+    await openPanel(api)
+    const before = api.gcSnapshot.mock.calls.length
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await domGet('[data-testid="panel-recheck"]').trigger('click')
+    await flushPromises()
+    expect(api.gcRecheck).toHaveBeenCalledWith(ID)
+    expect(api.gcSnapshot.mock.calls.length).toBeGreaterThan(before)
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'success',
+      title: t('cleanup.gc.recheck.cleared')
+    })
+  })
+
+  it('a still-broken item stays demoted and the toast says why', async () => {
+    const api = install(snapshotOf([demoted()]))
+    api.gcRecheck.mockResolvedValue({ id: ID, outcome: 'still-refused', code: 'cannot-unregister' })
+    await openPanel(api)
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await domGet('[data-testid="panel-recheck"]').trigger('click')
+    await flushPromises()
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'warning',
+      title: t('cleanup.gc.recheck.stillRefused'),
+      description: t('cleanup.gc.removal.reason.cannotUnregister')
+    })
+    expect(dom('[data-testid="panel-recheck"]').exists()).toBe(true)
+  })
+
+  it('a check that could not answer says so instead of claiming a result', async () => {
+    const api = install(snapshotOf([demoted()]))
+    api.gcRecheck.mockResolvedValue({ id: ID, outcome: 'unchecked', code: 'docker-unavailable' })
+    await openPanel(api)
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await domGet('[data-testid="panel-recheck"]').trigger('click')
+    await flushPromises()
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'warning',
+      title: t('cleanup.gc.recheck.unchecked')
+    })
   })
 })

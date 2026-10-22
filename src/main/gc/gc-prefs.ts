@@ -22,6 +22,16 @@ export interface GcPrefs {
   maxItemsPerCycle: number
   categories: { worktrees: boolean; dockerCache: boolean }
   cacheMaxAgeDays: number
+  /**
+   * "Keep archives for N days": the age past which `refs/archive/**` entries are offered for
+   * deletion, behind a confirm that lists them.
+   */
+  archiveKeepDays: number
+  /**
+   * "Expire archives automatically": the autopilot itself may delete the archive refs older than
+   * `archiveKeepDays`. Off by default, so refs only ever go on an explicit confirm.
+   */
+  archiveAutoExpire: boolean
   /** Absolute repo or worktree paths the autopilot and manual cleaning never touch. */
   neverClean: string[]
   /** Bundle id → the fate it had when the operator pressed Keep. */
@@ -58,6 +68,8 @@ export const MAX_INTERVAL_MS = 86_400_000
 export const MAX_GRACE_DAYS = 30
 export const MAX_ITEMS_PER_CYCLE = 200
 export const MAX_CACHE_AGE_DAYS = 365
+export const DEFAULT_ARCHIVE_KEEP_DAYS = 30
+export const MAX_ARCHIVE_KEEP_DAYS = 3650
 
 export function prefsFile(userDataDir: string): string {
   return path.join(userDataDir, PREFS_FILE)
@@ -73,6 +85,8 @@ export function defaultGcPrefs(): GcPrefs {
     maxItemsPerCycle: 20,
     categories: { worktrees: true, dockerCache: true },
     cacheMaxAgeDays: 7,
+    archiveKeepDays: DEFAULT_ARCHIVE_KEEP_DAYS,
+    archiveAutoExpire: false,
     neverClean: [],
     keep: {},
     released: {},
@@ -175,6 +189,8 @@ export function normalizeGcPrefs(
       dockerCache: bool(categories.dockerCache) ?? d.categories.dockerCache
     },
     cacheMaxAgeDays: clamped(r.cacheMaxAgeDays, 1, MAX_CACHE_AGE_DAYS) ?? d.cacheMaxAgeDays,
+    archiveKeepDays: clamped(r.archiveKeepDays, 1, MAX_ARCHIVE_KEEP_DAYS) ?? d.archiveKeepDays,
+    archiveAutoExpire: bool(r.archiveAutoExpire) ?? d.archiveAutoExpire,
     neverClean,
     keep,
     released,
@@ -221,7 +237,8 @@ export async function writeGcPrefs(file: string, prefs: GcPrefs): Promise<void> 
 /**
  * A write from the renderer, whole or partial: it changes only what it names. `keep`, `released`
  * and the acknowledgement have their own channels, so a stale settings form can neither wipe the
- * operator's Keep marks or an agent's releases nor acknowledge a report it never showed.
+ * operator's Keep marks or an agent's releases nor acknowledge a report it never showed. Turning
+ * the autopilot on (off to on) resets the acknowledgement.
  */
 export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
   const incoming =
@@ -244,7 +261,11 @@ export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
     keep: current.keep,
     released: current.released,
     releasedFrom: current.releasedFrom,
-    firstReportAcknowledged: current.firstReportAcknowledged
+    // Turning the autopilot ON starts a new promise: its first cycle only reports. A write
+    // cannot acknowledge (see above), but it can take the acknowledgement away, so an operator
+    // who dismissed the banner, or ran the autopilot before, is never cleaned for on a stale ack.
+    firstReportAcknowledged:
+      !current.autopilot && next.autopilot ? false : current.firstReportAcknowledged
   }
 }
 

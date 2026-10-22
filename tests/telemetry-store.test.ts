@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FleetTelemetry, SessionTelemetry } from '../src/main/statusline-parse'
@@ -235,6 +235,75 @@ describe('telemetry store', () => {
       // a restored entry is the last known statusLine-side record: a lease loss falls back to it
       b.dropCompanion(SID)
       expect(only(b.getTelemetryPayload())?.costUsd).toBe(0.5)
+    })
+  })
+
+  describe('last-known records (BUG-196 AC-1)', () => {
+    const DAY = 24 * 3_600_000
+
+    it('serves an expired record under lastKnown, never in perSession', () => {
+      const s = rig()
+      s.ingestStatusline(sl({ updatedAtMs: clock - 25 * 3_600_000 }))
+      s.ingestStatusline(sl({ sessionId: OTHER, updatedAtMs: clock - 1_000 }))
+      const p = s.getTelemetryPayload()
+      expect(only(p)).toBeUndefined()
+      expect(p.lastKnown.map((t) => t.sessionId)).toEqual([SID])
+      expect(only(p, OTHER)?.sessionId).toBe(OTHER)
+      expect(p.lastKnown.some((t) => t.sessionId === OTHER)).toBe(false)
+    })
+
+    it('an expired record never counts toward the fleet aggregate', () => {
+      const s = rig()
+      s.ingestStatusline(sl({ updatedAtMs: clock - 25 * 3_600_000 }))
+      expect(s.getTelemetryPayload().fleet.sessionCount).toBe(0)
+      expect(s.getTelemetryPayload().fleet.totalCostUsd).toBe(0)
+    })
+
+    it('a record that ages past the TTL while the app runs moves to lastKnown', () => {
+      const s = rig()
+      s.ingestStatusline(sl({ updatedAtMs: clock }))
+      expect(only(s.getTelemetryPayload())).toBeDefined()
+      clock += 25 * 3_600_000
+      const p = s.getTelemetryPayload()
+      expect(only(p)).toBeUndefined()
+      expect(p.lastKnown.map((t) => t.sessionId)).toEqual([SID])
+    })
+
+    it('a fresh blob supersedes the expired record', () => {
+      const s = rig()
+      s.ingestStatusline(sl({ updatedAtMs: clock - 25 * 3_600_000, costUsd: 1 }))
+      s.ingestStatusline(sl({ updatedAtMs: clock, costUsd: 2 }))
+      const p = s.getTelemetryPayload()
+      expect(only(p)?.costUsd).toBe(2)
+      expect(p.lastKnown).toEqual([])
+    })
+
+    it('hydrate keeps an expired record as last-known and still drops one past the retention', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'harnu-ts-'))
+      dirs.push(dir)
+      const path = join(dir, 'telemetry-cache.json')
+      writeFileSync(
+        path,
+        JSON.stringify([
+          sl({ updatedAtMs: clock - 3 * DAY }),
+          sl({ sessionId: OTHER, updatedAtMs: clock - 400 * DAY })
+        ])
+      )
+      const s = rig({ cachePath: path })
+      await s.hydrate()
+      const p = s.getTelemetryPayload()
+      expect(only(p)).toBeUndefined() // not served as live
+      expect(p.lastKnown.map((t) => t.sessionId)).toEqual([SID])
+    })
+
+    it('persists expired records so a restart still knows them', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'harnu-ts-'))
+      dirs.push(dir)
+      const path = join(dir, 'telemetry-cache.json')
+      const s = rig({ cachePath: path })
+      s.ingestStatusline(sl({ updatedAtMs: clock - 3 * DAY }))
+      s.flushSync()
+      expect(JSON.parse(readFileSync(path, 'utf8'))[0].sessionId).toBe(SID)
     })
   })
 

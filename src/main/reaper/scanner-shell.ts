@@ -40,6 +40,7 @@ import { readUserProjects } from '../user-projects'
 import { getFleetFolders } from '../fleet-model'
 import { getTaskStates } from '../hook-bridge'
 import { spawnEnvOnce } from '../appimage-env'
+import { withoutItems } from '../gc/gc-ghosts'
 import { liveSessionKeys } from '../pty'
 import { probeGitMetaBatch } from '../git-probe'
 import { probeWorktreeStatus, hasUnpushedCommits, readManifestSources } from '../worktree-ipc'
@@ -64,7 +65,9 @@ import {
   stillModified,
   type ExecFn
 } from './dehydrate-shell'
+import { openPrRefsFromCache, type OpenPrRefs } from '../gc/gc-remote-facts'
 import { readHydrationFile, updateHydrationFile } from './hydration-store'
+import { needsWorkStamp, scanWorkStamp } from '../gc/gc-work-stamp'
 
 export { ghCacheFresh }
 
@@ -143,6 +146,20 @@ async function readGhCache(): Promise<GhCacheFile> {
   } catch {
     return {}
   }
+}
+
+/**
+ * The open pull requests (heads and bases) out of the bulk PR list the last scan cached for a repo,
+ * or null when that list cannot answer (stale, capped, an older cache without base refs). The
+ * remove dialog reads this instead of asking `gh` again (delta-2 item 2).
+ */
+export async function readOpenPrRefs(repoPath: string): Promise<OpenPrRefs | null> {
+  const entry = (await readGhCache())[repoPath]
+  return openPrRefsFromCache(
+    entry,
+    !!entry && typeof entry.fetchedAt === 'number' && ghCacheFresh(entry.fetchedAt, Date.now()),
+    GH_CACHE_VERSION
+  )
 }
 
 async function writeGhCache(cache: GhCacheFile): Promise<void> {
@@ -365,7 +382,7 @@ async function fetchPrFacts(
           '--limit',
           String(PR_LIST_LIMIT),
           '--json',
-          'headRefName,headRefOid,number,state,mergedAt,reviewDecision,statusCheckRollup'
+          'headRefName,baseRefName,headRefOid,number,state,mergedAt,reviewDecision,statusCheckRollup'
         ],
         { ...GH_PR_LIST_OPTS, cwd: repoPath }
       )
@@ -436,7 +453,7 @@ async function probeStatusUnpushed(
   const statusByPath = new Map<string, WorktreeStatus | null>()
   const unpushedByPath = new Map<string, boolean | null>()
   for (const w of worktrees) {
-    if (w.bare || w.detached || w.path === mainWorktreePath) continue
+    if (w.bare || w.path === mainWorktreePath) continue
     try {
       // BUG-75: the split probe, never `isWorktreeDirty` — an untracked file
       // must not read as a blocker here.
@@ -444,6 +461,8 @@ async function probeStatusUnpushed(
     } catch {
       statusByPath.set(w.path, null)
     }
+    // A detached HEAD has no upstream to be ahead of: only its untracked files are disclosed.
+    if (w.detached || !w.branch) continue
     try {
       unpushedByPath.set(w.path, await hasUnpushedCommits(w.path))
     } catch {
@@ -828,6 +847,13 @@ async function scanOneRepo(
     if (hydration && item.hydration === null) deriveInto(item, hydration, manifest, null)
   }
 
+  // A fingerprint of the uncommitted work, for the force path to compare against. A probe that
+  // cannot answer is recorded as "unknown", never as "no work", so the force path says so instead
+  // of comparing a live value against nothing.
+  await mapLimit(items.filter(needsWorkStamp), MEASURE_CONCURRENCY, async (item) => {
+    item.workStamp = await scanWorkStamp(reaperExec, item.path!)
+  })
+
   const reconcile = [...pending.entries()].flatMap(([id, h]) => {
     const item = items.find((i) => i.id === id)
     if (!item?.path || !h.record) return []
@@ -873,6 +899,17 @@ let inflight: Promise<ReaperSnapshot> | null = null
 /** The last computed snapshot, or `null` before the first scan. */
 export function lastSnapshot(): ReaperSnapshot | null {
   return cachedSnapshot
+}
+
+/**
+ * Drops items a clean job just removed from the last scan, so what reads that scan next (the
+ * workspace GC's gather, `reaper:snapshot`) does not see them until the next real scan. Without
+ * it a cleaned worktree came back as a "Needs review" ghost.
+ */
+export function forgetItems(ids: ReadonlySet<string>): void {
+  if (ids.size === 0) return
+  if (cachedSnapshot) cachedSnapshot = withoutItems(cachedSnapshot, ids)
+  for (const repo of cachedFate.values()) for (const id of ids) repo.delete(id)
 }
 
 /**

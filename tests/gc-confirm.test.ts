@@ -27,7 +27,7 @@ describe('expectedOf: the facts the operator was shown', () => {
       ownedVolumes: ['v'],
       localTip: 'c'.repeat(40),
       reason: { code: 'dirty', detail: 'x' },
-      item: reapItem('/ws/wt/d', { diskBytes: 77 })
+      item: reapItem('/ws/wt/d', { diskBytes: 77, workStamp: 'w1' })
     })
     expect(expectedOf(b)).toEqual({
       bucket: 'review',
@@ -36,7 +36,8 @@ describe('expectedOf: the facts the operator was shown', () => {
       stackIds: ['s1', 's2'],
       ownedVolumes: ['v'],
       bytes: 77,
-      path: '/ws/wt/d'
+      path: '/ws/wt/d',
+      workStamp: 'w1'
     })
   })
 

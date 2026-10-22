@@ -2,7 +2,7 @@
 // send well-formed facts; a malformed entry is dropped, which makes that id fail closed with
 // `missing-expected` instead of being compared against something invented.
 
-import type { GcCleanOptions, GcExpected } from './gc-wire'
+import type { GcCleanOptions, GcExpected, GcPrep } from './gc-wire'
 
 /** Narrows an untrusted `expected` entry; anything malformed is dropped, which refuses that id. */
 function parseExpected(raw: unknown): GcExpected | null {
@@ -17,7 +17,9 @@ function parseExpected(raw: unknown): GcExpected | null {
     (bucket !== 'ready' &&
       bucket !== 'review' &&
       bucket !== 'in-use' &&
-      bucket !== 'orphan-volume') ||
+      bucket !== 'orphan-volume' &&
+      bucket !== 'orphan-transcripts' &&
+      bucket !== 'stack-leftover') ||
     !stackIds ||
     !ownedVolumes ||
     !(e.reasonCode === null || typeof e.reasonCode === 'string') ||
@@ -27,8 +29,14 @@ function parseExpected(raw: unknown): GcExpected | null {
   ) {
     return null
   }
+  if (!(e.proof === undefined || e.proof === 'proven' || e.proof === 'not-found')) return null
+  const networkIds = e.networkIds === undefined ? undefined : strings(e.networkIds)
+  if (networkIds === null) return null
   const project = e.project === undefined || typeof e.project === 'string' || e.project === null
   if (!project) return null
+  if (!(e.workStamp === undefined || e.workStamp === null || typeof e.workStamp === 'string')) {
+    return null
+  }
   return {
     bucket,
     reasonCode: e.reasonCode,
@@ -37,12 +45,53 @@ function parseExpected(raw: unknown): GcExpected | null {
     ownedVolumes,
     bytes: e.bytes,
     path: e.path,
-    ...(e.project !== undefined ? { project: e.project as string | null } : {})
+    ...(e.workStamp !== undefined ? { workStamp: e.workStamp as string | null } : {}),
+    ...(e.project !== undefined ? { project: e.project as string | null } : {}),
+    ...(networkIds ? { networkIds } : {}),
+    ...(e.proof !== undefined ? { proof: e.proof } : {})
   }
 }
 
+/** Narrows an untrusted guided prep; anything else is dropped, so that id gets no prep. */
+function parsePrep(raw: unknown): GcPrep | null {
+  if (!raw || typeof raw !== 'object') return null
+  const p = raw as Record<string, unknown>
+  if (p.kind === 'unlock' || p.kind === 'close-session') return { kind: p.kind }
+  if (p.kind === 'stop-stack' || p.kind === 'leave-stack') {
+    const ids = p.stackIds
+    if (
+      Array.isArray(ids) &&
+      ids.length > 0 &&
+      ids.length <= 50 &&
+      ids.every((x) => typeof x === 'string' && x.length > 0)
+    ) {
+      return { kind: p.kind, stackIds: ids as string[] }
+    }
+  }
+  return null
+}
+
 /**
- * `confirmed` and `expected` from an untrusted payload. There is deliberately no blanket
+ * One prep, or a list of them for an item with stacked causes: at most one of each kind, never both stack
+ * kinds, never more than three. Anything malformed drops the whole entry, so that id gets no prep.
+ */
+function parsePreps(raw: unknown): GcPrep | GcPrep[] | null {
+  if (!Array.isArray(raw)) return parsePrep(raw)
+  if (raw.length === 0 || raw.length > 3) return null
+  const out: GcPrep[] = []
+  for (const x of raw) {
+    const p = parsePrep(x)
+    if (!p) return null
+    out.push(p)
+  }
+  const kinds = new Set(out.map((p) => p.kind))
+  if (kinds.size !== out.length) return null
+  if (kinds.has('stop-stack') && kinds.has('leave-stack')) return null
+  return out
+}
+
+/**
+ * `confirmed`, `expected` and `prepare` from an untrusted payload. There is deliberately no blanket
  * "confirm everything" flag: a stray `confirmDecide` or `confirmReview` is ignored, so it confirms nothing.
  */
 export function parseOptions(raw: unknown): GcCleanOptions {
@@ -57,5 +106,24 @@ export function parseOptions(raw: unknown): GcCleanOptions {
       if (parsed) expected[id] = parsed
     }
   }
-  return { confirmed, expected }
+  const deleteRemote = Array.isArray(r.deleteRemote)
+    ? r.deleteRemote.filter((x): x is string => typeof x === 'string').slice(0, 500)
+    : undefined
+  const confirmedNotFound = Array.isArray(r.confirmedNotFound)
+    ? r.confirmedNotFound.filter((x): x is string => typeof x === 'string').slice(0, 500)
+    : undefined
+  const prepare: Record<string, GcPrep | GcPrep[]> = {}
+  if (r.prepare && typeof r.prepare === 'object' && !Array.isArray(r.prepare)) {
+    for (const [id, value] of Object.entries(r.prepare as Record<string, unknown>)) {
+      const parsed = parsePreps(value)
+      if (parsed) prepare[id] = parsed
+    }
+  }
+  return {
+    confirmed,
+    expected,
+    ...(deleteRemote ? { deleteRemote } : {}),
+    ...(confirmedNotFound ? { confirmedNotFound } : {}),
+    ...(Object.keys(prepare).length > 0 ? { prepare } : {})
+  }
 }

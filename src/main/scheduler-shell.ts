@@ -45,9 +45,11 @@ import {
   nextFailureState,
   parseSkillMentions,
   partitionExtraReadCommands,
+  pinWorker,
   runNotificationText,
   shouldNotifyRun,
   tickArgv,
+  unpinWorker,
   type Effort,
   type Run,
   type RunStatus,
@@ -887,7 +889,13 @@ export async function updateWorkerForAgent(
   if (!workersCache.some((w) => w.id === input.id)) throw new WorkerNotFoundError(input.id)
 
   const tickInFlight = liveTicks.has(input.id)
-  const updated = updateWorker(input.id, input.set)
+  // T483: `pinnedAt` is the operator's curation and `UpdateWorkerPatch` excludes it by type; strip
+  // it at runtime too so no caller (a future one, a cast) can set or clear a pin through this path.
+  const { pinnedAt: _ignoredPin, ...safeSet } = input.set as UpdateWorkerPatch & {
+    pinnedAt?: unknown
+  }
+  void _ignoredPin
+  const updated = updateWorker(input.id, safeSet)
   if (!updated) throw new WorkerNotFoundError(input.id)
   await persistWorkers()
   emitChanged()
@@ -904,6 +912,25 @@ export async function updateWorkerForAgent(
     }
   }
   return { worker: updated, missingSkills, rejectedSkills, tickInFlight }
+}
+
+/**
+ * T483: pin or unpin a worker — the operator's curation, reachable only through the
+ * `scheduler:setPinned` IPC (no MCP verb carries it). Goes through the same cache mutation and
+ * persistence as every other write, so a stale debounced `scheduler:save` can never resurrect an
+ * old pin state: `scheduler:save` ignores `pinnedAt` and this is the only door that moves it.
+ */
+export async function setWorkerPinned(id: string, pinned: boolean): Promise<Worker[]> {
+  await ready
+  assertStoreLoaded()
+  const idx = workersCache.findIndex((w) => w.id === id)
+  if (idx < 0) throw new WorkerNotFoundError(id)
+  workersCache = workersCache.map((w) =>
+    w.id === id ? (pinned ? pinWorker(w, Date.now()) : unpinWorker(w)) : w
+  )
+  await persistWorkers()
+  emitChanged()
+  return workersCache
 }
 
 /**
@@ -964,13 +991,24 @@ export function registerScheduler(
     const id = draft.id && draft.id.length > 0 ? draft.id : randomUUID()
     const existingIdx = workersCache.findIndex((w) => w.id === id)
     const base: Worker = existingIdx >= 0 ? workersCache[existingIdx] : newWorker(id)
-    const merged: Worker = { ...base, ...draft, id }
+    // T483: a draft never moves the pin — `scheduler:setPinned` is the only door. The renderer's
+    // debounced draft is built from a snapshot, so honoring its `pinnedAt` could undo a pin made
+    // after the snapshot was taken.
+    const { pinnedAt: _draftPin, ...draftWithoutPin } = draft
+    void _draftPin
+    const merged: Worker = { ...base, ...draftWithoutPin, id }
     if (existingIdx >= 0) workersCache[existingIdx] = merged
     else workersCache = [...workersCache, merged]
     await persistWorkers()
     emitChanged()
     return workersCache
   })
+
+  ipcMain.handle(
+    'scheduler:setPinned',
+    async (_e, id: string, pinned: boolean): Promise<Worker[]> =>
+      setWorkerPinned(id, pinned === true)
+  )
 
   ipcMain.handle('scheduler:delete', async (_e, id: string): Promise<Worker[]> => {
     await ready

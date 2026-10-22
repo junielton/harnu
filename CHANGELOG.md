@@ -10,10 +10,387 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
-## 2026-10-09
+## 2026-10-22
+
+### Added
+
+- **Browser panes are paused when nobody looks at them, and come back after a restart.** A pane hidden for ten
+  minutes lets go of its page (a few hundred megabytes) and shows "Paused to save memory" with a **Click to reload**
+  button; a session that needs the page reloads it first and is told so. It is never paused while a session is
+  working in it, recording its network, or while a download or your own click is in progress. When you quit and
+  reopen Harnu the panes return in their folders, not loaded yet, at the same address, with their zoom, device, network
+  switch, scroll position and unsent comment drafts, and load as soon as you look at them. A session's permission to
+  drive a pane, a network recording and the "opened by agent" badge do not survive a restart.
+- **A session's fifth browser pane is refused up front.** The limit of four panes per folder a session may open is now
+  decided before any permission prompt, and the answer lists the panes to reuse; the panes you open yourself never
+  count. `browser_list` shows a paused pane as `discarded`, and `browser_snapshot` can now return a live panel's saved
+  data.
+- **Sessions can drive a browser page — with your permission where it matters.** Five new session verbs act on a
+  page: `browser_eval` (run a script and get the result back), `browser_click`, `browser_type`, `browser_fill`
+  (up to 20 fields at once) and `browser_press` (Enter, Tab, arrows, `Ctrl+A`…). They aim at elements by the
+  names a snapshot gives, wait up to five seconds for the element to be visible and not covered, and say what they
+  hit. On a dev server on your own machine a session drives freely. On any other site, and on any pane **you**
+  opened, the first attempt asks you: the prompt names the pane, who opened it, the site and the first thing it
+  would do. **Allow does nothing by itself** — it only lets the session drive that pane for the next ten idle
+  minutes, and the session is told to look at the page and try again. **Deny** blocks that pane for five minutes
+  without asking again. Closing the pane, **Disconnect**, blocking the folder or switching agent browser control
+  off ends it at once, and so does the pane moving to another site: an Allow given for `localhost:3000` never covers a bank or mail page it later opens. What a session types or runs there acts as you on that page, and the prompt says so.
+  Writes to one pane run one at a time (more than 60 a minute is refused), and every call is audited with the
+  script or text scrubbed and cut to 200 characters. A pane does not pass clicks or key presses to the first page
+  it loads, to a page it reached from a blank page or another site, or after a page redirects itself, so those are refused up front (`PANE_INPUT_NOT_READY`, "reload the pane once") instead of reporting a
+  success that did nothing; filling, plain typing and scripts are unaffected.
+- **Folder menu: let sessions read the browser panes you open, and name your dev hosts.** Right-click a folder and
+  choose **Let agents read browser panes I open** (off by default, this folder only — never its worktrees) so a
+  session can look at a page you opened; acting on it still asks you, once per pane. **Trusted dev hosts…** lists
+  the names that count as your own dev servers (`app.test`, `*.test`, a docker service name) so a session can
+  drive them without asking; only exact names and short wildcards like `*.test` are accepted, and only you can edit
+  the list. A pane you opened now shows "An agent can read here" or "An agent can drive here" in its header once a
+  session may do so.
+- **Zoom in the browser pane.** `−`, the percentage and `+` sit at the right of the address bar; click the percentage to go back to 100%. Cmd/Ctrl `+`, `−` and `0` work while the pane has focus. The zoom is remembered per site, so it is still there next time you open that site, and a session's `browser_emulate({ zoom })` sets the same remembered value.
+- **Device mode in the browser pane.** The new phone icon next to the zoom opens seven device classes (`phone-s`, `phone-m`, `phone-l`, `tablet`, `tablet-landscape`, `laptop`, `desktop`) and a custom size. The page really thinks it is on that device — its size, pixel ratio, touch events and, for phones and tablets, a mobile browser identity — and is drawn inside a device frame, scaled down to fit without the page ever seeing the scaling. A second row has Rotate, light/dark, reduced motion and Reset device. Zoom is off while a device is on.
+- **`browser_emulate`, `browser_upload` and `browser_download` for sessions.** A session can zoom a pane, show it as a device (the pane's picker shows the same setting), attach files from the folder to a page's file field (inside the folder only, never secrets, up to 10 files of 50 MB) and download a file into `.harnu/out/downloads/`. Free on a pane the session opened; a lease on one you opened, and for uploads on any site that is not your own machine. `browser_open` also takes a `device`.
+- **A prompt for downloads you click.** Clicking a download in a browser pane now asks "Save _name_ to `.harnu/out/downloads/`?" instead of silently cancelling. Nothing a download produces is ever opened or run, and downloads a page starts by itself are still cancelled.
+
+### Changed
+
+- **One check decides whether a session's input made a page event or a comment pick.** The page-event gate, the comment
+  pick and the registry check had three copies; they now share one. It follows the moment of your own click: a session's
+  click that overlapped it, or was still running, makes the event or pick ignored, and the pane now says so ("Ignored — a
+  session just acted on this page"). Your own click a moment after a session's goes through.
+- **`browser_patch` on a pane you opened needs the same permission as reading it.** It can run script and tells a session
+  what matched, so it now asks for **Let agents read browser panes I open** like every other verb; `browser_set_data`
+  stays free.
+- **Only folders Harnu knows and you have not blocked get their browser panes back after a restart**, an agent's pane
+  always keeps the agent's own cookie jar, and a pane's saved address no longer includes its query string.
+- **Point-and-comment, tightened.** A browser pane you paused still takes comments (pausing stops the session
+  driving the page, not you writing to it); one you disconnected the session from does not, and the comment
+  button and composer now say so up front instead of failing after you typed. A comment stays a draft until its
+  message has really gone into the terminal, so a session that closed while Harnu waited for you to stop typing
+  loses nothing, and moving the mouse over a terminal no longer counts as typing. Text a page hides in
+  invisible characters (the Unicode "tag" block, word joiners, soft hyphens) or fakes with look-alike dashes and
+  backticks is cleaned out of what the session reads. Pins sit at the top-right corner of their element, the
+  hint reads "Click an element to comment · Esc to exit", one Esc closes an empty composer and ends picking,
+  the bar shows just "N sent" when nothing waits, the Activity row names the session, and the button's tooltip
+  shows your current shortcut. The overlay can no longer be hidden or moved by the page's own CSS, ignores touch
+  input while picking, and no longer marks the page's element while it looks up its source file.
+- **Recording the network of another site now asks, instead of being refused.** `browser_network` on a page that isn't
+  on your own machine used to be unavailable; it now uses the same ask-once permission as driving a page, and
+  ending the recording is always allowed. A pane you opened is now refused until you let agents read browser panes
+  in its folder, instead of being unavailable to sessions altogether.
+- A hidden browser pane in device mode now screenshots the right element: the crop accounts for the device's own size instead of the pane's.
+- Browser panes that were never put in a device mode no longer lose their client hints (`Sec-CH-UA`): Harnu used to restore the browser's user agent on every page load, which dropped them. Resetting a device now puts the real hints back, and a pane opened in a device sends its first request as that device.
+- A session's `browser_download` by clicking an element now needs the same permission as clicking, on a site that is not your own machine: it was a way to click without asking.
+- Uploads refuse more secrets: anything in `.harnu`, `.env*`, `.git-credentials`, `.npmrc`, `.netrc` and `.pypirc` as well as keys, and a path that leaves the folder is refused before you are ever asked.
+- A download in a browser pane that a session gives up on (timeout, closed pane) is stopped and leaves nothing in your folder; denying a download you started shows "Download cancelled" instead of a failure; names are cut by bytes and cleaned of direction-changing characters; leftovers of an interrupted save are swept at the next start.
+- A session's clicks on a page that emulates touch are now taps, like a finger's: a mouse press never completes while touch is emulated, so the click used to hang.
 
 ### Fixed
 
+- **No more "write EPIPE" error dialog when checking for updates.** If Harnu was started from a terminal or
+  launcher that has since closed, a routine log line from the update check could pop up an "unexpected error" box.
+  Those broken-pipe log writes are now ignored.
+- **New sessions start again on Linux.** Every new or resumed Claude session failed at once with
+  "execvp(3) failed.: Argument list too long" once Harnu's built-in guide for sessions grew past what Linux
+  allows in a single launch argument. Harnu now hands a large system prompt to Claude through a temporary file,
+  removed when the session ends, and the guide itself is shorter.
+- **Disconnecting a session from a browser pane now lasts across a restart.** It used to come back connected. Panes a
+  session has been disconnected from no longer count toward its four-panes-per-folder limit, so they cannot lock it
+  out of opening new ones.
+- **Restoring browser panes at launch no longer delays the window.** Nothing is read when no browser pane is saved, and
+  with some only the pinned projects and each pane's own folder are checked.
+- **A browser pane's saved state could stop being written.** Adding a second pane to a folder left the first one's
+  saved details in a form the file write refused, so the file silently stopped updating; it now writes plain data.
+
+## 2026-10-21
+
+### Added
+
+- **Point-and-comment on a page.** In a browser pane, click the new comment button in the header (or press
+  `Ctrl/Cmd+Shift+C` while the pane has focus), hover any element to see its outline and size, and click it. A
+  numbered pin appears on the element and a composer docks under the page: the page gets shorter to make room, and
+  nothing is ever drawn over it. Type what should change and press **Enter** to send it to your session now, or
+  **Shift+Enter** to keep it as a draft and carry on; **Send N comments** in the bar below sends every draft as
+  one message. Pick the session in the **Send to** menu (a session's own pane sends to that session, any other
+  pane to the one you are looking at); with no session at all the comment is copied to your clipboard. The
+  session gets your words plus a cropped picture of the element, its HTML, a short list of its styles and its
+  source file when the page says (Vue, React, Svelte). Whatever the page itself wrote is fenced and marked
+  untrusted, so a page cannot pose as you. The composer lives in Harnu, outside the page, so the page cannot
+  see what you type, and a page cannot fake a click on a pin. Pins stay on the page, find their element again
+  after a reload, sit dashed where they were when it is gone, and go solid and faded once sent. A comment waits
+  while you are typing in that session's terminal, and a parked session is woken in the background first.
+
+- **Live panels in the browser pane.** A session can now open one of your project's `.html` files — or write a
+  small panel for you from inline HTML — in a browser pane (`browser_open` with `path`, or `html` and `name`),
+  and keep it fresh with `browser_set_data` (the panel's state, saved next to your project and re-read on every
+  reload) and `browser_patch` (change one number or row right now). Edit the file yourself and the pane reloads
+  where you were scrolling; delete it and the pane says "File removed" until it comes back. Buttons in the panel
+  can send an event to the session (`harnu.emit`), but only when you really click or press a key: a session that
+  clicks its own panel cannot approve itself. Panels are **offline by default**: a panel can't load anything from
+  the network, and its own script, links and popups can't take it to another address (only its own folder's files);
+  a per-pane **Offline / Network on** switch in the address bar, yours alone, lets a panel that needs a CDN script,
+  a web font or an outside link through, and your own address bar can always leave. Only your own files are
+  ever served, never anything under `.git` or `.harnu/memory`, and only to the panel itself: a web page in another
+  pane, or a background worker it starts, can't read them (a worker started inside a panel can't either).
+
+- **Browser pane — open a real browser beside your session.** The Split button in the Topbar now has a small
+  arrow beside it: choose **Browser** and a Chromium page opens in the split stack, with back, forward and
+  reload, an address bar (type a URL and press Enter, or `Cmd/Ctrl+L` to jump to it), a title, and the same
+  maximize and close buttons as every other pane. Sessions can open one too — `browser_open` for your dev server
+  on localhost or any site, then `browser_navigate`, `browser_list` and `browser_close`. A site a session opens
+  shows an amber "opened by agent" badge, a local dev server gets a green `local` badge, and the pane menu
+  (the ⋯ button) has **Pause agent for 10 min** and **Open DevTools**. Panes a session opened show who is
+  connected and can be cut off for good with the unplug button, or paused for ten minutes with a countdown and
+  a Resume button. **Allow agents to drive browser panes** in Settings → Control server turns every agent
+  write (open, navigate) off at once. When a menu, dialog, toast or palette opens over a page, the page freezes
+  to a still image so nothing is ever drawn underneath it, and it comes back when the layer closes. Pages run
+  in their own cookie jar, away from Harnu itself: only `http`, `https` and `about:blank` open, popups open as
+  a new pane only after you click, downloads and permission prompts are refused, and a page can't reach Harnu's
+  own windows or files. Panes you opened can't be driven by an agent yet, and the pane does not reopen after a
+  restart — both arrive in later releases, along with opening local `.html` files, reading and acting on the
+  page, and point-and-comment.
+- **Sessions can read a browser pane.** Five new session verbs let a session see a page it opened:
+  `browser_snapshot` (the page as its accessibility tree, with stable names for each element), `browser_screenshot`
+  (the whole viewport, the whole page or one element, optionally saved under `.harnu/out/browser/shots/`),
+  `browser_console` (everything the page logged since the pane opened), `browser_wait_for` (wait for an element or
+  text to appear or go away, the address to change, or the network to go quiet), and `browser_network`. Network
+  capture is **off until a session asks for it**: while it runs a red **Network 4:12** counter shows in the pane
+  header counting down to when it stops by itself (10 minutes by default, 30 at most), and it also stops when the
+  pane closes, when you disconnect the session, or when you switch agent browser control off. It records addresses
+  with every query value hidden, never records cookies or sign-in headers, and records response text only if the
+  session asked for it. While a session is paused it can still read and stop a recording but not start one. Reading keeps working while a session is paused or agent control is off, never works on a
+  pane you opened yourself yet, and stops for good when you disconnect the session. Scheduler `observe` workers can
+  read panes too (not capture traffic).
+- **The review companion now sees what you have selected, without you doing anything.** While a companion is open, every change of the selection in the Review diff — a click, a range, a drag, a whole file — is shared with it half a second after you stop, as a hidden note. It is never a message and never a turn: nothing is typed into the conversation and the companion says nothing until you start the conversation yourself. While it is answering a question, updates wait and only the latest is sent when the answer is done. There is no send button; the bar keeps **Copy as text** and **Clear selection**.
+- **A one-line chip says whether the companion sees the selection on screen** — _Updating…_ or _Companion sees this_ — and never whether it was asked or answered: that describes the conversation, not your selection, and a "reviewed"-style badge would claim more than Harnu knows. When something does not work it says so in one plain sentence with what to do next: **Try again**, **Open Mods settings**, or — when the companion was started before the Harnu mod was on and so can never receive a selection — close it and open a fresh one. Open Mods settings is offered only when the mod is actually off.
+- **Copy as text** copies exactly the text the companion would have been sent, so you can paste it into any session. It works with no companion and no mod, and is unavailable only after the head or base moved.
+- **A range that spans both sides of a change is sent as the diff rows between its two ends,** exactly as the pane shows them, and the bar no longer carries a note about lines not being included.
+- With no companion open nothing is sent, and the bar says so quietly: _Open "Ask a fresh session" first_.
+
+### Fixed
+
+- **Saving a canvas twice in quick succession no longer redraws it and drops your selection.** The second Save made the first Save's delayed file-change echo look like an outside edit, so the pane reloaded the whole board and cleared what you had just selected. The echo of the Save before one that is still landing is now recognised as your own, and a second pane on the same file is told which pane's Save it was. A real outside change, including one that restores the earlier Save's exact content, still reaches the pane.
+- **A session's change to a canvas that is just opening is no longer lost.** If a session drew on a board in the instant its pane was opening, the pane could end up showing the old drawing as if nothing had changed, and your next Save wrote that old drawing over the session's change. The pane now waits until Harnu is watching the file before it reads it, so a change in that moment is either in what it shows or arrives as an update. If the watch takes longer than about 3 seconds to start, the pane opens anyway and checks the file again once the watch is ready; [Canvas](docs/user/canvas.md) lists the cases this fallback does not cover.
+- **Saving a canvas that is open in two panes no longer gets silently undone.** When the same board was open twice (for example in two worktree panes), the pane you saved from was told to ignore the change, but so was the other pane, which kept showing the old drawing, and its next Save wrote that old state over yours. The other pane now redraws to your Save when it has no unsaved edits, with its view where it was, and shows the "This canvas changed on disk" strip when it does. This holds even if you close the pane right after saving. The pane you saved from still doesn't reload or flag its own Save. Two exceptions remain, both last-writer-wins: saving the other pane over its warning strip writes its version over yours, and two Saves in different panes within roughly 100–250 ms of each other keep only the later one.
+- **Clearing the selection now tells the review companion.** Clear selection, Esc, collapsing the file or a refresh that moves the head used to leave the last selection in the companion's context, so it kept answering about lines you were no longer looking at. It is now told that nothing is selected in the review right now, through the same hidden note, after the same half-second pause. Nothing is sent if the companion never had a selection to replace.
+- **The line above the companion's prompt no longer disappears after the first answer.** It said which selection the companion has, then vanished once the companion answered while the note was still in its context. It now stays for as long as the selection is the companion's current one, and goes away only when you clear it, run `/clear` in the companion, or close it.
+- **A selection made after `/clear` in the companion now reaches it.** Running `/clear` gave the conversation a new id, and Harnu kept addressing the old one, so every later selection failed with _Not connected to the Harnu mod_ and the only way out was a fresh companion. Harnu now follows the companion through `/clear` and a resume.
+- **The line above the companion's prompt now actually appears.** After Harnu or the mod restarted, the mod kept counting from the old session and silently ignored every new line, and it never asked the screen to redraw when a line was set or cleared. It now starts over on a new session, tells the truth when it refuses a line, and redraws at once — and a line you replace by selecting something else no longer goes blank while the new one is on its way. In a pane under 40 columns it shrinks to the range alone (`⧉ L21–24`) instead of vanishing.
+- **Updates now wait for every answer, not only the first.** A second question about the same selection, followed by a change of selection, used to send the update straight into the answer being written. It now waits until that answer is done, like the first one.
+
+## 2026-10-20
+
+### Added
+
+- **Settings → Keyboard Shortcuts is searchable, grouped and filterable.** Type words to find an action by name, chord or id, or type a key combo (`Ctrl+K`, `F6`, `⌘K`) to see exactly what is on it; a single key name like `delete` matches both ways. Rows are grouped under Sessions, Sidebar, Folders, Views, Panes, Takeovers and App, and the Unbound, Conflicts and Customized chips (each with its total count) narrow the list further.
+- **Keyboard access to sessions and the sidebar.** `Cmd/Ctrl+Shift+F` opens the sidebar's jump palette (and closes it again), even from a focused terminal and with the sidebar collapsed. `Cmd/Ctrl+Enter` opens the session under the sidebar's keyboard cursor in a split beside the current one. `Shift+F10` opens the right-click menu for that row, anchored to it.
+- Every item of the session right-click menu, closing a folder terminal, starting a new session in the active folder and the sidebar header's buttons can now be given a shortcut in Settings → Keyboard Shortcuts. They ship without one.
+- **`F2` renames a folder.** With the sidebar's keyboard cursor on a folder row, `F2` opens Rename folder for it; with no cursor row, it renames the active folder. On a session or repo-group row it does nothing. On most Mac keyboards press `Fn+F2`.
+- Every item of the folder right-click menu (except block agents, letting agents read terminals, Modes and the parent-folder pick), the folder row's show older / show archived toggles, and the repo-group menu (rename, reset name, clean up) can now be given a shortcut in Settings → Keyboard Shortcuts. They ship without one and act on the active folder, or for a group on the cursor's group row, else the active folder's group.
+- The Fleet rail's header buttons (open approvals, flip the order, filter states, show all) and the popovers in the Topbar and footer (Activity, mission progress, pasted images, Claude service status, plan usage) can now be given a shortcut in Settings → Keyboard Shortcuts. They ship without one; a popover's shortcut works while its button is on screen, and pressing it again or `Esc` closes the popover.
+- **`Esc` closes the open view** — the Roadmap board, PR Stack, Review, Cleanup, the Scheduler, the System Monitor, Containers or the usage overview — exactly like its close button, one layer at a time: a dialog, menu or popover on top closes first, then the view's own selection or filter (Cleanup's checked blocks and side panel, a PR Stack filter, the Roadmap's dispatch confirm, a line selection in Review, a canvas beside the view backing out of a shape in progress, a drawing tool or its selection), and only the next `Esc` closes the view. `Esc` in a text field or a terminal still goes there. It can be rebound in Settings → Keyboard Shortcuts.
+- **`Cmd/Ctrl+Alt+S` opens Settings on the Keyboard Shortcuts tab**, also as **View → Keyboard Shortcuts…** (on macOS, right after Settings… in the Harnu menu). Every other Settings tab, and the Cleanup, Scheduler, System Monitor and Containers views, can now be given a shortcut too; they ship without one.
+- The shortcut recorder now refuses a combo that could never fire for that action — Shift plus punctuation, or Option plus a letter on macOS, on actions with no menu item — keeps the old one and says why under the row.
+- **Back and Forward can be rebound.** They are listed in Settings → Keyboard Shortcuts (`nav.back` / `nav.forward` in `keybindings.json`) with their per-platform defaults, `Alt+←` / `Alt+→` on Linux and Windows and `⌘[` / `⌘]` on macOS. A new chord updates the Session menu and still works while a terminal has focus, without opening the menu bar on the Alt release.
+- Settings → Keyboard Shortcuts now says when a terminal and a shortcut compete for a key: "Taken from the terminal" under an action whose chord never reaches the program running there, and "The terminal keeps …" under an action bound to a combo the terminal uses itself (copy, paste, `Shift+Enter`, font size…), which won't fire while a terminal has focus.
+- **`F6` / `Shift+F6` move focus between panes** — the main terminal, then each split pane top to bottom, wrapping around — even while a terminal has focus (the program there no longer gets `F6`). A collapsed split and the panes behind a maximized one are skipped. On most Mac keyboards press `Fn+F6`. A focused Markdown, Memory, file-browser or canvas pane now shows a thin accent outline.
+- **`Cmd/Ctrl+Shift+M` maximizes or restores the focused split pane**; with no split pane focused it restores the maximized one. **Close the focused pane** can be given a shortcut too; a pane with unsaved changes still asks first.
+- **A terminal toggle you can bind** (`terminal.toggle`, no shortcut out of the box): it opens a shell pane if the folder has none, otherwise shows and focuses the existing one, and collapses the split when that shell already has focus. It reuses your shell instead of adding a new one each time, and never takes over a terminal an agent opened. Bind it to ``Ctrl+` ``, not `Ctrl+J`: the toggle's chord never reaches a terminal, and `Ctrl+J` is the newline / Enter key there.
+- **The command palette lists every action.** `Cmd/Ctrl+K` now finds any action from Settings → Keyboard Shortcuts by name — including the ones with no shortcut, like Rename the folder…, Fork the session or Close the open view — whenever it can run right now, and shows each action's shortcut, updated when you rebind it. Empty, it still shows only a short list of everyday actions.
+- **Tooltips show the shortcut.** Hovering a Topbar, sidebar, footer, Fleet rail, view close or split-pane button now reads like "Hide sidebar (Ctrl+B)" (`⌘B` on macOS), following your rebinds; a button whose action has no shortcut keeps its plain tooltip. The session and folder right-click menus show each item's shortcut too, once it has one (Rename folder shows `F2`).
+- **Select lines in the Review diff.** Click a line number to select that row, shift-click or drag across the line numbers to select a range, or use the new select-file button in a file's header to select the whole file — including binary and deleted files. A selection stays inside one hunk (past its edge it stops there and says so), shows an accent bar and tint over the diff's own add/remove colours, and works from the keyboard too: arrow keys move, Shift+arrow extends, Enter or Space selects, Esc clears. A bar at the bottom of the review names what is selected and clears it. The selection clears when its file is collapsed, and when a refresh moves the head or the base (the bar says `The head moved (a1b2c3d → e4f5a6b)`). Sending a selection to the review companion is not part of this release.
+- **Layer controls in the canvas Properties panel.** Select one or more shapes and use **Send to back**, **Send backward**, **Bring forward** and **Bring to front** at the bottom of the panel. Forward and backward step past the next shape that overlaps the selection, arrows always stay under shapes, and each move is one undo step. Stacking values are written to the file only after you restack, or when you add a shape to a board that already has them; a board without any that you only move, resize, rename or restyle is saved with no new keys.
+- **Sessions can set stacking on the canvas.** `draw_canvas` accepts a `zIndex` (a whole number from 1) when adding or updating a node, so an agent can put one shape in front of another.
+
+### Changed
+
+- The menu item and shortcut that open the raw shortcuts file now read **Open keybindings.json** (they used to say "Keyboard Shortcuts…", a name that now opens the Settings tab).
+- **The canvas panel is now called Properties, and it shows for every shape.** A card on its own, **Ctrl/⌘ + A**, or a box together with a card now show the Layers buttons instead of no panel at all.
+
+### Fixed
+
+- **Settings → Keyboard Shortcuts shows action names again** instead of raw keys like `keybindings.actions.session.new`, in English and Portuguese, including the conflict badges and the screen-reader labels.
+- Pressing `Esc` while recording a shortcut now cancels just the recording; it no longer closes Settings.
+- A shortcut now fires only when exactly its modifiers are held: a shortcut on `F7` no longer also fires on `Shift+F7`, nor one on `Ctrl+K` on `Ctrl+Shift+K`.
+- The command palette's **Resume last session** no longer picks a folder terminal; it resumes your most recent Claude session, like `Cmd/Ctrl+Shift+R`.
+- **A session's drawing on an open canvas no longer disappears the next time you Save.** When a session changed a board that was already open in a pane, the pane never heard about it: it kept showing the old drawing, and your next Save wrote that old state back over the session's change (an arrow it added, a label it renamed) without any warning. The pane now redraws to the session's version straight away when you have no unsaved edits, with your view where you left it, and shows the "This canvas changed on disk" strip when you do. Your own Save still doesn't refresh the pane that made it, and a session's write that lands in the same fraction of a second as your Save is now noticed too. One narrow case remains: if you press Save in the fraction of a second (roughly 100–250 ms) before the pane has heard about a session's write, your Save wins, as it does when you Save over the strip.
+- An arrow you delete, save and then bring back with undo is now saved with its label, routing and extra data, instead of losing them.
+- An arrow you draw in the canvas pane now stays under the shapes it connects, instead of painting over them until the board was reopened.
+
+## 2026-10-19
+
+### Added
+
+- **Style canvas shapes from a new Style panel.** Select one or more shapes in Select and a panel appears at the left edge of the board with six kinds of control: **Color** (default, accent, green, amber, red, muted), **Stroke** style and **width**, **Corners** (boxes only), **Text size** and **Align**, and **Opacity**. The panel only offers what every selected shape accepts, each pick is a single undo step, colours follow the theme, and in a narrow pane the panel folds into a **palette** button.
+- **Sessions can style the shapes they draw.** `draw_canvas` accepts a `style` field on a node (a tone, a dashed or dotted outline, a stroke weight, a font size, an alignment, an opacity). A value Harnu does not know is refused, and styles you set from the panel survive when a session later edits the same shape.
+- **Diamond and Ellipse tools on the canvas toolbar.** Two new buttons sit between Rectangle and Arrow. **Diamond** (**D** or **3**) and **Ellipse** (**O** or **4**) work like Rectangle: click to place a standard-size shape, or drag to draw one to the size you want, then type its name. They are handy for decisions and start/end points in a flow. Arrows connect to them like any other shape.
+- **Sessions can draw ellipses and diamonds on a canvas.** When an agent draws a diagram with `draw_canvas`, it can now use ellipse and diamond shapes alongside boxes, text, cards and images, and you can move, resize and rename them like anything you drew yourself.
+- **Saving a canvas keeps the extra data stored inside an arrow's `props`.** If a board's arrows carry such details (styling, for example), opening the board, editing and saving now writes them back untouched instead of dropping them. Extra data kept anywhere else on an arrow is still not preserved.
+- **The canvas has a toolbar.** A small bar floats at the top of the board: **Hand** (drag to move the board), **Select**, **Rectangle** (click to place a box, or drag to size one), **Arrow** (drag from one shape to another), **Text** (click anywhere and type) and **Eraser** (drag across boxes and arrows to delete them all in a single undo step; **Esc** cancels the stroke). Each has a letter shortcut (**H V R A T E**), and most also have a number shortcut; both are shown on the button and in its tooltip, and a short hint underneath explains the active tool until you have used it once. After you create something the canvas goes back to Select.
+- **Lock keeps a tool active.** The padlock at the left of the toolbar (or **Q**) stops the canvas returning to Select after each shape, so you can place several boxes or labels in a row.
+- **Hold Space to pan from any tool,** and let go to carry on with the tool you had. Right-drag still pans in every tool, and **Ctrl/⌘ + scroll** still zooms.
+- **Double-click empty board in Select to place a text label** and start typing.
+- **The toolbar wraps in narrow panes.** In a pane too narrow for one row, the buttons wrap onto extra rows instead of running off the edge or covering the zoom controls.
+
+### Changed
+
+- **A click or drag on an empty canvas no longer draws a box.** Select is now the default tool, so a drag on empty board draws a selection rectangle; pick Rectangle (or press **R**) to draw a box.
+- **Selecting several things no longer needs Shift.** Dragging on empty board in Select selects everything inside the rectangle; hold **Shift** to add to the current selection.
+- **Shift-click or Ctrl/⌘-click toggles a box** in or out of the selection.
+- **Renaming moved to the non-drawing tools.** Double-click a box in Select, Hand or Arrow to rename it. In Rectangle and Text the first click already places a shape, so a double-click there places and edits a new shape instead.
+
+### Fixed
+
+- Hovering a canvas shape no longer adds undo steps or empties the redo stack.
+- Switching theme with a canvas open now keeps your selection and its resize handles, instead of clearing them.
+- The footer no longer goes silently blank when a session has no live statusLine telemetry. It now shows the session's last known model, context and cost, dimmed, with how long ago they were seen on hover and a short reason beside them ("telemetry expired" or "no live telemetry"). Sessions Harnu has never heard from still show their model and context, read from the transcript. Stale values are never presented as live.
+- A session that keeps answering but stops sending statusLine telemetry is now flagged in the footer with "Not reporting — restart session"; clicking it restarts the session (the conversation is kept) and the hint clears on the next telemetry.
+- When Harnu finds the `statusLine` setting removed from `~/.claude/settings.json` it re-installs it as before, and now also records what it found (time, the file's last-change time, the running `claude` processes) in `heal-log.ndjson` next to the telemetry cache, and posts one Activity notice naming the sessions that started before the repair and need a restart.
+- **A brand-new session is no longer swapped for "This session lives in the cloud" a couple of seconds after you open it.** Claude Code creates a session's transcript file a moment before it records your first prompt, and Harnu was reading that empty file as a cloud-only session — hiding the live terminal and leaving no way back, even after a restart. A session whose terminal is running is now never treated that way, and a transcript only counts as cloud-only when it is linked to claude.ai and has sat untouched for over a minute.
+- **The cloud panel is no longer a dead end.** It now has a **Resume anyway** button that opens the terminal for that session regardless, so you can see what Claude Code actually says instead of being stuck on a panel. If the transcript later gains a conversation, the terminal comes back on its own.
+
+## 2026-10-14
+
+### Added
+
+- **A terminal a session is connected to now shows who, and lets you cut it off.** The pane header gets a small pill — "Connected to ‹session›" — that jumps to that session when clicked, shows "(parked)" if the session is at rest and "a closed session" if it is gone, and adds **reading** or **typing** (with a pulsing dot, or just the word under reduced motion) while the session works. The new **Disconnect** button next to it cuts the session off at once, with no confirmation and a short notice; the pill disappears and the shell stays yours (if the Disconnect cannot be applied, the pill stays and an error notice says the session still has access). On a terminal you opened yourself the pill shows only while a session can type in it or is reading it.
+
+- **A session can wait for what a command prints, instead of guessing how long to sleep.** When a session types into a terminal it can now say what it is waiting for: a piece of text the program should print (say `passed|failed` after `npm test`), a quiet period, or a time limit. The call returns as soon as the first of those happens — or when the terminal ends or you disconnect it — and brings back everything printed since the send, so a test run comes back with its summary line in one call. The text is matched against what the _program_ prints; Harnu skips the shell's echo of what the session typed (right-hand prompts and autosuggestions on that line included), so `grep failed log` is not mistaken for a failure. The matched text is hidden the way the rest of the output is when it looks like a secret. A wait never runs longer than its limit (at most 90 seconds), and running out of time is reported plainly, not as an error. A pattern that is too long, doesn't parse, or would match nothing at all is refused before anything is typed, and one that takes too long to evaluate is switched off for that call so it can never freeze Harnu.
+
+- **One switch turns off agent typing everywhere, and Disconnect cuts a terminal off for good.** **Settings → Control server → "Allow agents to type into terminals"** is on by default. Turn it off and every attempt by a session to type into a terminal is refused at once — before any approval prompt, whatever the mode, on your terminals and the ones a session opened — and any typing permission you had granted ends. Reading, the terminal list and Disconnect keep working, and a send already under way finishes. **Disconnect** is permanent for that terminal and stops a session from reading it as well as typing in it; the shell keeps running for you, a session's wait for its output ends immediately with what the screen showed at that moment, and a send cut off between its pieces says it was only partly typed. The Disconnect button sits on the pane's connection chip, and a terminal you disconnect stays disconnected even after a window reload.
+- A terminal you opened that a session has permission to type into now shows as freely writable in the terminal list instead of "asks first".
+
+- **Sessions can ask to type into the terminals you open — and you decide, once per terminal.** For a folder where you let agents read your terminals, an agent's first attempt to type into one of them now stops and asks you. The question names the terminal, its working directory, the folder and exactly what would be typed, and never shows the title a program set on the terminal. **Allow doesn't type anything**: it lets agents type into that terminal — the permission belongs to the terminal, not to the one agent that asked — and tells the asking agent to look at the screen and send again, so a request that waited unanswered can never type old keystrokes into whatever is on screen later. After that, sends to that terminal run without asking until it has had no typing for 10 minutes, it ends (a pane reopened under the same name is a new shell and asks again), you block the folder, you turn the read switch off, or you quit Harnu. **Deny** refuses the send and every further one for five minutes without asking again. With "Ask before agent actions" on, the same ask-once rule now covers terminals a session opened itself. A question left unanswered for 30 minutes is denied.
+
+- **Sessions can now type into the terminals they open.** A new `send_terminal` verb types text and presses named keys — Enter, Tab, Esc, the arrows, `Ctrl+C`, `Ctrl+D` and so on — in a terminal a session opened itself, then hands back what the screen shows from that point (scrubbed like every terminal read). Each send goes to the terminal as one write, so your own keystrokes can't land in the middle of it; the one exception is `Esc` followed by more input, which goes out as two writes 50 ms apart. Several sends to one terminal run one at a time, a send that waits more than 10 seconds behind others gives up, and a terminal accepts at most 60 sends a minute. The reply says if you typed in the pane during the call or another session wrote to it. Control characters hidden in text, over-long lines and unknown key names are refused up front, and every send is written to the audit log with the terminal, the owner, the (scrubbed) text and the keys. Typing into terminals you open yourself comes with the approval step described above, and a scheduled read-only worker can never type. The "Allow agents to type into terminals" switch that turns all of this off is described in the entry above about the switch.
+- **You can let sessions read the terminals you open yourself — one folder at a time.** Right-click a folder and choose **"Let agents read terminals I open"** (it is off by default, and a worktree of an opted-in folder does not inherit it). Until you turn it on, a session that asks to read one of your terminals is refused and told why; the terminal still shows up in its list, marked as not readable, but with its title, last-output time and exit code left out. Turning it back off closes the door again at once.
+- **Everything a session reads from a terminal is scrubbed of secrets first.** Your home folder becomes `~`, and AWS key ids, `Bearer` tokens, `Authorization` values, the password in a `scheme://user:password@host` address, secret-looking `NAME=value` pairs and private-key blocks become `<redacted>`, in the screen text and in the terminal's title, on terminals a session opened as well as on yours. It is a best-effort filter, not a guarantee: a secret in a shape it doesn't recognise can still get through, and a value that merely looks like a secret may be hidden even if the session printed it itself. Scheduled read-only workers can now list and read terminals too, under the same rules.
+- **Pin the Scheduler workers you use every day.** Hover a worker's row and click the pin, or use the pin button next to **Run now** in the worker's detail: it moves into a **Pinned** group at the top of the list, whether it is on or off, in the order you pinned them. A pinned worker that is off keeps its dimmed "off" look, so your daily workers read at a glance. Unpin it and it returns to **Enabled** or **Off**. The **Pinned** header only appears once something is pinned, and the pin survives a restart. Sessions can't pin or unpin workers, and editing a pinned worker through an agent keeps its pin.
+- **Collapse the Off group.** Click the **Off** header to fold away the workers that are switched off; Harnu remembers it the next time you open the Scheduler. Collapsing never changes which worker you have selected, and opening the Scheduler now lands on the first worker in the list (the first pinned one when you have any).
+
+### Fixed
+
+- **Sends to one terminal now go out in the order they were made.** Two sessions typing into the same terminal at the same moment could swap places depending on whose prefs read finished first; each send now takes its place the instant it arrives.
+- **A send no longer types into a terminal that stopped being yours while it waited.** Whether the terminal ended, you disconnected it or you blocked its folder, it is checked again right before every write — and if an `Esc` send is cut short between its two writes, the result says exactly which keys went out instead of claiming all of them.
+- **The audit line for a send can't be forged by what was typed, and key names are bounded.** Quotes, text-direction overrides, zero-width characters and line separators in the typed text are escaped, the owner id is escaped and cut, a key name is at most 16 characters, and an unknown key is shown escaped instead of passed through.
+- **A send no longer uses up two of a session's read cursors.** It used to evict the oldest cursor a session was still holding.
+
+## 2026-10-13
+
+### Added
+
+- **Sessions can now read the terminals they open.** A new `read_terminal` verb returns the terminal as you would see it — a progress bar that redraws on one line comes back as its last state, colours are plain text, a wrapped line is one line — as the last few lines, just the visible screen (for a prompt, `vim` or `htop`), or everything since an earlier point. Harnu keeps the last 2,000 lines of each terminal for this, and a read never types anything. Terminals you opened yourself can't be read yet. While nobody has the pane open, Harnu answers the questions programs like `nvim` and `fzf` ask their terminal so they don't hang, and hands that job to the pane once you open it; a flood of output slows the program down instead of starving the app.
+- **Sessions can now keep track of the terminals they open.** `spawn_terminal` returns a `terminalId`, tells you which session the terminal is connected to, and starts the shell straight away — even in a folder you aren't looking at. A new `list_terminals` verb lists every terminal with its owner, state and size (paths are shortened, and a terminal in a folder you blocked is left out), and `get_session` lists the terminals a session owns. Each folder holds at most four live agent terminals. Two identical `spawn_terminal` calls now open two terminals instead of returning the first one's answer again. Reading and typing into a terminal come in a later release.
+
+### Changed
+
+- **A terminal a session opens now lives with the app, not with the pane.** The shell is started when the session asks for it and the pane picks it up when you first look at that folder, so nothing is started twice. Closing the pane (or the folder going away) always ends that shell and frees its slot, even if you never opened the pane. A shell that quits on its own after a couple of seconds closes its pane, whether or not you were looking; one that dies straight away stays, with what it printed and a note that it ended. Reloading the window keeps the terminals you could see running, and the panes come back on their own. Terminals a session opened are never saved across a restart, so a pane never comes back showing a different shell.
+
+### Fixed
+
+- **A collapsed helper panel now opens when you add a pane.** Collapsing the right panel and then choosing Split → new terminal (or opening a session in a new tab, the file explorer, a markdown viewer or a canvas) used to add the pane out of sight when the folder already had panes. Any pane opened in the folder you are looking at now reveals the panel, including re-opening one that was already there. Panes opened in a folder you aren't viewing still don't pop the panel open, and collapsing it by hand sticks until the next pane is opened.
+- **Reloading the window no longer wipes the helper panes you had saved for a folder.** If a session had a terminal open in that folder, the pane list could be saved as empty before your own saved panes were read back. Saved panes are now always read first and kept alongside the live ones.
+
+## 2026-10-12
+
+### Added
+
+- **Cleanup never leaves you at a dead end.** When **Remove** is unavailable, the selection bar now says why in plain text, grouped by cause with counts ("3 can't be removed: 2 locked in git · 1 session open", "Removes 3 · 4 can't: …"), and each cause links to the action that clears it. The same actions are in the item's panel and its Needs review row: **Unlock and remove…** (shows the lock reason git recorded), **Close session and remove…** (parks only an idle Harnu session, never a working one), **Choose what to do with the stack…** (stop a Docker stack other folders share, or remove the worktree and leave it running when it doesn't use the folder; volumes are always kept), **Show how to fix it…** for a folder Harnu can't read (the exact path, its owner and a command to copy, then **Check again**), and a Docker-wasn't-running prompt with **Scan again**. When the refused items carry installed dependencies, **Dehydrate** now says what it frees: "Dehydrate frees 11.70 GB and keeps the code". Each action is one confirm and one background job, removes through the usual guarded steps, shows a spinner while it runs and ends in a toast with the bytes freed or the reason it stopped.
+- **Cleanup now cleans its own leftovers: archives and the trash.** Every removal Harnu makes keeps the branch tip and your working state in git as `refs/archive/…` refs, and moves the folder to the system trash. Neither ever went away. A new **Archives** card on the Cleanup screen lists them per repo (**"3 archives · ≈ 2 MB"**, the size being what only those refs keep alive, so always an estimate), and each one shows where it came from (the removed folder or branch, or "detached"), when, its tip, whether a working state was kept, and a button that copies the command to restore it, and its own **Delete…**. A new **In the trash** strip says how much of your trash is Harnu's.
+- **Archive retention.** Settings → Cleanup has **Keep archives for N days** (30 by default). Cleanup offers **Delete N older than 30 days…** on each repo, with a confirm that lists exactly what will go. The autopilot only deletes expired archives if you also turn on **Expire archives automatically** (off by default). Deleting archives never runs `git gc`: git frees the space on its next gc, or you can use **Run git gc now…**, which has its own confirm.
+- **Empty what Harnu moved to the trash.** A button that permanently deletes only the exact trash entries Harnu itself created: it records each one at the moment it moves the folder, and deletes it only while it is still exactly that entry. A folder you restored and trashed again yourself is never touched, even at the same path. The confirm lists the folders and deletes exactly those, so anything trashed while it is open stays. It always asks first and the autopilot never does it. It works with the Linux (freedesktop) trash; on macOS Harnu checks the entry but leaves that trash alone, and what it can't check is shown as "moved to the trash by Harnu (can't check what's still there)", never as space still in the trash.
+- **`list_cleanup` reports archives and the trash.** New `archives` (per repo: count, estimated bytes, how many are past retention), `lastCycle` (`freedNowBytes` / `trashedBytes`) and `totals.archives`, `archiveBytes`, `inTrashBytes`, `inTrashCount`, `trashUnverifiedBytes`, `trashUnverifiedCount`.
+- **Cleanup now cleans what its own removals leave behind.** Removing a worktree used to leave things only a terminal could clear; each now has an in-app path, behind a confirm, and nothing alive is ever touched.
+  - **Claude transcripts of folders that are gone.** **Other leftovers** lists the `~/.claude/projects` folders whose every transcript names a folder that no longer exists, grouped by repo with their size, sessions and when they were last used. **Delete** (or **Delete all** for a repo) asks first and moves them to the system trash, so you can bring them back. A project whose folder still exists, one that holds a running or parked session, one written in the last 24 hours (a session still writing from another terminal) or one Harnu cannot read is never listed. A folder counts as gone only when that is proven (Harnu removed it, git lists it as prunable, or it sat under a known worktrees folder); a folder that is merely missing, such as a project on a drive or share that is not connected, is listed apart under **Folder not found** with its full path, and moving it to the trash needs a stronger confirm ("I checked: this folder is really gone, not on a drive that's unplugged"). A folder that also holds Claude's memory notes says so.
+  - **Containers and networks of a stack whose worktree Harnu removed.** The Docker card has a **Left by removed worktrees** block with the stopped containers and the networks (`docker rm` used to leave the network behind) and a **Clean up** button with its own confirm. Anything running, or a project whose folder came back, is left alone. Volumes are listed apart with **Remove volumes…** behind a stronger confirm (they cannot be restored) and are never removed with the stack or automatically.
+  - **"Also delete the branch on the remote"** in the remove confirm, off by default. It appears only when a merged pull request records the merge (an ancestor of `main` with no PR, like `staging` or `release/x`, never qualifies), no open pull request uses the branch as head or base, GitHub does not protect it, and the remote tip is your tip or older. It deletes on the branch's own upstream remote, never an assumed `origin`, with `git push --delete`. The answers are asked when the dialog opens (never on a scan), shared and kept for ten minutes, and asked again when you confirm. If `gh` or the remote cannot be asked, the box is not shown. If the remote refuses, the toast says so and the local clean still stands. The autopilot never does it, and the Settings → Cleanup switch that forbids remote deletes is honoured.
+  - **A dehydrated worktree says what is left.** In Needs review its row reads "Dehydrated · 6 MB left" and keeps the normal **Remove**. Dehydrating never changed its verdict: a merged one still becomes ready after the grace period, like a hydrated one.
+- **Shortcuts for the Topbar's folder actions.** Settings → Keyboard Shortcuts
+  now lists the roadmap board, PR Stack, open in file manager, open in VS Code,
+  pull requests on GitHub, Browse files, and open a terminal. They ship with no
+  chord — give them one in the pane or in `keybindings.json`. A new native
+  **Folder** menu carries the same actions, so a chord you bind fires even while
+  the terminal has focus.
+- **`Cmd/Ctrl+,` opens Settings.** It's also in the menu (Harnu → Settings… on
+  macOS, File → Settings… elsewhere) and can be rebound like any other shortcut.
+- **A shortcut slot for the usage overview.** The Usage Dashboard is now listed
+  in Settings → Keyboard Shortcuts and in the View menu. It has no chord until
+  you give it one.
+
+### Changed
+
+- **Never clean now protects archives too.** A repo on the never-clean list keeps its archives: the autopilot's expiry skips it and deleting them by hand is refused.
+- **Never clean holds for archives of a folder too, also by hand.** Deleting an archive whose removed folder stood under a never-clean path is refused (and "Delete older…" leaves it out), even in a repo that is not on the list; the toast names every reason something was left alone.
+- **Emptying the trash is safer and clearer.** Harnu re-checks every directory between the trash folder and the entry right before each delete, so a link swapped in at the last moment redirects nothing. A trash entry that is no longer exactly what Harnu moved stays listed as "can't check" instead of being forgotten (a remounted disk no longer makes real entries vanish), and the first trash onto a new disk is recorded too. Toasts say when nothing was emptied, and why a folder was left (disk not mounted, changed, or no exact record). The agent's `list_cleanup` no longer touches the trash ledger at all.
+- **Archive sizes ignore what a reflog or the index also keeps, and archives without a time stamp never expire on their own.** The autopilot's notice always mentions the archives it deleted, and the toast counts archives (a tip and its working state are one), not refs.
+- **"Freed" no longer counts what is still sitting in the trash.** A clean moves the checkout to the system trash, so its disk space only comes back when the trash is emptied. The progress chip, the success toast, the "Last cycle" line and the autopilot's notification now all say **"400 MB freed now · 2.00 GB in the trash"** (just the first part when nothing was trashed). Removing items from Needs review no longer reports "Freed 0 B · 3 ready items cleaned": it counts the trashed checkouts and says "3 items removed".
+
+### Fixed
+
+- **Deleting leftover Claude transcripts is now honest about the trash.** Moving the transcripts of a folder that is gone to the system trash used to report the whole size as "freed", and Harnu forgot the move, so the **In the trash** strip never counted it and **Empty what Harnu moved to the trash** could not empty it. It now says **"0 B freed now · 4 MB in the trash"**, records the exact trash entry like a removed worktree, and the strip and the empty button include it. A folder you restored and trashed again yourself is still never touched.
+- **A detached worktree you removed is one archive, with a date.** Its tip, working state, earlier working states and reflog commits used to appear as a pile of separate "age unknown" archives that never expired. New removals are dated (`refs/archive/detached/<time>/<folder>-<sha>/…`) and shown as one row with its tip, **has working state** and **N reflog commits**; the retention, **Delete N older…** and **Delete…** all act on the row as a whole. Archives an older Harnu wrote are grouped the same way and keep **age unknown**. The copy-restore buttons are unchanged; the commands in the docs use the new `<time>/` path.
+- **Retrying a removal no longer piles up archives, and nothing is overwritten.** A detached removal that stopped partway and is retried within a day writes into the same archive instead of opening a new one. Working states kept beside the current one get unique names, so three removals in the same second can't replace each other's only copy. Only refs shaped like Harnu's own (the folder name ends in the first 12 characters of the tip's commit, and the tip is that commit) are grouped and can expire: a hand-made `refs/archive/detached/…` ref is listed as itself and never expires on its own. Deleting an archive deletes exactly the refs, at exactly the commits, that the confirm listed.
+- **"Close session and remove" no longer parks a session for a removal that cannot happen.** A detached worktree whose history holds more than 500 separate lines of commits that no branch reaches is refused with `reflog-limit` at the preview, before the session is closed, instead of only when the removal itself runs.
+- **The changelog's example of why Remove is unavailable is true again.** It named detached worktrees, which can be removed from Needs review; it now shows real causes (locked, session open).
+
+- **Interrupted-clean notices are safer to answer.** **Start again** is only offered while the worktree and every folder the stack mounts still exist (otherwise Docker would recreate them empty), and says why when it isn't. **Lock again** checks who the worktree is at that moment; if it still isn't clearly the same one, it names the mismatch and the button becomes **Lock this worktree anyway**. A creation time the filesystem could not report no longer counts as a match, and a lock that failed on the same worktree says the lock failed. A mount that is exactly a worktree git lists is that worktree's, not the main checkout's. A step that throws after the unlock or the stack stop is rolled back like any other, and a failure while clearing Harnu's note after a successful removal no longer turns the removal into a failure.
+
+- **Cleanup's guided actions: no dead end in Harnu's own layout, and a cautious boot.** **Stop stack and remove** no longer calls a stack "the main checkout's" just because its mounts are worktrees Harnu keeps inside the main checkout (`.claude/worktrees/*`, or any worktree git lists); only the main checkout's own tree counts. A step that fails with an unexpected error is rolled back and recorded for that item, and the rest of the job goes on. If Harnu quits in the middle of an unlock or a stack stop, the next start puts the lock back only on the very same worktree and never starts containers by itself: an interrupted stop is a notice at the top of Cleanup with **Start again** and **Leave stopped**, a lock that was not put back offers **Lock again** or **Dismiss**, each stays until you answer it, and each is announced in Activity once (and not lost if the window was not up yet). A lock reason's leading and trailing spaces are kept exactly. Fixed a duplicate-key warning in the selection bar when a plain lock and a lock plus shared stack are selected together.
+
+- **Cleanup's guided actions: stacked causes, safer rollbacks.** A worktree refused for several reasons at once (say a shared Docker stack and a lock) now gets **one** combined action ("Unlock, stop stack and remove…") with a single confirm listing every step; when a cause can't be fixed by a step, that one is shown first. A lock reason that git quotes (accents, quotes) is now put back exactly as it was. A rollback only happens while the folder still exists: after the folder is trashed Harnu says a stopped stack was left stopped instead of re-locking or restarting things whose folder is gone. A failed restart after a partial stop names the containers left stopped. If Harnu quits in the middle of an unlock or a stack stop, the next start puts the lock or the containers back and reports it in Activity. **Stop stack** also refuses a stack that a live or parked session holds a mount of. The dry run is now exact (it still asks git whether the registration is ambiguous, and checks the archive is possible before anything is parked). **Scan again** and removing a Keep mark show they are working, and the unmark has an **Undo**.
+
+- **Cleanup's guided "…and remove" no longer changes things for a removal that was going to fail.** The unlock, the session close and the stack stop now run last, after a dry run of everything else (work that changed or could not be read, nested or foreign checkouts, an unreadable folder, a blind scan, protections); if anything else would refuse, nothing is touched. When the removal still refuses after the step, it is put back: the worktree is locked again with its original reason and the containers Harnu stopped are started again. **Stop stack and remove** now only stops (it never removes a container), lists the containers by name, and is refused for the main checkout's own stack and for a stack another folder uses while it has a live or parked session. **Close session and remove** treats only an explicit idle, completed or stopped session as idle (an unknown state counts as busy), warns that parking closes its terminal and says when you opened the session yourself; a session in a nested worktree is no longer counted for its parent. Also: a stack that could not be fully stopped says it was started again, an unreadable folder's owner shows as a user name instead of a number, the **Dehydrate frees …** button now dehydrates exactly the items it counts, and Unlock only goes to the rows git still lists as locked.
+
+- **A detached worktree can now be removed from Cleanup.** These were most of what Needs review held on disk, and every Remove of one was refused, which sent people to `rm -rf` and skipped every safety net. Remove now works on them from Needs review, after you confirm in the red dialog. Harnu first saves the commit and any uncommitted or untracked work under `refs/archive/detached/<time>/<folder>-<short sha>/` (so a commit that no branch holds stays recoverable), then trashes the folder and unregisters it from git. If the refs cannot be written, nothing is removed. A detached worktree is still never part of the hero button or the autopilot, and the old "run `git worktree remove`" hint is gone. How to get one back is in the Cleanup page of the user docs.
+- **Removing a detached worktree is safer and clearer.** Commits made while detached and then left behind (only the folder's own history reached them) are saved too, under `…/reflog/`. A worktree with a rebase or bisect still running is not offered for removal, and the panel names the command that ends it. The confirm now lists the untracked files by name and shows the same 12-character commit id the archive ref uses. If you remove the same folder at the same commit twice, the earlier uncommitted-work ref is kept under a dated `wip-…` sibling instead of being overwritten. A halted removal of a detached worktree is now reported as archived.
+- **Detached removal no longer drops commits on a long history, and notices `git am`.** Commits only the worktree's own HEAD history reaches are now filtered first and archived in bulk; if more than 500 separate lines of commits (tips) would need archiving, the removal is refused with a clear reason, before any archive ref is written, instead of keeping some. Nothing about what is reachable is remembered between passes, so a tag deleted in between can no longer hide a commit. A `git am` in progress (on any worktree, branch ones included) now refuses removal like a rebase or bisect and names `git am --abort`, and that refusal is remembered. The confirm lists at most 10 untracked files per row, then "and N more", with a total for the dialog.
+- **A removed worktree's subfolders no longer linger as ghost rows in the sidebar.** A session started in a subfolder (`api/`, a nested `.claude/worktrees/…`) is its own folder in the sidebar; removing the worktree, from Cleanup or with the sidebar's own **Remove**, used to drop only the worktree's own row. Every gone folder under it, pinned, hidden or known only from its transcripts, is now dropped too.
+- **"Folder not found" is stricter about what counts as proof.** A transcript folder is proven gone only while the worktree's own folder is missing: a dangling symlink or an empty mount point where it was (its drive is not mounted), or a folder that exists again, proves nothing. Harnu notes a removal as its own only when the folder was really there and is gone afterwards, and git's "prunable" counts only for its "directory is gone" reason. On Windows the worktree folder is worked out with Windows path rules (drive letters, network shares, case-insensitive), and when it cannot be worked out reliably nothing is proven. No stack leftovers are offered while a compose name could not be resolved, remote facts with any unknown answer are asked again instead of cached, and a view of Docker or the transcripts older than ten seconds is renewed before the next removal in a big batch.
+- **A compose project a live folder owns is never offered as a leftover.** A remembered project whose name the main checkout or any existing worktree pins (`myapp`), or runs as by default, keeps its containers and networks out of "Left by removed worktrees".
+- **A symlinked worktree no longer keeps subfolder ghost rows.** Rows are matched under both the real and the as-given spelling, and the folder list is read once per cleanup instead of once per row.
+- **Cleaning many leftovers at once costs one scan, not one per item.** Volumes, transcript folders and stack leftovers in one request share a single fresh look.
+- **A worktree removed from the sidebar now leaves its Docker leftovers visible too.** Its compose stack's containers and network are offered under "Left by removed worktrees" in Cleanup, as for one Cleanup removed.
+- **You can select and copy text in files opened in the side pane.** Markdown, plain-text
+  files and lessons opened in a helper pane now let you highlight any part of the file and
+  copy it with the usual shortcut; before, selection was blocked across the whole pane.
+
+## 2026-10-09
+
+### Changed
+
+- **The Fleet rail no longer jumps around.** Cards used to reshuffle every time a session wrote
+  anything, so with a few sessions running the list never stayed put. Inside each state group
+  (needs input, errored, stuck, working, done) cards now stay in the order the sessions were
+  created, newest on top, and activity never moves them. The groups keep their usual order, and
+  the minimized strip follows the same order. A new button in the rail header (next to the
+  state filter) flips it to oldest first; Harnu remembers your choice.
+
+### Added
+
+- **Review every mission that needs you, and close the finished ones in one go.** **Review all** on the Activity entry (or a row whose owner session isn't open) now opens **Missions that need you**: your whole pile in three groups — ready to close (the session asked; pre-selected), finished but never verified (listed with the same warnings as the End dialog, not pre-selected) and waiting on you for something else (each has an **Open** button). **Close N as delivered…** opens a confirmation listing each mission and its warnings, with one optional reason; confirming closes them as delivered, one after another, and each mission's log records it as a `bulk close`. If some can't be closed you're told how many, and the review stays open on them. There is no bulk discard, and no session can do this — it only asks for the close.
+
+### Fixed
+
+- **A mission no longer appears twice when two clones of a repo hold the same mission files.** Missions are now listed once by id, in the app and for the agent's `mission_list`: the newest copy wins, and a mission you closed stays closed even if an older clone still says it is active. This also stops the "N missions need you" notice from counting and naming the same mission twice.
+- **One mission entry in the Activity bell, with a clickable row per mission.** A mission that needs you used to add a new line to the bell on every reminder, and a line that named several missions could not be clicked at all. Now the bell keeps a single mission entry that lists each mission as its own row (up to five, then **Review all**); it is updated in place and shrinks on its own as you handle missions, and it comes back only when something new needs you. Clicking a row opens that mission's session and its progress popover, without clearing the entry. If the mission's session isn't open in this window, the row is dimmed and the click opens the review of that mission instead.
+- **Missions no longer nag.** The sound, taskbar nudge and Activity entry for a mission that needs you used to repeat every 30 minutes for everything, and replayed your whole backlog each time Harnu started. Now a to-do nobody is blocked on (a delivered mission waiting for your close, due checks, an imported finish line to review) rings once and is never repeated, while things an agent is waiting on (a blocker, a re-scope, a step to confirm) are repeated after 30 minutes, 1 hour, 2 hours and 4 hours and then stop. Harnu now remembers what it already told you, so opening it again only rings for what became waiting while it was closed.
+- **Removing a worktree of an Electron project no longer stops at "drop deps".** Inside the app, Node's file layer treats any `.asar` file as a folder, so deleting `node_modules` left `electron/dist/resources/default_app.asar` behind and the clean halted before the git step, leaving the checkout and branch in place. Dependency folders (and a worktree's git admin folder) are now deleted with Electron's plain file layer, so the clean finishes.
+- **The autopilot's first cycle really only reports.** "Not now" on the first-cycle banner no longer counts as agreeing: it just hides the banner until Harnu restarts. Turning the autopilot on, from the banner or from Settings, always starts with a cycle that only reports. The banner now says what the next cycle may clean (the cap per cycle and today's count) ("the next cycle, in 40 min, will clean the ready items it finds then, up to 20 per cycle. Right now that is 2 items, 944 MB"), plus the Docker prune the acknowledgement also turns on, and when you turned the autopilot on in Settings it offers **Allow cleaning** once it has reported.
+- **Retrying a clean that stopped half way keeps the safety checks.** A ready worktree whose clean halted showed up in Needs review, and Retry used the red force path (no dirty or unpushed checks, force-delete of the branch). Retry now runs the same guarded path the autopilot uses, with the ordinary green confirm.
+- **Removing a worktree you picked yourself no longer takes edits you made after looking.** In the red Needs review flow, a file edited after the last scan used to go to the trash along with everything else. Harnu now compares the uncommitted work with what you were shown and, if it changed, leaves the worktree alone and asks you to scan again and review it.
+- **The first-cycle banner is more honest.** It also names the Docker prune that allowing cleaning turns on (build cache older than N days and dangling images) when Docker cleaning is on and Docker answered, and it describes the worktree part as a cap plus today's count rather than an exact list. The summary line ("autopilot on · …") now agrees with the badge: off, report only, paused or on.
+- **An edit made while a forced removal runs is caught too.** The work check now repeats before the dependency folders are deleted and before the checkout is trashed. If Harnu could not read a worktree's uncommitted work when it scanned, it refuses to remove it unseen and says to scan again.
+- **The autopilot badge no longer says "on" when nothing will be cleaned.** It reads "Autopilot on · report only" until you allow cleaning, and "Autopilot paused — background scan is off" when the automatic scan is off.
+- **A clean no longer leaves "Needs review" ghosts behind.** After every successful clean (the big button, **Remove**, **Clean now**, **Retry**, even the last item before "All clean") the cleaned worktrees used to come straight back as hatched Needs review items saying "Another worktree lives inside this one", with a raw `ENOENT … scandir` error in the panel, while the totals stayed inflated. Only **Scan now** fixed it. Cleaned items now leave the screen the moment the clean ends, the totals match, and the screen reaches "All clean" on its own. A worktree whose folder no longer exists is simply absent, never reviewed.
+- **A cleanup that stops partway no longer disappears.** When a clean trashed a worktree's folder but then stopped at the git steps (pruning the registration or deleting the branch, for example because of a git lock), the item used to vanish from the screen while the toast still said "1 needs review". It now stays in Needs review as "Cleanup stopped at …" with the step and the folder, until it is dealt with. Retry cannot finish those git steps when the folder is already gone, so for such an item Cleanup hides Retry, Remove and Dehydrate and shows, in the panel and the list, the step it stopped at and the exact commands to finish by hand (`git -C <repo> worktree prune`, plus `git -C <repo> branch -D <branch>` when the branch is still there and its commit is archived, or the safer `branch -d` with a warning when it is not). The archive refs keep the commit recoverable once the archive step had run. A folder you deleted by hand gets the same note. A real resume is planned.
+- **Cleaned items stay gone even if another refresh was already running.** A refresh that started before a clean (Keep, or opening Cleanup) could finish afterwards and bring the cleaned items back. Refreshes that began before a clean ended are now discarded.
+- **A broken symlink is no longer treated as a cleaned folder.** A worktree whose folder is a link to somewhere that no longer exists lands in Needs review instead of vanishing.
+- **Halted items no longer show raw errors.** A "Cleanup stopped at …" reason shows the step and the folder only; the engine's own error text goes to the log. Remove on an item Harnu could not look inside no longer claims another worktree lives inside it, and the bulk Remove dialog now shows the translated reason for every code.
+- **"Harnu could not look inside" has its own reason.** When Harnu cannot read a worktree's folder to check for other checkouts (a root-owned folder, say), the item now says so in plain words and names the folder, instead of claiming another worktree lives inside it. The raw error text is no longer shown, and Remove stays unavailable for that item with a sentence that says why. `list_cleanup` reports the new `check-failed` reason code for it.
+- **Removing detached worktrees in Cleanup no longer seems to do nothing.** Picking worktrees with a detached HEAD and confirming **Remove N worktrees** closed the dialog, then Harnu refused every one ("cannot clean this kind of folder yet") and left them all in place, with at most a brief toast. Harnu still can't remove a worktree that has no branch, so it now says so when you click **Remove**: those worktrees are left out of the dialog, which lists only what it can actually remove, and a toast tells you to remove the rest with `git worktree remove`.
+- **Cleanup no longer offers a Remove that Harnu is going to refuse.** Locked worktrees, worktrees that hold another worktree or a foreign checkout, a stack shared with another folder, a session still open in the worktree, a commit Harnu could not read, a path it could not resolve and detached worktrees all ended in a red confirm dialog and then "0 cleaned · N need review". Harnu now judges all of them from what it already knows, before you click: the panel shows no Remove button (and **R** does nothing) and says why, with the command that fixes it (`git worktree unlock <path>`); a row in Needs review shows a dimmed trash icon with the reason; **Select all in repo** and **Remove the N marked safe** skip them; a Keep mark or a never-clean path added since the scan (a symlinked path included, read on real paths as Harnu does when it cleans) hides Remove at once, and **Clean now** follows the same rules as **Remove**; **Remove selected** is disabled when none of what you ticked can be removed. A mixed selection still opens one dialog, with a separate **Won't be removed** section that lists each refused item with its reason and the command to fix it, and is left out of the count and out of the request.
+- **A locked worktree keeps saying it is locked.** After a refused clean it used to read "couldn't match this worktree to a single git registration", which is not why.
+- **An item Harnu keeps refusing no longer sits in "Clean N ready" forever.** When the last check refused a ready item (git cannot unregister it, its commit is unknown, a path does not resolve…), every click ended in "0 cleaned" and the automatic cycle spent its per-cycle limit on the same item every hour. The refusal is now remembered for a few hours: the item leaves the count and the automatic cycle skips it, its panel says "The last clean was refused" and why, and **Retry** tries again. The count of identical refusals outlives that pause, so after two it moves to Needs review with that reason, where Remove and Retry are no longer offered and the panel names the real cause. If the cause is fixed outside Harnu (a registration repaired, a stack stopped), **Check again** on the item's panel forgets the refusal and looks once more: a fixed item is ready again, a still-broken one stays in Needs review with its reason.
+- **A stopped Docker daemon no longer pretends to be cleanable.** With Docker installed but not running, every clean was refused with "Docker did not answer" while the button still offered "Clean 19 ready". Harnu never reads a Docker it could not see as "no stacks": with Docker stopped, nothing cleans, by hand or by the automatic cycle, until you start Docker and press **Scan now** (a clean you start by hand looks at Docker again when you click, so it is refused too). The button says **Start Docker to clean these** until then. With no Docker installed at all, worktrees clean as before.
 - **Cleanup no longer warns about hidden orphan volumes when none could be hidden.** The Docker card said "Orphan volumes: hidden" with a list of folders even when every volume belonged to a running stack. The warning now shows only when some volume is used by no container and a compose project name could not be resolved; otherwise the card reads "No orphan volumes". The card also says plainly that it counts only build cache older than N days and dangling images, never images in use or the volumes of live stacks.
 
 ## 2026-10-08
@@ -44,12 +421,39 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   state), so asking again costs nothing, and the chips come back by themselves after you reload
   the window.
 - Scheduler workers have a **Network access** switch (Settings → Permission, `observe` workers only). It is off by default. Turning it on gives that worker `WebFetch` and shows a red warning, because a worker that can read any file and also reach the internet can be talked into sending a file out by anything malicious it reads. Workers you already had start with it off, and one Activity entry lists the ones whose prompt mentions a URL or `WebFetch`, so you can switch it back on. When a Claude session asks to turn it on through `create_worker` or `update_worker`, Harnu now asks you first.
+- **Rebind Harnu's keyboard shortcuts.** Drop a `keybindings.json` next to your
+  `settings.json` — a VS Code-shaped array of `{ "key", "command" }` entries —
+  and Harnu merges it over the built-in defaults. `Cmd` maps to ⌘ on macOS and
+  `Ctrl` elsewhere, so one file works everywhere; `"key": null` unbinds an
+  action; `//` comments are fine. Edits apply on save with no restart — the
+  in-app shortcuts, the `⌘K`-style hints, and the native menu (File, View, …)
+  all re-bind live. A broken file falls back to the defaults with a toast, and a
+  few actions (quit, reload, DevTools, fullscreen) stay reserved.
+- **Settings → Keyboard Shortcuts.** A new Settings tab lists every rebindable
+  action with its current chord. Click a shortcut and press the keys you want —
+  Esc cancels, Backspace clears it. Each row has Reset (back to the default) and
+  Unbind, there's a Reset all, and any two actions that land on the same chord
+  both get a conflict badge. Renderer-only actions are marked "not in terminal".
+  It writes the same `keybindings.json`, so hand-edits and the pane stay in sync.
+- **Open keybindings.json in one step.** A new **View → "Keyboard Shortcuts…"**
+  menu item and a `Cmd/Ctrl+Alt+K` shortcut (plus an "Open keybindings.json"
+  button in the Settings pane) open the raw file in a split-pane editor for when
+  you'd rather edit the JSON directly. That chord is reserved, like quit and
+  reload.
 
 ### Changed
 
 - **Cleanup polish.** Docker bytes now get their own "Docker (cleaned each cycle)" segment in the split bar, so "Ready to clean" agrees with the big button. While a clean runs, the line under the bar reads "Cleaning now · N left". The selection bar's Remove, Dehydrate and Keep have icons. The dialog and the side panel use the same `proj/www` repo label as the map, so two repos called `www` stay apart. Portuguese now calls the review group "Precisa de revisão" everywhere in Cleanup.
 - **Cleanup now matches the approved mockup more closely.** Every map region shows its repo as a monospace `proj/www`-style label (the full path on hover), a legend row under the split bar names the three groups and says what a block's area means, Map / List and Scan now have icons, and the Docker card has a "runs each cycle" subtitle, a split bar of cache, images and orphan volumes, and draws orphan volumes in the amber review colour. The confirm dialog gained a close button, icons on the chips and the confirm button, monospace row titles, a one-line breakdown ("3 stacks stopped · 12 dependency folders removed · 12 worktrees trashed") and a "12 ready · 6.44 GB" footer.
 - **One unit everywhere in Cleanup.** Sizes use the app's decimal GB/MB on every surface; the docs examples follow.
+- **Keyboard-shortcut hints now match your platform.** Every `⌘K`-style hint —
+  the empty-state card, the session right-click menu, the shortcut reference —
+  is now derived from one source of truth and rendered for the OS you're on:
+  `⌘⇧P` on macOS, `Ctrl+Shift+P` on Linux and Windows, instead of always
+  showing Mac symbols. Groundwork for rebindable shortcuts.
+- The keybindings core's chord/scope comparison key uses a visible separator
+  instead of an embedded NUL byte, and the resolved table's `byId` map is typed
+  `Partial` to match reality (the reserved actions aren't in it).
 
 ### Fixed
 
@@ -72,6 +476,39 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - Scheduler `observe` workers no longer have a shell. Their allowlist used to include `git log`, `git diff`, `git show`, `git status` and a few `gh` commands, and a "read-only" `git` command can still write a file: `git log --output=<path>` overwrites any path, so text from a commit message could land in `.git/config` and run as a command on the next `git status`. `Bash` is now denied outright in `observe` mode; the delivery watchdog reads worktrees and PRs through Harnu's own tools instead. The **Extra read commands** field is gone from worker settings, and any saved rules are ignored and listed as `rejected rule` in the Runs tab. `act` workers are unchanged.
 - Closed the rest of the same hole for `observe` workers: Harnu now starts each tick with `--tools Read,Grep,Glob,Skill` (plus `WebFetch` only for a worker you opted in to Network access), so the CLI loads no other built-in tool. Before this, `Monitor` (which runs commands), `EnterWorktree` (which runs `git worktree add` and any `post-checkout` hook), the scheduled-task, workflow and `SendMessage` tools and `ToolSearch` were still loaded and callable even with `Bash` denied. They are also denied by name as a second layer, and so are the Harnu tools an `observe` worker may not call, so they no longer appear in its tool list at all.
 - **Saving the Containers settings can no longer come back as the defaults.** If the settings were still loading in the background when you saved (a slow disk, a busy machine), the save was written correctly but the window briefly showed the default values instead of what you had just saved. The saved values now always stand.
+- **Custom shortcuts recorded on Linux/Windows now behave like the defaults.**
+  A chord recorded in Settings → Keyboard Shortcuts off macOS came out as
+  `Ctrl+…` while every built-in default is written `Cmd+…`, so re-recording a
+  row's own default never returned it to "default", two bindings that share a
+  physical key (`Ctrl+B` vs `Cmd+B`) weren't flagged as conflicting, and a
+  recorded `Ctrl+Q` slipped past the reserved-chord guard. `Ctrl` now folds onto
+  `Cmd` at capture time and in conflict / reserved-chord detection on those
+  platforms; a hand-edited `Ctrl+Q` is likewise caught.
+- **A rejected rebind no longer lingers in `keybindings.json`.** Binding an
+  action to a reserved chord (or a chord the native menu can't express) is
+  ignored by the resolver — but the Settings pane used to still write it to the
+  file, so every reconcile re-raised the "some shortcuts were ignored" toast.
+  The pane now persists only what the resolver accepted, and surfaces the
+  warning immediately instead of a file-watch round-trip later.
+- **Two actions on the same chord fire once, not twice.** Per the spec the
+  first-registered action wins; the renderer was wiring a watcher per binding,
+  so a shared chord ran both handlers (e.g. two toggles cancelling out). This
+  now also covers the off-macOS case where a hand-edited `Ctrl+B` and a default
+  `Cmd+B` are the same physical key.
+- **`keybindings.json` writes are atomic** (temp file + rename) and the Settings
+  pane serializes its saves, so two quick edits can't interleave into a
+  truncated or out-of-order file. A `keybindings.json` symlinked into a dotfiles
+  repo is followed to its target rather than replaced with a plain file.
+- **A chord whose key is `-` (e.g. `Cmd+-`) works as a renderer shortcut**
+  instead of silently doing nothing, including with Shift held.
+- **Symlinks are refused at the `keybindings.json` editor path.** The exact-path
+  exception the editor pane uses skipped the known-folders check; a symlink
+  planted there could have redirected a read or write outside Harnu's folders.
+- Recording capture no longer stays armed after you click away without pressing
+  a key (it could rebind the next character you typed elsewhere in Settings).
+- The in-app shortcut hints show a dash for an unbound action rather than a
+  blank gap, and the "recording" label / a couple of doc lines now match the
+  design spec.
 
 ## 2026-10-07
 

@@ -86,7 +86,7 @@ file. What that changes for you:
   becomes a check with a clear label.
 - **When a session is waiting on you, Harnu tells you.** A session whose turn ends
   waiting on you — a merge, a key, a decision — raises a blocker in your name, which is
-  what makes Harnu chime and remind you every 30 minutes until it's handled.
+  what makes Harnu chime and remind you (after 30 minutes, then 1, 2 and 4 hours) until it's handled or the reminders run out.
 - **Change the rules and the finish line follows.** Tell the session the delivery now
   ends differently (stacked PRs you merge yourself, a different target branch) and it
   proposes the new finish line on the spot, for you to approve.

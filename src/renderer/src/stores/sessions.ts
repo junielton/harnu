@@ -55,12 +55,7 @@ import {
   type FleetState
 } from './fleet-state'
 import { sortSessions, type SessionSortMode } from '../components/session-sort'
-import {
-  buildBoard,
-  type BoardBucket,
-  type BoardSession,
-  type BoardState
-} from '../components/fleet-board'
+import { buildBoard, type BoardBucket, type BoardSession } from '../components/fleet-board'
 import { sortFolders, type FolderSortMode } from '../components/folder-sort'
 import { isSidebarDensity, type SidebarDensity } from '../components/sidebar-density'
 import { teamHex } from '../components/teammate-grouping'
@@ -264,6 +259,12 @@ export interface Session {
    * `true` (a freshly-spawned session writes a real transcript).
    */
   resumable: boolean
+  /**
+   * Renderer-only (BUG-198 G4): the operator pressed "Resume anyway" on the
+   * cloud panel, so this row mounts its terminal even though `resumable` is
+   * `false`. Never on disk; survives reconciles (`RENDERER_ONLY_SESSION_KEYS`).
+   */
+  resumeAnyway?: boolean
   /**
    * Mirrors `SessionEntry.bridged` — `true` when the session is mirrored to a
    * claude.ai cloud session. Drives the sidebar cloud affordance; orthogonal to
@@ -1313,6 +1314,24 @@ export const useSessionsStore = defineStore('sessions', () => {
   const orchestratorDefaultPaths = ref<Set<string>>(new Set())
 
   /**
+   * Set of normalized absolute paths whose operator-opened terminals agents may read (the
+   * `agentTerminalRead` flag in `projects.json#projects[]`, T481). Track-the-ON-set like
+   * `orchestratorDefaultPaths` (default OFF). EXACT-PATH ONLY — a linked worktree never
+   * inherits a path's membership. Hydrated from `userProjectsList()` on `reloadModel()` and
+   * mirrored from every `userProjects:setTerminalRead` response.
+   */
+  const terminalReadPaths = ref<Set<string>>(new Set())
+
+  /**
+   * Set of normalized absolute paths whose operator-opened BROWSER panes agents may read (the `agentBrowserRead`
+   * flag, T571). Track-the-ON-set, default OFF, EXACT-PATH ONLY like {@link terminalReadPaths}.
+   */
+  const browserReadPaths = ref<Set<string>>(new Set())
+
+  /** path → the folder's trusted dev hosts (T571, spec §7.2). Exact path only; operator-edited only. */
+  const browserTrustedHosts = ref<Map<string, string[]>>(new Map())
+
+  /**
    * Close-handlers registered by panes that own a live xterm for a session.
    * When `closeSession()` fires the store dispatches to every registered
    * handler so each pane can tear down its own resources. Multi-subscriber
@@ -1971,6 +1990,16 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (s) s.hibernated = undefined
   }
 
+  /**
+   * BUG-198 G4: the operator chose "Resume anyway" on the cloud panel. Marks the
+   * row so the panel yields to the terminal and `TerminalPane` stops refusing to
+   * spawn it. Disk truth (`resumable`) is left alone; the flag is renderer-only.
+   */
+  function resumeAnyway(sessionId: string): void {
+    const s = allSessions.value.find((x) => x.sessionId === sessionId)
+    if (s) s.resumeAnyway = true
+  }
+
   /** Resolve a session's canonical live-activity verdict (working / stuck / idle)
    *  via the shared `resolveActivity` — the SAME source the sidebar dot and the
    *  board consume, so every surface agrees. `nowMs` is passed so callers share
@@ -2421,22 +2450,23 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
-   * Tiers whose bucket sorts oldest-waiting-first (Fleet rail, T151 — "the
-   * most neglected surfaces on top"), the inverse of `buildBoard`'s default
-   * most-recent-first. Applies to every `boardBuckets` consumer (not just the
-   * rail) — `buildBoard`/`fleet-board.ts` itself stays untouched; this
-   * re-sorts its output per bucket.
+   * Creation-time anchors for the Fleet rail's sort (T459): `realId` → the
+   * `created` of the synthetic placeholder it replaced. When the synthetic row
+   * is DROPPED and a different (disk) row survives (`absorbSyntheticIntoRealRow`,
+   * `collapseResolvedSynthetics`), the survivor's own `created` is the JSONL's
+   * birthtime — seconds after the operator pressed "+ New session" — so keying
+   * the sort on it would make the card jump past newer neighbours. The anchor
+   * is the creation moment as the operator experienced it. The two IN-PLACE
+   * paths (`migrateSyntheticInPlace`, `collapseSyntheticInto`) need one too:
+   * they rename the same row object, but `reconcileSessions` overwrites its
+   * `created` with the disk row's on the next index update.
+   * `Session.created` itself is never rewritten (twin matching reads it).
    */
-  const ASCENDING_TIME_TIERS: ReadonlySet<BoardState> = new Set(['needs-input', 'errored', 'stuck'])
-
-  function oldestFirst(sessions: readonly BoardSession[]): BoardSession[] {
-    return [...sessions].sort((a, b) => {
-      const am = Date.parse(a.modified)
-      const bm = Date.parse(b.modified)
-      const ak = Number.isFinite(am) ? am : Infinity
-      const bk = Number.isFinite(bm) ? bm : Infinity
-      return ak - bk
-    })
+  const creationAnchors = new Map<string, string>()
+  function anchorCreation(synth: Session, realId: string): void {
+    if (Number.isFinite(Date.parse(synth.created))) {
+      creationAnchors.set(realId, creationAnchors.get(synth.sessionId) ?? synth.created)
+    }
   }
 
   /**
@@ -2444,7 +2474,10 @@ export const useSessionsStore = defineStore('sessions', () => {
    * `folders` data the zones read, re-grouped by session state into urgency
    * buckets. Resolves `folderAlias` once per folder, drops sidechains, honours
    * the inline `filterQuery` per-card, then delegates ordering/grouping to the
-   * pure `buildBoard`. Orthogonal to the zones — never touches folder-zones.ts.
+   * pure `buildBoard`. Cards inside a bucket are in CREATION order (T459 —
+   * never moved by activity), newest first unless the rail's invert toggle
+   * (`layout.inboxRailOrder`) says otherwise. Orthogonal to the zones — never
+   * touches folder-zones.ts.
    */
   const boardBuckets = computed<BoardBucket[]>(() => {
     const q = filterQuery.value.trim()
@@ -2476,16 +2509,13 @@ export const useSessionsStore = defineStore('sessions', () => {
           status: s.status,
           isSidechain: s.isSidechain,
           modified: s.modified,
+          created: creationAnchors.get(s.sessionId) ?? s.created,
           activity: activityOf(s, now),
           folderAlias: f.alias
         })
       }
     }
-    return buildBoard(slices).map((bucket) =>
-      ASCENDING_TIME_TIERS.has(bucket.state)
-        ? { state: bucket.state, sessions: oldestFirst(bucket.sessions) }
-        : bucket
-    )
+    return buildBoard(slices, useLayoutStore().inboxRailOrder)
   })
 
   /**
@@ -3336,6 +3366,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     report: boolean
   ): void {
     const oldId = synth.sessionId
+    anchorCreation(synth, realId) // the next reconcile overwrites `created` from disk
     synth.sessionId = realId
     synth.synthetic = false
     synth.forkSourceId = undefined
@@ -3701,6 +3732,52 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
+   * Toggle the per-folder "let agents read terminals I open" opt-in (T481). Writes the
+   * `agentTerminalRead` flag through `userProjectsSetTerminalRead` and mirrors the resulting set
+   * back into `terminalReadPaths`. EXACT-PATH ONLY — never touches any other folder.
+   */
+  async function setFolderTerminalRead(path: string, enabled: boolean): Promise<UserProject[]> {
+    const payload = await window.api.userProjectsSetTerminalRead(path, enabled)
+    terminalReadPaths.value = new Set(
+      payload.projects.filter((p) => p.agentTerminalRead).map((p) => p.path)
+    )
+    return payload.projects
+  }
+
+  /** Mirror the two browser flags (T571) out of a `userProjects` payload. */
+  function mirrorBrowserFlags(projects: UserProject[]): void {
+    browserReadPaths.value = new Set(projects.filter((p) => p.agentBrowserRead).map((p) => p.path))
+    browserTrustedHosts.value = new Map(
+      projects
+        .filter((p) => (p.browserTrustedHosts?.length ?? 0) > 0)
+        .map((p) => [p.path, [...(p.browserTrustedHosts ?? [])]])
+    )
+  }
+
+  /**
+   * Toggle the per-folder "let agents read browser panes I open" opt-in (T571). Writes the `agentBrowserRead`
+   * flag through `userProjectsSetBrowserRead` and mirrors the result back. EXACT-PATH ONLY.
+   */
+  async function setFolderBrowserRead(path: string, enabled: boolean): Promise<UserProject[]> {
+    const payload = await window.api.userProjectsSetBrowserRead(path, enabled)
+    mirrorBrowserFlags(payload.projects)
+    return payload.projects
+  }
+
+  /**
+   * Replace a folder's trusted dev hosts (T571, spec §7.2). The Trusted dev hosts dialog is the only caller; no
+   * agent verb edits the list. Mirrors the saved list back.
+   */
+  async function setFolderBrowserTrustedHosts(
+    path: string,
+    hosts: string[]
+  ): Promise<UserProject[]> {
+    const payload = await window.api.userProjectsSetBrowserTrustedHosts(path, hosts)
+    mirrorBrowserFlags(payload.projects)
+    return payload.projects
+  }
+
+  /**
    * Toggle the per-repo "auto-organize conversation into draft cards" opt-out
    * (T106/D6). Writes the `autoOrganizeCards` flag through
    * `userProjectsSetAutoOrganize` and mirrors the resulting OFF set back into
@@ -3879,16 +3956,20 @@ export const useSessionsStore = defineStore('sessions', () => {
    * signal, is no longer done here: the `watch(selectedId, …)` below does
    * that for every selection, not just this "jump to session" entry point
    * (reactive-sidebar-sync, 2026-07-19 — see docs/specs/2026-07-19-sidebar-drill-in-navigation.md).
+   *
+   * Returns whether the session was found (BUG-173): `false` is the "owner not
+   * loaded" signal a caller may route to a fallback. Existing callers ignore it.
    */
-  function activateSession(sessionId: string): void {
+  function activateSession(sessionId: string): boolean {
     const session = findSessionById(sessionId)
-    if (!session) return
+    if (!session) return false
     const folder = findFolderBySessionId(sessionId)
     if (folder && filterQuery.value.trim() && !filteredFolders.value.includes(folder)) {
       setFilterQuery('')
     }
     setCursorToSession(sessionId)
     select(sessionId)
+    return true
   }
 
   /** Find the `FolderGroup` (if any) currently rendering under a namespaced group key. */
@@ -4311,7 +4392,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     'bootOverride', // New session dialog + remoteControl toggle
     'agentControlled', // MCP agent-created session (withhold mcp-config + downgrade)
     'mode', // T123: Modes ▸ Learning teaching contract, read on every claude-resume spawn
-    'spawnedBy' // T215: who caused this session to exist — gates message_session's recipient scope
+    'spawnedBy', // T215: who caused this session to exist — gates message_session's recipient scope
+    'resumeAnyway' // BUG-198 G4: the operator's "Resume anyway" override of a cloud-stub classification
   ])
 
   function reconcileSessions(curArr: Session[], nextArr: Session[]): void {
@@ -4342,6 +4424,18 @@ export const useSessionsStore = defineStore('sessions', () => {
           // lacks the key (a real value on disk would still win — none of these
           // ever appears there).
           if (RENDERER_ONLY_SESSION_KEYS.has(key) && !(key in nsRec)) continue
+          // BUG-198 G2: a fresh session's JSONL exists seconds before its first
+          // turn, so the reader briefly says `resumable:false`. Disk may UPGRADE
+          // a row born synthetic in this run, never downgrade it — the process
+          // that will write the turns is ours and alive. (After a restart the
+          // row is no longer "born synthetic" and disk truth applies again.)
+          if (
+            key === 'resumable' &&
+            exRec[key] === true &&
+            nsRec[key] === false &&
+            bornSyntheticIds.has(ns.sessionId)
+          )
+            continue
           // Assigning an unchanged value is a no-op for Vue reactivity, so only
           // genuine field changes notify dependents.
           if (exRec[key] !== nsRec[key]) exRec[key] = nsRec[key]
@@ -4776,6 +4870,11 @@ export const useSessionsStore = defineStore('sessions', () => {
     orchestratorDefaultPaths.value = new Set(
       userProjects.filter((p) => p.orchestratorDefault).map((p) => p.path)
     )
+    // The "agents may read terminals I open" mirror (T481): EXACT-PATH only too.
+    terminalReadPaths.value = new Set(
+      userProjects.filter((p) => p.agentTerminalRead).map((p) => p.path)
+    )
+    mirrorBrowserFlags(userProjects)
 
     // Re-inject synthetics into matching folders (match by folder path).
     //
@@ -5053,6 +5152,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     const synthId = synth.sessionId
     const wasAgentControlled = synth.agentControlled === true
     agentCorrelationMeta.delete(synthId)
+    anchorCreation(synth, realId) // the next reconcile overwrites `created` from disk
     synth.sessionId = realId
     synth.synthetic = false
     synth.forkSourceId = undefined
@@ -5084,6 +5184,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     const realId = realRow.sessionId
     const wasAgentControlled = synth.agentControlled === true
     agentCorrelationMeta.delete(synthId)
+    anchorCreation(synth, realId)
     // T215: carry the ownership marker onto the surviving row. The disk row
     // has no `spawnedBy` (it never appears in the JSONL), and dropping it
     // here would make the session look operator-owned on its NEXT spawn —
@@ -5092,6 +5193,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (realRow.spawnedBy === undefined && synth.spawnedBy !== undefined) {
       realRow.spawnedBy = synth.spawnedBy
     }
+    // BUG-198: the reader may have surfaced this id as a zero-turn stub before
+    // the first prompt landed; the synthetic's process is alive, so it is not.
+    if (synth.resumable && !realRow.resumable) realRow.resumable = true
     const live = folders.value.find((f) => f.path === folderPath)
     const idx = live ? live.sessions.indexOf(synth) : -1
     if (live && idx !== -1) live.sessions.splice(idx, 1)
@@ -5288,6 +5392,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         }
         if (!twin) continue
         claimed.add(twin.sessionId)
+        anchorCreation(synth, twin.sessionId)
 
         const synthId = synth.sessionId
         folder.sessions.splice(folder.sessions.indexOf(twin), 1)
@@ -5746,6 +5851,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     autoOrganizeOffPaths,
     orchestratorSessionIds,
     orchestratorDefaultPaths,
+    terminalReadPaths,
+    browserReadPaths,
+    browserTrustedHosts,
     selectedId,
     selectedFolderPath,
     activeFolderPath,
@@ -5863,6 +5971,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     setFolderAutoOrganize,
     isFolderAutoOrganizeOn,
     setFolderOrchestratorDefault,
+    setFolderTerminalRead,
+    setFolderBrowserRead,
+    setFolderBrowserTrustedHosts,
     setFolderBornFrom,
     listBornFromCandidates,
     setSessionSort,
@@ -5894,6 +6005,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     archivedSessionCount,
     markHibernated,
     clearHibernated,
+    resumeAnyway,
     registryStates,
     getPrefs,
     toggleNoFlicker,

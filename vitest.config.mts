@@ -36,6 +36,11 @@ export default defineConfig({
         // unit-tested); these shells only marshal the effect. Verified
         // by: unit-tested pure core + local smoke e2e (tests/e2e/*.spec.ts) +
         // headless e2e in CI where signature-free (server/prefs, T05 track 2).
+        'src/main/browser/view-host.ts', // T564 U1: WebContentsView + webContents event glue (bounds, freeze, guest hardening, chords). Every decision — rounding, parking, overlay intersection, scheme/popup/permission/certificate policy, chord forwarding, navigation waiting, access — is pure in browser/{bounds,nav-policy,chord,nav-wait,access}.ts (tested); live-verified in a second isolated instance
+        'src/main/browser/overlay-bridge.ts', // T573: ipcMain binding of the guest overlay channels and the composer's app channels, plus the crop capture (capturePage + fs); every decision — pick gate, submit gate, payload caps, crop geometry, pin store, the message, delivery and clipboard fallback — is pure in browser/comment-{plan,payload,pins,format,delivery}.ts (tested); live-verified in a second isolated instance
+        'src/main/browser/browser-ipc.ts', // T564 U1: ipcMain binding of the browser pane channels; validates payloads and delegates to the view host and the pure access/registry cores (tested)
+        'src/main/browser/browser-service.ts', // T564 U1: singletons + the real dependencies of the verb logic (Electron window, prefs, bridge); the verbs themselves are pure in browser/verbs-core.ts (tested over fakes)
+        'src/main/keybindings.ts', // T1 P2: ipcMain + chokidar shell for keybindings.json; every fs/parse decision is pure in keybindings-file.ts + keybindings-core.ts (both tested)
         'src/main/mcp/server.ts', // MCP Streamable-HTTP loopback server + SDK transport
         'src/main/mcp/tool-handlers.ts', // T120: per-op handler shell (Electron/fs/bridge) — same reason as server.ts; the dispatch (`op` → handler) is pure in tool-catalog.ts (tested)
         'src/main/mcp/memory-store.ts', // .harnu/memory/ I/O + git-probe (T79; pure logic in memory-core, tested)
@@ -49,6 +54,7 @@ export default defineConfig({
         'src/main/companion/staging.ts', // T389 P1W2: fs + Electron `app` glue for the immutable staging (every decision — allowlist, digest, stage key, GC, dev-mode lock — is pure in staging-core.ts, tested; the shell is also exercised against real temp dirs in staging-core.test.ts)
         'src/main/companion/spawn-inject.ts', // T389 P1W2: wires mode + version gate + staging + the host's token minting into the spawn path (the gate is pure in version-gate.ts, argv insertion in staging-core.ts, the retry decision in sideload-retry-core.ts, all tested)
         'src/main/command-bridge-ipc.ts', // CommandBridge ↔ webContents/ipcMain
+        'src/main/terminal-ipc.ts', // T474 B2: ipcMain binding of terminal:status/close/xtermGone + the renderer:ready re-dispatch; every decision is pure in terminal-lifecycle.ts (tested)
         'src/main/manifest-drain-shell.ts', // T113: real drain deps (webContents + fs + git); the pure driver in manifest-drain.ts is tested
         'src/main/worktree-ipc.ts', // execFile git worktree add + adopt + IPC
         'src/main/pr-stack.ts', // T198: execFile gh/git + IPC shell (graph, roles, layout and zoom are pure in pr-stack-core, tested)

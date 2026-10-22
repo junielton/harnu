@@ -44,6 +44,15 @@ function makeApi(overrides: Record<string, unknown> = {}): Record<string, unknow
     settingsChangeLocation: vi.fn(async () => null),
     settingsReveal: vi.fn(),
     settingsOpenExternal: vi.fn(),
+    // T1 P2: `changeLocation` also re-resolves keybindings.json (it moves with
+    // settings.json). Stub the load so the keybindings store's `reload()` — which
+    // `changeLocation` awaits — resolves without a real IPC bridge.
+    keybindingsLoad: vi.fn(async () => ({
+      path: '/moved/keybindings.json',
+      resolved: { byId: {}, list: [], warnings: [] }
+    })),
+    keybindingsSave: vi.fn(async () => {}),
+    onKeybindingsChanged: vi.fn(() => () => {}),
     onSettingsChanged: vi.fn((cb: ChangedCb) => {
       changedCb = cb
       return () => {}

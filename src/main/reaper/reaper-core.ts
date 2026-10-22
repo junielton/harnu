@@ -232,6 +232,12 @@ export interface ReapItem {
    * one of them before anything is deleted (BUG-75). Never a blocker.
    */
   untracked: string[]
+  /**
+   * A fingerprint of the uncommitted work (`git status` plus each path's size and mtime) taken at
+   * scan time, only for a worktree that has any (null otherwise). The force path compares it with
+   * a fresh probe, so a file edited after the operator looked halts the removal.
+   */
+  workStamp?: string | null
   justifiedBy: MergeSignal | null
   /**
    * Dependency-directory state (T250), for `worktree` and `detached-worktree`
@@ -459,6 +465,8 @@ export interface DetachedWorktreeFacts {
   lastCommitAt: number | null
   /** Measured size of the checkout in bytes, or null when it was not measured. */
   diskBytes: number | null
+  /** Untracked paths in the checkout, when its status was probed: a disclosure, never a blocker. */
+  untracked?: string[]
 }
 
 /** The only two verdicts a detached worktree can carry — `harvestable` is not among them. */
@@ -505,9 +513,9 @@ export function classifyDetachedWorktree(
     needsRemoteDelete: false,
     remoteSha: null,
     headSha: facts.head,
-    // Never probed for a detached worktree — it is `blocked` regardless, so
-    // there is nothing a disclosure list could unblock.
-    untracked: [],
+    // A disclosure for the confirm, never a blocker: the item is `blocked` regardless, so nothing here
+    // can unblock it. Empty when the status was not probed.
+    untracked: facts.untracked ?? [],
     justifiedBy: null,
     hydration: null
   }

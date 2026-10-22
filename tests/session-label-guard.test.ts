@@ -77,7 +77,8 @@ const ALLOWLIST: AllowEntry[] = [
   { file: 'lib/session-label.ts', reason: 'the helper itself — the one place the cascade lives' },
   {
     file: 'lib/context-digest.ts',
-    reason: 'builds the digest from a DTO (fed by SessionMenu, which already passes sessionTitle)'
+    reason:
+      'builds the digest from a DTO (fed by useSessionActions, which already passes sessionTitle)'
   },
   {
     file: 'components/session-sort.ts',
@@ -93,7 +94,7 @@ const ALLOWLIST: AllowEntry[] = [
     reason: "a shadow-log row's tool-call summary, not a session"
   },
   {
-    file: 'components/SessionMenu.vue',
+    file: 'composables/useSessionActions.ts',
     lineIncludes: 'firstPrompt: target.firstPrompt',
     reason: 'the digest\'s "First prompt" section — content, not the name'
   },

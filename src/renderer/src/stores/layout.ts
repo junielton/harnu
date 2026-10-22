@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { persistedRef, persistedSet } from './persisted'
-import type { BoardState } from '../components/fleet-board'
+import { DEFAULT_BOARD_ORDER, type BoardOrder, type BoardState } from '../components/fleet-board'
 
 const STORAGE_KEY = 'om2tab.sidebarWidth'
 const SIDEBAR_COLLAPSED_KEY = 'om2tab.sidebarCollapsed'
@@ -8,6 +8,7 @@ const HELPER_COLLAPSED_KEY = 'om2tab.helperCollapsed'
 const INBOX_RAIL_WIDTH_KEY = 'om2tab.inboxRailWidth'
 const INBOX_RAIL_STATE_KEY = 'om2tab.inboxRailState'
 const INBOX_RAIL_HIDDEN_STATES_KEY = 'om2tab.inboxRailHiddenStates'
+const INBOX_RAIL_ORDER_KEY = 'om2tab.inboxRailOrder'
 
 // Sidebar drag-resize bounds (design.md §4 — Layout dimensions). The width is
 // clamped to [MIN, MAX]; a missing/invalid persisted value falls back to DEFAULT.
@@ -151,6 +152,14 @@ export const useLayoutStore = defineStore('layout', () => {
     validate: isFilterableBoardState
   })
 
+  // Fleet rail card order (T459) — creation order inside each state group,
+  // newest first by default; the header toggle inverts it. Fleet-global like
+  // its neighbours. Persisted as a plain string; an unknown value falls back to
+  // the default rather than being trusted.
+  const inboxRailOrder = persistedRef<BoardOrder>(INBOX_RAIL_ORDER_KEY, DEFAULT_BOARD_ORDER, {
+    validate: (v) => v === 'newest-first' || v === 'oldest-first'
+  })
+
   function setSidebarWidth(w: number): void {
     sidebarWidth.value = clampWidth(w)
   }
@@ -215,6 +224,10 @@ export const useLayoutStore = defineStore('layout', () => {
     if (inboxRailState.value !== 'expanded') inboxRailState.value = 'expanded'
   }
 
+  function toggleInboxRailOrder(): void {
+    inboxRailOrder.value = inboxRailOrder.value === 'newest-first' ? 'oldest-first' : 'newest-first'
+  }
+
   function toggleInboxRailStateVisibility(state: BoardState): void {
     inboxRailHiddenStates.toggle(state)
   }
@@ -240,6 +253,8 @@ export const useLayoutStore = defineStore('layout', () => {
     setInboxRailState,
     toggleInboxRail,
     summonInboxRail,
+    inboxRailOrder,
+    toggleInboxRailOrder,
     inboxRailHiddenStates: inboxRailHiddenStates.set,
     toggleInboxRailStateVisibility,
     clearInboxRailStateFilter

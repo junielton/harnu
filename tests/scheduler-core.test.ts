@@ -52,15 +52,34 @@ const ALLOWED_VERBS = [
   'list_cleanup',
   'mission_get',
   'mission_list',
+  // T481 (agent terminals B4): the two terminal READ verbs.
+  'list_terminals',
+  'read_terminal',
+  // T570 (browser pane U3): the browser READ verbs. `browser_network` can write and stays denied.
+  'browser_list',
+  'browser_snapshot',
+  'browser_screenshot',
+  'browser_console',
+  'browser_wait_for',
+  // T569 U2: the two live-panel verbs (page-class only for every caller).
+  'browser_set_data',
+  'browser_patch',
   'create_card',
   'update_card',
   'notify'
 ]
 
 const DENIED_VERBS = [
+  // T570: it can turn capture on, so it is never an observe tick's.
+  'browser_network',
+  'browser_open',
+  'browser_navigate',
+  'browser_close',
   'create_session',
   'create_worktree',
   'spawn_terminal',
+  // T482 (B4 carry-in): typing into a terminal is never an observe tick's.
+  'send_terminal',
   'submit_manifest',
   'adopt_folder',
   'remove_folder',

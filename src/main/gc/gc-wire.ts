@@ -10,6 +10,10 @@ import type { HousekeepingResult } from './housekeeping-core'
 import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import type { GcJobDone, GcJobInfo, GcJobProgress } from './gc-jobs-core'
 import type { GcDockerCard, OrphanVolumesHidden } from './gc-docker-card'
+import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
+import type { StackLeftoverItem } from './gc-stack-leftovers'
+import type { ArchiveEntry, ArchiveRepoGroup, GcArchivesCard } from './archives-core'
+import type { GcTrashCard, TrashListEntry } from './trash-core'
 import type {
   GcOpinionAck,
   GcOpinionDone,
@@ -20,6 +24,11 @@ import type {
 } from './opinion-core'
 
 export type {
+  ArchiveEntry,
+  ArchiveRepoGroup,
+  GcArchivesCard,
+  GcTrashCard,
+  TrashListEntry,
   GcDockerCard,
   OrphanVolumesHidden,
   GcOpinionAck,
@@ -33,6 +42,8 @@ export type {
   GcJobInfo,
   GcJobProgress,
   OrphanVolumeItem,
+  OrphanTranscriptItem,
+  StackLeftoverItem,
   GcItemResult
 }
 
@@ -46,8 +57,12 @@ export interface CycleRecord {
   /** Disk those ready items occupy. */
   foundBytes: number
   cleaned: GcItemResult[]
-  /** Bytes the worktree cleanups freed plus what Docker housekeeping reclaimed. */
+  /** Bytes actually deleted: the dependency folders plus what Docker housekeeping reclaimed. */
   freedBytes: number
+  /** Bytes of checkouts moved to the OS trash by this cycle: on disk until the trash is emptied. */
+  trashedBytes: number
+  /** Archive refs the autopilot deleted this cycle (0 unless "Expire archives automatically"). */
+  archivesExpired: number
   /** Eligible ready items the per-cycle cap left for a later cycle. */
   deferred: number
   housekeeping: HousekeepingResult | null
@@ -64,6 +79,19 @@ export interface GcSnapshot {
   /** Orphan volumes offered in Needs review. Removed only by an explicit, confirmed action. */
   orphanVolumes: OrphanVolumeItem[]
   /**
+   * Claude transcript folders whose project folder is gone and that no live or parked session uses,
+   * listed under "Other leftovers". Moved to the trash only by an explicit, confirmed action
+   * (`gc:clean` with id `transcripts:<slug>`, its own entry in `confirmed`, bucket `orphan-transcripts`).
+   */
+  orphanTranscripts: OrphanTranscriptItem[]
+  /**
+   * What worktrees Harnu removed left in Docker: their stopped containers and networks (cleaned by
+   * `gc:clean` with id `stack-leftover:<project>`, its own entry in `confirmed`, bucket
+   * `stack-leftover`) and, listed apart, their orphan volumes (removed only through the
+   * `volume:<name>` ids, each with its own confirm: volumes are never removed with the stack).
+   */
+  stackLeftovers: StackLeftoverItem[]
+  /**
    * The Docker card: `buildCacheReclaimableBytes`, `danglingImages { count, bytes }` and
    * `orphanVolumesHidden { reason, folders } | null`. The first two are null when docker was
    * absent or did not answer for them; the last says why the orphan list is empty when an
@@ -74,6 +102,18 @@ export interface GcSnapshot {
   lastCycle: CycleRecord | null
   /** When the next timer tick fires, or null when the Reaper background scan is off. */
   nextCycleAt: number | null
+  /**
+   * What the next cycle would clean once cleaning is allowed (autopilot on, report acknowledged):
+   * the figure the first-cycle banner discloses before the operator enables it. Null when the
+   * worktrees category is off.
+   */
+  nextClean: { count: number; bytes: number } | null
+  /** The Reaper's "Automatic background scan" toggle: with it off no cycle ever runs. */
+  backgroundScan: boolean
+  /** Every repo's `refs/archive/**`: what Cleanup's own removals left behind, and the retention. */
+  archives: GcArchivesCard
+  /** What Harnu moved to the OS trash that is still there (see `trash-core.ts`). */
+  trash: GcTrashCard
 }
 
 /**
@@ -91,7 +131,7 @@ export interface GcSnapshot {
  * compared: disk use drifts without anything having changed.
  */
 export interface GcExpected {
-  bucket: 'ready' | 'review' | 'in-use' | 'orphan-volume'
+  bucket: 'ready' | 'review' | 'in-use' | 'orphan-volume' | 'orphan-transcripts' | 'stack-leftover'
   reasonCode: string | null
   headSha: string | null
   stackIds: string[]
@@ -104,8 +144,19 @@ export interface GcExpected {
    * normalization (slashes, `.` and `..`), so a spelling difference is not a change.
    */
   path: string | null
+  /**
+   * Fingerprint of the worktree's uncommitted work as the scan saw it (`item.workStamp`; null
+   * when it had none). The force path probes the folder again and refuses (`work-changed-since-
+   * confirm`) when the stamp differs: a file edited after the operator looked never rides along.
+   * `'unknown'` means the scan's probe could not answer: the force path refuses it (`work-unreadable`).
+   */
+  workStamp?: string | null
   /** Orphan volumes only: the compose project shown with the volume. */
   project?: string | null
+  /** Stack leftovers only: the networks that were shown (container ids ride in `stackIds`). */
+  networkIds?: string[]
+  /** Orphan transcripts only: whether the folder was proven gone or only not found when shown. */
+  proof?: 'proven' | 'not-found'
 }
 
 /**
@@ -123,6 +174,97 @@ export interface GcExpected {
 export interface GcCleanOptions {
   confirmed?: string[]
   expected?: Record<string, GcExpected>
+  /**
+   * Ids of the worktrees whose branch the operator also wants deleted on the remote ("Also delete
+   * the branch on the remote", off by default). Main honours it per item only for a branch merged
+   * by strong proof, not protected, with the remote delete switched on; otherwise the item is
+   * cleaned locally and its result says why the remote was left. Absent means none.
+   */
+  deleteRemote?: string[]
+  /**
+   * Ids of orphaned transcript folders the operator confirmed with the STRONGER confirm: their
+   * folder is missing but nothing proves it gone ("I checked: it is not on a drive that is
+   * unplugged"). A `not-found` item without its own entry here is refused, whatever `confirmed` says.
+   */
+  confirmedNotFound?: string[]
+  /**
+   * A guided action's one preparatory step, per id, run inside the job before that item is judged
+   * for the ordinary guarded remove ("No dead ends"). Only a confirmed review worktree takes one, and
+   * only when it still applies to what main finds (see `prepareClean`).
+   */
+  prepare?: Record<string, GcPrep | GcPrep[]>
+}
+
+/** The step a guided "…and remove" runs first. */
+export type GcPrep =
+  /** `git worktree unlock` on a locked worktree. */
+  | { kind: 'unlock' }
+  /** Park the idle Harnu sessions open in the worktree (only an explicit idle, completed or stopped one). */
+  | { kind: 'close-session' }
+  /** Stop (never remove) the running containers of these shared stacks; started again if the remove refuses. */
+  | { kind: 'stop-stack'; stackIds: string[] }
+  /** Remove the worktree and leave these shared stacks running (only when none binds the folder). */
+  | { kind: 'leave-stack'; stackIds: string[] }
+
+/** What the operator can answer to a recovery notice. */
+export type GcRecoveryAction = 'start' | 'lock' | 'lock-anyway' | 'dismiss'
+
+/**
+ * One thing the prep journal wants the operator to know (see gc-prep-journal.ts): a `notice` stays until it
+ * is answered or dismissed; a `resolved` one (a lock Harnu put back) is shown once and then goes.
+ */
+export interface GcRecoveryItem {
+  id: string
+  state: 'notice' | 'resolved'
+  kind: 'unlock' | 'stop-stack'
+  notice?: 'stack-stopped' | 'lock-skipped' | 'lock-failed' | 'containers-gone'
+  outcome?: 'relocked'
+  path: string
+  /** Container names for a stack, or what went wrong. */
+  detail: string
+  /** Already announced in Activity: it is not announced again. */
+  announced: boolean
+  /** A lock: the click-time identity check failed again, in words; only "Lock this worktree anyway" is left. */
+  mismatch?: string
+  /** A stopped stack: whether starting it again is possible now (its folders still exist). */
+  canStart?: boolean
+  /** Why it is not: starting it would recreate empty folders. */
+  cannotStart?: string
+}
+
+/** One stack other folders use too, as a guided dialog shows it. */
+export interface GcGuidedStack {
+  id: string
+  name: string
+  /** Folders (other than this worktree) the stack's containers run from or mount. */
+  otherFolders: string[]
+  /** Whether any container of the stack runs from, or bind-mounts, this worktree. */
+  bindsThisFolder: boolean
+  containers: number
+  /** The containers a "Stop stack" would stop, by name: the confirm lists them. */
+  containerNames: string[]
+  /**
+   * Why the stack must not be stopped, when it must not: it is the main checkout's own stack, or a
+   * folder that has a live or parked session uses it too.
+   */
+  stopBlocked: 'main-checkout' | 'in-use-elsewhere' | null
+}
+
+/**
+ * `gc:guide`: what main sees about a refused item right now, for the guided dialog. Each part is
+ * null when it does not apply. Read-only.
+ */
+export interface GcGuidance {
+  id: string
+  /** Git lists the worktree as locked; `reason` is what `git worktree lock --reason` recorded. */
+  lock: { reason: string | null } | null
+  /** Harnu sessions open in it: those idle (closable) and those working or waiting (never closed). */
+  sessions: { idle: number; busy: number; userOpened: number } | null
+  stacks: GcGuidedStack[]
+  /** The exact folder the scan could not read, who owns it and a command that fixes it. */
+  unreadable: { path: string; owner: string | null; fixCommand: string } | null
+  /** The scan ran without Docker: the command that starts it on this platform, when there is one. */
+  docker: { hint: string | null } | null
 }
 
 /** `gc:clean` acknowledges at once; the work streams on `gc:progress` and ends on `gc:done`. */
@@ -130,4 +272,16 @@ export interface GcCleanAck {
   jobId: string
   /** True when another job was already running and this one waits its turn. */
   queued: boolean
+}
+
+/**
+ * `gc:recheck`: what "Check again" found for one item. `cleared`: nothing refuses it now (the
+ * remembered refusal is gone and the next gather shows it as the scan sees it). `still-refused`: main
+ * refuses it again for `code`, and it stays demoted. `unchecked`: the check itself could not answer
+ * (Docker down, a probe that failed), so nothing was concluded. `unknown-item`: not in the gather.
+ */
+export interface GcRecheckResult {
+  id: string
+  outcome: 'cleared' | 'still-refused' | 'unchecked' | 'unknown-item'
+  code?: string
 }
