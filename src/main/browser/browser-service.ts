@@ -178,12 +178,15 @@ export async function resolveBrowserGate(
   paneId: string | undefined,
   file?: UserProjectsFile,
   /** `browser_open` / `browser_list` carry a folder of their own: its trusted hosts are loaded for them. */
-  folder?: string
+  folder?: string,
+  /** The verb being judged: `browser_close` is the one write that outlives the kill-switch. */
+  op?: string
 ): Promise<GateResolution> {
   const writesEnabled = await readAgentBrowserWrites()
   // Switching agent browser control off ends every lease. The Settings toggle does that itself; doing it here too
-  // covers a pref flipped some other way, and costs nothing while the switch is on.
-  if (!writesEnabled) browserLeases.revokeAll()
+  // covers a pref flipped some other way. `close` keeps working with the switch off, so a call for it must not end
+  // the lease the operator just granted for it (that would confirm again on every retry).
+  if (!writesEnabled && op !== 'browser_close') browserLeases.revokeAll()
   const rec = paneId === undefined ? undefined : browserRegistry.get(paneId)
   const projects = file ?? (await readUserProjects())
   if (rec) await loadTrustedHosts(rec.folder, projects)
@@ -284,4 +287,17 @@ export function makeBrowserActDeps(env: BrowserHandlerEnv): BrowserActDeps {
 export function stopAllBrowserCaptures(): void {
   if (host) host.stopAllCaptures('kill-switch')
   browserLeases.revokeAll()
+}
+
+/** The kill-switch flipped either way: no lease survives it, so one granted for `close` while off cannot be revived. */
+export function revokeAllBrowserLeases(): void {
+  browserLeases.revokeAll()
+}
+
+/** The origin-class inputs the gate uses for a folder's panes, so a disclosure classifies a URL exactly as it does. */
+export function browserClassifyOptions(folder: string): {
+  harnuPorts: number[]
+  extraTrustedHosts: readonly string[]
+} {
+  return { harnuPorts: collectHarnuPorts(mcpPort), extraTrustedHosts: trustedHostsSync(folder) }
 }

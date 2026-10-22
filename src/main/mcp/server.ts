@@ -133,7 +133,9 @@ import {
   getBrowserHost,
   noteMcpPort,
   resolveBrowserGate,
-  stopAllBrowserCaptures
+  stopAllBrowserCaptures,
+  revokeAllBrowserLeases,
+  browserClassifyOptions
 } from '../browser/browser-service'
 import { browserWriteQueue } from '../browser/write-queue'
 import { leaseConfirmPrompt } from '../browser/lease-confirm-text'
@@ -1095,7 +1097,8 @@ async function runToolCall(
     const resolved = await resolveBrowserGate(
       def.op === 'browser_open' || def.op === 'browser_list' ? undefined : strField(args, 'paneId'),
       projectsFile,
-      strField(args, 'folder')
+      strField(args, 'folder'),
+      def.op
     )
     if (def.op !== 'browser_open' && def.op !== 'browser_list') gateFolder = resolved.folder
     browser = resolved.input
@@ -1619,7 +1622,7 @@ async function browserLeasePrompt(
     shortPaneId: paneId.slice(0, 10),
     openedBy: rec?.openedBy ?? 'operator',
     host: hostOf(live?.url ?? ''),
-    originClass: classifyOrigin(live?.url ?? ''),
+    originClass: classifyOrigin(live?.url ?? '', browserClassifyOptions(rec?.folder ?? folder)),
     folder: tilde(rec?.folder ?? folder),
     target
   })
@@ -1638,7 +1641,7 @@ async function grantBrowserLease(
   paneId: string,
   parkedViewToken: string | undefined
 ): Promise<CallToolResult> {
-  const resolved = await resolveBrowserGate(paneId)
+  const resolved = await resolveBrowserGate(paneId, undefined, undefined, op)
   const refusal =
     isBrowserOp(op) && resolved.input.pane
       ? gateBrowserOpDetailed(op, { ...resolved.input })
@@ -2058,6 +2061,7 @@ export async function registerMcpServer(
     await writeAgentBrowserWrites(enabled === true)
     // Switching agent browser control off also ends every network capture an agent had running (spec §7.4).
     if (enabled !== true) stopAllBrowserCaptures()
+    revokeAllBrowserLeases()
     return readAgentBrowserWrites()
   })
 
