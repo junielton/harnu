@@ -151,7 +151,8 @@ export function ackBase(
 export async function gate(
   op: BrowserOp,
   paneId: string | undefined,
-  deps: BrowserVerbDeps
+  deps: BrowserVerbDeps,
+  action?: string
 ): Promise<
   { refusal: Refusal } | { rec?: BrowserPaneRecord; live?: LivePaneInfo; origin?: OriginClass }
 > {
@@ -160,7 +161,8 @@ export async function gate(
   const origin = rec ? originOf(rec, live, deps) : undefined
   const denied = gateBrowserOp(op, {
     pane: rec && origin ? accessOf(rec, deps, origin) : undefined,
-    writesEnabled: await deps.writesEnabled()
+    writesEnabled: await deps.writesEnabled(),
+    ...(action !== undefined ? { action } : {})
   })
   // No `args` here, so the gate cannot answer BAD_ARGS: the content rules run in the verb, after this.
   if (denied) return { refusal: refuse(denied as BrowserDenialCode, { folder: rec?.folder }) }

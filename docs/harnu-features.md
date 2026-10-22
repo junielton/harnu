@@ -1,4 +1,4 @@
-<!-- harnu-features v99 (2026-10-21) -->
+<!-- harnu-features v100 (2026-10-21) -->
 
 # You are running inside Harnu
 
@@ -874,14 +874,22 @@ bodies?, headers?, filter?, since?, limit? })` is **off until you start it**: ca
 `maxMinutes` (default 10, at most 30), shows the operator a red "Network m:ss" counter, and ends on
 its own, on pane close, on Disconnect and when the kill-switch goes off. Entries keep query keys but
 replace every query value with `*`, never record credential headers, and carry bodies only with
-`bodies: true` at `start`. It is a write: it refuses `BROWSER_WRITES_DISABLED` and `BROWSER_PAUSED`,
-and on an `external` page it refuses `NOT_YET_AVAILABLE` (it needs a lease that does not exist
+`bodies: true` at `start`. It is a write: every action refuses `BROWSER_WRITES_DISABLED` when agent
+control is off, and `start` refuses `BROWSER_PAUSED` while the operator has paused you (`read` and
+`stop` still work while paused: they only reduce what is observed). On an `external` page it refuses `NOT_YET_AVAILABLE` (it needs a lease that does not exist
 yet); use it on local dev servers. `browser_wait_for({ paneId, selector?, text?, textGone?, url?,
 networkIdleMs?, timeoutMs? })` returns on the first of those conditions (`url` is a regex of at most
-200 characters), on `timeoutMs` (default 15000, at most 90000, **not an error**), when the pane
-closes or when you are disconnected; read `wait.reason`. Bad arguments (an over-large `maxNodes`,
-`maxDim`, `lines`, `timeoutMs`, an invalid regex) are `BAD_ARGS` before anything else, even with the
-kill-switch off. A Scheduler `observe` worker may call `browser_list`, `browser_snapshot`,
+200 characters, matched against the first 2048 characters of the address; a repetition or an
+alternation inside a repeated group such as `(a+)+` or `(a|b)*`, or more than three repetition
+operators, is `BAD_ARGS`), on `timeoutMs` (default 15000, at most 90000, **not an error**), when the pane
+closes or when you are disconnected; read `wait.reason`. Two kinds of bad argument, and both are
+refused before the kill-switch and before any confirm. A value outside its range (`maxNodes`, `maxDim`,
+`quality`, `lines`, `limit`, `maxMinutes`, `networkIdleMs`, `timeoutMs`, an unknown `format` or
+`levels` entry) never reaches Harnu: the MCP schema rejects it with `-32602 Input validation error`,
+so read that as a bad argument, not as a Harnu refusal object. A combination that is only wrong
+together (`ref` with `selector`, `fullPage` with either, mode `since` without a `since` cursor, a
+`browser_wait_for` with no condition, a `url` that is not a valid or safe regex) is a Harnu
+`BAD_ARGS` refusal with `message` and `nextActions`. A Scheduler `observe` worker may call `browser_list`, `browser_snapshot`,
 `browser_screenshot`, `browser_console` and `browser_wait_for`, never `browser_network`.
 
 **Worktrees.** You can create and list git worktrees (`create_worktree` /

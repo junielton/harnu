@@ -105,9 +105,10 @@ interface ReadCtx {
 async function openRead(
   op: Parameters<typeof gate>[0],
   paneId: string,
-  deps: BrowserReadDeps
+  deps: BrowserReadDeps,
+  action?: string
 ): Promise<{ refusal: Refusal } | { ctx: ReadCtx }> {
-  const g = await gate(op, paneId, deps)
+  const g = await gate(op, paneId, deps, action)
   if ('refusal' in g) return g
   const rec = g.rec!
   const readers = deps.host.readers(rec.paneId)
@@ -545,7 +546,7 @@ export async function networkVerb(
   args: NetworkArgs,
   deps: BrowserReadDeps
 ): Promise<Record<string, unknown>> {
-  const opened = await openRead('browser_network', args.paneId, deps)
+  const opened = await openRead('browser_network', args.paneId, deps, args.action)
   if ('refusal' in opened) return opened.refusal
   const { ctx } = opened
 
@@ -749,6 +750,7 @@ export async function waitForVerb(
           }
         : {})
     },
+    untrustedNote: BROWSER_NOTE,
     note: BROWSER_NOTE
   }
 }

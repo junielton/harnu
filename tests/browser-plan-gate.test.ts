@@ -314,6 +314,8 @@ describe('browser reading verbs at plan level', () => {
     ['browser_network', { action: 'read', limit: 501 }],
     ['browser_wait_for', { text: 'x', timeoutMs: 999999 }],
     ['browser_wait_for', { url: '(' }],
+    ['browser_wait_for', { url: '(a+)+$' }],
+    ['browser_wait_for', { url: '(a|aa)+$' }],
     ['browser_wait_for', {}]
   ])(
     '%s %j is BAD_ARGS before the kill-switch and before any confirm, in ask mode too',
@@ -326,21 +328,37 @@ describe('browser reading verbs at plan level', () => {
     }
   )
 
-  it('browser_network is a write: it refuses under the kill-switch and while paused, before any confirm', () => {
+  it('browser_network is a write: it refuses under the kill-switch for every action, before any confirm', () => {
     for (const action of ['start', 'read', 'stop']) {
       for (const ask of [false, true]) {
         const off = plan('browser_network', { action }, gate({ writesEnabled: false }), ask)
         expect(off).toMatchObject({ verdict: 'deny', shouldConfirm: false })
         expect(off.auditRecord.result).toBe('BROWSER_WRITES_DISABLED')
-        const paused = plan(
-          'browser_network',
-          { action },
-          gate({ pane: pane({ paused: true }) }),
-          ask
-        )
-        expect(paused.auditRecord.result).toBe('BROWSER_PAUSED')
       }
     }
+  })
+
+  it('while paused, browser_network start is refused, but read and stop still work (they only reduce what is observed)', () => {
+    for (const ask of [false, true]) {
+      const paused = gate({ pane: pane({ paused: true }) })
+      const start = plan('browser_network', { action: 'start' }, paused, ask)
+      expect(start).toMatchObject({ verdict: 'deny', shouldConfirm: false, shouldDispatch: false })
+      expect(start.auditRecord.result).toBe('BROWSER_PAUSED')
+      for (const action of ['read', 'stop']) {
+        const p = plan('browser_network', { action }, paused, ask)
+        expect(p.auditRecord.result, action).not.toBe('BROWSER_PAUSED')
+        expect(p.shouldDispatch || p.shouldConfirm, action).toBe(true)
+      }
+    }
+  })
+
+  it('a paused operator-opened pane is still BROWSER_READ_NOT_ENABLED for network read', () => {
+    const p = plan(
+      'browser_network',
+      { action: 'read' },
+      gate({ pane: pane({ paused: true, openedBy: 'operator' }) })
+    )
+    expect(p.auditRecord.result).toBe('BROWSER_READ_NOT_ENABLED')
   })
 
   it('browser_network runs free on an agent pane and is a normal confirm in ask mode', () => {

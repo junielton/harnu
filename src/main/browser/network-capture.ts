@@ -341,32 +341,74 @@ export interface NetworkIdleTracker {
   ingest(method: string, params: unknown): void
   /** Whether nothing is in flight and nothing started or finished for at least `idleMs`. */
   isIdle(idleMs: number): boolean
+  /** The page navigated: every request id known so far belongs to the old page and is forgotten. */
+  reset(): void
   readonly inflight: number
 }
 
 /**
+ * A request the counter has seen start but never finish is forgotten after this long. A reload cancels requests
+ * without always reporting `loadingFailed`, and one orphaned id would otherwise keep the page "busy" forever.
+ */
+export const OPEN_REQUEST_TTL_MS = 30_000
+
+/**
  * The lightweight counter behind `waitFor`'s `networkIdleMs` (spec §6.2): in-flight requests and the time of the
  * last request activity. It keeps no URL and no header, so it is always on without being a capture. Streams
- * that never end (EventSource) are not counted, or no page with one would ever be idle.
+ * that never end (EventSource) are not counted, or no page with one would ever be idle, and an id that has been
+ * open longer than {@link OPEN_REQUEST_TTL_MS}, or that belonged to a page since navigated away from, is dropped.
  */
 export function createNetworkIdleTracker(now: () => number): NetworkIdleTracker {
-  const open = new Set<string>()
+  /** Request id → when it started. */
+  const open = new Map<string, number>()
   let lastActivityAt = now()
+  const prune = (): void => {
+    const cutoff = now() - OPEN_REQUEST_TTL_MS
+    for (const [id, startedAt] of open) if (startedAt <= cutoff) open.delete(id)
+  }
   return {
     ingest(method, params) {
       const p = (params ?? {}) as { requestId?: string; type?: string }
       const id = p.requestId
       if (typeof id !== 'string') return
       if (method === 'Network.requestWillBeSent') {
-        if (p.type !== 'EventSource') open.add(id)
+        if (p.type !== 'EventSource') open.set(id, now())
         lastActivityAt = now()
       } else if (method === 'Network.loadingFinished' || method === 'Network.loadingFailed') {
         if (open.delete(id)) lastActivityAt = now()
       }
     },
-    isIdle: (idleMs) => open.size === 0 && now() - lastActivityAt >= idleMs,
+    isIdle(idleMs) {
+      prune()
+      return open.size === 0 && now() - lastActivityAt >= idleMs
+    },
+    reset() {
+      open.clear()
+      lastActivityAt = now()
+    },
     get inflight() {
+      prune()
       return open.size
     }
   }
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Network domain buffers                                                                             */
+/* ------------------------------------------------------------------------------------------------ */
+
+/**
+ * `Network.enable` buffer sizes. The domain is on for every pane so the idle counter works, and Chromium keeps
+ * response bodies in those buffers so `Network.getResponseBody` can serve them later. Nothing needs a body
+ * unless a capture with `bodies: true` is running, so the buffers stay tiny until then (a page that streams
+ * megabytes would otherwise hold them in the browser process for no reader) and are sized up only for that
+ * capture, then back down when it ends.
+ */
+export function networkEnableParams(bodies: boolean): {
+  maxTotalBufferSize: number
+  maxResourceBufferSize: number
+} {
+  return bodies
+    ? { maxTotalBufferSize: 8 * 1024 * 1024, maxResourceBufferSize: 1024 * 1024 }
+    : { maxTotalBufferSize: 1024, maxResourceBufferSize: 1024 }
 }

@@ -9,6 +9,7 @@ import {
   DEFAULT_CAPTURE_MINUTES,
   createNetworkCapture,
   createNetworkIdleTracker,
+  networkEnableParams,
   type CaptureOptions,
   type CaptureStatus,
   type NetworkCapture,
@@ -64,6 +65,13 @@ export function createPaneReaders(deps: PaneReadersDeps): PaneReaders {
   let timer: unknown = null
   /** Capture was started and has not been ended by us: the lazy expiry inside `capture` cannot tell us. */
   let capturing = false
+  /** The Network buffers are sized up for a `bodies: true` capture (see `networkEnableParams`). */
+  let bodyBuffers = false
+  const setBodyBuffers = (on: boolean): void => {
+    if (bodyBuffers === on) return
+    bodyBuffers = on
+    void deps.send('Network.enable', networkEnableParams(on)).catch(() => undefined)
+  }
 
   function clearExpiry(): void {
     if (timer !== null) deps.clearTimer(timer)
@@ -73,6 +81,7 @@ export function createPaneReaders(deps: PaneReadersDeps): PaneReaders {
   function stop(reason: CaptureEndReason): CaptureStatus {
     const wasActive = capturing
     capturing = false
+    setBodyBuffers(false)
     clearExpiry()
     const status = capture.stop()
     if (wasActive) deps.onCaptureChange(status, reason)
@@ -91,7 +100,11 @@ export function createPaneReaders(deps: PaneReadersDeps): PaneReaders {
       } else if (method === 'Page.frameNavigated') {
         // A top-level navigation kills every ref made on the old page (spec §6.2 `REF_STALE`).
         const frame = (params as { frame?: { parentId?: string } } | undefined)?.frame
-        if (frame && frame.parentId === undefined) refs.invalidate()
+        if (frame && frame.parentId === undefined) {
+          refs.invalidate()
+          // The old page's requests are gone with it; keep none of their ids to wait on.
+          idle.reset()
+        }
       } else {
         consoleBuffer.ingest(method, params)
       }
@@ -109,6 +122,8 @@ export function createPaneReaders(deps: PaneReadersDeps): PaneReaders {
           Math.max(0, status.expiresAt - deps.now())
         )
       }
+      // Bodies are fetched from the browser's own buffers, so they are sized up before the first request.
+      setBodyBuffers(status.bodies)
       deps.onCaptureChange(status, 'started')
       return status
     },

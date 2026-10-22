@@ -26,6 +26,7 @@ import {
 import { decideForward, type GuestInput } from './chord'
 import { guestWebPreferences, PARTITION_NAMES, type BrowserPartition } from './guest-prefs'
 import { waitForNavigation } from './nav-wait'
+import { networkEnableParams } from './network-capture'
 import { createPaneReaders, type PaneReaders } from './pane-readers'
 import { clampSize, type ViewMode } from './screenshot-plan'
 import type { CaptureRequest, CaptureResult } from './read-verbs'
@@ -778,11 +779,13 @@ export class BrowserViewHost implements BrowserReadHost {
         void this.cdpQuiet(e, 'Page.handleJavaScriptDialog', { accept: kind === 'beforeunload' })
         this.publish(e, { notice: { kind: 'dialog', dialog: kind } })
       })
-      await Promise.all(
-        ['Page.enable', 'Runtime.enable', 'Log.enable', 'Network.enable'].map((method) =>
+      await Promise.all([
+        ...['Page.enable', 'Runtime.enable', 'Log.enable'].map((method) =>
           this.cdpQuiet(e, method, {})
-        )
-      )
+        ),
+        // On for the idle counter, with buffers too small to hold a body until a capture asks for them.
+        this.cdpQuiet(e, 'Network.enable', networkEnableParams(false))
+      ])
     } catch {
       // A guest without a debugger still works; only dialog interception and the reading verbs are lost.
     }

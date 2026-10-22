@@ -12,8 +12,14 @@ export const MAX_WAIT_TIMEOUT_MS = 90_000
 export const MAX_URL_PATTERN_CHARS = 200
 /** How often the conditions are re-checked while nothing has changed. */
 export const WAIT_POLL_MS = 100
-/** A URL longer than this is not matched against a pattern (bounds a hostile pattern's work). */
-const MAX_URL_MATCH_CHARS = 4_096
+/**
+ * Only the first this-many characters of the URL are matched against a `url` pattern. The URL is written by the
+ * page and the pattern by the agent, and the match runs in Harnu's main process, so the work is bounded here and
+ * the pattern's shape is bounded in {@link compileUrlPattern}.
+ */
+export const MAX_URL_MATCH_CHARS = 2_048
+/** A pattern may use at most this many repetition operators (`*`, `+`, `{n,m}`): matching is polynomial in them. */
+export const MAX_PATTERN_QUANTIFIERS = 3
 
 export interface WaitConditions {
   selector?: string
@@ -50,9 +56,72 @@ export interface WaitOutcome {
   match?: string
 }
 
-/** Compile a `url` condition; `null` if it is too long or not a valid pattern. */
+/** The length of a `{n}`, `{n,}` or `{n,m}` repetition starting at `i`, or 0 when `source[i]` is not one. */
+function braceQuantifierLength(source: string, i: number): number {
+  const m = /^\{\d+(?:,\d*)?\}/.exec(source.slice(i, i + 24))
+  return m ? m[0].length : 0
+}
+
+/**
+ * Whether a pattern could backtrack catastrophically or is heavier than a URL check needs: a repetition inside a
+ * group that is itself repeated (`(a+)+`, `(\w+\s?)*`), an alternation inside a repeated group (`(a|aa)+`, which
+ * overlapping branches turn exponential), or more than {@link MAX_PATTERN_QUANTIFIERS} repetition operators.
+ * A conservative scan, not a proof: it refuses some harmless patterns on purpose, and says so to the caller.
+ */
+export function isHeavyPattern(source: string): boolean {
+  const groups: Array<{ repeats: boolean; alternates: boolean }> = []
+  let inClass = false
+  let quantifiers = 0
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]!
+    if (ch === '\\') {
+      i++
+      continue
+    }
+    if (inClass) {
+      if (ch === ']') inClass = false
+      continue
+    }
+    if (ch === '[') {
+      inClass = true
+      continue
+    }
+    if (ch === '(') {
+      groups.push({ repeats: false, alternates: false })
+      continue
+    }
+    if (ch === '|') {
+      const top = groups[groups.length - 1]
+      if (top) top.alternates = true
+      continue
+    }
+    const brace = ch === '{' ? braceQuantifierLength(source, i) : 0
+    if (ch === '*' || ch === '+' || brace > 0) {
+      quantifiers++
+      const top = groups[groups.length - 1]
+      if (top) top.repeats = true
+      i += brace > 0 ? brace - 1 : 0
+      continue
+    }
+    if (ch === ')') {
+      const closed = groups.pop()
+      if (!closed) continue
+      const next = source[i + 1]
+      const repeated =
+        next === '*' || next === '+' || (next === '{' && braceQuantifierLength(source, i + 1) > 0)
+      if (repeated && (closed.repeats || closed.alternates)) return true
+      // A group that repeats something inside also makes its parent "repeat something inside".
+      const parent = groups[groups.length - 1]
+      if (parent && closed.repeats) parent.repeats = true
+    }
+  }
+  return quantifiers > MAX_PATTERN_QUANTIFIERS
+}
+
+/** Compile a `url` condition; `null` if it is too long, not a valid pattern, or too heavy to run safely. */
 export function compileUrlPattern(source: string): RegExp | null {
   if (source.length === 0 || source.length > MAX_URL_PATTERN_CHARS) return null
+  if (isHeavyPattern(source)) return null
   try {
     return new RegExp(source)
   } catch {
@@ -101,11 +170,8 @@ export async function runWait(
       }
     }
     if (conds.url !== undefined) {
-      const url = deps.probes.currentUrl()
-      if (url.length <= MAX_URL_MATCH_CHARS) {
-        const m = conds.url.exec(url)
-        if (m) return done('url', m[0])
-      }
+      const m = conds.url.exec(deps.probes.currentUrl().slice(0, MAX_URL_MATCH_CHARS))
+      if (m) return done('url', m[0])
     }
     if (conds.networkIdleMs !== undefined && deps.probes.networkIdle(conds.networkIdleMs)) {
       return done('networkIdle')

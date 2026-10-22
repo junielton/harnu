@@ -9,6 +9,7 @@ import {
   createNetworkCapture,
   createNetworkIdleTracker,
   isTextMime,
+  networkEnableParams,
   scrubHeaders,
   scrubQueryValues
 } from '../src/main/browser/network-capture'
@@ -371,5 +372,147 @@ describe('pane readers', () => {
     expect(r.refs.resolve('s1e1').ok).toBe(true)
     r.ingest('Page.frameNavigated', { frame: { id: 'main' } })
     expect(r.refs.resolve('s1e1')).toEqual({ ok: false, error: 'REF_STALE' })
+  })
+})
+
+/* ---- T570 delta 1: the idle counter must not wait on a request the page can no longer finish ------------- */
+
+describe('idle tracker: orphaned requests', () => {
+  it('forgets every request id when the page navigates, so a reload cancelling a request does not hold it busy', () => {
+    let t = 0
+    const idle = createNetworkIdleTracker(() => t)
+    // A request the old page started and a reload cancelled: no finished/failed event ever arrives.
+    idle.ingest('Network.requestWillBeSent', { requestId: 'favicon', type: 'Other' })
+    t = 1_000
+    expect(idle.isIdle(500)).toBe(false)
+    idle.reset()
+    t = 1_600
+    expect(idle.inflight).toBe(0)
+    expect(idle.isIdle(500)).toBe(true)
+  })
+
+  it('does not count the moment of the reset as quiet time', () => {
+    let t = 0
+    const idle = createNetworkIdleTracker(() => t)
+    idle.reset()
+    t = 100
+    expect(idle.isIdle(500)).toBe(false)
+    t = 500
+    expect(idle.isIdle(500)).toBe(true)
+  })
+
+  it('expires an id that has been open for 30 s with no event, without any navigation', () => {
+    let t = 0
+    const idle = createNetworkIdleTracker(() => t)
+    idle.ingest('Network.requestWillBeSent', { requestId: 'stuck', type: 'XHR' })
+    t = 29_000
+    expect(idle.inflight).toBe(1)
+    expect(idle.isIdle(500)).toBe(false)
+    t = 30_001
+    expect(idle.inflight).toBe(0)
+    expect(idle.isIdle(500)).toBe(true)
+  })
+
+  it('a finish event for a forgotten id changes nothing', () => {
+    let t = 0
+    const idle = createNetworkIdleTracker(() => t)
+    idle.ingest('Network.requestWillBeSent', { requestId: 'old', type: 'XHR' })
+    idle.reset()
+    t = 50
+    idle.ingest('Network.loadingFinished', { requestId: 'old' })
+    t = 600
+    expect(idle.isIdle(500)).toBe(true)
+  })
+
+  it('pane readers: a main-frame navigation resets the counter, a sub-frame one does not', () => {
+    let t = 0
+    const r = createPaneReaders({
+      now: () => t,
+      send: async () => undefined,
+      scrub: (s) => s,
+      setTimer: () => 0,
+      clearTimer: () => undefined,
+      onCaptureChange: () => undefined
+    })
+    r.ingest('Network.requestWillBeSent', { requestId: 'a', type: 'Fetch' })
+    r.ingest('Page.frameNavigated', { frame: { id: 'child', parentId: 'main' } })
+    expect(r.idle.inflight).toBe(1)
+    r.ingest('Page.frameNavigated', { frame: { id: 'main' } })
+    expect(r.idle.inflight).toBe(0)
+    t = 600
+    expect(r.idle.isIdle(500)).toBe(true)
+  })
+
+  it('three reloads with cancelled requests in between still end idle', () => {
+    let t = 0
+    const r = createPaneReaders({
+      now: () => t,
+      send: async () => undefined,
+      scrub: (s) => s,
+      setTimer: () => 0,
+      clearTimer: () => undefined,
+      onCaptureChange: () => undefined
+    })
+    for (let i = 0; i < 3; i++) {
+      r.ingest('Network.requestWillBeSent', { requestId: `doc${i}`, type: 'Document' })
+      r.ingest('Network.requestWillBeSent', { requestId: `fav${i}`, type: 'Other' })
+      r.ingest('Network.loadingFinished', { requestId: `doc${i}` })
+      t += 50
+      r.ingest('Page.frameNavigated', { frame: { id: 'main' } })
+    }
+    t += 600
+    expect(r.idle.isIdle(500)).toBe(true)
+  })
+})
+
+/* ---- T570 delta 1: Network buffers stay tiny unless a bodies:true capture needs them -------------------- */
+
+describe('network buffers', () => {
+  function rigWithSends() {
+    const sent: Array<[string, object]> = []
+    let t = 0
+    const r = createPaneReaders({
+      now: () => t,
+      send: async (method, params) => void sent.push([method, params ?? {}]),
+      scrub: (s) => s,
+      setTimer: () => 0,
+      clearTimer: () => undefined,
+      onCaptureChange: () => undefined
+    })
+    return { r, sent }
+  }
+
+  it('the idle-only parameters are tiny, the bodies ones are not', () => {
+    expect(networkEnableParams(false)).toEqual({
+      maxTotalBufferSize: 1024,
+      maxResourceBufferSize: 1024
+    })
+    expect(networkEnableParams(true).maxTotalBufferSize).toBeGreaterThan(1024 * 1024)
+  })
+
+  it('a capture without bodies never touches them', () => {
+    const { r, sent } = rigWithSends()
+    r.startCapture({})
+    r.stopCapture()
+    expect(sent).toEqual([])
+  })
+
+  it('sizes them up for a bodies capture and back down when it ends, however it ends', () => {
+    for (const end of ['stop', 'dispose'] as const) {
+      const { r, sent } = rigWithSends()
+      r.startCapture({ bodies: true })
+      expect(sent).toEqual([['Network.enable', networkEnableParams(true)]])
+      if (end === 'stop') r.stopCapture()
+      else r.dispose()
+      expect(sent.at(-1)).toEqual(['Network.enable', networkEnableParams(false)])
+      expect(sent).toHaveLength(2)
+    }
+  })
+
+  it('restarting with bodies off after a bodies capture shrinks them again', () => {
+    const { r, sent } = rigWithSends()
+    r.startCapture({ bodies: true })
+    r.startCapture({ bodies: false })
+    expect(sent.map(([, p]) => p)).toEqual([networkEnableParams(true), networkEnableParams(false)])
   })
 })

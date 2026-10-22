@@ -39,7 +39,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   header counting down to when it stops by itself (10 minutes by default, 30 at most), and it also stops when the
   pane closes, when you disconnect the session, or when you switch agent browser control off. It records addresses
   with every query value hidden, never records cookies or sign-in headers, and records response text only if the
-  session asked for it. Reading keeps working while a session is paused or agent control is off, never works on a
+  session asked for it. While a session is paused it can still read and stop a recording but not start one. Reading keeps working while a session is paused or agent control is off, never works on a
   pane you opened yourself yet, and stops for good when you disconnect the session. Scheduler `observe` workers can
   read panes too (not capture traffic).
 

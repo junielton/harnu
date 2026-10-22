@@ -544,6 +544,26 @@ describe('browser_network', () => {
   })
 })
 
+describe('browser_network while paused', () => {
+  it('lets read and stop through but refuses start', async () => {
+    const r = rig()
+    await networkVerb({ paneId: 'bp-1', action: 'start' }, r.deps)
+    r.access.pause('bp-1')
+    expect(await networkVerb({ paneId: 'bp-1', action: 'read' }, r.deps)).toMatchObject({
+      ok: true,
+      active: true
+    })
+    expect(await networkVerb({ paneId: 'bp-1', action: 'stop' }, r.deps)).toMatchObject({
+      ok: true,
+      active: false
+    })
+    expect(await networkVerb({ paneId: 'bp-1', action: 'start' }, r.deps)).toMatchObject({
+      ok: false,
+      error: 'BROWSER_PAUSED'
+    })
+  })
+})
+
 describe('browser_wait_for', () => {
   it('needs a condition, and validates the url regex and the timeout', async () => {
     const { deps } = rig()
@@ -558,6 +578,19 @@ describe('browser_wait_for', () => {
       await waitForVerb({ paneId: 'bp-1', text: 'x', timeoutMs: 999_999 }, deps)
     ).toMatchObject({ error: 'BAD_ARGS' })
     expect(await waitForVerb({ paneId: 'bp-1', networkIdleMs: 5 }, deps)).toMatchObject({
+      error: 'BAD_ARGS'
+    })
+  })
+
+  it('carries the untrusted-content note like every other reading verb', async () => {
+    const { deps } = rig()
+    const res = await waitForVerb({ paneId: 'bp-1', selector: '#ok' }, deps)
+    expect(res).toMatchObject({ untrustedNote: BROWSER_NOTE, note: BROWSER_NOTE })
+  })
+
+  it('refuses a url pattern that could backtrack catastrophically', async () => {
+    const { deps } = rig()
+    expect(await waitForVerb({ paneId: 'bp-1', url: '(a+)+$' }, deps)).toMatchObject({
       error: 'BAD_ARGS'
     })
   })

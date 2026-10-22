@@ -20,6 +20,7 @@
 
 import * as path from 'node:path'
 import { z } from 'zod'
+import { compileUrlPattern } from '../browser/wait-for'
 import { sanitizeAgentBootOverride, type AgentBootOverride } from './agent-boot'
 import { SAFE_GRANT_VERBS, toolByName, type McpOp } from './tool-catalog'
 import { MESSAGE_MAX_CHARS } from '../messaging-socket'
@@ -1533,18 +1534,10 @@ const BrowserWaitForSchema = z
     (v) => [v.selector, v.text, v.textGone, v.url, v.networkIdleMs].some((c) => c !== undefined),
     { message: 'pass at least one of selector, text, textGone, url, networkIdleMs' }
   )
-  .refine(
-    (v) => {
-      if (v.url === undefined) return true
-      try {
-        new RegExp(v.url)
-        return true
-      } catch {
-        return false
-      }
-    },
-    { message: '`url` must be a valid regex source' }
-  )
+  .refine((v) => v.url === undefined || compileUrlPattern(v.url) !== null, {
+    message:
+      '`url` must be a valid regex of at most 200 characters, without a repetition inside a repeated group, an alternation inside a repeated group, or more than 3 repetition operators'
+  })
 
 export function parseBrowserWaitFor(input: unknown): ParseResult<BrowserWaitForArgs> {
   const parsed = BrowserWaitForSchema.safeParse(input)

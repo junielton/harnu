@@ -107,6 +107,11 @@ export interface BrowserGateInput {
    * the audit row classifies a target URL exactly as the gate does.
    */
   classify?: OriginClassOptions
+  /**
+   * `browser_network`'s `action`, for callers that judge the gate without the whole argument set. It also rides
+   * in `args.action` at plan level; either one counts.
+   */
+  action?: string
 }
 
 /**
@@ -147,7 +152,12 @@ export function gateBrowserOpDetailed(
   const write = isBrowserWriteOp(op)
   if (write && op !== 'browser_close' && !input.writesEnabled)
     return { reason: 'BROWSER_WRITES_DISABLED' }
-  if (write && addressesPane && pane?.paused) return { reason: 'BROWSER_PAUSED' }
+  // Pause suspends what a session CHANGES. Reading what network capture recorded and ending the capture only
+  // ever reduce what is observed, so they work while paused; starting a capture does not.
+  const action =
+    input.action ?? (typeof input.args?.action === 'string' ? input.args.action : undefined)
+  const pauseExempt = op === 'browser_network' && (action === 'read' || action === 'stop')
+  if (write && addressesPane && pane?.paused && !pauseExempt) return { reason: 'BROWSER_PAUSED' }
   if (write && browserTier(op, pane) === 'lease') return { reason: 'NOT_YET_AVAILABLE' }
   return null
 }
