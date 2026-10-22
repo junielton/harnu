@@ -49,12 +49,15 @@ const MOUSE_KEY: Array<[string, Record<string, unknown>]> = [
   ['browser_click', { ref: 's1e1' }],
   ['browser_press', { keys: ['Enter'] }],
   ['browser_type', { text: 'x', delayMs: 5 }],
-  ['browser_type', { text: 'x', submit: true }]
+  ['browser_type', { text: 'x', submit: true }],
+  // A download started by clicking an element (T572).
+  ['browser_download', { ref: 's1e1' }]
 ]
 const UNAFFECTED: Array<[string, Record<string, unknown>]> = [
   ['browser_type', { text: 'x' }],
   ['browser_fill', { fields: [{ ref: 's1e1', value: 'v' }] }],
-  ['browser_eval', { expression: '1' }]
+  ['browser_eval', { expression: '1' }],
+  ['browser_download', { url: 'https://example.com/a.txt' }]
 ]
 
 describe('which calls send mouse or key events', () => {

@@ -66,6 +66,8 @@ export function sendsPointerOrKeyEvents(
   args: Record<string, unknown> | undefined
 ): boolean {
   if (op === 'browser_click' || op === 'browser_press') return true
+  // A download started by `ref` is a click on that element (T572); one by `url` sends no input.
+  if (op === 'browser_download') return typeof args?.ref === 'string'
   if (op === 'browser_type') {
     return (typeof args?.delayMs === 'number' && args.delayMs > 0) || args?.submit === true
   }
