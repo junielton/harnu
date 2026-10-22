@@ -9,7 +9,7 @@ for it with a scripted host, [`01-prototype.md`](01-prototype.md) §1).
 ### 1.1 The match
 
 One pure function, `resolveMissionRole(views, ids, cwd)`, in a new `src/main/mission-role-core.ts`.
-`views` are the open missions as `listMissionViews` builds them (`mission-ipc.ts:168-201`); `ids`
+`views` are the open missions as `listMissionViews` builds them (`mission-ipc.ts:174-206`); `ids`
 is the binding's **trusted id set** (§1.2); `cwd` its folder. It returns every role it finds:
 
 ```ts
@@ -22,7 +22,7 @@ interface MissionRoles {
 ```
 
 1. **Owner:** `owner.sessionId` in `ids`, the rule the pill and `mission_get({ ownerSessionId })`
-   use (`lib/mission-view.ts:266-277`).
+   use (`lib/mission-view.ts:267-278`).
 2. **Child by session link:** a step whose `links` hold `{ kind: 'session', ref }` with `ref` in
    `ids`. Those steps are `mySteps`.
 3. **Child by worktree link**, only when 2 found nothing: a step with a `worktree` link whose path,
@@ -56,15 +56,15 @@ Round 1 built the id chain from the binding's `sid` plus a `sidHistory` appended
 
 | Source of an id for the binding's PTY                                                                                                                         | Trusted                                                                                                    |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| the key the PTY was spawned with (`sessionIndex.register(opts.sessionKey, id)`, `pty.ts:959`): a `--resume <uuid>`, or a synthetic id for a new session       | yes                                                                                                        |
-| a key the index moved to by a migration Harnu correlated itself: `MigrateVia` `agent-correlation`, `collapse`, `resolved-window` (`stores/sessions.ts:702`)   | yes                                                                                                        |
-| a key moved by a `companion` migration whose claim has `cause: 'spawn'` and binds the PTY's own synthetic row (`bindByClaim`, `stores/sessions.ts:5138-5156`) | **yes, under S1–S5 below** (W1 gives this migration its own `via`, `companion-spawn`)                      |
-| a key moved by a `companion` migration whose claim has `cause: 'clear'` or `'resume'` (a `session.rebound`, `:5157-5176`)                                     | **never**: recorded for the audit and the OQ-8 gesture, flagged contested when a step or an owner links it |
+| the key the PTY was spawned with (`sessionIndex.register(opts.sessionKey, id)`, `pty.ts:1730`): a `--resume <uuid>`, or a synthetic id for a new session      | yes                                                                                                        |
+| a key the index moved to by a migration Harnu correlated itself: `MigrateVia` `agent-correlation`, `collapse`, `resolved-window` (`stores/sessions.ts:703`)   | yes                                                                                                        |
+| a key moved by a `companion` migration whose claim has `cause: 'spawn'` and binds the PTY's own synthetic row (`bindByClaim`, `stores/sessions.ts:5242-5260`) | **yes, under S1–S5 below** (W1 gives this migration its own `via`, `companion-spawn`)                      |
+| a key moved by a `companion` migration whose claim has `cause: 'clear'` or `'resume'` (a `session.rebound`, `:5261-5280`)                                     | **never**: recorded for the audit and the OQ-8 gesture, flagged contested when a step or an owner links it |
 | the binding's `sid`, a `session.rebound` as such, anything else the mod says                                                                                  | no                                                                                                         |
 
 **Why a spawn claim has to be trusted.** In companion mode `active` (T389's target) the claim path
 runs before every other binder: `reconcileSessionAdded` honours an acting claim first
-(`stores/sessions.ts:5200-5201`), and a claim acts whenever the mode is `active`, the CLI gate is
+(`stores/sessions.ts:5304-5305`), and a claim acts whenever the mode is `active`, the CLI gate is
 ok and the lease is live (`mayAct`, `identity-core.ts:41-48`). So a fresh `create_session`
 executor reaches the real id that `mission_link_child` later links through a **`companion`**
 migration, not `agent-correlation`. Without the third row only `--resume` spawns would keep their
@@ -76,7 +76,7 @@ actions, and the rail would work in the legacy modes only. W0 records the `via` 
 
 - **S1** the claim's cause is `spawn`, which only a binding's first hello carries (the hello that
   redeemed the one-time spawn token), and it migrates the PTY's own synthetic row (`row.synthetic
-=== true`): the key comes from the PTY that carried the token (`:5129-5131`), never from a
+=== true`): the key comes from the PTY that carried the token (`:5233-5235`), never from a
   request. **The sid is locked at the first redeem.** A spawn token can be redeemed again, still
   as kind `spawn`, while the conn it issued is unused (`session-table.ts:430-436`: `b.sid =
 req.sid`), and the claim's cause defaults to `spawn` when none was recorded
@@ -132,7 +132,7 @@ forged first hello, the remainder named above.
 
 **A stronger option, not adopted: mint the id.** `pty:create` already accepts a caller-minted
 `claudeSessionId` for `claude-new` and emits `--session-id <uuid>` (T245, T344;
-`pty.ts:212-224`, `:698-733`; agent-dispatched spawns skip it today). If every Harnu-spawned
+`pty.ts:234-246`, `:1441-1476`; agent-dispatched spawns skip it today). If every Harnu-spawned
 executor were started that way, the PTY's key would be the real id from the first moment, the
 fact would be `confirmed` (`key === sid`), and no claim would carry the target. It changes every
 dispatch's argv, the synthetic-row machinery and the T245/T344 arming rules, so it is OQ-B for the
@@ -148,10 +148,10 @@ views: the executor reads the mission file fresh under the lock
 binding's trusted keys.
 
 What changes in code (W1): `PtySessionIndex` keeps, per PTY, a bounded history of
-`{ key, via: 'spawn' | MigrateVia, at }`, plus the process-wide ledger of S4; the `pty:rekey` IPC (`pty.ts:1140`, today
+`{ key, via: 'spawn' | MigrateVia, at }`, plus the process-wide ledger of S4; the `pty:rekey` IPC (`pty.ts:852`, today
 `(fromKey, toKey)`) and the renderer's migrate handler (`registerMigrateHandler`,
-`stores/sessions.ts:1340`, today `(fromId, toId)`) carry the `via` that `fireMigrate` already has
-(`stores/sessions.ts:1741`). The renderer is Harnu's own code, so its `via` is a host fact.
+`stores/sessions.ts:1359`, today `(fromId, toId)`) carry the `via` that `fireMigrate` already has
+(`stores/sessions.ts:1760`). The renderer is Harnu's own code, so its `via` is a host fact.
 
 **External bindings** (P4W3, no PTY) use their corroborated `sid` (Harnu's watchers saw the
 transcript, `external-corroboration.ts`) for the display row only; they never get an action.
@@ -185,7 +185,7 @@ a server-side child lookup that matches "**by binding first** … the binding's 
   "the mission I am responsible for", the rail "the step I am working on". D-A itself,
   `mission_get({ childSessionId })`, returns the child match only.
 - **Trust differs by purpose.** D-A is a read; like `ownerSessionId` it takes a self-declared id
-  ("Self-declared, not authenticated", `TC:1394-1404`), and that is fine for a read. The rail's
+  ("Self-declared, not authenticated", `TC:2162-2172`), and that is fine for a read. The rail's
   writes are aimed only with the trusted set of §1.2. D-A should not adopt T447's "binding's whole
   id chain" from `session.rebound` for anything that writes.
 - **No duplication.** Whichever of W1 and D-A lands first creates `mission-role-core.ts`, the
@@ -196,40 +196,42 @@ a server-side child lookup that matches "**by binding first** … the binding's 
 ### 2.1 Why not MCP, and why not `$.harnu`
 
 - An executor dispatched with `create_session` is `agentControlled`; Harnu withholds its
-  `--mcp-config` so "the agent gets NO Harnu MCP server" (`pty.ts:811-818`). A board or manifest
+  `--mcp-config` so "the agent gets NO Harnu MCP server" (`pty.ts:1554-1561`). A board or manifest
   dispatch gets the server (T447 SDK-Q10), but the MCP-spawned executor is the rail's main reader.
 - In such a session `$.mcp.call('harnu', …)` has no server to reach, and T447's noun answers
   `NO_MCP` for every mission method (T447 `00-spec.md:501-508`).
 - The companion may not call `$.mcp.call` at all (T389 SEC-9 (b), `00-master.md:502`).
 - The companion **is** loaded in those sessions: the spawn path asks the companion provider with
   `trust: trustFor({ agentControlled, … })` and inserts its `--plugin-dir` for agent and non-agent
-  spawns alike (`pty.ts:836-857`).
+  spawns alike (`pty.ts:1576-1600`).
 
 So the host is the only party that both knows the mission and reaches every executor.
 
 ### 2.2 A timer Harnu main owns
 
 Round 1 rode the renderer's mission poll. That poll is not a guarantee: it starts only when a
-`MissionPill` or `SidebarFolder` mounts (`missions.ensureStarted()`, `MissionPill.vue:22`,
-`SidebarFolder.vue:410`; `stores/missions.ts:151-155`), it lists only `sessions.folders`
-(`stores/missions.ts:112`), and it is a renderer `setInterval`, which Chromium may throttle while
+`MissionPill` or `SidebarFolder` mounts (`missions.ensureStarted()`, `MissionPill.vue:26`,
+`SidebarFolder.vue:411`; `stores/missions.ts:318-322`), it lists only `sessions.folders`
+(`stores/missions.ts:220`), and it is a renderer `setInterval`, which Chromium may throttle while
 the window is hidden (an assumption, not measured; the rail no longer depends on it).
 
 So `src/main/companion/rail.ts` owns the clock:
 
 - **A tick every `RAIL_LIST_MS` (20 000)**, running only while at least one bound binding has
-  `ui.band` enabled. It calls `listMissionViews` over the repos of those bindings' folders, with
+  `ui.rail` enabled. It calls `listMissionViews` over the repos of those bindings' folders, with
   `prWaitMs: 0` so the derive reads the sticky link cache (`mission-link-cache.ts`) instead of
   waiting on GitHub. `listMissionViews` passes no options to the derive today
-  (`mission-ipc.ts:192-198`); W1 adds the pass-through. A renderer list that covered the same
+  (`mission-ipc.ts:197-203`); W1 adds the pass-through. A renderer list that covered the same
   repos less than 20 s ago is reused instead of a second derive.
 - **Every write, at once.** After any mission write — a `mission_*` handler (`editMission`,
   `missionLogHandler`), an operator door (`runOperatorDoor`) or a rail press — the publisher
   re-derives that one mission with `prWaitMs: 0` and republishes the bindings it touches.
 - **The channel's own timing**, unchanged from P4W2: debounce `BAND_DEBOUNCE_MS` (500 ms),
-  keep-alive `BAND_REFRESH_MS` (60 s), mod TTL `BAND_TTL_MS` (90 s). `ui.band.set` is
-  observe-only, so it is admitted while the Harnu mod's `channel` key is at its default `shadow`
-  (`command-gate-core.ts:127-142`; P4W2:168-172).
+  keep-alive `BAND_REFRESH_MS` (60 s), mod TTL `BAND_TTL_MS` (90 s). `ui.rail.set` joins
+  `ui.band.set` in the observe-only set, so it is admitted while the Harnu mod's `channel` key is at
+  its default `shadow` (`command-gate-core.ts:240-247`; P4W2:167-178). The publisher keeps pushing a
+  binding's rail while a review selection hides it, so the rail is live when the selection ends
+  ([`05-shared-band-and-status.md`](05-shared-band-and-status.md) §3.3).
 
 **The bound, stated:** a write shows within the debounce plus one single-mission derive; a
 time-dependent field (`running`, `waiting`, `stale`) within 20 s plus one list, whether or not a
@@ -249,7 +251,7 @@ Per tick (every 20 s, only while a rail is live):
   set of a few ids. With 20 bindings and this repo's 141 links, a few thousand string comparisons
   per tick. **Not measured as time** (A-6); W1 measures it on a synthetic 50-mission, 50-binding
   fleet and records the number.
-- `ui.band.set` only for bindings whose value changed, debounced. A steady fleet sends one
+- `ui.rail.set` only for bindings whose value changed, debounced. A steady fleet sends one
   keep-alive per binding per minute, the P4W2 rate.
 - **Zero** MCP calls, zero calls from any session.
 
@@ -303,8 +305,8 @@ in an executor at all.
 4. Harnu main takes `missionId` and `stepId` from **its own** record of the target of the pinned
    revision (which step 3 required to equal the current target) and applies the write of §3.2.
 5. It writes one audit record (§3.4), re-derives the mission and publishes the next revision with
-   `result`. No toast, no `$.ui.status`: P4W2 keeps the band and the status line from saying the
-   same thing (P4W2 §7.4).
+   `result`. No toast. The status line is set by the mod from the pushed value, never by a press
+   (05 §4); P4W2 §7.4's "never the same text" rule is amended for this source only.
 
 ```ts
 type RailRefusal =
@@ -334,30 +336,30 @@ the field opened on, sent after the host had pushed `null` and a line for step 5
 
 Round 1 ran the verb's handler and then appended a Log line through `mission_log`: two locked
 writes, a failure between them leaving a claim with no attribution, and a Log line any MCP holder
-could forge verbatim, since `ToolHandlerCtx` carries no caller identity (`tool-handlers.ts:234-262`)
+could forge verbatim, since `ToolHandlerCtx` carries no caller identity (`tool-handlers.ts:292-320`)
 and the handlers store none. Now:
 
 - **One mutation, shared.** W2 extracts the mutation bodies of the three handlers into pure
   functions in `mission-core.ts`: `applyClaim(m, stepId)` (the body of
-  `missionUpdateStepHandler`'s `proof: 'claimed'` branch, `tool-handlers.ts:4187-4203`, with its
-  `PROOF_NOT_CLAIMABLE` refusals), `applySetBlocker(m, stepId, b)` (`:4291-4323`),
-  `applyClearBlocker(m, stepId, reason)` (`:4325-4357`). The handlers call them; so does the rail.
+  `missionUpdateStepHandler`'s `proof: 'claimed'` branch, `tool-handlers.ts:4769-4785`, with its
+  `PROOF_NOT_CLAIMABLE` refusals), `applySetBlocker(m, stepId, b)` (`:4873-4905`),
+  `applyClearBlocker(m, stepId, reason)` (`:4907-4939`). The handlers call them; so does the rail.
   One mutation path, one set of refusals.
-- **One write, through `editMission`.** `editMission(args, ctx, fn)` (`tool-handlers.ts:4051-4084`)
+- **One write, through `editMission`.** `editMission(args, ctx, fn)` (`tool-handlers.ts:4633-4666`)
   already does everything a locked write needs: load under `withMissionIdMintLock`, refuse
   `MISSION_CLOSED`, refuse a blocked folder (`missionFolderRefusal`), stamp `updatedAt`, and write
   the frontmatter **and** `edit.logAppend` in one `atomicWriteFile`; its `fn` may return
-  `logAppend` (`MissionEdit`, `:4020-4026`). W2 exports a thin `editMissionFor(root, id, ctx, fn)`
+  `logAppend` (`MissionEdit`, `:4602-4608`). W2 exports a thin `editMissionFor(root, id, ctx, fn)`
   with that body and the rail calls it with a `fn` that applies the shared mutation and returns
   `logAppend`: no steps are copied. The ctx carries the agent policy (the live `denyFolders`), as
   for any agent verb. A log press is a `fn` that only returns `logAppend`.
 - **The Log header is not provenance on its own.** The entry's header is `### <iso> · rail ·
 stp-3`, and the verbs build their own headers (`missionLogEntry(before, tag, text)`,
-  `tool-handlers.ts:4362`, tag ` · <stepId>`). But several of them insert caller text raw: the
-  `note` of `mission_log`, up to 8000 characters (`TC:1524`, `tool-handlers.ts:4553`); the
-  `evidence` of `mission_verify_step` (`:4524`); and in `mission_set_end` the `reason` **and**
-  `declaredEnd.target` and `.evidence`, which are only trimmed (`:4383-4384`) and interpolated
-  through `formatDeclaredEnd` into the `was:` and `now:` lines (`:4405`); the importer copies a
+  `tool-handlers.ts:4944`, tag ` · <stepId>`). But several of them insert caller text raw: the
+  `note` of `mission_log`, up to 8000 characters (`TC:2292`, `tool-handlers.ts:5135`); the
+  `evidence` of `mission_verify_step` (`:5106`); and in `mission_set_end` the `reason` **and**
+  `declaredEnd.target` and `.evidence`, which are only trimmed (`:4965-4966`) and interpolated
+  through `formatDeclaredEnd` into the `was:` and `now:` lines (`:4987`); the importer copies a
   legacy Log verbatim. A newline in any of them can start a line that reads `### <iso> · rail ·
 stp-3` and, below it, `Claimed from the terminal rail …`. So W2 adds **one shared helper,
   `neutralizeLogText`, and every verb applies it to the whole body it composes, after its own
@@ -378,11 +380,11 @@ stp-3` and, below it, `Claimed from the terminal rail …`. So W2 adds **one sha
   `reason`, `unblocks`, `owner` only), and W2 adds both, optional, to the mission file's validator.
   The popover shows "from the terminal rail" beside such a blocker or claim (`mission.viaRail`,
   both locales). **The mark must not outlive the act it describes.** `mission_set_blocker` updates a
-  blocker with the same `reason` in place (`tool-handlers.ts:4304-4306`: `unblocks` and `owner`
+  blocker with the same `reason` in place (`tool-handlers.ts:4886-4888`: `unblocks` and `owner`
   are overwritten), and `mission_update_step` can set `proof: 'claimed'` again on a claimed step
   (`:4187-4203`). W2 makes both handlers delete `via` and `claimedVia` when they touch the record,
   and every other write that changes a step's `proof` does the same: `mission_verify_step`
-  (`:4524` and its proof update) and the operator doors (`applyOperatorVerifyStep`, ticking and
+  (`:5106` and its proof update) and the operator doors (`applyOperatorVerifyStep`, ticking and
   unticking a human step), so `claimedVia` never survives a verification. A mark means "this
   record was last written by a press"; a rail press that updates an existing blocker sets it
   again.
@@ -424,20 +426,20 @@ binding, action, mission id, step id, the trusted key the step matched, outcome,
 
 ## 4. Environments
 
-| Session                                                                                                                            | What the rail does                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Spawned by Harnu for an agent (`agentControlled`), no Harnu MCP                                                                    | full rail and actions: the data comes over the companion channel, not MCP (§2.1)                                                                         |
-| Spawned by Harnu, operator-started, with Harnu MCP                                                                                 | same; the rail never uses the MCP server                                                                                                                 |
-| Board or manifest dispatch (trust `agent`)                                                                                         | same                                                                                                                                                     |
-| Fresh `create_session` executor, companion `active`                                                                                | reaches its real id through a `companion` migration with claim cause `spawn`: trusted under S1–S5, full rail and actions (A-11)                          |
-| A session sharing a worktree with a step's link, not linked                                                                        | display only (§1.1, rule 3)                                                                                                                              |
-| Executor sharing its folder with another live `claude` (two executors in one folder; an executor in the orchestrator's own folder) | display only through a `worktree` link, or absent: S3 refuses the spawn claim, so its id is not trusted. A shell tab in the folder does not count        |
-| Read-only review spawn                                                                                                             | display only                                                                                                                                             |
-| Scheduler tick                                                                                                                     | nothing: headless, `ui.render` not raised; `ui.band` is never enabled headless (`feature-policy.ts:82`)                                                  |
-| Outside Harnu, P4W3 on                                                                                                             | owner row (P4W2 row 4 + Δ5), child row display-only, both after corroboration                                                                            |
-| Companion `off`, CLI below the floor, sideload-blocked                                                                             | nothing: no companion, no band                                                                                                                           |
-| Companion `legacy` (loaded, not authoritative)                                                                                     | nothing until `ui.band` is enabled for the binding (spec §10)                                                                                            |
-| Harnu quits mid-session                                                                                                            | the row turns final after the TTL; an open field or confirm stays until the person ends it (spec S8, §7.5)                                               |
-| Hot reload of the companion                                                                                                        | the row redraws from `$.state` (the `band` value survives a reload, `TYPES:3376-3383`)                                                                   |
-| Hibernation, then resume                                                                                                           | Harnu respawns with `--resume <uuid>`: the spawn key is trusted (§1.2)                                                                                   |
-| `/clear` or `/resume` typed in the executor                                                                                        | display only through a `worktree` link, or nothing; actions return with a respawn by Harnu (`--resume`, a spawn key) or an operator gesture (§1.2, OQ-8) |
+| Session                                                                                                                            | What the rail does                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Spawned by Harnu for an agent (`agentControlled`), no Harnu MCP                                                                    | full rail and actions: the data comes over the companion channel, not MCP (§2.1)                                                                             |
+| Spawned by Harnu, operator-started, with Harnu MCP                                                                                 | same; the rail never uses the MCP server                                                                                                                     |
+| Board or manifest dispatch (trust `agent`)                                                                                         | same                                                                                                                                                         |
+| Fresh `create_session` executor, companion `active`                                                                                | reaches its real id through a `companion` migration with claim cause `spawn`: trusted under S1–S5, full rail and actions (A-11)                              |
+| A session sharing a worktree with a step's link, not linked                                                                        | display only (§1.1, rule 3)                                                                                                                                  |
+| Executor sharing its folder with another live `claude` (two executors in one folder; an executor in the orchestrator's own folder) | display only through a `worktree` link, or absent: S3 refuses the spawn claim, so its id is not trusted. A shell tab in the folder does not count            |
+| Read-only review spawn                                                                                                             | display only; a live review selection takes the row (05 §3)                                                                                                  |
+| Scheduler tick                                                                                                                     | nothing: headless, `ui.render` not raised; `ui.rail` is never enabled headless (`computeEnable`, `feature-policy.ts:128`)                                    |
+| Outside Harnu, P4W3 on                                                                                                             | owner row (P4W2 row 4 + Δ5), child row display-only, both after corroboration                                                                                |
+| Companion `off`, CLI below the floor, sideload-blocked                                                                             | nothing: no companion, no band                                                                                                                               |
+| Companion `legacy` (loaded, not authoritative)                                                                                     | nothing until `ui.rail` is enabled for the binding (spec §10)                                                                                                |
+| Harnu quits mid-session                                                                                                            | the row turns final after the TTL; an open field or confirm stays until the person ends it (spec S8, §7.5)                                                   |
+| Hot reload of the companion                                                                                                        | the row redraws from `$.state` (the `rail` and `railMode` values survive a reload, `TYPES:3466-3473`; the status pin is rewritten by the next push, 05 §4.4) |
+| Hibernation, then resume                                                                                                           | Harnu respawns with `--resume <uuid>`: the spawn key is trusted (§1.2)                                                                                       |
+| `/clear` or `/resume` typed in the executor                                                                                        | display only through a `worktree` link, or nothing; actions return with a respawn by Harnu (`--resume`, a spawn key) or an operator gesture (§1.2, OQ-8)     |

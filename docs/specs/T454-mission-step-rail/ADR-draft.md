@@ -1,10 +1,10 @@
 # ADR-draft: the mission step rail is host-resolved band content, and a press is an event Harnu acts on
 
 - **Status:** proposed (numbered on merge)
-- **Date:** 2026-10-09 (round 2)
+- **Date:** 2026-10-09 (round 5); amended 2026-10-22 (amendment 1)
 - **Card:** T454 · Spec: [`00-spec.md`](00-spec.md), [`02-host.md`](02-host.md)
 - **Related:** ADR-0018 (the Harnu mod as integration substrate), ADR-0019 (the `$.harnu` noun's
-  transport), T389 P4W2 (the terminal band), T447 (the `$.harnu` noun and its D-A)
+  transport), T389 P4W2 (the terminal band), T257 (the review-selection band that shipped on the same slot), T447 (the `$.harnu` noun and its D-A)
 
 ## Context
 
@@ -13,12 +13,12 @@ claim the step, raise or clear a blocker, or log a note with a key. Four facts c
 can live, how a press reaches a mission, and what may aim it:
 
 1. The sessions it is for, executors an orchestrator dispatched with `create_session`, are spawned
-   **without** the Harnu MCP server (`src/main/pty.ts:811-818`). `$.mcp.call('harnu', …)` has no
+   **without** the Harnu MCP server (`src/main/pty.ts:1554-1561`). `$.mcp.call('harnu', …)` has no
    server there, and T447's `$.harnu` noun answers `NO_MCP` for every mission method.
 2. The Harnu mod (`harnu-companion`) **is** loaded in every such session
-   (`src/main/pty.ts:836-857`) and already holds a command channel to Harnu (T389 P2W1). It may not
+   (`src/main/pty.ts:1576-1600`) and already holds a command channel to Harnu (T389 P2W1). It may not
    call `$.mcp.call` (T389 SEC-9 (b)), and it may have one `AbovePrompt` hook (MOD-4), which T389
-   P4W2 specified and which has not shipped.
+   P4W2 specified and T257 shipped on 2026-10-20 for the review companion.
 3. Nothing the mod says is authority. Any plugin can rewrite a `$.state` value through a
    `state.set` hook and post events with the readable `conn` (smoke D6). The `session.rebound`
    handler re-keys a binding on the mod's word (`identity-adapter.ts:259-268`), so the binding's
@@ -29,10 +29,12 @@ can live, how a press reaches a mission, and what may aim it:
 
 ## Decision
 
-1. **The rail is content of P4W2's band.** It adds an optional `rail` payload to `ui.band.set` and
-   is drawn by the one `AbovePrompt` hook P4W2 specified. Because that site has not shipped, the
-   rail's first wave lands it as P4W2 wrote it, with eight named deltas. No second site, no second
-   plugin.
+1. **The rail is a second client of the shipped band hook.** It is drawn by the one `AbovePrompt`
+   hook the companion already has, but it carries its own state key (`rail`) and its own command
+   (`ui.rail.set`), because `ui.band` is T257's: its parser drops unknown fields, `line: null`
+   clears its whole key, and three locks reserve it for the `read-only` class. A fixed priority
+   picks one row: the rail while the person is mid-input, then a live review selection, then the
+   idle rail. No second site, no second plugin.
 2. **Harnu main resolves and pushes, on its own clock.** Main matches the binding to its mission
    and step (owner; child by a `session` link; display-only child by a `worktree` link), builds the
    rail from the mission's `derived.progress`, and pushes it over the channel when the value
@@ -59,6 +61,11 @@ can live, how a press reaches a mission, and what may aim it:
    row that drew keys keeps one. A key the band does not bind sends the keyboard back to the
    prompt (observed live), so removing a field under someone's typing would deliver the rest of it
    to the model.
+6. **The rail is opt-in for good.** The Harnu mod key `rail` defaults to `false` and no wave flips
+   it; the switch is in Settings → Mods. A default-on idea is an open question for the operator.
+7. **The mission's progress is also pinned in the status line.** The mod builds the text from
+   numbers and closed words in the pushed value and calls `$.ui.status`; it never touches the
+   user's `statusLine` setting or Harnu's footer telemetry.
 
 ## Consequences
 
@@ -80,9 +87,9 @@ can live, how a press reaches a mission, and what may aim it:
 - Residual, named: a letter for a key no longer drawn sends the keyboard to the prompt (K-10). A
   field the person walks away from stays drawn: no timer closes it, because every close tried
   either left nothing focusable or sent the person's next letter to the prompt.
-- The companion gains a `ui.render` hook, so the Mods tab shows its `terminal` chip. The mission
-  file gains two optional fields (`Blocker.via`, `MissionStep.claimedVia`).
-- P4W2 is amended in eight named places (spec §4.3), including its "no band inside Harnu" rule for
+- The companion already has a `ui.render` hook (T257), so the rail adds no Mods-tab chip. The
+  mission file gains two optional fields (`Blocker.via`, `MissionStep.claimedVia`).
+- P4W2 is amended in ten named places (spec §4.3), the last two for the shared slot and the status line, including its "no band inside Harnu" rule for
   linked children (the Topbar pill is owner-only) and its "no Button in the band" non-goal.
 
 ## Alternatives considered
@@ -113,6 +120,12 @@ can live, how a press reaches a mission, and what may aim it:
 - **Close an abandoned field on a timer.** Rejected after the round-3 grading: to idle it leaves
   nothing focusable when the line is gone, and with the line present the person's next letter
   goes to the prompt. The pinned revision makes a lingering field safe.
+
+- **Carry the rail in `ui.band.set` (round 5's plan).** Rejected on `MAIN`: the shipped parser drops
+  the field, a clear from either producer would erase the other's line, and widening the
+  `read-only` locks to carry it would loosen a shipped feature's guard.
+- **Turn the rail on by default once the live checks pass (round 5's W3).** Withdrawn by the
+  operator: opt-in permanently; any default-on idea goes to OQ-C.
 
 ## Kill criteria
 

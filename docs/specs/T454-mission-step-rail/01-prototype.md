@@ -14,8 +14,8 @@ carrying the action and the revision only, the TTL, and the fail-open render hoo
 standalone plugin named `rail-proto` so it can run from the session scratchpad.
 
 It is **not** the companion. In the spec the mod half lives in `resources/companion/` (spec §9)
-and talks to Harnu over the companion's command channel: the host pushes the rail inside
-`ui.band.set` and a press leaves as a `ui.action` edge event. The prototype replaces that channel
+and talks to Harnu over the companion's command channel: the host pushes the rail with
+`ui.rail.set` (round 5 planned `ui.band.set`; amendment 1 changed it, [`05`](05-shared-band-and-status.md) §2) and a press leaves as a `ui.action` edge event. The prototype replaces that channel
 with one `$.http.fetch` POST to a stand-in host that carries both directions, so the kit can
 script the host with one bottom hook. The host half ([`02-host.md`](02-host.md)) is not
 prototyped.
