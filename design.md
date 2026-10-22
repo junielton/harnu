@@ -3884,7 +3884,10 @@ the one line that matters, **what the page can see**: the outline, the hint pill
 **Activation.** A `message-square-plus` 18×18 icon button in the pane header (between the chip and the ⋯ menu,
 same geometry as the other header icons), `aria-pressed` while picking, and the `browser.overlay.toggle` action
 (`Ctrl+Shift+C`, browser-pane focus only). While picking, the button reads `bg-accent-soft text-accent`. Native
-`title`: "Comment on the page (Ctrl+Shift+C)". Operator only: no verb switches it on.
+`title`: "Comment on the page" followed by the CURRENT binding of `browser.overlay.toggle` in parentheses, rendered
+from the keybindings table (never hardcoded; no parentheses when the action is unbound). **Disconnected pane:** the
+button is `disabled` (`text-text-disabled`) and its title is the reason, "Comments are off here: you disconnected
+the agent from this pane." A **paused** pane still takes comments. Operator only: no verb switches it on.
 
 **Guest-drawn layers** (built by the guest preload into a closed shadow root, so they cannot use Tailwind or
 the app's CSS variables. **`--accent` and `--accent-ink` are the app theme's own values**, read when the mode is
@@ -3892,17 +3895,20 @@ switched on and pushed with it (validated as plain colours), so the layers match
 other literals below are kept in ONE constant block in `src/preload/overlay/styles.ts` and mirrored here). They
 are the only place a raw colour is allowed in this feature, because the page is another document.
 
-| Layer           | Spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Outline**     | `position: fixed` box over the hovered node: 1.5px `--accent` border, `--accent` at 14% fill, 3px radius, `pointer-events: none`. Follows the node on scroll and resize.                                                                                                                                                                                                                                                                                                                                                         |
-| **Outline tag** | Under the box's left edge (3px gap): mono 10.5px `--accent-ink` on `--accent`, `2px 6px`, `0 3px 3px 3px` radius, the role or tag plus its size, e.g. `button.btn.primary · 168×40`. Flips above the box when there is no room below.                                                                                                                                                                                                                                                                                            |
-| **Hint pill**   | Fixed, top centre, 8px from the top: 11px `--text` on `rgba(23,18,14,.92)`, `4px 10px`, `rounded-full`, `--shadow-pop`, a `mouse-pointer-click` glyph, "Click an element to comment", then a `kbd` "Esc" and "to exit". `pointer-events: none`.                                                                                                                                                                                                                                                                                  |
-| **Pin**         | A 20×20 marker with a pointed lower-left corner (`border-radius: 50% 50% 50% 2px`), its number centred (10.5px, 600), 2px offset from the node's top-left corner, `0 2px 6px` shadow. **Draft:** white fill, 2px `--accent` border, `--accent` number. **Sent:** solid `--accent` fill, `--accent-ink` number, 55% opacity. **Detached** (its selector no longer matches): 2px _dashed_ `--text-3` border, `--text-3` number, drawn at its last rect, never removed. The pin is clickable and opens its comment in the composer. |
+| Layer           | Spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Outline**     | `position: fixed` box over the hovered node: 1.5px `--accent` border, `--accent` at 14% fill, 3px radius, `pointer-events: none`. Follows the node on scroll and resize.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Outline tag** | Under the box's left edge (3px gap): mono 10.5px `--accent-ink` on `--accent`, `2px 6px`, `0 3px 3px 3px` radius, the role or tag plus its size, e.g. `button.btn.primary · 168×40`. Flips above the box when there is no room below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Hint pill**   | Fixed, top centre, 8px from the top: 11px `--text` on `rgba(23,18,14,.92)`, `4px 10px`, `rounded-full`, `--shadow-pop`, a `mouse-pointer-click` glyph, "Click an element to comment", then a `kbd` "Esc" and "to exit". `pointer-events: none`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Pin**         | A 20×20 marker with a pointed lower-left corner (`border-radius: 50% 50% 50% 2px`), its number centred (10.5px, 600), at the node's **top-right corner** as in the approved mockup (its left edge 4px inside the node's right edge, 14px above its top edge, clamped to the viewport), `0 2px 6px` shadow, `tabindex=-1` (pointer only: Tab never lands on it). **Draft:** white fill, 2px `--accent` border, `--accent` number. **Sent:** solid `--accent` fill, `--accent-ink` number, 55% opacity. **Detached** (its selector no longer matches): 2px _dashed_ `--text-3` border, `--text-3` number, drawn at its last rect, never removed. The pin is clickable and opens its comment in the composer. |
 
 No motion beyond the existing 80ms colour transition; under `prefers-reduced-motion` there is none.
 
 **Picking behaviour.** While active, trusted pointer events are consumed by the overlay: the page receives no
-picking click, no hover and no keyboard. Esc exits. A script-dispatched (untrusted) event is ignored.
+picking click, no hover and no touch (a tap still produces the click that picks). **The keyboard keeps reaching
+the page**, except `Esc`, which is consumed and exits picking. A script-dispatched (untrusted) event is ignored.
+The host element carries every style that could hide or move it (`display`, `position`, `transform`,
+`visibility`, `opacity`, `z-index`, `pointer-events`) inline with `!important`, so page CSS cannot.
 
 **Docked composer** (app chrome, rendered by `BrowserPane.vue` between the host and the pane's bottom edge,
 `flex-shrink: 0`). **The host rect shrinks to make room** (spec §2.1): the composer is a sibling after the host
@@ -3941,16 +3947,22 @@ picking click, no hover and no keyboard. Esc exits. A script-dispatched (untrust
 - **Batch bar** — 26px, `--accent-soft` fill, `border-t border-accent-line`, 11.5px `--text-2`, `px-2`:
   `message-square` 12px, "**1 draft** · 1 sent" (the first count in `--text`, weight 500), a spacer, and a
   ghost 20px **Send N comments** button. It shows whenever the pane has at least one draft or sent pin, even
-  with the composer closed, and "Send N comments" is disabled at zero drafts.
-- **Keys** — `Enter` sends this comment now; `Shift+Enter` keeps it as a draft; `Esc` closes the composer (an
-  empty one discards its pin; a non-empty one is kept as a draft, so Esc never loses text). Composition (IME)
+  with the composer closed. **With zero drafts** it shows only "M sent" and the button is not drawn (a disabled
+  "Send 0 comments" is never shown).
+- **Keys** — `Enter` sends this comment now; `Shift+Enter` keeps it as a draft; `Esc` closes the composer **and ends picking** in
+  one press (an empty composer discards its pin; a non-empty one is kept as a draft, so Esc never loses text). Composition (IME)
   never submits.
 - **Narrow panes** — below 320px the "Send to" caption and the context line's "Comment on" go; the picker
   shows the bot glyph and truncates the title; the button labels keep their `kbd` hints out (the hover title has
   them).
-- **Result toasts** — sent: no toast (the Activity row "Comment sent to ‹session›" is the record). Nowhere to
-  send: `warning` "No session to send to" with "The comment was copied to your clipboard." Refused (the agent was
-  driving the page a moment ago, or the pane is paused or disconnected): `warning` with the reason.
+- **Disconnected pane** — said **up front**, never after typing: the header button is disabled (above), and a
+  composer left open shows one `--warning` 11px line with `triangle-alert` ("Comments are off here: you
+  disconnected the agent from this pane."), with Keep as draft, Send and Send N comments disabled. A paused pane
+  takes comments as usual.
+- **Result toasts** — sent: no toast (the Activity row "Comment sent to ‹session name›" is the record). Nowhere to
+  send: `warning` "No session to send to" with "The comment was copied to your clipboard." Refused (only the
+  disconnected case can reach main; the session could not take it): `warning` with the reason, and the draft is
+  kept until the message has really gone into the terminal.
 
 No new §9 token: the composer uses existing tokens only, and the guest layers above are the one documented place
 where literal values stand in for them.

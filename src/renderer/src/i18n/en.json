@@ -4393,13 +4393,13 @@
     },
     "pageEvent": {
       "sent": "Page event sent to the session",
-      "sentComment": "Comment sent to the session",
+      "sentComment": "Comment sent to ‹{session}›",
       "heldTitle": "A page panel sent an event, but no session can take it",
       "heldBody": "Select a session in this folder, or connect the pane to one, and use the panel again."
     },
     "comment": {
       "hint": "Click an element to comment",
-      "toggle": "Comment on the page (Ctrl+Shift+C)",
+      "toggle": "Comment on the page",
       "toggleOff": "Stop commenting (Esc)",
       "commentOn": "Comment on",
       "attached": "crop + HTML + {styles} styles attached",
@@ -4421,15 +4421,15 @@
       "refused": {
         "BAD_ARGS": "The request was not valid.",
         "PANE_NOT_FOUND": "This pane no longer exists.",
-        "BROWSER_DISCONNECTED": "The agent is disconnected from this pane.",
-        "BROWSER_PAUSED": "The agent is paused on this pane. Resume it, then send again.",
-        "COMMENT_AGENT_INPUT": "The agent was driving the page a moment ago. Try again in a second.",
+        "BROWSER_DISCONNECTED": "The agent is disconnected from this pane, so comments are off.",
         "NOTHING_TO_SEND": "There is nothing to send: add some text first.",
         "DELIVERY_FAILED": "The session could not take the message. The draft is kept."
       },
       "noSessionTitle": "No session to send to",
       "noSessionBody": "The comment was copied to your clipboard.",
-      "noSessionLost": "The comment could not be copied. It is still a draft in this pane."
+      "noSessionLost": "The comment could not be copied. It is still a draft in this pane.",
+      "hintExit": "to exit",
+      "disconnectedHint": "Comments are off here: you disconnected the agent from this pane."
     }
   },
   "splitMenu": {

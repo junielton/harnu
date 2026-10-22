@@ -813,7 +813,11 @@ header that states it is data and not the operator speaking.
   the main world and the snapshot strips the overlay (A10).
 - **Cannot be submitted by an agent:** the composer is renderer code and CDP is attached to the guest only, so
   no verb can type into it or press Send. Main accepts `comment:submit` **only from the app window's
-  `webContents`**, never from a guest, and still checks `paused` and `disconnected`.
+  `webContents`**, never from a guest, and refuses a `disconnected` pane. _(Amended 2026-10-22 by the
+  orchestrator, pending operator confirmation: the submit no longer checks the `agentInputAt` window, because the
+  composer cannot be driven by an agent, and a **paused** pane now accepts comments, because pausing stops the
+  agent driving the page and a comment does not. The `agentInputAt` window stays on **picks** only. The UI says a
+  pane is disconnected up front instead of after typing.)_
 - **Cannot be read by the page:** the guest's overlay DOM is a closed shadow root, and the composer is outside
   the guest entirely, so the page's own `keydown`/`input` listeners never see what the operator types (Q2, the
   keystroke hole decision 15 as first written left open).
@@ -826,8 +830,9 @@ header that states it is data and not the operator speaking.
 operator input. The path is the one lesson quizzes already use, generalised and moved behind main:
 
 1. The docked composer (renderer) sends `comment:submit { paneId, batch, sessionId }` to main. Main checks
-   that the sender is the app window, that the pane is not `paused` or `disconnected`, and builds the text with
-   `formatComment()` (§8.5).
+   that the sender is the app window and that the pane is not `disconnected`, and builds the text with
+   `formatComment()` (§8.5). _(Amended 2026-10-22 by the orchestrator, pending operator confirmation: `paused` no
+   longer refuses a comment, see §8.6.)_
 2. **Destination (decision 19):** the pane's `ownerSessionId`; no owner (operator-opened) → the folder's
    **selected session**. The composer's **"Send to ‹session›"** picker lists the folder's sessions and
    overrides it; the choice is remembered per pane. No session at all → the text is copied to the clipboard

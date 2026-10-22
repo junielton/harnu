@@ -4393,13 +4393,13 @@
     },
     "pageEvent": {
       "sent": "Evento da página enviado à sessão",
-      "sentComment": "Comentário enviado à sessão",
+      "sentComment": "Comentário enviado para ‹{session}›",
       "heldTitle": "Um painel enviou um evento, mas nenhuma sessão pode recebê-lo",
       "heldBody": "Selecione uma sessão desta pasta, ou conecte o painel a uma, e use o painel de novo."
     },
     "comment": {
       "hint": "Clique em um elemento para comentar",
-      "toggle": "Comentar na página (Ctrl+Shift+C)",
+      "toggle": "Comentar na página",
       "toggleOff": "Parar de comentar (Esc)",
       "commentOn": "Comentário em",
       "attached": "recorte + HTML + {styles} estilos anexados",
@@ -4421,15 +4421,15 @@
       "refused": {
         "BAD_ARGS": "O pedido não era válido.",
         "PANE_NOT_FOUND": "Este painel não existe mais.",
-        "BROWSER_DISCONNECTED": "O agente está desconectado deste painel.",
-        "BROWSER_PAUSED": "O agente está pausado neste painel. Retome-o e envie de novo.",
-        "COMMENT_AGENT_INPUT": "O agente estava controlando a página há pouco. Tente de novo em um segundo.",
+        "BROWSER_DISCONNECTED": "O agente está desconectado deste painel, então os comentários estão desligados.",
         "NOTHING_TO_SEND": "Não há nada para enviar: escreva um texto primeiro.",
         "DELIVERY_FAILED": "A sessão não conseguiu receber a mensagem. O rascunho foi mantido."
       },
       "noSessionTitle": "Nenhuma sessão para receber",
       "noSessionBody": "O comentário foi copiado para a área de transferência.",
-      "noSessionLost": "Não foi possível copiar o comentário. Ele continua como rascunho neste painel."
+      "noSessionLost": "Não foi possível copiar o comentário. Ele continua como rascunho neste painel.",
+      "hintExit": "para sair",
+      "disconnectedHint": "Comentários desligados aqui: você desconectou o agente deste painel."
     }
   },
   "splitMenu": {

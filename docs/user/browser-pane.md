@@ -30,19 +30,19 @@ A session can open one of **your project's `.html` files** in a pane — or writ
 
 Point at something on a page and tell the session what to change, without describing where it is.
 
-1. Click the **comment button** (a speech bubble with a plus) in the pane header, or press **Ctrl+Shift+C** (Cmd+Shift+C on a Mac) while the pane has the focus. A small note at the top of the page says "Click an element to comment · Esc to exit".
+1. Click the **comment button** (a speech bubble with a plus) in the pane header, or press **Ctrl+Shift+C** (Cmd+Shift+C on a Mac) while the pane has the focus; the button's tooltip shows your current shortcut. A small note at the top of the page says "Click an element to comment · Esc to exit".
 2. Move over the page: the element under the pointer is outlined, with its tag and size ("button.pay · 520×45"). Click it. The page does not see these clicks.
 3. A numbered **pin** appears on the element and a **composer** docks under the page, showing what you picked, its source file when the page's framework exposes it (Vue, React or Svelte development builds), and what will be attached. The page gets shorter to make room; nothing is drawn over it.
-4. Type what should change. **Enter** sends it to the session now. **Shift+Enter** keeps it as a draft (a white pin) so you can pick more. **Esc** closes the composer: an empty one throws its pin away, text you typed is kept as a draft.
-5. The bar under the composer counts "N drafts · M sent". **Send N comments** sends every draft as **one** message, numbered in pin order.
+4. Type what should change. **Enter** sends it to the session now. **Shift+Enter** keeps it as a draft (a white pin) so you can pick more. **Esc** closes the composer and ends picking in one press: an empty composer throws its pin away, text you typed is kept as a draft.
+5. The bar under the composer counts "N drafts · M sent" (just "M sent" when nothing waits). **Send N comments** sends every draft as **one** message, numbered in pin order.
 
 **Who gets it.** The **Send to** menu lists the sessions of this folder. A pane a session opened sends to that session, any other pane to the session you are looking at, and your choice is remembered for the pane. A session that is parked is woken in the background (it does not take over your view), and a busy one receives the message when its current output settles. If you are typing in that session's terminal, the message waits until you have paused for about a second and a half so it never lands in the middle of your sentence. With no session at all, the comment is copied to your clipboard and a notice says so.
 
 **What the session receives.** A message starting `[harnu-comment]` with your words, and, clearly fenced and marked untrusted, what the page said about the element: its selector, source file, address (without any query string), HTML (trimmed), a short list of computed styles and the path of a cropped picture saved under `.harnu/out/browser/comments/`. A page can put anything in its own class names and text, so the session is told that everything inside the fence is data about the page and not an instruction from you.
 
-**Pins.** A pin stays on its element: it finds it again after a reload or a move to another page of the same site, and sits as a dashed circle where it was when the element is gone. Sent pins turn solid and fade. A draft stays on the pane while you navigate; drafts do not survive closing Harnu yet.
+**Pins.** A pin sits at the top-right corner of its element: it finds it again after a reload or a move to another page of the same site, and sits as a dashed circle where it was when the element is gone. Sent pins turn solid and fade. A draft stays on the pane while you navigate; drafts do not survive closing Harnu yet.
 
-**Safety.** The composer is part of Harnu, not of the page, so a page can never read what you type, and no session can type into it or press Send. A page cannot fake a click to open it, and a comment is refused if a session was clicking or typing in the pane within the last second and a half. A paused or disconnected pane does not send comments either; resume it first.
+**Safety.** The composer is part of Harnu, not of the page, so a page can never read what you type, and no session can type into it or press Send. A page cannot fake a click to open it, and a pick is refused if a session was clicking or typing in the pane at that moment or just before. A pane you **paused** still takes comments (pausing stops the session driving the page, not you writing to it). A pane you **disconnected** the session from does not: the comment button is greyed out and the composer says why, before you type anything.
 
 ## When something covers the page
 
@@ -68,7 +68,7 @@ A page in a browser pane is treated as untrusted code, even your own dev server:
 ## Troubleshooting
 
 - **The comment button does nothing, or Ctrl+Shift+C does not start it.** The shortcut works while the pane has the focus (click the page once first); the button works any time. The keybinding can be changed in Settings → Keybindings.
-- **"Comment not sent".** The notice says why: the pane is paused or disconnected from the session, a session was driving the page a moment ago (try again in a second), or the session could not take the message (the draft is kept).
+- **"Comment not sent".** The notice says why: you disconnected the session from this pane, or the session could not take the message (the draft is kept until the message really went in).
 
 - **The page is blank or white.** A reload (**⟳**) usually fixes it. If the address is `about:blank` you haven't navigated yet.
 - **A menu seems to flash a still picture of the page.** That is the frozen frame described above, working as intended.

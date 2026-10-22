@@ -10,6 +10,22 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-22
+
+### Changed
+
+- **Point-and-comment, tightened.** A browser pane you paused still takes comments (pausing stops the session
+  driving the page, not you writing to it); one you disconnected the session from does not, and the comment
+  button and composer now say so up front instead of failing after you typed. A comment stays a draft until its
+  message has really gone into the terminal, so a session that closed while Harnu waited for you to stop typing
+  loses nothing, and moving the mouse over a terminal no longer counts as typing. Text a page hides in
+  invisible characters (the Unicode "tag" block, word joiners, soft hyphens) or fakes with look-alike dashes and
+  backticks is cleaned out of what the session reads. Pins sit at the top-right corner of their element, the
+  hint reads "Click an element to comment · Esc to exit", one Esc closes an empty composer and ends picking,
+  the bar shows just "N sent" when nothing waits, the Activity row names the session, and the button's tooltip
+  shows your current shortcut. The overlay can no longer be hidden or moved by the page's own CSS, ignores touch
+  input while picking, and no longer marks the page's element while it looks up its source file.
+
 ## 2026-10-21
 
 ### Added

@@ -2407,6 +2407,7 @@ const api = {
     paneId: string
     active: boolean
     hint: string
+    exitHint: string
     theme: OverlayTheme
   }): Promise<boolean> => ipcRenderer.invoke('browser:overlaySet', payload),
   /** The pins and the open composer of a pane (T573). */

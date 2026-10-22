@@ -58,6 +58,9 @@ import {
   openPin
 } from '../lib/browser-comment'
 import { COMMENT_MAX_CHARS } from '../../../shared/browser-comment'
+import { renderKeysString } from '../../../main/keybindings-core'
+import { useKeybindingsStore } from '../stores/keybindings'
+import { isMac } from '../lib/platform'
 import type { BrowserPaneState } from '../../../preload'
 
 interface Props {
@@ -74,6 +77,7 @@ const helpers = useHelpersStore()
 const browser = useBrowserStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 
 const paneId = props.pane.id
 const payload = computed(() => browserPayload(props.pane))
@@ -389,6 +393,18 @@ const composerPin = computed(() =>
 const composerReadonly = computed(() => composerPin.value?.state === 'sent')
 const batch = computed(() => batchSummary(commentPins.value))
 const barVisible = computed(() => batchBarVisible(commentPins.value))
+/** The operator cut this pane off from agents: comments are off, said up front rather than after typing. */
+const commentsOff = computed(() => state.value.disconnected)
+/** The toggle's tooltip names the CURRENT binding of `browser.overlay.toggle` (the operator may have rebound it). */
+const toggleTitle = computed(() => {
+  if (commentsOff.value) return t('browserPane.comment.disconnectedHint')
+  if (overlayActive.value) return t('browserPane.comment.toggleOff')
+  const keys = renderKeysString(keybindings.chordFor('browser.overlay.toggle') ?? null, {
+    mac: isMac
+  })
+  const base = t('browserPane.comment.toggle')
+  return keys.length > 0 ? `${base} (${keys.join(isMac ? '' : '+')})` : base
+})
 
 const composerText = ref('')
 const composerEl = ref<HTMLTextAreaElement | null>(null)
@@ -473,7 +489,8 @@ async function saveComposer(): Promise<boolean> {
 
 async function onSend(): Promise<void> {
   const pin = composerPin.value
-  if (!pin || busy.value || composerText.value.trim() === '' || composerReadonly.value) return
+  if (!pin || busy.value || commentsOff.value) return
+  if (composerText.value.trim() === '' || composerReadonly.value) return
   busy.value = true
   try {
     if (!(await saveComposer())) return
@@ -485,7 +502,8 @@ async function onSend(): Promise<void> {
 }
 
 async function onKeepDraft(): Promise<void> {
-  if (busy.value || composerText.value.trim() === '' || composerReadonly.value) return
+  if (busy.value || commentsOff.value) return
+  if (composerText.value.trim() === '' || composerReadonly.value) return
   busy.value = true
   try {
     if (await saveComposer()) await browser.closeComposer(paneId)
@@ -503,13 +521,18 @@ async function onCloseComposer(): Promise<void> {
   } else if (composerText.value.trim() === '') {
     if (pin.comment === '') await window.api.browserCommentDiscard({ paneId, pinId: pin.id })
     else await browser.closeComposer(paneId)
-  } else if (await saveComposer()) {
+  } else if (!(await saveComposer())) {
+    return
+  } else {
     await browser.closeComposer(paneId)
   }
+  // One Esc does both: the composer closes AND picking ends (a second Esc is not needed).
+  if (overlayActive.value) await browser.setOverlay(paneId, false)
 }
 
 async function onSendBatch(): Promise<void> {
-  if (busy.value || batch.value.drafts + (composerText.value.trim() !== '' ? 1 : 0) === 0) return
+  if (busy.value || commentsOff.value) return
+  if (batch.value.drafts + (composerText.value.trim() !== '' ? 1 : 0) === 0) return
   busy.value = true
   try {
     // Text already typed in the open composer rides with the batch.
@@ -675,15 +698,16 @@ watch(isFrozen, async (frozen) => {
         type="button"
         class="flex shrink-0 items-center justify-center rounded transition"
         :class="
-          overlayActive
-            ? 'bg-accent-soft text-accent'
-            : 'text-text-3 hover:bg-surface-2 hover:text-text'
+          commentsOff
+            ? 'cursor-default text-text-disabled'
+            : overlayActive
+              ? 'bg-accent-soft text-accent'
+              : 'text-text-3 hover:bg-surface-2 hover:text-text'
         "
         style="width: 18px; height: 18px"
         :aria-pressed="overlayActive"
-        :title="
-          overlayActive ? $t('browserPane.comment.toggleOff') : $t('browserPane.comment.toggle')
-        "
+        :disabled="commentsOff"
+        :title="toggleTitle"
         :aria-label="$t('browserPane.comment.toggle')"
         data-testid="browser-comment-toggle"
         @mousedown.stop
@@ -1021,6 +1045,17 @@ watch(isFrozen, async (frozen) => {
         <span class="shrink-0 @max-[420px]:hidden">·</span>
         <span class="min-w-0 shrink-[3] truncate @max-[420px]:hidden">{{ attachedText }}</span>
       </div>
+      <div
+        v-if="commentsOff"
+        class="flex items-center gap-1.5 text-[11px] text-warning"
+        role="status"
+        data-testid="browser-composer-off"
+      >
+        <TriangleAlert :size="11" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
+        <span class="min-w-0 truncate" :title="$t('browserPane.comment.disconnectedHint')">{{
+          $t('browserPane.comment.disconnectedHint')
+        }}</span>
+      </div>
       <textarea
         ref="composerEl"
         v-model="composerText"
@@ -1097,7 +1132,7 @@ watch(isFrozen, async (frozen) => {
           <button
             type="button"
             class="flex h-6 shrink-0 items-center gap-1.5 rounded-sm border border-border-2 px-2.5 text-[11.5px] text-text-2 transition-colors hover:text-text disabled:cursor-default disabled:opacity-45"
-            :disabled="busy || composerText.trim() === ''"
+            :disabled="busy || commentsOff || composerText.trim() === ''"
             :title="$t('browserPane.comment.keepDraft') + ' (⇧↵)'"
             data-testid="browser-composer-draft"
             @click="onKeepDraft"
@@ -1108,7 +1143,7 @@ watch(isFrozen, async (frozen) => {
           <button
             type="button"
             class="flex h-6 shrink-0 items-center gap-1.5 rounded-sm bg-accent px-2.5 text-[11.5px] font-medium text-accent-ink transition-opacity disabled:cursor-default disabled:opacity-45"
-            :disabled="busy || composerText.trim() === ''"
+            :disabled="busy || commentsOff || composerText.trim() === ''"
             :title="$t('browserPane.comment.send') + ' (↵)'"
             data-testid="browser-composer-send"
             @click="onSend"
@@ -1136,7 +1171,11 @@ watch(isFrozen, async (frozen) => {
       data-testid="browser-batchbar"
     >
       <MessageSquare :size="12" :stroke-width="1.5" class="shrink-0" aria-hidden="true" />
-      <span class="min-w-0 truncate"
+      <!-- With nothing to send the bar only says how many went out; "Send 0 comments" is never shown. -->
+      <span v-if="batch.drafts === 0" class="min-w-0 truncate" data-testid="browser-batch-count">{{
+        $t('browserPane.comment.sentCount', batch.sent)
+      }}</span>
+      <span v-else class="min-w-0 truncate" data-testid="browser-batch-count"
         ><b class="font-medium text-text">{{
           $t('browserPane.comment.draftsCount', batch.drafts)
         }}</b>
@@ -1144,9 +1183,11 @@ watch(isFrozen, async (frozen) => {
       >
       <span class="flex-1" />
       <button
+        v-if="batch.drafts > 0"
         type="button"
         class="h-5 shrink-0 rounded-sm border border-border-2 px-2 text-[11.5px] text-text-2 transition-colors hover:text-text disabled:cursor-default disabled:opacity-45"
-        :disabled="busy || batch.drafts === 0"
+        :disabled="busy || commentsOff"
+        :title="commentsOff ? $t('browserPane.comment.disconnectedHint') : undefined"
         data-testid="browser-batch-send"
         @click="onSendBatch"
       >

@@ -221,6 +221,7 @@ export const useBrowserStore = defineStore('browser', () => {
       paneId,
       active,
       hint: i18n.global.t('browserPane.comment.hint'),
+      exitHint: i18n.global.t('browserPane.comment.hintExit'),
       theme: overlayTheme()
     })
   }
