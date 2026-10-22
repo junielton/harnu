@@ -3873,8 +3873,8 @@ and call again. What an agent types runs as you on this page. Deny blocks writes
 The disclosure is plain `--text` body copy in the existing overlay (no new colour). Page-authored text (an
 element's accessible name, an expression, typed text) is shown **escaped** (invisible and direction-changing
 characters spelled out, as the terminal confirm does) and cut at 200 characters with its true length stated.
-Copy lives in `$t('browserPane.leaseConfirm.*')`; the fixed sentence "What an agent types runs as you on this
-page." is mandatory.
+The prompt is built in main like the terminal confirm's (English, not translated); the fixed sentence "What an agent
+types runs as you on this page." is mandatory.
 
 **Trusted dev hosts dialog** (T571 U4, spec §7.2). `TrustedHostsDialog.vue`: a non-destructive `Dialog` (z-60, peer
 via `ui.dialog === 'trustedHosts'` + `ui.folderActionPath`), anatomy and tokens of "Rename folder". Header: title

@@ -123,7 +123,8 @@ const TABLE: Record<string, Row> = {
   'RenameFolderDialog.vue': ui(STORE, 'input'),
   'RenameRepoDialog.vue': ui(STORE, 'input'),
   'SettingsDialog.vue': ui(STORE, 'close'),
-  'SweepConfirmDialog.vue': ui('close[false]', 'cancel')
+  'SweepConfirmDialog.vue': ui('close[false]', 'cancel'),
+  'TrustedHostsDialog.vue': ui(STORE, 'input')
 }
 
 // KNOWN_DEVIATIONS:BEGIN — one entry per line, keyed by component filename, sorted.

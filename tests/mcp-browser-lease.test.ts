@@ -70,7 +70,9 @@ vi.mock('../src/main/browser/view-host', async () => {
     return r
   }
   class FakeHost {
-    create(): void {}
+    create(): void {
+      /* a fake view host: nothing to do */
+    }
     info(paneId: string) {
       const url = h.pages.get(paneId)
       return url === undefined
@@ -80,9 +82,15 @@ vi.mock('../src/main/browser/view-host', async () => {
     async navigate(): Promise<never> {
       throw new Error('not used')
     }
-    destroy(): void {}
-    publishFlag(): void {}
-    refresh(): void {}
+    destroy(): void {
+      /* a fake view host: nothing to do */
+    }
+    publishFlag(): void {
+      /* a fake view host: nothing to do */
+    }
+    refresh(): void {
+      /* a fake view host: nothing to do */
+    }
     readers(paneId: string) {
       if (!h.pages.has(paneId)) return undefined
       if (!readers.has(paneId)) readers.set(paneId, mk())
@@ -94,7 +102,9 @@ vi.mock('../src/main/browser/view-host', async () => {
     inputScale(): number {
       return 1
     }
-    drive(): void {}
+    drive(): void {
+      /* a fake view host: nothing to do */
+    }
     viewMode(): string {
       return 'visible'
     }

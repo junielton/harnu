@@ -21,7 +21,12 @@ function rig(opts: { queueWaitMs?: number; ratePerMin?: number } = {}) {
   )
   const advance = (ms: number): void => {
     clock += ms
-    for (const t of timers) if (t.live && t.at <= clock) ((t.live = false), t.fn())
+    for (const t of timers) {
+      if (t.live && t.at <= clock) {
+        t.live = false
+        t.fn()
+      }
+    }
   }
   return { q, advance }
 }

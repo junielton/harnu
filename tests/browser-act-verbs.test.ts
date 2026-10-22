@@ -576,7 +576,7 @@ describe('browser_eval', () => {
         result: { type: 'function', objectId: 'f', description: 'function f(){}' }
       })
     })
-    r.cdp.mockImplementation(async (_id, method, params = {}) => {
+    r.cdp.mockImplementation(async (_id, method, _params = {}) => {
       if (method === 'Runtime.callFunctionOn') return { result: {} }
       if (method === 'Runtime.evaluate')
         return { result: { type: 'function', objectId: 'f', description: 'function f(){}' } }

@@ -42,6 +42,32 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   session asked for it. While a session is paused it can still read and stop a recording but not start one. Reading keeps working while a session is paused or agent control is off, never works on a
   pane you opened yourself yet, and stops for good when you disconnect the session. Scheduler `observe` workers can
   read panes too (not capture traffic).
+- **Sessions can drive a browser page — with your permission where it matters.** Five new session verbs act on a
+  page: `browser_eval` (run a script and get the result back), `browser_click`, `browser_type`, `browser_fill`
+  (up to 20 fields at once) and `browser_press` (Enter, Tab, arrows, `Ctrl+A`…). They aim at elements by the
+  names a snapshot gives, wait up to five seconds for the element to be visible and not covered, and say what they
+  hit. On a dev server on your own machine a session drives freely. On any other site, and on any pane **you**
+  opened, the first attempt asks you: the prompt names the pane, who opened it, the site and the first thing it
+  would do. **Allow does nothing by itself** — it only lets the session drive that pane for the next ten idle
+  minutes, and the session is told to look at the page and try again. **Deny** blocks that pane for five minutes
+  without asking again. Closing the pane, **Disconnect**, blocking the folder or switching agent browser control
+  off ends it at once. What a session types or runs there acts as you on that page, and the prompt says so.
+  Writes to one pane run one at a time (more than 60 a minute is refused), and every call is audited with the
+  script or text scrubbed and cut to 200 characters.
+- **Folder menu: let sessions read the browser panes you open, and name your dev hosts.** Right-click a folder and
+  choose **Let agents read browser panes I open** (off by default, this folder only — never its worktrees) so a
+  session can look at a page you opened; acting on it still asks you, once per pane. **Trusted dev hosts…** lists
+  the names that count as your own dev servers (`app.test`, `*.test`, a docker service name) so a session can
+  drive them without asking; only exact names and short wildcards like `*.test` are accepted, and only you can edit
+  the list. A pane you opened now shows "An agent can read here" or "An agent can drive here" in its header once a
+  session may do so.
+
+### Changed
+
+- **Recording the network of another site now asks, instead of being refused.** `browser_network` on a page that isn't
+  on your own machine used to be unavailable; it now uses the same ask-once permission as driving a page, and
+  ending the recording is always allowed. A pane you opened is now refused until you let agents read browser panes
+  in its folder, instead of being unavailable to sessions altogether.
 
 ## 2026-10-19
 
