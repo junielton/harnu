@@ -58,6 +58,9 @@ const INTERACTIVE_ROLES: ReadonlySet<string> = new Set([
   'textarea'
 ])
 
+/** Fields whose value is printed on their own line. */
+const INPUT_ROLES: ReadonlySet<string> = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton'])
+
 /** Roles that carry no meaning of their own: dropped when unnamed, their children keep their depth. */
 const TRANSPARENT_ROLES: ReadonlySet<string> = new Set(['generic', 'none', 'presentation', 'group'])
 /** Roles never emitted, children included (text fragments the parent already names). */
@@ -122,6 +125,8 @@ function displayRole(role: string): string {
       return 'document'
     case 'Iframe':
       return 'iframe'
+    case 'LabelText':
+      return 'label'
     default:
       return role
   }
@@ -267,7 +272,9 @@ export function formatSnapshot(nodes: readonly AxNode[], opts: FormatOptions): F
         stack.push({ source: innerSource, id: r.nodeId, depth: frame.depth + 1, parentName: '' })
       }
     } else {
-      pushChildren(frame.depth + 1, name)
+      // A field's own value is printed on its line; the text node that repeats it is noise.
+      const fieldValue = INPUT_ROLES.has(lower) ? cleanName(strOf(node.value?.value)) : ''
+      pushChildren(frame.depth + 1, fieldValue !== '' ? fieldValue : name)
     }
   }
 

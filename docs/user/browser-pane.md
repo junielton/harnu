@@ -2,7 +2,7 @@
 
 A **browser pane** is a real Chromium page that lives in the split stack beside your session. Use it to look at the dev server a session just started, to read documentation next to the conversation, or to let a session open a page for you. It works like any other pane: it can be maximized, resized by dragging its header, and closed.
 
-> **What is and isn't built yet.** This page describes what ships today. A session can open, list, navigate and close panes; it cannot yet read what is on the page, click, type, or open a local `.html` file for you, and the pane does not come back after you restart Harnu. Point-and-comment (picking an element and sending a note to the session), device and zoom controls, downloads and uploads are later releases.
+> **What is and isn't built yet.** This page describes what ships today. A session can open, list, navigate and close panes and read what is on the page (a snapshot, a screenshot, the console, the network if you let it); it cannot yet click, type, or open a local `.html` file for you, and the pane does not come back after you restart Harnu. Point-and-comment (picking an element and sending a note to the session), device and zoom controls, downloads and uploads are later releases.
 
 ## Opening one
 
@@ -16,6 +16,8 @@ Click the small arrow beside the **Split** button in the Topbar and choose **Bro
 - **Notices** — one line under the address bar when something was refused or dismissed: an address of a kind that is blocked, a certificate Harnu accepted for your own machine, or a dialog (`alert`, `confirm`, `prompt`) the page opened that Harnu closed for you.
 - **⋯ menu** — **Pause agent for 10 min** (or **Resume agent**) and **Open DevTools**.
 
+- **Network counter** — a red dot and **Network 4:12** appear in the header while a session is recording the page's network traffic. It counts down to when the recording stops by itself. There is no stop button: close the pane or disconnect the session to end it sooner. When the pane is narrow the word "Network" gives way and the dot and the time stay.
+
 ## When something covers the page
 
 A browser page is drawn by the system above everything else in the window, so a menu, dialog, palette or notification opened over it would normally be hidden behind it. Harnu avoids this by swapping the page for a still picture of itself while anything overlaps it: the page keeps running underneath, and it comes back the moment the menu closes. Dragging a splitter does the same, so the drag doesn't get lost inside the page. You will notice a frozen frame for a moment; that is why.
@@ -23,6 +25,8 @@ A browser page is drawn by the system above everything else in the window, so a 
 ## Sessions and the connection chip
 
 A pane a session opened shows a chip in its header — "Connected to ‹session›" (the session name is kept when the pane is narrow; the words "Connected to" go first), or "Connected to an agent" — with the word **driving** while the session is navigating the pane. Click the unplug button to **Disconnect** the session from that pane for good: it can no longer read or change it, even close it, and nothing reconnects it. The pane stays and stays yours. Use **Pause agent for 10 min** to stop a session changing the pane for a while: the chip shows "Agent paused · 9:41" counting down, with a **Resume** button. See [Agent control](agent-control.md#browser-panes-a-session-opens) for everything a session can do, and **Settings → Control server → Allow agents to drive browser panes** to switch all of it off.
+
+**What a session can read.** On a pane it opened, a session can take a snapshot of the page (the same outline a screen reader sees, so it never needs to guess at pixels), a screenshot, the page's console messages, and wait for something to happen on the page. None of this works while you have the session **disconnected**; it keeps working while the session is **paused** or agent control is off, because reading never changes the page. **Network recording** is separate and off by default: a session has to ask, you see the red counter, and it stops on its own. Addresses are recorded without their query values, cookies and sign-in headers are never recorded, and response text only if the session asked for it. Recording a site that isn't your own machine isn't available yet.
 
 Panes you open yourself can't be read or driven by a session at all yet.
 

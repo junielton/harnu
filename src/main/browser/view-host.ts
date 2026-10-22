@@ -297,6 +297,8 @@ export class BrowserViewHost implements BrowserReadHost {
     const plan = req.plan
     let image: Electron.NativeImage
     let passthrough: Buffer | null = null
+    /** CDP was asked for a smaller image than the page's own size (the clip scale), so the shot was clamped. */
+    let cdpClamped = false
     if (plan.method === 'cdp') {
       const params: Record<string, unknown> = {
         format: req.format,
@@ -306,6 +308,7 @@ export class BrowserViewHost implements BrowserReadHost {
       if (rect) {
         // Ask CDP for the final size so a large page is never rendered at full resolution only to be shrunk.
         const k = Math.min(1, req.maxDim / Math.max(rect.width, rect.height))
+        cdpClamped = k < 1
         params.clip = { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: k }
         params.captureBeyondViewport = true
       }
@@ -346,7 +349,7 @@ export class BrowserViewHost implements BrowserReadHost {
         mime: req.format === 'jpeg' ? 'image/jpeg' : 'image/png',
         width: size.width,
         height: size.height,
-        clamped: false
+        clamped: cdpClamped
       }
     }
     const out = fit.clamped
@@ -357,7 +360,7 @@ export class BrowserViewHost implements BrowserReadHost {
       mime: req.format === 'jpeg' ? 'image/jpeg' : 'image/png',
       width: out.getSize().width,
       height: out.getSize().height,
-      clamped: fit.clamped
+      clamped: fit.clamped || cdpClamped
     }
   }
 

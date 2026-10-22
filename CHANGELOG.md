@@ -30,6 +30,18 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   own windows or files. Panes you opened can't be driven by an agent yet, and the pane does not reopen after a
   restart — both arrive in later releases, along with opening local `.html` files, reading and acting on the
   page, and point-and-comment.
+- **Sessions can read a browser pane.** Five new session verbs let a session see a page it opened:
+  `browser_snapshot` (the page as its accessibility tree, with stable names for each element), `browser_screenshot`
+  (the whole viewport, the whole page or one element, optionally saved under `.harnu/out/browser/shots/`),
+  `browser_console` (everything the page logged since the pane opened), `browser_wait_for` (wait for an element or
+  text to appear or go away, the address to change, or the network to go quiet), and `browser_network`. Network
+  capture is **off until a session asks for it**: while it runs a red **Network 4:12** counter shows in the pane
+  header counting down to when it stops by itself (10 minutes by default, 30 at most), and it also stops when the
+  pane closes, when you disconnect the session, or when you switch agent browser control off. It records addresses
+  with every query value hidden, never records cookies or sign-in headers, and records response text only if the
+  session asked for it. Reading keeps working while a session is paused or agent control is off, never works on a
+  pane you opened yourself yet, and stops for good when you disconnect the session. Scheduler `observe` workers can
+  read panes too (not capture traffic).
 
 ## 2026-10-19
 

@@ -167,6 +167,21 @@ describe('formatSnapshot', () => {
     expect(opened.text).toContain('    - document "Inner"')
   })
 
+  it('prints a label as `label` and drops the text node that only repeats a field value', () => {
+    const root = node('RootWebArea', { name: 'F' })
+    const label = node('LabelText')
+    const text = node('StaticText', { name: 'Card number' })
+    const field = node('textbox', { name: 'Card number', value: { value: '4242' } })
+    const valueText = node('StaticText', { name: '4242' })
+    adopt(root, label)
+    adopt(label, text, field)
+    adopt(field, valueText)
+    const out = formatSnapshot([root, label, text, field, valueText], { snapshotId: 1 }).text
+    expect(out).toContain('- label [ref=')
+    expect(out).not.toContain('text "4242"')
+    expect(out).toContain('textbox "Card number" [value="4242"]')
+  })
+
   it('does not let a node name forge a ref', () => {
     const root = node('RootWebArea', { name: 'x [ref=s9e9]' })
     const out = formatSnapshot([root], { snapshotId: 3 })
