@@ -12,6 +12,15 @@ import type { BrowserWindow } from 'electron'
 import { readAgentBrowserWrites } from '../mcp/prefs'
 import { scrubTerminalText } from '../scrub-terminal'
 import { createBrowserAccess } from './access'
+import { browserLeases } from './lease-singleton'
+import { browserWriteQueue } from './write-queue'
+import type { BrowserActDeps } from './act-verbs'
+import {
+  browserReadOptIns,
+  browserTrustedHostsFor,
+  readUserProjects,
+  type UserProjectsFile
+} from '../user-projects'
 import { resolveGateInput, type GateResolution } from './gate-resolve'
 import { createBrowserRegistry } from './registry'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
@@ -21,6 +30,43 @@ import type { BrowserPartition } from './guest-prefs'
 
 export const browserRegistry = createBrowserRegistry(() => Date.now())
 export const browserAccess = createBrowserAccess(() => Date.now())
+export { browserLeases }
+
+/**
+ * The operator's trusted dev hosts per folder (spec §7.2), kept in memory because classification is synchronous
+ * and the file read is not. Keyed by the folder exactly as a pane carries it. Filled whenever a verb resolves its
+ * gate (the file is read there anyway) and refreshed when the operator edits the list.
+ */
+const trustedHostsCache = new Map<string, readonly string[]>()
+
+function trustedHostsSync(folder: string): readonly string[] {
+  return trustedHostsCache.get(folder) ?? []
+}
+
+/** Read `folder`'s trusted hosts from the projects file into the cache. */
+async function loadTrustedHosts(
+  folder: string,
+  file: UserProjectsFile
+): Promise<readonly string[]> {
+  const hosts = await browserTrustedHostsFor(file, folder)
+  trustedHostsCache.set(folder, hosts)
+  return hosts
+}
+
+/**
+ * The operator edited a folder's trusted hosts: re-read every cached folder and tell the open panes, so their
+ * origin badge and the next verb see the new class at once (spec §7.2: "re-evaluated at every call").
+ */
+export async function refreshBrowserTrustedHosts(file?: UserProjectsFile): Promise<void> {
+  const current = file ?? (await readUserProjects())
+  for (const folder of [...trustedHostsCache.keys()]) await loadTrustedHosts(folder, current)
+  if (host) for (const rec of browserRegistry.list()) host.refresh(rec.paneId)
+}
+
+/** Whether the folder's browser-read opt-in is on (exact folder). */
+async function readOptInFor(folder: string, file?: UserProjectsFile): Promise<boolean> {
+  return (await browserReadOptIns(file ?? (await readUserProjects()), [folder])).has(folder)
+}
 
 let mainWindowGetter: (() => BrowserWindow | null) | null = null
 let host: BrowserViewHost | null = null
@@ -101,6 +147,7 @@ export function closePaneFromOperator(paneId: string): void {
   getBrowserHost().destroy(paneId)
   browserRegistry.remove(paneId)
   browserAccess.forget(paneId)
+  browserLeases.forget(paneId)
 }
 
 /**
@@ -108,17 +155,34 @@ export function closePaneFromOperator(paneId: string): void {
  * call never raises a confirm first. An unknown id leaves `pane` undefined, which the gate answers
  * `PANE_NOT_FOUND`. `folder` is the pane's own folder, the gate anchor for the folder block.
  */
-export async function resolveBrowserGate(paneId: string | undefined): Promise<GateResolution> {
+export async function resolveBrowserGate(
+  paneId: string | undefined,
+  file?: UserProjectsFile
+): Promise<GateResolution> {
   const writesEnabled = await readAgentBrowserWrites()
+  // Switching agent browser control off ends every lease. The Settings toggle does that itself; doing it here too
+  // covers a pref flipped some other way, and costs nothing while the switch is on.
+  if (!writesEnabled) browserLeases.revokeAll()
   const rec = paneId === undefined ? undefined : browserRegistry.get(paneId)
+  const projects = file ?? (await readUserProjects())
+  if (rec) await loadTrustedHosts(rec.folder, projects)
+  const readOptIn = rec ? await readOptInFor(rec.folder, projects) : false
+  // A lease on an operator pane rides on the folder's opt-in: whenever the opt-in is seen OFF the lease ends,
+  // whatever turned it off, so turning it back on can never revive an old approval.
+  if (rec && rec.openedBy === 'operator' && !readOptIn) browserLeases.revoke(rec.paneId)
+  const token = rec ? getBrowserHost().viewToken(rec.paneId) : undefined
   return resolveGateInput({
     rec,
     liveUrl: rec ? (getBrowserHost().info(rec.paneId)?.url ?? '') : '',
     writesEnabled,
     disconnected: rec ? browserAccess.isDisconnected(rec.paneId) : false,
     paused: rec ? browserAccess.isPaused(rec.paneId) : false,
+    readOptIn,
+    leaseActive:
+      rec !== undefined && token !== undefined ? browserLeases.isActive(rec.paneId, token) : false,
+    writeDenied: rec ? browserLeases.isDenied(rec.paneId) : false,
     harnuPorts: collectHarnuPorts(mcpPort),
-    trustedHosts: []
+    trustedHosts: rec ? trustedHostsSync(rec.folder) : []
   })
 }
 
@@ -147,7 +211,9 @@ export function makeBrowserVerbDeps(env: BrowserHandlerEnv): BrowserVerbDeps {
     access: browserAccess,
     host: getBrowserHost(),
     writesEnabled: () => readAgentBrowserWrites(),
-    trustedHosts: () => [],
+    leases: browserLeases,
+    readOptIn: (folder) => readOptInFor(folder),
+    trustedHosts: trustedHostsSync,
     harnuPorts: () => collectHarnuPorts(mcpPort),
     sessionKnown: (id) => env.sessionKnown(id),
     showPane: async (payload) => {
@@ -186,7 +252,13 @@ export function makeBrowserReadDeps(env: BrowserHandlerEnv): BrowserReadDeps {
   }
 }
 
+/** The dependencies of the acting verbs: the reading set plus the per-pane write queue. */
+export function makeBrowserActDeps(env: BrowserHandlerEnv): BrowserActDeps {
+  return { ...makeBrowserReadDeps(env), host: getBrowserHost(), queue: browserWriteQueue }
+}
+
 /** The kill-switch went off: every pane's network capture ends at once (spec §7.4). */
 export function stopAllBrowserCaptures(): void {
   if (host) host.stopAllCaptures('kill-switch')
+  browserLeases.revokeAll()
 }

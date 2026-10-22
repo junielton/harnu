@@ -266,6 +266,12 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'browser_close',
     // T570: start/stop are writes the agent makes on a pane it opened.
     'browser_network',
+    // T571 (U4): the acting verbs run free on a local pane; a lease row asks (plan layer).
+    'browser_eval',
+    'browser_click',
+    'browser_type',
+    'browser_fill',
+    'browser_press',
     'adopt_folder',
     'remove_folder',
     'memory_append',

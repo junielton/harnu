@@ -267,7 +267,13 @@ describe('AC-B1-3 — spawn_terminal is not replayable', () => {
       'browser_navigate',
       'browser_close',
       // T570: start/stop change the pane; two identical calls must both act.
-      'browser_network'
+      'browser_network',
+      // T571 (U4): two identical acting calls act twice.
+      'browser_eval',
+      'browser_click',
+      'browser_type',
+      'browser_fill',
+      'browser_press'
     ])
   })
 })

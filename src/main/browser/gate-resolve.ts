@@ -20,6 +20,10 @@ export function resolveGateInput(opts: {
   writesEnabled: boolean
   disconnected: boolean
   paused: boolean
+  /** The folder's browser-read opt-in (exact folder), the operator's lease on this pane and the Deny cooldown. */
+  readOptIn?: boolean
+  leaseActive?: boolean
+  writeDenied?: boolean
   harnuPorts: readonly number[]
   trustedHosts: readonly string[]
   /** The verb's own arguments, for the content refusals that come before the kill-switch. */
@@ -39,7 +43,10 @@ export function resolveGateInput(opts: {
         openedBy: rec.openedBy,
         originClass: classifyOrigin(opts.liveUrl, classify),
         disconnected: opts.disconnected,
-        paused: opts.paused
+        paused: opts.paused,
+        readOptIn: opts.readOptIn === true,
+        leaseActive: opts.leaseActive === true,
+        writeDenied: opts.writeDenied === true
       },
       ...args
     }

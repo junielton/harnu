@@ -44,6 +44,23 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   browser_console: { paneId: 'bp-1', mode: 'tail', lines: 50, levels: ['error'] },
   browser_network: { paneId: 'bp-1', action: 'start', maxMinutes: 5, bodies: true },
   browser_wait_for: { paneId: 'bp-1', selector: '#done', timeoutMs: 5000 },
+  // T571 (U4): the acting verbs carry only a paneId plus their own arguments.
+  browser_eval: {
+    paneId: 'bp-1',
+    expression: 'document.title',
+    awaitPromise: true,
+    timeoutMs: 5000
+  },
+  browser_click: {
+    paneId: 'bp-1',
+    ref: 's1e2',
+    button: 'left',
+    clickCount: 2,
+    offset: { x: 3, y: 4 }
+  },
+  browser_type: { paneId: 'bp-1', ref: 's1e3', text: 'hello', delayMs: 10, submit: true },
+  browser_fill: { paneId: 'bp-1', fields: [{ ref: 's1e3', value: 'a@b.c' }] },
+  browser_press: { paneId: 'bp-1', keys: ['Ctrl+A', 'Enter'] },
   adopt_folder: { folder: ALLOWED },
   remove_folder: { folder: ALLOWED },
   plan_mission: {

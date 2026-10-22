@@ -18,6 +18,7 @@ import { checkTopLevelNavigation } from './nav-policy'
 import {
   bindBrowserWindow,
   browserAccess,
+  browserLeases,
   browserRegistry,
   closePaneFromOperator,
   getBrowserHost,
@@ -149,6 +150,8 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
   handleApp('browser:disconnect', (paneId: unknown) => {
     if (!isPaneId(paneId) || !browserRegistry.get(paneId)) return false
     browserAccess.disconnect(paneId)
+    // Disconnect ends the agent's lease on the pane for good (spec §7.1).
+    browserLeases.revoke(paneId)
     // A disconnected pane records nothing more (spec §6.2): end any network capture the agent had running.
     host().stopCapture(paneId, 'disconnected')
     host().refresh(paneId)

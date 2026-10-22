@@ -628,7 +628,7 @@ describe('the write queue (spec §6.4) around the acting verbs', () => {
         order.push('press')
       if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased')
         order.push('release')
-      if (method === 'DOM.resolveNode') return { object: { objectId: 'obj-20' } }
+      if (method === 'DOM.resolveNode') return { object: { objectId: 'obj_20' } }
       if (method === 'Page.getLayoutMetrics')
         return { cssVisualViewport: { clientWidth: 1280, clientHeight: 800 } }
       if (method === 'Accessibility.getPartialAXTree')

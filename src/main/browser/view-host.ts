@@ -275,6 +275,23 @@ export class BrowserViewHost implements BrowserReadHost {
     for (const e of this.entries.values()) e.readers.stopCapture(reason)
   }
 
+  /** Names the view that shows the pane now (a lease is granted for ONE view, spec §7.1). */
+  viewToken(paneId: string): string | undefined {
+    const e = this.entries.get(paneId)
+    return e && !e.wc.isDestroyed() ? String(e.wc.id) : undefined
+  }
+
+  /** The factor between page CSS px and view coordinates: 1 until a device is emulated (U5, assumption A5). */
+  inputScale(_paneId: string): number {
+    return 1
+  }
+
+  /** The header's `driving` word while an acting verb runs. */
+  drive(paneId: string, on: boolean): void {
+    const e = this.entries.get(paneId)
+    if (e) this.setActivity(e, on ? 'driving' : null)
+  }
+
   /**
    * How the pane's view is shown right now. `capturePage()` works on all three (spec §2.3, A3): a parked view is
    * attached and visible at 1×1 with a 1280×800 metrics override, and a view that painted and was then hidden

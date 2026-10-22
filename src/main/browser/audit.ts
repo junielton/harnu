@@ -76,6 +76,5 @@ export function summarizeBrowserCall(
         .join(',')}]`
     )
   }
-  if (opts.gate !== undefined) parts.push(`gate=${opts.gate}`)
   return parts.join(' ')
 }

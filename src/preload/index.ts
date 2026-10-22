@@ -2461,6 +2461,18 @@ const api = {
     enabled: boolean
   ): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:setTerminalRead', { targetPath, enabled }),
+  // T571: per-folder "let agents read browser panes I open" opt-in (FolderMenu toggle), exact path only.
+  userProjectsSetBrowserRead: (
+    targetPath: string,
+    enabled: boolean
+  ): Promise<UserProjectsPayload> =>
+    ipcRenderer.invoke('userProjects:setBrowserRead', { targetPath, enabled }),
+  // T571: replace a folder's trusted dev hosts (Trusted dev hosts dialog). Operator-only: no MCP verb exists.
+  userProjectsSetBrowserTrustedHosts: (
+    targetPath: string,
+    hosts: string[]
+  ): Promise<UserProjectsPayload> =>
+    ipcRenderer.invoke('userProjects:setBrowserTrustedHosts', { targetPath, hosts }),
   // T191: "Set parent folder" / "Clear parent folder" (folder menu) — the manual
   // override for the `bornFrom` lineage edge. Pass `null` to clear.
   userProjectsSetBornFrom: (

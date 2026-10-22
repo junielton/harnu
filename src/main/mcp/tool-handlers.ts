@@ -66,7 +66,12 @@ import {
 } from '../terminal-registry'
 import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { readAgentTerminalWrites } from './prefs'
-import { makeBrowserReadDeps, makeBrowserVerbDeps } from '../browser/browser-service'
+import {
+  makeBrowserActDeps,
+  makeBrowserReadDeps,
+  makeBrowserVerbDeps
+} from '../browser/browser-service'
+import { clickVerb, evalVerb, fillVerb, pressVerb, typeVerb } from '../browser/act-verbs'
 import type { ConsoleLevel } from '../browser/console-buffer'
 import {
   consoleVerb,
@@ -5342,6 +5347,95 @@ const browserWaitForHandler: Handler = async (args, ctx) => {
   return browserResult({ op: 'browser_wait_for', ...res })
 }
 
+/* ---- T571 (T564 U4): the acting verbs. `args` rides along as the write-queue key: the server reserved the
+ * pane's place in line with that very object, on entry, before any await (spec §6.4). ---- */
+
+const browserEvalHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await evalVerb(
+    {
+      ...paneArgs(args),
+      expression: optStr(args, 'expression') ?? '',
+      ...(typeof args.awaitPromise === 'boolean' ? { awaitPromise: args.awaitPromise } : {}),
+      ...(optStr(args, 'frame') !== undefined ? { frame: optStr(args, 'frame') } : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_eval', ...res })
+}
+
+const browserClickHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const offset = args.offset as { x?: unknown; y?: unknown } | undefined
+  const res = await clickVerb(
+    {
+      ...paneArgs(args),
+      ref: optStr(args, 'ref') ?? '',
+      ...(args.button === 'left' || args.button === 'middle' || args.button === 'right'
+        ? { button: args.button }
+        : {}),
+      ...(typeof args.clickCount === 'number' ? { clickCount: args.clickCount } : {}),
+      ...(Array.isArray(args.modifiers)
+        ? { modifiers: args.modifiers as Array<'Alt' | 'Control' | 'Meta' | 'Shift'> }
+        : {}),
+      ...(offset && typeof offset.x === 'number' && typeof offset.y === 'number'
+        ? { offset: { x: offset.x, y: offset.y } }
+        : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_click', ...res })
+}
+
+const browserTypeHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await typeVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {}),
+      text: optStr(args, 'text') ?? '',
+      ...(typeof args.delayMs === 'number' ? { delayMs: args.delayMs } : {}),
+      ...(typeof args.submit === 'boolean' ? { submit: args.submit } : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_type', ...res })
+}
+
+const browserFillHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const fields = Array.isArray(args.fields)
+    ? (args.fields as Array<Record<string, unknown>>).map((f) => ({
+        ref: typeof f.ref === 'string' ? f.ref : '',
+        value: typeof f.value === 'string' ? f.value : ''
+      }))
+    : []
+  const res = await fillVerb(
+    { ...paneArgs(args), fields },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_fill', ...res })
+}
+
+const browserPressHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await pressVerb(
+    {
+      ...paneArgs(args),
+      keys: Array.isArray(args.keys) ? (args.keys as unknown[]).map(String) : [],
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_press', ...res })
+}
+
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
   get_fleet: getFleetHandler,
@@ -5363,6 +5457,11 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   browser_console: browserConsoleHandler,
   browser_network: browserNetworkHandler,
   browser_wait_for: browserWaitForHandler,
+  browser_eval: browserEvalHandler,
+  browser_click: browserClickHandler,
+  browser_type: browserTypeHandler,
+  browser_fill: browserFillHandler,
+  browser_press: browserPressHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

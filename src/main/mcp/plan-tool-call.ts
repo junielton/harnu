@@ -333,8 +333,8 @@ export function planToolCall({
     })
     if (refusal) {
       const result =
-        refusal.reason === 'BAD_ARGS'
-          ? `BAD_ARGS: ${refusal.content?.detail ?? ''}`
+        refusal.reason === 'BAD_ARGS' || refusal.reason === 'BROWSER_KEY_UNKNOWN'
+          ? `${refusal.reason}: ${refusal.content?.detail ?? ''}`
           : refusal.reason
       return denyPlan(tool, folder ?? '', now, result, redact)
     }

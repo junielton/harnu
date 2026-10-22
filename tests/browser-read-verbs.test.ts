@@ -189,7 +189,12 @@ describe('browser_snapshot', () => {
   it('refs from the snapshot resolve; a navigation kills them', async () => {
     const { deps, readers } = rig()
     await snapshotVerb({ paneId: 'bp-1' }, deps)
-    expect(readers.refs.resolve('s1e2')).toEqual({ ok: true, backendNodeId: 20 })
+    // The ref also carries the role and name the line showed (U4 `snapshotStale`).
+    expect(readers.refs.resolve('s1e2')).toEqual({
+      ok: true,
+      backendNodeId: 20,
+      label: 'button|Save'
+    })
     readers.ingest('Page.frameNavigated', { frame: { id: 'main' } })
     expect(readers.refs.resolve('s1e2')).toEqual({ ok: false, error: 'REF_STALE' })
   })

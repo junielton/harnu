@@ -59,6 +59,7 @@ import {
   livePtyDescriptors
 } from './pty'
 import { registerBrowserIpc } from './browser/browser-ipc'
+import { refreshBrowserTrustedHosts } from './browser/browser-service'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
 import {
@@ -100,6 +101,8 @@ import {
   getUserProjectOrchestratorDefault,
   setUserProjectOrchestratorDefault,
   setUserProjectTerminalRead,
+  setUserProjectBrowserRead,
+  setUserProjectBrowserTrustedHosts,
   interceptActivePaths,
   setUserProjectBornFrom,
   listBornFromCandidates,
@@ -1021,6 +1024,28 @@ app.whenReady().then(async () => {
       const payload = toUserProjectsPayload(await setUserProjectTerminalRead(targetPath, enabled))
       // Turning it off ends the lazy screen models of the operator's terminals there at once.
       if (!enabled) await dropOperatorScreenModels(targetPath)
+      return payload
+    }
+  )
+
+  // T571: "let agents read browser panes I open" per-folder opt-in (FolderMenu toggle). EXACT-PATH ONLY. Turning
+  // it off ends the folder's browser leases (done inside the setter).
+  ipcMain.handle(
+    'userProjects:setBrowserRead',
+    async (_e, { targetPath, enabled }: { targetPath: string; enabled: boolean }) => {
+      return toUserProjectsPayload(await setUserProjectBrowserRead(targetPath, enabled))
+    }
+  )
+
+  // T571: the folder's trusted dev hosts (Trusted dev hosts dialog). The operator is the only writer; each
+  // entry is validated by `browser/trusted-hosts` and the edited list is re-applied to the open panes.
+  ipcMain.handle(
+    'userProjects:setBrowserTrustedHosts',
+    async (_e, { targetPath, hosts }: { targetPath: string; hosts: string[] }) => {
+      const payload = toUserProjectsPayload(
+        await setUserProjectBrowserTrustedHosts(targetPath, hosts)
+      )
+      await refreshBrowserTrustedHosts()
       return payload
     }
   )

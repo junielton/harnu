@@ -10,6 +10,8 @@ import { recordRemovedFolder } from './gc/gc-removed-folders'
 import { fsPathExistence } from './gc/gc-orphan-existence'
 import { migrateFolderDataDirLazily } from './migrations/data-dir-boot'
 import { terminalLeases } from './terminal-lease'
+import { browserLeases } from './browser/lease-singleton'
+import { sanitizeTrustedHosts, MAX_TRUSTED_HOSTS } from './browser/trusted-hosts'
 
 /**
  * One worktree entry in a persisted project record. Vestigial under the
@@ -180,6 +182,18 @@ export interface UserProject {
    * worktree is a different place with its own shells.
    */
   agentTerminalRead?: boolean
+  /**
+   * T571 (browser pane U4, spec §7.1): agents may read — and, through the operator's lease, drive — the browser
+   * panes the OPERATOR opens in this folder. Default OFF, EXACT-PATH ONLY (like {@link agentTerminalRead}): a
+   * linked worktree of an opted-in repo is NOT itself opted in. Agent-opened panes never need it.
+   */
+  agentBrowserRead?: boolean
+  /**
+   * T571 (spec §7.2): hosts the operator says are THEIR dev servers (`app.test`, `*.test`, a docker service
+   * name). A page on one classifies as `local`. EXACT-PATH ONLY. Edited only from the folder menu; no verb
+   * touches it. Always read through `sanitizeTrustedHosts`.
+   */
+  browserTrustedHosts?: string[]
 }
 
 /** On-disk schema for `<userData>/projects.json`. */
@@ -434,7 +448,10 @@ export async function setUserProjectAgentDenied(
     if (idx === -1) return file // not a tracked project — nothing to flag
     // T474 B6: a block ends every terminal write lease in the folder and below it, even when the
     // flag was already set — a lease must never survive to be revived by a later unblock.
-    if (denied) terminalLeases.revokeUnder(normalizedPath)
+    if (denied) {
+      terminalLeases.revokeUnder(normalizedPath)
+      browserLeases.revokeUnder(normalizedPath)
+    }
     if ((file.projects[idx].agentDenied ?? false) === denied) return file // unchanged
     const next: UserProjectsFile = {
       version: 1,
@@ -931,6 +948,106 @@ export async function setUserProjectTerminalRead(
 }
 
 /**
+ * Which of `folders` have the operator's browser-read opt-in on (T571). Same matching as
+ * {@link terminalReadOptIns}: both sides go through {@link normalizePath}, the returned set holds the folders
+ * EXACTLY as the caller spelled them, exact path only.
+ */
+export async function browserReadOptIns(
+  file: UserProjectsFile,
+  folders: readonly string[]
+): Promise<Set<string>> {
+  const on = new Set(file.projects.filter((p) => p.agentBrowserRead === true).map((p) => p.path))
+  const out = new Set<string>()
+  if (on.size === 0) return out
+  for (const folder of folders) {
+    if (on.has(await normalizePath(folder))) out.add(folder)
+  }
+  return out
+}
+
+/**
+ * Set the browser-read opt-in on a project by `path` (T571), the folder the user right-clicked. Creates the record
+ * of an auto-discovered folder, like {@link setUserProjectTerminalRead}. Turning it OFF ends every browser lease in
+ * the folder, because a lease on an operator pane rides on the opt-in.
+ */
+export async function setUserProjectBrowserRead(
+  targetPath: string,
+  enabled: boolean
+): Promise<UserProjectsFile> {
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const normalizedPath = await normalizePath(targetPath)
+    if (!enabled) browserLeases.revokeFolder(normalizedPath)
+    return setBrowserField(
+      file,
+      normalizedPath,
+      { agentBrowserRead: enabled },
+      (p) => (p.agentBrowserRead ?? false) === enabled
+    )
+  })
+}
+
+/** The trusted dev hosts of `folder` (T571), cleaned; `[]` when none. Exact path only. */
+export async function browserTrustedHostsFor(
+  file: UserProjectsFile,
+  folder: string
+): Promise<string[]> {
+  const normalized = await normalizePath(folder)
+  const rec = file.projects.find((p) => p.path === normalized)
+  return rec ? sanitizeTrustedHosts(rec.browserTrustedHosts) : []
+}
+
+/** Replace the trusted dev hosts of a folder (T571). The caller validated; the list is cleaned again here. */
+export async function setUserProjectBrowserTrustedHosts(
+  targetPath: string,
+  hosts: readonly string[]
+): Promise<UserProjectsFile> {
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const normalizedPath = await normalizePath(targetPath)
+    const clean = sanitizeTrustedHosts(hosts).slice(0, MAX_TRUSTED_HOSTS)
+    return setBrowserField(file, normalizedPath, { browserTrustedHosts: clean }, (p) => {
+      const cur = sanitizeTrustedHosts(p.browserTrustedHosts)
+      return cur.length === clean.length && cur.every((h, i) => h === clean[i])
+    })
+  })
+}
+
+/** Shared write of one browser field: create the record of an auto-discovered folder, skip an unchanged write. */
+async function setBrowserField(
+  file: UserProjectsFile,
+  normalizedPath: string,
+  patch: Partial<UserProject>,
+  unchanged: (p: UserProject) => boolean
+): Promise<UserProjectsFile> {
+  const idx = file.projects.findIndex((p) => p.path === normalizedPath)
+  if (idx === -1) {
+    const created: UserProject = {
+      path: normalizedPath,
+      alias: path.basename(normalizedPath),
+      addedAt: new Date().toISOString(),
+      worktrees: [],
+      ...patch
+    }
+    const next: UserProjectsFile = {
+      version: 1,
+      projects: [...file.projects, created],
+      hiddenPaths: (file.hiddenPaths ?? []).filter((p) => p !== normalizedPath)
+    }
+    await writeUserProjects(next)
+    return next
+  }
+  if (unchanged(file.projects[idx]!)) return file
+  const next: UserProjectsFile = {
+    version: 1,
+    projects: file.projects.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
+    hiddenPaths: file.hiddenPaths ?? []
+  }
+  await writeUserProjects(next)
+  return next
+}
+
+/**
  * The per-folder BUNDLED-skill overrides for `targetPath` (T217), or `{}` when the
  * folder has no record or no overrides. Tri-state by ABSENCE: a key that is not
  * here inherits the global value — this function deliberately does NOT merge the
@@ -1221,6 +1338,7 @@ export async function removeUserProject(targetPath: string): Promise<UserProject
   // the leases here means removing the folder, re-adding it and opting in again cannot revive an
   // approval the operator gave before they removed it.
   terminalLeases.revokeFolder(removedProject.path)
+  browserLeases.revokeFolder(removedProject.path)
 
   // Cascade: helpers entries for this project's root path AND each of
   // its worktrees must also go. Best-effort — failures here are logged

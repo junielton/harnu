@@ -52,6 +52,10 @@ export function shapeDenial(
   const at = ctx.folder ? ` (${ctx.folder})` : ''
   // T564 U1: the browser verbs' refusals carry their own hints.
   if (isBrowserDenialCode(result)) return shapeBrowserDenial(result, { folder: ctx.folder })
+  // T571: a refused key press names the offending key in its detail.
+  const browserKey = /^BROWSER_KEY_UNKNOWN: ([\s\S]*)$/.exec(result)
+  if (browserKey)
+    return shapeBrowserDenial('BROWSER_KEY_UNKNOWN', { folder: ctx.folder, detail: browserKey[1]! })
   // T482 B5: a refused send names the offending key or line in its detail.
   const content = /^(KEY_UNKNOWN|INPUT_TOO_LARGE|WAIT_PATTERN_INVALID): ([\s\S]*)$/.exec(result)
   if (content) {

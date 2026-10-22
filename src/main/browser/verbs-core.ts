@@ -496,6 +496,8 @@ export async function closeVerb(
   const report = deps.registry.endWrite(token)
   deps.registry.remove(rec.paneId)
   deps.access.forget(rec.paneId)
+  // The pane is gone, and so is the operator's lease on it (spec §7.1).
+  deps.leases?.forget(rec.paneId)
   await deps.hidePane(rec.folder, rec.paneId).catch(() => false)
   return {
     ...base,
