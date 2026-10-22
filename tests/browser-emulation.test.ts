@@ -16,6 +16,9 @@ import {
   fitScale,
   isEmptyRecord,
   mergeEmulation,
+  nativeBrands,
+  nativeUserAgentOverride,
+  nextSessionState,
   sanitizeEmulatePatch,
   metricsCommand,
   needsReloadFor,
@@ -383,5 +386,107 @@ describe('sanitizeEmulatePatch (the picker’s IPC payload is untrusted)', () =>
 
   it('a bad colour scheme is dropped, not passed through', () => {
     expect(sanitizeEmulatePatch({ colorScheme: 'sepia' })).toEqual({})
+  })
+})
+
+describe('a pane that was never emulated gets nothing (delta 1, measured live)', () => {
+  it('sends no command for an empty record before anything was ever applied', () => {
+    expect(sessionCommands({}, CHROME_UA, { dirty: false })).toEqual([])
+  })
+
+  it('sends the clearing set ONCE after a non-empty record, then goes quiet again', () => {
+    const device = mergeEmulation({}, { device: 'phone-m' })
+    const sent = sessionCommands(device, CHROME_UA, { dirty: false })
+    expect(sent.length).toBeGreaterThan(0)
+    expect(nextSessionState(device)).toEqual({ dirty: true })
+    const reset = sessionCommands({}, CHROME_UA, nextSessionState(device))
+    // The restore is the original UA string with no metadata: the only way that measurably returned the pane to
+    // its never-emulated state (an empty userAgent did NOT clear the override or its client hints).
+    expect(reset.find((c) => c.method === 'Emulation.setUserAgentOverride')?.params).toEqual({
+      userAgent: CHROME_UA
+    })
+    expect(nextSessionState({})).toEqual({ dirty: false })
+    expect(sessionCommands({}, CHROME_UA, nextSessionState({}))).toEqual([])
+  })
+
+  it('a non-empty record always sends, whatever was sent before (a navigation can drop the emulation)', () => {
+    const device = mergeEmulation({}, { device: 'phone-m' })
+    expect(sessionCommands(device, CHROME_UA, { dirty: true }).length).toBe(4)
+    expect(sessionCommands(device, CHROME_UA, { dirty: false }).length).toBe(4)
+  })
+})
+
+describe('putting the real client hints back on a reset (delta 1, measured live)', () => {
+  const env = {
+    chromeVersion: '142.0.7444.265',
+    platform: 'linux',
+    arch: 'x64',
+    osRelease: '6.8.0-45-generic'
+  }
+
+  it('rebuilds Chromium’s own brand list: the GREASE brand and its place come from the major version', () => {
+    // What the unmodified guest sent for Chromium 142: "Not_A Brand";v="99", "Chromium";v="142".
+    expect(nativeBrands(142)).toEqual([
+      { brand: 'Not_A Brand', version: '99' },
+      { brand: 'Chromium', version: '142' }
+    ])
+    // An odd major puts Chromium first; the GREASE spelling changes with the version.
+    expect(nativeBrands(139).map((b) => b.brand)).toEqual(['Chromium', 'Not;A=Brand'])
+  })
+
+  it('is the original user agent with the browser’s own metadata, not a mobile one', () => {
+    const o = nativeUserAgentOverride(CHROME_UA, env)
+    expect(o.userAgent).toBe(CHROME_UA)
+    expect(o.userAgentMetadata).toMatchObject({
+      platform: 'Linux',
+      platformVersion: '6.8.0',
+      architecture: 'x86',
+      bitness: '64',
+      mobile: false,
+      model: ''
+    })
+    expect((o.userAgentMetadata as { fullVersionList: unknown[] }).fullVersionList).toContainEqual({
+      brand: 'Chromium',
+      version: '142.0.7444.265'
+    })
+  })
+
+  it('maps the other platforms and architectures', () => {
+    expect(
+      nativeUserAgentOverride(CHROME_UA, { ...env, platform: 'darwin', arch: 'arm64' })
+        .userAgentMetadata
+    ).toMatchObject({
+      platform: 'macOS',
+      architecture: 'arm'
+    })
+    expect(
+      nativeUserAgentOverride(CHROME_UA, { ...env, platform: 'win32' }).userAgentMetadata
+    ).toMatchObject({
+      platform: 'Windows',
+      platformVersion: '10.0.0'
+    })
+  })
+
+  it('the reset command carries the real metadata when the host says what it is, and only the string otherwise', () => {
+    const dirty = { dirty: true }
+    const withEnv = sessionCommands({}, CHROME_UA, dirty, env).find(
+      (c) => c.method === 'Emulation.setUserAgentOverride'
+    )!
+    expect(withEnv.params).toMatchObject({
+      userAgent: CHROME_UA,
+      userAgentMetadata: { platform: 'Linux', mobile: false }
+    })
+    const without = sessionCommands({}, CHROME_UA, dirty).find(
+      (c) => c.method === 'Emulation.setUserAgentOverride'
+    )!
+    expect(without.params).toEqual({ userAgent: CHROME_UA })
+  })
+
+  it('an emulated device still sends its OWN metadata, never the native one', () => {
+    const rec = mergeEmulation({}, { device: 'phone-m' })
+    const cmd = sessionCommands(rec, CHROME_UA, { dirty: false }, env).find(
+      (c) => c.method === 'Emulation.setUserAgentOverride'
+    )!
+    expect(cmd.params.userAgentMetadata).toMatchObject({ platform: 'Android', mobile: true })
   })
 })

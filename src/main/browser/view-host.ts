@@ -13,9 +13,12 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  realpathSync
+  realpathSync,
+  unlinkSync,
+  writeFileSync
 } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readdir, stat } from 'node:fs/promises'
+import { release, tmpdir } from 'node:os'
 import { rawRm } from '../raw-fs'
 import { join as joinPath } from 'node:path'
 import {
@@ -39,10 +42,12 @@ import { decideForward, type GuestInput } from './chord'
 import { guestWebPreferences, PARTITION_NAMES, type BrowserPartition } from './guest-prefs'
 import {
   DOWNLOAD_PROMPT_TIMEOUT_MS,
+  HELD_DIR_PREFIX,
   NEW_HELD_DOWNLOAD,
   createDownloadArms,
   decideDownload,
   downloadResult,
+  isStaleHeldDir,
   moveHeldDownload,
   overLimit,
   resolveDownloadTarget,
@@ -59,9 +64,12 @@ import {
   checkEmulateArgs,
   deviceActive,
   effectiveTouch,
+  isEmptyRecord,
   mergeEmulation,
+  nextSessionState,
   metricsCommand,
   needsReloadFor,
+  type NativeHintsEnv,
   sanitizeEmulatePatch,
   sessionCommands,
   viewScale,
@@ -148,17 +156,30 @@ export interface PageHooks {
   allowNetwork(paneId: string): boolean
 }
 
+/** What this browser is, so a reset can put its real client hints back (`nativeUserAgentOverride`). */
+const NATIVE_HINTS_ENV: NativeHintsEnv = {
+  chromeVersion: process.versions.chrome ?? '',
+  platform: process.platform,
+  arch: process.arch,
+  osRelease: release()
+}
+
 /** The real filesystem the download target resolution touches. */
-const REAL_FS: MoveIo = {
+const BASE_FS: DownloadFsIo = {
   mkdirp: (dir) => void mkdirSync(dir, { recursive: true }),
   realpath: (p) => realpathSync(p),
-  exists: (p) => existsSync(p),
-  // COPYFILE_EXCL: a file that is already there is never replaced.
+  exists: (p) => existsSync(p)
+}
+/** An agent download: the target name is claimed by creating the file exclusively (`wx`), so it cannot be raced. */
+const AGENT_FS: DownloadFsIo = {
+  ...BASE_FS,
+  reserve: (p) => writeFileSync(p, '', { flag: 'wx' })
+}
+/** The operator's Save: an exclusive copy out of the temp folder (COPYFILE_EXCL never replaces a file). */
+const MOVE_FS: MoveIo = {
+  ...BASE_FS,
   copyExclusive: (from, to) => copyFileSync(from, to, fsConstants.COPYFILE_EXCL)
 }
-// `DownloadFsIo` is what the target resolution needs; `MoveIo` adds the exclusive copy.
-const _fsIo: DownloadFsIo = REAL_FS
-void _fsIo
 
 /** How long the "Saved" / "cancelled" notice stays up before it clears itself (design.md "Download prompt"). */
 const TRANSIENT_NOTICE_MS = 4000
@@ -177,6 +198,12 @@ interface PendingDownload {
   /** The question was answered (the prompt row is gone) but the file may still be arriving. */
   answered: boolean
   tooLarge: boolean
+}
+
+/** An agent's download that is arriving: cancelled when its call gives up on it. */
+interface AgentDownload {
+  item: Electron.DownloadItem
+  absPath: string
 }
 
 interface ViewEntry {
@@ -218,6 +245,8 @@ interface ViewEntry {
   pageReady: boolean
   /** The emulation record last put on the page, to tell when touch turns on. */
   applied: EmulationRecord
+  /** A non-empty record was sent: the next empty one must send the clearing set (`SessionState`). */
+  sessionDirty: boolean
   /** The factor between page CSS px and view px now in effect (1 without a device). */
   deviceScale: number
   /** The last metrics command sent, so an unchanged one is not sent again. */
@@ -226,6 +255,8 @@ interface ViewEntry {
   boundsWaiter: (() => void) | null
   /** The operator's download waiting for an answer. */
   prompt: PendingDownload | null
+  /** The agent's download that is arriving now. */
+  agentDownload: AgentDownload | null
 }
 
 export class BrowserViewHost implements BrowserReadHost {
@@ -238,10 +269,63 @@ export class BrowserViewHost implements BrowserReadHost {
   private windowHooked: BrowserWindow | null = null
   private readonly arms: DownloadArms = createDownloadArms({
     setTimer: (fn, ms) => setTimeout(fn, ms),
-    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
+    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    // The call gave up on its download (a deadline, a timeout): stop it, so nothing keeps arriving in the folder.
+    abortClaimed: (paneId) => this.cancelAgentDownload(paneId)
   })
 
-  constructor(private readonly deps: ViewHostDeps) {}
+  constructor(private readonly deps: ViewHostDeps) {
+    void this.sweepStaleHeldDownloads()
+  }
+
+  /**
+   * A real click or key counts as the operator's gesture (a popup, the download prompt). While an agent input verb is
+   * running the pane's input is the agent's, so it must never open the operator's download prompt (T572 delta 1).
+   */
+  private noteGesture(e: ViewEntry): void {
+    if (this.deps.registry.agentInput(e.paneId).inFlight) return
+    e.gestures.note()
+  }
+
+  /** Cancel and clean up the agent's arriving download, if any. */
+  private cancelAgentDownload(paneId: string): void {
+    const e = this.entries.get(paneId)
+    const d = e?.agentDownload
+    if (!e || !d) return
+    e.agentDownload = null
+    try {
+      d.item.cancel()
+    } catch {
+      /* already finished */
+    }
+    try {
+      unlinkSync(d.absPath)
+    } catch {
+      /* the reserved placeholder is already gone */
+    }
+  }
+
+  /**
+   * Held downloads live in `harnu-dl-*` temp folders. A process that died (or was killed) mid-question leaves one
+   * behind, so a startup sweep removes the ones old enough to be nobody's (a younger one may be another running
+   * Harnu's, which shares the OS temp directory).
+   */
+  private async sweepStaleHeldDownloads(): Promise<void> {
+    try {
+      const base = tmpdir()
+      const now = Date.now()
+      for (const name of await readdir(base)) {
+        if (!name.startsWith(HELD_DIR_PREFIX)) continue
+        const full = joinPath(base, name)
+        const st = await stat(full).catch(() => null)
+        if (st?.isDirectory() && isStaleHeldDir(name, st.mtimeMs, now)) {
+          await rawRm(full, { recursive: true, force: true }).catch(() => undefined)
+        }
+      }
+    } catch {
+      // A temp directory that cannot be listed has nothing for us to sweep.
+    }
+  }
 
   /* ---------------------------------------------------------------------------------------- */
   /* BrowserHost (the verb seam)                                                               */
@@ -282,10 +366,12 @@ export class BrowserViewHost implements BrowserReadHost {
       originalUserAgent: wc.getUserAgent(),
       pageReady: false,
       applied: this.deps.registry.get(opts.paneId)?.emulation ?? {},
+      sessionDirty: false,
       deviceScale: 1,
       lastMetricsKey: null,
       boundsWaiter: null,
-      prompt: null
+      prompt: null,
+      agentDownload: null
     }
     entry.readers = createPaneReaders({
       now: this.deps.now,
@@ -302,6 +388,9 @@ export class BrowserViewHost implements BrowserReadHost {
 
     win.contentView.addChildView(view)
     void this.attachDebugger(entry)
+    // A pane opened with a device must send its very first request as that device (user agent, client hints, touch):
+    // the session commands go out on the debugger channel BEFORE the load starts, not at `did-start-navigation`.
+    this.pushSession(entry)
     this.park(entry)
     this.attachGuestHandlers(entry)
     wc.loadURL(opts.url).catch(() => undefined)
@@ -387,6 +476,8 @@ export class BrowserViewHost implements BrowserReadHost {
       void rawRm(e.prompt.tempDir, { recursive: true, force: true }).catch(() => undefined)
       e.prompt = null
     }
+    // An agent's download that is still arriving stops with the pane, and its reserved name goes with it.
+    this.cancelAgentDownload(paneId)
     this.arms.settle(paneId, {
       ok: false,
       code: 'DOWNLOAD_CANCELLED',
@@ -634,9 +725,15 @@ export class BrowserViewHost implements BrowserReadHost {
     const prev = e.applied
     this.applyZoom(e)
     if (e.pageReady) {
-      for (const c of sessionCommands(next, e.originalUserAgent)) {
+      for (const c of sessionCommands(
+        next,
+        e.originalUserAgent,
+        { dirty: e.sessionDirty },
+        NATIVE_HINTS_ENV
+      )) {
         await this.cdpStrict(e, c.method, c.params)
       }
+      e.sessionDirty = nextSessionState(next).dirty
       this.syncMetrics(e, true)
     }
     e.applied = next
@@ -754,7 +851,7 @@ export class BrowserViewHost implements BrowserReadHost {
       return
     }
     // effect === 'move': the operator said yes and every byte is here.
-    const moved = moveHeldDownload(e.folder, p.tempFile, p.name, REAL_FS)
+    const moved = moveHeldDownload(e.folder, p.tempFile, p.name, MOVE_FS)
     finish(moved.ok ? { kind: 'downloaded', name: moved.name } : { kind: 'download-failed' })
   }
 
@@ -795,7 +892,7 @@ export class BrowserViewHost implements BrowserReadHost {
       return
     }
     const claim = this.arms.claim(e.paneId)
-    const target = resolveDownloadTarget(e.folder, claim?.name ?? item.getFilename(), REAL_FS)
+    const target = resolveDownloadTarget(e.folder, claim?.name ?? item.getFilename(), AGENT_FS)
     if (!target.ok) {
       event.preventDefault()
       if (claim) {
@@ -808,6 +905,7 @@ export class BrowserViewHost implements BrowserReadHost {
       return
     }
     item.setSavePath(target.absPath)
+    e.agentDownload = { item, absPath: target.absPath }
     let tooLarge = false
     item.on('updated', () => {
       // A size the server did not announce is watched as it grows.
@@ -817,6 +915,15 @@ export class BrowserViewHost implements BrowserReadHost {
       }
     })
     item.once('done', (_ev, state) => {
+      if (e.agentDownload?.item === item) e.agentDownload = null
+      // The reserved placeholder must not outlive a download that did not complete.
+      if (state !== 'completed') {
+        try {
+          unlinkSync(target.absPath)
+        } catch {
+          /* already removed */
+        }
+      }
       claim?.settle(
         downloadResult({
           state,
@@ -839,7 +946,7 @@ export class BrowserViewHost implements BrowserReadHost {
     const name = sanitizeDownloadName(item.getFilename())
     let tempDir: string
     try {
-      tempDir = mkdtempSync(joinPath(tmpdir(), 'harnu-dl-'))
+      tempDir = mkdtempSync(joinPath(tmpdir(), HELD_DIR_PREFIX))
     } catch {
       item.cancel()
       this.transientNotice(e, { kind: 'download-failed' })
@@ -1189,9 +1296,15 @@ export class BrowserViewHost implements BrowserReadHost {
   /** Touch, user agent and media features of the record, fire-and-forget (navigation start, spec §9.2). */
   private pushSession(e: ViewEntry): void {
     const rec = this.deps.registry.get(e.paneId)?.emulation ?? {}
-    for (const c of sessionCommands(rec, e.originalUserAgent)) {
+    for (const c of sessionCommands(
+      rec,
+      e.originalUserAgent,
+      { dirty: e.sessionDirty },
+      NATIVE_HINTS_ENV
+    )) {
       void this.cdpQuiet(e, c.method, c.params)
     }
+    if (!isEmptyRecord(rec) || e.sessionDirty) e.sessionDirty = nextSessionState(rec).dirty
   }
 
   private hookWindow(win: BrowserWindow): void {
@@ -1476,7 +1589,7 @@ export class BrowserViewHost implements BrowserReadHost {
     // CDP-dispatched ones (U0 A1), so it is also the signal that the OPERATOR is using the pane.
     wc.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown') {
-        e.gestures.note()
+        this.noteGesture(e)
         e.lastRealKeyDownAt = this.deps.now()
         this.deps.registry.noteOperatorInteraction(e.paneId)
       }
@@ -1493,7 +1606,7 @@ export class BrowserViewHost implements BrowserReadHost {
     })
     wc.on('before-mouse-event', (_event, mouse) => {
       if (mouse.type !== 'mouseDown') return
-      e.gestures.note()
+      this.noteGesture(e)
       this.deps.registry.noteOperatorInteraction(e.paneId)
     })
   }

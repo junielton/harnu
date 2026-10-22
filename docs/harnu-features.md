@@ -816,8 +816,8 @@ site. `browser_open({ folder, url, ownerSessionId?, name? })` opens one in the b
 focus steal) and returns `paneId`, `url` (query string removed), `origin` (`local` for
 localhost and other literal dev hosts, `external` for the rest), `state`, `flagged` and
 `openedBy: 'agent'`. Only `http`, `https` and `about:blank` open: `file:`, `chrome:`,
-`devtools:`, `view-source:` and `javascript:` are `URL_SCHEME_BLOCKED`. `device` refuses
-`NOT_YET_AVAILABLE` until its release; the `path` and `html` forms open a live panel (below). Pass your own session id as
+`devtools:`, `view-source:` and `javascript:` are `URL_SCHEME_BLOCKED`. `device` (a preset, see below) opens the pane
+already in that device; any other value is `BAD_ARGS`. The `path` and `html` forms open a live panel (below). Pass your own session id as
 `ownerSessionId` so the operator sees who the pane is connected to; it is attribution only.
 At most 4 agent-opened panes per folder: the fifth is `PANE_LIMIT`, and its `nextActions` list
 the `paneId`s to reuse. `browser_navigate({ paneId, url | action })` takes a `url` or an
@@ -945,16 +945,17 @@ never completes there; a right or middle `button` is then refused with `INPUT_FA
 first).
 `browser_upload({ paneId, ref, paths })` attaches 1..10 files to an `<input type=file>` (`NOT_A_FILE_INPUT`
 otherwise; an input without `multiple` takes one). Every path must be a regular file INSIDE the pane's folder
-once links are followed, at most 50 MiB (`UPLOAD_TOO_LARGE`), and never `.git/**`, `.env*`, `*.pem`, `*.key`
-or `id_*`: `UPLOAD_PATH_DENIED`, and one bad path refuses the call. Attaching does not submit; click the
+once links are followed, at most 50 MiB (`UPLOAD_TOO_LARGE`), and never anything in `.git/` or `.harnu/`, any `.env*`, `.git-credentials`, `.npmrc`, `.netrc`, `.pypirc`, `*.pem`,
+`*.key` or `id_*`: `UPLOAD_PATH_DENIED` (a `..` or an absolute path elsewhere is refused before any confirm), and one bad path refuses the call. Attaching does not submit; click the
 form's button after. `browser_download({ paneId, url | ref, name?, timeoutMs? })` allows exactly one download
 for the length of the call (`url` must be http or https; `ref` is the element that starts it), waits for it, and
 saves it as `.harnu/out/downloads/<clean name>` in the pane's folder, never replacing a file: the ACK has
 `path`, `bytes`, `mime` and `name`. It is never opened or run. `NO_DOWNLOAD_STARTED` (nothing began within
 `timeoutMs`, at most 30000), `DOWNLOAD_TOO_LARGE` (over 100 MiB), `DOWNLOAD_FAILED`, `DOWNLOAD_CANCELLED`. A
 download a page starts on its own is always cancelled; a download the operator starts by clicking asks them
-first ("Save to `.harnu/out/downloads/`?"). Emulate and download are free on a pane you opened and a lease on
-one the operator opened; upload is a lease on an `external` page too (a file leaves the folder). A Scheduler
+first ("Save to `.harnu/out/downloads/`?"). Emulate and download-by-`url` are free on a pane you opened and a lease on
+one the operator opened; download-by-`ref` CLICKS, so it is the Input tier (a lease on an `external` page too, like
+`browser_click`); upload is a lease on an `external` page too (a file leaves the folder). A Scheduler
 `observe` worker may call none of the three.
 
 **Who may do what.** On a `page` or `local` pane you opened (your dev server) these verbs are free. On an

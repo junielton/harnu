@@ -53,6 +53,7 @@ interface RigOpts {
   /** Touch is emulated: clicks must be taps. */
   touch?: boolean
   scale?: number
+  url?: string
 }
 
 function rig(opts: RigOpts = {}) {
@@ -193,7 +194,7 @@ function rig(opts: RigOpts = {}) {
     ...(opts.device ? { emulation: { device: deviceFromPreset('phone-m') } } : {})
   })
   live.set('bp-1', {
-    url: 'http://localhost:5173/app',
+    url: opts.url ?? 'http://localhost:5173/app',
     title: 'App',
     loading: false,
     canGoBack: false,
@@ -456,6 +457,25 @@ describe('browser_download', () => {
     const res = await downloadVerb({ paneId: 'bp-1', ref: 's1e2' }, r.deps)
     expect(res).toMatchObject({ ok: false, error: 'ELEMENT_OBSCURED' })
     expect(r.arm.disarm).toHaveBeenCalled()
+  })
+
+  it('by ref on an external page it needs the lease and clicks nothing without it (Q4, delta 1)', async () => {
+    const r = rig({ download: saved, url: 'https://shop.example.com/cart' })
+    expect(await downloadVerb({ paneId: 'bp-1', ref: 's1e2' }, r.deps)).toMatchObject({
+      ok: false,
+      error: 'BROWSER_LEASE_ENDED'
+    })
+    expect(calls(r.log, 'Input.dispatchMouseEvent')).toEqual([])
+    expect(r.host.armDownload).not.toHaveBeenCalled()
+    // By url it only fetches: the same page needs no lease.
+    expect(
+      await downloadVerb({ paneId: 'bp-1', url: 'https://shop.example.com/a.txt' }, r.deps)
+    ).toMatchObject({ ok: true })
+    // With the operator's lease the ref form runs.
+    const leased = rig({ download: saved, url: 'https://shop.example.com/cart', leaseActive: true })
+    expect(await downloadVerb({ paneId: 'bp-1', ref: 's1e2' }, leased.deps)).toMatchObject({
+      ok: true
+    })
   })
 
   it('maps each way a download fails to its code', async () => {

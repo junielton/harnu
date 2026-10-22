@@ -9,12 +9,31 @@ import * as path from 'node:path'
 export const MAX_UPLOAD_FILES = 10
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
-/** The names an upload never takes, however the path got there (spec §6.2): `.git/**`, `.env*`, `*.pem`, `*.key`, `id_*`. */
+/** Exact file names that carry credentials (compared lower-cased, by base name). */
+const SECRET_FILE_NAMES: ReadonlySet<string> = new Set([
+  '.git-credentials',
+  '.npmrc',
+  '.netrc',
+  '.pypirc',
+  '_netrc',
+  '.htpasswd'
+])
+
+/**
+ * The names an upload never takes, however the path got there (spec §6.2, widened in T572 delta 1): anything inside
+ * `.git/` or `.harnu/`, any `.env*`, the credential files (`.git-credentials`, `.npmrc`, `.netrc`, `.pypirc`),
+ * `*.pem`, `*.key` and `id_*` (`id_rsa*`, `id_ed25519*`, …). Judged on every path component, lower-cased.
+ */
 export function forbiddenUploadReason(p: string): string | null {
   const parts = p.split(/[\\/]+/).filter((s) => s !== '' && s !== '.')
-  if (parts.some((s) => s.toLowerCase() === '.git')) return 'it is inside .git'
+  for (const part of parts) {
+    const lower = part.toLowerCase()
+    if (lower === '.git') return 'it is inside .git'
+    if (lower === '.harnu') return 'it is inside .harnu'
+  }
   const base = (parts[parts.length - 1] ?? '').toLowerCase()
-  if (base === '.env' || base.startsWith('.env.')) return 'it is an .env file'
+  if (base.startsWith('.env')) return 'it is an .env file'
+  if (SECRET_FILE_NAMES.has(base)) return 'it is a credentials file'
   if (base.endsWith('.pem') || base.endsWith('.key')) return 'it is a key file'
   if (base.startsWith('id_')) return 'it looks like an SSH key'
   return null
@@ -27,8 +46,15 @@ export interface UploadRefusal {
   detail: string
 }
 
-/** The plan-level checks of the arguments alone (no filesystem): the count and the forbidden names. */
-export function checkUploadArgs(args: Record<string, unknown>): UploadRefusal | null {
+/**
+ * The plan-level checks of the arguments (no filesystem): the count, the forbidden names, and, when the pane's
+ * `folder` is known, that every path stays inside it lexically (a `..`, or an absolute path elsewhere) — so none of
+ * those can reach a confirm, and the answer never touches the disk. Links are judged later, by {@link planUpload}.
+ */
+export function checkUploadArgs(
+  args: Record<string, unknown>,
+  folder?: string
+): UploadRefusal | null {
   const paths = args.paths
   if (
     !Array.isArray(paths) ||
@@ -40,9 +66,23 @@ export function checkUploadArgs(args: Record<string, unknown>): UploadRefusal | 
   if (paths.length > MAX_UPLOAD_FILES) {
     return { code: 'BAD_ARGS', detail: `At most ${MAX_UPLOAD_FILES} files per call.` }
   }
+  const root = folder !== undefined && folder !== '' ? path.resolve(folder) : null
   for (const p of paths as string[]) {
     const why = forbiddenUploadReason(p)
     if (why) return { code: 'UPLOAD_PATH_DENIED', detail: `${shorten(p)}: ${why}.` }
+    if (root !== null) {
+      const abs = path.resolve(root, p)
+      if (!inside(root, abs)) {
+        return {
+          code: 'UPLOAD_PATH_DENIED',
+          detail: `${shorten(p)}: it is outside the pane's folder.`
+        }
+      }
+      // `sub/../.env` resolves to `.env`: the forbidden names apply to where the path really lands.
+      const resolvedWhy = forbiddenUploadReason(path.relative(root, abs))
+      if (resolvedWhy)
+        return { code: 'UPLOAD_PATH_DENIED', detail: `${shorten(p)}: ${resolvedWhy}.` }
+    }
   }
   return null
 }
@@ -78,7 +118,7 @@ export async function planUpload(opts: {
   paths: readonly string[]
   io: UploadIo
 }): Promise<UploadPlan> {
-  const argRefusal = checkUploadArgs({ paths: [...opts.paths] })
+  const argRefusal = checkUploadArgs({ paths: [...opts.paths] }, opts.folder)
   if (argRefusal) return { ok: false, ...argRefusal }
   let rootReal: string
   try {

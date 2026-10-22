@@ -62,7 +62,9 @@ const TABLE: Cell[] = [
   ['browser_press', {}, extLease(), 'lease'],
   ['browser_upload', {}, extLease(), 'lease'],
   ['browser_emulate', {}, all('free'), 'lease'],
-  ['browser_download', {}, all('free'), 'lease'],
+  ['browser_download', { url: 'https://x.test/f' }, all('free'), 'lease'],
+  // By `ref` it clicks the element: the Input tier, a lease on an external page (Q4, T572 delta 1).
+  ['browser_download', { ref: 's1e1' }, extLease(), 'lease'],
   ['browser_close', {}, all('free'), 'lease'],
   [
     'browser_set_data',

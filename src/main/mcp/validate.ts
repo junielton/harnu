@@ -21,6 +21,7 @@
 import * as path from 'node:path'
 import { z } from 'zod'
 import { compileUrlPattern } from '../browser/wait-for'
+import { DEVICE_PRESET_NAMES, type DevicePresetName } from '../../shared/browser-emulation'
 import { sanitizeAgentBootOverride, type AgentBootOverride } from './agent-boot'
 import { SAFE_GRANT_VERBS, toolByName, type McpOp } from './tool-catalog'
 import { MESSAGE_MAX_CHARS } from '../messaging-socket'
@@ -1270,7 +1271,7 @@ export interface BrowserOpenArgs {
   html?: string
   name?: string
   ownerSessionId?: string
-  device?: unknown
+  device?: DevicePresetName
   background?: boolean
 }
 
@@ -1281,7 +1282,7 @@ const BrowserOpenSchema = z.object({
   html: z.string().optional(),
   name: z.string().min(1).max(80).optional(),
   ownerSessionId: z.string().min(1).optional(),
-  device: z.unknown().optional(),
+  device: z.enum(DEVICE_PRESET_NAMES as [DevicePresetName, ...DevicePresetName[]]).optional(),
   background: z.boolean().optional()
 })
 

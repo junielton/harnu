@@ -58,6 +58,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   ending the recording is always allowed. A pane you opened is now refused until you let agents read browser panes
   in its folder, instead of being unavailable to sessions altogether.
 - A hidden browser pane in device mode now screenshots the right element: the crop accounts for the device's own size instead of the pane's.
+- Browser panes that were never put in a device mode no longer lose their client hints (`Sec-CH-UA`): Harnu used to restore the browser's user agent on every page load, which dropped them. Resetting a device now puts the real hints back, and a pane opened in a device sends its first request as that device.
+- A session's `browser_download` by clicking an element now needs the same permission as clicking, on a site that is not your own machine: it was a way to click without asking.
+- Uploads refuse more secrets: anything in `.harnu`, `.env*`, `.git-credentials`, `.npmrc`, `.netrc` and `.pypirc` as well as keys, and a path that leaves the folder is refused before you are ever asked.
+- A download in a browser pane that a session gives up on (timeout, closed pane) is stopped and leaves nothing in your folder; denying a download you started shows "Download cancelled" instead of a failure; names are cut by bytes and cleaned of direction-changing characters; leftovers of an interrupted save are swept at the next start.
 - A session's clicks on a page that emulates touch are now taps, like a finger's: a mouse press never completes while touch is emulated, so the click used to hang.
 
 ## 2026-10-21

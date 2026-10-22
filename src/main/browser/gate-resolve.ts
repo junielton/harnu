@@ -4,6 +4,7 @@
  * `browser-service.ts` reads those and calls this; the tests call it with fakes.
  */
 import type { BrowserGateInput } from './access'
+import { effectiveTouch } from '../../shared/browser-emulation'
 import { classifyOrigin } from './origin-class'
 import type { BrowserPaneRecord } from './registry'
 
@@ -50,7 +51,9 @@ export function resolveGateInput(opts: {
         leaseActive: opts.leaseActive === true,
         writeDenied: opts.writeDenied === true,
         inputReady: opts.inputReady !== false,
-        deviceActive: rec.emulation?.device !== undefined
+        deviceActive: rec.emulation?.device !== undefined,
+        touchActive: effectiveTouch(rec.emulation),
+        folder: rec.folder
       },
       ...args
     }

@@ -866,12 +866,10 @@ describe('T571 delta 2 — catalog descriptions stay true to what the verbs retu
   const desc = (op: string): string => MCP_TOOLS.find((t) => t.op === op)!.description
   const browserOps = MCP_TOOLS.filter((t) => t.op.startsWith('browser_')).map((t) => t.op)
 
-  it('no browser verb but browser_open still advertises NOT_YET_AVAILABLE (it only returns it for path/html/device)', () => {
+  it('no browser verb advertises NOT_YET_AVAILABLE: every form of every verb is served since U5', () => {
     for (const op of browserOps) {
-      if (op === 'browser_open') continue
       expect(desc(op), op).not.toContain('NOT_YET_AVAILABLE')
     }
-    expect(desc('browser_open')).toContain('NOT_YET_AVAILABLE')
   })
 
   it('navigate, close and network describe the opt-in and the lease instead', () => {

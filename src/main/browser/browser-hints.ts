@@ -94,6 +94,11 @@ export interface BrowserHintContext {
   jailReason?: string
 }
 
+/** `detail` without its closing period, so a message that adds its own does not end in "..". */
+function noDot(detail: string | undefined): string | undefined {
+  return detail?.replace(/\.+$/, '')
+}
+
 export function shapeBrowserDenial(
   code: BrowserDenialCode,
   ctx: BrowserHintContext = {}
@@ -467,7 +472,7 @@ export function shapeBrowserDenial(
     case 'UPLOAD_PATH_DENIED':
       return {
         error: code,
-        message: `That file cannot be uploaded${ctx.detail ? `: ${ctx.detail}` : ''}.`,
+        message: `That file cannot be uploaded${noDot(ctx.detail) ? `: ${noDot(ctx.detail)}` : ''}.`,
         nextActions: [
           {
             do: 'Pass paths that are files inside the pane’s folder. Secrets (.git, .env*, *.pem, *.key, id_*) and anything reached through a link that leaves the folder are never uploaded. Copy a file into the folder first if you need it.',
@@ -478,7 +483,7 @@ export function shapeBrowserDenial(
     case 'UPLOAD_TOO_LARGE':
       return {
         error: code,
-        message: `That file is too large to upload${ctx.detail ? `: ${ctx.detail}` : ''}. The limit is 50 MiB per file.`,
+        message: `That file is too large to upload${noDot(ctx.detail) ? `: ${noDot(ctx.detail)}` : ''}. The limit is 50 MiB per file.`,
         nextActions: [
           {
             do: 'Upload a smaller file, or split it.',
@@ -511,7 +516,7 @@ export function shapeBrowserDenial(
     case 'DOWNLOAD_FAILED':
       return {
         error: code,
-        message: `The download did not complete${ctx.detail ? `: ${ctx.detail}` : ''}. Nothing was kept.`,
+        message: `The download did not complete${noDot(ctx.detail) ? `: ${noDot(ctx.detail)}` : ''}. Nothing was kept.`,
         nextActions: [
           {
             do: 'Try again, or check the address with browser_navigate first.',
@@ -522,7 +527,7 @@ export function shapeBrowserDenial(
     case 'DOWNLOAD_CANCELLED':
       return {
         error: code,
-        message: `The download was cancelled${ctx.detail ? `: ${ctx.detail}` : ''}.`,
+        message: `The download was cancelled${noDot(ctx.detail) && noDot(ctx.detail) !== 'The download was cancelled' ? `: ${noDot(ctx.detail)}` : ''}.`,
         nextActions: [
           {
             do: 'Tell the operator if you still need the file; do not retry in a loop.',

@@ -870,6 +870,58 @@ describe('T572 (U5): emulate, upload and download ride the same lease (AC-9)', (
     expect(h.downloads).toBe(1)
   })
 
+  describe('download by ref clicks, so on an external page it is the Input tier (Q4, delta 1)', () => {
+    const byRef = (): Promise<CallToolResult> =>
+      call('browser_download', { paneId: 'bp-ext', ref: 's1e1' })
+    const byUrl = (): Promise<CallToolResult> =>
+      call('browser_download', { paneId: 'bp-ext', url: 'https://shop.example.com/a.txt' })
+
+    it('free mode: the first call confirms, Allow clicks NOTHING, the next call runs under the lease', async () => {
+      const first = await confirmAndAnswer(byRef, 'allow')
+      expect(first.error).toBe('BROWSER_APPROVED_RESEND')
+      expect(wires[0]!.prompt).toContain('An agent wants to drive a browser pane.')
+      expect(wires[0]!.prompt).toContain('to download a file into .harnu/out/downloads/')
+      expect(inputEvents()).toBe(0)
+      expect(h.downloads).toBe(0)
+      expect(body(await byRef()).ok).toBe(true)
+      expect(inputEvents()).toBeGreaterThan(0)
+      expect(wires).toHaveLength(1)
+    })
+
+    it('ask mode: the confirm is the lease confirm, and an Allow performs no click', async () => {
+      await writeMcpAsk(true)
+      const first = await confirmAndAnswer(byRef, 'allow')
+      expect(first.error).toBe('BROWSER_APPROVED_RESEND')
+      expect(wires[0]!.prompt).toContain('An agent wants to drive a browser pane.')
+      expect(inputEvents()).toBe(0)
+    })
+
+    it('a Deny blocks the pane for the click too, with no click and no new prompt', async () => {
+      const first = await confirmAndAnswer(byRef, 'deny')
+      expect(first.error).toBe('BROWSER_WRITE_DENIED')
+      expect(body(await byRef()).error).toBe('BROWSER_WRITE_DENIED')
+      expect(wires).toHaveLength(1)
+      expect(inputEvents()).toBe(0)
+    })
+
+    it('by url it only fetches: free in free mode (no confirm), a normal confirm in ask mode that DOES act', async () => {
+      expect(body(await byUrl()).ok).toBe(true)
+      expect(wires).toHaveLength(0)
+      expect(h.downloads).toBe(1)
+      await writeMcpAsk(true)
+      const res = await confirmAndAnswer(byUrl, 'allow')
+      expect(res.ok).toBe(true)
+      expect(wires[0]!.prompt).not.toContain('An agent wants to drive a browser pane.')
+      expect(h.downloads).toBe(2)
+    })
+
+    it('on a local pane the agent opened, by ref is still free', async () => {
+      const res = body(await call('browser_download', { paneId: 'bp-loc', ref: 's1e1' }))
+      expect(res.ok).toBe(true)
+      expect(wires).toHaveLength(0)
+    })
+  })
+
   it('a download of a non-http address is refused at plan level', async () => {
     const res = body(
       await call('browser_download', { paneId: 'bp-loc', url: 'file:///etc/passwd' })

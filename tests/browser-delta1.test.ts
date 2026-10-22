@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { createBrowserRegistry, AGENT_INPUT_HISTORY_MS } from '../src/main/browser/registry'
+import { createBrowserRegistry } from '../src/main/browser/registry'
 import { createBootTracker } from '../src/main/browser/page-boot'
 import {
   folderIdOf,
@@ -27,8 +27,8 @@ import { buildPlanInput } from '../src/main/mcp/plan-input'
 import { createBrowserAccess } from '../src/main/browser/access'
 import { openVerb, type BrowserHost, type BrowserVerbDeps } from '../src/main/browser/verbs-core'
 
-describe('F5 — the registry keeps agent input runs for the emit gate', () => {
-  it('records runs, closes them FIFO and reports in-flight', () => {
+describe('F5 — the registry keeps agent input runs for the one agent-input gate', () => {
+  it('records runs, closes them FIFO and reports in-flight and overlap', () => {
     let t = 1000
     const reg = createBrowserRegistry(() => t)
     reg.beginAgentInput('p')
@@ -36,29 +36,34 @@ describe('F5 — the registry keeps agent input runs for the emit gate', () => {
     reg.beginAgentInput('p')
     t = 1200
     reg.endAgentInput('p')
-    expect(reg.agentInput('p')).toEqual({
-      inFlight: true,
-      at: 1200,
-      intervals: [
-        { start: 1000, end: 1200 },
-        { start: 1100, end: null }
-      ]
-    })
+    expect(reg.agentInput('p')).toEqual({ inFlight: true, at: 1200 })
+    // the first run was 1000..1200, the second is still open since 1100
+    expect(reg.agentInputOverlaps('p', 900, 950)).toBe(false)
+    expect(reg.agentInputOverlaps('p', 1050, 1060)).toBe(true)
+    expect(reg.agentInputOverlaps('p', 5000, 5001)).toBe(true) // the open run counts up to the end of the question
     t = 1300
     reg.endAgentInput('p')
     expect(reg.agentInput('p').inFlight).toBe(false)
+    expect(reg.agentInputOverlaps('p', 1250, 1290)).toBe(true) // the second run ended at 1300
+    expect(reg.agentInputOverlaps('p', 1301, 2000)).toBe(false)
   })
 
-  it('forgets runs older than the history window, and a closed pane', () => {
+  it('forgets a closed pane, and keeps a bounded number of finished runs', () => {
     let t = 0
     const reg = createBrowserRegistry(() => t)
     reg.beginAgentInput('p')
-    reg.endAgentInput('p')
-    t = AGENT_INPUT_HISTORY_MS + 1
-    expect(reg.agentInput('p').intervals).toEqual([])
-    reg.beginAgentInput('p')
     reg.remove('p')
-    expect(reg.agentInput('p')).toEqual({ inFlight: false, at: null, intervals: [] })
+    expect(reg.agentInput('p')).toEqual({ inFlight: false, at: null })
+    expect(reg.agentInputOverlaps('p', 0, 10)).toBe(false)
+    for (let i = 0; i < 100; i++) {
+      t = i * 10
+      reg.beginAgentInput('q')
+      t = i * 10 + 5
+      reg.endAgentInput('q')
+    }
+    // the oldest runs fell off the bounded list; the newest are still there
+    expect(reg.agentInputOverlaps('q', 0, 20)).toBe(false)
+    expect(reg.agentInputOverlaps('q', 985, 995)).toBe(true)
   })
 })
 

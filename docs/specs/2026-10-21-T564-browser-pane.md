@@ -182,8 +182,10 @@ the pane would render underneath it. `WebContentsView` cannot be clipped to a re
 A focused guest swallows keystrokes before the renderer's keybinding engine sees them. Main installs
 `before-input-event` on every guest `webContents`, normalizes the chord and forwards it to the renderer
 (`browser:chord`), which runs the normal keybinding dispatcher. The guest keeps a short **page-owns** list
-(copy, paste, cut, select-all, undo/redo, find, and the pane's own zoom chords); everything else is offered to
-Harnu first. New action ids for the keybindings table (T486 conventions: every id has a handler and labels in
+(copy, paste, cut, select-all, undo/redo, find); everything else is offered to Harnu first. **The zoom chords are
+Harnu-owned (amended in U5, T572):** `Ctrl =`, `Ctrl −` and `Ctrl 0` (and `Ctrl +`, folded onto `Ctrl =`) are
+forwarded like any other bound chord and drive the per-origin zoom of §9.1; they are not page-owned, and a page
+never sees them. New action ids for the keybindings table (T486 conventions: every id has a handler and labels in
 both locales): `browser.overlay.toggle`, `browser.zoom.in|out|reset`, `browser.devtools`, `browser.reload`,
 `browser.back`, `browser.forward`, `browser.focusAddress`. `browser.overlay.toggle` defaults to
 `Ctrl+Shift+C` scoped to **browser-pane focus only** (Chrome's own inspect chord; Harnu's terminals use it for

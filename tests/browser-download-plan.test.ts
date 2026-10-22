@@ -12,6 +12,7 @@ import {
   isInsideReal,
   overLimit,
   resolveDownloadTarget,
+  isStaleHeldDir,
   moveHeldDownload,
   stepHeldDownload,
   NEW_HELD_DOWNLOAD,
@@ -58,10 +59,23 @@ describe('sanitizeDownloadName', () => {
     expect(sanitizeDownloadName('  ')).toBe('download')
   })
 
-  it('cuts a very long name to 120 characters and keeps the extension', () => {
+  it('cuts a very long name to 240 UTF-8 bytes and keeps the extension', () => {
     const out = sanitizeDownloadName(`${'a'.repeat(300)}.pdf`)
-    expect([...out].length).toBeLessThanOrEqual(120)
+    expect(Buffer.byteLength(out)).toBeLessThanOrEqual(240)
     expect(out.endsWith('.pdf')).toBe(true)
+  })
+
+  it('counts BYTES, not characters: a name of 4-byte characters is cut on a character boundary', () => {
+    const out = sanitizeDownloadName(`${'😀'.repeat(100)}.txt`)
+    expect(Buffer.byteLength(out)).toBeLessThanOrEqual(240)
+    expect(out.endsWith('.txt')).toBe(true)
+    expect(out).not.toContain('\ufffd')
+    expect([...out.replace('.txt', '')].every((c) => c === '😀')).toBe(true)
+  })
+
+  it('removes direction-changing and invisible characters (a name that reads as something else)', () => {
+    expect(sanitizeDownloadName('invoice\u202efdp.exe')).toBe('invoicefdp.exe')
+    expect(sanitizeDownloadName('a\u2066b\u2069c\u200bd\ufeffe\u061c.txt')).toBe('abcde.txt')
   })
 })
 
@@ -256,6 +270,63 @@ describe('the one-shot allowance', () => {
   })
 })
 
+describe('the allowance aborts a download it gives up on (delta 1)', () => {
+  function harness() {
+    const timers: Array<{ fn: () => void; live: boolean }> = []
+    const aborted: string[] = []
+    const arms = createDownloadArms({
+      setTimer: (fn) => {
+        const t = { fn, live: true }
+        timers.push(t)
+        return t
+      },
+      clearTimer: (h) => {
+        ;(h as { live: boolean }).live = false
+      },
+      abortClaimed: (id) => aborted.push(id)
+    })
+    return { arms, timers, aborted }
+  }
+
+  it('the completion timeout cancels the item', async () => {
+    const { arms, timers, aborted } = harness()
+    const arm = arms.arm('p1', { timeoutMs: 5000 })
+    arms.claim('p1')
+    timers[1]!.fn()
+    expect(aborted).toEqual(['p1'])
+    expect(await arm.result).toMatchObject({ ok: false, code: 'DOWNLOAD_FAILED' })
+  })
+
+  it('a call that ends (deadline, abort) while the download is arriving cancels it', () => {
+    const { arms, aborted } = harness()
+    const arm = arms.arm('p1', { timeoutMs: 5000 })
+    arms.claim('p1')
+    arm.disarm()
+    expect(aborted).toEqual(['p1'])
+  })
+
+  it('a finished download, or one that never started, aborts nothing', () => {
+    const { arms, aborted } = harness()
+    const a = arms.arm('p1', { timeoutMs: 5000 })
+    a.disarm()
+    const b = arms.arm('p2', { timeoutMs: 5000 })
+    arms.claim('p2')
+    arms.settle('p2', { ok: true, path: 'x', bytes: 1, mime: 'a/b', name: 'x' })
+    b.disarm()
+    expect(aborted).toEqual([])
+  })
+})
+
+describe('stale held downloads', () => {
+  const HOUR = 60 * 60 * 1000
+  it('sweeps only our own prefix, and only what is old enough to belong to a dead process', () => {
+    expect(isStaleHeldDir('harnu-dl-abc123', 0, 2 * HOUR)).toBe(true)
+    expect(isStaleHeldDir('harnu-dl-abc123', HOUR, 1.5 * HOUR)).toBe(false)
+    expect(isStaleHeldDir('other-dir', 0, 10 * HOUR)).toBe(false)
+    expect(isStaleHeldDir('harnu-dl', 0, 10 * HOUR)).toBe(false)
+  })
+})
+
 describe('isInsideReal', () => {
   it('accepts the root and its descendants, refuses siblings and parents', () => {
     expect(isInsideReal('/w/app', '/w/app')).toBe(true)
@@ -306,6 +377,41 @@ describe('resolveDownloadTarget', () => {
     expect(r).toMatchObject({ ok: false })
   })
 
+  it('reserves the name exclusively, and picks again when somebody takes it first (no overwrite race)', () => {
+    const taken = new Set<string>()
+    let first = true
+    const racing: DownloadFsIo = {
+      mkdirp: () => undefined,
+      realpath: (p) => p,
+      exists: (p) => taken.has(p),
+      reserve: (p) => {
+        if (first) {
+          first = false
+          taken.add(p) // another writer got there between the check and the claim
+          throw Object.assign(new Error('exists'), { code: 'EEXIST' })
+        }
+        taken.add(p)
+      }
+    }
+    expect(resolveDownloadTarget('/w/app', 'a.txt', racing)).toMatchObject({
+      ok: true,
+      name: 'a (1).txt'
+    })
+    expect(taken.has('/w/app/.harnu/out/downloads/a (1).txt')).toBe(true)
+  })
+
+  it('a reservation failure that is not a name clash is reported', () => {
+    const r = resolveDownloadTarget('/w/app', 'a.txt', {
+      mkdirp: () => undefined,
+      realpath: (p) => p,
+      exists: () => false,
+      reserve: () => {
+        throw Object.assign(new Error('EROFS'), { code: 'EROFS' })
+      }
+    })
+    expect(r).toEqual({ ok: false, detail: 'EROFS' })
+  })
+
   it('reports a directory it cannot create', () => {
     const r = resolveDownloadTarget(
       '/w/app',
@@ -350,6 +456,12 @@ describe('the operator’s held download (Q16, found live: a pause does not hold
     expect(run(['deny']).effects).toEqual(['discard'])
     expect(run(['done-ok', 'deny']).effects).toEqual(['none', 'discard'])
     expect(run(['deny', 'done-ok']).effects).toEqual(['discard', 'discard'])
+  })
+
+  it('Deny while it is still arriving shows ONE outcome: its own cancel coming back is not a failure', () => {
+    const { state, effects } = run(['deny', 'done-fail'])
+    expect(effects).toEqual(['discard', 'none'])
+    expect(state.failed).toBe(false)
   })
 
   it('a download that broke off is discarded and a later Save moves nothing', () => {
