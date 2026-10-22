@@ -441,6 +441,8 @@ _another_ folder.
 | `play`                                   | Browser pane → Resume the agent after "Pause agent for 10 min" (chip)                                                                                                                                                                  |
 | `pause`                                  | Browser pane → "Pause agent for 10 min" (⋯ menu)                                                                                                                                                                                       |
 | `bug`                                    | Browser pane → Open DevTools (⋯ menu)                                                                                                                                                                                                  |
+| `wifi-off` / `wifi`                      | Browser pane → "Allow network" switch on a page pane: off = `wifi-off` (default), on = `wifi` (T569 U2)                                                                                                                                |
+| `file-x`                                 | Browser pane → "file removed" placeholder for a page pane whose file is gone (T569 U2)                                                                                                                                                 |
 
 ### Novelty dot (on an icon button)
 
@@ -3843,6 +3845,29 @@ bottom-right corner) registers the same way and is hidden while an overlay inter
 **Open from the Split menu.** The Split dropdown gains a **Browser** item (`globe`) that opens an operator pane at
 `about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
 agent partition (spec §3.4). Operator panes are unlimited; agent panes are capped at 4 per folder.
+
+**Page pane** (T569 U2, spec §4 and §5). A pane showing one of **our own files** served from `harnu-page://`
+(a project `.html`, or a panel an agent wrote). The page is still a native view, so every rule above holds; the
+chrome adds three things and changes one.
+
+- **Address field shows the file, not the address.** For a `page` origin the field shows the folder-relative path
+  (`.harnu/out/panels/status.html`) in the same mono 11px field instead of the opaque `harnu-page://f…/…` URL;
+  the origin badge reads `page` (`--accent-soft` fill, `--accent` text, as above). The header title falls back to
+  the file name. A page pane is **not** a place to type another site: Enter with an `http(s)` address still
+  navigates (and the badge changes with the origin class), a path is not an address.
+- **"Allow network" switch** (spec §4.3, Q3). Operator only: no verb can set it, and the control is rendered only
+  for a `page` origin. A pill button in the address bar, right of the field, `role="switch"` with `aria-checked`,
+  geometry of the origin badge (`padding 1px 6px`, 10px, `rounded-full`, 1px border) with a 10px icon.
+  **Off (default)**: `wifi-off`, `--surface-2` fill, `--text-3` text, 1px `--border`, text "Offline".
+  **On**: `wifi`, `--warning` text on a `--warning` 10% fill with a `--warning` 30% border, text "Network on",
+  because it relaxes the no-egress policy and must not look neutral. Toggling it reloads the page (the policy rides
+  the document response). The state lives on the pane. Native `title`: "Offline: the page cannot reach the
+  network. Click to allow it for this pane." / "Network on: the page can reach the network. Click to turn it
+  off." Focus ring is the standard `--accent-line` 1px.
+- **"File removed" placeholder** (spec §4.4). When the served file is deleted the native view is hidden and the
+  host shows a centred block on `--bg`: `file-x` 20px `--text-4`, the line "File removed" in 13px `--text-2`, the
+  path in mono 11px `--text-3`, and "Waiting for it to come back…" in 11px `--text-4`. No spinner and no motion. The
+  pane keeps watching: when the file is re-created the placeholder goes and the page reloads.
 
 #### Review companion pane
 
