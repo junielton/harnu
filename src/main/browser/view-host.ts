@@ -24,6 +24,7 @@ import {
   app,
   nativeImage,
   session,
+  type Session,
   type WebContents
 } from 'electron'
 import {
@@ -82,6 +83,9 @@ import {
 } from './nav-policy'
 import { classifyOrigin, hostOf, originKey } from './origin-class'
 import { initialInputReadyState, nextInputReadyState, type InputReadyState } from './input-ready'
+import { decidePageRequest } from './page-guard'
+import { decidePageNavigation, popupAllowedFrom } from './page-egress'
+import { pageCsp } from './page-url'
 import {
   FreezeGeneration,
   captureMatchesBounds,
@@ -90,7 +94,8 @@ import {
   certificateVerdictFor,
   createGestureGate,
   decideFreeze,
-  flagAfterOperatorAction
+  flagAfterOperatorAction,
+  liveUrlOf
 } from './view-logic'
 import type { BrowserAccess } from './access'
 import type { BrowserRegistry } from './registry'
@@ -121,6 +126,26 @@ export interface ViewHostDeps {
   openPopupPane(opts: { folder: string; partition: BrowserPartition; url: string }): void
   /** `<userData>/browser-prefs.json`: the zoom remembered per origin (T572, spec §9.1). */
   prefs: BrowserPrefsStore
+  /** The `harnu-page://` side (T569 U2); absent in a unit that never loads a page. */
+  pageHooks?: PageHooks
+}
+
+/** What the view host asks of the page service (`page-service.ts`). */
+export interface PageHooks {
+  /** Registered once per guest partition: the `harnu-page:` protocol handler. */
+  registerProtocol(ses: Session, partition: string): void
+  /** A main-frame navigation started: the previous document's preload is gone (F3). */
+  onNavigationStart(paneId: string): void
+  /** A pane committed a navigation (to any URL): start, keep or drop its file watcher. */
+  onNavigated(paneId: string, url: string): void
+  onDestroyed(paneId: string): void
+  /**
+   * `onBeforeRequest` ALLOWED a `harnu-page:` request: issue its one-shot ticket (the handler serves nothing
+   * else, F1) and, when it came from a known pane, watch its file.
+   */
+  onRequest(partition: string, paneId: string | undefined, url: string): void
+  /** The pane's per-pane "Allow network" switch (spec §4.3), read on every response. */
+  allowNetwork(paneId: string): boolean
 }
 
 /** The real filesystem the download target resolution touches. */
@@ -172,6 +197,12 @@ interface ViewEntry {
   paintedWaiter: (() => void) | null
   /** Real clicks/keys: one popup per activation (`view-logic.ts`). */
   gestures: GestureGate
+  /** When `before-input-event` last saw a REAL `keyDown` on the pane (spec §5.4 condition 4). */
+  lastRealKeyDownAt: number | null
+  /** The address the pane was last asked to load, for a pane that has not committed anything yet (F3). */
+  requestedUrl: string
+  /** The served page file is gone (T569 U2): the view is hidden and the pane shows the placeholder. */
+  fileRemoved: boolean
   loading: boolean
   /** Mouse and key events reach the current document (see `inputReady` and `browser/input-ready.ts`). */
   inputState: InputReadyState
@@ -239,6 +270,9 @@ export class BrowserViewHost implements BrowserReadHost {
       gen: new FreezeGeneration(),
       paintedWaiter: null,
       gestures: createGestureGate(() => this.deps.now()),
+      lastRealKeyDownAt: null,
+      requestedUrl: opts.url,
+      fileRemoved: false,
       loading: false,
       inputState: initialInputReadyState(),
       harnuNavigation: false,
@@ -278,7 +312,7 @@ export class BrowserViewHost implements BrowserReadHost {
     const e = this.entries.get(paneId)
     if (!e || e.wc.isDestroyed()) return undefined
     return {
-      url: e.wc.getURL(),
+      url: liveUrlOf(e.wc.getURL(), e.requestedUrl),
       title: e.wc.getTitle(),
       loading: e.wc.isLoading(),
       canGoBack: e.wc.navigationHistory.canGoBack(),
@@ -324,6 +358,7 @@ export class BrowserViewHost implements BrowserReadHost {
       e.harnuNavigation = true
       if ('url' in target) {
         e.notice = null
+        e.requestedUrl = target.url
         wc.loadURL(target.url).catch(() => undefined)
       } else if (target.action === 'back') wc.navigationHistory.goBack()
       else if (target.action === 'forward') wc.navigationHistory.goForward()
@@ -360,6 +395,7 @@ export class BrowserViewHost implements BrowserReadHost {
     this.entries.delete(paneId)
     this.byWebContentsId.delete(e.wc.id)
     e.readers.dispose()
+    this.deps.pageHooks?.onDestroyed(paneId)
     const win = this.deps.getWindow()
     try {
       if (e.wc.debugger.isAttached()) e.wc.debugger.detach()
@@ -888,7 +924,8 @@ export class BrowserViewHost implements BrowserReadHost {
     })
     e.parked = placement.parked
     e.view.setBounds(placement.bounds)
-    e.view.setVisible(placement.visible)
+    // A removed page file hides the view; the pane chrome shows the placeholder (design.md "Page pane").
+    e.view.setVisible(placement.visible && !e.fileRemoved)
     // Parked → real rect clears the parking override and applies the pane's own emulation record (spec §2.3);
     // a changed rect in device mode changes the scale the page is shown at (spec §9.2).
     this.syncMetrics(e)
@@ -933,6 +970,7 @@ export class BrowserViewHost implements BrowserReadHost {
       const rec = this.deps.registry.get(paneId)
       if (rec) rec.flagged = flagAfterOperatorAction()
       e.notice = null
+      e.requestedUrl = verdict.url
       e.wc.loadURL(verdict.url).catch(() => undefined)
     } else if (target.action === 'back') e.wc.navigationHistory.goBack()
     else if (target.action === 'forward') e.wc.navigationHistory.goForward()
@@ -979,6 +1017,88 @@ export class BrowserViewHost implements BrowserReadHost {
 
   has(paneId: string): boolean {
     return this.entries.has(paneId)
+  }
+
+  /* ---- The page side (T569 U2) ---------------------------------------------------------------- */
+
+  webContentsOf(paneId: string): WebContents | undefined {
+    const e = this.entries.get(paneId)
+    return e && !e.wc.isDestroyed() ? e.wc : undefined
+  }
+
+  paneIdOfWebContents(webContentsId: number): string | undefined {
+    return this.byWebContentsId.get(webContentsId)
+  }
+
+  lastRealKeyDownAt(paneId: string): number | null {
+    return this.entries.get(paneId)?.lastRealKeyDownAt ?? null
+  }
+
+  /** Reload a page pane, keeping its scroll position (spec §4.4). */
+  async reloadPage(paneId: string): Promise<void> {
+    const e = this.entries.get(paneId)
+    if (!e || e.wc.isDestroyed()) return
+    let scroll: [number, number] = [0, 0]
+    try {
+      const got = (await e.wc.executeJavaScript('[window.scrollX, window.scrollY]')) as unknown
+      if (Array.isArray(got) && typeof got[0] === 'number' && typeof got[1] === 'number') {
+        scroll = [got[0], got[1]]
+      }
+    } catch {
+      /* the page was not ready: reload from the top */
+    }
+    e.wc.once('did-finish-load', () => {
+      if (e.wc.isDestroyed() || (scroll[0] === 0 && scroll[1] === 0)) return
+      void e.wc
+        .executeJavaScript(`window.scrollTo(${scroll[0]}, ${scroll[1]})`)
+        .catch(() => undefined)
+    })
+    e.wc.reloadIgnoringCache()
+  }
+
+  /** The served file was deleted (or came back): hide the view and show the placeholder, or undo that. */
+  setFileRemoved(paneId: string, removed: boolean): void {
+    const e = this.entries.get(paneId)
+    if (!e || e.fileRemoved === removed) return
+    e.fileRemoved = removed
+    this.place(e)
+    this.publish(e)
+  }
+
+  /** The operator flipped "Allow network": the policy rides the document response, so reload to apply it. */
+  setAllowNetwork(paneId: string, allow: boolean): boolean {
+    const rec = this.deps.registry.get(paneId)
+    const e = this.entries.get(paneId)
+    if (!rec || !e || rec.allowNetwork === allow) return false
+    this.deps.registry.noteOperatorInteraction(paneId)
+    rec.allowNetwork = allow
+    this.publish(e)
+    if (!e.wc.isDestroyed()) e.wc.reloadIgnoringCache()
+    return true
+  }
+
+  /**
+   * Evaluate `script` in the pane's top frame and main world once the page has loaded (waits up to `waitMs`).
+   * `null` when the page never became ready or the script threw.
+   */
+  async runInPage<T>(paneId: string, script: string, waitMs = 5000): Promise<T | null> {
+    const e = this.entries.get(paneId)
+    if (!e || e.wc.isDestroyed()) return null
+    if (e.wc.isLoading()) {
+      const ready = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), waitMs)
+        e.wc.once('did-stop-loading', () => {
+          clearTimeout(timer)
+          resolve(true)
+        })
+      })
+      if (!ready) return null
+    }
+    try {
+      return (await e.wc.executeJavaScript(script, false)) as T
+    } catch {
+      return null
+    }
   }
 
   destroyAll(): void {
@@ -1157,7 +1277,7 @@ export class BrowserViewHost implements BrowserReadHost {
     e.frozen = false
     e.gen.bump()
     e.paintedWaiter?.()
-    if (e.parked || e.visibleReported) e.view.setVisible(true)
+    if ((e.parked || e.visibleReported) && !e.fileRemoved) e.view.setVisible(true)
     if (!e.parked) this.send('browser:unfreeze', { paneId: e.paneId })
   }
 
@@ -1178,9 +1298,61 @@ export class BrowserViewHost implements BrowserReadHost {
     // No automatic downloads (spec §3.2): `onWillDownload` cancels unless a `browser_download` call armed the pane or
     // the operator's own click started it and they answer the "Save to …?" prompt.
     ses.on('will-download', (event, item, wc) => this.onWillDownload(event, item, wc))
+    // The page protocol answers on this session only (spec §4.1); the app's default session never gets it.
+    this.deps.pageHooks?.registerProtocol(ses, name)
     ses.webRequest.onBeforeRequest((details, callback) => {
-      callback({ cancel: !isSubresourceSchemeAllowed(details.url) })
+      if (!isSubresourceSchemeAllowed(details.url)) return callback({ cancel: true })
+      // `harnu-page:` is reachable only from a page of the same folder host (spec §3.2). This check cannot see a
+      // dedicated worker's requests at all, so ALLOWING one issues the one-shot ticket the protocol handler
+      // requires (`page-ticket.ts`): a request that skipped this check has no ticket and is refused there.
+      const frame = details.frame
+      const verdict = decidePageRequest({
+        url: details.url,
+        resourceType: details.resourceType,
+        frame: frame
+          ? {
+              origin: frame.origin,
+              parent: frame.parent ? { origin: frame.parent.origin } : null
+            }
+          : null
+      })
+      if (!verdict.allow) return callback({ cancel: true })
+      if (details.url.startsWith('harnu-page:')) {
+        this.deps.pageHooks?.onRequest(
+          name,
+          this.byWebContentsId.get(details.webContentsId ?? -1),
+          details.url
+        )
+      }
+      callback({})
     })
+    // The per-pane "Allow network" switch rides the document response (spec §4.3): the protocol handler serves
+    // the offline policy, and a pane the operator switched on gets the relaxed one here.
+    ses.webRequest.onHeadersReceived((details, callback) => {
+      const paneId = this.byWebContentsId.get(details.webContentsId ?? -1)
+      if (
+        paneId &&
+        details.url.startsWith('harnu-page:') &&
+        this.deps.pageHooks?.allowNetwork(paneId)
+      ) {
+        const headers = { ...(details.responseHeaders ?? {}) }
+        for (const k of Object.keys(headers)) {
+          if (k.toLowerCase() === 'content-security-policy') delete headers[k]
+        }
+        headers['Content-Security-Policy'] = [pageCsp(true)]
+        return callback({ responseHeaders: headers })
+      }
+      callback({})
+    })
+  }
+
+  /** The F2 rule for this pane: see `page-egress.ts`. */
+  private pageMayNavigate(e: ViewEntry, targetUrl: string): boolean {
+    return decidePageNavigation({
+      currentUrl: e.wc.getURL(),
+      targetUrl,
+      allowNetwork: this.deps.registry.get(e.paneId)?.allowNetwork === true
+    }).allow
   }
 
   private attachGuestHandlers(e: ViewEntry): void {
@@ -1207,6 +1379,11 @@ export class BrowserViewHost implements BrowserReadHost {
       this.publish(e)
     })
     wc.on('page-title-updated', () => this.publish(e))
+    wc.on('did-start-navigation', (details) => {
+      if (details.isMainFrame && !details.isSameDocument) {
+        this.deps.pageHooks?.onNavigationStart(e.paneId)
+      }
+    })
     wc.on('did-navigate', (_ev, url) => {
       e.inputState = nextInputReadyState(e.inputState, {
         host: hostOf(url),
@@ -1217,6 +1394,7 @@ export class BrowserViewHost implements BrowserReadHost {
       const r = rec()
       const host = hostOf(url)
       if (r && host) r.seenHosts.add(host)
+      this.deps.pageHooks?.onNavigated(e.paneId, url)
       // The new page gets its origin's remembered zoom (1 in device mode) and the record again: a cross-process
       // navigation can drop the emulation (spec §9.1, §9.2, A5).
       this.applyZoom(e)
@@ -1231,7 +1409,18 @@ export class BrowserViewHost implements BrowserReadHost {
     // page itself started counts as the `page` initiator; the operator and the verbs use `loadURL`, which
     // does not pass through here.
     const guardTopLevel = (event: { preventDefault(): void }, url: string): void => {
-      const verdict = checkTopLevelNavigation(url, 'page')
+      // An OFFLINE page pane may not navigate away at all (F2): a CSP does not stop `location = 'http://x/?d=…'`.
+      if (!this.pageMayNavigate(e, url)) {
+        event.preventDefault()
+        this.publish(e, { notice: { kind: 'offline' } })
+        return
+      }
+      // A link inside one of OUR pages to another file of the same folder is the page's own navigation, not an
+      // external page reaching for our files (spec §3.2).
+      const verdict = checkTopLevelNavigation(
+        url,
+        sameHarnuPageOrigin(wc.getURL(), url) ? 'verb' : 'page'
+      )
       if (!verdict.ok) {
         event.preventDefault()
         this.publish(e, { notice: { kind: 'blocked', scheme: verdict.scheme } })
@@ -1244,12 +1433,21 @@ export class BrowserViewHost implements BrowserReadHost {
     })
     wc.on('will-frame-navigate', (details) => {
       if (details.isMainFrame) return
-      if (!isSubresourceSchemeAllowed(details.url)) details.preventDefault()
+      if (!isSubresourceSchemeAllowed(details.url) || !this.pageMayNavigate(e, details.url)) {
+        details.preventDefault()
+      }
     })
 
     // Layer 2: popups. Denied as popups; with a real user activation the target opens as a NEW operator-class
     // pane that inherits the opener's partition, with no `opener` link (spec §3.2, Q10).
     wc.setWindowOpenHandler((details) => {
+      // No popup from an offline page pane: its target would be the same exfiltration channel (F2).
+      if (
+        !popupAllowedFrom({ currentUrl: wc.getURL(), allowNetwork: rec()?.allowNetwork === true })
+      ) {
+        this.publish(e, { notice: { kind: 'offline' } })
+        return { action: 'deny' }
+      }
       // One activation buys one popup: a page cannot loop `window.open` inside the gesture window.
       const decision = decidePopup(details.url, e.gestures.pending())
       if (decision.action === 'open-pane') {
@@ -1279,6 +1477,7 @@ export class BrowserViewHost implements BrowserReadHost {
     wc.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown') {
         e.gestures.note()
+        e.lastRealKeyDownAt = this.deps.now()
         this.deps.registry.noteOperatorInteraction(e.paneId)
       }
       const decision = decideForward(
@@ -1378,7 +1577,10 @@ export class BrowserViewHost implements BrowserReadHost {
       networkUntil: e.readers.capture.status().expiresAt,
       zoom: e.wc.isDestroyed() ? 1 : e.wc.getZoomFactor(),
       emulation: r?.emulation ?? {},
-      downloadPrompt: e.prompt && !e.prompt.answered ? { name: e.prompt.name } : null
+      downloadPrompt: e.prompt && !e.prompt.answered ? { name: e.prompt.name } : null,
+      pagePath: r?.pagePath ?? null,
+      allowNetwork: r?.allowNetwork === true,
+      pageFileRemoved: e.fileRemoved
     }
   }
 
@@ -1397,6 +1599,17 @@ export class BrowserViewHost implements BrowserReadHost {
   private send(channel: string, payload: unknown): void {
     const win = this.deps.getWindow()
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+  }
+}
+
+/** Both addresses are `harnu-page:` URLs of the same folder host. */
+function sameHarnuPageOrigin(a: string, b: string): boolean {
+  try {
+    const x = new URL(a)
+    const y = new URL(b)
+    return x.protocol === 'harnu-page:' && y.protocol === 'harnu-page:' && x.host === y.host
+  } catch {
+    return false
   }
 }
 

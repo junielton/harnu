@@ -781,8 +781,8 @@ useShortcuts(
       id: 'browser.overlay.toggle',
       scope: 'browser',
       keys: kb('browser.overlay.toggle'),
-      enabled: () => false, // U6: point-and-comment overlay
-      handler: () => undefined
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.toggleOverlay(browser.chordPaneId!)
     },
     // --- Sidebar arrow-key navigation (T-4.6). ---
     // The four arrow keys + Enter walk the flattened visible tree

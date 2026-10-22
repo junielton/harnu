@@ -22,6 +22,8 @@ import {
   browserRegistry,
   closePaneFromOperator,
   getBrowserHost,
+  getOverlayBridge,
+  getPageService,
   openOperatorPane
 } from './browser-service'
 import type { EmulateArgs } from '../../shared/browser-emulation'
@@ -49,6 +51,7 @@ function toOverlay(v: unknown): BrowserOverlayRect | null {
 
 export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void {
   bindBrowserWindow(getWindow)
+  getPageService().registerIpc()
   const host = (): ReturnType<typeof getBrowserHost> => getBrowserHost()
 
   // Every app-side `browser:*` channel is accepted ONLY from the app window's own webContents. A guest page
@@ -71,6 +74,9 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
       return fn(...args)
     })
   }
+
+  // Point-and-comment (T573): the guest's private channels and the composer's app channels.
+  getOverlayBridge().registerIpc({ onApp, handleApp })
 
   // The operator opened a pane (Split menu). `folder` is the stack's worktree path.
   handleApp('browser:open', (payload: unknown) => {
@@ -147,6 +153,17 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     return true
   })
 
+  // The operator's per-pane "Allow network" switch for a page pane (spec §4.3, Q3). Operator only: this is an IPC
+  // from the app window; no MCP verb reaches it.
+  ipcMain.handle('browser:setAllowNetwork', (e, payload: unknown) => {
+    // App channel: only the app window may flip it, never a guest page (which has no preload path to it anyway).
+    if (e.sender !== getWindow()?.webContents) return false
+    if (!isRecord(payload) || !isPaneId(payload.paneId) || typeof payload.allow !== 'boolean') {
+      return false
+    }
+    return host().setAllowNetwork(payload.paneId, payload.allow)
+  })
+
   // The operator's decisions about the agent (spec §7.4). Disconnect is permanent: no handler reconnects.
   handleApp('browser:disconnect', (paneId: unknown) => {
     if (!isPaneId(paneId) || !browserRegistry.get(paneId)) return false
@@ -155,6 +172,7 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     browserLeases.revoke(paneId)
     // A disconnected pane records nothing more (spec §6.2): end any network capture the agent had running.
     host().stopCapture(paneId, 'disconnected')
+    getOverlayBridge().onDisconnected(paneId)
     host().refresh(paneId)
     return true
   })

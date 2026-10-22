@@ -27,8 +27,10 @@ import {
 } from '../user-projects'
 import { resolveGateInput, type GateResolution } from './gate-resolve'
 import { createBrowserRegistry } from './registry'
-import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import type { BrowserReadDeps } from './read-verbs'
+import { BrowserViewHost, collectHarnuPorts, type PageHooks } from './view-host'
+import { createPageService, type PageService } from './page-service'
+import { createOverlayBridge, type OverlayBridge } from './overlay-bridge'
 import type { BrowserVerbDeps } from './verbs-core'
 import type { BrowserPartition } from './guest-prefs'
 
@@ -110,7 +112,44 @@ function browserPrefs(): BrowserPrefsStore {
 
 let mainWindowGetter: (() => BrowserWindow | null) | null = null
 let host: BrowserViewHost | null = null
+let pages: PageService | null = null
+let overlay: OverlayBridge | null = null
 let mcpPort = 0
+let bridge: { dispatch(command: string, payload: unknown): Promise<unknown> } | undefined
+
+/** `index.ts` hands over the renderer command bridge, which page events ride to a session (T569 U2). */
+export function bindBrowserBridge(b: {
+  dispatch(command: string, payload: unknown): Promise<unknown>
+}): void {
+  bridge = b
+}
+
+/** The `harnu-page://` service. Created on first use, like the view host. */
+export function getPageService(): PageService {
+  if (pages) return pages
+  pages = createPageService({
+    registry: browserRegistry,
+    access: browserAccess,
+    getHost: () => getBrowserHost(),
+    now: () => Date.now(),
+    getBridge: () => bridge
+  })
+  return pages
+}
+
+/** The point-and-comment bridge (T573). Created on first use, like the view host. */
+export function getOverlayBridge(): OverlayBridge {
+  if (overlay) return overlay
+  overlay = createOverlayBridge({
+    registry: browserRegistry,
+    access: browserAccess,
+    getHost: () => getBrowserHost(),
+    getWindow: () => mainWindowGetter?.() ?? null,
+    now: () => Date.now(),
+    getBridge: () => bridge
+  })
+  return overlay
+}
 
 /** `server.ts` reports the port it bound, so a page on that port classifies as `external` (spec §7.2). */
 export function noteMcpPort(port: number): void {
@@ -138,11 +177,23 @@ export function getBrowserHost(): BrowserViewHost {
     scrub: (text) => scrubTerminalText(text, os.homedir()),
     openPopupPane: ({ folder, partition, url }) =>
       openOperatorPane({ folder, partition, url, popup: true }),
-    prefs: browserPrefs()
+    prefs: browserPrefs(),
+    pageHooks: withOverlayCleanup(getPageService().hooks)
   })
   // A lease that starts or ends repaints the pane's chip (display only).
   browserLeases.onChange((paneId) => host?.refresh(paneId))
   return host
+}
+
+/** A pane's pins and overlay state go with the pane. */
+function withOverlayCleanup(hooks: PageHooks): PageHooks {
+  return {
+    ...hooks,
+    onDestroyed(paneId) {
+      hooks.onDestroyed(paneId)
+      getOverlayBridge().forget(paneId)
+    }
+  }
 }
 
 export function bindBrowserWindow(getWindow: () => BrowserWindow | null): void {
@@ -172,7 +223,9 @@ export function openOperatorPane(opts: {
     createdAt: now,
     lastActiveAt: now,
     seenHosts: new Set<string>(),
-    flagged: null
+    flagged: null,
+    pagePath: null,
+    allowNetwork: false
   })
   // The chip shows whether agents may read this pane: fetch the folder's opt-in once, then repaint.
   void readOptInFor(opts.folder).then(() => host?.refresh(paneId))
@@ -286,7 +339,8 @@ export function makeBrowserVerbDeps(env: BrowserHandlerEnv): BrowserVerbDeps {
     },
     scrub: (text) => scrubTerminalText(text, home),
     alias: (folder) => path.basename(folder) || folder,
-    folderBlocked: (folder) => env.folderBlocked(folder)
+    folderBlocked: (folder) => env.folderBlocked(folder),
+    pages: getPageService().seam
   }
 }
 

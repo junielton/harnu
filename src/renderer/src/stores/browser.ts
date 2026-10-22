@@ -4,9 +4,17 @@ import { isMac } from '../lib/platform'
 import { actionForChord, boundChordsFrom } from '../lib/browser-chords'
 import { startNativeOverlayWatcher } from '../lib/native-overlay'
 import { dispatchForwardedChord } from '../composables/useShortcuts'
+import { i18n } from '../i18n'
+import { useUiStore } from './ui'
 import { useHelpersStore } from './helpers'
 import { useKeybindingsStore } from './keybindings'
-import type { BrowserActivityWord, BrowserEmulatePatch, BrowserPaneState } from '../../../preload'
+import type {
+  BrowserActivityWord,
+  BrowserEmulatePatch,
+  BrowserPaneState,
+  CommentPaneState,
+  CommentSubmitResult
+} from '../../../preload'
 
 /**
  * Browser pane store (T564 U1): the live state main pushes for each pane (`browser:state`), the chip's live
@@ -29,6 +37,10 @@ export const useBrowserStore = defineStore('browser', () => {
   /** Bumped per `browser.focusAddress`, per pane, so a repeat re-fires the pane's watcher. */
   const focusAddressNonce = ref<Record<string, number>>({})
   const focusAddressPending = ref<Record<string, boolean>>({})
+  /** paneId → the point-and-comment state main pushes (pins, whether picking, the open composer pin). */
+  const comments = ref<Record<string, CommentPaneState>>({})
+  /** paneId → the session the operator picked in the composer ("remembered per pane", spec §8.7). */
+  const destinations = ref<Record<string, string>>({})
   /** Ticks each second while some pane is paused or recording network, so the countdowns move; otherwise static. */
   const clock = ref(Date.now())
 
@@ -52,6 +64,10 @@ export const useBrowserStore = defineStore('browser', () => {
     words.value = restWords
     const { [paneId]: _f, ...restFrozen } = frozen.value
     frozen.value = restFrozen
+    const { [paneId]: _c, ...restComments } = comments.value
+    comments.value = restComments
+    const { [paneId]: _d, ...restDest } = destinations.value
+    destinations.value = restDest
   }
 
   function onChord(paneId: string, chord: string): void {
@@ -80,6 +96,9 @@ export const useBrowserStore = defineStore('browser', () => {
         })
       }),
       window.api.onBrowserChord(({ paneId, chord }) => onChord(paneId, chord)),
+      window.api.onBrowserCommentState((state) => {
+        comments.value = { ...comments.value, [state.paneId]: state }
+      }),
       window.api.onBrowserPopup(({ paneId, worktreePath, url, partition }) => {
         // A popup the operator clicked open: an operator-class pane that inherits the opener's partition.
         helpers.addBrowserHelper(worktreePath, {
@@ -210,9 +229,90 @@ export const useBrowserStore = defineStore('browser', () => {
     return true
   }
 
+  /* ---- Point-and-comment (T573) ---------------------------------------------------------------- */
+
+  /** The app theme's two overlay colours, read live so the page layers match the theme. */
+  function overlayTheme(): { accent: string; accentInk: string } {
+    const css = getComputedStyle(document.documentElement)
+    return {
+      accent: css.getPropertyValue('--color-accent').trim() || '#7aa2f7',
+      accentInk: css.getPropertyValue('--color-accent-ink').trim() || '#0b0e1a'
+    }
+  }
+
+  function overlayActive(paneId: string): boolean {
+    return comments.value[paneId]?.overlayActive === true
+  }
+
+  function setOverlay(paneId: string, active: boolean): Promise<boolean> {
+    return window.api.browserOverlaySet({
+      paneId,
+      active,
+      hint: i18n.global.t('browserPane.comment.hint'),
+      exitHint: i18n.global.t('browserPane.comment.hintExit'),
+      theme: overlayTheme()
+    })
+  }
+
+  function toggleOverlay(paneId: string): Promise<boolean> {
+    return setOverlay(paneId, !overlayActive(paneId))
+  }
+
+  /** Close the docked composer (the pane host grows back). */
+  function closeComposer(paneId: string): Promise<boolean> {
+    return window.api.browserCommentOpen({ paneId, pinId: null })
+  }
+
+  function rememberDestination(paneId: string, sessionId: string | null): void {
+    if (sessionId === null) {
+      const { [paneId]: _d, ...rest } = destinations.value
+      destinations.value = rest
+    } else {
+      destinations.value = { ...destinations.value, [paneId]: sessionId }
+    }
+  }
+
+  /**
+   * Send pins to a session and say what happened. A delivered comment needs no toast of its own (the Activity
+   * row "Comment sent to the session" is the record); the other outcomes the operator has to hear.
+   */
+  async function submitComments(
+    paneId: string,
+    which: string[] | 'drafts',
+    sessionId: string | null
+  ): Promise<CommentSubmitResult> {
+    const t = i18n.global.t
+    const ui = useUiStore()
+    const result = await window.api.browserCommentSubmit({ paneId, which, sessionId })
+    if (!result.ok) {
+      ui.pushToast({
+        kind: 'warning',
+        title: t('browserPane.comment.refusedTitle'),
+        description: t(`browserPane.comment.refused.${result.error}`)
+      })
+    } else if (!result.delivered) {
+      ui.pushToast({
+        kind: 'warning',
+        title: t('browserPane.comment.noSessionTitle'),
+        description: result.copied
+          ? t('browserPane.comment.noSessionBody')
+          : t('browserPane.comment.noSessionLost')
+      })
+    }
+    return result
+  }
+
   return {
     states,
     words,
+    comments,
+    destinations,
+    overlayActive,
+    setOverlay,
+    toggleOverlay,
+    closeComposer,
+    rememberDestination,
+    submitComments,
     frozen,
     chordPaneId,
     focusAddressNonce,

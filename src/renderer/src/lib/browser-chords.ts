@@ -11,10 +11,11 @@ import type { ResolvedBinding } from '../../../main/keybindings-core'
 type BindingLike = Pick<ResolvedBinding, 'id' | 'keys' | 'scope'>
 
 /**
- * Actions whose handlers are disabled until a later unit enables them (point-and-comment overlay: U6; zoom
- * went live in U5). Their chords are NOT swallowed from the page: a key Harnu does nothing with must reach the page.
+ * Actions whose handlers are disabled until a later unit enables them. Their chords are NOT swallowed from the
+ * page: a key Harnu does nothing with must reach the page. (Zoom went live in U5 (T572), the point-and-comment
+ * overlay in U6 (T573), so nothing is inactive now.)
  */
-export const INACTIVE_BROWSER_ACTIONS: ReadonlySet<string> = new Set(['browser.overlay.toggle'])
+export const INACTIVE_BROWSER_ACTIONS: ReadonlySet<string> = new Set<string>()
 
 /** Off macOS `Ctrl` and `Cmd` are the same physical key, so main reports `Cmd`; fold the table the same way. */
 function fold(chord: string, mac: boolean): string {

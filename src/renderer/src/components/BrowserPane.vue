@@ -17,9 +17,13 @@ import {
   Bug,
   Check,
   Download,
+  ChevronDown,
+  FileX,
   Globe,
   Laptop,
   Maximize2,
+  MessageSquare,
+  MessageSquarePlus,
   Minimize2,
   Minus,
   Monitor,
@@ -35,6 +39,8 @@ import {
   Sun,
   Tablet,
   TriangleAlert,
+  Wifi,
+  WifiOff,
   Unplug,
   Wind,
   X
@@ -51,6 +57,7 @@ import {
   FRAME_BEZEL_PX,
   FRAME_RING_PX,
   BACKDROP_PAD_PX,
+  addressText,
   chipFor,
   deviceChipText,
   deviceIconName,
@@ -67,6 +74,19 @@ import {
   splitAddress,
   zoomView
 } from '../lib/browser-pane'
+import {
+  attachedSummary,
+  batchBarVisible,
+  batchSummary,
+  composerKeyAction,
+  destinationOptions,
+  effectiveDestination,
+  openPin
+} from '../lib/browser-comment'
+import { COMMENT_MAX_CHARS } from '../../../shared/browser-comment'
+import { renderKeysString } from '../../../main/keybindings-core'
+import { useKeybindingsStore } from '../stores/keybindings'
+import { isMac } from '../lib/platform'
 import type { BrowserPaneState } from '../../../preload'
 
 interface Props {
@@ -83,6 +103,7 @@ const helpers = useHelpersStore()
 const browser = useBrowserStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 
 const paneId = props.pane.id
 const payload = computed(() => browserPayload(props.pane))
@@ -108,7 +129,10 @@ const state = computed<BrowserPaneState>(
       networkUntil: null,
       zoom: 1,
       emulation: {},
-      downloadPrompt: null
+      downloadPrompt: null,
+      pagePath: payload.value.pagePath ?? null,
+      allowNetwork: false,
+      pageFileRemoved: false
     }
 )
 
@@ -175,7 +199,7 @@ const editing = ref(false)
 watch(
   () => state.value.url,
   (url) => {
-    if (!editing.value) address.value = url === 'about:blank' ? '' : url
+    if (!editing.value) address.value = addressText(url)
   },
   { immediate: true }
 )
@@ -183,6 +207,11 @@ watch(
 const originKey = computed(() => originBadgeKey(state.value.origin))
 /** The address in three runs: the host is brighter than the scheme and the path (design.md "Address bar"). */
 const addressParts = computed(() => splitAddress(address.value))
+/** The "Allow network" switch exists only on a page pane, and only the operator can flip it (spec §4.3). */
+const isPage = computed(() => state.value.origin === 'page')
+function onToggleNetwork(): void {
+  void window.api.browserSetAllowNetwork({ paneId, allow: !state.value.allowNetwork })
+}
 
 async function onAddressEnter(): Promise<void> {
   const url = normalizeAddressInput(address.value)
@@ -196,7 +225,7 @@ async function onAddressEnter(): Promise<void> {
 }
 function onAddressEscape(): void {
   editing.value = false
-  address.value = state.value.url === 'about:blank' ? '' : state.value.url
+  address.value = addressText(state.value.url)
   addressEl.value?.blur()
 }
 function focusAddress(): void {
@@ -235,6 +264,7 @@ const noticeText = computed(() => {
   if (n.kind === 'downloaded') return t('browserPane.noticeDownloaded', { name: n.name })
   if (n.kind === 'download-cancelled') return t('browserPane.noticeDownloadCancelled')
   if (n.kind === 'download-failed') return t('browserPane.noticeDownloadFailed')
+  if (n.kind === 'offline') return t('browserPane.notice.offline')
   return t('browserPane.notice.crashed')
 })
 const noticeIsInfo = computed(() =>
@@ -477,6 +507,10 @@ onMounted(() => {
   })
   void browser.refresh(paneId)
   window.addEventListener('mousedown', onWindowPointerDown, true)
+  window.addEventListener('keydown', onWindowKeyDown)
+  void window.api.browserCommentState(paneId).then((st) => {
+    if (st) browser.comments = { ...browser.comments, [paneId]: st }
+  })
   startTracking()
 })
 
@@ -485,6 +519,7 @@ onBeforeUnmount(() => {
   areaObserver = null
   stopTracking()
   window.removeEventListener('mousedown', onWindowPointerDown, true)
+  window.removeEventListener('keydown', onWindowKeyDown)
   // Hidden, not destroyed: switching folders never disposes a pane (spec §2.3).
   const r = hostEl.value?.getBoundingClientRect()
   window.api.browserBounds({
@@ -493,6 +528,187 @@ onBeforeUnmount(() => {
     visible: false
   })
 })
+
+/* ---- Point-and-comment (T573, design.md "Point-and-comment overlay") ------------------------------- */
+
+const commentState = computed(() => browser.comments[paneId] ?? null)
+const commentPins = computed(() => commentState.value?.pins ?? [])
+const overlayActive = computed(() => commentState.value?.overlayActive === true)
+const composerPin = computed(() =>
+  openPin(commentPins.value, commentState.value?.openPinId ?? null)
+)
+const composerReadonly = computed(() => composerPin.value?.state === 'sent')
+const batch = computed(() => batchSummary(commentPins.value))
+const barVisible = computed(() => batchBarVisible(commentPins.value))
+/** The operator cut this pane off from agents: comments are off, said up front rather than after typing. */
+const commentsOff = computed(() => state.value.disconnected)
+/** The toggle's tooltip names the CURRENT binding of `browser.overlay.toggle` (the operator may have rebound it). */
+const toggleTitle = computed(() => {
+  if (commentsOff.value) return t('browserPane.comment.disconnectedHint')
+  if (overlayActive.value) return t('browserPane.comment.toggleOff')
+  const keys = renderKeysString(keybindings.chordFor('browser.overlay.toggle') ?? null, {
+    mac: isMac
+  })
+  const base = t('browserPane.comment.toggle')
+  return keys.length > 0 ? `${base} (${keys.join(isMac ? '' : '+')})` : base
+})
+
+const composerText = ref('')
+const composerEl = ref<HTMLTextAreaElement | null>(null)
+const busy = ref(false)
+
+const attachedText = computed(() => {
+  const pin = composerPin.value
+  if (!pin) return ''
+  const a = attachedSummary(pin)
+  if (a.crop) return t('browserPane.comment.attached', { styles: a.styles })
+  if (a.html || a.styles > 0) return t('browserPane.comment.attachedHtmlOnly', { styles: a.styles })
+  return t('browserPane.comment.attachedNone')
+})
+const charsLeft = computed(() => COMMENT_MAX_CHARS - composerText.value.length)
+
+/** The sessions of this pane's folder, for the "Send to" picker. */
+const folderSessions = computed(() => {
+  const folder = sessions.folders.find((f) => f.path === props.worktreePath)
+  return (folder?.sessions ?? []).map((s) => ({
+    id: s.sessionId,
+    title: sessionTitle(s, sessions.allSessions, t) || s.sessionId.slice(0, 8)
+  }))
+})
+const destinationId = computed(() =>
+  effectiveDestination({
+    remembered: browser.destinations[paneId] ?? null,
+    owner: state.value.ownerSessionId,
+    selectedId: sessions.selectedId,
+    folderSessionIds: folderSessions.value.map((s) => s.id)
+  })
+)
+const destinationTitle = computed(
+  () => folderSessions.value.find((s) => s.id === destinationId.value)?.title ?? ''
+)
+const destinationList = computed(() =>
+  destinationOptions(folderSessions.value, state.value.ownerSessionId)
+)
+
+const destMenuOpen = ref(false)
+const destMenuEl = ref<HTMLElement | null>(null)
+// An in-app layer over the page, so it registers with the native-overlay freeze like the ⋯ menu (spec §2.4).
+useNativeOverlay(`browser-dest-${paneId}`, destMenuEl)
+function onPickDestination(id: string): void {
+  browser.rememberDestination(paneId, id)
+  destMenuOpen.value = false
+}
+
+// A new pin (or a pin clicked on the page) opens the composer on it: the app takes the keyboard back from the
+// page and the textarea gets the focus. Keyed on the pin id only, so a state push while typing never rewrites
+// what the operator is writing.
+watch(
+  () => commentState.value?.openPinId ?? null,
+  async (id, prevId) => {
+    destMenuOpen.value = false
+    // The operator picked another node while a composer was open: what was typed there is kept as a draft, and
+    // an empty pin they walked away from is dropped, so a stray click never leaves a numbered pin behind.
+    if (prevId !== null && prevId !== id) {
+      const typed = composerText.value.trim()
+      const prev = commentPins.value.find((p) => p.id === prevId)
+      if (prev && prev.state === 'draft') {
+        if (typed !== '') {
+          await window.api.browserCommentSave({ paneId, pinId: prevId, text: typed })
+        } else if (prev.comment === '') {
+          await window.api.browserCommentDiscard({ paneId, pinId: prevId })
+        }
+      }
+    }
+    if (id === null) return
+    composerText.value = composerPin.value?.comment ?? ''
+    await nextTick()
+    void window.api.browserFocusApp()
+    composerEl.value?.focus()
+  }
+)
+
+async function saveComposer(): Promise<boolean> {
+  const pin = composerPin.value
+  const body = composerText.value.trim()
+  if (!pin || composerReadonly.value || body === '') return false
+  return window.api.browserCommentSave({ paneId, pinId: pin.id, text: body })
+}
+
+async function onSend(): Promise<void> {
+  const pin = composerPin.value
+  if (!pin || busy.value || commentsOff.value) return
+  if (composerText.value.trim() === '' || composerReadonly.value) return
+  busy.value = true
+  try {
+    if (!(await saveComposer())) return
+    const result = await browser.submitComments(paneId, [pin.id], destinationId.value)
+    if (result.ok) await browser.closeComposer(paneId)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function onKeepDraft(): Promise<void> {
+  if (busy.value || commentsOff.value) return
+  if (composerText.value.trim() === '' || composerReadonly.value) return
+  busy.value = true
+  try {
+    if (await saveComposer()) await browser.closeComposer(paneId)
+  } finally {
+    busy.value = false
+  }
+}
+
+/** Esc: an empty composer discards its pin; text is kept as a draft, so Esc never loses what was typed. */
+async function onCloseComposer(): Promise<void> {
+  const pin = composerPin.value
+  if (!pin) return
+  if (composerReadonly.value) {
+    await browser.closeComposer(paneId)
+  } else if (composerText.value.trim() === '') {
+    if (pin.comment === '') await window.api.browserCommentDiscard({ paneId, pinId: pin.id })
+    else await browser.closeComposer(paneId)
+  } else if (!(await saveComposer())) {
+    return
+  } else {
+    await browser.closeComposer(paneId)
+  }
+  // One Esc does both: the composer closes AND picking ends (a second Esc is not needed).
+  if (overlayActive.value) await browser.setOverlay(paneId, false)
+}
+
+async function onSendBatch(): Promise<void> {
+  if (busy.value || commentsOff.value) return
+  if (batch.value.drafts + (composerText.value.trim() !== '' ? 1 : 0) === 0) return
+  busy.value = true
+  try {
+    // Text already typed in the open composer rides with the batch.
+    if (composerPin.value && !composerReadonly.value) await saveComposer()
+    const result = await browser.submitComments(paneId, 'drafts', destinationId.value)
+    if (result.ok && composerPin.value && composerPin.value.state !== 'draft') {
+      await browser.closeComposer(paneId)
+    }
+  } finally {
+    busy.value = false
+  }
+}
+
+function onComposerKey(ev: KeyboardEvent): void {
+  const action = composerKeyAction(ev)
+  if (action === null) return
+  ev.preventDefault()
+  ev.stopPropagation()
+  if (action === 'send') void onSend()
+  else if (action === 'draft') void onKeepDraft()
+  else void onCloseComposer()
+}
+
+// Esc while picking, when the keyboard is in the app rather than the page (the page handles its own Esc).
+function onWindowKeyDown(ev: KeyboardEvent): void {
+  if (ev.key === 'Escape' && overlayActive.value && !composerPin.value) {
+    void browser.setOverlay(paneId, false)
+  }
+}
 
 /* ---- Frozen frame ------------------------------------------------------------------------------ */
 
@@ -640,6 +856,27 @@ watch(isFrozen, async (frozen) => {
         <span data-testid="browser-network-time">{{ formatCountdown(networkMs) }}</span>
       </span>
 
+      <button
+        type="button"
+        class="flex shrink-0 items-center justify-center rounded transition"
+        :class="
+          commentsOff
+            ? 'cursor-default text-text-disabled'
+            : overlayActive
+              ? 'bg-accent-soft text-accent'
+              : 'text-text-3 hover:bg-surface-2 hover:text-text'
+        "
+        style="width: 18px; height: 18px"
+        :aria-pressed="overlayActive"
+        :disabled="commentsOff"
+        :title="toggleTitle"
+        :aria-label="$t('browserPane.comment.toggle')"
+        data-testid="browser-comment-toggle"
+        @mousedown.stop
+        @click="browser.toggleOverlay(paneId)"
+      >
+        <MessageSquarePlus :size="12" :stroke-width="1.5" />
+      </button>
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
@@ -822,6 +1059,31 @@ watch(isFrozen, async (frozen) => {
           ><span class="text-text-2">{{ addressParts.rest }}</span>
         </div>
       </div>
+
+      <!-- Allow network (design.md "Page pane"): operator only, off by default, no verb can set it. -->
+      <button
+        v-if="isPage"
+        type="button"
+        role="switch"
+        :aria-checked="state.allowNetwork"
+        class="flex shrink-0 items-center gap-1 rounded-full border transition-colors focus-visible:border-accent-line focus-visible:outline-none"
+        :class="
+          state.allowNetwork
+            ? 'border-warning/30 bg-warning/10 text-warning'
+            : 'border-border bg-surface-2 text-text-3 hover:text-text'
+        "
+        style="padding: 1px 6px; font-size: 10px"
+        :title="
+          state.allowNetwork ? $t('browserPane.network.onHint') : $t('browserPane.network.offHint')
+        "
+        data-testid="browser-network"
+        @click="onToggleNetwork"
+      >
+        <component :is="state.allowNetwork ? Wifi : WifiOff" :size="10" :stroke-width="1.6" />
+        <span class="@max-[260px]:hidden">{{
+          state.allowNetwork ? $t('browserPane.network.on') : $t('browserPane.network.off')
+        }}</span>
+      </button>
 
       <!-- Device mode button (design.md "Device button and picker"). -->
       <button
@@ -1174,6 +1436,23 @@ watch(isFrozen, async (frozen) => {
       :class="layout ? 'overflow-auto' : ''"
       data-testid="browser-area"
     >
+      <!-- "File removed" placeholder (spec §4.4): the native view is hidden while the page file is gone. -->
+      <div
+        v-if="state.pageFileRemoved"
+        class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1 bg-bg px-4 text-center"
+        role="status"
+        data-testid="browser-file-removed"
+      >
+        <FileX :size="20" :stroke-width="1.5" class="text-text-4" aria-hidden="true" />
+        <span class="text-[13px] text-text-2">{{ $t('browserPane.fileRemoved.title') }}</span>
+        <span
+          class="max-w-full truncate font-mono text-[11px] text-text-3"
+          :title="addressText(state.url)"
+          >{{ addressText(state.url) }}</span
+        >
+        <span class="text-[11px] text-text-4">{{ $t('browserPane.fileRemoved.waiting') }}</span>
+      </div>
+
       <div
         v-if="layout && device"
         class="flex min-h-full min-w-full flex-col items-center justify-center"
@@ -1265,6 +1544,193 @@ watch(isFrozen, async (frozen) => {
       >
         <Bug :size="13" :stroke-width="1.5" />
         {{ $t('browserPane.devtools') }}
+      </button>
+    </div>
+
+    <!-- Docked composer (design.md "Point-and-comment overlay"): app chrome BELOW the host, so opening it
+         shortens the page view instead of covering it, and the page can never read what is typed here. -->
+    <div
+      v-if="composerPin"
+      class="@container flex shrink-0 flex-col gap-1.5 border-t border-border bg-surface p-2"
+      role="group"
+      :aria-label="$t('browserPane.comment.composerLabel')"
+      data-testid="browser-composer"
+    >
+      <div
+        class="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[11px] text-text-3"
+        data-testid="browser-composer-context"
+      >
+        <span
+          class="grid h-4 w-4 shrink-0 place-items-center rounded-full border-2 border-accent bg-surface-2 text-[9.5px] font-semibold text-accent"
+          :title="$t('browserPane.comment.pin', { n: composerPin.n })"
+          >{{ composerPin.n }}</span
+        >
+        <span class="shrink-0 @max-[320px]:hidden">{{ $t('browserPane.comment.commentOn') }}</span>
+        <span
+          class="min-w-0 shrink truncate font-mono text-text-2"
+          :title="composerPin.selector"
+          data-testid="browser-composer-selector"
+          >{{ composerPin.selector }}</span
+        >
+        <template v-if="composerPin.component">
+          <span class="shrink-0">·</span>
+          <span
+            class="min-w-0 shrink-[2] truncate font-mono text-text-2"
+            :title="composerPin.component"
+            data-testid="browser-composer-component"
+            >{{ composerPin.component }}</span
+          >
+        </template>
+        <span class="shrink-0 @max-[420px]:hidden">·</span>
+        <span class="min-w-0 shrink-[3] truncate @max-[420px]:hidden">{{ attachedText }}</span>
+      </div>
+      <div
+        v-if="commentsOff"
+        class="flex items-center gap-1.5 text-[11px] text-warning"
+        role="status"
+        data-testid="browser-composer-off"
+      >
+        <TriangleAlert :size="11" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
+        <span class="min-w-0 truncate" :title="$t('browserPane.comment.disconnectedHint')">{{
+          $t('browserPane.comment.disconnectedHint')
+        }}</span>
+      </div>
+      <textarea
+        ref="composerEl"
+        v-model="composerText"
+        :maxlength="COMMENT_MAX_CHARS"
+        :readonly="composerReadonly"
+        rows="2"
+        spellcheck="false"
+        class="max-h-40 min-h-[52px] w-full resize-none rounded-sm border border-accent-line bg-bg px-[9px] py-[7px] text-[13px] leading-5 text-text outline-none placeholder:text-text-4"
+        :placeholder="$t('browserPane.comment.placeholder')"
+        :aria-label="$t('browserPane.comment.composerLabel')"
+        data-testid="browser-composer-text"
+        @keydown="onComposerKey"
+      />
+      <div class="flex min-w-0 items-center gap-1.5">
+        <span class="shrink-0 text-[11px] text-text-3 @max-[320px]:hidden">{{
+          $t('browserPane.comment.sendTo')
+        }}</span>
+        <div class="relative min-w-0 shrink">
+          <button
+            type="button"
+            class="flex h-6 max-w-full items-center gap-[5px] rounded-sm border border-border-2 px-2 text-[11.5px] text-text-2 transition-colors hover:text-text disabled:cursor-default disabled:opacity-70"
+            :disabled="destinationList.length === 0"
+            :title="destinationTitle || $t('browserPane.comment.noSession')"
+            aria-haspopup="menu"
+            :aria-expanded="destMenuOpen"
+            data-testid="browser-composer-dest"
+            @click="destMenuOpen = !destMenuOpen"
+          >
+            <Bot :size="12" :stroke-width="1.5" class="shrink-0" aria-hidden="true" />
+            <span class="min-w-0 truncate">{{
+              destinationTitle || $t('browserPane.comment.noSession')
+            }}</span>
+            <ChevronDown
+              v-if="destinationList.length > 0"
+              :size="12"
+              :stroke-width="1.5"
+              class="shrink-0"
+              aria-hidden="true"
+            />
+          </button>
+          <div
+            v-if="destMenuOpen && destinationList.length > 0"
+            ref="destMenuEl"
+            class="anim-fade-in absolute bottom-full left-0 z-10 mb-1 max-h-48 min-w-[200px] overflow-y-auto rounded border border-border bg-surface py-1 text-[12px] text-text-2"
+            style="box-shadow: var(--shadow-pop)"
+            role="menu"
+            data-testid="browser-composer-dest-menu"
+          >
+            <button
+              v-for="opt in destinationList"
+              :key="opt.id"
+              type="button"
+              role="menuitemradio"
+              :aria-checked="opt.id === destinationId"
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-2 hover:text-text"
+              :class="opt.id === destinationId ? 'text-text' : ''"
+              @click="onPickDestination(opt.id)"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ opt.title }}</span>
+              <span v-if="opt.isOwner" class="shrink-0 text-[10px] text-text-4">{{
+                $t('browserPane.comment.owner')
+              }}</span>
+            </button>
+          </div>
+        </div>
+        <span class="min-w-0 flex-1" />
+        <span
+          v-if="charsLeft <= 200"
+          class="shrink-0 text-[10.5px] text-text-4"
+          data-testid="browser-composer-left"
+          >{{ $t('browserPane.comment.charsLeft', { n: charsLeft }) }}</span
+        >
+        <template v-if="!composerReadonly">
+          <button
+            type="button"
+            class="flex h-6 shrink-0 items-center gap-1.5 rounded-sm border border-border-2 px-2.5 text-[11.5px] text-text-2 transition-colors hover:text-text disabled:cursor-default disabled:opacity-45"
+            :disabled="busy || commentsOff || composerText.trim() === ''"
+            :title="$t('browserPane.comment.keepDraft') + ' (⇧↵)'"
+            data-testid="browser-composer-draft"
+            @click="onKeepDraft"
+          >
+            <span class="@max-[320px]:hidden">{{ $t('browserPane.comment.keepDraft') }}</span>
+            <span class="rounded border border-border-2 px-1 font-mono text-[10.5px]">⇧↵</span>
+          </button>
+          <button
+            type="button"
+            class="flex h-6 shrink-0 items-center gap-1.5 rounded-sm bg-accent px-2.5 text-[11.5px] font-medium text-accent-ink transition-opacity disabled:cursor-default disabled:opacity-45"
+            :disabled="busy || commentsOff || composerText.trim() === ''"
+            :title="$t('browserPane.comment.send') + ' (↵)'"
+            data-testid="browser-composer-send"
+            @click="onSend"
+          >
+            {{ $t('browserPane.comment.send') }}
+            <span class="rounded border border-accent-ink/30 px-1 font-mono text-[10.5px]">↵</span>
+          </button>
+        </template>
+        <button
+          v-else
+          type="button"
+          class="grid h-6 w-6 shrink-0 place-items-center rounded-sm border border-border-2 text-text-3 hover:text-text"
+          :aria-label="$t('helperPane.close')"
+          @click="onCloseComposer"
+        >
+          <X :size="12" :stroke-width="1.5" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Batch bar: every draft pin goes to the session as ONE turn, numbered in pin order. -->
+    <div
+      v-if="barVisible"
+      class="flex h-[26px] shrink-0 items-center gap-2 border-t border-accent-line bg-accent-soft px-2 text-[11.5px] text-text-2"
+      data-testid="browser-batchbar"
+    >
+      <MessageSquare :size="12" :stroke-width="1.5" class="shrink-0" aria-hidden="true" />
+      <!-- With nothing to send the bar only says how many went out; "Send 0 comments" is never shown. -->
+      <span v-if="batch.drafts === 0" class="min-w-0 truncate" data-testid="browser-batch-count">{{
+        $t('browserPane.comment.sentCount', batch.sent)
+      }}</span>
+      <span v-else class="min-w-0 truncate" data-testid="browser-batch-count"
+        ><b class="font-medium text-text">{{
+          $t('browserPane.comment.draftsCount', batch.drafts)
+        }}</b>
+        · {{ $t('browserPane.comment.sentCount', batch.sent) }}</span
+      >
+      <span class="flex-1" />
+      <button
+        v-if="batch.drafts > 0"
+        type="button"
+        class="h-5 shrink-0 rounded-sm border border-border-2 px-2 text-[11.5px] text-text-2 transition-colors hover:text-text disabled:cursor-default disabled:opacity-45"
+        :disabled="busy || commentsOff"
+        :title="commentsOff ? $t('browserPane.comment.disconnectedHint') : undefined"
+        data-testid="browser-batch-send"
+        @click="onSendBatch"
+      >
+        {{ $t('browserPane.comment.sendBatch', batch.drafts) }}
       </button>
     </div>
   </div>

@@ -442,6 +442,10 @@ _another_ folder.
 | `pause`                                  | Browser pane → "Pause agent for 10 min" (⋯ menu)                                                                                                                                                                                       |
 | `bug`                                    | Browser pane → Open DevTools (⋯ menu)                                                                                                                                                                                                  |
 | `shield-check`                           | Folder menu → Trusted dev hosts… (T571 U4, §6 "Trusted dev hosts dialog")                                                                                                                                                              |
+| `wifi-off` / `wifi`                      | Browser pane → "Allow network" switch on a page pane: off = `wifi-off` (default), on = `wifi` (T569 U2)                                                                                                                                |
+| `file-x`                                 | Browser pane → "file removed" placeholder for a page pane whose file is gone (T569 U2)                                                                                                                                                 |
+| `message-square-plus`                    | Browser pane → header button: turn point-and-comment on (T564 U6)                                                                                                                                                                      |
+| `message-square`                         | Browser pane → batch bar: "N drafts · M sent" (T564 U6)                                                                                                                                                                                |
 
 ### Novelty dot (on an icon button)
 
@@ -3814,7 +3818,9 @@ must freeze it first (see "Frozen frame").
   external, as in the mockup), and below 300px the badge is hidden anyway.
 - **Notice strip** — one optional 22px row under the address bar for a refusal or an intercepted event: a blocked
   scheme, a certificate error accepted on loopback, a dialog the page raised and Harnu dismissed. `--warning` 10%
-  fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old.
+  fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old. The **offline** notice ("Blocked: this panel is offline, so it
+  cannot open other addresses. Turn on Network on to follow links out.") appears when a page pane's own script, link
+  or popup tried to leave its folder while its **Offline** switch is off (T569); the operator's address bar still can.
 - **Pane menu (⋯)** — a standard context menu (§6 "Context menu"): **Pause agent for 10 min** (`pause`; becomes
   **Resume agent** while paused) and **Open DevTools** (`bug`). Clear browsing data arrives with a later unit;
   zoom and device mode live in the address bar (below). It registers with the native-overlay composable, so
@@ -3958,6 +3964,123 @@ bottom-right corner) registers the same way and is hidden while an overlay inter
 **Open from the Split menu.** The Split dropdown gains a **Browser** item (`globe`) that opens an operator pane at
 `about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
 agent partition (spec §3.4). Operator panes are unlimited; agent panes are capped at 4 per folder.
+
+**Page pane** (T569 U2, spec §4 and §5). A pane showing one of **our own files** served from `harnu-page://`
+(a project `.html`, or a panel an agent wrote). The page is still a native view, so every rule above holds; the
+chrome adds three things and changes one.
+
+- **Address field shows the file, not the address.** For a `page` origin the field shows the folder-relative path
+  (`.harnu/out/panels/status.html`) in the same mono 11px field instead of the opaque `harnu-page://f…/…` URL;
+  the origin badge reads `page` (`--accent-soft` fill, `--accent` text, as above). The header title falls back to
+  the file name. A page pane is **not** a place to type another site: Enter with an `http(s)` address still
+  navigates (and the badge changes with the origin class), a path is not an address.
+- **"Allow network" switch** (spec §4.3, Q3). Operator only: no verb can set it, and the control is rendered only
+  for a `page` origin. A pill button in the address bar, right of the field, `role="switch"` with `aria-checked`,
+  geometry of the origin badge (`padding 1px 6px`, 10px, `rounded-full`, 1px border) with a 10px icon.
+  **Off (default)**: `wifi-off`, `--surface-2` fill, `--text-3` text, 1px `--border`, text "Offline".
+  **On**: `wifi`, `--warning` text on a `--warning` 10% fill with a `--warning` 30% border, text "Network on",
+  because it relaxes the no-egress policy and must not look neutral. Toggling it reloads the page (the policy rides
+  the document response). The state lives on the pane. Native `title`: "Offline: the page cannot reach the
+  network. Click to allow it for this pane." / "Network on: the page can reach the network. Click to turn it
+  off." Focus ring is the standard `--accent-line` 1px.
+- **"File removed" placeholder** (spec §4.4). When the served file is deleted the native view is hidden and the
+  host shows a centred block on `--bg`: `file-x` 20px `--text-4`, the line "File removed" in 13px `--text-2`, the
+  path in mono 11px `--text-3`, and "Waiting for it to come back…" in 11px `--text-4`. No spinner and no motion. The
+  pane keeps watching: when the file is re-created the placeholder goes and the page reloads.
+
+#### Point-and-comment overlay (browser pane)
+
+T564 U6, spec `docs/specs/2026-10-21-T564-browser-pane.md` §8; approved mockup
+`docs/specs/T564-browser-pane-mockup/`, scenario "Comment", **Docked** variant. The operator points at a node
+of the page and types a request; it lands in the session as a `[harnu-comment]` turn. The feature is split along
+the one line that matters, **what the page can see**: the outline, the hint pill and the numbered pins are drawn
+**inside the page** (they must sit on its nodes); the composer is **app chrome** and never enters the page.
+
+**Activation.** A `message-square-plus` 18×18 icon button in the pane header (between the chip and the ⋯ menu,
+same geometry as the other header icons), `aria-pressed` while picking, and the `browser.overlay.toggle` action
+(`Ctrl+Shift+C`, browser-pane focus only). While picking, the button reads `bg-accent-soft text-accent`. Native
+`title`: "Comment on the page" followed by the CURRENT binding of `browser.overlay.toggle` in parentheses, rendered
+from the keybindings table (never hardcoded; no parentheses when the action is unbound). **Disconnected pane:** the
+button is `disabled` (`text-text-disabled`) and its title is the reason, "Comments are off here: you disconnected
+the agent from this pane." A **paused** pane still takes comments. Operator only: no verb switches it on.
+
+**Guest-drawn layers** (built by the guest preload into a closed shadow root, so they cannot use Tailwind or
+the app's CSS variables. **`--accent` and `--accent-ink` are the app theme's own values**, read when the mode is
+switched on and pushed with it (validated as plain colours), so the layers match whichever theme is active; the
+other literals below are kept in ONE constant block in `src/preload/overlay/styles.ts` and mirrored here). They
+are the only place a raw colour is allowed in this feature, because the page is another document.
+
+| Layer           | Spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Outline**     | `position: fixed` box over the hovered node: 1.5px `--accent` border, `--accent` at 14% fill, 3px radius, `pointer-events: none`. Follows the node on scroll and resize.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Outline tag** | Under the box's left edge (3px gap): mono 10.5px `--accent-ink` on `--accent`, `2px 6px`, `0 3px 3px 3px` radius, the role or tag plus its size, e.g. `button.btn.primary · 168×40`. Flips above the box when there is no room below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Hint pill**   | Fixed, top centre, 8px from the top: 11px `--text` on `rgba(23,18,14,.92)`, `4px 10px`, `rounded-full`, `--shadow-pop`, a `mouse-pointer-click` glyph, "Click an element to comment", then a `kbd` "Esc" and "to exit". `pointer-events: none`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Pin**         | A 20×20 marker with a pointed lower-left corner (`border-radius: 50% 50% 50% 2px`), its number centred (10.5px, 600), at the node's **top-right corner** as in the approved mockup (its left edge 4px inside the node's right edge, 14px above its top edge, clamped to the viewport), `0 2px 6px` shadow, `tabindex=-1` (pointer only: Tab never lands on it). **Draft:** white fill, 2px `--accent` border, `--accent` number. **Sent:** solid `--accent` fill, `--accent-ink` number, 55% opacity. **Detached** (its selector no longer matches): 2px _dashed_ `--text-3` border, `--text-3` number, drawn at its last rect, never removed. The pin is clickable and opens its comment in the composer. |
+
+No motion beyond the existing 80ms colour transition; under `prefers-reduced-motion` there is none.
+
+**Picking behaviour.** While active, trusted pointer events are consumed by the overlay: the page receives no
+picking click, no hover and no touch (a tap still produces the click that picks). **The keyboard keeps reaching
+the page**, except `Esc`, which is consumed and exits picking. A script-dispatched (untrusted) event is ignored.
+The host element carries every style that could hide or move it (`display`, `position`, `transform`,
+`visibility`, `opacity`, `z-index`, `pointer-events`) inline with `!important`, so page CSS cannot.
+
+**Docked composer** (app chrome, rendered by `BrowserPane.vue` between the host and the pane's bottom edge,
+`flex-shrink: 0`). **The host rect shrinks to make room** (spec §2.1): the composer is a sibling after the host
+`<div>`, never an overlay over it, so the native view is never covered and never needs to freeze.
+
+```
+├───────────────────────────────────────────────────────────────────────┤
+│   host <div>  (shorter while the composer is open)                    │
+├───────────────────────────────────────────────────────────────────────┤  1px --border
+│ ② Comment on div.pay · src/components/PayButton.vue:42 · crop + HTML… │  context line
+│ ┌───────────────────────────────────────────────────────────────────┐ │
+│ │ this corner is too rounded, make it a bit squarer                 │ │  textarea, min 52px
+│ └───────────────────────────────────────────────────────────────────┘ │
+│ Send to [🤖 Checkout polish ▾]        [Keep as draft ⇧↵] [Send ↵]     │  row
+├───────────────────────────────────────────────────────────────────────┤
+│ 💬 1 draft · 1 sent                              [Send 1 comment]     │  batch bar, 26px
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+- **Panel** — `--surface` fill, `border-t border-border`, `8px` padding, `gap-1.5`.
+- **Context line** — 11px `--text-3`, single line, truncating from the right: a 16×16 round **pin number**
+  (`--surface-2` fill, 2px `--accent` border, `--accent` 9.5px/600 number: the draft pin's look, on app tokens), "Comment on",
+  the **selector** in mono 11px `--text-2`, "·", the **source component** (`file:line`, mono) when known, "·",
+  then what is attached ("crop + HTML + 14 styles attached"). Every page-authored run (selector, component) is
+  rendered as **plain text** (`{{ }}`, never `v-html`) with a native `title` holding the full value.
+- **Textarea** — min-height 52px, grows to 8 lines then scrolls, `--bg` fill, 1px `--accent-line` border,
+  `--radius-sm`, 13px/20px `--text`; placeholder "What should change?". The caret is the real one; no fake
+  caret. 4000-character limit (the count appears only in the last 200).
+- **Row** — "Send to" 11px `--text-3`, the **destination picker**, a spacer, **Keep as draft** (ghost: 1px
+  `--border-2`, `--text-2`, a `kbd` "⇧↵") and **Send** (primary: `--accent` fill, `--accent-ink`, weight 500, a
+  `kbd` "↵"). Both buttons 24px, 11.5px, `--radius-sm`. They are disabled while the text is empty.
+- **Destination picker** — a 24px bordered button (`bot` 12px, the session title, `chevron-down`) opening a
+  standard menu (§6 "Context menu") that lists the folder's sessions, the pane's owner marked "owner"; the
+  choice is remembered per pane. The menu registers with the native-overlay composable like the ⋯ menu. With no
+  session at all it reads "No session — copies to clipboard" and is not openable.
+- **Batch bar** — 26px, `--accent-soft` fill, `border-t border-accent-line`, 11.5px `--text-2`, `px-2`:
+  `message-square` 12px, "**1 draft** · 1 sent" (the first count in `--text`, weight 500), a spacer, and a
+  ghost 20px **Send N comments** button. It shows whenever the pane has at least one draft or sent pin, even
+  with the composer closed. **With zero drafts** it shows only "M sent" and the button is not drawn (a disabled
+  "Send 0 comments" is never shown).
+- **Keys** — `Enter` sends this comment now; `Shift+Enter` keeps it as a draft; `Esc` closes the composer **and ends picking** in
+  one press (an empty composer discards its pin; a non-empty one is kept as a draft, so Esc never loses text). Composition (IME)
+  never submits.
+- **Narrow panes** — below 320px the "Send to" caption and the context line's "Comment on" go; the picker
+  shows the bot glyph and truncates the title; the button labels keep their `kbd` hints out (the hover title has
+  them).
+- **Disconnected pane** — said **up front**, never after typing: the header button is disabled (above), and a
+  composer left open shows one `--warning` 11px line with `triangle-alert` ("Comments are off here: you
+  disconnected the agent from this pane."), with Keep as draft, Send and Send N comments disabled. A paused pane
+  takes comments as usual.
+- **Result toasts** — sent: no toast (the Activity row "Comment sent to ‹session name›" is the record). Nowhere to
+  send: `warning` "No session to send to" with "The comment was copied to your clipboard." Refused (only the
+  disconnected case can reach main; the session could not take it): `warning` with the reason, and the draft is
+  kept until the message has really gone into the terminal.
+
+No new §9 token: the composer uses existing tokens only, and the guest layers above are the one documented place
+where literal values stand in for them.
 
 #### Review companion pane
 

@@ -8,6 +8,17 @@ import { needsFreeze, toViewBounds, type OverlayRect, type Rect } from './bounds
 import { certificateDecision } from './nav-policy'
 import { isLoopbackHost, type OriginClass } from './origin-class'
 
+/* ---- The URL a pane is "at" ------------------------------------------------------------------------ */
+
+/**
+ * `webContents.getURL()` is empty until the first commit, so a verb called right after `browser_open` would see a
+ * `blank` pane and `browser_set_data` would refuse `NOT_A_PAGE_PANE` (T569 delta 1, F3). Until something has
+ * committed, a pane is at the address it was asked to load; once it has committed, the committed one wins.
+ */
+export function liveUrlOf(committed: string, requested: string): string {
+  return committed !== '' ? committed : requested
+}
+
 /* ---- Freeze / thaw -------------------------------------------------------------------------------- */
 
 /** What the freeze rule reads about one view. */

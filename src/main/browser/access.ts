@@ -51,10 +51,15 @@ const READ_OPS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Verbs the live-panel unit owns (spec §5.2): `page` panes only, for every caller. They are refused on any other
- * origin class, never leased.
+ * The live-panel verbs (spec §5.2): `page`-class only, for EVERY caller. On a `local` or `external` pane they
+ * refuse `NOT_A_PAGE_PANE`, which is the structural half of decision 25 (spec §7.3): an `observe` worker's
+ * exception cannot become a way into a dev server or an external site, because the verbs have no such path.
  */
 const LIVE_PANEL_OPS: ReadonlySet<string> = new Set(['browser_set_data', 'browser_patch'])
+
+export function isLivePanelOp(op: string): boolean {
+  return LIVE_PANEL_OPS.has(op)
+}
 
 /**
  * Whether this call sends mouse or key events (the ones a pane's first document drops): `click`, `press`, and
@@ -110,6 +115,9 @@ export type BrowserDenyReason =
   | 'ZOOM_IN_DEVICE_MODE'
   | 'UPLOAD_PATH_DENIED'
   | 'NOT_YET_AVAILABLE'
+  | 'DATA_TOO_LARGE'
+  | 'HTML_TOO_LARGE'
+  | 'PATH_NOT_ALLOWED'
 
 /** How a pane was opened (spec §1.2). */
 export type BrowserOpenedBy = 'agent' | 'operator'
@@ -210,7 +218,7 @@ export interface BrowserGateRefusal {
 
 /**
  * The refusal for `op`, or `null` to continue. Order (spec §6.3): pane known → Disconnect → read opt-in
- * (operator panes) → content (arguments) → kill-switch → pause → tier (`refused`, then the Deny cooldown, then,
+ * (operator panes) → `page`-class check (live-panel verbs) → content (arguments) → kill-switch → pause → tier (`refused`, then the Deny cooldown, then,
  * for the handler only, a missing lease). `close` is exempt from the kill-switch (Q6) but not from Disconnect
  * or Pause. A `lease` row without an active lease is NOT a refusal here: the plan layer turns it into the
  * operator's confirm.
@@ -223,8 +231,18 @@ export function gateBrowserOpDetailed(
   const pane = input.pane
   if (addressesPane && !pane) return { reason: 'PANE_NOT_FOUND' }
   if (addressesPane && pane?.disconnected) return { reason: 'BROWSER_DISCONNECTED' }
-  if (addressesPane && pane?.openedBy === 'operator' && pane.readOptIn !== true)
+  // The live-panel verbs only write a page file's own data and DOM and read nothing back, so they do not need the
+  // folder's read opt-in even on a pane the operator opened (spec §7.1 "Live panel": free on `page`).
+  if (
+    addressesPane &&
+    !LIVE_PANEL_OPS.has(op) &&
+    pane?.openedBy === 'operator' &&
+    pane.readOptIn !== true
+  )
     return { reason: 'BROWSER_READ_NOT_ENABLED' }
+  if (LIVE_PANEL_OPS.has(op) && pane && pane.originClass !== 'page') {
+    return { reason: 'NOT_A_PAGE_PANE' }
+  }
   if (input.args) {
     const content = checkBrowserContent(op, input.args, {
       deviceActive: pane?.deviceActive === true

@@ -61,6 +61,9 @@ const ALLOWED_VERBS = [
   'browser_screenshot',
   'browser_console',
   'browser_wait_for',
+  // T569 U2: the two live-panel verbs (page-class only for every caller).
+  'browser_set_data',
+  'browser_patch',
   'create_card',
   'update_card',
   'notify'

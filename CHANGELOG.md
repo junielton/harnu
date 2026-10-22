@@ -42,6 +42,17 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **Point-and-comment, tightened.** A browser pane you paused still takes comments (pausing stops the session
+  driving the page, not you writing to it); one you disconnected the session from does not, and the comment
+  button and composer now say so up front instead of failing after you typed. A comment stays a draft until its
+  message has really gone into the terminal, so a session that closed while Harnu waited for you to stop typing
+  loses nothing, and moving the mouse over a terminal no longer counts as typing. Text a page hides in
+  invisible characters (the Unicode "tag" block, word joiners, soft hyphens) or fakes with look-alike dashes and
+  backticks is cleaned out of what the session reads. Pins sit at the top-right corner of their element, the
+  hint reads "Click an element to comment · Esc to exit", one Esc closes an empty composer and ends picking,
+  the bar shows just "N sent" when nothing waits, the Activity row names the session, and the button's tooltip
+  shows your current shortcut. The overlay can no longer be hidden or moved by the page's own CSS, ignores touch
+  input while picking, and no longer marks the page's element while it looks up its source file.
 - **Recording the network of another site now asks, instead of being refused.** `browser_network` on a page that isn't
   on your own machine used to be unavailable; it now uses the same ask-once permission as driving a page, and
   ending the recording is always allowed. A pane you opened is now refused until you let agents read browser panes
@@ -52,6 +63,33 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ## 2026-10-21
 
 ### Added
+
+- **Point-and-comment on a page.** In a browser pane, click the new comment button in the header (or press
+  `Ctrl/Cmd+Shift+C` while the pane has focus), hover any element to see its outline and size, and click it. A
+  numbered pin appears on the element and a composer docks under the page: the page gets shorter to make room, and
+  nothing is ever drawn over it. Type what should change and press **Enter** to send it to your session now, or
+  **Shift+Enter** to keep it as a draft and carry on; **Send N comments** in the bar below sends every draft as
+  one message. Pick the session in the **Send to** menu (a session's own pane sends to that session, any other
+  pane to the one you are looking at); with no session at all the comment is copied to your clipboard. The
+  session gets your words plus a cropped picture of the element, its HTML, a short list of its styles and its
+  source file when the page says (Vue, React, Svelte). Whatever the page itself wrote is fenced and marked
+  untrusted, so a page cannot pose as you. The composer lives in Harnu, outside the page, so the page cannot
+  see what you type, and a page cannot fake a click on a pin. Pins stay on the page, find their element again
+  after a reload, sit dashed where they were when it is gone, and go solid and faded once sent. A comment waits
+  while you are typing in that session's terminal, and a parked session is woken in the background first.
+
+- **Live panels in the browser pane.** A session can now open one of your project's `.html` files — or write a
+  small panel for you from inline HTML — in a browser pane (`browser_open` with `path`, or `html` and `name`),
+  and keep it fresh with `browser_set_data` (the panel's state, saved next to your project and re-read on every
+  reload) and `browser_patch` (change one number or row right now). Edit the file yourself and the pane reloads
+  where you were scrolling; delete it and the pane says "File removed" until it comes back. Buttons in the panel
+  can send an event to the session (`harnu.emit`), but only when you really click or press a key: a session that
+  clicks its own panel cannot approve itself. Panels are **offline by default**: a panel can't load anything from
+  the network, and its own script, links and popups can't take it to another address (only its own folder's files);
+  a per-pane **Offline / Network on** switch in the address bar, yours alone, lets a panel that needs a CDN script,
+  a web font or an outside link through, and your own address bar can always leave. Only your own files are
+  ever served, never anything under `.git` or `.harnu/memory`, and only to the panel itself: a web page in another
+  pane, or a background worker it starts, can't read them (a worker started inside a panel can't either).
 
 - **Browser pane — open a real browser beside your session.** The Split button in the Topbar now has a small
   arrow beside it: choose **Browser** and a Chromium page opens in the split stack, with back, forward and

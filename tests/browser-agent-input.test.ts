@@ -16,13 +16,17 @@ function rig() {
 describe('the agent-input record', () => {
   it('has nothing before any verb, then records in flight and the end time', () => {
     const { reg, tick } = rig()
-    expect(reg.agentInput('bp-1')).toEqual({ inFlight: false, at: null })
+    expect(reg.agentInput('bp-1')).toEqual({ inFlight: false, at: null, intervals: [] })
     expect(reg.lastAgentInputAt('bp-1')).toBeNull()
     reg.beginAgentInput('bp-1')
     expect(reg.agentInput('bp-1')).toMatchObject({ inFlight: true })
     tick(40)
     reg.endAgentInput('bp-1')
-    expect(reg.agentInput('bp-1')).toEqual({ inFlight: false, at: 10_040 })
+    expect(reg.agentInput('bp-1')).toEqual({
+      inFlight: false,
+      at: 10_040,
+      intervals: [{ start: 10_000, end: 10_040 }]
+    })
     expect(reg.lastAgentInputAt('bp-1')).toBe(10_040)
   })
 
@@ -43,7 +47,7 @@ describe('the agent-input record', () => {
     reg.beginAgentInput('bp-1')
     expect(reg.agentInput('bp-2').inFlight).toBe(false)
     reg.remove('bp-1')
-    expect(reg.agentInput('bp-1')).toEqual({ inFlight: false, at: null })
+    expect(reg.agentInput('bp-1')).toEqual({ inFlight: false, at: null, intervals: [] })
   })
 
   it('answers whether any input overlapped an interval', () => {

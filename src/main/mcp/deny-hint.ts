@@ -70,6 +70,14 @@ export function shapeDenial(
       folder: ctx.folder,
       detail: browserDetail[2]!
     })
+  // T569 F6: a plan-level path refusal names which jail rule it hit.
+  const pathRefusal = /^PATH_NOT_ALLOWED: ([a-z-]*)$/.exec(result)
+  if (pathRefusal) {
+    return shapeBrowserDenial('PATH_NOT_ALLOWED', {
+      folder: ctx.folder,
+      ...(pathRefusal[1] ? { jailReason: pathRefusal[1] } : {})
+    })
+  }
   // T482 B5: a refused send names the offending key or line in its detail.
   const content = /^(KEY_UNKNOWN|INPUT_TOO_LARGE|WAIT_PATTERN_INVALID): ([\s\S]*)$/.exec(result)
   if (content) {

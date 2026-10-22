@@ -26,6 +26,10 @@ import {
 import type { BrowserPartition } from './guest-prefs'
 import type { BrowserLeases } from './lease'
 import type { SteerableDenial } from '../mcp/deny-hint'
+import type { JailFs, PageFolder } from './page-url'
+import type { PageState, PageStateStore } from './page-state'
+import type { PatchResult } from './page-patch'
+import { openPageFileVerb } from './page-verbs'
 
 /** The fixed reminder on every ACK that carries page-derived text (spec §6, §7.6). */
 export const BROWSER_NOTE =
@@ -79,6 +83,28 @@ export interface BrowserHost {
   zoomOf?(paneId: string): number
 }
 
+/** The page-protocol seam the live-panel verbs and `browser_open({ path | html })` use (`page-service.ts`). */
+export interface PageSeam {
+  /** The known folder (with its realpath), or `null` when Harnu does not track it. */
+  folderFor(folder: string): Promise<PageFolder | null>
+  fs: JailFs
+  /** The folder and folder-relative file a live page URL names, or `null` when it is not a known page. */
+  locate(liveUrl: string): Promise<{ folder: string; relPath: string } | null>
+  state: PageStateStore
+  /** Push a state to every loaded pane showing that file; returns how many were reached. */
+  pushData(folder: string, relPath: string, state: PageState): number
+  /** Run a patch script in the pane's top frame once it has loaded; `null` when the page never became ready. */
+  runPatch(paneId: string, script: string): Promise<PatchResult | null>
+  /** Write `.harnu/out/panels/<slug>.html`; returns its folder-relative path. */
+  writePanel(
+    folder: string,
+    slug: string,
+    html: string
+  ): Promise<{ ok: true; relPath: string } | { ok: false; reason: string }>
+  /** The `harnu-page://` address of a folder-relative file. */
+  urlFor(folderReal: string, relPath: string): string
+}
+
 export interface BrowserVerbDeps {
   now(): number
   newPaneId(): string
@@ -101,6 +127,8 @@ export interface BrowserVerbDeps {
     openedBy: 'agent'
     ownerSessionId: string | null
     partition: BrowserPartition
+    /** A page pane's folder-relative file (T569 U2). */
+    pagePath?: string
   }): Promise<boolean>
   hidePane(folder: string, paneId: string): Promise<boolean>
   /** Redact page-derived text (home path, secret shapes). Best-effort, not a security boundary. */
@@ -116,6 +144,8 @@ export interface BrowserVerbDeps {
   leases?: BrowserLeases
   /** The folder's "Let agents read browser panes I open" opt-in (exact folder). Absent = off. */
   readOptIn?(folder: string): Promise<boolean>
+  /** The `harnu-page://` side: the jail, the sidecar, the panel files and the live page (T569 U2). */
+  pages: PageSeam
 }
 
 export function refuse(
@@ -246,6 +276,8 @@ export async function openVerb(
   // The same content rules the plan layer applies (defense in depth: the plan refuses first).
   const bad = checkBrowserContent('browser_open', args as unknown as Record<string, unknown>)
   if (bad) return refuseContent(bad)
+  // The `path` and `html` forms open one of our own page files (T569 U2).
+  if (args.path !== undefined || args.html !== undefined) return openPageFileVerb(args, deps)
   const verdict = checkTopLevelNavigation(args.url ?? '', 'verb')
   if (!verdict.ok) return refuse('URL_SCHEME_BLOCKED', { scheme: verdict.scheme })
 
@@ -319,11 +351,11 @@ export async function openVerb(
   }
 }
 
-function emptyLive(): LivePaneInfo {
+export function emptyLive(): LivePaneInfo {
   return { url: '', title: '', loading: true, canGoBack: false, canGoForward: false }
 }
 
-function sessionNotFound(): SteerableDenial {
+export function sessionNotFound(): SteerableDenial {
   return {
     error: 'SESSION_NOT_FOUND',
     message: 'Harnu does not know that session id, so it cannot be named as the pane owner.',
@@ -340,6 +372,10 @@ export function refuseContent(c: ContentRefusal): Refusal {
   if (c.code === 'BAD_ARGS') return refuseBadArgs(c.detail)
   if (c.code === 'BROWSER_KEY_UNKNOWN') return refuse('BROWSER_KEY_UNKNOWN', { detail: c.detail })
   if (c.code === 'URL_SCHEME_BLOCKED') return refuse('URL_SCHEME_BLOCKED', { scheme: c.scheme })
+  if (c.code === 'DATA_TOO_LARGE' || c.code === 'HTML_TOO_LARGE') {
+    return refuse(c.code, { limitBytes: c.limitBytes })
+  }
+  if (c.code === 'PATH_NOT_ALLOWED') return refuse(c.code, { jailReason: c.jailReason })
   return refuse('NOT_YET_AVAILABLE', { feature: c.feature })
 }
 

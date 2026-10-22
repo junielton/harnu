@@ -12,6 +12,8 @@ import type { EmulationRecord } from '../../shared/browser-emulation'
 
 /** Agent-opened panes per folder (spec §10.1, decision 28). Enforced in the verb, not here. */
 export const MAX_AGENT_PANES_PER_FOLDER = 4
+/** How long a finished agent input run is remembered for the emit gate (F5). */
+export const AGENT_INPUT_HISTORY_MS = 15_000
 
 export interface BrowserPaneRecord {
   paneId: string
@@ -34,6 +36,13 @@ export interface BrowserPaneRecord {
    * `browser_emulate` both write and the view host applies. Absent or empty = no emulation.
    */
   emulation?: EmulationRecord
+  /**
+   * The folder-relative page file this pane was opened on (T569 U2): the dedupe key of a page pane. The pane's
+   * CLASS is always read off the live URL, never off this field.
+   */
+  pagePath?: string | null
+  /** The operator's per-pane "Allow network" switch (spec §4.3). Off by default; NO verb sets it. */
+  allowNetwork?: boolean
 }
 
 /** A write in flight: what the ACK needs to say about concurrent activity. */
@@ -62,13 +71,21 @@ export interface BrowserRegistry {
   noteOperatorInteraction(paneId: string): void
   beginWrite(paneId: string): WriteToken
   endWrite(token: WriteToken): WriteReport
+  /** A page pane in `folder` showing `relPath`, for `browser_open({ path })` dedupe (spec §6.2). */
+  findPagePane(folder: string, relPath: string): BrowserPaneRecord | undefined
   /**
    * An agent INPUT verb (`click`, `type`, `fill`, `press`, `upload`, an `eval` that dispatches input) is running
    * on the pane (spec §5.4 condition 2). U4 calls these around its input verbs; the emit gate reads them.
    */
   beginAgentInput(paneId: string): void
   endAgentInput(paneId: string): void
-  agentInput(paneId: string): { inFlight: boolean; at: number | null }
+  agentInput(paneId: string): {
+    inFlight: boolean
+    /** When the last run finished, or `null`. */
+    at: number | null
+    /** Recent runs (the last ~15 s, open ones with `end: null`), for the emit gate's overlap test. */
+    intervals: Array<{ start: number; end: number | null }>
+  }
   /** Epoch ms of the latest moment an agent input verb was active (now while one runs), or `null` if none ever. */
   lastAgentInputAt(paneId: string): number | null
   /**
@@ -85,7 +102,10 @@ export interface BrowserRegistry {
  */
 export const AGENT_INPUT_WINDOW_MS = 5000
 
-/** Most intervals kept per pane (old ones are irrelevant after {@link AGENT_INPUT_WINDOW_MS}). */
+/**
+ * Most intervals kept per pane. Old ones stop mattering once they are more than {@link AGENT_INPUT_WINDOW_MS} plus
+ * an activation's lifetime in the past, but the count is the only bound, so a busy agent cannot grow it.
+ */
 const MAX_INPUT_INTERVALS = 64
 
 export function createBrowserRegistry(now: () => number): BrowserRegistry {
@@ -124,6 +144,8 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
       [...panes.values()]
         .filter((p) => p.folder === folder && p.openedBy === 'agent')
         .sort((a, b) => a.createdAt - b.createdAt),
+    findPagePane: (folder, relPath) =>
+      [...panes.values()].find((p) => p.folder === folder && p.pagePath === relPath),
     beginAgentInput(id) {
       const cur = agentInputs.get(id) ?? { running: 0, at: null, open: [], done: [] }
       cur.running++
@@ -144,7 +166,18 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
     },
     agentInput(id) {
       const cur = agentInputs.get(id)
-      return { inFlight: (cur?.running ?? 0) > 0, at: cur?.at ?? null }
+      if (!cur) return { inFlight: false, at: null, intervals: [] }
+      // Keep ~15 s of history: an activation lives about 5 s, and the gate asks about runs around it.
+      const cutoff = now() - AGENT_INPUT_HISTORY_MS
+      cur.done = cur.done.filter((iv) => iv.end >= cutoff)
+      return {
+        inFlight: cur.running > 0,
+        at: cur.at,
+        intervals: [
+          ...cur.done.map((iv) => ({ ...iv })),
+          ...cur.open.map((start) => ({ start, end: null }))
+        ]
+      }
     },
     lastAgentInputAt(id) {
       const cur = agentInputs.get(id)

@@ -277,7 +277,10 @@ describe('AC-B1-3 — spawn_terminal is not replayable', () => {
       // T572 (U5): emulate, upload and download are writes too.
       'browser_emulate',
       'browser_upload',
-      'browser_download'
+      'browser_download',
+      // T569 U2: two identical writes to a live panel write twice.
+      'browser_set_data',
+      'browser_patch'
     ])
   })
 })

@@ -60,12 +60,13 @@ import {
   livePtyDescriptors
 } from './pty'
 import { registerBrowserIpc } from './browser/browser-ipc'
-import { refreshBrowserTrustedHosts } from './browser/browser-service'
+import { bindBrowserBridge, refreshBrowserTrustedHosts } from './browser/browser-service'
 import {
   isFromAppWindow,
   parseBrowserReadPayload,
   parseTrustedHostsPayload
 } from './browser/folder-flag-ipc'
+import { pageSchemeEntry } from './browser/page-service'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
 import {
@@ -446,7 +447,9 @@ migrateUserData({
 // privileged-scheme table once at startup, and the mirrored ES modules need
 // `standard` (root-relative imports) + `secure` (module/WASM loading) + CORS
 // (the page itself is on file://). The handler is installed in `whenReady`.
-registerKokoroScheme()
+// T564 U2: the `harnu-page://` scheme is privileged in the SAME call (a second call would strip `secure` from
+// the voice scheme), at the same point (before ready).
+registerKokoroScheme([pageSchemeEntry()])
 
 /**
  * Last-resort crash handlers. The whole point of Harnu is to keep many live
@@ -748,6 +751,8 @@ app.whenReady().then(async () => {
       /* not a real directory — ignore the CLI arg */
     }
   })
+  // T564 U2: page events ride the command bridge to a session as a user turn.
+  bindBrowserBridge(cmdBridge.bridge)
   void registerMcpServer(() => mainWindow, {
     bridge: cmdBridge.bridge,
     confirm: mcpConfirm.confirm
