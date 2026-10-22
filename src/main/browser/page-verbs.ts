@@ -84,6 +84,20 @@ export async function setDataVerb(
   }
   // `delivered: false` means no loaded page took it; the value is applied at next load from the sidecar.
   const reached = deps.pages.pushData(target.folder, target.relPath, result.state)
+  // A pane the agent may not read (an operator pane without the folder opt-in) gets back only what the write itself
+  // produced: not its address, its state, whether a page took the data, or whether the operator was using it.
+  const readable =
+    rec.openedBy === 'agent' || (deps.readOptIn ? await deps.readOptIn(rec.folder) : false)
+  if (!readable) {
+    return {
+      ok: true,
+      op: 'browser_set_data',
+      paneId: rec.paneId,
+      url: null,
+      rev: result.state.rev,
+      persisted: true
+    }
+  }
   return {
     ...ackBase(rec, g.live, g.origin ?? 'page'),
     rev: result.state.rev,

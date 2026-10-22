@@ -68,8 +68,14 @@ export interface BrowserRegistry {
   get(paneId: string): BrowserPaneRecord | undefined
   remove(paneId: string): boolean
   list(): BrowserPaneRecord[]
-  /** Agent-opened panes in `folder`, oldest first (the `PANE_LIMIT` nextActions list them). */
+  /**
+   * Agent-opened panes in `folder`, oldest first (the `PANE_LIMIT` nextActions list them). A pane the operator
+   * DISCONNECTED the agent from is not counted and not offered for reuse: the agent can neither use nor close it, so
+   * four of them would otherwise cap the folder for good.
+   */
   agentPanesIn(folder: string): BrowserPaneRecord[]
+  /** Tell the registry which panes are disconnected (the access state owns that). */
+  setDisconnectedProbe(probe: (paneId: string) => boolean): void
   touch(paneId: string): void
   /** The operator did something in the pane. */
   noteOperatorInteraction(paneId: string): void
@@ -119,6 +125,7 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
   /** Per pane: write ids that overlapped some other write while in flight. */
   const overlapped = new Map<string, Set<number>>()
   let nextId = 1
+  let isDisconnected: (paneId: string) => boolean = () => false
   const verbs = new Map<string, number>()
   /** Per pane: agent input verbs running now, and when the last one finished. */
   const agentInputs = new Map<
@@ -145,9 +152,12 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
       return panes.delete(id)
     },
     list: () => [...panes.values()],
+    setDisconnectedProbe(probe) {
+      isDisconnected = probe
+    },
     agentPanesIn: (folder) =>
       [...panes.values()]
-        .filter((p) => p.folder === folder && p.openedBy === 'agent')
+        .filter((p) => p.folder === folder && p.openedBy === 'agent' && !isDisconnected(p.paneId))
         .sort((a, b) => a.createdAt - b.createdAt),
     findPagePane: (folder, relPath) =>
       [...panes.values()].find((p) => p.folder === folder && p.pagePath === relPath),

@@ -262,3 +262,54 @@ describe('close (spec §10.2)', () => {
     expect(touched).toEqual([])
   })
 })
+
+describe('the gate runs again after a revival (Delta 2)', () => {
+  it('a Disconnect during the revival refuses the verb too', async () => {
+    const { deps, host, access, discard } = rig()
+    discard()
+    ;(host.revive as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      access.disconnect('bp-1')
+      return true
+    })
+    const res = await navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps)
+    expect(res).toMatchObject({ ok: false, error: 'BROWSER_DISCONNECTED' })
+    expect(host.navigate).not.toHaveBeenCalled()
+  })
+
+  it('a folder blocked during the revival refuses PANE_FOLDER_BLOCKED', async () => {
+    const { deps, host, discard } = rig()
+    discard()
+    let blocked = false
+    deps.folderBlocked = () => blocked
+    ;(host.revive as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      blocked = true
+      return true
+    })
+    const res = await navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps)
+    expect(res).toMatchObject({ ok: false, error: 'PANE_FOLDER_BLOCKED' })
+    expect(host.navigate).not.toHaveBeenCalled()
+  })
+
+  it('an operator pane whose opt-in was turned off during the revival refuses too', async () => {
+    const { deps, host, registry, discard } = rig()
+    registry.get('bp-1')!.openedBy = 'operator'
+    ;(host as { viewToken?: () => string }).viewToken = () => 'tok'
+    let optIn = true
+    deps.readOptIn = async () => optIn
+    deps.leases = {
+      forget: () => undefined,
+      isActive: () => true,
+      isDenied: () => false,
+      noteWrite: () => undefined,
+      revoke: () => undefined
+    } as never
+    discard()
+    ;(host.revive as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      optIn = false
+      return true
+    })
+    const res = await navigateVerb({ paneId: 'bp-1', action: 'reload' }, deps)
+    expect(res).toMatchObject({ ok: false, error: 'BROWSER_READ_NOT_ENABLED' })
+    expect(host.navigate).not.toHaveBeenCalled()
+  })
+})

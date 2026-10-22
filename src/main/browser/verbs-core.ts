@@ -260,27 +260,34 @@ export async function gate(
   { refusal: Refusal } | { rec?: BrowserPaneRecord; live?: LivePaneInfo; origin?: OriginClass }
 > {
   const rec = paneId === undefined ? undefined : deps.registry.get(paneId)
-  const live = rec ? deps.host.info(rec.paneId) : undefined
-  const origin = rec ? originOf(rec, live, deps) : undefined
-  const readOptIn = rec && deps.readOptIn ? await deps.readOptIn(rec.folder) : false
-  // The operator closing the folder's read door ends the leases behind it, whatever turned it off.
-  if (rec && rec.openedBy === 'operator' && !readOptIn) deps.leases?.revoke(rec.paneId)
-  const denied = gateBrowserOpDetailed(op, {
-    pane: rec && origin ? accessOf(rec, deps, origin, readOptIn) : undefined,
-    writesEnabled: await deps.writesEnabled(),
-    enforceLease: true,
-    ...(args ? { args } : {})
-  })
-  // The older verbs pass no content `args`, so for them the content rules run in the verb, after this.
-  if (denied) {
-    if (denied.content) return { refusal: refuseContent(denied.content) }
-    return {
-      refusal: refuse(denied.reason as BrowserDenialCode, {
-        folder: rec?.folder,
-        ...(rec ? { openedBy: rec.openedBy } : {})
-      })
+  let live = rec ? deps.host.info(rec.paneId) : undefined
+  const originNow = (): OriginClass | undefined => (rec ? originOf(rec, live, deps) : undefined)
+  let origin = originNow()
+  /** The access judgement over facts read just now (it runs again after a revival, over freshly read ones). */
+  const decide = (readOptIn: boolean, writesEnabled: boolean): { refusal: Refusal } | null => {
+    // The operator closing the folder's read door ends the leases behind it, whatever turned it off.
+    if (rec && rec.openedBy === 'operator' && !readOptIn) deps.leases?.revoke(rec.paneId)
+    const denied = gateBrowserOpDetailed(op, {
+      pane: rec && origin ? accessOf(rec, deps, origin, readOptIn) : undefined,
+      writesEnabled,
+      enforceLease: true,
+      ...(args ? { args } : {})
+    })
+    // The older verbs pass no content `args`, so for them the content rules run in the verb, after this.
+    if (denied) {
+      if (denied.content) return { refusal: refuseContent(denied.content) }
+      return {
+        refusal: refuse(denied.reason as BrowserDenialCode, {
+          folder: rec?.folder,
+          ...(rec ? { openedBy: rec.openedBy } : {})
+        })
+      }
     }
+    return null
   }
+  const readOptIn = rec && deps.readOptIn ? await deps.readOptIn(rec.folder) : false
+  const first = decide(readOptIn, await deps.writesEnabled())
+  if (first) return first
   // A discarded pane comes back before a verb that needs a live page runs; the ACK says `revived: true` (spec §10.1).
   // The gate has already passed, so a refused call never pays for a page load.
   if (rec && deps.host.isDiscarded?.(rec.paneId) && opNeedsLivePage(op, args)) {
@@ -291,7 +298,19 @@ export async function gate(
     if (!revived) return { refusal: refuse('PANE_REVIVE_FAILED', { folder: rec.folder }) }
     const store = revivalOfThisCall.getStore()
     if (store) store.revived = true
-    return { rec, live: deps.host.info(rec.paneId), origin }
+    live = deps.host.info(rec.paneId)
+    origin = originNow()
+    // The revival took seconds: a Disconnect, a Pause, a blocked folder or a read opt-in turned off meanwhile
+    // refuses the verb too, the same as before it (the page was only loaded; nothing was read or done).
+    if (deps.folderBlocked(rec.folder)) {
+      return { refusal: refuse('PANE_FOLDER_BLOCKED', { folder: rec.folder }) }
+    }
+    const again = decide(
+      rec && deps.readOptIn ? await deps.readOptIn(rec.folder) : false,
+      await deps.writesEnabled()
+    )
+    if (again) return again
+    return { rec, live, origin }
   }
   // Passing the gate does NOT refresh the lease's idle clock: only a write that actually ran does (`noteAgentWrite`).
   return { rec, live, origin }

@@ -829,7 +829,10 @@ first and says `revived: true` in its ACK; a revived page is a new document, so 
 ended and its scroll is put back best-effort. Panes come back **after an app restart** the same way
 (discarded, at the same address, with their zoom, emulation, network switch and unsent comments); a
 lease, network capture, the "opened by agent" flag and a pause do not survive it, but a **Disconnect does** (the pane returns
-disconnected: `BROWSER_DISCONNECTED`). If a paused page cannot be reloaded the verb is `PANE_REVIVE_FAILED` and nothing ran. `browser_navigate({ paneId, url | action })` takes a `url` or an
+disconnected: `BROWSER_DISCONNECTED`). If a paused page cannot be reloaded the verb is `PANE_REVIVE_FAILED` and nothing ran; the access check runs again after the
+reload, so a Disconnect, a block or an opt-in turned off meanwhile still refuses (`PANE_FOLDER_BLOCKED` for a block). Panes
+you were disconnected from do not count toward the 4-pane cap. On a pane you may not read, a `browser_set_data` ACK is only
+`{ok, paneId, url: null, rev, persisted}`. `browser_navigate({ paneId, url | action })` takes a `url` or an
 `action` (`back`, `forward`, `reload`, `stop`) and waits for `load` by default (`waitUntil`,
 `timeoutMs`): hitting the timeout is not an error (`reason: 'timeout'`), and a network failure is
 still `ok` with `netError`. Read `othersWrote` and `operatorInteracted` on the ACK: either means

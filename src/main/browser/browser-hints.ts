@@ -13,6 +13,7 @@ export const BROWSER_DENIAL_CODES = [
   'URL_SCHEME_BLOCKED',
   'PANE_LIMIT',
   'PANE_REVIVE_FAILED',
+  'PANE_FOLDER_BLOCKED',
   'NOT_YET_AVAILABLE',
   'REF_STALE',
   'REF_NOT_FOUND',
@@ -170,6 +171,17 @@ export function shapeBrowserDenial(
           {
             do: 'Serve the content over http://localhost (a dev server) or use an https URL.',
             why: 'file:, chrome:, devtools:, view-source: and javascript: addresses are blocked so a page can never reach local files or the app itself.'
+          }
+        ]
+      }
+    case 'PANE_FOLDER_BLOCKED':
+      return {
+        error: code,
+        message: `The operator blocked this folder${at} for agents, so nothing was done.`,
+        nextActions: [
+          {
+            do: 'Stop using browser panes in this folder and tell the operator what you wanted to do there.',
+            why: 'A blocked folder is a decision of the operator that no verb may work around.'
           }
         ]
       }

@@ -366,9 +366,26 @@ describe('browser_set_data (AC-6)', () => {
       flagged: null
     })
     r.live.set('op-1', { url, title: '', loading: false, canGoBack: false, canGoForward: false })
-    expect(await setDataVerb({ paneId: 'op-1', data: { a: 1 } }, r.deps)).toMatchObject({
+    const ack = await setDataVerb({ paneId: 'op-1', data: { a: 1 } }, r.deps)
+    expect(ack).toMatchObject({ ok: true, rev: 1, persisted: true, url: null })
+    // the agent may not read this pane: nothing of its live state comes back (Delta 2)
+    for (const key of [
+      'state',
+      'origin',
+      'operatorInteracted',
+      'othersWrote',
+      'delivered',
+      'flagged'
+    ]) {
+      expect(ack, key).not.toHaveProperty(key)
+    }
+    // with the folder opt-in the full ACK is back
+    r.deps.readOptIn = async () => true
+    expect(await setDataVerb({ paneId: 'op-1', data: { a: 2 } }, r.deps)).toMatchObject({
       ok: true,
-      rev: 1
+      rev: 2,
+      state: 'live',
+      operatorInteracted: false
     })
   })
 

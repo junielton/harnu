@@ -14,6 +14,7 @@
  */
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import { bootOverlay } from './overlay'
+import { isActivatingKey } from '../shared/browser-activation'
 
 const CHANNEL_GET_DATA = 'harnu:page:getData'
 const CHANNEL_EMIT = 'harnu:page:emit'
@@ -61,7 +62,15 @@ function bootHarnuApi(): void {
     lastActivation = kind
     lastActivationAt = performance.timeOrigin + e.timeStamp
   }
-  window.addEventListener('keydown', (e) => noteActivation('key', e), true)
+  // Chromium's user activation comes from keys that type or act, not from Escape or a modifier on its own: those must
+  // not move the anchor main measures an agent run against (they would make a real click look older or newer).
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (isActivatingKey((e as KeyboardEvent).key)) noteActivation('key', e)
+    },
+    true
+  )
   window.addEventListener('pointerdown', (e) => noteActivation('pointer', e), true)
 
   contextBridge.exposeInMainWorld('harnu', {

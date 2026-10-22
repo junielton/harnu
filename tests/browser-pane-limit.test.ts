@@ -192,3 +192,44 @@ describe('what counts toward the cap', () => {
     expect(resolved.input.agentPaneIds).toEqual(held(4))
   })
 })
+
+describe('a disconnected pane does not count toward the cap (Delta 2)', () => {
+  const rec = (paneId: string) => ({
+    paneId,
+    folder: FOLDER,
+    name: paneId,
+    openedBy: 'agent' as const,
+    partition: 'agent' as const,
+    ownerSessionId: null,
+    createdAt: Number(paneId.replace(/\D/g, '')),
+    lastActiveAt: 1,
+    seenHosts: new Set<string>(),
+    flagged: null
+  })
+
+  it('leaves disconnected panes out of the list the cap counts and the hint offers', () => {
+    const reg = createBrowserRegistry(() => 1)
+    const gone = new Set<string>()
+    reg.setDisconnectedProbe((id) => gone.has(id))
+    for (let i = 1; i <= 4; i++) reg.add(rec(`bp-${i}`))
+    expect(reg.agentPanesIn(FOLDER)).toHaveLength(4)
+    gone.add('bp-1')
+    gone.add('bp-2')
+    expect(reg.agentPanesIn(FOLDER).map((p) => p.paneId)).toEqual(['bp-3', 'bp-4'])
+    // four disconnected panes no longer cap the folder for good
+    gone.add('bp-3')
+    gone.add('bp-4')
+    expect(reg.agentPanesIn(FOLDER)).toEqual([])
+  })
+
+  it('so a fifth open is allowed once the agent holds fewer than four usable panes', () => {
+    const reg = createBrowserRegistry(() => 1)
+    const gone = new Set(['bp-1'])
+    reg.setDisconnectedProbe((id) => gone.has(id))
+    for (let i = 1; i <= 4; i++) reg.add(rec(`bp-${i}`))
+    const ids = reg.agentPanesIn(FOLDER).map((p) => p.paneId)
+    expect(ids).toEqual(['bp-2', 'bp-3', 'bp-4'])
+    const plan = open({ url: 'http://localhost:3009' }, input(ids), false)
+    expect(plan.auditRecord.result).not.toMatch(/PANE_LIMIT/)
+  })
+})

@@ -4,7 +4,7 @@
  * pure modules next to it.
  */
 import { randomUUID } from 'node:crypto'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir, realpath, stat, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -30,9 +30,8 @@ import { createBrowserRegistry } from './registry'
 import type { BrowserReadDeps } from './read-verbs'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import { resolveDiscardMs } from './lifecycle'
-import { planRestore, type PersistedPaneInput } from './restore-plan'
+import { runRestore } from './restore-run'
 import { readHelpers } from '../helpers-store'
-import { scanFolders } from '../claude-reader'
 import { isFolderDenied } from '../mcp/permission-core'
 import { createPageService, type PageService } from './page-service'
 import { createOverlayBridge, type OverlayBridge } from './overlay-bridge'
@@ -41,6 +40,7 @@ import type { BrowserPartition } from './guest-prefs'
 
 export const browserRegistry = createBrowserRegistry(() => Date.now())
 export const browserAccess = createBrowserAccess(() => Date.now())
+browserRegistry.setDisconnectedProbe((paneId) => browserAccess.isDisconnected(paneId))
 export { browserLeases }
 
 /**
@@ -250,43 +250,33 @@ export function openOperatorPane(opts: {
  * before the renderer hydrates its stacks. A pane that is already known is left alone.
  */
 export async function restoreBrowserPanes(): Promise<number> {
-  let file: Awaited<ReturnType<typeof readHelpers>>
-  try {
-    file = await readHelpers()
-  } catch {
-    return 0
-  }
-  const inputs: PersistedPaneInput[] = []
-  for (const [worktreePath, state] of Object.entries(file.byWorktree)) {
-    for (const pane of state.panes ?? []) {
-      inputs.push({ id: pane.id, type: pane.type, worktreePath, payload: pane.payload })
-    }
-  }
-  // Only a folder Harnu tracks (pinned, or with sessions on disk) and the operator has not blocked comes back: the
-  // stack's folder feeds the `harnu-page:` servable-folder index, so a hand-edited file must not name any other.
-  let known = new Set<string>()
-  let denied: string[] = []
-  try {
-    const projects = (await readUserProjects()).projects
-    denied = projects.filter((p) => p.agentDenied === true).map((p) => p.path)
-    known = new Set([...projects.map((p) => p.path), ...(await scanFolders()).map((f) => f.path)])
-  } catch {
-    return 0
-  }
   const home = os.homedir()
-  const folderAllowed = (folder: string): boolean =>
-    known.has(folder) && !isFolderDenied(folder, denied, home)
-  let restored = 0
-  for (const { rec, pins, disconnected } of planRestore(inputs, Date.now(), folderAllowed)) {
-    if (browserRegistry.get(rec.paneId)) continue
-    browserRegistry.add(rec)
-    // Disconnect is "for good" (spec §7.4): it survives a restart, so reads and writes refuse again.
-    if (disconnected) browserAccess.disconnect(rec.paneId)
-    if (pins.length > 0) getOverlayBridge().restorePins(rec.paneId, pins)
-    getBrowserHost().restoreDiscarded(rec.paneId)
-    restored++
-  }
-  return restored
+  return runRestore({
+    readStacks: async () =>
+      Object.entries((await readHelpers()).byWorktree).map(([worktreePath, state]) => ({
+        worktreePath,
+        panes: state.panes ?? []
+      })),
+    readProjects: async () => (await readUserProjects()).projects,
+    isDirectory: (p) => {
+      try {
+        return statSync(p).isDirectory()
+      } catch {
+        return false
+      }
+    },
+    hasGit: (p) => existsSync(join(p, '.git')),
+    isBlocked: (folder, denied) => isFolderDenied(folder, [...denied], home),
+    now: () => Date.now(),
+    apply: ({ rec, pins, disconnected }) => {
+      if (browserRegistry.get(rec.paneId)) return
+      browserRegistry.add(rec)
+      // Disconnect is "for good" (spec §7.4): it survives a restart, so reads and writes refuse again.
+      if (disconnected) browserAccess.disconnect(rec.paneId)
+      if (pins.length > 0) getOverlayBridge().restorePins(rec.paneId, pins)
+      getBrowserHost().restoreDiscarded(rec.paneId)
+    }
+  })
 }
 
 /** Close a pane from the operator's side (X button, a removed helper): the view, the record, the access state. */

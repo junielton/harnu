@@ -28,6 +28,7 @@ import {
   type EmulationRecord
 } from '../../shared/browser-emulation'
 import { ZOOM_MAX, ZOOM_MIN } from '../../shared/browser-zoom'
+import { scrubUrl } from '../../shared/browser-comment'
 import { checkTopLevelNavigation } from './nav-policy'
 import type { PinRecord } from './comment-pins'
 import { buildDiscardState, sanitizeScroll } from './lifecycle'
@@ -157,6 +158,16 @@ export function sanitizeEmulation(raw: unknown): EmulationRecord {
   return out
 }
 
+/** A session id is a UUID, or a `synthetic-` one; anything else in a hand-edited file is not an owner. */
+const SESSION_ID = /^(synthetic-)?[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+
+function ownerOf(raw: unknown): string | null {
+  return typeof raw === 'string' && SESSION_ID.test(raw) ? raw : null
+}
+
+/** Which folders a restored pane may come back in, for which kind of pane. */
+export type FolderAllowed = (folder: string, openedBy: 'agent' | 'operator') => boolean
+
 /* ---- The pane ---------------------------------------------------------------------------------------- */
 
 /**
@@ -166,12 +177,9 @@ export function sanitizeEmulation(raw: unknown): EmulationRecord {
 export function restorePane(
   input: PersistedPaneInput,
   now: number,
-  folderAllowed: (folder: string) => boolean = () => true
+  folderAllowed: FolderAllowed = () => true
 ): RestoredPane | null {
   if (input.type !== 'browser') return null
-  // The stack's folder feeds the `harnu-page:` servable-folder index: only a folder Harnu tracks and the operator has
-  // not blocked may, so a hand-edited file cannot make an arbitrary directory servable.
-  if (typeof input.worktreePath !== 'string' || !folderAllowed(input.worktreePath)) return null
   const paneId = typeof input.id === 'string' && PANE_ID.test(input.id) ? input.id : null
   if (!paneId || typeof input.worktreePath !== 'string' || input.worktreePath === '') return null
   const p = isRecord(input.payload) ? input.payload : {}
@@ -184,10 +192,15 @@ export function restorePane(
   if (rawUrl !== '') {
     const verdict = checkTopLevelNavigation(rawUrl, 'operator')
     const isPageUrl = rawUrl.startsWith('harnu-page:')
-    if (verdict.ok && (!isPageUrl || pagePath !== null)) url = verdict.url
+    // Userinfo, query and fragment are dropped here too (main side): a file written by an older build, or by hand,
+    // must not bring a token back into a loaded page.
+    if (verdict.ok && (!isPageUrl || pagePath !== null)) url = scrubUrl(verdict.url)
   }
 
   const openedBy = p.openedBy === 'agent' ? 'agent' : 'operator'
+  // The stack's folder feeds the `harnu-page:` servable-folder index, so a hand-edited file must not name any
+  // directory: the caller decides which folders may come back, and for which kind of pane.
+  if (!folderAllowed(input.worktreePath, openedBy)) return null
   // An agent-opened pane ALWAYS uses the agent partition (spec §3.4: no argument selects it), so a hand-edited file
   // cannot put one in the operator's cookie jar. An operator pane may be on either (a popup inherits its opener's).
   const partition = openedBy === 'agent' || p.partition === 'agent' ? 'agent' : 'operator'
@@ -199,7 +212,8 @@ export function restorePane(
     name: str(p.name, MAX_NAME_CHARS) ?? '',
     openedBy,
     partition,
-    ownerSessionId: str(p.ownerSessionId, 80) || null,
+    // Unknown shapes become `null`, which delivery turns into the folder's selected session.
+    ownerSessionId: ownerOf(p.ownerSessionId),
     createdAt: now,
     lastActiveAt: now,
     // `flagged` does not survive a restart (spec §10.3): the badge is for what an agent opened THIS run.
@@ -225,14 +239,20 @@ export function restorePane(
 export function planRestore(
   panes: readonly PersistedPaneInput[],
   now: number,
-  folderAllowed?: (folder: string) => boolean
+  folderAllowed?: FolderAllowed
 ): RestoredPane[] {
   const out: RestoredPane[] = []
-  const seen = new Set<string>()
+  const byId = new Map<string, RestoredPane>()
   for (const pane of panes) {
     const restored = restorePane(pane, now, folderAllowed)
-    if (!restored || seen.has(restored.rec.paneId)) continue
-    seen.add(restored.rec.paneId)
+    if (!restored) continue
+    const first = byId.get(restored.rec.paneId)
+    if (first) {
+      // A repeated id keeps the first pane, but a Disconnect on either copy is never lost.
+      first.disconnected = first.disconnected || restored.disconnected
+      continue
+    }
+    byId.set(restored.rec.paneId, restored)
     out.push(restored)
   }
   return out

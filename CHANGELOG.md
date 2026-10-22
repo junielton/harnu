@@ -86,7 +86,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
-- **Disconnecting a session from a browser pane now lasts across a restart.** It used to come back connected.
+- **Disconnecting a session from a browser pane now lasts across a restart.** It used to come back connected. Panes a
+  session has been disconnected from no longer count toward its four-panes-per-folder limit, so they cannot lock it
+  out of opening new ones.
+- **Restoring browser panes at launch no longer delays the window.** Nothing is read when no browser pane is saved, and
+  with some only the pinned projects and each pane's own folder are checked.
 - **A browser pane's saved state could stop being written.** Adding a second pane to a folder left the first one's
   saved details in a form the file write refused, so the file silently stopped updating; it now writes plain data.
 

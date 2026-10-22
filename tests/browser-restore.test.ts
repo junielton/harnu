@@ -49,7 +49,7 @@ describe('a restored pane', () => {
         url: 'http://localhost:3000/cart?x=1',
         openedBy: 'agent',
         partition: 'agent',
-        ownerSessionId: 'sess-1',
+        ownerSessionId: '40b13c23-ac97-41a7-9c4e-7f6a30a9cff5',
         zoom: 1.25,
         scroll: { x: 0, y: 900 },
         emulation: {
@@ -73,7 +73,7 @@ describe('a restored pane', () => {
       name: 'cart',
       openedBy: 'agent',
       partition: 'agent',
-      ownerSessionId: 'sess-1',
+      ownerSessionId: '40b13c23-ac97-41a7-9c4e-7f6a30a9cff5',
       allowNetwork: false,
       pagePath: null,
       emulation: {
@@ -82,7 +82,7 @@ describe('a restored pane', () => {
       },
       discarded: {
         reason: 'restored',
-        url: 'http://localhost:3000/cart?x=1',
+        url: 'http://localhost:3000/cart',
         scroll: { x: 0, y: 900 },
         zoom: 1.25
       }
@@ -118,8 +118,14 @@ describe('a restored pane', () => {
   })
 
   it('keeps the owner as written: delivery falls back to the folder’s selected session when it is gone', () => {
-    const r = restorePane(pane({ url: 'http://localhost:3000', ownerSessionId: 'gone-9' }), 1)!
-    expect(r.rec.ownerSessionId).toBe('gone-9')
+    const r = restorePane(
+      pane({
+        url: 'http://localhost:3000',
+        ownerSessionId: '11111111-2222-3333-4444-555555555555'
+      }),
+      1
+    )!
+    expect(r.rec.ownerSessionId).toBe('11111111-2222-3333-4444-555555555555')
     expect(restorePane(pane({ url: 'http://localhost:3000' }), 1)!.rec.ownerSessionId).toBeNull()
   })
 
@@ -337,5 +343,43 @@ describe('pins from a file (draft and sent come back)', () => {
   it('a pin with bad optional fields is repaired, not lost', () => {
     const p = sanitizePin(pin({ tag: 7, styles: 'no', component: 5, url: null }))!
     expect(p).toMatchObject({ tag: '', styles: {}, component: null, url: '' })
+  })
+})
+
+describe('restore: scrub, owner, duplicates (Delta 2)', () => {
+  it('drops userinfo, query and fragment from the address in main too', () => {
+    const r = restorePane(pane({ url: 'https://user:pw@app.example.com/cart?token=abc#frag' }), 1)!
+    expect(r.rec.discarded?.url).toBe('https://app.example.com/cart')
+    expect(JSON.stringify(r.rec)).not.toMatch(/token=|user:pw|frag/)
+  })
+
+  it('an owner that is not a session id becomes null (delivery falls back to the selected session)', () => {
+    expect(restorePane(pane({ ownerSessionId: '../../etc' }), 1)!.rec.ownerSessionId).toBeNull()
+    expect(restorePane(pane({ ownerSessionId: 'x'.repeat(80) }), 1)!.rec.ownerSessionId).toBeNull()
+    const ok = '40b13c23-ac97-41a7-9c4e-7f6a30a9cff5'
+    expect(restorePane(pane({ ownerSessionId: ok }), 1)!.rec.ownerSessionId).toBe(ok)
+    expect(restorePane(pane({ ownerSessionId: 'synthetic-' + ok }), 1)!.rec.ownerSessionId).toBe(
+      'synthetic-' + ok
+    )
+  })
+
+  it('a repeated pane id keeps the first pane but never loses a Disconnect', () => {
+    const out = planRestore(
+      [
+        pane({ url: 'http://localhost:1' }),
+        pane({ url: 'http://localhost:2', disconnected: true })
+      ],
+      1
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]!.rec.discarded?.url).toBe('http://localhost:1/')
+    expect(out[0]!.disconnected).toBe(true)
+  })
+
+  it('asks the folder rule with the kind of pane', () => {
+    const seen: string[] = []
+    restorePane(pane({ openedBy: 'agent' }), 1, (_f, by) => (seen.push(by), true))
+    restorePane(pane({}), 1, (_f, by) => (seen.push(by), true))
+    expect(seen).toEqual(['agent', 'operator'])
   })
 })
