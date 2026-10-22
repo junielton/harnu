@@ -58,7 +58,7 @@ The round-5 spec carried the rail as an optional field of `ui.band.set` into the
    (`lib/command-core.ts:267`, `:320`) and a lower `n` never overwrites a higher one (`:319`). If
    the rail rode `band`, a rail push would erase a live review selection, a selection clear would
    erase the rail, and whichever command had the higher `n` would win whatever its priority.
-3. **The lock is shut on purpose.** `ui.band` is reserved for the `read-only` class by three locks:
+3. **The lock is reserved and extend-only, on purpose.** `ui.band` is reserved for the `read-only` class by three locks:
    the gate row (`command-gate-core.ts:171-175`), the cause (`reviewSelectionBand` only) and the
    feature rule (`feature-policy.ts:84-92`). The rail's bindings are `agent` or `operator`. Opening
    `ui.band` to them would loosen a lock a shipped feature depends on, in a change that is not
@@ -88,10 +88,10 @@ and the `ui.rail` feature id (`contract.ts:435` neighbourhood; `FeatureId` is a 
 `:26`); the command-to-feature row next to `'ui.band.set': 'ui.band'` (`lib/command-core.ts:94`);
 `IMPLEMENTED_COMMANDS` and `TOKENLESS_OK` (`:102-114`); a `case 'ui.rail.set'` in `runHandler`
 (`register.ts:1123-1144`) backed by `runRailSet`, which has **its own** `railN` and write chain
-(two commands never share a counter, `register.ts:149-153`); `railFeatures` beside `bandFeatures`
+(by design the two commands do not share a counter; the shipped single counter is `bandN`, `register.ts:149-153`); `railFeatures` beside `bandFeatures`
 (`:339-342`), declared under the same `ui.render` condition (`register.ts:1488`); `sweepBand`
 generalised to sweep both keys and to stop the timer only when both are empty (`register.ts:1078-1094`);
-`resetBand` zeroing `railN` (`:1065-1075`); `api-surface.json` `stateKeys` gains `rail` and
+`resetBand` zeroing `railN` and handling `railMode` as §3.3 says (`:1065-1075`); `runStatus` clearing the status-pin record (§4.4, `:1019-1026`); the render hook reading `rail` and `railMode` before any early return, the way it reads `band` today (`:1470-1472`), so a state write redraws it even when it drew nothing; `api-surface.json` `stateKeys` gains `rail` and
 `railMode`, and `plugin.json`'s `types` contract (`resources/companion/types/index.d.ts`) declares
 them. The host side: `registerGateRow('ui.rail.set', …)` and a `ui.rail` rule in
 `command-gate-core.ts` / `feature-policy.ts` (the rule of [`00-spec.md`](00-spec.md) §10.1), with
@@ -137,16 +137,16 @@ a blank. Each candidate keeps its own width floor (the selection's compact line,
 
 ### 3.3 The handoff, both ways
 
-| Event                                                                             | What happens                                                                                                                                                                                                                   |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A selection is set while the rail is idle                                         | `runBandSet` writes `band` and calls `redrawBand` (`register.ts:1105-1110`); the hook now returns the selection row. The `rail` and `railMode` keys are untouched. The status line (§4) keeps showing the progress             |
-| A selection is set while the rail holds a field, confirm, saving row or final row | the selection is **stored and not drawn** (P1). The moment `railMode` returns to idle, that write redraws and the selection shows, unless its TTL lapsed (the host re-sends every 60 s, `review-selection-tracker.ts:323-325`) |
-| The selection clears: `line: null` (`cleared`, `review-selection-tracker.ts:365`) | `band` is set to `null` and redrawn; the rail row returns at once if its `rail` is still live                                                                                                                                  |
-| The selection lapses: no re-send for 90 s (`BAND_TTL_MS`, `contract.ts:68`)       | `sweepBand` clears it on its next 30 s tick (`register.ts:1078-1089`) and redraws, so the rail returns at most 30 s after the expiry                                                                                           |
-| The rail is pushed or cleared while a selection stands                            | stored; no visible change. The host publishes the rail on its own clock whether or not the slot shows it, so it is live when the selection ends (one keep-alive a minute per binding, [`02-host.md`](02-host.md) §2.3)         |
-| The rail's TTL lapses while the selection stands (Harnu gone)                     | `rail` and the status line are cleared by the same sweep; the selection is unaffected                                                                                                                                          |
-| `/clear`, `/resume`, the companion ending                                         | each producer handles its own: the selection by its `cleared` transition, the rail by the host's re-resolution ([`02-host.md`](02-host.md) §1.2). Neither clears the other's key                                               |
-| A new host boot                                                                   | `resetBand` zeroes `bandN`; the generalised reset also zeroes `railN` and clears both keys                                                                                                                                     |
+| Event                                                                             | What happens                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A selection is set while the rail is idle                                         | `runBandSet` writes `band` and calls `redrawBand` (`register.ts:1105-1110`); the hook now returns the selection row. The `rail` and `railMode` keys are untouched. The status line (§4) keeps showing the progress                                                                                                                                                                                                                                                                  |
+| A selection is set while the rail holds a field, confirm, saving row or final row | the selection is **stored and not drawn** (P1). The moment `railMode` returns to idle, that write redraws and the selection shows, unless its TTL lapsed (the host re-sends every 60 s, `review-selection-tracker.ts:323-325`)                                                                                                                                                                                                                                                      |
+| The selection clears: `line: null` (`cleared`, `review-selection-tracker.ts:365`) | `band` is set to `null` and redrawn; the rail row returns at once if its `rail` is still live                                                                                                                                                                                                                                                                                                                                                                                       |
+| The selection lapses: no re-send for 90 s (`BAND_TTL_MS`, `contract.ts:68`)       | `sweepBand` clears it on its next 30 s tick (`register.ts:1078-1089`) and redraws, so the rail returns at most 30 s after the expiry                                                                                                                                                                                                                                                                                                                                                |
+| The rail is pushed or cleared while a selection stands                            | stored; no visible change. The host publishes the rail on its own clock whether or not the slot shows it, so it is live when the selection ends (one keep-alive a minute per binding, [`02-host.md`](02-host.md) §2.3)                                                                                                                                                                                                                                                              |
+| The rail's TTL lapses while the selection stands (Harnu gone)                     | `rail` and the status line are cleared by the same sweep; the selection is unaffected                                                                                                                                                                                                                                                                                                                                                                                               |
+| `/clear`, `/resume`, the companion ending                                         | each producer handles its own: the selection by its `cleared` transition, the rail by the host's re-resolution ([`02-host.md`](02-host.md) §1.2). Neither clears the other's key                                                                                                                                                                                                                                                                                                    |
+| A new host boot                                                                   | `resetBand` zeroes `bandN`; the generalised reset also zeroes `railN`, clears `band` and `rail`, and clears the status line. `railMode` is **kept**: an open field or confirm is the person's (§7.5 rule 1), so it stays drawn and, when the person ends it, the check finds the line gone and a final row says "Harnu is not reachable. Nothing was saved." (the same path as a TTL expiry, cause `unreachable`). An idle or final mode with no line collapses as `reconcile` says |
 
 ### 3.4 Focus and hotkeys at the swap
 
@@ -215,9 +215,10 @@ band, §6.5.)
   (`src/main/mission-progress.ts:130-145`): "Step {n} of {m}", "Steps {n}–{to} of {m}",
   "Step {m} of {m} ✓" (`en.json` `mission.headline`; `design.md:6264-6266`). Never a recount. An
   `empty` headline sets no line.
-- `{state}` is the pill's primary state in the short words of [`00-spec.md`](00-spec.md) §6.3 S2
-  (`blocked`, `needs you`, `stale`, `re-scope pending`, `delivered`), absent for `active` and
-  `total-changed`. The pill's state comes from `missionState` (`src/renderer/src/lib/mission-view.ts`),
+- `{state}` is the pill's primary state, but in the **terminal's own short words** of
+  [`00-spec.md`](00-spec.md) §6.3 S2 (`blocked`, `needs you`, `stale`, `re-scope pending`,
+  `delivered`), not the pill's `en.json` strings (`mission.state`: "re-scope awaiting your approval",
+  "delivered, awaiting your close"; `en.json:4329-4333`). It is absent for `active` and `total-changed`. The pill's state comes from `missionState` (`src/renderer/src/lib/mission-view.ts`),
   moved to a shared pure module in W3 as before; until then the host computes it from the same inputs.
 - The mark `◆ Harnu ` is P4W2's row 4 form, so the line names its source next to other plugins'
   pinned lines.
@@ -236,18 +237,23 @@ keeps meaning "this session's step".
 
 ### 4.4 When it is set and cleared
 
-| Moment                                                                               | Call                                                                                                         |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `runRailSet` applies a value whose text differs from the last one the rail set       | `$.ui.status(text)`; an identical text makes no call (the 60 s keep-alive is a no-op here)                   |
-| `runRailSet` applies `rail: null` (mission closed, step unlinked, rail switched off) | `$.ui.status(undefined)`                                                                                     |
-| The sweep clears an expired `rail` (Harnu unreachable for 90 s)                      | `$.ui.status(undefined)`, in the same sweep that clears the band row: stale progress is worse than none      |
-| `headline.kind` is `empty`                                                           | `$.ui.status(undefined)`                                                                                     |
-| A person-owned mode (confirm, field) is open                                         | unchanged: the status line carries no focus and is never part of §7.5                                        |
-| The mod reloads (hot reload, `/reload-plugins`)                                      | module variables restart; the next push (at most 60 s) pins it again. `$.state` holds the value, not the pin |
-| The shipped `ui.status` diagnostic command runs                                      | it replaces the pin (one slot per plugin); the next rail push puts the rail's text back                      |
+| Moment                                                                               | Call                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runRailSet` applies a value whose text differs from the last one the rail set       | `$.ui.status(text)` and `statusPin = text`; an identical text makes no call **while `pinnedThisLoad` is true** (the 60 s keep-alive is then a no-op)                                                |
+| `runRailSet` applies `rail: null` (mission closed, step unlinked, rail switched off) | `$.ui.status(undefined)` and `statusPin = null`                                                                                                                                                     |
+| The sweep clears an expired `rail` (Harnu unreachable for 90 s)                      | `$.ui.status(undefined)`, in the same sweep that clears the band row: stale progress is worse than none                                                                                             |
+| `headline.kind` is `empty`                                                           | `$.ui.status(undefined)`                                                                                                                                                                            |
+| A person-owned mode (confirm, field) is open                                         | unchanged: the status line carries no focus and is never part of §7.5                                                                                                                               |
+| The mod reloads (hot reload, `/reload-plugins`)                                      | `pinnedThisLoad` restarts false, so the first push after a reload always pins, whatever `statusPin` says. `statusPin` is in `$.state` and survives, so a `rail: null` before that push still clears |
+| The shipped `ui.status` diagnostic command runs                                      | it replaces the pin (one slot per plugin) and `runStatus` sets `statusPin = null` and `pinnedThisLoad = false`, so the next rail push re-pins even an identical text                                |
 
-The mod clears only a line the rail set (a module flag, `statusFromRail`, cleared by the diagnostic
-command), so it never removes text another producer of the same plugin pinned.
+**The pin record.** `statusPin` (the text the rail pinned, or `null`) is a field of the `railMode` value in
+`$.state`, which survives a reload (`TYPES:3466-3473`); `pinnedThisLoad` is a module variable. A clear
+is made only when `statusPin` is not `null`, so the rail never removes text another producer of the
+same plugin pinned, and a clear that arrives after a reload still works. A set is skipped only when
+`statusPin` equals the new text **and** `pinnedThisLoad` is true: the dedupe and the ownership reset
+together. Whether the engine keeps a plugin's pin across a reload is not declared (A-16); the rule
+holds either way.
 
 ### 4.5 Coexistence with the user's `statusLine` and Harnu's chain (BUG-196)
 
@@ -324,8 +330,8 @@ They are rows of the canonical tables in [`00-spec.md`](00-spec.md), so each liv
 
 - assumptions **A-12 to A-16** (§13): a swap from a keyed rail row to a selection; a survey over an
   open field; the plugin status line beside the user's `statusLine`; `$.ui.status` from a command
-  handler; the `statusFromRail` flag across a reload;
+  handler; the status-pin record across a reload;
 - open questions **OQ-C to OQ-F** (§14): default-on (the operator decides, default no); the owner
-  row's duplicated headline; stacking both rows; which mockup-04 elements are wanted;
+  row's duplicated headline; stacking both rows; which elements of mockup 04 are wanted;
 - risks **K-13 to K-15** (§15): a selection over a keyed rail row; a survey over an open field; the
   shared plugin status slot.

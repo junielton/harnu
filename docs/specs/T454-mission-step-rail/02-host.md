@@ -58,7 +58,7 @@ Round 1 built the id chain from the binding's `sid` plus a `sidHistory` appended
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | the key the PTY was spawned with (`sessionIndex.register(opts.sessionKey, id)`, `pty.ts:1730`): a `--resume <uuid>`, or a synthetic id for a new session      | yes                                                                                                        |
 | a key the index moved to by a migration Harnu correlated itself: `MigrateVia` `agent-correlation`, `collapse`, `resolved-window` (`stores/sessions.ts:703`)   | yes                                                                                                        |
-| a key moved by a `companion` migration whose claim has `cause: 'spawn'` and binds the PTY's own synthetic row (`bindByClaim`, `stores/sessions.ts:5242-5260`) | **yes, under S1–S5 below** (W1 gives this migration its own `via`, `companion-spawn`)                      |
+| a key moved by a `companion` migration whose claim has `cause: 'spawn'` and binds the PTY's own synthetic row (`bindByClaim`, `stores/sessions.ts:5238-5260`) | **yes, under S1–S5 below** (W1 gives this migration its own `via`, `companion-spawn`)                      |
 | a key moved by a `companion` migration whose claim has `cause: 'clear'` or `'resume'` (a `session.rebound`, `:5261-5280`)                                     | **never**: recorded for the audit and the OQ-8 gesture, flagged contested when a step or an owner links it |
 | the binding's `sid`, a `session.rebound` as such, anything else the mod says                                                                                  | no                                                                                                         |
 
@@ -345,7 +345,7 @@ and the handlers store none. Now:
   `PROOF_NOT_CLAIMABLE` refusals), `applySetBlocker(m, stepId, b)` (`:4873-4905`),
   `applyClearBlocker(m, stepId, reason)` (`:4907-4939`). The handlers call them; so does the rail.
   One mutation path, one set of refusals.
-- **One write, through `editMission`.** `editMission(args, ctx, fn)` (`tool-handlers.ts:4633-4666`)
+- **One write, through `editMission`.** `editMission(args, ctx, fn)` (`tool-handlers.ts:4633-4663`)
   already does everything a locked write needs: load under `withMissionIdMintLock`, refuse
   `MISSION_CLOSED`, refuse a blocked folder (`missionFolderRefusal`), stamp `updatedAt`, and write
   the frontmatter **and** `edit.logAppend` in one `atomicWriteFile`; its `fn` may return
