@@ -1,0 +1,116 @@
+/**
+ * T570 (browser pane U3, AC-5) — the wait condition engine: first of selector / text / textGone / url /
+ * network idle / timeout / closed / disconnected, with `wait.reason` naming it.
+ */
+import { describe, it, expect } from 'vitest'
+import { compileUrlPattern, runWait, type WaitProbes } from '../src/main/browser/wait-for'
+
+function rig(over: Partial<WaitProbes> = {}) {
+  let t = 0
+  const probes: WaitProbes = {
+    selectorPresent: async () => false,
+    pageText: async () => '',
+    currentUrl: () => 'http://localhost/start',
+    networkIdle: () => false,
+    paneOpen: () => true,
+    disconnected: () => false,
+    ...over
+  }
+  const deps = { now: () => t, sleep: async (ms: number) => void (t += ms), probes }
+  return { deps, at: (ms: number) => void (t = ms) }
+}
+
+describe('runWait', () => {
+  it('returns at once when a condition already holds', async () => {
+    const { deps } = rig({ selectorPresent: async () => true })
+    expect(await runWait({ selector: '#a' }, 5_000, deps)).toEqual({
+      reason: 'selector',
+      waitedMs: 0,
+      match: '#a'
+    })
+  })
+
+  it('waits for text to appear', async () => {
+    let polls = 0
+    const { deps } = rig({ pageText: async () => (++polls > 3 ? 'Order placed' : 'Loading') })
+    const out = await runWait({ text: 'placed' }, 5_000, deps)
+    expect(out.reason).toBe('text')
+    expect(out.waitedMs).toBeGreaterThan(0)
+  })
+
+  it('waits for text to go away', async () => {
+    let polls = 0
+    const { deps } = rig({ pageText: async () => (++polls > 2 ? 'Done' : 'Loading…') })
+    expect((await runWait({ textGone: 'Loading' }, 5_000, deps)).reason).toBe('textGone')
+  })
+
+  it('matches the url regex against the current url', async () => {
+    let url = 'http://localhost/start'
+    let polls = 0
+    const { deps } = rig({
+      currentUrl: () => (++polls > 2 && (url = 'http://localhost/done?x=1'), url)
+    })
+    const out = await runWait({ url: compileUrlPattern('/done')! }, 5_000, deps)
+    expect(out).toMatchObject({ reason: 'url', match: '/done' })
+  })
+
+  it('returns networkIdle when the counter says so', async () => {
+    let polls = 0
+    const { deps } = rig({ networkIdle: (ms) => (ms === 400 ? ++polls > 1 : false) })
+    expect((await runWait({ networkIdleMs: 400 }, 5_000, deps)).reason).toBe('networkIdle')
+  })
+
+  it('times out without an error, having waited the whole time', async () => {
+    const { deps } = rig()
+    expect(await runWait({ selector: '#never' }, 1_000, deps)).toEqual({
+      reason: 'timeout',
+      waitedMs: 1_000
+    })
+  })
+
+  it('ends when the pane closes or the operator disconnects, and says which', async () => {
+    let open = true
+    const { deps } = rig({ paneOpen: () => open })
+    const closing = runWait({ selector: '#a' }, 5_000, deps)
+    open = false
+    expect((await closing).reason).toBe('closed')
+
+    let cut = false
+    const second = rig({ disconnected: () => cut })
+    const waiting = runWait({ text: 'x' }, 5_000, second.deps)
+    cut = true
+    expect((await waiting).reason).toBe('disconnected')
+  })
+
+  it('disconnect outranks a condition that also holds', async () => {
+    const { deps } = rig({ disconnected: () => true, selectorPresent: async () => true })
+    expect((await runWait({ selector: '#a' }, 5_000, deps)).reason).toBe('disconnected')
+  })
+
+  it('treats a probe that throws (the page is navigating) as "not yet"', async () => {
+    let polls = 0
+    const { deps } = rig({
+      selectorPresent: async () => {
+        if (++polls < 3) throw new Error('Cannot find context')
+        return true
+      }
+    })
+    expect((await runWait({ selector: '#a' }, 5_000, deps)).reason).toBe('selector')
+  })
+
+  it('the first condition to hold wins when several are given', async () => {
+    const { deps } = rig({ pageText: async () => 'hello', selectorPresent: async () => false })
+    expect(
+      (await runWait({ selector: '#a', text: 'hello', textGone: 'nope' }, 5_000, deps)).reason
+    ).toBe('text')
+  })
+})
+
+describe('compileUrlPattern', () => {
+  it('accepts a regex of 1 to 200 characters and refuses the rest', () => {
+    expect(compileUrlPattern('/done$')).toBeInstanceOf(RegExp)
+    expect(compileUrlPattern('')).toBeNull()
+    expect(compileUrlPattern('a'.repeat(201))).toBeNull()
+    expect(compileUrlPattern('(unclosed')).toBeNull()
+  })
+})

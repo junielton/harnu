@@ -127,7 +127,7 @@ import { readUserProjects, setUserProjectInheritAgentControl } from '../user-pro
 import { setMcpArgsProvider } from '../pty'
 import { gateTerminalOp, type TerminalGateState } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
-import { noteMcpPort, resolveBrowserGate } from '../browser/browser-service'
+import { noteMcpPort, resolveBrowserGate, stopAllBrowserCaptures } from '../browser/browser-service'
 import { isBrowserOp, type BrowserGateInput } from '../browser/access'
 import { terminalLeases } from '../terminal-lease'
 import { terminalRegistry } from '../terminal-registry'
@@ -1865,6 +1865,8 @@ export async function registerMcpServer(
   ipcMain.handle('mcp:agentBrowserWrites:get', () => readAgentBrowserWrites())
   ipcMain.handle('mcp:agentBrowserWrites:set', async (_e, enabled: boolean) => {
     await writeAgentBrowserWrites(enabled === true)
+    // Switching agent browser control off also ends every network capture an agent had running (spec §7.4).
+    if (enabled !== true) stopAllBrowserCaptures()
     return readAgentBrowserWrites()
   })
 

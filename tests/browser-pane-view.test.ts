@@ -134,3 +134,16 @@ describe('splitAddress', () => {
     expect(splitAddress('')).toEqual({ scheme: '', host: '', rest: '' })
   })
 })
+
+describe('networkRemainingMs (the red "Network m:ss" counter, T570)', () => {
+  it('counts down to the moment capture stops itself, and shows nothing without a capture or after it ended', async () => {
+    const { networkRemainingMs, formatCountdown } =
+      await import('../src/renderer/src/lib/browser-pane')
+    expect(networkRemainingMs({ networkUntil: null }, 1_000)).toBeNull()
+    expect(networkRemainingMs({ networkUntil: 1_000 }, 1_000)).toBeNull()
+    expect(networkRemainingMs({ networkUntil: 1_000 }, 5_000)).toBeNull()
+    const left = networkRemainingMs({ networkUntil: 5_000 + 252_000 }, 5_000)
+    expect(left).toBe(252_000)
+    expect(formatCountdown(left!)).toBe('4:12')
+  })
+})

@@ -149,6 +149,8 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
   handleApp('browser:disconnect', (paneId: unknown) => {
     if (!isPaneId(paneId) || !browserRegistry.get(paneId)) return false
     browserAccess.disconnect(paneId)
+    // A disconnected pane records nothing more (spec §6.2): end any network capture the agent had running.
+    host().stopCapture(paneId, 'disconnected')
     host().refresh(paneId)
     return true
   })

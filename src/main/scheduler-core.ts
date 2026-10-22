@@ -384,6 +384,13 @@ const OBSERVE_ALLOW_VERBS: readonly string[] = [
   // `send_terminal` stay on the derived deny list below.
   'list_terminals',
   'read_terminal',
+  // T570 (T564 U3): the browser pane READ verbs. `browser_network` can write (it turns capture on) and stays
+  // on the derived deny list with every other browser verb.
+  'browser_list',
+  'browser_snapshot',
+  'browser_screenshot',
+  'browser_console',
+  'browser_wait_for',
   'create_card',
   'update_card',
   'notify'

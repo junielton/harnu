@@ -66,7 +66,15 @@ import {
 } from '../terminal-registry'
 import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { readAgentTerminalWrites } from './prefs'
-import { makeBrowserVerbDeps } from '../browser/browser-service'
+import { makeBrowserReadDeps, makeBrowserVerbDeps } from '../browser/browser-service'
+import type { ConsoleLevel } from '../browser/console-buffer'
+import {
+  consoleVerb,
+  networkVerb,
+  screenshotVerb,
+  snapshotVerb,
+  waitForVerb
+} from '../browser/read-verbs'
 import { closeVerb, listVerb, navigateVerb, openVerb } from '../browser/verbs-core'
 import { resolveTerminalGate } from '../terminal-gate'
 import { terminalLeases } from '../terminal-lease'
@@ -5138,18 +5146,35 @@ const missionLogHandler: Handler = async (args, ctx) => {
 /* ---- T564 U1: the browser verbs ------------------------------------------------------------------- */
 
 /** The bits of this call's context the browser verbs need, over the real singletons. */
-function browserDeps(ctx: ToolHandlerCtx): ReturnType<typeof makeBrowserVerbDeps> {
-  return makeBrowserVerbDeps({
+function browserEnv(ctx: ToolHandlerCtx): Parameters<typeof makeBrowserVerbDeps>[0] {
+  return {
     bridge: ctx.bridge,
     sessionKnown: (id) => sessionKnown(id, ctx),
     folderBlocked: (folder) => isFolderDenied(folder, ctx.denyFolders, os.homedir())
-  })
+  }
+}
+
+function browserDeps(ctx: ToolHandlerCtx): ReturnType<typeof makeBrowserVerbDeps> {
+  return makeBrowserVerbDeps(browserEnv(ctx))
 }
 
 /** A verb result: `ok:false` is the steering refusal shape of spec §6, returned as an error result. */
 function browserResult(res: Record<string, unknown>): CallToolResult {
   if (res.ok === false) {
     return { content: [{ type: 'text', text: JSON.stringify(res) }], isError: true }
+  }
+  // A screenshot rides as an image content block; the JSON beside it never repeats the bytes.
+  const { image, ...rest } = res as { image?: { data: string; mimeType: string } } & Record<
+    string,
+    unknown
+  >
+  if (image) {
+    return {
+      content: [
+        { type: 'image', data: image.data, mimeType: image.mimeType },
+        { type: 'text', text: JSON.stringify(rest) }
+      ]
+    }
   }
   return textResult(res)
 }
@@ -5230,6 +5255,94 @@ const browserCloseHandler: Handler = async (args, ctx) => {
 }
 
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
+/** The pane-addressed reading verbs share one shape: a `paneId` and the verb's own arguments. */
+function paneArgs(args: Record<string, unknown>): { paneId: string } {
+  return { paneId: optStr(args, 'paneId') ?? '' }
+}
+
+const browserSnapshotHandler: Handler = async (args, ctx) => {
+  const res = await snapshotVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(typeof args.interactiveOnly === 'boolean'
+        ? { interactiveOnly: args.interactiveOnly }
+        : {}),
+      ...(typeof args.maxNodes === 'number' ? { maxNodes: args.maxNodes } : {}),
+      ...(Array.isArray(args.include) ? { include: args.include as string[] } : {}),
+      ...(typeof args.frames === 'boolean' ? { frames: args.frames } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_snapshot', ...res })
+}
+
+const browserScreenshotHandler: Handler = async (args, ctx) => {
+  const res = await screenshotVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {}),
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(typeof args.fullPage === 'boolean' ? { fullPage: args.fullPage } : {}),
+      ...(args.format === 'png' || args.format === 'jpeg' ? { format: args.format } : {}),
+      ...(typeof args.quality === 'number' ? { quality: args.quality } : {}),
+      ...(typeof args.maxDim === 'number' ? { maxDim: args.maxDim } : {}),
+      ...(typeof args.save === 'boolean' ? { save: args.save } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_screenshot', ...res })
+}
+
+const browserConsoleHandler: Handler = async (args, ctx) => {
+  const res = await consoleVerb(
+    {
+      ...paneArgs(args),
+      ...(args.mode === 'tail' || args.mode === 'since' ? { mode: args.mode } : {}),
+      ...(typeof args.lines === 'number' ? { lines: args.lines } : {}),
+      ...(optStr(args, 'since') !== undefined ? { since: optStr(args, 'since') } : {}),
+      ...(Array.isArray(args.levels) ? { levels: args.levels as ConsoleLevel[] } : {}),
+      ...(typeof args.clear === 'boolean' ? { clear: args.clear } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_console', ...res })
+}
+
+const browserNetworkHandler: Handler = async (args, ctx) => {
+  const res = await networkVerb(
+    {
+      ...paneArgs(args),
+      action: args.action as 'start' | 'read' | 'stop',
+      ...(typeof args.maxMinutes === 'number' ? { maxMinutes: args.maxMinutes } : {}),
+      ...(typeof args.bodies === 'boolean' ? { bodies: args.bodies } : {}),
+      ...(typeof args.headers === 'boolean' ? { headers: args.headers } : {}),
+      ...(optStr(args, 'filter') !== undefined ? { filter: optStr(args, 'filter') } : {}),
+      ...(optStr(args, 'since') !== undefined ? { since: optStr(args, 'since') } : {}),
+      ...(typeof args.limit === 'number' ? { limit: args.limit } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_network', ...res })
+}
+
+const browserWaitForHandler: Handler = async (args, ctx) => {
+  const res = await waitForVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(optStr(args, 'text') !== undefined ? { text: optStr(args, 'text') } : {}),
+      ...(optStr(args, 'textGone') !== undefined ? { textGone: optStr(args, 'textGone') } : {}),
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(typeof args.networkIdleMs === 'number' ? { networkIdleMs: args.networkIdleMs } : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_wait_for', ...res })
+}
+
+/** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
   get_fleet: getFleetHandler,
   get_session: getSessionHandler,
@@ -5245,6 +5358,11 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   browser_list: browserListHandler,
   browser_navigate: browserNavigateHandler,
   browser_close: browserCloseHandler,
+  browser_snapshot: browserSnapshotHandler,
+  browser_screenshot: browserScreenshotHandler,
+  browser_console: browserConsoleHandler,
+  browser_network: browserNetworkHandler,
+  browser_wait_for: browserWaitForHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

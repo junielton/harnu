@@ -248,3 +248,120 @@ describe("the audit classifies with the gate's own inputs (delta 3)", () => {
     )
   })
 })
+
+/* ---- T570 (U3): the reading verbs at plan level -------------------------------------------------- */
+
+const plan = (
+  tool: string,
+  args: Record<string, unknown>,
+  state: BrowserGateInput | undefined,
+  ask = false
+): ReturnType<typeof planToolCall> =>
+  planToolCall({
+    tool,
+    input: buildPlanInput(tool as never, { paneId: 'bp-1', ...args }, '/work/app'),
+    policy: policy(ask),
+    now: 1,
+    ...(state ? { browser: state } : {})
+  })
+
+const READS: Array<[string, Record<string, unknown>]> = [
+  ['browser_snapshot', {}],
+  ['browser_screenshot', {}],
+  ['browser_console', {}],
+  ['browser_wait_for', { text: 'x' }]
+]
+
+describe('browser reading verbs at plan level', () => {
+  it.each(READS)(
+    '%s runs on a free agent pane, and with the kill-switch off or while paused',
+    (tool, args) => {
+      expect(plan(tool, args, gate())).toMatchObject({ verdict: 'allow', shouldDispatch: true })
+      expect(plan(tool, args, gate({ writesEnabled: false })).verdict).toBe('allow')
+      expect(plan(tool, args, gate({ pane: pane({ paused: true }) })).verdict).toBe('allow')
+    }
+  )
+
+  it.each(READS)(
+    '%s on a pane the operator opened is BROWSER_READ_NOT_ENABLED, never a confirm',
+    (tool, args) => {
+      for (const ask of [false, true]) {
+        const p = plan(tool, args, gate({ pane: pane({ openedBy: 'operator' }) }), ask)
+        expect(p).toMatchObject({ verdict: 'deny', shouldConfirm: false, shouldDispatch: false })
+        expect(p.auditRecord.result).toBe('BROWSER_READ_NOT_ENABLED')
+      }
+    }
+  )
+
+  it.each(READS)(
+    '%s on a disconnected or unknown pane is refused in the documented order',
+    (tool, args) => {
+      expect(plan(tool, args, gate({ pane: undefined })).auditRecord.result).toBe('PANE_NOT_FOUND')
+      expect(
+        plan(tool, args, gate({ pane: pane({ disconnected: true, openedBy: 'operator' }) }))
+          .auditRecord.result
+      ).toBe('BROWSER_DISCONNECTED')
+    }
+  )
+
+  it.each([
+    ['browser_snapshot', { maxNodes: 5000 }],
+    ['browser_screenshot', { maxDim: 4000 }],
+    ['browser_screenshot', { ref: 'a', selector: 'b' }],
+    ['browser_console', { lines: 900 }],
+    ['browser_console', { mode: 'since' }],
+    ['browser_network', { action: 'start', maxMinutes: 31 }],
+    ['browser_network', { action: 'read', limit: 501 }],
+    ['browser_wait_for', { text: 'x', timeoutMs: 999999 }],
+    ['browser_wait_for', { url: '(' }],
+    ['browser_wait_for', {}]
+  ])(
+    '%s %j is BAD_ARGS before the kill-switch and before any confirm, in ask mode too',
+    (tool, args) => {
+      for (const ask of [false, true]) {
+        const p = plan(tool, args, gate({ writesEnabled: false }), ask)
+        expect(p).toMatchObject({ verdict: 'deny', shouldConfirm: false, shouldDispatch: false })
+        expect(p.auditRecord.result).toMatch(/^BAD_ARGS/)
+      }
+    }
+  )
+
+  it('browser_network is a write: it refuses under the kill-switch and while paused, before any confirm', () => {
+    for (const action of ['start', 'read', 'stop']) {
+      for (const ask of [false, true]) {
+        const off = plan('browser_network', { action }, gate({ writesEnabled: false }), ask)
+        expect(off).toMatchObject({ verdict: 'deny', shouldConfirm: false })
+        expect(off.auditRecord.result).toBe('BROWSER_WRITES_DISABLED')
+        const paused = plan(
+          'browser_network',
+          { action },
+          gate({ pane: pane({ paused: true }) }),
+          ask
+        )
+        expect(paused.auditRecord.result).toBe('BROWSER_PAUSED')
+      }
+    }
+  })
+
+  it('browser_network runs free on an agent pane and is a normal confirm in ask mode', () => {
+    expect(plan('browser_network', { action: 'start' }, gate())).toMatchObject({
+      verdict: 'allow',
+      shouldDispatch: true
+    })
+    expect(plan('browser_network', { action: 'start' }, gate(), true)).toMatchObject({
+      verdict: 'confirm',
+      shouldConfirm: true
+    })
+  })
+
+  it('browser_network on an operator pane is BROWSER_READ_NOT_ENABLED, ahead of the lease placeholder', () => {
+    const p = plan(
+      'browser_network',
+      { action: 'read' },
+      gate({ pane: pane({ openedBy: 'operator' }) }),
+      true
+    )
+    expect(p.auditRecord.result).toBe('BROWSER_READ_NOT_ENABLED')
+    expect(p.shouldConfirm).toBe(false)
+  })
+})

@@ -37,6 +37,8 @@ export interface BrowserPaneState {
   disconnected: boolean
   ownerSessionId: string | null
   notice: BrowserNotice | null
+  /** Epoch ms the agent's network capture stops itself, or `null` when none is running (the red counter). */
+  networkUntil: number | null
 }
 
 /** A rectangle in CSS px, as the renderer measures it. */

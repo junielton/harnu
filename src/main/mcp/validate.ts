@@ -1370,6 +1370,192 @@ export function parseBrowserClose(input: unknown): ParseResult<BrowserCloseArgs>
   return { ok: true, value }
 }
 
+/* ---- T564 U3: the reading verbs. Every bound is checked HERE, at parse time, so a bad call is refused before
+ * the kill-switch and before any confirm in `ask` mode (spec §6.3). ---- */
+
+const paneIdSchema = z.string().min(1).max(80)
+const consoleLevelSchema = z.enum(['debug', 'log', 'info', 'warn', 'error'])
+
+/** Validated args for `browser_snapshot`. */
+export interface BrowserSnapshotArgs {
+  folder?: string
+  paneId: string
+  selector?: string
+  interactiveOnly?: boolean
+  maxNodes?: number
+  include?: Array<'data'>
+  frames?: boolean
+}
+
+const BrowserSnapshotSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  selector: z.string().min(1).max(1000).optional(),
+  interactiveOnly: z.boolean().optional(),
+  maxNodes: z.number().int().min(1).max(2000).optional(),
+  include: z
+    .array(z.enum(['data']))
+    .max(1)
+    .optional(),
+  frames: z.boolean().optional()
+})
+
+export function parseBrowserSnapshot(input: unknown): ParseResult<BrowserSnapshotArgs> {
+  const parsed = BrowserSnapshotSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserSnapshotArgs }
+}
+
+/** Validated args for `browser_screenshot`. */
+export interface BrowserScreenshotArgs {
+  folder?: string
+  paneId: string
+  ref?: string
+  selector?: string
+  fullPage?: boolean
+  format?: 'png' | 'jpeg'
+  quality?: number
+  maxDim?: number
+  save?: boolean
+}
+
+const BrowserScreenshotSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    paneId: paneIdSchema,
+    ref: z.string().min(1).max(40).optional(),
+    selector: z.string().min(1).max(1000).optional(),
+    fullPage: z.boolean().optional(),
+    format: z.enum(['png', 'jpeg']).optional(),
+    quality: z.number().int().min(1).max(100).optional(),
+    maxDim: z.number().int().min(1).max(1568).optional(),
+    save: z.boolean().optional()
+  })
+  .refine((v) => v.ref === undefined || v.selector === undefined, {
+    message: 'pass `ref` or `selector`, not both'
+  })
+  .refine((v) => v.fullPage !== true || (v.ref === undefined && v.selector === undefined), {
+    message: '`fullPage` cannot be combined with `ref` or `selector`'
+  })
+
+export function parseBrowserScreenshot(input: unknown): ParseResult<BrowserScreenshotArgs> {
+  const parsed = BrowserScreenshotSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserScreenshotArgs }
+}
+
+/** Validated args for `browser_console`. */
+export interface BrowserConsoleArgs {
+  folder?: string
+  paneId: string
+  mode?: 'tail' | 'since'
+  lines?: number
+  since?: string
+  levels?: Array<'debug' | 'log' | 'info' | 'warn' | 'error'>
+  clear?: boolean
+}
+
+const BrowserConsoleSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    paneId: paneIdSchema,
+    mode: z.enum(['tail', 'since']).optional(),
+    lines: z.number().int().min(1).max(500).optional(),
+    since: z.string().min(1).max(40).optional(),
+    levels: z.array(consoleLevelSchema).max(5).optional(),
+    clear: z.boolean().optional()
+  })
+  .refine((v) => v.mode !== 'since' || v.since !== undefined, {
+    message: '`mode: "since"` needs the `since` cursor'
+  })
+
+export function parseBrowserConsole(input: unknown): ParseResult<BrowserConsoleArgs> {
+  const parsed = BrowserConsoleSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserConsoleArgs }
+}
+
+/** Validated args for `browser_network`. */
+export interface BrowserNetworkArgs {
+  folder?: string
+  paneId: string
+  action: 'start' | 'read' | 'stop'
+  maxMinutes?: number
+  bodies?: boolean
+  headers?: boolean
+  filter?: string
+  since?: string
+  limit?: number
+}
+
+const BrowserNetworkSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  action: z.enum(['start', 'read', 'stop']),
+  maxMinutes: z.number().int().min(1).max(30).optional(),
+  bodies: z.boolean().optional(),
+  headers: z.boolean().optional(),
+  filter: z.string().min(1).max(200).optional(),
+  since: z.string().min(1).max(40).optional(),
+  limit: z.number().int().min(1).max(500).optional()
+})
+
+export function parseBrowserNetwork(input: unknown): ParseResult<BrowserNetworkArgs> {
+  const parsed = BrowserNetworkSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserNetworkArgs }
+}
+
+/** Validated args for `browser_wait_for`. */
+export interface BrowserWaitForArgs {
+  folder?: string
+  paneId: string
+  selector?: string
+  text?: string
+  textGone?: string
+  url?: string
+  networkIdleMs?: number
+  timeoutMs?: number
+}
+
+const BrowserWaitForSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    paneId: paneIdSchema,
+    selector: z.string().min(1).max(1000).optional(),
+    text: z.string().min(1).max(1000).optional(),
+    textGone: z.string().min(1).max(1000).optional(),
+    url: z.string().min(1).max(200).optional(),
+    networkIdleMs: z.number().int().min(50).max(30000).optional(),
+    timeoutMs: z.number().int().min(100).max(90000).optional()
+  })
+  .refine(
+    (v) => [v.selector, v.text, v.textGone, v.url, v.networkIdleMs].some((c) => c !== undefined),
+    { message: 'pass at least one of selector, text, textGone, url, networkIdleMs' }
+  )
+  .refine(
+    (v) => {
+      if (v.url === undefined) return true
+      try {
+        new RegExp(v.url)
+        return true
+      } catch {
+        return false
+      }
+    },
+    { message: '`url` must be a valid regex source' }
+  )
+
+export function parseBrowserWaitFor(input: unknown): ParseResult<BrowserWaitForArgs> {
+  const parsed = BrowserWaitForSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserWaitForArgs }
+}
+
+function dropUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>
+}
+
 /**
  * Router-side dispatch table: validate the args for a given {@link McpOp}.
  * Every op maps to exactly ONE parser — a `Record<McpOp, …>` rather than a
@@ -1391,6 +1577,11 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   browser_list: parseBrowserList,
   browser_navigate: parseBrowserNavigate,
   browser_close: parseBrowserClose,
+  browser_snapshot: parseBrowserSnapshot,
+  browser_screenshot: parseBrowserScreenshot,
+  browser_console: parseBrowserConsole,
+  browser_network: parseBrowserNetwork,
+  browser_wait_for: parseBrowserWaitFor,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

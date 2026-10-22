@@ -48,6 +48,19 @@ const READ_OPS: ReadonlySet<string> = new Set([
   'browser_wait_for'
 ])
 
+/**
+ * Verbs that observe a pane's content: the read verbs plus `browser_network`. On a pane the OPERATOR opened they
+ * need the folder's read opt-in (spec §7.1), which a later unit adds, so until then they refuse
+ * `BROWSER_READ_NOT_ENABLED`. `browser_list` is not here: it lists such a pane with `readable: false`.
+ */
+const OBSERVING_OPS: ReadonlySet<string> = new Set([
+  'browser_snapshot',
+  'browser_screenshot',
+  'browser_console',
+  'browser_wait_for',
+  'browser_network'
+])
+
 export function isBrowserOp(op: string): op is BrowserOp {
   return (BROWSER_OPS as readonly string[]).includes(op)
 }
@@ -63,6 +76,7 @@ export type BrowserDenyReason =
   | 'BROWSER_DISCONNECTED'
   | 'BAD_ARGS'
   | 'URL_SCHEME_BLOCKED'
+  | 'BROWSER_READ_NOT_ENABLED'
   | 'BROWSER_WRITES_DISABLED'
   | 'BROWSER_PAUSED'
   | 'NOT_YET_AVAILABLE'
@@ -112,8 +126,9 @@ export interface BrowserGateRefusal {
 }
 
 /**
- * The refusal for `op`, or `null` to continue. Order (spec §6.3): pane known → Disconnect → content (arguments)
- * → kill-switch → pause → tier. `close` is exempt from the kill-switch (Q6) but not from Disconnect or Pause.
+ * The refusal for `op`, or `null` to continue. Order (spec §6.3): pane known → Disconnect → read opt-in →
+ * content (arguments) → kill-switch → pause → tier. `close` is exempt from the kill-switch (Q6) but not from
+ * Disconnect or Pause.
  */
 export function gateBrowserOpDetailed(
   op: BrowserOp,
@@ -123,6 +138,8 @@ export function gateBrowserOpDetailed(
   const pane = input.pane
   if (addressesPane && !pane) return { reason: 'PANE_NOT_FOUND' }
   if (addressesPane && pane?.disconnected) return { reason: 'BROWSER_DISCONNECTED' }
+  if (OBSERVING_OPS.has(op) && pane?.openedBy === 'operator')
+    return { reason: 'BROWSER_READ_NOT_ENABLED' }
   if (input.args) {
     const content = checkBrowserContent(op, input.args)
     if (content) return { reason: content.code, content }

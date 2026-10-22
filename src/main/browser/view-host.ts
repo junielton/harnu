@@ -7,7 +7,14 @@
  * `access` and the verb logic in `verbs-core`. This file only wires them to Electron events.
  */
 import { randomUUID } from 'node:crypto'
-import { BrowserWindow, WebContentsView, app, session, type WebContents } from 'electron'
+import {
+  BrowserWindow,
+  WebContentsView,
+  app,
+  nativeImage,
+  session,
+  type WebContents
+} from 'electron'
 import {
   FREEZE_JPEG_QUALITY,
   PARKED_METRICS,
@@ -19,6 +26,9 @@ import {
 import { decideForward, type GuestInput } from './chord'
 import { guestWebPreferences, PARTITION_NAMES, type BrowserPartition } from './guest-prefs'
 import { waitForNavigation } from './nav-wait'
+import { createPaneReaders, type PaneReaders } from './pane-readers'
+import { clampSize, type ViewMode } from './screenshot-plan'
+import type { CaptureRequest, CaptureResult } from './read-verbs'
 import {
   checkTopLevelNavigation,
   decidePopup,
@@ -39,7 +49,8 @@ import {
 import type { BrowserAccess } from './access'
 import type { BrowserRegistry } from './registry'
 import type { BrowserNotice, BrowserOverlayRect, BrowserPaneState } from './state-types'
-import type { BrowserHost, LivePaneInfo, NavigateOutcome, NavigateTarget } from './verbs-core'
+import type { BrowserReadHost } from './read-verbs'
+import type { LivePaneInfo, NavigateOutcome, NavigateTarget } from './verbs-core'
 
 /** Give the renderer this long to paint the frozen image before the view is hidden anyway. */
 const FREEZE_PAINT_TIMEOUT_MS = 150
@@ -52,6 +63,8 @@ export interface ViewHostDeps {
   now(): number
   harnuPorts(): number[]
   trustedHosts(folder: string): readonly string[]
+  /** Redact page-derived text recorded by the readers (best-effort, the `read_terminal` scrubber). */
+  scrub(text: string): string
   /** The operator's click opened a popup: create an operator-class pane in `folder` (spec §3.2). */
   openPopupPane(opts: { folder: string; partition: BrowserPartition; url: string }): void
 }
@@ -79,9 +92,11 @@ interface ViewEntry {
   loading: boolean
   notice: BrowserNotice | null
   activity: 'driving' | null
+  /** The reading verbs' per-pane state (console ring, network capture, refs), fed from the debugger session. */
+  readers: PaneReaders
 }
 
-export class BrowserViewHost implements BrowserHost {
+export class BrowserViewHost implements BrowserReadHost {
   private readonly entries = new Map<string, ViewEntry>()
   private readonly byWebContentsId = new Map<number, string>()
   private overlays: BrowserOverlayRect[] = []
@@ -122,8 +137,19 @@ export class BrowserViewHost implements BrowserHost {
       gestures: createGestureGate(() => this.deps.now()),
       loading: false,
       notice: null,
-      activity: null
+      activity: null,
+      readers: null as unknown as PaneReaders
     }
+    entry.readers = createPaneReaders({
+      now: this.deps.now,
+      send: (method, params) => this.cdpStrict(entry, method, params ?? {}),
+      scrub: this.deps.scrub,
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      onCaptureChange: () => {
+        if (this.entries.has(entry.paneId)) this.publish(entry)
+      }
+    })
     this.entries.set(opts.paneId, entry)
     this.byWebContentsId.set(wc.id, opts.paneId)
 
@@ -203,6 +229,7 @@ export class BrowserViewHost implements BrowserHost {
     e.paintedWaiter?.()
     this.entries.delete(paneId)
     this.byWebContentsId.delete(e.wc.id)
+    e.readers.dispose()
     const win = this.deps.getWindow()
     try {
       if (e.wc.debugger.isAttached()) e.wc.debugger.detach()
@@ -215,6 +242,123 @@ export class BrowserViewHost implements BrowserHost {
       /* already removed */
     }
     if (!e.wc.isDestroyed()) e.wc.close()
+  }
+
+  /* ---------------------------------------------------------------------------------------- */
+  /* BrowserReadHost (the reading verbs' seam, T564 U3)                                        */
+  /* ---------------------------------------------------------------------------------------- */
+
+  readers(paneId: string): PaneReaders | undefined {
+    const e = this.entries.get(paneId)
+    return e && !e.wc.isDestroyed() ? e.readers : undefined
+  }
+
+  async cdp(paneId: string, method: string, params: object = {}): Promise<unknown> {
+    const e = this.entries.get(paneId)
+    if (!e) throw new Error('pane is gone')
+    return this.cdpStrict(e, method, params)
+  }
+
+  captureStatus(paneId: string): { active: boolean; expiresAt: number | null } {
+    const s = this.entries.get(paneId)?.readers.capture.status()
+    return { active: s?.active ?? false, expiresAt: s?.expiresAt ?? null }
+  }
+
+  /** End a pane's network capture because the operator (or the kill-switch) said so. */
+  stopCapture(paneId: string, reason: 'disconnected' | 'kill-switch'): void {
+    this.entries.get(paneId)?.readers.stopCapture(reason)
+  }
+
+  /** Every pane's capture ends: the kill-switch went off (spec §7.4). */
+  stopAllCaptures(reason: 'kill-switch'): void {
+    for (const e of this.entries.values()) e.readers.stopCapture(reason)
+  }
+
+  /**
+   * How the pane's view is shown right now. `capturePage()` works on all three (spec §2.3, A3): a parked view is
+   * attached and visible at 1×1 with a 1280×800 metrics override, and a view that painted and was then hidden
+   * (under an overlay, in another tab) keeps its last frame.
+   */
+  viewMode(paneId: string): ViewMode | undefined {
+    const e = this.entries.get(paneId)
+    if (!e || e.wc.isDestroyed()) return undefined
+    if (e.parked) return e.frozen ? 'hidden' : 'parked'
+    return e.view.getVisible() ? 'visible' : 'hidden'
+  }
+
+  /** A device is being emulated (the emulation unit sets this; until it lands no pane ever is). */
+  deviceMode(_paneId: string): boolean {
+    return false
+  }
+
+  async capture(paneId: string, req: CaptureRequest): Promise<CaptureResult> {
+    const e = this.entries.get(paneId)
+    if (!e || e.wc.isDestroyed()) throw new Error('pane is gone')
+    const plan = req.plan
+    let image: Electron.NativeImage
+    let passthrough: Buffer | null = null
+    if (plan.method === 'cdp') {
+      const params: Record<string, unknown> = {
+        format: req.format,
+        ...(req.format === 'jpeg' ? { quality: req.quality } : {})
+      }
+      const rect = req.documentRect
+      if (rect) {
+        // Ask CDP for the final size so a large page is never rendered at full resolution only to be shrunk.
+        const k = Math.min(1, req.maxDim / Math.max(rect.width, rect.height))
+        params.clip = { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: k }
+        params.captureBeyondViewport = true
+      }
+      const res = (await this.cdpStrict(e, 'Page.captureScreenshot', params)) as { data?: string }
+      if (!res.data) throw new Error('the page returned no image')
+      passthrough = Buffer.from(res.data, 'base64')
+      image = nativeImage.createFromBuffer(passthrough)
+    } else {
+      const bounds = e.view.getBounds()
+      const crop = plan.cropToBounds
+        ? { x: 0, y: 0, width: bounds.width, height: bounds.height }
+        : undefined
+      image = crop ? await e.wc.capturePage(crop) : await e.wc.capturePage()
+      if (plan.cropToElement && req.viewportRect) {
+        // The element box is in CSS px of the page; the capture is in device px. A parked view is 1×1 with a
+        // 1280-wide metrics override, so its viewport is that wide; otherwise the viewport is the bounds
+        // divided by the page zoom.
+        const size = image.getSize()
+        const cssViewportWidth = e.parked
+          ? PARKED_METRICS.width
+          : bounds.width / e.wc.getZoomFactor()
+        const k = size.width / Math.max(1, cssViewportWidth)
+        const r = req.viewportRect
+        const x = Math.max(0, Math.round(r.x * k))
+        const y = Math.max(0, Math.round(r.y * k))
+        const w = Math.min(size.width - x, Math.round(r.width * k))
+        const h = Math.min(size.height - y, Math.round(r.height * k))
+        if (w < 1 || h < 1) throw new Error('the element is outside the visible part of the page')
+        image = image.crop({ x, y, width: w, height: h })
+      }
+    }
+    if (image.isEmpty()) throw new Error('the page has not painted yet')
+    const size = image.getSize()
+    const fit = clampSize(size.width, size.height, req.maxDim)
+    if (!fit.clamped && passthrough) {
+      return {
+        data: passthrough,
+        mime: req.format === 'jpeg' ? 'image/jpeg' : 'image/png',
+        width: size.width,
+        height: size.height,
+        clamped: false
+      }
+    }
+    const out = fit.clamped
+      ? image.resize({ width: fit.width, height: fit.height, quality: 'best' })
+      : image
+    return {
+      data: req.format === 'jpeg' ? out.toJPEG(req.quality) : out.toPNG(),
+      mime: req.format === 'jpeg' ? 'image/jpeg' : 'image/png',
+      width: out.getSize().width,
+      height: out.getSize().height,
+      clamped: fit.clamped
+    }
   }
 
   publishFlag(paneId: string, flagged: { host: string } | null): void {
@@ -394,7 +538,7 @@ export class BrowserViewHost implements BrowserHost {
   private applyParkedMetrics(e: ViewEntry): void {
     if (!e.parked || e.parkedMetricsApplied || e.wc.isDestroyed()) return
     e.parkedMetricsApplied = true
-    void this.cdp(e, 'Emulation.setDeviceMetricsOverride', {
+    void this.cdpQuiet(e, 'Emulation.setDeviceMetricsOverride', {
       width: PARKED_METRICS.width,
       height: PARKED_METRICS.height,
       deviceScaleFactor: PARKED_METRICS.deviceScaleFactor,
@@ -408,7 +552,7 @@ export class BrowserViewHost implements BrowserHost {
     // U5 re-applies the pane's own record here.
     if (e.parkedMetricsApplied) {
       e.parkedMetricsApplied = false
-      void this.cdp(e, 'Emulation.clearDeviceMetricsOverride', {})
+      void this.cdpQuiet(e, 'Emulation.clearDeviceMetricsOverride', {})
     }
   }
 
@@ -615,23 +759,40 @@ export class BrowserViewHost implements BrowserHost {
     })
   }
 
-  /** CDP session for dialogs (spec §3.1): `alert`/`confirm`/`prompt` raise a banner and are auto-dismissed. */
+  /**
+   * The pane's CDP session. It serves the dialog interception of spec §3.1 and feeds the reading verbs: console
+   * capture starts here, at pane creation, and the `Network` domain is on so `browser_wait_for`'s idle counter
+   * always works (it keeps no URL and no header; recording is the separate, opt-in capture). Every enable is sent
+   * in one burst before the page loads, so nothing the page logs on start is missed.
+   */
   private async attachDebugger(e: ViewEntry): Promise<void> {
     try {
       if (!e.wc.debugger.isAttached()) e.wc.debugger.attach('1.3')
       e.wc.debugger.on('message', (_ev, method, params: { type?: string }) => {
+        e.readers.ingest(method, params)
         if (method !== 'Page.javascriptDialogOpening') return
         const kind = params.type ?? 'alert'
-        void this.cdp(e, 'Page.handleJavaScriptDialog', { accept: kind === 'beforeunload' })
+        void this.cdpQuiet(e, 'Page.handleJavaScriptDialog', { accept: kind === 'beforeunload' })
         this.publish(e, { notice: { kind: 'dialog', dialog: kind } })
       })
-      await this.cdp(e, 'Page.enable', {})
+      await Promise.all(
+        ['Page.enable', 'Runtime.enable', 'Log.enable', 'Network.enable'].map((method) =>
+          this.cdpQuiet(e, method, {})
+        )
+      )
     } catch {
-      // A guest without a debugger still works; only dialog interception is lost.
+      // A guest without a debugger still works; only dialog interception and the reading verbs are lost.
     }
   }
 
-  private async cdp(e: ViewEntry, method: string, params: object): Promise<unknown> {
+  /** Like {@link cdp} but a failure rejects, so a verb can tell "no answer" from "an empty answer". */
+  private async cdpStrict(e: ViewEntry, method: string, params: object): Promise<unknown> {
+    if (e.wc.isDestroyed() || !e.wc.debugger.isAttached())
+      throw new Error('the pane has no debugger')
+    return e.wc.debugger.sendCommand(method, params)
+  }
+
+  private async cdpQuiet(e: ViewEntry, method: string, params: object): Promise<unknown> {
     try {
       if (e.wc.isDestroyed() || !e.wc.debugger.isAttached()) return undefined
       return await e.wc.debugger.sendCommand(method, params)
@@ -669,7 +830,8 @@ export class BrowserViewHost implements BrowserHost {
       pausedUntil: this.deps.access.pausedUntil(e.paneId),
       disconnected: this.deps.access.isDisconnected(e.paneId),
       ownerSessionId: r?.ownerSessionId ?? null,
-      notice: e.notice
+      notice: e.notice,
+      networkUntil: e.readers.capture.status().expiresAt
     }
   }
 

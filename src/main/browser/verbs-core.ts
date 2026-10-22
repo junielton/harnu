@@ -64,6 +64,8 @@ export interface BrowserHost {
   destroy(paneId: string): void
   /** Tell the renderer the pane's flagged state changed. */
   publishFlag(paneId: string, flagged: { host: string } | null): void
+  /** Whether network capture is on for the pane and when it stops itself (`browser_list`'s `network`). */
+  captureStatus?(paneId: string): { active: boolean; expiresAt: number | null }
 }
 
 export interface BrowserVerbDeps {
@@ -98,14 +100,14 @@ export interface BrowserVerbDeps {
   folderBlocked(folder: string): boolean
 }
 
-function refuse(
+export function refuse(
   code: BrowserDenialCode,
   ctx: Parameters<typeof shapeBrowserDenial>[1] = {}
 ): Refusal {
   return { ok: false, ...shapeBrowserDenial(code, ctx) }
 }
 
-function accessOf(
+export function accessOf(
   rec: BrowserPaneRecord,
   deps: BrowserVerbDeps,
   originClass: OriginClass
@@ -118,7 +120,7 @@ function accessOf(
   }
 }
 
-function originOf(
+export function originOf(
   rec: BrowserPaneRecord,
   live: LivePaneInfo | undefined,
   deps: BrowserVerbDeps
@@ -130,7 +132,7 @@ function originOf(
 }
 
 /** The fields every ACK carries (spec §6): the URL is scrubbed of its query string. */
-function ackBase(
+export function ackBase(
   rec: BrowserPaneRecord,
   live: LivePaneInfo | undefined,
   origin: OriginClass
@@ -146,7 +148,7 @@ function ackBase(
 }
 
 /** Run the access gate for a pane-addressed verb, returning the refusal or `null`. */
-async function gate(
+export async function gate(
   op: BrowserOp,
   paneId: string | undefined,
   deps: BrowserVerbDeps
@@ -281,7 +283,7 @@ function refuseContent(c: ContentRefusal): Refusal {
   return refuse('NOT_YET_AVAILABLE', { feature: c.feature })
 }
 
-function refuseBadArgs(message: string): Refusal {
+export function refuseBadArgs(message: string): Refusal {
   return {
     ok: false,
     error: 'BAD_ARGS',
@@ -416,7 +418,7 @@ export async function listVerb(
         flagged: rec.flagged !== null,
         zoom: 1,
         emulation: null,
-        network: { active: false, expiresAt: null },
+        network: deps.host.captureStatus?.(rec.paneId) ?? { active: false, expiresAt: null },
         pendingPins: 0,
         createdAt: rec.createdAt,
         lastActiveAt: rec.lastActiveAt

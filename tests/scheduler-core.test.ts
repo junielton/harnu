@@ -55,12 +55,23 @@ const ALLOWED_VERBS = [
   // T481 (agent terminals B4): the two terminal READ verbs.
   'list_terminals',
   'read_terminal',
+  // T570 (browser pane U3): the browser READ verbs. `browser_network` can write and stays denied.
+  'browser_list',
+  'browser_snapshot',
+  'browser_screenshot',
+  'browser_console',
+  'browser_wait_for',
   'create_card',
   'update_card',
   'notify'
 ]
 
 const DENIED_VERBS = [
+  // T570: it can turn capture on, so it is never an observe tick's.
+  'browser_network',
+  'browser_open',
+  'browser_navigate',
+  'browser_close',
   'create_session',
   'create_worktree',
   'spawn_terminal',

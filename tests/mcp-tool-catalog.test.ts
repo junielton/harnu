@@ -264,6 +264,8 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'browser_open',
     'browser_navigate',
     'browser_close',
+    // T570: start/stop are writes the agent makes on a pane it opened.
+    'browser_network',
     'adopt_folder',
     'remove_folder',
     'memory_append',

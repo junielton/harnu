@@ -7,11 +7,19 @@ import type { SteerableDenial } from '../mcp/deny-hint'
 export const BROWSER_DENIAL_CODES = [
   'PANE_NOT_FOUND',
   'BROWSER_DISCONNECTED',
+  'BROWSER_READ_NOT_ENABLED',
   'BROWSER_WRITES_DISABLED',
   'BROWSER_PAUSED',
   'URL_SCHEME_BLOCKED',
   'PANE_LIMIT',
-  'NOT_YET_AVAILABLE'
+  'NOT_YET_AVAILABLE',
+  'REF_STALE',
+  'REF_NOT_FOUND',
+  'SELECTOR_NOT_FOUND',
+  'ELEMENT_NOT_VISIBLE',
+  'CURSOR_EXPIRED',
+  'SCREENSHOT_FAILED',
+  'PAGE_READ_FAILED'
 ] as const
 export type BrowserDenialCode = (typeof BROWSER_DENIAL_CODES)[number]
 
@@ -27,6 +35,10 @@ export interface BrowserHintContext {
   feature?: string
   /** `URL_SCHEME_BLOCKED`: the refused scheme, when known. */
   scheme?: string
+  /** `SELECTOR_NOT_FOUND`: the selector that matched nothing. */
+  selector?: string
+  /** `SCREENSHOT_FAILED` and `PAGE_READ_FAILED`: why it failed. */
+  detail?: string
 }
 
 export function shapeBrowserDenial(
@@ -54,6 +66,17 @@ export function shapeBrowserDenial(
           {
             do: 'Treat this as the operator’s decision. Open a new, visible pane with browser_open if you still need a browser, or ask the operator.',
             why: 'Disconnect is permanent for that pane id; no verb reconnects it.'
+          }
+        ]
+      }
+    case 'BROWSER_READ_NOT_ENABLED':
+      return {
+        error: code,
+        message: `The operator opened that pane${at}, and agents may not read panes the operator opens until the operator allows it for the folder.`,
+        nextActions: [
+          {
+            do: 'Open your own pane with browser_open and read that, or ask the operator to let agents read browser panes they open.',
+            why: 'An operator-opened pane can hold pages the operator is signed in to; reading it is the operator’s decision, per folder.'
           }
         ]
       }
@@ -113,6 +136,86 @@ export function shapeBrowserDenial(
           {
             do: 'Use a `url` on browser_open instead (an http or https address, for example a dev server on localhost), or ask the operator.',
             why: 'This build ships the url form of browser_open and the list, navigate and close verbs; the rest arrive in later releases.'
+          }
+        ]
+      }
+    case 'REF_STALE':
+      return {
+        error: code,
+        message:
+          'That ref belongs to a page you have since navigated away from (or to a snapshot Harnu no longer remembers), so it no longer points at anything.',
+        nextActions: [
+          {
+            do: 'Call browser_snapshot again and use a ref from the new snapshot.',
+            why: 'Refs are valid for one page only; a navigation kills every ref made before it.'
+          }
+        ]
+      }
+    case 'REF_NOT_FOUND':
+      return {
+        error: code,
+        message:
+          'No such ref. Refs look like `s4e12` and come from a browser_snapshot of this pane.',
+        nextActions: [
+          {
+            do: 'Copy a ref exactly from the latest browser_snapshot text, for example `[ref=s4e12]` → `s4e12`.',
+            why: 'A ref is only meaningful for the snapshot that made it, in the pane that took it.'
+          }
+        ]
+      }
+    case 'SELECTOR_NOT_FOUND':
+      return {
+        error: code,
+        message: `No element matches the selector${ctx.selector ? ` ${JSON.stringify(ctx.selector)}` : ''}.`,
+        nextActions: [
+          {
+            do: 'Take a browser_snapshot to see what is on the page, or wait for it with browser_wait_for({ selector }).',
+            why: 'The page may still be loading, or the element may be inside a frame or hidden.'
+          }
+        ]
+      }
+    case 'ELEMENT_NOT_VISIBLE':
+      return {
+        error: code,
+        message: 'That element has no size on the page, so there is nothing to capture.',
+        nextActions: [
+          {
+            do: 'Pick a visible element, or take a screenshot of the whole pane without `ref`/`selector`.',
+            why: 'Elements that are display:none or collapsed to zero size have no pixels.'
+          }
+        ]
+      }
+    case 'CURSOR_EXPIRED':
+      return {
+        error: code,
+        message:
+          'That cursor points before the oldest entry Harnu still holds (or is not a cursor of this pane).',
+        nextActions: [
+          {
+            do: 'Read again with mode `tail` (console) or without `since` (network) and continue from the cursor it returns.',
+            why: 'The buffer is a bounded ring; entries older than its limits are gone for good.'
+          }
+        ]
+      }
+    case 'SCREENSHOT_FAILED':
+      return {
+        error: code,
+        message: `The page could not be captured${ctx.detail ? `: ${ctx.detail}` : ''}.`,
+        nextActions: [
+          {
+            do: 'Wait for the page to load with browser_wait_for, then try again; if the pane crashed, browser_navigate it to reload.',
+            why: 'A page that is still starting or has crashed has no frame to capture.'
+          }
+        ]
+      }
+    case 'PAGE_READ_FAILED':
+      return {
+        error: code,
+        message: `The page could not be read${ctx.detail ? `: ${ctx.detail}` : ''}.`,
+        nextActions: [
+          {
+            do: 'Wait for the page to load with browser_wait_for, then try again; if the pane crashed, browser_navigate it to reload.',
+            why: 'A page that is still starting, mid-navigation or crashed cannot answer.'
           }
         ]
       }

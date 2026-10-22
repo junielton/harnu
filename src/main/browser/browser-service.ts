@@ -4,6 +4,7 @@
  * pure modules next to it.
  */
 import { randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { join } from 'node:path'
@@ -14,6 +15,7 @@ import { createBrowserAccess } from './access'
 import { resolveGateInput, type GateResolution } from './gate-resolve'
 import { createBrowserRegistry } from './registry'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
+import type { BrowserReadDeps } from './read-verbs'
 import type { BrowserVerbDeps } from './verbs-core'
 import type { BrowserPartition } from './guest-prefs'
 
@@ -41,6 +43,7 @@ export function getBrowserHost(): BrowserViewHost {
     now: () => Date.now(),
     harnuPorts: () => collectHarnuPorts(mcpPort),
     trustedHosts: () => [],
+    scrub: (text) => scrubTerminalText(text, os.homedir()),
     openPopupPane: ({ folder, partition, url }) =>
       openOperatorPane({ folder, partition, url, popup: true })
   })
@@ -161,4 +164,29 @@ export function makeBrowserVerbDeps(env: BrowserHandlerEnv): BrowserVerbDeps {
     alias: (folder) => path.basename(folder) || folder,
     folderBlocked: (folder) => env.folderBlocked(folder)
   }
+}
+
+/** Where a pane's saved screenshots go, relative to its folder (spec §6.2). */
+export const SHOTS_DIR = '.harnu/out/browser/shots'
+
+/** The dependencies of the reading verbs: the U1 set plus the clock, the screenshot writer and the panel data seam. */
+export function makeBrowserReadDeps(env: BrowserHandlerEnv): BrowserReadDeps {
+  return {
+    ...makeBrowserVerbDeps(env),
+    host: getBrowserHost(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    saveShot: async (folder, data, ext) => {
+      const dir = join(folder, SHOTS_DIR)
+      await mkdir(dir, { recursive: true })
+      const name = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 6)}.${ext === 'jpeg' ? 'jpg' : 'png'}`
+      await writeFile(join(dir, name), data, { mode: 0o644 })
+      return `${SHOTS_DIR}/${name}`
+    }
+    // `pageData` (browser_snapshot's `include: ['data']`) is wired by the live-panel unit (U2): one seam.
+  }
+}
+
+/** The kill-switch went off: every pane's network capture ends at once (spec §7.4). */
+export function stopAllBrowserCaptures(): void {
+  if (host) host.stopAllCaptures('kill-switch')
 }

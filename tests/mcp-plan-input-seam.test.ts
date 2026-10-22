@@ -38,6 +38,12 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   browser_list: { folder: ALLOWED },
   browser_navigate: { paneId: 'bp-1', url: 'http://localhost:5173/' },
   browser_close: { paneId: 'bp-1' },
+  // T570 (U3): the reading verbs carry only a paneId plus their own arguments.
+  browser_snapshot: { paneId: 'bp-1', selector: 'main', interactiveOnly: true, maxNodes: 300 },
+  browser_screenshot: { paneId: 'bp-1', ref: 's1e2', format: 'jpeg', quality: 70, maxDim: 1000 },
+  browser_console: { paneId: 'bp-1', mode: 'tail', lines: 50, levels: ['error'] },
+  browser_network: { paneId: 'bp-1', action: 'start', maxMinutes: 5, bodies: true },
+  browser_wait_for: { paneId: 'bp-1', selector: '#done', timeoutMs: 5000 },
   adopt_folder: { folder: ALLOWED },
   remove_folder: { folder: ALLOWED },
   plan_mission: {
