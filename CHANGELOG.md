@@ -47,6 +47,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   ending the recording is always allowed. A pane you opened is now refused until you let agents read browser panes
   in its folder, instead of being unavailable to sessions altogether.
 - A hidden browser pane in device mode now screenshots the right element: the crop accounts for the device's own size instead of the pane's.
+- A session's clicks on a page that emulates touch are now taps, like a finger's: a mouse press never completes while touch is emulated, so the click used to hang.
 
 ## 2026-10-21
 

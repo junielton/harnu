@@ -297,3 +297,84 @@ export function resolveDownloadTarget(
     return { ok: false, detail: err instanceof Error ? err.message : String(err) }
   }
 }
+
+/* ------------------------------------------------------------------------------------------------ */
+/* The operator's held download (Q16)                                                                 */
+/* ------------------------------------------------------------------------------------------------ */
+
+/**
+ * A download the operator started with a click is received into a PRIVATE temporary directory, never into the folder:
+ * pausing it is not a hold (a small file finishes before the pause lands, found live), so the only thing that can put
+ * a file in `.harnu/out/downloads/` is the operator's **Save** after it arrived. This is the whole state machine of
+ * that hold, pure, so the order of "finished" and "answered" can never matter.
+ */
+export interface HeldDownload {
+  /** The bytes have all arrived in the temporary directory. */
+  completed: boolean
+  answered: 'pending' | 'allow' | 'deny'
+  /** The download broke off (interrupted, cancelled, or over the size limit). */
+  failed: boolean
+}
+
+export const NEW_HELD_DOWNLOAD: HeldDownload = {
+  completed: false,
+  answered: 'pending',
+  failed: false
+}
+
+export type HeldAction = 'done-ok' | 'done-fail' | 'allow' | 'deny'
+
+/** What the host does about it: nothing yet, move the file into the folder, or throw the temporary file away. */
+export type HeldEffect = 'none' | 'move' | 'discard'
+
+export function stepHeldDownload(
+  state: HeldDownload,
+  action: HeldAction
+): { state: HeldDownload; effect: HeldEffect } {
+  switch (action) {
+    case 'deny':
+      return { state: { ...state, answered: 'deny' }, effect: 'discard' }
+    case 'done-fail':
+      return { state: { ...state, failed: true }, effect: 'discard' }
+    case 'allow': {
+      const next: HeldDownload = { ...state, answered: 'allow' }
+      return { state: next, effect: state.completed && !state.failed ? 'move' : 'none' }
+    }
+    case 'done-ok': {
+      const next: HeldDownload = { ...state, completed: true }
+      if (state.failed || state.answered === 'deny') return { state: next, effect: 'discard' }
+      return { state: next, effect: state.answered === 'allow' ? 'move' : 'none' }
+    }
+  }
+}
+
+/** The file io the move needs: an exclusive copy (never overwrite) and the temporary file's removal. */
+export interface MoveIo extends DownloadFsIo {
+  /** Copy `from` to `to`, failing with `EEXIST` if `to` exists. */
+  copyExclusive(from: string, to: string): void
+}
+
+/**
+ * Move a held download into `.harnu/out/downloads/`: pick the target name now (so a file that appeared while the
+ * question was open is never replaced), copy exclusively, and retry the name once if another file took it in between.
+ */
+export function moveHeldDownload(
+  folder: string,
+  tempFile: string,
+  rawName: string,
+  io: MoveIo
+): DownloadTarget {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const target = resolveDownloadTarget(folder, rawName, io)
+    if (!target.ok) return target
+    try {
+      io.copyExclusive(tempFile, target.absPath)
+      return target
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+        return { ok: false, detail: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  }
+  return { ok: false, detail: 'could not find a free file name' }
+}

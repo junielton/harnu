@@ -187,6 +187,33 @@ export interface MouseEventParams {
   modifiers: number
 }
 
+export interface TouchEventParams {
+  type: 'touchStart' | 'touchEnd'
+  touchPoints: Point[]
+  modifiers: number
+}
+
+/**
+ * The CDP touch events of a tap, for a page that emulates touch (T572, spec §9.2). While
+ * `Emulation.setEmitTouchEventsForMouse` is on, `Input.dispatchMouseEvent` presses are swallowed by the touch
+ * emulator and never acknowledge (measured live: `mousePressed` hung, a `touchStart` at the same point clicked), so
+ * a click on such a page is a tap: `touchStart` then `touchEnd` at the point, once per click, with the same view
+ * coordinates (post fit scale) the mouse events use. A page that does not emulate touch keeps real mouse events.
+ */
+export function tapEvents(
+  at: Point,
+  opts: { clickCount?: number; modifiers?: readonly ClickModifier[] }
+): TouchEventParams[] {
+  const count = Math.max(1, Math.min(3, Math.trunc(opts.clickCount ?? 1)))
+  const modifiers = modifierMask(opts.modifiers)
+  const events: TouchEventParams[] = []
+  for (let i = 0; i < count; i++) {
+    events.push({ type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }], modifiers })
+    events.push({ type: 'touchEnd', touchPoints: [], modifiers })
+  }
+  return events
+}
+
 /**
  * The CDP mouse events of one click: move onto the target, then `clickCount` press/release pairs numbered
  * 1…n (a double click is two pairs with the second carrying `clickCount: 2`).

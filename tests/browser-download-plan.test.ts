@@ -12,7 +12,13 @@ import {
   isInsideReal,
   overLimit,
   resolveDownloadTarget,
+  moveHeldDownload,
+  stepHeldDownload,
+  NEW_HELD_DOWNLOAD,
   type DownloadFsIo,
+  type HeldAction,
+  type HeldDownload,
+  type MoveIo,
   sanitizeDownloadName,
   uniqueDownloadName
 } from '../src/main/browser/download-plan'
@@ -298,5 +304,113 @@ describe('resolveDownloadTarget', () => {
       })
     )
     expect(r).toEqual({ ok: false, detail: 'EACCES' })
+  })
+})
+
+describe('the operator’s held download (Q16, found live: a pause does not hold a small file)', () => {
+  const run = (actions: HeldAction[]): { state: HeldDownload; effects: string[] } => {
+    let state = NEW_HELD_DOWNLOAD
+    const effects: string[] = []
+    for (const a of actions) {
+      const r = stepHeldDownload(state, a)
+      state = r.state
+      effects.push(r.effect)
+    }
+    return { state, effects }
+  }
+
+  it('Save after it arrived moves it, and nothing moves before the answer', () => {
+    expect(run(['done-ok', 'allow']).effects).toEqual(['none', 'move'])
+  })
+
+  it('Save before it arrived waits for the last byte, then moves — order never matters', () => {
+    expect(run(['allow', 'done-ok']).effects).toEqual(['none', 'move'])
+  })
+
+  it('a download that finishes while the question is open keeps nothing in the folder', () => {
+    const { state, effects } = run(['done-ok'])
+    expect(effects).toEqual(['none'])
+    expect(state).toMatchObject({ completed: true, answered: 'pending' })
+  })
+
+  it('Cancel (or the timeout) discards at any point', () => {
+    expect(run(['deny']).effects).toEqual(['discard'])
+    expect(run(['done-ok', 'deny']).effects).toEqual(['none', 'discard'])
+    expect(run(['deny', 'done-ok']).effects).toEqual(['discard', 'discard'])
+  })
+
+  it('a download that broke off is discarded and a later Save moves nothing', () => {
+    expect(run(['done-fail']).effects).toEqual(['discard'])
+    expect(run(['done-fail', 'allow']).effects).toEqual(['discard', 'none'])
+    expect(run(['allow', 'done-fail']).effects).toEqual(['none', 'discard'])
+  })
+})
+
+describe('moveHeldDownload', () => {
+  const io = (taken: Set<string>, copies: Array<[string, string]>): MoveIo => ({
+    mkdirp: () => undefined,
+    realpath: (p) => p,
+    exists: (p) => taken.has(p),
+    copyExclusive: (from, to) => {
+      if (taken.has(to)) throw Object.assign(new Error('exists'), { code: 'EEXIST' })
+      copies.push([from, to])
+      taken.add(to)
+    }
+  })
+
+  it('copies the temporary file to a clean name in the downloads folder', () => {
+    const copies: Array<[string, string]> = []
+    const r = moveHeldDownload(
+      '/w/app',
+      '/tmp/harnu-dl-x/report.txt',
+      'report.txt',
+      io(new Set(), copies)
+    )
+    expect(r).toMatchObject({ ok: true, relPath: '.harnu/out/downloads/report.txt' })
+    expect(copies).toEqual([
+      ['/tmp/harnu-dl-x/report.txt', '/w/app/.harnu/out/downloads/report.txt']
+    ])
+  })
+
+  it('never replaces a file, even one that appeared while the question was open', () => {
+    const taken = new Set(['/w/app/.harnu/out/downloads/report.txt'])
+    const copies: Array<[string, string]> = []
+    const r = moveHeldDownload('/w/app', '/tmp/t/report.txt', 'report.txt', io(taken, copies))
+    expect(r).toMatchObject({ ok: true, name: 'report (1).txt' })
+  })
+
+  it('retries the name when another writer takes it between the check and the copy', () => {
+    const taken = new Set<string>()
+    let first = true
+    const racing: MoveIo = {
+      mkdirp: () => undefined,
+      realpath: (p) => p,
+      exists: (p) => taken.has(p),
+      copyExclusive: (_f, to) => {
+        if (first) {
+          first = false
+          taken.add(to)
+          throw Object.assign(new Error('exists'), { code: 'EEXIST' })
+        }
+        taken.add(to)
+      }
+    }
+    expect(moveHeldDownload('/w/app', '/t/a.txt', 'a.txt', racing)).toMatchObject({
+      ok: true,
+      name: 'a (1).txt'
+    })
+  })
+
+  it('reports an io failure that is not a name clash', () => {
+    const failing: MoveIo = {
+      ...io(new Set(), []),
+      copyExclusive: () => {
+        throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+      }
+    }
+    expect(moveHeldDownload('/w/app', '/t/a.txt', 'a.txt', failing)).toEqual({
+      ok: false,
+      detail: 'ENOSPC'
+    })
   })
 })

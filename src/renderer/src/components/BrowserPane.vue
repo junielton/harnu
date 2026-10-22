@@ -1211,8 +1211,9 @@ watch(isFrozen, async (frozen) => {
           </div>
         </div>
         <div
-          class="shrink-0 truncate text-center font-mono text-text-3"
+          class="max-w-full min-w-0 truncate text-center font-mono text-text-3"
           style="font-size: 10.5px; line-height: 16px"
+          :title="caption"
           data-testid="browser-device-caption"
         >
           {{ caption }}

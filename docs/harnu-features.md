@@ -939,7 +939,10 @@ other settings). `zoom` (0.25..5, remembered for the page's site, as the operato
 device mode: `zoom` while a device is active, or with `device`, is `ZOOM_IN_DEVICE_MODE` (pass `reset: true`
 first). The operator's device picker edits the same record, so `browser_list`'s `emulation` and the ACK's
 `emulation`, `zoom` and `fitScale` are what they see. `browser_open` also takes `device`. After
-emulating, take a `browser_screenshot`; clicks and element shots already account for the scale.
+emulating, take a `browser_screenshot`; clicks and element shots already account for the scale. While touch is
+emulated (a mobile device, or `touch: true`) `browser_click` taps, as a finger would, because a mouse press
+never completes there; a right or middle `button` is then refused with `INPUT_FAILED` (set `touch: false`
+first).
 `browser_upload({ paneId, ref, paths })` attaches 1..10 files to an `<input type=file>` (`NOT_A_FILE_INPUT`
 otherwise; an input without `multiple` takes one). Every path must be a regular file INSIDE the pane's folder
 once links are followed, at most 50 MiB (`UPLOAD_TOO_LARGE`), and never `.git/**`, `.env*`, `*.pem`, `*.key`

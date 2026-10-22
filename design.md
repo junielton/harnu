@@ -3936,8 +3936,9 @@ not apply). The page renders at device size and is only displayed scaled: it nev
 on a link or button), main holds it and the pane shows one **prompt row** under the bars: 24px, `--accent-soft`
 fill, 1px `--accent-line` bottom border, `download` 12px `--accent`, the text "Save ‹file name› to
 `.harnu/out/downloads/`?" (11px `--text-2`; the file name mono, truncating), then **Save** (accent text button) and
-**Cancel** (ghost) at the right. No answer for 60 seconds cancels it. One prompt at a time per pane; a second
-download while one waits is cancelled. After the decision the **notice strip** says "Saved ‹name›" or "Download
+**Cancel** (ghost) at the right. No answer for 60 seconds cancels it. The file arrives in a private temporary folder and is moved into
+`.harnu/out/downloads/` only when the operator clicks **Save**, so nothing reaches the project before the answer, however
+small the file. One prompt at a time per pane; a second download while one waits is cancelled. After the decision the **notice strip** says "Saved ‹name›" or "Download
 cancelled" for the few seconds it takes to read, then clears itself; these two are reports, not warnings, so
 the strip uses `--accent-soft` fill, `--text-2` text and a `download` 11px `--accent` icon instead of the amber
 warning treatment (a failed download keeps the amber one). A download nobody asked for (a page script, no

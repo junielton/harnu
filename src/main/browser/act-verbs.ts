@@ -11,6 +11,7 @@
  */
 import {
   clickEvents,
+  tapEvents,
   clickTarget,
   toViewPoint,
   waitActionable,
@@ -49,6 +50,11 @@ export interface BrowserActHost extends BrowserReadHost {
    * without one. CDP mouse and touch events take VIEW coordinates.
    */
   inputScale?(paneId: string): number
+  /**
+   * The pane emulates touch (T572): pointer input is sent as touch taps, because mouse presses never acknowledge
+   * while the touch emulator is on. Absent = `false`.
+   */
+  touchActive?(paneId: string): boolean
   /** Show the pane header's `driving` word while a verb runs. */
   drive?(paneId: string, on: boolean): void
 }
@@ -83,6 +89,8 @@ export interface ActCtx {
   rec: BrowserPaneRecord
   readers: PaneReaders
   scale: number
+  /** Touch is emulated: clicks are taps. */
+  touch: boolean
 }
 
 type Located =
@@ -123,7 +131,12 @@ export async function runWrite(
     let result: Record<string, unknown> | Refusal
     let report: ReturnType<typeof deps.registry.endWrite>
     try {
-      result = await body({ rec, readers, scale: deps.host.inputScale?.(rec.paneId) ?? 1 })
+      result = await body({
+        rec,
+        readers,
+        scale: deps.host.inputScale?.(rec.paneId) ?? 1,
+        touch: deps.host.touchActive?.(rec.paneId) ?? false
+      })
     } finally {
       report = deps.registry.endWrite(token)
       deps.registry.endAgentInput(rec.paneId)
@@ -341,13 +354,31 @@ export async function performClick(
     if (!aim.ok) return refuse('OFFSET_OUTSIDE_BOX', { folder: ctx.rec.folder })
     const seen = await describe(loc, ctx, deps)
     const at = toViewPoint(aim.point, ctx.scale)
+    // A page that emulates touch gets taps: its mouse presses never acknowledge (see `tapEvents`). A tap has no
+    // button, so a right or middle click there says so instead of hanging.
+    if (ctx.touch && args.button !== undefined && args.button !== 'left') {
+      return refuse('INPUT_FAILED', {
+        folder: ctx.rec.folder,
+        detail:
+          'right and middle clicks do not exist while touch is emulated; call browser_emulate with `touch: false` first'
+      })
+    }
     try {
-      for (const ev of clickEvents(at, {
-        ...(args.button ? { button: args.button } : {}),
-        ...(args.clickCount !== undefined ? { clickCount: args.clickCount } : {}),
-        ...(args.modifiers ? { modifiers: args.modifiers } : {})
-      })) {
-        await deps.host.cdp(ctx.rec.paneId, 'Input.dispatchMouseEvent', ev)
+      if (ctx.touch) {
+        for (const ev of tapEvents(at, {
+          ...(args.clickCount !== undefined ? { clickCount: args.clickCount } : {}),
+          ...(args.modifiers ? { modifiers: args.modifiers } : {})
+        })) {
+          await deps.host.cdp(ctx.rec.paneId, 'Input.dispatchTouchEvent', ev)
+        }
+      } else {
+        for (const ev of clickEvents(at, {
+          ...(args.button ? { button: args.button } : {}),
+          ...(args.clickCount !== undefined ? { clickCount: args.clickCount } : {}),
+          ...(args.modifiers ? { modifiers: args.modifiers } : {})
+        })) {
+          await deps.host.cdp(ctx.rec.paneId, 'Input.dispatchMouseEvent', ev)
+        }
       }
     } catch (err) {
       return refuse('INPUT_FAILED', {

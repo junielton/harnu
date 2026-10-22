@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { createBrowserAccess } from '../src/main/browser/access'
+import { clickVerb } from '../src/main/browser/act-verbs'
 import { createBrowserRegistry } from '../src/main/browser/registry'
 import { createPaneReaders } from '../src/main/browser/pane-readers'
 import { BrowserLeases } from '../src/main/browser/lease'
@@ -49,6 +50,9 @@ interface RigOpts {
   files?: Record<string, number>
   links?: Record<string, string>
   inputAttrs?: string[]
+  /** Touch is emulated: clicks must be taps. */
+  touch?: boolean
+  scale?: number
 }
 
 function rig(opts: RigOpts = {}) {
@@ -95,6 +99,7 @@ function rig(opts: RigOpts = {}) {
       case 'DOM.setFileInputFiles':
       case 'DOM.scrollIntoViewIfNeeded':
       case 'Input.dispatchMouseEvent':
+      case 'Input.dispatchTouchEvent':
       case 'Runtime.releaseObjectGroup':
         return {}
       case 'DOM.resolveNode': {
@@ -126,7 +131,8 @@ function rig(opts: RigOpts = {}) {
     deviceMode: () => false,
     capture: vi.fn(),
     viewToken: () => 'view-1',
-    inputScale: () => 1,
+    inputScale: () => opts.scale ?? 1,
+    touchActive: () => opts.touch === true,
     drive: vi.fn(),
     applyEmulation: vi.fn(async () => {
       if (opts.applyFails) throw new Error('Emulation domain refused')
@@ -484,5 +490,46 @@ describe('browser_download', () => {
         error: 'BROWSER_WRITES_DISABLED'
       }
     )
+  })
+})
+
+describe('input while touch is emulated: a click is a tap (AC-6, found live)', () => {
+  it('sends touchStart and touchEnd at the view point, never a mouse press', async () => {
+    const r = rig({ touch: true, scale: 0.5 })
+    const res = await clickVerb({ paneId: 'bp-1', ref: 's1e2' }, r.deps)
+    expect(res).toMatchObject({ ok: true, target: { role: 'link', name: 'Download report' } })
+    expect(calls(r.log, 'Input.dispatchMouseEvent')).toEqual([])
+    const touches = calls(r.log, 'Input.dispatchTouchEvent')
+    expect(touches.map((t) => t.type)).toEqual(['touchStart', 'touchEnd'])
+    // The box centre is (60, 40) in page px; the fit scale 0.5 makes it (30, 20) in view px (A5).
+    expect(touches[0]).toMatchObject({ touchPoints: [{ x: 30, y: 20 }] })
+    expect(touches[1]).toMatchObject({ touchPoints: [] })
+  })
+
+  it('a double click is two taps', async () => {
+    const r = rig({ touch: true })
+    await clickVerb({ paneId: 'bp-1', ref: 's1e2', clickCount: 2 }, r.deps)
+    expect(calls(r.log, 'Input.dispatchTouchEvent').map((t) => t.type)).toEqual([
+      'touchStart',
+      'touchEnd',
+      'touchStart',
+      'touchEnd'
+    ])
+  })
+
+  it('a right or middle click says it does not exist under touch, and sends nothing', async () => {
+    const r = rig({ touch: true })
+    const res = await clickVerb({ paneId: 'bp-1', ref: 's1e2', button: 'right' }, r.deps)
+    expect(res).toMatchObject({ ok: false, error: 'INPUT_FAILED' })
+    expect(JSON.stringify(res)).toContain('touch: false')
+    expect(calls(r.log, 'Input.dispatchTouchEvent')).toEqual([])
+    expect(calls(r.log, 'Input.dispatchMouseEvent')).toEqual([])
+  })
+
+  it('a page without touch keeps real mouse events', async () => {
+    const r = rig({ touch: false })
+    await clickVerb({ paneId: 'bp-1', ref: 's1e2' }, r.deps)
+    expect(calls(r.log, 'Input.dispatchTouchEvent')).toEqual([])
+    expect(calls(r.log, 'Input.dispatchMouseEvent').length).toBe(3)
   })
 })

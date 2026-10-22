@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  tapEvents,
   ACTIONABLE_TIMEOUT_MS,
   actionableRefusal,
   clickEvents,
@@ -159,5 +160,25 @@ describe('mouse events', () => {
     expect(e[1]).toMatchObject({ button: 'right', buttons: 2, modifiers: 10 })
     expect(modifierMask(['Alt', 'Meta'])).toBe(5)
     expect(modifierMask(undefined)).toBe(0)
+  })
+})
+
+describe('tapEvents (T572: a click while touch is emulated)', () => {
+  it('is touchStart then touchEnd at the point', () => {
+    expect(tapEvents({ x: 30, y: 20 }, {})).toEqual([
+      { type: 'touchStart', touchPoints: [{ x: 30, y: 20 }], modifiers: 0 },
+      { type: 'touchEnd', touchPoints: [], modifiers: 0 }
+    ])
+  })
+
+  it('repeats once per click, clamped to three, and carries the modifiers', () => {
+    expect(tapEvents({ x: 1, y: 2 }, { clickCount: 2 }).map((e) => e.type)).toEqual([
+      'touchStart',
+      'touchEnd',
+      'touchStart',
+      'touchEnd'
+    ])
+    expect(tapEvents({ x: 1, y: 2 }, { clickCount: 9 })).toHaveLength(6)
+    expect(tapEvents({ x: 1, y: 2 }, { modifiers: ['Shift'] })[0]!.modifiers).toBe(8)
   })
 })

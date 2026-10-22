@@ -7,7 +7,17 @@
  * `access` and the verb logic in `verbs-core`. This file only wires them to Electron events.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, realpathSync } from 'node:fs'
+import {
+  constants as fsConstants,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join as joinPath } from 'node:path'
 import {
   BrowserWindow,
   WebContentsView,
@@ -28,18 +38,26 @@ import { decideForward, type GuestInput } from './chord'
 import { guestWebPreferences, PARTITION_NAMES, type BrowserPartition } from './guest-prefs'
 import {
   DOWNLOAD_PROMPT_TIMEOUT_MS,
+  NEW_HELD_DOWNLOAD,
   createDownloadArms,
   decideDownload,
   downloadResult,
+  moveHeldDownload,
   overLimit,
   resolveDownloadTarget,
+  sanitizeDownloadName,
+  stepHeldDownload,
   type DownloadArm,
   type DownloadArms,
-  type DownloadFsIo
+  type DownloadFsIo,
+  type HeldAction,
+  type HeldDownload,
+  type MoveIo
 } from './download-plan'
 import {
   checkEmulateArgs,
   deviceActive,
+  effectiveTouch,
   mergeEmulation,
   metricsCommand,
   needsReloadFor,
@@ -106,20 +124,34 @@ export interface ViewHostDeps {
 }
 
 /** The real filesystem the download target resolution touches. */
-const REAL_FS: DownloadFsIo = {
+const REAL_FS: MoveIo = {
   mkdirp: (dir) => void mkdirSync(dir, { recursive: true }),
   realpath: (p) => realpathSync(p),
-  exists: (p) => existsSync(p)
+  exists: (p) => existsSync(p),
+  // COPYFILE_EXCL: a file that is already there is never replaced.
+  copyExclusive: (from, to) => copyFileSync(from, to, fsConstants.COPYFILE_EXCL)
 }
+// `DownloadFsIo` is what the target resolution needs; `MoveIo` adds the exclusive copy.
+const _fsIo: DownloadFsIo = REAL_FS
+void _fsIo
 
 /** How long the "Saved" / "cancelled" notice stays up before it clears itself (design.md "Download prompt"). */
 const TRANSIENT_NOTICE_MS = 4000
 
-/** The operator's pending "Save to …?" decision on a held download. */
+/**
+ * The operator's pending "Save to …?" decision on a held download. The bytes arrive in `tempDir`, never in the
+ * folder: only the operator's Save moves the finished file (`stepHeldDownload`).
+ */
 interface PendingDownload {
   item: Electron.DownloadItem
   name: string
   timer: ReturnType<typeof setTimeout>
+  tempDir: string
+  tempFile: string
+  step: HeldDownload
+  /** The question was answered (the prompt row is gone) but the file may still be arriving. */
+  answered: boolean
+  tooLarge: boolean
 }
 
 interface ViewEntry {
@@ -317,6 +349,7 @@ export class BrowserViewHost implements BrowserReadHost {
       } catch {
         /* already done */
       }
+      rmSync(e.prompt.tempDir, { recursive: true, force: true })
       e.prompt = null
     }
     this.arms.settle(paneId, {
@@ -400,6 +433,11 @@ export class BrowserViewHost implements BrowserReadHost {
   inputReady(paneId: string): boolean {
     const e = this.entries.get(paneId)
     return !e || e.inputState.ready
+  }
+
+  /** The pane emulates touch: the input verbs tap instead of clicking (T572, `tapEvents`). */
+  touchActive(paneId: string): boolean {
+    return effectiveTouch(this.deps.registry.get(paneId)?.emulation)
   }
 
   /** The header's `driving` word while an acting verb runs. */
@@ -642,21 +680,45 @@ export class BrowserViewHost implements BrowserReadHost {
     e.wc.downloadURL(url)
   }
 
-  /** The operator answered the "Save to .harnu/out/downloads/?" prompt. */
+  /** The operator answered the "Save to .harnu/out/downloads/?" prompt (or it timed out: a No). */
   answerDownload(paneId: string, allow: boolean): void {
     const e = this.entries.get(paneId)
     const pending = e?.prompt
-    if (!e || !pending) return
+    if (!e || !pending || pending.answered) return
+    pending.answered = true
     clearTimeout(pending.timer)
-    e.prompt = null
     this.deps.registry.noteOperatorInteraction(paneId)
-    try {
-      if (allow) pending.item.resume()
-      else pending.item.cancel()
-    } catch {
-      /* the item already finished */
-    }
+    this.stepHeld(e, pending, allow ? 'allow' : 'deny')
+    // The question is closed either way; a Save whose file is still arriving finishes in the background.
     this.publish(e)
+  }
+
+  /**
+   * Run one step of a held download (`stepHeldDownload`) and do what it says: nothing, move the finished file into
+   * the folder, or throw the temporary file away. The notice reports how it ended.
+   */
+  private stepHeld(e: ViewEntry, p: PendingDownload, action: HeldAction): void {
+    const { state, effect } = stepHeldDownload(p.step, action)
+    p.step = state
+    if (effect === 'none') return
+    const alive = !e.wc.isDestroyed() && this.entries.has(e.paneId)
+    const finish = (notice: BrowserNotice): void => {
+      rmSync(p.tempDir, { recursive: true, force: true })
+      if (e.prompt === p) e.prompt = null
+      if (alive) this.transientNotice(e, notice)
+    }
+    if (effect === 'discard') {
+      try {
+        if (!state.completed) p.item.cancel()
+      } catch {
+        /* already finished */
+      }
+      finish(state.failed ? { kind: 'download-failed' } : { kind: 'download-cancelled' })
+      return
+    }
+    // effect === 'move': the operator said yes and every byte is here.
+    const moved = moveHeldDownload(e.folder, p.tempFile, p.name, REAL_FS)
+    finish(moved.ok ? { kind: 'downloaded', name: moved.name } : { kind: 'download-failed' })
   }
 
   private onWillDownload(
@@ -692,7 +754,11 @@ export class BrowserViewHost implements BrowserReadHost {
       }
       return
     }
-    const claim = decision.action === 'save-agent' ? this.arms.claim(e.paneId) : null
+    if (decision.action === 'prompt') {
+      this.holdOperatorDownload(e, item)
+      return
+    }
+    const claim = this.arms.claim(e.paneId)
     const target = resolveDownloadTarget(e.folder, claim?.name ?? item.getFilename(), REAL_FS)
     if (!target.ok) {
       event.preventDefault()
@@ -715,43 +781,63 @@ export class BrowserViewHost implements BrowserReadHost {
       }
     })
     item.once('done', (_ev, state) => {
-      if (e.prompt?.item === item) {
-        clearTimeout(e.prompt.timer)
-        e.prompt = null
-        if (!e.wc.isDestroyed()) this.publish(e)
-      }
-      const result = downloadResult({
-        state,
-        savedAs: target.absPath,
-        relPath: target.relPath,
-        bytes: item.getReceivedBytes(),
-        mime: item.getMimeType(),
-        tooLarge
-      })
-      if (claim) {
-        this.arms.settle(e.paneId, result)
-      } else if (!e.wc.isDestroyed() && this.entries.has(e.paneId)) {
-        this.transientNotice(
-          e,
-          result.ok
-            ? { kind: 'downloaded', name: result.name }
-            : result.code === 'DOWNLOAD_CANCELLED'
-              ? { kind: 'download-cancelled' }
-              : { kind: 'download-failed' }
-        )
+      this.arms.settle(
+        e.paneId,
+        downloadResult({
+          state,
+          savedAs: target.absPath,
+          relPath: target.relPath,
+          bytes: item.getReceivedBytes(),
+          mime: item.getMimeType(),
+          tooLarge
+        })
+      )
+    })
+  }
+
+  /**
+   * The operator's own click started a download (Q16). It is received into a private temporary directory and the pane
+   * asks "Save … to .harnu/out/downloads/?"; nothing reaches the folder before the answer, however small the file
+   * (a paused download is not a hold: it can finish before the pause lands).
+   */
+  private holdOperatorDownload(e: ViewEntry, item: Electron.DownloadItem): void {
+    const name = sanitizeDownloadName(item.getFilename())
+    let tempDir: string
+    try {
+      tempDir = mkdtempSync(joinPath(tmpdir(), 'harnu-dl-'))
+    } catch {
+      item.cancel()
+      this.transientNotice(e, { kind: 'download-failed' })
+      return
+    }
+    const tempFile = joinPath(tempDir, name)
+    item.setSavePath(tempFile)
+    e.gestures.consume()
+    const pending: PendingDownload = {
+      item,
+      name,
+      tempDir,
+      tempFile,
+      step: NEW_HELD_DOWNLOAD,
+      answered: false,
+      tooLarge: false,
+      timer: setTimeout(() => this.answerDownload(e.paneId, false), DOWNLOAD_PROMPT_TIMEOUT_MS)
+    }
+    e.prompt = pending
+    item.on('updated', () => {
+      if (!pending.tooLarge && overLimit(item.getReceivedBytes())) {
+        pending.tooLarge = true
+        item.cancel()
       }
     })
-    if (decision.action === 'prompt') {
-      // The operator's own click started this: hold it until they say yes (spec §3.2, Q16). One activation, one question.
-      e.gestures.consume()
-      item.pause()
-      const timer = setTimeout(
-        () => this.answerDownload(e.paneId, false),
-        DOWNLOAD_PROMPT_TIMEOUT_MS
+    item.once('done', (_ev, state) =>
+      this.stepHeld(
+        e,
+        pending,
+        state === 'completed' && !pending.tooLarge ? 'done-ok' : 'done-fail'
       )
-      e.prompt = { item, name: target.name, timer }
-      this.publish(e)
-    }
+    )
+    this.publish(e)
   }
 
   /** A notice that clears itself after a few seconds (design.md "Download prompt"). */
@@ -1293,7 +1379,7 @@ export class BrowserViewHost implements BrowserReadHost {
       networkUntil: e.readers.capture.status().expiresAt,
       zoom: e.wc.isDestroyed() ? 1 : e.wc.getZoomFactor(),
       emulation: r?.emulation ?? {},
-      downloadPrompt: e.prompt ? { name: e.prompt.name } : null
+      downloadPrompt: e.prompt && !e.prompt.answered ? { name: e.prompt.name } : null
     }
   }
 
