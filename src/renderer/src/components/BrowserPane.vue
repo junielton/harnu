@@ -441,8 +441,21 @@ function onPickDestination(id: string): void {
 // what the operator is writing.
 watch(
   () => commentState.value?.openPinId ?? null,
-  async (id) => {
+  async (id, prevId) => {
     destMenuOpen.value = false
+    // The operator picked another node while a composer was open: what was typed there is kept as a draft, and
+    // an empty pin they walked away from is dropped, so a stray click never leaves a numbered pin behind.
+    if (prevId !== null && prevId !== id) {
+      const typed = composerText.value.trim()
+      const prev = commentPins.value.find((p) => p.id === prevId)
+      if (prev && prev.state === 'draft') {
+        if (typed !== '') {
+          await window.api.browserCommentSave({ paneId, pinId: prevId, text: typed })
+        } else if (prev.comment === '') {
+          await window.api.browserCommentDiscard({ paneId, pinId: prevId })
+        }
+      }
+    }
     if (id === null) return
     composerText.value = composerPin.value?.comment ?? ''
     await nextTick()

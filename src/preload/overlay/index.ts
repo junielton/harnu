@@ -17,6 +17,7 @@ import {
   type GuestPin,
   type OverlayGuestState,
   type OverlayRect,
+  type OverlayTheme,
   type PickedPayload
 } from '../../shared/browser-comment'
 import { computedStyles, discoverComponent, outerHtmlShallow, type MainWorld } from './capture'
@@ -243,6 +244,22 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
 
   /* ---- State from main -------------------------------------------------------------------------- */
 
+  let hint = ''
+  let theme: OverlayTheme | null = null
+
+  /**
+   * Draw what the last state says. The preload can run before `document.documentElement` exists, so the host
+   * may not be buildable yet: the state is kept and this runs again when the document loads.
+   */
+  function render(): void {
+    if (!layers.ensure()) return
+    if (theme) layers.setTheme(theme)
+    syncObserver()
+    layers.setHint(active, hint)
+    if (!active) layers.setOutline(null)
+    layoutPins()
+  }
+
   function applyState(raw: unknown): void {
     unhide()
     if (typeof raw !== 'object' || raw === null) return
@@ -250,18 +267,18 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     const wasActive = active
     active = st.active === true
     pins = Array.isArray(st.pins) ? (st.pins as GuestPin[]) : []
-    if (!layers.ensure() && (active || pins.length > 0)) {
-      // The document element is not there yet; the next event or load retries.
-      return
-    }
+    hint = typeof st.hint === 'string' ? st.hint : ''
     if (st.theme && isSafeColor(st.theme.accent) && isSafeColor(st.theme.accentInk)) {
-      layers.setTheme({ accent: st.theme.accent, accentInk: st.theme.accentInk })
+      theme = { accent: st.theme.accent, accentInk: st.theme.accentInk }
     }
-    syncObserver()
-    layers.setHint(active, typeof st.hint === 'string' ? st.hint : '')
-    if (!active) layers.setOutline(null)
-    else if (!wasActive) queueHover()
-    layoutPins()
+    if (active || pins.length > 0) render()
+    else {
+      syncObserver()
+      layers.setHint(false, '')
+      layers.setOutline(null)
+      layers.setPins([])
+    }
+    if (active && !wasActive) queueHover()
   }
 
   /* ---- Events ----------------------------------------------------------------------------------- */
@@ -323,7 +340,7 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
   win.addEventListener('scroll', onScrollOrResize, { capture: true, passive: true })
   win.addEventListener('resize', onScrollOrResize, { passive: true })
   const onLoaded = (): void => {
-    layoutPins()
+    if (active || pins.length > 0) render()
   }
   doc.addEventListener('DOMContentLoaded', onLoaded)
   win.addEventListener('load', onLoaded)
