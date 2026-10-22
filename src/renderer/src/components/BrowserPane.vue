@@ -571,7 +571,7 @@ watch(isFrozen, async (frozen) => {
       </button>
 
       <span
-        v-if="originKey"
+        v-if="originKey && !state.flagged"
         class="shrink-0 rounded-full border @max-[300px]:hidden"
         :class="
           originKey === 'local'
@@ -587,7 +587,7 @@ watch(isFrozen, async (frozen) => {
 
       <span
         v-if="state.flagged"
-        class="flex max-w-[45%] min-w-0 shrink items-center gap-1 rounded-full border border-warning/30 bg-warning/10 text-warning"
+        class="flex max-w-[35%] min-w-0 shrink items-center gap-1 rounded-full border border-warning/30 bg-warning/10 text-warning"
         style="padding: 1px 6px; font-size: 10px"
         data-testid="browser-flag"
       >
@@ -635,7 +635,7 @@ watch(isFrozen, async (frozen) => {
           aria-hidden="true"
           data-testid="browser-address-view"
         >
-          <span class="text-text-2 @max-[300px]:hidden">{{ addressParts.scheme }}</span
+          <span class="text-text-2 @max-[360px]:hidden">{{ addressParts.scheme }}</span
           ><span class="text-text" data-testid="browser-address-host">{{ addressParts.host }}</span
           ><span class="text-text-2">{{ addressParts.rest }}</span>
         </div>

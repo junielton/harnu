@@ -3790,7 +3790,7 @@ must freeze it first (see "Frozen frame").
   (`--accent-line` on focus). It shows the **real URL** (query string included, because the operator typed it
   and must be able to edit it). **Host emphasis:** while the field is not being edited, the scheme and the path
   are drawn in `--text-2` and the host (with its port) in `--text`, so the part that says where you are stands
-  out (below 300px the scheme is left out of this view so the host fits, as browsers do); the text under it is the real input, made transparent, and it returns to a single `--text` tone the moment
+  out (below 360px the scheme is left out of this view so the host fits, as browsers do); the text under it is the real input, made transparent, and it returns to a single `--text` tone the moment
   the field takes focus (an accent border, `--accent-line`, and a caret). Enter navigates (a bare word with no dot or scheme is treated as `https://` +
   word; a blocked scheme raises the notice strip and never navigates). Escape restores the live URL.
   `browser.focusAddress` focuses and selects it.
@@ -3804,7 +3804,8 @@ must freeze it first (see "Frozen frame").
   with a 12px `x` that dismisses it. It also clears when the **operator** navigates. **Narrow panes** (the address
   field must stay readable): below 330px the words "opened by agent ·" go and the pill is icon + host; below
   250px the host goes too and it is the icon alone (the hover title keeps the full text). The pill never takes
-  more than 45% of the row, and the origin badge hides below 300px.
+  more than 35% of the row. While the flag shows, the origin badge is not drawn (the flag already says the site is
+  external, as in the mockup), and below 300px the badge is hidden anyway.
 - **Notice strip** — one optional 22px row under the address bar for a refusal or an intercepted event: a blocked
   scheme, a certificate error accepted on loopback, a dialog the page raised and Harnu dismissed. `--warning` 10%
   fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old.
