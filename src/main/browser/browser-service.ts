@@ -32,6 +32,8 @@ import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import { resolveDiscardMs } from './lifecycle'
 import { planRestore, type PersistedPaneInput } from './restore-plan'
 import { readHelpers } from '../helpers-store'
+import { scanFolders } from '../claude-reader'
+import { isFolderDenied } from '../mcp/permission-core'
 import { createPageService, type PageService } from './page-service'
 import { createOverlayBridge, type OverlayBridge } from './overlay-bridge'
 import type { BrowserVerbDeps } from './verbs-core'
@@ -260,8 +262,22 @@ export async function restoreBrowserPanes(): Promise<number> {
       inputs.push({ id: pane.id, type: pane.type, worktreePath, payload: pane.payload })
     }
   }
+  // Only a folder Harnu tracks (pinned, or with sessions on disk) and the operator has not blocked comes back: the
+  // stack's folder feeds the `harnu-page:` servable-folder index, so a hand-edited file must not name any other.
+  let known = new Set<string>()
+  let denied: string[] = []
+  try {
+    const projects = (await readUserProjects()).projects
+    denied = projects.filter((p) => p.agentDenied === true).map((p) => p.path)
+    known = new Set([...projects.map((p) => p.path), ...(await scanFolders()).map((f) => f.path)])
+  } catch {
+    return 0
+  }
+  const home = os.homedir()
+  const folderAllowed = (folder: string): boolean =>
+    known.has(folder) && !isFolderDenied(folder, denied, home)
   let restored = 0
-  for (const { rec, pins, disconnected } of planRestore(inputs, Date.now())) {
+  for (const { rec, pins, disconnected } of planRestore(inputs, Date.now(), folderAllowed)) {
     if (browserRegistry.get(rec.paneId)) continue
     browserRegistry.add(rec)
     // Disconnect is "for good" (spec §7.4): it survives a restart, so reads and writes refuse again.

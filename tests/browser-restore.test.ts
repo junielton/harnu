@@ -214,6 +214,42 @@ describe('what a hand-edited file cannot do', () => {
   })
 })
 
+describe('restore trust (F3)', () => {
+  it('an agent-opened pane is always on the agent partition, whatever the file says', () => {
+    const r = restorePane(
+      pane({ url: 'http://localhost:1', openedBy: 'agent', partition: 'operator' }),
+      1
+    )!
+    expect(r.rec).toMatchObject({ openedBy: 'agent', partition: 'agent' })
+  })
+
+  it('an operator pane keeps the partition it had (a popup inherits its opener’s)', () => {
+    expect(restorePane(pane({ openedBy: 'operator', partition: 'agent' }), 1)!.rec.partition).toBe(
+      'agent'
+    )
+    expect(
+      restorePane(pane({ openedBy: 'operator', partition: 'operator' }), 1)!.rec.partition
+    ).toBe('operator')
+  })
+
+  it('only a folder Harnu tracks and the operator has not blocked comes back', () => {
+    const allowed = (f: string): boolean => f === WT
+    expect(restorePane(pane({ url: 'http://localhost:1' }), 1, allowed)).not.toBeNull()
+    expect(
+      restorePane(pane({ url: 'http://localhost:1' }, { worktreePath: '/etc' }), 1, allowed)
+    ).toBeNull()
+    expect(
+      restorePane(pane({ url: 'http://localhost:1' }, { worktreePath: '/' }), 1, allowed)
+    ).toBeNull()
+    const out = planRestore(
+      [pane({}), pane({}, { id: 'bp-x', worktreePath: '/home/victim/.ssh' })],
+      1,
+      allowed
+    )
+    expect(out.map((r) => r.rec.paneId)).toEqual(['bp-1a2b3c4d'])
+  })
+})
+
 describe('emulation from a file', () => {
   it('keeps a valid device and the media settings', () => {
     expect(

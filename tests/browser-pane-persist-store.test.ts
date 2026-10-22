@@ -156,6 +156,21 @@ describe('a browser pane in helpers.json', () => {
     expect(helpersSet.mock.calls.length).toBe(before)
   })
 
+  it('writes the address without its query string or fragment', async () => {
+    const helpers = useHelpersStore()
+    await helpers.ensureLoaded(WT)
+    addPane(helpers)
+    helpers.patchBrowserPayload(PANE, () => ({
+      url: 'https://app.example.com/cart?token=s3cr3t&x=1#frag'
+    }))
+    await flushed()
+    const written = helpersSet.mock.calls.at(-1)![0] as {
+      state: { panes: Array<{ payload: { url: string } }> }
+    }
+    expect(written.state.panes[0]!.payload.url).toBe('https://app.example.com/cart')
+    expect(JSON.stringify(written)).not.toContain('s3cr3t')
+  })
+
   it('ignores a pane the store does not hold', async () => {
     const helpers = useHelpersStore()
     await helpers.ensureLoaded(WT)

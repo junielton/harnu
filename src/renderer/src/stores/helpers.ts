@@ -14,6 +14,7 @@ import {
 } from '../lib/pane-alert'
 import type { BrowserEmulationState, WorktreeHelperState, HelperPane } from '../../../preload'
 import type { PersistedPayloadFields } from '../lib/browser-persist'
+import { scrubUrl } from '../../../shared/browser-comment'
 import type { AgentTerminalSplit } from './command-router'
 import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-corrective'
 
@@ -279,6 +280,11 @@ function toPersistShape(state: InMemoryWorktreeState): WorktreeHelperState {
         // The `payload` bag is JSON by contract, and every pane spread through the reactive state (a rebalance after
         // a new pane, a ratio drag) holds a PROXY of it, which cannot cross the IPC write: copy it out as plain data.
         if (pane.payload !== undefined) pane.payload = JSON.parse(JSON.stringify(pane.payload))
+        // A browser pane's address is kept without its query string or fragment (they hold tokens as often as state):
+        // a restart reopens the page, not the session behind it.
+        const saved = pane.payload as { url?: unknown } | undefined
+        if (pane.type === 'browser' && typeof saved?.url === 'string')
+          saved.url = scrubUrl(saved.url)
         return pane
       })
   }

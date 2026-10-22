@@ -163,8 +163,15 @@ export function sanitizeEmulation(raw: unknown): EmulationRecord {
  * One persisted pane as a discarded registry record and its pins, or `null` when it cannot be restored: not a
  * browser pane, a bad id, or an address a pane may not load.
  */
-export function restorePane(input: PersistedPaneInput, now: number): RestoredPane | null {
+export function restorePane(
+  input: PersistedPaneInput,
+  now: number,
+  folderAllowed: (folder: string) => boolean = () => true
+): RestoredPane | null {
   if (input.type !== 'browser') return null
+  // The stack's folder feeds the `harnu-page:` servable-folder index: only a folder Harnu tracks and the operator has
+  // not blocked may, so a hand-edited file cannot make an arbitrary directory servable.
+  if (typeof input.worktreePath !== 'string' || !folderAllowed(input.worktreePath)) return null
   const paneId = typeof input.id === 'string' && PANE_ID.test(input.id) ? input.id : null
   if (!paneId || typeof input.worktreePath !== 'string' || input.worktreePath === '') return null
   const p = isRecord(input.payload) ? input.payload : {}
@@ -181,7 +188,9 @@ export function restorePane(input: PersistedPaneInput, now: number): RestoredPan
   }
 
   const openedBy = p.openedBy === 'agent' ? 'agent' : 'operator'
-  const partition = p.partition === 'agent' ? 'agent' : 'operator'
+  // An agent-opened pane ALWAYS uses the agent partition (spec §3.4: no argument selects it), so a hand-edited file
+  // cannot put one in the operator's cookie jar. An operator pane may be on either (a popup inherits its opener's).
+  const partition = openedBy === 'agent' || p.partition === 'agent' ? 'agent' : 'operator'
   const zoom = finite(p.zoom) ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, p.zoom)) : 1
   const emulation = sanitizeEmulation(p.emulation)
   const rec: BrowserPaneRecord = {
@@ -213,11 +222,15 @@ export function restorePane(input: PersistedPaneInput, now: number): RestoredPan
 }
 
 /** Every browser pane of every stack, restored; a duplicate pane id keeps its first. */
-export function planRestore(panes: readonly PersistedPaneInput[], now: number): RestoredPane[] {
+export function planRestore(
+  panes: readonly PersistedPaneInput[],
+  now: number,
+  folderAllowed?: (folder: string) => boolean
+): RestoredPane[] {
   const out: RestoredPane[] = []
   const seen = new Set<string>()
   for (const pane of panes) {
-    const restored = restorePane(pane, now)
+    const restored = restorePane(pane, now, folderAllowed)
     if (!restored || seen.has(restored.rec.paneId)) continue
     seen.add(restored.rec.paneId)
     out.push(restored)
