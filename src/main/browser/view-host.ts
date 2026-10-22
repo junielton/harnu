@@ -13,10 +13,10 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  realpathSync,
-  rmSync
+  realpathSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { rawRm } from '../raw-fs'
 import { join as joinPath } from 'node:path'
 import {
   BrowserWindow,
@@ -349,7 +349,7 @@ export class BrowserViewHost implements BrowserReadHost {
       } catch {
         /* already done */
       }
-      rmSync(e.prompt.tempDir, { recursive: true, force: true })
+      void rawRm(e.prompt.tempDir, { recursive: true, force: true }).catch(() => undefined)
       e.prompt = null
     }
     this.arms.settle(paneId, {
@@ -703,7 +703,7 @@ export class BrowserViewHost implements BrowserReadHost {
     if (effect === 'none') return
     const alive = !e.wc.isDestroyed() && this.entries.has(e.paneId)
     const finish = (notice: BrowserNotice): void => {
-      rmSync(p.tempDir, { recursive: true, force: true })
+      void rawRm(p.tempDir, { recursive: true, force: true }).catch(() => undefined)
       if (e.prompt === p) e.prompt = null
       if (alive) this.transientNotice(e, notice)
     }
