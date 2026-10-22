@@ -8,7 +8,9 @@ import { describe, it, expect } from 'vitest'
 import { createBrowserRegistry, AGENT_INPUT_WINDOW_MS } from '../src/main/browser/registry'
 import {
   ACTIVATION_MAX_AGE_MS,
-  agentInputAnchor,
+  ACTIVATION_PADDING_MS,
+  agentInputWindowStart,
+  believableActivation,
   agentInputBlocksEmit
 } from '../src/main/browser/agent-input-gate'
 import { evaluateEmitGate } from '../src/main/browser/emit-gate'
@@ -119,32 +121,38 @@ describe('agentInputBlocksEmit', () => {
 })
 
 describe('which activation timestamp is believed (one rule for the emit and the pick)', () => {
-  it('uses the activation when it is recent and not in the future, else the call itself', () => {
-    expect(agentInputAnchor(10_000, 9_000)).toBe(9_000)
-    expect(agentInputAnchor(10_000, null)).toBe(10_000)
-    expect(agentInputAnchor(10_000, undefined)).toBe(10_000)
+  it('uses the activation when it is recent and not in the future, else nothing (the fallback window applies)', () => {
+    expect(believableActivation(10_000, 9_000)).toBe(9_000)
+    expect(believableActivation(10_000, null)).toBeNull()
+    expect(believableActivation(10_000, undefined)).toBeNull()
     // stale: older than an activation lives
-    expect(agentInputAnchor(20_000, 20_000 - ACTIVATION_MAX_AGE_MS - 1)).toBe(20_000)
-    expect(agentInputAnchor(20_000, 20_000 - ACTIVATION_MAX_AGE_MS)).toBe(
+    expect(believableActivation(20_000, 20_000 - ACTIVATION_MAX_AGE_MS - 1)).toBeNull()
+    expect(believableActivation(20_000, 20_000 - ACTIVATION_MAX_AGE_MS)).toBe(
       20_000 - ACTIVATION_MAX_AGE_MS
     )
     // future beyond the skew slack
-    expect(agentInputAnchor(10_000, 99_999)).toBe(10_000)
+    expect(believableActivation(10_000, 99_999)).toBeNull()
     // slightly ahead (clock skew between worlds): measured from the call, never from the future
-    expect(agentInputAnchor(10_000, 10_500)).toBe(10_000)
+    expect(believableActivation(10_000, 10_500)).toBe(10_000)
   })
 
-  it('a stale or future timestamp falls back to the window measured from the call', () => {
+  it('the window starts at the activation less a small padding, and at 5000 ms before the call without one', () => {
+    expect(agentInputWindowStart(10_000, 9_800)).toBe(9_800 - ACTIVATION_PADDING_MS)
+    expect(agentInputWindowStart(10_000, null)).toBe(10_000 - AGENT_INPUT_WINDOW_MS)
+    expect(agentInputWindowStart(10_000, 99_999)).toBe(10_000 - AGENT_INPUT_WINDOW_MS)
+  })
+
+  it('a stale or future timestamp falls back to the 5 s window measured from the call', () => {
     const { reg, set } = rig()
     reg.beginAgentInput('bp-1')
     set(18_000)
-    reg.endAgentInput('bp-1') // the run is 8_000..18_000 → the emit at 20_000 is 2 s after its end
+    reg.endAgentInput('bp-1') // the run is 10_000..18_000 → the emit at 20_000 is 2 s after its end
     expect(agentInputBlocksEmit(reg, 'bp-1', 20_000, 10_000)).toBe(true) // stale timestamp
     expect(agentInputBlocksEmit(reg, 'bp-1', 20_000, 99_999)).toBe(true) // future timestamp
   })
 })
 
-describe('the activation timestamp (F5, the setTimeout(emit, 1600) self-approval)', () => {
+describe('the activation timestamp is the primary anchor (F5 self-approval vs the operator’s own click)', () => {
   // The agent clicked at 8_400 (took 50 ms); the page's script emits at 10_000, while the CDP click's transient
   // activation is still alive. The preload says the activating input was at 8_410.
   function afterAgentClick() {
@@ -163,24 +171,41 @@ describe('the activation timestamp (F5, the setTimeout(emit, 1600) self-approval
     expect(agentInputBlocksEmit(reg, 'bp-1', 10_000, null)).toBe(true)
   })
 
-  it('refuses the operator’s own click inside the 5 s window after an agent input, allows it after', () => {
+  it('lets the operator’s OWN click through when the agent finished before it, with a believable timestamp', () => {
     const reg = afterAgentClick()
-    // spec §5.4: from 5000 ms before the activation. The operator clicked at 9_800, 1.35 s after the agent: refused.
-    expect(agentInputBlocksEmit(reg, 'bp-1', 10_000, 9_800)).toBe(true)
-    // …and one 5 s+ after the agent's last input is let through (the run ended at 8_450; 13_460 − 5000 > 8_450).
-    expect(agentInputBlocksEmit(reg, 'bp-1', 13_500, 13_460)).toBe(false)
+    // the operator clicked at 9_800, 1.35 s after the agent's last input: the primary rule lets it through…
+    expect(agentInputBlocksEmit(reg, 'bp-1', 10_000, 9_800)).toBe(false)
+    // …but without a timestamp the 5 s fallback cannot tell it from the agent's, so it refuses
+    expect(agentInputBlocksEmit(reg, 'bp-1', 10_000, null)).toBe(true)
   })
 
-  it('refuses when an agent run overlaps the activation, or is still open', () => {
+  it('refuses when an agent run overlaps the activation (inside the padding), or is still open', () => {
     const { reg, set } = rig()
-    set(9_790)
+    set(9_700)
     reg.beginAgentInput('bp-1')
-    set(9_900)
-    reg.endAgentInput('bp-1')
+    set(9_750)
+    reg.endAgentInput('bp-1') // ended 50 ms before the activation: inside the padding
     expect(agentInputBlocksEmit(reg, 'bp-1', 10_000, 9_800)).toBe(true)
-    reg.beginAgentInput('bp-1') // open since before the emit
+    // ended 200 ms before: outside it
+    const other = rig()
+    other.set(9_500)
+    other.reg.beginAgentInput('bp-1')
+    other.set(9_600)
+    other.reg.endAgentInput('bp-1')
+    expect(agentInputBlocksEmit(other.reg, 'bp-1', 10_000, 9_800)).toBe(false)
+    // a run still open since before the emit blocks it
+    reg.beginAgentInput('bp-1')
     set(10_500)
     expect(agentInputBlocksEmit(reg, 'bp-1', 10_500, 10_400)).toBe(true)
+  })
+
+  it('setTimeout(emit, 1600) after an agent click stays refused however the page timestamps it', () => {
+    const reg = afterAgentClick()
+    for (const activationAt of [8_400, 8_410, 8_449, null, 99_999]) {
+      expect(agentInputBlocksEmit(reg, 'bp-1', 10_030, activationAt), String(activationAt)).toBe(
+        true
+      )
+    }
   })
 })
 

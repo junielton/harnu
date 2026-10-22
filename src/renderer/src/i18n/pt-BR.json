@@ -4411,7 +4411,8 @@
       "dialog": "A página abriu um diálogo {dialog} e o Harnu o dispensou",
       "crashed": "A página parou de responder",
       "dismiss": "Dispensar",
-      "offline": "Bloqueado: este painel está offline e não pode abrir outros endereços. Ative Rede ativa para seguir links externos."
+      "offline": "Bloqueado: este painel está offline e não pode abrir outros endereços. Ative Rede ativa para seguir links externos.",
+      "agentInput": "Ignorado — uma sessão acabou de agir nesta página"
     },
     "zoom": {
       "in": "Aumentar zoom",

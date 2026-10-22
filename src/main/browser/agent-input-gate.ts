@@ -3,12 +3,13 @@
  * condition 2 and §8.6): one pure question over the registry's record of agent input runs.
  *
  * A page event (`harnu.emit`) or a comment pick is rejected when an agent INPUT verb (`click`, `type`, `fill`,
- * `press`, `upload`, `eval`) was running, or ran at any moment from {@link AGENT_INPUT_WINDOW_MS} before the user
- * activation the call rides on up to the call itself. Chromium keeps a user activation alive for about 5 s, so a
- * CDP click can be spent by a `setTimeout(emit, 1600)` the page armed itself; a shorter window would let that
- * through. The page's activation timestamp is used only when it is believable (see {@link ACTIVATION_MAX_AGE_MS});
- * without one the window is measured back from the call. Both call sites (`page-service.ts` for the emit,
- * `overlay-bridge.ts` for the pick) call {@link agentInputBlocksEmit}; the pure gates only receive its verdict.
+ * `press`, `upload`, `eval`) was running, or ran at any moment between the user activation it rides on (less
+ * {@link ACTIVATION_PADDING_MS}) and the call itself. The page's activation timestamp is the PRIMARY anchor: it is
+ * what tells the operator's own click from an agent click that a page script spends later (`setTimeout(emit, 1600)`
+ * lands on the agent's activation and overlaps the run). Only when the timestamp is missing or not believable (see
+ * {@link ACTIVATION_MAX_AGE_MS}) is the window measured back from the call by {@link AGENT_INPUT_WINDOW_MS}, as long as
+ * a user activation lives. Both call sites (`page-service.ts` for the emit, `overlay-bridge.ts` for the pick) call
+ * {@link agentInputBlocksEmit}; the pure gates only receive its verdict.
  */
 import { AGENT_INPUT_WINDOW_MS, type BrowserRegistry } from './registry'
 
@@ -18,14 +19,22 @@ export { AGENT_INPUT_WINDOW_MS }
 export const ACTIVATION_MAX_AGE_MS = 6000
 /** How far into the future a preload timestamp may be before it is not believed (clock skew between worlds). */
 export const ACTIVATION_FUTURE_SLACK_MS = 1000
+/** An agent run that ended this long before the activation still counts (event delivery is not instantaneous). */
+export const ACTIVATION_PADDING_MS = 100
 
-/** The moment the window is measured back from: the activation when it is believable, else the call itself. */
-export function agentInputAnchor(emitAt: number, activationAt?: number | null): number {
-  if (activationAt == null) return emitAt
+/** The activation to anchor on when it is believable, else `null` (use the fallback window from the call). */
+export function believableActivation(emitAt: number, activationAt?: number | null): number | null {
+  if (activationAt == null) return null
   const believable =
     activationAt <= emitAt + ACTIVATION_FUTURE_SLACK_MS &&
     emitAt - activationAt <= ACTIVATION_MAX_AGE_MS
-  return believable ? Math.min(activationAt, emitAt) : emitAt
+  return believable ? Math.min(activationAt, emitAt) : null
+}
+
+/** The start of the interval an agent input run must not overlap, for a call at `emitAt`. */
+export function agentInputWindowStart(emitAt: number, activationAt?: number | null): number {
+  const activation = believableActivation(emitAt, activationAt)
+  return activation === null ? emitAt - AGENT_INPUT_WINDOW_MS : activation - ACTIVATION_PADDING_MS
 }
 
 export function agentInputBlocksEmit(
@@ -34,6 +43,5 @@ export function agentInputBlocksEmit(
   emitAt: number,
   activationAt?: number | null
 ): boolean {
-  const anchor = agentInputAnchor(emitAt, activationAt)
-  return registry.agentInputOverlaps(paneId, anchor - AGENT_INPUT_WINDOW_MS, emitAt)
+  return registry.agentInputOverlaps(paneId, agentInputWindowStart(emitAt, activationAt), emitAt)
 }

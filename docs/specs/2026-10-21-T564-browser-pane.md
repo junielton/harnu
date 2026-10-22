@@ -486,15 +486,16 @@ live main-world reference.
   condition 4 above, which is stricter than Q8 and awaits the operator's confirmation. ADR-0022's revisit
   condition 5 ("no residual agent-input race") is therefore **not** met for pointer input.
 
-> **Amended 2026-10-22 (U7, T574) by the orchestrator; pending operator confirmation.** Condition 2, the pick gate of
-> §8.6 and the registry's `agentInputBlocksEmit` had grown into three implementations on three branches (U2's with a
-> 100 ms padding around the activation, U4's with the 5000 ms window, U6's own). There is now **one**:
-> `agent-input-gate.ts` `agentInputBlocksEmit(registry, paneId, emitAt, activationAt?)`, called by both `page-service`
-> (the emit) and `overlay-bridge` (the pick); the pure gates only honour its verdict. It follows this section: an agent
-> input run in flight, or at any moment from **5000 ms** before the activation, blocks. The preload's activation
-> timestamp is believed only when it is not in the future (beyond 1 s of clock skew) and not older than 6 s; otherwise the
-> window is measured back from the emit. The cost, accepted on purpose: the operator's own click within 5 s of an
-> agent input on that pane is dropped too, which U2's padding had let through.
+> **Amended 2026-10-22 (U7, T574; revised after the Delta 1 review) by the orchestrator; pending operator
+> confirmation.** Condition 2, the pick gate of §8.6 and the registry's `agentInputBlocksEmit` had grown into three
+> implementations on three branches. There is now **one**: `agent-input-gate.ts` `agentInputBlocksEmit(registry,
+paneId, emitAt, activationAt?)`, called by both `page-service` (the emit) and `overlay-bridge` (the pick); the pure
+> gates only honour its verdict. **The preload's activation timestamp is the primary anchor:** the call is refused when
+> any agent input run overlapped `[activation − 100 ms, call]` (a run still open counts), which is what tells the
+> operator's own click from an agent click a page script spends later (`setTimeout(emit, 1600)` lands on the agent's
+> activation and overlaps the run). The 5000 ms window of the paragraph above is the **fallback**, used only when the
+> timestamp is missing, in the future (beyond 1 s of skew) or older than 6 s. When a pick or an emit is refused for this
+> reason the pane shows a notice ("Ignored — a session just acted on this page"), not only an audit line.
 
 ## 6. MCP verbs
 

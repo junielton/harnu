@@ -1028,6 +1028,12 @@ export class BrowserViewHost implements BrowserReadHost {
     this.publish(e)
   }
 
+  /** Show a self-clearing notice on a pane from outside the host (a dropped page event or comment pick). */
+  noticeTransient(paneId: string, notice: BrowserNotice): void {
+    const e = this.entries.get(paneId)
+    if (e) this.transientNotice(e, notice)
+  }
+
   /** A notice that clears itself after a few seconds (design.md "Download prompt"). */
   private transientNotice(e: ViewEntry, notice: BrowserNotice): void {
     this.publish(e, { notice })

@@ -280,6 +280,7 @@ const noticeText = computed(() => {
   if (n.kind === 'download-cancelled') return t('browserPane.noticeDownloadCancelled')
   if (n.kind === 'download-failed') return t('browserPane.noticeDownloadFailed')
   if (n.kind === 'offline') return t('browserPane.notice.offline')
+  if (n.kind === 'agent-input') return t('browserPane.notice.agentInput')
   return t('browserPane.notice.crashed')
 })
 const noticeIsInfo = computed(() =>

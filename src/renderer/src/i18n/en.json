@@ -4411,7 +4411,8 @@
       "dialog": "The page opened a {dialog} dialog and Harnu dismissed it",
       "crashed": "The page stopped responding",
       "dismiss": "Dismiss",
-      "offline": "Blocked: this panel is offline, so it cannot open other addresses. Turn on Network on to follow links out."
+      "offline": "Blocked: this panel is offline, so it cannot open other addresses. Turn on Network on to follow links out.",
+      "agentInput": "Ignored — a session just acted on this page"
     },
     "zoom": {
       "in": "Zoom in",

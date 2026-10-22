@@ -480,6 +480,8 @@ export function createPageService(deps: PageServiceDeps): PageService {
     })
     if (!gate.ok) {
       audit(who.paneId, 'deny', `PAGE_EVENT_GATE_${gate.failed}`)
+      // Condition 2 is the only one the operator cannot see the cause of: say so in the pane (spec §5.4).
+      if (gate.failed === 2) deps.getHost().noticeTransient(who.paneId, { kind: 'agent-input' })
       return
     }
     const valid =

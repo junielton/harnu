@@ -249,6 +249,9 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
         result: `COMMENT_PICK_REFUSED: ${gate.reason}: pane ${who.paneId}`
       })
       pushGuest(who.paneId) // brings the guest's layers back
+      if (gate.reason === 'AGENT_INPUT') {
+        deps.getHost().noticeTransient(who.paneId, { kind: 'agent-input' })
+      }
       return
     }
     const picked = validatePicked(raw)

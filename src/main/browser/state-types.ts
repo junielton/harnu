@@ -23,6 +23,8 @@ export type BrowserNotice =
   | { kind: 'download-failed' }
   /** An offline page pane tried to leave (a link, a redirect, a popup): refused (T569 F2). */
   | { kind: 'offline' }
+  /** A page event or a comment pick was dropped because a session had just acted on the page (T574 F4). */
+  | { kind: 'agent-input' }
 
 /** A device the pane emulates; mirrors `DeviceSpec` in `src/shared/browser-emulation.ts` (a test pins the two). */
 export interface BrowserDeviceState {
