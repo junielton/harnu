@@ -111,6 +111,7 @@ import {
   HIDDEN_DISCARD_MS,
   buildDiscardState,
   createHiddenTracker,
+  discardBlockedBy,
   planDiscard,
   reviveOnShow,
   sanitizeScroll,
@@ -1235,8 +1236,19 @@ export class BrowserViewHost implements BrowserReadHost {
     const rec = this.deps.registry.get(paneId)
     if (!e || !rec || e.wc.isDestroyed()) return false
     const scroll = await this.readScroll(e)
-    // The pane may have been shown, driven or closed while the scroll was read.
+    // The pane may have been shown, driven or closed while the scroll was read (that read awaits the page): judge it
+    // again, with the same rule the sweep used, so a verb that started meanwhile, a pane the operator just showed or
+    // touched, a capture or a download never loses its page under it (spec §10.1).
     if (this.entries.get(paneId) !== e || e.wc.isDestroyed()) return false
+    if (
+      discardBlockedBy(
+        this.discardFacts(e),
+        this.deps.now(),
+        this.deps.discardMs ?? HIDDEN_DISCARD_MS
+      ) !== null
+    ) {
+      return false
+    }
     rec.discarded = buildDiscardState({
       reason,
       url: liveUrlOf(e.wc.getURL(), e.requestedUrl),

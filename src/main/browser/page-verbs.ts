@@ -28,21 +28,9 @@ import {
   type BrowserVerbDeps,
   type OpenArgs
 } from './verbs-core'
+import { PANEL_DIR, panelSlug } from './page-content-rules'
 
-export const PANEL_DIR = '.harnu/out/panels'
-
-/** A file name for a panel from the name the agent gave it: lowercase, `a-z0-9-`, never empty. */
-export function panelSlug(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
-    .replace(/-+$/, '')
-  return slug === '' ? 'panel' : slug
-}
+export { PANEL_DIR, panelSlug }
 
 function bytes(text: string): number {
   return Buffer.byteLength(text, 'utf8')

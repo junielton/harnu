@@ -338,7 +338,14 @@ export async function resolveBrowserGate(
     harnuPorts: collectHarnuPorts(mcpPort),
     trustedHosts: rec ? trustedHostsSync(rec.folder) : [],
     ...(op === 'browser_open' && folder !== undefined
-      ? { agentPaneIds: browserRegistry.agentPanesIn(folder).map((p) => p.paneId) }
+      ? {
+          agentPaneIds: browserRegistry.agentPanesIn(folder).map((p) => p.paneId),
+          pagePathsInFolder: browserRegistry
+            .list()
+            .filter((p) => p.folder === folder && p.pagePath)
+            .map((p) => p.pagePath as string),
+          openFolder: folder
+        }
       : {})
   })
 }

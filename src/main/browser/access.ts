@@ -14,6 +14,7 @@
 import { checkBrowserContent, type ContentRefusal } from './content-check'
 import type { OriginClass, OriginClassOptions } from './origin-class'
 import { MAX_AGENT_PANES_PER_FOLDER } from './registry'
+import { lexicalPageTarget } from './page-content-rules'
 
 /** Every `browser_*` op of the spec (§6.1); U1 wires `open`, `list`, `navigate` and `close`. */
 export const BROWSER_OPS = [
@@ -89,6 +90,18 @@ const SCRIPT_AND_INPUT_OPS: ReadonlySet<string> = new Set([
   'browser_press',
   'browser_upload'
 ])
+
+/**
+ * Whether this `browser_open` would need a NEW pane: a `url` always; a `path` / `html` form that names a file no pane
+ * of the folder shows yet. A form whose file cannot be told lexically is left to the verb (it is not refused here).
+ */
+function opensNewPane(input: BrowserGateInput): boolean {
+  const args = input.args ?? {}
+  if (args.url !== undefined) return true
+  if (input.openFolder === undefined) return false
+  const target = lexicalPageTarget(args, input.openFolder)
+  return target !== null && !(input.pagePathsInFolder ?? []).includes(target)
+}
 
 export function isBrowserOp(op: string): op is BrowserOp {
   return (BROWSER_OPS as readonly string[]).includes(op)
@@ -185,6 +198,13 @@ export interface BrowserGateInput {
    * any confirm. Absent = unknown (the verb judges it again).
    */
   agentPaneIds?: readonly string[]
+  /**
+   * `browser_open({ path | html })`: the folder-relative page files shown by panes of the target folder, so the plan can
+   * tell a call that REUSES one (never a new pane) from one that needs a fifth pane (T574 F6).
+   */
+  pagePathsInFolder?: readonly string[]
+  /** The target folder of that `browser_open`, to judge a `path` lexically. */
+  openFolder?: string
 }
 
 export type BrowserTier = 'free' | 'lease' | 'refused'
@@ -283,9 +303,9 @@ export function gateBrowserOpDetailed(
   // pane already showing that file, which only the verb can tell, so the plan judges the `url` form alone.
   if (
     op === 'browser_open' &&
-    input.args?.url !== undefined &&
     input.agentPaneIds !== undefined &&
-    input.agentPaneIds.length >= MAX_AGENT_PANES_PER_FOLDER
+    input.agentPaneIds.length >= MAX_AGENT_PANES_PER_FOLDER &&
+    opensNewPane(input)
   ) {
     return { reason: 'PANE_LIMIT', reusablePaneIds: [...input.agentPaneIds] }
   }

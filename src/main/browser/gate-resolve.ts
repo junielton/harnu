@@ -33,11 +33,15 @@ export function resolveGateInput(opts: {
   args?: Record<string, unknown>
   /** `browser_open`: the agent panes the target folder already holds (the plan-level `PANE_LIMIT`). */
   agentPaneIds?: readonly string[]
+  pagePathsInFolder?: readonly string[]
+  openFolder?: string
 }): GateResolution {
   const { rec, writesEnabled } = opts
   const args = {
     ...(opts.args !== undefined ? { args: opts.args } : {}),
-    ...(opts.agentPaneIds !== undefined ? { agentPaneIds: opts.agentPaneIds } : {})
+    ...(opts.agentPaneIds !== undefined ? { agentPaneIds: opts.agentPaneIds } : {}),
+    ...(opts.pagePathsInFolder !== undefined ? { pagePathsInFolder: opts.pagePathsInFolder } : {}),
+    ...(opts.openFolder !== undefined ? { openFolder: opts.openFolder } : {})
   }
   const classify = { harnuPorts: opts.harnuPorts, extraTrustedHosts: opts.trustedHosts }
   if (!rec)

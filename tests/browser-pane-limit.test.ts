@@ -8,6 +8,7 @@ import { planToolCall } from '../src/main/mcp/plan-tool-call'
 import { buildPlanInput } from '../src/main/mcp/plan-input'
 import { shapeDenial } from '../src/main/mcp/deny-hint'
 import { gateBrowserOpDetailed, type BrowserGateInput } from '../src/main/browser/access'
+import { lexicalPageTarget } from '../src/main/browser/page-content-rules'
 import { resolveGateInput } from '../src/main/browser/gate-resolve'
 import { MAX_AGENT_PANES_PER_FOLDER, createBrowserRegistry } from '../src/main/browser/registry'
 
@@ -64,11 +65,43 @@ describe.each([false, true])('browser_open at the cap, plan level, ask=%s', (ask
     expect(plan.auditRecord.result).not.toMatch(/PANE_LIMIT/)
   })
 
-  it('leaves the path and html forms to the verb, which may reuse a pane already showing the file', () => {
-    for (const args of [{ path: 'docs/a.html' }, { html: '<p>x</p>', name: 'p' }]) {
-      const plan = open(args, input(held(4)), ask)
-      expect(plan.auditRecord.result, JSON.stringify(args)).not.toMatch(/PANE_LIMIT/)
+  it('judges the path and html forms too: a file no pane shows is a fifth pane, one a pane shows is a reuse', () => {
+    const base = (pagePathsInFolder: string[]): BrowserGateInput => ({
+      pane: undefined,
+      writesEnabled: true,
+      agentPaneIds: held(4),
+      pagePathsInFolder,
+      openFolder: FOLDER
+    })
+    // a new file: refused at plan level, with the panes to reuse
+    for (const args of [{ path: 'docs/new.html' }, { html: '<p>x</p>', name: 'Fresh Board' }]) {
+      const plan = open(args, base([]), ask)
+      expect(plan.auditRecord.result, JSON.stringify(args)).toBe('PANE_LIMIT: bp-1,bp-2,bp-3,bp-4')
     }
+    // a file a pane already shows: the verb reuses that pane, never a new one
+    expect(
+      open({ path: 'docs/board.html' }, base(['docs/board.html']), ask).auditRecord.result
+    ).not.toMatch(/PANE_LIMIT/)
+    expect(
+      open({ path: `${FOLDER}/docs/board.html` }, base(['docs/board.html']), ask).auditRecord.result
+    ).not.toMatch(/PANE_LIMIT/)
+    expect(
+      open({ html: '<p>x</p>', name: 'My Board' }, base(['.harnu/out/panels/my-board.html']), ask)
+        .auditRecord.result
+    ).not.toMatch(/PANE_LIMIT/)
+  })
+
+  it('a path that cannot be told lexically is left to the verb', () => {
+    const base: BrowserGateInput = {
+      pane: undefined,
+      writesEnabled: true,
+      agentPaneIds: held(4),
+      pagePathsInFolder: [],
+      openFolder: FOLDER
+    }
+    expect(open({ path: '/elsewhere/x.html' }, base, ask).auditRecord.result).not.toMatch(
+      /PANE_LIMIT/
+    )
   })
 
   it('a content refusal still comes first, and the kill-switch before the cap', () => {
@@ -102,6 +135,23 @@ describe('the gate itself', () => {
       })
       expect(r?.reason).not.toBe('PANE_LIMIT')
     }
+  })
+})
+
+describe('lexicalPageTarget (pure)', () => {
+  it('names the file a call would show', () => {
+    expect(lexicalPageTarget({ path: 'docs/a.html' }, FOLDER)).toBe('docs/a.html')
+    expect(lexicalPageTarget({ path: `${FOLDER}/docs/../docs/a.html` }, FOLDER)).toBe('docs/a.html')
+    expect(lexicalPageTarget({ html: 'x', name: 'Status Board!' }, FOLDER)).toBe(
+      '.harnu/out/panels/status-board.html'
+    )
+  })
+
+  it('gives up on what needs the disk', () => {
+    expect(lexicalPageTarget({ path: '../x.html' }, FOLDER)).toBeNull()
+    expect(lexicalPageTarget({ path: '/etc/x.html' }, FOLDER)).toBeNull()
+    expect(lexicalPageTarget({ html: 'x' }, FOLDER)).toBeNull()
+    expect(lexicalPageTarget({}, FOLDER)).toBeNull()
   })
 })
 
