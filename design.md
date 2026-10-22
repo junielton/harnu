@@ -441,6 +441,7 @@ _another_ folder.
 | `play`                                   | Browser pane → Resume the agent after "Pause agent for 10 min" (chip)                                                                                                                                                                  |
 | `pause`                                  | Browser pane → "Pause agent for 10 min" (⋯ menu)                                                                                                                                                                                       |
 | `bug`                                    | Browser pane → Open DevTools (⋯ menu)                                                                                                                                                                                                  |
+| `shield-check`                           | Folder menu → Trusted dev hosts… (T571 U4, §6 "Trusted dev hosts dialog")                                                                                                                                                              |
 
 ### Novelty dot (on an icon button)
 
@@ -3827,7 +3828,7 @@ It shows for an agent-opened pane, and while paused or disconnected.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Agent-opened, owner known   | accent pill, "Connected to ‹session›", live word `driving` while a navigation verb runs (`reading` arrives with the read verbs of a later unit); **Disconnect** (`unplug`) at its right. The session name is the part that stays: "Connected to" is dropped first (below 300px) and the name truncates last; the hover title keeps the whole text  |
 | Agent-opened, owner unknown | "Connected to an agent"; same Disconnect                                                                                                                                                                                                                                                                                                           |
-| Operator-opened             | no chip (an agent has no standing on it before the lease of a later unit); no Disconnect                                                                                                                                                                                                                                                           |
+| Operator-opened             | no chip until the folder's read opt-in is on. Opt-in on, no lease: "An agent can read here" (no Disconnect: the reader is unidentifiable). A lease active: "An agent can drive here" (a lease records no grantee) with **Disconnect**. Same pill geometry as the agent chip                                                                        |
 | **Paused**                  | `--warning` 10% pill, `--warning` text, "Agent paused · 9:41" (m:ss, counts down each second), then a bordered **Resume** text button (`play` 10px + "Resume", 1px `--warning` 40% border). Below 300px the header has no room for the words, so the same chip (text, Resume, Disconnect) becomes a 22px strip under the header on `--warning` 10% |
 | **Disconnected**            | `--red-soft` pill, `--red` text, "Disconnected" (the mockup's red chip), no button. Permanent; the operator keeps using the pane                                                                                                                                                                                                                   |
 
@@ -3849,6 +3850,44 @@ timer (10 min by default, 30 at most), on pane close, on Disconnect and when the
 operator who wants it gone closes the pane or Disconnects the agent. At narrow widths (`@max-[300px]`) the word
 "Network" gives way and the dot plus the time remain; the countdown never hides. A pane with no active capture
 shows nothing here.
+
+**Lease confirm** (T571 U4, spec §7.1). A browser verb on a `lease` row (an `external` page, or any operator
+pane) raises the standard agent-action confirm (§6 "Agent-action confirm overlay"; same modal, same parked
+Inbox row) with this disclosure, all of it built by main from the pane registry and never from the agent's
+arguments:
+
+```
+An agent wants to drive a browser pane.
+
+Pane: ‹name› (‹short id›)          Opened by: operator | agent
+Site: ‹host› (external | local)     Folder: ‹~/path›
+
+The first thing it would do:
+  click  ‹role "name"›   |   type  (‹n› characters): "‹escaped preview›"   |   eval (‹n› characters): "‹escaped preview›"
+
+Allow lets agents drive this pane until it has had no agent write for 10 minutes. The permission belongs to
+the pane, not to the agent that asked. Nothing happens when you Allow: the agent is told to look at the page
+and call again. What an agent types runs as you on this page. Deny blocks writes to this pane for 5 minutes.
+```
+
+The disclosure is plain `--text` body copy in the existing overlay (no new colour). Page-authored text (an
+element's accessible name, an expression, typed text) is shown **escaped** (invisible and direction-changing
+characters spelled out, as the terminal confirm does) and cut at 200 characters with its true length stated.
+Copy lives in `$t('browserPane.leaseConfirm.*')`; the fixed sentence "What an agent types runs as you on this
+page." is mandatory.
+
+**Trusted dev hosts dialog** (T571 U4, spec §7.2). `TrustedHostsDialog.vue`: a non-destructive `Dialog` (z-60, peer
+via `ui.dialog === 'trustedHosts'` + `ui.folderActionPath`), anatomy and tokens of "Rename folder". Header: title
+"Trusted dev hosts" + folder basename (mono `--text-4`), `X`. Body: an UPPERCASE eyebrow "Always trusted" listing
+the built-ins as read-only mono rows (`localhost`, `*.localhost`, `127.0.0.0/8`, `[::1]`; `--text-3`, no remove
+button); an eyebrow "Added by you" with one mono row per host (`--text-2`, a trailing 12px `x` to remove, 18×18
+target) and, when empty, the muted line "None yet."; below, one single-line input (placeholder
+`app.test or *.test`) with an **Add** button (`plus`, ghost) — Enter adds. A rejected value shows an inline
+`--red` 11px message under the input (never a toast). Muted hint: "Pages on these hosts count as local: agents
+can drive them without asking. Only exact host names and one-level wildcards. A name that merely resolves to
+loopback is never trusted by itself." Footer: **Close** only (each add or remove saves at once, like the
+terminal toggle). Persisted per EXACT folder through `userProjectsSetBrowserTrustedHosts`; **no agent verb edits
+the list**.
 
 **Frozen frame** (spec §2.4). When any registered overlay rectangle intersects a visible pane's rectangle, or an
 overlay is `fullscreen`, or a splitter or sidebar drag starts, main captures the view as a JPEG, the renderer
@@ -5430,6 +5469,20 @@ Right-click menu on a project row (`FolderMenu.vue`). Items:
   toggle: a linked worktree does not pick up its main worktree's value, and
   the entry is shown for every folder, worktree or not, each independently
   toggleable. Non-destructive, no `window.confirm`. No sidebar indicator.
+
+- **Toggle "Let agents read browser panes I open"** (icon `globe`, T571 U4), right after the
+  terminal toggle — the per-FOLDER opt-in that lets an agent read (and, through a lease, drive)
+  the browser panes the operator opens here (an agent-opened pane never needs it). **Default
+  OFF.** Alternates like the items above:
+  - Disabled → **"Let agents read browser panes I open"** → turns it on.
+  - Enabled → **"Stop agents reading browser panes I open"** → back to the default (agents are
+    refused `BROWSER_READ_NOT_ENABLED`); it also ends every browser lease in the folder.
+
+  **Per EXACT folder, never inherited**, like the terminal toggle. Non-destructive, no
+  `window.confirm`.
+
+- **"Trusted dev hosts…"** (icon `shield-check`, T571 U4) — opens the Trusted dev hosts dialog
+  (§6 "Trusted dev hosts dialog"). Per EXACT folder. Shown for every folder.
 
 - Toggle Hide / Unhide, which **flips** according to the project's state:
   - Visible project → **Hide** (icon `eye-off`) → hides the project.
