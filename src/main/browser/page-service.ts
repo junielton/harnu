@@ -9,7 +9,7 @@ import { promises as fsp } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { ipcMain, net, protocol, type IpcMainEvent, type Session } from 'electron'
+import { ipcMain, net, type IpcMainEvent, type Session } from 'electron'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { atomicWriteFile } from '../mcp/atomic-write'
 import { appendAudit } from '../mcp/audit-log'
@@ -49,11 +49,13 @@ import type { BrowserRegistry } from './registry'
 import type { BrowserViewHost, PageHooks } from './view-host'
 import type { PageSeam } from './verbs-core'
 
-/** Must run before `app.whenReady()` (like `registerKokoroScheme`): the scheme is privileged per spec §4.1. */
-export function registerPageScheme(): void {
-  protocol.registerSchemesAsPrivileged([
-    { scheme: PAGE_SCHEME, privileges: PAGE_SCHEME_PRIVILEGES }
-  ])
+/**
+ * The privileged-scheme entry for `harnu-page:` (spec §4.1). It is NOT registered here: Electron keeps only the
+ * privileges of the last `registerSchemesAsPrivileged` call (a second call strips `secure` from the first, measured
+ * in the T569 probe), so `index.ts` passes this to the ONE call `registerKokoroScheme` makes, before ready.
+ */
+export function pageSchemeEntry(): Electron.CustomScheme {
+  return { scheme: PAGE_SCHEME, privileges: { ...PAGE_SCHEME_PRIVILEGES } }
 }
 
 const realFs: JailFs = {

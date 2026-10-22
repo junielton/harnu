@@ -342,7 +342,7 @@ function status(manifest: KokoroInstallManifest | null, installing: boolean): Ko
  * and module loading are allowed), fetch-capable and CORS-enabled — the page
  * itself is on `file://`, so every request into the mirror is cross-origin.
  */
-export function registerKokoroScheme(): void {
+export function registerKokoroScheme(extra: Electron.CustomScheme[] = []): void {
   const privileges = {
     standard: true,
     secure: true,
@@ -353,9 +353,12 @@ export function registerKokoroScheme(): void {
   }
   // The legacy scheme is registered too: installs made before the rename have it
   // baked into the mirrored entry file on disk.
+  // ONE call for every privileged scheme of the app: a second call to `registerSchemesAsPrivileged` makes the
+  // earlier scheme lose `secure` (measured in the T569 probe), so schemes from other modules ride in `extra`.
   protocol.registerSchemesAsPrivileged([
     { scheme: KOKORO_PROTOCOL, privileges },
-    { scheme: KOKORO_LEGACY_PROTOCOL, privileges }
+    { scheme: KOKORO_LEGACY_PROTOCOL, privileges },
+    ...extra
   ])
 }
 

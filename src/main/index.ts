@@ -60,7 +60,7 @@ import {
 } from './pty'
 import { registerBrowserIpc } from './browser/browser-ipc'
 import { bindBrowserBridge } from './browser/browser-service'
-import { registerPageScheme } from './browser/page-service'
+import { pageSchemeEntry } from './browser/page-service'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
 import {
@@ -439,9 +439,9 @@ migrateUserData({
 // privileged-scheme table once at startup, and the mirrored ES modules need
 // `standard` (root-relative imports) + `secure` (module/WASM loading) + CORS
 // (the page itself is on file://). The handler is installed in `whenReady`.
-registerKokoroScheme()
-// T564 U2: the `harnu-page://` scheme, privileged for the same reason and at the same point (before ready).
-registerPageScheme()
+// T564 U2: the `harnu-page://` scheme is privileged in the SAME call (a second call would strip `secure` from
+// the voice scheme), at the same point (before ready).
+registerKokoroScheme([pageSchemeEntry()])
 
 /**
  * Last-resort crash handlers. The whole point of Harnu is to keep many live
