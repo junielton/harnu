@@ -242,11 +242,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `default` alongside `blob`: the blob reporter alone prints nothing but
+      # "blob report written", and `coverage` is skipped when a shard fails, so
+      # without it a failing test's name and assertion would appear in no log.
       - name: Test (shard ${{ matrix.shard }}/${{ strategy.job-total }})
         run: >-
           npx vitest run
           --shard=${{ matrix.shard }}/${{ strategy.job-total }}
           --coverage
+          --reporter=default
           --reporter=blob
           --coverage.thresholds.lines=0
           --coverage.thresholds.statements=0
