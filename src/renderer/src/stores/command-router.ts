@@ -159,7 +159,7 @@ export interface CommandRouterActions {
     folder: string
     text: string
     source: 'page-event' | 'overlay'
-  }): { delivered: true; sessionId: string } | { parked: true; sessionId: string } | { held: true }
+  }): UserTurnResult | Promise<UserTurnResult>
   /**
    * T171 `close_file`: close the non-PTY, file/folder-backed pane (markdown /
    * memory / explorer) matching `path` in the TARGET worktree's stack.
@@ -346,7 +346,10 @@ export type DispatchResult =
   | ThrownError
 
 /** A bound dispatcher: maps `(command, payload)` to a {@link DispatchResult}. */
-export type CommandRouter = (command: string, payload: unknown) => DispatchResult
+export type CommandRouter = (
+  command: string,
+  payload: unknown
+) => DispatchResult | Promise<DispatchResult>
 
 const BAD_ARGS: CommandError = { error: 'BAD_ARGS' }
 
@@ -497,17 +500,29 @@ function handlePaneBrowser(actions: CommandRouterActions, payload: unknown): Dis
 }
 
 /** `session.userTurn` (T569 U2): see {@link CommandRouterActions.deliverUserTurn}. */
-function handleSessionUserTurn(actions: CommandRouterActions, payload: unknown): DispatchResult {
+function handleSessionUserTurn(
+  actions: CommandRouterActions,
+  payload: unknown
+): DispatchResult | Promise<DispatchResult> {
   if (!actions.deliverUserTurn) return { ok: false, error: 'deliverUserTurn not wired' }
   if (!isRecord(payload)) return BAD_ARGS
   if (!isNonEmptyString(payload.folder) || !isNonEmptyString(payload.text)) return BAD_ARGS
   const source = payload.source === 'overlay' ? 'overlay' : 'page-event'
-  return actions.deliverUserTurn({
+  const out = actions.deliverUserTurn({
     sessionId: isNonEmptyString(payload.sessionId) ? payload.sessionId : null,
     folder: payload.folder,
     text: payload.text,
     source
   })
+  // The paste can wait for the operator to stop typing: the ack is a promise then, and a rejection must still
+  // become an error ack, as a throw does for every other command.
+  if (out instanceof Promise) {
+    return out.catch((err): ThrownError => ({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err)
+    }))
+  }
+  return out
 }
 
 /**
@@ -697,7 +712,10 @@ function handleSessionWake(actions: CommandRouterActions, payload: unknown): Dis
  * @returns a bound {@link CommandRouter}.
  */
 export function makeCommandRouter(actions: CommandRouterActions): CommandRouter {
-  return function dispatch(command: string, payload: unknown): DispatchResult {
+  return function dispatch(
+    command: string,
+    payload: unknown
+  ): DispatchResult | Promise<DispatchResult> {
     try {
       switch (command) {
         case 'session.create':

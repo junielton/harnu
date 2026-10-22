@@ -18,9 +18,7 @@ export interface CommentPaneFacts {
   folder: string
   name: string
   ownerSessionId: string | null
-  paused: boolean
   disconnected: boolean
-  agentInput: { inFlight: boolean; at: number | null }
 }
 
 export interface CommentDeliveryDeps {
@@ -55,13 +53,7 @@ export function createCommentDelivery(deps: CommentDeliveryDeps): CommentDeliver
     async submit(input) {
       const pane = deps.pane(input.paneId)
       if (!pane) return { ok: false, error: 'PANE_NOT_FOUND' }
-      const gate = evaluateSubmitGate({
-        now: deps.now(),
-        agentInputInFlight: pane.agentInput.inFlight,
-        agentInputAt: pane.agentInput.at,
-        paused: pane.paused,
-        disconnected: pane.disconnected
-      })
+      const gate = evaluateSubmitGate({ disconnected: pane.disconnected })
       if (!gate.ok) {
         deps.audit({
           paneId: input.paneId,

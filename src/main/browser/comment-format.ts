@@ -23,7 +23,7 @@ import {
   STYLE_VALUE_MAX_CHARS,
   URL_MAX_CHARS
 } from '../../shared/browser-comment'
-import { sanitizeLabel, sanitizeUntrusted } from './emit-gate'
+import { foldLookalikes, sanitizeLabel, sanitizeUntrusted, stripInvisible } from './emit-gate'
 
 export const COMMENT_MARKER = '[harnu-comment]'
 export const COMMENT_DATA_CLOSE = '--- end of page data ---'
@@ -54,19 +54,16 @@ export interface CommentMessage {
   comments: CommentEntry[]
 }
 
-const CONTROL_AND_BIDI = new RegExp(
-  // C0 (minus \n and \t), DEL, C1, the bidi marks/embeddings/overrides/isolates, zero-width characters and BOM.
-  // eslint-disable-next-line no-control-regex
-  '[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff]',
-  'g'
-)
-
 /** One line of page text, safe inside the data block, cut to `max` characters. */
 export function untrustedLine(text: string, max: number): string {
-  const oneLine = text.replace(/\s+/g, ' ').trim()
-  return sanitizeUntrusted(oneLine, max)
+  // Fold and strip FIRST, so every check below sees the characters a reader (or a model) would see.
+  const oneLine = foldLookalikes(stripInvisible(text)).replace(/\s+/g, ' ').trim()
+  // Delimiter runs and the message marker are escaped here, before `sanitizeUntrusted` looks at line starts, so a
+  // marker at the start of a value is escaped once (it used to be escaped twice).
+  const escaped = oneLine
     .replace(/-{3,}/g, (run) => run.split('').join('\\'))
     .replace(/\[harnu-/gi, '\\[harnu-')
+  return sanitizeUntrusted(escaped, max)
 }
 
 /**
@@ -75,7 +72,7 @@ export function untrustedLine(text: string, max: number): string {
  * or as the data-block delimiters. It is NOT fenced: it is the request.
  */
 export function operatorText(text: string): string {
-  const clean = text.replace(/\r\n?/g, '\n').replace(CONTROL_AND_BIDI, '').trim()
+  const clean = stripInvisible(text.replace(/\r\n?/g, '\n')).trim()
   const capped = Array.from(clean).slice(0, COMMENT_MAX_CHARS).join('')
   return capped.replace(/"/g, '\\"').replace(/\n/g, '\n    ')
 }

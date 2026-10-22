@@ -12,7 +12,7 @@ const NOW = 100_000
 const calm = { now: NOW, agentInputInFlight: false, agentInputAt: null }
 
 describe('evaluatePickGate', () => {
-  const ok = { ...calm, overlayActive: true }
+  const ok = { ...calm, overlayActive: true, disconnected: false }
   it('accepts a pick with no agent input around', () => {
     expect(evaluatePickGate(ok)).toEqual({ ok: true })
   })
@@ -38,7 +38,7 @@ describe('evaluatePickGate', () => {
 })
 
 describe('evaluatePickGate with an activation time', () => {
-  const ok = { ...calm, overlayActive: true }
+  const ok = { ...calm, overlayActive: true, disconnected: false }
   it('refuses a pick whose click an agent input run overlapped', () => {
     const at = NOW - 200
     const intervals = [{ start: NOW - 300, end: NOW - 150 }]
@@ -60,29 +60,31 @@ describe('evaluatePickGate with an activation time', () => {
   })
 })
 
-describe('evaluateSubmitGate', () => {
-  const ok = { ...calm, paused: false, disconnected: false }
-  it('passes a calm pane', () => {
-    expect(evaluateSubmitGate(ok)).toEqual({ ok: true })
+describe('evaluatePickGate on a disconnected pane', () => {
+  it('refuses: the operator cut this pane off from agents, so it takes no comments', () => {
+    expect(evaluatePickGate({ ...calm, overlayActive: true, disconnected: true })).toEqual({
+      ok: false,
+      reason: 'DISCONNECTED'
+    })
   })
-  it('refuses a disconnected pane first, then a paused one, then recent agent input', () => {
-    expect(
-      evaluateSubmitGate({ ...ok, disconnected: true, paused: true, agentInputInFlight: true })
-    ).toEqual({
+})
+
+describe('evaluateSubmitGate', () => {
+  it('passes a pane that is connected', () => {
+    expect(evaluateSubmitGate({ disconnected: false })).toEqual({ ok: true })
+  })
+  it('refuses only a DISCONNECTED pane', () => {
+    expect(evaluateSubmitGate({ disconnected: true })).toEqual({
       ok: false,
       error: 'BROWSER_DISCONNECTED'
     })
-    expect(evaluateSubmitGate({ ...ok, paused: true, agentInputInFlight: true })).toEqual({
-      ok: false,
-      error: 'BROWSER_PAUSED'
-    })
-    expect(evaluateSubmitGate({ ...ok, agentInputAt: NOW - 1000 })).toEqual({
-      ok: false,
-      error: 'COMMENT_AGENT_INPUT'
-    })
-    expect(evaluateSubmitGate({ ...ok, agentInputAt: NOW - AGENT_INPUT_WINDOW_MS })).toEqual({
-      ok: true
-    })
+  })
+  it('has no agent-input window and no pause check: the composer is renderer code an agent cannot drive', () => {
+    // The gate's input is the disconnected flag alone: extra facts (a pause, a verb in flight) change nothing.
+    const gate = evaluateSubmitGate as (i: Record<string, unknown>) => unknown
+    expect(
+      gate({ disconnected: false, paused: true, agentInputInFlight: true, agentInputAt: NOW - 10 })
+    ).toEqual({ ok: true })
   })
 })
 

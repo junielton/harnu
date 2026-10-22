@@ -22,6 +22,10 @@ export function isOperatorKeystroke(data: string): boolean {
     return false
   if (/^\x1b\](?:.|\n)*?(?:\x07|\x1b\\)$/.test(data)) return false
   if (/^\x1bP(?:.|\n)*?\x1b\\$/.test(data)) return false
+  // Mouse reports (xterm mouse tracking): SGR `ESC [ < b ; x ; y M|m` and the legacy `ESC [ M b x y`. Moving or
+  // scrolling the pointer over a terminal that asked for them is not typing.
+  if (/^(?:\x1b\[<\d+;\d+;\d+[Mm])+$/.test(data)) return false
+  if (/^(?:\x1b\[M[\s\S]{3})+$/.test(data)) return false
   /* eslint-enable no-control-regex */
   return true
 }
@@ -57,22 +61,34 @@ export interface QuietPasteDeps {
   tracker: OperatorInputTracker
   now(): number
   setTimer(fn: () => void, ms: number): unknown
-  paste(ptyId: string, text: string): void
+  /** Paste into the terminal. `false` = the terminal is gone (it died or was parked during the wait). */
+  paste(ptyId: string, text: string): boolean
 }
 
-/** Paste `text` into `ptyId` once the operator has been quiet in it for the whole window (or the cap hits). */
-export function pasteWhenOperatorQuiet(deps: QuietPasteDeps, ptyId: string, text: string): void {
+/**
+ * Paste `text` into `ptyId` once the operator has been quiet in it for the whole window (or the cap hits).
+ * Resolves with what `paste` answered, AFTER it ran: a caller that must not claim delivery before the text really
+ * went in (a comment is kept as a draft until then) waits for this. A terminal that died during the wait
+ * resolves `false`, so nothing is lost.
+ */
+export function pasteWhenOperatorQuiet(
+  deps: QuietPasteDeps,
+  ptyId: string,
+  text: string
+): Promise<boolean> {
   const startedAt = deps.now()
-  const attempt = (): void => {
-    const wait = quietDelayMs(deps.tracker.lastAt(ptyId), deps.now())
-    if (wait === 0 || deps.now() - startedAt >= OPERATOR_QUIET_CAP_MS) {
-      deps.paste(ptyId, text)
-      return
+  return new Promise<boolean>((resolve) => {
+    const attempt = (): void => {
+      const wait = quietDelayMs(deps.tracker.lastAt(ptyId), deps.now())
+      if (wait === 0 || deps.now() - startedAt >= OPERATOR_QUIET_CAP_MS) {
+        resolve(deps.paste(ptyId, text))
+        return
+      }
+      // +10 ms so the re-check lands just AFTER the window ends rather than on its edge.
+      deps.setTimer(attempt, wait + 10)
     }
-    // +10 ms so the re-check lands just AFTER the window ends rather than on its edge.
-    deps.setTimer(attempt, wait + 10)
-  }
-  attempt()
+    attempt()
+  })
 }
 
 /** The app-wide tracker `TerminalPane` feeds and `command-dispatch` reads. */

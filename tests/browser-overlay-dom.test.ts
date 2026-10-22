@@ -156,34 +156,37 @@ describe('component discovery', () => {
     expect(normalizeComponentSource('')).toBeNull()
     expect(normalizeComponentSource({ file: 'x' })).toBeNull()
   })
-  it('falls back to a bounded page-world probe, tags the node only during it, and cleans up', async () => {
+  it('falls back to a bounded page-world probe by POINT and never writes onto the page node', async () => {
     const d = page('<div id="n">x</div>')
     const el = d.querySelector('#n')!
-    let tagged = false
+    const seenAttrs: string[][] = []
+    const observer = new MutationObserver(() => undefined)
+    observer.observe(el, { attributes: true })
+    let code = ''
     const out = await discoverComponent(
       el,
       {
-        executeJavaScript: async (code) => {
-          tagged = el.getAttribute('data-harnu-probe') === 'nonce1' && code.includes('nonce1')
+        executeJavaScript: async (c) => {
+          code = c
+          seenAttrs.push(Array.from(el.attributes).map((a) => a.name))
           return 'src/Dev.svelte:9'
         }
       },
-      'nonce1'
+      { x: 12.4, y: 30.6 }
     )
     expect(out).toBe('src/Dev.svelte:9')
-    expect(tagged).toBe(true)
-    expect(el.hasAttribute('data-harnu-probe')).toBe(false)
+    // The probe addresses the node by where it was clicked, so the page node carries nothing at any moment.
+    expect(code).toContain('elementsFromPoint(12, 31)')
+    expect(seenAttrs).toEqual([['id']])
+    expect(observer.takeRecords()).toEqual([])
+    observer.disconnect()
   })
   it('gives up silently on a probe that hangs or throws', async () => {
     const d = page('<div id="n">x</div>')
     const el = d.querySelector('#n')!
+    const pt = { x: 1, y: 1 }
     expect(
-      await discoverComponent(
-        el,
-        { executeJavaScript: () => new Promise(() => undefined) },
-        'n',
-        20
-      )
+      await discoverComponent(el, { executeJavaScript: () => new Promise(() => undefined) }, pt, 20)
     ).toBeNull()
     expect(
       await discoverComponent(
@@ -193,10 +196,9 @@ describe('component discovery', () => {
             throw new Error('x')
           }
         },
-        'n'
+        pt
       )
     ).toBeNull()
-    expect(el.hasAttribute('data-harnu-probe')).toBe(false)
   })
   it('prefers the DOM attribute and does not run the probe at all', async () => {
     const d = page('<div data-v-inspector="src/A.vue:1:1"><i id="n"></i></div>')
@@ -204,17 +206,19 @@ describe('component discovery', () => {
     const out = await discoverComponent(
       d.querySelector('#n')!,
       { executeJavaScript: async () => ((ran = true), null) },
-      'n'
+      { x: 1, y: 1 }
     )
     expect(out).toBe('src/A.vue:1')
     expect(ran).toBe(false)
   })
   it('the probe source reads the three framework markers', () => {
-    const src = probeSource('abc')
+    const src = probeSource(10, 20)
     expect(src).toContain('__vueParentComponent')
     expect(src).toContain('__reactFiber$')
     expect(src).toContain('_debugSource')
     expect(src).toContain('__svelte_meta')
-    expect(src).toContain('abc')
+    expect(src).toContain('elementsFromPoint(10, 20)')
+    expect(src).toContain('data-harnu-overlay')
+    expect(src).not.toContain('data-harnu-probe')
   })
 })

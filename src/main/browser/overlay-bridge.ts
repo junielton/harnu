@@ -56,6 +56,8 @@ export interface AppChannels {
 
 export interface OverlayBridge {
   registerIpc(app: AppChannels): void
+  /** The operator disconnected the agent from a pane: picking ends there (comments are off on it). */
+  onDisconnected(paneId: string): void
   /** A pane closed: forget its pins and overlay state. */
   forget(paneId: string): void
   /** Test and live-proof hook. */
@@ -65,6 +67,7 @@ export interface OverlayBridge {
 interface PaneRuntime {
   active: boolean
   hint: string
+  exitHint: string
   theme: OverlayTheme
   openPinId: string | null
 }
@@ -84,7 +87,7 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
   const rt = (paneId: string): PaneRuntime => {
     let r = runtime.get(paneId)
     if (!r) {
-      r = { active: false, hint: '', theme: DEFAULT_OVERLAY_THEME, openPinId: null }
+      r = { active: false, hint: '', exitHint: '', theme: DEFAULT_OVERLAY_THEME, openPinId: null }
       runtime.set(paneId, r)
     }
     return r
@@ -100,9 +103,7 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
         folder: rec.folder,
         name: rec.name,
         ownerSessionId: rec.ownerSessionId,
-        paused: deps.access.isPaused(paneId),
-        disconnected: deps.access.isDisconnected(paneId),
-        agentInput: deps.registry.agentInput(paneId)
+        disconnected: deps.access.isDisconnected(paneId)
       }
     },
     delivery: {
@@ -129,7 +130,13 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
 
   function guestState(paneId: string, url: string): OverlayGuestState {
     const r = rt(paneId)
-    return { active: r.active, hint: r.hint, theme: r.theme, pins: pins.guestPins(paneId, url) }
+    return {
+      active: r.active,
+      hint: r.hint,
+      exitHint: r.exitHint,
+      theme: r.theme,
+      pins: pins.guestPins(paneId, url)
+    }
   }
 
   function pushGuest(paneId: string): void {
@@ -201,6 +208,7 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
     const gate = evaluatePickGate({
       now: deps.now(),
       overlayActive: r.active,
+      disconnected: deps.access.isDisconnected(who.paneId),
       agentInputInFlight: input.inFlight,
       agentInputAt: input.at,
       agentInputIntervals: input.intervals,
@@ -275,8 +283,11 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
         return false
       }
       const r = rt(payload.paneId)
+      // A disconnected pane takes no comments: it cannot be switched on (the app disables the button up front).
+      if (payload.active === true && deps.access.isDisconnected(payload.paneId)) return false
       r.active = payload.active === true
       if (typeof payload.hint === 'string') r.hint = payload.hint.slice(0, 120)
+      if (typeof payload.exitHint === 'string') r.exitHint = payload.exitHint.slice(0, 40)
       if (
         isRecord(payload.theme) &&
         isSafeColor(payload.theme.accent) &&
@@ -363,6 +374,12 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
       registered = true
       registerGuestChannels()
       registerAppChannels(app)
+    },
+    onDisconnected(paneId) {
+      const r = runtime.get(paneId)
+      if (!r || !r.active) return
+      r.active = false
+      pushBoth(paneId)
     },
     forget(paneId) {
       pins.forget(paneId)

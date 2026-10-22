@@ -182,11 +182,30 @@ export function createEmitRateLimiter(now: () => number): EmitRateLimiter {
 /* ---- The message ---------------------------------------------------------------------------------- */
 
 const BIDI_AND_CONTROL = new RegExp(
-  // C0 (minus \n and \t), DEL, C1, the bidi marks/embeddings/overrides/isolates, zero-width characters and BOM.
+  // C0 (minus \n and \t), DEL, C1, the soft hyphen, the Arabic letter mark, the line and paragraph separators,
+  // zero-width and word-joiner characters (U+200B-200F, U+2060-2064), the bidi embeddings / overrides / isolates,
+  // the Mongolian vowel separator, the BOM and the Unicode TAG block (U+E0000-E007F, the "invisible ASCII" a hostile
+  // page can hide a whole instruction in).
   // eslint-disable-next-line no-control-regex
-  '[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff]',
-  'g'
+  '[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufeff\\u{e0000}-\\u{e007f}]',
+  'gu'
 )
+
+/** Remove every invisible, control or direction-changing character (see {@link BIDI_AND_CONTROL}). */
+export function stripInvisible(text: string): string {
+  return text.replace(BIDI_AND_CONTROL, '')
+}
+
+/**
+ * Look-alikes of the two characters the message's fences are made of. A hyphen-like dash or a backtick-like mark
+ * is folded to the ASCII character BEFORE the `---` / fence checks, so `———` or `｀｀｀` cannot slip past them.
+ */
+const DASH_LOOKALIKES = /[\u2010-\u2015\u2212\uff0d\ufe58\ufe63]/g
+const BACKTICK_LOOKALIKES = /[\uff40\u02cb\u2035\u1fef]/g
+
+export function foldLookalikes(text: string): string {
+  return text.replace(DASH_LOOKALIKES, '-').replace(BACKTICK_LOOKALIKES, '`')
+}
 
 /** Cut `text` to `max` characters (never half a surrogate pair) and mark the cut. */
 function truncate(text: string, max: number): string {
@@ -201,7 +220,7 @@ function truncate(text: string, max: number): string {
  * second message. Truncated to `max` characters.
  */
 export function sanitizeUntrusted(text: string, max: number): string {
-  return truncate(text.replace(BIDI_AND_CONTROL, ''), max)
+  return truncate(foldLookalikes(stripInvisible(text)), max)
     .replace(/`/g, '\\`')
     .split('\n')
     .map((line) => (/^\s*(---|\[harnu-)/.test(line) ? `\\${line}` : line))

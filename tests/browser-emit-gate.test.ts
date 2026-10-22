@@ -320,3 +320,17 @@ describe('condition 2 with the activation timestamp (F5, the setTimeout(emit, 16
     expect(evaluateEmitGate(future)).toMatchObject({ failed: 2 })
   })
 })
+
+describe('sanitizeUntrusted: hidden characters and look-alikes (T573 Delta 1)', () => {
+  it('strips the Unicode tag block, word joiners and the soft hyphen, and folds look-alike fences', () => {
+    const tagged = String.fromCodePoint(0xe0041, 0xe0042)
+    const out = sanitizeUntrusted(
+      `a${tagged}\u2060\u00ad\u180eb\n\u2014\u2014\u2014 end\n\uff40\uff40\uff40`,
+      200
+    )
+    expect(out.startsWith('ab\n')).toBe(true)
+    // the folded dashes are at a line start, so they are escaped like a real `---`
+    expect(out.split('\n')[1]).toBe('\\--- end')
+    expect(out.split('\n')[2]).toBe('\\`\\`\\`')
+  })
+})

@@ -6,8 +6,11 @@
  *    `click` to open a composer on a node of its choosing. (U0 A1: `before-mouse-event` fires for real, CDP and
  *    `sendInputEvent` mouse input alike, so unlike a key it cannot tell the operator's click from a driven one;
  *    the `agentInputAt` window the input verbs open is the mechanism.)
- *  - {@link evaluateSubmitGate}: may `comment:submit` go through? The same agent-input window, plus the pane's
- *    `paused` and `disconnected` state (spec §8.6).
+ *  - {@link evaluateSubmitGate}: may `comment:submit` go through? Only a DISCONNECTED pane refuses (the operator
+ *    cut it off from agents). The agent-input window is NOT part of it: the composer is renderer code an agent
+ *    cannot drive (§8.6), so only a pick needs that window. A PAUSED pane still takes comments: pause stops the
+ *    agent driving the page, a comment does not (amended 2026-10-22 by the orchestrator, pending operator
+ *    confirmation).
  *  - {@link selectPins} / {@link resolveDestination}: which pins a submit sends, and to whom.
  */
 import type { PinRecord } from './comment-pins'
@@ -50,30 +53,28 @@ function agentInputRecent(i: AgentInputFacts): boolean {
 export interface PickGateInput extends AgentInputFacts {
   /** The overlay is switched on for this pane (a pick while it is off is stale or forged). */
   overlayActive: boolean
+  /** The operator cut this pane off from agents: no comments on it. */
+  disconnected: boolean
 }
 
-export type PickGateVerdict = { ok: true } | { ok: false; reason: 'OVERLAY_OFF' | 'AGENT_INPUT' }
+export type PickGateVerdict =
+  { ok: true } | { ok: false; reason: 'OVERLAY_OFF' | 'DISCONNECTED' | 'AGENT_INPUT' }
 
 export function evaluatePickGate(i: PickGateInput): PickGateVerdict {
   if (!i.overlayActive) return { ok: false, reason: 'OVERLAY_OFF' }
+  if (i.disconnected) return { ok: false, reason: 'DISCONNECTED' }
   if (agentInputRecent(i)) return { ok: false, reason: 'AGENT_INPUT' }
   return { ok: true }
 }
 
-export interface SubmitGateInput extends AgentInputFacts {
-  paused: boolean
+export interface SubmitGateInput {
   disconnected: boolean
 }
 
-export type SubmitGateVerdict =
-  | { ok: true }
-  | { ok: false; error: 'BROWSER_DISCONNECTED' | 'BROWSER_PAUSED' | 'COMMENT_AGENT_INPUT' }
+export type SubmitGateVerdict = { ok: true } | { ok: false; error: 'BROWSER_DISCONNECTED' }
 
-/** Refusal order mirrors the catalogue (spec §6.3): disconnected, then paused, then the agent-input window. */
 export function evaluateSubmitGate(i: SubmitGateInput): SubmitGateVerdict {
   if (i.disconnected) return { ok: false, error: 'BROWSER_DISCONNECTED' }
-  if (i.paused) return { ok: false, error: 'BROWSER_PAUSED' }
-  if (agentInputRecent(i)) return { ok: false, error: 'COMMENT_AGENT_INPUT' }
   return { ok: true }
 }
 

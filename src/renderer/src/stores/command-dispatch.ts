@@ -28,7 +28,8 @@ import { useSessionsStore } from './sessions'
 import { useHelpersStore } from './helpers'
 import { useNotificationsStore } from './notifications'
 import { useUiStore } from './ui'
-import { makeCommandRouter, type CommandRouterActions } from './command-router'
+import { makeCommandRouter, type CommandRouterActions, type UserTurnResult } from './command-router'
+import { sessionTitle } from '../lib/session-label'
 import { speech } from '../lib/speech'
 import { livePtyIdOf } from '../lib/live-pty-resolver'
 import { pasteAndSubmit } from '../components/prompt-inject'
@@ -188,31 +189,43 @@ export function buildDispatchActions(): CommandRouterActions {
       }
       const ptyId = livePtyIdOf(target)
       if (!ptyId) return { parked: true, sessionId: target }
-      // Never interleave with the operator's own keystrokes in that terminal (spec §8.7 step 5): the paste
-      // waits until they have been quiet for 1500 ms. A busy session still takes it between turns.
-      pasteWhenOperatorQuiet(
+      // Never interleave with the operator's own keystrokes in that terminal (spec §8.7 step 5): the paste waits
+      // until they have been quiet for 1500 ms. The ack comes AFTER the paste really happened, so a comment stays
+      // a draft until then; a terminal that died during the wait answers `parked` and main wakes the session.
+      const title = (() => {
+        const found = sessions.findSessionById(target)
+        return found ? sessionTitle(found, sessions.allSessions, i18n.global.t) : ''
+      })()
+      return pasteWhenOperatorQuiet(
         {
           tracker: operatorInput,
           now: () => Date.now(),
           setTimer: (fn, ms) => setTimeout(fn, ms),
-          paste: (id, body) => pasteAndSubmit(id, body)
+          paste: (id, body) => {
+            if (livePtyIdOf(target) !== id) return false
+            pasteAndSubmit(id, body)
+            return true
+          }
         },
         ptyId,
         text
-      )
-      notifications.notify({
-        ts: Date.now(),
-        source: 'agent',
-        kind: 'info',
-        title: i18n.global.t(
-          source === 'page-event'
-            ? 'browserPane.pageEvent.sent'
-            : 'browserPane.pageEvent.sentComment'
-        ),
-        sessionId: target,
-        folderPath: folder
+      ).then((pasted): UserTurnResult => {
+        if (!pasted) return { parked: true, sessionId: target }
+        notifications.notify({
+          ts: Date.now(),
+          source: 'agent',
+          kind: 'info',
+          title:
+            source === 'page-event'
+              ? i18n.global.t('browserPane.pageEvent.sent')
+              : i18n.global.t('browserPane.pageEvent.sentComment', {
+                  session: title || target.slice(0, 8)
+                }),
+          sessionId: target,
+          folderPath: folder
+        })
+        return { delivered: true, sessionId: target }
       })
-      return { delivered: true, sessionId: target }
     },
     closeHelperByPath: (worktreePath, path) => helpers.closeHelperByPath(worktreePath, path),
     closeHelperById: (worktreePath, paneId) => helpers.closeHelperById(worktreePath, paneId),
@@ -307,19 +320,27 @@ export function wireCommandDispatch(): () => void {
   const off = api.onRendererCommand((msg) => {
     if (!msg || typeof msg !== 'object') return
     const { requestId, command, payload } = msg as RendererCommandMessage
-    let result: unknown
+    const ack = (result: unknown): void => {
+      try {
+        api.rendererCommandAck?.(requestId, result)
+      } catch {
+        // Bridge torn down mid-flight (window closing) — drop the ack; the
+        // dispatch deadline on the main side evicts the request.
+      }
+    }
+    const failed = (err: unknown): { ok: false; error: string } => ({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err)
+    })
     try {
-      result = dispatch(command, payload)
+      const result = dispatch(command, payload)
+      // `session.userTurn` may wait for the operator to stop typing before it pastes: its ack is a promise.
+      if (result instanceof Promise) result.then(ack, (err) => ack(failed(err)))
+      else ack(result)
     } catch (err) {
       // The router already catches thrown actions; this guards the marshaling
       // itself so a malformed message never escapes the IPC callback.
-      result = { ok: false, error: err instanceof Error ? err.message : String(err) }
-    }
-    try {
-      api.rendererCommandAck?.(requestId, result)
-    } catch {
-      // Bridge torn down mid-flight (window closing) — drop the ack; the
-      // dispatch deadline on the main side evicts the request.
+      ack(failed(err))
     }
   })
 

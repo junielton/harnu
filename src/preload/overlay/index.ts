@@ -69,6 +69,8 @@ const CONSUMED_HOVER = [
   'mouseout'
 ]
 
+const CONSUMED_TOUCH = ['touchstart', 'touchmove', 'touchend', 'touchcancel']
+
 /** The layers come back by themselves if main never answers a pick. */
 const CAPTURE_HIDE_SAFETY_MS = 1500
 const RECT_REPORT_DEBOUNCE_MS = 500
@@ -154,7 +156,11 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     layers.setHidden(false)
   }
 
-  async function pick(el: Element, activationAt: number | null): Promise<void> {
+  async function pick(
+    el: Element,
+    activationAt: number | null,
+    point: { x: number; y: number }
+  ): Promise<void> {
     if (picking) return
     picking = true
     const rect = el.getBoundingClientRect()
@@ -163,8 +169,7 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     layers.setOutline(null)
     layers.setHidden(true)
     safety = setTimeout(unhide, CAPTURE_HIDE_SAFETY_MS)
-    const nonce = Math.random().toString(36).slice(2, 12)
-    const [component] = await Promise.all([discoverComponent(el, env.world, nonce), nextPaint()])
+    const [component] = await Promise.all([discoverComponent(el, env.world, point), nextPaint()])
     const payload: PickedPayload = {
       selector: buildSelector(el, doc),
       tag: el.tagName.toLowerCase(),
@@ -204,7 +209,8 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
         rect = { x: r.left, y: r.top, width: r.width, height: r.height }
         now.set(pin.id, rect)
       }
-      const x = Math.min(Math.max(rect.x - 6, 0), Math.max(0, win.innerWidth - 22))
+      // At the node's top-right corner, as in the approved mockup: 4 px in from its right edge, 14 px above it.
+      const x = Math.min(Math.max(rect.x + rect.width - 4, 0), Math.max(0, win.innerWidth - 22))
       const y = Math.min(Math.max(rect.y - 14, 0), Math.max(0, win.innerHeight - 22))
       placements.push({ id: pin.id, n: pin.n, state: pin.state, detached: el === null, x, y })
     }
@@ -246,6 +252,7 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
   /* ---- State from main -------------------------------------------------------------------------- */
 
   let hint = ''
+  let exitHint = ''
   let theme: OverlayTheme | null = null
 
   /**
@@ -256,7 +263,7 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     if (!layers.ensure()) return
     if (theme) layers.setTheme(theme)
     syncObserver()
-    layers.setHint(active, hint)
+    layers.setHint(active, hint, exitHint)
     if (!active) layers.setOutline(null)
     layoutPins()
   }
@@ -269,13 +276,14 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     active = st.active === true
     pins = Array.isArray(st.pins) ? (st.pins as GuestPin[]) : []
     hint = typeof st.hint === 'string' ? st.hint : ''
+    exitHint = typeof st.exitHint === 'string' ? st.exitHint : ''
     if (st.theme && isSafeColor(st.theme.accent) && isSafeColor(st.theme.accentInk)) {
       theme = { accent: st.theme.accent, accentInk: st.theme.accentInk }
     }
     if (active || pins.length > 0) render()
     else {
       syncObserver()
-      layers.setHint(false, '')
+      layers.setHint(false, '', '')
       layers.setOutline(null)
       layers.setPins([])
     }
@@ -306,7 +314,7 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     const el = pickAt(m.clientX, m.clientY)
     if (el) {
       const t = globalThis.performance
-      void pick(el, t ? t.timeOrigin + e.timeStamp : null)
+      void pick(el, t ? t.timeOrigin + e.timeStamp : null, { x: m.clientX, y: m.clientY })
     }
   }
 
@@ -320,13 +328,22 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     }
   }
 
+  /**
+   * Touch input (device emulation, a touchscreen): while picking the page gets none of it either. Not
+   * `preventDefault`ed, so the click a tap synthesises still arrives and picks.
+   */
+  function onTouch(e: Event): void {
+    if (!active || !trusted(e)) return
+    e.stopImmediatePropagation()
+  }
+
   function onKey(e: Event): void {
     if (!active || !trusted(e)) return
     if ((e as KeyboardEvent).key !== 'Escape') return
     consume(e)
     if (e.type === 'keydown') {
       active = false
-      layers.setHint(false, '')
+      layers.setHint(false, '', '')
       layers.setOutline(null)
       ipc.send(OVERLAY_CHANNEL.exit)
     }
@@ -335,6 +352,7 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
   const listenerOpts = { capture: true }
   for (const t of CONSUMED_POINTER) win.addEventListener(t, onPointer, listenerOpts)
   for (const t of CONSUMED_HOVER) win.addEventListener(t, onHover, listenerOpts)
+  for (const t of CONSUMED_TOUCH) win.addEventListener(t, onTouch, listenerOpts)
   win.addEventListener('keydown', onKey, listenerOpts)
   win.addEventListener('keyup', onKey, listenerOpts)
   const onScrollOrResize = (): void => {
@@ -382,6 +400,7 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     destroy() {
       for (const t of CONSUMED_POINTER) win.removeEventListener(t, onPointer, listenerOpts)
       for (const t of CONSUMED_HOVER) win.removeEventListener(t, onHover, listenerOpts)
+      for (const t of CONSUMED_TOUCH) win.removeEventListener(t, onTouch, listenerOpts)
       win.removeEventListener('keydown', onKey, listenerOpts)
       win.removeEventListener('keyup', onKey, listenerOpts)
       win.removeEventListener('scroll', onScrollOrResize, { capture: true })

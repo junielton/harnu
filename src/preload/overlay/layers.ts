@@ -24,7 +24,7 @@ export interface Layers {
   /** Build the host if it is not there (or was removed by the page). Needs `document.documentElement`. */
   ensure(): boolean
   setTheme(theme: OverlayTheme): void
-  setHint(active: boolean, text: string): void
+  setHint(active: boolean, text: string, exitText: string): void
   setOutline(
     box: { x: number; y: number; width: number; height: number; label: string } | null
   ): void
@@ -36,6 +36,28 @@ export interface Layers {
   isHost(node: EventTarget | null): boolean
   destroy(): void
 }
+
+/** Everything page CSS could use to hide, move or dim the host, pinned inline with `!important`. */
+const HOST_STYLE: ReadonlyArray<readonly [string, string]> = [
+  ['all', 'initial'],
+  ['display', 'block'],
+  ['position', 'fixed'],
+  ['top', '0'],
+  ['right', '0'],
+  ['bottom', '0'],
+  ['left', '0'],
+  ['transform', 'none'],
+  ['translate', 'none'],
+  ['scale', 'none'],
+  ['rotate', 'none'],
+  ['filter', 'none'],
+  ['clip-path', 'none'],
+  ['opacity', '1'],
+  ['visibility', 'visible'],
+  ['z-index', '2147483647'],
+  ['pointer-events', 'none'],
+  ['contain', 'layout style']
+]
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -63,6 +85,7 @@ export function createLayers(doc: Document): Layers {
   let outlineTag: HTMLElement | null = null
   let hint: HTMLElement | null = null
   let hintText: HTMLElement | null = null
+  let exitText: HTMLElement | null = null
   let pinLayer: HTMLElement | null = null
   const pinEls = new Map<string, HTMLElement>()
   let theme: OverlayTheme = DEFAULT_OVERLAY_THEME
@@ -73,7 +96,7 @@ export function createLayers(doc: Document): Layers {
     host?.style.setProperty('--accent-ink', theme.accentInk)
   }
   function applyHidden(): void {
-    host?.style.setProperty('visibility', hidden ? 'hidden' : 'visible')
+    host?.style.setProperty('visibility', hidden ? 'hidden' : 'visible', 'important')
   }
 
   function build(): boolean {
@@ -82,16 +105,9 @@ export function createLayers(doc: Document): Layers {
     host = doc.createElement('div')
     host.setAttribute('aria-hidden', 'true')
     host.setAttribute('data-harnu-overlay', '')
-    for (const [k, v] of [
-      ['all', 'initial'],
-      ['position', 'fixed'],
-      ['inset', '0'],
-      ['z-index', '2147483647'],
-      ['pointer-events', 'none'],
-      ['contain', 'layout style']
-    ] as const) {
-      host.style.setProperty(k, v)
-    }
+    // Inline AND `!important`: an inline important declaration beats every author rule, layered or not, so page
+    // CSS (`[data-harnu-overlay] { display: none !important }`, a transform, an opacity) cannot hide or move us.
+    for (const [k, v] of HOST_STYLE) host.style.setProperty(k, v, 'important')
     root = host.attachShadow({ mode: 'closed' })
     try {
       const sheet = new CSSStyleSheet()
@@ -118,6 +134,8 @@ export function createLayers(doc: Document): Layers {
     kbd.className = 'kbd'
     kbd.textContent = 'Esc'
     hint.appendChild(kbd)
+    exitText = doc.createElement('span')
+    hint.appendChild(exitText)
     pinLayer = doc.createElement('div')
     layer.append(outline, pinLayer, hint)
     root.appendChild(layer)
@@ -144,10 +162,11 @@ export function createLayers(doc: Document): Layers {
       theme = next
       applyTheme()
     },
-    setHint(active, text) {
-      if (!hint || !hintText) return
+    setHint(active, text, exit) {
+      if (!hint || !hintText || !exitText) return
       hint.classList.toggle('on', active)
       hintText.textContent = text
+      exitText.textContent = exit
     },
     setOutline(box) {
       if (!outline || !outlineTag) return
@@ -174,6 +193,8 @@ export function createLayers(doc: Document): Layers {
         if (!el) {
           el = doc.createElement('button')
           el.setAttribute('type', 'button')
+          // A pin is clickable with the pointer only: Tab must never land on it, and a page cannot focus it.
+          el.setAttribute('tabindex', '-1')
           el.setAttribute('data-pin', p.id)
           pinLayer.appendChild(el)
           pinEls.set(p.id, el)
@@ -202,7 +223,7 @@ export function createLayers(doc: Document): Layers {
     isHost: (node) => host !== null && node === host,
     destroy() {
       host?.remove()
-      host = root = outline = outlineTag = hint = hintText = pinLayer = null
+      host = root = outline = outlineTag = hint = hintText = exitText = pinLayer = null
       pinEls.clear()
     }
   }

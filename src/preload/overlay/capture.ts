@@ -83,14 +83,19 @@ export function componentFromAttributes(el: Element): string | null {
 }
 
 /**
- * The page-world probe, run through `webFrame.executeJavaScript` against a node tagged with a one-shot nonce.
- * Best-effort and silent when absent: Vue 3 `__vueParentComponent.type.__file`, React `_debugSource` (walking
- * up through `_debugOwner`), Svelte `__svelte_meta.loc`. It returns a string or `null`; the result is
- * normalised by {@link normalizeComponentSource} and is page-authored like everything else.
+ * The page-world probe, run through `webFrame.executeJavaScript`. It finds the node the operator clicked by its
+ * POINT (the first element under it that is not our own overlay host), so nothing is written onto the page's
+ * node: no attribute for a page's MutationObserver to see. Best-effort and silent when absent: Vue 3
+ * `__vueParentComponent.type.__file`, React `_debugSource` (walking up through `_debugOwner`), Svelte
+ * `__svelte_meta.loc`. It returns a string or `null`; the result is normalised by
+ * {@link normalizeComponentSource} and is page-authored like everything else.
  */
-export function probeSource(nonce: string): string {
+export function probeSource(x: number, y: number): string {
+  const px = Math.round(Number.isFinite(x) ? x : 0)
+  const py = Math.round(Number.isFinite(y) ? y : 0)
   return `(() => { try {
-  const el = document.querySelector('[data-harnu-probe="${nonce}"]');
+  const stack = document.elementsFromPoint(${px}, ${py});
+  const el = stack.find((e) => !e.hasAttribute('data-harnu-overlay'));
   if (!el) return null;
   let n = el;
   for (let i = 0; n && i < 20; i++, n = n.parentElement) {
@@ -115,25 +120,22 @@ export interface MainWorld {
   executeJavaScript(code: string): Promise<unknown>
 }
 
-/** The component of a picked node: the DOM attribute first, then a bounded page-world probe. */
+/** The component of a picked node: the DOM attribute first, then a bounded page-world probe by point. */
 export async function discoverComponent(
   el: Element,
   world: MainWorld,
-  nonce: string,
+  point: { x: number; y: number },
   timeoutMs = 200
 ): Promise<string | null> {
   const fromDom = componentFromAttributes(el)
   if (fromDom) return fromDom
-  el.setAttribute('data-harnu-probe', nonce)
   try {
     const raw = await Promise.race([
-      world.executeJavaScript(probeSource(nonce)),
+      world.executeJavaScript(probeSource(point.x, point.y)),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs))
     ])
     return normalizeComponentSource(raw)
   } catch {
     return null
-  } finally {
-    el.removeAttribute('data-harnu-probe')
   }
 }

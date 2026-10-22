@@ -29,9 +29,7 @@ function rig(
     folder: '/w/f',
     name: 'Checkout',
     ownerSessionId: 'owner-1',
-    paused: false,
     disconnected: false,
-    agentInput: { inFlight: false, at: null },
     ...over.pane
   }
   const deps: CommentDeliveryDeps = {
@@ -144,7 +142,7 @@ describe('submit', () => {
     expect(r.audits[0]!.verdict).toBe('deny')
   })
 
-  it('refuses before anything is sent: unknown pane, disconnected, paused, recent agent input', async () => {
+  it('refuses before anything is sent: an unknown pane and a disconnected pane', async () => {
     const r = rig({ pane: { disconnected: true } })
     const id = r.add('#a', 'x')
     expect(await r.delivery.submit({ paneId: 'nope', which: [id], sessionId: null })).toEqual({
@@ -155,23 +153,8 @@ describe('submit', () => {
       ok: false,
       error: 'BROWSER_DISCONNECTED'
     })
-    const p = rig({ pane: { paused: true } })
-    expect(
-      await p.delivery.submit({ paneId: 'p1', which: [p.add('#a', 'x')], sessionId: null })
-    ).toEqual({
-      ok: false,
-      error: 'BROWSER_PAUSED'
-    })
-    const a = rig({ pane: { agentInput: { inFlight: false, at: 50_000 - 1000 } } })
-    expect(
-      await a.delivery.submit({ paneId: 'p1', which: [a.add('#a', 'x')], sessionId: null })
-    ).toEqual({
-      ok: false,
-      error: 'COMMENT_AGENT_INPUT'
-    })
     expect(r.calls).toHaveLength(0)
-    expect(p.calls).toHaveLength(0)
-    expect(a.calls).toHaveLength(0)
+    expect(r.audits[0]!.result).toContain('BROWSER_DISCONNECTED')
   })
 
   it('has nothing to send for a sent, empty or unknown pin', async () => {

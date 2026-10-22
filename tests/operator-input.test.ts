@@ -28,6 +28,17 @@ describe('isOperatorKeystroke', () => {
     expect(isOperatorKeystroke('\x1b]11;rgb:0000/0000/0000\x07')).toBe(false)
     expect(isOperatorKeystroke('')).toBe(false)
   })
+  it('does not count xterm mouse reports (pointer moves and wheel over a terminal that asked for them)', () => {
+    for (const d of [
+      '\x1b[<0;12;7M',
+      '\x1b[<0;12;7m',
+      '\x1b[<64;40;9M',
+      '\x1b[<35;1;1M\x1b[<35;2;1M',
+      '\x1b[M #!'
+    ]) {
+      expect(isOperatorKeystroke(d), JSON.stringify(d)).toBe(false)
+    }
+  })
 })
 
 describe('quietDelayMs', () => {
@@ -41,6 +52,7 @@ describe('quietDelayMs', () => {
 describe('pasteWhenOperatorQuiet', () => {
   function rig() {
     let t = 10_000
+    let alive = true
     const timers: Array<{ at: number; fn: () => void }> = []
     const pasted: Array<[string, string]> = []
     const tracker = createOperatorInputTracker(() => t)
@@ -48,7 +60,10 @@ describe('pasteWhenOperatorQuiet', () => {
       tracker,
       now: () => t,
       setTimer: (fn: () => void, ms: number) => void timers.push({ at: t + ms, fn }),
-      paste: (p: string, x: string) => void pasted.push([p, x])
+      paste: (p: string, x: string) => {
+        pasted.push([p, x])
+        return alive
+      }
     }
     const advance = (ms: number): void => {
       const end = t + ms
@@ -62,7 +77,14 @@ describe('pasteWhenOperatorQuiet', () => {
       }
       t = end
     }
-    return { deps, tracker, pasted, advance, setNow: (v: number) => (t = v) }
+    return {
+      deps,
+      tracker,
+      pasted,
+      advance,
+      kill: () => (alive = false),
+      setNow: (v: number) => (t = v)
+    }
   }
 
   it('pastes at once when the operator has not typed', () => {
@@ -101,5 +123,27 @@ describe('pasteWhenOperatorQuiet', () => {
     }
     expect(r.pasted).toEqual([['pty1', 'late']])
     expect(OPERATOR_QUIET_CAP_MS).toBeGreaterThan(OPERATOR_TYPING_WINDOW_MS)
+  })
+
+  it('resolves only AFTER the paste ran, so a caller can keep its draft until then', async () => {
+    const r = rig()
+    r.tracker.note('pty1', 'a')
+    let settled: boolean | null = null
+    void pasteWhenOperatorQuiet(r.deps, 'pty1', 'hello').then((ok) => (settled = ok))
+    await Promise.resolve()
+    expect(settled).toBeNull() // still waiting for the operator to pause: nothing delivered yet
+    r.advance(2000)
+    await Promise.resolve()
+    expect(r.pasted).toEqual([['pty1', 'hello']])
+    expect(settled).toBe(true)
+  })
+
+  it('resolves false when the terminal died during the wait, so nothing is lost', async () => {
+    const r = rig()
+    r.tracker.note('pty1', 'a')
+    const done = pasteWhenOperatorQuiet(r.deps, 'pty1', 'hello')
+    r.kill()
+    r.advance(2000)
+    expect(await done).toBe(false)
   })
 })

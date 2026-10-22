@@ -166,6 +166,7 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
   handleApp('browser:disconnect', (paneId: unknown) => {
     if (!isPaneId(paneId) || !browserRegistry.get(paneId)) return false
     browserAccess.disconnect(paneId)
+    getOverlayBridge().onDisconnected(paneId)
     host().refresh(paneId)
     return true
   })

@@ -127,8 +127,10 @@ export const DEFAULT_OVERLAY_THEME: OverlayTheme = { accent: '#7aa2f7', accentIn
 
 export interface OverlayGuestState {
   active: boolean
-  /** The hint pill text, already localised by the app. */
+  /** The hint pill text, already localised by the app: "Click an element to comment". */
   hint: string
+  /** The words after the Esc key cap in the pill, localised: "to exit". */
+  exitHint: string
   theme: OverlayTheme
   pins: GuestPin[]
 }
@@ -158,13 +160,7 @@ export interface CommentPaneState {
 }
 
 export type CommentSubmitError =
-  | 'BAD_ARGS'
-  | 'PANE_NOT_FOUND'
-  | 'BROWSER_DISCONNECTED'
-  | 'BROWSER_PAUSED'
-  | 'COMMENT_AGENT_INPUT'
-  | 'NOTHING_TO_SEND'
-  | 'DELIVERY_FAILED'
+  'BAD_ARGS' | 'PANE_NOT_FOUND' | 'BROWSER_DISCONNECTED' | 'NOTHING_TO_SEND' | 'DELIVERY_FAILED'
 
 export type CommentSubmitResult =
   | { ok: true; delivered: true; count: number; sessionId: string; woke: boolean }
