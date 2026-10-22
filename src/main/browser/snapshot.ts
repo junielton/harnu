@@ -100,6 +100,8 @@ export interface FormattedSnapshot {
   rootMissing: boolean
   /** `n` (the number after `e` in a ref) → the CDP backendNodeId it stands for. */
   refs: Map<number, number>
+  /** `n` → the role and name the line showed, to tell later whether the element still looks the same. */
+  labels: Map<number, string>
 }
 
 interface Source {
@@ -179,6 +181,7 @@ export function formatSnapshot(nodes: readonly AxNode[], opts: FormatOptions): F
   const maxNodes = Math.min(Math.max(1, opts.maxNodes ?? DEFAULT_MAX_NODES), MAX_NODES_CEILING)
   const lines: string[] = []
   const refs = new Map<number, number>()
+  const labels = new Map<number, string>()
   let chars = 0
   let truncated = false
   let rootMissing = false
@@ -247,6 +250,7 @@ export function formatSnapshot(nodes: readonly AxNode[], opts: FormatOptions): F
     if (backend !== undefined && !isText) {
       const n = nextRef++
       refs.set(n, backend)
+      labels.set(n, refLabel(role, name))
       line += ` [ref=${refName(opts.snapshotId, n)}]`
     }
     if (chars + line.length + 1 > MAX_SNAPSHOT_CHARS) {
@@ -254,6 +258,7 @@ export function formatSnapshot(nodes: readonly AxNode[], opts: FormatOptions): F
       // Un-allocate the ref this line would have owned.
       if (backend !== undefined && !isText) {
         refs.delete(nextRef - 1)
+        labels.delete(nextRef - 1)
         nextRef--
       }
       break
@@ -278,7 +283,12 @@ export function formatSnapshot(nodes: readonly AxNode[], opts: FormatOptions): F
     }
   }
 
-  return { text: lines.join('\n'), nodes: lines.length, truncated, rootMissing, refs }
+  return { text: lines.join('\n'), nodes: lines.length, truncated, rootMissing, refs, labels }
+}
+
+/** The identity of an element as a snapshot line shows it: its role and its (cleaned) accessible name. */
+export function refLabel(role: string, name: string): string {
+  return `${displayRole(role)}|${cleanName(name)}`
 }
 
 export function refName(snapshotId: number, n: number): string {
@@ -293,13 +303,18 @@ export function refName(snapshotId: number, n: number): string {
 export const MAX_LIVE_SNAPSHOTS = 8
 
 export type RefResolution =
-  { ok: true; backendNodeId: number } | { ok: false; error: 'REF_STALE' | 'REF_NOT_FOUND' }
+  | { ok: true; backendNodeId: number; label?: string }
+  | { ok: false; error: 'REF_STALE' | 'REF_NOT_FOUND' }
 
 export interface RefStore {
   /** Allocate the id for the snapshot about to be taken. */
   nextSnapshotId(): number
   /** Remember a finished snapshot's refs, evicting the oldest beyond {@link MAX_LIVE_SNAPSHOTS}. */
-  commit(snapshotId: number, refs: ReadonlyMap<number, number>): void
+  commit(
+    snapshotId: number,
+    refs: ReadonlyMap<number, number>,
+    labels?: ReadonlyMap<number, string>
+  ): void
   /** `s<id>e<n>` → the backendNodeId. */
   resolve(ref: string): RefResolution
   /** The page navigated: every ref made so far is dead (`REF_STALE`), and stays dead. */
@@ -309,14 +324,17 @@ export interface RefStore {
 export function createRefStore(): RefStore {
   let issued = 0
   const live = new Map<number, ReadonlyMap<number, number>>()
+  const liveLabels = new Map<number, ReadonlyMap<number, string>>()
   return {
     nextSnapshotId: () => ++issued,
-    commit(snapshotId, refs) {
+    commit(snapshotId, refs, labels) {
       live.set(snapshotId, refs)
+      if (labels) liveLabels.set(snapshotId, labels)
       while (live.size > MAX_LIVE_SNAPSHOTS) {
         const oldest = live.keys().next().value
         if (oldest === undefined) break
         live.delete(oldest)
+        liveLabels.delete(oldest)
       }
     },
     resolve(ref) {
@@ -331,10 +349,12 @@ export function createRefStore(): RefStore {
       if (!table) return { ok: false, error: 'REF_STALE' }
       const backendNodeId = table.get(n)
       if (backendNodeId === undefined) return { ok: false, error: 'REF_NOT_FOUND' }
-      return { ok: true, backendNodeId }
+      const label = liveLabels.get(snapshotId)?.get(n)
+      return { ok: true, backendNodeId, ...(label !== undefined ? { label } : {}) }
     },
     invalidate() {
       live.clear()
+      liveLabels.clear()
     }
   }
 }

@@ -17,6 +17,20 @@ export const BROWSER_DENIAL_CODES = [
   'REF_NOT_FOUND',
   'SELECTOR_NOT_FOUND',
   'ELEMENT_NOT_VISIBLE',
+  'ELEMENT_OBSCURED',
+  'ELEMENT_DISABLED',
+  'ELEMENT_NOT_EDITABLE',
+  'OFFSET_OUTSIDE_BOX',
+  'EVAL_TIMEOUT',
+  'FRAME_NOT_FOUND',
+  'INPUT_FAILED',
+  'BROWSER_KEY_UNKNOWN',
+  'BROWSER_APPROVED_RESEND',
+  'BROWSER_WRITE_DENIED',
+  'BROWSER_LEASE_ENDED',
+  'BROWSER_BUSY',
+  'BROWSER_RATE_LIMIT',
+  'NOT_A_PAGE_PANE',
   'CURSOR_EXPIRED',
   'SCREENSHOT_FAILED',
   'PAGE_READ_FAILED'
@@ -37,8 +51,10 @@ export interface BrowserHintContext {
   scheme?: string
   /** `SELECTOR_NOT_FOUND`: the selector that matched nothing. */
   selector?: string
-  /** `SCREENSHOT_FAILED` and `PAGE_READ_FAILED`: why it failed. */
+  /** `SCREENSHOT_FAILED`, `PAGE_READ_FAILED`, `INPUT_FAILED`, `BROWSER_KEY_UNKNOWN`: what went wrong. */
   detail?: string
+  /** `ELEMENT_NOT_VISIBLE`: the verb that asked, so the hint speaks of input and not of a capture. */
+  during?: 'input'
 }
 
 export function shapeBrowserDenial(
@@ -175,6 +191,19 @@ export function shapeBrowserDenial(
         ]
       }
     case 'ELEMENT_NOT_VISIBLE':
+      if (ctx.during === 'input') {
+        return {
+          error: code,
+          message:
+            'That element did not become visible and still within 5 seconds, so nothing was done to it.',
+          nextActions: [
+            {
+              do: 'Take a browser_snapshot to see the page as it is now, scroll or open whatever hides the element, then use a fresh ref.',
+              why: 'Input is only sent to an element a person could see and reach: it must have a size, be inside the page and stop moving.'
+            }
+          ]
+        }
+      }
       return {
         error: code,
         message: 'That element has no size on the page, so there is nothing to capture.',
@@ -182,6 +211,165 @@ export function shapeBrowserDenial(
           {
             do: 'Pick a visible element, or take a screenshot of the whole pane without `ref`/`selector`.',
             why: 'Elements that are display:none or collapsed to zero size have no pixels.'
+          }
+        ]
+      }
+    case 'ELEMENT_OBSCURED':
+      return {
+        error: code,
+        message:
+          'Something else covers that element at the point Harnu would click, and it did not go away within 5 seconds. Nothing was clicked.',
+        nextActions: [
+          {
+            do: 'Take a browser_snapshot, close or dismiss whatever is in front (a dialog, a cookie banner, a menu), then try again; or click the covering element instead.',
+            why: 'A real click lands on the topmost element at that point, so clicking a covered element would press something else.'
+          }
+        ]
+      }
+    case 'ELEMENT_DISABLED':
+      return {
+        error: code,
+        message: 'That element is disabled, so it does not take input. Nothing was done.',
+        nextActions: [
+          {
+            do: 'Do whatever enables it first (fill a required field, tick a box), then take a fresh browser_snapshot and try again.',
+            why: 'A disabled control ignores clicks and typing; the page enables it when its conditions are met.'
+          }
+        ]
+      }
+    case 'ELEMENT_NOT_EDITABLE':
+      return {
+        error: code,
+        message: 'That element does not take typed text, so nothing was typed.',
+        nextActions: [
+          {
+            do: 'Use the ref of a text field, a text area or an editable region from browser_snapshot. To press a button use browser_click.',
+            why: 'browser_fill and browser_type put text into editable elements only.'
+          }
+        ]
+      }
+    case 'OFFSET_OUTSIDE_BOX':
+      return {
+        error: code,
+        message: 'The `offset` is outside the element’s box. Nothing was clicked.',
+        nextActions: [
+          {
+            do: 'Pass `offset` as {x, y} in CSS pixels measured from the element’s top-left corner, within its width and height, or leave it out to click the centre.',
+            why: 'Clicks are aimed at elements, never at raw page coordinates.'
+          }
+        ]
+      }
+    case 'EVAL_TIMEOUT':
+      return {
+        error: code,
+        message: `The script did not finish in time and was stopped${ctx.detail ? ` (${ctx.detail})` : ''}.`,
+        nextActions: [
+          {
+            do: 'Make the expression return sooner (do less per call, or use browser_wait_for for things that take time), or raise `timeoutMs` (at most 30000).',
+            why: 'An expression that never settles would hold the pane for every other writer.'
+          }
+        ]
+      }
+    case 'FRAME_NOT_FOUND':
+      return {
+        error: code,
+        message: `No frame of this page matches${ctx.detail ? ` ${JSON.stringify(ctx.detail)}` : ''}.`,
+        nextActions: [
+          {
+            do: 'Pass `frame` as a frame’s name or a part of its address, or leave it out to run in the top page. browser_snapshot lists child frames as `iframe [host]`.',
+            why: 'The script must run in a frame the page really has.'
+          }
+        ]
+      }
+    case 'INPUT_FAILED':
+      return {
+        error: code,
+        message: `The input could not be sent${ctx.detail ? `: ${ctx.detail}` : ''}.`,
+        nextActions: [
+          {
+            do: 'Take a browser_snapshot and try again with a fresh ref; if the pane crashed, browser_navigate it to reload.',
+            why: 'The page changed or went away between finding the element and acting on it.'
+          }
+        ]
+      }
+    case 'BROWSER_KEY_UNKNOWN':
+      return {
+        error: code,
+        message: ctx.detail ?? 'That is not a key name.',
+        nextActions: [
+          {
+            do: 'Press keys by name in `keys` (Enter, Tab, Esc, Backspace, Delete, Space, Up/Down/Left/Right, Home, End, PageUp, PageDown, F1–F12, a letter or digit, with Ctrl+, Alt+, Meta+ or Shift+ in front). Put text in browser_type.',
+            why: 'Control actions are named keys so the operator and the audit see exactly what was pressed. Nothing was pressed.'
+          }
+        ]
+      }
+    case 'BROWSER_APPROVED_RESEND':
+      return {
+        error: code,
+        message:
+          'Nothing was done. The operator approved driving this pane. Call browser_snapshot to see the page as it is now, then call the verb again.',
+        nextActions: [
+          {
+            do: 'Call browser_snapshot to see the page as it is now, then call the verb again with what you still want done.',
+            why: 'An approval only grants a lease on this pane; the call that asked is never replayed, because the page may have changed while it waited.'
+          }
+        ]
+      }
+    case 'BROWSER_WRITE_DENIED':
+      return {
+        error: code,
+        message: `The operator declined driving that pane${at}. Script and input calls to it are refused for 5 minutes.`,
+        nextActions: [
+          {
+            do: 'Stop sending to this pane. Open your own pane on a local dev server with browser_open, or ask the operator to run it or to allow it.',
+            why: 'A Deny starts a 5-minute cooldown; asking again right away only gets refused.'
+          }
+        ]
+      }
+    case 'BROWSER_LEASE_ENDED':
+      return {
+        error: code,
+        message:
+          'Nothing was done. The operator’s lease on this pane ended before the call ran (it idled out, or the pane, the folder or the control switch changed).',
+        nextActions: [
+          {
+            do: 'Call the verb again: it will ask the operator for a new lease.',
+            why: 'A lease ends after 10 minutes without an agent write, on close, Disconnect, a folder block or the kill-switch.'
+          }
+        ]
+      }
+    case 'BROWSER_BUSY':
+      return {
+        error: code,
+        message:
+          'Other writes to this pane were still running after 10 seconds, so yours was not started. Nothing was done.',
+        nextActions: [
+          {
+            do: 'Wait a moment and call again, or work on a different pane.',
+            why: 'Writes to one pane run one at a time, in order; a stuck one must not hold up the 2-minute tool deadline.'
+          }
+        ]
+      }
+    case 'BROWSER_RATE_LIMIT':
+      return {
+        error: code,
+        message: 'More than 60 writes to this pane in the last minute. Nothing was done.',
+        nextActions: [
+          {
+            do: 'Slow down: batch field values into one browser_fill, and wait for the page with browser_wait_for instead of retrying.',
+            why: 'A loop that clicks as fast as it can is almost always a mistake worth stopping.'
+          }
+        ]
+      }
+    case 'NOT_A_PAGE_PANE':
+      return {
+        error: code,
+        message:
+          'Live-panel verbs work on a Harnu page pane only; this pane shows another kind of page.',
+        nextActions: [
+          {
+            do: 'Open a page with browser_open({ path }) for a live panel, or use browser_eval / browser_click on this pane.',
+            why: 'A live panel is a page Harnu serves itself; patching someone else’s page is not allowed.'
           }
         ]
       }

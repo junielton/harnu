@@ -56,7 +56,31 @@ export interface BrowserRegistry {
   noteOperatorInteraction(paneId: string): void
   beginWrite(paneId: string): WriteToken
   endWrite(token: WriteToken): WriteReport
+  /**
+   * An agent INPUT verb (`click`, `type`, `fill`, `press`, `upload`, an `eval` that dispatches input) is running
+   * on the pane (spec §5.4 condition 2). U4 calls these around its input verbs; the emit gate reads them.
+   */
+  beginAgentInput(paneId: string): void
+  endAgentInput(paneId: string): void
+  agentInput(paneId: string): { inFlight: boolean; at: number | null }
+  /** Epoch ms of the latest moment an agent input verb was active (now while one runs), or `null` if none ever. */
+  lastAgentInputAt(paneId: string): number | null
+  /**
+   * Whether any agent input verb was active at some moment in `[fromMs, toMs]` (a verb still running counts up to
+   * `toMs`). The emit gate asks it for `[activation − AGENT_INPUT_WINDOW_MS, emit]` (spec §5.4 condition 2).
+   */
+  agentInputOverlaps(paneId: string, fromMs: number, toMs: number): boolean
 }
+
+/**
+ * How far back from a user activation an agent input verb still disqualifies it (spec §5.4, Q8). Chromium keeps a
+ * user activation "sticky" for about 5 s, so a CDP click can be spent by a `setTimeout(emit, 1600)` the page
+ * armed itself; the window therefore covers the activation's whole lifetime, not only the last 1.5 s.
+ */
+export const AGENT_INPUT_WINDOW_MS = 5000
+
+/** Most intervals kept per pane (old ones are irrelevant after {@link AGENT_INPUT_WINDOW_MS}). */
+const MAX_INPUT_INTERVALS = 64
 
 export function createBrowserRegistry(now: () => number): BrowserRegistry {
   const panes = new Map<string, BrowserPaneRecord>()
@@ -66,6 +90,18 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
   /** Per pane: write ids that overlapped some other write while in flight. */
   const overlapped = new Map<string, Set<number>>()
   let nextId = 1
+  /** Per pane: agent input verbs running now, and when the last one finished. */
+  const agentInputs = new Map<
+    string,
+    {
+      running: number
+      at: number | null
+      /** Start times of the verbs running now. */
+      open: number[]
+      /** Finished verbs, oldest first. */
+      done: Array<{ start: number; end: number }>
+    }
+  >()
 
   return {
     add: (rec) => void panes.set(rec.paneId, rec),
@@ -74,6 +110,7 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
       operatorAt.delete(id)
       inflight.delete(id)
       overlapped.delete(id)
+      agentInputs.delete(id)
       return panes.delete(id)
     },
     list: () => [...panes.values()],
@@ -81,6 +118,39 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
       [...panes.values()]
         .filter((p) => p.folder === folder && p.openedBy === 'agent')
         .sort((a, b) => a.createdAt - b.createdAt),
+    beginAgentInput(id) {
+      const cur = agentInputs.get(id) ?? { running: 0, at: null, open: [], done: [] }
+      cur.running++
+      cur.open.push(now())
+      agentInputs.set(id, cur)
+    },
+    endAgentInput(id) {
+      const cur = agentInputs.get(id)
+      if (!cur) return
+      cur.running = Math.max(0, cur.running - 1)
+      const end = now()
+      cur.at = end
+      const start = cur.open.shift()
+      if (start !== undefined) {
+        cur.done.push({ start, end })
+        if (cur.done.length > MAX_INPUT_INTERVALS) cur.done.shift()
+      }
+    },
+    agentInput(id) {
+      const cur = agentInputs.get(id)
+      return { inFlight: (cur?.running ?? 0) > 0, at: cur?.at ?? null }
+    },
+    lastAgentInputAt(id) {
+      const cur = agentInputs.get(id)
+      if (!cur) return null
+      return cur.running > 0 ? now() : cur.at
+    },
+    agentInputOverlaps(id, fromMs, toMs) {
+      const cur = agentInputs.get(id)
+      if (!cur) return false
+      if (cur.open.some((start) => start <= toMs)) return true
+      return cur.done.some((iv) => iv.start <= toMs && iv.end >= fromMs)
+    },
     touch(id) {
       const rec = panes.get(id)
       if (rec) rec.lastActiveAt = now()

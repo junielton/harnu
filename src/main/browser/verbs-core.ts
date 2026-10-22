@@ -6,8 +6,9 @@
  * `{ ok: false, error, message, nextActions }` of spec §6.
  */
 import {
-  gateBrowserOp,
+  gateBrowserOpDetailed,
   describePaneAccess,
+  isBrowserWriteOp,
   type BrowserAccess,
   type BrowserOp,
   type BrowserPaneAccess
@@ -23,6 +24,7 @@ import {
   type BrowserRegistry
 } from './registry'
 import type { BrowserPartition } from './guest-prefs'
+import type { BrowserLeases } from './lease'
 import type { SteerableDenial } from '../mcp/deny-hint'
 
 /** The fixed reminder on every ACK that carries page-derived text (spec §6, §7.6). */
@@ -66,6 +68,11 @@ export interface BrowserHost {
   publishFlag(paneId: string, flagged: { host: string } | null): void
   /** Whether network capture is on for the pane and when it stops itself (`browser_list`'s `network`). */
   captureStatus?(paneId: string): { active: boolean; expiresAt: number | null }
+  /**
+   * Names the view that shows the pane now. A lease is granted for ONE view: a pane re-created under the same id
+   * (discard and restore) is a page the operator never saw, so its token differs and the lease is dead.
+   */
+  viewToken?(paneId: string): string | undefined
 }
 
 export interface BrowserVerbDeps {
@@ -98,6 +105,13 @@ export interface BrowserVerbDeps {
   alias(folder: string): string
   /** Whether the folder is one the operator blocked (listing only). */
   folderBlocked(folder: string): boolean
+  /**
+   * The operator's leases (spec §7.1). Absent = no lease exists, so every `lease` row asks. The real service
+   * always supplies the one live table.
+   */
+  leases?: BrowserLeases
+  /** The folder's "Let agents read browser panes I open" opt-in (exact folder). Absent = off. */
+  readOptIn?(folder: string): Promise<boolean>
 }
 
 export function refuse(
@@ -110,13 +124,19 @@ export function refuse(
 export function accessOf(
   rec: BrowserPaneRecord,
   deps: BrowserVerbDeps,
-  originClass: OriginClass
+  originClass: OriginClass,
+  readOptIn = false
 ): BrowserPaneAccess {
+  const token = deps.host.viewToken?.(rec.paneId)
   return {
     openedBy: rec.openedBy,
     originClass,
     disconnected: deps.access.isDisconnected(rec.paneId),
-    paused: deps.access.isPaused(rec.paneId)
+    paused: deps.access.isPaused(rec.paneId),
+    readOptIn,
+    leaseActive:
+      token !== undefined && deps.leases ? deps.leases.isActive(rec.paneId, token) : false,
+    writeDenied: deps.leases ? deps.leases.isDenied(rec.paneId) : false
   }
 }
 
@@ -147,25 +167,38 @@ export function ackBase(
   }
 }
 
-/** Run the access gate for a pane-addressed verb, returning the refusal or `null`. */
+/**
+ * Run the access gate for a pane-addressed verb, returning the refusal or the resolved pane. This is the handler's
+ * last line of defence, so it also enforces the lease (`BROWSER_LEASE_ENDED`): the plan judged the same state a
+ * moment earlier, but a lease can end between the plan and the dispatch. `args` carries the arguments the tier
+ * depends on (`browser_network`'s `action`). An agent write that gets through refreshes the lease's idle clock.
+ */
 export async function gate(
   op: BrowserOp,
   paneId: string | undefined,
   deps: BrowserVerbDeps,
-  action?: string
+  args?: Record<string, unknown>
 ): Promise<
   { refusal: Refusal } | { rec?: BrowserPaneRecord; live?: LivePaneInfo; origin?: OriginClass }
 > {
   const rec = paneId === undefined ? undefined : deps.registry.get(paneId)
   const live = rec ? deps.host.info(rec.paneId) : undefined
   const origin = rec ? originOf(rec, live, deps) : undefined
-  const denied = gateBrowserOp(op, {
-    pane: rec && origin ? accessOf(rec, deps, origin) : undefined,
+  const readOptIn = rec && deps.readOptIn ? await deps.readOptIn(rec.folder) : false
+  // The operator closing the folder's read door ends the leases behind it, whatever turned it off.
+  if (rec && rec.openedBy === 'operator' && !readOptIn) deps.leases?.revoke(rec.paneId)
+  const denied = gateBrowserOpDetailed(op, {
+    pane: rec && origin ? accessOf(rec, deps, origin, readOptIn) : undefined,
     writesEnabled: await deps.writesEnabled(),
-    ...(action !== undefined ? { action } : {})
+    enforceLease: true,
+    ...(args ? { args } : {})
   })
-  // No `args` here, so the gate cannot answer BAD_ARGS: the content rules run in the verb, after this.
-  if (denied) return { refusal: refuse(denied as BrowserDenialCode, { folder: rec?.folder }) }
+  // The older verbs pass no content `args`, so for them the content rules run in the verb, after this.
+  if (denied) {
+    if (denied.content) return { refusal: refuseContent(denied.content) }
+    return { refusal: refuse(denied.reason as BrowserDenialCode, { folder: rec?.folder }) }
+  }
+  if (rec && isBrowserWriteOp(op)) deps.leases?.noteWrite(rec.paneId)
   return { rec, live, origin }
 }
 
@@ -279,8 +312,9 @@ function sessionNotFound(): SteerableDenial {
   }
 }
 
-function refuseContent(c: ContentRefusal): Refusal {
+export function refuseContent(c: ContentRefusal): Refusal {
   if (c.code === 'BAD_ARGS') return refuseBadArgs(c.detail)
+  if (c.code === 'BROWSER_KEY_UNKNOWN') return refuse('BROWSER_KEY_UNKNOWN', { detail: c.detail })
   if (c.code === 'URL_SCHEME_BLOCKED') return refuse('URL_SCHEME_BLOCKED', { scheme: c.scheme })
   return refuse('NOT_YET_AVAILABLE', { feature: c.feature })
 }
@@ -387,6 +421,13 @@ export async function listVerb(
   const denied = await gate('browser_list', undefined, deps)
   if ('refusal' in denied) return denied.refusal
   const writesEnabled = await deps.writesEnabled()
+  // The folder opt-in is read once per folder, outside the (synchronous) row mapping.
+  const optIn = new Map<string, boolean>()
+  for (const rec of deps.registry.list()) {
+    if (rec.openedBy === 'operator' && !optIn.has(rec.folder)) {
+      optIn.set(rec.folder, deps.readOptIn ? await deps.readOptIn(rec.folder) : false)
+    }
+  }
 
   const panes = deps.registry
     .list()
@@ -400,7 +441,10 @@ export async function listVerb(
     .map((rec) => {
       const live = deps.host.info(rec.paneId)
       const origin = originOf(rec, live, deps)
-      const access = describePaneAccess(accessOf(rec, deps, origin), writesEnabled)
+      const access = describePaneAccess(
+        accessOf(rec, deps, origin, optIn.get(rec.folder) === true),
+        writesEnabled
+      )
       // Page-derived fields are shown only for a pane the agent may read (spec §6.2).
       const readable = access.readable
       return {

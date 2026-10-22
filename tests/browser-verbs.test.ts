@@ -302,7 +302,7 @@ describe('browser_navigate', () => {
     })
   })
 
-  it('never lets an agent write to a pane the operator opened (the lease is a later unit)', async () => {
+  it('never lets an agent write to a pane the operator opened until the folder opted in', async () => {
     const { deps, registry, host } = await opened()
     registry.add({
       paneId: 'op-1',
@@ -318,7 +318,7 @@ describe('browser_navigate', () => {
     })
     expect(await navigateVerb({ paneId: 'op-1', url: 'http://localhost:1' }, deps)).toMatchObject({
       ok: false,
-      error: 'NOT_YET_AVAILABLE'
+      error: 'BROWSER_READ_NOT_ENABLED'
     })
     expect(host.navigate).not.toHaveBeenCalled()
   })

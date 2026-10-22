@@ -6,8 +6,10 @@
  * {@link createBrowserAccess} holds the operator's per-pane decisions (Disconnect, Pause) behind an injected
  * clock. The kill-switch and the folder block are read by the shell (`mcp/prefs.ts`, the plan's base gate).
  *
- * The lease tier of spec §7.1 belongs to a later unit: until it exists, a write that WOULD need a lease
- * (any write to an operator-opened pane) refuses `NOT_YET_AVAILABLE` rather than running unattended.
+ * U4 adds the tier table of spec §7.1: which verb class is `free`, which needs the operator's `lease`, and which
+ * is `refused` for the pane's origin class and who opened it. The lease itself (confirm → Allow performs nothing →
+ * `BROWSER_APPROVED_RESEND` → a 10-minute idle lease) lives in `lease.ts`; the plan layer promotes a lease-row
+ * call to a confirm, and the verb handler re-checks the lease right before it acts (`enforceLease`).
  */
 import { checkBrowserContent, type ContentRefusal } from './content-check'
 import type { OriginClass, OriginClassOptions } from './origin-class'
@@ -49,16 +51,19 @@ const READ_OPS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Verbs that observe a pane's content: the read verbs plus `browser_network`. On a pane the OPERATOR opened they
- * need the folder's read opt-in (spec §7.1), which a later unit adds, so until then they refuse
- * `BROWSER_READ_NOT_ENABLED`. `browser_list` is not here: it lists such a pane with `readable: false`.
+ * Verbs the live-panel unit owns (spec §5.2): `page` panes only, for every caller. They are refused on any other
+ * origin class, never leased.
  */
-const OBSERVING_OPS: ReadonlySet<string> = new Set([
-  'browser_snapshot',
-  'browser_screenshot',
-  'browser_console',
-  'browser_wait_for',
-  'browser_network'
+const LIVE_PANEL_OPS: ReadonlySet<string> = new Set(['browser_set_data', 'browser_patch'])
+
+/** Verbs that run page script or drive its input: a lease on an `external` page (spec §7.1 "Eval", "Input"). */
+const SCRIPT_AND_INPUT_OPS: ReadonlySet<string> = new Set([
+  'browser_eval',
+  'browser_click',
+  'browser_type',
+  'browser_fill',
+  'browser_press',
+  'browser_upload'
 ])
 
 export function isBrowserOp(op: string): op is BrowserOp {
@@ -79,6 +84,10 @@ export type BrowserDenyReason =
   | 'BROWSER_READ_NOT_ENABLED'
   | 'BROWSER_WRITES_DISABLED'
   | 'BROWSER_PAUSED'
+  | 'BROWSER_WRITE_DENIED'
+  | 'BROWSER_LEASE_ENDED'
+  | 'NOT_A_PAGE_PANE'
+  | 'BROWSER_KEY_UNKNOWN'
   | 'NOT_YET_AVAILABLE'
 
 /** How a pane was opened (spec §1.2). */
@@ -90,6 +99,15 @@ export interface BrowserPaneAccess {
   originClass: OriginClass
   disconnected: boolean
   paused: boolean
+  /**
+   * The folder's "Let agents read browser panes I open" opt-in (exact folder, spec §7.1). Only an operator-opened
+   * pane consults it; an agent-opened pane is always readable. Absent = off.
+   */
+  readOptIn?: boolean
+  /** The operator's lease on this pane is active now (and was granted for this very view). Absent = no lease. */
+  leaseActive?: boolean
+  /** The operator denied this pane less than 5 minutes ago. Absent = no cooldown. */
+  writeDenied?: boolean
 }
 
 export interface BrowserGateInput {
@@ -112,16 +130,47 @@ export interface BrowserGateInput {
    * in `args.action` at plan level; either one counts.
    */
   action?: string
+  /**
+   * The verb handler's last line of defence: a call on a `lease` row with no active lease refuses
+   * `BROWSER_LEASE_ENDED` instead of passing. The plan layer leaves it off, because there the same state is a
+   * confirm, not a refusal.
+   */
+  enforceLease?: boolean
 }
 
+export type BrowserTier = 'free' | 'lease' | 'refused'
+
 /**
- * The tier of a call (spec §7.1) for the verbs U1 owns. `free` runs; `lease` needs the operator's lease, which
- * a later unit adds. Navigate and close on an operator-opened pane are `lease` in every origin class.
+ * The tier of a call (spec §7.1). Rows are verb classes, columns the origin class at call time and who opened the
+ * pane. `blank` (nothing loaded) behaves like `local`: there is no remote page to act as. Reads are `free` here;
+ * an operator pane's read opt-in is a separate gate step (it refuses, it does not lease).
+ *
+ *   Open / Read                 free (an operator pane's reads need the folder opt-in)
+ *   Navigate, Emulate, Download, Close   agent pane: free · operator pane: lease
+ *   Network start/read          agent pane: free on page/local/blank, lease on external · operator pane: lease
+ *   Network stop                always free (it only ever reduces what is observed)
+ *   Eval, Input                 agent pane: free on page/local/blank, lease on external · operator pane: lease
+ *   Live panel                  free on `page`, refused on any other class (agent or operator pane)
  */
-export function browserTier(op: BrowserOp, pane: BrowserPaneAccess | undefined): 'free' | 'lease' {
+export function browserTier(
+  op: BrowserOp,
+  pane: BrowserPaneAccess | undefined,
+  args?: Record<string, unknown>
+): BrowserTier {
   if (!isBrowserWriteOp(op)) return 'free'
   if (PANELESS_OPS.has(op)) return 'free'
-  return pane?.openedBy === 'operator' ? 'lease' : 'free'
+  if (!pane) return 'free'
+  if (LIVE_PANEL_OPS.has(op)) return pane.originClass === 'page' ? 'free' : 'refused'
+  const operatorPane = pane.openedBy === 'operator'
+  if (op === 'browser_network') {
+    if (args?.action === 'stop') return 'free'
+    return operatorPane || pane.originClass === 'external' ? 'lease' : 'free'
+  }
+  if (SCRIPT_AND_INPUT_OPS.has(op)) {
+    return operatorPane || pane.originClass === 'external' ? 'lease' : 'free'
+  }
+  // navigate, emulate, download, close
+  return operatorPane ? 'lease' : 'free'
 }
 
 /** A refusal with the detail the plan result and the audit carry. */
@@ -131,9 +180,11 @@ export interface BrowserGateRefusal {
 }
 
 /**
- * The refusal for `op`, or `null` to continue. Order (spec §6.3): pane known → Disconnect → read opt-in →
- * content (arguments) → kill-switch → pause → tier. `close` is exempt from the kill-switch (Q6) but not from
- * Disconnect or Pause.
+ * The refusal for `op`, or `null` to continue. Order (spec §6.3): pane known → Disconnect → read opt-in
+ * (operator panes) → content (arguments) → kill-switch → pause → tier (`refused`, then the Deny cooldown, then,
+ * for the handler only, a missing lease). `close` is exempt from the kill-switch (Q6) but not from Disconnect
+ * or Pause. A `lease` row without an active lease is NOT a refusal here: the plan layer turns it into the
+ * operator's confirm.
  */
 export function gateBrowserOpDetailed(
   op: BrowserOp,
@@ -143,7 +194,7 @@ export function gateBrowserOpDetailed(
   const pane = input.pane
   if (addressesPane && !pane) return { reason: 'PANE_NOT_FOUND' }
   if (addressesPane && pane?.disconnected) return { reason: 'BROWSER_DISCONNECTED' }
-  if (OBSERVING_OPS.has(op) && pane?.openedBy === 'operator')
+  if (addressesPane && pane?.openedBy === 'operator' && pane.readOptIn !== true)
     return { reason: 'BROWSER_READ_NOT_ENABLED' }
   if (input.args) {
     const content = checkBrowserContent(op, input.args)
@@ -158,7 +209,13 @@ export function gateBrowserOpDetailed(
     input.action ?? (typeof input.args?.action === 'string' ? input.args.action : undefined)
   const pauseExempt = op === 'browser_network' && (action === 'read' || action === 'stop')
   if (write && addressesPane && pane?.paused && !pauseExempt) return { reason: 'BROWSER_PAUSED' }
-  if (write && browserTier(op, pane) === 'lease') return { reason: 'NOT_YET_AVAILABLE' }
+  const tier = browserTier(op, pane, action !== undefined ? { ...input.args, action } : input.args)
+  if (tier === 'refused') return { reason: 'NOT_A_PAGE_PANE' }
+  if (tier === 'lease') {
+    if (pane?.writeDenied === true) return { reason: 'BROWSER_WRITE_DENIED' }
+    if (input.enforceLease === true && pane?.leaseActive !== true)
+      return { reason: 'BROWSER_LEASE_ENDED' }
+  }
   return null
 }
 
@@ -168,24 +225,29 @@ export function gateBrowserOp(op: BrowserOp, input: BrowserGateInput): BrowserDe
 }
 
 export type WritableState = 'free' | 'confirm' | 'paused' | 'revoked' | 'off'
-export type WritableReason = 'read-not-enabled' | 'kill-switch' | 'disconnected' | 'paused'
+export type WritableReason =
+  'read-not-enabled' | 'kill-switch' | 'disconnected' | 'paused' | 'write-denied'
 
 /**
- * `browser_list`'s `readable` / `writable` / `writableReason` for one pane (spec §6.2). Until the folder
- * read opt-in of a later unit exists, a pane the OPERATOR opened is not readable to agents.
+ * `browser_list`'s `readable` / `writable` / `writableReason` for one pane (spec §6.2, §7.1). A pane the OPERATOR
+ * opened is readable to agents only when its folder opted in; its writes then need a lease (`confirm`, or `free`
+ * while one is active). An `external` page in an agent pane is `confirm` for the same reason: its script and
+ * input verbs are lease rows.
  */
 export function describePaneAccess(
   pane: BrowserPaneAccess,
   writesEnabled: boolean
 ): { readable: boolean; writable: WritableState; writableReason?: WritableReason } {
-  const readable = pane.openedBy === 'agent' && !pane.disconnected
   if (pane.disconnected)
     return { readable: false, writable: 'revoked', writableReason: 'disconnected' }
-  if (pane.openedBy === 'operator') {
-    return { readable, writable: 'off', writableReason: 'read-not-enabled' }
-  }
+  const readable = pane.openedBy === 'agent' || pane.readOptIn === true
+  if (!readable) return { readable, writable: 'off', writableReason: 'read-not-enabled' }
   if (!writesEnabled) return { readable, writable: 'off', writableReason: 'kill-switch' }
   if (pane.paused) return { readable, writable: 'paused', writableReason: 'paused' }
+  const needsLease = pane.openedBy === 'operator' || pane.originClass === 'external'
+  if (needsLease && pane.writeDenied === true)
+    return { readable, writable: 'off', writableReason: 'write-denied' }
+  if (needsLease && pane.leaseActive !== true) return { readable, writable: 'confirm' }
   return { readable, writable: 'free' }
 }
 

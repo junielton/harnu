@@ -516,15 +516,15 @@ describe('browser_network', () => {
     expect(r.host.captureStatus('bp-1')).toMatchObject({ active: true })
   })
 
-  it('on an external page start and read need a lease that does not exist yet; stop still works', async () => {
+  it('on an external page start and read are a lease row the handler re-checks (no lease: BROWSER_LEASE_ENDED); stop still works', async () => {
     const r = rig({ url: 'https://example.com/' })
     expect(await networkVerb({ paneId: 'bp-1', action: 'start' }, r.deps)).toMatchObject({
       ok: false,
-      error: 'NOT_YET_AVAILABLE'
+      error: 'BROWSER_LEASE_ENDED'
     })
     expect(await networkVerb({ paneId: 'bp-1', action: 'read' }, r.deps)).toMatchObject({
       ok: false,
-      error: 'NOT_YET_AVAILABLE'
+      error: 'BROWSER_LEASE_ENDED'
     })
     expect(await networkVerb({ paneId: 'bp-1', action: 'stop' }, r.deps)).toMatchObject({
       ok: true,

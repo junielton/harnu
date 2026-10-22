@@ -62,7 +62,12 @@ import {
 } from '../terminal-gate-core'
 import { auditField, checkSendContent, summarizeSend } from '../terminal-keys'
 import { checkWaitFor } from '../terminal-wait'
-import { gateBrowserOpDetailed, isBrowserOp, type BrowserGateInput } from '../browser/access'
+import {
+  browserTier,
+  gateBrowserOpDetailed,
+  isBrowserOp,
+  type BrowserGateInput
+} from '../browser/access'
 import { summarizeBrowserCall } from '../browser/audit'
 import type { SendTerminalArgs } from './validate'
 
@@ -155,6 +160,17 @@ export interface ToolCallPlan {
    * `send_terminal` is not grantable, so in practice only this can arm).
    */
   leaseAllow?: { terminalId: string }
+  /**
+   * Set (T564 U4, spec §7.1) when a browser verb on a `lease` row has no active lease, so its confirm is a LEASE
+   * confirm: an Allow performs nothing and grants the lease (`BROWSER_APPROVED_RESEND`), a Deny starts the
+   * 5-minute cooldown. The shell reads it to build the disclosure and to actuate the operator's answer.
+   */
+  browserLeaseConfirm?: { paneId: string }
+  /**
+   * Set when a browser verb on a `lease` row was let through because the operator's lease on that pane is active
+   * (the ask-mode path; in free mode the silent-allow carries the call). The shell actuates it directly.
+   */
+  browserLeaseAllow?: { paneId: string }
   /**
    * Set when this mutation ran FREE — no human confirm — which post-reversal is
    * the DEFAULT for every mutating verb that carries `silentAllowInAgentFolder`
@@ -279,6 +295,16 @@ export function planToolCall({
   let inheritOnceAllow = false
   let silentAllowInAgentFolder = false
   let leaseAllow: { terminalId: string } | undefined
+  let browserLeaseConfirm: { paneId: string } | undefined
+  let browserLeaseAllow: { paneId: string } | undefined
+  /** A browser call on a `lease` row (spec §7.1): decided from the resolved pane and the arguments. */
+  const browserLeaseRow =
+    isBrowserOp(def.op) &&
+    browserTier(def.op, browser?.pane, parsed.value as Record<string, unknown>) === 'lease'
+  const browserLeaseActive = browserLeaseRow && browser?.pane?.leaseActive === true
+  const browserPaneId = isBrowserOp(def.op)
+    ? String((parsed.value as { paneId?: unknown }).paneId ?? '')
+    : ''
 
   // THE BLOCK IS ABSOLUTE. `FOLDER_NOT_ALLOWED` no longer means "not granted yet"
   // (there is no allowlist left to be absent from) — post-reversal it can only
@@ -337,10 +363,13 @@ export function planToolCall({
     //
     // T474 B6: `confirmWhen` is the same narrowing for a rule that depends on the state of what the
     // call addresses — a `send_terminal` to an operator-opened terminal without a lease.
+    //
+    // T564 U4: a browser verb on a `lease` row with no active lease is the same narrowing (spec §7.1).
     const forcedConfirm =
       (def.forceConfirmFor?.(parsed.value as Record<string, unknown>) ?? false) ||
       (def.confirmWhen?.(parsed.value as Record<string, unknown>, terminal ?? UNKNOWN_TERMINAL) ??
-        false)
+        false) ||
+      (browserLeaseRow && !browserLeaseActive)
     if (def.silentAllowInAgentFolder && !forcedConfirm) silentAllowInAgentFolder = true
     else verdict = 'confirm'
   }
@@ -399,6 +428,15 @@ export function planToolCall({
     ) {
       verdict = 'allow'
       leaseAllow = { terminalId: (parsed.value as SendTerminalArgs).terminalId }
+    }
+
+    // T564 U4 (spec §7.1): the browser lease, same family and same direction as the block above. In `ask` mode
+    // the base verdict starts at `confirm`; an active lease lets a lease-row call through. A mission grant never
+    // covers a lease row (browser verbs are not `grantable`), and neither does "always allow" (not
+    // `alwaysAllowable`): the lease is the only repeat-without-asking mechanism.
+    if (verdict === 'confirm' && browserLeaseActive && grantAllow === undefined) {
+      verdict = 'allow'
+      browserLeaseAllow = { paneId: browserPaneId }
     }
 
     // bootstrapConfirmOnDeny (S1/S5): the verbs that BOOTSTRAP membership
@@ -460,6 +498,11 @@ export function planToolCall({
     }
   }
 
+  // A lease-row call still waiting on the operator: its confirm is a LEASE confirm, whatever the mode.
+  if (verdict === 'confirm' && browserLeaseRow && !browserLeaseActive && !explicitBlock) {
+    browserLeaseConfirm = { paneId: browserPaneId }
+  }
+
   // confirm-only-for-mutations + dispatch-only-on-allow, derived from the verdict.
   const shouldConfirm = verdict === 'confirm'
   const shouldDispatch = verdict === 'allow'
@@ -491,7 +534,11 @@ export function planToolCall({
       def.op,
       parsed.value as Record<string, unknown>,
       browser?.pane,
-      browser?.classify
+      {
+        home: homeDir ?? homedir(),
+        gate: !shouldDispatch ? 'confirm' : browserLeaseActive ? 'lease' : 'free',
+        ...(browser?.classify ? { classify: browser.classify } : {})
+      }
     )
   }
 
@@ -509,12 +556,15 @@ export function planToolCall({
           // mode on the silent-allow path — so it can be told apart from a free agent-terminal send.
           def.op === 'send_terminal' && shouldDispatch && terminal?.leaseActive
           ? `LEASE: ${auditField((parsed.value as SendTerminalArgs).terminalId)}`
-          : silentAllowInAgentFolder
-            ? // Free mode: the mutation ran without asking. The audit row is the
-              // operator's ONLY trace of it, so it says so plainly — this is what
-              // they scan when they want to know what the fleet did unattended.
-              'AGENT_ALLOWED'
-            : (decision.reason ?? verdict)
+          : // T564 U4: a browser call that rode the operator's lease says so, distinct from a free agent-pane call.
+            isBrowserOp(def.op) && shouldDispatch && browserLeaseActive
+            ? `LEASE: ${auditField(browserPaneId)}`
+            : silentAllowInAgentFolder
+              ? // Free mode: the mutation ran without asking. The audit row is the
+                // operator's ONLY trace of it, so it says so plainly — this is what
+                // they scan when they want to know what the fleet did unattended.
+                'AGENT_ALLOWED'
+              : (decision.reason ?? verdict)
   }
 
   // Optional fields are assigned only when set (exactOptionalPropertyTypes): a
@@ -526,6 +576,8 @@ export function planToolCall({
   if (inheritDiscovery) result.inheritDiscovery = inheritDiscovery
   if (inheritOnceAllow) result.inheritOnceAllow = true
   if (leaseAllow) result.leaseAllow = leaseAllow
+  if (browserLeaseConfirm) result.browserLeaseConfirm = browserLeaseConfirm
+  if (browserLeaseAllow) result.browserLeaseAllow = browserLeaseAllow
   if (silentAllowInAgentFolder) result.silentAllowInAgentFolder = true
   return result
 }

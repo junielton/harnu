@@ -20,7 +20,7 @@ const agentPane: BrowserPaneAccess = {
   disconnected: false,
   paused: false
 }
-const operatorPane: BrowserPaneAccess = { ...agentPane, openedBy: 'operator' }
+const operatorPane: BrowserPaneAccess = { ...agentPane, openedBy: 'operator', readOptIn: true }
 
 describe('gateBrowserOp', () => {
   it('lets every U1 verb through on a free agent pane', () => {
@@ -81,16 +81,27 @@ describe('gateBrowserOp', () => {
     expect(gateBrowserOp('browser_navigate', { pane: pausedOperator, writesEnabled: true })).toBe(
       'BROWSER_PAUSED'
     )
-    expect(gateBrowserOp('browser_navigate', { pane: operatorPane, writesEnabled: true })).toBe(
-      'NOT_YET_AVAILABLE'
-    )
+    // A lease row without a lease is the PLAN's confirm, not a refusal; the handler enforces it (T571 U4).
+    expect(
+      gateBrowserOp('browser_navigate', { pane: operatorPane, writesEnabled: true })
+    ).toBeNull()
+    expect(
+      gateBrowserOp('browser_navigate', {
+        pane: operatorPane,
+        writesEnabled: true,
+        enforceLease: true
+      })
+    ).toBe('BROWSER_LEASE_ENDED')
   })
 
   it('never lets a write reach an operator-opened pane before the lease exists', () => {
     for (const op of ['browser_navigate', 'browser_close'] as const) {
-      expect(gateBrowserOp(op, { pane: operatorPane, writesEnabled: true }), op).toBe(
-        'NOT_YET_AVAILABLE'
-      )
+      const input = { pane: operatorPane, writesEnabled: true, enforceLease: true }
+      expect(gateBrowserOp(op, input), op).toBe('BROWSER_LEASE_ENDED')
+      expect(
+        gateBrowserOp(op, { ...input, pane: { ...operatorPane, leaseActive: true } }),
+        op
+      ).toBeNull()
     }
   })
 })
@@ -148,10 +159,16 @@ describe('describePaneAccess', () => {
       writable: 'paused',
       writableReason: 'paused'
     })
-    expect(describePaneAccess(operatorPane, true)).toEqual({
+    expect(describePaneAccess({ ...operatorPane, readOptIn: false }, true)).toEqual({
       readable: false,
       writable: 'off',
       writableReason: 'read-not-enabled'
+    })
+    // Opted in: readable, and its writes need a lease (confirm), or are free while one is active.
+    expect(describePaneAccess(operatorPane, true)).toEqual({ readable: true, writable: 'confirm' })
+    expect(describePaneAccess({ ...operatorPane, leaseActive: true }, true)).toEqual({
+      readable: true,
+      writable: 'free'
     })
   })
 })

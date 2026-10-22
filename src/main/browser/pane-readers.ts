@@ -15,6 +15,7 @@ import {
   type NetworkCapture,
   type NetworkIdleTracker
 } from './network-capture'
+import { createContextTracker, type ContextTracker } from './contexts'
 import { createRefStore, type RefStore } from './snapshot'
 
 export type CaptureEndReason = 'stopped' | 'expired' | 'closed' | 'disconnected' | 'kill-switch'
@@ -35,6 +36,8 @@ export interface PaneReaders {
   readonly capture: NetworkCapture
   readonly idle: NetworkIdleTracker
   readonly refs: RefStore
+  /** Which JavaScript context is each frame's own (`browser_eval`'s `frame`). */
+  readonly contexts: ContextTracker
   /** Every CDP event of the pane's session. */
   ingest(method: string, params: unknown): void
   startCapture(opts: Partial<CaptureOptions>): CaptureStatus
@@ -47,6 +50,7 @@ export function createPaneReaders(deps: PaneReadersDeps): PaneReaders {
   const consoleBuffer = createConsoleBuffer(deps.now)
   const idle = createNetworkIdleTracker(deps.now)
   const refs = createRefStore()
+  const contexts = createContextTracker()
   const capture = createNetworkCapture({
     now: deps.now,
     scrub: deps.scrub,
@@ -93,7 +97,9 @@ export function createPaneReaders(deps: PaneReadersDeps): PaneReaders {
     capture,
     idle,
     refs,
+    contexts,
     ingest(method, params) {
+      if (method.startsWith('Runtime.executionContext')) contexts.ingest(method, params)
       if (method.startsWith('Network.')) {
         idle.ingest(method, params)
         capture.ingest(method, params)

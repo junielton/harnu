@@ -176,8 +176,11 @@ describe.each([false, true])('content refusals at plan level, ask=%s', (ask) => 
         .result
     ).toBe('URL_SCHEME_BLOCKED')
     expect(
-      navigate({ url: 'file:///x' }, withPane({ pane: pane({ openedBy: 'operator' }) }), ask)
-        .auditRecord.result
+      navigate(
+        { url: 'file:///x' },
+        withPane({ pane: pane({ openedBy: 'operator', readOptIn: true }) }),
+        ask
+      ).auditRecord.result
     ).toBe('URL_SCHEME_BLOCKED')
   })
 })

@@ -106,9 +106,9 @@ async function openRead(
   op: Parameters<typeof gate>[0],
   paneId: string,
   deps: BrowserReadDeps,
-  action?: string
+  args?: Record<string, unknown>
 ): Promise<{ refusal: Refusal } | { ctx: ReadCtx }> {
-  const g = await gate(op, paneId, deps, action)
+  const g = await gate(op, paneId, deps, args)
   if ('refusal' in g) return g
   const rec = g.rec!
   const readers = deps.host.readers(rec.paneId)
@@ -271,7 +271,7 @@ export async function snapshotVerb(
       frameHosts,
       frameTrees
     })
-    ctx.readers.refs.commit(snapshotId, formatted.refs)
+    ctx.readers.refs.commit(snapshotId, formatted.refs, formatted.labels)
 
     const wantsData = args.include?.includes('data') === true
     let data: unknown = undefined
@@ -546,7 +546,8 @@ export async function networkVerb(
   args: NetworkArgs,
   deps: BrowserReadDeps
 ): Promise<Record<string, unknown>> {
-  const opened = await openRead('browser_network', args.paneId, deps, args.action)
+  // The tier depends on the action (`stop` is always free, `start`/`read` lease on an external page, spec §7.1).
+  const opened = await openRead('browser_network', args.paneId, deps, { action: args.action })
   if ('refusal' in opened) return opened.refusal
   const { ctx } = opened
 
@@ -561,11 +562,8 @@ export async function networkVerb(
     return refuseBadArgs(`\`limit\` must be an integer between 1 and ${NETWORK_MAX_LIMIT}.`)
   }
   // Recording what an external site's requests carry is observing traffic the page did not mean to expose, so on
-  // an external page it is a lease (spec §7.1). The lease arrives with the input verbs; until then it refuses.
-  // `stop` only ever reduces what is observed, so it is always allowed.
-  if (args.action !== 'stop' && ctx.ack.origin === 'external') {
-    return refuse('NOT_YET_AVAILABLE', { feature: 'Network capture on an external page' })
-  }
+  // an external page it is a lease row (spec §7.1). That is decided at PLAN level (`access.ts`, so a refusal never
+  // follows a confirm) and re-checked in the gate above; `stop` only reduces what is observed and is always free.
 
   const rec = deps.registry.get(ctx.paneId)!
   const token = deps.registry.beginWrite(rec.paneId)

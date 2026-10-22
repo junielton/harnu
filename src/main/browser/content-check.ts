@@ -7,9 +7,12 @@
  * agent actions" mode a call that can never succeed never raises a confirm, and with the kill-switch off a
  * `javascript:` URL is still told what is wrong with it.
  */
+import { PRESS_KEY_NAMES, firstUnknownKey } from './cdp-keys'
 import { checkTopLevelNavigation, URL_SCHEME_BLOCKED } from './nav-policy'
+import { escapeForAudit } from '../terminal-keys'
 
-export type ContentCode = 'BAD_ARGS' | typeof URL_SCHEME_BLOCKED | 'NOT_YET_AVAILABLE'
+export type ContentCode =
+  'BAD_ARGS' | typeof URL_SCHEME_BLOCKED | 'NOT_YET_AVAILABLE' | 'BROWSER_KEY_UNKNOWN'
 
 export interface ContentRefusal {
   code: ContentCode
@@ -70,6 +73,21 @@ export function checkBrowserContent(
       return { code: 'BAD_ARGS', detail: 'Pass exactly one of `url` or `action`.' }
     }
     return args.url !== undefined ? checkUrl(str(args.url) ?? '') : null
+  }
+  if (op === 'browser_press') {
+    const keys = Array.isArray(args.keys)
+      ? args.keys.filter((k): k is string => typeof k === 'string')
+      : []
+    const bad = firstUnknownKey(keys)
+    if (bad !== null) {
+      // The name is untrusted text: quoted, escaped and cut, so it cannot pass for the rest of the message.
+      const shown = [...bad].slice(0, 16)
+      const quoted = `"${escapeForAudit(shown.join(''), true)}${[...bad].length > 16 ? '…' : ''}"`
+      return {
+        code: 'BROWSER_KEY_UNKNOWN',
+        detail: `${quoted} is not a key. Use one of: ${PRESS_KEY_NAMES.join(', ')}.`
+      }
+    }
   }
   return null
 }

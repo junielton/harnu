@@ -1545,6 +1545,136 @@ export function parseBrowserWaitFor(input: unknown): ParseResult<BrowserWaitForA
   return { ok: true, value: dropUndefined(parsed.data) as BrowserWaitForArgs }
 }
 
+/* ---- T571 (T564 U4): the acting verbs. Bounds are checked HERE, at parse time, so a bad call is refused before
+ * the kill-switch and before any confirm in `ask` mode (spec §6.3). The key vocabulary is judged by
+ * `browser/content-check` in the same slot. ---- */
+
+const refSchema = z.string().min(1).max(40)
+
+/** Validated args for `browser_eval`. */
+export interface BrowserEvalArgs {
+  folder?: string
+  paneId: string
+  expression: string
+  awaitPromise?: boolean
+  frame?: string
+  timeoutMs?: number
+}
+
+const BrowserEvalSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  expression: z.string().min(1).max(100_000),
+  awaitPromise: z.boolean().optional(),
+  frame: z.string().min(1).max(200).optional(),
+  timeoutMs: z.number().int().min(100).max(30_000).optional()
+})
+
+export function parseBrowserEval(input: unknown): ParseResult<BrowserEvalArgs> {
+  const parsed = BrowserEvalSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserEvalArgs }
+}
+
+/** Validated args for `browser_click`. */
+export interface BrowserClickArgs {
+  folder?: string
+  paneId: string
+  ref: string
+  button?: 'left' | 'middle' | 'right'
+  clickCount?: number
+  modifiers?: Array<'Alt' | 'Control' | 'Meta' | 'Shift'>
+  offset?: { x: number; y: number }
+}
+
+const BrowserClickSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  ref: refSchema,
+  button: z.enum(['left', 'middle', 'right']).optional(),
+  clickCount: z.number().int().min(1).max(3).optional(),
+  modifiers: z
+    .array(z.enum(['Alt', 'Control', 'Meta', 'Shift']))
+    .max(4)
+    .optional(),
+  offset: z.object({ x: z.number().finite(), y: z.number().finite() }).optional()
+})
+
+export function parseBrowserClick(input: unknown): ParseResult<BrowserClickArgs> {
+  const parsed = BrowserClickSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserClickArgs }
+}
+
+/** Validated args for `browser_type`. */
+export interface BrowserTypeArgs {
+  folder?: string
+  paneId: string
+  ref?: string
+  text: string
+  delayMs?: number
+  submit?: boolean
+}
+
+const BrowserTypeSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  ref: refSchema.optional(),
+  text: z.string().min(1).max(4000),
+  delayMs: z.number().int().min(0).max(1000).optional(),
+  submit: z.boolean().optional()
+})
+
+export function parseBrowserType(input: unknown): ParseResult<BrowserTypeArgs> {
+  const parsed = BrowserTypeSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserTypeArgs }
+}
+
+/** Validated args for `browser_fill`. */
+export interface BrowserFillArgs {
+  folder?: string
+  paneId: string
+  fields: Array<{ ref: string; value: string }>
+}
+
+const BrowserFillSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  fields: z
+    .array(z.object({ ref: refSchema, value: z.string().max(4000) }))
+    .min(1)
+    .max(20)
+})
+
+export function parseBrowserFill(input: unknown): ParseResult<BrowserFillArgs> {
+  const parsed = BrowserFillSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserFillArgs }
+}
+
+/** Validated args for `browser_press`. */
+export interface BrowserPressArgs {
+  folder?: string
+  paneId: string
+  keys: string[]
+  ref?: string
+}
+
+const BrowserPressSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  // A key name is judged by `checkBrowserContent` (BROWSER_KEY_UNKNOWN); the length bound only keeps it small.
+  keys: z.array(z.string().min(1).max(64)).min(1).max(64),
+  ref: refSchema.optional()
+})
+
+export function parseBrowserPress(input: unknown): ParseResult<BrowserPressArgs> {
+  const parsed = BrowserPressSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserPressArgs }
+}
+
 function dropUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>
 }
@@ -1575,6 +1705,11 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   browser_console: parseBrowserConsole,
   browser_network: parseBrowserNetwork,
   browser_wait_for: parseBrowserWaitFor,
+  browser_eval: parseBrowserEval,
+  browser_click: parseBrowserClick,
+  browser_type: parseBrowserType,
+  browser_fill: parseBrowserFill,
+  browser_press: parseBrowserPress,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

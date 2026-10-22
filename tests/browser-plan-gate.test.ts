@@ -52,7 +52,7 @@ describe('browser plan gate', () => {
     ['BROWSER_DISCONNECTED', gate({ pane: pane({ disconnected: true }) })],
     ['BROWSER_WRITES_DISABLED', gate({ writesEnabled: false })],
     ['BROWSER_PAUSED', gate({ pane: pane({ paused: true }) })],
-    ['NOT_YET_AVAILABLE', gate({ pane: pane({ openedBy: 'operator' }) })]
+    ['BROWSER_READ_NOT_ENABLED', gate({ pane: pane({ openedBy: 'operator' }) })]
   ])(
     '%s is a deny that never confirms and never dispatches, free and ask mode alike',
     (code, state) => {
@@ -76,9 +76,16 @@ describe('browser plan gate', () => {
       run(gate({ pane: pane({ disconnected: true, paused: true }), writesEnabled: false }))
     ).toBe('BROWSER_DISCONNECTED')
     expect(
-      run(gate({ pane: pane({ paused: true, openedBy: 'operator' }), writesEnabled: false }))
+      run(
+        gate({
+          pane: pane({ paused: true, openedBy: 'operator', readOptIn: true }),
+          writesEnabled: false
+        })
+      )
     ).toBe('BROWSER_WRITES_DISABLED')
-    expect(run(gate({ pane: pane({ paused: true, openedBy: 'operator' }) }))).toBe('BROWSER_PAUSED')
+    expect(run(gate({ pane: pane({ paused: true, openedBy: 'operator', readOptIn: true }) }))).toBe(
+      'BROWSER_PAUSED'
+    )
   })
 
   it('keeps browser_list and browser_close working with the kill-switch off', () => {
