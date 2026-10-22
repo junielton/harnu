@@ -272,7 +272,13 @@ function toPersistShape(state: InMemoryWorktreeState): WorktreeHelperState {
       // T474: an agent terminal's id is held by an agent and its PTY dies with the app, so
       // the pane must not come back after a restart backed by a different shell.
       .filter((p) => (p as { origin?: unknown }).origin !== 'agent')
-      .map((p) => stripTransientFields({ ...toRaw(p) }) as HelperPane)
+      .map((p) => {
+        const pane = stripTransientFields({ ...toRaw(p) }) as HelperPane
+        // The `payload` bag is JSON by contract, and every pane spread through the reactive state (a rebalance after
+        // a new pane, a ratio drag) holds a PROXY of it, which cannot cross the IPC write: copy it out as plain data.
+        if (pane.payload !== undefined) pane.payload = JSON.parse(JSON.stringify(pane.payload))
+        return pane
+      })
   }
 }
 

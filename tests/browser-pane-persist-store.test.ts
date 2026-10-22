@@ -112,6 +112,29 @@ describe('a browser pane in helpers.json', () => {
     })
   })
 
+  it('survives a rebalance and a ratio drag: a pane spread through the reactive state holds a proxy of its payload', async () => {
+    const helpers = useHelpersStore()
+    await helpers.ensureLoaded(WT)
+    addPane(helpers)
+    helpers.patchBrowserPayload(PANE, () => ({ zoom: 1.5, pins: [{ id: 'p1' }] }))
+    // a second pane rebalances every ratio by spreading the first, and a drag does the same
+    helpers.addBrowserHelper(WT, {
+      paneId: 'bp-bbbb2222',
+      name: 'second',
+      url: 'http://localhost:3000/second',
+      openedBy: 'operator',
+      partition: 'operator',
+      ownerSessionId: null
+    })
+    helpers.setPaneRatios(WT, [0.3, 0.7])
+    await flushed()
+    const written = helpersSet.mock.calls.at(-1)![0] as {
+      state: { panes: Array<{ id: string; payload: Record<string, unknown> }> }
+    }
+    expect(written.state.panes.map((p) => p.id)).toEqual([PANE, 'bp-bbbb2222'])
+    expect(written.state.panes[0]!.payload).toMatchObject({ zoom: 1.5, pins: [{ id: 'p1' }] })
+  })
+
   it('writes nothing for a patch that changes nothing', async () => {
     const helpers = useHelpersStore()
     await helpers.ensureLoaded(WT)
