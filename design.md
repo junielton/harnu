@@ -652,6 +652,11 @@ scale (0.43 for the 6px default, 5px → 0.38, 8px → 0.5), and non-square elem
 same geometry, same reduced-motion behaviour. Used by the agent connection chip's leading
 dot (§6); the dot itself carries `bg-accent`.
 
+**Red variant** (T570) — `.anim-pulse-dot--red` changes **only** the halo colour:
+`.anim-pulse-dot--red::after { background: var(--color-red-soft) }`. Same keyframe, geometry and
+reduced-motion behaviour. Used by the browser pane's network counter (§6 "Network counter"); the dot
+itself carries `bg-red`.
+
 Attention blink (`needs-input` state) — opacity, not box-shadow, to read as
 "blinking, needs you" without competing with the `active` green halo. Helper
 `.anim-attention-dot` in `main.css`. Respects `prefers-reduced-motion` (§7).
@@ -3835,7 +3840,7 @@ mockup, scenario "Device mode"). Network capture is **off by default**; while an
 header shows a recording pill between the connection chip and the ⋯ button, so the operator can always see that
 traffic is being recorded. Geometry and tokens: `inline-flex`, `gap-1` (5px), `padding 0 4px`, mono 10.5px
 `--red` text with **no fill and no border** (it is a status readout, not a control), a 6px `--red` leading dot
-(`.anim-pulse-dot`; under `prefers-reduced-motion` the dot is still and the word carries the signal), then the
+(`.anim-pulse-dot.anim-pulse-dot--red`; under `prefers-reduced-motion` the dot is still and the word carries the signal), then the
 word `$t('browserPane.network.label')` ("Network") and the time **remaining** until capture stops itself, `m:ss`,
 counting down once a second (the same `formatCountdown` as the pause chip). The native `title` reads
 `$t('browserPane.network.hint')` ("Network capture is on. It stops by itself and records no bodies unless the
