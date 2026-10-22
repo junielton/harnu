@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  REAL_MOUSEDOWN_WINDOW_MS,
   evaluatePickGate,
   evaluateSubmitGate,
   resolveDestination,
@@ -12,8 +11,8 @@ const NOW = 100_000
 const calm = { now: NOW, agentInputInFlight: false, agentInputAt: null }
 
 describe('evaluatePickGate', () => {
-  const ok = { ...calm, overlayActive: true, lastRealMouseDownAt: NOW - 50 }
-  it('accepts a pick after a real press with no agent input around', () => {
+  const ok = { ...calm, overlayActive: true }
+  it('accepts a pick with no agent input around', () => {
     expect(evaluatePickGate(ok)).toEqual({ ok: true })
   })
   it('refuses a pick while the overlay is off', () => {
@@ -32,15 +31,6 @@ describe('evaluatePickGate', () => {
       ok: false,
       reason: 'AGENT_INPUT'
     })
-  })
-  it('refuses a pick the OS never saw a mouse press for (a script-driven click)', () => {
-    expect(evaluatePickGate({ ...ok, lastRealMouseDownAt: null })).toEqual({
-      ok: false,
-      reason: 'NO_REAL_MOUSE'
-    })
-    expect(
-      evaluatePickGate({ ...ok, lastRealMouseDownAt: NOW - REAL_MOUSEDOWN_WINDOW_MS - 1 })
-    ).toEqual({ ok: false, reason: 'NO_REAL_MOUSE' })
   })
 })
 

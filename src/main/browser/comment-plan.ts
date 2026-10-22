@@ -3,22 +3,15 @@
  *
  *  - {@link evaluatePickGate}: may a guest's pick open a composer? A pick is accepted only if no agent INPUT verb
  *    ran on the pane within the previous 1500 ms (the `agentInputAt` window of §5.4), so an agent cannot use a
- *    `click` to open a composer on a node of its choosing; and only if a REAL mouse press was seen on the pane.
+ *    `click` to open a composer on a node of its choosing. (U0 A1: `before-mouse-event` fires for real, CDP and
+ *    `sendInputEvent` mouse input alike, so unlike a key it cannot tell the operator's click from a driven one;
+ *    the `agentInputAt` window the input verbs open is the mechanism.)
  *  - {@link evaluateSubmitGate}: may `comment:submit` go through? The same agent-input window, plus the pane's
  *    `paused` and `disconnected` state (spec §8.6).
  *  - {@link selectPins} / {@link resolveDestination}: which pins a submit sends, and to whom.
  */
 import type { PinRecord } from './comment-pins'
 import { AGENT_INPUT_WINDOW_MS } from './emit-gate'
-
-/** A pick needs a real mouse press this recent on the pane (`before-mouse-event`); a long press is still one. */
-export const REAL_MOUSEDOWN_WINDOW_MS = 10_000
-/**
- * Stricter than the spec's text, in the same spirit as the emit gate's condition 4: the guest says it saw a
- * trusted click, main wants the OS to have said so too (a script-driven CDP click does not pass through
- * `before-mouse-event`). ONE named switch, so it can be dropped with a one-line change.
- */
-export const REQUIRE_REAL_MOUSEDOWN_FOR_PICK = true
 
 export interface AgentInputFacts {
   now: number
@@ -38,21 +31,13 @@ function agentInputRecent(i: AgentInputFacts): boolean {
 export interface PickGateInput extends AgentInputFacts {
   /** The overlay is switched on for this pane (a pick while it is off is stale or forged). */
   overlayActive: boolean
-  /** When `before-mouse-event` last saw a real `mouseDown` on the pane, or `null`. */
-  lastRealMouseDownAt: number | null
 }
 
-export type PickGateVerdict =
-  { ok: true } | { ok: false; reason: 'OVERLAY_OFF' | 'AGENT_INPUT' | 'NO_REAL_MOUSE' }
+export type PickGateVerdict = { ok: true } | { ok: false; reason: 'OVERLAY_OFF' | 'AGENT_INPUT' }
 
 export function evaluatePickGate(i: PickGateInput): PickGateVerdict {
   if (!i.overlayActive) return { ok: false, reason: 'OVERLAY_OFF' }
   if (agentInputRecent(i)) return { ok: false, reason: 'AGENT_INPUT' }
-  if (REQUIRE_REAL_MOUSEDOWN_FOR_PICK) {
-    const real =
-      i.lastRealMouseDownAt !== null && i.now - i.lastRealMouseDownAt <= REAL_MOUSEDOWN_WINDOW_MS
-    if (!real) return { ok: false, reason: 'NO_REAL_MOUSE' }
-  }
   return { ok: true }
 }
 

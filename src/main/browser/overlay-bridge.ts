@@ -201,8 +201,7 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
       now: deps.now(),
       overlayActive: r.active,
       agentInputInFlight: deps.registry.agentInput(who.paneId).inFlight,
-      agentInputAt: deps.registry.agentInput(who.paneId).at,
-      lastRealMouseDownAt: deps.getHost().lastRealMouseDownAt(who.paneId)
+      agentInputAt: deps.registry.agentInput(who.paneId).at
     })
     const folder = deps.registry.get(who.paneId)?.folder ?? ''
     if (!gate.ok) {
