@@ -917,7 +917,7 @@ calls act twice.
 acknowledged by the browser and not delivered on the first page a pane loads, after it moves from `about:blank` to
 a site, after a move to another site (a different host or port), and after a page's own `location.replace`; they
 are delivered once Harnu navigates the pane again on the same site (a reload is enough), whether or not the
-operator is looking at it. So `browser_click`, `browser_press` and a `browser_type` that types key by key
+operator is looking at it. So `browser_click`, `browser_press`, a `browser_download` by `ref` and a `browser_type` that types key by key
 (`delayMs`) or presses Enter (`submit: true`) refuse `PANE_INPUT_NOT_READY` in those states, before anything is
 sent and before any confirm: you are never told a click worked when it did nothing. On a pane you opened the fix
 is yours: `browser_navigate({ paneId, action: "reload" })`, `browser_snapshot` for fresh refs, call again. On a
