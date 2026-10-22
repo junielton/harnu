@@ -11,11 +11,7 @@ import { checkTopLevelNavigation, URL_SCHEME_BLOCKED } from './nav-policy'
 import { checkPageContentSize } from './page-content'
 
 export type ContentCode =
-  | 'BAD_ARGS'
-  | typeof URL_SCHEME_BLOCKED
-  | 'NOT_YET_AVAILABLE'
-  | 'DATA_TOO_LARGE'
-  | 'HTML_TOO_LARGE'
+  'BAD_ARGS' | typeof URL_SCHEME_BLOCKED | 'NOT_YET_AVAILABLE' | 'DATA_TOO_LARGE' | 'HTML_TOO_LARGE'
 
 export interface ContentRefusal {
   code: ContentCode

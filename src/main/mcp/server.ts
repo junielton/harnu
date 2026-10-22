@@ -128,7 +128,6 @@ import { setMcpArgsProvider } from '../pty'
 import { gateTerminalOp, type TerminalGateState } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
 import { noteMcpPort, resolveBrowserGate } from '../browser/browser-service'
-import { checkBrowserContent } from '../browser/page-content'
 import { isBrowserOp, type BrowserGateInput } from '../browser/access'
 import { terminalLeases } from '../terminal-lease'
 import { terminalRegistry } from '../terminal-registry'
@@ -1071,9 +1070,7 @@ async function runToolCall(
     // plan level (spec §6.3). `browser_open` and `browser_list` carry a `folder` of their own and address
     // no pane; they still need the kill-switch, which rides in the same state.
     const resolved = await resolveBrowserGate(
-      def.op === 'browser_open' || def.op === 'browser_list' ? undefined : strField(args, 'paneId'),
-      // T569 U2: size refusals ride the same plan-level gate (spec §6.3), ahead of the kill-switch and any confirm.
-      checkBrowserContent(def.op, args)
+      def.op === 'browser_open' || def.op === 'browser_list' ? undefined : strField(args, 'paneId')
     )
     if (def.op !== 'browser_open' && def.op !== 'browser_list') gateFolder = resolved.folder
     browser = resolved.input

@@ -63,12 +63,9 @@ describe('checkBrowserContent (pure)', () => {
       checkBrowserContent('browser_open', { folder: '/w', url: 'http://a.test', path: 'a.html' })
         ?.code
     ).toBe('BAD_ARGS')
-    expect(checkBrowserContent('browser_open', { folder: '/w', path: 'a.html' })?.code).toBe(
-      'NOT_YET_AVAILABLE'
-    )
-    expect(checkBrowserContent('browser_open', { folder: '/w', html: '<p>' })?.code).toBe(
-      'NOT_YET_AVAILABLE'
-    )
+    // The `path` and `html` forms are served since T569 U2: the plan layer lets them through to the verb.
+    expect(checkBrowserContent('browser_open', { folder: '/w', path: 'a.html' })).toBeNull()
+    expect(checkBrowserContent('browser_open', { folder: '/w', html: '<p>' })).toBeNull()
     expect(
       checkBrowserContent('browser_open', { folder: '/w', url: 'http://a.test', device: 'phone-m' })
         ?.code
@@ -84,7 +81,7 @@ describe('checkBrowserContent (pure)', () => {
         folder: '/w',
         url: 'harnu-page://f0123456789ab/a.html'
       })?.code
-    ).toBe('NOT_YET_AVAILABLE')
+    ).toBe('BAD_ARGS')
   })
 
   it('judges navigate: exactly one of url/action, and the scheme of a url', () => {
@@ -121,12 +118,8 @@ describe.each([false, true])('content refusals at plan level, ask=%s', (ask) => 
     }
   })
 
-  it('browser_open path / html / device is NOT_YET_AVAILABLE and never confirms', () => {
-    for (const args of [
-      { path: 'docs/a.html' },
-      { html: '<p>x</p>', name: 'p' },
-      { url: 'http://localhost:3000', device: 'phone-m' }
-    ]) {
+  it('browser_open device is NOT_YET_AVAILABLE and never confirms', () => {
+    for (const args of [{ url: 'http://localhost:3000', device: 'phone-m' }]) {
       const plan = open(args, on, ask)
       expect(plan).toMatchObject(never)
       expect(plan.auditRecord.result).toBe('NOT_YET_AVAILABLE')
@@ -148,7 +141,9 @@ describe.each([false, true])('content refusals at plan level, ask=%s', (ask) => 
     expect(open({ url: 'javascript:alert(1)' }, off, ask).auditRecord.result).toBe(
       'URL_SCHEME_BLOCKED'
     )
-    expect(open({ path: 'a.html' }, off, ask).auditRecord.result).toBe('NOT_YET_AVAILABLE')
+    expect(
+      open({ url: 'http://localhost:3000', device: 'phone-m' }, off, ask).auditRecord.result
+    ).toBe('NOT_YET_AVAILABLE')
     expect(open({}, off, ask).auditRecord.result).toMatch(/^BAD_ARGS/)
     expect(
       navigate({ url: 'file:///x' }, withPane({ writesEnabled: false }), ask).auditRecord.result

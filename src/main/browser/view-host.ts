@@ -32,7 +32,7 @@ import {
   isPermissionGranted,
   isSubresourceSchemeAllowed
 } from './nav-policy'
-import { classifyOrigin, hostOf, isLoopbackHost } from './origin-class'
+import { classifyOrigin, hostOf } from './origin-class'
 import { decidePageRequest } from './page-guard'
 import { pageCsp } from './page-url'
 import {

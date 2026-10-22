@@ -12,7 +12,8 @@ import { createBrowserAccess, gateBrowserOp } from '../src/main/browser/access'
 import { createBrowserRegistry } from '../src/main/browser/registry'
 import { createPageStateStore } from '../src/main/browser/page-state'
 import { buildPageUrl, folderIdOf } from '../src/main/browser/page-url'
-import { checkBrowserContent, MAX_PANEL_HTML_BYTES } from '../src/main/browser/page-content'
+import { checkBrowserContent } from '../src/main/browser/content-check'
+import { MAX_PANEL_HTML_BYTES } from '../src/main/browser/page-content'
 import { panelSlug, patchVerb, setDataVerb } from '../src/main/browser/page-verbs'
 import {
   openVerb,
@@ -472,11 +473,10 @@ describe('plan-level ordering of the content refusals (spec §6.3)', () => {
 
   it('a size refusal is a deny that never confirms, free and ask mode alike, and beats the kill-switch', () => {
     const big = { paneId: 'bp-1', data: 'x'.repeat(300_000) }
-    const content = checkBrowserContent('browser_set_data', big)
-    expect(content).toBe('DATA_TOO_LARGE')
+    expect(checkBrowserContent('browser_set_data', big)?.code).toBe('DATA_TOO_LARGE')
     for (const ask of [false, true]) {
       for (const writesEnabled of [true, false]) {
-        const p = plan('browser_set_data', big, { pane: page, writesEnabled, content }, ask)
+        const p = plan('browser_set_data', big, { pane: page, writesEnabled }, ask)
         expect(p).toMatchObject({ verdict: 'deny', shouldConfirm: false, shouldDispatch: false })
         expect(p.auditRecord.result).toBe('DATA_TOO_LARGE')
       }
@@ -517,11 +517,11 @@ describe('plan-level ordering of the content refusals (spec §6.3)', () => {
   })
 
   it('checkBrowserContent measures bytes and ignores other verbs', () => {
-    expect(checkBrowserContent('browser_patch', { html: 'é'.repeat(33_000) })).toBe(
+    expect(checkBrowserContent('browser_patch', { html: 'é'.repeat(33_000) })?.code).toBe(
       'HTML_TOO_LARGE'
     )
     expect(
-      checkBrowserContent('browser_open', { html: 'x'.repeat(MAX_PANEL_HTML_BYTES + 1) })
+      checkBrowserContent('browser_open', { html: 'x'.repeat(MAX_PANEL_HTML_BYTES + 1) })?.code
     ).toBe('HTML_TOO_LARGE')
     expect(checkBrowserContent('browser_open', { url: 'http://x' })).toBeNull()
     expect(checkBrowserContent('browser_close', { html: 'x'.repeat(10_000_000) })).toBeNull()
@@ -545,14 +545,14 @@ describe('plan-level ordering of the content refusals (spec §6.3)', () => {
       gateBrowserOp('browser_patch', {
         pane: external,
         writesEnabled: false,
-        content: 'HTML_TOO_LARGE'
+        args: { html: 'x'.repeat(300_000) }
       })
     ).toBe('NOT_A_PAGE_PANE')
     expect(
       gateBrowserOp('browser_patch', {
         pane: page,
         writesEnabled: false,
-        content: 'HTML_TOO_LARGE'
+        args: { html: 'x'.repeat(300_000) }
       })
     ).toBe('HTML_TOO_LARGE')
     expect(gateBrowserOp('browser_patch', { pane: page, writesEnabled: false })).toBe(

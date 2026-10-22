@@ -14,10 +14,7 @@ function byteLength(text: string): number {
   return Buffer.byteLength(text, 'utf8')
 }
 
-function tooLarge(
-  code: 'DATA_TOO_LARGE' | 'HTML_TOO_LARGE',
-  limitBytes: number
-): ContentRefusal {
+function tooLarge(code: 'DATA_TOO_LARGE' | 'HTML_TOO_LARGE', limitBytes: number): ContentRefusal {
   return { code, detail: `over ${limitBytes} bytes`, limitBytes }
 }
 
