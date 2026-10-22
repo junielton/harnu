@@ -35,6 +35,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   drive them without asking; only exact names and short wildcards like `*.test` are accepted, and only you can edit
   the list. A pane you opened now shows "An agent can read here" or "An agent can drive here" in its header once a
   session may do so.
+- **Zoom in the browser pane.** `−`, the percentage and `+` sit at the right of the address bar; click the percentage to go back to 100%. Cmd/Ctrl `+`, `−` and `0` work while the pane has focus. The zoom is remembered per site, so it is still there next time you open that site, and a session's `browser_emulate({ zoom })` sets the same remembered value.
+- **Device mode in the browser pane.** The new phone icon next to the zoom opens seven device classes (`phone-s`, `phone-m`, `phone-l`, `tablet`, `tablet-landscape`, `laptop`, `desktop`) and a custom size. The page really thinks it is on that device — its size, pixel ratio, touch events and, for phones and tablets, a mobile browser identity — and is drawn inside a device frame, scaled down to fit without the page ever seeing the scaling. A second row has Rotate, light/dark, reduced motion and Reset device. Zoom is off while a device is on.
+- **`browser_emulate`, `browser_upload` and `browser_download` for sessions.** A session can zoom a pane, show it as a device (the pane's picker shows the same setting), attach files from the folder to a page's file field (inside the folder only, never secrets, up to 10 files of 50 MB) and download a file into `.harnu/out/downloads/`. Free on a pane the session opened; a lease on one you opened, and for uploads on any site that is not your own machine. `browser_open` also takes a `device`.
+- **A prompt for downloads you click.** Clicking a download in a browser pane now asks "Save _name_ to `.harnu/out/downloads/`?" instead of silently cancelling. Nothing a download produces is ever opened or run, and downloads a page starts by itself are still cancelled.
 
 ### Changed
 
@@ -42,6 +46,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   on your own machine used to be unavailable; it now uses the same ask-once permission as driving a page, and
   ending the recording is always allowed. A pane you opened is now refused until you let agents read browser panes
   in its folder, instead of being unavailable to sessions altogether.
+- A hidden browser pane in device mode now screenshots the right element: the crop accounts for the device's own size instead of the pane's.
 
 ## 2026-10-21
 

@@ -13,7 +13,7 @@ import {
   type BrowserPaneAccess
 } from './access'
 import { shapeBrowserDenial, type BrowserDenialCode } from './browser-hints'
-import { deviceFromPreset, isPresetName } from '../../shared/browser-emulation'
+import { deviceFromPreset, isPresetName, summarizeEmulation } from '../../shared/browser-emulation'
 import { checkBrowserContent, type ContentRefusal } from './content-check'
 import { checkTopLevelNavigation } from './nav-policy'
 import { flagAfterVerbNavigation } from './view-logic'
@@ -75,6 +75,8 @@ export interface BrowserHost {
    * (discard and restore) is a page the operator never saw, so its token differs and the lease is dead.
    */
   viewToken?(paneId: string): string | undefined
+  /** The zoom factor the pane shows now (1 in device mode); absent = 1 (`browser_list`, T572). */
+  zoomOf?(paneId: string): number
 }
 
 export interface BrowserVerbDeps {
@@ -485,8 +487,9 @@ export async function listVerb(
         ...(access.writableReason ? { writableReason: access.writableReason } : {}),
         pausedUntil: deps.access.pausedUntil(rec.paneId),
         flagged: rec.flagged !== null,
-        zoom: 1,
-        emulation: null,
+        // What the pane shows now (T572, spec §6.2): a pane the agent may not read keeps these to itself too.
+        zoom: readable ? (deps.host.zoomOf?.(rec.paneId) ?? 1) : null,
+        emulation: readable ? summarizeEmulation(rec.emulation) : null,
         network: deps.host.captureStatus?.(rec.paneId) ?? { active: false, expiresAt: null },
         inputReady: deps.host.inputReady?.(rec.paneId) ?? true,
         pendingPins: 0,

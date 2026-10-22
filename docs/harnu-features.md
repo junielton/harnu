@@ -1,4 +1,4 @@
-<!-- harnu-features v102 (2026-10-22) -->
+<!-- harnu-features v103 (2026-10-22) -->
 
 # You are running inside Harnu
 
@@ -28,7 +28,7 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `list_terminals`, `read_terminal`, `send_terminal`, `browser_open`, `browser_list`,
 `browser_navigate`, `browser_close`, `browser_snapshot`, `browser_screenshot`,
 `browser_console`, `browser_network`, `browser_wait_for`, `browser_eval`, `browser_click`,
-`browser_type`, `browser_fill`, `browser_press`, `adopt_folder`, `remove_folder`, `memory_append`, `create_card`, `update_card`,
+`browser_type`, `browser_fill`, `browser_press`, `browser_emulate`, `browser_upload`, `browser_download`, `adopt_folder`, `remove_folder`, `memory_append`, `create_card`, `update_card`,
 `move_card`, `archive_card`, `delete_card`, `submit_manifest`, `draw_canvas`,
 `notify`, `speak`, `message_session`, `create_worker`, `list_workers`,
 `list_containers`, `stop_containers`, `start_containers`, `remove_containers`,
@@ -924,6 +924,35 @@ is yours: `browser_navigate({ paneId, action: "reload" })`, `browser_snapshot` f
 pane the operator opened do not reload it (that can lose their page state): ask them. `browser_fill`, a plain
 `browser_type` and `browser_eval` work in every state. `browser_list` rows carry `inputReady`. The cause is not
 understood yet; treat this as the observed rule.
+
+**Showing a page as a device, and moving files — `browser_emulate`, `browser_upload`,
+`browser_download`.** `browser_emulate({ paneId, zoom?, device?, width?, height?, dpr?, mobile?, touch?,
+userAgent?, colorScheme?, reducedMotion?, reset? })` changes how the pane shows its page. `device` is a
+preset: `phone-s` 360x800@3, `phone-m` 390x844@3, `phone-l` 430x932@3, `tablet` 768x1024@2, `tablet-landscape`
+1024x768@2, `laptop` 1440x900@2, `desktop` 1920x1080@1; or give `width` and `height` (100..10000, with
+`dpr` and `mobile`). The two forms together are `BAD_ARGS`. It is real mobile emulation, not a narrower
+window: the page sees that size, pixel ratio, touch and (for a mobile device) a mobile user agent, so media
+queries and `<meta viewport>` behave as on the device; the pane draws it scaled to fit and the page never sees
+that scale. Turning touch on for a page that already loaded reloads it. `colorScheme` and `reducedMotion` set
+the media features; `reset: true` clears everything and restores the page's own user agent (it may ride with
+other settings). `zoom` (0.25..5, remembered for the page's site, as the operator's Ctrl +/− is) is off in
+device mode: `zoom` while a device is active, or with `device`, is `ZOOM_IN_DEVICE_MODE` (pass `reset: true`
+first). The operator's device picker edits the same record, so `browser_list`'s `emulation` and the ACK's
+`emulation`, `zoom` and `fitScale` are what they see. `browser_open` also takes `device`. After
+emulating, take a `browser_screenshot`; clicks and element shots already account for the scale.
+`browser_upload({ paneId, ref, paths })` attaches 1..10 files to an `<input type=file>` (`NOT_A_FILE_INPUT`
+otherwise; an input without `multiple` takes one). Every path must be a regular file INSIDE the pane's folder
+once links are followed, at most 50 MiB (`UPLOAD_TOO_LARGE`), and never `.git/**`, `.env*`, `*.pem`, `*.key`
+or `id_*`: `UPLOAD_PATH_DENIED`, and one bad path refuses the call. Attaching does not submit; click the
+form's button after. `browser_download({ paneId, url | ref, name?, timeoutMs? })` allows exactly one download
+for the length of the call (`url` must be http or https; `ref` is the element that starts it), waits for it, and
+saves it as `.harnu/out/downloads/<clean name>` in the pane's folder, never replacing a file: the ACK has
+`path`, `bytes`, `mime` and `name`. It is never opened or run. `NO_DOWNLOAD_STARTED` (nothing began within
+`timeoutMs`, at most 30000), `DOWNLOAD_TOO_LARGE` (over 100 MiB), `DOWNLOAD_FAILED`, `DOWNLOAD_CANCELLED`. A
+download a page starts on its own is always cancelled; a download the operator starts by clicking asks them
+first ("Save to `.harnu/out/downloads/`?"). Emulate and download are free on a pane you opened and a lease on
+one the operator opened; upload is a lease on an `external` page too (a file leaves the folder). A Scheduler
+`observe` worker may call none of the three.
 
 **Who may do what.** On a `page` or `local` pane you opened (your dev server) these verbs are free. On an
 `external` page, or on any pane the operator opened, they are a **lease**: the first call raises the

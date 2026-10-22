@@ -22,7 +22,9 @@ const h = vi.hoisted(() => ({
   /** paneId → live url */
   pages: new Map<string, string>(),
   cdp: [] as Array<[string, Record<string, unknown>]>,
-  tokens: new Map<string, string>()
+  tokens: new Map<string, string>(),
+  applied: 0,
+  downloads: 0
 }))
 
 vi.mock('electron', () => ({
@@ -119,6 +121,32 @@ vi.mock('../src/main/browser/view-host', async () => {
     captureStatus(): { active: boolean; expiresAt: null } {
       return { active: false, expiresAt: null }
     }
+    // T572 (U5): what the emulation, zoom and download verbs ask of the host.
+    async applyEmulation(): Promise<{ fitScale: number | null; reloaded: boolean }> {
+      h.applied += 1
+      return { fitScale: 0.5, reloaded: false }
+    }
+    zoomOf(): number {
+      return 1
+    }
+    setZoom(_id: string, factor: number): number {
+      return factor
+    }
+    armDownload(): { result: Promise<unknown>; disarm(): void } {
+      return {
+        result: Promise.resolve({
+          ok: true,
+          path: '.harnu/out/downloads/a.txt',
+          bytes: 1,
+          mime: 'text/plain',
+          name: 'a.txt'
+        }),
+        disarm: (): void => undefined
+      }
+    }
+    downloadUrl(): void {
+      h.downloads += 1
+    }
     async cdp(_id: string, method: string, params: Record<string, unknown> = {}): Promise<unknown> {
       h.cdp.push([method, params])
       switch (method) {
@@ -143,6 +171,8 @@ vi.mock('../src/main/browser/view-host', async () => {
           }
         case 'Runtime.evaluate':
           return { result: { type: 'number', value: 42 } }
+        case 'DOM.describeNode':
+          return { node: { nodeName: 'INPUT', attributes: ['type', 'file'] } }
         default:
           return {}
       }
@@ -255,6 +285,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   h.cdp.length = 0
+  h.applied = 0
+  h.downloads = 0
   h.pages.clear()
   h.tokens.clear()
   h.denied = []
@@ -753,3 +785,123 @@ function afterAllClose(): void {
     expect(browserLeases.activeIds()).toEqual([])
   })
 }
+
+describe('T572 (U5): emulate, upload and download ride the same lease (AC-9)', () => {
+  const emulate = (paneId: string, args: Record<string, unknown> = { device: 'phone-m' }) =>
+    call('browser_emulate', { paneId, ...args })
+
+  it('emulate is free on a pane the agent opened, even an external page: no confirm, it acts', async () => {
+    const res = body(await emulate('bp-ext'))
+    expect(res).toMatchObject({ ok: true, emulation: { device: 'phone-m' }, fitScale: 0.5 })
+    expect(wires).toHaveLength(0)
+    expect(h.applied).toBe(1)
+  })
+
+  it('on an operator pane emulate is a lease row: confirm, Allow performs nothing, then it runs', async () => {
+    h.optedIn = [h.open]
+    addPane('bp-op', 'http://localhost:9999/', 'operator')
+    const first = await confirmAndAnswer(() => emulate('bp-op'), 'allow')
+    expect(first.error).toBe('BROWSER_APPROVED_RESEND')
+    expect(wires[0]!.prompt).toContain('change how the page is shown: device phone-m')
+    expect(h.applied).toBe(0)
+    expect(body(await emulate('bp-op')).ok).toBe(true)
+    expect(h.applied).toBe(1)
+    expect(wires).toHaveLength(1)
+  })
+
+  it('zoom on a pane in device mode never raises a confirm, in free or ask mode', async () => {
+    h.optedIn = [h.open]
+    addPane('bp-op', 'http://localhost:9999/', 'operator')
+    browserRegistry.get('bp-op')!.emulation = {
+      device: { preset: 'phone-m', width: 390, height: 844, dpr: 3, mobile: true, rotated: false }
+    }
+    for (const ask of [false, true]) {
+      await writeMcpAsk(ask)
+      const res = body(await emulate('bp-op', { zoom: 1.5 }))
+      expect(res.error).toBe('ZOOM_IN_DEVICE_MODE')
+    }
+    expect(wires).toHaveLength(0)
+    expect(auditResults().some((r) => r.startsWith('ZOOM_IN_DEVICE_MODE'))).toBe(true)
+  })
+
+  it('upload is a lease on an external page, and its confirm names the files', async () => {
+    const upload = (): Promise<CallToolResult> =>
+      call('browser_upload', { paneId: 'bp-ext', ref: 's1e1', paths: ['fixtures/a.png'] })
+    const first = await confirmAndAnswer(upload, 'allow')
+    expect(first.error).toBe('BROWSER_APPROVED_RESEND')
+    expect(wires[0]!.prompt).toContain('upload 1 file from this folder to the page: fixtures/a.png')
+    expect(h.cdp.some(([m]) => m === 'DOM.setFileInputFiles')).toBe(false)
+  })
+
+  it('upload of a secret is refused before any confirm, even on a lease row', async () => {
+    const res = body(
+      await call('browser_upload', { paneId: 'bp-ext', ref: 's1e1', paths: ['.env.local'] })
+    )
+    expect(res.error).toBe('UPLOAD_PATH_DENIED')
+    expect(wires).toHaveLength(0)
+  })
+
+  it('upload on a local pane the agent opened is free (the path jail then decides)', async () => {
+    const res = body(
+      await call('browser_upload', { paneId: 'bp-loc', ref: 's1e1', paths: ['nope.txt'] })
+    )
+    expect(wires).toHaveLength(0)
+    // The fake page says the element is a file input; the file is not in the folder, so the JAIL refuses.
+    expect(res.error).toBe('UPLOAD_PATH_DENIED')
+  })
+
+  it('download is free on an agent pane and a lease on an operator pane', async () => {
+    const free = body(
+      await call('browser_download', { paneId: 'bp-loc', url: 'http://localhost:5173/a.txt' })
+    )
+    expect(free).toMatchObject({ ok: true, path: '.harnu/out/downloads/a.txt', name: 'a.txt' })
+    expect(h.downloads).toBe(1)
+    expect(wires).toHaveLength(0)
+    h.optedIn = [h.open]
+    addPane('bp-op', 'http://localhost:9999/', 'operator')
+    const lease = await confirmAndAnswer(
+      () => call('browser_download', { paneId: 'bp-op', url: 'http://localhost:5173/a.txt' }),
+      'allow'
+    )
+    expect(lease.error).toBe('BROWSER_APPROVED_RESEND')
+    expect(wires[0]!.prompt).toContain(
+      'download a file from localhost:5173 into .harnu/out/downloads/'
+    )
+    expect(h.downloads).toBe(1)
+  })
+
+  it('a download of a non-http address is refused at plan level', async () => {
+    const res = body(
+      await call('browser_download', { paneId: 'bp-loc', url: 'file:///etc/passwd' })
+    )
+    expect(res.error).toBe('URL_SCHEME_BLOCKED')
+    expect(wires).toHaveLength(0)
+  })
+
+  it('the Scheduler observe allowlist never includes the three verbs', () => {
+    for (const op of ['browser_emulate', 'browser_upload', 'browser_download']) {
+      expect(OBSERVE_MCP_DENY, op).toContain(`mcp__harnu__${op}`)
+    }
+  })
+
+  it('browser_list reports the zoom and the emulation record the picker also shows', async () => {
+    browserRegistry.get('bp-loc')!.emulation = {
+      device: { preset: 'tablet', width: 768, height: 1024, dpr: 2, mobile: true, rotated: false },
+      colorScheme: 'dark'
+    }
+    const rows = (body(await call('browser_list', { folder: h.open })).panes ?? []) as Array<
+      Record<string, unknown>
+    >
+    const row = rows.find((r) => r.paneId === 'bp-loc')!
+    expect(row.zoom).toBe(1)
+    expect(row.emulation).toMatchObject({
+      device: 'tablet',
+      width: 768,
+      height: 1024,
+      dpr: 2,
+      mobile: true,
+      touch: true,
+      colorScheme: 'dark'
+    })
+  })
+})
