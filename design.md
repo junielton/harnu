@@ -3810,7 +3810,9 @@ must freeze it first (see "Frozen frame").
   external, as in the mockup), and below 300px the badge is hidden anyway.
 - **Notice strip** — one optional 22px row under the address bar for a refusal or an intercepted event: a blocked
   scheme, a certificate error accepted on loopback, a dialog the page raised and Harnu dismissed. `--warning` 10%
-  fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old.
+  fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old. The **offline** notice ("Blocked: this panel is offline, so it
+  cannot open other addresses. Turn on Network on to follow links out.") appears when a page pane's own script, link
+  or popup tried to leave its folder while its **Offline** switch is off (T569); the operator's address bar still can.
 - **Pane menu (⋯)** — a standard context menu (§6 "Context menu"): **Pause agent for 10 min** (`pause`; becomes
   **Resume agent** while paused) and **Open DevTools** (`bug`). Clear browsing data, zoom and device mode arrive
   with later units. It registers with the native-overlay composable, so opening it freezes the view.

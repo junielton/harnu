@@ -73,7 +73,7 @@ describe('the harnu-page origin check', () => {
     ).toMatchObject({ allow: false, reason: 'no-issuer' })
   })
 
-  it('FAILS CLOSED on a request with no frame (a dedicated worker, importScripts)', () => {
+  it('refuses a request with no frame (defence in depth: onBeforeRequest does NOT observe workers, the ticket does)', () => {
     for (const resourceType of ['script', 'xhr', 'other', 'subFrame']) {
       expect(decidePageRequest({ url: TARGET, resourceType, frame: null })).toMatchObject({
         allow: false,

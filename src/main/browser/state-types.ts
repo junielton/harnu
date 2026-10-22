@@ -17,6 +17,8 @@ export type BrowserNotice =
   | { kind: 'certificate'; host: string }
   | { kind: 'dialog'; dialog: string }
   | { kind: 'crashed' }
+  /** An offline page pane tried to leave (a link, a redirect, a popup): refused (T569 F2). */
+  | { kind: 'offline' }
 
 /** Everything the pane chrome needs to draw, pushed from main as `browser:state`. */
 export interface BrowserPaneState {

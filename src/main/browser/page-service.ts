@@ -31,6 +31,13 @@ import {
   type DependencySet
 } from './page-watch'
 import { createPageStateStore, type PageState } from './page-state'
+import {
+  UNTICKETED_BODY,
+  UNTICKETED_STATUS,
+  createPageTickets,
+  unticketedHeaders,
+  type PageTickets
+} from './page-ticket'
 import type { PatchResult } from './page-patch'
 import {
   PAGE_SCHEME,
@@ -39,6 +46,7 @@ import {
   folderIdOf,
   jailResolve,
   mimeFor,
+  pageCsp,
   pageResponseHeaders,
   parsePageUrl,
   type JailFs,
@@ -173,8 +181,24 @@ export function createPageService(deps: PageServiceDeps): PageService {
     'Content-Security-Policy': pageResponseHeaders('', false)['Content-Security-Policy']!,
     'Cache-Control': 'no-store'
   }
+  const unticketed = unticketedHeaders(pageCsp(false))
+  /** Tickets are per guest partition: a request is served only by the session whose check allowed it. */
+  const ticketsByPartition = new Map<string, PageTickets>()
+  const ticketsFor = (partition: string): PageTickets => {
+    let t = ticketsByPartition.get(partition)
+    if (!t) {
+      t = createPageTickets(deps.now)
+      ticketsByPartition.set(partition, t)
+    }
+    return t
+  }
 
-  async function handle(request: Request): Promise<Response> {
+  async function handle(request: Request, tickets: PageTickets): Promise<Response> {
+    // FIRST, before any I/O: a request that never passed the `onBeforeRequest` origin check (a worker's) has no
+    // ticket and gets one identical refusal, so it learns nothing about what exists (F1).
+    if (!tickets.redeem(request.url)) {
+      return new Response(UNTICKETED_BODY, { status: UNTICKETED_STATUS, headers: unticketed })
+    }
     const { byId, deny } = await loadIndex()
     const verdict = await jailResolve({
       url: request.url,
@@ -288,8 +312,9 @@ export function createPageService(deps: PageServiceDeps): PageService {
   /* ---- The hooks the view host calls ------------------------------------------------------------ */
 
   const hooks: PageHooks = {
-    registerProtocol(ses: Session): void {
-      ses.protocol.handle(PAGE_SCHEME, handle)
+    registerProtocol(ses: Session, partition: string): void {
+      const tickets = ticketsFor(partition)
+      ses.protocol.handle(PAGE_SCHEME, (request) => handle(request, tickets))
     },
     onNavigated(paneId, url) {
       void ensureWatch(paneId, url).catch(() => undefined)
@@ -299,7 +324,11 @@ export function createPageService(deps: PageServiceDeps): PageService {
       rate.forget(paneId)
       held.forget(paneId)
     },
-    onRequest: noteRequest,
+    onRequest(partition, paneId, url) {
+      // The check allowed this request: let the handler serve it once, and watch the file for its pane.
+      ticketsFor(partition).issue(url)
+      if (paneId) noteRequest(paneId, url)
+    },
     allowNetwork: (paneId) => deps.registry.get(paneId)?.allowNetwork === true
   }
 

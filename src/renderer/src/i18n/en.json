@@ -4378,7 +4378,8 @@
       "certificate": "Accepted the self-signed certificate for {host}",
       "dialog": "The page opened a {dialog} dialog and Harnu dismissed it",
       "crashed": "The page stopped responding",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "offline": "Blocked: this panel is offline, so it cannot open other addresses. Turn on Network on to follow links out."
     },
     "network": {
       "off": "Offline",

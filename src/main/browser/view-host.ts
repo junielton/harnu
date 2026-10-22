@@ -34,6 +34,7 @@ import {
 } from './nav-policy'
 import { classifyOrigin, hostOf } from './origin-class'
 import { decidePageRequest } from './page-guard'
+import { decidePageNavigation, popupAllowedFrom } from './page-egress'
 import { pageCsp } from './page-url'
 import {
   FreezeGeneration,
@@ -70,12 +71,15 @@ export interface ViewHostDeps {
 /** What the view host asks of the page service (`page-service.ts`). */
 export interface PageHooks {
   /** Registered once per guest partition: the `harnu-page:` protocol handler. */
-  registerProtocol(ses: Session): void
+  registerProtocol(ses: Session, partition: string): void
   /** A pane committed a navigation (to any URL): start, keep or drop its file watcher. */
   onNavigated(paneId: string, url: string): void
   onDestroyed(paneId: string): void
-  /** An allowed `harnu-page:` request left a pane's page: a dependency to watch. */
-  onRequest(paneId: string, url: string): void
+  /**
+   * `onBeforeRequest` ALLOWED a `harnu-page:` request: issue its one-shot ticket (the handler serves nothing
+   * else, F1) and, when it came from a known pane, watch its file.
+   */
+  onRequest(partition: string, paneId: string | undefined, url: string): void
   /** The pane's per-pane "Allow network" switch (spec §4.3), read on every response. */
   allowNetwork(paneId: string): boolean
 }
@@ -630,11 +634,12 @@ export class BrowserViewHost implements BrowserHost {
     // No automatic downloads (spec §3.2). `browser_download` (a later unit) arms a one-shot allowance.
     ses.on('will-download', (event) => event.preventDefault())
     // The page protocol answers on this session only (spec §4.1); the app's default session never gets it.
-    this.deps.pageHooks?.registerProtocol(ses)
+    this.deps.pageHooks?.registerProtocol(ses, name)
     ses.webRequest.onBeforeRequest((details, callback) => {
       if (!isSubresourceSchemeAllowed(details.url)) return callback({ cancel: true })
-      // `harnu-page:` is reachable only from a page of the same folder host (spec §3.2). Fail closed: a request
-      // with no requesting frame (a worker) cannot name its issuer, so it is refused.
+      // `harnu-page:` is reachable only from a page of the same folder host (spec §3.2). This check cannot see a
+      // dedicated worker's requests at all, so ALLOWING one issues the one-shot ticket the protocol handler
+      // requires (`page-ticket.ts`): a request that skipped this check has no ticket and is refused there.
       const frame = details.frame
       const verdict = decidePageRequest({
         url: details.url,
@@ -647,9 +652,12 @@ export class BrowserViewHost implements BrowserHost {
           : null
       })
       if (!verdict.allow) return callback({ cancel: true })
-      const paneId = this.byWebContentsId.get(details.webContentsId ?? -1)
-      if (paneId && details.url.startsWith('harnu-page:')) {
-        this.deps.pageHooks?.onRequest(paneId, details.url)
+      if (details.url.startsWith('harnu-page:')) {
+        this.deps.pageHooks?.onRequest(
+          name,
+          this.byWebContentsId.get(details.webContentsId ?? -1),
+          details.url
+        )
       }
       callback({})
     })
@@ -671,6 +679,15 @@ export class BrowserViewHost implements BrowserHost {
       }
       callback({})
     })
+  }
+
+  /** The F2 rule for this pane: see `page-egress.ts`. */
+  private pageMayNavigate(e: ViewEntry, targetUrl: string): boolean {
+    return decidePageNavigation({
+      currentUrl: e.wc.getURL(),
+      targetUrl,
+      allowNetwork: this.deps.registry.get(e.paneId)?.allowNetwork === true
+    }).allow
   }
 
   private attachGuestHandlers(e: ViewEntry): void {
@@ -701,6 +718,12 @@ export class BrowserViewHost implements BrowserHost {
     // page itself started counts as the `page` initiator; the operator and the verbs use `loadURL`, which
     // does not pass through here.
     const guardTopLevel = (event: { preventDefault(): void }, url: string): void => {
+      // An OFFLINE page pane may not navigate away at all (F2): a CSP does not stop `location = 'http://x/?d=…'`.
+      if (!this.pageMayNavigate(e, url)) {
+        event.preventDefault()
+        this.publish(e, { notice: { kind: 'offline' } })
+        return
+      }
       // A link inside one of OUR pages to another file of the same folder is the page's own navigation, not an
       // external page reaching for our files (spec §3.2).
       const verdict = checkTopLevelNavigation(
@@ -719,12 +742,21 @@ export class BrowserViewHost implements BrowserHost {
     })
     wc.on('will-frame-navigate', (details) => {
       if (details.isMainFrame) return
-      if (!isSubresourceSchemeAllowed(details.url)) details.preventDefault()
+      if (!isSubresourceSchemeAllowed(details.url) || !this.pageMayNavigate(e, details.url)) {
+        details.preventDefault()
+      }
     })
 
     // Layer 2: popups. Denied as popups; with a real user activation the target opens as a NEW operator-class
     // pane that inherits the opener's partition, with no `opener` link (spec §3.2, Q10).
     wc.setWindowOpenHandler((details) => {
+      // No popup from an offline page pane: its target would be the same exfiltration channel (F2).
+      if (
+        !popupAllowedFrom({ currentUrl: wc.getURL(), allowNetwork: rec()?.allowNetwork === true })
+      ) {
+        this.publish(e, { notice: { kind: 'offline' } })
+        return { action: 'deny' }
+      }
       // One activation buys one popup: a page cannot loop `window.open` inside the gesture window.
       const decision = decidePopup(details.url, e.gestures.pending())
       if (decision.action === 'open-pane') {

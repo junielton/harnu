@@ -208,6 +208,7 @@ const noticeText = computed(() => {
   }
   if (n.kind === 'certificate') return t('browserPane.notice.certificate', { host: n.host })
   if (n.kind === 'dialog') return t('browserPane.notice.dialog', { dialog: n.dialog })
+  if (n.kind === 'offline') return t('browserPane.notice.offline')
   return t('browserPane.notice.crashed')
 })
 
