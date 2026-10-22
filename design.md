@@ -3830,6 +3830,21 @@ The pause countdown is the only chip text that ticks. It is plain text with no a
 `prefers-reduced-motion`. Disconnect needs **no confirm** (revoking is the safe direction) and is **permanent**,
 exactly like the terminal chip.
 
+**Network counter** (T564 U3, spec §6.2 `browser_network`, decision 9; the red "Network 4:12" pill of the approved
+mockup, scenario "Device mode"). Network capture is **off by default**; while an agent has it on for a pane, the
+header shows a recording pill between the connection chip and the ⋯ button, so the operator can always see that
+traffic is being recorded. Geometry and tokens: `inline-flex`, `gap-1` (5px), `padding 0 4px`, mono 10.5px
+`--red` text with **no fill and no border** (it is a status readout, not a control), a 6px `--red` leading dot
+(`.anim-pulse-dot`; under `prefers-reduced-motion` the dot is still and the word carries the signal), then the
+word `$t('browserPane.network.label')` ("Network") and the time **remaining** until capture stops itself, `m:ss`,
+counting down once a second (the same `formatCountdown` as the pause chip). The native `title` reads
+`$t('browserPane.network.hint')` ("Network capture is on. It stops by itself and records no bodies unless the
+agent asked for them."). It is **not interactive**: there is no stop button, because capture ends by itself on its
+timer (10 min by default, 30 at most), on pane close, on Disconnect and when the kill-switch is switched off. The
+operator who wants it gone closes the pane or Disconnects the agent. At narrow widths (`@max-[300px]`) the word
+"Network" gives way and the dot plus the time remain; the countdown never hides. A pane with no active capture
+shows nothing here.
+
 **Frozen frame** (spec §2.4). When any registered overlay rectangle intersects a visible pane's rectangle, or an
 overlay is `fullscreen`, or a splitter or sidebar drag starts, main captures the view as a JPEG, the renderer
 paints it as an `<img>` filling the host (`object-fit: fill`, no border, no filter: it must look like the live
