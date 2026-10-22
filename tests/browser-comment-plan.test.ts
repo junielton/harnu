@@ -5,11 +5,10 @@ import {
   resolveDestination,
   selectPins
 } from '../src/main/browser/comment-plan'
-import { AGENT_INPUT_WINDOW_MS } from '../src/main/browser/emit-gate'
 import type { PinRecord } from '../src/main/browser/comment-pins'
 
 const NOW = 100_000
-const calm = { now: NOW, agentInputInFlight: false, agentInputAt: null }
+const calm = { agentInputBlocked: false }
 
 describe('evaluatePickGate', () => {
   const ok = { ...calm, overlayActive: true, disconnected: false }
@@ -22,41 +21,13 @@ describe('evaluatePickGate', () => {
       reason: 'OVERLAY_OFF'
     })
   })
-  it('refuses within the agent-input window of an agent input verb, and while one is running', () => {
-    expect(evaluatePickGate({ ...ok, agentInputAt: NOW - (AGENT_INPUT_WINDOW_MS - 1) })).toEqual({
+  it('refuses when the agent-input gate says an agent input verb ran around the pick', () => {
+    // The window itself (5000 ms, in-flight runs, the activation time) is decided by `agentInputBlocksEmit` and
+    // tested once, in browser-agent-input.test.ts; this gate only honours its verdict.
+    expect(evaluatePickGate({ ...ok, agentInputBlocked: true })).toEqual({
       ok: false,
       reason: 'AGENT_INPUT'
     })
-    expect(evaluatePickGate({ ...ok, agentInputAt: NOW - AGENT_INPUT_WINDOW_MS })).toEqual({
-      ok: true
-    })
-    expect(evaluatePickGate({ ...ok, agentInputInFlight: true })).toEqual({
-      ok: false,
-      reason: 'AGENT_INPUT'
-    })
-  })
-})
-
-describe('evaluatePickGate with an activation time', () => {
-  const ok = { ...calm, overlayActive: true, disconnected: false }
-  it('refuses a pick whose click an agent input run overlapped', () => {
-    const at = NOW - 200
-    const intervals = [{ start: NOW - 300, end: NOW - 150 }]
-    expect(evaluatePickGate({ ...ok, activationAt: at, agentInputIntervals: intervals })).toEqual({
-      ok: false,
-      reason: 'AGENT_INPUT'
-    })
-  })
-  it('accepts a pick whose click came after an agent run that ended well before it', () => {
-    const intervals = [{ start: NOW - 4000, end: NOW - 3000 }]
-    expect(
-      evaluatePickGate({
-        ...ok,
-        agentInputAt: NOW - 3000,
-        activationAt: NOW - 200,
-        agentInputIntervals: intervals
-      })
-    ).toEqual({ ok: true })
   })
 })
 
@@ -82,9 +53,9 @@ describe('evaluateSubmitGate', () => {
   it('has no agent-input window and no pause check: the composer is renderer code an agent cannot drive', () => {
     // The gate's input is the disconnected flag alone: extra facts (a pause, a verb in flight) change nothing.
     const gate = evaluateSubmitGate as (i: Record<string, unknown>) => unknown
-    expect(
-      gate({ disconnected: false, paused: true, agentInputInFlight: true, agentInputAt: NOW - 10 })
-    ).toEqual({ ok: true })
+    expect(gate({ disconnected: false, paused: true, agentInputBlocked: true })).toEqual({
+      ok: true
+    })
   })
 })
 

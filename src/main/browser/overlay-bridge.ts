@@ -34,6 +34,7 @@ import {
 import { createCommentDelivery, type CommentDelivery } from './comment-delivery'
 import { cropRect, cropRelPath, scaledCropSize, toRect, validatePicked } from './comment-payload'
 import { createPinStore, paneStateOf, type PinStore } from './comment-pins'
+import { agentInputBlocksEmit } from './agent-input-gate'
 import { evaluatePickGate } from './comment-plan'
 import type { BrowserAccess } from './access'
 import type { BrowserRegistry } from './registry'
@@ -204,15 +205,15 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
     const who = senderPane(event)
     if (!who) return
     const r = rt(who.paneId)
-    const input = deps.registry.agentInput(who.paneId)
     const gate = evaluatePickGate({
-      now: deps.now(),
       overlayActive: r.active,
       disconnected: deps.access.isDisconnected(who.paneId),
-      agentInputInFlight: input.inFlight,
-      agentInputAt: input.at,
-      agentInputIntervals: input.intervals,
-      activationAt: isRecord(raw) && typeof raw.activationAt === 'number' ? raw.activationAt : null
+      agentInputBlocked: agentInputBlocksEmit(
+        deps.registry,
+        who.paneId,
+        deps.now(),
+        isRecord(raw) && typeof raw.activationAt === 'number' ? raw.activationAt : null
+      )
     })
     const folder = deps.registry.get(who.paneId)?.folder ?? ''
     if (!gate.ok) {

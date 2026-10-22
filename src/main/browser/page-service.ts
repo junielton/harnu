@@ -57,6 +57,7 @@ import {
   type PageFolder
 } from './page-url'
 import type { BrowserAccess } from './access'
+import { agentInputBlocksEmit } from './agent-input-gate'
 import type { BrowserRegistry } from './registry'
 import type { BrowserViewHost, PageHooks } from './view-host'
 import type { PageSeam } from './verbs-core'
@@ -462,15 +463,17 @@ export function createPageService(deps: PageServiceDeps): PageService {
       return
     }
     const by: ActivationKind = m.by === 'key' || m.by === 'pointer' ? m.by : null
-    const input = deps.registry.agentInput(who.paneId)
+    const now = deps.now()
     const gate = evaluateEmitGate({
-      now: deps.now(),
+      now,
       userActivationActive: m.active === true,
       activatedBy: by,
-      agentInputInFlight: input.inFlight,
-      agentInputAt: input.at,
-      agentInputIntervals: input.intervals,
-      activationAt: typeof m.activationAt === 'number' ? m.activationAt : null,
+      agentInputBlocked: agentInputBlocksEmit(
+        deps.registry,
+        who.paneId,
+        now,
+        typeof m.activationAt === 'number' ? m.activationAt : null
+      ),
       paused: deps.access.isPaused(who.paneId),
       disconnected: deps.access.isDisconnected(who.paneId),
       lastRealKeyDownAt: deps.getHost().lastRealKeyDownAt(who.paneId)

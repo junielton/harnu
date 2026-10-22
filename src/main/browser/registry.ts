@@ -12,8 +12,6 @@ import type { EmulationRecord } from '../../shared/browser-emulation'
 
 /** Agent-opened panes per folder (spec §10.1, decision 28). Enforced in the verb, not here. */
 export const MAX_AGENT_PANES_PER_FOLDER = 4
-/** How long a finished agent input run is remembered for the emit gate (F5). */
-export const AGENT_INPUT_HISTORY_MS = 15_000
 
 export interface BrowserPaneRecord {
   paneId: string
@@ -79,13 +77,7 @@ export interface BrowserRegistry {
    */
   beginAgentInput(paneId: string): void
   endAgentInput(paneId: string): void
-  agentInput(paneId: string): {
-    inFlight: boolean
-    /** When the last run finished, or `null`. */
-    at: number | null
-    /** Recent runs (the last ~15 s, open ones with `end: null`), for the emit gate's overlap test. */
-    intervals: Array<{ start: number; end: number | null }>
-  }
+  agentInput(paneId: string): { inFlight: boolean; at: number | null }
   /** Epoch ms of the latest moment an agent input verb was active (now while one runs), or `null` if none ever. */
   lastAgentInputAt(paneId: string): number | null
   /**
@@ -166,18 +158,7 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
     },
     agentInput(id) {
       const cur = agentInputs.get(id)
-      if (!cur) return { inFlight: false, at: null, intervals: [] }
-      // Keep ~15 s of history: an activation lives about 5 s, and the gate asks about runs around it.
-      const cutoff = now() - AGENT_INPUT_HISTORY_MS
-      cur.done = cur.done.filter((iv) => iv.end >= cutoff)
-      return {
-        inFlight: cur.running > 0,
-        at: cur.at,
-        intervals: [
-          ...cur.done.map((iv) => ({ ...iv })),
-          ...cur.open.map((start) => ({ start, end: null }))
-        ]
-      }
+      return { inFlight: (cur?.running ?? 0) > 0, at: cur?.at ?? null }
     },
     lastAgentInputAt(id) {
       const cur = agentInputs.get(id)

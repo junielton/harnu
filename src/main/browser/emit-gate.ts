@@ -9,20 +9,6 @@
 
 export const EMIT_TYPE_MAX_CHARS = 64
 export const EMIT_PAYLOAD_MAX_BYTES = 8 * 1024
-/**
- * Condition 2's FALLBACK window: used only when the preload sent no usable activation timestamp. It must be at least
- * as long as a user activation lives (about 5 s), or `setTimeout(emit, 1600)` after an agent click self-approves (F5).
- */
-export const AGENT_INPUT_WINDOW_MS = 5000
-/** Condition 2 asks whether an agent input overlapped [activation - this, emit]. */
-export const ACTIVATION_PADDING_MS = 100
-/** An activation timestamp older than this (a transient activation lasts about 5 s) or in the future is not trusted. */
-export const ACTIVATION_MAX_AGE_MS = 6000
-/** One run of an agent input verb on a pane: `end` is `null` while it is still running. */
-export interface AgentInputInterval {
-  start: number
-  end: number | null
-}
 /** Condition 4: a key-activated emit needs a REAL `keyDown` on the pane this recent (`before-input-event`). */
 export const REAL_KEYDOWN_WINDOW_MS = 1000
 /**
@@ -44,17 +30,12 @@ export interface EmitGateInput {
   userActivationActive: boolean
   /** The preload's tag for the last trusted `keydown` / `pointerdown` it saw. */
   activatedBy: ActivationKind
-  /** 2. An agent input verb is running on this pane right now. */
-  agentInputInFlight: boolean
-  /** 2. When the last agent input verb finished on this pane, or `null`. */
-  agentInputAt: number | null
-  /** 2. Recent agent input runs on this pane (the registry keeps the last ~15 s). */
-  agentInputIntervals: readonly AgentInputInterval[]
   /**
-   * 2. Epoch ms of the trusted pointerdown/keydown that made the activation, from the preload
-   * (`performance.timeOrigin + event.timeStamp`), or `null`.
+   * 2. An agent input verb was running on this pane, or ran within `AGENT_INPUT_WINDOW_MS` before the activation
+   * (or before the emit when the preload sent no usable timestamp). Computed by `agentInputBlocksEmit`
+   * (`agent-input-gate.ts`), the one implementation of condition 2.
    */
-  activationAt: number | null
+  agentInputBlocked: boolean
   /** 3. The pane's access state. */
   paused: boolean
   disconnected: boolean
@@ -65,31 +46,12 @@ export interface EmitGateInput {
 export type EmitGateFailure = 1 | 2 | 3 | 4
 export type EmitGateVerdict = { ok: true } | { ok: false; failed: EmitGateFailure; reason: string }
 
-/**
- * Condition 2 (F5). A CDP-dispatched click is a REAL activation that lives about 5 s, so a short "recently" window
- * lets `setTimeout(emit, 1600)` after an agent click self-approve. Instead: when the preload says WHEN the
- * activating input happened, refuse if any agent input run overlaps [activation - 100 ms, now]; an agent run that
- * ended well before the operator's own click does not block it. Without a trustworthy timestamp, fall back to a
- * window as long as an activation lives.
- */
-export function agentInputBlocks(i: EmitGateInput): boolean {
-  if (i.agentInputInFlight) return true
-  const at = i.activationAt
-  const trusted = at !== null && at <= i.now + 1000 && i.now - at <= ACTIVATION_MAX_AGE_MS
-  if (trusted) {
-    return i.agentInputIntervals.some(
-      (iv) => iv.start <= i.now && (iv.end === null || iv.end >= at - ACTIVATION_PADDING_MS)
-    )
-  }
-  return i.agentInputAt !== null && i.now - i.agentInputAt < AGENT_INPUT_WINDOW_MS
-}
-
 /** The four conditions of spec §5.4 (+ `576f70f1`), checked in order; the first failure is reported. */
 export function evaluateEmitGate(i: EmitGateInput): EmitGateVerdict {
   if (!i.userActivationActive || i.activatedBy === null) {
     return { ok: false, failed: 1, reason: 'no user activation' }
   }
-  if (agentInputBlocks(i)) {
+  if (i.agentInputBlocked) {
     return {
       ok: false,
       failed: 2,

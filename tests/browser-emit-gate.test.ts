@@ -4,7 +4,6 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  AGENT_INPUT_WINDOW_MS,
   EMIT_PAYLOAD_MAX_BYTES,
   PAGE_DATA_CLOSE,
   PAGE_DATA_OPEN,
@@ -23,10 +22,7 @@ const base = (over: Partial<EmitGateInput> = {}): EmitGateInput => ({
   now: 10_000,
   userActivationActive: true,
   activatedBy: 'pointer',
-  agentInputInFlight: false,
-  agentInputAt: null,
-  agentInputIntervals: [],
-  activationAt: null,
+  agentInputBlocked: false,
   paused: false,
   disconnected: false,
   lastRealKeyDownAt: null,
@@ -43,15 +39,10 @@ describe('the gesture gate', () => {
     expect(evaluateEmitGate(base({ activatedBy: null }))).toMatchObject({ failed: 1 })
   })
 
-  it('2 (fallback, no activation timestamp): refuses while an agent input is in flight or within 5 s', () => {
-    expect(AGENT_INPUT_WINDOW_MS).toBeGreaterThanOrEqual(5000)
-    expect(evaluateEmitGate(base({ agentInputInFlight: true }))).toMatchObject({ failed: 2 })
-    expect(evaluateEmitGate(base({ agentInputAt: 10_000 - 1499 }))).toMatchObject({ failed: 2 })
-    expect(evaluateEmitGate(base({ agentInputAt: 10_000 - 4999 }))).toMatchObject({ failed: 2 })
-    expect(evaluateEmitGate(base({ agentInputAt: 10_000 - AGENT_INPUT_WINDOW_MS }))).toEqual({
-      ok: true
-    })
-    expect(evaluateEmitGate(base({ agentInputAt: 1 }))).toEqual({ ok: true })
+  it('2: refuses when the agent-input gate says an agent input made or overlapped the activation', () => {
+    // What counts as "overlapped" (the 5000 ms window, in-flight runs, the activation timestamp and when it is not
+    // believed) is decided once, by `agentInputBlocksEmit`, and tested in browser-agent-input.test.ts.
+    expect(evaluateEmitGate(base({ agentInputBlocked: true }))).toMatchObject({ failed: 2 })
   })
 
   it('3: refuses on a paused or disconnected pane', () => {
@@ -80,12 +71,10 @@ describe('the gesture gate', () => {
 
   it('reports the FIRST failing condition in order', () => {
     expect(
-      evaluateEmitGate(
-        base({ userActivationActive: false, agentInputInFlight: true, paused: true })
-      )
+      evaluateEmitGate(base({ userActivationActive: false, agentInputBlocked: true, paused: true }))
     ).toMatchObject({ failed: 1 })
     expect(
-      evaluateEmitGate(base({ agentInputInFlight: true, paused: true, activatedBy: 'key' }))
+      evaluateEmitGate(base({ agentInputBlocked: true, paused: true, activatedBy: 'key' }))
     ).toMatchObject({ failed: 2 })
     expect(evaluateEmitGate(base({ paused: true, activatedBy: 'key' }))).toMatchObject({
       failed: 3
@@ -94,7 +83,7 @@ describe('the gesture gate', () => {
 
   it('an agent that clicks its own panel cannot self-approve (the CDP click IS a real activation)', () => {
     // userActivation is true and the click is trusted; only condition 2 stops it.
-    const afterAgentClick = base({ agentInputAt: 9_900 })
+    const afterAgentClick = base({ agentInputBlocked: true })
     expect(evaluateEmitGate(afterAgentClick)).toMatchObject({ ok: false, failed: 2 })
   })
 })
@@ -250,74 +239,6 @@ describe('the [harnu-page-event] message (hostile fixtures)', () => {
 
   it('marks a missing payload', () => {
     expect(msg({ payloadJson: null })).toContain('payload: (none)')
-  })
-})
-
-describe('condition 2 with the activation timestamp (F5, the setTimeout(emit, 1600) self-approval)', () => {
-  // `now` is 10_000. The agent clicked at 8_400 (took 50 ms); the page's script emits at 10_000, 1.6 s later, while
-  // the CDP click's transient activation is still alive. The preload says the activating input was at 8_410.
-  const agentClick = { start: 8_400, end: 8_450 }
-
-  it('refuses an emit made 1.6 s after an agent click, which the old 1.5 s window let through', () => {
-    const v = evaluateEmitGate(
-      base({
-        now: 10_000,
-        activationAt: 8_410,
-        agentInputIntervals: [agentClick],
-        agentInputAt: 8_450
-      })
-    )
-    expect(v).toMatchObject({ ok: false, failed: 2 })
-    // ...and so does the fallback when the preload sent no timestamp (the window is now >= an activation's life).
-    expect(
-      evaluateEmitGate(base({ now: 10_000, activationAt: null, agentInputAt: 8_450 }))
-    ).toMatchObject({ ok: false, failed: 2 })
-  })
-
-  it('lets the operator’s OWN click through when the agent finished well before it', () => {
-    const v = evaluateEmitGate(
-      base({
-        now: 10_000,
-        activationAt: 9_800, // the operator clicked at 9_800
-        agentInputIntervals: [agentClick],
-        agentInputAt: 8_450
-      })
-    )
-    expect(v).toEqual({ ok: true })
-  })
-
-  it('refuses when an agent run OVERLAPS the activation or starts just after it', () => {
-    const overlapping = { start: 9_790, end: 9_900 }
-    expect(
-      evaluateEmitGate(base({ activationAt: 9_800, agentInputIntervals: [overlapping] }))
-    ).toMatchObject({ failed: 2 })
-    // ended 50 ms before the activation: inside the 100 ms padding
-    expect(
-      evaluateEmitGate(
-        base({ activationAt: 9_800, agentInputIntervals: [{ start: 9_700, end: 9_750 }] })
-      )
-    ).toMatchObject({ failed: 2 })
-    // ended 200 ms before: outside it
-    expect(
-      evaluateEmitGate(
-        base({ activationAt: 9_800, agentInputIntervals: [{ start: 9_500, end: 9_600 }] })
-      )
-    ).toEqual({ ok: true })
-  })
-
-  it('an agent run still open (end: null) since before the emit blocks it', () => {
-    expect(
-      evaluateEmitGate(
-        base({ activationAt: 9_800, agentInputIntervals: [{ start: 9_000, end: null }] })
-      )
-    ).toMatchObject({ failed: 2 })
-  })
-
-  it('does not trust a timestamp that is stale or from the future: it falls back to the 5 s window', () => {
-    const stale = base({ now: 20_000, activationAt: 10_000, agentInputAt: 18_000 })
-    expect(evaluateEmitGate(stale)).toMatchObject({ failed: 2 })
-    const future = base({ now: 10_000, activationAt: 99_999, agentInputAt: 9_000 })
-    expect(evaluateEmitGate(future)).toMatchObject({ failed: 2 })
   })
 })
 

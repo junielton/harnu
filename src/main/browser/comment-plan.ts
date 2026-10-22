@@ -14,40 +14,13 @@
  *  - {@link selectPins} / {@link resolveDestination}: which pins a submit sends, and to whom.
  */
 import type { PinRecord } from './comment-pins'
-import { AGENT_INPUT_WINDOW_MS, agentInputBlocks, type AgentInputInterval } from './emit-gate'
 
 export interface AgentInputFacts {
-  now: number
-  /** An agent input verb is running on the pane right now. */
-  agentInputInFlight: boolean
-  /** When the last agent input verb finished on the pane, or `null`. */
-  agentInputAt: number | null
-  /** Recent agent input runs on the pane, for the activation-overlap check (needs `activationAt`). */
-  agentInputIntervals?: readonly AgentInputInterval[]
-  /** Epoch ms of the trusted input that made this request, when the guest says (`null` = unknown). */
-  activationAt?: number | null
-}
-
-function agentInputRecent(i: AgentInputFacts): boolean {
-  // With a trustworthy activation time the emit gate's overlap check applies; without one, the plain window.
-  if (i.activationAt != null && i.agentInputIntervals) {
-    return agentInputBlocks({
-      now: i.now,
-      userActivationActive: true,
-      activatedBy: 'pointer',
-      agentInputInFlight: i.agentInputInFlight,
-      agentInputAt: i.agentInputAt,
-      agentInputIntervals: i.agentInputIntervals,
-      activationAt: i.activationAt,
-      paused: false,
-      disconnected: false,
-      lastRealKeyDownAt: null
-    })
-  }
-  return (
-    i.agentInputInFlight ||
-    (i.agentInputAt !== null && i.now - i.agentInputAt < AGENT_INPUT_WINDOW_MS)
-  )
+  /**
+   * An agent input verb ran on the pane within the window of §5.4 around this pick (or is running now): the verdict of
+   * `agentInputBlocksEmit` (`agent-input-gate.ts`), the one implementation shared with `harnu.emit`.
+   */
+  agentInputBlocked: boolean
 }
 
 export interface PickGateInput extends AgentInputFacts {
@@ -63,7 +36,7 @@ export type PickGateVerdict =
 export function evaluatePickGate(i: PickGateInput): PickGateVerdict {
   if (!i.overlayActive) return { ok: false, reason: 'OVERLAY_OFF' }
   if (i.disconnected) return { ok: false, reason: 'DISCONNECTED' }
-  if (agentInputRecent(i)) return { ok: false, reason: 'AGENT_INPUT' }
+  if (i.agentInputBlocked) return { ok: false, reason: 'AGENT_INPUT' }
   return { ok: true }
 }
 
