@@ -24,6 +24,8 @@ export function resolveGateInput(opts: {
   readOptIn?: boolean
   leaseActive?: boolean
   writeDenied?: boolean
+  /** Mouse and key events reach the current document (`view-host.inputReady`). Absent = ready. */
+  inputReady?: boolean
   harnuPorts: readonly number[]
   trustedHosts: readonly string[]
   /** The verb's own arguments, for the content refusals that come before the kill-switch. */
@@ -46,7 +48,8 @@ export function resolveGateInput(opts: {
         paused: opts.paused,
         readOptIn: opts.readOptIn === true,
         leaseActive: opts.leaseActive === true,
-        writeDenied: opts.writeDenied === true
+        writeDenied: opts.writeDenied === true,
+        inputReady: opts.inputReady !== false
       },
       ...args
     }

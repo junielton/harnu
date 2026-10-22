@@ -56,6 +56,22 @@ const READ_OPS: ReadonlySet<string> = new Set([
  */
 const LIVE_PANEL_OPS: ReadonlySet<string> = new Set(['browser_set_data', 'browser_patch'])
 
+/**
+ * Whether this call sends mouse or key events (the ones a pane's first document drops): `click`, `press`, and
+ * `type` when it types key by key (`delayMs`) or presses Enter (`submit`). `fill`, a plain `type` (inserted text)
+ * and `eval` do not.
+ */
+export function sendsPointerOrKeyEvents(
+  op: string,
+  args: Record<string, unknown> | undefined
+): boolean {
+  if (op === 'browser_click' || op === 'browser_press') return true
+  if (op === 'browser_type') {
+    return (typeof args?.delayMs === 'number' && args.delayMs > 0) || args?.submit === true
+  }
+  return false
+}
+
 /** Verbs that run page script or drive its input: a lease on an `external` page (spec §7.1 "Eval", "Input"). */
 const SCRIPT_AND_INPUT_OPS: ReadonlySet<string> = new Set([
   'browser_eval',
@@ -88,6 +104,7 @@ export type BrowserDenyReason =
   | 'BROWSER_LEASE_ENDED'
   | 'NOT_A_PAGE_PANE'
   | 'BROWSER_KEY_UNKNOWN'
+  | 'PANE_INPUT_NOT_READY'
   | 'NOT_YET_AVAILABLE'
 
 /** How a pane was opened (spec §1.2). */
@@ -104,6 +121,12 @@ export interface BrowserPaneAccess {
    * pane consults it; an agent-opened pane is always readable. Absent = off.
    */
   readOptIn?: boolean
+  /**
+   * Mouse and key events reach the pane's current document (`view-host.inputReady`). `false` on the first document
+   * a pane loads: the verbs that send such events then refuse `PANE_INPUT_NOT_READY` instead of reporting a
+   * success that delivered nothing. Absent = ready.
+   */
+  inputReady?: boolean
   /** The operator's lease on this pane is active now (and was granted for this very view). Absent = no lease. */
   leaseActive?: boolean
   /** The operator denied this pane less than 5 minutes ago. Absent = no cooldown. */
@@ -199,6 +222,11 @@ export function gateBrowserOpDetailed(
   if (input.args) {
     const content = checkBrowserContent(op, input.args)
     if (content) return { reason: content.code, content }
+  }
+  // Decided here, before the kill-switch and any confirm (spec §6.3): a call that cannot deliver must not first
+  // ask the operator and only then be refused.
+  if (pane && pane.inputReady === false && sendsPointerOrKeyEvents(op, input.args)) {
+    return { reason: 'PANE_INPUT_NOT_READY' }
   }
   const write = isBrowserWriteOp(op)
   if (write && op !== 'browser_close' && !input.writesEnabled)

@@ -68,6 +68,8 @@ export interface BrowserHost {
   publishFlag(paneId: string, flagged: { host: string } | null): void
   /** Whether network capture is on for the pane and when it stops itself (`browser_list`'s `network`). */
   captureStatus?(paneId: string): { active: boolean; expiresAt: number | null }
+  /** Mouse and key events reach the pane's current document (false on its first page). Absent = ready. */
+  inputReady?(paneId: string): boolean
   /**
    * Names the view that shows the pane now. A lease is granted for ONE view: a pane re-created under the same id
    * (discard and restore) is a page the operator never saw, so its token differs and the lease is dead.
@@ -136,7 +138,8 @@ export function accessOf(
     readOptIn,
     leaseActive:
       token !== undefined && deps.leases ? deps.leases.isActive(rec.paneId, token) : false,
-    writeDenied: deps.leases ? deps.leases.isDenied(rec.paneId) : false
+    writeDenied: deps.leases ? deps.leases.isDenied(rec.paneId) : false,
+    inputReady: deps.host.inputReady ? deps.host.inputReady(rec.paneId) : true
   }
 }
 
@@ -465,6 +468,7 @@ export async function listVerb(
         zoom: 1,
         emulation: null,
         network: deps.host.captureStatus?.(rec.paneId) ?? { active: false, expiresAt: null },
+        inputReady: deps.host.inputReady?.(rec.paneId) ?? true,
         pendingPins: 0,
         createdAt: rec.createdAt,
         lastActiveAt: rec.lastActiveAt

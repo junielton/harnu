@@ -53,7 +53,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   without asking again. Closing the pane, **Disconnect**, blocking the folder or switching agent browser control
   off ends it at once. What a session types or runs there acts as you on that page, and the prompt says so.
   Writes to one pane run one at a time (more than 60 a minute is refused), and every call is audited with the
-  script or text scrubbed and cut to 200 characters.
+  script or text scrubbed and cut to 200 characters. A pane does not pass clicks or key presses to the first page
+  it loads, so those are refused up front (`PANE_INPUT_NOT_READY`, "reload the pane once") instead of reporting a
+  success that did nothing; filling, plain typing and scripts are unaffected.
 - **Folder menu: let sessions read the browser panes you open, and name your dev hosts.** Right-click a folder and
   choose **Let agents read browser panes I open** (off by default, this folder only — never its worktrees) so a
   session can look at a page you opened; acting on it still asks you, once per pane. **Trusted dev hosts…** lists

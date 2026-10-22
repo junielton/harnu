@@ -203,6 +203,7 @@ export async function resolveBrowserGate(
     leaseActive:
       rec !== undefined && token !== undefined ? browserLeases.isActive(rec.paneId, token) : false,
     writeDenied: rec ? browserLeases.isDenied(rec.paneId) : false,
+    inputReady: rec ? getBrowserHost().inputReady(rec.paneId) : true,
     harnuPorts: collectHarnuPorts(mcpPort),
     trustedHosts: rec ? trustedHostsSync(rec.folder) : []
   })

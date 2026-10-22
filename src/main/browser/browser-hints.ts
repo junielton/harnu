@@ -25,6 +25,7 @@ export const BROWSER_DENIAL_CODES = [
   'FRAME_NOT_FOUND',
   'INPUT_FAILED',
   'BROWSER_KEY_UNKNOWN',
+  'PANE_INPUT_NOT_READY',
   'BROWSER_APPROVED_RESEND',
   'BROWSER_WRITE_DENIED',
   'BROWSER_LEASE_ENDED',
@@ -300,6 +301,22 @@ export function shapeBrowserDenial(
           {
             do: 'Press keys by name in `keys` (Enter, Tab, Esc, Backspace, Delete, Space, Up/Down/Left/Right, Home, End, PageUp, PageDown, F1–F12, a letter or digit, with Ctrl+, Alt+, Meta+ or Shift+ in front). Put text in browser_type.',
             why: 'Control actions are named keys so the operator and the audit see exactly what was pressed. Nothing was pressed.'
+          }
+        ]
+      }
+    case 'PANE_INPUT_NOT_READY':
+      return {
+        error: code,
+        message:
+          'Nothing was sent. This pane is still on the first page it loaded, and a pane does not take mouse clicks or key presses on its first page, so a click or a key press would have been acknowledged and ignored.',
+        nextActions: [
+          {
+            do: 'Reload it with browser_navigate({ paneId, action: "reload" }), then browser_snapshot for fresh refs, and call again. Any later navigation fixes it.',
+            why: 'After the first navigation the pane delivers clicks and key presses, whether or not the operator is looking at it.'
+          },
+          {
+            do: 'browser_fill, a plain browser_type (no delayMs, no submit) and browser_eval work on the first page; use them if you do not need a click or a key.',
+            why: 'They insert text and run script instead of sending mouse and key events.'
           }
         ]
       }

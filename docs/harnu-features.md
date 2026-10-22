@@ -913,6 +913,16 @@ pane run one at a time in order: `BROWSER_BUSY` (still waiting after 10 s, nothi
 `BROWSER_RATE_LIMIT` (more than 60 a minute) are not retries, they are a sign to slow down. Two identical
 calls act twice.
 
+**A pane's first page does not take clicks or key presses.** Measured on the real app: on the first document a
+pane ever loads, mouse and key events are acknowledged by the browser and not delivered, whether or not the
+operator is looking at the pane. So `browser_click`, `browser_press` and a `browser_type` that types key by key
+(`delayMs`) or presses Enter (`submit: true`) refuse `PANE_INPUT_NOT_READY` there, before anything is sent and
+before any confirm: you are never told a click worked when it did nothing. The fix is yours to make:
+`browser_navigate({ paneId, action: "reload" })` (any later navigation works), `browser_snapshot` for fresh refs,
+call again. `browser_fill`, a plain `browser_type` and `browser_eval` work on the first page. `browser_list`
+rows carry `inputReady` (false until that first navigation). The cause is not understood yet; treat this as the
+observed rule.
+
 **Who may do what.** On a `page` or `local` pane you opened (your dev server) these verbs are free. On an
 `external` page, or on any pane the operator opened, they are a **lease**: the first call raises the
 operator's confirm, which shows the pane, who opened it, the site and the first thing you would do. **An

@@ -95,6 +95,8 @@ interface ViewEntry {
   /** Real clicks/keys: one popup per activation (`view-logic.ts`). */
   gestures: GestureGate
   loading: boolean
+  /** Main-frame commits so far. The FIRST document does not take mouse or key events (see `inputReady`). */
+  commits: number
   notice: BrowserNotice | null
   activity: 'driving' | null
   /** The reading verbs' per-pane state (console ring, network capture, refs), fed from the debugger session. */
@@ -141,6 +143,7 @@ export class BrowserViewHost implements BrowserReadHost {
       paintedWaiter: null,
       gestures: createGestureGate(() => this.deps.now()),
       loading: false,
+      commits: 0,
       notice: null,
       activity: null,
       readers: null as unknown as PaneReaders
@@ -288,6 +291,18 @@ export class BrowserViewHost implements BrowserReadHost {
   /** The factor between page CSS px and view coordinates: 1 until a device is emulated (U5, assumption A5). */
   inputScale(_paneId: string): number {
     return 1
+  }
+
+  /**
+   * Whether mouse and key events sent over CDP reach the pane's current document. Measured in the U4 live run:
+   * on the FIRST document a pane loads, `Input.dispatchMouseEvent` and `dispatchKeyEvent` are acknowledged and not
+   * delivered, whether the pane is mounted in the app or parked; after any later main-frame navigation (a reload
+   * is enough) they are delivered, shown, hidden or parked. `insertText`, eval and snapshot are not affected.
+   * The root cause is not understood (carded separately); this is the observed rule, not a theory.
+   */
+  inputReady(paneId: string): boolean {
+    const e = this.entries.get(paneId)
+    return !e || e.commits >= 2
   }
 
   /** The header's `driving` word while an acting verb runs. */
@@ -704,6 +719,7 @@ export class BrowserViewHost implements BrowserReadHost {
     })
     wc.on('page-title-updated', () => this.publish(e))
     wc.on('did-navigate', (_ev, url) => {
+      e.commits++
       const r = rec()
       const host = hostOf(url)
       if (r && host) r.seenHosts.add(host)
