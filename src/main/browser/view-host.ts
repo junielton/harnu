@@ -73,6 +73,8 @@ export interface PageHooks {
   /** Registered once per guest partition: the `harnu-page:` protocol handler. */
   registerProtocol(ses: Session, partition: string): void
   /** A pane committed a navigation (to any URL): start, keep or drop its file watcher. */
+  /** A main-frame navigation started: the previous document's preload is gone (F3). */
+  onNavigationStart(paneId: string): void
   onNavigated(paneId: string, url: string): void
   onDestroyed(paneId: string): void
   /**
@@ -704,6 +706,11 @@ export class BrowserViewHost implements BrowserHost {
       this.publish(e)
     })
     wc.on('page-title-updated', () => this.publish(e))
+    wc.on('did-start-navigation', (details) => {
+      if (details.isMainFrame && !details.isSameDocument) {
+        this.deps.pageHooks?.onNavigationStart(e.paneId)
+      }
+    })
     wc.on('did-navigate', (_ev, url) => {
       const r = rec()
       const host = hostOf(url)

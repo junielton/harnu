@@ -91,12 +91,12 @@ function rig(over: Partial<BrowserVerbDeps> = {}) {
       state,
       pushData: (folder, rel, st) => (pushed.push([folder, rel, st.rev]), 1),
       runPatch: vi.fn(async () => patchResult.current as never),
-      writePanel: async (folder, slug, html) => {
+      writePanel: vi.fn(async (folder: string, slug: string, html: string) => {
         const rel = `.harnu/out/panels/${slug}.html`
         await fsp.mkdir(path.join(folder, '.harnu', 'out', 'panels'), { recursive: true })
         await fsp.writeFile(path.join(folder, rel), html)
-        return rel
-      },
+        return { ok: true as const, relPath: rel }
+      }),
       urlFor: (real, rel) => buildPageUrl(folderIdOf(real), rel)
     },
     ...over
@@ -398,10 +398,11 @@ describe('browser_patch (AC-7)', () => {
       ok: false,
       error: 'SELECTOR_NOT_FOUND'
     })
+    // A page that never became ready is NOT a selector that matched nothing (F8).
     r.patchResult.current = null
     expect(await patchVerb({ paneId, selector: '#a', mode: 'remove' }, r.deps)).toMatchObject({
       ok: false,
-      error: 'SELECTOR_NOT_FOUND'
+      error: 'PAGE_NOT_READY'
     })
   })
 
@@ -521,7 +522,8 @@ describe('plan-level ordering of the content refusals (spec §6.3)', () => {
       'HTML_TOO_LARGE'
     )
     expect(
-      checkBrowserContent('browser_open', { html: 'x'.repeat(MAX_PANEL_HTML_BYTES + 1) })?.code
+      checkBrowserContent('browser_open', { html: 'x'.repeat(MAX_PANEL_HTML_BYTES + 1), name: 'p' })
+        ?.code
     ).toBe('HTML_TOO_LARGE')
     expect(checkBrowserContent('browser_open', { url: 'http://x' })).toBeNull()
     expect(checkBrowserContent('browser_close', { html: 'x'.repeat(10_000_000) })).toBeNull()

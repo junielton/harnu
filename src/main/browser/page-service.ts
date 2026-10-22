@@ -25,11 +25,13 @@ import {
 } from './emit-gate'
 import { createHeldEvents, deliverUserTurn } from './page-delivery'
 import {
+  MAX_WATCH_DEPENDENCIES,
   createDebouncer,
   createDependencySet,
   planWatchEvent,
   type DependencySet
 } from './page-watch'
+import { createBootTracker } from './page-boot'
 import { createPageStateStore, type PageState } from './page-state'
 import {
   UNTICKETED_BODY,
@@ -44,10 +46,12 @@ import {
   PAGE_SCHEME_PRIVILEGES,
   buildPageUrl,
   folderIdOf,
+  isInsideFolder,
   jailResolve,
   mimeFor,
   pageCsp,
   pageResponseHeaders,
+  pagePathForUrl,
   parsePageUrl,
   type JailFs,
   type PageFolder
@@ -121,6 +125,11 @@ export function createPageService(deps: PageServiceDeps): PageService {
       }
     }
   })
+  const boot = createBootTracker()
+  /** First-load asset requests that arrived before the pane's watcher existed (F8): drained when it does. */
+  const pendingRequests = new Map<string, string[]>()
+  /** The folder block as last read, for the one place that cannot await (the sync `getData`). */
+  let lastDeny: string[] = []
   const rate = createEmitRateLimiter(deps.now)
   const held = createHeldEvents()
   const watches = new Map<string, Watch>()
@@ -147,6 +156,7 @@ export function createPageService(deps: PageServiceDeps): PageService {
   async function loadIndex(): Promise<{ byId: Map<string, PageFolder>; deny: string[] }> {
     const projects = (await readUserProjects()).projects
     const deny = projects.filter((p) => p.agentDenied === true).map((p) => p.path)
+    lastDeny = deny
     const folders = new Set<string>(projects.map((p) => p.path))
     for (const rec of deps.registry.list()) folders.add(rec.folder)
     const byId = new Map<string, PageFolder>()
@@ -273,6 +283,9 @@ export function createPageService(deps: PageServiceDeps): PageService {
       )
     }
     watches.set(paneId, w)
+    // Assets the first load already asked for, before this watcher existed (F8).
+    for (const pending of pendingRequests.get(paneId) ?? []) noteRequest(paneId, pending)
+    pendingRequests.delete(paneId)
     const onEvent =
       (kind: 'add' | 'change' | 'unlink') =>
       (file: string): void => {
@@ -302,6 +315,12 @@ export function createPageService(deps: PageServiceDeps): PageService {
 
   function noteRequest(paneId: string, url: string): void {
     const w = watches.get(paneId)
+    if (!w) {
+      const list = pendingRequests.get(paneId) ?? []
+      if (list.length < MAX_WATCH_DEPENDENCIES) list.push(url)
+      pendingRequests.set(paneId, list)
+      return
+    }
     const parsed = parsePageUrl(url)
     if (!w || !parsed || parsed.folderId !== w.folderId || parsed.segments.length === 0) return
     const file = path.join(w.realFolder, ...parsed.segments)
@@ -316,10 +335,19 @@ export function createPageService(deps: PageServiceDeps): PageService {
       const tickets = ticketsFor(partition)
       ses.protocol.handle(PAGE_SCHEME, (request) => handle(request, tickets))
     },
+    onNavigationStart(paneId) {
+      boot.markNavigating(paneId)
+      pendingRequests.delete(paneId)
+    },
     onNavigated(paneId, url) {
+      // The pane's file follows where it is NOW, so dedupe and the emit `file:` line stay true (F4).
+      const rec = deps.registry.get(paneId)
+      if (rec) rec.pagePath = pagePathForUrl(url)
       void ensureWatch(paneId, url).catch(() => undefined)
     },
     onDestroyed(paneId) {
+      boot.forget(paneId)
+      pendingRequests.delete(paneId)
       dropWatch(paneId)
       rate.forget(paneId)
       held.forget(paneId)
@@ -355,7 +383,8 @@ export function createPageService(deps: PageServiceDeps): PageService {
       for (const w of watches.values()) {
         if (w.folder !== folder || w.relPath !== relPath) continue
         const wc = deps.getHost().webContentsOf(w.paneId)
-        if (!wc || wc.isLoading()) continue
+        // Push to a document whose preload is listening, whether or not it is still loading (F3).
+        if (!wc || !boot.isBooted(w.paneId)) continue
         wc.send(PAGE_CHANNEL.data, { data: st.data, rev: st.rev })
         reached++
       }
@@ -365,11 +394,25 @@ export function createPageService(deps: PageServiceDeps): PageService {
       return deps.getHost().runInPage<PatchResult>(paneId, script)
     },
     async writePanel(folder, slug, html) {
-      const rel = `.harnu/out/panels/${slug}.html`
-      const file = path.join(folder, '.harnu', 'out', 'panels', `${slug}.html`)
-      await fsp.mkdir(path.dirname(file), { recursive: true })
-      await atomicWriteFile(file, html, 0o644)
-      return rel
+      const real = await realOf(folder)
+      if (!real) return { ok: false, reason: 'unknown folder' }
+      // Walk `.harnu/out/panels` one level at a time: each level is resolved and must stay inside the folder BEFORE
+      // the next is created, so a symlinked `.harnu` or `out` cannot send the write (or even a mkdir) elsewhere (F7).
+      let dir = real
+      for (const segment of ['.harnu', 'out', 'panels']) {
+        const next = path.join(dir, segment)
+        let resolved: string
+        try {
+          resolved = await fsp.realpath(next)
+        } catch {
+          await fsp.mkdir(next)
+          resolved = await fsp.realpath(next)
+        }
+        if (!isInsideFolder(real, resolved)) return { ok: false, reason: 'escape' }
+        dir = resolved
+      }
+      await atomicWriteFile(path.join(dir, `${slug}.html`), html, 0o644)
+      return { ok: true, relPath: `.harnu/out/panels/${slug}.html` }
     },
     urlFor(folderReal, relPath) {
       return buildPageUrl(folderIdOf(folderReal), relPath)
@@ -409,9 +452,15 @@ export function createPageService(deps: PageServiceDeps): PageService {
       tooLarge?: unknown
       active?: unknown
       by?: unknown
+      activationAt?: unknown
     }
     const rec = deps.registry.get(who.paneId)
     if (!rec) return
+    // A folder the operator blocked after the page opened delivers nothing (F8).
+    if (isFolderDenied(rec.folder, (await loadIndex()).deny, home)) {
+      audit(who.paneId, 'deny', 'FOLDER_NOT_ALLOWED')
+      return
+    }
     const by: ActivationKind = m.by === 'key' || m.by === 'pointer' ? m.by : null
     const input = deps.registry.agentInput(who.paneId)
     const gate = evaluateEmitGate({
@@ -420,6 +469,8 @@ export function createPageService(deps: PageServiceDeps): PageService {
       activatedBy: by,
       agentInputInFlight: input.inFlight,
       agentInputAt: input.at,
+      agentInputIntervals: input.intervals,
+      activationAt: typeof m.activationAt === 'number' ? m.activationAt : null,
       paused: deps.access.isPaused(who.paneId),
       disconnected: deps.access.isDisconnected(who.paneId),
       lastRealKeyDownAt: deps.getHost().lastRealKeyDownAt(who.paneId)
@@ -481,7 +532,13 @@ export function createPageService(deps: PageServiceDeps): PageService {
         event.returnValue = null
         return
       }
+      // The block is re-checked here too (F8): a page that was open when the folder got blocked reads nothing new.
+      if (isFolderDenied(folder.folder, lastDeny, home)) {
+        event.returnValue = null
+        return
+      }
       const st = state.readSync(folder.folder, parsed.relPath)
+      boot.markBooted(who.paneId)
       event.returnValue = {
         data: st.data,
         rev: st.rev,

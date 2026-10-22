@@ -65,7 +65,7 @@ describe('checkBrowserContent (pure)', () => {
     ).toBe('BAD_ARGS')
     // The `path` and `html` forms are served since T569 U2: the plan layer lets them through to the verb.
     expect(checkBrowserContent('browser_open', { folder: '/w', path: 'a.html' })).toBeNull()
-    expect(checkBrowserContent('browser_open', { folder: '/w', html: '<p>' })).toBeNull()
+    expect(checkBrowserContent('browser_open', { folder: '/w', html: '<p>', name: 'p' })).toBeNull()
     expect(
       checkBrowserContent('browser_open', { folder: '/w', url: 'http://a.test', device: 'phone-m' })
         ?.code

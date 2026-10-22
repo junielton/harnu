@@ -309,7 +309,9 @@ export function planToolCall({
       const result =
         refusal.reason === 'BAD_ARGS'
           ? `BAD_ARGS: ${refusal.content?.detail ?? ''}`
-          : refusal.reason
+          : refusal.reason === 'PATH_NOT_ALLOWED'
+            ? `PATH_NOT_ALLOWED: ${refusal.content?.jailReason ?? ''}`
+            : refusal.reason
       return denyPlan(tool, folder ?? '', now, result, redact)
     }
   }

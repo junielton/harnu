@@ -20,7 +20,7 @@ const B = 'harnu-page://f0123456789ab/docs/other.js'
 
 describe('page tickets', () => {
   it('serves exactly what was allowed, once', () => {
-    let t = 0
+    const t = 0
     const tickets = createPageTickets(() => t)
     expect(tickets.redeem(A)).toBe(false) // never allowed: a worker's request
     tickets.issue(A)

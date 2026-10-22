@@ -53,16 +53,15 @@ function bootHarnuApi(): void {
   // The last TRUSTED key or pointer press this page saw: the gate's condition 4 needs to know which kind of
   // input made the user activation. A page-dispatched event is `isTrusted: false` and never counts.
   let lastActivation: 'key' | 'pointer' | null = null
-  window.addEventListener(
-    'keydown',
-    (e) => (e.isTrusted ? (lastActivation = 'key') : undefined),
-    true
-  )
-  window.addEventListener(
-    'pointerdown',
-    (e) => (e.isTrusted ? (lastActivation = 'pointer') : undefined),
-    true
-  )
+  /** Epoch ms of that trusted event (`timeOrigin + timeStamp`): main refuses an emit an agent input overlapped (F5). */
+  let lastActivationAt: number | null = null
+  const noteActivation = (kind: 'key' | 'pointer', e: Event): void => {
+    if (!e.isTrusted) return
+    lastActivation = kind
+    lastActivationAt = performance.timeOrigin + e.timeStamp
+  }
+  window.addEventListener('keydown', (e) => noteActivation('key', e), true)
+  window.addEventListener('pointerdown', (e) => noteActivation('pointer', e), true)
 
   contextBridge.exposeInMainWorld('harnu', {
     getData: (): unknown => current.data,
@@ -90,7 +89,8 @@ function bootHarnuApi(): void {
         type,
         ...(tooLarge ? { tooLarge: true } : { payload: event.payload }),
         active: navigator.userActivation?.isActive === true,
-        by: lastActivation
+        by: lastActivation,
+        activationAt: lastActivationAt
       })
     },
     pane: { id: boot.pane.id, name: boot.pane.name }

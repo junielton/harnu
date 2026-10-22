@@ -83,7 +83,11 @@ export interface PageSeam {
   /** Run a patch script in the pane's top frame once it has loaded; `null` when the page never became ready. */
   runPatch(paneId: string, script: string): Promise<PatchResult | null>
   /** Write `.harnu/out/panels/<slug>.html`; returns its folder-relative path. */
-  writePanel(folder: string, slug: string, html: string): Promise<string>
+  writePanel(
+    folder: string,
+    slug: string,
+    html: string
+  ): Promise<{ ok: true; relPath: string } | { ok: false; reason: string }>
   /** The `harnu-page://` address of a folder-relative file. */
   urlFor(folderReal: string, relPath: string): string
 }
@@ -309,6 +313,7 @@ function refuseContent(c: ContentRefusal): Refusal {
   if (c.code === 'DATA_TOO_LARGE' || c.code === 'HTML_TOO_LARGE') {
     return refuse(c.code, { limitBytes: c.limitBytes })
   }
+  if (c.code === 'PATH_NOT_ALLOWED') return refuse(c.code, { jailReason: c.jailReason })
   return refuse('NOT_YET_AVAILABLE', { feature: c.feature })
 }
 

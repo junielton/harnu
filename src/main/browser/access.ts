@@ -80,6 +80,7 @@ export type BrowserDenyReason =
   | 'NOT_A_PAGE_PANE'
   | 'DATA_TOO_LARGE'
   | 'HTML_TOO_LARGE'
+  | 'PATH_NOT_ALLOWED'
 
 /** How a pane was opened (spec §1.2). */
 export type BrowserOpenedBy = 'agent' | 'operator'

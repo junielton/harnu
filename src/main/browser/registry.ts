@@ -11,6 +11,8 @@ import type { BrowserOpenedBy } from './access'
 
 /** Agent-opened panes per folder (spec §10.1, decision 28). Enforced in the verb, not here. */
 export const MAX_AGENT_PANES_PER_FOLDER = 4
+/** How long a finished agent input run is remembered for the emit gate (F5). */
+export const AGENT_INPUT_HISTORY_MS = 15_000
 
 export interface BrowserPaneRecord {
   paneId: string
@@ -71,7 +73,13 @@ export interface BrowserRegistry {
    */
   beginAgentInput(paneId: string): void
   endAgentInput(paneId: string): void
-  agentInput(paneId: string): { inFlight: boolean; at: number | null }
+  agentInput(paneId: string): {
+    inFlight: boolean
+    /** When the last run finished, or `null`. */
+    at: number | null
+    /** Recent runs (the last ~15 s), for the emit gate's overlap test. */
+    intervals: Array<{ start: number; end: number | null }>
+  }
 }
 
 export function createBrowserRegistry(now: () => number): BrowserRegistry {
@@ -83,7 +91,10 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
   const overlapped = new Map<string, Set<number>>()
   let nextId = 1
   /** Per pane: agent input verbs running now, and when the last one finished. */
-  const agentInputs = new Map<string, { running: number; at: number | null }>()
+  const agentInputs = new Map<
+    string,
+    { at: number | null; runs: Array<{ start: number; end: number | null }> }
+  >()
 
   return {
     add: (rec) => void panes.set(rec.paneId, rec),
@@ -103,19 +114,29 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
     findPagePane: (folder, relPath) =>
       [...panes.values()].find((p) => p.folder === folder && p.pagePath === relPath),
     beginAgentInput(id) {
-      const cur = agentInputs.get(id) ?? { running: 0, at: null }
-      cur.running++
+      const cur = agentInputs.get(id) ?? { at: null, runs: [] }
+      cur.runs.push({ start: now(), end: null })
       agentInputs.set(id, cur)
     },
     endAgentInput(id) {
       const cur = agentInputs.get(id)
       if (!cur) return
-      cur.running = Math.max(0, cur.running - 1)
+      // Close the oldest run still open (runs on one pane are FIFO through the write queue).
+      const open = cur.runs.find((r) => r.end === null)
+      if (open) open.end = now()
       cur.at = now()
     },
     agentInput(id) {
       const cur = agentInputs.get(id)
-      return { inFlight: (cur?.running ?? 0) > 0, at: cur?.at ?? null }
+      if (!cur) return { inFlight: false, at: null, intervals: [] }
+      // Keep ~15 s of history: an activation lives about 5 s, and the gate asks about runs around it.
+      const cutoff = now() - AGENT_INPUT_HISTORY_MS
+      cur.runs = cur.runs.filter((r) => r.end === null || r.end >= cutoff)
+      return {
+        inFlight: cur.runs.some((r) => r.end === null),
+        at: cur.at,
+        intervals: cur.runs.map((r) => ({ ...r }))
+      }
     },
     touch(id) {
       const rec = panes.get(id)

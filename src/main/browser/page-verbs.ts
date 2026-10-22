@@ -152,7 +152,9 @@ export async function patchVerb(
     throw err
   }
   const report = deps.registry.endWrite(token)
-  if (outcome === null || outcome.badSelector !== undefined || outcome.matched === 0) {
+  // A page that never became ready is not a selector that matched nothing: say which it was (F8).
+  if (outcome === null) return refuse('PAGE_NOT_READY', { folder: rec.folder })
+  if (outcome.badSelector !== undefined || outcome.matched === 0) {
     return refuse('SELECTOR_NOT_FOUND', { folder: rec.folder, selector })
   }
   return {
@@ -180,6 +182,9 @@ export async function openPageFileVerb(
   if (!folder)
     return refuse('PATH_NOT_ALLOWED', { folder: args.folder, jailReason: 'unknown folder' })
 
+  // The `html` form names its file BEFORE anything is written, so every refusal below (the cap included) happens
+  // with the disk untouched (F7). The path form is jailed first, then deduped, then capped.
+  let htmlPanel: { slug: string; rel: string } | null = null
   let rawPath: string
   if (args.html !== undefined) {
     if (args.name === undefined || args.name.trim() === '') {
@@ -188,8 +193,26 @@ export async function openPageFileVerb(
     if (bytes(args.html) > MAX_PANEL_HTML_BYTES) {
       return refuse('HTML_TOO_LARGE', { folder: args.folder, limitBytes: MAX_PANEL_HTML_BYTES })
     }
-    // Writing the file is the same act as the agent's own Write: the folder is the one it works in.
-    rawPath = await deps.pages.writePanel(args.folder, panelSlug(args.name), args.html)
+    const slug = panelSlug(args.name)
+    htmlPanel = { slug, rel: `${PANEL_DIR}/${slug}.html` }
+    rawPath = htmlPanel.rel
+    // A new panel pane counts toward the cap; rewriting the file a pane already shows does not.
+    const agentPanes = deps.registry.agentPanesIn(args.folder)
+    if (
+      !deps.registry.findPagePane(args.folder, htmlPanel.rel) &&
+      agentPanes.length >= MAX_AGENT_PANES_PER_FOLDER
+    ) {
+      return refuse('PANE_LIMIT', {
+        folder: args.folder,
+        reusablePaneIds: agentPanes.map((p) => p.paneId)
+      })
+    }
+    // Writing the file is the same act as the agent's own Write, through a verified real directory.
+    const written = await deps.pages.writePanel(args.folder, htmlPanel.slug, args.html)
+    if (!written.ok) {
+      return refuse('PATH_NOT_ALLOWED', { folder: args.folder, jailReason: written.reason })
+    }
+    rawPath = written.relPath
   } else {
     rawPath = args.path ?? ''
   }

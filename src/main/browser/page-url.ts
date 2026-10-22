@@ -92,7 +92,14 @@ export function parsePageUrl(raw: string): ParsedPageUrl | null {
 export function isDeniedPagePath(segments: readonly string[]): boolean {
   const lower = segments.map((s) => s.toLowerCase())
   if (lower.includes('.git')) return true
-  return lower[0] === '.harnu' && lower[1] === 'memory'
+  // `.harnu/memory` at ANY depth: a nested repo or worktree keeps its own project memory there too.
+  return lower.some((seg, i) => seg === '.harnu' && lower[i + 1] === 'memory')
+}
+
+/** The folder-relative file a `harnu-page:` address names, or `null` when it is not a file address. */
+export function pagePathForUrl(url: string): string | null {
+  const parsed = parsePageUrl(url)
+  return parsed && parsed.segments.length > 0 ? parsed.relPath : null
 }
 
 /* ---- MIME ------------------------------------------------------------------------------------ */
@@ -213,8 +220,16 @@ function fail(reason: JailFailure): JailVerdict {
 
 function relativeSegments(realFolder: string, realPath: string): string[] | null {
   const rel = path.relative(realFolder, realPath)
-  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null
+  // `..foo` is an ordinary file name; only `..` itself (or `../…`) leaves the folder.
+  if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    return null
+  }
   return rel.split(path.sep)
+}
+
+/** `realPath` lies strictly inside `realFolder` (both already `realpath`ed). */
+export function isInsideFolder(realFolder: string, realPath: string): boolean {
+  return relativeSegments(realFolder, realPath) !== null
 }
 
 export interface JailRequest {

@@ -18,7 +18,8 @@ export const BROWSER_DENIAL_CODES = [
   'DATA_TOO_LARGE',
   'REV_CONFLICT',
   'HTML_TOO_LARGE',
-  'PATH_NOT_ALLOWED'
+  'PATH_NOT_ALLOWED',
+  'PAGE_NOT_READY'
 ] as const
 export type BrowserDenialCode = (typeof BROWSER_DENIAL_CODES)[number]
 
@@ -194,6 +195,17 @@ export function shapeBrowserDenial(
           {
             do: 'Pass a file inside this folder that exists (repo-relative or absolute). Nothing under .git or .harnu/memory is served, and a symlink that leaves the folder is refused.',
             why: 'A page can only read files the operator could already open from this folder.'
+          }
+        ]
+      }
+    case 'PAGE_NOT_READY':
+      return {
+        error: code,
+        message: `The page in that pane has not finished loading, so nothing was changed${at}.`,
+        nextActions: [
+          {
+            do: 'Wait a moment and call again (browser_navigate with waitUntil: "load" waits for it), or check the pane with browser_list.',
+            why: 'A patch needs a loaded document; this is not the same as a selector that matches nothing.'
           }
         ]
       }
