@@ -154,7 +154,7 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     layers.setHidden(false)
   }
 
-  async function pick(el: Element): Promise<void> {
+  async function pick(el: Element, activationAt: number | null): Promise<void> {
     if (picking) return
     picking = true
     const rect = el.getBoundingClientRect()
@@ -174,7 +174,8 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
       rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
       viewport: { width: win.innerWidth, height: win.innerHeight }
     }
-    ipc.send(OVERLAY_CHANNEL.picked, payload)
+    // `activationAt` rides beside the payload, not in it: main's pick gate refuses a click an agent input overlapped.
+    ipc.send(OVERLAY_CHANNEL.picked, { ...payload, activationAt })
   }
 
   /* ---- Pins ------------------------------------------------------------------------------------- */
@@ -303,7 +304,10 @@ export function bootOverlay(env: OverlayEnv): OverlayHandle {
     }
     if (!active) return
     const el = pickAt(m.clientX, m.clientY)
-    if (el) void pick(el)
+    if (el) {
+      const t = globalThis.performance
+      void pick(el, t ? t.timeOrigin + e.timeStamp : null)
+    }
   }
 
   function onHover(e: Event): void {

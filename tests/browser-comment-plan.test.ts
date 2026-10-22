@@ -5,6 +5,7 @@ import {
   resolveDestination,
   selectPins
 } from '../src/main/browser/comment-plan'
+import { AGENT_INPUT_WINDOW_MS } from '../src/main/browser/emit-gate'
 import type { PinRecord } from '../src/main/browser/comment-pins'
 
 const NOW = 100_000
@@ -21,16 +22,41 @@ describe('evaluatePickGate', () => {
       reason: 'OVERLAY_OFF'
     })
   })
-  it('refuses within 1500 ms of an agent input verb, and while one is running', () => {
-    expect(evaluatePickGate({ ...ok, agentInputAt: NOW - 1499 })).toEqual({
+  it('refuses within the agent-input window of an agent input verb, and while one is running', () => {
+    expect(evaluatePickGate({ ...ok, agentInputAt: NOW - (AGENT_INPUT_WINDOW_MS - 1) })).toEqual({
       ok: false,
       reason: 'AGENT_INPUT'
     })
-    expect(evaluatePickGate({ ...ok, agentInputAt: NOW - 1500 })).toEqual({ ok: true })
+    expect(evaluatePickGate({ ...ok, agentInputAt: NOW - AGENT_INPUT_WINDOW_MS })).toEqual({
+      ok: true
+    })
     expect(evaluatePickGate({ ...ok, agentInputInFlight: true })).toEqual({
       ok: false,
       reason: 'AGENT_INPUT'
     })
+  })
+})
+
+describe('evaluatePickGate with an activation time', () => {
+  const ok = { ...calm, overlayActive: true }
+  it('refuses a pick whose click an agent input run overlapped', () => {
+    const at = NOW - 200
+    const intervals = [{ start: NOW - 300, end: NOW - 150 }]
+    expect(evaluatePickGate({ ...ok, activationAt: at, agentInputIntervals: intervals })).toEqual({
+      ok: false,
+      reason: 'AGENT_INPUT'
+    })
+  })
+  it('accepts a pick whose click came after an agent run that ended well before it', () => {
+    const intervals = [{ start: NOW - 4000, end: NOW - 3000 }]
+    expect(
+      evaluatePickGate({
+        ...ok,
+        agentInputAt: NOW - 3000,
+        activationAt: NOW - 200,
+        agentInputIntervals: intervals
+      })
+    ).toEqual({ ok: true })
   })
 })
 
@@ -54,7 +80,9 @@ describe('evaluateSubmitGate', () => {
       ok: false,
       error: 'COMMENT_AGENT_INPUT'
     })
-    expect(evaluateSubmitGate({ ...ok, agentInputAt: NOW - 1500 })).toEqual({ ok: true })
+    expect(evaluateSubmitGate({ ...ok, agentInputAt: NOW - AGENT_INPUT_WINDOW_MS })).toEqual({
+      ok: true
+    })
   })
 })
 

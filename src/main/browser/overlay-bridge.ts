@@ -197,11 +197,14 @@ export function createOverlayBridge(deps: OverlayBridgeDeps): OverlayBridge {
     const who = senderPane(event)
     if (!who) return
     const r = rt(who.paneId)
+    const input = deps.registry.agentInput(who.paneId)
     const gate = evaluatePickGate({
       now: deps.now(),
       overlayActive: r.active,
-      agentInputInFlight: deps.registry.agentInput(who.paneId).inFlight,
-      agentInputAt: deps.registry.agentInput(who.paneId).at
+      agentInputInFlight: input.inFlight,
+      agentInputAt: input.at,
+      agentInputIntervals: input.intervals,
+      activationAt: isRecord(raw) && typeof raw.activationAt === 'number' ? raw.activationAt : null
     })
     const folder = deps.registry.get(who.paneId)?.folder ?? ''
     if (!gate.ok) {

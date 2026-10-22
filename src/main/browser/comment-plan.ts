@@ -2,7 +2,7 @@
  * The decisions behind point-and-comment (T564 U6, spec §8.1, §8.6, §8.7), pure over injected facts.
  *
  *  - {@link evaluatePickGate}: may a guest's pick open a composer? A pick is accepted only if no agent INPUT verb
- *    ran on the pane within the previous 1500 ms (the `agentInputAt` window of §5.4), so an agent cannot use a
+ *    ran on the pane within the `agentInputAt` window of §5.4 (or overlapped the click), so an agent cannot use a
  *    `click` to open a composer on a node of its choosing. (U0 A1: `before-mouse-event` fires for real, CDP and
  *    `sendInputEvent` mouse input alike, so unlike a key it cannot tell the operator's click from a driven one;
  *    the `agentInputAt` window the input verbs open is the mechanism.)
@@ -11,7 +11,7 @@
  *  - {@link selectPins} / {@link resolveDestination}: which pins a submit sends, and to whom.
  */
 import type { PinRecord } from './comment-pins'
-import { AGENT_INPUT_WINDOW_MS } from './emit-gate'
+import { AGENT_INPUT_WINDOW_MS, agentInputBlocks, type AgentInputInterval } from './emit-gate'
 
 export interface AgentInputFacts {
   now: number
@@ -19,9 +19,28 @@ export interface AgentInputFacts {
   agentInputInFlight: boolean
   /** When the last agent input verb finished on the pane, or `null`. */
   agentInputAt: number | null
+  /** Recent agent input runs on the pane, for the activation-overlap check (needs `activationAt`). */
+  agentInputIntervals?: readonly AgentInputInterval[]
+  /** Epoch ms of the trusted input that made this request, when the guest says (`null` = unknown). */
+  activationAt?: number | null
 }
 
 function agentInputRecent(i: AgentInputFacts): boolean {
+  // With a trustworthy activation time the emit gate's overlap check applies; without one, the plain window.
+  if (i.activationAt != null && i.agentInputIntervals) {
+    return agentInputBlocks({
+      now: i.now,
+      userActivationActive: true,
+      activatedBy: 'pointer',
+      agentInputInFlight: i.agentInputInFlight,
+      agentInputAt: i.agentInputAt,
+      agentInputIntervals: i.agentInputIntervals,
+      activationAt: i.activationAt,
+      paused: false,
+      disconnected: false,
+      lastRealKeyDownAt: null
+    })
+  }
   return (
     i.agentInputInFlight ||
     (i.agentInputAt !== null && i.now - i.agentInputAt < AGENT_INPUT_WINDOW_MS)
