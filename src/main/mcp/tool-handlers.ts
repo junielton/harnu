@@ -68,6 +68,7 @@ import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { readAgentTerminalWrites } from './prefs'
 import { makeBrowserVerbDeps } from '../browser/browser-service'
 import { closeVerb, listVerb, navigateVerb, openVerb } from '../browser/verbs-core'
+import { patchVerb, setDataVerb } from '../browser/page-verbs'
 import { resolveTerminalGate } from '../terminal-gate'
 import { terminalLeases } from '../terminal-lease'
 import { scrubTerminalText } from '../scrub-terminal'
@@ -5229,6 +5230,34 @@ const browserCloseHandler: Handler = async (args, ctx) => {
   return browserResult({ op: 'browser_close', ...res })
 }
 
+const browserSetDataHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await setDataVerb(
+    {
+      paneId: optStr(args, 'paneId') ?? '',
+      data: args.data,
+      ...(typeof args.merge === 'boolean' ? { merge: args.merge } : {}),
+      ...(typeof args.expectRev === 'number' ? { expectRev: args.expectRev } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_set_data', ...res })
+}
+
+const browserPatchHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await patchVerb(
+    {
+      paneId: optStr(args, 'paneId') ?? '',
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(optStr(args, 'mode') !== undefined ? { mode: optStr(args, 'mode') } : {}),
+      ...(optStr(args, 'html') !== undefined ? { html: optStr(args, 'html') } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_patch', ...res })
+}
+
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
   get_fleet: getFleetHandler,
@@ -5245,6 +5274,8 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   browser_list: browserListHandler,
   browser_navigate: browserNavigateHandler,
   browser_close: browserCloseHandler,
+  browser_set_data: browserSetDataHandler,
+  browser_patch: browserPatchHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

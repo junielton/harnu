@@ -21,6 +21,7 @@ import {
   browserRegistry,
   closePaneFromOperator,
   getBrowserHost,
+  getPageService,
   openOperatorPane
 } from './browser-service'
 import type { BrowserOverlayRect, BrowserRect } from './state-types'
@@ -47,6 +48,7 @@ function toOverlay(v: unknown): BrowserOverlayRect | null {
 
 export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void {
   bindBrowserWindow(getWindow)
+  getPageService().registerIpc()
   const host = (): ReturnType<typeof getBrowserHost> => getBrowserHost()
 
   // Every app-side `browser:*` channel is accepted ONLY from the app window's own webContents. A guest page
@@ -143,6 +145,17 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
   handleApp('browser:dismissNotice', (paneId: unknown) => {
     if (isPaneId(paneId)) host().dismissNotice(paneId)
     return true
+  })
+
+  // The operator's per-pane "Allow network" switch for a page pane (spec §4.3, Q3). Operator only: this is an IPC
+  // from the app window; no MCP verb reaches it.
+  ipcMain.handle('browser:setAllowNetwork', (e, payload: unknown) => {
+    // App channel: only the app window may flip it, never a guest page (which has no preload path to it anyway).
+    if (e.sender !== getWindow()?.webContents) return false
+    if (!isRecord(payload) || !isPaneId(payload.paneId) || typeof payload.allow !== 'boolean') {
+      return false
+    }
+    return host().setAllowNetwork(payload.paneId, payload.allow)
   })
 
   // The operator's decisions about the agent (spec §7.4). Disconnect is permanent: no handler reconnects.

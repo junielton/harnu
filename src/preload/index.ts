@@ -2391,6 +2391,9 @@ const api = {
   browserPause: (paneId: string): Promise<number | null> =>
     ipcRenderer.invoke('browser:pause', paneId),
   browserResume: (paneId: string): Promise<boolean> => ipcRenderer.invoke('browser:resume', paneId),
+  /** The operator's per-pane "Allow network" switch on a page pane (T569 U2). Operator only. */
+  browserSetAllowNetwork: (payload: { paneId: string; allow: boolean }): Promise<boolean> =>
+    ipcRenderer.invoke('browser:setAllowNetwork', payload),
   onBrowserState: (cb: (state: BrowserPaneState) => void): (() => void) =>
     subscribe('browser:state', cb),
   onBrowserFreeze: (cb: (p: { paneId: string; dataUrl: string | null }) => void): (() => void) =>

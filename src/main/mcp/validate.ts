@@ -1370,6 +1370,64 @@ export function parseBrowserClose(input: unknown): ParseResult<BrowserCloseArgs>
   return { ok: true, value }
 }
 
+/** Validated args for `browser_set_data` (T569 U2). `data` may be any JSON value, including `null`. */
+export interface BrowserSetDataArgs {
+  folder?: string
+  paneId: string
+  data: unknown
+  merge?: boolean
+  expectRev?: number
+}
+
+const BrowserSetDataSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: z.string().min(1),
+  data: z.unknown(),
+  merge: z.boolean().optional(),
+  expectRev: z.number().int().min(0).optional()
+})
+
+export function parseBrowserSetData(input: unknown): ParseResult<BrowserSetDataArgs> {
+  const parsed = BrowserSetDataSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const d = parsed.data
+  if (!('data' in (input as object)) || d.data === undefined) {
+    return { ok: false, error: 'BAD_ARGS', detail: '`data` is required (any JSON value).' }
+  }
+  const value: BrowserSetDataArgs = { paneId: d.paneId, data: d.data }
+  if (d.folder !== undefined) value.folder = d.folder
+  if (d.merge !== undefined) value.merge = d.merge
+  if (d.expectRev !== undefined) value.expectRev = d.expectRev
+  return { ok: true, value }
+}
+
+/** Validated args for `browser_patch` (T569 U2). */
+export interface BrowserPatchArgs {
+  folder?: string
+  paneId: string
+  selector: string
+  mode: 'inner' | 'outer' | 'append' | 'prepend' | 'remove'
+  html?: string
+}
+
+const BrowserPatchSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: z.string().min(1),
+  selector: z.string().min(1).max(1000),
+  mode: z.enum(['inner', 'outer', 'append', 'prepend', 'remove']),
+  html: z.string().optional()
+})
+
+export function parseBrowserPatch(input: unknown): ParseResult<BrowserPatchArgs> {
+  const parsed = BrowserPatchSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const d = parsed.data
+  const value: BrowserPatchArgs = { paneId: d.paneId, selector: d.selector, mode: d.mode }
+  if (d.folder !== undefined) value.folder = d.folder
+  if (d.html !== undefined) value.html = d.html
+  return { ok: true, value }
+}
+
 /**
  * Router-side dispatch table: validate the args for a given {@link McpOp}.
  * Every op maps to exactly ONE parser — a `Record<McpOp, …>` rather than a
@@ -1391,6 +1449,8 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   browser_list: parseBrowserList,
   browser_navigate: parseBrowserNavigate,
   browser_close: parseBrowserClose,
+  browser_set_data: parseBrowserSetData,
+  browser_patch: parseBrowserPatch,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

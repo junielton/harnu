@@ -14,6 +14,7 @@ import { createBrowserAccess } from './access'
 import { resolveGateInput, type GateResolution } from './gate-resolve'
 import { createBrowserRegistry } from './registry'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
+import { createPageService, type PageService } from './page-service'
 import type { BrowserVerbDeps } from './verbs-core'
 import type { BrowserPartition } from './guest-prefs'
 
@@ -22,7 +23,29 @@ export const browserAccess = createBrowserAccess(() => Date.now())
 
 let mainWindowGetter: (() => BrowserWindow | null) | null = null
 let host: BrowserViewHost | null = null
+let pages: PageService | null = null
 let mcpPort = 0
+let bridge: { dispatch(command: string, payload: unknown): Promise<unknown> } | undefined
+
+/** `index.ts` hands over the renderer command bridge, which page events ride to a session (T569 U2). */
+export function bindBrowserBridge(b: {
+  dispatch(command: string, payload: unknown): Promise<unknown>
+}): void {
+  bridge = b
+}
+
+/** The `harnu-page://` service. Created on first use, like the view host. */
+export function getPageService(): PageService {
+  if (pages) return pages
+  pages = createPageService({
+    registry: browserRegistry,
+    access: browserAccess,
+    getHost: () => getBrowserHost(),
+    now: () => Date.now(),
+    getBridge: () => bridge
+  })
+  return pages
+}
 
 /** `server.ts` reports the port it bound, so a page on that port classifies as `external` (spec §7.2). */
 export function noteMcpPort(port: number): void {
@@ -42,7 +65,8 @@ export function getBrowserHost(): BrowserViewHost {
     harnuPorts: () => collectHarnuPorts(mcpPort),
     trustedHosts: () => [],
     openPopupPane: ({ folder, partition, url }) =>
-      openOperatorPane({ folder, partition, url, popup: true })
+      openOperatorPane({ folder, partition, url, popup: true }),
+    pageHooks: getPageService().hooks
   })
   return host
 }
@@ -74,7 +98,9 @@ export function openOperatorPane(opts: {
     createdAt: now,
     lastActiveAt: now,
     seenHosts: new Set<string>(),
-    flagged: null
+    flagged: null,
+    pagePath: null,
+    allowNetwork: false
   })
   try {
     getBrowserHost().create({ paneId, folder: opts.folder, partition, url: opts.url })
@@ -159,6 +185,7 @@ export function makeBrowserVerbDeps(env: BrowserHandlerEnv): BrowserVerbDeps {
     },
     scrub: (text) => scrubTerminalText(text, home),
     alias: (folder) => path.basename(folder) || folder,
-    folderBlocked: (folder) => env.folderBlocked(folder)
+    folderBlocked: (folder) => env.folderBlocked(folder),
+    pages: getPageService().seam
   }
 }

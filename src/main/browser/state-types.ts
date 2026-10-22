@@ -37,6 +37,12 @@ export interface BrowserPaneState {
   disconnected: boolean
   ownerSessionId: string | null
   notice: BrowserNotice | null
+  /** The folder-relative page file, or `null` (T569 U2). */
+  pagePath: string | null
+  /** The operator's per-pane "Allow network" switch (spec §4.3); off by default, no verb sets it. */
+  allowNetwork: boolean
+  /** The served page file was deleted: the pane shows the "file removed" placeholder. */
+  pageFileRemoved: boolean
 }
 
 /** A rectangle in CSS px, as the renderer measures it. */

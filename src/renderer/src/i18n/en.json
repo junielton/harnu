@@ -4379,6 +4379,22 @@
       "dialog": "The page opened a {dialog} dialog and Harnu dismissed it",
       "crashed": "The page stopped responding",
       "dismiss": "Dismiss"
+    },
+    "network": {
+      "off": "Offline",
+      "on": "Network on",
+      "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
+      "onHint": "Network on: the page can reach the network. Click to turn it off."
+    },
+    "fileRemoved": {
+      "title": "File removed",
+      "waiting": "Waiting for it to come back…"
+    },
+    "pageEvent": {
+      "sent": "Page event sent to the session",
+      "sentComment": "Comment sent to the session",
+      "heldTitle": "A page panel sent an event, but no session can take it",
+      "heldBody": "Select a session in this folder, or connect the pane to one, and use the panel again."
     }
   },
   "splitMenu": {

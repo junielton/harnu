@@ -55,7 +55,10 @@ export const COMMAND_OPS = [
   // a live process to reach. HEADLESS — it must never select the session, for
   // the same reason `pane.split`/`pane.openMarkdown` never do: an agent's
   // message cannot yank an operator who is looking somewhere else.
-  'session.wake'
+  'session.wake',
+  // T569 U2: put text into a session as a USER turn (a page event from a live panel; the overlay's comments
+  // reuse it). The renderer resolves the destination and the live PTY; main wakes a parked one first.
+  'session.userTurn'
 ] as const
 
 /** A router-dispatchable command op — one of {@link COMMAND_OPS}. */
@@ -143,8 +146,20 @@ export interface CommandRouterActions {
       openedBy: 'agent' | 'operator'
       partition: 'agent' | 'operator'
       ownerSessionId: string | null
+      pagePath?: string | null
     }
   ): string
+  /**
+   * T569 U2 `session.userTurn`: deliver `text` to a session as a user turn through the paste+quiescence-submit
+   * path (`pasteAndSubmit`). Destination: `sessionId` when it exists, else the folder's selected session.
+   * Answers `delivered`, `parked` (no live PTY: main wakes it and asks again) or `held` (no destination).
+   */
+  deliverUserTurn?(turn: {
+    sessionId: string | null
+    folder: string
+    text: string
+    source: 'page-event' | 'overlay'
+  }): { delivered: true; sessionId: string } | { parked: true; sessionId: string } | { held: true }
   /**
    * T171 `close_file`: close the non-PTY, file/folder-backed pane (markdown /
    * memory / explorer) matching `path` in the TARGET worktree's stack.
@@ -311,6 +326,10 @@ export interface ThrownError {
   error: string
 }
 
+/** Success of `session.userTurn` (T569 U2): delivered, parked (main wakes it and asks again) or held. */
+export type UserTurnResult =
+  { delivered: true; sessionId: string } | { parked: true; sessionId: string } | { held: true }
+
 /** Every shape `dispatch` can return; discriminated by key presence. */
 export type DispatchResult =
   | SessionCreatedResult
@@ -320,6 +339,7 @@ export type DispatchResult =
   | NotifyPushResult
   | SpeechSayResult
   | SessionWakeResult
+  | UserTurnResult
   | CloseFileResult
   | ClosePaneResult
   | CommandError
@@ -470,9 +490,24 @@ function handlePaneBrowser(actions: CommandRouterActions, payload: unknown): Dis
     url: isNonEmptyString(payload.url) ? payload.url : '',
     openedBy,
     partition,
-    ownerSessionId: isNonEmptyString(payload.ownerSessionId) ? payload.ownerSessionId : null
+    ownerSessionId: isNonEmptyString(payload.ownerSessionId) ? payload.ownerSessionId : null,
+    pagePath: isNonEmptyString(payload.pagePath) ? payload.pagePath : null
   })
   return { paneId }
+}
+
+/** `session.userTurn` (T569 U2): see {@link CommandRouterActions.deliverUserTurn}. */
+function handleSessionUserTurn(actions: CommandRouterActions, payload: unknown): DispatchResult {
+  if (!actions.deliverUserTurn) return { ok: false, error: 'deliverUserTurn not wired' }
+  if (!isRecord(payload)) return BAD_ARGS
+  if (!isNonEmptyString(payload.folder) || !isNonEmptyString(payload.text)) return BAD_ARGS
+  const source = payload.source === 'overlay' ? 'overlay' : 'page-event'
+  return actions.deliverUserTurn({
+    sessionId: isNonEmptyString(payload.sessionId) ? payload.sessionId : null,
+    folder: payload.folder,
+    text: payload.text,
+    source
+  })
 }
 
 /**
@@ -687,6 +722,8 @@ export function makeCommandRouter(actions: CommandRouterActions): CommandRouter 
           return handleSpeechSay(actions, payload)
         case 'session.wake':
           return handleSessionWake(actions, payload)
+        case 'session.userTurn':
+          return handleSessionUserTurn(actions, payload)
         default:
           return BAD_ARGS
       }

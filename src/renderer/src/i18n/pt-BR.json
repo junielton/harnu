@@ -4379,6 +4379,22 @@
       "dialog": "A página abriu um diálogo {dialog} e o Harnu o dispensou",
       "crashed": "A página parou de responder",
       "dismiss": "Dispensar"
+    },
+    "network": {
+      "off": "Offline",
+      "on": "Rede ativa",
+      "offHint": "Offline: a página não alcança a rede. Clique para permitir neste painel.",
+      "onHint": "Rede ativa: a página alcança a rede. Clique para desligar."
+    },
+    "fileRemoved": {
+      "title": "Arquivo removido",
+      "waiting": "Aguardando ele voltar…"
+    },
+    "pageEvent": {
+      "sent": "Evento da página enviado à sessão",
+      "sentComment": "Comentário enviado à sessão",
+      "heldTitle": "Um painel enviou um evento, mas nenhuma sessão pode recebê-lo",
+      "heldBody": "Selecione uma sessão desta pasta, ou conecte o painel a uma, e use o painel de novo."
     }
   },
   "splitMenu": {

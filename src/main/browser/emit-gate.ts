@@ -142,9 +142,9 @@ export function createEmitRateLimiter(now: () => number): EmitRateLimiter {
 
 /* ---- The message ---------------------------------------------------------------------------------- */
 
-// eslint-disable-next-line no-control-regex
 const BIDI_AND_CONTROL = new RegExp(
   // C0 (minus \n and \t), DEL, C1, the bidi marks/embeddings/overrides/isolates, zero-width characters and BOM.
+  // eslint-disable-next-line no-control-regex
   '[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff]',
   'g'
 )

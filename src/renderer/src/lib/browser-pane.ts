@@ -26,6 +26,31 @@ export function normalizeAddressInput(raw: string): string | null {
   return `${isLocal ? 'http' : 'https'}://${text.replace(/^\/\//, '')}`
 }
 
+/**
+ * The folder-relative file a `harnu-page://f<id>/<path>` address names (decoded), or `null` for any other
+ * address. A page pane's address field shows this instead of the opaque address (design.md "Page pane").
+ */
+export function pageDisplayPath(url: string): string | null {
+  try {
+    const u = new URL(url)
+    if (u.protocol !== 'harnu-page:') return null
+    const path = u.pathname
+      .split('/')
+      .filter((s) => s !== '')
+      .map((s) => decodeURIComponent(s))
+      .join('/')
+    return path === '' ? null : path
+  } catch {
+    return null
+  }
+}
+
+/** What the address field shows for a live URL: the page file for a page, nothing for `about:blank`. */
+export function addressText(url: string): string {
+  if (url === 'about:blank') return ''
+  return pageDisplayPath(url) ?? url
+}
+
 /** `mm:ss` for a remaining duration in ms; never negative. */
 export function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000))
@@ -37,6 +62,8 @@ export function formatCountdown(ms: number): string {
 /** The text of the pane header: the page title, else the host, else nothing (the component adds the fallback). */
 export function headerTitle(state: Pick<BrowserPaneState, 'title' | 'url'>): string {
   if (state.title.trim() !== '') return state.title.trim()
+  const file = pageDisplayPath(state.url)
+  if (file) return file.split('/').pop() ?? file
   try {
     const u = new URL(state.url)
     return u.host

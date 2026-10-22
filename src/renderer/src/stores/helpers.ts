@@ -202,6 +202,8 @@ export interface BrowserPanePayload {
   openedBy: 'agent' | 'operator'
   partition: 'agent' | 'operator'
   ownerSessionId: string | null
+  /** The folder-relative page file this pane was opened on (T569 U2), or `null`. */
+  pagePath?: string | null
 }
 
 /** Read a browser pane's payload with safe defaults. */
@@ -212,7 +214,8 @@ export function browserPayload(pane: AnyHelperPane): BrowserPanePayload {
     url: p.url ?? '',
     openedBy: p.openedBy === 'agent' ? 'agent' : 'operator',
     partition: p.partition === 'agent' ? 'agent' : 'operator',
-    ownerSessionId: p.ownerSessionId ?? null
+    ownerSessionId: p.ownerSessionId ?? null,
+    pagePath: p.pagePath ?? null
   }
 }
 

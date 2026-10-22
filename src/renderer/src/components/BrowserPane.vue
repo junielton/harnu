@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Bot,
   Bug,
+  FileX,
   Globe,
   Maximize2,
   Minimize2,
@@ -23,6 +24,8 @@ import {
   Play,
   RotateCw,
   TriangleAlert,
+  Wifi,
+  WifiOff,
   Unplug,
   X
 } from 'lucide-vue-next'
@@ -34,6 +37,7 @@ import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { createFrameScheduler } from '../lib/frame-scheduler'
 import { sessionTitle } from '../lib/session-label'
 import {
+  addressText,
   chipFor,
   formatCountdown,
   headerTitle,
@@ -78,7 +82,10 @@ const state = computed<BrowserPaneState>(
       pausedUntil: null,
       disconnected: false,
       ownerSessionId: payload.value.ownerSessionId,
-      notice: null
+      notice: null,
+      pagePath: payload.value.pagePath ?? null,
+      allowNetwork: false,
+      pageFileRemoved: false
     }
 )
 
@@ -139,7 +146,7 @@ const editing = ref(false)
 watch(
   () => state.value.url,
   (url) => {
-    if (!editing.value) address.value = url === 'about:blank' ? '' : url
+    if (!editing.value) address.value = addressText(url)
   },
   { immediate: true }
 )
@@ -147,6 +154,11 @@ watch(
 const originKey = computed(() => originBadgeKey(state.value.origin))
 /** The address in three runs: the host is brighter than the scheme and the path (design.md "Address bar"). */
 const addressParts = computed(() => splitAddress(address.value))
+/** The "Allow network" switch exists only on a page pane, and only the operator can flip it (spec §4.3). */
+const isPage = computed(() => state.value.origin === 'page')
+function onToggleNetwork(): void {
+  void window.api.browserSetAllowNetwork({ paneId, allow: !state.value.allowNetwork })
+}
 
 async function onAddressEnter(): Promise<void> {
   const url = normalizeAddressInput(address.value)
@@ -160,7 +172,7 @@ async function onAddressEnter(): Promise<void> {
 }
 function onAddressEscape(): void {
   editing.value = false
-  address.value = state.value.url === 'about:blank' ? '' : state.value.url
+  address.value = addressText(state.value.url)
   addressEl.value?.blur()
 }
 function focusAddress(): void {
@@ -658,6 +670,31 @@ watch(isFrozen, async (frozen) => {
           ><span class="text-text-2">{{ addressParts.rest }}</span>
         </div>
       </div>
+
+      <!-- Allow network (design.md "Page pane"): operator only, off by default, no verb can set it. -->
+      <button
+        v-if="isPage"
+        type="button"
+        role="switch"
+        :aria-checked="state.allowNetwork"
+        class="flex shrink-0 items-center gap-1 rounded-full border transition-colors focus-visible:border-accent-line focus-visible:outline-none"
+        :class="
+          state.allowNetwork
+            ? 'border-warning/30 bg-warning/10 text-warning'
+            : 'border-border bg-surface-2 text-text-3 hover:text-text'
+        "
+        style="padding: 1px 6px; font-size: 10px"
+        :title="
+          state.allowNetwork ? $t('browserPane.network.onHint') : $t('browserPane.network.offHint')
+        "
+        data-testid="browser-network"
+        @click="onToggleNetwork"
+      >
+        <component :is="state.allowNetwork ? Wifi : WifiOff" :size="10" :stroke-width="1.6" />
+        <span class="@max-[260px]:hidden">{{
+          state.allowNetwork ? $t('browserPane.network.on') : $t('browserPane.network.off')
+        }}</span>
+      </button>
     </div>
 
     <!-- Notice strip: one refusal or intercepted event at a time (design.md "Notice strip"). -->
@@ -695,6 +732,23 @@ watch(isFrozen, async (frozen) => {
         @error="ackFreezePainted"
       />
       <div v-else-if="isFrozen" class="absolute inset-0 bg-bg" data-testid="browser-frozen" />
+
+      <!-- "File removed" placeholder (spec §4.4): the native view is hidden while the page file is gone. -->
+      <div
+        v-if="state.pageFileRemoved"
+        class="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-bg px-4 text-center"
+        role="status"
+        data-testid="browser-file-removed"
+      >
+        <FileX :size="20" :stroke-width="1.5" class="text-text-4" aria-hidden="true" />
+        <span class="text-[13px] text-text-2">{{ $t('browserPane.fileRemoved.title') }}</span>
+        <span
+          class="max-w-full truncate font-mono text-[11px] text-text-3"
+          :title="addressText(state.url)"
+          >{{ addressText(state.url) }}</span
+        >
+        <span class="text-[11px] text-text-4">{{ $t('browserPane.fileRemoved.waiting') }}</span>
+      </div>
 
       <!-- ⋯ menu: over the host, above the frozen frame. -->
       <div

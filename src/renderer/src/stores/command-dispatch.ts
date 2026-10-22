@@ -27,8 +27,11 @@ import { i18n } from '../i18n'
 import { useSessionsStore } from './sessions'
 import { useHelpersStore } from './helpers'
 import { useNotificationsStore } from './notifications'
+import { useUiStore } from './ui'
 import { makeCommandRouter, type CommandRouterActions } from './command-router'
 import { speech } from '../lib/speech'
+import { livePtyIdFor } from '../components/TerminalPane.vue'
+import { pasteAndSubmit } from '../components/prompt-inject'
 
 /**
  * A correlated command pushed from main over `onRendererCommand`. Mirrors
@@ -159,6 +162,43 @@ export function buildDispatchActions(): CommandRouterActions {
     // T564 U1: a browser pane main created for an agent; background and badged like every agent pane.
     addBrowserHelper: (worktreePath, spec) =>
       helpers.addBrowserHelper(worktreePath, spec, { origin: 'agent' }),
+    // T569 U2 `session.userTurn`: a page event (later a comment) becomes a user turn in the owner session, else
+    // the folder's selected one. Same paste + quiescence-submit path as a lesson result (`MarkdownPane`).
+    deliverUserTurn: ({ sessionId, folder, text, source }) => {
+      const owner = sessionId !== null && sessions.findSessionById(sessionId) ? sessionId : null
+      const selected = sessions.selectedId
+      const selectedHere =
+        selected !== null &&
+        sessions.folders.some(
+          (f) => f.path === folder && f.sessions.some((s) => s.sessionId === selected)
+        )
+      const target = owner ?? (selectedHere ? selected : null)
+      if (!target) {
+        // Neither the owner nor a selected session of the folder: the event is held on the pane.
+        useUiStore().pushToast({
+          kind: 'warning',
+          title: i18n.global.t('browserPane.pageEvent.heldTitle'),
+          description: i18n.global.t('browserPane.pageEvent.heldBody')
+        })
+        return { held: true }
+      }
+      const ptyId = livePtyIdFor(target)
+      if (!ptyId) return { parked: true, sessionId: target }
+      pasteAndSubmit(ptyId, text)
+      notifications.notify({
+        ts: Date.now(),
+        source: 'agent',
+        kind: 'info',
+        title: i18n.global.t(
+          source === 'page-event'
+            ? 'browserPane.pageEvent.sent'
+            : 'browserPane.pageEvent.sentComment'
+        ),
+        sessionId: target,
+        folderPath: folder
+      })
+      return { delivered: true, sessionId: target }
+    },
     closeHelperByPath: (worktreePath, path) => helpers.closeHelperByPath(worktreePath, path),
     closeHelperById: (worktreePath, paneId) => helpers.closeHelperById(worktreePath, paneId),
     // T113 (background drain): the board-dispatch spawn WITHOUT selection — the
