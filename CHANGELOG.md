@@ -20,10 +20,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   reload) and `browser_patch` (change one number or row right now). Edit the file yourself and the pane reloads
   where you were scrolling; delete it and the pane says "File removed" until it comes back. Buttons in the panel
   can send an event to the session (`harnu.emit`), but only when you really click or press a key: a session that
-  clicks its own panel cannot approve itself. Panels are **offline by default** (a pane can't reach the network
-  at all); a per-pane **Offline / Network on** switch in the address bar, yours alone, lets a panel that needs a
-  CDN script or a web font through. Only your own files are ever served, and nothing under `.git` or
-  `.harnu/memory`.
+  clicks its own panel cannot approve itself. Panels are **offline by default**: a panel can't load anything from
+  the network, and its own script, links and popups can't take it to another address (only its own folder's files);
+  a per-pane **Offline / Network on** switch in the address bar, yours alone, lets a panel that needs a CDN script,
+  a web font or an outside link through, and your own address bar can always leave. Only your own files are
+  ever served, never anything under `.git` or `.harnu/memory`, and only to the panel itself: a web page in another
+  pane, or a background worker it starts, can't read them (a worker started inside a panel can't either).
 
 - **Browser pane — open a real browser beside your session.** The Split button in the Topbar now has a small
   arrow beside it: choose **Browser** and a Chromium page opens in the split stack, with back, forward and

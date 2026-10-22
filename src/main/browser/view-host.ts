@@ -44,7 +44,8 @@ import {
   certificateVerdictFor,
   createGestureGate,
   decideFreeze,
-  flagAfterOperatorAction
+  flagAfterOperatorAction,
+  liveUrlOf
 } from './view-logic'
 import type { BrowserAccess } from './access'
 import type { BrowserRegistry } from './registry'
@@ -108,6 +109,8 @@ interface ViewEntry {
   gestures: GestureGate
   /** When `before-input-event` last saw a REAL `keyDown` on the pane (spec §5.4 condition 4). */
   lastRealKeyDownAt: number | null
+  /** The address the pane was last asked to load, for a pane that has not committed anything yet (F3). */
+  requestedUrl: string
   /** The served page file is gone (T569 U2): the view is hidden and the pane shows the placeholder. */
   fileRemoved: boolean
   loading: boolean
@@ -155,6 +158,7 @@ export class BrowserViewHost implements BrowserHost {
       paintedWaiter: null,
       gestures: createGestureGate(() => this.deps.now()),
       lastRealKeyDownAt: null,
+      requestedUrl: opts.url,
       fileRemoved: false,
       loading: false,
       notice: null,
@@ -175,7 +179,7 @@ export class BrowserViewHost implements BrowserHost {
     const e = this.entries.get(paneId)
     if (!e || e.wc.isDestroyed()) return undefined
     return {
-      url: e.wc.getURL(),
+      url: liveUrlOf(e.wc.getURL(), e.requestedUrl),
       title: e.wc.getTitle(),
       loading: e.wc.isLoading(),
       canGoBack: e.wc.navigationHistory.canGoBack(),
@@ -220,6 +224,7 @@ export class BrowserViewHost implements BrowserHost {
       })
       if ('url' in target) {
         e.notice = null
+        e.requestedUrl = target.url
         wc.loadURL(target.url).catch(() => undefined)
       } else if (target.action === 'back') wc.navigationHistory.goBack()
       else if (target.action === 'forward') wc.navigationHistory.goForward()
@@ -335,6 +340,7 @@ export class BrowserViewHost implements BrowserHost {
       const rec = this.deps.registry.get(paneId)
       if (rec) rec.flagged = flagAfterOperatorAction()
       e.notice = null
+      e.requestedUrl = verdict.url
       e.wc.loadURL(verdict.url).catch(() => undefined)
     } else if (target.action === 'back') e.wc.navigationHistory.goBack()
     else if (target.action === 'forward') e.wc.navigationHistory.goForward()

@@ -377,3 +377,13 @@ describe('F8 — jail corners', () => {
     expect(isInsideFolder('/w', '/other/x')).toBe(false)
   })
 })
+
+describe('F3 — a verb called right after browser_open sees the page it was asked to load', () => {
+  it('uses the requested address until something has committed, then the committed one', async () => {
+    const { liveUrlOf } = await import('../src/main/browser/view-logic')
+    const url = 'harnu-page://f0123456789ab/docs/status.html'
+    expect(liveUrlOf('', url)).toBe(url)
+    expect(liveUrlOf('https://example.com/', url)).toBe('https://example.com/')
+    expect(liveUrlOf('', '')).toBe('')
+  })
+})
