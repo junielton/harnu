@@ -2,7 +2,7 @@
 
 A **browser pane** is a real Chromium page that lives in the split stack beside your session. Use it to look at the dev server a session just started, to read documentation next to the conversation, or to let a session open a page for you. It works like any other pane: it can be maximized, resized by dragging its header, and closed.
 
-> **What is and isn't built yet.** This page describes what ships today. A session can open, list, navigate and close panes, open a local `.html` file as a live panel (below), read what is on the page (a snapshot, a screenshot, the console, the network if you let it) and drive it (run a script, click, type, fill a form, press keys); it can also show the page as a phone or tablet, zoom it, attach files from the folder to a form, and download a file into the folder. You can point at an element and send a note to a session (below). The pane does not come back after you restart Harnu yet.
+> **What is and isn't built yet.** This page describes what ships today. A session can open, list, navigate and close panes, open a local `.html` file as a live panel (below), read what is on the page (a snapshot, a screenshot, the console, the network if you let it) and drive it (run a script, click, type, fill a form, press keys); it can also show the page as a phone or tablet, zoom it, attach files from the folder to a form, and download a file into the folder. You can point at an element and send a note to a session (below). Panes come back after you restart Harnu, and a pane nobody looks at for ten minutes is paused to save memory (both below).
 
 ## Opening one
 
@@ -53,6 +53,14 @@ Point at something on a page and tell the session what to change, without descri
 
 A browser page is drawn by the system above everything else in the window, so a menu, dialog, palette or notification opened over it would normally be hidden behind it. Harnu avoids this by swapping the page for a still picture of itself while anything overlaps it: the page keeps running underneath, and it comes back the moment the menu closes. Dragging a splitter does the same, so the drag doesn't get lost inside the page. You will notice a frozen frame for a moment; that is why.
 
+## Paused to save memory, and coming back after a restart
+
+A page that stays open costs a few hundred megabytes. When a browser pane has been hidden for **ten minutes** (you are in another folder, its stack is closed, or it never had a window to show in) Harnu lets go of its page: the pane keeps its place, its header and its comment pins, and shows **Paused to save memory** with the address and **Click to reload**. Click it and the page loads again where you left it (scroll position and zoom included, best effort). A session that needs the page does the same for you and is told it had to reload it. A pane is never paused while a session is working in it, while its network is being recorded, while a download is arriving or waiting for your answer, or in the minute after you last used it. The comment composer and your drafts are untouched.
+
+When you quit and reopen Harnu, your browser panes come back in the same folders, **not loaded yet**, at the same address, with their zoom, device, "Network on" switch, scroll position and any **unsent comments**. They load by themselves the moment you look at them. What does not come back, on purpose: a session's permission to drive a pane (it asks again), a network recording, the amber "opened by agent" badge and a pause you set.
+
+Panes a session opened count toward a limit of **four per folder**; the panes you open yourself never do.
+
 ## Sessions and the connection chip
 
 A pane a session opened shows a chip in its header — "Connected to ‹session›" (the session name is kept when the pane is narrow; the words "Connected to" go first), or "Connected to an agent" — with the word **driving** while the session is navigating the pane. Click the unplug button to **Disconnect** the session from that pane for good: it can no longer read or change it, even close it, and nothing reconnects it. The pane stays and stays yours. Use **Pause agent for 10 min** to stop a session changing the pane for a while: the chip shows "Agent paused · 9:41" counting down, with a **Resume** button. See [Agent control](agent-control.md#browser-panes-a-session-opens) for everything a session can do, and **Settings → Control server → Allow agents to drive browser panes** to switch all of it off.
@@ -86,6 +94,7 @@ A page in a browser pane is treated as untrusted code, even your own dev server:
 - **"Comment not sent".** The notice says why: you disconnected the session from this pane, or the session could not take the message (the draft is kept until the message really went in).
 
 - **The page is blank or white.** A reload (**⟳**) usually fixes it. If the address is `about:blank` you haven't navigated yet.
+- **A pane says "Paused to save memory".** It was hidden for ten minutes; click **Click to reload** (or just ask the session to use it). After a restart a pane says "Not loaded yet" until you look at it.
 - **A menu seems to flash a still picture of the page.** That is the frozen frame described above, working as intended.
 - **A panel doesn't update.** Check the pane's chip: **Pause agent** and the Settings switch both stop updates. A page that is not one of your own files (a dev server, a website) can't be updated by `set_data` or `patch`; the session is told so.
 - **My panel's web font or CDN script doesn't load.** Panels are offline by default; turn on **Network on** for that pane.

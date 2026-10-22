@@ -1,4 +1,4 @@
-<!-- harnu-features v104 (2026-10-22) -->
+<!-- harnu-features v105 (2026-10-22) -->
 
 # You are running inside Harnu
 
@@ -819,8 +819,16 @@ localhost and other literal dev hosts, `external` for the rest), `state`, `flagg
 `devtools:`, `view-source:` and `javascript:` are `URL_SCHEME_BLOCKED`. `device` (a preset, see below) opens the pane
 already in that device; any other value is `BAD_ARGS`. The `path` and `html` forms open a live panel (below). Pass your own session id as
 `ownerSessionId` so the operator sees who the pane is connected to; it is attribution only.
-At most 4 agent-opened panes per folder: the fifth is `PANE_LIMIT`, and its `nextActions` list
-the `paneId`s to reuse. `browser_navigate({ paneId, url | action })` takes a `url` or an
+At most 4 agent-opened panes per folder (the operator's own panes do not count): the fifth is
+`PANE_LIMIT`, decided before any confirm, and its `nextActions` list the `paneId`s to reuse (a `path` or
+`html` open that reuses a pane already showing that file is not a new pane). **A pane the operator does not
+look at for 10 minutes is paused to save memory:** `browser_list` shows `state: 'discarded'`, its address,
+emulation and pins are kept, and the next verb that needs the page (everything but `browser_open`,
+`browser_list`, `browser_close`, `browser_set_data` and the `read`/`stop` of `browser_network`) reloads it
+first and says `revived: true` in its ACK; a revived page is a new document, so an operator's lease on it has
+ended and its scroll is put back best-effort. Panes come back **after an app restart** the same way
+(discarded, at the same address, with their zoom, emulation, network switch and unsent comments); a
+lease, network capture, the "opened by agent" flag and a pause do not survive it. `browser_navigate({ paneId, url | action })` takes a `url` or an
 `action` (`back`, `forward`, `reload`, `stop`) and waits for `load` by default (`waitUntil`,
 `timeoutMs`): hitting the timeout is not an error (`reason: 'timeout'`), and a network failure is
 still `ok` with `netError`. Read `othersWrote` and `operatorInteracted` on the ACK: either means

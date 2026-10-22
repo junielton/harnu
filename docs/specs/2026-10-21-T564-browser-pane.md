@@ -270,6 +270,14 @@ Enforced in main in three layers, because each alone has gaps: `will-navigate` +
   `will-navigate` (both fired in U0), not here. A request from a dedicated worker was not observed in
   `onBeforeRequest` (the worker's `fetch` failed before reaching it; the cause was not isolated), so the hostile
   fixtures (§12) include a worker.
+  - **Amended 2026-10-22 (U2, T569 F1) by the orchestrator; pending operator confirmation.** U2's hostile fixtures
+    found that a dedicated worker of an `external` page **does** bypass `onBeforeRequest` (`importScripts` of a
+    `harnu-page:` file ran, and a no-cors fetch timing revealed which files exist), so the check alone is not enough.
+    The handler serves a `harnu-page:` URL **only against a one-shot ticket** that `onBeforeRequest` issued for an
+    allowed request (bound to its partition and URL, atomically redeemed before any I/O, short TTL, bounded store); a
+    request without one, from a worker or anywhere else, gets the same 404 as a missing file. What a panel author must
+    know: **only the panel document itself can load the folder's files**; a worker, including one a panel starts, gets
+    nothing.
 - **Popups and `target=_blank`:** `window.open` and `_blank` links are denied as popups. If the request
   carries a real user activation, the target opens as a **new operator-class pane** in the same folder (a
   person's click made it) that **inherits the opener's partition** (§3.4), with no `opener` link and at most
@@ -383,6 +391,13 @@ CDN script or web font breaks (UC1). The pane header gets a per-pane **"Allow ne
 only, off by default, persisted on the pane; when on, the policy drops to `default-src * data: blob:
 'unsafe-inline'`. **No verb can set it.** Confirmed by the operator (Q3).
 
+> **Amended 2026-10-22 (U2, T569 F2) by the orchestrator; pending operator confirmation.** A CSP does not stop
+> `location = 'http://x/?d=…'`, so the policy has a second half: while a `page` pane is on a `harnu-page:` URL and its
+> **Allow network** switch is off, it may not navigate away at all. A link, a redirect, a `meta` refresh, a form
+> submit, `window.open`, `_blank` and a frame to anything that is not the same folder host or `about:blank` are refused,
+> and the pane shows the notice "this panel is offline". The operator's own address bar is not a page and can still
+> leave. With the switch on the guard is off.
+
 ### 4.4 Reload on change
 
 Main watches (chokidar, already a dependency) the served HTML file and every file the handler served to that
@@ -470,6 +485,16 @@ live main-world reference.
   alone (Q8 stands; the residual race is as accepted there), and a page event raised from a **key** press adds
   condition 4 above, which is stricter than Q8 and awaits the operator's confirmation. ADR-0022's revisit
   condition 5 ("no residual agent-input race") is therefore **not** met for pointer input.
+
+> **Amended 2026-10-22 (U7, T574) by the orchestrator; pending operator confirmation.** Condition 2, the pick gate of
+> §8.6 and the registry's `agentInputBlocksEmit` had grown into three implementations on three branches (U2's with a
+> 100 ms padding around the activation, U4's with the 5000 ms window, U6's own). There is now **one**:
+> `agent-input-gate.ts` `agentInputBlocksEmit(registry, paneId, emitAt, activationAt?)`, called by both `page-service`
+> (the emit) and `overlay-bridge` (the pick); the pure gates only honour its verdict. It follows this section: an agent
+> input run in flight, or at any moment from **5000 ms** before the activation, blocks. The preload's activation
+> timestamp is believed only when it is not in the future (beyond 1 s of clock skew) and not older than 6 s; otherwise the
+> window is measured back from the emit. The cost, accepted on purpose: the operator's own click within 5 s of an
+> agent input on that pane is dropped too, which U2's padding had let through.
 
 ## 6. MCP verbs
 
@@ -617,6 +642,18 @@ Writes to one pane run **FIFO** through a per-pane queue modelled on `terminal-w
 entry, `QUEUE_WAIT_MS` 10 s → `BROWSER_BUSY`, 60 writes/min → `BROWSER_RATE_LIMIT`). Reads do not queue. A
 `waitFor` does not hold the queue. Different panes never wait on each other.
 
+> **Added 2026-10-22 (U4, T571 Delta 2) by the orchestrator; pending operator confirmation: `PANE_INPUT_NOT_READY`.**
+> Measured on the real app: mouse and key events sent over CDP are acknowledged and **not delivered** to the first
+> document a view loads, after a move from `about:blank` to a site, after a move to another host or port, and after a
+> page's own `location.replace`; they are delivered once **Harnu** navigates the pane again on the same host (a reload
+> is enough). The cause is not understood, so the rule is the observed one (`browser/input-ready.ts`): a pane is
+> _input-ready_ once Harnu navigates it to the same host as the commit before. `click`, `press`, a `download` by `ref` and
+> a `type` that types key by key or presses Enter refuse **`PANE_INPUT_NOT_READY`** at plan level, before the kill-switch
+> and any confirm, instead of reporting a success that delivered nothing; on a pane the agent opened the hint is to
+> `browser_navigate({ action: "reload" })`, on an operator pane to ask. `fill`, a plain `type` and `eval` work in every
+> state. `browser_list` rows carry `inputReady`. A view brought back from a discard (§10.1) is a new first document: a
+> verb about to send input has the revival followed by one Harnu-started reload, so it is not refused.
+
 ## 7. Access: tiers, writers and controls
 
 ### 7.1 The tier table
@@ -635,6 +672,11 @@ closes, is disconnected, the folder is blocked, the kill-switch flips, or the ap
 > origin grants nothing (`BROWSER_LEASE_ENDED`). Implemented as the view token `<webContents id>|<origin>`. Under "Ask before agent actions", every
 > row that says `free` becomes a normal confirm; a mission grant or an "always allow" can never cover a
 > `lease` row.
+
+> **Amended 2026-10-22 (U7, T574) by the orchestrator; pending operator confirmation.** The live-panel verbs
+> (`browser_set_data`, `browser_patch`) are exempt from the folder's read opt-in even on a pane the operator opened:
+> they only write a page file's own data and DOM and read nothing back, and they refuse every non-`page` pane for every
+> caller (`NOT_A_PAGE_PANE`). Every other verb on an operator-opened pane still needs the opt-in.
 
 **Rows are verb classes; columns are the origin class at call time.**
 
@@ -933,6 +975,21 @@ Real mobile rules, not a narrower window, through CDP:
   Returning to it, or any verb that needs a live page, **revives** it (`revived: true` in the ACK).
   Discard never fires while a verb is in flight, while network capture is active, or while an operator
   interaction is recent. A live view costs ~100–300 MB, so the number is a real knob (Q13).
+  **As built (U7, T574; \* marks a decision of the orchestrator, pending operator confirmation).** The cap is judged at
+  **plan level** for a `browser_open` with a `url` (so a refusal never raises a confirm), with the panes to reuse in
+  `nextActions`; the `path` / `html` forms are judged by the verb, because they may reuse a pane already showing that
+  file. The 10 minutes is `HIDDEN_DISCARD_MS` (`lifecycle.ts`); a hidden stretch starts when the pane is not mounted, not
+  visible, or parked, and a sweep every 30 s discards a pane that has waited long enough, has no verb in flight, no
+  network capture, no download pending and no operator interaction in the last minute. The recorded
+  `{url, title, scroll, zoom}` sit on the registry record beside the emulation and the pins, which stay. A shortened
+  time for the live proof comes from an env var that is ignored in a packaged build. `browser_list` shows
+  `state: "discarded"`; a verb that needs a live page (everything except `open`, `list`, `close`, `set_data` and the
+  `network` read and stop) revives the pane after its gate has passed (a refused call never pays for a page load), and
+  its ACK carries `revived: true` once. \* A pane the **timer** discarded waits for the operator's click on the
+  placeholder ("reloads with one click", mockup "States") rather than loading when it is merely shown; a pane
+  **restored after a restart** loads by itself when it is shown. One constant (`REVIVE_IDLE_DISCARD_ON_SHOW`) flips the
+  first to "on show". \* A revived pane is a new view, so an operator lease on it does not carry over (§7.1).
+
 - **No global live cap in v1,** but `app.getAppMetrics()` already reports the guest processes; attributing
   them in the System Monitor is a follow-up, not part of this card.
 
@@ -951,6 +1008,14 @@ scroll position is restored best-effort. Unlike agent terminals (ADR-0020: an id
 come back bound to a different process), a pane id survives because nothing about it is a process. A pane
 whose owner session no longer exists falls back to "selected session of the folder" for delivery. Leases,
 network capture, `flagged` state and the pause timer **do not** survive a restart.
+
+> **As built (U7, T574).** The renderer owns `helpers.json`, so main keeps each pane's restorable state current on the
+> pane's `payload` through two pushes: the address, zoom, emulation and network switch ride on `browser:state`, and the
+> pins (draft and sent) and the scroll position (sampled at the sweep's pace, best effort) on `browser:persist`. At boot
+> main reads `helpers.json` **before the renderer hydrates**, validates and bounds every field (`restore-plan.ts`; an
+> address a pane may not load becomes `about:blank`, a crop path outside the comments folder is dropped), registers the
+> panes discarded, and hands the pins back to the pin store. A pane's owner is kept as written: delivery already
+> falls back to the folder's selected session when it no longer exists (`session.userTurn`).
 
 ## 11. What implementation must also touch
 

@@ -14,6 +14,17 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Browser panes are paused when nobody looks at them, and come back after a restart.** A pane hidden for ten
+  minutes lets go of its page (a few hundred megabytes) and shows "Paused to save memory" with a **Click to reload**
+  button; a session that needs the page reloads it first and is told so. It is never paused while a session is
+  working in it, recording its network, or while a download or your own click is in progress. When you quit and
+  reopen Harnu the panes return in their folders, not loaded yet, at the same address, with their zoom, device, network
+  switch, scroll position and unsent comment drafts, and load as soon as you look at them. A session's permission to
+  drive a pane, a network recording and the "opened by agent" badge do not survive a restart.
+- **A session's fifth browser pane is refused up front.** The limit of four panes per folder a session may open is now
+  decided before any permission prompt, and the answer lists the panes to reuse; the panes you open yourself never
+  count. `browser_list` shows a paused pane as `discarded`, and `browser_snapshot` can now return a live panel's saved
+  data.
 - **Sessions can drive a browser page — with your permission where it matters.** Five new session verbs act on a
   page: `browser_eval` (run a script and get the result back), `browser_click`, `browser_type`, `browser_fill`
   (up to 20 fields at once) and `browser_press` (Enter, Tab, arrows, `Ctrl+A`…). They aim at elements by the
@@ -42,6 +53,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **One check decides whether a session's input made a page event or a comment pick.** The page-event gate, the comment
+  pick and the registry check had three copies; they now share one. A click you make within five seconds of a session
+  clicking in the same pane is treated as the session's, the way the longer-lived browser activation requires.
 - **Point-and-comment, tightened.** A browser pane you paused still takes comments (pausing stops the session
   driving the page, not you writing to it); one you disconnected the session from does not, and the comment
   button and composer now say so up front instead of failing after you typed. A comment stays a draft until its
@@ -63,6 +77,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - Uploads refuse more secrets: anything in `.harnu`, `.env*`, `.git-credentials`, `.npmrc`, `.netrc` and `.pypirc` as well as keys, and a path that leaves the folder is refused before you are ever asked.
 - A download in a browser pane that a session gives up on (timeout, closed pane) is stopped and leaves nothing in your folder; denying a download you started shows "Download cancelled" instead of a failure; names are cut by bytes and cleaned of direction-changing characters; leftovers of an interrupted save are swept at the next start.
 - A session's clicks on a page that emulates touch are now taps, like a finger's: a mouse press never completes while touch is emulated, so the click used to hang.
+
+### Fixed
+
+- **A browser pane's saved state could stop being written.** Adding a second pane to a folder left the first one's
+  saved details in a form the file write refused, so the file silently stopped updating; it now writes plain data.
 
 ## 2026-10-21
 
