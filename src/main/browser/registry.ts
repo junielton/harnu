@@ -9,6 +9,7 @@
 import type { BrowserPartition } from './guest-prefs'
 import type { BrowserOpenedBy } from './access'
 import type { EmulationRecord } from '../../shared/browser-emulation'
+import type { DiscardState } from './lifecycle'
 
 /** Agent-opened panes per folder (spec §10.1, decision 28). Enforced in the verb, not here. */
 export const MAX_AGENT_PANES_PER_FOLDER = 4
@@ -34,6 +35,11 @@ export interface BrowserPaneRecord {
    * `browser_emulate` both write and the view host applies. Absent or empty = no emulation.
    */
   emulation?: EmulationRecord
+  /**
+   * Set while the pane is DISCARDED (T574, spec §10.1): the page and its view are gone, this is what comes back.
+   * `null`/absent = live.
+   */
+  discarded?: DiscardState | null
   /**
    * The folder-relative page file this pane was opened on (T569 U2): the dedupe key of a page pane. The pane's
    * CLASS is always read off the live URL, never off this field.
@@ -67,6 +73,14 @@ export interface BrowserRegistry {
   touch(paneId: string): void
   /** The operator did something in the pane. */
   noteOperatorInteraction(paneId: string): void
+  /** A verb (read or write) is running on the pane, so it must not be discarded under it (spec §10.1). */
+  beginVerb(paneId: string): () => void
+  verbsInFlight(paneId: string): number
+  /** The pane was revived on behalf of a verb call; the ACK says `revived: true` once (`takeRevived`). */
+  noteRevived(paneId: string): void
+  takeRevived(paneId: string): boolean
+  /** When the operator last used the pane, or `null`. */
+  operatorInteractionAt(paneId: string): number | null
   beginWrite(paneId: string): WriteToken
   endWrite(token: WriteToken): WriteReport
   /** A page pane in `folder` showing `relPath`, for `browser_open({ path })` dedupe (spec §6.2). */
@@ -108,6 +122,8 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
   /** Per pane: write ids that overlapped some other write while in flight. */
   const overlapped = new Map<string, Set<number>>()
   let nextId = 1
+  const verbs = new Map<string, number>()
+  const revived = new Set<string>()
   /** Per pane: agent input verbs running now, and when the last one finished. */
   const agentInputs = new Map<
     string,
@@ -125,6 +141,8 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
     add: (rec) => void panes.set(rec.paneId, rec),
     get: (id) => panes.get(id),
     remove(id) {
+      verbs.delete(id)
+      revived.delete(id)
       operatorAt.delete(id)
       inflight.delete(id)
       overlapped.delete(id)
@@ -171,6 +189,21 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
       if (cur.open.some((start) => start <= toMs)) return true
       return cur.done.some((iv) => iv.start <= toMs && iv.end >= fromMs)
     },
+    beginVerb(id) {
+      verbs.set(id, (verbs.get(id) ?? 0) + 1)
+      let ended = false
+      return () => {
+        if (ended) return
+        ended = true
+        const left = (verbs.get(id) ?? 1) - 1
+        if (left <= 0) verbs.delete(id)
+        else verbs.set(id, left)
+      }
+    },
+    verbsInFlight: (id) => verbs.get(id) ?? 0,
+    noteRevived: (id) => void revived.add(id),
+    takeRevived: (id) => revived.delete(id),
+    operatorInteractionAt: (id) => operatorAt.get(id) ?? null,
     touch(id) {
       const rec = panes.get(id)
       if (rec) rec.lastActiveAt = now()
