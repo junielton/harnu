@@ -1240,6 +1240,9 @@ export class BrowserViewHost implements BrowserReadHost {
       now: this.deps.now(),
       hiddenSince: this.hidden.since(paneId)
     })
+    // What the discard recorded is also what a restart should find.
+    this.send('browser:persist', { paneId, scroll: rec.discarded.scroll })
+    this.sentScroll.set(paneId, JSON.stringify(rec.discarded.scroll))
     this.deps.onViewDiscarded?.(paneId)
     this.release(paneId)
     this.hidden.markHidden(paneId, this.deps.now())
@@ -1350,11 +1353,11 @@ export class BrowserViewHost implements BrowserReadHost {
   private readonly sentScroll = new Map<string, string>()
 
   /**
-   * Remember where a shown page is scrolled so a restart can put it back (best effort, spec §10.3). Only a pane that
-   * is shown and idle is read, at the sweep's pace, and only a change is sent.
+   * Remember where a page is scrolled so a restart can put it back (best effort, spec §10.3). Only a settled pane is
+   * read, at the sweep's pace, and only a change is sent. A hidden pane is read too: it may be the one a restart finds.
    */
   private sampleScroll(e: ViewEntry): void {
-    if (this.hidden.since(e.paneId) !== null || e.wc.isDestroyed() || e.loading) return
+    if (e.wc.isDestroyed() || e.loading) return
     void this.readScroll(e).then((raw) => {
       const scroll = sanitizeScroll(raw)
       const key = JSON.stringify(scroll)

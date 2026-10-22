@@ -863,7 +863,7 @@ nodes / 60,000 characters). Read the **refs**: `s<snapshotId>e<n>` names that el
 verbs and is valid until the page navigates. A dead ref is `REF_STALE` (snapshot again), an unknown
 one `REF_NOT_FOUND`. Child frames show as opaque `iframe [host]` nodes; `frames: true` reads
 same-site frames, a frame from another site stays opaque. `include: ['data']` returns a live
-panel's data once live panels exist; until then `data` is `null` with a `dataNote`.
+panel's saved data (the same state `harnu.getData()` reads); on a pane that is not a live panel `data` is `null` with a `dataNote`.
 `browser_screenshot({ paneId, ref? | selector?, fullPage?, format?, quality?, maxDim?, save? })`
 returns an image block and `width`, `height`, `bytes`, `clamped` (longest side capped at `maxDim`,
 at most 1568); `save: true` also writes it under the folder's `.harnu/out/browser/shots/` and

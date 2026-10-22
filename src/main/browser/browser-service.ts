@@ -387,8 +387,17 @@ export function makeBrowserReadDeps(env: BrowserHandlerEnv): BrowserReadDeps {
       const name = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 6)}.${ext === 'jpeg' ? 'jpg' : 'png'}`
       await writeFile(join(dir, name), data, { mode: 0o644 })
       return `${SHOTS_DIR}/${name}`
+    },
+    // `browser_snapshot({ include: ['data'] })`: the live panel's saved data, from the same sidecar `harnu.getData()`
+    // reads. A pane that is not showing one of our page files has none (`undefined` → the verb says so).
+    pageData: async (paneId) => {
+      const url = getBrowserHost().info(paneId)?.url
+      if (!url) return undefined
+      const seam = getPageService().seam
+      const where = await seam.locate(url)
+      if (!where) return undefined
+      return (await seam.state.read(where.folder, where.relPath)).data
     }
-    // `pageData` (browser_snapshot's `include: ['data']`) is wired by the live-panel unit (U2): one seam.
   }
 }
 
