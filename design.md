@@ -443,6 +443,8 @@ _another_ folder.
 | `bug`                                    | Browser pane → Open DevTools (⋯ menu)                                                                                                                                                                                                  |
 | `wifi-off` / `wifi`                      | Browser pane → "Allow network" switch on a page pane: off = `wifi-off` (default), on = `wifi` (T569 U2)                                                                                                                                |
 | `file-x`                                 | Browser pane → "file removed" placeholder for a page pane whose file is gone (T569 U2)                                                                                                                                                 |
+| `message-square-plus`                    | Browser pane → header button: turn point-and-comment on (T564 U6)                                                                                                                                                                      |
+| `message-square`                         | Browser pane → batch bar: "N drafts · M sent" (T564 U6)                                                                                                                                                                                |
 
 ### Novelty dot (on an icon button)
 
@@ -3870,6 +3872,87 @@ chrome adds three things and changes one.
   host shows a centred block on `--bg`: `file-x` 20px `--text-4`, the line "File removed" in 13px `--text-2`, the
   path in mono 11px `--text-3`, and "Waiting for it to come back…" in 11px `--text-4`. No spinner and no motion. The
   pane keeps watching: when the file is re-created the placeholder goes and the page reloads.
+
+#### Point-and-comment overlay (browser pane)
+
+T564 U6, spec `docs/specs/2026-10-21-T564-browser-pane.md` §8; approved mockup
+`docs/specs/T564-browser-pane-mockup/`, scenario "Comment", **Docked** variant. The operator points at a node
+of the page and types a request; it lands in the session as a `[harnu-comment]` turn. The feature is split along
+the one line that matters, **what the page can see**: the outline, the hint pill and the numbered pins are drawn
+**inside the page** (they must sit on its nodes); the composer is **app chrome** and never enters the page.
+
+**Activation.** A `message-square-plus` 18×18 icon button in the pane header (between the chip and the ⋯ menu,
+same geometry as the other header icons), `aria-pressed` while picking, and the `browser.overlay.toggle` action
+(`Ctrl+Shift+C`, browser-pane focus only). While picking, the button reads `bg-accent-soft text-accent`. Native
+`title`: "Comment on the page (Ctrl+Shift+C)". Operator only: no verb switches it on.
+
+**Guest-drawn layers** (built by the guest preload into a closed shadow root, so they cannot use Tailwind or
+the app's CSS variables; the values below are the literal `themes.css` dark-theme values, kept in ONE constant
+block in `src/preload/overlay/styles.ts` and mirrored here). They are the only place a raw colour is allowed in
+this feature, because the page is another document.
+
+| Layer           | Spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Outline**     | `position: fixed` box over the hovered node: 1.5px `--accent` border, `--accent` at 14% fill, 3px radius, `pointer-events: none`. Follows the node on scroll and resize.                                                                                                                                                                                                                                                                                                                                                         |
+| **Outline tag** | Under the box's left edge (3px gap): mono 10.5px `--accent-ink` on `--accent`, `2px 6px`, `0 3px 3px 3px` radius, the role or tag plus its size, e.g. `button.btn.primary · 168×40`. Flips above the box when there is no room below.                                                                                                                                                                                                                                                                                            |
+| **Hint pill**   | Fixed, top centre, 8px from the top: 11px `--text` on `rgba(23,18,14,.92)`, `4px 10px`, `rounded-full`, `--shadow-pop`, a `mouse-pointer-click` glyph, "Click an element to comment", then a `kbd` "Esc" and "to exit". `pointer-events: none`.                                                                                                                                                                                                                                                                                  |
+| **Pin**         | A 20×20 marker with a pointed lower-left corner (`border-radius: 50% 50% 50% 2px`), its number centred (10.5px, 600), 2px offset from the node's top-left corner, `0 2px 6px` shadow. **Draft:** white fill, 2px `--accent` border, `--accent` number. **Sent:** solid `--accent` fill, `--accent-ink` number, 55% opacity. **Detached** (its selector no longer matches): 2px _dashed_ `--text-3` border, `--text-3` number, drawn at its last rect, never removed. The pin is clickable and opens its comment in the composer. |
+
+No motion beyond the existing 80ms colour transition; under `prefers-reduced-motion` there is none.
+
+**Picking behaviour.** While active, trusted pointer events are consumed by the overlay: the page receives no
+picking click, no hover and no keyboard. Esc exits. A script-dispatched (untrusted) event is ignored.
+
+**Docked composer** (app chrome, rendered by `BrowserPane.vue` between the host and the pane's bottom edge,
+`flex-shrink: 0`). **The host rect shrinks to make room** (spec §2.1): the composer is a sibling after the host
+`<div>`, never an overlay over it, so the native view is never covered and never needs to freeze.
+
+```
+├───────────────────────────────────────────────────────────────────────┤
+│   host <div>  (shorter while the composer is open)                    │
+├───────────────────────────────────────────────────────────────────────┤  1px --border
+│ ② Comment on div.pay · src/components/PayButton.vue:42 · crop + HTML… │  context line
+│ ┌───────────────────────────────────────────────────────────────────┐ │
+│ │ this corner is too rounded, make it a bit squarer                 │ │  textarea, min 52px
+│ └───────────────────────────────────────────────────────────────────┘ │
+│ Send to [🤖 Checkout polish ▾]        [Keep as draft ⇧↵] [Send ↵]     │  row
+├───────────────────────────────────────────────────────────────────────┤
+│ 💬 1 draft · 1 sent                              [Send 1 comment]     │  batch bar, 26px
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+- **Panel** — `--surface` fill, `border-t border-border`, `8px` padding, `gap-1.5`.
+- **Context line** — 11px `--text-3`, single line, truncating from the right: a 16×16 round **pin number**
+  (white fill, 2px `--accent` border, `--accent` 9.5px/600 number, the draft pin's look), "Comment on",
+  the **selector** in mono 11px `--text-2`, "·", the **source component** (`file:line`, mono) when known, "·",
+  then what is attached ("crop + HTML + 14 styles attached"). Every page-authored run (selector, component) is
+  rendered as **plain text** (`{{ }}`, never `v-html`) with a native `title` holding the full value.
+- **Textarea** — min-height 52px, grows to 8 lines then scrolls, `--bg` fill, 1px `--accent-line` border,
+  `--radius-sm`, 13px/20px `--text`; placeholder "What should change?". The caret is the real one; no fake
+  caret. 4000-character limit (the count appears only in the last 200).
+- **Row** — "Send to" 11px `--text-3`, the **destination picker**, a spacer, **Keep as draft** (ghost: 1px
+  `--border-2`, `--text-2`, a `kbd` "⇧↵") and **Send** (primary: `--accent` fill, `--accent-ink`, weight 500, a
+  `kbd` "↵"). Both buttons 24px, 11.5px, `--radius-sm`. They are disabled while the text is empty.
+- **Destination picker** — a 24px bordered button (`bot` 12px, the session title, `chevron-down`) opening a
+  standard menu (§6 "Context menu") that lists the folder's sessions, the pane's owner marked "owner"; the
+  choice is remembered per pane. The menu registers with the native-overlay composable like the ⋯ menu. With no
+  session at all it reads "No session — copies to clipboard" and is not openable.
+- **Batch bar** — 26px, `--accent-soft` fill, `border-t border-accent-line`, 11.5px `--text-2`, `px-2`:
+  `message-square` 12px, "**1 draft** · 1 sent" (the first count in `--text`, weight 500), a spacer, and a
+  ghost 20px **Send N comments** button. It shows whenever the pane has at least one draft or sent pin, even
+  with the composer closed, and "Send N comments" is disabled at zero drafts.
+- **Keys** — `Enter` sends this comment now; `Shift+Enter` keeps it as a draft; `Esc` closes the composer (an
+  empty one discards its pin; a non-empty one is kept as a draft, so Esc never loses text). Composition (IME)
+  never submits.
+- **Narrow panes** — below 320px the "Send to" caption and the context line's "Comment on" go; the picker
+  shows the bot glyph and truncates the title; the button labels keep their `kbd` hints out (the hover title has
+  them).
+- **Result toasts** — sent: no toast (the Activity row "Comment sent to ‹session›" is the record). Nowhere to
+  send: `warning` "No session to send to" with "The comment was copied to your clipboard." Refused (the agent was
+  driving the page a moment ago, or the pane is paused or disconnected): `warning` with the reason.
+
+No new §9 token: the composer uses existing tokens only, and the guest layers above are the one documented place
+where literal values stand in for them.
 
 #### Review companion pane
 
