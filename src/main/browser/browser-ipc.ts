@@ -6,7 +6,13 @@
  *
  * Electron-bound glue (ipcMain); the decisions live in `view-host`, `access`, `nav-policy` and `bounds`.
  */
-import { app, ipcMain, type BrowserWindow } from 'electron'
+import {
+  app,
+  ipcMain,
+  type BrowserWindow,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent
+} from 'electron'
 import { PAUSE_MS } from './access'
 import { checkTopLevelNavigation } from './nav-policy'
 import {
@@ -43,8 +49,29 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
   bindBrowserWindow(getWindow)
   const host = (): ReturnType<typeof getBrowserHost> => getBrowserHost()
 
+  // Every app-side `browser:*` channel is accepted ONLY from the app window's own webContents. A guest page
+  // runs in a different webContents (and has no preload API anyway), so even a compromised page cannot drive
+  // these. The guest's own channels (overlay, page API) arrive in later units and will be accepted only from a
+  // webContents the registry holds; this unit's guest preload registers none.
+  const fromApp = (e: IpcMainEvent | IpcMainInvokeEvent): boolean => {
+    const win = getWindow()
+    return win !== null && !win.isDestroyed() && e.sender === win.webContents
+  }
+  const onApp = (channel: string, fn: (...args: unknown[]) => void): void => {
+    ipcMain.on(channel, (e, ...args) => {
+      if (fromApp(e)) fn(...args)
+    })
+  }
+  const handleApp = <T>(channel: string, fn: (...args: unknown[]) => T): void => {
+    ipcMain.handle(channel, (e, ...args) => {
+      // A call from anywhere else is refused outright (the caller's promise rejects).
+      if (!fromApp(e)) throw new Error(`${channel}: refused, not sent by the app window`)
+      return fn(...args)
+    })
+  }
+
   // The operator opened a pane (Split menu). `folder` is the stack's worktree path.
-  ipcMain.handle('browser:open', (_e, payload: unknown) => {
+  handleApp('browser:open', (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.folder !== 'string' || payload.folder.length === 0) {
       return { ok: false as const, error: 'BAD_ARGS' }
     }
@@ -60,27 +87,27 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
   })
 
   // Geometry and overlays are fire-and-forget: they ride animation frames.
-  ipcMain.on('browser:bounds', (_e, payload: unknown) => {
+  onApp('browser:bounds', (payload: unknown) => {
     if (!isRecord(payload) || !isPaneId(payload.paneId)) return
     const rect = toRect(payload.rect)
     if (!rect) return
     host().applyBounds(payload.paneId, rect, payload.visible === true)
   })
-  ipcMain.on('browser:overlays', (_e, payload: unknown) => {
+  onApp('browser:overlays', (payload: unknown) => {
     if (!Array.isArray(payload)) return
     const overlays = payload.map(toOverlay).filter((o): o is BrowserOverlayRect => o !== null)
     host().setOverlays(overlays)
   })
-  ipcMain.on('browser:drag', (_e, active: unknown) => host().setDragActive(active === true))
-  ipcMain.on('browser:freezePainted', (_e, paneId: unknown) => {
+  onApp('browser:drag', (active: unknown) => host().setDragActive(active === true))
+  onApp('browser:freezePainted', (paneId: unknown) => {
     if (isPaneId(paneId)) host().freezePainted(paneId)
   })
-  ipcMain.on('browser:setChords', (_e, chords: unknown) => {
+  onApp('browser:setChords', (chords: unknown) => {
     if (Array.isArray(chords))
       host().setBoundChords(chords.filter((c): c is string => typeof c === 'string'))
   })
 
-  ipcMain.handle('browser:navigate', (_e, payload: unknown) => {
+  handleApp('browser:navigate', (payload: unknown) => {
     if (!isRecord(payload) || !isPaneId(payload.paneId)) return { ok: false as const, scheme: '' }
     let target: NavigateTarget
     if (typeof payload.url === 'string') target = { url: payload.url }
@@ -95,34 +122,37 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     return host().operatorNavigate(payload.paneId, target)
   })
 
-  ipcMain.handle('browser:state', (_e, paneId: unknown) =>
-    isPaneId(paneId) ? host().state(paneId) : null
-  )
-  ipcMain.handle('browser:destroy', (_e, paneId: unknown) => {
+  handleApp('browser:state', (paneId: unknown) => (isPaneId(paneId) ? host().state(paneId) : null))
+  handleApp('browser:destroy', (paneId: unknown) => {
     if (isPaneId(paneId)) closePaneFromOperator(paneId)
     return true
   })
-  ipcMain.handle('browser:devtools', (_e, paneId: unknown) => {
+  // The renderer needs the keyboard (a forwarded chord focused the address bar while the guest had the focus).
+  handleApp('browser:focusApp', () => {
+    host().focusApp()
+    return true
+  })
+  handleApp('browser:devtools', (paneId: unknown) => {
     if (isPaneId(paneId)) host().openDevTools(paneId)
     return true
   })
-  ipcMain.handle('browser:dismissFlag', (_e, paneId: unknown) => {
+  handleApp('browser:dismissFlag', (paneId: unknown) => {
     if (isPaneId(paneId)) host().dismissFlag(paneId)
     return true
   })
-  ipcMain.handle('browser:dismissNotice', (_e, paneId: unknown) => {
+  handleApp('browser:dismissNotice', (paneId: unknown) => {
     if (isPaneId(paneId)) host().dismissNotice(paneId)
     return true
   })
 
   // The operator's decisions about the agent (spec §7.4). Disconnect is permanent: no handler reconnects.
-  ipcMain.handle('browser:disconnect', (_e, paneId: unknown) => {
+  handleApp('browser:disconnect', (paneId: unknown) => {
     if (!isPaneId(paneId) || !browserRegistry.get(paneId)) return false
     browserAccess.disconnect(paneId)
     host().refresh(paneId)
     return true
   })
-  ipcMain.handle('browser:pause', (_e, paneId: unknown) => {
+  handleApp('browser:pause', (paneId: unknown) => {
     if (!isPaneId(paneId) || !browserRegistry.get(paneId) || browserAccess.isDisconnected(paneId)) {
       return null
     }
@@ -130,7 +160,7 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     host().refresh(paneId)
     return until
   })
-  ipcMain.handle('browser:resume', (_e, paneId: unknown) => {
+  handleApp('browser:resume', (paneId: unknown) => {
     if (!isPaneId(paneId) || !browserRegistry.get(paneId)) return false
     browserAccess.resume(paneId)
     host().refresh(paneId)

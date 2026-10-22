@@ -10,6 +10,17 @@ import type { ResolvedBinding } from '../../../main/keybindings-core'
 
 type BindingLike = Pick<ResolvedBinding, 'id' | 'keys' | 'scope'>
 
+/**
+ * Actions whose handlers are disabled until a later unit enables them (zoom: U5, point-and-comment overlay:
+ * U6). Their chords are NOT swallowed from the page: a key Harnu does nothing with must reach the page.
+ */
+export const INACTIVE_BROWSER_ACTIONS: ReadonlySet<string> = new Set([
+  'browser.zoom.in',
+  'browser.zoom.out',
+  'browser.zoom.reset',
+  'browser.overlay.toggle'
+])
+
 /** Off macOS `Ctrl` and `Cmd` are the same physical key, so main reports `Cmd`; fold the table the same way. */
 function fold(chord: string, mac: boolean): string {
   return mac ? chord : chord.replace(/Ctrl\+/g, 'Cmd+').replace(/Cmd\+Cmd\+/g, 'Cmd+')
@@ -21,6 +32,7 @@ export function boundChordsFrom(list: readonly BindingLike[], mac: boolean): str
   for (const b of list) {
     if (b.keys === null) continue
     if (b.scope !== 'global' && b.scope !== 'browser') continue
+    if (INACTIVE_BROWSER_ACTIONS.has(b.id)) continue
     out.add(fold(b.keys, mac))
   }
   return [...out]
@@ -34,7 +46,11 @@ export function actionForChord(
 ): { id: string; scope: 'browser' | 'global' } | null {
   for (const scope of ['browser', 'global'] as const) {
     const hit = list.find(
-      (b) => b.scope === scope && b.keys !== null && fold(b.keys, mac) === chord
+      (b) =>
+        b.scope === scope &&
+        b.keys !== null &&
+        !INACTIVE_BROWSER_ACTIONS.has(b.id) &&
+        fold(b.keys, mac) === chord
     )
     if (hit) return { id: hit.id, scope }
   }

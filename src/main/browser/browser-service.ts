@@ -10,10 +10,10 @@ import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { readAgentBrowserWrites } from '../mcp/prefs'
 import { scrubTerminalText } from '../scrub-terminal'
-import { createBrowserAccess, type BrowserGateInput } from './access'
+import { createBrowserAccess } from './access'
+import { resolveGateInput, type GateResolution } from './gate-resolve'
 import { createBrowserRegistry } from './registry'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
-import { classifyOrigin } from './origin-class'
 import type { BrowserVerbDeps } from './verbs-core'
 import type { BrowserPartition } from './guest-prefs'
 
@@ -105,25 +105,18 @@ export function closePaneFromOperator(paneId: string): void {
  * call never raises a confirm first. An unknown id leaves `pane` undefined, which the gate answers
  * `PANE_NOT_FOUND`. `folder` is the pane's own folder, the gate anchor for the folder block.
  */
-export async function resolveBrowserGate(
-  paneId: string | undefined
-): Promise<{ folder: string | undefined; input: BrowserGateInput }> {
+export async function resolveBrowserGate(paneId: string | undefined): Promise<GateResolution> {
   const writesEnabled = await readAgentBrowserWrites()
   const rec = paneId === undefined ? undefined : browserRegistry.get(paneId)
-  if (!rec) return { folder: undefined, input: { pane: undefined, writesEnabled } }
-  const live = getBrowserHost().info(rec.paneId)
-  return {
-    folder: rec.folder,
-    input: {
-      writesEnabled,
-      pane: {
-        openedBy: rec.openedBy,
-        originClass: classifyOrigin(live?.url ?? '', { harnuPorts: collectHarnuPorts(mcpPort) }),
-        disconnected: browserAccess.isDisconnected(rec.paneId),
-        paused: browserAccess.isPaused(rec.paneId)
-      }
-    }
-  }
+  return resolveGateInput({
+    rec,
+    liveUrl: rec ? (getBrowserHost().info(rec.paneId)?.url ?? '') : '',
+    writesEnabled,
+    disconnected: rec ? browserAccess.isDisconnected(rec.paneId) : false,
+    paused: rec ? browserAccess.isPaused(rec.paneId) : false,
+    harnuPorts: collectHarnuPorts(mcpPort),
+    trustedHosts: []
+  })
 }
 
 /** What the handlers pass in: the bits of the MCP call context the verbs need. */

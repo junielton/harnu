@@ -152,3 +152,70 @@ describe('browser refusals steer', () => {
     expect(hint?.nextActions.length).toBeGreaterThan(0)
   })
 })
+
+describe('browser audit line (spec §3.2, §7.5)', () => {
+  const summary = (plan: ReturnType<typeof navigate>): string =>
+    plan.auditRecord.disclosedPayloadSummary
+
+  it('a navigation is audited with pane id, origin class and host only: no path, query or fragment', () => {
+    const plan = navigate(gate(), false)
+    expect(summary(plan)).toBe('browser_navigate pane=bp-1 origin=local host=localhost:3000')
+    const secret = planToolCall({
+      tool: 'browser_navigate',
+      input: buildPlanInput(
+        'browser_navigate',
+        { paneId: 'bp-1', url: 'https://user:pw@docs.example.com/a/b?token=s3cret#frag' },
+        '/work/app'
+      ),
+      policy: policy(false),
+      now: 1,
+      browser: gate()
+    })
+    expect(summary(secret)).toBe('browser_navigate pane=bp-1 origin=external host=docs.example.com')
+    for (const leak of ['s3cret', '/a/b', 'frag', 'user', 'pw']) {
+      expect(summary(secret)).not.toContain(leak)
+    }
+  })
+
+  it('an open is audited the same way, and an action navigate carries the pane origin', () => {
+    const open = planToolCall({
+      tool: 'browser_open',
+      input: buildPlanInput(
+        'browser_open',
+        { folder: '/work/app', url: 'http://localhost:5173/checkout?x=1' },
+        '/work/app'
+      ),
+      policy: policy(false),
+      now: 1,
+      browser: gate({ pane: undefined })
+    })
+    expect(summary(open)).toBe('browser_open origin=local host=localhost:5173')
+    const reload = planToolCall({
+      tool: 'browser_navigate',
+      input: buildPlanInput('browser_navigate', { paneId: 'bp-1', action: 'reload' }, '/work/app'),
+      policy: policy(false),
+      now: 1,
+      browser: gate({ pane: pane({ originClass: 'external' }) })
+    })
+    expect(summary(reload)).toBe('browser_navigate pane=bp-1 origin=external')
+  })
+
+  it('a hostile pane id cannot pass for another field', () => {
+    const plan = planToolCall({
+      tool: 'browser_close',
+      input: buildPlanInput(
+        'browser_close',
+        { paneId: 'bp-1 host=evil.com\norigin=local' },
+        '/work/app'
+      ),
+      policy: policy(false),
+      now: 1,
+      browser: gate()
+    })
+    expect(summary(plan)).not.toMatch(/\n|host=evil/)
+  })
+
+  it('a refusal says nothing about the call', () => {
+    expect(summary(navigate(gate({ writesEnabled: false }), false))).toBe('none')
+  })
+})

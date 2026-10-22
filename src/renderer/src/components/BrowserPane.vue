@@ -163,6 +163,8 @@ function onAddressEscape(): void {
   addressEl.value?.blur()
 }
 function focusAddress(): void {
+  // The keyboard may still be inside the page (a chord came from it): the app takes it back first.
+  void window.api.browserFocusApp()
   addressEl.value?.focus()
   addressEl.value?.select()
 }
@@ -226,26 +228,85 @@ function onWindowPointerDown(ev: MouseEvent): void {
 const hostEl = ref<HTMLElement | null>(null)
 let rafId = 0
 let last = ''
+/** Frames still to check after the last change, so a transition that moves the pane is followed to its end. */
+let settleFrames = 0
 
-/**
- * Report the host div's rectangle whenever it moves or resizes (spec §2.3). A `ResizeObserver` misses a pane
- * that moves without changing size (a splitter, a sidebar collapse, a maximize of its neighbour), so the rect
- * is read each animation frame and sent only when it changed: one cheap read per frame per pane.
- */
-function pump(): void {
-  rafId = requestAnimationFrame(pump)
+/** Read the host rect and tell main if it changed. @returns whether it changed. */
+function report(): boolean {
   const el = hostEl.value
-  if (!el) return
+  if (!el) return false
   const r = el.getBoundingClientRect()
   const visible = r.width >= 1 && r.height >= 1
   const key = `${r.x},${r.y},${r.width},${r.height},${visible}`
-  if (key === last) return
+  if (key === last) return false
   last = key
   window.api.browserBounds({
     paneId,
     rect: { x: r.x, y: r.y, width: r.width, height: r.height },
     visible
   })
+  return true
+}
+
+function frame(): void {
+  rafId = 0
+  // While the rect keeps changing (a drag, a transition) keep following it; stop a few frames after it settles.
+  settleFrames = report() ? 6 : settleFrames - 1
+  if (settleFrames > 0) schedule()
+}
+
+/**
+ * Ask for a rect check on the next animation frame. Nothing runs while the layout is idle: the checks are
+ * driven by what can move the pane (below), throttled to one per frame, instead of a perpetual rAF loop that
+ * would keep the renderer awake. A `ResizeObserver` alone misses a pane that moves without changing size (a
+ * sidebar collapse), which is why the triggers also include style/class mutations and transitions ending.
+ */
+function schedule(): void {
+  if (rafId === 0) rafId = requestAnimationFrame(frame)
+}
+
+let resizeObserver: ResizeObserver | null = null
+let mutationObserver: MutationObserver | null = null
+
+function startTracking(): void {
+  settleFrames = 6
+  schedule()
+  resizeObserver = new ResizeObserver(() => {
+    settleFrames = Math.max(settleFrames, 2)
+    schedule()
+  })
+  if (hostEl.value) resizeObserver.observe(hostEl.value)
+  resizeObserver.observe(document.documentElement)
+  mutationObserver = new MutationObserver(() => {
+    settleFrames = Math.max(settleFrames, 2)
+    schedule()
+  })
+  mutationObserver.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['style', 'class'],
+    childList: true,
+    subtree: true
+  })
+  window.addEventListener('resize', onLayoutEvent)
+  window.addEventListener('transitionend', onLayoutEvent, true)
+  window.addEventListener('animationend', onLayoutEvent, true)
+}
+
+function onLayoutEvent(): void {
+  settleFrames = Math.max(settleFrames, 2)
+  schedule()
+}
+
+function stopTracking(): void {
+  cancelAnimationFrame(rafId)
+  rafId = 0
+  resizeObserver?.disconnect()
+  mutationObserver?.disconnect()
+  resizeObserver = null
+  mutationObserver = null
+  window.removeEventListener('resize', onLayoutEvent)
+  window.removeEventListener('transitionend', onLayoutEvent, true)
+  window.removeEventListener('animationend', onLayoutEvent, true)
 }
 
 onMounted(() => {
@@ -256,11 +317,11 @@ onMounted(() => {
   })
   void browser.refresh(paneId)
   window.addEventListener('mousedown', onWindowPointerDown, true)
-  rafId = requestAnimationFrame(pump)
+  startTracking()
 })
 
 onBeforeUnmount(() => {
-  cancelAnimationFrame(rafId)
+  stopTracking()
   window.removeEventListener('mousedown', onWindowPointerDown, true)
   // Hidden, not destroyed: switching folders never disposes a pane (spec §2.3).
   const r = hostEl.value?.getBoundingClientRect()

@@ -62,7 +62,8 @@ import {
 } from '../terminal-gate-core'
 import { auditField, checkSendContent, summarizeSend } from '../terminal-keys'
 import { checkWaitFor } from '../terminal-wait'
-import { gateBrowserOp, isBrowserOp, type BrowserGateInput } from '../browser/access'
+import { gateBrowserOpDetailed, isBrowserOp, type BrowserGateInput } from '../browser/access'
+import { summarizeBrowserCall } from '../browser/audit'
 import type { SendTerminalArgs } from './validate'
 
 /**
@@ -299,8 +300,18 @@ export function planToolCall({
   // T564 U1: browser pane access rules, decided HERE for the same reason: unknown pane, Disconnect, the
   // kill-switch and Pause refuse before any confirm, in `ask` mode too (spec §6.3).
   if (verdict !== 'deny' && isBrowserOp(def.op)) {
-    const refusal = gateBrowserOp(def.op, browser ?? { pane: undefined, writesEnabled: true })
-    if (refusal) return denyPlan(tool, folder ?? '', now, refusal, redact)
+    const refusal = gateBrowserOpDetailed(def.op, {
+      ...(browser ?? { pane: undefined, writesEnabled: true }),
+      // The arguments, so the content refusals land in their §6.3 slot (before the kill-switch and any confirm).
+      args: parsed.value as Record<string, unknown>
+    })
+    if (refusal) {
+      const result =
+        refusal.reason === 'BAD_ARGS'
+          ? `BAD_ARGS: ${refusal.content?.detail ?? ''}`
+          : refusal.reason
+      return denyPlan(tool, folder ?? '', now, result, redact)
+    }
   }
 
   // FREE BY DEFAULT — the base gate hands back `allow` for a mutation (unless the
@@ -471,6 +482,16 @@ export function planToolCall({
       gate: !shouldDispatch ? 'confirm' : terminal?.leaseActive ? 'lease' : 'free',
       home: homeDir ?? homedir()
     })
+  }
+
+  // T564 U1 (spec §3.2, §7.5): a browser verb is audited with the pane id, the origin class and the HOST only,
+  // never a path or query string. Only a call that is going ahead (or waiting on the operator) says so.
+  if (isBrowserOp(def.op) && verdict !== 'deny') {
+    disclosedPayloadSummary = summarizeBrowserCall(
+      def.op,
+      parsed.value as Record<string, unknown>,
+      browser?.pane
+    )
   }
 
   const auditRecord: AuditRecord = {

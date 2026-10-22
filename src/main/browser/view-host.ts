@@ -12,7 +12,6 @@ import {
   FREEZE_JPEG_QUALITY,
   PARKED_METRICS,
   freezeCaptureRect,
-  needsFreeze,
   parkedBounds,
   placeView,
   type Rect
@@ -21,20 +20,25 @@ import { decideForward, type GuestInput } from './chord'
 import { guestWebPreferences, PARTITION_NAMES, type BrowserPartition } from './guest-prefs'
 import { waitForNavigation } from './nav-wait'
 import {
-  certificateDecision,
   checkTopLevelNavigation,
   decidePopup,
   isPermissionGranted,
   isSubresourceSchemeAllowed
 } from './nav-policy'
-import { classifyOrigin, hostOf, isLoopbackHost } from './origin-class'
+import { classifyOrigin, hostOf } from './origin-class'
+import {
+  FreezeGeneration,
+  type GestureGate,
+  certificateVerdictFor,
+  createGestureGate,
+  decideFreeze,
+  flagAfterOperatorAction
+} from './view-logic'
 import type { BrowserAccess } from './access'
 import type { BrowserRegistry } from './registry'
 import type { BrowserNotice, BrowserOverlayRect, BrowserPaneState } from './state-types'
 import type { BrowserHost, LivePaneInfo, NavigateOutcome, NavigateTarget } from './verbs-core'
 
-/** How long a real click or key counts as the user activation a popup needs (spec §3.2). */
-const GESTURE_WINDOW_MS = 1500
 /** Give the renderer this long to paint the frozen image before the view is hidden anyway. */
 const FREEZE_PAINT_TIMEOUT_MS = 150
 
@@ -65,9 +69,11 @@ interface ViewEntry {
   parkedMetricsApplied: boolean
   /** Frozen (hidden under an overlay or a drag). */
   frozen: boolean
-  freezeGen: number
+  /** The freeze-generation race guard (`view-logic.ts`). */
+  gen: FreezeGeneration
   paintedWaiter: (() => void) | null
-  lastGestureAt: number
+  /** Real clicks/keys: one popup per activation (`view-logic.ts`). */
+  gestures: GestureGate
   loading: boolean
   notice: BrowserNotice | null
   activity: 'driving' | null
@@ -109,9 +115,9 @@ export class BrowserViewHost implements BrowserHost {
       parked: false,
       parkedMetricsApplied: false,
       frozen: false,
-      freezeGen: 0,
+      gen: new FreezeGeneration(),
       paintedWaiter: null,
-      lastGestureAt: 0,
+      gestures: createGestureGate(() => this.deps.now()),
       loading: false,
       notice: null,
       activity: null
@@ -191,7 +197,7 @@ export class BrowserViewHost implements BrowserHost {
   destroy(paneId: string): void {
     const e = this.entries.get(paneId)
     if (!e) return
-    e.freezeGen++
+    e.gen.bump()
     e.paintedWaiter?.()
     this.entries.delete(paneId)
     this.byWebContentsId.delete(e.wc.id)
@@ -227,7 +233,7 @@ export class BrowserViewHost implements BrowserHost {
     if (!visible) {
       // Hidden: a freeze no longer applies, and a painted view keeps its bounds (`placeView` hides it).
       if (!e.parked) {
-        e.freezeGen++
+        e.gen.bump()
         e.frozen = false
       }
     }
@@ -287,7 +293,7 @@ export class BrowserViewHost implements BrowserHost {
       }
       // The operator picked this site: the agent flag no longer applies (spec §3.2).
       const rec = this.deps.registry.get(paneId)
-      if (rec) rec.flagged = null
+      if (rec) rec.flagged = flagAfterOperatorAction()
       e.notice = null
       e.wc.loadURL(verdict.url).catch(() => undefined)
     } else if (target.action === 'back') e.wc.navigationHistory.goBack()
@@ -301,7 +307,7 @@ export class BrowserViewHost implements BrowserHost {
   dismissFlag(paneId: string): void {
     const rec = this.deps.registry.get(paneId)
     const e = this.entries.get(paneId)
-    if (rec) rec.flagged = null
+    if (rec) rec.flagged = flagAfterOperatorAction()
     if (e) this.publish(e, { flagged: null })
   }
 
@@ -310,6 +316,11 @@ export class BrowserViewHost implements BrowserHost {
     if (!e) return
     e.notice = null
     this.publish(e)
+  }
+
+  /** The renderer needs the keyboard (focus the address field): move the OS focus to the app's webContents. */
+  focusApp(): void {
+    this.deps.getWindow()?.webContents.focus()
   }
 
   openDevTools(paneId: string): void {
@@ -421,23 +432,22 @@ export class BrowserViewHost implements BrowserHost {
 
   /** Freeze every visible view that an overlay (or a drag) would otherwise sit under; thaw the rest. */
   private reconcileFreeze(): void {
+    const ctx = {
+      overlays: this.overlays,
+      dragActive: this.dragActive,
+      parkedRect: this.parkedCssRect()
+    }
     for (const e of this.entries.values()) {
       if (e.wc.isDestroyed()) continue
-      const rect = e.parked
-        ? this.parkedCssRect()
-        : e.visibleReported && e.rectCss
-          ? e.rectCss
-          : null
-      if (!rect) continue
-      const want = (this.dragActive && !e.parked) || needsFreeze(rect, this.overlays)
-      if (want && !e.frozen) void this.freeze(e)
-      else if (!want && e.frozen) this.thaw(e)
+      const action = decideFreeze(e, ctx)
+      if (action === 'freeze') void this.freeze(e)
+      else if (action === 'thaw') this.thaw(e)
     }
   }
 
   private async freeze(e: ViewEntry): Promise<void> {
     e.frozen = true
-    const gen = ++e.freezeGen
+    const gen = e.gen.next()
     if (e.parked) {
       // Nothing to paint for a 1×1 corner: just get it out from under the overlay.
       e.view.setVisible(false)
@@ -454,7 +464,7 @@ export class BrowserViewHost implements BrowserHost {
     } catch {
       // A failed capture degrades to a blank rect of the pane background, never to a live view under an overlay.
     }
-    if (gen !== e.freezeGen || !e.frozen) return
+    if (!e.gen.isCurrent(gen) || !e.frozen) return
     this.send('browser:freeze', { paneId: e.paneId, dataUrl })
     await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, FREEZE_PAINT_TIMEOUT_MS)
@@ -464,13 +474,13 @@ export class BrowserViewHost implements BrowserHost {
       }
     })
     e.paintedWaiter = null
-    if (gen !== e.freezeGen || !e.frozen || e.wc.isDestroyed()) return
+    if (!e.gen.isCurrent(gen) || !e.frozen || e.wc.isDestroyed()) return
     e.view.setVisible(false)
   }
 
   private thaw(e: ViewEntry): void {
     e.frozen = false
-    e.freezeGen++
+    e.gen.bump()
     e.paintedWaiter?.()
     if (e.parked || e.visibleReported) e.view.setVisible(true)
     if (!e.parked) this.send('browser:unfreeze', { paneId: e.paneId })
@@ -543,11 +553,10 @@ export class BrowserViewHost implements BrowserHost {
     // Layer 2: popups. Denied as popups; with a real user activation the target opens as a NEW operator-class
     // pane that inherits the opener's partition, with no `opener` link (spec §3.2, Q10).
     wc.setWindowOpenHandler((details) => {
-      const gesture = this.deps.now() - e.lastGestureAt <= GESTURE_WINDOW_MS
-      const decision = decidePopup(details.url, gesture)
+      // One activation buys one popup: a page cannot loop `window.open` inside the gesture window.
+      const decision = decidePopup(details.url, e.gestures.pending())
       if (decision.action === 'open-pane') {
-        // One activation buys one popup: a page cannot loop `window.open` inside the gesture window.
-        e.lastGestureAt = 0
+        e.gestures.consume()
         this.deps.openPopupPane({ folder: e.folder, partition: e.partition, url: decision.url })
       } else if (decision.reason === 'scheme-blocked') {
         this.publish(e, { notice: { kind: 'blocked', scheme: schemeOf(details.url) } })
@@ -558,8 +567,7 @@ export class BrowserViewHost implements BrowserHost {
     // Certificate errors: denied, except loopback (self-signed local dev HTTPS), accepted and flagged.
     wc.on('certificate-error', (event, url, _error, _cert, callback) => {
       event.preventDefault()
-      const host = hostOf(url)
-      const verdict = certificateDecision(host, isLoopbackHost(host.replace(/:\d+$/, '')))
+      const { verdict, host } = certificateVerdictFor(url)
       if (verdict === 'accept-flagged') this.publish(e, { notice: { kind: 'certificate', host } })
       callback(verdict === 'accept-flagged')
     })
@@ -573,7 +581,7 @@ export class BrowserViewHost implements BrowserHost {
     // CDP-dispatched ones (U0 A1), so it is also the signal that the OPERATOR is using the pane.
     wc.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown') {
-        e.lastGestureAt = this.deps.now()
+        e.gestures.note()
         this.deps.registry.noteOperatorInteraction(e.paneId)
       }
       const decision = decideForward(
@@ -583,12 +591,13 @@ export class BrowserViewHost implements BrowserHost {
       )
       if (!decision.forward || decision.chord === null) return
       event.preventDefault()
+      // The chord is handed over without moving the keyboard focus: a reload or back keeps the page focused.
+      // An action that needs the app (focus the address bar) asks for it through `focusApp`.
       this.send('browser:chord', { paneId: e.paneId, chord: decision.chord })
-      this.deps.getWindow()?.webContents.focus()
     })
     wc.on('before-mouse-event', (_event, mouse) => {
       if (mouse.type !== 'mouseDown') return
-      e.lastGestureAt = this.deps.now()
+      e.gestures.note()
       this.deps.registry.noteOperatorInteraction(e.paneId)
     })
   }

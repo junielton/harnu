@@ -9,6 +9,7 @@
  * The lease tier of spec §7.1 belongs to a later unit: until it exists, a write that WOULD need a lease
  * (any write to an operator-opened pane) refuses `NOT_YET_AVAILABLE` rather than running unattended.
  */
+import { checkBrowserContent, type ContentRefusal } from './content-check'
 import type { OriginClass } from './origin-class'
 
 /** Every `browser_*` op of the spec (§6.1); U1 wires `open`, `list`, `navigate` and `close`. */
@@ -60,6 +61,8 @@ export function isBrowserWriteOp(op: string): boolean {
 export type BrowserDenyReason =
   | 'PANE_NOT_FOUND'
   | 'BROWSER_DISCONNECTED'
+  | 'BAD_ARGS'
+  | 'URL_SCHEME_BLOCKED'
   | 'BROWSER_WRITES_DISABLED'
   | 'BROWSER_PAUSED'
   | 'NOT_YET_AVAILABLE'
@@ -80,6 +83,11 @@ export interface BrowserGateInput {
   pane: BrowserPaneAccess | undefined
   /** The global kill-switch "Allow agents to drive browser panes" (spec §7.4), read just now. */
   writesEnabled: boolean
+  /**
+   * The verb's own arguments. When present, the content refusals (`BAD_ARGS`, `URL_SCHEME_BLOCKED`,
+   * `NOT_YET_AVAILABLE`) are judged in the spec §6.3 position: after Disconnect, before the kill-switch.
+   */
+  args?: Record<string, unknown>
 }
 
 /**
@@ -92,20 +100,39 @@ export function browserTier(op: BrowserOp, pane: BrowserPaneAccess | undefined):
   return pane?.openedBy === 'operator' ? 'lease' : 'free'
 }
 
+/** A refusal with the detail the plan result and the audit carry. */
+export interface BrowserGateRefusal {
+  reason: BrowserDenyReason
+  content?: ContentRefusal
+}
+
 /**
- * The refusal for `op`, or `null` to continue. Order (spec §6.3): pane known → Disconnect → kill-switch →
- * pause → tier. `close` is exempt from the kill-switch (Q6) but not from Disconnect or Pause.
+ * The refusal for `op`, or `null` to continue. Order (spec §6.3): pane known → Disconnect → content (arguments)
+ * → kill-switch → pause → tier. `close` is exempt from the kill-switch (Q6) but not from Disconnect or Pause.
  */
-export function gateBrowserOp(op: BrowserOp, input: BrowserGateInput): BrowserDenyReason | null {
+export function gateBrowserOpDetailed(
+  op: BrowserOp,
+  input: BrowserGateInput
+): BrowserGateRefusal | null {
   const addressesPane = !PANELESS_OPS.has(op)
   const pane = input.pane
-  if (addressesPane && !pane) return 'PANE_NOT_FOUND'
-  if (addressesPane && pane?.disconnected) return 'BROWSER_DISCONNECTED'
+  if (addressesPane && !pane) return { reason: 'PANE_NOT_FOUND' }
+  if (addressesPane && pane?.disconnected) return { reason: 'BROWSER_DISCONNECTED' }
+  if (input.args) {
+    const content = checkBrowserContent(op, input.args)
+    if (content) return { reason: content.code, content }
+  }
   const write = isBrowserWriteOp(op)
-  if (write && op !== 'browser_close' && !input.writesEnabled) return 'BROWSER_WRITES_DISABLED'
-  if (write && addressesPane && pane?.paused) return 'BROWSER_PAUSED'
-  if (write && browserTier(op, pane) === 'lease') return 'NOT_YET_AVAILABLE'
+  if (write && op !== 'browser_close' && !input.writesEnabled)
+    return { reason: 'BROWSER_WRITES_DISABLED' }
+  if (write && addressesPane && pane?.paused) return { reason: 'BROWSER_PAUSED' }
+  if (write && browserTier(op, pane) === 'lease') return { reason: 'NOT_YET_AVAILABLE' }
   return null
+}
+
+/** {@link gateBrowserOpDetailed}, reason only. */
+export function gateBrowserOp(op: BrowserOp, input: BrowserGateInput): BrowserDenyReason | null {
+  return gateBrowserOpDetailed(op, input)?.reason ?? null
 }
 
 export type WritableState = 'free' | 'confirm' | 'paused' | 'revoked' | 'off'

@@ -2378,6 +2378,8 @@ const api = {
     ipcRenderer.invoke('browser:destroy', paneId),
   browserDevtools: (paneId: string): Promise<boolean> =>
     ipcRenderer.invoke('browser:devtools', paneId),
+  /** Move the OS keyboard focus from a guest page back to the app (a chord that needs the address bar). */
+  browserFocusApp: (): Promise<boolean> => ipcRenderer.invoke('browser:focusApp'),
   browserDismissFlag: (paneId: string): Promise<boolean> =>
     ipcRenderer.invoke('browser:dismissFlag', paneId),
   browserDismissNotice: (paneId: string): Promise<boolean> =>

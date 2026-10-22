@@ -13,7 +13,9 @@ import {
   type BrowserPaneAccess
 } from './access'
 import { shapeBrowserDenial, type BrowserDenialCode } from './browser-hints'
-import { checkTopLevelNavigation, shouldFlagNavigation } from './nav-policy'
+import { checkBrowserContent, type ContentRefusal } from './content-check'
+import { checkTopLevelNavigation } from './nav-policy'
+import { flagAfterVerbNavigation } from './view-logic'
 import { classifyOrigin, hostOf, scrubUrl, type OriginClass } from './origin-class'
 import {
   MAX_AGENT_PANES_PER_FOLDER,
@@ -158,7 +160,8 @@ async function gate(
     pane: rec && origin ? accessOf(rec, deps, origin) : undefined,
     writesEnabled: await deps.writesEnabled()
   })
-  if (denied) return { refusal: refuse(denied, { folder: rec?.folder }) }
+  // No `args` here, so the gate cannot answer BAD_ARGS: the content rules run in the verb, after this.
+  if (denied) return { refusal: refuse(denied as BrowserDenialCode, { folder: rec?.folder }) }
   return { rec, live, origin }
 }
 
@@ -184,22 +187,11 @@ export async function openVerb(
   const denied = await gate('browser_open', undefined, deps)
   if ('refusal' in denied) return denied.refusal
 
-  const forms = [args.url, args.path, args.html].filter((v) => v !== undefined).length
-  if (forms !== 1) {
-    return refuseBadArgs('Pass exactly one of `url`, `path` or `html`.')
-  }
-  // U2 and U5 forms: refused clearly rather than half-working.
-  if (args.path !== undefined || args.html !== undefined) {
-    return refuse('NOT_YET_AVAILABLE', { feature: 'Opening a file or HTML in a browser pane' })
-  }
-  if (args.device !== undefined) {
-    return refuse('NOT_YET_AVAILABLE', { feature: 'Device emulation' })
-  }
+  // The same content rules the plan layer applies (defense in depth: the plan refuses first).
+  const bad = checkBrowserContent('browser_open', args as unknown as Record<string, unknown>)
+  if (bad) return refuseContent(bad)
   const verdict = checkTopLevelNavigation(args.url ?? '', 'verb')
   if (!verdict.ok) return refuse('URL_SCHEME_BLOCKED', { scheme: verdict.scheme })
-  if (new URL(verdict.url).protocol === 'harnu-page:') {
-    return refuse('NOT_YET_AVAILABLE', { feature: 'Opening a harnu-page address' })
-  }
 
   const owner = args.ownerSessionId ?? null
   if (owner !== null && !deps.sessionKnown(owner)) {
@@ -234,8 +226,7 @@ export async function openVerb(
     lastActiveAt: now,
     seenHosts: new Set<string>(host ? [host] : []),
     // The flag is for sites the operator did not pick; a local dev server is the expected case (spec §7.1).
-    flagged:
-      origin === 'external' && shouldFlagNavigation('verb', host, new Set()) ? { host } : null
+    flagged: flagAfterVerbNavigation(null, { origin, host, seenBefore: new Set() })
   }
   deps.registry.add(rec)
   try {
@@ -284,6 +275,12 @@ function sessionNotFound(): SteerableDenial {
   }
 }
 
+function refuseContent(c: ContentRefusal): Refusal {
+  if (c.code === 'BAD_ARGS') return refuseBadArgs(c.detail)
+  if (c.code === 'URL_SCHEME_BLOCKED') return refuse('URL_SCHEME_BLOCKED', { scheme: c.scheme })
+  return refuse('NOT_YET_AVAILABLE', { feature: c.feature })
+}
+
 function refuseBadArgs(message: string): Refusal {
   return {
     ok: false,
@@ -317,16 +314,12 @@ export async function navigateVerb(
   if ('refusal' in g) return g.refusal
   const rec = g.rec!
 
-  if ((args.url === undefined) === (args.action === undefined)) {
-    return refuseBadArgs('Pass exactly one of `url` or `action`.')
-  }
+  const bad = checkBrowserContent('browser_navigate', args as unknown as Record<string, unknown>)
+  if (bad) return refuseContent(bad)
   let target: NavigateTarget
   if (args.url !== undefined) {
     const verdict = checkTopLevelNavigation(args.url, 'verb')
     if (!verdict.ok) return refuse('URL_SCHEME_BLOCKED', { scheme: verdict.scheme })
-    if (new URL(verdict.url).protocol === 'harnu-page:') {
-      return refuse('NOT_YET_AVAILABLE', { feature: 'Opening a harnu-page address' })
-    }
     target = { url: verdict.url }
   } else {
     target = { action: args.action! }
@@ -354,8 +347,9 @@ export async function navigateVerb(
   const origin = originOf(rec, live, deps)
   // "Opened by agent" (spec §3.2): a verb moved the pane to a site the operator did not pick.
   const host = hostOf(live?.url ?? '')
-  if (host && origin === 'external' && shouldFlagNavigation('verb', host, seenBefore)) {
-    rec.flagged = { host }
+  const flagged = flagAfterVerbNavigation(rec.flagged, { origin, host, seenBefore })
+  if (flagged !== rec.flagged) {
+    rec.flagged = flagged
     deps.host.publishFlag(rec.paneId, rec.flagged)
   }
   if (host) rec.seenHosts.add(host)

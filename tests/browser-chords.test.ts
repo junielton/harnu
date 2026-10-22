@@ -2,7 +2,11 @@
  * T568 (browser pane U1, AC-8) — the chord set a guest forwards and the action each one runs.
  */
 import { describe, it, expect } from 'vitest'
-import { actionForChord, boundChordsFrom } from '../src/renderer/src/lib/browser-chords'
+import {
+  INACTIVE_BROWSER_ACTIONS,
+  actionForChord,
+  boundChordsFrom
+} from '../src/renderer/src/lib/browser-chords'
 import { resolveKeybindings } from '../src/main/keybindings-core'
 
 const list = resolveKeybindings(null, { mac: false }).list
@@ -29,16 +33,7 @@ describe('boundChordsFrom', () => {
 
   it('includes the real defaults: the browser actions and the global ones', () => {
     const chords = new Set(boundChordsFrom(list, false))
-    for (const c of [
-      'Cmd+Shift+C',
-      'Cmd+R',
-      'Cmd+L',
-      'Cmd+[',
-      'Cmd+]',
-      'Cmd+Alt+I',
-      'Cmd+N',
-      'Cmd+K'
-    ]) {
+    for (const c of ['Cmd+R', 'Cmd+L', 'Cmd+[', 'Cmd+]', 'Cmd+Alt+I', 'Cmd+N', 'Cmd+K']) {
       expect(chords.has(c), c).toBe(true)
     }
   })
@@ -58,12 +53,8 @@ describe('actionForChord', () => {
     expect(actionForChord(list, 'Cmd+Q', false)).toBeNull()
   })
 
-  it('resolves each §2.5 action id from its default chord', () => {
+  it('resolves each ACTIVE §2.5 action id from its default chord', () => {
     const expected: Record<string, string> = {
-      'browser.overlay.toggle': 'Cmd+Shift+C',
-      'browser.zoom.in': 'Cmd+=',
-      'browser.zoom.out': 'Cmd+-',
-      'browser.zoom.reset': 'Cmd+0',
       'browser.devtools': 'Cmd+Alt+I',
       'browser.reload': 'Cmd+R',
       'browser.back': 'Cmd+[',
@@ -73,5 +64,25 @@ describe('actionForChord', () => {
     for (const [id, chord] of Object.entries(expected)) {
       expect(actionForChord(list, chord, false), id).toEqual({ id, scope: 'browser' })
     }
+  })
+})
+
+describe('inactive actions are not swallowed (delta 2)', () => {
+  it('the disabled zoom and overlay chords are not in the set main swallows, so they reach the page', () => {
+    const chords = new Set(boundChordsFrom(list, false))
+    for (const c of ['Cmd+Shift+C', 'Cmd+=', 'Cmd+-', 'Cmd+0']) expect(chords.has(c), c).toBe(false)
+    // …while the active browser actions are.
+    for (const c of ['Cmd+R', 'Cmd+L', 'Cmd+[', 'Cmd+]', 'Cmd+Alt+I'])
+      expect(chords.has(c), c).toBe(true)
+  })
+
+  it('does not resolve an inactive chord to an action either', () => {
+    expect(actionForChord(list, 'Cmd+Shift+C', false)).toBeNull()
+    expect([...INACTIVE_BROWSER_ACTIONS].sort()).toEqual([
+      'browser.overlay.toggle',
+      'browser.zoom.in',
+      'browser.zoom.out',
+      'browser.zoom.reset'
+    ])
   })
 })
