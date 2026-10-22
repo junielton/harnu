@@ -442,12 +442,12 @@ live main-world reference.
 - **Gesture gate (decision 12).** An emit is delivered only if all hold:
   1. `navigator.userActivation.isActive` was true in the preload at the call;
   2. main saw **no agent input verb** (`click`, `type`, `fill`, `press`, `upload`, or `eval` that dispatches
-     input) on this pane in flight or within the previous **1500 ms** (`agentInputAt`);
+     input) on this pane in flight or at any moment from **5000 ms** before the user activation the emit rides on (the preload sends its timestamp; without one, from 5000 ms before the emit) — `AGENT_INPUT_WINDOW_MS`, one named constant, because Chromium keeps a user activation alive for about 5 s and a shorter window lets `setTimeout(emit, 1600)` after an agent click spend it (amended 2026-10-22 from 1500 ms, verifier finding);
   3. the pane is not `paused` and not `disconnected`;
   4. **if the activating input was a key press** (the preload tags the last trusted `keydown` or `pointerdown`
      it saw), main saw a real `keyDown` on the pane through `before-input-event` within the previous **1000 ms**.
      _Added from U0 evidence; stricter than Q8, pending operator confirmation._ Without it, condition 2's
-     1500 ms window is the only check on keyboard-activated emits, although real keys are distinguishable.
+     5000 ms window is the only check on keyboard-activated emits, although real keys are distinguishable.
 
   Condition 2 exists because a CDP-driven click is a real activation: without it, an agent could click its
   own panel's button and self-approve (Q8, assumptions A1/A2).
@@ -464,7 +464,7 @@ live main-world reference.
   There is **no per-event discriminator for pointer input**: `before-input-event` never fires for the mouse, and
   Electron 39's `before-mouse-event` fires for real, CDP and `sendInputEvent` mouse events alike, with the same
   payload. **Keyboard input is distinguishable**: `before-input-event` fires for real keys and not for CDP
-  `Input.dispatchKeyEvent` or `sendInputEvent`. So the pointer path keeps the 1500 ms `agentInputAt` window
+  `Input.dispatchKeyEvent` or `sendInputEvent`. So the pointer path keeps the 5000 ms `agentInputAt` window
   alone (Q8 stands; the residual race is as accepted there), and a page event raised from a **key** press adds
   condition 4 above, which is stricter than Q8 and awaits the operator's confirmation. ADR-0022's revisit
   condition 5 ("no residual agent-input race") is therefore **not** met for pointer input.
@@ -606,6 +606,11 @@ existing server behaviour.
 
 ### 6.4 Concurrency
 
+> **Scope, amended 2026-10-22 (code kept, spec aligned):** the queue covers the five acting verbs (`eval`, `click`, `type`,
+> `fill`, `press`). `navigate`, `network` and `close` are not queued: a navigate waits up to 90 s for the page to load and
+> would hold the line past the 10 s `BROWSER_BUSY` limit for every other writer. They stay serialized by their own
+> in-flight tracking (`othersWrote`).
+
 Writes to one pane run **FIFO** through a per-pane queue modelled on `terminal-write-queue.ts` (ticket on
 entry, `QUEUE_WAIT_MS` 10 s → `BROWSER_BUSY`, 60 writes/min → `BROWSER_RATE_LIMIT`). Reads do not queue. A
 `waitFor` does not hold the queue. Different panes never wait on each other.
@@ -618,24 +623,31 @@ entry, `QUEUE_WAIT_MS` 10 s → `BROWSER_BUSY`, 60 writes/min → `BROWSER_RATE_
 (it returns `BROWSER_APPROVED_RESEND`, as `TERMINAL_APPROVED_RESEND` does); the operator-approved **lease**
 then lets every writer's calls through until the pane has had no agent write for **10 minutes**, the pane
 closes, is disconnected, the folder is blocked, the kill-switch flips, or the app quits. A Deny is
-`BROWSER_WRITE_DENIED`, repeated for 5 minutes without a new prompt. Under "Ask before agent actions", every
-row that says `free` becomes a normal confirm; a mission grant or an "always allow" can never cover a
-`lease` row.
+`BROWSER_WRITE_DENIED`, repeated for 5 minutes without a new prompt.
+
+> **Amended 2026-10-22 by the orchestrator; pending operator confirmation.** The lease is bound to **pane + origin**
+> (scheme + host + port), not to the pane alone: a main-frame commit to a different origin ends it, and the next
+> lease-row call asks again. The same origin across paths and queries keeps it. Otherwise an Allow shown for
+> `localhost:3000` would also cover a later bank or mail site the same pane navigated to. The confirm says so:
+> "Allow lets agents drive this pane while it stays on ‹host›". An Allow that arrives after the pane moved to another
+> origin grants nothing (`BROWSER_LEASE_ENDED`). Implemented as the view token `<webContents id>|<origin>`. Under "Ask before agent actions", every
+> row that says `free` becomes a normal confirm; a mission grant or an "always allow" can never cover a
+> `lease` row.
 
 **Rows are verb classes; columns are the origin class at call time.**
 
-| Verb class (verbs)                                                 | Agent-opened pane: `page` | `local` | `external`    | Operator-opened pane (any class)               |
-| ------------------------------------------------------------------ | ------------------------- | ------- | ------------- | ---------------------------------------------- |
-| **Open** (`open`)                                                  | free (cap 4)              | free    | free, flagged | n/a (creates agent panes)                      |
-| **Navigate** (`navigate`)                                          | free                      | free    | free, flagged | lease                                          |
-| **Read** (`list`, `snapshot`, `screenshot`, `console`, `wait_for`) | free                      | free    | free (Q1)     | folder opt-in, else `BROWSER_READ_NOT_ENABLED` |
-| **Network capture** (`network start/stop`, `read`)                 | free                      | free    | lease         | lease (and folder opt-in)                      |
-| **Live panel** (`set_data`, `patch`)                               | free                      | refused | refused       | free on `page`, else refused                   |
-| **Eval** (`eval`)                                                  | free                      | free    | **lease**     | **lease** (decision 6)                         |
-| **Input** (`click`, `type`, `fill`, `press`, `upload`) **[gap]**   | free                      | free    | **lease**     | lease                                          |
-| **Emulate** (`emulate`)                                            | free                      | free    | free          | lease                                          |
-| **Download** (`download`)                                          | free                      | free    | free          | lease                                          |
-| **Close** (`close`)                                                | free                      | free    | free          | lease                                          |
+| Verb class (verbs)                                                                                                         | Agent-opened pane: `page` | `local` | `external`    | Operator-opened pane (any class)               |
+| -------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------- | ------------- | ---------------------------------------------- |
+| **Open** (`open`)                                                                                                          | free (cap 4)              | free    | free, flagged | n/a (creates agent panes)                      |
+| **Navigate** (`navigate`)                                                                                                  | free                      | free    | free, flagged | lease                                          |
+| **Read** (`list`, `snapshot`, `screenshot`, `console`, `wait_for`)                                                         | free                      | free    | free (Q1)     | folder opt-in, else `BROWSER_READ_NOT_ENABLED` |
+| **Network capture** (`network start`, `read`; `stop` is always free: it only reduces what is observed, amended 2026-10-22) | free                      | free    | lease         | lease (and folder opt-in)                      |
+| **Live panel** (`set_data`, `patch`)                                                                                       | free                      | refused | refused       | free on `page`, else refused                   |
+| **Eval** (`eval`)                                                                                                          | free                      | free    | **lease**     | **lease** (decision 6)                         |
+| **Input** (`click`, `type`, `fill`, `press`, `upload`) **[gap]**                                                           | free                      | free    | **lease**     | lease                                          |
+| **Emulate** (`emulate`)                                                                                                    | free                      | free    | free          | lease                                          |
+| **Download** (`download`)                                                                                                  | free                      | free    | free          | lease                                          |
+| **Close** (`close`)                                                                                                        | free                      | free    | free          | lease                                          |
 
 Why `Input` is a lease on `external` although decision 6 names only `eval`: a click or a typed field on an
 external site can post, buy or delete as whatever that pane is logged in as. It is the same side door
@@ -808,7 +820,7 @@ header that states it is data and not the operator speaking.
 
 - **Cannot be forged by the page:** the page cannot `dispatchEvent` into a trusted pick (`isTrusted`) and
   cannot call the private IPC channels (§3.3). A pick is accepted only if **no agent input verb** ran on the
-  pane within the previous 1500 ms (the `agentInputAt` window of §5.4), so an agent cannot use `click` to open
+  pane within the 5000 ms `agentInputAt` window of §5.4 (`agentInputBlocksEmit`), so an agent cannot use `click` to open
   a composer on a node of its choosing. Agent verbs cannot reach the guest overlay otherwise: `eval` runs in
   the main world and the snapshot strips the overlay (A10).
 - **Cannot be submitted by an agent:** the composer is renderer code and CDP is attached to the guest only, so

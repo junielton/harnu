@@ -97,7 +97,9 @@ vi.mock('../src/main/browser/view-host', async () => {
       return readers.get(paneId)
     }
     viewToken(paneId: string): string | undefined {
-      return h.pages.has(paneId) ? (h.tokens.get(paneId) ?? 'view-1') : undefined
+      return h.pages.has(paneId)
+        ? `${h.tokens.get(paneId) ?? 'view-1'}|${originKey(h.pages.get(paneId) ?? '')}`
+        : undefined
     }
     inputReady(): boolean {
       return true
@@ -149,6 +151,7 @@ vi.mock('../src/main/browser/view-host', async () => {
   return { BrowserViewHost: FakeHost, collectHarnuPorts: (): number[] => [] }
 })
 
+import { originKey } from '../src/main/browser/origin-class'
 import { handleToolCall, registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
 import { WIRED_TOOLS } from '../src/main/mcp/tool-handlers'
 import {
@@ -186,6 +189,9 @@ function body(res: CallToolResult): Record<string, unknown> {
   }
 }
 
+/** The token the fake host reports for a pane right now: `<view>|<origin>`. */
+const tokenOf = (paneId: string): string =>
+  `${h.tokens.get(paneId) ?? 'view-1'}|${originKey(h.pages.get(paneId) ?? '')}`
 const call = (op: string, args: Record<string, unknown>): Promise<CallToolResult> =>
   handleToolCall(def(op), args)
 const click = (paneId = 'bp-ext', ref = 's1e1'): Promise<CallToolResult> =>
@@ -304,7 +310,7 @@ describe('free mode: an external page is a lease row', () => {
     const res = body(await pending)
     expect(res).toMatchObject({ ok: false, error: 'BROWSER_APPROVED_RESEND' })
     expect(inputEvents()).toBe(0)
-    expect(browserLeases.isActive('bp-ext', 'view-1')).toBe(true)
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(true)
   })
 
   it('then every writer’s next call runs under the lease with no prompt, audited LEASE', async () => {
@@ -349,12 +355,103 @@ describe('free mode: an external page is a lease row', () => {
     expect(body(await click('bp-loc')).ok).toBe(true)
   })
 
-  it('a navigation to another host does not end the lease; the class is re-read at every call', async () => {
+  it('a navigation within the same origin (other paths, queries) keeps the lease, with no new prompt', async () => {
     await confirmAndAnswer(() => click(), 'allow')
-    h.pages.set('bp-ext', 'http://localhost:3000/')
-    // now local: free anyway, no prompt
+    h.pages.set('bp-ext', 'https://shop.example.com/checkout/step-2?x=1#pay')
+    browserLeases.noteToken('bp-ext', tokenOf('bp-ext'))
     expect(body(await click()).ok).toBe(true)
     expect(wires).toHaveLength(1)
+  })
+})
+
+describe('the lease is bound to pane + origin (scheme + host + port), spec §7.1 as amended 2026-10-22', () => {
+  const move = (paneId: string, url: string): void => {
+    h.pages.set(paneId, url)
+    // what the view host does on a main-frame commit
+    browserLeases.noteToken(paneId, tokenOf(paneId))
+  }
+
+  it('the prompt says the approval holds while the pane stays on the host, and ends if it moves', async () => {
+    const pending = click()
+    const wire = await confirmRaised(1)
+    expect(wire.prompt).toContain(
+      'Allow lets agents drive this pane while it stays on shop.example.com'
+    )
+    expect(wire.prompt).toContain(
+      'If the pane moves to another site, this approval ends and you are asked again.'
+    )
+    confirm.respond(wire.id, 'allow')
+    await pending
+  })
+
+  it('external A → external B ends it: the next lease-row call asks again', async () => {
+    await confirmAndAnswer(() => click(), 'allow')
+    move('bp-ext', 'https://bank.example.org/login')
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
+    const pending = click()
+    const wire = await confirmRaised(2)
+    expect(wire.prompt).toContain('Site: bank.example.org (external)')
+    confirm.respond(wire.id, 'deny')
+    expect(body(await pending).error).toBe('BROWSER_WRITE_DENIED')
+  })
+
+  it('local → external on an operator pane ends it too, and the new prompt names the new site', async () => {
+    h.optedIn = [h.open]
+    addPane('bp-op', 'http://localhost:9999/', 'operator')
+    await confirmAndAnswer(() => click('bp-op'), 'allow')
+    expect(body(await click('bp-op')).ok).toBe(true)
+    move('bp-op', 'https://mail.example.com/inbox')
+    const pending = click('bp-op')
+    const wire = await confirmRaised(2)
+    expect(wire.prompt).toContain('Site: mail.example.com (external)')
+    expect(wire.prompt).toContain('Opened by: operator')
+    confirm.respond(wire.id, 'allow')
+    expect(body(await pending).error).toBe('BROWSER_APPROVED_RESEND')
+  })
+
+  it('the same host across paths stays leased; another port or scheme is another origin', async () => {
+    await confirmAndAnswer(() => click(), 'allow')
+    move('bp-ext', 'https://shop.example.com/a/b/c')
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(true)
+    move('bp-ext', 'https://shop.example.com:8443/a')
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
+    await confirmAndAnswer(() => click(), 'allow')
+    move('bp-ext', 'http://shop.example.com:8443/a')
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
+  })
+
+  it('A → B → A between two calls does not bring the lease back', async () => {
+    await confirmAndAnswer(() => click(), 'allow')
+    move('bp-ext', 'https://other.example.org/')
+    move('bp-ext', 'https://shop.example.com/cart')
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
+  })
+
+  it('even without the commit hook, a call re-reads the origin: the lease does not apply to the new site', async () => {
+    await confirmAndAnswer(() => click(), 'allow')
+    h.pages.set('bp-ext', 'https://bank.example.org/') // no noteToken
+    const pending = click()
+    const wire = await confirmRaised(2)
+    confirm.respond(wire.id, 'deny')
+    await pending
+  })
+
+  it('an Allow that arrives after the pane moved to another site grants nothing (BROWSER_LEASE_ENDED)', async () => {
+    const pending = click()
+    const wire = await confirmRaised(1)
+    h.pages.set('bp-ext', 'https://bank.example.org/')
+    confirm.respond(wire.id, 'allow')
+    expect(body(await pending).error).toBe('BROWSER_LEASE_ENDED')
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
+  })
+
+  it('a blank operator pane that then navigates to a site is not leased there', async () => {
+    h.optedIn = [h.open]
+    addPane('bp-op', 'about:blank', 'operator')
+    await confirmAndAnswer(() => click('bp-op'), 'allow')
+    expect(browserLeases.isActive('bp-op', tokenOf('bp-op'))).toBe(true)
+    move('bp-op', 'https://shop.example.com/')
+    expect(browserLeases.isActive('bp-op', tokenOf('bp-op'))).toBe(false)
   })
 })
 
@@ -378,15 +475,15 @@ describe('what ends a lease', () => {
     await confirmAndAnswer(() => click(), 'allow')
     await writeAgentBrowserWrites(false)
     expect(body(await click()).error).toBe('BROWSER_WRITES_DISABLED')
-    expect(browserLeases.isActive('bp-ext', 'view-1')).toBe(false)
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
   })
 
   it('10 idle minutes end it', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     await confirmAndAnswer(() => click(), 'allow')
-    expect(browserLeases.isActive('bp-ext', 'view-1')).toBe(true)
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(true)
     vi.setSystemTime(Date.now() + 10 * 60_000 + 1)
-    expect(browserLeases.isActive('bp-ext', 'view-1')).toBe(false)
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
   })
 
   it('an Allow that arrives after the pane was disconnected grants nothing', async () => {
@@ -395,7 +492,7 @@ describe('what ends a lease', () => {
     browserAccess.disconnect('bp-ext')
     confirm.respond(wire.id, 'allow')
     expect(body(await pending).error).toBe('BROWSER_DISCONNECTED')
-    expect(browserLeases.isActive('bp-ext', 'view-1')).toBe(false)
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
   })
 
   it('an Allow for one view does not lease the page that replaced it', async () => {
@@ -404,7 +501,7 @@ describe('what ends a lease', () => {
     h.tokens.set('bp-ext', 'view-2')
     confirm.respond(wire.id, 'allow')
     expect(body(await pending).error).toBe('PANE_NOT_FOUND')
-    expect(browserLeases.isActive('bp-ext', 'view-2')).toBe(false)
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
   })
 
   it('a blocked folder refuses before any confirm', async () => {
@@ -506,7 +603,7 @@ describe('operator-opened panes (spec §7.1)', () => {
     await confirmAndAnswer(() => click('bp-op'), 'allow')
     h.optedIn = []
     expect(body(await click('bp-op')).error).toBe('BROWSER_READ_NOT_ENABLED')
-    expect(browserLeases.isActive('bp-op', 'view-1')).toBe(false)
+    expect(browserLeases.isActive('bp-op', tokenOf('bp-op'))).toBe(false)
   })
 
   it('browser_list reports readable / writable / writableReason per §7.1', async () => {
@@ -574,7 +671,7 @@ describe('the confirm window and the 30-minute fail-closed', () => {
     expect(String(handle.message)).toContain('BROWSER_APPROVED_RESEND')
     confirm.respond(wires[0]!.id, 'allow')
     // The Allow re-judges the pane (real file reads) before it grants, so wait for it.
-    await vi.waitFor(() => expect(browserLeases.isActive('bp-ext', 'view-1')).toBe(true))
+    await vi.waitFor(() => expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(true))
     const status = body(
       await handleToolCall(approvalDef, { approvalId: String(handle.approvalId) })
     )
@@ -594,7 +691,7 @@ describe('the confirm window and the 30-minute fail-closed', () => {
       await handleToolCall(approvalDef, { approvalId: String(handle.approvalId) })
     )
     expect(status.status).toBe('denied')
-    expect(browserLeases.isActive('bp-ext', 'view-1')).toBe(false)
+    expect(browserLeases.isActive('bp-ext', tokenOf('bp-ext'))).toBe(false)
     expect(inputEvents()).toBe(0)
   })
 })
@@ -651,7 +748,7 @@ afterAllClose()
 function afterAllClose(): void {
   // closing the server also ends every browser lease (the app is quitting)
   it('closing the control server ends every browser lease', async () => {
-    browserLeases.grant('bp-ext', h.open, 'view-1')
+    browserLeases.grant('bp-ext', h.open, tokenOf('bp-ext'))
     await closeMcpServer()
     expect(browserLeases.activeIds()).toEqual([])
   })

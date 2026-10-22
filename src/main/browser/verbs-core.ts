@@ -199,7 +199,12 @@ export async function gate(
   // The older verbs pass no content `args`, so for them the content rules run in the verb, after this.
   if (denied) {
     if (denied.content) return { refusal: refuseContent(denied.content) }
-    return { refusal: refuse(denied.reason as BrowserDenialCode, { folder: rec?.folder }) }
+    return {
+      refusal: refuse(denied.reason as BrowserDenialCode, {
+        folder: rec?.folder,
+        ...(rec ? { openedBy: rec.openedBy } : {})
+      })
+    }
   }
   if (rec && isBrowserWriteOp(op)) deps.leases?.noteWrite(rec.paneId)
   return { rec, live, origin }

@@ -20,6 +20,8 @@ describe('parseTrustedHost', () => {
     ['web', 'web'],
     ['api-gateway', 'api-gateway'],
     ['*.dev.example.org', '*.dev.example.org'],
+    ['*.app.test', '*.app.test'],
+    ['*.corp.internal', '*.corp.internal'],
     ['192.168.1.5', '192.168.1.5'],
     ['[::1]', '[::1]']
   ])('accepts %j as %j', (raw, host) => {
@@ -38,6 +40,11 @@ describe('parseTrustedHost', () => {
     ['*.com', 'WILDCARD_TOO_BROAD'],
     ['*.dev', 'WILDCARD_TOO_BROAD'],
     ['*.io', 'WILDCARD_TOO_BROAD'],
+    ['*.co.uk', 'WILDCARD_TOO_BROAD'],
+    ['*.github.io', 'WILDCARD_TOO_BROAD'],
+    ['*.example.com', 'WILDCARD_TOO_BROAD'],
+    ['*.1.1', 'WILDCARD_TOO_BROAD'],
+    ['*.10', 'WILDCARD_TOO_BROAD'],
     ['*.', 'WILDCARD_POSITION'],
     ['bad_name.test', 'BAD_CHARACTERS'],
     ['-x.test', 'BAD_CHARACTERS'],

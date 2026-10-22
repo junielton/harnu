@@ -35,7 +35,9 @@ describe('leaseConfirmPrompt', () => {
   it('says an Allow performs nothing, the 10-minute and 5-minute rules, and that typing runs as the operator', () => {
     const p = leaseConfirmPrompt(facts())
     expect(p).toContain('Nothing happens when you Allow')
+    expect(p).toContain('while it stays on example.com')
     expect(p).toContain('no agent write for 10 minutes')
+    expect(p).toContain('If the pane moves to another site, this approval ends')
     expect(p).toContain('Deny blocks writes to this pane for 5 minutes')
     expect(p).toContain('What an agent types runs as you on this page.')
   })
@@ -105,6 +107,25 @@ describe('leaseConfirmPrompt', () => {
     expect(describeFirstAction(facts({ op: 'browser_network', args: { action: 'start' } }))).toBe(
       'start network traffic recording'
     )
+  })
+
+  it('scrubs secrets in what it previews, before the cut, and still states the true length', () => {
+    const scrub = (t: string): string => t.replace(/Bearer [A-Za-z0-9]+/g, '<redacted>')
+    const secret = 'fetch(u,{h:"Bearer abcdefghijklmnop0123456789"})'
+    const p = describeFirstAction(facts({ args: { expression: secret }, scrub }))
+    expect(p).not.toContain('abcdefghijklmnop0123456789')
+    expect(p).toContain('<redacted>')
+    expect(p).toContain(`(${secret.length} characters)`)
+    expect(
+      describeFirstAction(
+        facts({
+          op: 'browser_click',
+          args: { ref: 's1e1' },
+          target: { role: 'button', name: 'Bearer zzzzzzzz1234' },
+          scrub
+        })
+      )
+    ).not.toContain('zzzzzzzz1234')
   })
 
   it('handles an operator pane with nothing loaded', () => {

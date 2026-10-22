@@ -16,9 +16,9 @@ export const MAX_TRUSTED_HOSTS = 32
 export const MAX_TRUSTED_HOST_CHARS = 253
 
 /**
- * Single-label suffixes a wildcard may sit on: names reserved for private use (RFC 2606, 6761, 8375) that the
+ * Top-level names a wildcard may end in: names reserved for private use (RFC 2606, 6761, 8375) that the
  * public internet cannot serve. `*.com` or `*.dev` would make a whole public TLD "local", so any other
- * wildcard must name at least two labels (`*.dev.example.org`).
+ * wildcard must have at least three labels under the `*.` (`*.dev.example.org`).
  */
 const RESERVED_WILDCARD_TLDS: ReadonlySet<string> = new Set([
   'test',
@@ -59,8 +59,14 @@ export function parseTrustedHost(
   if (host.slice(wildcard ? 2 : 0).includes('*')) return { ok: false, error: 'WILDCARD_POSITION' }
   const labels = (wildcard ? host.slice(2) : host).split('.')
   if (labels.some((l) => !LABEL.test(l))) return { ok: false, error: 'BAD_CHARACTERS' }
-  if (wildcard && labels.length < 2 && !RESERVED_WILDCARD_TLDS.has(labels[0]!)) {
-    return { ok: false, error: 'WILDCARD_TOO_BROAD' }
+  if (wildcard) {
+    // A wildcard over a public suffix (`*.com`, `*.co.uk`, `*.github.io`) would make the internet "local".
+    // Without a public-suffix list the rule is conservative: the base must be a reserved dev TLD (`*.test`,
+    // `*.app.test`), or have at least three labels (`*.dev.example.org`). An all-numeric base (`*.1.1`) looks
+    // like an address and never is a name. Exact hosts are always fine.
+    if (labels.every((l) => /^[0-9]+$/.test(l))) return { ok: false, error: 'WILDCARD_TOO_BROAD' }
+    const reservedBase = RESERVED_WILDCARD_TLDS.has(labels[labels.length - 1]!)
+    if (!reservedBase && labels.length < 3) return { ok: false, error: 'WILDCARD_TOO_BROAD' }
   }
   return { ok: true, host }
 }

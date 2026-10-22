@@ -335,7 +335,9 @@ export function planToolCall({
       const result =
         refusal.reason === 'BAD_ARGS' || refusal.reason === 'BROWSER_KEY_UNKNOWN'
           ? `${refusal.reason}: ${refusal.content?.detail ?? ''}`
-          : refusal.reason
+          : refusal.reason === 'PANE_INPUT_NOT_READY' && browser?.pane?.openedBy === 'operator'
+            ? 'PANE_INPUT_NOT_READY: operator-pane'
+            : refusal.reason
       return denyPlan(tool, folder ?? '', now, result, redact)
     }
   }

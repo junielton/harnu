@@ -104,6 +104,10 @@ export function getBrowserHost(): BrowserViewHost {
     trustedHosts: trustedHostsSync,
     readOptIn: (folder) => readOptInCache.get(folder) === true,
     leaseActive: (paneId, token) => browserLeases.isActive(paneId, token),
+    onMainFrameCommit: (paneId) => {
+      const token = host?.viewToken(paneId)
+      if (token !== undefined) browserLeases.noteToken(paneId, token)
+    },
     scrub: (text) => scrubTerminalText(text, os.homedir()),
     openPopupPane: ({ folder, partition, url }) =>
       openOperatorPane({ folder, partition, url, popup: true })

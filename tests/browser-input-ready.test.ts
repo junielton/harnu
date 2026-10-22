@@ -150,6 +150,24 @@ describe('at plan level (free mode and ask mode): a loud refusal, never a confir
     expect(resolveGateInput(base).input.pane?.inputReady).toBe(true)
   })
 
+  it('on an OPERATOR pane the hint says to ask the operator, never to reload it (plan and handler)', async () => {
+    const p = plan(
+      'browser_click',
+      { ref: 's1e1' },
+      pane({ openedBy: 'operator', readOptIn: true }),
+      false
+    )
+    expect(p.auditRecord.result).toBe('PANE_INPUT_NOT_READY: operator-pane')
+    const d = shapeDenial(p.auditRecord.result, { folder: '/work/app' })!
+    expect(d.error).toBe('PANE_INPUT_NOT_READY')
+    expect(d.nextActions[0]!.do).toContain('Ask the operator')
+    expect(d.nextActions[0]!.do).toContain('Do not reload it yourself')
+    expect(JSON.stringify(d)).not.toContain('action: "reload"')
+    // an agent pane still gets the reload advice
+    const agent = shapeDenial('PANE_INPUT_NOT_READY', { folder: '/work/app' })!
+    expect(agent.nextActions[0]!.do).toContain('action: "reload"')
+  })
+
   it('the refusal tells the agent the way forward: reload, and what still works', () => {
     const d = shapeDenial('PANE_INPUT_NOT_READY', { folder: '/work/app' })!
     expect(d.error).toBe('PANE_INPUT_NOT_READY')

@@ -855,3 +855,46 @@ describe('create_worktree — existingWork collision warning (BUG-40 §3.5 / BUG
     expect(tool?.description).toMatch(/non-blocking/)
   })
 })
+
+describe('T571 delta 2 — catalog descriptions stay true to what the verbs return', () => {
+  const desc = (op: string): string => MCP_TOOLS.find((t) => t.op === op)!.description
+  const browserOps = MCP_TOOLS.filter((t) => t.op.startsWith('browser_')).map((t) => t.op)
+
+  it('no browser verb but browser_open still advertises NOT_YET_AVAILABLE (it only returns it for path/html/device)', () => {
+    for (const op of browserOps) {
+      if (op === 'browser_open') continue
+      expect(desc(op), op).not.toContain('NOT_YET_AVAILABLE')
+    }
+    expect(desc('browser_open')).toContain('NOT_YET_AVAILABLE')
+  })
+
+  it('navigate, close and network describe the opt-in and the lease instead', () => {
+    for (const op of ['browser_navigate', 'browser_close']) {
+      expect(desc(op), op).toContain('BROWSER_READ_NOT_ENABLED')
+      expect(desc(op), op).toContain('BROWSER_APPROVED_RESEND')
+    }
+    expect(desc('browser_network')).toContain('BROWSER_APPROVED_RESEND')
+    expect(desc('browser_network')).toContain('stop is always free')
+  })
+
+  it('the first-page input sentence is on exactly click, type and press, and tells an agent not to reload an operator pane', () => {
+    const withIt = MCP_TOOLS.filter((t) => t.description.includes('PANE_INPUT_NOT_READY')).map(
+      (t) => t.op
+    )
+    expect(withIt.sort()).toEqual(['browser_click', 'browser_press', 'browser_type'])
+    for (const op of withIt) expect(desc(op), op).toContain('ask them')
+    expect(desc('browser_type')).toContain('browser_fill work on the first page')
+    expect(desc('browser_click')).toContain('after it moves to another site')
+  })
+
+  it('browser_list names every writableReason it can return', () => {
+    for (const r of ['read-not-enabled', 'kill-switch', 'write-denied', 'disconnected']) {
+      expect(desc('browser_list'), r).toContain(r)
+    }
+  })
+
+  it('browser_eval says the lease holds while the pane stays on one site, and ends when it moves', () => {
+    expect(desc('browser_eval')).toContain('while the pane stays on the site the operator saw')
+    expect(desc('browser_eval')).toContain('moving it to another host ends it')
+  })
+})

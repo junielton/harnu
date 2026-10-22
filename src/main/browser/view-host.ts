@@ -36,7 +36,8 @@ import {
   isPermissionGranted,
   isSubresourceSchemeAllowed
 } from './nav-policy'
-import { classifyOrigin, hostOf } from './origin-class'
+import { classifyOrigin, hostOf, originKey } from './origin-class'
+import { initialInputReadyState, nextInputReadyState, type InputReadyState } from './input-ready'
 import {
   FreezeGeneration,
   captureMatchesBounds,
@@ -68,6 +69,8 @@ export interface ViewHostDeps {
   readOptIn(folder: string): boolean
   /** The operator's lease on the pane is active for the view `token` (display only). */
   leaseActive(paneId: string, token: string): boolean
+  /** The pane committed a main-frame navigation: a lease bound to another origin ends (spec §7.1). */
+  onMainFrameCommit?(paneId: string): void
   /** Redact page-derived text recorded by the readers (best-effort, the `read_terminal` scrubber). */
   scrub(text: string): string
   /** The operator's click opened a popup: create an operator-class pane in `folder` (spec §3.2). */
@@ -95,8 +98,10 @@ interface ViewEntry {
   /** Real clicks/keys: one popup per activation (`view-logic.ts`). */
   gestures: GestureGate
   loading: boolean
-  /** Main-frame commits so far. The FIRST document does not take mouse or key events (see `inputReady`). */
-  commits: number
+  /** Mouse and key events reach the current document (see `inputReady` and `browser/input-ready.ts`). */
+  inputState: InputReadyState
+  /** The navigation now in flight was started by Harnu (the verb, the address bar, back/forward, reload). */
+  harnuNavigation: boolean
   notice: BrowserNotice | null
   activity: 'driving' | null
   /** The reading verbs' per-pane state (console ring, network capture, refs), fed from the debugger session. */
@@ -143,7 +148,8 @@ export class BrowserViewHost implements BrowserReadHost {
       paintedWaiter: null,
       gestures: createGestureGate(() => this.deps.now()),
       loading: false,
-      commits: 0,
+      inputState: initialInputReadyState(),
+      harnuNavigation: false,
       notice: null,
       activity: null,
       readers: null as unknown as PaneReaders
@@ -216,6 +222,7 @@ export class BrowserViewHost implements BrowserReadHost {
         },
         title: () => (wc.isDestroyed() ? '' : wc.getTitle())
       })
+      e.harnuNavigation = true
       if ('url' in target) {
         e.notice = null
         wc.loadURL(target.url).catch(() => undefined)
@@ -282,10 +289,15 @@ export class BrowserViewHost implements BrowserReadHost {
     for (const e of this.entries.values()) e.readers.stopCapture(reason)
   }
 
-  /** Names the view that shows the pane now (a lease is granted for ONE view, spec §7.1). */
+  /**
+   * Names the view AND the origin that shows the pane now (spec §7.1, amended 2026-10-22): a lease is granted for
+   * ONE view on ONE origin (scheme + host + port). A pane that moves to another host, or is re-created under the
+   * same id, gets a different token, so the lease no longer applies and the next lease-row call asks again.
+   * The part before `|` is the view; the part after it is the origin.
+   */
   viewToken(paneId: string): string | undefined {
     const e = this.entries.get(paneId)
-    return e && !e.wc.isDestroyed() ? String(e.wc.id) : undefined
+    return e && !e.wc.isDestroyed() ? `${e.wc.id}|${originKey(e.wc.getURL())}` : undefined
   }
 
   /** The factor between page CSS px and view coordinates: 1 until a device is emulated (U5, assumption A5). */
@@ -294,15 +306,17 @@ export class BrowserViewHost implements BrowserReadHost {
   }
 
   /**
-   * Whether mouse and key events sent over CDP reach the pane's current document. Measured in the U4 live run:
-   * on the FIRST document a pane loads, `Input.dispatchMouseEvent` and `dispatchKeyEvent` are acknowledged and not
-   * delivered, whether the pane is mounted in the app or parked; after any later main-frame navigation (a reload
-   * is enough) they are delivered, shown, hidden or parked. `insertText`, eval and snapshot are not affected.
-   * The root cause is not understood (carded separately); this is the observed rule, not a theory.
+   * Whether mouse and key events sent over CDP reach the pane's current document. Measured in the U4 live runs
+   * (`browser/input-ready.ts` has the table): they are acknowledged and NOT delivered after a navigation that
+   * commits in a fresh renderer (the first document, about:blank → a site, a cross-site navigation), and after a
+   * script's own `location.replace`; they ARE delivered once Harnu itself navigates the pane to the same host again
+   * (a reload is enough), shown, hidden or parked. `insertText`, eval and snapshot are never affected. The root
+   * cause is not understood (disabling the parking override drops everything; re-asserting it on load changes
+   * nothing); this is the observed rule, not a theory.
    */
   inputReady(paneId: string): boolean {
     const e = this.entries.get(paneId)
-    return !e || e.commits >= 2
+    return !e || e.inputState.ready
   }
 
   /** The header's `driving` word while an acting verb runs. */
@@ -471,6 +485,8 @@ export class BrowserViewHost implements BrowserReadHost {
     const e = this.entries.get(paneId)
     if (!e || e.wc.isDestroyed()) return { ok: false, scheme: '' }
     this.deps.registry.noteOperatorInteraction(paneId)
+    // Every navigation started from the address bar or its buttons is Harnu's, not the page's (`input-ready.ts`).
+    e.harnuNavigation = true
     if ('url' in target) {
       const verdict = checkTopLevelNavigation(target.url, 'operator')
       if (!verdict.ok) {
@@ -719,7 +735,12 @@ export class BrowserViewHost implements BrowserReadHost {
     })
     wc.on('page-title-updated', () => this.publish(e))
     wc.on('did-navigate', (_ev, url) => {
-      e.commits++
+      e.inputState = nextInputReadyState(e.inputState, {
+        host: hostOf(url),
+        initiatedByHarnu: e.harnuNavigation
+      })
+      e.harnuNavigation = false
+      this.deps.onMainFrameCommit?.(e.paneId)
       const r = rec()
       const host = hostOf(url)
       if (r && host) r.seenHosts.add(host)
@@ -875,7 +896,7 @@ export class BrowserViewHost implements BrowserReadHost {
       ownerSessionId: r?.ownerSessionId ?? null,
       notice: e.notice,
       agentReads: (r?.openedBy ?? 'operator') === 'agent' || this.deps.readOptIn(e.folder),
-      leaseActive: this.deps.leaseActive(e.paneId, String(e.wc.id)),
+      leaseActive: this.deps.leaseActive(e.paneId, this.viewToken(e.paneId) ?? ''),
       networkUntil: e.readers.capture.status().expiresAt
     }
   }

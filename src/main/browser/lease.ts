@@ -26,8 +26,9 @@ interface Lease {
   /** The pane's folder, so a block of that folder can end the lease. */
   folder: string
   /**
-   * The view the operator approved. A lease counts only while the pane id still names THAT view: a pane
-   * restored under the same id is a page the operator never saw.
+   * The view AND origin the operator approved (`view-host.viewToken`: `<webContents id>|<scheme+host+port>`). A lease
+   * counts only while the pane id still names THAT view showing THAT origin: a pane restored under the same id, or
+   * one that moved to another site, is a page the operator never approved.
    */
   viewToken: string
   /** Epoch ms of the grant or of the last agent write, whichever is later. */
@@ -89,6 +90,16 @@ export class BrowserLeases {
       return false
     }
     return true
+  }
+
+  /**
+   * The pane's token changed under a lease (a main-frame commit to another origin, spec §7.1): the lease ends at
+   * once, whatever the next call looks like. A pane that went A → B → A between two calls is then not leased
+   * on its return.
+   */
+  noteToken(paneId: string, viewToken: string): void {
+    const lease = this.leases.get(paneId)
+    if (lease && lease.viewToken !== viewToken) this.revoke(paneId)
   }
 
   /** An agent write went out under the lease: the 10 minutes start over. No lease, no effect. */

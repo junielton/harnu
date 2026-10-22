@@ -26,20 +26,28 @@ export interface LeaseConfirmFacts {
   folder: string
   /** Role and name of the element a `click`/`type` targets, when it could be resolved. */
   target?: { role: string; name: string } | null
+  /**
+   * Best-effort secret scrubber for the agent's text and the page's element names (the audit's own, so the confirm
+   * and the log never differ). Absent = shown as is.
+   */
+  scrub?: (text: string) => string
 }
 
 /** `text` escaped and cut for display, with its true length. */
-function preview(text: string): string {
-  const chars = [...text]
-  const cut = chars.length > PREVIEW_MAX_CHARS
-  const shown = escapeForConfirm(chars.slice(0, PREVIEW_MAX_CHARS).join(''))
-  return `(${chars.length} characters): "${shown}"${cut ? '…' : ''}`
+function preview(text: string, scrub?: (t: string) => string): string {
+  const trueLength = [...text].length
+  // Scrubbed FIRST and over the whole text, so the cut can never leave half a secret (the audit does the same).
+  const clean = [...(scrub && text !== '' ? scrub(text) : text)]
+  const cut = clean.length > PREVIEW_MAX_CHARS
+  const shown = escapeForConfirm(clean.slice(0, PREVIEW_MAX_CHARS).join(''))
+  return `(${trueLength} characters): "${shown}"${cut ? '…' : ''}`
 }
 
 function targetLabel(f: LeaseConfirmFacts): string {
   const ref = typeof f.args.ref === 'string' ? f.args.ref : '?'
   if (!f.target) return `element ${escapeForConfirm(ref)}`
-  return `${escapeForConfirm(f.target.role)} "${escapeForConfirm(f.target.name).slice(0, PREVIEW_MAX_CHARS)}" (${escapeForConfirm(ref)})`
+  const name = f.scrub ? f.scrub(f.target.name) : f.target.name
+  return `${escapeForConfirm(f.target.role)} "${escapeForConfirm(name).slice(0, PREVIEW_MAX_CHARS)}" (${escapeForConfirm(ref)})`
 }
 
 /** One line: the first thing the call would do. */
@@ -47,7 +55,7 @@ export function describeFirstAction(f: LeaseConfirmFacts): string {
   const a = f.args
   switch (f.op) {
     case 'browser_eval':
-      return `eval ${preview(typeof a.expression === 'string' ? a.expression : '')}`
+      return `eval ${preview(typeof a.expression === 'string' ? a.expression : '', f.scrub)}`
     case 'browser_click': {
       const n = typeof a.clickCount === 'number' && a.clickCount > 1 ? ` x${a.clickCount}` : ''
       const b =
@@ -57,11 +65,11 @@ export function describeFirstAction(f: LeaseConfirmFacts): string {
       return `click ${targetLabel(f)}${n}${b}`
     }
     case 'browser_type':
-      return `type ${preview(typeof a.text === 'string' ? a.text : '')}${typeof a.ref === 'string' ? ` into ${targetLabel(f)}` : ' into the focused element'}${a.submit === true ? ', then press Enter' : ''}`
+      return `type ${preview(typeof a.text === 'string' ? a.text : '', f.scrub)}${typeof a.ref === 'string' ? ` into ${targetLabel(f)}` : ' into the focused element'}${a.submit === true ? ', then press Enter' : ''}`
     case 'browser_fill': {
       const fields = Array.isArray(a.fields) ? (a.fields as Array<Record<string, unknown>>) : []
       const first = fields[0]
-      return `fill ${fields.length} field${fields.length === 1 ? '' : 's'}${first ? `; the first value ${preview(typeof first.value === 'string' ? first.value : '')}` : ''}`
+      return `fill ${fields.length} field${fields.length === 1 ? '' : 's'}${first ? `; the first value ${preview(typeof first.value === 'string' ? first.value : '', f.scrub)}` : ''}`
     }
     case 'browser_press': {
       const keys = Array.isArray(a.keys) ? (a.keys as unknown[]).map(String) : []
@@ -99,7 +107,8 @@ export function leaseConfirmPrompt(f: LeaseConfirmFacts): string {
     `Site: ${site}\n` +
     `Folder: ${escapeForConfirm(f.folder)}\n\n` +
     `The first thing it would do:\n  ${describeFirstAction(f)}\n\n` +
-    `Allow lets agents drive this pane until it has had no agent write for 10 minutes. ` +
+    `Allow lets agents drive this pane while it stays on ${site === '(nothing loaded)' ? 'this page' : escapeForConfirm(f.host)}, until it has had no agent write for 10 minutes. ` +
+    `If the pane moves to another site, this approval ends and you are asked again. ` +
     `The permission belongs to the pane, not to the agent that asked. ` +
     `Nothing happens when you Allow: the agent is told to look at the page and call again. ` +
     `What an agent types runs as you on this page. ` +

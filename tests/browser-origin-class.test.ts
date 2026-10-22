@@ -2,7 +2,13 @@
  * T568 (browser pane U1) — origin class (spec §1.2, §7.2): host-string classification only.
  */
 import { describe, it, expect } from 'vitest'
-import { classifyOrigin, hostOf, isLoopbackHost, scrubUrl } from '../src/main/browser/origin-class'
+import {
+  classifyOrigin,
+  hostOf,
+  isLoopbackHost,
+  originKey,
+  scrubUrl
+} from '../src/main/browser/origin-class'
 
 describe('classifyOrigin', () => {
   it('classifies the built-in dev hosts as local', () => {
@@ -89,5 +95,26 @@ describe('url helpers', () => {
     expect(isLoopbackHost('localhost')).toBe(true)
     expect(isLoopbackHost('127.0.0.1')).toBe(true)
     expect(isLoopbackHost('example.com')).toBe(false)
+  })
+})
+
+describe('originKey (the scope of a lease)', () => {
+  it('is scheme + host + port without path, query or fragment', () => {
+    expect(originKey('https://a.com/x?q=1#f')).toBe('https://a.com')
+    expect(originKey('https://a.com:443/y')).toBe('https://a.com')
+    expect(originKey('https://a.com:8443/')).toBe('https://a.com:8443')
+    expect(originKey('http://a.com/')).toBe('http://a.com')
+    expect(originKey('http://LOCALHOST:3000/app')).toBe('http://localhost:3000')
+  })
+  it('keeps userinfo out, and gives non-http addresses and junk their own keys', () => {
+    expect(originKey('https://user:pw@a.com/')).toBe('https://a.com')
+    expect(originKey('about:blank')).toBe('about:blank')
+    expect(originKey('')).toBe('')
+    expect(originKey('not a url')).toBe('')
+  })
+  it('tells different sites apart', () => {
+    expect(originKey('https://a.com/')).not.toBe(originKey('https://b.com/'))
+    expect(originKey('https://a.com/')).not.toBe(originKey('http://a.com/'))
+    expect(originKey('https://a.com/')).not.toBe(originKey('https://sub.a.com/'))
   })
 })

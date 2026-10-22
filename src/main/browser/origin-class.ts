@@ -106,3 +106,20 @@ export function hostOf(rawUrl: string): string {
     return ''
   }
 }
+
+/**
+ * The scope a lease is bound to (T571 Delta 2, spec §7.1): scheme + host + port of the page, never the path or query.
+ * `https://a.com/x` and `https://a.com/y?q=1` are one origin; `http://a.com` and `https://a.com`, or another port,
+ * are different ones. Anything that is not an http(s) address is its own key (`about:blank`), and an unparseable
+ * address is `''`.
+ */
+export function originKey(rawUrl: string): string {
+  if (rawUrl === '') return ''
+  try {
+    const u = new URL(rawUrl)
+    if (u.protocol === 'http:' || u.protocol === 'https:') return u.origin
+    return u.protocol === 'about:' ? rawUrl : `${u.protocol}//${u.host}`
+  } catch {
+    return ''
+  }
+}

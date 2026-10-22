@@ -52,6 +52,10 @@ export function shapeDenial(
   const at = ctx.folder ? ` (${ctx.folder})` : ''
   // T564 U1: the browser verbs' refusals carry their own hints.
   if (isBrowserDenialCode(result)) return shapeBrowserDenial(result, { folder: ctx.folder })
+  // T571: an operator pane must not be reloaded by the agent, so its hint says to ask.
+  if (result === 'PANE_INPUT_NOT_READY: operator-pane') {
+    return shapeBrowserDenial('PANE_INPUT_NOT_READY', { folder: ctx.folder, openedBy: 'operator' })
+  }
   // T571: a refused key press names the offending key in its detail.
   const browserKey = /^BROWSER_KEY_UNKNOWN: ([\s\S]*)$/.exec(result)
   if (browserKey)

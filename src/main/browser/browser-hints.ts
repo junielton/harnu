@@ -56,6 +56,8 @@ export interface BrowserHintContext {
   detail?: string
   /** `ELEMENT_NOT_VISIBLE`: the verb that asked, so the hint speaks of input and not of a capture. */
   during?: 'input'
+  /** `PANE_INPUT_NOT_READY`: who opened the pane. An agent may reload its own pane; an operator's page is theirs. */
+  openedBy?: 'agent' | 'operator'
 }
 
 export function shapeBrowserDenial(
@@ -304,22 +306,29 @@ export function shapeBrowserDenial(
           }
         ]
       }
-    case 'PANE_INPUT_NOT_READY':
+    case 'PANE_INPUT_NOT_READY': {
+      const operatorPane = ctx.openedBy === 'operator'
       return {
         error: code,
         message:
-          'Nothing was sent. This pane is still on the first page it loaded, and a pane does not take mouse clicks or key presses on its first page, so a click or a key press would have been acknowledged and ignored.',
+          'Nothing was sent. A pane does not take mouse clicks or key presses on the first page it loads, after it moves to another site (or from about:blank), or after a page redirects itself, until it is navigated again on the same site, so a click or a key press would have been acknowledged and ignored.',
         nextActions: [
-          {
-            do: 'Reload it with browser_navigate({ paneId, action: "reload" }), then browser_snapshot for fresh refs, and call again. Any later navigation fixes it.',
-            why: 'After the first navigation the pane delivers clicks and key presses, whether or not the operator is looking at it.'
-          },
+          operatorPane
+            ? {
+                do: 'Ask the operator to reload that pane (or to open another page in it), then browser_snapshot for fresh refs and call again. Do not reload it yourself.',
+                why: 'The operator opened this pane: a reload can lose what they have typed or the state they are in. After that the pane delivers clicks and key presses.'
+              }
+            : {
+                do: 'Reload it with browser_navigate({ paneId, action: "reload" }), then browser_snapshot for fresh refs, and call again. A reload (or navigating the same site again) fixes it.',
+                why: 'After that the pane delivers clicks and key presses, whether or not the operator is looking at it.'
+              },
           {
             do: 'browser_fill, a plain browser_type (no delayMs, no submit) and browser_eval work on the first page; use them if you do not need a click or a key.',
             why: 'They insert text and run script instead of sending mouse and key events.'
           }
         ]
       }
+    }
     case 'BROWSER_APPROVED_RESEND':
       return {
         error: code,
@@ -347,11 +356,11 @@ export function shapeBrowserDenial(
       return {
         error: code,
         message:
-          'Nothing was done. The operator’s lease on this pane ended before the call ran (it idled out, or the pane, the folder or the control switch changed).',
+          'Nothing was done. The operator’s lease on this pane ended before the call ran (it idled out, the pane moved to another site, or the pane, the folder or the control switch changed).',
         nextActions: [
           {
             do: 'Call the verb again: it will ask the operator for a new lease.',
-            why: 'A lease ends after 10 minutes without an agent write, on close, Disconnect, a folder block or the kill-switch.'
+            why: 'A lease ends after 10 minutes without an agent write, when the pane moves to another site (scheme, host or port), on close, Disconnect, a folder block or the kill-switch.'
           }
         ]
       }

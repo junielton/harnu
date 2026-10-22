@@ -1,4 +1,4 @@
-<!-- harnu-features v101 (2026-10-22) -->
+<!-- harnu-features v102 (2026-10-22) -->
 
 # You are running inside Harnu
 
@@ -828,7 +828,7 @@ the operator or another call used the pane during yours. Opening or navigating t
 pane had not shown (an `external` one) sets `flagged`, and the operator sees an "opened by agent"
 badge. `browser_list({ folder?, ownerSessionId? })` lists panes with `readable`, `writable`
 (`free`, `confirm`, `paused`, `revoked`, `off`) and a `writableReason` (`read-not-enabled`,
-`kill-switch`, `disconnected`, `paused`); `url` and `title` are `null` while `readable` is
+`kill-switch`, `write-denied`, `disconnected`, `paused`); `url` and `title` are `null` while `readable` is
 false, which is every pane the operator opened until their folder opts in. `browser_close({ paneId })`
 closes a pane. A pane the operator opened is refused `BROWSER_READ_NOT_ENABLED` until the operator turns on
 "Let agents read browser panes I open" for the folder; its writes then need a lease (see "Driving a browser pane").
@@ -913,22 +913,26 @@ pane run one at a time in order: `BROWSER_BUSY` (still waiting after 10 s, nothi
 `BROWSER_RATE_LIMIT` (more than 60 a minute) are not retries, they are a sign to slow down. Two identical
 calls act twice.
 
-**A pane's first page does not take clicks or key presses.** Measured on the real app: on the first document a
-pane ever loads, mouse and key events are acknowledged by the browser and not delivered, whether or not the
-operator is looking at the pane. So `browser_click`, `browser_press` and a `browser_type` that types key by key
-(`delayMs`) or presses Enter (`submit: true`) refuse `PANE_INPUT_NOT_READY` there, before anything is sent and
-before any confirm: you are never told a click worked when it did nothing. The fix is yours to make:
-`browser_navigate({ paneId, action: "reload" })` (any later navigation works), `browser_snapshot` for fresh refs,
-call again. `browser_fill`, a plain `browser_type` and `browser_eval` work on the first page. `browser_list`
-rows carry `inputReady` (false until that first navigation). The cause is not understood yet; treat this as the
-observed rule.
+**A pane drops clicks and key presses in some states.** Measured on the real app: mouse and key events are
+acknowledged by the browser and not delivered on the first page a pane loads, after it moves from `about:blank` to
+a site, after a move to another site (a different host or port), and after a page's own `location.replace`; they
+are delivered once Harnu navigates the pane again on the same site (a reload is enough), whether or not the
+operator is looking at it. So `browser_click`, `browser_press` and a `browser_type` that types key by key
+(`delayMs`) or presses Enter (`submit: true`) refuse `PANE_INPUT_NOT_READY` in those states, before anything is
+sent and before any confirm: you are never told a click worked when it did nothing. On a pane you opened the fix
+is yours: `browser_navigate({ paneId, action: "reload" })`, `browser_snapshot` for fresh refs, call again. On a
+pane the operator opened do not reload it (that can lose their page state): ask them. `browser_fill`, a plain
+`browser_type` and `browser_eval` work in every state. `browser_list` rows carry `inputReady`. The cause is not
+understood yet; treat this as the observed rule.
 
 **Who may do what.** On a `page` or `local` pane you opened (your dev server) these verbs are free. On an
 `external` page, or on any pane the operator opened, they are a **lease**: the first call raises the
 operator's confirm, which shows the pane, who opened it, the site and the first thing you would do. **An
 Allow performs nothing:** you get `BROWSER_APPROVED_RESEND`; call `browser_snapshot` to see the page as it
-is now, then call again. The lease then covers every writer on that pane until it has had no agent write
-for 10 minutes, or it is closed, disconnected, its folder is blocked or the kill-switch flips. A Deny is
+is now, then call again. The lease then covers every writer on that pane **while it stays on the site the operator saw** (scheme, host and
+port; other paths are fine) until it has had no agent write for 10 minutes, or it is closed, disconnected, its folder
+is blocked or the kill-switch flips. If the pane moves to another site the lease ends and the next lease-row call asks
+again. A Deny is
 `BROWSER_WRITE_DENIED` for 5 minutes with no new prompt: stop, open your own pane on a local dev server, or
 ask the operator. `BROWSER_LEASE_ENDED` means it lapsed between the check and the call: just call again. A
 mission grant or "always allow" never covers a lease row. The operator also decides which hosts count as

@@ -1001,7 +1001,7 @@
       "HAS_SCHEME_OR_PATH": "Type only the host name, without http:// or a path.",
       "HAS_PORT": "Leave the port out; it applies to every port.",
       "BAD_CHARACTERS": "Host names use letters, digits and hyphens.",
-      "WILDCARD_TOO_BROAD": "That wildcard is too broad. Use *.test, or name at least two labels.",
+      "WILDCARD_TOO_BROAD": "That wildcard is too broad. Use *.test, or a base of at least three labels like *.dev.example.org.",
       "WILDCARD_POSITION": "A wildcard can only start the name, like *.test.",
       "DUPLICATE": "Already in the list.",
       "LIST_FULL": "The list is full."

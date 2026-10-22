@@ -33,6 +33,16 @@ describe('BrowserLeases', () => {
     expect(leases.isActive('bp-1', 'v1')).toBe(false)
   })
 
+  it('noteToken ends a lease whose token changed (a commit to another origin) and leaves a matching one alone', () => {
+    const { leases } = rig()
+    leases.grant('bp-1', '/w', '7|https://a.example.com')
+    leases.noteToken('bp-1', '7|https://a.example.com')
+    expect(leases.isActive('bp-1', '7|https://a.example.com')).toBe(true)
+    leases.noteToken('bp-1', '7|https://b.example.com')
+    expect(leases.activeIds()).toEqual([])
+    leases.noteToken('bp-9', '7|https://b.example.com') // no lease: nothing happens
+  })
+
   it('noteWrite without a lease does nothing', () => {
     const { leases } = rig()
     leases.noteWrite('bp-1')

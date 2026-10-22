@@ -146,6 +146,7 @@ import { terminalRegistry } from '../terminal-registry'
 import { auditField } from '../terminal-keys'
 import { terminalWriteQueue } from '../terminal-write-queue'
 import { escapeForConfirm, shortPaneId } from '../terminal-confirm-text'
+import { scrubTerminalText } from '../scrub-terminal'
 import { shapeDenial } from './deny-hint'
 import { isFolderDenied } from './permission-core'
 import { previewWorktreeCommands, worktreeInheritOfferForTarget } from '../worktree-ipc'
@@ -1624,7 +1625,9 @@ async function browserLeasePrompt(
     host: hostOf(live?.url ?? ''),
     originClass: classifyOrigin(live?.url ?? '', browserClassifyOptions(rec?.folder ?? folder)),
     folder: tilde(rec?.folder ?? folder),
-    target
+    target,
+    // The audit's own scrubber, so the confirm and the log never differ.
+    scrub: (text) => scrubTerminalText(text, home)
   })
 }
 
@@ -1651,9 +1654,14 @@ async function grantBrowserLease(
   const token = getBrowserHost().viewToken(paneId)
   // The operator answered about ONE view. If the id now names a different page (restored under the same id),
   // that Allow says nothing about the new one.
-  if (!rec || token === undefined || parkedViewToken === undefined || token !== parkedViewToken) {
+  if (!rec || token === undefined || parkedViewToken === undefined) {
     return steerError('PANE_NOT_FOUND', folder)
   }
+  if (token.split('|')[0] !== parkedViewToken.split('|')[0])
+    return steerError('PANE_NOT_FOUND', folder)
+  // Same view, other site: the Allow was shown for the page the pane was on when it asked (spec §7.1, amended
+  // 2026-10-22), and says nothing about this one.
+  if (token !== parkedViewToken) return steerError('BROWSER_LEASE_ENDED', folder)
   const denyFolders = (await readUserProjects()).projects
     .filter((p) => p.agentDenied === true)
     .map((p) => p.path)
