@@ -4,7 +4,7 @@
  *
  * It must never import the app preload (`./index`): the guest has no `window.api`. It does, and only does:
  *
- *  1. (later unit) boot the point-and-comment overlay into a closed shadow root, in every origin class;
+ *  1. boot the point-and-comment overlay (`./overlay`, T564 U6) into a closed shadow root, in every origin class;
  *  2. IF AND ONLY IF `location.protocol === 'harnu-page:'`, expose the `harnu` page API (spec §5.3) through
  *     `contextBridge.exposeInMainWorld`. A `local` or `external` page gets no API at all (decision 10);
  *  3. talk to main over a PRIVATE channel set that main accepts only from this guest's own `webContents`, and
@@ -12,7 +12,8 @@
  *
  * The channel names are duplicated here on purpose: a sandboxed preload cannot import main code.
  */
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webFrame } from 'electron'
+import { bootOverlay } from './overlay'
 
 const CHANNEL_GET_DATA = 'harnu:page:getData'
 const CHANNEL_EMIT = 'harnu:page:emit'
@@ -98,3 +99,19 @@ function bootHarnuApi(): void {
 }
 
 if (location.protocol === 'harnu-page:') bootHarnuApi()
+
+// The overlay's own half of the private channels lives in `./overlay` (spec §8.2). Top frame only: a sub-frame is
+// the page's own business, and main accepts the overlay channels only from the top frame anyway.
+if (window === window.top) {
+  bootOverlay({
+    win: window,
+    doc: document,
+    ipc: {
+      invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+      send: (channel, ...args) => ipcRenderer.send(channel, ...args),
+      on: (channel, listener) =>
+        void ipcRenderer.on(channel, (event, ...args) => listener(event, ...args))
+    },
+    world: webFrame
+  })
+}

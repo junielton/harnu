@@ -117,10 +117,19 @@ export interface GuestPin {
   rect: OverlayRect
 }
 
+/** The app theme's overlay colours, so the page layers match it. Validated by main before they are forwarded. */
+export interface OverlayTheme {
+  accent: string
+  accentInk: string
+}
+
+export const DEFAULT_OVERLAY_THEME: OverlayTheme = { accent: '#7aa2f7', accentInk: '#0b0e1a' }
+
 export interface OverlayGuestState {
   active: boolean
   /** The hint pill text, already localised by the app. */
   hint: string
+  theme: OverlayTheme
   pins: GuestPin[]
 }
 
@@ -161,6 +170,15 @@ export type CommentSubmitResult =
   | { ok: true; delivered: true; count: number; sessionId: string; woke: boolean }
   | { ok: true; delivered: false; held: true; count: number; copied: boolean }
   | { ok: false; error: CommentSubmitError; detail?: string }
+
+/** A CSS colour the app's theme can hold: `#rgb[a]`, `#rrggbb[aa]`, or `rgb[a](…)` of plain numbers. */
+export function isSafeColor(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= 40 &&
+    (/^#[0-9a-fA-F]{3,8}$/.test(value) || /^rgba?\(\s*[\d.\s,%/]+\)$/.test(value))
+  )
+}
 
 /* ---- URL scrub (spec §8.3) ---------------------------------------------------------------------- */
 
