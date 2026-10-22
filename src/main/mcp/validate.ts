@@ -20,6 +20,8 @@
 
 import * as path from 'node:path'
 import { z } from 'zod'
+import { compileUrlPattern } from '../browser/wait-for'
+import { DEVICE_PRESET_NAMES, type DevicePresetName } from '../../shared/browser-emulation'
 import { sanitizeAgentBootOverride, type AgentBootOverride } from './agent-boot'
 import { SAFE_GRANT_VERBS, toolByName, type McpOp } from './tool-catalog'
 import { MESSAGE_MAX_CHARS } from '../messaging-socket'
@@ -1258,6 +1260,574 @@ function parseMissionVerb(op: McpOp): (input: unknown) => ParseResult<Record<str
   }
 }
 
+/* T564 U1: the browser verbs. Validation here is STRUCTURAL; the scheme, the pane cap and the access rules
+ * are judged by `browser/verbs-core` and `browser/access`. */
+
+/** Validated args for `browser_open` (url form; `path`/`html`/`device` parse but refuse later). */
+export interface BrowserOpenArgs {
+  folder: string
+  url?: string
+  path?: string
+  html?: string
+  name?: string
+  ownerSessionId?: string
+  device?: DevicePresetName
+  background?: boolean
+}
+
+const BrowserOpenSchema = z.object({
+  folder: absolutePathSchema,
+  url: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+  html: z.string().optional(),
+  name: z.string().min(1).max(80).optional(),
+  ownerSessionId: z.string().min(1).optional(),
+  device: z.enum(DEVICE_PRESET_NAMES as [DevicePresetName, ...DevicePresetName[]]).optional(),
+  background: z.boolean().optional()
+})
+
+export function parseBrowserOpen(input: unknown): ParseResult<BrowserOpenArgs> {
+  const parsed = BrowserOpenSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: BrowserOpenArgs = { folder: parsed.data.folder }
+  for (const key of ['url', 'path', 'html', 'name', 'ownerSessionId'] as const) {
+    if (parsed.data[key] !== undefined) value[key] = parsed.data[key]
+  }
+  if (parsed.data.device !== undefined) value.device = parsed.data.device
+  if (parsed.data.background !== undefined) value.background = parsed.data.background
+  return { ok: true, value }
+}
+
+/** Validated args for `browser_list`: both filters optional. */
+export interface BrowserListArgs {
+  folder?: string
+  ownerSessionId?: string
+}
+
+const BrowserListSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  ownerSessionId: z.string().min(1).optional()
+})
+
+export function parseBrowserList(input: unknown): ParseResult<BrowserListArgs> {
+  const parsed = BrowserListSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: BrowserListArgs = {}
+  if (parsed.data.folder !== undefined) value.folder = parsed.data.folder
+  if (parsed.data.ownerSessionId !== undefined) value.ownerSessionId = parsed.data.ownerSessionId
+  return { ok: true, value }
+}
+
+/** Validated args for `browser_navigate`. `folder` is the pane's own folder, resolved by the shell. */
+export interface BrowserNavigateArgs {
+  folder?: string
+  paneId: string
+  url?: string
+  action?: 'back' | 'forward' | 'reload' | 'stop'
+  hard?: boolean
+  waitUntil?: 'commit' | 'domcontentloaded' | 'load'
+  timeoutMs?: number
+}
+
+const BrowserNavigateSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: z.string().min(1),
+  url: z.string().min(1).optional(),
+  action: z.enum(['back', 'forward', 'reload', 'stop']).optional(),
+  hard: z.boolean().optional(),
+  waitUntil: z.enum(['commit', 'domcontentloaded', 'load']).optional(),
+  timeoutMs: z.number().int().min(100).max(90000).optional()
+})
+
+export function parseBrowserNavigate(input: unknown): ParseResult<BrowserNavigateArgs> {
+  const parsed = BrowserNavigateSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const d = parsed.data
+  const value: BrowserNavigateArgs = { paneId: d.paneId }
+  if (d.folder !== undefined) value.folder = d.folder
+  if (d.url !== undefined) value.url = d.url
+  if (d.action !== undefined) value.action = d.action
+  if (d.hard !== undefined) value.hard = d.hard
+  if (d.waitUntil !== undefined) value.waitUntil = d.waitUntil
+  if (d.timeoutMs !== undefined) value.timeoutMs = d.timeoutMs
+  return { ok: true, value }
+}
+
+/** Validated args for `browser_close`. */
+export interface BrowserCloseArgs {
+  folder?: string
+  paneId: string
+}
+
+const BrowserCloseSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: z.string().min(1)
+})
+
+export function parseBrowserClose(input: unknown): ParseResult<BrowserCloseArgs> {
+  const parsed = BrowserCloseSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: BrowserCloseArgs = { paneId: parsed.data.paneId }
+  if (parsed.data.folder !== undefined) value.folder = parsed.data.folder
+  return { ok: true, value }
+}
+
+/* ---- T564 U3: the reading verbs. Every bound is checked HERE, at parse time, so a bad call is refused before
+ * the kill-switch and before any confirm in `ask` mode (spec §6.3). ---- */
+
+const paneIdSchema = z.string().min(1).max(80)
+const consoleLevelSchema = z.enum(['debug', 'log', 'info', 'warn', 'error'])
+
+/** Validated args for `browser_snapshot`. */
+export interface BrowserSnapshotArgs {
+  folder?: string
+  paneId: string
+  selector?: string
+  interactiveOnly?: boolean
+  maxNodes?: number
+  include?: Array<'data'>
+  frames?: boolean
+}
+
+const BrowserSnapshotSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  selector: z.string().min(1).max(1000).optional(),
+  interactiveOnly: z.boolean().optional(),
+  maxNodes: z.number().int().min(1).max(2000).optional(),
+  include: z
+    .array(z.enum(['data']))
+    .max(1)
+    .optional(),
+  frames: z.boolean().optional()
+})
+
+export function parseBrowserSnapshot(input: unknown): ParseResult<BrowserSnapshotArgs> {
+  const parsed = BrowserSnapshotSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserSnapshotArgs }
+}
+
+/** Validated args for `browser_screenshot`. */
+export interface BrowserScreenshotArgs {
+  folder?: string
+  paneId: string
+  ref?: string
+  selector?: string
+  fullPage?: boolean
+  format?: 'png' | 'jpeg'
+  quality?: number
+  maxDim?: number
+  save?: boolean
+}
+
+const BrowserScreenshotSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    paneId: paneIdSchema,
+    ref: z.string().min(1).max(40).optional(),
+    selector: z.string().min(1).max(1000).optional(),
+    fullPage: z.boolean().optional(),
+    format: z.enum(['png', 'jpeg']).optional(),
+    quality: z.number().int().min(1).max(100).optional(),
+    maxDim: z.number().int().min(1).max(1568).optional(),
+    save: z.boolean().optional()
+  })
+  .refine((v) => v.ref === undefined || v.selector === undefined, {
+    message: 'pass `ref` or `selector`, not both'
+  })
+  .refine((v) => v.fullPage !== true || (v.ref === undefined && v.selector === undefined), {
+    message: '`fullPage` cannot be combined with `ref` or `selector`'
+  })
+
+export function parseBrowserScreenshot(input: unknown): ParseResult<BrowserScreenshotArgs> {
+  const parsed = BrowserScreenshotSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserScreenshotArgs }
+}
+
+/** Validated args for `browser_console`. */
+export interface BrowserConsoleArgs {
+  folder?: string
+  paneId: string
+  mode?: 'tail' | 'since'
+  lines?: number
+  since?: string
+  levels?: Array<'debug' | 'log' | 'info' | 'warn' | 'error'>
+  clear?: boolean
+}
+
+const BrowserConsoleSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    paneId: paneIdSchema,
+    mode: z.enum(['tail', 'since']).optional(),
+    lines: z.number().int().min(1).max(500).optional(),
+    since: z.string().min(1).max(40).optional(),
+    levels: z.array(consoleLevelSchema).max(5).optional(),
+    clear: z.boolean().optional()
+  })
+  .refine((v) => v.mode !== 'since' || v.since !== undefined, {
+    message: '`mode: "since"` needs the `since` cursor'
+  })
+
+export function parseBrowserConsole(input: unknown): ParseResult<BrowserConsoleArgs> {
+  const parsed = BrowserConsoleSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserConsoleArgs }
+}
+
+/** Validated args for `browser_network`. */
+export interface BrowserNetworkArgs {
+  folder?: string
+  paneId: string
+  action: 'start' | 'read' | 'stop'
+  maxMinutes?: number
+  bodies?: boolean
+  headers?: boolean
+  filter?: string
+  since?: string
+  limit?: number
+}
+
+const BrowserNetworkSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  action: z.enum(['start', 'read', 'stop']),
+  maxMinutes: z.number().int().min(1).max(30).optional(),
+  bodies: z.boolean().optional(),
+  headers: z.boolean().optional(),
+  filter: z.string().min(1).max(200).optional(),
+  since: z.string().min(1).max(40).optional(),
+  limit: z.number().int().min(1).max(500).optional()
+})
+
+export function parseBrowserNetwork(input: unknown): ParseResult<BrowserNetworkArgs> {
+  const parsed = BrowserNetworkSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserNetworkArgs }
+}
+
+/** Validated args for `browser_wait_for`. */
+export interface BrowserWaitForArgs {
+  folder?: string
+  paneId: string
+  selector?: string
+  text?: string
+  textGone?: string
+  url?: string
+  networkIdleMs?: number
+  timeoutMs?: number
+}
+
+const BrowserWaitForSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    paneId: paneIdSchema,
+    selector: z.string().min(1).max(1000).optional(),
+    text: z.string().min(1).max(1000).optional(),
+    textGone: z.string().min(1).max(1000).optional(),
+    url: z.string().min(1).max(200).optional(),
+    networkIdleMs: z.number().int().min(50).max(30000).optional(),
+    timeoutMs: z.number().int().min(100).max(90000).optional()
+  })
+  .refine(
+    (v) => [v.selector, v.text, v.textGone, v.url, v.networkIdleMs].some((c) => c !== undefined),
+    { message: 'pass at least one of selector, text, textGone, url, networkIdleMs' }
+  )
+  .refine((v) => v.url === undefined || compileUrlPattern(v.url) !== null, {
+    message:
+      '`url` must be a valid regex of at most 200 characters, without a repetition inside a repeated group, an alternation inside a repeated group, or more than 3 repetition operators'
+  })
+
+export function parseBrowserWaitFor(input: unknown): ParseResult<BrowserWaitForArgs> {
+  const parsed = BrowserWaitForSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserWaitForArgs }
+}
+
+/* ---- T571 (T564 U4): the acting verbs. Bounds are checked HERE, at parse time, so a bad call is refused before
+ * the kill-switch and before any confirm in `ask` mode (spec §6.3). The key vocabulary is judged by
+ * `browser/content-check` in the same slot. ---- */
+
+const refSchema = z.string().min(1).max(40)
+
+/** Validated args for `browser_eval`. */
+export interface BrowserEvalArgs {
+  folder?: string
+  paneId: string
+  expression: string
+  awaitPromise?: boolean
+  frame?: string
+  timeoutMs?: number
+}
+
+const BrowserEvalSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  expression: z.string().min(1).max(100_000),
+  awaitPromise: z.boolean().optional(),
+  frame: z.string().min(1).max(200).optional(),
+  timeoutMs: z.number().int().min(100).max(30_000).optional()
+})
+
+export function parseBrowserEval(input: unknown): ParseResult<BrowserEvalArgs> {
+  const parsed = BrowserEvalSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserEvalArgs }
+}
+
+/** Validated args for `browser_click`. */
+export interface BrowserClickArgs {
+  folder?: string
+  paneId: string
+  ref: string
+  button?: 'left' | 'middle' | 'right'
+  clickCount?: number
+  modifiers?: Array<'Alt' | 'Control' | 'Meta' | 'Shift'>
+  offset?: { x: number; y: number }
+}
+
+const BrowserClickSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  ref: refSchema,
+  button: z.enum(['left', 'middle', 'right']).optional(),
+  clickCount: z.number().int().min(1).max(3).optional(),
+  modifiers: z
+    .array(z.enum(['Alt', 'Control', 'Meta', 'Shift']))
+    .max(4)
+    .optional(),
+  offset: z.object({ x: z.number().finite(), y: z.number().finite() }).optional()
+})
+
+export function parseBrowserClick(input: unknown): ParseResult<BrowserClickArgs> {
+  const parsed = BrowserClickSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserClickArgs }
+}
+
+/** Validated args for `browser_type`. */
+export interface BrowserTypeArgs {
+  folder?: string
+  paneId: string
+  ref?: string
+  text: string
+  delayMs?: number
+  submit?: boolean
+}
+
+const BrowserTypeSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  ref: refSchema.optional(),
+  text: z.string().min(1).max(4000),
+  delayMs: z.number().int().min(0).max(1000).optional(),
+  submit: z.boolean().optional()
+})
+
+export function parseBrowserType(input: unknown): ParseResult<BrowserTypeArgs> {
+  const parsed = BrowserTypeSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserTypeArgs }
+}
+
+/** Validated args for `browser_fill`. */
+export interface BrowserFillArgs {
+  folder?: string
+  paneId: string
+  fields: Array<{ ref: string; value: string }>
+}
+
+const BrowserFillSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  fields: z
+    .array(z.object({ ref: refSchema, value: z.string().max(4000) }))
+    .min(1)
+    .max(20)
+})
+
+export function parseBrowserFill(input: unknown): ParseResult<BrowserFillArgs> {
+  const parsed = BrowserFillSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserFillArgs }
+}
+
+/** Validated args for `browser_press`. */
+export interface BrowserPressArgs {
+  folder?: string
+  paneId: string
+  keys: string[]
+  ref?: string
+}
+
+const BrowserPressSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  // A key name is judged by `checkBrowserContent` (BROWSER_KEY_UNKNOWN); the length bound only keeps it small.
+  keys: z.array(z.string().min(1).max(64)).min(1).max(64),
+  ref: refSchema.optional()
+})
+
+export function parseBrowserPress(input: unknown): ParseResult<BrowserPressArgs> {
+  const parsed = BrowserPressSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserPressArgs }
+}
+
+/* ---- T572 (T564 U5): emulate, upload, download. Shapes are checked here; the ranges and the cross-argument rules
+ * (`device` xor a free size, zoom in device mode, forbidden upload names, http(s) only) are judged by
+ * `browser/content-check` in the same §6.3 slot, so the refusal can say what is wrong. ---- */
+
+/** Validated args for `browser_emulate`. */
+export interface BrowserEmulateArgs {
+  folder?: string
+  paneId: string
+  zoom?: number
+  device?: string
+  width?: number
+  height?: number
+  dpr?: number
+  mobile?: boolean
+  touch?: boolean
+  userAgent?: string
+  colorScheme?: 'light' | 'dark'
+  reducedMotion?: boolean
+  reset?: boolean
+}
+
+const BrowserEmulateSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  zoom: z.number().finite().optional(),
+  device: z.string().max(40).optional(),
+  width: z.number().finite().optional(),
+  height: z.number().finite().optional(),
+  dpr: z.number().finite().optional(),
+  mobile: z.boolean().optional(),
+  touch: z.boolean().optional(),
+  userAgent: z.string().max(512).optional(),
+  colorScheme: z.enum(['light', 'dark']).optional(),
+  reducedMotion: z.boolean().optional(),
+  reset: z.boolean().optional()
+})
+
+export function parseBrowserEmulate(input: unknown): ParseResult<BrowserEmulateArgs> {
+  const parsed = BrowserEmulateSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserEmulateArgs }
+}
+
+/** Validated args for `browser_upload`. */
+export interface BrowserUploadArgs {
+  folder?: string
+  paneId: string
+  ref: string
+  paths: string[]
+}
+
+const BrowserUploadSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  ref: refSchema,
+  // The count and the names are judged by `checkBrowserContent` (BAD_ARGS / UPLOAD_PATH_DENIED).
+  paths: z.array(z.string().min(1).max(4096)).min(1).max(10)
+})
+
+export function parseBrowserUpload(input: unknown): ParseResult<BrowserUploadArgs> {
+  const parsed = BrowserUploadSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserUploadArgs }
+}
+
+/** Validated args for `browser_download`. */
+export interface BrowserDownloadArgs {
+  folder?: string
+  paneId: string
+  url?: string
+  ref?: string
+  name?: string
+  timeoutMs?: number
+}
+
+const BrowserDownloadSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: paneIdSchema,
+  url: z.string().min(1).max(4096).optional(),
+  ref: refSchema.optional(),
+  name: z.string().min(1).max(200).optional(),
+  timeoutMs: z.number().int().min(1000).max(30_000).optional()
+})
+
+export function parseBrowserDownload(input: unknown): ParseResult<BrowserDownloadArgs> {
+  const parsed = BrowserDownloadSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: dropUndefined(parsed.data) as BrowserDownloadArgs }
+}
+
+/** Validated args for `browser_set_data` (T569 U2). `data` may be any JSON value, including `null`. */
+export interface BrowserSetDataArgs {
+  folder?: string
+  paneId: string
+  data: unknown
+  merge?: boolean
+  expectRev?: number
+}
+
+const BrowserSetDataSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: z.string().min(1),
+  data: z.unknown(),
+  merge: z.boolean().optional(),
+  expectRev: z.number().int().min(0).optional()
+})
+
+export function parseBrowserSetData(input: unknown): ParseResult<BrowserSetDataArgs> {
+  const parsed = BrowserSetDataSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const d = parsed.data
+  if (!('data' in (input as object)) || d.data === undefined) {
+    return { ok: false, error: 'BAD_ARGS', detail: '`data` is required (any JSON value).' }
+  }
+  const value: BrowserSetDataArgs = { paneId: d.paneId, data: d.data }
+  if (d.folder !== undefined) value.folder = d.folder
+  if (d.merge !== undefined) value.merge = d.merge
+  if (d.expectRev !== undefined) value.expectRev = d.expectRev
+  return { ok: true, value }
+}
+
+/** Validated args for `browser_patch` (T569 U2). */
+export interface BrowserPatchArgs {
+  folder?: string
+  paneId: string
+  selector: string
+  mode: 'inner' | 'outer' | 'append' | 'prepend' | 'remove'
+  html?: string
+}
+
+const BrowserPatchSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  paneId: z.string().min(1),
+  selector: z.string().min(1).max(1000),
+  mode: z.enum(['inner', 'outer', 'append', 'prepend', 'remove']),
+  html: z.string().optional()
+})
+
+export function parseBrowserPatch(input: unknown): ParseResult<BrowserPatchArgs> {
+  const parsed = BrowserPatchSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const d = parsed.data
+  const value: BrowserPatchArgs = { paneId: d.paneId, selector: d.selector, mode: d.mode }
+  if (d.folder !== undefined) value.folder = d.folder
+  if (d.html !== undefined) value.html = d.html
+  return { ok: true, value }
+}
+
+function dropUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>
+}
+
 /**
  * Router-side dispatch table: validate the args for a given {@link McpOp}.
  * Every op maps to exactly ONE parser — a `Record<McpOp, …>` rather than a
@@ -1275,6 +1845,25 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   list_terminals: parseListTerminals,
   read_terminal: parseReadTerminal,
   send_terminal: parseSendTerminal,
+  browser_open: parseBrowserOpen,
+  browser_list: parseBrowserList,
+  browser_navigate: parseBrowserNavigate,
+  browser_close: parseBrowserClose,
+  browser_snapshot: parseBrowserSnapshot,
+  browser_screenshot: parseBrowserScreenshot,
+  browser_console: parseBrowserConsole,
+  browser_network: parseBrowserNetwork,
+  browser_wait_for: parseBrowserWaitFor,
+  browser_eval: parseBrowserEval,
+  browser_click: parseBrowserClick,
+  browser_type: parseBrowserType,
+  browser_fill: parseBrowserFill,
+  browser_press: parseBrowserPress,
+  browser_emulate: parseBrowserEmulate,
+  browser_upload: parseBrowserUpload,
+  browser_download: parseBrowserDownload,
+  browser_set_data: parseBrowserSetData,
+  browser_patch: parseBrowserPatch,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

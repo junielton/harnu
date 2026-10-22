@@ -73,7 +73,10 @@ Four substrates are real candidates:
   deliberately exempt and may clip under a view.
 - **A visible cost, accepted.** While a layer overlaps a pane the operator sees a still image, not the live
   page. The page keeps running; agent verbs keep working. If `capturePage()` is slow the pane will visibly
-  flicker under menus; budget 100 ms at 1280×800 (spec assumption A12), proven in the spike. Toasts are the
+  flicker under menus; budget 100 ms at 1280×800 (spec assumption A12). The U0 spike measured it: it holds at
+  DPR 1 as capture plus PNG encode (38–80 ms), but at DPR 2 PNG was 146 ms on X11 and 312 ms on Wayland, past
+  the ~250 ms re-open trigger below. Encoding the freeze as JPEG instead brings it to 8 ms at DPR 1 and 21–28 ms
+  at DPR 2, so D-3 stands (spec §2.4, §13.5). Toasts are the
   frequent case; the operator accepted it (spec Q13) rather than making toasts avoid pane rects.
 - **Drags freeze every visible view.** Without that, the pointer enters the native view during a splitter
   drag and the renderer stops receiving `pointermove`.
@@ -86,14 +89,17 @@ Four substrates are real candidates:
 - **`pane-registry.ts` gets a `browser` entry that cannot use `maxInstances`.** The registry's cap recycles the
   _oldest_ pane silently; an agent hitting the cap must be **refused** ("reuse one"), so the cap lives in the
   verb handler (spec §2.2).
-- **Pixel verbs on a hidden view are an open dependency.** Screenshots of a pane that was never shown rely on
-  `capturePage` or CDP `Page.captureScreenshot` working with throttling lifted (assumption A3). If that
-  fails, the fallback is a briefly shown view or an off-screen window, which changes §2.3.
+- **Pixel verbs need a view that has painted.** U0 (assumption A3) found that a view that was never shown
+  cannot be captured at all: `capturePage` returns an empty image and CDP `Page.captureScreenshot` times out, for
+  a hidden-from-birth view, an off-screen rect, a `show: false` window and an `offscreen` view alike, with
+  throttling lifted or not. A view hidden **after** it painted still captures with `capturePage`. So a pane with
+  no real rect yet is parked visible at 1×1 with a 1280×800 metrics override (spec §2.3), which changes §2.3 as
+  the fallback here anticipated; an off-screen window is not an option (Wayland ignores window positions).
 - **The window prefs the guest must not inherit are named.** `createWindow` has `sandbox: false` and
   `autoplayPolicy: 'no-user-gesture-required'`; the guest set differs on both (spec §3.1), so a future edit to
   the app window cannot loosen the guest by accident.
-- **DevTools coexists with the debugger only if assumption A4 holds.** If it does not, the DevTools button
-  detaches the CDP session and verbs refuse while it is open.
+- **DevTools coexists with the debugger (assumption A4, proven in U0).** Attaching the debugger and opening
+  DevTools worked in both orders with no detach event, so the DevTools button does not touch the CDP session.
 - **Reversibility.** The pane type, the verbs and the protocol do not depend on the substrate beyond
   `setBounds` and `capturePage`. If the freeze proves unacceptable in the spike, the decision to re-open is
   D-3 only, not D-1.

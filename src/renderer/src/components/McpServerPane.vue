@@ -166,6 +166,26 @@ async function loadAgentTerminalWrites(): Promise<void> {
   }
 }
 
+// T564 U1: the browser kill-switch. Default ON; off refuses every browser write verb.
+const agentBrowserWrites = ref(true)
+
+async function loadAgentBrowserWrites(): Promise<void> {
+  try {
+    agentBrowserWrites.value = await window.api.mcpAgentBrowserWritesGet()
+  } catch {
+    agentBrowserWrites.value = true // default ON
+  }
+}
+
+async function toggleAgentBrowserWrites(next: boolean): Promise<void> {
+  agentBrowserWrites.value = next // optimistic
+  try {
+    agentBrowserWrites.value = await window.api.mcpAgentBrowserWritesSet(next)
+  } catch {
+    agentBrowserWrites.value = !next // revert
+  }
+}
+
 async function toggleAgentTerminalWrites(next: boolean): Promise<void> {
   agentTerminalWrites.value = next // optimistic
   try {
@@ -212,6 +232,7 @@ onMounted(() => {
   void loadProjects()
   void loadAsk()
   void loadAgentTerminalWrites()
+  void loadAgentBrowserWrites()
   void loadAutoRegister()
   // Light poll keeps the connection dot + audit log fresh while the pane is open.
   pollTimer = setInterval(() => {
@@ -321,6 +342,22 @@ const eyebrowStyle =
           :model-value="agentTerminalWrites"
           :aria-label="$t('mcpServer.agentTerminalWrites')"
           @update:model-value="toggleAgentTerminalWrites($event)"
+        />
+      </div>
+
+      <!-- T564 U1: the browser kill-switch. Default ON; off refuses every browser write verb. -->
+      <div class="flex items-start justify-between" style="gap: 12px; margin-top: 14px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ $t('mcpServer.agentBrowserWrites') }}
+          </div>
+          <SettingHint>{{ $t('mcpServer.agentBrowserWritesHint') }}</SettingHint>
+        </div>
+        <ToggleSwitch
+          :model-value="agentBrowserWrites"
+          :aria-label="$t('mcpServer.agentBrowserWrites')"
+          data-testid="mcp-agent-browser-writes"
+          @update:model-value="toggleAgentBrowserWrites($event)"
         />
       </div>
     </section>

@@ -251,7 +251,7 @@ describe('AC-B1-3 — spawn_terminal is not replayable', () => {
     expect(beginCall(callIdFor(def, folderA, args)!)).toMatchObject({ status: 'applied' })
   })
 
-  it('a read never goes through the registry, and only the two terminal mutations opt out', () => {
+  it('a read never goes through the registry, and only the terminal and browser writes opt out', () => {
     expect(
       callIdFor(
         MCP_TOOLS.find((t) => t.op === 'list_terminals')!,
@@ -261,7 +261,26 @@ describe('AC-B1-3 — spawn_terminal is not replayable', () => {
     ).toBeUndefined()
     expect(MCP_TOOLS.filter((t) => t.replayable === false).map((t) => t.op)).toEqual([
       'spawn_terminal',
-      'send_terminal'
+      'send_terminal',
+      // T564 U1: two identical browser writes act twice (spec §6): a replay would swallow the second.
+      'browser_open',
+      'browser_navigate',
+      'browser_close',
+      // T570: start/stop change the pane; two identical calls must both act.
+      'browser_network',
+      // T571 (U4): two identical acting calls act twice.
+      'browser_eval',
+      'browser_click',
+      'browser_type',
+      'browser_fill',
+      'browser_press',
+      // T572 (U5): emulate, upload and download are writes too.
+      'browser_emulate',
+      'browser_upload',
+      'browser_download',
+      // T569 U2: two identical writes to a live panel write twice.
+      'browser_set_data',
+      'browser_patch'
     ])
   })
 })

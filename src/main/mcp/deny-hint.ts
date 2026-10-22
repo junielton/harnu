@@ -19,6 +19,13 @@
  * only reachable in the opt-in guarded (`ask`) mode now (`permission-core.ts`).
  */
 
+import {
+  BROWSER_DETAIL_CODES,
+  isBrowserDenialCode,
+  shapeBrowserDenial,
+  type BrowserDenialCode
+} from '../browser/browser-hints'
+
 /** One concrete way for the agent to progress (a verb to call, or a human ask). */
 export interface NextAction {
   /** What to do — an MCP verb to call, or an operator action to request. */
@@ -48,6 +55,37 @@ export function shapeDenial(
   ctx: { folder?: string; syntheticId?: string } = {}
 ): SteerableDenial | null {
   const at = ctx.folder ? ` (${ctx.folder})` : ''
+  // T564 U1: the browser verbs' refusals carry their own hints.
+  if (isBrowserDenialCode(result)) return shapeBrowserDenial(result, { folder: ctx.folder })
+  // T571: an operator pane must not be reloaded by the agent, so its hint says to ask.
+  if (result === 'PANE_INPUT_NOT_READY: operator-pane') {
+    return shapeBrowserDenial('PANE_INPUT_NOT_READY', { folder: ctx.folder, openedBy: 'operator' })
+  }
+  // T571: a refused key press names the offending key in its detail.
+  const browserDetail = new RegExp(`^(${BROWSER_DETAIL_CODES.join('|')}): ([\\s\\S]*)$`).exec(
+    result
+  )
+  if (browserDetail)
+    return shapeBrowserDenial(browserDetail[1] as BrowserDenialCode, {
+      folder: ctx.folder,
+      detail: browserDetail[2]!
+    })
+  // T574: the plan-level pane cap names the panes to reuse.
+  const paneLimit = /^PANE_LIMIT: ([A-Za-z0-9_,-]*)$/.exec(result)
+  if (paneLimit) {
+    return shapeBrowserDenial('PANE_LIMIT', {
+      folder: ctx.folder,
+      reusablePaneIds: paneLimit[1] ? paneLimit[1].split(',') : []
+    })
+  }
+  // T569 F6: a plan-level path refusal names which jail rule it hit.
+  const pathRefusal = /^PATH_NOT_ALLOWED: ([a-z-]*)$/.exec(result)
+  if (pathRefusal) {
+    return shapeBrowserDenial('PATH_NOT_ALLOWED', {
+      folder: ctx.folder,
+      ...(pathRefusal[1] ? { jailReason: pathRefusal[1] } : {})
+    })
+  }
   // T482 B5: a refused send names the offending key or line in its detail.
   const content = /^(KEY_UNKNOWN|INPUT_TOO_LARGE|WAIT_PATTERN_INVALID): ([\s\S]*)$/.exec(result)
   if (content) {

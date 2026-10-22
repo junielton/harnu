@@ -10,7 +10,12 @@ import type {
   ExplorerEntry,
   ExplorerListing,
   ExplorerSearchResult,
-  ExtensionThemeWire
+  ExtensionThemeWire,
+  BrowserActivityWord,
+  BrowserNotice,
+  BrowserOverlayRect,
+  BrowserPaneState,
+  BrowserRect
 } from './index'
 
 // Re-export the preload's public types so the renderer can pull everything
@@ -19,6 +24,11 @@ import type {
 // `index.ts` itself, so this barrel is the single seam between the two
 // processes' type worlds.
 export type {
+  BrowserActivityWord,
+  BrowserNotice,
+  BrowserOverlayRect,
+  BrowserPaneState,
+  BrowserRect,
   Api,
   DegradedCode,
   SessionStatus,

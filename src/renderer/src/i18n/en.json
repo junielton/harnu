@@ -289,12 +289,37 @@
           "red": "Red",
           "muted": "Muted"
         },
-        "stroke": { "solid": "Solid", "dashed": "Dashed", "dotted": "Dotted" },
-        "strokeWidth": { "thin": "Thin", "regular": "Regular", "bold": "Bold" },
-        "corners": { "sharp": "Sharp", "round": "Round" },
-        "fontSize": { "s": "Small", "m": "Medium", "l": "Large", "xl": "Extra large" },
-        "align": { "left": "Left", "center": "Center", "right": "Right" },
-        "opacity": { "25": "25%", "50": "50%", "75": "75%", "100": "100%" }
+        "stroke": {
+          "solid": "Solid",
+          "dashed": "Dashed",
+          "dotted": "Dotted"
+        },
+        "strokeWidth": {
+          "thin": "Thin",
+          "regular": "Regular",
+          "bold": "Bold"
+        },
+        "corners": {
+          "sharp": "Sharp",
+          "round": "Round"
+        },
+        "fontSize": {
+          "s": "Small",
+          "m": "Medium",
+          "l": "Large",
+          "xl": "Extra large"
+        },
+        "align": {
+          "left": "Left",
+          "center": "Center",
+          "right": "Right"
+        },
+        "opacity": {
+          "25": "25%",
+          "50": "50%",
+          "75": "75%",
+          "100": "100%"
+        }
       }
     }
   },
@@ -362,6 +387,9 @@
     "orchestratorDefaultOff": "Stop starting sessions as Orchestrator",
     "terminalReadOn": "Let agents read terminals I open",
     "terminalReadOff": "Stop agents reading terminals I open",
+    "browserReadOn": "Let agents read browser panes I open",
+    "browserReadOff": "Stop agents reading browser panes I open",
+    "trustedHosts": "Trusted dev hosts…",
     "newWorktree": "New worktree…",
     "removeWorktree": "Remove worktree",
     "createWorktreeMd": "Create WORKTREE.md",
@@ -956,6 +984,29 @@
       "memoryLabel": "Where we left off"
     }
   },
+  "trustedHosts": {
+    "title": "Trusted dev hosts",
+    "close": "Close",
+    "builtInLabel": "Always trusted",
+    "addedLabel": "Added by you",
+    "none": "None yet.",
+    "placeholder": "app.test or *.test",
+    "add": "Add",
+    "remove": "Remove {host}",
+    "hint": "Pages on these hosts count as local: agents can drive them without asking. Only exact host names and one-level wildcards. A name that merely resolves to loopback is never trusted by itself.",
+    "failed": "Couldn't save the trusted hosts",
+    "errors": {
+      "EMPTY": "Type a host name.",
+      "TOO_LONG": "That host name is too long.",
+      "HAS_SCHEME_OR_PATH": "Type only the host name, without http:// or a path.",
+      "HAS_PORT": "Leave the port out; it applies to every port.",
+      "BAD_CHARACTERS": "Host names use letters, digits and hyphens.",
+      "WILDCARD_TOO_BROAD": "That wildcard is too broad. Use *.test, or a base of at least three labels like *.dev.example.org.",
+      "WILDCARD_POSITION": "A wildcard can only start the name, like *.test.",
+      "DUPLICATE": "Already in the list.",
+      "LIST_FULL": "The list is full."
+    }
+  },
   "renameFolder": {
     "title": "Rename folder",
     "close": "Close",
@@ -1255,7 +1306,16 @@
       "app.devtools": "Toggle DevTools",
       "app.quit": "Quit Harnu",
       "app.fullscreen": "Toggle fullscreen",
-      "app.openKeybindings": "Open Keyboard Shortcuts"
+      "app.openKeybindings": "Open Keyboard Shortcuts",
+      "browser.overlay.toggle": "Browser pane: toggle point-and-comment",
+      "browser.zoom.in": "Browser pane: zoom in",
+      "browser.zoom.out": "Browser pane: zoom out",
+      "browser.zoom.reset": "Browser pane: reset zoom",
+      "browser.devtools": "Browser pane: open DevTools",
+      "browser.reload": "Browser pane: reload",
+      "browser.back": "Browser pane: back",
+      "browser.forward": "Browser pane: forward",
+      "browser.focusAddress": "Browser pane: focus the address bar"
     }
   },
   "notifications": {
@@ -1809,7 +1869,9 @@
       "description": "Put a confirmation in front of every agent action — creating a session, spawning a terminal, a worktree, writing to memory. Off by default: agents act freely and every call is recorded in the audit log below. Turn this on if you'd rather approve each one."
     },
     "agentTerminalWrites": "Allow agents to type into terminals",
-    "agentTerminalWritesHint": "When off, agents can still read terminals you allow, but every attempt to type is refused."
+    "agentTerminalWritesHint": "When off, agents can still read terminals you allow, but every attempt to type is refused.",
+    "agentBrowserWrites": "Allow agents to drive browser panes",
+    "agentBrowserWritesHint": "When off, every browser write (open, navigate, …) is refused. Listing and closing still work."
   },
   "bundledSkills": {
     "title": "Bundled skills",
@@ -4296,5 +4358,157 @@
       },
       "manualRemove": "To remove it by hand, delete {path} from `CLAUDE_CODE_PLUGIN_DIRS`."
     }
+  },
+  "browserPane": {
+    "network": {
+      "label": "Network",
+      "hint": "Network capture is on. It stops by itself and records no bodies unless the agent asked for them."
+    },
+    "label": "Browser pane",
+    "newTab": "New tab",
+    "menu": "More actions",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "stop": "Stop",
+    "address": "Address",
+    "addressPlaceholder": "Enter an address",
+    "pauseAgent": "Pause agent for 10 min",
+    "resumeAgent": "Resume agent",
+    "devtools": "Open DevTools",
+    "openFailed": "Couldn't open the browser pane",
+    "origin": {
+      "local": "local",
+      "external": "external",
+      "page": "page"
+    },
+    "flag": {
+      "label": "opened by agent · {host}",
+      "dismiss": "Dismiss the notice",
+      "prefix": "opened by agent"
+    },
+    "chip": {
+      "connectedTo": "Connected to {session}",
+      "connectedToAgent": "Connected to an agent",
+      "canDrive": "An agent can drive here",
+      "canRead": "An agent can read here",
+      "paused": "Agent paused · {time}",
+      "resume": "Resume",
+      "disconnected": "Disconnected",
+      "disconnect": "Disconnect the agent",
+      "disconnectHint": "Ends the agent's access to this pane for good",
+      "disconnectedToast": "Agent disconnected from this pane",
+      "disconnectFailed": "Couldn't disconnect the agent",
+      "reading": "reading",
+      "driving": "driving",
+      "pausedLabel": "Agent paused",
+      "connectedPrefix": "Connected to"
+    },
+    "notice": {
+      "blocked": "Blocked: {scheme}: addresses cannot be opened",
+      "blockedAny": "Blocked: this kind of address cannot be opened",
+      "certificate": "Accepted the self-signed certificate for {host}",
+      "dialog": "The page opened a {dialog} dialog and Harnu dismissed it",
+      "crashed": "The page stopped responding",
+      "dismiss": "Dismiss",
+      "offline": "Blocked: this panel is offline, so it cannot open other addresses. Turn on Network on to follow links out.",
+      "agentInput": "Ignored — a session just acted on this page"
+    },
+    "zoom": {
+      "in": "Zoom in",
+      "out": "Zoom out",
+      "reset": "Reset zoom to 100%",
+      "offInDevice": "Zoom is off while a device is emulated",
+      "label": "Zoom"
+    },
+    "device": {
+      "button": "Device mode",
+      "chipHint": "Change the device",
+      "custom": "Custom size…",
+      "width": "Width",
+      "height": "Height",
+      "dpr": "Pixel ratio",
+      "mobile": "Mobile",
+      "apply": "Apply",
+      "back": "Back",
+      "reset": "Reset device",
+      "rotate": "Rotate",
+      "scheme": "Light or dark",
+      "schemeLight": "Light",
+      "schemeDark": "Dark",
+      "reducedMotion": "Reduced motion",
+      "invalid": "Use 100 to 10000 for the size and 0.5 to 5 for the pixel ratio",
+      "failed": "Couldn't change the device"
+    },
+    "download": {
+      "prompt": "Save {name} to .harnu/out/downloads/?",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "noticeDownloaded": "Saved {name}",
+    "noticeDownloadCancelled": "Download cancelled",
+    "noticeDownloadFailed": "The download failed",
+    "network": {
+      "off": "Offline",
+      "on": "Network on",
+      "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
+      "onHint": "Network on: the page can reach the network. Click to turn it off."
+    },
+    "discarded": {
+      "titleIdle": "Paused to save memory",
+      "titleRestored": "Not loaded yet",
+      "hidden": "{address} · hidden {min} min",
+      "reload": "Click to reload",
+      "load": "Load the page"
+    },
+    "fileRemoved": {
+      "title": "File removed",
+      "waiting": "Waiting for it to come back…"
+    },
+    "pageEvent": {
+      "sent": "Page event sent to the session",
+      "sentComment": "Comment sent to ‹{session}›",
+      "heldTitle": "A page panel sent an event, but no session can take it",
+      "heldBody": "Select a session in this folder, or connect the pane to one, and use the panel again."
+    },
+    "comment": {
+      "hint": "Click an element to comment",
+      "toggle": "Comment on the page",
+      "toggleOff": "Stop commenting (Esc)",
+      "commentOn": "Comment on",
+      "attached": "crop + HTML + {styles} styles attached",
+      "attachedHtmlOnly": "HTML + {styles} styles attached",
+      "attachedNone": "nothing attached",
+      "placeholder": "What should change?",
+      "sendTo": "Send to",
+      "noSession": "No session — copies to clipboard",
+      "owner": "owner",
+      "keepDraft": "Keep as draft",
+      "send": "Send",
+      "composerLabel": "Comment on the selected element",
+      "draftsCount": "no drafts | {n} draft | {n} drafts",
+      "sentCount": "{n} sent",
+      "sendBatch": "Send {n} comment | Send {n} comments",
+      "pin": "Pin {n}",
+      "charsLeft": "{n} left",
+      "refusedTitle": "Comment not sent",
+      "refused": {
+        "BAD_ARGS": "The request was not valid.",
+        "PANE_NOT_FOUND": "This pane no longer exists.",
+        "BROWSER_DISCONNECTED": "The agent is disconnected from this pane, so comments are off.",
+        "NOTHING_TO_SEND": "There is nothing to send: add some text first.",
+        "DELIVERY_FAILED": "The session could not take the message. The draft is kept."
+      },
+      "noSessionTitle": "No session to send to",
+      "noSessionBody": "The comment was copied to your clipboard.",
+      "noSessionLost": "The comment could not be copied. It is still a draft in this pane.",
+      "hintExit": "to exit",
+      "disconnectedHint": "Comments are off here: you disconnected the agent from this pane."
+    }
+  },
+  "splitMenu": {
+    "label": "More split options",
+    "terminal": "Terminal",
+    "browser": "Browser"
   }
 }

@@ -10,6 +10,7 @@
  * `MissionCloseConfirmDialog`, and the door fires from that dialog's confirm.
  */
 import { computed, ref } from 'vue'
+import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useI18n } from 'vue-i18n'
 import { Check, FileText, Flag, TriangleAlert } from 'lucide-vue-next'
 import type { MissionDoor, MissionView } from '../../../main/mission-ipc'
@@ -154,10 +155,15 @@ async function onTickCheck(
 function onDeleteCheck(stepId: string, checkId: string): void {
   void door({ door: 'deleteCheck', stepId, checkId } as Omit<MissionDoor, 'root' | 'missionId'>)
 }
+
+// An in-app popover: registers with the native-overlay freeze (a browser pane under it freezes, spec §2.4).
+const rootEl = ref<HTMLElement | null>(null)
+useNativeOverlay('mission-popover', rootEl)
 </script>
 
 <template>
   <div
+    ref="rootEl"
     class="anim-fade-in-scale flex flex-col overflow-hidden rounded border border-border-2 bg-surface shadow-pop"
     style="width: 400px; max-height: 560px"
     :data-dsqa="`mission-popover--${model.state}`"

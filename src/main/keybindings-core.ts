@@ -64,8 +64,18 @@ export type ShortcutActionId =
   | 'app.quit'
   | 'app.fullscreen'
   | 'app.openKeybindings'
+  // T564 U1 (spec §2.5): the browser pane's own actions, scoped to a focused browser pane.
+  | 'browser.overlay.toggle'
+  | 'browser.zoom.in'
+  | 'browser.zoom.out'
+  | 'browser.zoom.reset'
+  | 'browser.devtools'
+  | 'browser.reload'
+  | 'browser.back'
+  | 'browser.forward'
+  | 'browser.focusAddress'
 
-export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal'
+export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal' | 'browser'
 
 export interface KeyBindingDescriptor {
   id: ShortcutActionId
@@ -357,6 +367,78 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
     menu: true,
     reserved: true,
     labelKey: 'keybindings.actions.app.openKeybindings'
+  },
+  {
+    id: 'browser.overlay.toggle',
+    defaultKeys: 'Cmd+Shift+C',
+    scope: 'browser',
+    menu: false,
+    reserved: false,
+    labelKey: 'keybindings.actions.browser.overlay.toggle'
+  },
+  {
+    id: 'browser.zoom.in',
+    defaultKeys: 'Cmd+=',
+    scope: 'browser',
+    menu: false,
+    reserved: false,
+    labelKey: 'keybindings.actions.browser.zoom.in'
+  },
+  {
+    id: 'browser.zoom.out',
+    defaultKeys: 'Cmd+-',
+    scope: 'browser',
+    menu: false,
+    reserved: false,
+    labelKey: 'keybindings.actions.browser.zoom.out'
+  },
+  {
+    id: 'browser.zoom.reset',
+    defaultKeys: 'Cmd+0',
+    scope: 'browser',
+    menu: false,
+    reserved: false,
+    labelKey: 'keybindings.actions.browser.zoom.reset'
+  },
+  {
+    id: 'browser.devtools',
+    defaultKeys: 'Cmd+Alt+I',
+    scope: 'browser',
+    menu: false,
+    reserved: false,
+    labelKey: 'keybindings.actions.browser.devtools'
+  },
+  {
+    id: 'browser.reload',
+    defaultKeys: 'Cmd+R',
+    scope: 'browser',
+    menu: false,
+    reserved: false,
+    labelKey: 'keybindings.actions.browser.reload'
+  },
+  {
+    id: 'browser.back',
+    defaultKeys: 'Cmd+[',
+    scope: 'browser',
+    menu: false,
+    reserved: false,
+    labelKey: 'keybindings.actions.browser.back'
+  },
+  {
+    id: 'browser.forward',
+    defaultKeys: 'Cmd+]',
+    scope: 'browser',
+    menu: false,
+    reserved: false,
+    labelKey: 'keybindings.actions.browser.forward'
+  },
+  {
+    id: 'browser.focusAddress',
+    defaultKeys: 'Cmd+L',
+    scope: 'browser',
+    menu: false,
+    reserved: false,
+    labelKey: 'keybindings.actions.browser.focusAddress'
   }
 ]
 

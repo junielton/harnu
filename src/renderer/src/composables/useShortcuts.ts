@@ -42,7 +42,7 @@ import {
  * The four scopes are sized for v1 — extend the union here when introducing
  * a new top-of-stack surface.
  */
-export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal'
+export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal' | 'browser'
 
 /**
  * Declaration of one keyboard shortcut.
@@ -313,6 +313,27 @@ export function activeScope(): ShortcutScope {
 export function resetScopesForTests(): void {
   scopeStack.length = 0
   scopeStack.push('global')
+}
+
+/**
+ * Run the binding a FORWARDED guest chord resolved to (T564 U1, spec §2.5). A focused browser pane swallows
+ * keystrokes, so main hands the chord over and the browser store resolves it to an action id. `browser` scope
+ * bindings win over `global` ones. Nothing runs while a modal or another scope owns the keyboard, exactly as
+ * for a key typed in the main window.
+ *
+ * @returns whether a binding ran.
+ */
+export function dispatchForwardedChord(id: string): boolean {
+  const top = activeScope()
+  if (top !== 'global' && top !== 'browser') return false
+  for (const scope of ['browser', 'global'] as const) {
+    const match = registrations.find((r) => r.id === id && r.scope === scope)
+    if (!match) continue
+    if (match.enabled && !match.enabled()) return false
+    void match.handler()
+    return true
+  }
+  return false
 }
 
 function dispatch(id: string, source: DispatchSource): void {

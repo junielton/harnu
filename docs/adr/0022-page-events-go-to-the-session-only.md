@@ -96,7 +96,8 @@ Re-open this decision, with a new ADR, if **any** of these becomes true:
 4. **Attribution for mod calls ships** (the audit can say which mod made a call, ADR-0019 P2W5), so a
    subscriber's actions on an event would be traceable to it.
 5. **The gesture gate is proven unforgeable** — the spike results for assumptions A1 and A2 (spec §13) show a
-   page event can be attributed to a real operator gesture with no residual agent-input race — and the
+   page event can be attributed to a real operator gesture with no residual agent-input race (the U0 results show
+   that for keyboard input only, not for pointer input, spec §5.4) — and the
    operator wants unattended reactions to such events, which would then need an explicit, per-mod opt-in.
 
 Any revisit must answer, in the new ADR: who receives the event, what authority it carries, what the page

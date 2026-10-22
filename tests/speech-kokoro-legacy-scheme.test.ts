@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({
   userData: '',
   registered: [] as Array<{ scheme: string; privileges: Record<string, boolean> }>,
+  callCount: 0,
   handlers: new Map<string, (req: Request) => Promise<Response>>()
 }))
 
@@ -14,6 +15,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   protocol: {
     registerSchemesAsPrivileged: (list: typeof state.registered) => {
+      state.callCount++
       state.registered = list
     },
     handle: (scheme: string, fn: (req: Request) => Promise<Response>) => {
@@ -47,6 +49,7 @@ function entryFile(): string {
 beforeEach(() => {
   state.userData = mkdtempSync(path.join(os.tmpdir(), 'harnu-kokoro-legacy-'))
   state.registered = []
+  state.callCount = 0
   state.handlers.clear()
   mkdirSync(path.dirname(entryFile()), { recursive: true })
   writeFileSync(entryFile(), OLD_ENTRY, 'utf8')
@@ -73,6 +76,14 @@ describe('legacy capy-voice:// scheme (pre-rename installs)', () => {
     const byName = new Map(state.registered.map((r) => [r.scheme, r.privileges]))
     expect([...byName.keys()].sort()).toEqual([KOKORO_LEGACY_PROTOCOL, KOKORO_PROTOCOL].sort())
     expect(byName.get(KOKORO_LEGACY_PROTOCOL)).toEqual(byName.get(KOKORO_PROTOCOL))
+  })
+
+  it('registers extra schemes (harnu-page:) in the SAME call: a second call would strip `secure` from the first (T569)', () => {
+    registerKokoroScheme([{ scheme: 'harnu-page', privileges: { standard: true, secure: true } }])
+    expect(state.callCount).toBe(1)
+    expect(state.registered.map((r) => r.scheme).sort()).toEqual(
+      [KOKORO_LEGACY_PROTOCOL, KOKORO_PROTOCOL, 'harnu-page'].sort()
+    )
   })
 
   it('serves an OLD install through the legacy scheme, and the new one', async () => {

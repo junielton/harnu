@@ -10,6 +10,150 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-22
+
+### Added
+
+- **Browser panes are paused when nobody looks at them, and come back after a restart.** A pane hidden for ten
+  minutes lets go of its page (a few hundred megabytes) and shows "Paused to save memory" with a **Click to reload**
+  button; a session that needs the page reloads it first and is told so. It is never paused while a session is
+  working in it, recording its network, or while a download or your own click is in progress. When you quit and
+  reopen Harnu the panes return in their folders, not loaded yet, at the same address, with their zoom, device, network
+  switch, scroll position and unsent comment drafts, and load as soon as you look at them. A session's permission to
+  drive a pane, a network recording and the "opened by agent" badge do not survive a restart.
+- **A session's fifth browser pane is refused up front.** The limit of four panes per folder a session may open is now
+  decided before any permission prompt, and the answer lists the panes to reuse; the panes you open yourself never
+  count. `browser_list` shows a paused pane as `discarded`, and `browser_snapshot` can now return a live panel's saved
+  data.
+- **Sessions can drive a browser page — with your permission where it matters.** Five new session verbs act on a
+  page: `browser_eval` (run a script and get the result back), `browser_click`, `browser_type`, `browser_fill`
+  (up to 20 fields at once) and `browser_press` (Enter, Tab, arrows, `Ctrl+A`…). They aim at elements by the
+  names a snapshot gives, wait up to five seconds for the element to be visible and not covered, and say what they
+  hit. On a dev server on your own machine a session drives freely. On any other site, and on any pane **you**
+  opened, the first attempt asks you: the prompt names the pane, who opened it, the site and the first thing it
+  would do. **Allow does nothing by itself** — it only lets the session drive that pane for the next ten idle
+  minutes, and the session is told to look at the page and try again. **Deny** blocks that pane for five minutes
+  without asking again. Closing the pane, **Disconnect**, blocking the folder or switching agent browser control
+  off ends it at once, and so does the pane moving to another site: an Allow given for `localhost:3000` never covers a bank or mail page it later opens. What a session types or runs there acts as you on that page, and the prompt says so.
+  Writes to one pane run one at a time (more than 60 a minute is refused), and every call is audited with the
+  script or text scrubbed and cut to 200 characters. A pane does not pass clicks or key presses to the first page
+  it loads, to a page it reached from a blank page or another site, or after a page redirects itself, so those are refused up front (`PANE_INPUT_NOT_READY`, "reload the pane once") instead of reporting a
+  success that did nothing; filling, plain typing and scripts are unaffected.
+- **Folder menu: let sessions read the browser panes you open, and name your dev hosts.** Right-click a folder and
+  choose **Let agents read browser panes I open** (off by default, this folder only — never its worktrees) so a
+  session can look at a page you opened; acting on it still asks you, once per pane. **Trusted dev hosts…** lists
+  the names that count as your own dev servers (`app.test`, `*.test`, a docker service name) so a session can
+  drive them without asking; only exact names and short wildcards like `*.test` are accepted, and only you can edit
+  the list. A pane you opened now shows "An agent can read here" or "An agent can drive here" in its header once a
+  session may do so.
+- **Zoom in the browser pane.** `−`, the percentage and `+` sit at the right of the address bar; click the percentage to go back to 100%. Cmd/Ctrl `+`, `−` and `0` work while the pane has focus. The zoom is remembered per site, so it is still there next time you open that site, and a session's `browser_emulate({ zoom })` sets the same remembered value.
+- **Device mode in the browser pane.** The new phone icon next to the zoom opens seven device classes (`phone-s`, `phone-m`, `phone-l`, `tablet`, `tablet-landscape`, `laptop`, `desktop`) and a custom size. The page really thinks it is on that device — its size, pixel ratio, touch events and, for phones and tablets, a mobile browser identity — and is drawn inside a device frame, scaled down to fit without the page ever seeing the scaling. A second row has Rotate, light/dark, reduced motion and Reset device. Zoom is off while a device is on.
+- **`browser_emulate`, `browser_upload` and `browser_download` for sessions.** A session can zoom a pane, show it as a device (the pane's picker shows the same setting), attach files from the folder to a page's file field (inside the folder only, never secrets, up to 10 files of 50 MB) and download a file into `.harnu/out/downloads/`. Free on a pane the session opened; a lease on one you opened, and for uploads on any site that is not your own machine. `browser_open` also takes a `device`.
+- **A prompt for downloads you click.** Clicking a download in a browser pane now asks "Save _name_ to `.harnu/out/downloads/`?" instead of silently cancelling. Nothing a download produces is ever opened or run, and downloads a page starts by itself are still cancelled.
+
+### Changed
+
+- **One check decides whether a session's input made a page event or a comment pick.** The page-event gate, the comment
+  pick and the registry check had three copies; they now share one. It follows the moment of your own click: a session's
+  click that overlapped it, or was still running, makes the event or pick ignored, and the pane now says so ("Ignored — a
+  session just acted on this page"). Your own click a moment after a session's goes through.
+- **`browser_patch` on a pane you opened needs the same permission as reading it.** It can run script and tells a session
+  what matched, so it now asks for **Let agents read browser panes I open** like every other verb; `browser_set_data`
+  stays free.
+- **Only folders Harnu knows and you have not blocked get their browser panes back after a restart**, an agent's pane
+  always keeps the agent's own cookie jar, and a pane's saved address no longer includes its query string.
+- **Point-and-comment, tightened.** A browser pane you paused still takes comments (pausing stops the session
+  driving the page, not you writing to it); one you disconnected the session from does not, and the comment
+  button and composer now say so up front instead of failing after you typed. A comment stays a draft until its
+  message has really gone into the terminal, so a session that closed while Harnu waited for you to stop typing
+  loses nothing, and moving the mouse over a terminal no longer counts as typing. Text a page hides in
+  invisible characters (the Unicode "tag" block, word joiners, soft hyphens) or fakes with look-alike dashes and
+  backticks is cleaned out of what the session reads. Pins sit at the top-right corner of their element, the
+  hint reads "Click an element to comment · Esc to exit", one Esc closes an empty composer and ends picking,
+  the bar shows just "N sent" when nothing waits, the Activity row names the session, and the button's tooltip
+  shows your current shortcut. The overlay can no longer be hidden or moved by the page's own CSS, ignores touch
+  input while picking, and no longer marks the page's element while it looks up its source file.
+- **Recording the network of another site now asks, instead of being refused.** `browser_network` on a page that isn't
+  on your own machine used to be unavailable; it now uses the same ask-once permission as driving a page, and
+  ending the recording is always allowed. A pane you opened is now refused until you let agents read browser panes
+  in its folder, instead of being unavailable to sessions altogether.
+- A hidden browser pane in device mode now screenshots the right element: the crop accounts for the device's own size instead of the pane's.
+- Browser panes that were never put in a device mode no longer lose their client hints (`Sec-CH-UA`): Harnu used to restore the browser's user agent on every page load, which dropped them. Resetting a device now puts the real hints back, and a pane opened in a device sends its first request as that device.
+- A session's `browser_download` by clicking an element now needs the same permission as clicking, on a site that is not your own machine: it was a way to click without asking.
+- Uploads refuse more secrets: anything in `.harnu`, `.env*`, `.git-credentials`, `.npmrc`, `.netrc` and `.pypirc` as well as keys, and a path that leaves the folder is refused before you are ever asked.
+- A download in a browser pane that a session gives up on (timeout, closed pane) is stopped and leaves nothing in your folder; denying a download you started shows "Download cancelled" instead of a failure; names are cut by bytes and cleaned of direction-changing characters; leftovers of an interrupted save are swept at the next start.
+- A session's clicks on a page that emulates touch are now taps, like a finger's: a mouse press never completes while touch is emulated, so the click used to hang.
+
+### Fixed
+
+- **Disconnecting a session from a browser pane now lasts across a restart.** It used to come back connected. Panes a
+  session has been disconnected from no longer count toward its four-panes-per-folder limit, so they cannot lock it
+  out of opening new ones.
+- **Restoring browser panes at launch no longer delays the window.** Nothing is read when no browser pane is saved, and
+  with some only the pinned projects and each pane's own folder are checked.
+- **A browser pane's saved state could stop being written.** Adding a second pane to a folder left the first one's
+  saved details in a form the file write refused, so the file silently stopped updating; it now writes plain data.
+
+## 2026-10-21
+
+### Added
+
+- **Point-and-comment on a page.** In a browser pane, click the new comment button in the header (or press
+  `Ctrl/Cmd+Shift+C` while the pane has focus), hover any element to see its outline and size, and click it. A
+  numbered pin appears on the element and a composer docks under the page: the page gets shorter to make room, and
+  nothing is ever drawn over it. Type what should change and press **Enter** to send it to your session now, or
+  **Shift+Enter** to keep it as a draft and carry on; **Send N comments** in the bar below sends every draft as
+  one message. Pick the session in the **Send to** menu (a session's own pane sends to that session, any other
+  pane to the one you are looking at); with no session at all the comment is copied to your clipboard. The
+  session gets your words plus a cropped picture of the element, its HTML, a short list of its styles and its
+  source file when the page says (Vue, React, Svelte). Whatever the page itself wrote is fenced and marked
+  untrusted, so a page cannot pose as you. The composer lives in Harnu, outside the page, so the page cannot
+  see what you type, and a page cannot fake a click on a pin. Pins stay on the page, find their element again
+  after a reload, sit dashed where they were when it is gone, and go solid and faded once sent. A comment waits
+  while you are typing in that session's terminal, and a parked session is woken in the background first.
+
+- **Live panels in the browser pane.** A session can now open one of your project's `.html` files — or write a
+  small panel for you from inline HTML — in a browser pane (`browser_open` with `path`, or `html` and `name`),
+  and keep it fresh with `browser_set_data` (the panel's state, saved next to your project and re-read on every
+  reload) and `browser_patch` (change one number or row right now). Edit the file yourself and the pane reloads
+  where you were scrolling; delete it and the pane says "File removed" until it comes back. Buttons in the panel
+  can send an event to the session (`harnu.emit`), but only when you really click or press a key: a session that
+  clicks its own panel cannot approve itself. Panels are **offline by default**: a panel can't load anything from
+  the network, and its own script, links and popups can't take it to another address (only its own folder's files);
+  a per-pane **Offline / Network on** switch in the address bar, yours alone, lets a panel that needs a CDN script,
+  a web font or an outside link through, and your own address bar can always leave. Only your own files are
+  ever served, never anything under `.git` or `.harnu/memory`, and only to the panel itself: a web page in another
+  pane, or a background worker it starts, can't read them (a worker started inside a panel can't either).
+
+- **Browser pane — open a real browser beside your session.** The Split button in the Topbar now has a small
+  arrow beside it: choose **Browser** and a Chromium page opens in the split stack, with back, forward and
+  reload, an address bar (type a URL and press Enter, or `Cmd/Ctrl+L` to jump to it), a title, and the same
+  maximize and close buttons as every other pane. Sessions can open one too — `browser_open` for your dev server
+  on localhost or any site, then `browser_navigate`, `browser_list` and `browser_close`. A site a session opens
+  shows an amber "opened by agent" badge, a local dev server gets a green `local` badge, and the pane menu
+  (the ⋯ button) has **Pause agent for 10 min** and **Open DevTools**. Panes a session opened show who is
+  connected and can be cut off for good with the unplug button, or paused for ten minutes with a countdown and
+  a Resume button. **Allow agents to drive browser panes** in Settings → Control server turns every agent
+  write (open, navigate) off at once. When a menu, dialog, toast or palette opens over a page, the page freezes
+  to a still image so nothing is ever drawn underneath it, and it comes back when the layer closes. Pages run
+  in their own cookie jar, away from Harnu itself: only `http`, `https` and `about:blank` open, popups open as
+  a new pane only after you click, downloads and permission prompts are refused, and a page can't reach Harnu's
+  own windows or files. Panes you opened can't be driven by an agent yet, and the pane does not reopen after a
+  restart — both arrive in later releases, along with opening local `.html` files, reading and acting on the
+  page, and point-and-comment.
+- **Sessions can read a browser pane.** Five new session verbs let a session see a page it opened:
+  `browser_snapshot` (the page as its accessibility tree, with stable names for each element), `browser_screenshot`
+  (the whole viewport, the whole page or one element, optionally saved under `.harnu/out/browser/shots/`),
+  `browser_console` (everything the page logged since the pane opened), `browser_wait_for` (wait for an element or
+  text to appear or go away, the address to change, or the network to go quiet), and `browser_network`. Network
+  capture is **off until a session asks for it**: while it runs a red **Network 4:12** counter shows in the pane
+  header counting down to when it stops by itself (10 minutes by default, 30 at most), and it also stops when the
+  pane closes, when you disconnect the session, or when you switch agent browser control off. It records addresses
+  with every query value hidden, never records cookies or sign-in headers, and records response text only if the
+  session asked for it. While a session is paused it can still read and stop a recording but not start one. Reading keeps working while a session is paused or agent control is off, never works on a
+  pane you opened yourself yet, and stops for good when you disconnect the session. Scheduler `observe` workers can
+  read panes too (not capture traffic).
+
 ## 2026-10-19
 
 ### Added

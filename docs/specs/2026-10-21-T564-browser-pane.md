@@ -16,8 +16,9 @@ the confirm / lease / disconnect / kill-switch model this spec mirrors), `docs/u
 > Every **[gap]** default and every question raised while writing this spec was resolved by the operator on
 > 2026-10-21 (§14, "Resolved questions"). Two resolutions **amend** decisions as first written: Q1 (decision 7:
 > two partitions instead of one) and Q2 (decisions 15–18: the composer is docked in the pane chrome instead of
-> floating in the page). Everything in §13 is an assumption about Electron or Chromium that must be proven in
-> a spike (unit U0) before code that depends on it is written.
+> floating in the page). §13 lists the twelve assumptions about Electron and Chromium that the U0 spike (card T567) tested on
+> 2026-10-21: it now holds the results, and every refuted or partial assumption has its fallback written into
+> the section it reopens.
 
 ## 1. Intent, scope and traceability
 
@@ -113,10 +114,36 @@ Main positions the view with `view.setBounds()` from a rect the renderer reports
    maximize toggle and scroll-container movement. Reports are `requestAnimationFrame`-throttled over one
    channel: `browser:bounds { paneId, rect: {x,y,w,h} in CSS px, visible }`.
 2. Main converts CSS px to DIP using the window zoom factor (the app has its own renderer zoom) and rounds to
-   integers. `visible: false` (pane not mounted, tab not shown, folder not selected, popover closed it) calls
-   `view.setVisible(false)`; the view stays attached and alive.
-3. A pane that has **never** been mounted uses a default off-screen rect of 1280×800, so pixel verbs have a
-   viewport (assumption A3).
+   integers. Rounding is by **edges**: `x0 = round(x·f)`, `x1 = round((x+w)·f)`, `width = x1 − x0`, and the same
+   for y, so the far edge cannot drift. (The U0 probe rounded `x` and `width` separately and measured at most
+   1 device px of left/right or top/bottom asymmetry at fractional zoom; the edge rule is the adopted fix and was
+   not measured separately. A7.) `visible: false` (pane not mounted, tab not shown, folder not selected,
+   popover closed it) calls `view.setVisible(false)`; the view stays attached and alive. **"Without flicker" is
+   unproven (A7).** U0 checked settled and sampled-mid-animation states with a screenshot tool that takes about
+   one frame per second, so a one-frame tear would be missed (§13.4). The bounds unit (U1) therefore captures a
+   **frame sequence** (30 fps or better, native views included) during a splitter drag, a maximize toggle and a
+   window resize, on X11 and Wayland, and decides from it. **Fallback if it shows tearing: snapshot-during-resize.**
+   On `pointerdown` of a splitter or resize handle, and when maximize starts, the pane freezes (§2.4) and
+   `setBounds` is applied once on release (or after the toggle settles) instead of per frame.
+3. **A view that has never painted cannot be captured, so a pane is never created hidden or off-screen.** U0 (A3)
+   found that a view which was never attached, attached but `setVisible(false)` from birth, attached at an
+   off-screen rect (−5000, −5000), `offscreen: true`, or attached to a `show: false` window all return an empty
+   `capturePage()` image and never answer CDP `Page.captureScreenshot` (4 s timeout), with throttling lifted or
+   not. A 0×0 rect fails the same way. What works is a view attached to the app window and **visible**, even at
+   1×1: the page paints at whatever `Emulation.setDeviceMetricsOverride` says. So a pane that has no real rect
+   yet (agent-opened for a folder the operator is not viewing, or restored after restart) is **parked**: attached,
+   visible, `setBounds` 1×1 inside the window (bottom-right content corner), with a metrics override of
+   1280×800 at DPR 1. When the renderer first reports a real rect, main clears that override (re-applying the
+   pane's own emulation record, §9), then calls `setBounds` with the real rect. The cost is one pixel painted
+   over whatever sits in that corner while parked. A view that **has** painted and is then hidden with
+   `setVisible(false)` keeps working for `capturePage()` (§6.2), so the freeze (§2.4) and ordinary hiding do not
+   need parking. A parked pane counts as **hidden** for the §10.1 discard: its 10-minute timer runs from the moment
+   it was parked, and a discarded pane is revived parked. It also **registers with the §2.4 overlay logic**: a
+   native 1×1 view paints above any toast or dialog that sits in that corner, so its 1×1 rect is registered like a
+   pane rect, and while any layer intersects it main calls `setVisible(false)` on the parked view (no freeze
+   image: there is no host to paint it in) and `setVisible(true)` when the layer closes. A parked view that is
+   hidden this way has painted, so `capturePage()` still works on it. That is a composition of two separately
+   measured behaviours (A3), not a measurement of its own; U1 verifies it.
 4. The view is added once with `win.contentView.addChildView(view)` and removed only at close or discard.
    Switching folders never reparents.
 
@@ -130,7 +157,7 @@ the pane would render underneath it. `WebContentsView` cannot be clipped to a re
   popovers, the command palette, the jump palette, toasts, dropdowns from `SplitMenu`, the pane's own
   header menus. Each registers `(id, rect | 'fullscreen')` while open; the `ui` store keeps the set.
 - When any registered rect **intersects** a visible pane rect (or a layer is `fullscreen`), main runs the
-  **freeze**: `capturePage()` of the view → PNG data URL → `browser:freeze { paneId, dataUrl }` → renderer
+  **freeze**: `capturePage()` of the view → JPEG 80 data URL (`image.toJPEG(80)`, see the cost bullet below) → `browser:freeze { paneId, dataUrl }` → renderer
   paints it as an `<img>` in the host → main calls `setVisible(false)`. When the last intersecting layer
   closes, main calls `setVisible(true)` and the renderer removes the `<img>` on the next frame.
 - **Drags freeze globally.** On `pointerdown` on a splitter, a pane drag handle or a sidebar drag, all
@@ -140,7 +167,14 @@ the pane would render underneath it. `WebContentsView` cannot be clipped to a re
   registered; the cost is a brief frozen frame while one overlaps a pane (accepted, Q13).
 - While frozen the page keeps running (audio, timers, network) and agent verbs keep working; the operator
   sees a still image and cannot interact. Keyboard focus returns to the renderer.
-- `capturePage()` cost is budgeted at 100 ms for a 1280×800 pane (assumption A12). A failed capture
+- `capturePage()` cost is budgeted at 100 ms for a 1280×800 pane (assumption A12). **The freeze image is encoded
+  as JPEG** (`image.toJPEG(80)`, then a `data:image/jpeg;base64,` URL), not PNG. U0 measured the whole freeze
+  (capture plus encode, median over n = 25–30): PNG at DPR 1 was 38–80 ms (Wayland 75–80 ms, p95 85 ms); PNG at
+  DPR 2 (a 2560×1600 image) was 146 ms on X11 and 312 ms on Wayland, over the budget and over ADR-0021's re-open
+  trigger. JPEG 80 was 8 ms at DPR 1 and 21–28 ms at DPR 2. The `<img>` is sized to the host rect in CSS px, so
+  the extra pixels at DPR 2 only sharpen it. **In device mode** (§9.2) `capturePage()` returns an image the size
+  of the emulated device with the frame drawn in its top-left bounds-sized corner and the rest blank, so the
+  freeze captures `capturePage({ x: 0, y: 0, width: bw, height: bh })`, the view's own bounds. A failed capture
   degrades to a blank rect of the pane background colour, never to an overlay hidden under a live view.
 
 ### 2.5 Focus and keyboard
@@ -148,12 +182,23 @@ the pane would render underneath it. `WebContentsView` cannot be clipped to a re
 A focused guest swallows keystrokes before the renderer's keybinding engine sees them. Main installs
 `before-input-event` on every guest `webContents`, normalizes the chord and forwards it to the renderer
 (`browser:chord`), which runs the normal keybinding dispatcher. The guest keeps a short **page-owns** list
-(copy, paste, cut, select-all, undo/redo, find, and the pane's own zoom chords); everything else is offered to
-Harnu first. New action ids for the keybindings table (T486 conventions: every id has a handler and labels in
+(copy, paste, cut, select-all, undo/redo, find); everything else is offered to Harnu first. **The zoom chords are
+Harnu-owned (amended in U5, T572 by the orchestrator; pending operator confirmation):** `Ctrl =`, `Ctrl −` and `Ctrl 0` (and `Ctrl +`, folded onto `Ctrl =`) are
+forwarded like any other bound chord and drive the per-origin zoom of §9.1; they are not page-owned, and a page
+never sees them. New action ids for the keybindings table (T486 conventions: every id has a handler and labels in
 both locales): `browser.overlay.toggle`, `browser.zoom.in|out|reset`, `browser.devtools`, `browser.reload`,
 `browser.back`, `browser.forward`, `browser.focusAddress`. `browser.overlay.toggle` defaults to
 `Ctrl+Shift+C` scoped to **browser-pane focus only** (Chrome's own inspect chord; Harnu's terminals use it for
 copy, which a focus-scoped binding does not touch — Q12).
+
+U0 (A8, real X11 keystrokes) confirmed the mechanism. A chord that `before-input-event` `preventDefault`s reaches
+neither the page's `keydown` nor its `keyup` (no orphaned `keyup`); every key not prevented, including the
+page-owned ones (`Ctrl+C`, plain letters, `Escape`), reaches the page unchanged. The handler is also called for
+the bare modifier presses (`Control`, `Shift`), so the forwarder must ignore a modifier that is not part of a
+chord. Two rules follow: never intercept while `input.isComposing` is true (Electron exposes it on the event)
+or for `key === 'Process'` / keyCode 229, and run only on `keyDown`. A **real** IME (fcitx, ibus) was **not**
+tested, because no IME was available; the keyboard unit must verify composition on a machine that has one before
+the forwarder ships.
 
 ### 2.6 New main-process modules (proposed layout)
 
@@ -176,23 +221,28 @@ renderer's session, or another origin's data.
 
 ### 3.1 `webPreferences` (the guest set, distinct from `src/main/index.ts` `createWindow`)
 
-| Pref                                 | Value                                                                                   | Why                                                                                                        |
-| ------------------------------------ | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `partition`                          | `persist:harnu-browser` (operator panes) or `persist:harnu-browser-agent` (agent panes) | Decision 7 as amended by Q1 (§3.4). Both isolated from the app's default session; cookies persist in each. |
-| `sandbox`                            | `true`                                                                                  | Decision 7. The app window uses `sandbox: false`; the guest must not.                                      |
-| `contextIsolation`                   | `true`                                                                                  | Preload world is separate from the page world.                                                             |
-| `nodeIntegration` / `...InSubFrames` | `false`                                                                                 |                                                                                                            |
-| `webSecurity`                        | `true`                                                                                  | Same-origin policy stays on, including for `harnu-page://`.                                                |
-| `allowRunningInsecureContent`        | `false`                                                                                 |                                                                                                            |
-| `webviewTag`                         | `false`                                                                                 | No nested guests.                                                                                          |
-| `preload`                            | `out/preload/browser-guest.js`                                                          | Overlay + `harnu` API (§5.3, §8). Not `index.js`.                                                          |
-| `autoplayPolicy`                     | `document-user-activation-required`                                                     | The app's `no-user-gesture-required` is for notification sound only.                                       |
-| `backgroundThrottling`               | `true`, lifted per call                                                                 | Lifted only while a pixel verb runs on a non-visible pane (A3).                                            |
-| `spellcheck`, `enableWebSQL`         | `false`                                                                                 |                                                                                                            |
-| `disableDialogs`                     | `false`, but dialogs are intercepted                                                    | `alert/confirm/prompt` raise a header banner and auto-dismiss after the call returns.                      |
+| Pref                                 | Value                                                                                   | Why                                                                                                                                                                                                                                                  |
+| ------------------------------------ | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `partition`                          | `persist:harnu-browser` (operator panes) or `persist:harnu-browser-agent` (agent panes) | Decision 7 as amended by Q1 (§3.4). Both isolated from the app's default session; cookies persist in each.                                                                                                                                           |
+| `sandbox`                            | `true`                                                                                  | Decision 7. The app window uses `sandbox: false`; the guest must not.                                                                                                                                                                                |
+| `contextIsolation`                   | `true`                                                                                  | Preload world is separate from the page world.                                                                                                                                                                                                       |
+| `nodeIntegration` / `...InSubFrames` | `false`                                                                                 |                                                                                                                                                                                                                                                      |
+| `webSecurity`                        | `true`                                                                                  | Same-origin policy stays on, including for `harnu-page://`.                                                                                                                                                                                          |
+| `allowRunningInsecureContent`        | `false`                                                                                 |                                                                                                                                                                                                                                                      |
+| `webviewTag`                         | `false`                                                                                 | No nested guests.                                                                                                                                                                                                                                    |
+| `preload`                            | `out/preload/browser-guest.js`                                                          | Overlay + `harnu` API (§5.3, §8). Not `index.js`.                                                                                                                                                                                                    |
+| `autoplayPolicy`                     | `document-user-activation-required`                                                     | The app's `no-user-gesture-required` is for notification sound only.                                                                                                                                                                                 |
+| `backgroundThrottling`               | `true`; `false` only to keep a hidden pane animating                                    | Not needed for `capturePage()` and no cure for a never-painted view (§2.3); lifting keeps `visibilityState` at `visible`.                                                                                                                            |
+| `spellcheck`, `enableWebSQL`         | `false`                                                                                 |                                                                                                                                                                                                                                                      |
+| `disableDialogs`                     | `true` (amended by the U1 live run, was `false` + intercept)                            | `alert/confirm/prompt` return at once and never show. With `false`, a page's `alert()` plus CDP `Page.handleJavaScriptDialog` freed the page's script but left Electron's own native dialog window up, modal over the app, until someone clicked it. |
 
 The renderer's CSP (`src/renderer/index.html`) is **unchanged**: guest content lives in its own
 `webContents`, not an iframe. The freeze `<img>` is a `data:` URL, already allowed by `img-src 'self' data:`.
+
+> **U1 amendment (2026-10-21, live run in a second isolated instance).** The row above for `disableDialogs`
+> was measured, not assumed: with `false` and a CDP `Page.handleJavaScriptDialog` the native dialog stayed up.
+> The guest therefore runs with dialogs off. The "dialog dismissed" header notice is kept where the page
+> still reports the attempt.
 
 ### 3.2 Navigation and protocol policy
 
@@ -208,7 +258,26 @@ Enforced in main in three layers, because each alone has gaps: `will-navigate` +
   header banner on the page path.
 - **`harnu-page://` is not reachable from other origins.** `onBeforeRequest` rejects any `harnu-page:` request
   whose initiator origin is not a `harnu-page://` origin of the **same folder host**. A `local` or `external`
-  page cannot embed or fetch our files.
+  page cannot embed or fetch our files. How it is checked (A6): Electron 39's `onBeforeRequest` `details` has
+  **no `initiator` field**; the issuing page is `details.frame` (a `WebFrameMain`): `frame.origin` for scripts,
+  images and `fetch`/XHR, and `frame.parent.origin` for a `subFrame` navigation. It holds under
+  `Referrer-Policy: no-referrer`, where `details.referrer` is empty. The `protocol.handle` request carries no
+  `Origin` or `Sec-Fetch-*` headers, so the handler cannot enforce this and the check must live in
+  `onBeforeRequest`, and it is **load-bearing, not belt-and-braces**: with it absent, U0's external page loaded
+  `harnu-page://f1/data.json` as a `<script>` and framed `harnu-page://f1/frame.html`; only `fetch` was stopped
+  (by CORS), and a `no-cors` fetch still resolved opaque. A top-level redirect from an external page to
+  `harnu-page:` arrives as a `mainFrame` request with no issuer, so it is refused by `will-redirect` /
+  `will-navigate` (both fired in U0), not here. A request from a dedicated worker was not observed in
+  `onBeforeRequest` (the worker's `fetch` failed before reaching it; the cause was not isolated), so the hostile
+  fixtures (§12) include a worker.
+  - **Amended 2026-10-22 (U2, T569 F1) by the orchestrator; pending operator confirmation.** U2's hostile fixtures
+    found that a dedicated worker of an `external` page **does** bypass `onBeforeRequest` (`importScripts` of a
+    `harnu-page:` file ran, and a no-cors fetch timing revealed which files exist), so the check alone is not enough.
+    The handler serves a `harnu-page:` URL **only against a one-shot ticket** that `onBeforeRequest` issued for an
+    allowed request (bound to its partition and URL, atomically redeemed before any I/O, short TTL, bounded store); a
+    request without one, from a worker or anywhere else, gets the same 404 as a missing file. What a panel author must
+    know: **only the panel document itself can load the folder's files**; a worker, including one a panel starts, gets
+    nothing.
 - **Popups and `target=_blank`:** `window.open` and `_blank` links are denied as popups. If the request
   carries a real user activation, the target opens as a **new operator-class pane** in the same folder (a
   person's click made it) that **inherits the opener's partition** (§3.4), with no `opener` link and at most
@@ -322,6 +391,13 @@ CDN script or web font breaks (UC1). The pane header gets a per-pane **"Allow ne
 only, off by default, persisted on the pane; when on, the policy drops to `default-src * data: blob:
 'unsafe-inline'`. **No verb can set it.** Confirmed by the operator (Q3).
 
+> **Amended 2026-10-22 (U2, T569 F2) by the orchestrator; pending operator confirmation.** A CSP does not stop
+> `location = 'http://x/?d=…'`, so the policy has a second half: while a `page` pane is on a `harnu-page:` URL and its
+> **Allow network** switch is off, it may not navigate away at all. A link, a redirect, a `meta` refresh, a form
+> submit, `window.open`, `_blank` and a frame to anything that is not the same folder host or `about:blank` are refused,
+> and the pane shows the notice "this panel is offline". The operator's own address bar is not a page and can still
+> leave. With the switch on the guard is off.
+
 ### 4.4 Reload on change
 
 Main watches (chokidar, already a dependency) the served HTML file and every file the handler served to that
@@ -383,10 +459,16 @@ live main-world reference.
 - **Gesture gate (decision 12).** An emit is delivered only if all hold:
   1. `navigator.userActivation.isActive` was true in the preload at the call;
   2. main saw **no agent input verb** (`click`, `type`, `fill`, `press`, `upload`, or `eval` that dispatches
-     input) on this pane in flight or within the previous **1500 ms** (`agentInputAt`);
-  3. the pane is not `paused` and not `disconnected`.
-     Condition 2 exists because a CDP-driven click is a real activation: without it, an agent could click its
-     own panel's button and self-approve (Q8, assumptions A1/A2).
+     input) on this pane in flight or at any moment from **5000 ms** before the user activation the emit rides on (the preload sends its timestamp; without one, from 5000 ms before the emit) — `AGENT_INPUT_WINDOW_MS`, one named constant, because Chromium keeps a user activation alive for about 5 s and a shorter window lets `setTimeout(emit, 1600)` after an agent click spend it (amended 2026-10-22 from 1500 ms, verifier finding);
+  3. the pane is not `paused` and not `disconnected`;
+  4. **if the activating input was a key press** (the preload tags the last trusted `keydown` or `pointerdown`
+     it saw), main saw a real `keyDown` on the pane through `before-input-event` within the previous **1000 ms**.
+     _Added from U0 evidence; stricter than Q8, pending operator confirmation._ Without it, condition 2's
+     5000 ms window is the only check on keyboard-activated emits, although real keys are distinguishable.
+
+  Condition 2 exists because a CDP-driven click is a real activation: without it, an agent could click its
+  own panel's button and self-approve (Q8, assumptions A1/A2).
+
 - **Rate:** 1 per second and 20 per minute per pane; excess is coalesced into a `dropped: n` field on the
   next delivered event.
 - **Delivery:** a user turn (§8.7) starting `[harnu-page-event]`, which is **data, never instructions**
@@ -394,6 +476,26 @@ live main-world reference.
   event is held on the pane's pin tray and a toast says so.
 - Marker text is fixed; the payload sits inside a fenced block labelled untrusted, with the same fence
   sanitization as §8.5. ADR-0022 records why this goes to the session only.
+- **What U0 proved about the gate (A1, A2).** A CDP click **does** set `navigator.userActivation.isActive`
+  (`isTrusted` is true too), so condition 1 alone proves nothing and condition 2 is load-bearing, not redundant.
+  There is **no per-event discriminator for pointer input**: `before-input-event` never fires for the mouse, and
+  Electron 39's `before-mouse-event` fires for real, CDP and `sendInputEvent` mouse events alike, with the same
+  payload. **Keyboard input is distinguishable**: `before-input-event` fires for real keys and not for CDP
+  `Input.dispatchKeyEvent` or `sendInputEvent`. So the pointer path keeps the 5000 ms `agentInputAt` window
+  alone (Q8 stands; the residual race is as accepted there), and a page event raised from a **key** press adds
+  condition 4 above, which is stricter than Q8 and awaits the operator's confirmation. ADR-0022's revisit
+  condition 5 ("no residual agent-input race") is therefore **not** met for pointer input.
+
+> **Amended 2026-10-22 (U7, T574; revised after the Delta 1 review) by the orchestrator; pending operator
+> confirmation.** Condition 2, the pick gate of §8.6 and the registry's `agentInputBlocksEmit` had grown into three
+> implementations on three branches. There is now **one**: `agent-input-gate.ts` `agentInputBlocksEmit(registry,
+paneId, emitAt, activationAt?)`, called by both `page-service` (the emit) and `overlay-bridge` (the pick); the pure
+> gates only honour its verdict. **The preload's activation timestamp is the primary anchor:** the call is refused when
+> any agent input run overlapped `[activation − 100 ms, call]` (a run still open counts), which is what tells the
+> operator's own click from an agent click a page script spends later (`setTimeout(emit, 1600)` lands on the agent's
+> activation and overlaps the run). The 5000 ms window of the paragraph above is the **fallback**, used only when the
+> timestamp is missing, in the future (beyond 1 s of skew) or older than 6 s. When a pick or an emit is refused for this
+> reason the pane shows a notice ("Ignored — a session just acted on this page"), not only an audit line.
 
 ## 6. MCP verbs
 
@@ -457,10 +559,20 @@ expiresAt}`, `pendingPins`, `createdAt`, `lastActiveAt`. A pane in a blocked fol
   `- button "Save changes" [ref=s4e12]`. A ref is `s<snapshotId>e<n>` and maps to a CDP `backendNodeId`;
   it is valid only for that snapshot and dies on navigation. Using a dead ref refuses `REF_STALE` (re-snapshot);
   an unknown ref refuses `REF_NOT_FOUND`. Output is capped at 2000 nodes / 60 000 characters (`truncated`).
-  Cross-process iframes appear as opaque `iframe [host]` nodes in v1 (assumption A11). The overlay's own
-  nodes are removed from the tree (assumption A10).
-- **`browser_screenshot`.** Uses `capturePage` for visible panes and CDP `Page.captureScreenshot` for hidden
-  ones (A3). The image is returned as an MCP image content block; `save: true` also writes
+  Child frames appear as opaque `iframe [host]` nodes in v1 (assumption A11): the default
+  `Accessibility.getFullAXTree` call returns the main frame only, so **same-site** iframes are opaque too, not
+  just cross-process ones. A per-frame `getFullAXTree({ frameId })` reads a same-site frame, and a child session
+  from `Target.setAutoAttach({ flatten: true })` reads a cross-process one (both verified in U0); either is a
+  cheap follow-up, not v1. The overlay's own nodes are removed from the tree (assumption A10) by setting
+  `aria-hidden="true"` on the overlay host element in the closed shadow root: U0 showed the AX tree
+  otherwise includes the overlay's pins and text, and that `aria-hidden` removes all of it while leaving page
+  content, including the page's own closed-shadow-root content, in the tree. (`inert` also works but blocks the
+  overlay's own pointer handling.)
+- **`browser_screenshot`.** Uses `capturePage` for visible panes **and for panes hidden after they painted**
+  (A3: U0 measured 4–13 ms; the first capture after a DOM change returned the previous frame in one of eight runs). CDP `Page.captureScreenshot` is **not** used on a hidden
+  view: it answered in 0.6–2.8 s on the first call and timed out intermittently, with throttling lifted or not.
+  A pane that never painted is parked first (§2.3). `fullPage`, `clip` and **device mode** use CDP on a
+  visible or parked view, because only CDP renders the whole emulated device at its DPR (§9.2). The image is returned as an MCP image content block; `save: true` also writes
   `.harnu/out/browser/shots/<id>.png`. Longest side clamps to 1568 px (`clamped: true`); `fullPage` taller than
   8000 px clamps the same way. Element shots use `ref` or `selector` and crop to the element rect.
 - **`browser_console`.** Capture starts at pane creation (cheap, bounded) from `Runtime.consoleAPICalled`,
@@ -483,7 +595,10 @@ expiresAt}`, `pendingPins`, `createdAt`, `lastActiveAt`. A pane in a blocked fol
   (`truncated`). A thrown exception is `ok: true` with `thrown: {message, stack}`: the call worked, the
   script did not. The expression is audited scrubbed and cut to 200 characters, like `send_terminal`.
 - **Input verbs (`click`, `type`, `fill`, `press`).** Refs only (decision 23), no CSS selectors and no raw
-  coordinates beyond `offset` inside a ref's box. Input is real CDP input (`Input.dispatchMouseEvent`,
+  coordinates beyond `offset` inside a ref's box. While a device is active the box is in page px but CDP
+  `Input.dispatchMouseEvent` and `dispatchTouchEvent` take **view** coordinates (post-`scale`): U0 dispatched a
+  tap at 150,150 under `scale: 0.5` and the page received 300,300. The verb multiplies by the fit scale (A5).
+  Input is real CDP input (`Input.dispatchMouseEvent`,
   `dispatchKeyEvent`, `insertText`), after scrolling the element into view and waiting up to 5 s for it to be
   visible, stable and un-obscured: `ELEMENT_NOT_VISIBLE`, `ELEMENT_OBSCURED`, `ELEMENT_DISABLED`. `snapshotStale`
   in the ACK says the page changed under the ref. Key names are the `send_terminal` set plus `Meta+`/`Alt+`
@@ -519,9 +634,26 @@ existing server behaviour.
 
 ### 6.4 Concurrency
 
+> **Scope, amended 2026-10-22 (code kept, spec aligned):** the queue covers the five acting verbs (`eval`, `click`, `type`,
+> `fill`, `press`). `navigate`, `network` and `close` are not queued: a navigate waits up to 90 s for the page to load and
+> would hold the line past the 10 s `BROWSER_BUSY` limit for every other writer. They stay serialized by their own
+> in-flight tracking (`othersWrote`).
+
 Writes to one pane run **FIFO** through a per-pane queue modelled on `terminal-write-queue.ts` (ticket on
 entry, `QUEUE_WAIT_MS` 10 s → `BROWSER_BUSY`, 60 writes/min → `BROWSER_RATE_LIMIT`). Reads do not queue. A
 `waitFor` does not hold the queue. Different panes never wait on each other.
+
+> **Added 2026-10-22 (U4, T571 Delta 2) by the orchestrator; pending operator confirmation: `PANE_INPUT_NOT_READY`.**
+> Measured on the real app: mouse and key events sent over CDP are acknowledged and **not delivered** to the first
+> document a view loads, after a move from `about:blank` to a site, after a move to another host or port, and after a
+> page's own `location.replace`; they are delivered once **Harnu** navigates the pane again on the same host (a reload
+> is enough). The cause is not understood, so the rule is the observed one (`browser/input-ready.ts`): a pane is
+> _input-ready_ once Harnu navigates it to the same host as the commit before. `click`, `press`, a `download` by `ref` and
+> a `type` that types key by key or presses Enter refuse **`PANE_INPUT_NOT_READY`** at plan level, before the kill-switch
+> and any confirm, instead of reporting a success that delivered nothing; on a pane the agent opened the hint is to
+> `browser_navigate({ action: "reload" })`, on an operator pane to ask. `fill`, a plain `type` and `eval` work in every
+> state. `browser_list` rows carry `inputReady`. A view brought back from a discard (§10.1) is a new first document: a
+> verb about to send input has the revival followed by one Harnu-started reload, so it is not refused.
 
 ## 7. Access: tiers, writers and controls
 
@@ -531,24 +663,38 @@ entry, `QUEUE_WAIT_MS` 10 s → `BROWSER_BUSY`, 60 writes/min → `BROWSER_RATE_
 (it returns `BROWSER_APPROVED_RESEND`, as `TERMINAL_APPROVED_RESEND` does); the operator-approved **lease**
 then lets every writer's calls through until the pane has had no agent write for **10 minutes**, the pane
 closes, is disconnected, the folder is blocked, the kill-switch flips, or the app quits. A Deny is
-`BROWSER_WRITE_DENIED`, repeated for 5 minutes without a new prompt. Under "Ask before agent actions", every
-row that says `free` becomes a normal confirm; a mission grant or an "always allow" can never cover a
-`lease` row.
+`BROWSER_WRITE_DENIED`, repeated for 5 minutes without a new prompt.
+
+> **Amended 2026-10-22 by the orchestrator; pending operator confirmation.** The lease is bound to **pane + origin**
+> (scheme + host + port), not to the pane alone: a main-frame commit to a different origin ends it, and the next
+> lease-row call asks again. The same origin across paths and queries keeps it. Otherwise an Allow shown for
+> `localhost:3000` would also cover a later bank or mail site the same pane navigated to. The confirm says so:
+> "Allow lets agents drive this pane while it stays on ‹host›". An Allow that arrives after the pane moved to another
+> origin grants nothing (`BROWSER_LEASE_ENDED`). Implemented as the view token `<webContents id>|<origin>`. Under "Ask before agent actions", every
+> row that says `free` becomes a normal confirm; a mission grant or an "always allow" can never cover a
+> `lease` row.
+
+> **Amended 2026-10-22 (U7, T574; narrowed after the Delta 1 review) by the orchestrator; pending operator
+> confirmation.** `browser_set_data` is exempt from the folder's read opt-in even on a pane the operator opened: it only
+> writes the panel's sidecar. `browser_patch` is **not**: it sets markup under `script-src 'unsafe-inline'`, so it can
+> run script in the page, and its `matched` count and `SELECTOR_NOT_FOUND` tell the caller what the page holds, so on
+> an operator-opened pane it needs the opt-in like every other verb. Both refuse every non-`page` pane for every caller
+> (`NOT_A_PAGE_PANE`).
 
 **Rows are verb classes; columns are the origin class at call time.**
 
-| Verb class (verbs)                                                 | Agent-opened pane: `page` | `local` | `external`    | Operator-opened pane (any class)               |
-| ------------------------------------------------------------------ | ------------------------- | ------- | ------------- | ---------------------------------------------- |
-| **Open** (`open`)                                                  | free (cap 4)              | free    | free, flagged | n/a (creates agent panes)                      |
-| **Navigate** (`navigate`)                                          | free                      | free    | free, flagged | lease                                          |
-| **Read** (`list`, `snapshot`, `screenshot`, `console`, `wait_for`) | free                      | free    | free (Q1)     | folder opt-in, else `BROWSER_READ_NOT_ENABLED` |
-| **Network capture** (`network start/stop`, `read`)                 | free                      | free    | lease         | lease (and folder opt-in)                      |
-| **Live panel** (`set_data`, `patch`)                               | free                      | refused | refused       | free on `page`, else refused                   |
-| **Eval** (`eval`)                                                  | free                      | free    | **lease**     | **lease** (decision 6)                         |
-| **Input** (`click`, `type`, `fill`, `press`, `upload`) **[gap]**   | free                      | free    | **lease**     | lease                                          |
-| **Emulate** (`emulate`)                                            | free                      | free    | free          | lease                                          |
-| **Download** (`download`)                                          | free                      | free    | free          | lease                                          |
-| **Close** (`close`)                                                | free                      | free    | free          | lease                                          |
+| Verb class (verbs)                                                                                                         | Agent-opened pane: `page` | `local` | `external`    | Operator-opened pane (any class)               |
+| -------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------- | ------------- | ---------------------------------------------- |
+| **Open** (`open`)                                                                                                          | free (cap 4)              | free    | free, flagged | n/a (creates agent panes)                      |
+| **Navigate** (`navigate`)                                                                                                  | free                      | free    | free, flagged | lease                                          |
+| **Read** (`list`, `snapshot`, `screenshot`, `console`, `wait_for`)                                                         | free                      | free    | free (Q1)     | folder opt-in, else `BROWSER_READ_NOT_ENABLED` |
+| **Network capture** (`network start`, `read`; `stop` is always free: it only reduces what is observed, amended 2026-10-22) | free                      | free    | lease         | lease (and folder opt-in)                      |
+| **Live panel** (`set_data`, `patch`)                                                                                       | free                      | refused | refused       | free on `page`, else refused                   |
+| **Eval** (`eval`)                                                                                                          | free                      | free    | **lease**     | **lease** (decision 6)                         |
+| **Input** (`click`, `type`, `fill`, `press`, `upload`) **[gap]**                                                           | free                      | free    | **lease**     | lease                                          |
+| **Emulate** (`emulate`)                                                                                                    | free                      | free    | free          | lease                                          |
+| **Download** (`download`)                                                                                                  | free                      | free    | free          | lease                                          |
+| **Close** (`close`)                                                                                                        | free                      | free    | free          | lease                                          |
 
 Why `Input` is a lease on `external` although decision 6 names only `eval`: a click or a typed field on an
 external site can post, buy or delete as whatever that pane is logged in as. It is the same side door
@@ -721,12 +867,16 @@ header that states it is data and not the operator speaking.
 
 - **Cannot be forged by the page:** the page cannot `dispatchEvent` into a trusted pick (`isTrusted`) and
   cannot call the private IPC channels (§3.3). A pick is accepted only if **no agent input verb** ran on the
-  pane within the previous 1500 ms (the `agentInputAt` window of §5.4), so an agent cannot use `click` to open
+  pane within the 5000 ms `agentInputAt` window of §5.4 (`agentInputBlocksEmit`), so an agent cannot use `click` to open
   a composer on a node of its choosing. Agent verbs cannot reach the guest overlay otherwise: `eval` runs in
   the main world and the snapshot strips the overlay (A10).
 - **Cannot be submitted by an agent:** the composer is renderer code and CDP is attached to the guest only, so
   no verb can type into it or press Send. Main accepts `comment:submit` **only from the app window's
-  `webContents`**, never from a guest, and still checks `paused` and `disconnected`.
+  `webContents`**, never from a guest, and refuses a `disconnected` pane. _(Amended 2026-10-22 by the
+  orchestrator, pending operator confirmation: the submit no longer checks the `agentInputAt` window, because the
+  composer cannot be driven by an agent, and a **paused** pane now accepts comments, because pausing stops the
+  agent driving the page and a comment does not. The `agentInputAt` window stays on **picks** only. The UI says a
+  pane is disconnected up front instead of after typing.)_
 - **Cannot be read by the page:** the guest's overlay DOM is a closed shadow root, and the composer is outside
   the guest entirely, so the page's own `keydown`/`input` listeners never see what the operator types (Q2, the
   keystroke hole decision 15 as first written left open).
@@ -739,8 +889,9 @@ header that states it is data and not the operator speaking.
 operator input. The path is the one lesson quizzes already use, generalised and moved behind main:
 
 1. The docked composer (renderer) sends `comment:submit { paneId, batch, sessionId }` to main. Main checks
-   that the sender is the app window, that the pane is not `paused` or `disconnected`, and builds the text with
-   `formatComment()` (§8.5).
+   that the sender is the app window and that the pane is not `disconnected`, and builds the text with
+   `formatComment()` (§8.5). _(Amended 2026-10-22 by the orchestrator, pending operator confirmation: `paused` no
+   longer refuses a comment, see §8.6.)_
 2. **Destination (decision 19):** the pane's `ownerSessionId`; no owner (operator-opened) → the folder's
    **selected session**. The composer's **"Send to ‹session›"** picker lists the folder's sessions and
    overrides it; the choice is remembered per pane. No session at all → the text is copied to the clipboard
@@ -755,9 +906,13 @@ operator input. The path is the one lesson quizzes already use, generalised and 
    with their own input (Q7).
 6. **Parked session (decision 20):** there is no live PTY, and `MarkdownPane.deliver()` deliberately does not
    queue. Main first **wakes it headlessly** using the wake step behind `message_session`'s `woke: true`
-   (it never moves the operator's view), then dispatches `session.userTurn` once the PTY is live. That wake
-   step is gated on "Harnu spawned this for an agent" today; for a comment it must be callable for an
-   operator-owned session, because the operator authored the turn (assumption A9, Q7).
+   (it never moves the operator's view), then dispatches `session.userTurn` once the PTY is live. The wake is
+   **not** itself gated (A9): `messageSessionHandler` (`tool-handlers.ts`) refuses on two predicates before it
+   wakes anything (`sessionOwnedByHarnu`, then the `isMessageableOwner` spawn-origin marker), and the wake is only
+   `ctx.bridge.dispatch('session.wake', { sessionId })` followed by `waitForSessionReady(sessionId, 40_000)`.
+   The renderer side (`handleSessionWake` → `enqueueSessionWake`) checks only that the id exists in the model.
+   Comment delivery calls those two steps directly for the operator-owned recipient; it must not route
+   through `message_session`, whose two refusals stay as they are (Q7).
 7. An Activity row ("Comment sent to ‹session›") is posted; the audit log records the batch size, the
    destination and `source: 'overlay'`. The audit never stores the comment text.
 
@@ -790,7 +945,18 @@ Real mobile rules, not a narrower window, through CDP:
 - **Frame.** The view's bounds are the device size times a **fit scale** (largest scale ≤ 1 that fits the
   pane), drawn inside a device frame in the pane chrome. The fit scale is passed as `scale` to
   `setDeviceMetricsOverride` so the page renders at device size and is displayed smaller (assumption A5).
-  The fit scale is display-only and never visible to the page.
+  The fit scale is display-only and never visible to the page. U0 (A5) confirmed the page sees the device
+  (`innerWidth` 390, `devicePixelRatio` 3, a coarse pointer, `maxTouchPoints` 5, the override UA) while the
+  view's bounds are 195×422, and that real mouse input maps correctly through the scale (a click at view px
+  75,75 reached page 150,150). Four corrections follow. (1) CDP `Input.dispatch*` coordinates are view
+  coordinates, not page coordinates (§6.2). (2) `capturePage()` returns a device-sized image with the frame in
+  its top-left corner, so the freeze crops to the bounds (§2.4); `browser_screenshot` uses un-clipped CDP,
+  because a full-viewport `clip` returned a partly blank image under `scale`, while an element `clip` was
+  correct. (3) `clearDeviceMetricsOverride` does **not** restore the user agent: "Reset device" also calls
+  `setUserAgentOverride` with the original UA. (4) Touch emulation must be on **before** the page loads for
+  `'ontouchstart' in window` to be true (touch events fire without it), so the touch part of the record is applied
+  at `did-start-navigation`, before the page's scripts run (U0 did not test that timing), and a pane that turns
+  touch on mid-page reloads.
 - **Zoom vs device.** Entering device mode resets page zoom to 1.0 and disables the zoom controls;
   `browser_emulate({ zoom })` while a device is active refuses `ZOOM_IN_DEVICE_MODE` (Q15).
 - **Persistence.** The emulation record lives on the pane (§10.3), is re-applied after navigation commit,
@@ -812,6 +978,21 @@ Real mobile rules, not a narrower window, through CDP:
   Returning to it, or any verb that needs a live page, **revives** it (`revived: true` in the ACK).
   Discard never fires while a verb is in flight, while network capture is active, or while an operator
   interaction is recent. A live view costs ~100–300 MB, so the number is a real knob (Q13).
+  **As built (U7, T574; \* marks a decision of the orchestrator, pending operator confirmation).** The cap is judged at
+  **plan level** for a `browser_open` with a `url` (so a refusal never raises a confirm), with the panes to reuse in
+  `nextActions`; the `path` / `html` forms are judged by the verb, because they may reuse a pane already showing that
+  file. The 10 minutes is `HIDDEN_DISCARD_MS` (`lifecycle.ts`); a hidden stretch starts when the pane is not mounted, not
+  visible, or parked, and a sweep every 30 s discards a pane that has waited long enough, has no verb in flight, no
+  network capture, no download pending and no operator interaction in the last minute. The recorded
+  `{url, title, scroll, zoom}` sit on the registry record beside the emulation and the pins, which stay. A shortened
+  time for the live proof comes from an env var that is ignored in a packaged build. `browser_list` shows
+  `state: "discarded"`; a verb that needs a live page (everything except `open`, `list`, `close`, `set_data` and the
+  `network` read and stop) revives the pane after its gate has passed (a refused call never pays for a page load), and
+  its ACK carries `revived: true` once. \* A pane the **timer** discarded waits for the operator's click on the
+  placeholder ("reloads with one click", mockup "States") rather than loading when it is merely shown; a pane
+  **restored after a restart** loads by itself when it is shown. One constant (`REVIVE_IDLE_DISCARD_ON_SHOW`) flips the
+  first to "on show". \* A revived pane is a new view, so an operator lease on it does not carry over (§7.1).
+
 - **No global live cap in v1,** but `app.getAppMetrics()` already reports the guest processes; attributing
   them in the System Monitor is a follow-up, not part of this card.
 
@@ -829,7 +1010,15 @@ session, destroy the `webContents`, remove the view. Page files, sidecars and sa
 scroll position is restored best-effort. Unlike agent terminals (ADR-0020: an id held by an agent must never
 come back bound to a different process), a pane id survives because nothing about it is a process. A pane
 whose owner session no longer exists falls back to "selected session of the folder" for delivery. Leases,
-network capture, `flagged` state and the pause timer **do not** survive a restart.
+network capture, `flagged` state and the pause timer **do not** survive a restart. **Disconnect does** (it is permanent, §7.4): the pane payload keeps it and the pane returns disconnected, so a relaunch never gives an agent back a pane the operator cut it off from.
+
+> **As built (U7, T574).** The renderer owns `helpers.json`, so main keeps each pane's restorable state current on the
+> pane's `payload` through two pushes: the address, zoom, emulation and network switch ride on `browser:state`, and the
+> pins (draft and sent) and the scroll position (sampled at the sweep's pace, best effort) on `browser:persist`. At boot
+> main reads `helpers.json` **before the renderer hydrates**, validates and bounds every field (`restore-plan.ts`; an
+> address a pane may not load becomes `about:blank`, a crop path outside the comments folder is dropped), registers the
+> panes discarded, and hands the pins back to the pin store. A pane's owner is kept as written: delivery already
+> falls back to the folder's selected session when it no longer exists (`session.userTurn`).
 
 ## 11. What implementation must also touch
 
@@ -873,28 +1062,132 @@ Per `CLAUDE.md`, none of this lands in this card; it is the checklist for the im
   `--remote-debugging-port`, so a script can read the guest independently of the verbs. U0 and each unit
   record live evidence; unit tests alone cannot see overlay ordering, `before-input-event`, or native bounds.
 - **Hostile-page fixtures** served from `harnu-page://` and a throwaway localhost server: keylogger on
-  `window`, forged `dispatchEvent`, `<img onerror>`, an iframe loading `harnu-page:` cross-origin, a redirect
-  from `local` to `external`, an unsolicited download, a `window.open`.
+  `window`, forged `dispatchEvent`, `<img onerror>`, an iframe loading `harnu-page:` cross-origin, a **dedicated
+  worker** from an `external` page requesting `harnu-page:` (U0 did not see it in `onBeforeRequest`, §3.2), a
+  redirect from `local` to `external`, an unsolicited download, a `window.open`.
+- **Real-IME composition check (A8).** The keyboard unit types a composition (fcitx or ibus) into the guest and
+  into a page-owned field with chord forwarding on, on a machine that has an IME, and asserts the composition
+  is never intercepted (§2.5). U0 could not run it.
+- **Frame-sequence flicker capture (A7).** The bounds unit records a 30 fps or better sequence during a
+  splitter drag, a maximize toggle and a window resize on X11 and Wayland, and measures the host-to-view
+  misalignment per frame; it decides between per-frame `setBounds` and snapshot-during-resize (§2.3).
 
-## 13. Assumptions to prove in U0
+## 13. Assumptions proven in U0: results
 
-None of these is verified today. Each one is load-bearing for a named section; a failed one reopens that
-section, not the whole spec.
+Each assumption was load-bearing for a named section. U0 (card T567, 2026-10-21) tested all twelve with
+throwaway code; a refuted or partial one reopened that section, not the whole spec. Every fallback below is
+already written into the section it names. **Verdicts: 7 PROVEN, 5 PARTIAL, 0 REFUTED outright**, but A3 and A12
+each refuted a specific claim inside them (a never-painted view cannot be captured; PNG freeze at DPR 2 is over
+budget), and A1 refuted the mouse half.
 
-| #   | Assumption                                                                                                                                     | Needed by       | If false                                                                |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ----------------------------------------------------------------------- |
-| A1  | `before-input-event` distinguishes real input from CDP-dispatched input (or the `agentInputAt` window is enough)                               | §5.4, §8        | gate relies on the window alone; widen it                               |
-| A2  | A CDP `Input.dispatchMouseEvent` sets `navigator.userActivation.isActive`                                                                      | §5.4            | window rule becomes redundant; keep it anyway                           |
-| A3  | `capturePage` and `Page.captureScreenshot` work on a view with `setVisible(false)` or never mounted, with throttling lifted                    | §2.3, §6        | pixel verbs need a briefly shown view or an off-screen window           |
-| A4  | `webContents.debugger.attach` and the DevTools window coexist (multiple CDP clients)                                                           | §6, decision 29 | DevTools button detaches the debugger; verbs refuse while it is open    |
-| A5  | `Emulation.setDeviceMetricsOverride` `scale` plus bounds sizing renders a device frame correctly, touch emulation works on a `WebContentsView` | §9              | frame done with bounds + CSS transform in chrome                        |
-| A6  | `session.protocol.handle` per partition + `registerSchemesAsPrivileged`; `onBeforeRequest` sees the **initiator** for subresources and iframes | §3.2, §4        | cross-origin fetch of `harnu-page:` blocked another way                 |
-| A7  | `setBounds` with integer DIP is stable under HiDPI, fractional app zoom and Linux X11/Wayland without flicker                                  | §2.3            | snapshot-during-resize                                                  |
-| A8  | `before-input-event` on a guest can forward app chords without breaking IME and page shortcuts                                                 | §2.5            | smaller page-owns/Harnu-owns split                                      |
-| A9  | The headless wake behind `message_session` can be called for an operator-owned parked session                                                  | §8.7            | wake via renderer `selectSession` without focus steal, or queue + toast |
-| A10 | The AX tree includes closed-shadow-root content, and the guest overlay's outline and pins can be filtered out                                  | §6.2, §8.6      | outline and pins move to a separate overlay view (Q2 option)            |
-| A11 | Cross-process iframes in the AX tree are opaque                                                                                                | §6.2            | document, no work                                                       |
-| A12 | `capturePage` of a 1280×800 view completes in ≲ 100 ms                                                                                         | §2.4            | freeze on a lower-resolution capture                                    |
+### 13.1 How it was run
+
+- **Electron 39.8.10 (Chromium 142.0.7444.265)**, the `node_modules` build behind `package.json`'s `^39.2.6`.
+  Linux 7.0, KDE Plasma, Intel i5-14600KF (20 threads).
+- **Three display setups.** (a) **Xvfb** `:99`, 1920×1080, software GL, X11, with **real X input** from `xdotool`
+  (XTEST). (b) The **real KDE session through XWayland** (`--ozone-platform=x11`, GPU). (c) The **real KDE session on
+  native Wayland** (`--ozone-platform=wayland`, GPU), captured with `spectacle`. The physical monitors are DPR 1;
+  HiDPI was forced with `--force-device-scale-factor=1.5|2`.
+- **Command shape**, one probe script per assumption, each in its own process and its own `--user-data-dir`:
+  `DISPLAY=:99 electron --user-data-dir=<tmp> --ozone-platform=x11 --no-sandbox <probe>.js`. Each probe is a
+  minimal host (a `BrowserWindow` plus a `WebContentsView` with the spec's guest prefs: `contextIsolation`,
+  `sandbox: true`, `webSecurity`, a named partition), not Harnu itself: no Harnu code is involved in A1–A8 and
+  A10–A12, and A9 was read in the source. It still follows the isolation rules of
+  `docs/dev/live-verify-second-instance.md` (own `userData`, nothing of the operator's running Harnu touched, only
+  the spawned PIDs stopped). The probes are **not committed** (card T567).
+- **Caveat on every row: `--no-sandbox` was global.** Without the flag on the command line (a script-level
+  `appendSwitch` was not enough) renderers crashed at start with `platform_shared_memory_region_posix.cc … FATAL`;
+  the sandbox as the cause was inferred, not isolated. The guest's `sandbox: true`
+  pref and the restrictions of a sandboxed preload (§3.3) were therefore **not exercised** by any probe.
+- **Not done on purpose:** real input on XWayland or native Wayland (it would mean injecting pointer clicks into the
+  operator's live desktop), so real-input rows are X11/Xvfb only.
+
+### 13.2 Results
+
+| #   | Assumption                                                                                                                                     | Verdict     | Evidence (Electron 39.8.10)                                                                                                                                                                                                                                                                             | Reopened         |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| A1  | `before-input-event` distinguishes real input from CDP-dispatched input (or the `agentInputAt` window is enough)                               | **PARTIAL** | Keyboard: fired for real `xdotool` keys (keyDown+keyUp), **not** for CDP `dispatchKeyEvent` or `sendInputEvent`. Mouse: never fires `before-input-event`; `before-mouse-event` fires for real, CDP and `sendInputEvent` alike, same payload (`globalX/Y` 480,160 for real and CDP). Xvfb only.          | §5.4             |
+| A2  | A CDP `Input.dispatchMouseEvent` sets `navigator.userActivation.isActive`                                                                      | **PROVEN**  | Before: `isActive` false. After a CDP click: `isActive` true, `hasBeenActive` true, `isTrusted` true. Same for CDP `keyDown` and `sendInputEvent`. Xvfb.                                                                                                                                                | §5.4             |
+| A3  | `capturePage` and `Page.captureScreenshot` work on a view with `setVisible(false)` or never mounted, with throttling lifted                    | **PARTIAL** | Hidden **after painting**: `capturePage` works (4–13 ms); CDP is unreliable (0.6–2.8 s first call, 4 s timeouts). **Never painted** (never attached, hidden from birth, off-screen rect, `offscreen: true`, `show:false` window, 0×0): `capturePage` empty, CDP times out. Details in 13.3.             | §2.3, §3.1, §6.2 |
+| A4  | `webContents.debugger.attach` and the DevTools window coexist (multiple CDP clients)                                                           | **PROVEN**  | Both orders (attach then `openDevTools`, and the reverse): 0 `detach` events; `Runtime.evaluate` returned 42, `DOM.getDocument` and `Page.captureScreenshot` worked, console events kept arriving (4 in 1.2 s); `isAttached()` stayed true after DevTools closed. Detached DevTools, Xvfb.              | none             |
+| A5  | `Emulation.setDeviceMetricsOverride` `scale` plus bounds sizing renders a device frame correctly, touch emulation works on a `WebContentsView` | **PROVEN**  | Bounds 195×422, override 390×844 @3 mobile, `scale` 0.5: page saw 390×844, DPR 3, coarse pointer, 5 touch points, mobile UA; CDP screenshot 1170×2532 with all three edge strips; CDP touch tap and real mouse (via `setEmitTouchEventsForMouse`) both produced `touchstart`+`click`. Four corrections. | §9.2, §2.4, §6.2 |
+| A6  | `session.protocol.handle` per partition + `registerSchemesAsPrivileged`; `onBeforeRequest` sees the **initiator** for subresources and iframes | **PROVEN**  | Handler on two partitions: both load; a default-session view gets `ERR_FAILED`. `details` has no `initiator` but `details.frame.origin` / `frame.parent.origin` name the issuer, with or without `Referrer-Policy: no-referrer`; cancelling on it stopped script, fetch and iframe. Wording fixed.      | §3.2             |
+| A7  | `setBounds` with integer DIP is stable under HiDPI, fractional app zoom and Linux X11/Wayland without flicker                                  | **PARTIAL** | Settled and sampled-animated alignment held within 1–2 device px on Xvfb at DPR 1, 1.5, 2 (forced), real XWayland and native Wayland; guest viewport equalled the bounds exactly in every rect/zoom case. **Flicker not measured**; physical HiDPI not tested. Details in 13.4.                         | §2.3             |
+| A8  | `before-input-event` on a guest can forward app chords without breaking IME and page shortcuts                                                 | **PARTIAL** | `preventDefault` on `Ctrl+Shift+C` and `Ctrl+B`: page saw neither keydown nor keyup; `Ctrl+C`, `a`, `Escape` reached the page; modifier presses are reported separately. **Real IME not tested.** CDP composition does not reach `before-input-event`. Xvfb, real X11 keys.                             | §2.5             |
+| A9  | The headless wake behind `message_session` can be called for an operator-owned parked session                                                  | **PROVEN**  | Source reading, not run live: the wake is `bridge.dispatch('session.wake')` + `waitForSessionReady`; both ownership refusals are earlier, in `messageSessionHandler`. `handleSessionWake` only checks the id exists. See §8.7.                                                                          | §8.7             |
+| A10 | The AX tree includes closed-shadow-root content, and the guest overlay's outline and pins can be filtered out                                  | **PROVEN**  | Page's closed-shadow button **is** in the tree (27 nodes). Overlay pin and text **are** too, until the host gets `aria-hidden="true"`: then 23 nodes, overlay gone, page content kept. Filtering by DOM subtree missed a single text child, so it is not the method.                                    | §6.2             |
+| A11 | Cross-process iframes in the AX tree are opaque                                                                                                | **PROVEN**  | The iframe is an `Iframe` node with 0 children. The **same-site** iframe was equally absent from the default call. Both are readable on demand: `getFullAXTree({frameId})` and a `Target.setAutoAttach` child session returned `INNER-BTN`.                                                             | §6.2             |
+| A12 | `capturePage` of a 1280×800 view completes in ≲ 100 ms                                                                                         | **PARTIAL** | `capturePage` alone: median **8.1–18.3 ms** (n = 30). With PNG encode: 38–80 ms at DPR 1, but **146 ms (X11) and 312 ms (Wayland) at DPR 2**. JPEG 80: 8 ms at DPR 1, 21–28 ms at DPR 2. Details in 13.5.                                                                                               | §2.4             |
+
+### 13.3 A3 in detail
+
+One fresh process per scenario; the page starts red and is turned blue **after** the view is put in the scenario's
+state, and the capture's centre pixel says whether the frame is current. `cap` is `capturePage()`, `cdp` is
+`Page.captureScreenshot`, three tries each, 4 s cap.
+
+| Scenario                                                            | `cap`                                       | `cdp`                                       |
+| ------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------- |
+| attached, visible (baseline)                                        | 1280×800 blue, 6–16 ms                      | 41–49 ms (Wayland 175–199 ms)               |
+| painted, then `setVisible(false)`                                   | 1280×800 blue, 4–13 ms                      | 2.7–2.8 s, then 4 s timeout, then 67 ms     |
+| same, plus `setBackgroundThrottling(false)`                         | blue, 5–16 ms; `visibilityState` visible    | 2.8 s, 4 s timeout, 61 ms                   |
+| never attached to a window                                          | **empty** (0×0), 0 ms                       | **timeout** ×3, no frames (0 rAF/s)         |
+| attached, `setVisible(false)` from birth (with or without throttle) | **empty**                                   | **timeout** ×3                              |
+| attached at (−5000, −5000), throttling lifted, metrics override     | **empty**                                   | 2.7 s, timeout, 65 ms                       |
+| separate `show: false` window, 1280×800                             | **empty**                                   | timeout / 75 ms / timeout                   |
+| `offscreen: true` view, never attached                              | **empty**                                   | timeout                                     |
+| attached, bounds 0×0, metrics override 1280×800                     | **empty** ×2, then blue                     | 2.7 s, timeout, 63 ms                       |
+| **attached, visible, bounds 1×1, metrics override 1280×800**        | **1280×800 blue, 5–14 ms**                  | **38–55 ms** (Wayland 160–182 ms), 60 rAF/s |
+| separate window shown at x = −3000                                  | works on X11; on Wayland it stays on screen | 44–57 ms on X11                             |
+
+The same pattern held on Xvfb, real XWayland and native Wayland. The first `capturePage()` after the page changed
+returned the previous frame once in eight hidden runs (real X11). **Fallback adopted (§2.3, §6.2, §3.1):** a pane
+with no real rect is parked visible at 1×1 with a 1280×800 metrics override, never created hidden or off-screen;
+hidden-after-painted panes use `capturePage`; CDP screenshots only on a visible or parked view.
+
+### 13.4 A7: what was tested and what was not
+
+The probe reproduces the spec's flow: a renderer `ResizeObserver` or `requestAnimationFrame` reports the host div's
+rect over IPC, main applies the app zoom, rounds, calls `setBounds`. The view is inset 4 CSS px inside a coloured
+host div, so a screenshot of the **real screen** shows a frame of colour whose four widths should match.
+Six zoom factors ×3 rects on Xvfb DPR 1 (1, 1.25, 1.5, 1.1, 0.8, 1.33), three on the real sessions, three on forced
+DPR 1.5 and 2.
+
+- **Tested:** Xvfb (X11, software) at DPR 1, 1.5 and 2; the real KDE session through **XWayland** at DPR 1; the real
+  KDE session on **native Wayland** at DPR 1 (right, top and bottom frame widths measured; the left side was polluted
+  by unrelated pixels on the operator's desktop, so it is not claimed).
+  Fractional app zoom 0.8, 1.1, 1.25, 1.33, 1.5. Settled frames were within 1 device px of `inset × zoom × DPR` at DPR 1
+  (4/5/6) and within 2 at DPR 1.5 and 2 (6–8 and 8–10; cases where the host div itself ran past the screen or window
+  edge are excluded, they read 0 or short); in the sampled mid-animation frames (12 at DPR 1 and 10 at DPR 1.5
+  and 2 on Xvfb, 6 each on XWayland and Wayland) the four widths were equal every time, on Wayland for the three
+  measurable sides. Guest `innerWidth`/`innerHeight` equalled
+  the bounds exactly.
+- **NOT tested:** a **physical HiDPI monitor** (DPR was forced, not real); **fractional Wayland scaling** in the
+  compositor (the real display is at scale 1); a mixed-DPI multi-monitor setup; GNOME/Mutter or other Wayland
+  compositors; macOS and Windows; and **flicker itself**. `spectacle` and `import` take about one frame per second,
+  so a one-frame tear would be missed. "Without flicker" is **unproven**; "settled and sampled states align" is
+  proven. The pre-agreed fallback (snapshot during resize) stays available; the bounds unit adds a frame-sequence
+  capture and decides on it.
+
+### 13.5 A12: the measurement
+
+`capturePage()` of a 1280×800 view (DPR 1), then `toDataURL()` (PNG) as §2.4 specifies. Milliseconds, median / p95
+over n runs:
+
+| Setup                                  | `capturePage` | PNG encode    | Total PNG     | JPEG 80 total      |
+| -------------------------------------- | ------------- | ------------- | ------------- | ------------------ |
+| Xvfb, DPR 1, visible (n = 30)          | 18.3 / 20.8   | 31.6 / 33.8   | 49.7 / 53.7   | 7.8 / 9.6 (n = 25) |
+| Xvfb, DPR 1, hidden (n = 30)           | 4.8 / 6.7     | 32.3 / 38.0   | 38.0 / 46.6   | n/a                |
+| XWayland (GPU), DPR 1, visible         | 12.8 / 14.2   | 30.5 / 34.9   | 43.5 / 47.0   | n/a                |
+| native Wayland (GPU), DPR 1, visible   | 8.1 / 16.1    | 68.6 / 73.3   | 79.5 / 84.9   | n/a                |
+| native Wayland (GPU), DPR 1, hidden    | 5.5 / 13.6    | 67.8 / 71.6   | 74.8 / 82.3   | n/a                |
+| Xvfb, DPR 2 forced (2560×1600), n = 25 | 16.8 / 22.5   | 128.9 / 133.8 | 145.8 / 156.3 | 28.0 / 34.3        |
+| native Wayland, DPR 2 forced, n = 25   | 9.9 / 11.0    | 302.4 / 309.4 | 312.4 / 320.0 | 21.2 / 23.5        |
+
+The 100 ms budget holds at DPR 1 but only with 13 ms of margin on native Wayland, on a fast desktop CPU. At DPR 2
+the PNG freeze is 1.5–3× over budget, and the 312 ms is over ADR-0021's re-open trigger (~250 ms). JPEG fixes it with
+a 4–10× margin (a 1280×800 page: 54 KB JPEG against 162 KB PNG at DPR 1; 134 KB against 504 KB–1275 KB at DPR 2). The
+test page is a gradient plus text, so PNG size and time on a busier page will differ; the JPEG margin is large
+enough not to matter. **Fallback adopted (§2.4):** JPEG 80, crop to the view bounds in device mode.
 
 ## 14. Resolved questions
 

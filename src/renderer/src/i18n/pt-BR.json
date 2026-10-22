@@ -289,12 +289,37 @@
           "red": "Vermelho",
           "muted": "Neutro"
         },
-        "stroke": { "solid": "Contínuo", "dashed": "Tracejado", "dotted": "Pontilhado" },
-        "strokeWidth": { "thin": "Fino", "regular": "Normal", "bold": "Grosso" },
-        "corners": { "sharp": "Retos", "round": "Arredondados" },
-        "fontSize": { "s": "Pequeno", "m": "Médio", "l": "Grande", "xl": "Extra grande" },
-        "align": { "left": "Esquerda", "center": "Centro", "right": "Direita" },
-        "opacity": { "25": "25%", "50": "50%", "75": "75%", "100": "100%" }
+        "stroke": {
+          "solid": "Contínuo",
+          "dashed": "Tracejado",
+          "dotted": "Pontilhado"
+        },
+        "strokeWidth": {
+          "thin": "Fino",
+          "regular": "Normal",
+          "bold": "Grosso"
+        },
+        "corners": {
+          "sharp": "Retos",
+          "round": "Arredondados"
+        },
+        "fontSize": {
+          "s": "Pequeno",
+          "m": "Médio",
+          "l": "Grande",
+          "xl": "Extra grande"
+        },
+        "align": {
+          "left": "Esquerda",
+          "center": "Centro",
+          "right": "Direita"
+        },
+        "opacity": {
+          "25": "25%",
+          "50": "50%",
+          "75": "75%",
+          "100": "100%"
+        }
       }
     }
   },
@@ -362,6 +387,9 @@
     "orchestratorDefaultOff": "Parar de iniciar sessões como Orquestrador",
     "terminalReadOn": "Deixar agentes lerem os terminais que eu abro",
     "terminalReadOff": "Parar de deixar agentes lerem os terminais que eu abro",
+    "browserReadOn": "Deixar agentes lerem os painéis de navegador que abro",
+    "browserReadOff": "Parar de deixar agentes lerem os painéis de navegador que abro",
+    "trustedHosts": "Hosts de desenvolvimento confiáveis…",
     "newWorktree": "Nova worktree…",
     "removeWorktree": "Remover worktree",
     "createWorktreeMd": "Criar WORKTREE.md",
@@ -956,6 +984,29 @@
       "memoryLabel": "Onde paramos"
     }
   },
+  "trustedHosts": {
+    "title": "Hosts de desenvolvimento confiáveis",
+    "close": "Fechar",
+    "builtInLabel": "Sempre confiáveis",
+    "addedLabel": "Adicionados por você",
+    "none": "Nenhum ainda.",
+    "placeholder": "app.test ou *.test",
+    "add": "Adicionar",
+    "remove": "Remover {host}",
+    "hint": "Páginas nesses hosts contam como locais: agentes podem controlá-las sem pedir. Só nomes exatos e curingas de um nível. Um nome que apenas resolve para loopback nunca é confiável por si só.",
+    "failed": "Não foi possível salvar os hosts confiáveis",
+    "errors": {
+      "EMPTY": "Digite um nome de host.",
+      "TOO_LONG": "Esse nome de host é longo demais.",
+      "HAS_SCHEME_OR_PATH": "Digite só o nome do host, sem http:// nem caminho.",
+      "HAS_PORT": "Deixe a porta de fora; vale para todas as portas.",
+      "BAD_CHARACTERS": "Nomes de host usam letras, dígitos e hífens.",
+      "WILDCARD_TOO_BROAD": "Esse curinga é amplo demais. Use *.test, ou uma base de pelo menos três níveis como *.dev.example.org.",
+      "WILDCARD_POSITION": "O curinga só pode abrir o nome, como *.test.",
+      "DUPLICATE": "Já está na lista.",
+      "LIST_FULL": "A lista está cheia."
+    }
+  },
   "renameFolder": {
     "title": "Renomear pasta",
     "close": "Fechar",
@@ -1255,7 +1306,16 @@
       "app.devtools": "Alternar o DevTools",
       "app.quit": "Sair do Harnu",
       "app.fullscreen": "Alternar tela cheia",
-      "app.openKeybindings": "Abrir Atalhos de teclado"
+      "app.openKeybindings": "Abrir Atalhos de teclado",
+      "browser.overlay.toggle": "Alternar comentário no navegador (apontar e comentar)",
+      "browser.zoom.in": "Painel do navegador: aumentar zoom",
+      "browser.zoom.out": "Painel do navegador: diminuir zoom",
+      "browser.zoom.reset": "Painel do navegador: restaurar zoom",
+      "browser.devtools": "Painel do navegador: abrir DevTools",
+      "browser.reload": "Painel do navegador: recarregar",
+      "browser.back": "Painel do navegador: voltar",
+      "browser.forward": "Painel do navegador: avançar",
+      "browser.focusAddress": "Painel do navegador: focar na barra de endereço"
     }
   },
   "notifications": {
@@ -1809,7 +1869,9 @@
       "description": "Coloca uma confirmação na frente de toda ação do agente — criar sessão, abrir terminal, worktree, escrever na memória. Desligado por padrão: os agentes agem livremente e toda chamada fica registrada no log de auditoria abaixo. Ligue se preferir aprovar uma a uma."
     },
     "agentTerminalWrites": "Permitir que agentes digitem em terminais",
-    "agentTerminalWritesHint": "Desligado, os agentes ainda podem ler os terminais que você permitir, mas toda tentativa de digitar é recusada."
+    "agentTerminalWritesHint": "Desligado, os agentes ainda podem ler os terminais que você permitir, mas toda tentativa de digitar é recusada.",
+    "agentBrowserWrites": "Permitir que agentes controlem painéis do navegador",
+    "agentBrowserWritesHint": "Desligado, todo comando de escrita do navegador é recusado (abrir, navegar…). Listar e fechar continuam funcionando."
   },
   "bundledSkills": {
     "title": "Skills inclusas",
@@ -4296,5 +4358,157 @@
       },
       "manualRemove": "Para remover à mão, apague {path} de `CLAUDE_CODE_PLUGIN_DIRS`."
     }
+  },
+  "browserPane": {
+    "network": {
+      "label": "Rede",
+      "hint": "A captura de rede está ligada. Ela para sozinha e não grava corpos de resposta, a menos que o agente peça."
+    },
+    "label": "Navegador",
+    "newTab": "Nova aba",
+    "menu": "Mais ações",
+    "back": "Voltar",
+    "forward": "Avançar",
+    "reload": "Recarregar",
+    "stop": "Parar",
+    "address": "Endereço",
+    "addressPlaceholder": "Digite um endereço",
+    "pauseAgent": "Pausar o agente por 10 min",
+    "resumeAgent": "Retomar o agente",
+    "devtools": "Abrir DevTools",
+    "openFailed": "Não foi possível abrir o navegador",
+    "origin": {
+      "local": "local",
+      "external": "externo",
+      "page": "página"
+    },
+    "flag": {
+      "label": "aberto pelo agente · {host}",
+      "dismiss": "Dispensar o aviso",
+      "prefix": "aberto pelo agente"
+    },
+    "chip": {
+      "connectedTo": "Conectado a {session}",
+      "connectedToAgent": "Conectado a um agente",
+      "canDrive": "Um agente pode controlar aqui",
+      "canRead": "Um agente pode ler aqui",
+      "paused": "Agente pausado · {time}",
+      "resume": "Retomar",
+      "disconnected": "Desconectado",
+      "disconnect": "Desconectar o agente",
+      "disconnectHint": "Encerra o acesso do agente a este painel para sempre",
+      "disconnectedToast": "Agente desconectado deste painel",
+      "disconnectFailed": "Não foi possível desconectar o agente",
+      "reading": "lendo",
+      "driving": "operando",
+      "pausedLabel": "Agente pausado",
+      "connectedPrefix": "Conectado a"
+    },
+    "notice": {
+      "blocked": "Bloqueado: endereços {scheme}: não podem ser abertos",
+      "blockedAny": "Bloqueado: este tipo de endereço não pode ser aberto",
+      "certificate": "Certificado autoassinado aceito para {host}",
+      "dialog": "A página abriu um diálogo {dialog} e o Harnu o dispensou",
+      "crashed": "A página parou de responder",
+      "dismiss": "Dispensar",
+      "offline": "Bloqueado: este painel está offline e não pode abrir outros endereços. Ative Rede ativa para seguir links externos.",
+      "agentInput": "Ignorado — uma sessão acabou de agir nesta página"
+    },
+    "zoom": {
+      "in": "Aumentar zoom",
+      "out": "Diminuir zoom",
+      "reset": "Voltar o zoom para 100%",
+      "offInDevice": "O zoom fica desligado enquanto um dispositivo é emulado",
+      "label": "Zoom"
+    },
+    "device": {
+      "button": "Modo dispositivo",
+      "chipHint": "Trocar o dispositivo",
+      "custom": "Tamanho personalizado…",
+      "width": "Largura",
+      "height": "Altura",
+      "dpr": "Densidade de pixels",
+      "mobile": "Mobile",
+      "apply": "Aplicar",
+      "back": "Voltar",
+      "reset": "Resetar dispositivo",
+      "rotate": "Girar",
+      "scheme": "Claro ou escuro",
+      "schemeLight": "Claro",
+      "schemeDark": "Escuro",
+      "reducedMotion": "Movimento reduzido",
+      "invalid": "Use de 100 a 10000 para o tamanho e de 0,5 a 5 para a densidade de pixels",
+      "failed": "Não foi possível trocar o dispositivo"
+    },
+    "download": {
+      "prompt": "Salvar {name} em .harnu/out/downloads/?",
+      "save": "Salvar",
+      "cancel": "Cancelar"
+    },
+    "noticeDownloaded": "{name} salvo",
+    "noticeDownloadCancelled": "Download cancelado",
+    "noticeDownloadFailed": "O download falhou",
+    "network": {
+      "off": "Offline",
+      "on": "Rede ativa",
+      "offHint": "Offline: a página não alcança a rede. Clique para permitir neste painel.",
+      "onHint": "Rede ativa: a página alcança a rede. Clique para desligar."
+    },
+    "discarded": {
+      "titleIdle": "Pausado para economizar memória",
+      "titleRestored": "Ainda não carregado",
+      "hidden": "{address} · oculto há {min} min",
+      "reload": "Clique para recarregar",
+      "load": "Carregar a página"
+    },
+    "fileRemoved": {
+      "title": "Arquivo removido",
+      "waiting": "Aguardando ele voltar…"
+    },
+    "pageEvent": {
+      "sent": "Evento da página enviado à sessão",
+      "sentComment": "Comentário enviado para ‹{session}›",
+      "heldTitle": "Um painel enviou um evento, mas nenhuma sessão pode recebê-lo",
+      "heldBody": "Selecione uma sessão desta pasta, ou conecte o painel a uma, e use o painel de novo."
+    },
+    "comment": {
+      "hint": "Clique em um elemento para comentar",
+      "toggle": "Comentar na página",
+      "toggleOff": "Parar de comentar (Esc)",
+      "commentOn": "Comentário em",
+      "attached": "recorte + HTML + {styles} estilos anexados",
+      "attachedHtmlOnly": "HTML + {styles} estilos anexados",
+      "attachedNone": "nada anexado",
+      "placeholder": "O que deve mudar?",
+      "sendTo": "Enviar para",
+      "noSession": "Nenhuma sessão — copia para a área de transferência",
+      "owner": "dono",
+      "keepDraft": "Manter como rascunho",
+      "send": "Enviar",
+      "composerLabel": "Comentar o elemento selecionado",
+      "draftsCount": "nenhum rascunho | {n} rascunho | {n} rascunhos",
+      "sentCount": "{n} enviado | {n} enviados",
+      "sendBatch": "Enviar {n} comentário | Enviar {n} comentários",
+      "pin": "Marcador {n}",
+      "charsLeft": "{n} restantes",
+      "refusedTitle": "Comentário não enviado",
+      "refused": {
+        "BAD_ARGS": "O pedido não era válido.",
+        "PANE_NOT_FOUND": "Este painel não existe mais.",
+        "BROWSER_DISCONNECTED": "O agente está desconectado deste painel, então os comentários estão desligados.",
+        "NOTHING_TO_SEND": "Não há nada para enviar: escreva um texto primeiro.",
+        "DELIVERY_FAILED": "A sessão não conseguiu receber a mensagem. O rascunho foi mantido."
+      },
+      "noSessionTitle": "Nenhuma sessão para receber",
+      "noSessionBody": "O comentário foi copiado para a área de transferência.",
+      "noSessionLost": "Não foi possível copiar o comentário. Ele continua como rascunho neste painel.",
+      "hintExit": "para sair",
+      "disconnectedHint": "Comentários desligados aqui: você desconectou o agente deste painel."
+    }
+  },
+  "splitMenu": {
+    "label": "Mais opções de divisão",
+    "terminal": "Terminal",
+    "browser": "Navegador"
   }
 }
