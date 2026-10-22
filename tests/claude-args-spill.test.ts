@@ -41,7 +41,7 @@ describe('spillOversizedPromptArgs', () => {
     expect(out).toEqual(['--system-prompt-file', '/tmp/s.md', '--', big])
   })
 
-  it('measures bytes, not UTF-16 code units', async () => {
+  it('measures bytes, not JS string length', async () => {
     const multibyte = 'é'.repeat(PROMPT_ARG_SPILL_BYTES / 2)
     const out = await spillOversizedPromptArgs(['--append-system-prompt', multibyte], () => '/f')
     expect(out[0]).toBe('--append-system-prompt-file')

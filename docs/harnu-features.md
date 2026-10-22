@@ -447,7 +447,7 @@ you see in `list_containers.recent`. None of the three is open to a Scheduler
 **Workspace cleanup — `list_cleanup`, `release_worktree`.** Cleanup judges every worktree
 into `ready` ("Ready to clean": strongly merged, clean, no running session, past its grace
 window), `review` ("Needs review": the operator decides, with a one-sentence reason) or
-`in-use` ("In use"). Neither verb removes anything; cleaning is the operator's click or the
+`in-use` ("In use"). Neither verb removes anything and no verb cleans a worktree; cleaning is the operator's click or the
 autopilot's (`remove_containers` removes Docker containers only after a confirm).
 
 - `list_cleanup({ folder? })` reads the picture. ACK
@@ -457,7 +457,8 @@ bytes, expired }], totals: { ready, readyBytes, review, reviewBytes, inUse, orph
 orphanVolumeBytes, archives, archiveBytes, inTrashBytes, inTrashCount, trashUnverifiedBytes,
 trashUnverifiedCount }, lastCycle: { at,
 freedNowBytes, trashedBytes } | null, autopilot: { enabled, reportOnly, graceDays },
-nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never re-derive them. A clean
+nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never re-derive them. `totals` counts `ready`, `readyBytes`, `review`, `reviewBytes`,
+  `inUse`. A clean
   moves the checkout to the OS trash, so `lastCycle` splits `freedNowBytes` (really deleted:
   dependency folders, Docker) from `trashedBytes` (on disk until the trash is emptied) —
   never add them up as freed. `totals.inTrashBytes` / `inTrashCount` is verified to still be
