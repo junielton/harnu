@@ -61,6 +61,8 @@ interface ViewEntry {
   visibleReported: boolean
   /** Parked: attached, visible, 1×1 with a metrics override (spec §2.3). Counts as hidden for discard (U7). */
   parked: boolean
+  /** The 1280×800 parking override is on the page (sent once the page can take CDP, see `applyParkedMetrics`). */
+  parkedMetricsApplied: boolean
   /** Frozen (hidden under an overlay or a drag). */
   frozen: boolean
   freezeGen: number
@@ -105,6 +107,7 @@ export class BrowserViewHost implements BrowserHost {
       rectCss: null,
       visibleReported: false,
       parked: false,
+      parkedMetricsApplied: false,
       frozen: false,
       freezeGen: 0,
       paintedWaiter: null,
@@ -117,9 +120,9 @@ export class BrowserViewHost implements BrowserHost {
     this.byWebContentsId.set(wc.id, opts.paneId)
 
     win.contentView.addChildView(view)
+    void this.attachDebugger(entry)
     this.park(entry)
     this.attachGuestHandlers(entry)
-    void this.attachDebugger(entry)
     wc.loadURL(opts.url).catch(() => undefined)
     this.publish(entry)
   }
@@ -368,6 +371,16 @@ export class BrowserViewHost implements BrowserHost {
     e.parked = true
     e.view.setBounds(parkedBounds(this.contentSize()))
     e.view.setVisible(true)
+    // The 1280×800 metrics override is sent when the page first becomes ready (`applyParkedMetrics`), not here:
+    // the U1 live run crashed the app (SIGSEGV) when `Emulation.setDeviceMetricsOverride` reached a view that
+    // had not yet created its first frame.
+    if (!e.wc.isLoading() && e.wc.getURL() !== '') this.applyParkedMetrics(e)
+  }
+
+  /** Send the parking override once the page can take CDP; a no-op when the pane was already unparked. */
+  private applyParkedMetrics(e: ViewEntry): void {
+    if (!e.parked || e.parkedMetricsApplied || e.wc.isDestroyed()) return
+    e.parkedMetricsApplied = true
     void this.cdp(e, 'Emulation.setDeviceMetricsOverride', {
       width: PARKED_METRICS.width,
       height: PARKED_METRICS.height,
@@ -378,8 +391,12 @@ export class BrowserViewHost implements BrowserHost {
 
   private unpark(e: ViewEntry): void {
     e.parked = false
-    // U1 has no emulation record to re-apply (spec §9); U5 re-applies the pane's own record here.
-    void this.cdp(e, 'Emulation.clearDeviceMetricsOverride', {})
+    // Only a override that was actually sent needs clearing. U1 has no emulation record to re-apply (spec §9);
+    // U5 re-applies the pane's own record here.
+    if (e.parkedMetricsApplied) {
+      e.parkedMetricsApplied = false
+      void this.cdp(e, 'Emulation.clearDeviceMetricsOverride', {})
+    }
   }
 
   private hookWindow(win: BrowserWindow): void {
@@ -484,6 +501,7 @@ export class BrowserViewHost implements BrowserHost {
     const wc = e.wc
     const rec = (): ReturnType<BrowserRegistry['get']> => this.deps.registry.get(e.paneId)
 
+    wc.once('dom-ready', () => this.applyParkedMetrics(e))
     wc.on('did-start-loading', () => {
       e.loading = true
       this.publish(e)

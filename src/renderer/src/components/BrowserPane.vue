@@ -484,7 +484,7 @@ watch(isFrozen, async (frozen) => {
 
       <span
         v-if="state.flagged"
-        class="flex min-w-0 shrink items-center gap-1 rounded-full border border-warning/30 bg-warning/10 text-warning"
+        class="flex max-w-[50%] min-w-0 shrink items-center gap-1 rounded-full border border-warning/30 bg-warning/10 text-warning"
         style="padding: 1px 6px; font-size: 10px"
         data-testid="browser-flag"
       >
