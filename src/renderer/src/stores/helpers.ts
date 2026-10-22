@@ -1277,6 +1277,9 @@ export const useHelpersStore = defineStore('helpers', () => {
     // means unmount alone no longer kills them).
     for (const pane of state.panes) {
       closeAgentTerminal(pane)
+      if (pane.type === 'browser') {
+        void Promise.resolve(window.api.browserDestroy(pane.id)).catch(() => undefined)
+      }
       notifyPaneRemoved(pane.id)
     }
     const map = new Map(byWorktree.value)

@@ -450,9 +450,10 @@ export async function closeVerb(
   const origin = g.origin ?? 'blank'
   const base = ackBase(rec, g.live, origin)
   deps.host.destroy(rec.paneId)
+  // Read the write report before `remove` clears the in-flight / operator-interaction tracking.
+  const report = deps.registry.endWrite(token)
   deps.registry.remove(rec.paneId)
   deps.access.forget(rec.paneId)
-  const report = deps.registry.endWrite(token)
   await deps.hidePane(rec.folder, rec.paneId).catch(() => false)
   return {
     ...base,

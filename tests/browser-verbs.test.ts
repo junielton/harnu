@@ -460,6 +460,14 @@ describe('browser_close', () => {
     expect(await closeVerb({ paneId: 'bp-1' }, deps)).toMatchObject({ error: 'PANE_NOT_FOUND' })
   })
 
+  it('reports an operator interaction that happened during the close', async () => {
+    const { deps, host, registry } = rig()
+    await openVerb({ folder: FOLDER, url: 'http://localhost:3000' }, deps)
+    host.destroy.mockImplementation(() => registry.noteOperatorInteraction('bp-1'))
+    const res = await closeVerb({ paneId: 'bp-1' }, deps)
+    expect(res).toMatchObject({ closed: true, operatorInteracted: true })
+  })
+
   it('still works with the kill-switch off (Q6) but not when paused or disconnected', async () => {
     const r = rig()
     await openVerb({ folder: FOLDER, url: 'http://localhost:3000' }, r.deps)
