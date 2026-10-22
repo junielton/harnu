@@ -46,6 +46,11 @@ function stable(v: unknown): string {
   return JSON.stringify(v) ?? 'null'
 }
 
+/** A deep, plain (JSON) copy, so no reactive proxy of the store ever reaches `helpers.json`'s IPC write. */
+function plainCopy<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v ?? {})) as T
+}
+
 function isEmpty(e: BrowserEmulationState | undefined): boolean {
   return (
     !e || Object.keys(e).filter((k) => (e as Record<string, unknown>)[k] !== undefined).length === 0
@@ -70,7 +75,8 @@ export function payloadPatchFromState(
       isEmpty(saved.emulation) ? {} : saved.emulation
     )
   ) {
-    patch.emulation = state.emulation
+    // A plain copy: the pushed state lives in a reactive store, and a Vue proxy cannot cross IPC (`helpers:set`).
+    patch.emulation = plainCopy(state.emulation)
   }
   if (state.allowNetwork !== (saved.allowNetwork === true)) patch.allowNetwork = state.allowNetwork
   return Object.keys(patch).length > 0 ? patch : null
@@ -82,9 +88,11 @@ export function payloadPatchFromPersist(
   event: { pins?: unknown[]; scroll?: { x: number; y: number } | null }
 ): PersistedPayloadFields | null {
   const patch: PersistedPayloadFields = {}
-  if (event.pins !== undefined && !sameJson(event.pins, saved.pins ?? [])) patch.pins = event.pins
+  if (event.pins !== undefined && !sameJson(event.pins, saved.pins ?? [])) {
+    patch.pins = plainCopy(event.pins)
+  }
   if (event.scroll !== undefined && !sameJson(event.scroll, saved.scroll ?? null)) {
-    patch.scroll = event.scroll
+    patch.scroll = event.scroll === null ? null : plainCopy(event.scroll)
   }
   return Object.keys(patch).length > 0 ? patch : null
 }

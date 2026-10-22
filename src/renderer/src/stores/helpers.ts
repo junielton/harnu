@@ -999,7 +999,11 @@ export const useHelpersStore = defineStore('helpers', () => {
       mutateWorktree(worktreePath, (s) => ({
         ...s,
         panes: s.panes.map((p) =>
-          p.id === paneId ? { ...p, payload: { ...(p as HelperPane).payload, ...patch } } : p
+          // `toRaw`: reading a payload through the reactive state hands back proxies of its nested values (the
+          // emulation record, the pins), and a proxy cannot cross the IPC write to `helpers.json`.
+          p.id === paneId
+            ? { ...p, payload: { ...toRaw((p as HelperPane).payload ?? {}), ...patch } }
+            : p
         ) as AnyHelperPane[]
       }))
       return

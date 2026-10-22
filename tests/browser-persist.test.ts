@@ -89,6 +89,25 @@ describe('a pushed state', () => {
   })
 })
 
+describe('what reaches helpers.json is plain data', () => {
+  it('copies the emulation record: a reactive proxy of the store can never cross the IPC write', () => {
+    const emulation = { colorScheme: 'dark' as const }
+    const reactiveLike = new Proxy(emulation, {})
+    const patch = payloadPatchFromState({}, state({ emulation: reactiveLike }))!
+    expect(patch.emulation).toEqual({ colorScheme: 'dark' })
+    expect(patch.emulation).not.toBe(reactiveLike)
+    // survives the structured clone `ipcRenderer.invoke` performs
+    expect(() => structuredClone(patch)).not.toThrow()
+  })
+
+  it('copies pins and scroll too', () => {
+    const pins = [{ id: 'p1' }]
+    const patch = payloadPatchFromPersist({}, { pins, scroll: { x: 1, y: 2 } })!
+    expect(patch.pins).toEqual(pins)
+    expect(patch.pins).not.toBe(pins)
+  })
+})
+
 describe('a persist event', () => {
   const pin = { id: 'p1', n: 1, state: 'draft', comment: 'x' }
 
