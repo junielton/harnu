@@ -26,7 +26,7 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `open_file`. The rest surface when you search your tools for them: `list_worktrees`,
 `get_approval`, `create_session`, `create_worktree`, `spawn_terminal`,
 `list_terminals`, `read_terminal`, `send_terminal`, `browser_open`, `browser_list`,
-`browser_navigate`, `browser_close`, `adopt_folder`, `remove_folder`, `memory_append`, `create_card`, `update_card`,
+`browser_navigate`, `browser_close`, `browser_set_data`, `browser_patch`, `adopt_folder`, `remove_folder`, `memory_append`, `create_card`, `update_card`,
 `move_card`, `archive_card`, `delete_card`, `submit_manifest`, `draw_canvas`,
 `notify`, `speak`, `message_session`, `create_worker`, `list_workers`,
 `list_containers`, `stop_containers`, `start_containers`, `remove_containers`,

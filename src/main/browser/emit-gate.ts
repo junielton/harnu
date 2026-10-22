@@ -149,7 +149,7 @@ const BIDI_AND_CONTROL = new RegExp(
   'g'
 )
 
-/** Cut `text` to `max` characters (not UTF-16 halves) and mark the cut. */
+/** Cut `text` to `max` characters (never half a surrogate pair) and mark the cut. */
 function truncate(text: string, max: number): string {
   const chars = Array.from(text)
   return chars.length <= max ? text : `${chars.slice(0, max).join('')}…`

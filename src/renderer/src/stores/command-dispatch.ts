@@ -30,7 +30,7 @@ import { useNotificationsStore } from './notifications'
 import { useUiStore } from './ui'
 import { makeCommandRouter, type CommandRouterActions } from './command-router'
 import { speech } from '../lib/speech'
-import { livePtyIdFor } from '../components/TerminalPane.vue'
+import { livePtyIdOf } from '../lib/live-pty-resolver'
 import { pasteAndSubmit } from '../components/prompt-inject'
 
 /**
@@ -182,7 +182,7 @@ export function buildDispatchActions(): CommandRouterActions {
         })
         return { held: true }
       }
-      const ptyId = livePtyIdFor(target)
+      const ptyId = livePtyIdOf(target)
       if (!ptyId) return { parked: true, sessionId: target }
       pasteAndSubmit(ptyId, text)
       notifications.notify({

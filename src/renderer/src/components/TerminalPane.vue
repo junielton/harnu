@@ -12,6 +12,7 @@
  * main pane; helper cells are the separate HelperPane with its own cache).
  */
 import { Terminal } from '@xterm/xterm'
+import { registerLivePtyResolver } from '../lib/live-pty-resolver'
 
 /**
  * Per-session live state. The Terminal, its PTY, and IPC cleanups stay alive
@@ -139,6 +140,8 @@ const wakeIds = new Set<string>()
 export function livePtyIdFor(sessionKey: string): string | null {
   return liveTerminals.get(sessionKey)?.ptyId ?? null
 }
+// Stores that deliver text to a session ask for the PTY through this registration, not by importing this file.
+registerLivePtyResolver(livePtyIdFor)
 
 /**
  * A park is a resource decision, not a lifecycle outcome (BUG-70 §3.3): only a

@@ -64,7 +64,7 @@ export async function deliverUserTurn(
   deps: DeliveryDeps,
   turn: UserTurnPayload
 ): Promise<DeliveryOutcome> {
-  let ack = asAck(await deps.dispatch('session.userTurn', turn).catch(() => null))
+  const ack = asAck(await deps.dispatch('session.userTurn', turn).catch(() => null))
   if (ack === null) return { status: 'failed', reason: 'the renderer did not answer' }
   if ('parked' in ack) {
     // Headless wake (spec §8.7 step 6): it never selects the session, so it cannot move the operator's view.
