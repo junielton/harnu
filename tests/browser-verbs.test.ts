@@ -56,6 +56,23 @@ function rig(over: Partial<BrowserVerbDeps> = {}) {
     scrub: (t) => t,
     alias: (f) => f.split('/').pop() ?? f,
     folderBlocked: () => false,
+    pages: {
+      folderFor: async (folder) => ({ folder, realFolder: folder }),
+      fs: {
+        realpath: async (p) => p,
+        stat: async () => ({ isFile: () => true, isDirectory: () => false, size: 10 })
+      },
+      locate: async () => null,
+      state: {
+        read: async () => ({ v: 1 as const, path: '', rev: 0, updatedAt: 0, data: null }),
+        readSync: () => ({ v: 1 as const, path: '', rev: 0, updatedAt: 0, data: null }),
+        set: async () => ({ ok: false as const, code: 'REV_CONFLICT' as const, currentRev: 0 })
+      },
+      pushData: () => 0,
+      runPatch: async () => null,
+      writePanel: async (_f, slug) => `.harnu/out/panels/${slug}.html`,
+      urlFor: (real, rel) => `harnu-page://f${real.length}/${rel}`
+    },
     ...over
   }
   return { deps, host, registry, access, live, tick: (ms: number) => (clock += ms) }
@@ -120,17 +137,21 @@ describe('browser_open (url form)', () => {
     expect(host.create).toHaveBeenCalledWith(expect.objectContaining({ partition: 'agent' }))
   })
 
-  it('refuses the path and html forms and a device with a clear NOT_YET_AVAILABLE', async () => {
+  it('refuses a device with a clear NOT_YET_AVAILABLE (U5 owns emulation)', async () => {
     const { deps, host } = rig()
-    for (const args of [
-      { folder: FOLDER, path: 'docs/a.html' },
-      { folder: FOLDER, html: '<h1>x</h1>', name: 'p' },
-      { folder: FOLDER, url: 'http://localhost:3000', device: 'phone-m' }
-    ]) {
-      const res = await openVerb(args, deps)
-      expect(res).toMatchObject({ ok: false, error: 'NOT_YET_AVAILABLE' })
-      expect((res.nextActions as unknown[]).length).toBeGreaterThan(0)
-    }
+    const res = await openVerb(
+      { folder: FOLDER, url: 'http://localhost:3000', device: 'phone-m' },
+      deps
+    )
+    expect(res).toMatchObject({ ok: false, error: 'NOT_YET_AVAILABLE' })
+    expect((res.nextActions as unknown[]).length).toBeGreaterThan(0)
+    expect(host.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses a harnu-page address on the url form and points at `path`', async () => {
+    const { deps, host } = rig()
+    const res = await openVerb({ folder: FOLDER, url: 'harnu-page://f0123456789ab/a.html' }, deps)
+    expect(res).toMatchObject({ ok: false, error: 'BAD_ARGS' })
     expect(host.create).not.toHaveBeenCalled()
   })
 

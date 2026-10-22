@@ -8,8 +8,14 @@
  * `javascript:` URL is still told what is wrong with it.
  */
 import { checkTopLevelNavigation, URL_SCHEME_BLOCKED } from './nav-policy'
+import { checkPageContentSize } from './page-content'
 
-export type ContentCode = 'BAD_ARGS' | typeof URL_SCHEME_BLOCKED | 'NOT_YET_AVAILABLE'
+export type ContentCode =
+  | 'BAD_ARGS'
+  | typeof URL_SCHEME_BLOCKED
+  | 'NOT_YET_AVAILABLE'
+  | 'DATA_TOO_LARGE'
+  | 'HTML_TOO_LARGE'
 
 export interface ContentRefusal {
   code: ContentCode
@@ -18,6 +24,8 @@ export interface ContentRefusal {
   /** `URL_SCHEME_BLOCKED`: the refused scheme. `NOT_YET_AVAILABLE`: the feature asked for. */
   scheme?: string
   feature?: string
+  /** `DATA_TOO_LARGE` / `HTML_TOO_LARGE`: the cap that was exceeded, in bytes. */
+  limitBytes?: number
 }
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
@@ -32,13 +40,14 @@ function checkUrl(url: string): ContentRefusal | null {
       scheme: verdict.scheme
     }
   }
-  // `harnu-page://` loads arrive with U2: until then no handler serves it.
-  if (new URL(verdict.url).protocol === 'harnu-page:') {
-    return {
-      code: 'NOT_YET_AVAILABLE',
-      detail: 'harnu-page',
-      feature: 'Opening a harnu-page address'
-    }
+  return null
+}
+
+/** A `harnu-page://` address is Harnu's own: a project file is opened with `path`, never by address. */
+function checkNotPageAddress(url: string, hint: string): ContentRefusal | null {
+  const verdict = checkTopLevelNavigation(url, 'verb')
+  if (verdict.ok && new URL(verdict.url).protocol === 'harnu-page:') {
+    return { code: 'BAD_ARGS', detail: hint }
   }
   return null
 }
@@ -53,23 +62,30 @@ export function checkBrowserContent(
     if (forms !== 1) {
       return { code: 'BAD_ARGS', detail: 'Pass exactly one of `url`, `path` or `html`.' }
     }
-    if (args.path !== undefined || args.html !== undefined) {
-      return {
-        code: 'NOT_YET_AVAILABLE',
-        detail: 'path/html',
-        feature: 'Opening a file or HTML in a browser pane'
-      }
-    }
     if (args.device !== undefined) {
       return { code: 'NOT_YET_AVAILABLE', detail: 'device', feature: 'Device emulation' }
     }
-    return checkUrl(str(args.url) ?? '')
+    // The `path` and `html` forms open one of our own page files (T569 U2); the jail and the size cap are the verb's.
+    if (args.path !== undefined || args.html !== undefined) return checkPageContentSize(op, args)
+    const bad = checkUrl(str(args.url) ?? '')
+    if (bad) return bad
+    return checkNotPageAddress(
+      str(args.url) ?? '',
+      'Open a project file with `path` (or `html` and `name`), not a harnu-page address.'
+    )
   }
   if (op === 'browser_navigate') {
     if ((args.url === undefined) === (args.action === undefined)) {
       return { code: 'BAD_ARGS', detail: 'Pass exactly one of `url` or `action`.' }
     }
-    return args.url !== undefined ? checkUrl(str(args.url) ?? '') : null
+    if (args.url === undefined) return null
+    const bad = checkUrl(str(args.url) ?? '')
+    if (bad) return bad
+    return checkNotPageAddress(
+      str(args.url) ?? '',
+      'browser_navigate takes http(s) addresses. Open a project file with browser_open({ path }).'
+    )
   }
+  if (op === 'browser_set_data' || op === 'browser_patch') return checkPageContentSize(op, args)
   return null
 }

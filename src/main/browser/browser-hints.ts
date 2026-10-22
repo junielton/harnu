@@ -11,7 +11,14 @@ export const BROWSER_DENIAL_CODES = [
   'BROWSER_PAUSED',
   'URL_SCHEME_BLOCKED',
   'PANE_LIMIT',
-  'NOT_YET_AVAILABLE'
+  'NOT_YET_AVAILABLE',
+  // T569 U2: live panels and the path / html forms of browser_open.
+  'NOT_A_PAGE_PANE',
+  'SELECTOR_NOT_FOUND',
+  'DATA_TOO_LARGE',
+  'REV_CONFLICT',
+  'HTML_TOO_LARGE',
+  'PATH_NOT_ALLOWED'
 ] as const
 export type BrowserDenialCode = (typeof BROWSER_DENIAL_CODES)[number]
 
@@ -27,6 +34,14 @@ export interface BrowserHintContext {
   feature?: string
   /** `URL_SCHEME_BLOCKED`: the refused scheme, when known. */
   scheme?: string
+  /** `SELECTOR_NOT_FOUND`: the selector that matched nothing. */
+  selector?: string
+  /** `REV_CONFLICT`: the rev the sidecar holds now. */
+  currentRev?: number
+  /** `DATA_TOO_LARGE` / `HTML_TOO_LARGE`: the cap, in bytes. */
+  limitBytes?: number
+  /** `PATH_NOT_ALLOWED`: why the jail refused. */
+  jailReason?: string
 }
 
 export function shapeBrowserDenial(
@@ -111,8 +126,74 @@ export function shapeBrowserDenial(
         message: `${ctx.feature ?? 'That form'} is not available yet in this build of the browser pane.`,
         nextActions: [
           {
-            do: 'Use a `url` on browser_open instead (an http or https address, for example a dev server on localhost), or ask the operator.',
-            why: 'This build ships the url form of browser_open and the list, navigate and close verbs; the rest arrive in later releases.'
+            do: 'Use a `url`, `path` or `html` on browser_open instead (an http or https address, a project .html file, or inline HTML for a live panel), or ask the operator.',
+            why: 'This build ships the list, navigate and close verbs and the live-panel verbs; the rest arrive in later releases.'
+          }
+        ]
+      }
+    case 'NOT_A_PAGE_PANE':
+      return {
+        error: code,
+        message: `browser_set_data and browser_patch only work on a pane showing one of Harnu's own page files (an origin of \`page\`)${at}. This pane is showing something else.`,
+        nextActions: [
+          {
+            do: 'Open the panel with browser_open({ path }) or browser_open({ html, name }) and use that paneId. For a dev server or an external site there is no data/patch verb.',
+            why: 'Live panels are page-class only for every caller, so a read-only worker can never reach a dev server or a site through them.'
+          }
+        ]
+      }
+    case 'SELECTOR_NOT_FOUND':
+      return {
+        error: code,
+        message: `The selector${ctx.selector ? ` “${ctx.selector}”` : ''} matched no element in the page, or is not a valid CSS selector.`,
+        nextActions: [
+          {
+            do: 'Check the selector against the panel file (it patches the live DOM, so an element your script has not rendered yet does not exist), then call again.',
+            why: 'Zero matches is an error, not a silent no-op, so a typo cannot pass for success.'
+          }
+        ]
+      }
+    case 'DATA_TOO_LARGE':
+      return {
+        error: code,
+        message: `That data is larger than ${Math.round((ctx.limitBytes ?? 262144) / 1024)} KiB once serialised.`,
+        nextActions: [
+          {
+            do: 'Send less: keep the panel state small (counts, ids, short strings) and have the page fetch or render the bulk from files.',
+            why: 'The state is one JSON file shared by every pane on the page and re-read on every reload.'
+          }
+        ]
+      }
+    case 'REV_CONFLICT':
+      return {
+        error: code,
+        message: `expectRev did not match: the page state is at rev ${ctx.currentRev ?? '?'} now. Nothing was written.`,
+        nextActions: [
+          {
+            do: 'Read the current state (browser_snapshot with include: ["data"], or call set_data without expectRev), merge your change, and call again with the new rev.',
+            why: 'Someone else wrote the state since you read it; expectRev exists so you never overwrite that blindly.'
+          }
+        ]
+      }
+    case 'HTML_TOO_LARGE':
+      return {
+        error: code,
+        message: `That HTML is larger than ${Math.round((ctx.limitBytes ?? 65536) / 1024)} KiB.`,
+        nextActions: [
+          {
+            do: 'For a bigger panel write the .html file with your Write tool and open it with browser_open({ path }); keep patches small.',
+            why: 'Patches are a scalpel for one number or row; the file is the panel.'
+          }
+        ]
+      }
+    case 'PATH_NOT_ALLOWED':
+      return {
+        error: code,
+        message: `Harnu will not serve that path${ctx.jailReason ? ` (${ctx.jailReason})` : ''}${at}.`,
+        nextActions: [
+          {
+            do: 'Pass a file inside this folder that exists (repo-relative or absolute). Nothing under .git or .harnu/memory is served, and a symlink that leaves the folder is refused.',
+            why: 'A page can only read files the operator could already open from this folder.'
           }
         ]
       }

@@ -28,6 +28,13 @@ export interface BrowserPaneRecord {
   seenHosts: Set<string>
   /** The "opened by agent · host" flag (spec §3.2), or `null`. */
   flagged: { host: string } | null
+  /**
+   * The folder-relative page file this pane was opened on (T569 U2): the dedupe key of a page pane. The pane's
+   * CLASS is always read off the live URL, never off this field.
+   */
+  pagePath?: string | null
+  /** The operator's per-pane "Allow network" switch (spec §4.3). Off by default; NO verb sets it. */
+  allowNetwork?: boolean
 }
 
 /** A write in flight: what the ACK needs to say about concurrent activity. */
@@ -56,6 +63,15 @@ export interface BrowserRegistry {
   noteOperatorInteraction(paneId: string): void
   beginWrite(paneId: string): WriteToken
   endWrite(token: WriteToken): WriteReport
+  /** A page pane in `folder` showing `relPath`, for `browser_open({ path })` dedupe (spec §6.2). */
+  findPagePane(folder: string, relPath: string): BrowserPaneRecord | undefined
+  /**
+   * An agent INPUT verb (`click`, `type`, `fill`, `press`, `upload`, an `eval` that dispatches input) is running
+   * on the pane (spec §5.4 condition 2). U4 calls these around its input verbs; the emit gate reads them.
+   */
+  beginAgentInput(paneId: string): void
+  endAgentInput(paneId: string): void
+  agentInput(paneId: string): { inFlight: boolean; at: number | null }
 }
 
 export function createBrowserRegistry(now: () => number): BrowserRegistry {
@@ -66,6 +82,8 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
   /** Per pane: write ids that overlapped some other write while in flight. */
   const overlapped = new Map<string, Set<number>>()
   let nextId = 1
+  /** Per pane: agent input verbs running now, and when the last one finished. */
+  const agentInputs = new Map<string, { running: number; at: number | null }>()
 
   return {
     add: (rec) => void panes.set(rec.paneId, rec),
@@ -74,6 +92,7 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
       operatorAt.delete(id)
       inflight.delete(id)
       overlapped.delete(id)
+      agentInputs.delete(id)
       return panes.delete(id)
     },
     list: () => [...panes.values()],
@@ -81,6 +100,23 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
       [...panes.values()]
         .filter((p) => p.folder === folder && p.openedBy === 'agent')
         .sort((a, b) => a.createdAt - b.createdAt),
+    findPagePane: (folder, relPath) =>
+      [...panes.values()].find((p) => p.folder === folder && p.pagePath === relPath),
+    beginAgentInput(id) {
+      const cur = agentInputs.get(id) ?? { running: 0, at: null }
+      cur.running++
+      agentInputs.set(id, cur)
+    },
+    endAgentInput(id) {
+      const cur = agentInputs.get(id)
+      if (!cur) return
+      cur.running = Math.max(0, cur.running - 1)
+      cur.at = now()
+    },
+    agentInput(id) {
+      const cur = agentInputs.get(id)
+      return { inFlight: (cur?.running ?? 0) > 0, at: cur?.at ?? null }
+    },
     touch(id) {
       const rec = panes.get(id)
       if (rec) rec.lastActiveAt = now()

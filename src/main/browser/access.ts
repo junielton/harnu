@@ -48,6 +48,17 @@ const READ_OPS: ReadonlySet<string> = new Set([
   'browser_wait_for'
 ])
 
+/**
+ * The live-panel verbs (spec §5.2): `page`-class only, for EVERY caller. On a `local` or `external` pane they
+ * refuse `NOT_A_PAGE_PANE`, which is the structural half of decision 25 (spec §7.3): an `observe` worker's
+ * exception cannot become a way into a dev server or an external site, because the verbs have no such path.
+ */
+const LIVE_PANEL_OPS: ReadonlySet<string> = new Set(['browser_set_data', 'browser_patch'])
+
+export function isLivePanelOp(op: string): boolean {
+  return LIVE_PANEL_OPS.has(op)
+}
+
 export function isBrowserOp(op: string): op is BrowserOp {
   return (BROWSER_OPS as readonly string[]).includes(op)
 }
@@ -66,6 +77,9 @@ export type BrowserDenyReason =
   | 'BROWSER_WRITES_DISABLED'
   | 'BROWSER_PAUSED'
   | 'NOT_YET_AVAILABLE'
+  | 'NOT_A_PAGE_PANE'
+  | 'DATA_TOO_LARGE'
+  | 'HTML_TOO_LARGE'
 
 /** How a pane was opened (spec §1.2). */
 export type BrowserOpenedBy = 'agent' | 'operator'
@@ -102,6 +116,8 @@ export interface BrowserGateInput {
 export function browserTier(op: BrowserOp, pane: BrowserPaneAccess | undefined): 'free' | 'lease' {
   if (!isBrowserWriteOp(op)) return 'free'
   if (PANELESS_OPS.has(op)) return 'free'
+  // Live panel: free on a `page` pane whoever opened it (spec §7.1); any other class never reaches the tier.
+  if (LIVE_PANEL_OPS.has(op)) return 'free'
   return pane?.openedBy === 'operator' ? 'lease' : 'free'
 }
 
@@ -112,8 +128,8 @@ export interface BrowserGateRefusal {
 }
 
 /**
- * The refusal for `op`, or `null` to continue. Order (spec §6.3): pane known → Disconnect → content (arguments)
- * → kill-switch → pause → tier. `close` is exempt from the kill-switch (Q6) but not from Disconnect or Pause.
+ * The refusal for `op`, or `null` to continue. Order (spec §6.3): pane known → Disconnect → `page`-class check (live-panel verbs) →
+ * content (arguments) → kill-switch → pause → tier. `close` is exempt from the kill-switch (Q6) but not from Disconnect or Pause.
  */
 export function gateBrowserOpDetailed(
   op: BrowserOp,
@@ -123,6 +139,9 @@ export function gateBrowserOpDetailed(
   const pane = input.pane
   if (addressesPane && !pane) return { reason: 'PANE_NOT_FOUND' }
   if (addressesPane && pane?.disconnected) return { reason: 'BROWSER_DISCONNECTED' }
+  if (LIVE_PANEL_OPS.has(op) && pane && pane.originClass !== 'page') {
+    return { reason: 'NOT_A_PAGE_PANE' }
+  }
   if (input.args) {
     const content = checkBrowserContent(op, input.args)
     if (content) return { reason: content.code, content }
