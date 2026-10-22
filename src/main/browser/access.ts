@@ -137,6 +137,10 @@ export interface BrowserPaneAccess {
   writeDenied?: boolean
   /** The pane emulates a device (T572): `browser_emulate({ zoom })` is refused while it does. Absent = no. */
   deviceActive?: boolean
+  /** Touch is emulated (T572): a right or middle click is refused `BAD_ARGS` at plan level. Absent = no. */
+  touchActive?: boolean
+  /** The pane's folder, so upload paths are judged against it at plan level (T572). Absent = not checked. */
+  folder?: string
 }
 
 export interface BrowserGateInput {
@@ -175,7 +179,8 @@ export type BrowserTier = 'free' | 'lease' | 'refused'
  * an operator pane's read opt-in is a separate gate step (it refuses, it does not lease).
  *
  *   Open / Read                 free (an operator pane's reads need the folder opt-in)
- *   Navigate, Emulate, Download, Close   agent pane: free · operator pane: lease
+ *   Navigate, Emulate, Download by url, Close   agent pane: free · operator pane: lease
+ *   Download by ref             Input tier: agent pane: free on page/local/blank, lease on external · operator pane: lease
  *   Network start/read          agent pane: free on page/local/blank, lease on external · operator pane: lease
  *   Network stop                always free (it only ever reduces what is observed)
  *   Eval, Input                 agent pane: free on page/local/blank, lease on external · operator pane: lease
@@ -195,10 +200,14 @@ export function browserTier(
     if (args?.action === 'stop') return 'free'
     return operatorPane || pane.originClass === 'external' ? 'lease' : 'free'
   }
-  if (SCRIPT_AND_INPUT_OPS.has(op)) {
+  // `browser_download({ ref })` CLICKS the element (a post, a purchase, a delete are one click), so it is the Input
+  // tier: a lease on an external page and on an operator pane. `browser_download({ url })` only fetches a file and
+  // keeps the plain download tier below (T572 delta 1: found by the verifier, Q4).
+  const clicks = op === 'browser_download' && args?.ref !== undefined
+  if (SCRIPT_AND_INPUT_OPS.has(op) || clicks) {
     return operatorPane || pane.originClass === 'external' ? 'lease' : 'free'
   }
-  // navigate, emulate, download, close
+  // navigate, emulate, download (by url), close
   return operatorPane ? 'lease' : 'free'
 }
 
@@ -227,7 +236,9 @@ export function gateBrowserOpDetailed(
     return { reason: 'BROWSER_READ_NOT_ENABLED' }
   if (input.args) {
     const content = checkBrowserContent(op, input.args, {
-      deviceActive: pane?.deviceActive === true
+      deviceActive: pane?.deviceActive === true,
+      touchActive: pane?.touchActive === true,
+      ...(pane?.folder !== undefined ? { folder: pane.folder } : {})
     })
     if (content) return { reason: content.code, content }
   }

@@ -18,31 +18,54 @@ export const MAX_DOWNLOAD_TIMEOUT_MS = 30_000
 export const DOWNLOAD_COMPLETE_TIMEOUT_MS = 80_000
 /** How long the operator's "Save to …?" prompt waits for an answer before cancelling (design.md). */
 export const DOWNLOAD_PROMPT_TIMEOUT_MS = 60_000
-const MAX_NAME_CHARS = 120
+/** The longest saved name in UTF-8 BYTES (file systems cap bytes, not characters; most allow 255). */
+const MAX_NAME_BYTES = 240
+
+/**
+ * Characters that change how a name READS without changing what it IS: bidirectional overrides and isolates (an
+ * `invoice‮fdp.exe` that looks like a PDF), the Arabic letter mark, zero-width characters and the byte-order mark.
+ * They are removed from every name, so the prompt and the saved file never show one.
+ */
+// eslint-disable-next-line no-misleading-character-class
+const INVISIBLE_RE = /[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g
+
+const byteLength = (text: string): number => Buffer.byteLength(text, 'utf8')
+
+/** `text` cut to at most `max` UTF-8 bytes on a character boundary. */
+function cutBytes(text: string, max: number): string {
+  let out = ''
+  let used = 0
+  for (const ch of text) {
+    const n = byteLength(ch)
+    if (used + n > max) break
+    out += ch
+    used += n
+  }
+  return out
+}
 
 /**
  * A safe file name from whatever the server or the agent suggested: no directories, no separators or NULs or control
- * characters, nothing Windows rejects, no leading dots (a hidden file or `..`), no trailing dots or spaces, at most
- * {@link MAX_NAME_CHARS} characters with the extension kept. Empty after cleaning is `download`.
+ * characters, no invisible or direction-changing characters, nothing Windows rejects, no leading dots (a hidden file
+ * or `..`), no trailing dots or spaces, at most {@link MAX_NAME_BYTES} UTF-8 bytes with the extension kept. Empty
+ * after cleaning is `download`.
  */
 export function sanitizeDownloadName(raw: string): string {
   // Both separators, whatever the platform: a name from a server is never a path.
   const base = raw.split(/[\\/]/).pop() ?? ''
   const cleaned = base
+    .replace(INVISIBLE_RE, '')
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f<>:"|?*]/g, '_')
     .replace(/^[.\s]+/, '')
     .replace(/[.\s]+$/, '')
   if (cleaned === '' || /^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(cleaned)) {
-    return cleaned === '' ? 'download' : `_${cleaned}`.slice(0, MAX_NAME_CHARS)
+    return cleaned === '' ? 'download' : cutBytes(`_${cleaned}`, MAX_NAME_BYTES)
   }
-  if ([...cleaned].length <= MAX_NAME_CHARS) return cleaned
+  if (byteLength(cleaned) <= MAX_NAME_BYTES) return cleaned
   const ext = path.extname(cleaned)
-  const keep = ext.length > 0 && ext.length <= 16 ? ext : ''
-  const stem = [...cleaned.slice(0, cleaned.length - keep.length)]
-    .slice(0, MAX_NAME_CHARS - [...keep].length)
-    .join('')
-  return `${stem}${keep}`
+  const keep = ext.length > 0 && byteLength(ext) <= 16 ? ext : ''
+  return `${cutBytes(cleaned.slice(0, cleaned.length - keep.length), MAX_NAME_BYTES - byteLength(keep))}${keep}`
 }
 
 /**
@@ -138,6 +161,11 @@ export function downloadResult(input: {
 export interface DownloadArmIo {
   setTimer(fn: () => void, ms: number): unknown
   clearTimer(handle: unknown): void
+  /**
+   * A claimed download is being abandoned (it did not finish in time, or the call that armed it is over): the host
+   * cancels the item, so nothing keeps downloading into the folder after the agent was told it failed.
+   */
+  abortClaimed?(paneId: string): void
 }
 
 export interface ArmClaim {
@@ -191,7 +219,11 @@ export function createDownloadArms(io: DownloadArmIo): DownloadArms {
     arm(paneId, opts) {
       // A previous allowance that is still open belongs to a call that is over: end it.
       const old = slots.get(paneId)
-      if (old) finish(paneId, old, noneStarted())
+      if (old) {
+        // A download of the call being replaced is still arriving: stop it, it belongs to nobody now.
+        if (old.claimed && !old.done) io.abortClaimed?.(paneId)
+        finish(paneId, old, noneStarted())
+      }
       let resolve!: (r: DownloadResult) => void
       const result = new Promise<DownloadResult>((r) => (resolve = r))
       const slot: Slot = {
@@ -207,7 +239,11 @@ export function createDownloadArms(io: DownloadArmIo): DownloadArms {
       slots.set(paneId, slot)
       return {
         result,
-        disarm: () => finish(paneId, slot, noneStarted())
+        disarm: () => {
+          // The call is over while its download is still arriving (a deadline, an abort): stop the download.
+          if (slot.claimed && !slot.done) io.abortClaimed?.(paneId)
+          finish(paneId, slot, noneStarted())
+        }
       }
     },
     claim(paneId) {
@@ -217,6 +253,7 @@ export function createDownloadArms(io: DownloadArmIo): DownloadArms {
       // The start timer no longer applies; the completion wait is its own bound.
       io.clearTimer(slot.timer)
       slot.timer = io.setTimer(() => {
+        if (!slot.done) io.abortClaimed?.(paneId)
         finish(paneId, slot, {
           ok: false,
           code: 'DOWNLOAD_FAILED',
@@ -263,6 +300,11 @@ export interface DownloadFsIo {
   mkdirp(dir: string): void
   realpath(p: string): string
   exists(p: string): boolean
+  /**
+   * Claim `p` by creating it exclusively (fails with `EEXIST` if it exists): the name is then ours, so a file that
+   * appears between "is it free?" and the first byte can never be overwritten. Absent = no reservation (tests).
+   */
+  reserve?(p: string): void
 }
 
 export type DownloadTarget =
@@ -286,15 +328,23 @@ export function resolveDownloadTarget(
     if (!isInsideReal(rootReal, dirReal)) {
       return { ok: false, detail: 'the downloads folder leaves the pane folder through a link' }
     }
-    const name = uniqueDownloadName(sanitizeDownloadName(rawName), (n) =>
-      io.exists(path.join(dirReal, n))
-    )
-    return {
-      ok: true,
-      absPath: path.join(dirReal, name),
-      relPath: `${DOWNLOADS_DIR}/${name}`,
-      name
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const name = uniqueDownloadName(sanitizeDownloadName(rawName), (n) =>
+        io.exists(path.join(dirReal, n))
+      )
+      const absPath = path.join(dirReal, name)
+      if (io.reserve) {
+        try {
+          io.reserve(absPath)
+        } catch (err) {
+          // Somebody took the name between the check and the claim: pick again (it now exists).
+          if ((err as NodeJS.ErrnoException).code === 'EEXIST') continue
+          throw err
+        }
+      }
+      return { ok: true, absPath, relPath: `${DOWNLOADS_DIR}/${name}`, name }
     }
+    return { ok: false, detail: 'could not find a free file name' }
   } catch (err) {
     return { ok: false, detail: err instanceof Error ? err.message : String(err) }
   }
@@ -337,6 +387,8 @@ export function stepHeldDownload(
     case 'deny':
       return { state: { ...state, answered: 'deny' }, effect: 'discard' }
     case 'done-fail':
+      // The operator already said no: the item's `cancelled` event is our own cancel coming back, not a failure.
+      if (state.answered === 'deny') return { state, effect: 'none' }
       return { state: { ...state, failed: true }, effect: 'discard' }
     case 'allow': {
       const next: HeldDownload = { ...state, answered: 'allow' }
@@ -379,4 +431,18 @@ export function moveHeldDownload(
     }
   }
   return { ok: false, detail: 'could not find a free file name' }
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Stale held downloads                                                                               */
+/* ------------------------------------------------------------------------------------------------ */
+
+/** The prefix of the private temp directories holding an operator download that waits for its answer. */
+export const HELD_DIR_PREFIX = 'harnu-dl-'
+/** A held directory older than this belongs to a process that died (the question times out after 60 s). */
+export const HELD_DIR_MAX_AGE_MS = 60 * 60 * 1000
+
+/** Whether a temp directory is a leftover held download to sweep at startup. Younger ones may be another instance's. */
+export function isStaleHeldDir(name: string, mtimeMs: number, now: number): boolean {
+  return name.startsWith(HELD_DIR_PREFIX) && now - mtimeMs > HELD_DIR_MAX_AGE_MS
 }

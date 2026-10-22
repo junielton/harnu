@@ -379,6 +379,68 @@ export function mobileUserAgent(major: number, kind: DeviceKind): UserAgentOverr
   }
 }
 
+/** What the host knows about the browser it runs, to rebuild its own client hints on a reset. */
+export interface NativeHintsEnv {
+  /** `process.versions.chrome`, e.g. `142.0.7444.265`. */
+  chromeVersion: string
+  /** `process.platform`. */
+  platform: string
+  /** `process.arch`. */
+  arch: string
+  /** `os.release()`. */
+  osRelease: string
+}
+
+/**
+ * Chromium's own brand list for its major version (its "GREASE" algorithm: a deliberately odd brand whose spelling,
+ * version and place are seeded by the major version, so no site can hard-code the list). Matches what the guest sent
+ * unmodified in the T572 delta-1 measurement: `"Not_A Brand";v="99", "Chromium";v="142"`.
+ */
+export function nativeBrands(major: number): Array<{ brand: string; version: string }> {
+  const chars = [' ', '(', ':', '-', '.', '/', ')', ';', '=', '?', '_']
+  const versions = ['8', '99', '24']
+  const grease = {
+    brand: `Not${chars[major % 11]}A${chars[(major + 1) % 11]}Brand`,
+    version: versions[major % 3]!
+  }
+  const chromium = { brand: 'Chromium', version: String(major) }
+  return major % 2 === 0 ? [grease, chromium] : [chromium, grease]
+}
+
+/**
+ * The user agent and client hints the browser has on its own, as an explicit override. An override with no metadata
+ * REMOVES the client hints (measured live: `brands: []` and no `Sec-CH-UA*` headers), and an empty `userAgent` does
+ * not clear an override, so the only way back to what an untouched pane sends is to set the real values again.
+ */
+export function nativeUserAgentOverride(
+  originalUserAgent: string,
+  env: NativeHintsEnv
+): UserAgentOverride {
+  const major = chromeMajor(originalUserAgent) ?? (Number.parseInt(env.chromeVersion, 10) || 130)
+  const platform =
+    env.platform === 'darwin' ? 'macOS' : env.platform === 'win32' ? 'Windows' : 'Linux'
+  const platformVersion =
+    env.platform === 'win32' ? '10.0.0' : (/^\d+(\.\d+){0,2}/.exec(env.osRelease)?.[0] ?? '')
+  const full = /^\d+(\.\d+){3}$/.test(env.chromeVersion) ? env.chromeVersion : `${major}.0.0.0`
+  return {
+    userAgent: originalUserAgent,
+    userAgentMetadata: {
+      brands: nativeBrands(major),
+      fullVersionList: nativeBrands(major).map((b) => ({
+        brand: b.brand,
+        version: b.brand === 'Chromium' ? full : `${b.version}.0.0.0`
+      })),
+      platform,
+      platformVersion,
+      architecture: env.arch === 'arm64' || env.arch === 'arm' ? 'arm' : 'x86',
+      bitness: env.arch === 'ia32' || env.arch === 'arm' ? '32' : '64',
+      model: '',
+      mobile: false,
+      wow64: false
+    }
+  }
+}
+
 /**
  * The user agent the record asks for: the explicit one, else a mobile device's own, else `null` (the page's
  * original, which {@link emulationCommands} restores explicitly because clearing the metrics override does not).
@@ -435,7 +497,14 @@ export function metricsCommand(device: DeviceSpec | undefined, scale: number): C
  * was on at load, spec §9.2 correction 4), so the host sends them at `did-start-navigation`. Every call sets all of
  * them, so a removed setting is explicitly cleared and a reset restores the original user agent.
  */
-export function sessionCommands(rec: EmulationRecord, originalUserAgent: string): CdpCommand[] {
+export function sessionCommands(
+  rec: EmulationRecord,
+  originalUserAgent: string,
+  prior: SessionState = { dirty: true },
+  native?: NativeHintsEnv
+): CdpCommand[] {
+  // A pane that was never emulated gets NOTHING: not a restore of a user agent nobody changed, not a "touch off".
+  if (isEmptyRecord(rec) && !prior.dirty) return []
   const touch = effectiveTouch(rec)
   const ua = userAgentFor(rec, originalUserAgent)
   return [
@@ -451,7 +520,12 @@ export function sessionCommands(rec: EmulationRecord, originalUserAgent: string)
     },
     {
       method: 'Emulation.setUserAgentOverride',
-      params: ua ? { ...ua } : { userAgent: originalUserAgent }
+      // No user agent asked for: put the real one back, with its real client hints when the host can say what they are.
+      params: ua
+        ? { ...ua }
+        : native
+          ? { ...nativeUserAgentOverride(originalUserAgent, native) }
+          : { userAgent: originalUserAgent }
     },
     {
       method: 'Emulation.setEmulatedMedia',
@@ -463,6 +537,20 @@ export function sessionCommands(rec: EmulationRecord, originalUserAgent: string)
       }
     }
   ]
+}
+
+/**
+ * Whether Harnu has put anything on the page yet (T572 delta 1, measured live: the guest sends no client hints at all
+ * before any emulation and the same nothing after a reset, so a restore on a never-emulated pane has nothing to
+ * restore). `dirty` is true once a non-empty record was sent; the next empty record then sends the clearing set once.
+ */
+export interface SessionState {
+  dirty: boolean
+}
+
+/** The state after `rec` was sent. */
+export function nextSessionState(rec: EmulationRecord): SessionState {
+  return { dirty: !isEmptyRecord(rec) }
 }
 
 /** The caption under the device frame (design.md "Device frame"): the segments that apply, in a fixed order. */

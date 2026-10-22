@@ -3895,7 +3895,8 @@ the list**.
 `--text-3`, `min-w-[34px]`, centred, a plain text button: clicking it resets to 100% (`$t('browserPane.zoom.reset')`
 is its title). Steps follow the browser ladder (25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300,
 400, 500%); the factor is clamped to 0.25–5. The zoom is **remembered per origin** and applied on every
-navigation, so the percentage shown is the one for the page now on screen. `Ctrl +`, `Ctrl −` and `Ctrl 0` do the
+navigation, so the percentage shown is the one for the page now on screen. It is per site, not per pane: two panes
+on the same site (and the same cookie jar) change together, because the browser keeps one zoom per site. `Ctrl +`, `Ctrl −` and `Ctrl 0` do the
 same while the pane has focus (`browser.zoom.in|out|reset`). **In device mode the group is disabled, not hidden**
 (`text-text-disabled`, no hover, `cursor-default`, title `$t('browserPane.zoom.offInDevice')`), and shows `100%`
 (Q15). Below 330px the percentage button goes and `minus`/`plus` remain.

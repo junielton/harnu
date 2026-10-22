@@ -270,8 +270,10 @@ describe('resolveGateInput (the shell half of the plan gate)', () => {
       leaseActive: false,
       writeDenied: false,
       inputReady: true,
-      // T572: no emulation record, so no device.
-      deviceActive: false
+      // T572: no emulation record: no device, no touch; the folder rides along for the upload path check.
+      deviceActive: false,
+      touchActive: false,
+      folder: '/work/app'
     })
     expect(
       resolveGateInput({ ...base, rec, liveUrl: 'https://example.com/' }).input.pane?.originClass

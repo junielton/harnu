@@ -49,7 +49,20 @@ describe('forbiddenUploadReason', () => {
       'certs/server.pem',
       'k.KEY',
       'id_rsa',
-      'home/.ssh/id_ed25519.pub'
+      'home/.ssh/id_ed25519.pub',
+      // The widened list (delta 1).
+      '.envrc',
+      '.env-backup',
+      'cfg/.ENV.production',
+      '.git-credentials',
+      '.npmrc',
+      'sub/.netrc',
+      '.pypirc',
+      'id_rsa.pub',
+      'id_ed25519',
+      '.harnu/memory/hot.md',
+      'x/.harnu/out/downloads/a.txt',
+      '.HARNU/out/a.txt'
     ]) {
       expect(forbiddenUploadReason(p), p).not.toBeNull()
     }
@@ -62,7 +75,10 @@ describe('forbiddenUploadReason', () => {
       'envelope.pdf',
       'valid_id.txt',
       'a.keynote',
-      'monkey.png'
+      'monkey.png',
+      'npmrc.md',
+      'harnu.md',
+      'docs/netrc-guide.txt'
     ]) {
       expect(forbiddenUploadReason(p), p).toBeNull()
     }
@@ -85,6 +101,36 @@ describe('checkUploadArgs (plan level)', () => {
     const r = checkUploadArgs({ paths: ['ok.txt', '.env'] })
     expect(r?.code).toBe('UPLOAD_PATH_DENIED')
     expect(r?.detail).toContain('.env')
+  })
+})
+
+describe('checkUploadArgs with the pane folder: the lexical path check is plan level (delta 1)', () => {
+  const FOLDER = '/work/app'
+  it('refuses `..`, an absolute path elsewhere and a traversal that lands outside, without any filesystem', () => {
+    for (const p of ['../x.txt', '/etc/hostname', 'sub/../../y.txt', '/work/app/../other/z.txt']) {
+      const r = checkUploadArgs({ paths: [p] }, FOLDER)
+      expect(r, p).toMatchObject({ code: 'UPLOAD_PATH_DENIED' })
+      expect(r?.detail).toContain('outside')
+    }
+  })
+
+  it('judges the name where the path really lands (`sub/../.env` is `.env`)', () => {
+    expect(checkUploadArgs({ paths: ['sub/../.env'] }, FOLDER)).toMatchObject({
+      code: 'UPLOAD_PATH_DENIED'
+    })
+    expect(checkUploadArgs({ paths: ['a/../.harnu/x.md'] }, FOLDER)).toMatchObject({
+      code: 'UPLOAD_PATH_DENIED'
+    })
+  })
+
+  it('lets a path inside the folder through, relative or absolute', () => {
+    expect(
+      checkUploadArgs({ paths: ['a.txt', 'sub/b.png', '/work/app/c.md', 'sub/../d.txt'] }, FOLDER)
+    ).toBeNull()
+  })
+
+  it('without a folder only the names are judged (the handler re-checks with the folder)', () => {
+    expect(checkUploadArgs({ paths: ['../x.txt'] })).toBeNull()
   })
 })
 

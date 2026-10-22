@@ -26,6 +26,10 @@ export type ContentCode =
 export interface ContentContext {
   /** The pane emulates a device right now (the registry's emulation record). */
   deviceActive?: boolean
+  /** The pane's folder: upload paths are checked against it at plan level. */
+  folder?: string
+  /** Touch is emulated on the pane: right and middle clicks do not exist there. */
+  touchActive?: boolean
 }
 
 export interface ContentRefusal {
@@ -99,7 +103,7 @@ export function checkBrowserContent(
     return refusal ? { code: refusal.code, detail: refusal.detail } : null
   }
   if (op === 'browser_upload') {
-    const refusal = checkUploadArgs(args)
+    const refusal = checkUploadArgs(args, ctx.folder)
     return refusal
       ? {
           code: refusal.code === 'BAD_ARGS' ? 'BAD_ARGS' : 'UPLOAD_PATH_DENIED',
@@ -126,6 +130,16 @@ export function checkBrowserContent(
           detail: `scheme ${protocol.replace(/:$/, '') || '(none)'}`,
           scheme: protocol.replace(/:$/, '')
         }
+      }
+    }
+    return null
+  }
+  if (op === 'browser_click' && ctx.touchActive === true) {
+    if (args.button === 'right' || args.button === 'middle') {
+      return {
+        code: 'BAD_ARGS',
+        detail:
+          'Right and middle clicks do not exist while touch is emulated: call browser_emulate with `touch: false` first, or click with the left button.'
       }
     }
     return null

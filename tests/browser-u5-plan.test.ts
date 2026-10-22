@@ -94,6 +94,49 @@ describe('browser_upload and browser_download at plan level', () => {
     }
   })
 
+  it('a path outside the pane folder is UPLOAD_PATH_DENIED at plan level, never a confirm (delta 1)', () => {
+    for (const ask of [false, true]) {
+      for (const paths of [['../etc/hostname'], ['/etc/hostname'], ['a/../../x']]) {
+        const p = plan('browser_upload', { ref: 's1e1', paths }, gate({ folder: '/work/app' }), ask)
+        expect(p, paths[0]).toMatchObject(never)
+        expect(p.auditRecord.result).toMatch(/^UPLOAD_PATH_DENIED: .*outside/)
+      }
+    }
+  })
+
+  it('a path inside the folder is not refused at plan level', () => {
+    const p = plan(
+      'browser_upload',
+      { ref: 's1e1', paths: ['fixtures/a.png'] },
+      gate({ folder: '/work/app' })
+    )
+    expect(p.verdict).not.toBe('deny')
+  })
+
+  it('a right or middle click while touch is emulated is BAD_ARGS at plan level, never a confirm (delta 1)', () => {
+    const click = (button: string, browser: BrowserGateInput, ask: boolean) =>
+      planToolCall({
+        tool: 'browser_click',
+        input: buildPlanInput(
+          'browser_click',
+          { paneId: 'bp-1', ref: 's1e1', button },
+          '/work/app'
+        ),
+        policy: policy(ask),
+        now: 1,
+        browser
+      })
+    for (const ask of [false, true]) {
+      for (const button of ['right', 'middle']) {
+        const p = click(button, gate({ touchActive: true }), ask)
+        expect(p, button).toMatchObject(never)
+        expect(p.auditRecord.result).toMatch(/^BAD_ARGS: Right and middle clicks do not exist/)
+      }
+    }
+    expect(click('left', gate({ touchActive: true }), false).verdict).not.toBe('deny')
+    expect(click('right', gate(), false).verdict).not.toBe('deny')
+  })
+
   it('too many paths is BAD_ARGS', () => {
     const paths = Array.from({ length: 11 }, (_, i) => `f${i}.txt`)
     const p = plan('browser_upload', { ref: 's1e1', paths }, gate())
@@ -202,5 +245,17 @@ describe('resolveGateInput', () => {
       resolveGateInput({ ...base, rec: rec({ colorScheme: 'dark' }) }).input.pane?.deviceActive
     ).toBe(false)
     expect(resolveGateInput({ ...base, rec: rec() }).input.pane?.deviceActive).toBe(false)
+  })
+
+  it('carries the touch state and the pane folder, for the plan-level click and upload rules', () => {
+    const touchOn = resolveGateInput({ ...base, rec: rec({ device: deviceFromPreset('phone-m') }) })
+      .input.pane
+    expect(touchOn).toMatchObject({ touchActive: true, folder: '/work/app' })
+    const touchOff = resolveGateInput({ ...base, rec: rec({ device: deviceFromPreset('laptop') }) })
+      .input.pane
+    expect(touchOff?.touchActive).toBe(false)
+    expect(resolveGateInput({ ...base, rec: rec({ touch: true }) }).input.pane?.touchActive).toBe(
+      true
+    )
   })
 })
