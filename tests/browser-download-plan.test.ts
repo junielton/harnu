@@ -182,7 +182,7 @@ describe('the one-shot allowance', () => {
     const { arms } = harness()
     arms.arm('p1', { timeoutMs: 5000 })
     expect(arms.isArmed('p1')).toBe(true)
-    expect(arms.claim('p1')).toEqual({ name: undefined })
+    expect(arms.claim('p1')).toMatchObject({ name: undefined })
     expect(arms.claim('p1')).toBeNull()
     expect(arms.isArmed('p1')).toBe(false)
   })
@@ -197,7 +197,7 @@ describe('the one-shot allowance', () => {
   it('carries the name the agent asked for', () => {
     const { arms } = harness()
     arms.arm('p1', { name: 'mine.csv', timeoutMs: 5000 })
-    expect(arms.claim('p1')).toEqual({ name: 'mine.csv' })
+    expect(arms.claim('p1')).toMatchObject({ name: 'mine.csv' })
   })
 
   it('NO_DOWNLOAD_STARTED when nothing began in time', async () => {
@@ -214,6 +214,19 @@ describe('the one-shot allowance', () => {
     arms.claim('p1')
     arms.settle('p1', { ok: true, path: 'x', bytes: 1, mime: 'a/b', name: 'x' })
     expect(await arm.result).toMatchObject({ ok: true, name: 'x' })
+  })
+
+  it('a claim settles only its own call: a late download cannot settle a newer one', async () => {
+    const { arms, timers, fire } = harness()
+    const first = arms.arm('p1', { timeoutMs: 5000 })
+    const claim = arms.claim('p1')!
+    fire(timers.length - 1)
+    expect(await first.result).toMatchObject({ ok: false, code: 'DOWNLOAD_FAILED' })
+    const second = arms.arm('p1', { timeoutMs: 5000 })
+    claim.settle({ ok: true, path: 'old', bytes: 1, mime: 'a/b', name: 'old' })
+    expect(arms.isArmed('p1')).toBe(true)
+    arms.claim('p1')!.settle({ ok: true, path: 'new', bytes: 1, mime: 'a/b', name: 'new' })
+    expect(await second.result).toMatchObject({ ok: true, name: 'new' })
   })
 
   it('a claimed download that never finishes fails after the completion bound, not the start bound', async () => {

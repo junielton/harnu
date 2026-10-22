@@ -703,6 +703,7 @@ export class BrowserViewHost implements BrowserReadHost {
     if (effect === 'none') return
     const alive = !e.wc.isDestroyed() && this.entries.has(e.paneId)
     const finish = (notice: BrowserNotice): void => {
+      clearTimeout(p.timer)
       void rawRm(p.tempDir, { recursive: true, force: true }).catch(() => undefined)
       if (e.prompt === p) e.prompt = null
       if (alive) this.transientNotice(e, notice)
@@ -744,8 +745,7 @@ export class BrowserViewHost implements BrowserReadHost {
       event.preventDefault()
       if (decision.reason === 'too-large') {
         if (armed) {
-          this.arms.claim(e.paneId)
-          this.arms.settle(e.paneId, {
+          this.arms.claim(e.paneId)?.settle({
             ok: false,
             code: 'DOWNLOAD_TOO_LARGE',
             detail: `${item.getTotalBytes()} bytes`
@@ -763,7 +763,7 @@ export class BrowserViewHost implements BrowserReadHost {
     if (!target.ok) {
       event.preventDefault()
       if (claim) {
-        this.arms.settle(e.paneId, {
+        claim.settle({
           ok: false,
           code: 'DOWNLOAD_FAILED',
           detail: this.deps.scrub(target.detail)
@@ -781,8 +781,7 @@ export class BrowserViewHost implements BrowserReadHost {
       }
     })
     item.once('done', (_ev, state) => {
-      this.arms.settle(
-        e.paneId,
+      claim?.settle(
         downloadResult({
           state,
           savedAs: target.absPath,

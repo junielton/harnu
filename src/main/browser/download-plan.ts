@@ -143,6 +143,8 @@ export interface DownloadArmIo {
 export interface ArmClaim {
   /** The name the agent asked for (sanitised later), or `undefined` to use the server's. */
   name: string | undefined
+  /** Settle the call that made this claim; a no-op once that call is over, so a late download never settles a newer one. */
+  settle(result: DownloadResult): void
 }
 
 export interface DownloadArm {
@@ -221,7 +223,7 @@ export function createDownloadArms(io: DownloadArmIo): DownloadArms {
           detail: 'The download did not finish in time.'
         })
       }, DOWNLOAD_COMPLETE_TIMEOUT_MS)
-      return { name: slot.name }
+      return { name: slot.name, settle: (result) => finish(paneId, slot, result) }
     },
     settle(paneId, result) {
       const slot = slots.get(paneId)
