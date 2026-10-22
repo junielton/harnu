@@ -3816,8 +3816,9 @@ must freeze it first (see "Frozen frame").
   scheme, a certificate error accepted on loopback, a dialog the page raised and Harnu dismissed. `--warning` 10%
   fill, `--warning` 11px text, a trailing dismiss `x`. One notice at a time; a new one replaces the old.
 - **Pane menu (⋯)** — a standard context menu (§6 "Context menu"): **Pause agent for 10 min** (`pause`; becomes
-  **Resume agent** while paused) and **Open DevTools** (`bug`). Clear browsing data, zoom and device mode arrive
-  with later units. It registers with the native-overlay composable, so opening it freezes the view.
+  **Resume agent** while paused) and **Open DevTools** (`bug`). Clear browsing data arrives with a later unit;
+  zoom and device mode live in the address bar (below). It registers with the native-overlay composable, so
+  opening it freezes the view.
 - **Host div** — `flex-1 min-h-0`, `--bg`. It is empty in the DOM: the page is drawn by the native view. While
   the view is hidden for any reason the host shows `--bg`, never a stale paint.
 
@@ -3888,6 +3889,58 @@ can drive them without asking. Only exact host names and one-level wildcards. A 
 loopback is never trusted by itself." Footer: **Close** only (each add or remove saves at once, like the
 terminal toggle). Persisted per EXACT folder through `userProjectsSetBrowserTrustedHosts`; **no agent verb edits
 the list**.
+
+**Zoom controls** (T572 U5, spec §9.1). At the right end of the address bar, after the URL field: a group of
+`minus` (18×18 icon button), a **percentage button** and `plus` (18×18). The percentage is mono 10.5px
+`--text-3`, `min-w-[34px]`, centred, a plain text button: clicking it resets to 100% (`$t('browserPane.zoom.reset')`
+is its title). Steps follow the browser ladder (25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300,
+400, 500%); the factor is clamped to 0.25–5. The zoom is **remembered per origin** and applied on every
+navigation, so the percentage shown is the one for the page now on screen. `Ctrl +`, `Ctrl −` and `Ctrl 0` do the
+same while the pane has focus (`browser.zoom.in|out|reset`). **In device mode the group is disabled, not hidden**
+(`text-text-disabled`, no hover, `cursor-default`, title `$t('browserPane.zoom.offInDevice')`), and shows `100%`
+(Q15). Below 330px the percentage button goes and `minus`/`plus` remain.
+
+**Device button and picker** (T572 U5, spec §9.2; approved mockup scenario "Device mode"). In the address bar, left
+of the zoom group: a `smartphone` 18×18 icon button, **Device mode** (`aria-expanded`, `bg-surface-2 text-text`
+while the picker is open or a device is active, accent text when active). It opens a popover anchored under it
+(§6 "Context menu" geometry: `--surface`, 1px `--border-2`, `--radius`, `--shadow-pop`, `anim-fade-in-scale`,
+`min-w-[220px]`; it registers with the native-overlay composable, so opening it freezes the view). Rows, 24px each:
+the seven presets as `‹name› · ‹w›×‹h› @‹dpr›` (mono 11px, the `‹name›` in `--text`, the rest in `--text-3`; the
+active one carries a `check` 12px `--accent` and an `--accent-soft` fill), a divider, then **Custom size…**, which
+swaps the list for the **free-size editor**: width, height (number inputs, mono 11px, `--bg`, 1px `--border`,
+`--radius-sm`, `--accent-line` on focus, 56px wide, 100–10000), DPR (0.5–5), a **Mobile** toggle (the `ToggleSwitch`
+primitive) and **Apply** (accent) / **Back** (ghost). When a device is active the list ends with **Reset device**
+(`rotate-ccw`, `--text-2`) which clears the whole emulation record. Presets are classes, never product names.
+
+**Device bar** (T572 U5). While a device is active, one more 28px row (`h-7`, `--bg`, `border-b border-border`,
+`px-2`, `gap-1`) sits under the address bar. Left to right: the **device chip** (`smartphone`/`tablet`/`laptop`/
+`monitor` 12px + `phone-m · 390×844 @3`, mono 10.5px `--text-2`, `--accent-soft` fill, 1px `--accent-line`,
+`rounded-full`, `padding 1px 8px`; clicking it opens the picker), then 18×18 icon buttons: **Rotate**
+(`rotate-ccw-square`: swaps width and height), **Light / dark** (`sun` when light, `moon` when dark; toggles
+`prefers-color-scheme`), **Reduced motion** (`wind`; `bg-surface-2 text-text` while on) and **Reset device** (`x`).
+A toggle that has not been set follows the page's own default and shows off. The row sits in the same place the
+mockup puts these controls in the address bar; a separate row is used so a narrow pane never has to hide one.
+`prefers-reduced-motion` needs no special handling here: nothing in the bar animates.
+
+**Device frame** (T572 U5, spec §9.2, §2.3). In device mode the host `<div>` is no longer the whole viewport area.
+The area under the bars becomes a **backdrop** (`--bg`, centred contents, `padding 12px`), holding the frame and a
+**caption** under it. The frame is `border 8px solid var(--color-surface-2)` outside a 1px `--border-2` ring,
+`--shadow-pop`, `--radius-lg` for phones and tablets (preset width ≤ 1100) and `--radius` for laptop and desktop;
+no notch, no status bar (the page paints its own). The frame's **inner box is the host `<div>` the native view is
+bounded to**, sized to the device size times the **fit scale** (the largest scale ≤ 1 at which the frame and the
+caption fit the backdrop; below 25% the backdrop scrolls instead). The caption is mono 10.5px `--text-3`, one
+line, centred: `fit 66% · touch on · mobile UA · prefers-color-scheme: light` (a segment is left out when it does
+not apply). The page renders at device size and is only displayed scaled: it never sees the fit scale.
+
+**Download prompt** (T572 U5, spec §3.2, Q16). When the operator starts a download in a pane (a real click or key
+on a link or button), main holds it and the pane shows one **prompt row** under the bars: 24px, `--accent-soft`
+fill, 1px `--accent-line` bottom border, `download` 12px `--accent`, the text "Save ‹file name› to
+`.harnu/out/downloads/`?" (11px `--text-2`; the file name mono, truncating), then **Save** (accent text button) and
+**Cancel** (ghost) at the right. No answer for 60 seconds cancels it. One prompt at a time per pane; a second
+download while one waits is cancelled. After the decision the **notice strip** says "Saved ‹name›" or "Download
+cancelled" for the few seconds it takes to read, then clears itself. A download nobody asked for (a page script, no
+real click) is cancelled silently and never prompts. An agent's `browser_download` needs no prompt: the call itself
+is the request, and its ACK carries the path.
 
 **Frozen frame** (spec §2.4). When any registered overlay rectangle intersects a visible pane's rectangle, or an
 overlay is `fullscreen`, or a splitter or sidebar drag starts, main captures the view as a JPEG, the renderer
