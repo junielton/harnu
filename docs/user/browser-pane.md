@@ -2,7 +2,7 @@
 
 A **browser pane** is a real Chromium page that lives in the split stack beside your session. Use it to look at the dev server a session just started, to read documentation next to the conversation, or to let a session open a page for you. It works like any other pane: it can be maximized, resized by dragging its header, and closed.
 
-> **What is and isn't built yet.** This page describes what ships today. A session can open, list, navigate and close panes; it cannot yet read what is on the page, click, type, or open a local `.html` file for you, and the pane does not come back after you restart Harnu. Point-and-comment (picking an element and sending a note to the session), device and zoom controls, downloads and uploads are later releases.
+> **What is and isn't built yet.** This page describes what ships today. A session can open, list, navigate and close panes, and open a local `.html` file as a live panel (below); it cannot yet read what is on a web page, click or type in it, and the pane does not come back after you restart Harnu. Point-and-comment (picking an element and sending a note to the session), device and zoom controls, downloads and uploads are later releases.
 
 ## Opening one
 
@@ -15,6 +15,16 @@ Click the small arrow beside the **Split** button in the Topbar and choose **Bro
 - **Badges** — a green **local** badge means the address is a dev server on your own machine (localhost and similar); **external** is any other site. An amber **opened by agent · host** badge appears when a session took the pane to a site you hadn't seen there; dismiss it with its **×**, or just navigate yourself.
 - **Notices** — one line under the address bar when something was refused or dismissed: an address of a kind that is blocked, a certificate Harnu accepted for your own machine, or a dialog (`alert`, `confirm`, `prompt`) the page opened that Harnu closed for you.
 - **⋯ menu** — **Pause agent for 10 min** (or **Resume agent**) and **Open DevTools**.
+
+## Live panels: your own files, kept fresh by a session
+
+A session can open one of **your project's `.html` files** in a pane — or write a small panel from inline HTML — and keep it up to date while you watch: a status board, a checklist, a set of numbers. A panel pane shows a blue **page** badge, and its address field shows the file's path in your project (`docs/status.html`) instead of an address.
+
+- **It reloads when the file changes.** Edit the `.html` file, or any file it loads (a stylesheet, a script, an image), and the pane reloads a moment later, scrolled to where you were. Delete the file and the pane shows **File removed — waiting for it to come back…**; put the file back and the page returns on its own.
+- **A session can update it without a reload.** It can set the panel's saved state (a small piece of data kept next to your project, so it survives a reload and a restart, in `.harnu/out/browser/state/`) and the page redraws, or change one element of the page right now. A change made that way to the page itself is not kept: a reload starts from the file and the saved state.
+- **Buttons can talk back.** A button in a panel can send a short message to the session — "approve", "reject", with a small piece of data — and it arrives in the session as a message starting `[harnu-page-event]`. It is sent only when **you** really click or press a key: a session that clicks its own panel's button cannot approve itself, and a page can send at most one message a second. The message says plainly that it is data from the page and not you speaking.
+- **Offline by default.** A panel pane cannot reach the network at all, so a panel can't send your files anywhere, whatever it contains. If you open a page that needs a CDN script or a web font, use the **Offline / Network on** switch at the right of the address bar: it is yours alone (no session can turn it on) and applies to that pane only; turning it on reloads the page, and the switch turns amber to remind you.
+- **Only your own files.** The pane serves files inside the folder only, never anything under `.git` or `.harnu/memory`, and it follows no link that leaves the folder. Each folder is its own world: a panel in one folder cannot read files of another, and a web page in another pane cannot load your files at all.
 
 ## When something covers the page
 
@@ -41,5 +51,7 @@ A page in a browser pane is treated as untrusted code, even your own dev server:
 
 - **The page is blank or white.** A reload (**⟳**) usually fixes it. If the address is `about:blank` you haven't navigated yet.
 - **A menu seems to flash a still picture of the page.** That is the frozen frame described above, working as intended.
+- **A panel doesn't update.** Check the pane's chip: **Pause agent** and the Settings switch both stop updates. A page that is not one of your own files (a dev server, a website) can't be updated by `set_data` or `patch`; the session is told so.
+- **My panel's web font or CDN script doesn't load.** Panels are offline by default; turn on **Network on** for that pane.
 - **A session says it can't drive my pane.** Panes you open yourself aren't available to sessions yet; ask the session to open its own.
 - **A session says "BROWSER_PAUSED" or "BROWSER_DISCONNECTED".** You paused it or cut it off. Resume from the chip, or open a new pane for it if you disconnected.

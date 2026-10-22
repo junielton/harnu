@@ -11,6 +11,8 @@ import {
   planWatchEvent
 } from '../src/main/browser/page-watch'
 import {
+  AFTER_WAKE_RETRIES,
+  AFTER_WAKE_RETRY_MS,
   WAKE_READY_TIMEOUT_MS,
   createHeldEvents,
   deliverUserTurn,
@@ -122,6 +124,28 @@ describe('delivering a page event as a user turn', () => {
       'session.userTurn'
     ])
     expect(WAKE_READY_TIMEOUT_MS).toBe(40_000)
+  })
+
+  it('keeps asking for a moment when the woken session is ready but its terminal is not cached yet', async () => {
+    const d = deps([
+      { parked: true, sessionId: 'owner-1' },
+      { parked: true, sessionId: 'owner-1' },
+      { parked: true, sessionId: 'owner-1' },
+      { delivered: true, sessionId: 'owner-1' }
+    ])
+    const delays: number[] = []
+    const out = await deliverUserTurn({ ...d, delay: async (ms) => void delays.push(ms) }, turn)
+    expect(out).toEqual({ status: 'delivered', sessionId: 'owner-1', woke: true })
+    expect(delays).toEqual([AFTER_WAKE_RETRY_MS, AFTER_WAKE_RETRY_MS])
+    expect(d.calls.filter(([c]) => c === 'session.wake')).toHaveLength(1)
+  })
+
+  it('gives up after the bounded retries and never wakes twice', async () => {
+    const d = deps(Array.from({ length: 20 }, () => ({ parked: true, sessionId: 'owner-1' })))
+    const out = await deliverUserTurn({ ...d, delay: async () => undefined }, turn)
+    expect(out).toMatchObject({ status: 'failed' })
+    expect(d.calls.filter(([c]) => c === 'session.userTurn')).toHaveLength(1 + AFTER_WAKE_RETRIES)
+    expect(d.calls.filter(([c]) => c === 'session.wake')).toHaveLength(1)
   })
 
   it('does not deliver when the woken session never comes up', async () => {

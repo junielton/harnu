@@ -28,7 +28,16 @@ export interface UserTurnPayload {
 export interface DeliveryDeps {
   dispatch(command: string, payload: unknown): Promise<unknown>
   waitForSessionReady(sessionId: string, timeoutMs: number): Promise<boolean>
+  /** Wait `ms` (injected so the retry is testable); defaults to a real timer. */
+  delay?(ms: number): Promise<void>
 }
+
+/**
+ * After a wake, `pty:sessionReady` can land a beat BEFORE the renderer's terminal cache holds the new PTY (found
+ * in the T569 live run), so the first re-ask may still answer `parked`. Ask again for a bounded time.
+ */
+export const AFTER_WAKE_RETRIES = 12
+export const AFTER_WAKE_RETRY_MS = 250
 
 /** A headless wake plus the CLI's own readiness; a long transcript's resume outlives the bridge deadline. */
 export const WAKE_READY_TIMEOUT_MS = 40_000
@@ -66,15 +75,19 @@ export async function deliverUserTurn(
     if (!(await deps.waitForSessionReady(ack.sessionId, WAKE_READY_TIMEOUT_MS))) {
       return { status: 'failed', reason: 'the parked session did not come up in time' }
     }
-    ack = asAck(
-      await deps
-        .dispatch('session.userTurn', { ...turn, sessionId: ack.sessionId })
-        .catch(() => null)
-    )
-    if (ack === null || !('delivered' in ack)) {
-      return { status: 'failed', reason: 'the woken session did not take the message' }
+    const delay = deps.delay ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+    const sessionId = ack.sessionId
+    for (let attempt = 0; attempt < AFTER_WAKE_RETRIES; attempt++) {
+      const again = asAck(
+        await deps.dispatch('session.userTurn', { ...turn, sessionId }).catch(() => null)
+      )
+      if (again !== null && 'delivered' in again) {
+        return { status: 'delivered', sessionId: again.sessionId, woke: true }
+      }
+      if (again === null || 'held' in again) break
+      await delay(AFTER_WAKE_RETRY_MS)
     }
-    return { status: 'delivered', sessionId: ack.sessionId, woke: true }
+    return { status: 'failed', reason: 'the woken session did not take the message' }
   }
   if ('held' in ack) return { status: 'held' }
   return { status: 'delivered', sessionId: ack.sessionId, woke: false }
