@@ -10,6 +10,24 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-23
+
+### Changed
+
+- **The footer keeps its live figures when the statusLine goes quiet.** Model, context %, cost and the plan-usage
+  windows now come from Harnu's companion mod in every session it is loaded in, with the statusLine as the fallback
+  (CLI older than 2.1.287, sessions started outside Harnu, the mod switched off, or a session the mod could not
+  join). Previously the companion only recorded these figures, so a session went silent as soon as Harnu's
+  statusLine entry was lost from `~/.claude/settings.json`.
+- **"Not reporting — restart session" appears only when neither source is reporting.** A session the companion keeps
+  updating no longer shows the hint just because the statusLine is missing.
+
+### Fixed
+
+- **The footer's model chip follows `/model` without a restart.** After switching the model the chip used to keep the
+  old name until the next turn finished (or forever, with the statusLine gone); it now updates within about ten
+  seconds.
+
 ## 2026-10-22
 
 ### Added

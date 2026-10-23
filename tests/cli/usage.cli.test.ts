@@ -6,13 +6,18 @@ import surface from '../../resources/companion/api-surface.json'
 import type { RolloutView } from '../../src/main/companion/arbitration-core'
 import type { WireEvent } from '../../src/main/companion/contract'
 import { createCompanionHost } from '../../src/main/companion/host-core'
+import { buildRollout, defaultPrefs } from '../../src/main/companion/companion-prefs-core'
 import { createTelemetryAdapter } from '../../src/main/companion/ingest/telemetry-adapter'
+import { cliGate } from '../../src/main/companion/version-gate'
+import { parseClaudeVersion } from '../../src/main/claude-cli-version'
 import { createSessionArbiter } from '../../src/main/companion/session-arbiter'
+import type { SessionTelemetry } from '../../src/main/statusline-parse'
 import { createTelemetryStore } from '../../src/main/telemetry-store'
 import { fakeMode, shortTmp } from '../companion/support/host-rig'
 import {
   WITH_CLI,
   assertCleanLoad,
+  claudeVersion,
   assertNotBlockedByAuth,
   runClaude,
   type RunOptions,
@@ -43,7 +48,7 @@ const ROLLOUT: RolloutView = {
   rampFolders: new Set()
 }
 
-async function realHost() {
+async function realHost(rollout: RolloutView = ROLLOUT) {
   const dir = join(shortTmp('hc-us-'), 'companion')
   const host = createCompanionHost({
     dir,
@@ -55,7 +60,7 @@ async function realHost() {
   host.facade.setEnablePolicy((b) =>
     b.declared.filter((f) => f === 'sense.identity' || f === 'sense.usage')
   )
-  const arbiter = createSessionArbiter({ host: host.facade, rollout: () => ROLLOUT })
+  const arbiter = createSessionArbiter({ host: host.facade, rollout: () => rollout })
   const store = createTelemetryStore({
     now: () => Date.now(),
     captureFleet: () => undefined,
@@ -72,10 +77,13 @@ async function realHost() {
   const events: { t: string; d: Record<string, unknown> }[] = []
   /** What the store served for the session right after each usage event (the adapter ran first). */
   const served: (number | null)[] = []
+  const servedRecords: (SessionTelemetry | null)[] = []
   host.facade.bus.on('event', (_b, ev: WireEvent) => {
     events.push({ t: ev.t, d: ev.d as Record<string, unknown> })
     if (ev.t === 'usage.measured') {
-      served.push(store.getTelemetryPayload().perSession[0]?.costUsd ?? null)
+      const rec = store.getTelemetryPayload().perSession[0] ?? null
+      served.push(rec?.costUsd ?? null)
+      servedRecords.push(rec)
     }
   })
   cleanups.push(async () => {
@@ -89,6 +97,7 @@ async function realHost() {
     store,
     events,
     served,
+    servedRecords,
     endpoint: join(dir, 'endpoint.json'),
     usage: () => events.filter((e) => e.t === 'usage.measured'),
     mint: () =>
@@ -146,6 +155,31 @@ describe.skipIf(!WITH_CLI)('usage against the real host (L4)', () => {
     )
     expect(typeof model).toBe('string')
     expect((model as string).length).toBeGreaterThan(0)
+  })
+
+  it('the shipped defaults own telemetry with no statusLine at all (T577)', async () => {
+    // No prefs override, no ramp folder, and whatever gate this CLI lands on (above the tested
+    // ceiling on a newer CLI): the footer's figures must come from the companion alone.
+    const gate = cliGate(parseClaudeVersion(await claudeVersion()), surface.lastVerifiedCli)
+    const shipped = buildRollout(defaultPrefs(), gate, new Set())
+    const h = await realHost(shipped)
+    const r = await run({ env: { HARNU_SPAWN_TOKEN: h.mint() }, rendezvous: h.endpoint })
+    expect(r.code, r.stderr).toBe(0)
+    // The session has ended by now (its companion groups are dropped with it): judge what the
+    // store served right after the usage event, with no statusLine blob ever ingested.
+    const served = h.servedRecords.find((t) => t !== null)
+    console.info(
+      `[T577 evidence] ${JSON.stringify({
+        claude: r.claudeVersion,
+        gate,
+        modelId: served?.modelId ?? null,
+        modelName: served?.modelName ?? null,
+        costUsd: served?.costUsd ?? null
+      })}`
+    )
+    expect(served).toBeTruthy()
+    expect(served?.modelId).toBeTruthy()
+    expect(served?.modelName).toBeTruthy() // the chip has a name although no statusLine exists
   })
 
   describe.skipIf(!LIVE)(

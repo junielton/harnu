@@ -20,12 +20,14 @@ export interface MappedUsage {
   /** `spend_limit` has no slot in `SessionTelemetry` (OQ-b): recorded in the ledger only. */
   spendLimit?: { percentUsed: number; resetsAtMs: number | null }
   startedAt?: number
-  /** Evidence for Q13 only; it feeds no store field. */
+  /** The main loop's model; it also feeds the store's `model` group (T577). */
   model?: string
   changed: string[]
 }
 
 const PERCENT_USED_MAX = 1000
+/** `$.session.model()` as `/model` shows it: the id may carry a `[1m]` window suffix. */
+const SESSION_MODEL_RE = /^[A-Za-z0-9._:+/[\]-]{1,128}$/
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
@@ -89,7 +91,11 @@ export function mapUsageMeasured(d: unknown, atMs: number, cwd: string | null): 
   if (known) part.rateLimits = { fiveHour, sevenDay, atMs }
 
   if (finite(w.startedAt)) out.startedAt = w.startedAt
-  if (typeof w.model === 'string' && w.model !== '') out.model = w.model.slice(0, 128)
+  // The main loop's model as `/model` shows it: a short identifier or nothing (SEC-3c).
+  if (typeof w.model === 'string' && SESSION_MODEL_RE.test(w.model)) {
+    out.model = w.model
+    part.model = { id: w.model, atMs }
+  }
   return out
 }
 
