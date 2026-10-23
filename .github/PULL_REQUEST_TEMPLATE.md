@@ -1,30 +1,55 @@
-<!-- Thanks for contributing to Harnu! Please fill out the checklist below. -->
+<!--
+  Title: Conventional Commits, e.g. `fix(cleanup): …` / `feat(mission): …` / `docs(spec): …`
+  HTML comments like this one are hidden in the rendered PR, so you can leave them.
+-->
 
-## Summary
+## Description
 
-<!-- What does this PR change, and why? -->
+<!-- What changes and why, in 2–5 lines. Lead with the user-visible effect. -->
 
-## Related issue
+**Card / issue:** <!-- T123 · BUG-123 · Closes #123 — or "none" -->
 
-<!-- e.g. Closes #123 -->
+## Type of change
+
+- [ ] Fix
+- [ ] Feature
+- [ ] Refactor / perf (no behavior change)
+- [ ] Docs / spec only
+- [ ] Chore / CI / deps
+
+## Screenshots
+
+<!--
+  Required for any UI change. Drag images straight into this box.
+  Show both themes when colors or surfaces changed. Delete this section if nothing visible changed.
+-->
+
+|       | Before | After |
+| ----- | ------ | ----- |
+| Dark  |        |       |
+| Light |        |       |
+
+<!-- Motion or a multi-step flow? Attach a short GIF/video instead of (or after) the table. -->
+
+## How to test
+
+<!-- Steps a reviewer can follow to see it working. -->
+
+1.
 
 ## Checklist
 
-- [ ] `npm run typecheck` passes (node + web).
-- [ ] `npm run lint` passes.
-- [ ] `npm test` passes.
-- [ ] `CHANGELOG.md` updated with a dated, user-facing entry (required for any behavior change; not needed for pure refactors/docs/tests).
-- [ ] For UI changes: consulted `design.md` first (and updated it in this same PR if a new token/size/motion/component was needed). No raw colors or off-system sizes.
-- [ ] For new visible strings: i18n keys added to **both** `src/renderer/src/i18n/en.json` and `pt-BR.json` (schema parity).
-- [ ] For UI changes: screenshots or a short recording attached below.
-- [ ] For a user-visible capability: the matching page under `docs/user/` is updated.
-- [ ] For an agent-facing change (MCP verb, ACK shape, confirm semantics): `docs/harnu-features.md` is updated and its version marker bumped.
-- [ ] For a runtime dependency change: `THIRD-PARTY-NOTICES.md` regenerated (`node scripts/gen-third-party-notices.mjs`).
+- [ ] `npm run typecheck`, `npm run lint`, `npm test` and `npm run build` pass
+- [ ] `CHANGELOG.md` entry (or not needed: internal / docs / test-only)
+- [ ] `docs/harnu-features.md` updated + version bumped (agent-facing change)
+- [ ] `docs/user/` updated (user-visible change)
+- [ ] `design.md` updated first (new token, size, motion or component)
+- [ ] New i18n keys in both `en.json` and `pt-BR.json`
+- [ ] `THIRD-PARTY-NOTICES.md` regenerated with `node scripts/gen-third-party-notices.mjs` (runtime dependency change)
+- [ ] No client identifiers (names, ticket keys, paths)
 
-<!-- If a gate does not apply (pure refactor, docs-only, catalog-internal change), say which
-     escape label it needs: `no-changelog`, `no-awareness` or `no-user-docs`. A maintainer
-     will add it; pull requests from forks cannot set labels. -->
-
-## Screenshots / recording
-
-<!-- Required for visible UI changes. Drag-and-drop here. -->
+<!--
+  A gate that does not apply (pure refactor, docs-only, catalog-internal change) needs an
+  escape label: `no-changelog`, `no-awareness` or `no-user-docs`. A maintainer adds it;
+  pull requests from forks cannot set labels.
+-->
