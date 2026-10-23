@@ -59,6 +59,10 @@
   --gc-panel-w: 320px;
   --gc-dialog-w: min(720px, 90vw);
 
+  /* Dialog viewport cap (design.md §4 "Dialog — viewport cap"): every dialog card is at most this tall;
+   * its body scrolls, header and footer stay on screen. Theme-invariant. */
+  --dialog-max-h: 84vh;
+
   /* motion */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 100ms;

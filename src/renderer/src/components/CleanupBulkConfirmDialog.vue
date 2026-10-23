@@ -204,7 +204,7 @@ function onBackdropMousedown(e: MouseEvent): void {
     >
       <div
         ref="dialogRef"
-        class="anim-fade-in-scale mb-6 flex w-(--gc-dialog-w) flex-col rounded-lg border border-border-2 bg-surface text-text shadow-pop"
+        class="anim-fade-in-scale flex max-h-(--dialog-max-h) w-(--gc-dialog-w) flex-col rounded-lg border border-border-2 bg-surface text-text shadow-pop"
         role="dialog"
         aria-modal="true"
         aria-labelledby="cleanup-bulk-dialog-title"
@@ -212,251 +212,258 @@ function onBackdropMousedown(e: MouseEvent): void {
         :data-mode="mode"
         @mousedown.stop
       >
-        <div class="flex items-start gap-3 px-5 pb-2 pt-4">
-          <div class="min-w-0 flex-1">
-            <div id="cleanup-bulk-dialog-title" class="text-subtitle font-medium text-text">
-              {{ title }}
+        <div class="shrink-0">
+          <div class="flex items-start gap-3 px-5 pb-2 pt-4">
+            <div class="min-w-0 flex-1">
+              <div id="cleanup-bulk-dialog-title" class="text-subtitle font-medium text-text">
+                {{ title }}
+              </div>
+              <p class="m-0 mt-0.5 text-ui text-text-2">
+                {{
+                  mode === 'ready'
+                    ? t('cleanup.gc.confirm.subtitleReady')
+                    : t('cleanup.gc.confirm.subtitleReview')
+                }}
+              </p>
             </div>
-            <p class="m-0 mt-0.5 text-ui text-text-2">
-              {{
-                mode === 'ready'
-                  ? t('cleanup.gc.confirm.subtitleReady')
-                  : t('cleanup.gc.confirm.subtitleReview')
-              }}
-            </p>
+            <Button
+              variant="ghost"
+              size="icon"
+              :aria-label="t('cleanup.gc.confirm.close')"
+              :title="t('cleanup.gc.confirm.close')"
+              data-testid="bulk-close"
+              @click="emit('cancel')"
+            >
+              <X :size="14" :stroke-width="1.7" />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            :aria-label="t('cleanup.gc.confirm.close')"
-            :title="t('cleanup.gc.confirm.close')"
-            data-testid="bulk-close"
-            @click="emit('cancel')"
-          >
-            <X :size="14" :stroke-width="1.7" />
-          </Button>
-        </div>
-        <div class="px-5 pb-3 text-caption tabular-nums text-text-3" data-testid="bulk-breakdown">
-          {{ breakdown }}
+          <div class="px-5 pb-3 text-caption tabular-nums text-text-3" data-testid="bulk-breakdown">
+            {{ breakdown }}
+          </div>
         </div>
 
-        <div
-          class="scrollable mx-5 flex max-h-(--fv-rail-list-max-h) flex-col gap-1.5 overflow-y-auto pr-1"
-          tabindex="0"
-          role="list"
-          :aria-label="t('cleanup.gc.confirm.listLabel')"
-          data-testid="bulk-list"
-        >
+        <div class="scrollable min-h-0 flex-1 overflow-y-auto pb-3 pr-1" data-testid="bulk-body">
           <div
-            v-for="row in rows"
-            :key="row.id"
-            role="listitem"
-            class="grid shrink-0 grid-cols-[20px_1fr_64px] items-start gap-3 rounded-sm border bg-surface-2 px-2.5 py-2"
-            :class="row.risk ? 'border-warning-line' : 'border-border'"
-            data-testid="bulk-row"
-            :data-risk="row.risk ? 'true' : 'false'"
+            class="mx-5 flex flex-col gap-1.5"
+            tabindex="0"
+            role="list"
+            :aria-label="t('cleanup.gc.confirm.listLabel')"
+            data-testid="bulk-list"
           >
-            <span
-              class="mt-px inline-flex"
-              :class="row.risk || mode === 'review' ? 'text-warning' : 'text-green'"
+            <div
+              v-for="row in rows"
+              :key="row.id"
+              role="listitem"
+              class="grid shrink-0 grid-cols-[20px_1fr_64px] items-start gap-3 rounded-sm border bg-surface-2 px-2.5 py-2"
+              :class="row.risk ? 'border-warning-line' : 'border-border'"
+              data-testid="bulk-row"
+              :data-risk="row.risk ? 'true' : 'false'"
             >
-              <TriangleAlert
-                v-if="row.risk"
-                :size="14"
-                :stroke-width="1.6"
-                :aria-label="t('cleanup.gc.confirm.riskMarker')"
-                role="img"
-              />
-              <CircleHelp
-                v-else-if="mode === 'review'"
-                :size="14"
-                :stroke-width="1.6"
-                aria-hidden="true"
-              />
-              <CircleCheck v-else :size="14" :stroke-width="1.6" aria-hidden="true" />
-            </span>
-            <span class="flex min-w-0 flex-col gap-0.5">
-              <span class="truncate font-mono text-ui text-text" data-testid="bulk-row-title">{{
-                rowTitle(row)
-              }}</span>
               <span
-                v-if="rowSub(row)"
-                class="truncate font-mono text-caption text-text-4"
-                data-testid="bulk-row-sub"
-                >{{ rowSub(row) }}</span
+                class="mt-px inline-flex"
+                :class="row.risk || mode === 'review' ? 'text-warning' : 'text-green'"
               >
-              <template v-if="mode === 'review' && row.reasonCode">
-                <span class="text-caption leading-4 text-text-3" data-testid="bulk-reason">{{
-                  reasonText(row)
+                <TriangleAlert
+                  v-if="row.risk"
+                  :size="14"
+                  :stroke-width="1.6"
+                  :aria-label="t('cleanup.gc.confirm.riskMarker')"
+                  role="img"
+                />
+                <CircleHelp
+                  v-else-if="mode === 'review'"
+                  :size="14"
+                  :stroke-width="1.6"
+                  aria-hidden="true"
+                />
+                <CircleCheck v-else :size="14" :stroke-width="1.6" aria-hidden="true" />
+              </span>
+              <span class="flex min-w-0 flex-col gap-0.5">
+                <span class="truncate font-mono text-ui text-text" data-testid="bulk-row-title">{{
+                  rowTitle(row)
                 }}</span>
                 <span
-                  v-if="row.reasonDetail && row.reasonDetail !== reasonText(row)"
+                  v-if="rowSub(row)"
                   class="truncate font-mono text-caption text-text-4"
-                  >{{ row.reasonDetail }}</span
+                  data-testid="bulk-row-sub"
+                  >{{ rowSub(row) }}</span
                 >
-              </template>
-              <CleanupOpinionChip
-                v-if="mode === 'review' && opinionOf?.(row.id)"
-                :opinion="opinionOf(row.id)"
-                :pending="false"
-                show-evidence
-              />
-              <span
-                v-if="row.untracked?.length"
-                class="break-words text-caption leading-4 text-text-3"
-                :title="row.untracked.join('\n')"
-                data-testid="bulk-untracked"
-                >{{ untrackedText(row) }}</span
-              >
-              <span class="mt-1 flex flex-wrap gap-1">
+                <template v-if="mode === 'review' && row.reasonCode">
+                  <span class="text-caption leading-4 text-text-3" data-testid="bulk-reason">{{
+                    reasonText(row)
+                  }}</span>
+                  <span
+                    v-if="row.reasonDetail && row.reasonDetail !== reasonText(row)"
+                    class="truncate font-mono text-caption text-text-4"
+                    >{{ row.reasonDetail }}</span
+                  >
+                </template>
+                <CleanupOpinionChip
+                  v-if="mode === 'review' && opinionOf?.(row.id)"
+                  :opinion="opinionOf(row.id)"
+                  :pending="false"
+                  show-evidence
+                />
                 <span
-                  v-for="chip in row.chips"
-                  :key="chip"
-                  class="inline-flex items-center gap-0.75 rounded-xs border px-1.5 py-px text-eyebrow"
-                  :class="CHIP_CLASS[chip]"
-                  :data-chip="chip"
-                  :title="t(`cleanup.gc.chip.title.${chip}`)"
-                  ><component
-                    :is="CHIP_ICON[chip]"
-                    :size="10"
-                    :stroke-width="1.8"
-                    aria-hidden="true"
-                  />{{ t(`cleanup.gc.chip.${chip}`) }}</span
+                  v-if="row.untracked?.length"
+                  class="break-words text-caption leading-4 text-text-3"
+                  :title="row.untracked.join('\n')"
+                  data-testid="bulk-untracked"
+                  >{{ untrackedText(row) }}</span
                 >
+                <span class="mt-1 flex flex-wrap gap-1">
+                  <span
+                    v-for="chip in row.chips"
+                    :key="chip"
+                    class="inline-flex items-center gap-0.75 rounded-xs border px-1.5 py-px text-eyebrow"
+                    :class="CHIP_CLASS[chip]"
+                    :data-chip="chip"
+                    :title="t(`cleanup.gc.chip.title.${chip}`)"
+                    ><component
+                      :is="CHIP_ICON[chip]"
+                      :size="10"
+                      :stroke-width="1.8"
+                      aria-hidden="true"
+                    />{{ t(`cleanup.gc.chip.${chip}`) }}</span
+                  >
+                </span>
               </span>
-            </span>
-            <span class="text-right text-ui leading-4 tabular-nums text-text">{{
-              formatBytes(row.bytes)
-            }}</span>
+              <span class="text-right text-ui leading-4 tabular-nums text-text">{{
+                formatBytes(row.bytes)
+              }}</span>
+            </div>
           </div>
+
+          <section
+            v-if="refused.length > 0"
+            class="mx-5 mt-3 flex flex-col gap-1.5 rounded-sm border border-border bg-bg px-3 py-2.5"
+            data-testid="bulk-refused"
+          >
+            <div class="flex items-baseline gap-2">
+              <span class="eyebrow text-text-3" data-testid="bulk-refused-title">{{
+                t('cleanup.gc.confirm.refusedTitle', { n: refused.length })
+              }}</span>
+              <span class="text-caption text-text-4">{{ t('cleanup.gc.confirm.refusedSub') }}</span>
+            </div>
+            <ul class="m-0 flex list-none flex-col gap-1.5 p-0">
+              <li
+                v-for="row in refused"
+                :key="row.id"
+                class="flex flex-col gap-0.5"
+                data-testid="bulk-refused-row"
+                :data-refusal="row.refusal"
+              >
+                <span class="truncate font-mono text-ui text-text-2">{{ refusedTitle(row) }}</span>
+                <span
+                  class="text-caption leading-4 text-text-3"
+                  data-testid="bulk-refused-reason"
+                  >{{ t(removalKey(row.refusal)) }}</span
+                >
+                <code
+                  v-if="row.hint"
+                  class="select-all break-all font-mono text-caption text-text-2"
+                  data-testid="bulk-refused-hint"
+                  >{{ row.hint }}</code
+                >
+              </li>
+            </ul>
+          </section>
+
+          <div
+            class="mx-5 mt-3 flex items-start gap-2.5 rounded-sm border border-warning-line bg-warning-soft px-3 py-2.5"
+            data-testid="bulk-warning"
+          >
+            <TriangleAlert
+              :size="14"
+              :stroke-width="1.6"
+              class="mt-0.5 shrink-0 text-warning"
+              aria-hidden="true"
+            />
+            <div class="min-w-0 text-ui text-text-2">
+              <p v-if="mode === 'review' && riskCount > 0" class="m-0 mb-1" data-testid="bulk-risk">
+                <b class="font-semibold text-warning">{{
+                  t('cleanup.gc.confirm.warnRisk', riskCount, { named: { n: riskCount } })
+                }}</b>
+              </p>
+              <p
+                v-if="mode === 'review' && detachedCount > 0"
+                class="m-0 mb-1"
+                data-testid="bulk-detached"
+              >
+                <b class="font-semibold text-warning">{{
+                  t('cleanup.gc.confirm.warnDetached', detachedCount, {
+                    named: { n: detachedCount }
+                  })
+                }}</b>
+              </p>
+              <p v-if="untrackedTotal > 0" class="m-0 mb-1" data-testid="bulk-untracked-total">
+                {{
+                  t('cleanup.gc.confirm.untrackedTotal', untrackedTotal, {
+                    named: { n: untrackedTotal }
+                  })
+                }}
+              </p>
+              <p class="m-0">
+                <b
+                  v-if="hasVolumeRow"
+                  class="font-semibold text-warning"
+                  data-testid="bulk-volumes-lost"
+                  >{{ t('cleanup.gc.confirm.warnVolumesLost') }}</b
+                >
+                <template v-if="hasVolumeRow">{{ ' ' }}</template>
+                <span v-if="hasWorktreeRow" data-testid="bulk-volumes-kept">{{
+                  t('cleanup.gc.confirm.warnVolumesKept')
+                }}</span>
+                <template v-if="hasWorktreeRow"
+                  >{{ ' ' }}{{ t('cleanup.gc.confirm.warnRecover') }}</template
+                >
+              </p>
+            </div>
+          </div>
+
+          <p
+            v-if="remoteChecking && remoteRows.length === 0"
+            class="mx-5 mt-3 text-caption text-text-3"
+            role="status"
+            data-testid="bulk-remote-checking"
+          >
+            {{ t('cleanup.gc.confirm.remote.checking') }}
+          </p>
+          <label
+            v-if="remoteRows.length > 0"
+            class="mx-5 mt-3 flex cursor-pointer items-start gap-2.5"
+            data-testid="bulk-remote-label"
+          >
+            <input
+              v-model="deleteRemote"
+              type="checkbox"
+              class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+              data-testid="bulk-remote-delete"
+            />
+            <span class="flex min-w-0 flex-col gap-0.5">
+              <span class="inline-flex items-center gap-1.5 text-ui text-text">
+                <GitBranch :size="12" :stroke-width="1.7" class="shrink-0" aria-hidden="true" />
+                {{ t('cleanup.gc.confirm.remote.label') }}
+              </span>
+              <span class="text-caption leading-4 text-text-3">{{
+                t('cleanup.gc.confirm.remote.hint')
+              }}</span>
+              <span
+                v-if="remoteRows.length < rows.length"
+                class="text-caption leading-4 text-text-3"
+                data-testid="bulk-remote-count"
+                >{{
+                  t('cleanup.gc.confirm.remote.some', { n: remoteRows.length, total: rows.length })
+                }}</span
+              >
+            </span>
+          </label>
         </div>
 
-        <section
-          v-if="refused.length > 0"
-          class="mx-5 mt-3 flex flex-col gap-1.5 rounded-sm border border-border bg-bg px-3 py-2.5"
-          data-testid="bulk-refused"
-        >
-          <div class="flex items-baseline gap-2">
-            <span class="eyebrow text-text-3" data-testid="bulk-refused-title">{{
-              t('cleanup.gc.confirm.refusedTitle', { n: refused.length })
-            }}</span>
-            <span class="text-caption text-text-4">{{ t('cleanup.gc.confirm.refusedSub') }}</span>
-          </div>
-          <ul class="m-0 flex list-none flex-col gap-1.5 p-0">
-            <li
-              v-for="row in refused"
-              :key="row.id"
-              class="flex flex-col gap-0.5"
-              data-testid="bulk-refused-row"
-              :data-refusal="row.refusal"
-            >
-              <span class="truncate font-mono text-ui text-text-2">{{ refusedTitle(row) }}</span>
-              <span class="text-caption leading-4 text-text-3" data-testid="bulk-refused-reason">{{
-                t(removalKey(row.refusal))
-              }}</span>
-              <code
-                v-if="row.hint"
-                class="select-all break-all font-mono text-caption text-text-2"
-                data-testid="bulk-refused-hint"
-                >{{ row.hint }}</code
-              >
-            </li>
-          </ul>
-        </section>
-
-        <div
-          class="mx-5 mt-3 flex items-start gap-2.5 rounded-sm border border-warning-line bg-warning-soft px-3 py-2.5"
-          data-testid="bulk-warning"
-        >
-          <TriangleAlert
-            :size="14"
-            :stroke-width="1.6"
-            class="mt-0.5 shrink-0 text-warning"
-            aria-hidden="true"
-          />
-          <div class="min-w-0 text-ui text-text-2">
-            <p v-if="mode === 'review' && riskCount > 0" class="m-0 mb-1" data-testid="bulk-risk">
-              <b class="font-semibold text-warning">{{
-                t('cleanup.gc.confirm.warnRisk', riskCount, { named: { n: riskCount } })
-              }}</b>
-            </p>
-            <p
-              v-if="mode === 'review' && detachedCount > 0"
-              class="m-0 mb-1"
-              data-testid="bulk-detached"
-            >
-              <b class="font-semibold text-warning">{{
-                t('cleanup.gc.confirm.warnDetached', detachedCount, {
-                  named: { n: detachedCount }
-                })
-              }}</b>
-            </p>
-            <p v-if="untrackedTotal > 0" class="m-0 mb-1" data-testid="bulk-untracked-total">
-              {{
-                t('cleanup.gc.confirm.untrackedTotal', untrackedTotal, {
-                  named: { n: untrackedTotal }
-                })
-              }}
-            </p>
-            <p class="m-0">
-              <b
-                v-if="hasVolumeRow"
-                class="font-semibold text-warning"
-                data-testid="bulk-volumes-lost"
-                >{{ t('cleanup.gc.confirm.warnVolumesLost') }}</b
-              >
-              <template v-if="hasVolumeRow">{{ ' ' }}</template>
-              <span v-if="hasWorktreeRow" data-testid="bulk-volumes-kept">{{
-                t('cleanup.gc.confirm.warnVolumesKept')
-              }}</span>
-              <template v-if="hasWorktreeRow"
-                >{{ ' ' }}{{ t('cleanup.gc.confirm.warnRecover') }}</template
-              >
-            </p>
-          </div>
-        </div>
-
-        <p
-          v-if="remoteChecking && remoteRows.length === 0"
-          class="mx-5 mt-3 text-caption text-text-3"
-          role="status"
-          data-testid="bulk-remote-checking"
-        >
-          {{ t('cleanup.gc.confirm.remote.checking') }}
-        </p>
-        <label
-          v-if="remoteRows.length > 0"
-          class="mx-5 mt-3 flex cursor-pointer items-start gap-2.5"
-          data-testid="bulk-remote-label"
-        >
-          <input
-            v-model="deleteRemote"
-            type="checkbox"
-            class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
-            data-testid="bulk-remote-delete"
-          />
-          <span class="flex min-w-0 flex-col gap-0.5">
-            <span class="inline-flex items-center gap-1.5 text-ui text-text">
-              <GitBranch :size="12" :stroke-width="1.7" class="shrink-0" aria-hidden="true" />
-              {{ t('cleanup.gc.confirm.remote.label') }}
-            </span>
-            <span class="text-caption leading-4 text-text-3">{{
-              t('cleanup.gc.confirm.remote.hint')
-            }}</span>
-            <span
-              v-if="remoteRows.length < rows.length"
-              class="text-caption leading-4 text-text-3"
-              data-testid="bulk-remote-count"
-              >{{
-                t('cleanup.gc.confirm.remote.some', { n: remoteRows.length, total: rows.length })
-              }}</span
-            >
-          </span>
-        </label>
-
+        <!-- Outside the scrolling body: it explains why Remove is disabled, so it must never scroll out of sight. -->
         <p
           v-if="stale"
-          class="mx-5 mt-3 flex items-start gap-2 text-ui text-warning"
+          class="mx-5 mb-3 flex shrink-0 items-start gap-2 text-ui text-warning"
           role="alert"
           data-testid="bulk-stale"
         >
@@ -469,7 +476,7 @@ function onBackdropMousedown(e: MouseEvent): void {
           {{ t('cleanup.gc.confirm.changed') }}
         </p>
 
-        <div class="mt-3 flex items-center gap-2 border-t border-border px-5 py-3">
+        <div class="flex shrink-0 items-center gap-2 border-t border-border px-5 py-3">
           <span
             class="mr-auto text-ui font-medium tabular-nums text-text"
             data-testid="bulk-total"
