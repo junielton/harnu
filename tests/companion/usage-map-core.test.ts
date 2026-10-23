@@ -127,6 +127,21 @@ describe('usage map (AC-P1W6-3)', () => {
     expect(junk?.part.rateLimits).toBeUndefined()
   })
 
+  it('a read model feeds the model group, stamped with the host time (T577)', () => {
+    const m = mapUsageMeasured({ source: 'read', model: 'claude-fable-5-1' }, AT, null)!
+    expect(m.part.model).toEqual({ id: 'claude-fable-5-1', atMs: AT })
+    // a window suffix is part of `/model`'s answer
+    expect(mapUsageMeasured({ model: 'claude-opus-4-8[1m]' }, AT, null)!.part.model?.id).toBe(
+      'claude-opus-4-8[1m]'
+    )
+  })
+
+  it('a model that is not a short identifier is no reading of the group (SEC-3c)', () => {
+    for (const bad of ['', 'has space', 'x'.repeat(129), '<script>', 5, null, {}]) {
+      expect(mapUsageMeasured({ model: bad }, AT, null)!.part.model).toBeUndefined()
+    }
+  })
+
   it('a negative cost is rejected', () => {
     expect(mapUsageMeasured({ ...A3_WIRE, costUsd: -1 }, AT, null)!.part.cost).toBeUndefined()
   })

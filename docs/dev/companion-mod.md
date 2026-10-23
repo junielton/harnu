@@ -94,7 +94,7 @@ holding the owner's pid) makes the second one log a warning and stage normally.
 
 `api-surface.json` holds `minCli` (2.1.287) and `lastVerifiedCli` (the tested ceiling, 2.1.292). Below
 `minCli`, or with the version unknown, Harnu injects nothing. Above the ceiling it injects and the
-session is forced to `shadow` (P1W4). To move the ceiling, change `lastVerifiedCli` by hand in a PR
+session is forced to `shadow` (P1W4), except for the graduated families below. To move the ceiling, change `lastVerifiedCli` by hand in a PR
 of its own, and attach: the `mod` step log, the `--with-cli` log (both print `claude --version`) and
 recipe LV-P1W2-a on the new version. The three drift checks are: way 1 the static scan in
 `npm test`, way 2 the validate notes in the `mod` step, way 3 `tsc` against the types the engine
@@ -112,7 +112,8 @@ been released, 0 after the PTY exits); see `live-verify-second-instance.md`.
 
 `companion-prefs.json` (in `<userData>`) holds the kill switch (`enabled`), the per-family modes (`families`), the
 developer default (`mode`), the ramp escape hatch (`allFolders`) and the feature keys (`keys`); only overrides are
-written, and the shipped default is `shadow` for every family behind the one-time notice. `projects.json` carries the
+written, and the shipped default is `shadow` for every family behind the one-time notice, except the graduated
+families (`telemetry`, `planUsage`: `active`, T577). `projects.json` carries the
 per-folder ramp (`companionActive`). `parity/<stream>.ndjson` under `<userData>/companion/` is the persisted parity
 ledger; `scripts/dev/companion-parity-export.mjs --user-data <dir> --stream <name>` turns it into a scrubbed fixture.
 
@@ -123,3 +124,14 @@ with `npx electron-vite build` after a main-process change, because the instance
 `claude-policy-probe.ts` runs `claude plugin test <staged dir>` once per boot and CLI binary, lazily, and only when a
 spawn carried the mod and never said hello; `classifyPolicyProbe` maps its output (smoke addendum §15.1). In dev mode
 the staged directory is the repository folder, whose `tests/` the probe would run when mods load.
+
+## Graduated families (T577)
+
+`GRADUATED_FAMILIES` in `arbitration-core.ts` (`telemetry`, `planUsage`) ship `active` and are **not** narrowed by the
+per-folder ramp or by the CLI ceiling (ARB-7b): they are read-only facts with a permanent statusLine fallback, so a wrong
+or missing companion figure costs one chip, never an action. Everything else still applies: the kill switch, a `below` or
+`unknown` CLI gate, a missing binding (outside Harnu, mod not loaded), lease loss, a feature not yet proven and a sticky
+revocation all answer `legacy`, and a user can pin either family to `shadow` or `off` in `companion-prefs.json`.
+`companionModeOf` ignores graduated families, so the global mode that identity and the channel read does not become
+`active` for everyone. The parity numbers behind the flip are in the T577 PR; the footer model chip follows `/model`
+through the mod's heartbeat (`watchModel` in `register.ts`; no hook fires on `/model`).

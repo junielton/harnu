@@ -68,17 +68,32 @@ export const FAMILY_FEATURES: Readonly<Record<FactFamily, readonly FeatureId[]>>
   message: ['act.message']
 }
 
-/** Shipped default (OD-1): every family loads in `shadow`. Only overrides are persisted. */
+/**
+ * Shipped default (OD-1): every family loads in `shadow`, except the graduated ones (below).
+ * Only overrides are persisted, so a changed default reaches users who never touched the file.
+ */
 export const DEFAULT_FAMILY_MODE: Readonly<Record<FactFamily, CompanionMode>> = {
   identity: 'shadow',
   taskState: 'shadow',
-  telemetry: 'shadow',
-  planUsage: 'shadow',
+  telemetry: 'active',
+  planUsage: 'active',
   approval: 'shadow',
   guard: 'shadow',
   startPrompt: 'shadow',
   message: 'shadow'
 }
+
+/**
+ * Families whose flip to `active` (ARB-6c/d) is not narrowed by the folder ramp or by the CLI
+ * ceiling (ARB-7b). They are read-only facts with a permanent legacy fallback (the statusLine,
+ * ADR-0018 D2): a wrong or missing companion figure costs one chip, never an action. The kill
+ * switch, the `below`/`unknown` gates, the per-session lease, proof and revocation still apply,
+ * and a user can still pin the family to `shadow` or `off`. T577.
+ */
+export const GRADUATED_FAMILIES: ReadonlySet<FactFamily> = new Set<FactFamily>([
+  'telemetry',
+  'planUsage'
+])
 
 const MODES: ReadonlySet<string> = new Set(['off', 'shadow', 'active'])
 
@@ -106,6 +121,7 @@ export function effectiveMode(f: FactFamily, folder: string | null, r: RolloutVi
   if (!r.enabled || r.cliGate === 'below' || r.cliGate === 'unknown') return 'off'
   const m = configuredMode(f, r)
   if (m !== 'active') return m
+  if (GRADUATED_FAMILIES.has(f)) return 'active'
   if (r.cliGate === 'above') return 'shadow' // ARB-7b
   return onRamp(folder, r) ? 'active' : 'shadow'
 }
