@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Local mirror of the `verify` job in .github/workflows/ci.yml.
+# Local mirror of the gate jobs in .github/workflows/ci.yml (`gates`, `typecheck`, `lint`,
+# `test` + `coverage`).
 #
-# Runs the same gates, in the same order, with the same commands CI runs — so a
-# green local run means the same thing a green CI run means. The production
-# build (`npm run build`) is NOT part of `verify` and is skipped by default; the
-# `e2e` job is opt-in via --with-e2e because it needs build output to exist.
+# Runs the same gates with the same commands CI runs, serially (CI runs them as parallel
+# jobs and shards the Vitest suite) — so a green local run means the same thing a green
+# CI run means. The production build (`npm run build`, CI's `build` job) is skipped by
+# default; the `e2e` job is opt-in via --with-e2e because it needs build output to exist.
 #
 # Unlike CI, this collects every failure instead of stopping at the first one:
 # you fix the whole batch in one pass rather than one push per gate.
@@ -107,7 +108,7 @@ echo
 echo "${BOLD}Local CI — mirroring the 'verify' job${OFF}  ${DIM}(base: $BASE)${OFF}"
 echo
 
-# Same order as .github/workflows/ci.yml. The contract gates run before the slow
+# CI runs these as parallel jobs; serially here, the contract gates run before the slow
 # steps so a missing CHANGELOG entry costs you 2 seconds, not 4 minutes.
 run_step format    "format:check"      npm run format:check
 run_step i18n      "i18n parity"       node scripts/ci/i18n-parity.mjs

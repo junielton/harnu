@@ -1,13 +1,16 @@
 ---
 name: local-ci
-description: Use before pushing a branch or opening/updating a PR in this repo, when you need to know whether GitHub Actions will go green — it runs the same gates as the CI `verify` job locally (format:check, i18n parity, the CHANGELOG/self-awareness/user-docs contract gates, typecheck, lint, test:coverage). Also use when CI is unavailable (billing block, offline, rate limits) and a merge decision still has to be made, or when you want to fix every gate failure in one pass instead of one push per red check. Do NOT use as a substitute for the real CI on a PR that CAN run CI — it does not run the production build or the e2e job unless you pass --with-e2e.
+description: Use before pushing a branch or opening/updating a PR in this repo, when you need to know whether GitHub Actions will go green — it runs the same gates as CI's `gates`, `typecheck`, `lint`, `test` and `coverage` jobs locally (format:check, i18n parity, the CHANGELOG/self-awareness/user-docs contract gates, typecheck, lint, test:coverage). Also use when CI is unavailable (billing block, offline, rate limits) and a merge decision still has to be made, or when you want to fix every gate failure in one pass instead of one push per red check. Do NOT use as a substitute for the real CI on a PR that CAN run CI — it does not run the production build or the e2e job unless you pass --with-e2e.
 ---
 
 # Local CI
 
-`scripts/ci/local-pipeline.sh` mirrors the `verify` job in
-`.github/workflows/ci.yml` — same steps, same commands, same order. A green run
-means the same thing a green `verify` means, with the exceptions listed under
+`scripts/ci/local-pipeline.sh` mirrors the gate jobs in
+`.github/workflows/ci.yml` (`gates`, `typecheck`, `lint`, `test` + `coverage`) —
+same commands, run serially here (CI runs those jobs in parallel and shards the
+test suite; the merged coverage thresholds are the same ones `npm run
+test:coverage` enforces). A green run means the same thing a green CI means,
+with the exceptions listed under
 **Fidelity gaps** below. Read those before you tell anyone a branch is safe.
 
 ## Run it
@@ -57,7 +60,7 @@ broken.
 
 ## Fidelity gaps — say these out loud, don't imply parity you don't have
 
-1. **No production build.** CI's `verify` ends with `npm run build`. This script
+1. **No production build.** CI's `build` job runs `npm run build`. This script
    stops at tests. `npm run build` = `typecheck` + `electron-vite build`, so the
    typecheck half _is_ covered; a bundler-only failure is not.
 2. **No e2e unless asked.** The `e2e` job builds and runs headless Electron under
