@@ -26,8 +26,10 @@ import type { MissionChildState } from '../../../main/mcp/fleet-snapshot'
 import {
   formatDuration,
   OPERATOR_VERIFIER_ID,
+  pulseText,
   type MissionModel,
   type StepModel,
+  type StepPrModel,
   type StepVisual
 } from '../lib/mission-view'
 import { useSessionsStore } from '../stores/sessions'
@@ -79,12 +81,13 @@ function childLabel(c: MissionChildState): string {
   )
 }
 
-type ChildLook = 'working' | 'needsInput' | 'idle' | 'parked' | 'failed' | 'unknown'
+type ChildLook =
+  'working' | 'workingHelpers' | 'needsInput' | 'idle' | 'parked' | 'failed' | 'unknown'
 
 function childLook(c: MissionChildState): ChildLook {
   if (!c.known) return 'unknown'
   if (c.hibernated) return 'parked'
-  if (c.taskState === 'working') return 'working'
+  if (c.taskState === 'working') return c.waitingOnHelpers ? 'workingHelpers' : 'working'
   if (c.taskState === 'needs-input' || c.pendingApprovals > 0) return 'needsInput'
   if (c.taskState === 'failed') return 'failed'
   return 'idle'
@@ -92,6 +95,7 @@ function childLook(c: MissionChildState): ChildLook {
 
 const CHILD_DOT: Record<ChildLook, string> = {
   working: 'anim-pulse-dot bg-green',
+  workingHelpers: 'anim-pulse-dot bg-green',
   needsInput: 'anim-attention-dot bg-warning',
   idle: 'bg-text-4',
   parked: 'bg-text-4',
@@ -124,6 +128,18 @@ function verifiedCaption(s: StepModel): string | null {
 /** The operator verified this human step themselves — only then offer Unmark. */
 function operatorTicked(s: StepModel): boolean {
   return s.step.proof === 'verified' && s.step.verifiedBy?.sessionId === OPERATOR_VERIFIER_ID
+}
+
+/** "PR #7 · open" — the PR line's leading part; the CI state follows in its own tone. */
+function prLine(p: StepPrModel): string {
+  const state = p.state === 'MERGED' ? 'merged' : p.draft ? 'isDraft' : 'open'
+  return t('mission.pr.line', { n: p.number, state: t(`mission.pr.state.${state}`) })
+}
+
+const CI_CLASS: Record<Exclude<StepPrModel['ci'], 'unknown'>, string> = {
+  passing: 'text-green',
+  failing: 'text-red',
+  pending: 'text-text-3'
 }
 
 function staleDuration(): string {
@@ -333,6 +349,30 @@ function onCheckChange(stepId: string, checkId: string, e: Event): void {
           }}
         </div>
 
+        <!-- Step pulse (T547): movement inside the step, beside — never instead of — "Step N of M". -->
+        <div
+          v-if="s.pulse && pulseText($t, s.pulse)"
+          class="mission-caption mission-pulse tabular-nums"
+          :data-pulse="s.pulse.kind"
+          data-test="mission-pulse"
+        >
+          {{ pulseText($t, s.pulse) }}
+        </div>
+        <div
+          v-for="p in s.prs"
+          :key="p.number"
+          class="mission-caption mission-pr tabular-nums"
+          data-test="mission-pr"
+          :data-pr="p.number"
+          :title="p.url"
+        >
+          {{ prLine(p) }}
+          <template v-if="p.ci !== 'unknown'">
+            ·
+            <span :class="CI_CLASS[p.ci]" :data-ci="p.ci">{{ $t(`mission.pr.ci.${p.ci}`) }}</span>
+          </template>
+        </div>
+
         <!-- Human checks (Mission v3 §3.6) — ticked, added and deleted through the doors. -->
         <div
           v-if="s.checks.length"
@@ -511,6 +551,13 @@ function onCheckChange(stepId: string, checkId: string, e: Event): void {
   font-size: 11px;
   line-height: 1.5;
   color: var(--color-text-4);
+}
+.mission-pulse,
+.mission-pr {
+  color: var(--color-text-3);
+}
+.mission-pulse[data-pulse='quiet'] {
+  color: var(--color-warning);
 }
 .mission-callout {
   display: flex;

@@ -12,6 +12,7 @@ import type { MissionView } from '../../src/main/mission-ipc'
 import { closeWarnings, type Mission, type MissionStep } from '../../src/main/mission-core'
 import { computeProgress, type StepSignalsLite } from '../../src/main/mission-progress'
 import type { MissionChildState } from '../../src/main/mcp/fleet-snapshot'
+import type { MissionStepSignals } from '../../src/main/mcp/tool-handlers'
 
 export const FIXTURE_NOW = Date.parse('2026-10-01T12:00:00Z')
 
@@ -61,7 +62,12 @@ function child(c: StepSignalsLite['children'][number]): MissionChildState {
  */
 export function fixtureView(
   name: FixtureName,
-  over: { mission?: Partial<Mission>; view?: Partial<MissionView> } = {}
+  over: {
+    mission?: Partial<Mission>
+    view?: Partial<MissionView>
+    /** T547: patch one step's derived signals (its `pulse`, `links`, `children`). */
+    derivedStep?: Record<string, Partial<MissionStepSignals>>
+  } = {}
 ): MissionView {
   const f = loadFixture(name)
   const steps: MissionStep[] = f.mission.steps.map((s, i) => ({
@@ -108,7 +114,9 @@ export function fixtureView(
           stepId: s.id,
           children: (sig?.children ?? []).map(child),
           links: [],
-          existence: s.verification === 'existence' ? { proven: !!sig?.existenceProven } : null
+          existence: s.verification === 'existence' ? { proven: !!sig?.existenceProven } : null,
+          pulse: { commits: null, lastCommitAt: null, lastActivityAt: null },
+          ...over.derivedStep?.[s.id]
         }
       }),
       progress

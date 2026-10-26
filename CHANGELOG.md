@@ -12,9 +12,20 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-10-20
 
+### Added
+
+- The mission popover now shows movement **inside** the current step — for example **21 commits · active 2m ago** — so a long step no longer looks like a stuck one. It counts the commits on the step's linked worktree beyond the branch it was cut from (its pull request's base, or your default branch) and the time of the newest sign of life (a commit, the helper session, or its subagents). After 15 minutes without any, the line turns amber: **no activity for 45m**. "Step N of M" is unchanged; the pill's tooltip repeats the line.
+- A step that links a pull request now lists it with its CI state in the popover: **PR #7 · open · CI running**.
+
+### Changed
+
+- A helper session that is idle only because its own subagents are still working now reads **working · helpers** instead of idle, and counts as working for the step and the stalled-mission check. A commit landing on a linked worktree also counts as activity for the stalled-mission check.
+- `mission_get` reports the new signals: `derived.steps[].pulse`, `commits` on worktree links, and `helperActivityAt` / `waitingOnHelpers` on children.
+
 ### Fixed
 
 - **The daily budget is no longer wrong the day after a weekly reset.** When your weekly window reset during the previous day, "Today" in the Plan usage panel measured spending against the old week's peak, so it showed too small an allowance and 0% spent (for example 0% of 8% instead of 4% of 15%). It now starts from where the new week stood after the reset. A reset that happens while Harnu is open also refreshes the budget straight away instead of waiting until midnight.
+
 ## 2026-10-23
 
 ### Changed

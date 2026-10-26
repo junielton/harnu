@@ -12,6 +12,7 @@ import type { Admit } from '../companion/arbitration-core'
 import { type FailureReason, type TaskState } from '../hook-state'
 import { isHibernated } from '../hibernation'
 import { TaskStateRegistry } from './task-state-registry'
+import { noteSubagentActivity } from '../subagent-activity'
 
 export interface BridgeEvent {
   sessionId: string
@@ -180,6 +181,9 @@ const isTerminalEdge = (ev: BridgeEvent): boolean =>
  */
 export function ingest(ev: BridgeEvent, getWindow: () => BrowserWindow | null): void {
   if (deps.isHibernated(ev.sessionId)) return
+  // T547: a subagent's own tool call is a sign of life for its PARENT even though
+  // the fold below keeps the parent's state honest about its main thread.
+  if (ev.agentId !== undefined && ev.source === 'hook') noteSubagentActivity(ev.sessionId, ev.ts)
   let verdict = admitSafely(ev)
   if (isTerminalEdge(ev)) {
     const eligible = ev.source === 'hook' || verdict === 'apply'

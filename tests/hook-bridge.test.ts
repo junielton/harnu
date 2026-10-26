@@ -262,3 +262,40 @@ describe('terminal ledger integration (BUG-54)', () => {
     expect(getRestorableTerminalEntries({}).some((e) => e.sessionId === 'S-resumed')).toBe(false)
   })
 })
+
+/**
+ * T547 — a hook fired by a session's own subagent (`agent_id` set) is recorded
+ * as that session's helper activity, so a mission can tell "idle, waiting on its
+ * helpers" from "idle and stuck". The parent's folded state is not touched by it.
+ */
+describe('handleBridgeEvent — subagent activity (T547)', () => {
+  afterEach(async () => {
+    resetHibernation()
+    ;(await import('../src/main/subagent-activity')).resetSubagentActivityForTests()
+  })
+
+  it('records the time of a hook that carries an agent id', async () => {
+    const { lastSubagentActivity } = await import('../src/main/subagent-activity')
+    handleBridgeEvent(
+      { sessionId: 'parent-1', event: 'PreToolUse', agentId: 'agent-a', ts: 1234 },
+      () => null
+    )
+    expect(lastSubagentActivity('parent-1')).toBe(1234)
+  })
+
+  it('ignores a hook fired by the main thread', async () => {
+    const { lastSubagentActivity } = await import('../src/main/subagent-activity')
+    handleBridgeEvent({ sessionId: 'parent-2', event: 'PreToolUse', ts: 1234 }, () => null)
+    expect(lastSubagentActivity('parent-2')).toBeUndefined()
+  })
+
+  it('ignores a hook of a parked session', async () => {
+    const { lastSubagentActivity } = await import('../src/main/subagent-activity')
+    markHibernated('parent-3')
+    handleBridgeEvent(
+      { sessionId: 'parent-3', event: 'PreToolUse', agentId: 'agent-a', ts: 1234 },
+      () => null
+    )
+    expect(lastSubagentActivity('parent-3')).toBeUndefined()
+  })
+})

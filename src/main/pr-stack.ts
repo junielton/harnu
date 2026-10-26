@@ -301,6 +301,12 @@ export interface WorktreePrJoin {
   /** `null` for a detached HEAD or a path git cannot read. */
   branch: string | null
   head: { sha: string; subject: string; at: string } | null
+  /**
+   * T547: commits on this worktree's HEAD beyond its step's base — the branch
+   * its open PR merges into, else the repo's default branch. Absent when git
+   * could not count — never `0` for "unknown".
+   */
+  commits?: number
   prs: PrEntry[]
 }
 
@@ -312,6 +318,38 @@ export interface MissionPrJoin {
   branches: Record<string, PrEntry[]>
   /** `null` for a number not in the repo's recent PRs (or when `gh` is unavailable). */
   numbers: Record<number, PrEntry | null>
+}
+
+/**
+ * Commits HEAD holds beyond `base` — the branch the step's open PR merges into,
+ * else the repo's default branch — or `undefined` when no base ref resolves here
+ * (a fresh clone with neither `origin/<base>` nor the local branch). A stacked
+ * unit therefore counts only its own commits, not its parents'.
+ * `origin/<base>` wins over the local branch: the local one may have moved.
+ */
+async function commitsAhead(
+  worktreePath: string,
+  prBase: string | undefined
+): Promise<number | undefined> {
+  const bases = [prBase, await defaultBranchOf(worktreePath)].filter(
+    (b, i, all): b is string => !!b && all.indexOf(b) === i
+  )
+  for (const base of bases) {
+    for (const ref of [`origin/${base}`, base]) {
+      try {
+        const { stdout } = await runFile(
+          'git',
+          ['-C', worktreePath, 'rev-list', '--count', `${ref}..HEAD`],
+          GIT_OPTS
+        )
+        const n = Number(stdout.trim())
+        if (Number.isInteger(n) && n >= 0) return n
+      } catch {
+        /* this base ref does not exist here — try the next */
+      }
+    }
+  }
+  return undefined
 }
 
 /** Branch + head commit of one worktree path; `exists: false` when git cannot read it. */
@@ -373,8 +411,20 @@ export async function findPrsForWorktrees(
   const onBranch = (branch: string | null): PrEntry[] =>
     branch ? prs.filter((p) => p.branch === branch) : []
   const worktrees: Record<string, WorktreePrJoin> = {}
+  // T547: commits are counted from the open PR's base once the PRs are known.
+  const commits = await Promise.all(
+    refs.worktrees.map((wt, i) =>
+      heads[i].head
+        ? commitsAhead(wt, onBranch(heads[i].branch).find((p) => p.state === 'OPEN')?.base)
+        : undefined
+    )
+  )
   refs.worktrees.forEach((wt, i) => {
-    worktrees[wt] = { ...heads[i], prs: onBranch(heads[i].branch) }
+    worktrees[wt] = {
+      ...heads[i],
+      ...(commits[i] !== undefined ? { commits: commits[i] } : {}),
+      prs: onBranch(heads[i].branch)
+    }
   })
   const branches: Record<string, PrEntry[]> = {}
   for (const b of refs.branches) branches[b] = onBranch(b)

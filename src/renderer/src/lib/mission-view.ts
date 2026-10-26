@@ -13,6 +13,7 @@
 import type { MissionView } from '../../../main/mission-ipc'
 import { progressHeadline, type StepState } from '../../../main/mission-progress'
 import type { MissionChildState } from '../../../main/mcp/fleet-snapshot'
+import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
 import type { Blocker, Check, MissionStep } from '../../../main/mission-core'
 import { owedKeys } from './mission-cue'
 
@@ -40,6 +41,31 @@ export type EndChoice = 'delivered' | 'discarded'
 
 /** The headline every surface prints — the server's `progressHeadline`. */
 export type MissionHeadline = ReturnType<typeof progressHeadline>
+
+/**
+ * T547 — activity older than this reads as quiet ("no activity for …"). The
+ * mission-level Stale callout keeps its own, longer, server-side hour.
+ */
+export const PULSE_QUIET_AFTER_MS = 15 * 60_000
+
+/** The sign of movement inside a current step (design.md §6 "Step pulse"). */
+export interface StepPulseModel {
+  /** `moving`: fresh activity or a working child. `quiet`: neither — the step reads stalled. */
+  kind: 'moving' | 'quiet'
+  /** Commits landed on the step's linked worktrees; `null` when none could be counted. */
+  commits: number | null
+  /** ms since the newest sign of life as of the view's refresh; `null` when none was ever seen. */
+  ageMs: number | null
+}
+
+/** One PR a step shows (open or merged), with the CI state `gh` reported. */
+export interface StepPrModel {
+  number: number
+  state: 'OPEN' | 'MERGED' | 'CLOSED'
+  draft: boolean
+  ci: 'passing' | 'failing' | 'pending' | 'unknown'
+  url: string
+}
 
 export interface StepModel {
   step: MissionStep
@@ -73,6 +99,95 @@ export interface StepModel {
   checks: Check[]
   /** The step is reached, so its unticked checks are due. */
   checksDue: boolean
+  /** T547 — movement inside the step; only the current steps, `null` when there is nothing to watch. */
+  pulse: StepPulseModel | null
+  /** T547 — the open and merged PRs this step reaches, newest first (at most {@link MAX_STEP_PRS}). */
+  prs: StepPrModel[]
+}
+
+const MAX_STEP_PRS = 3
+
+const CI_STATES: ReadonlySet<string> = new Set(['passing', 'failing', 'pending'])
+
+/** The PRs a step's links reach, deduped by number, open/merged only. */
+function stepPrs(links: readonly MissionLinkSignal[]): StepPrModel[] {
+  const out = new Map<number, StepPrModel>()
+  const add = (m: StepPrModel): void => {
+    if (m.state === 'CLOSED') return
+    const prev = out.get(m.number)
+    // The same PR through a worktree/card carries CI; a bare `pr` link does not.
+    if (!prev || (prev.ci === 'unknown' && m.ci !== 'unknown')) out.set(m.number, m)
+  }
+  for (const l of links) {
+    if (l.kind === 'pr') {
+      if (l.number !== null && l.exists && l.state)
+        add({ number: l.number, state: l.state, draft: false, ci: 'unknown', url: l.url ?? '' })
+      continue
+    }
+    for (const p of l.prs)
+      add({
+        number: p.number,
+        state: p.state,
+        draft: p.isDraft,
+        ci: CI_STATES.has(p.ci) ? (p.ci as StepPrModel['ci']) : 'unknown',
+        url: p.url
+      })
+  }
+  return [...out.values()].sort((a, b) => b.number - a.number).slice(0, MAX_STEP_PRS)
+}
+
+/** The step's pulse — `null` when it links neither a session nor a worktree (nothing to watch). */
+function stepPulse(
+  view: MissionView,
+  stepId: string,
+  linked: readonly MissionChildState[],
+  now: number
+): StepPulseModel | null {
+  const d = view.derived.steps.find((x) => x.stepId === stepId)
+  if (!d || (linked.length === 0 && !d.links.some((l) => l.kind === 'worktree'))) return null
+  const at = d.pulse.lastActivityAt ? Date.parse(d.pulse.lastActivityAt) : NaN
+  const ageMs = Number.isFinite(at) ? Math.max(0, now - at) : null
+  const working = linked.some((c) => c.taskState === 'working')
+  return {
+    kind: working || (ageMs !== null && ageMs <= PULSE_QUIET_AFTER_MS) ? 'moving' : 'quiet',
+    commits: d.pulse.commits,
+    ageMs
+  }
+}
+
+/** A piece of the pulse line; the component maps `key` to `mission.pulse.<key>`. */
+export type PulsePart =
+  | { key: 'commits'; n: number }
+  | { key: 'active' | 'quiet'; age: string }
+  | { key: 'activeNow' | 'quietNever' }
+
+type PluralTranslate = (key: string, named: Record<string, unknown>, plural?: number) => string
+
+/** The pulse line as one string — "21 commits · active 2m ago" — for the rail and the pill tooltip. */
+export function pulseText(t: PluralTranslate, p: StepPulseModel): string {
+  return pulseParts(p)
+    .map((part) =>
+      part.key === 'commits'
+        ? t('mission.pulse.commits', { n: part.n }, part.n)
+        : t(`mission.pulse.${part.key}`, 'age' in part ? { age: part.age } : {})
+    )
+    .join(' · ')
+}
+
+/** What the pulse line prints, in order: commits, then activity (design.md §6 "Step pulse"). */
+export function pulseParts(p: StepPulseModel): PulsePart[] {
+  const parts: PulsePart[] = []
+  if (p.commits !== null && p.commits > 0) parts.push({ key: 'commits', n: p.commits })
+  if (p.ageMs === null) {
+    if (p.kind === 'quiet') parts.push({ key: 'quietNever' })
+  } else if (p.kind === 'moving') {
+    parts.push(
+      p.ageMs < 60_000 ? { key: 'activeNow' } : { key: 'active', age: formatDuration(p.ageMs) }
+    )
+  } else {
+    parts.push({ key: 'quiet', age: formatDuration(p.ageMs) })
+  }
+  return parts
 }
 
 export interface MissionModel {
@@ -241,7 +356,9 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
       rescopePending: isEnd && !!m.pendingRescope,
       canTick: step.verification === 'human',
       checks: step.checks ?? [],
-      checksDue: REACHED.has(st)
+      checksDue: REACHED.has(st),
+      pulse: current ? stepPulse(view, step.id, linked, now) : null,
+      prs: stepPrs(view.derived.steps.find((x) => x.stepId === step.id)?.links ?? [])
     }
   })
 
