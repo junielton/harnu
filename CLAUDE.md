@@ -369,6 +369,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Bulk close confirm (§6 — BUG-173 S5)               | `src/renderer/src/components/MissionBulkCloseConfirmDialog.vue`                  |
 | Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
 | Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                              |
+| Dialog (the modal shell, §6 — T460)                | `src/renderer/src/components/ui/Dialog.vue` + `composables/useDialogStack.ts`    |
 
 ## Process for UI work
 
