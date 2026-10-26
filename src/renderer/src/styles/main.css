@@ -24,6 +24,11 @@
   --text-eyebrow: 10.5px;
   --text-eyebrow--line-height: 14px;
   --tracking-title: -0.015em;
+
+  /* Dialog header title (design.md §6 "Dialog"): a documented exception to §3's Subtitle — the
+   * 13.5/20 that 14+ dialogs shipped with. Weight comes from `font-semibold`. */
+  --text-dialog-title: 13.5px;
+  --text-dialog-title--line-height: 20px;
 }
 
 html,

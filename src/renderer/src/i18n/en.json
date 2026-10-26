@@ -1038,6 +1038,7 @@
     "cleanup": "Cleanup…"
   },
   "dialog": {
+    "close": "Close",
     "addFolder": {
       "title": "Add folder",
       "close": "Close dialog",
