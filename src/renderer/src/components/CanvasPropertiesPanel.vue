@@ -23,22 +23,30 @@ import {
   MIXED,
   type CanvasStyleKey,
   type CanvasStylePatch,
-  type CanvasStyleValue
+  type CanvasStyleValue,
+  type StyleOptions
 } from './canvas/canvas-style'
 import { LAYER_MOVES, type LayerMove } from './canvas/canvas-layers'
 
-const props = defineProps<{
-  /** The keys to offer, in `CANVAS_STYLE_KEYS` order. */
-  keys: readonly CanvasStyleKey[]
-  /** The value per key, or `'mixed'` where the selected nodes disagree. */
-  values: Partial<Record<CanvasStyleKey, CanvasStyleValue | typeof MIXED>>
-  /** Narrow pane: the panel folds into a single button. */
-  collapsed: boolean
-  /** While collapsed, whether the button has opened the panel. */
-  open: boolean
-  /** The selection holds a node: offer the Layers group. */
-  layers: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** The keys to offer, in `CANVAS_STYLE_KEYS` order. */
+    keys: readonly CanvasStyleKey[]
+    /** The values to offer per key; a key left out offers every value of `CANVAS_STYLE_VALUES`. */
+    options?: StyleOptions
+    /** The value per key, or `'mixed'` where the selected nodes disagree. */
+    values: Partial<Record<CanvasStyleKey, CanvasStyleValue | typeof MIXED>>
+    /** Narrow pane: the panel folds into a single button. */
+    collapsed: boolean
+    /** While collapsed, whether the button has opened the panel. */
+    open: boolean
+    /** The selection holds a node: offer the Layers group. */
+    layers: boolean
+    /** Only arrows are selected: tones draw as line glyphs in the tone's colour, not fill swatches. */
+    edgeOnly?: boolean
+  }>(),
+  { options: () => ({}), edgeOnly: false }
+)
 
 const emit = defineEmits<{
   change: [patch: CanvasStylePatch]
@@ -57,6 +65,18 @@ const TONE_SWATCH: Readonly<Record<string, string>> = {
   amber: 'bg-warning-soft border-warning',
   red: 'bg-red-soft border-red',
   muted: 'bg-bg border-border'
+}
+
+// An arrow has no fill, so its tone reads as the line colour: the same stroke tokens as
+// the swatch borders above, spelled as text utilities because the glyph strokes currentColor.
+// An arrow's `default` tone is the accent line (design.md "Arrow styles"), `muted` the quiet one.
+const TONE_LINE: Readonly<Record<string, string>> = {
+  default: 'text-accent',
+  accent: 'text-accent',
+  green: 'text-green',
+  amber: 'text-warning',
+  red: 'text-red',
+  muted: 'text-text-3'
 }
 
 // Line glyphs borrow the canvas's own dasharray and widths (canvas-cells.ts).
@@ -79,6 +99,10 @@ const LAYER_ICON = {
 
 const showGroups = (): boolean =>
   (!props.collapsed || props.open) && (props.keys.length > 0 || props.layers)
+
+function valuesFor(key: CanvasStyleKey): readonly CanvasStyleValue[] {
+  return props.options[key] ?? CANVAS_STYLE_VALUES[key]
+}
 
 function label(key: CanvasStyleKey, value: CanvasStyleValue): string {
   return t(`diagramPane.style.value.${key}.${value}`)
@@ -138,7 +162,7 @@ const IDLE = 'text-text-3 hover:bg-surface-2 hover:text-text'
           class="flex flex-wrap gap-0.5"
         >
           <button
-            v-for="value in CANVAS_STYLE_VALUES[key]"
+            v-for="value in valuesFor(key)"
             :key="value"
             :data-testid="`canvas-prop-${key}-${value}`"
             type="button"
@@ -151,8 +175,22 @@ const IDLE = 'text-text-3 hover:bg-surface-2 hover:text-text'
             @pointerdown.stop
             @click="pick(key, value)"
           >
+            <svg
+              v-if="key === 'tone' && edgeOnly"
+              data-testid="canvas-prop-glyph"
+              :class="['block', TONE_LINE[value]]"
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              :stroke-width="WIDTH.bold"
+              aria-hidden="true"
+            >
+              <line x1="1" y1="8" x2="15" y2="8" />
+            </svg>
             <span
-              v-if="key === 'tone'"
+              v-else-if="key === 'tone'"
               data-testid="canvas-prop-swatch"
               :class="['block h-4 w-4 rounded-sm border', TONE_SWATCH[value]]"
             />

@@ -5,6 +5,7 @@ import { Transform } from '@antv/x6-plugin-transform'
 import { Snapline } from '@antv/x6-plugin-snapline'
 import type { CanvasDocument, CanvasNode } from '../../../../main/canvas-core'
 import { toX6Cells, toX6Node, type ResolvedImages } from './canvas-cells'
+import { edgeLineAttrs } from './canvas-style'
 import { nodeDraftFromCell, operatorEdgeData } from './canvas-edit'
 import type { CanvasPalette } from './canvas-theme'
 import {
@@ -264,6 +265,9 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
             // selection, as in Excalidraw.
             multipleSelectionModifiers: ['ctrl', 'meta', 'shift'],
             showNodeSelectionBox: true,
+            // A selected arrow shows the same box a node does (T536 U5): without it
+            // the pick that opens the properties panel leaves nothing on the board.
+            showEdgeSelectionBox: true,
             pointerEvents: 'none'
           }
         : { rubberband: false, showNodeSelectionBox: false }
@@ -358,6 +362,29 @@ export function restyleCanvasNode(
 }
 
 /**
+ * Re-derive an arrow's line from its own `data.props` (T536 U5), the edge twin of
+ * {@link restyleCanvasNode}: the pane calls it on every `cell:change:data` of an edge,
+ * so a style write, its undo and its redo all repaint from the style alone, in the
+ * palette in force now. Marked {@link CANVAS_DERIVED_CHANGE} (never an undo step) and
+ * `dirty` (so a dasharray the new attrs no longer carry is removed from the SVG).
+ *
+ * `overwrite` replaces the whole attrs object, so the derived `line` is laid over the
+ * X6 `Edge` class defaults, exactly as the constructor does on a fresh render. Without
+ * them the line loses `connection: true` (it would stop following the route) and the
+ * wide transparent `wrap` path goes, which is what makes a 1.5px arrow clickable.
+ */
+export function restyleCanvasEdge(edge: Edge, palette: CanvasPalette): void {
+  const data = edge.getData() as { props?: unknown } | undefined
+  const defaults = (edge.constructor as typeof Edge).getDefaults().attrs ?? {}
+  const attrs = ObjectExt.merge({}, defaults, { line: edgeLineAttrs(data?.props, palette) })
+  edge.setAttrs(attrs as Edge.Properties['attrs'], {
+    overwrite: true,
+    dirty: true,
+    [CANVAS_DERIVED_CHANGE]: true
+  })
+}
+
+/**
  * The edge an OPERATOR draws, without its ends: stamped `operator` (AC U3-3),
  * routed and styled the same way whichever gesture made it. Both creation paths
  * mint through this one spec, a port drag in Select (`connecting.createEdge`)
@@ -374,13 +401,8 @@ export function operatorEdgeSpec(palette: CanvasPalette): Edge.Metadata {
     zIndex: 0,
     router: { name: 'manhattan' },
     connector: { name: 'rounded', args: { radius: 8 } },
-    attrs: {
-      line: {
-        stroke: palette.accent,
-        strokeWidth: 1.5,
-        targetMarker: { name: 'block', width: 8, height: 6 }
-      }
-    }
+    // The same attrs an unstyled arrow draws with, from the one source (T536 U5).
+    attrs: { line: edgeLineAttrs(undefined, palette) }
   }
 }
 

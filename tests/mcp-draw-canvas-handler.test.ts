@@ -720,3 +720,43 @@ describe('drawCanvasHandler — T536 U4: zIndex', () => {
     expect(doc.nodes.find((n) => n.id === 'human-1')!.zIndex).toBe(9)
   })
 })
+
+describe('drawCanvasHandler — T536 U5: arrow style', () => {
+  it('the ACK carries edgeStyle: the tones and strokes an arrow takes', async () => {
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'add_node', shape: 'box', x: 0, y: 100 }] },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    expect(payload(res).edgeStyle).toEqual({
+      tone: ['default', 'green', 'amber', 'red', 'muted'],
+      stroke: ['solid', 'dashed', 'dotted']
+    })
+  })
+
+  it('update_edge with style writes the merged style to the file', async () => {
+    const add = await drawCanvasHandler(
+      { folder, ops: [{ op: 'add_node', shape: 'box', x: 300, y: 0 }] },
+      ctxFor()
+    )
+    const nodeId = (payload(add).applied as { id: string }[])[0].id
+    const edge = await drawCanvasHandler(
+      {
+        folder,
+        ops: [{ op: 'add_edge', source: 'human-1', target: nodeId, style: { tone: 'red' } }]
+      },
+      ctxFor()
+    )
+    expect(edge.isError).toBeFalsy()
+    const edgeId = (payload(edge).applied as { id: string }[])[0].id
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'update_edge', id: edgeId, style: { stroke: 'dashed' } }] },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    const onDisk = JSON.parse(readFileSync(canvasPath, 'utf8')) as CanvasDocument
+    expect(onDisk.edges.find((e) => e.id === edgeId)?.props).toEqual({
+      style: { tone: 'red', stroke: 'dashed' }
+    })
+  })
+})

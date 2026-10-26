@@ -14,10 +14,11 @@ import {
   focusPane,
   key,
   keyUp,
-  mountPane,
+  mountPaneReady,
   nodeEl,
   saveAndRead,
   settle,
+  settleUntil,
   svgOf,
   unmountPanes,
   up
@@ -85,6 +86,8 @@ const DOC: CanvasDocument = {
   edges: [{ id: 'e-1', source: 'n-a', target: 'n-b', label: 'IPC', origin: 'agent' }]
 }
 const SEEDED = DOC.nodes.map((n) => n.id)
+/** Every cell the board seeds (nodes AND the edge): drive nothing before all are drawn. */
+const BOARD = [...SEEDED, ...DOC.edges.map((e) => e.id)]
 
 /** Where to press inside each node — the jsdom CTM is the identity. */
 const AT: Record<string, [number, number]> = {
@@ -173,17 +176,6 @@ async function select(w: VueWrapper, ...ids: string[]): Promise<void> {
   await settle()
 }
 
-/**
- * Settle until `done()` holds, bounded by wall time: X6 draws a view update in
- * time-sliced jobs, so how many ticks a repaint takes depends on how busy the run
- * is. The caller's own assertion reports a condition that never came true.
- */
-async function settleUntil(done: () => boolean, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  do await settle()
-  while (!done() && Date.now() < deadline)
-}
-
 /** The selected cells, read off the class X6's Selection puts on their views. */
 function selectedIds(w: VueWrapper): string[] {
   return [...svgOf(w).querySelectorAll('.x6-node-selected, .x6-edge-selected')]
@@ -263,8 +255,7 @@ describe('DiagramPane — an arrow restored by undo after a Save (T536 U4)', () 
       ]
     }
     canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc }))
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     expect(selectedIds(w)).toEqual(['e-1'])
     focusPane(w)
@@ -295,8 +286,7 @@ describe('DiagramPane — an arrow restored by undo after a Save (T536 U4)', () 
 // ── visibility ──────────────────────────────────────────────────────────────
 describe('DiagramPane properties panel — when it shows', () => {
   it('shows for a selected node in Select only, and holding Space keeps it', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     expect(panel(w)).toBe(false)
 
     await select(w, 'n-a')
@@ -319,9 +309,8 @@ describe('DiagramPane properties panel — when it shows', () => {
     await settle()
   })
 
-  it('Review Focus 4: shows only the keys every selected node takes, and ignores edges', async () => {
-    const w = mountPane()
-    await settle()
+  it('Review Focus 4: shows only the keys every selected cell takes, arrows included (T536 U5)', async () => {
+    const w = await mountPaneReady(BOARD)
 
     // Everything, edge included: the mockup card takes no key, so none is shared.
     // T536 U4 changed this ON PURPOSE: it used to show no panel at all; now the
@@ -341,21 +330,22 @@ describe('DiagramPane properties panel — when it shows', () => {
     expect(layers(w)).toBe(true)
     expect(groups(w)).toEqual([])
 
-    // A box, an ellipse and the edge: the ellipse has no corners; the edge is ignored.
+    // A box, an ellipse and the edge. T536 U5 changed this ON PURPOSE: the arrow used to
+    // be ignored by the style groups (so the groups were the box and ellipse's); now it
+    // counts, and only what an arrow takes is shared: tone and stroke.
     await select(w, 'n-a', 'n-e', 'e-1')
     expect(selectedIds(w)).toEqual(['e-1', 'n-a', 'n-e'])
-    expect(groups(w)).toEqual(['tone', 'stroke', 'strokeWidth', 'fontSize', 'align', 'opacity'])
+    expect(groups(w)).toEqual(['tone', 'stroke'])
 
-    await pick(w, 'fontSize', 'l')
+    await pick(w, 'tone', 'red')
     const doc = await saveAndRead(w)
-    expect(nodeOf(doc, 'n-a').props).toEqual({ style: { fontSize: 'l' } })
-    expect(nodeOf(doc, 'n-e').props).toEqual({ style: { fontSize: 'l' } })
-    expect(doc.edges[0].props).toBeUndefined()
+    expect(nodeOf(doc, 'n-a').props).toEqual({ style: { tone: 'red' } })
+    expect(nodeOf(doc, 'n-e').props).toEqual({ style: { tone: 'red' } })
+    expect(doc.edges[0].props).toEqual({ style: { tone: 'red' } })
   })
 
   it('Review Focus 4: a key one node takes is never written onto another that does not', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a')
     await pick(w, 'corners', 'sharp')
 
@@ -371,8 +361,7 @@ describe('DiagramPane properties panel — when it shows', () => {
   it('Review Focus 4: the pane filters a patch per node, whatever the panel sends', async () => {
     // The panel only offers shared keys, so this patch cannot be clicked; the pane
     // must still not trust its input to be pre-filtered.
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a', 'n-e')
     w.findComponent(CanvasPropertiesPanel).vm.$emit('change', { corners: 'sharp', tone: 'red' })
     await settle()
@@ -381,17 +370,19 @@ describe('DiagramPane properties panel — when it shows', () => {
     expect(nodeOf(doc, 'n-a').props).toEqual({ style: { corners: 'sharp', tone: 'red' } })
   })
 
-  it('an edge alone shows no panel', async () => {
-    const w = mountPane()
-    await settle()
+  // T536 U5 changed this ON PURPOSE: an arrow alone used to show no panel; it now shows
+  // Color and Stroke (and no Layers, which acts on nodes only).
+  it('an edge alone shows the panel with its style groups and no Layers (T536 U5)', async () => {
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     expect(selectedIds(w)).toEqual(['e-1'])
-    expect(panel(w)).toBe(false)
+    expect(panel(w)).toBe(true)
+    expect(groups(w)).toEqual(['tone', 'stroke'])
+    expect(layers(w)).toBe(false)
   })
 
   it('a mixed value checks no option in its group', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a')
     await pick(w, 'tone', 'green')
     await select(w, 'n-a', 'n-b')
@@ -407,8 +398,7 @@ describe('DiagramPane properties panel — when it shows', () => {
 // ── writing a style ─────────────────────────────────────────────────────────
 describe('DiagramPane properties panel — a pick styles the selected nodes', () => {
   it('a tone pick dirties the pane, saves into props.style and paints the token', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a')
     await pick(w, 'tone', 'green')
 
@@ -420,8 +410,7 @@ describe('DiagramPane properties panel — a pick styles the selected nodes', ()
   })
 
   it('a text node tone colours its label with the tone', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-c')
     expect(groups(w)).toEqual(['tone', 'fontSize', 'align', 'opacity'])
     await pick(w, 'tone', 'accent')
@@ -430,8 +419,7 @@ describe('DiagramPane properties panel — a pick styles the selected nodes', ()
   })
 
   it('a pick on two nodes is ONE undo step, and redo puts both back', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a', 'n-b')
     await pick(w, 'stroke', 'dashed')
     await expectBody(w, 'n-a', 'stroke-dasharray', '6 4')
@@ -456,8 +444,7 @@ describe('DiagramPane properties panel — a pick styles the selected nodes', ()
   })
 
   it('undo after a pick puts the panel back on the old value', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a')
     await pick(w, 'tone', 'red')
     focusPane(w)
@@ -469,8 +456,7 @@ describe('DiagramPane properties panel — a pick styles the selected nodes', ()
   })
 
   it('picking the value already checked changes nothing: clean, nothing to undo', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a')
     // Selecting (and the port reveal the pointer triggers) is not an edit either.
     expect(w.find('[data-testid="diagram-undo"]').attributes('disabled')).toBeDefined()
@@ -480,8 +466,7 @@ describe('DiagramPane properties panel — a pick styles the selected nodes', ()
   })
 
   it('⌘D copies the style with the node', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a')
     await pick(w, 'tone', 'amber')
     focusPane(w)
@@ -500,8 +485,7 @@ describe('DiagramPane properties panel — Review Focus 1: undo never paints an 
   afterEach(() => useThemeStore().set('default-dark'))
 
   it('undo and redo after a theme switch resolve the NEW theme, and keep the redo stack', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a')
     await pick(w, 'tone', 'green')
     await expectBody(w, 'n-a', 'stroke', DARK['--color-green'])
@@ -525,8 +509,7 @@ describe('DiagramPane properties panel — Review Focus 1: undo never paints an 
   // Live matrix (T536 U3, row TH1): the theme redraw rebuilds every cell, which used to
   // drop the selection — and the properties panel with it — mid-edit.
   it('a theme switch keeps the selection, so the panel stays open on the same nodes', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a', 'n-b')
     expect(panel(w)).toBe(true)
 
@@ -537,8 +520,7 @@ describe('DiagramPane properties panel — Review Focus 1: undo never paints an 
   })
 
   it('a theme switch keeps open resize handles on their node', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     const handles = (): Element[] => [...w.element.querySelectorAll('.x6-widget-transform')]
     // A real click is mousedown + mouseup + click; X6 opens the handles on `click`.
     const at = AT['n-a']
@@ -565,8 +547,7 @@ describe('DiagramPane properties panel — Review Focus 1: undo never paints an 
   // later theme switch used to reopen handles on a node that undo had brought back as a
   // NEW instance — with nothing selected.
   it('a theme switch does not reopen handles on a node deleted and restored by undo', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     const handles = (): Element[] => [...w.element.querySelectorAll('.x6-widget-transform')]
     const at = AT['n-a']
     focusPane(w)
@@ -603,8 +584,7 @@ describe('DiagramPane properties panel — Review Focus 1: undo never paints an 
       )
     }
     canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc: styled }))
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await expectBody(w, 'n-a', 'stroke', DARK['--color-green'])
 
     await switchTheme(w, LIGHT)
@@ -616,8 +596,7 @@ describe('DiagramPane properties panel — Review Focus 1: undo never paints an 
 // ── Review Focus 5: the panel does not disturb the board ────────────────────
 describe('DiagramPane properties panel — Review Focus 5: using it leaves the board alone', () => {
   it('a press and click on a swatch keep the selection and start no rubberband or draw', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a', 'n-b')
     const before = selectedIds(w)
     expect(before).toEqual(['n-a', 'n-b'])
@@ -637,8 +616,7 @@ describe('DiagramPane properties panel — Review Focus 5: using it leaves the b
   })
 
   it('Space on a focused panel option does not pan: the tool stays Select', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a')
     const option = w.find('[data-testid="canvas-prop-tone-green"]').element as HTMLElement
     option.focus()
@@ -666,8 +644,7 @@ describe('DiagramPane properties panel — narrow panes', () => {
         disconnect = vi.fn()
       }
     )
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     Object.defineProperty(bodyOf(w), 'clientWidth', { configurable: true, value: 320 })
     tick!()
     await settle()
@@ -695,8 +672,7 @@ describe('DiagramPane properties panel — narrow panes', () => {
         disconnect = vi.fn()
       }
     )
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     Object.defineProperty(bodyOf(w), 'clientWidth', { configurable: true, value: 320 })
     tick!()
     await settle()
@@ -727,8 +703,7 @@ describe('DiagramPane properties panel — narrow panes', () => {
         disconnect = vi.fn()
       }
     )
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
 
     // jsdom has no layout: give the chrome the geometry the real app measures.
     const pin = (el: Element, props: Record<string, () => number>): void => {
@@ -819,8 +794,7 @@ describe('DiagramPane — a left or right aligned text node is clickable anywher
     const style = (n.props as { style: Record<string, string> }).style
     it(`size ${style.fontSize ?? 'm'}, align ${style.align}: a press at the frame centre selects it`, async () => {
       canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc: TEXT_DOC }))
-      const w = mountPane()
-      await settle()
+      const w = await mountPaneReady(TEXTS.map((n) => n.id))
       const centre: [number, number] = [n.x + n.width! / 2, n.y + n.height! / 2]
       down(hitAtFrameCentre(w, n), centre)
       up(centre)
