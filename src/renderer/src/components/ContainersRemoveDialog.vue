@@ -117,7 +117,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, true))
       <div
         ref="dialogRef"
         :data-dsqa="`containers-remove-dialog--${variant}`"
-        class="anim-fade-in-scale flex w-[460px] max-w-[90vw] flex-col gap-3.5 rounded-lg border border-border-2 bg-surface px-6 pb-[18px] pt-[22px] text-text shadow-pop"
+        class="anim-fade-in-scale flex max-h-(--dialog-max-h) w-[460px] max-w-[90vw] flex-col gap-3.5 rounded-lg border border-border-2 bg-surface px-6 pb-[18px] pt-[22px] text-text shadow-pop"
         role="dialog"
         aria-modal="true"
         aria-labelledby="containers-remove-dialog-title"
@@ -125,7 +125,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, true))
       >
         <div
           id="containers-remove-dialog-title"
-          class="text-[15px] font-medium leading-[22px] text-text"
+          class="shrink-0 text-[15px] font-medium leading-[22px] text-text"
         >
           <i18n-t keypath="containers.dialog.title" scope="global">
             <template #name>
@@ -133,78 +133,82 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, true))
             </template>
           </i18n-t>
         </div>
-        <p class="m-0 text-[13px] leading-5 text-text-2">{{ body }}</p>
+        <div class="scrollable flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto">
+          <p class="m-0 shrink-0 text-[13px] leading-5 text-text-2">{{ body }}</p>
 
-        <div
-          class="flex flex-col gap-[5px] rounded border border-border bg-bg px-3 py-2 font-mono text-[11px] text-text-3"
-        >
-          <div v-for="c in stack.containers" :key="c.id" class="flex justify-between gap-3">
-            <span class="truncate">{{ c.name }}</span>
-            <span class="shrink-0">{{ exitedText(c.finishedAt, c.state) }}</span>
+          <div
+            class="flex flex-col gap-[5px] rounded border border-border bg-bg px-3 py-2 font-mono text-[11px] text-text-3"
+          >
+            <div v-for="c in stack.containers" :key="c.id" class="flex justify-between gap-3">
+              <span class="truncate">{{ c.name }}</span>
+              <span class="shrink-0">{{ exitedText(c.finishedAt, c.state) }}</span>
+            </div>
           </div>
-        </div>
 
-        <label
-          v-if="eligible.length > 0"
-          class="flex cursor-pointer gap-2.5 rounded border border-warning-line bg-warning-soft px-3 py-2.5"
-        >
-          <span class="relative mt-0.5 h-3.5 w-3.5 shrink-0">
-            <input
-              v-model="removeVolumes"
-              type="checkbox"
-              data-testid="containers-remove-volume"
-              class="absolute inset-0 m-0 h-3.5 w-3.5 cursor-pointer appearance-none rounded-[3px] border border-border-2 bg-surface checked:border-warning checked:bg-warning disabled:cursor-not-allowed"
-              :disabled="running"
-            />
-            <Check
-              v-if="removeVolumes"
-              :size="10"
-              :stroke-width="3"
-              class="pointer-events-none absolute left-0.5 top-0.5 text-bg"
-            />
-          </span>
-          <div>
-            <div class="text-[12px] text-text">
-              <i18n-t
-                v-if="eligible.length === 1"
-                keypath="containers.dialog.volumeOne"
-                scope="global"
-              >
-                <template #name>
-                  <span class="font-mono text-[11.5px]">{{ volumeName(eligible[0].name) }}</span>
+          <label
+            v-if="eligible.length > 0"
+            class="flex cursor-pointer gap-2.5 rounded border border-warning-line bg-warning-soft px-3 py-2.5"
+          >
+            <span class="relative mt-0.5 h-3.5 w-3.5 shrink-0">
+              <input
+                v-model="removeVolumes"
+                type="checkbox"
+                data-testid="containers-remove-volume"
+                class="absolute inset-0 m-0 h-3.5 w-3.5 cursor-pointer appearance-none rounded-[3px] border border-border-2 bg-surface checked:border-warning checked:bg-warning disabled:cursor-not-allowed"
+                :disabled="running"
+              />
+              <Check
+                v-if="removeVolumes"
+                :size="10"
+                :stroke-width="3"
+                class="pointer-events-none absolute left-0.5 top-0.5 text-bg"
+              />
+            </span>
+            <div>
+              <div class="text-[12px] text-text">
+                <i18n-t
+                  v-if="eligible.length === 1"
+                  keypath="containers.dialog.volumeOne"
+                  scope="global"
+                >
+                  <template #name>
+                    <span class="font-mono text-[11.5px]">{{ volumeName(eligible[0].name) }}</span>
+                  </template>
+                  <template #size>{{ eligibleSize }}</template>
+                </i18n-t>
+                <template v-else>
+                  {{
+                    t('containers.dialog.volumeMany', { n: eligible.length, size: eligibleSize })
+                  }}
                 </template>
-                <template #size>{{ eligibleSize }}</template>
-              </i18n-t>
-              <template v-else>
-                {{ t('containers.dialog.volumeMany', { n: eligible.length, size: eligibleSize }) }}
-              </template>
+              </div>
+              <div class="mt-[3px] text-[11px] leading-4 text-warning">
+                {{ t('containers.dialog.volumeWarning') }}
+              </div>
             </div>
-            <div class="mt-[3px] text-[11px] leading-4 text-warning">
-              {{ t('containers.dialog.volumeWarning') }}
-            </div>
+          </label>
+
+          <p v-for="v in shared" :key="v.name" class="m-0 text-[11px] leading-4 text-text-3">
+            {{ t('containers.dialog.sharedKept', { name: volumeName(v.name) }) }}
+          </p>
+
+          <div
+            v-if="failure"
+            class="flex items-start gap-2.5 rounded border border-red-line bg-red-soft px-3 py-2.5 text-[12px] leading-[18px] text-text-2"
+          >
+            <TriangleAlert :size="14" :stroke-width="1.8" class="mt-0.5 shrink-0 text-red" />
+            <span>
+              {{ failureText(failure) }}
+              <span
+                v-if="failureDetail(failure)"
+                class="mt-1 block font-mono text-[11px] text-text-3"
+                >{{ failureDetail(failure) }}</span
+              >
+            </span>
           </div>
-        </label>
-
-        <p v-for="v in shared" :key="v.name" class="m-0 text-[11px] leading-4 text-text-3">
-          {{ t('containers.dialog.sharedKept', { name: volumeName(v.name) }) }}
-        </p>
-
-        <div
-          v-if="failure"
-          class="flex items-start gap-2.5 rounded border border-red-line bg-red-soft px-3 py-2.5 text-[12px] leading-[18px] text-text-2"
-        >
-          <TriangleAlert :size="14" :stroke-width="1.8" class="mt-0.5 shrink-0 text-red" />
-          <span>
-            {{ failureText(failure) }}
-            <span
-              v-if="failureDetail(failure)"
-              class="mt-1 block font-mono text-[11px] text-text-3"
-              >{{ failureDetail(failure) }}</span
-            >
-          </span>
         </div>
 
-        <div class="flex justify-end gap-2 pt-1">
+        <div class="flex shrink-0 justify-end gap-2 pt-1">
           <button
             ref="cancelRef"
             type="button"

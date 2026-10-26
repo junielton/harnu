@@ -394,6 +394,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **You can select and copy text in files opened in the side pane.** Markdown, plain-text
   files and lessons opened in a helper pane now let you highlight any part of the file and
   copy it with the usual shortcut; before, selection was blocked across the whole pane.
+- **The bulk-clean confirm no longer grows past the window.** With many worktrees selected, or a long
+  "Harnu cannot remove it yet" list, the dialog used to run off the screen and push its title and the
+  Cancel / Remove buttons out of reach. It now stops at 84% of the window height: the title and the
+  buttons stay in place and the list and the refused section scroll together in between. The
+  Containers remove confirm gets the same cap.
 
 ## 2026-10-09
 

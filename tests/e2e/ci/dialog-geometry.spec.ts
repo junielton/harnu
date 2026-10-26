@@ -45,20 +45,6 @@ const WIDTH = 1280
  */
 const KNOWN_VIOLATORS: Record<string, string> = {
   // KNOWN_VIOLATORS:BEGIN — one entry per line, sorted. The batch that fixes one deletes its line.
-  // BUG-184: the bulk-clean card has no max-height. With a long list the FOOTER leaves the viewport
-  // (ready @560: the card ends at 580 in a 560px window) or the HEADER does (review @900/@560: the
-  // card is taller than the window and is centered, so its top is above the viewport and its footer
-  // stays visible). BUG-184 owns the flip.
-  'CleanupBulkConfirmDialog#ready@560':
-    'BUG-184 — the card is 517px tall with no cap; its footer ends at 580px in a 560px window',
-  'CleanupBulkConfirmDialog#review-few@560':
-    'BUG-184 — 1 row + 16 refused make the card 1257px tall with no cap; its header is above the viewport',
-  'CleanupBulkConfirmDialog#review-few@900':
-    'BUG-184 — 1 row + 16 refused make the card 1257px tall with no cap; its header is above the viewport',
-  'CleanupBulkConfirmDialog#review@560':
-    'BUG-184 — 33 rows + 16 refused make the card 1423px tall with no cap; its header is above the viewport',
-  'CleanupBulkConfirmDialog#review@900':
-    'BUG-184 — 33 rows + 16 refused make the card 1423px tall with no cap; its header is above the viewport'
   // KNOWN_VIOLATORS:END
 }
 
