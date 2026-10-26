@@ -66,8 +66,6 @@ const HAND_ROLLED_SHELLS: readonly string[] = [
   'NewWorktreeDialog.vue',
   'OpenSubfolderDialog.vue',
   'RemoveWorktreeDialog.vue',
-  'RenameFolderDialog.vue',
-  'RenameRepoDialog.vue',
   'ReviewPane.vue',
   'RoadmapBoard.vue',
   'SettingsDialog.vue',
