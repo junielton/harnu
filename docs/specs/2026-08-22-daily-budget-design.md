@@ -42,11 +42,16 @@ on its own. The over-budget state simply _reports_ that: `next 3 days drop to 12
 - **`7d% now` and `resetsAtMs`** — `useUsageStore().rateLimits.sevenDay`, already
   reactive and already merged by freshness across the statusLine cockpit and the
   `/usage` poll.
-- **`baseline`** — yesterday's `DailyRollup.sevenDayPeak`. A 7d window is monotonic
-  within its own period, so yesterday's peak _is_ the value at the moment today
-  began. If today has a `weeklyReset` (the rollup already records one), the baseline
-  is `0`: the new window started empty, and everything before the reset was charged
-  to the previous week.
+- **`baseline`** — the 7d% at the moment today began. Normally that is yesterday's
+  `DailyRollup.sevenDayPeak`: a 7d window is monotonic within its own period, so
+  yesterday's peak _is_ the value at midnight. Two resets break that shortcut:
+  - **Reset earlier today** (today's rollup has a `weeklyReset`): the baseline is `0`.
+    The new window started empty, and everything before the reset was charged to the
+    previous week.
+  - **Reset during yesterday** (yesterday's rollup has a `weeklyReset`): yesterday's
+    peak belongs to the OLD window and overstates the midnight value (e.g. samples
+    47 → 53, reset, 12 — peak 53, but the new window stood at 12). The baseline is
+    that rollup's `weeklyReset.postPct`.
 - **`working days left`** — days `d` where `d >= today` and `d < resetsAtMs`, counted
   only when `d`'s weekday is in the configured set. Today is included when today is a
   working day.
@@ -97,7 +102,11 @@ per local day and invalidated on day rollover or on a newly-detected weekly rese
 The first call costs one rollup build; every later call is a map lookup.
 
 The renderer combines that baseline with the live `sevenDay` window it already has,
-so the row updates on every telemetry push with no further IPC.
+so the row updates on every telemetry push with no further IPC. It fetches once per
+day key, and re-reads when a weekly reset lands while the app is open: the live
+window's reset time jumps forward by more than an hour, or live 7d usage falls below
+the cached baseline (rate-limited to once a minute, so a lagging main cannot cause a
+fetch storm).
 
 ### 3. `UsageMeter` gains a budget variant
 

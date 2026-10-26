@@ -656,9 +656,11 @@ export function buildHeatmap(
  * The 7d percentage at the moment a given local day began (daily-budget spec).
  *
  * A 7d window only ever grows within its own period, so the PREVIOUS day's peak
- * is exactly the value at midnight. When the window reset earlier today the
- * baseline is 0 instead: the new window started empty, and everything spent
- * before the reset was charged to the previous week.
+ * is exactly the value at midnight — unless that day contained the weekly reset.
+ * Then its peak belongs to the OLD window, and the value at midnight is where
+ * the new window stood after the reset (`weeklyReset.postPct`). When the window
+ * reset earlier today the baseline is 0 instead: the new window started empty,
+ * and everything spent before the reset was charged to the previous week.
  *
  * @param rollups Ascending by day, as {@link buildRollups} returns.
  * @param dayKey The local day to compute the baseline for.
@@ -670,5 +672,6 @@ export function pickBaseline(rollups: readonly DailyRollup[], dayKey: string): n
   for (const r of rollups) {
     if (r.day < dayKey) prior = r
   }
+  if (prior?.weeklyReset) return prior.weeklyReset.postPct
   return prior?.sevenDayPeak ?? null
 }

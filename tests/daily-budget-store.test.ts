@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import { useDailyBudgetStore } from '../src/renderer/src/stores/daily-budget'
 import { useUsageStore } from '../src/renderer/src/stores/usage'
@@ -148,6 +149,103 @@ describe('daily-budget store', () => {
         expect(budget.budget.state).toBe('unavailable')
       }
       expect(window.api.usageHistoryDailyBudget).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  /**
+   * BUG-204: the baseline is fetched once per day, but a weekly reset can land
+   * while the app is open. The pre-reset baseline must not survive it.
+   */
+  describe('re-reads the baseline after a weekly reset', () => {
+    const mock = (): ReturnType<typeof vi.fn> =>
+      window.api.usageHistoryDailyBudget as ReturnType<typeof vi.fn>
+    const flush = async (): Promise<void> => {
+      await nextTick()
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+
+    it('re-fetches when live 7d usage drops below the cached baseline', async () => {
+      mock().mockResolvedValue({ baselinePct: 53, dayKey: todayKey() })
+      const budget = useDailyBudgetStore()
+      await budget.init()
+      const usage = useUsageStore()
+      usage.snapshot = snapshotWith(55, Date.now() + 3 * DAY)
+      await flush()
+      expect(mock()).toHaveBeenCalledTimes(1)
+
+      // Weekly reset: the window starts over and main now reports the new baseline.
+      mock().mockResolvedValue({ baselinePct: 0, dayKey: todayKey() })
+      usage.snapshot = snapshotWith(3, Date.now() + 7 * DAY)
+      await flush()
+      expect(mock()).toHaveBeenCalledTimes(2)
+      expect(budget.baselinePct).toBe(0)
+      expect(budget.budget.spentPct).toBeCloseTo(3)
+    })
+
+    it('re-fetches when the window reset time moves to a new week', async () => {
+      mock().mockResolvedValue({ baselinePct: 10, dayKey: todayKey() })
+      const budget = useDailyBudgetStore()
+      await budget.init()
+      const usage = useUsageStore()
+      usage.snapshot = snapshotWith(40, Date.now() + 1 * DAY)
+      await flush()
+      expect(mock()).toHaveBeenCalledTimes(1)
+
+      // Live usage is still above the old baseline — only the reset time moved.
+      usage.snapshot = snapshotWith(45, Date.now() + 8 * DAY)
+      await flush()
+      expect(mock()).toHaveBeenCalledTimes(2)
+    })
+
+    it('a failed re-read keeps the last good baseline and stays recoverable', async () => {
+      mock().mockResolvedValue({ baselinePct: 53, dayKey: todayKey() })
+      const budget = useDailyBudgetStore()
+      await budget.init()
+      const usage = useUsageStore()
+      const resetsAtMs = Date.now() + 3 * DAY
+      usage.snapshot = snapshotWith(55, resetsAtMs)
+      await flush()
+
+      // Live usage dropped below the baseline, but the re-read fails transiently.
+      mock().mockRejectedValue(new Error('x'))
+      usage.snapshot = snapshotWith(16, resetsAtMs)
+      await flush()
+      expect(mock()).toHaveBeenCalledTimes(2)
+      expect(budget.baselinePct).toBe(53)
+      expect(budget.budget.state).not.toBe('unavailable')
+
+      // A later trigger (the window's reset time moved) recovers the right value.
+      mock().mockResolvedValue({ baselinePct: 12, dayKey: todayKey() })
+      usage.snapshot = snapshotWith(16, Date.now() + 10 * DAY)
+      await flush()
+      expect(mock()).toHaveBeenCalledTimes(3)
+      expect(budget.baselinePct).toBe(12)
+    })
+
+    it('does not re-fetch for ordinary telemetry pushes', async () => {
+      const budget = useDailyBudgetStore()
+      await budget.init()
+      const usage = useUsageStore()
+      const resetsAtMs = Date.now() + 3 * DAY
+      for (const pct of [36, 37, 38, 39]) {
+        usage.snapshot = snapshotWith(pct, resetsAtMs)
+        await flush()
+      }
+      expect(mock()).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not storm when main keeps returning a baseline above the live value', async () => {
+      mock().mockResolvedValue({ baselinePct: 53, dayKey: todayKey() })
+      const budget = useDailyBudgetStore()
+      await budget.init()
+      const usage = useUsageStore()
+      for (const pct of [16, 15, 14, 13]) {
+        usage.snapshot = snapshotWith(pct, Date.now() + 6 * DAY)
+        await flush()
+      }
+      // init + exactly one drift re-read, not one per push.
+      expect(mock()).toHaveBeenCalledTimes(2)
     })
   })
 })

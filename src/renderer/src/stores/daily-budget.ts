@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useNow } from '@vueuse/core'
 import { useUsageStore } from './usage'
 import { computeDailyBudget, type DailyBudget } from '../components/daily-budget'
@@ -13,7 +13,8 @@ export const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5, 6]
  * the narrow `usageHistory:dailyBudget` IPC, and the user's working-day set.
  *
  * The baseline is fetched once per local day — it is by definition constant
- * within a day — and re-fetched when the day key rolls over.
+ * within a day — and re-fetched when the day key rolls over, or when a weekly
+ * reset lands while the app is open (see the watch below).
  */
 export const useDailyBudgetStore = defineStore('dailyBudget', () => {
   const usage = useUsageStore()
@@ -47,6 +48,10 @@ export const useDailyBudgetStore = defineStore('dailyBudget', () => {
       baselinePct.value = b.baselinePct
       baselineDayKey.value = b.dayKey
     } catch {
+      // A failed RE-read (the reset watch below) keeps the baseline already
+      // fetched for today: a transient IPC error must not blank a good number,
+      // and the watch retries on its next trigger.
+      if (baselineDayKey.value === dayKey.value) return
       // Nothing trustworthy to show: drop the stamp too, so the row reads
       // `unavailable` rather than pairing a null baseline with a stale day.
       baselinePct.value = null
@@ -68,6 +73,51 @@ export const useDailyBudgetStore = defineStore('dailyBudget', () => {
     if (requestedDayKey === dayKey.value) return
     void refreshBaseline()
   }
+
+  /**
+   * A weekly reset mid-day moves the baseline (main invalidates its memo on the
+   * closed 7d window), but the once-per-day guard above would keep the pre-reset
+   * value until midnight. Re-read it when the window visibly rolled over:
+   *
+   * - the reset time jumped forward by more than {@link RESET_JUMP_MS} (a new
+   *   window; smaller moves are `/usage` text-parse jitter), or
+   * - live usage fell below the cached baseline, which a monotonic 7d window
+   *   never does within its own period. Main can lag the renderer in noticing a
+   *   reset, so this retry is allowed once per clock tick (a minute) rather than
+   *   once ever, yet cannot storm: it fires at most that often, and only while
+   *   the contradiction persists.
+   */
+  const RESET_JUMP_MS = 3_600_000
+  let lastResetsAtMs: number | null = null
+  let lastDriftTick: number | null = null
+  watch(
+    () =>
+      [
+        usage.rateLimits?.sevenDay?.resetsAtMs ?? null,
+        usage.rateLimits?.sevenDay?.usedPercent ?? null,
+        now.value.getTime()
+      ] as const,
+    ([resetsAtMs, usedPercent, tick]) => {
+      if (baselineDayKey.value !== dayKey.value) return // the day-key path owns this
+      let stale = false
+      if (resetsAtMs !== null) {
+        if (lastResetsAtMs !== null && resetsAtMs - lastResetsAtMs > RESET_JUMP_MS) stale = true
+        if (lastResetsAtMs === null || Math.abs(resetsAtMs - lastResetsAtMs) > RESET_JUMP_MS) {
+          lastResetsAtMs = resetsAtMs
+        }
+      }
+      if (
+        usedPercent !== null &&
+        baselinePct.value !== null &&
+        usedPercent < baselinePct.value &&
+        lastDriftTick !== tick
+      ) {
+        lastDriftTick = tick
+        stale = true
+      }
+      if (stale) void refreshBaseline()
+    }
+  )
 
   async function init(): Promise<void> {
     try {
