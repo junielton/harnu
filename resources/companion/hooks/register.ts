@@ -129,6 +129,8 @@ let backoffMs = BACKOFF_MIN_MS
 let heartbeat: Timer | null = null
 let sentSinceBeat = false
 let driftBlocked = false
+/** The model of the last `usage.measured` read: `/model` has no event, so a beat compares (T577). */
+let lastModel: string | null = null
 let endpoint: Endpoint | null = null
 let pumpFlight: Promise<void> | null = null
 let pumpKick = false
@@ -381,10 +383,32 @@ function snapshot($: Dollar, reason: EventPayloads['session.snapshot']['reason']
 async function readUsage($: Dollar): Promise<void> {
   if (!enabled('sense.usage')) return
   try {
-    const [usage, model] = await Promise.all([$.session.usage(), $.session.model()])
+    // The model is noted as soon as it is known, even if the usage read then throws: the
+    // watcher must not turn one rejected read into a read on every beat.
+    const modelRead = $.session.model().then((m) => {
+      if (typeof m === 'string' && m !== '') lastModel = m
+      return m
+    })
+    const [usage, model] = await Promise.all([$.session.usage(), modelRead])
     emit($, { t: 'usage.measured', d: readPayload(usage, model) })
   } catch (err) {
     reportModError('session.usage', err)
+  }
+}
+
+/**
+ * One heartbeat's look at `$.session.model()`. No hook fires on `/model` (`session.measure` moves
+ * on context, rate limits and cost only), so a changed model is sent as a full read and the footer
+ * follows within one beat instead of waiting for the next turn. Never on a turn's path (MOD-6).
+ */
+async function watchModel($: Dollar): Promise<void> {
+  if (!enabled('sense.usage')) return
+  try {
+    const model = await $.session.model()
+    if (typeof model !== 'string' || model === '' || model === lastModel) return
+    await readUsage($)
+  } catch {
+    // advisory, like the drift check: a failed look changes nothing and is not reported every beat
   }
 }
 
@@ -768,6 +792,7 @@ async function beat($: Dollar): Promise<void> {
       return
     }
     await maybeDriftCheck($)
+    void watchModel($) // un-awaited: a slow read never delays the pump or the lease renewal
     if (ring.size() > 0) pump($)
     else if (!sentSinceBeat) pump($, true)
     sentSinceBeat = false

@@ -201,3 +201,46 @@ test('a throwing sensor never changes the answer of session.measure', async ($, 
   const out = await $.session.measure({ context: { window: 1 }, changed: ['context'] } as never)
   expect(out).toEqual({ changed: ['context'] })
 })
+
+test('a /model change is sent within a heartbeat, with no turn (T577)', async ($, on) => {
+  const rig = installRig(on, { script: usageScript(WITH_USAGE) })
+  let model = 'claude-sonnet-5-5'
+  on('session.usage', async () => ({ value: A3_USAGE }))
+  on('session.model', async () => ({ value: model }))
+  on('session.measure', async (_$, e) => ({ changed: e.changed }))
+  await $.session.start(START)
+  await drain(rig)
+  const reads = (): { d: Record<string, unknown> }[] =>
+    rig.events().filter((e) => e.t === 'usage.measured' && e.d.source === 'read')
+  const before = reads().length
+  expect(must(reads().at(-1)).d.model).toBe('claude-sonnet-5-5')
+
+  // nothing moved: further beats add no read
+  await drain(rig)
+  expect(reads().length).toBe(before)
+
+  // `/model fable`: no hook fires, the next beat notices
+  model = 'claude-fable-5-1'
+  await drain(rig)
+  expect(reads().length).toBe(before + 1)
+  expect(must(reads().at(-1)).d.model).toBe('claude-fable-5-1')
+
+  // and it is not repeated
+  await drain(rig)
+  expect(reads().length).toBe(before + 1)
+})
+
+test('the model is not watched while sense.usage is not enabled (T577)', async ($, on) => {
+  const rig = installRig(on, { script: usageScript(['sense.identity']) })
+  let calls = 0
+  on('session.usage', async () => ({ value: A3_USAGE }))
+  on('session.model', async () => {
+    calls++
+    return { value: 'claude-sonnet-5-5' }
+  })
+  await $.session.start(START)
+  await drain(rig)
+  await drain(rig)
+  expect(calls).toBe(0)
+  expect(rig.events().filter((e) => e.t === 'usage.measured').length).toBe(0)
+})

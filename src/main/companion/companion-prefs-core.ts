@@ -11,6 +11,7 @@
 
 import {
   FAMILY_FEATURES,
+  GRADUATED_FAMILIES,
   effectiveMode,
   type CompanionInjectDecision,
   type RolloutView
@@ -113,7 +114,13 @@ export function companionModeOf(
   const someFolder = r.allFolders || rampFolders.size > 0
   const folder = r.allFolders ? null : ([...rampFolders][0] ?? null)
   if (!someFolder) return 'shadow'
-  return FAMILIES.some((f) => effectiveMode(f, folder, r) === 'active') ? 'active' : 'shadow'
+  // A graduated family is `active` everywhere, so it says nothing about the ramp: counting it
+  // would flip the global mode (read by identity and the channel) for every user (T577).
+  return FAMILIES.some(
+    (f) => !GRADUATED_FAMILIES.has(f) && effectiveMode(f, folder, r) === 'active'
+  )
+    ? 'active'
+    : 'shadow'
 }
 
 /**
