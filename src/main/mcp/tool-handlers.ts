@@ -66,6 +66,26 @@ import {
 } from '../terminal-registry'
 import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { readAgentTerminalWrites } from './prefs'
+import { beginPaneVerb, runWithRevival, withRevivedFlag } from '../browser/verbs-core'
+import {
+  browserRegistry,
+  makeBrowserActDeps,
+  makeBrowserDeviceDeps,
+  makeBrowserReadDeps,
+  makeBrowserVerbDeps
+} from '../browser/browser-service'
+import { clickVerb, evalVerb, fillVerb, pressVerb, typeVerb } from '../browser/act-verbs'
+import { downloadVerb, emulateVerb, uploadVerb } from '../browser/device-verbs'
+import type { ConsoleLevel } from '../browser/console-buffer'
+import {
+  consoleVerb,
+  networkVerb,
+  screenshotVerb,
+  snapshotVerb,
+  waitForVerb
+} from '../browser/read-verbs'
+import { closeVerb, listVerb, navigateVerb, openVerb } from '../browser/verbs-core'
+import { patchVerb, setDataVerb } from '../browser/page-verbs'
 import { resolveTerminalGate } from '../terminal-gate'
 import { terminalLeases } from '../terminal-lease'
 import { scrubTerminalText } from '../scrub-terminal'
@@ -1669,6 +1689,7 @@ const drawCanvasHandler: Handler = async (args, ctx) => {
       updatedAt: nowIso
     }
   }
+  // Not the pane's own Save (no `selfWrite`): an open pane must hear about this write.
   const written = await writeCanvasFile(target.path, next)
   if (!written.ok) return errorResult(`${canvasVerbCode(written.code)}: ${written.error}`)
 
@@ -5133,6 +5154,396 @@ const missionLogHandler: Handler = async (args, ctx) => {
   })
 }
 
+/* ---- T564 U1: the browser verbs ------------------------------------------------------------------- */
+
+/** The bits of this call's context the browser verbs need, over the real singletons. */
+function browserEnv(ctx: ToolHandlerCtx): Parameters<typeof makeBrowserVerbDeps>[0] {
+  return {
+    bridge: ctx.bridge,
+    sessionKnown: (id) => sessionKnown(id, ctx),
+    folderBlocked: (folder) => isFolderDenied(folder, ctx.denyFolders, os.homedir())
+  }
+}
+
+function browserDeps(ctx: ToolHandlerCtx): ReturnType<typeof makeBrowserVerbDeps> {
+  return makeBrowserVerbDeps(browserEnv(ctx))
+}
+
+/** A verb result: `ok:false` is the steering refusal shape of spec §6, returned as an error result. */
+function browserResult(input: Record<string, unknown>): CallToolResult {
+  const res = withRevivedFlag(input)
+  if (res.ok === false) {
+    return { content: [{ type: 'text', text: JSON.stringify(res) }], isError: true }
+  }
+  // A screenshot rides as an image content block; the JSON beside it never repeats the bytes.
+  const { image, ...rest } = res as { image?: { data: string; mimeType: string } } & Record<
+    string,
+    unknown
+  >
+  if (image) {
+    return {
+      content: [
+        { type: 'image', data: image.data, mimeType: image.mimeType },
+        { type: 'text', text: JSON.stringify(rest) }
+      ]
+    }
+  }
+  return textResult(res)
+}
+
+/** The strings a verb carries, with `undefined` for absent. */
+function optStr(args: Record<string, unknown>, key: string): string | undefined {
+  return typeof args[key] === 'string' ? (args[key] as string) : undefined
+}
+
+const browserOpenHandler: Handler = async (args, ctx) => {
+  if (!ctx.bridge) return errorResult('NO_BRIDGE')
+  const folder = resolvePaneFolder(ctx)
+  if (!folder) return steerError('PANE_FOLDER_UNKNOWN', ctx.folder)
+  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT: do not open a page nobody will be told about.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await openVerb(
+    {
+      folder,
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(optStr(args, 'path') !== undefined ? { path: optStr(args, 'path') } : {}),
+      ...(optStr(args, 'html') !== undefined ? { html: optStr(args, 'html') } : {}),
+      ...(optStr(args, 'name') !== undefined ? { name: optStr(args, 'name') } : {}),
+      ...(optStr(args, 'ownerSessionId') !== undefined
+        ? { ownerSessionId: optStr(args, 'ownerSessionId') }
+        : {}),
+      ...(optStr(args, 'device') !== undefined ? { device: optStr(args, 'device') } : {}),
+      ...(typeof args.background === 'boolean' ? { background: args.background } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_open', ...res })
+}
+
+const browserListHandler: Handler = async (args, ctx) => {
+  const folderArg = optStr(args, 'folder')
+  const folder =
+    folderArg === undefined
+      ? undefined
+      : (resolveKnownFolder(
+          folderArg,
+          ctx.folders.map((f) => f.path)
+        ) ?? folderArg)
+  const res = await listVerb(
+    {
+      ...(folder !== undefined ? { folder } : {}),
+      ...(optStr(args, 'ownerSessionId') !== undefined
+        ? { ownerSessionId: optStr(args, 'ownerSessionId') }
+        : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult(res)
+}
+
+const browserNavigateHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await navigateVerb(
+    {
+      paneId: optStr(args, 'paneId') ?? '',
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(typeof args.action === 'string'
+        ? { action: args.action as 'back' | 'forward' | 'reload' | 'stop' }
+        : {}),
+      ...(typeof args.hard === 'boolean' ? { hard: args.hard } : {}),
+      ...(typeof args.waitUntil === 'string'
+        ? { waitUntil: args.waitUntil as 'commit' | 'domcontentloaded' | 'load' }
+        : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_navigate', ...res })
+}
+
+const browserCloseHandler: Handler = async (args, ctx) => {
+  const res = await closeVerb({ paneId: optStr(args, 'paneId') ?? '' }, browserDeps(ctx))
+  return browserResult({ op: 'browser_close', ...res })
+}
+
+/* ---- T572 (T564 U5): zoom and device emulation, upload from the folder, download into it. ---- */
+
+const browserEmulateHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await emulateVerb(
+    {
+      ...paneArgs(args),
+      ...(typeof args.zoom === 'number' ? { zoom: args.zoom } : {}),
+      ...(optStr(args, 'device') !== undefined ? { device: optStr(args, 'device') } : {}),
+      ...(typeof args.width === 'number' ? { width: args.width } : {}),
+      ...(typeof args.height === 'number' ? { height: args.height } : {}),
+      ...(typeof args.dpr === 'number' ? { dpr: args.dpr } : {}),
+      ...(typeof args.mobile === 'boolean' ? { mobile: args.mobile } : {}),
+      ...(typeof args.touch === 'boolean' ? { touch: args.touch } : {}),
+      ...(optStr(args, 'userAgent') !== undefined ? { userAgent: optStr(args, 'userAgent') } : {}),
+      ...(args.colorScheme === 'light' || args.colorScheme === 'dark'
+        ? { colorScheme: args.colorScheme }
+        : {}),
+      ...(typeof args.reducedMotion === 'boolean' ? { reducedMotion: args.reducedMotion } : {}),
+      ...(typeof args.reset === 'boolean' ? { reset: args.reset } : {})
+    },
+    makeBrowserDeviceDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_emulate', ...res })
+}
+
+const browserUploadHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await uploadVerb(
+    {
+      ...paneArgs(args),
+      ref: optStr(args, 'ref') ?? '',
+      paths: Array.isArray(args.paths) ? (args.paths as unknown[]).map(String) : []
+    },
+    makeBrowserDeviceDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_upload', ...res })
+}
+
+const browserDownloadHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await downloadVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {}),
+      ...(optStr(args, 'name') !== undefined ? { name: optStr(args, 'name') } : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    makeBrowserDeviceDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_download', ...res })
+}
+
+/**
+ * A pane-addressed browser verb is running: its pane is not discarded under it (T574, spec §10.1), and the ACK says
+ * `revived: true` when the verb had to bring the pane back.
+ */
+function paneVerb(handler: Handler): Handler {
+  return async (args, ctx) => {
+    const paneId = typeof args.paneId === 'string' ? args.paneId : ''
+    const end = paneId ? beginPaneVerb(browserRegistry, paneId) : undefined
+    try {
+      return await runWithRevival(() => handler(args, ctx))
+    } finally {
+      end?.()
+    }
+  }
+}
+
+/** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
+/** The pane-addressed reading verbs share one shape: a `paneId` and the verb's own arguments. */
+function paneArgs(args: Record<string, unknown>): { paneId: string } {
+  return { paneId: optStr(args, 'paneId') ?? '' }
+}
+
+const browserSnapshotHandler: Handler = async (args, ctx) => {
+  const res = await snapshotVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(typeof args.interactiveOnly === 'boolean'
+        ? { interactiveOnly: args.interactiveOnly }
+        : {}),
+      ...(typeof args.maxNodes === 'number' ? { maxNodes: args.maxNodes } : {}),
+      ...(Array.isArray(args.include) ? { include: args.include as string[] } : {}),
+      ...(typeof args.frames === 'boolean' ? { frames: args.frames } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_snapshot', ...res })
+}
+
+const browserScreenshotHandler: Handler = async (args, ctx) => {
+  const res = await screenshotVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {}),
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(typeof args.fullPage === 'boolean' ? { fullPage: args.fullPage } : {}),
+      ...(args.format === 'png' || args.format === 'jpeg' ? { format: args.format } : {}),
+      ...(typeof args.quality === 'number' ? { quality: args.quality } : {}),
+      ...(typeof args.maxDim === 'number' ? { maxDim: args.maxDim } : {}),
+      ...(typeof args.save === 'boolean' ? { save: args.save } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_screenshot', ...res })
+}
+
+const browserConsoleHandler: Handler = async (args, ctx) => {
+  const res = await consoleVerb(
+    {
+      ...paneArgs(args),
+      ...(args.mode === 'tail' || args.mode === 'since' ? { mode: args.mode } : {}),
+      ...(typeof args.lines === 'number' ? { lines: args.lines } : {}),
+      ...(optStr(args, 'since') !== undefined ? { since: optStr(args, 'since') } : {}),
+      ...(Array.isArray(args.levels) ? { levels: args.levels as ConsoleLevel[] } : {}),
+      ...(typeof args.clear === 'boolean' ? { clear: args.clear } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_console', ...res })
+}
+
+const browserNetworkHandler: Handler = async (args, ctx) => {
+  const res = await networkVerb(
+    {
+      ...paneArgs(args),
+      action: args.action as 'start' | 'read' | 'stop',
+      ...(typeof args.maxMinutes === 'number' ? { maxMinutes: args.maxMinutes } : {}),
+      ...(typeof args.bodies === 'boolean' ? { bodies: args.bodies } : {}),
+      ...(typeof args.headers === 'boolean' ? { headers: args.headers } : {}),
+      ...(optStr(args, 'filter') !== undefined ? { filter: optStr(args, 'filter') } : {}),
+      ...(optStr(args, 'since') !== undefined ? { since: optStr(args, 'since') } : {}),
+      ...(typeof args.limit === 'number' ? { limit: args.limit } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_network', ...res })
+}
+
+const browserWaitForHandler: Handler = async (args, ctx) => {
+  const res = await waitForVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(optStr(args, 'text') !== undefined ? { text: optStr(args, 'text') } : {}),
+      ...(optStr(args, 'textGone') !== undefined ? { textGone: optStr(args, 'textGone') } : {}),
+      ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
+      ...(typeof args.networkIdleMs === 'number' ? { networkIdleMs: args.networkIdleMs } : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    makeBrowserReadDeps(browserEnv(ctx))
+  )
+  return browserResult({ op: 'browser_wait_for', ...res })
+}
+
+/* ---- T571 (T564 U4): the acting verbs. `args` rides along as the write-queue key: the server reserved the
+ * pane's place in line with that very object, on entry, before any await (spec §6.4). ---- */
+
+const browserEvalHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await evalVerb(
+    {
+      ...paneArgs(args),
+      expression: optStr(args, 'expression') ?? '',
+      ...(typeof args.awaitPromise === 'boolean' ? { awaitPromise: args.awaitPromise } : {}),
+      ...(optStr(args, 'frame') !== undefined ? { frame: optStr(args, 'frame') } : {}),
+      ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_eval', ...res })
+}
+
+const browserClickHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const offset = args.offset as { x?: unknown; y?: unknown } | undefined
+  const res = await clickVerb(
+    {
+      ...paneArgs(args),
+      ref: optStr(args, 'ref') ?? '',
+      ...(args.button === 'left' || args.button === 'middle' || args.button === 'right'
+        ? { button: args.button }
+        : {}),
+      ...(typeof args.clickCount === 'number' ? { clickCount: args.clickCount } : {}),
+      ...(Array.isArray(args.modifiers)
+        ? { modifiers: args.modifiers as Array<'Alt' | 'Control' | 'Meta' | 'Shift'> }
+        : {}),
+      ...(offset && typeof offset.x === 'number' && typeof offset.y === 'number'
+        ? { offset: { x: offset.x, y: offset.y } }
+        : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_click', ...res })
+}
+
+const browserTypeHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await typeVerb(
+    {
+      ...paneArgs(args),
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {}),
+      text: optStr(args, 'text') ?? '',
+      ...(typeof args.delayMs === 'number' ? { delayMs: args.delayMs } : {}),
+      ...(typeof args.submit === 'boolean' ? { submit: args.submit } : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_type', ...res })
+}
+
+const browserFillHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const fields = Array.isArray(args.fields)
+    ? (args.fields as Array<Record<string, unknown>>).map((f) => ({
+        ref: typeof f.ref === 'string' ? f.ref : '',
+        value: typeof f.value === 'string' ? f.value : ''
+      }))
+    : []
+  const res = await fillVerb(
+    { ...paneArgs(args), fields },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_fill', ...res })
+}
+
+const browserPressHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await pressVerb(
+    {
+      ...paneArgs(args),
+      keys: Array.isArray(args.keys) ? (args.keys as unknown[]).map(String) : [],
+      ...(optStr(args, 'ref') !== undefined ? { ref: optStr(args, 'ref') } : {})
+    },
+    makeBrowserActDeps(browserEnv(ctx)),
+    args
+  )
+  return browserResult({ op: 'browser_press', ...res })
+}
+
+const browserSetDataHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await setDataVerb(
+    {
+      paneId: optStr(args, 'paneId') ?? '',
+      data: args.data,
+      ...(typeof args.merge === 'boolean' ? { merge: args.merge } : {}),
+      ...(typeof args.expectRev === 'number' ? { expectRev: args.expectRev } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_set_data', ...res })
+}
+
+const browserPatchHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const res = await patchVerb(
+    {
+      paneId: optStr(args, 'paneId') ?? '',
+      ...(optStr(args, 'selector') !== undefined ? { selector: optStr(args, 'selector') } : {}),
+      ...(optStr(args, 'mode') !== undefined ? { mode: optStr(args, 'mode') } : {}),
+      ...(optStr(args, 'html') !== undefined ? { html: optStr(args, 'html') } : {})
+    },
+    browserDeps(ctx)
+  )
+  return browserResult({ op: 'browser_patch', ...res })
+}
+
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
   get_fleet: getFleetHandler,
@@ -5145,6 +5556,25 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   list_terminals: listTerminalsHandler,
   read_terminal: readTerminalHandler,
   send_terminal: sendTerminalHandler,
+  browser_open: browserOpenHandler,
+  browser_list: browserListHandler,
+  browser_navigate: paneVerb(browserNavigateHandler),
+  browser_close: paneVerb(browserCloseHandler),
+  browser_snapshot: paneVerb(browserSnapshotHandler),
+  browser_screenshot: paneVerb(browserScreenshotHandler),
+  browser_console: paneVerb(browserConsoleHandler),
+  browser_network: paneVerb(browserNetworkHandler),
+  browser_wait_for: paneVerb(browserWaitForHandler),
+  browser_eval: paneVerb(browserEvalHandler),
+  browser_click: paneVerb(browserClickHandler),
+  browser_type: paneVerb(browserTypeHandler),
+  browser_fill: paneVerb(browserFillHandler),
+  browser_press: paneVerb(browserPressHandler),
+  browser_emulate: paneVerb(browserEmulateHandler),
+  browser_upload: paneVerb(browserUploadHandler),
+  browser_download: paneVerb(browserDownloadHandler),
+  browser_set_data: paneVerb(browserSetDataHandler),
+  browser_patch: paneVerb(browserPatchHandler),
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

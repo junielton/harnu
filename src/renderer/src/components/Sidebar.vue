@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useLayoutStore } from '../stores/layout'
 import { useClaudeChangelogStore } from '../stores/claudeChangelog'
 import SidebarFolder from './SidebarFolder.vue'
@@ -34,10 +35,12 @@ import {
 } from 'lucide-vue-next'
 import FolderDropOverlay from './ui/FolderDropOverlay.vue'
 import { useFolderDrop } from '../composables/useFolderDrop'
+import { useSidebarActions } from '../composables/useSidebarActions'
 import { macWindowControlsInset } from '../lib/platform'
 
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const layout = useLayoutStore()
 const claudeChangelog = useClaudeChangelogStore()
 const { t } = useI18n()
@@ -70,7 +73,6 @@ function toggleLineage(motherPath: string): void {
   lineageCollapsed.toggle(motherPath)
 }
 
-const hiddenTriggerRef = ref<HTMLButtonElement | null>(null)
 const filterInputRef = ref<HTMLInputElement | null>(null)
 const asideRef = ref<HTMLElement | null>(null)
 
@@ -145,7 +147,9 @@ watch(
   }
 )
 
-const anyExpanded = computed<boolean>(() => sessions.folders.some((f) => f.expanded === true))
+// The header buttons and their keyboard bindings (App.vue) run the same functions.
+const { rescanning, anyExpanded, rescan, toggleCollapseAll, toggleJump, toggleHiddenFolders } =
+  useSidebarActions()
 
 /**
  * Drill button label. At depth 0 it names the action ("turn on"); at 1–2 it
@@ -156,58 +160,6 @@ const drillLabel = computed(() =>
     ? t('sidebar.toolbar.drillOn')
     : t('sidebar.toolbar.drillLevel', { level: sessions.drillDepth, max: 2 })
 )
-
-function onHiddenClick(): void {
-  if (ui.sidebarHiddenPopover.open) {
-    ui.closeSidebarHiddenPopover()
-    return
-  }
-  const btn = hiddenTriggerRef.value
-  if (!btn) return
-  const rect = btn.getBoundingClientRect()
-  ui.openSidebarHiddenPopover({
-    left: rect.left,
-    top: rect.top,
-    right: rect.right,
-    bottom: rect.bottom
-  })
-}
-
-/**
- * Rescan folders (BUG-55 AC6) — the manual refresh affordance / escape hatch
- * for any watcher gap. Carried over from the old `⋯` menu's first item when
- * that menu was replaced by this toolbar (design.md §6). `rescanning` drives
- * the icon's spin while the scan is in flight (design.md §7 Motion) — the
- * only feedback `sessions.rescan()` otherwise gives.
- */
-const rescanning = ref(false)
-
-async function onRescanClick(): Promise<void> {
-  rescanning.value = true
-  try {
-    await sessions.rescan()
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    ui.pushToast({ kind: 'danger', title: t('sidebar.menu.rescanFailed'), description: message })
-  } finally {
-    rescanning.value = false
-  }
-}
-
-function onCollapseAllClick(): void {
-  if (anyExpanded.value) sessions.collapseAll()
-  else sessions.expandAll()
-}
-
-/**
- * The header's search button (T288). It opens the JUMP PALETTE — search means
- * "take me there", not "filter the tree". The inline filter morph is still
- * reachable, but only through the palette's explicit `⇥` fallback.
- */
-function onSearchClick(): void {
-  if (ui.sidebarJumpPalette.open) ui.closeSidebarJumpPalette()
-  else ui.openSidebarJumpPalette()
-}
 
 // `⇥` in the jump palette flips `filterActive` on from outside this component;
 // focus the input once it renders so the operator can keep typing.
@@ -238,6 +190,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
 <template>
   <aside
     ref="asideRef"
+    data-sidebar
     class="scrollable relative flex shrink-0 select-none flex-col bg-sidebar"
     :style="{ width: layout.sidebarWidth + 'px' }"
     @dragover="onDragOver"
@@ -267,9 +220,9 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
             data-sidebar-rescan
             class="flex items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
             style="width: 26px; height: 26px"
-            :title="$t('sidebar.menu.rescan')"
+            :title="keybindings.withChord($t('sidebar.menu.rescan'), 'sidebar.rescan')"
             :aria-label="$t('sidebar.menu.rescan')"
-            @click="onRescanClick()"
+            @click="rescan()"
           >
             <RefreshCw :size="14" :stroke-width="1.7" :class="rescanning ? 'anim-spin' : ''" />
           </button>
@@ -282,7 +235,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
                 : 'text-text-4 hover:bg-surface hover:text-text'
             "
             style="width: 26px; height: 26px"
-            :title="drillLabel"
+            :title="keybindings.withChord(drillLabel, 'sidebar.cycleDrillDepth')"
             :aria-label="drillLabel"
             @click="sessions.cycleDrillDepth()"
           >
@@ -294,25 +247,34 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
             v-if="sessions.drillDepth < 2"
             class="flex items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
             style="width: 26px; height: 26px"
-            :title="anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll')"
+            :title="
+              keybindings.withChord(
+                anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll'),
+                'sidebar.toggleCollapseAll'
+              )
+            "
             :aria-label="
               anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll')
             "
-            @click="onCollapseAllClick"
+            @click="toggleCollapseAll"
           >
             <ChevronsDownUp v-if="anyExpanded" :size="14" :stroke-width="1.7" />
             <ChevronsUpDown v-else :size="14" :stroke-width="1.7" />
           </button>
           <button
-            ref="hiddenTriggerRef"
             data-sidebar-hidden-trigger
             class="flex items-center rounded text-text-4 transition hover:bg-surface hover:text-text"
             :class="ui.sidebarHiddenPopover.open ? 'bg-surface text-text' : ''"
             style="height: 26px; padding: 0 7px; gap: 4px"
-            :title="$t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length })"
+            :title="
+              keybindings.withChord(
+                $t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length }),
+                'sidebar.hiddenFolders'
+              )
+            "
             :aria-label="$t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length })"
             :aria-expanded="ui.sidebarHiddenPopover.open"
-            @click.stop="onHiddenClick"
+            @click.stop="toggleHiddenFolders"
             @keydown.enter.stop
             @keydown.space.stop
           >
@@ -340,10 +302,10 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
               : 'text-text-4 hover:bg-surface hover:text-text'
           "
           style="width: 26px; height: 26px"
-          :title="$t('sidebar.jump.label')"
+          :title="keybindings.withChord($t('sidebar.jump.label'), 'sidebar.jump')"
           :aria-label="$t('sidebar.jump.label')"
           :aria-expanded="ui.sidebarJumpPalette.open"
-          @click.stop="onSearchClick"
+          @click.stop="toggleJump"
         >
           <Search :size="14" :stroke-width="1.5" />
         </button>
@@ -473,7 +435,10 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
           :title="
-            claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings')
+            keybindings.withChord(
+              claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings'),
+              'view.settings'
+            )
           "
           :aria-label="
             claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings')

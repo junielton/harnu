@@ -15,11 +15,256 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - **The daily budget is no longer wrong the day after a weekly reset.** When your weekly window reset during the previous day, "Today" in the Plan usage panel measured spending against the old week's peak, so it showed too small an allowance and 0% spent (for example 0% of 8% instead of 4% of 15%). It now starts from where the new week stood after the reset. A reset that happens while Harnu is open also refreshes the budget straight away instead of waiting until midnight.
+## 2026-10-23
 
-## 2026-10-19
+### Changed
+
+- **The footer keeps its live figures when the statusLine goes quiet.** Model, context %, cost and the plan-usage
+  windows now come from Harnu's companion mod in every session it is loaded in, with the statusLine as the fallback
+  (CLI older than 2.1.287, sessions started outside Harnu, the mod switched off, or a session the mod could not
+  join). Previously the companion only recorded these figures, so a session went silent as soon as Harnu's
+  statusLine entry was lost from `~/.claude/settings.json`.
+- **"Not reporting — restart session" appears only when neither source is reporting.** A session the companion keeps
+  updating no longer shows the hint just because the statusLine is missing.
 
 ### Fixed
 
+- **The footer's model chip follows `/model` without a restart.** After switching the model the chip used to keep the
+  old name until the next turn finished (or forever, with the statusLine gone); it now updates within about ten
+  seconds.
+
+## 2026-10-22
+
+### Added
+
+- **Browser panes are paused when nobody looks at them, and come back after a restart.** A pane hidden for ten
+  minutes lets go of its page (a few hundred megabytes) and shows "Paused to save memory" with a **Click to reload**
+  button; a session that needs the page reloads it first and is told so. It is never paused while a session is
+  working in it, recording its network, or while a download or your own click is in progress. When you quit and
+  reopen Harnu the panes return in their folders, not loaded yet, at the same address, with their zoom, device, network
+  switch, scroll position and unsent comment drafts, and load as soon as you look at them. A session's permission to
+  drive a pane, a network recording and the "opened by agent" badge do not survive a restart.
+- **A session's fifth browser pane is refused up front.** The limit of four panes per folder a session may open is now
+  decided before any permission prompt, and the answer lists the panes to reuse; the panes you open yourself never
+  count. `browser_list` shows a paused pane as `discarded`, and `browser_snapshot` can now return a live panel's saved
+  data.
+- **Sessions can drive a browser page — with your permission where it matters.** Five new session verbs act on a
+  page: `browser_eval` (run a script and get the result back), `browser_click`, `browser_type`, `browser_fill`
+  (up to 20 fields at once) and `browser_press` (Enter, Tab, arrows, `Ctrl+A`…). They aim at elements by the
+  names a snapshot gives, wait up to five seconds for the element to be visible and not covered, and say what they
+  hit. On a dev server on your own machine a session drives freely. On any other site, and on any pane **you**
+  opened, the first attempt asks you: the prompt names the pane, who opened it, the site and the first thing it
+  would do. **Allow does nothing by itself** — it only lets the session drive that pane for the next ten idle
+  minutes, and the session is told to look at the page and try again. **Deny** blocks that pane for five minutes
+  without asking again. Closing the pane, **Disconnect**, blocking the folder or switching agent browser control
+  off ends it at once, and so does the pane moving to another site: an Allow given for `localhost:3000` never covers a bank or mail page it later opens. What a session types or runs there acts as you on that page, and the prompt says so.
+  Writes to one pane run one at a time (more than 60 a minute is refused), and every call is audited with the
+  script or text scrubbed and cut to 200 characters. A pane does not pass clicks or key presses to the first page
+  it loads, to a page it reached from a blank page or another site, or after a page redirects itself, so those are refused up front (`PANE_INPUT_NOT_READY`, "reload the pane once") instead of reporting a
+  success that did nothing; filling, plain typing and scripts are unaffected.
+- **Folder menu: let sessions read the browser panes you open, and name your dev hosts.** Right-click a folder and
+  choose **Let agents read browser panes I open** (off by default, this folder only — never its worktrees) so a
+  session can look at a page you opened; acting on it still asks you, once per pane. **Trusted dev hosts…** lists
+  the names that count as your own dev servers (`app.test`, `*.test`, a docker service name) so a session can
+  drive them without asking; only exact names and short wildcards like `*.test` are accepted, and only you can edit
+  the list. A pane you opened now shows "An agent can read here" or "An agent can drive here" in its header once a
+  session may do so.
+- **Zoom in the browser pane.** `−`, the percentage and `+` sit at the right of the address bar; click the percentage to go back to 100%. Cmd/Ctrl `+`, `−` and `0` work while the pane has focus. The zoom is remembered per site, so it is still there next time you open that site, and a session's `browser_emulate({ zoom })` sets the same remembered value.
+- **Device mode in the browser pane.** The new phone icon next to the zoom opens seven device classes (`phone-s`, `phone-m`, `phone-l`, `tablet`, `tablet-landscape`, `laptop`, `desktop`) and a custom size. The page really thinks it is on that device — its size, pixel ratio, touch events and, for phones and tablets, a mobile browser identity — and is drawn inside a device frame, scaled down to fit without the page ever seeing the scaling. A second row has Rotate, light/dark, reduced motion and Reset device. Zoom is off while a device is on.
+- **`browser_emulate`, `browser_upload` and `browser_download` for sessions.** A session can zoom a pane, show it as a device (the pane's picker shows the same setting), attach files from the folder to a page's file field (inside the folder only, never secrets, up to 10 files of 50 MB) and download a file into `.harnu/out/downloads/`. Free on a pane the session opened; a lease on one you opened, and for uploads on any site that is not your own machine. `browser_open` also takes a `device`.
+- **A prompt for downloads you click.** Clicking a download in a browser pane now asks "Save _name_ to `.harnu/out/downloads/`?" instead of silently cancelling. Nothing a download produces is ever opened or run, and downloads a page starts by itself are still cancelled.
+
+### Changed
+
+- **One check decides whether a session's input made a page event or a comment pick.** The page-event gate, the comment
+  pick and the registry check had three copies; they now share one. It follows the moment of your own click: a session's
+  click that overlapped it, or was still running, makes the event or pick ignored, and the pane now says so ("Ignored — a
+  session just acted on this page"). Your own click a moment after a session's goes through.
+- **`browser_patch` on a pane you opened needs the same permission as reading it.** It can run script and tells a session
+  what matched, so it now asks for **Let agents read browser panes I open** like every other verb; `browser_set_data`
+  stays free.
+- **Only folders Harnu knows and you have not blocked get their browser panes back after a restart**, an agent's pane
+  always keeps the agent's own cookie jar, and a pane's saved address no longer includes its query string.
+- **Point-and-comment, tightened.** A browser pane you paused still takes comments (pausing stops the session
+  driving the page, not you writing to it); one you disconnected the session from does not, and the comment
+  button and composer now say so up front instead of failing after you typed. A comment stays a draft until its
+  message has really gone into the terminal, so a session that closed while Harnu waited for you to stop typing
+  loses nothing, and moving the mouse over a terminal no longer counts as typing. Text a page hides in
+  invisible characters (the Unicode "tag" block, word joiners, soft hyphens) or fakes with look-alike dashes and
+  backticks is cleaned out of what the session reads. Pins sit at the top-right corner of their element, the
+  hint reads "Click an element to comment · Esc to exit", one Esc closes an empty composer and ends picking,
+  the bar shows just "N sent" when nothing waits, the Activity row names the session, and the button's tooltip
+  shows your current shortcut. The overlay can no longer be hidden or moved by the page's own CSS, ignores touch
+  input while picking, and no longer marks the page's element while it looks up its source file.
+- **Recording the network of another site now asks, instead of being refused.** `browser_network` on a page that isn't
+  on your own machine used to be unavailable; it now uses the same ask-once permission as driving a page, and
+  ending the recording is always allowed. A pane you opened is now refused until you let agents read browser panes
+  in its folder, instead of being unavailable to sessions altogether.
+- A hidden browser pane in device mode now screenshots the right element: the crop accounts for the device's own size instead of the pane's.
+- Browser panes that were never put in a device mode no longer lose their client hints (`Sec-CH-UA`): Harnu used to restore the browser's user agent on every page load, which dropped them. Resetting a device now puts the real hints back, and a pane opened in a device sends its first request as that device.
+- A session's `browser_download` by clicking an element now needs the same permission as clicking, on a site that is not your own machine: it was a way to click without asking.
+- Uploads refuse more secrets: anything in `.harnu`, `.env*`, `.git-credentials`, `.npmrc`, `.netrc` and `.pypirc` as well as keys, and a path that leaves the folder is refused before you are ever asked.
+- A download in a browser pane that a session gives up on (timeout, closed pane) is stopped and leaves nothing in your folder; denying a download you started shows "Download cancelled" instead of a failure; names are cut by bytes and cleaned of direction-changing characters; leftovers of an interrupted save are swept at the next start.
+- A session's clicks on a page that emulates touch are now taps, like a finger's: a mouse press never completes while touch is emulated, so the click used to hang.
+
+### Fixed
+
+- **No more "write EPIPE" error dialog when checking for updates.** If Harnu was started from a terminal or
+  launcher that has since closed, a routine log line from the update check could pop up an "unexpected error" box.
+  Those broken-pipe log writes are now ignored.
+- **New sessions start again on Linux.** Every new or resumed Claude session failed at once with
+  "execvp(3) failed.: Argument list too long" once Harnu's built-in guide for sessions grew past what Linux
+  allows in a single launch argument. Harnu now hands a large system prompt to Claude through a temporary file,
+  removed when the session ends, and the guide itself is shorter.
+- **Disconnecting a session from a browser pane now lasts across a restart.** It used to come back connected. Panes a
+  session has been disconnected from no longer count toward its four-panes-per-folder limit, so they cannot lock it
+  out of opening new ones.
+- **Restoring browser panes at launch no longer delays the window.** Nothing is read when no browser pane is saved, and
+  with some only the pinned projects and each pane's own folder are checked.
+- **A browser pane's saved state could stop being written.** Adding a second pane to a folder left the first one's
+  saved details in a form the file write refused, so the file silently stopped updating; it now writes plain data.
+
+## 2026-10-21
+
+### Added
+
+- **Point-and-comment on a page.** In a browser pane, click the new comment button in the header (or press
+  `Ctrl/Cmd+Shift+C` while the pane has focus), hover any element to see its outline and size, and click it. A
+  numbered pin appears on the element and a composer docks under the page: the page gets shorter to make room, and
+  nothing is ever drawn over it. Type what should change and press **Enter** to send it to your session now, or
+  **Shift+Enter** to keep it as a draft and carry on; **Send N comments** in the bar below sends every draft as
+  one message. Pick the session in the **Send to** menu (a session's own pane sends to that session, any other
+  pane to the one you are looking at); with no session at all the comment is copied to your clipboard. The
+  session gets your words plus a cropped picture of the element, its HTML, a short list of its styles and its
+  source file when the page says (Vue, React, Svelte). Whatever the page itself wrote is fenced and marked
+  untrusted, so a page cannot pose as you. The composer lives in Harnu, outside the page, so the page cannot
+  see what you type, and a page cannot fake a click on a pin. Pins stay on the page, find their element again
+  after a reload, sit dashed where they were when it is gone, and go solid and faded once sent. A comment waits
+  while you are typing in that session's terminal, and a parked session is woken in the background first.
+
+- **Live panels in the browser pane.** A session can now open one of your project's `.html` files — or write a
+  small panel for you from inline HTML — in a browser pane (`browser_open` with `path`, or `html` and `name`),
+  and keep it fresh with `browser_set_data` (the panel's state, saved next to your project and re-read on every
+  reload) and `browser_patch` (change one number or row right now). Edit the file yourself and the pane reloads
+  where you were scrolling; delete it and the pane says "File removed" until it comes back. Buttons in the panel
+  can send an event to the session (`harnu.emit`), but only when you really click or press a key: a session that
+  clicks its own panel cannot approve itself. Panels are **offline by default**: a panel can't load anything from
+  the network, and its own script, links and popups can't take it to another address (only its own folder's files);
+  a per-pane **Offline / Network on** switch in the address bar, yours alone, lets a panel that needs a CDN script,
+  a web font or an outside link through, and your own address bar can always leave. Only your own files are
+  ever served, never anything under `.git` or `.harnu/memory`, and only to the panel itself: a web page in another
+  pane, or a background worker it starts, can't read them (a worker started inside a panel can't either).
+
+- **Browser pane — open a real browser beside your session.** The Split button in the Topbar now has a small
+  arrow beside it: choose **Browser** and a Chromium page opens in the split stack, with back, forward and
+  reload, an address bar (type a URL and press Enter, or `Cmd/Ctrl+L` to jump to it), a title, and the same
+  maximize and close buttons as every other pane. Sessions can open one too — `browser_open` for your dev server
+  on localhost or any site, then `browser_navigate`, `browser_list` and `browser_close`. A site a session opens
+  shows an amber "opened by agent" badge, a local dev server gets a green `local` badge, and the pane menu
+  (the ⋯ button) has **Pause agent for 10 min** and **Open DevTools**. Panes a session opened show who is
+  connected and can be cut off for good with the unplug button, or paused for ten minutes with a countdown and
+  a Resume button. **Allow agents to drive browser panes** in Settings → Control server turns every agent
+  write (open, navigate) off at once. When a menu, dialog, toast or palette opens over a page, the page freezes
+  to a still image so nothing is ever drawn underneath it, and it comes back when the layer closes. Pages run
+  in their own cookie jar, away from Harnu itself: only `http`, `https` and `about:blank` open, popups open as
+  a new pane only after you click, downloads and permission prompts are refused, and a page can't reach Harnu's
+  own windows or files. Panes you opened can't be driven by an agent yet, and the pane does not reopen after a
+  restart — both arrive in later releases, along with opening local `.html` files, reading and acting on the
+  page, and point-and-comment.
+- **Sessions can read a browser pane.** Five new session verbs let a session see a page it opened:
+  `browser_snapshot` (the page as its accessibility tree, with stable names for each element), `browser_screenshot`
+  (the whole viewport, the whole page or one element, optionally saved under `.harnu/out/browser/shots/`),
+  `browser_console` (everything the page logged since the pane opened), `browser_wait_for` (wait for an element or
+  text to appear or go away, the address to change, or the network to go quiet), and `browser_network`. Network
+  capture is **off until a session asks for it**: while it runs a red **Network 4:12** counter shows in the pane
+  header counting down to when it stops by itself (10 minutes by default, 30 at most), and it also stops when the
+  pane closes, when you disconnect the session, or when you switch agent browser control off. It records addresses
+  with every query value hidden, never records cookies or sign-in headers, and records response text only if the
+  session asked for it. While a session is paused it can still read and stop a recording but not start one. Reading keeps working while a session is paused or agent control is off, never works on a
+  pane you opened yourself yet, and stops for good when you disconnect the session. Scheduler `observe` workers can
+  read panes too (not capture traffic).
+- **The review companion now sees what you have selected, without you doing anything.** While a companion is open, every change of the selection in the Review diff — a click, a range, a drag, a whole file — is shared with it half a second after you stop, as a hidden note. It is never a message and never a turn: nothing is typed into the conversation and the companion says nothing until you start the conversation yourself. While it is answering a question, updates wait and only the latest is sent when the answer is done. There is no send button; the bar keeps **Copy as text** and **Clear selection**.
+- **A one-line chip says whether the companion sees the selection on screen** — _Updating…_ or _Companion sees this_ — and never whether it was asked or answered: that describes the conversation, not your selection, and a "reviewed"-style badge would claim more than Harnu knows. When something does not work it says so in one plain sentence with what to do next: **Try again**, **Open Mods settings**, or — when the companion was started before the Harnu mod was on and so can never receive a selection — close it and open a fresh one. Open Mods settings is offered only when the mod is actually off.
+- **Copy as text** copies exactly the text the companion would have been sent, so you can paste it into any session. It works with no companion and no mod, and is unavailable only after the head or base moved.
+- **A range that spans both sides of a change is sent as the diff rows between its two ends,** exactly as the pane shows them, and the bar no longer carries a note about lines not being included.
+- With no companion open nothing is sent, and the bar says so quietly: _Open "Ask a fresh session" first_.
+
+### Fixed
+
+- **Saving a canvas twice in quick succession no longer redraws it and drops your selection.** The second Save made the first Save's delayed file-change echo look like an outside edit, so the pane reloaded the whole board and cleared what you had just selected. The echo of the Save before one that is still landing is now recognised as your own, and a second pane on the same file is told which pane's Save it was. A real outside change, including one that restores the earlier Save's exact content, still reaches the pane.
+- **A session's change to a canvas that is just opening is no longer lost.** If a session drew on a board in the instant its pane was opening, the pane could end up showing the old drawing as if nothing had changed, and your next Save wrote that old drawing over the session's change. The pane now waits until Harnu is watching the file before it reads it, so a change in that moment is either in what it shows or arrives as an update. If the watch takes longer than about 3 seconds to start, the pane opens anyway and checks the file again once the watch is ready; [Canvas](docs/user/canvas.md) lists the cases this fallback does not cover.
+- **Saving a canvas that is open in two panes no longer gets silently undone.** When the same board was open twice (for example in two worktree panes), the pane you saved from was told to ignore the change, but so was the other pane, which kept showing the old drawing, and its next Save wrote that old state over yours. The other pane now redraws to your Save when it has no unsaved edits, with its view where it was, and shows the "This canvas changed on disk" strip when it does. This holds even if you close the pane right after saving. The pane you saved from still doesn't reload or flag its own Save. Two exceptions remain, both last-writer-wins: saving the other pane over its warning strip writes its version over yours, and two Saves in different panes within roughly 100–250 ms of each other keep only the later one.
+- **Clearing the selection now tells the review companion.** Clear selection, Esc, collapsing the file or a refresh that moves the head used to leave the last selection in the companion's context, so it kept answering about lines you were no longer looking at. It is now told that nothing is selected in the review right now, through the same hidden note, after the same half-second pause. Nothing is sent if the companion never had a selection to replace.
+- **The line above the companion's prompt no longer disappears after the first answer.** It said which selection the companion has, then vanished once the companion answered while the note was still in its context. It now stays for as long as the selection is the companion's current one, and goes away only when you clear it, run `/clear` in the companion, or close it.
+- **A selection made after `/clear` in the companion now reaches it.** Running `/clear` gave the conversation a new id, and Harnu kept addressing the old one, so every later selection failed with _Not connected to the Harnu mod_ and the only way out was a fresh companion. Harnu now follows the companion through `/clear` and a resume.
+- **The line above the companion's prompt now actually appears.** After Harnu or the mod restarted, the mod kept counting from the old session and silently ignored every new line, and it never asked the screen to redraw when a line was set or cleared. It now starts over on a new session, tells the truth when it refuses a line, and redraws at once — and a line you replace by selecting something else no longer goes blank while the new one is on its way. In a pane under 40 columns it shrinks to the range alone (`⧉ L21–24`) instead of vanishing.
+- **Updates now wait for every answer, not only the first.** A second question about the same selection, followed by a change of selection, used to send the update straight into the answer being written. It now waits until that answer is done, like the first one.
+
+## 2026-10-20
+
+### Added
+
+- **Settings → Keyboard Shortcuts is searchable, grouped and filterable.** Type words to find an action by name, chord or id, or type a key combo (`Ctrl+K`, `F6`, `⌘K`) to see exactly what is on it; a single key name like `delete` matches both ways. Rows are grouped under Sessions, Sidebar, Folders, Views, Panes, Takeovers and App, and the Unbound, Conflicts and Customized chips (each with its total count) narrow the list further.
+- **Keyboard access to sessions and the sidebar.** `Cmd/Ctrl+Shift+F` opens the sidebar's jump palette (and closes it again), even from a focused terminal and with the sidebar collapsed. `Cmd/Ctrl+Enter` opens the session under the sidebar's keyboard cursor in a split beside the current one. `Shift+F10` opens the right-click menu for that row, anchored to it.
+- Every item of the session right-click menu, closing a folder terminal, starting a new session in the active folder and the sidebar header's buttons can now be given a shortcut in Settings → Keyboard Shortcuts. They ship without one.
+- **`F2` renames a folder.** With the sidebar's keyboard cursor on a folder row, `F2` opens Rename folder for it; with no cursor row, it renames the active folder. On a session or repo-group row it does nothing. On most Mac keyboards press `Fn+F2`.
+- Every item of the folder right-click menu (except block agents, letting agents read terminals, Modes and the parent-folder pick), the folder row's show older / show archived toggles, and the repo-group menu (rename, reset name, clean up) can now be given a shortcut in Settings → Keyboard Shortcuts. They ship without one and act on the active folder, or for a group on the cursor's group row, else the active folder's group.
+- The Fleet rail's header buttons (open approvals, flip the order, filter states, show all) and the popovers in the Topbar and footer (Activity, mission progress, pasted images, Claude service status, plan usage) can now be given a shortcut in Settings → Keyboard Shortcuts. They ship without one; a popover's shortcut works while its button is on screen, and pressing it again or `Esc` closes the popover.
+- **`Esc` closes the open view** — the Roadmap board, PR Stack, Review, Cleanup, the Scheduler, the System Monitor, Containers or the usage overview — exactly like its close button, one layer at a time: a dialog, menu or popover on top closes first, then the view's own selection or filter (Cleanup's checked blocks and side panel, a PR Stack filter, the Roadmap's dispatch confirm, a line selection in Review, a canvas beside the view backing out of a shape in progress, a drawing tool or its selection), and only the next `Esc` closes the view. `Esc` in a text field or a terminal still goes there. It can be rebound in Settings → Keyboard Shortcuts.
+- **`Cmd/Ctrl+Alt+S` opens Settings on the Keyboard Shortcuts tab**, also as **View → Keyboard Shortcuts…** (on macOS, right after Settings… in the Harnu menu). Every other Settings tab, and the Cleanup, Scheduler, System Monitor and Containers views, can now be given a shortcut too; they ship without one.
+- The shortcut recorder now refuses a combo that could never fire for that action — Shift plus punctuation, or Option plus a letter on macOS, on actions with no menu item — keeps the old one and says why under the row.
+- **Back and Forward can be rebound.** They are listed in Settings → Keyboard Shortcuts (`nav.back` / `nav.forward` in `keybindings.json`) with their per-platform defaults, `Alt+←` / `Alt+→` on Linux and Windows and `⌘[` / `⌘]` on macOS. A new chord updates the Session menu and still works while a terminal has focus, without opening the menu bar on the Alt release.
+- Settings → Keyboard Shortcuts now says when a terminal and a shortcut compete for a key: "Taken from the terminal" under an action whose chord never reaches the program running there, and "The terminal keeps …" under an action bound to a combo the terminal uses itself (copy, paste, `Shift+Enter`, font size…), which won't fire while a terminal has focus.
+- **`F6` / `Shift+F6` move focus between panes** — the main terminal, then each split pane top to bottom, wrapping around — even while a terminal has focus (the program there no longer gets `F6`). A collapsed split and the panes behind a maximized one are skipped. On most Mac keyboards press `Fn+F6`. A focused Markdown, Memory, file-browser or canvas pane now shows a thin accent outline.
+- **`Cmd/Ctrl+Shift+M` maximizes or restores the focused split pane**; with no split pane focused it restores the maximized one. **Close the focused pane** can be given a shortcut too; a pane with unsaved changes still asks first.
+- **A terminal toggle you can bind** (`terminal.toggle`, no shortcut out of the box): it opens a shell pane if the folder has none, otherwise shows and focuses the existing one, and collapses the split when that shell already has focus. It reuses your shell instead of adding a new one each time, and never takes over a terminal an agent opened. Bind it to ``Ctrl+` ``, not `Ctrl+J`: the toggle's chord never reaches a terminal, and `Ctrl+J` is the newline / Enter key there.
+- **The command palette lists every action.** `Cmd/Ctrl+K` now finds any action from Settings → Keyboard Shortcuts by name — including the ones with no shortcut, like Rename the folder…, Fork the session or Close the open view — whenever it can run right now, and shows each action's shortcut, updated when you rebind it. Empty, it still shows only a short list of everyday actions.
+- **Tooltips show the shortcut.** Hovering a Topbar, sidebar, footer, Fleet rail, view close or split-pane button now reads like "Hide sidebar (Ctrl+B)" (`⌘B` on macOS), following your rebinds; a button whose action has no shortcut keeps its plain tooltip. The session and folder right-click menus show each item's shortcut too, once it has one (Rename folder shows `F2`).
+- **Select lines in the Review diff.** Click a line number to select that row, shift-click or drag across the line numbers to select a range, or use the new select-file button in a file's header to select the whole file — including binary and deleted files. A selection stays inside one hunk (past its edge it stops there and says so), shows an accent bar and tint over the diff's own add/remove colours, and works from the keyboard too: arrow keys move, Shift+arrow extends, Enter or Space selects, Esc clears. A bar at the bottom of the review names what is selected and clears it. The selection clears when its file is collapsed, and when a refresh moves the head or the base (the bar says `The head moved (a1b2c3d → e4f5a6b)`). Sending a selection to the review companion is not part of this release.
+- **Layer controls in the canvas Properties panel.** Select one or more shapes and use **Send to back**, **Send backward**, **Bring forward** and **Bring to front** at the bottom of the panel. Forward and backward step past the next shape that overlaps the selection, arrows always stay under shapes, and each move is one undo step. Stacking values are written to the file only after you restack, or when you add a shape to a board that already has them; a board without any that you only move, resize, rename or restyle is saved with no new keys.
+- **Sessions can set stacking on the canvas.** `draw_canvas` accepts a `zIndex` (a whole number from 1) when adding or updating a node, so an agent can put one shape in front of another.
+
+### Changed
+
+- The menu item and shortcut that open the raw shortcuts file now read **Open keybindings.json** (they used to say "Keyboard Shortcuts…", a name that now opens the Settings tab).
+- **The canvas panel is now called Properties, and it shows for every shape.** A card on its own, **Ctrl/⌘ + A**, or a box together with a card now show the Layers buttons instead of no panel at all.
+
+### Fixed
+
+- **Settings → Keyboard Shortcuts shows action names again** instead of raw keys like `keybindings.actions.session.new`, in English and Portuguese, including the conflict badges and the screen-reader labels.
+- Pressing `Esc` while recording a shortcut now cancels just the recording; it no longer closes Settings.
+- A shortcut now fires only when exactly its modifiers are held: a shortcut on `F7` no longer also fires on `Shift+F7`, nor one on `Ctrl+K` on `Ctrl+Shift+K`.
+- The command palette's **Resume last session** no longer picks a folder terminal; it resumes your most recent Claude session, like `Cmd/Ctrl+Shift+R`.
+- **A session's drawing on an open canvas no longer disappears the next time you Save.** When a session changed a board that was already open in a pane, the pane never heard about it: it kept showing the old drawing, and your next Save wrote that old state back over the session's change (an arrow it added, a label it renamed) without any warning. The pane now redraws to the session's version straight away when you have no unsaved edits, with your view where you left it, and shows the "This canvas changed on disk" strip when you do. Your own Save still doesn't refresh the pane that made it, and a session's write that lands in the same fraction of a second as your Save is now noticed too. One narrow case remains: if you press Save in the fraction of a second (roughly 100–250 ms) before the pane has heard about a session's write, your Save wins, as it does when you Save over the strip.
+- An arrow you delete, save and then bring back with undo is now saved with its label, routing and extra data, instead of losing them.
+- An arrow you draw in the canvas pane now stays under the shapes it connects, instead of painting over them until the board was reopened.
+
+## 2026-10-19
+
+### Added
+
+- **Style canvas shapes from a new Style panel.** Select one or more shapes in Select and a panel appears at the left edge of the board with six kinds of control: **Color** (default, accent, green, amber, red, muted), **Stroke** style and **width**, **Corners** (boxes only), **Text size** and **Align**, and **Opacity**. The panel only offers what every selected shape accepts, each pick is a single undo step, colours follow the theme, and in a narrow pane the panel folds into a **palette** button.
+- **Sessions can style the shapes they draw.** `draw_canvas` accepts a `style` field on a node (a tone, a dashed or dotted outline, a stroke weight, a font size, an alignment, an opacity). A value Harnu does not know is refused, and styles you set from the panel survive when a session later edits the same shape.
+- **Diamond and Ellipse tools on the canvas toolbar.** Two new buttons sit between Rectangle and Arrow. **Diamond** (**D** or **3**) and **Ellipse** (**O** or **4**) work like Rectangle: click to place a standard-size shape, or drag to draw one to the size you want, then type its name. They are handy for decisions and start/end points in a flow. Arrows connect to them like any other shape.
+- **Sessions can draw ellipses and diamonds on a canvas.** When an agent draws a diagram with `draw_canvas`, it can now use ellipse and diamond shapes alongside boxes, text, cards and images, and you can move, resize and rename them like anything you drew yourself.
+- **Saving a canvas keeps the extra data stored inside an arrow's `props`.** If a board's arrows carry such details (styling, for example), opening the board, editing and saving now writes them back untouched instead of dropping them. Extra data kept anywhere else on an arrow is still not preserved.
+- **The canvas has a toolbar.** A small bar floats at the top of the board: **Hand** (drag to move the board), **Select**, **Rectangle** (click to place a box, or drag to size one), **Arrow** (drag from one shape to another), **Text** (click anywhere and type) and **Eraser** (drag across boxes and arrows to delete them all in a single undo step; **Esc** cancels the stroke). Each has a letter shortcut (**H V R A T E**), and most also have a number shortcut; both are shown on the button and in its tooltip, and a short hint underneath explains the active tool until you have used it once. After you create something the canvas goes back to Select.
+- **Lock keeps a tool active.** The padlock at the left of the toolbar (or **Q**) stops the canvas returning to Select after each shape, so you can place several boxes or labels in a row.
+- **Hold Space to pan from any tool,** and let go to carry on with the tool you had. Right-drag still pans in every tool, and **Ctrl/⌘ + scroll** still zooms.
+- **Double-click empty board in Select to place a text label** and start typing.
+- **The toolbar wraps in narrow panes.** In a pane too narrow for one row, the buttons wrap onto extra rows instead of running off the edge or covering the zoom controls.
+
+### Changed
+
+- **A click or drag on an empty canvas no longer draws a box.** Select is now the default tool, so a drag on empty board draws a selection rectangle; pick Rectangle (or press **R**) to draw a box.
+- **Selecting several things no longer needs Shift.** Dragging on empty board in Select selects everything inside the rectangle; hold **Shift** to add to the current selection.
+- **Shift-click or Ctrl/⌘-click toggles a box** in or out of the selection.
+- **Renaming moved to the non-drawing tools.** Double-click a box in Select, Hand or Arrow to rename it. In Rectangle and Text the first click already places a shape, so a double-click there places and edits a new shape instead.
+
+### Fixed
+
+- Hovering a canvas shape no longer adds undo steps or empties the redo stack.
+- Switching theme with a canvas open now keeps your selection and its resize handles, instead of clearing them.
 - The footer no longer goes silently blank when a session has no live statusLine telemetry. It now shows the session's last known model, context and cost, dimmed, with how long ago they were seen on hover and a short reason beside them ("telemetry expired" or "no live telemetry"). Sessions Harnu has never heard from still show their model and context, read from the transcript. Stale values are never presented as live.
 - A session that keeps answering but stops sending statusLine telemetry is now flagged in the footer with "Not reporting — restart session"; clicking it restarts the session (the conversation is kept) and the hint clears on the next telemetry.
 - When Harnu finds the `statusLine` setting removed from `~/.claude/settings.json` it re-installs it as before, and now also records what it found (time, the file's last-change time, the running `claude` processes) in `heal-log.ndjson` next to the telemetry cache, and posts one Activity notice naming the sessions that started before the repair and need a restart.

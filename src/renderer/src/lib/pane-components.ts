@@ -5,6 +5,7 @@ import MarkdownPane from '../components/MarkdownPane.vue'
 import MemoryPane from '../components/MemoryPane.vue'
 import ExplorerPane from '../components/ExplorerPane.vue'
 import DiagramPane from '../components/DiagramPane.vue'
+import BrowserPane from '../components/BrowserPane.vue'
 
 /**
  * T121 — the Vue component that renders each pane type. Kept apart from the
@@ -25,5 +26,6 @@ export const paneComponents: Record<AnyHelperPane['type'], Component> = {
   markdown: MarkdownPane,
   memory: MemoryPane,
   explorer: ExplorerPane,
-  canvas: DiagramPane
+  canvas: DiagramPane,
+  browser: BrowserPane
 }

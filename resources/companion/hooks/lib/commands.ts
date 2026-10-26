@@ -6,7 +6,12 @@ import { CONFIG_BOUNDS, type Command, type CommandName, type Config } from '../c
  */
 
 /** What this build of the mod can run at all; everything else is `CMD_UNSUPPORTED`. */
-const RUNNABLE: ReadonlySet<CommandName> = new Set(['flush', 'config.update'])
+const RUNNABLE: ReadonlySet<CommandName> = new Set([
+  'flush',
+  'config.update',
+  'context.append',
+  'ui.band.set'
+])
 
 /**
  * The tokenless second lock (contract §9, §21 item 5; conformance row 26): a mod whose hello

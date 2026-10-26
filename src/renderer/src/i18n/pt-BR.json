@@ -215,7 +215,32 @@
     "reload": "Recarregar canvas",
     "loading": "Carregando…",
     "empty": "Este canvas está vazio.",
-    "emptyHint": "Arraste em qualquer lugar para desenhar uma caixa, ou cole uma imagem.",
+    "emptyHint": "Escolha uma forma na barra de ferramentas, ou cole uma imagem.",
+    "toolbar": "Ferramentas do canvas",
+    "tool": {
+      "hand": "Mão",
+      "select": "Selecionar",
+      "rectangle": "Retângulo",
+      "diamond": "Diamante",
+      "ellipse": "Elipse",
+      "arrow": "Seta",
+      "text": "Texto",
+      "eraser": "Borracha"
+    },
+    "toolTitle": "{name} — {key}",
+    "toolTitleDigit": "{name} — {key} ou {digit}",
+    "lock": "Manter a ferramenta ativa",
+    "unlock": "Voltar para Selecionar depois de desenhar",
+    "toolHint": {
+      "select": "Arraste para selecionar · Espaço+arrastar para mover",
+      "hand": "Arraste para mover o quadro",
+      "rectangle": "Clique para posicionar, ou arraste para dimensionar",
+      "diamond": "Clique para posicionar, ou arraste para dimensionar",
+      "ellipse": "Clique para posicionar, ou arraste para dimensionar",
+      "arrow": "Arraste de uma forma até outra",
+      "text": "Clique em qualquer lugar para digitar",
+      "eraser": "Arraste sobre qualquer coisa para apagar"
+    },
     "fit": "Ajustar à tela",
     "zoomIn": "Aproximar",
     "zoomOut": "Afastar",
@@ -242,6 +267,67 @@
     "changedOnDisk": {
       "title": "Este canvas mudou no disco.",
       "reload": "Recarregar"
+    },
+    "layers": {
+      "group": "Camadas",
+      "back": "Enviar para trás",
+      "backward": "Recuar",
+      "forward": "Avançar",
+      "front": "Trazer para a frente"
+    },
+    "style": {
+      "panel": "Propriedades",
+      "show": "Mostrar propriedades",
+      "group": {
+        "tone": "Cor",
+        "stroke": "Traço",
+        "strokeWidth": "Espessura do traço",
+        "corners": "Cantos",
+        "fontSize": "Tamanho do texto",
+        "align": "Alinhamento",
+        "opacity": "Opacidade"
+      },
+      "value": {
+        "tone": {
+          "default": "Padrão",
+          "accent": "Destaque",
+          "green": "Verde",
+          "amber": "Âmbar",
+          "red": "Vermelho",
+          "muted": "Neutro"
+        },
+        "stroke": {
+          "solid": "Contínuo",
+          "dashed": "Tracejado",
+          "dotted": "Pontilhado"
+        },
+        "strokeWidth": {
+          "thin": "Fino",
+          "regular": "Normal",
+          "bold": "Grosso"
+        },
+        "corners": {
+          "sharp": "Retos",
+          "round": "Arredondados"
+        },
+        "fontSize": {
+          "s": "Pequeno",
+          "m": "Médio",
+          "l": "Grande",
+          "xl": "Extra grande"
+        },
+        "align": {
+          "left": "Esquerda",
+          "center": "Centro",
+          "right": "Direita"
+        },
+        "opacity": {
+          "25": "25%",
+          "50": "50%",
+          "75": "75%",
+          "100": "100%"
+        }
+      }
     }
   },
   "markdownRenderer": {
@@ -308,6 +394,9 @@
     "orchestratorDefaultOff": "Parar de iniciar sessões como Orquestrador",
     "terminalReadOn": "Deixar agentes lerem os terminais que eu abro",
     "terminalReadOff": "Parar de deixar agentes lerem os terminais que eu abro",
+    "browserReadOn": "Deixar agentes lerem os painéis de navegador que abro",
+    "browserReadOff": "Parar de deixar agentes lerem os painéis de navegador que abro",
+    "trustedHosts": "Hosts de desenvolvimento confiáveis…",
     "newWorktree": "Nova worktree…",
     "removeWorktree": "Remover worktree",
     "createWorktreeMd": "Criar WORKTREE.md",
@@ -902,6 +991,29 @@
       "memoryLabel": "Onde paramos"
     }
   },
+  "trustedHosts": {
+    "title": "Hosts de desenvolvimento confiáveis",
+    "close": "Fechar",
+    "builtInLabel": "Sempre confiáveis",
+    "addedLabel": "Adicionados por você",
+    "none": "Nenhum ainda.",
+    "placeholder": "app.test ou *.test",
+    "add": "Adicionar",
+    "remove": "Remover {host}",
+    "hint": "Páginas nesses hosts contam como locais: agentes podem controlá-las sem pedir. Só nomes exatos e curingas de um nível. Um nome que apenas resolve para loopback nunca é confiável por si só.",
+    "failed": "Não foi possível salvar os hosts confiáveis",
+    "errors": {
+      "EMPTY": "Digite um nome de host.",
+      "TOO_LONG": "Esse nome de host é longo demais.",
+      "HAS_SCHEME_OR_PATH": "Digite só o nome do host, sem http:// nem caminho.",
+      "HAS_PORT": "Deixe a porta de fora; vale para todas as portas.",
+      "BAD_CHARACTERS": "Nomes de host usam letras, dígitos e hífens.",
+      "WILDCARD_TOO_BROAD": "Esse curinga é amplo demais. Use *.test, ou uma base de pelo menos três níveis como *.dev.example.org.",
+      "WILDCARD_POSITION": "O curinga só pode abrir o nome, como *.test.",
+      "DUPLICATE": "Já está na lista.",
+      "LIST_FULL": "A lista está cheia."
+    }
+  },
   "renameFolder": {
     "title": "Renomear pasta",
     "close": "Fechar",
@@ -1144,6 +1256,7 @@
     }
   },
   "keybindings": {
+    "withChord": "{label} ({chord})",
     "toast": {
       "warnings": {
         "title": "Alguns atalhos no keybindings.json foram ignorados",
@@ -1168,40 +1281,151 @@
       "notInTerminal": "não no terminal",
       "conflict": "conflito: {names}",
       "reset": "Restaurar",
-      "unbind": "Remover"
+      "unbind": "Remover",
+      "search": "Buscar atalhos ou digitar uma combinação de teclas",
+      "groups": {
+        "sessions": "Sessões",
+        "sidebar": "Barra lateral",
+        "folders": "Pastas",
+        "views": "Exibição",
+        "panes": "Painéis",
+        "takeovers": "Telas",
+        "app": "App"
+      },
+      "chips": {
+        "label": "Filtrar atalhos",
+        "unbound": "Sem atalho",
+        "conflicts": "Conflitos",
+        "customized": "Personalizados"
+      },
+      "noMatch": "Nenhum atalho encontrado.",
+      "unreachable": "{chord} nunca dispara para esta ação. Escolha outro atalho.",
+      "shieldHint": "Tomado do terminal: o programa que roda nele nunca recebe {chord}.",
+      "terminalKeepsHint": "O terminal fica com {chord}: o atalho não dispara enquanto um terminal tem o foco."
     },
     "actions": {
-      "session.new": "Nova sessão",
-      "app.search": "Abrir a paleta de comandos",
-      "inbox.toggle": "Alternar a coluna de Aprovações",
-      "view.fleetRail": "Alternar a coluna da Frota",
-      "view.toggleSidebar": "Alternar a barra lateral esquerda",
-      "view.toggleHelper": "Alternar o painel dividido à direita",
-      "project.switch": "Trocar de projeto",
-      "folder.add": "Adicionar pasta",
-      "view.review": "Revisar o branch da pasta ativa",
-      "view.roadmap": "Alternar o quadro de roadmap",
-      "view.prStack": "Alternar o PR Stack",
-      "folder.openInFileManager": "Abrir a pasta ativa no gerenciador de arquivos",
-      "folder.openInVSCode": "Abrir a pasta ativa no VS Code",
-      "folder.openGithubPulls": "Abrir os pull requests no GitHub",
-      "folder.browseFiles": "Navegar pelos arquivos",
-      "folder.newTerminal": "Abrir um terminal",
-      "view.settings": "Abrir as Configurações",
-      "view.usageDashboard": "Alternar a visão geral de uso",
-      "session.resumeLast": "Retomar a última sessão",
-      "session.rename": "Renomear a sessão selecionada",
-      "session.close": "Fechar a aba da sessão atual",
-      "sidebar.cursor.down": "Cursor da barra lateral: baixo",
-      "sidebar.cursor.up": "Cursor da barra lateral: cima",
-      "sidebar.cursor.right": "Cursor da barra lateral: expandir / entrar",
-      "sidebar.cursor.left": "Cursor da barra lateral: recolher / sair",
-      "sidebar.cursor.activate": "Cursor da barra lateral: abrir",
-      "app.reload": "Recarregar a janela",
-      "app.devtools": "Alternar o DevTools",
-      "app.quit": "Sair do Harnu",
-      "app.fullscreen": "Alternar tela cheia",
-      "app.openKeybindings": "Abrir Atalhos de teclado"
+      "session_new": "Nova sessão",
+      "app_search": "Abrir a paleta de comandos",
+      "inbox_toggle": "Alternar a coluna de Aprovações",
+      "view_fleetRail": "Alternar a coluna da Frota",
+      "view_toggleSidebar": "Alternar a barra lateral esquerda",
+      "view_toggleHelper": "Alternar o painel dividido à direita",
+      "project_switch": "Trocar de projeto",
+      "folder_add": "Adicionar pasta",
+      "view_review": "Revisar o branch da pasta ativa",
+      "view_roadmap": "Alternar o quadro de roadmap",
+      "view_prStack": "Alternar o PR Stack",
+      "folder_openInFileManager": "Abrir a pasta ativa no gerenciador de arquivos",
+      "folder_openInVSCode": "Abrir a pasta ativa no VS Code",
+      "folder_openGithubPulls": "Abrir os pull requests no GitHub",
+      "folder_browseFiles": "Navegar pelos arquivos",
+      "folder_newTerminal": "Abrir um terminal",
+      "view_settings": "Abrir as Configurações",
+      "view_usageDashboard": "Alternar a visão geral de uso",
+      "session_resumeLast": "Retomar a última sessão",
+      "session_rename": "Renomear a sessão selecionada",
+      "session_close": "Fechar a aba da sessão atual",
+      "session_newInFolder": "Nova sessão nesta pasta…",
+      "session_fork": "Fazer fork da sessão",
+      "session_openToSide": "Abrir a sessão ao lado",
+      "session_contextMenu": "Abrir o menu de contexto",
+      "session_restart": "Reiniciar a sessão",
+      "session_copyId": "Copiar o ID da sessão",
+      "session_copyTranscriptPath": "Copiar o caminho do transcript",
+      "session_copyResumeCommand": "Copiar o comando --resume",
+      "session_copyContextDigest": "Copiar o digest de contexto",
+      "session_toggleNoFlicker": "Alternar o modo sem flicker",
+      "session_toggleArchived": "Arquivar ou desarquivar a sessão",
+      "session_delete": "Excluir a sessão…",
+      "session_retryBoot": "Tentar de novo um início que falhou",
+      "session_dismiss": "Descartar uma sessão nova que falhou",
+      "session_closeTerminal": "Fechar o terminal da pasta",
+      "sidebar_jump": "Ir para uma pasta ou sessão",
+      "sidebar_rescan": "Reescanear pastas",
+      "sidebar_cycleDrillDepth": "Alternar a profundidade de navegação da barra lateral",
+      "sidebar_toggleCollapseAll": "Recolher ou expandir todas as pastas",
+      "sidebar_hiddenFolders": "Mostrar pastas ocultas",
+      "sidebar_cursor_down": "Cursor da barra lateral: baixo",
+      "sidebar_cursor_up": "Cursor da barra lateral: cima",
+      "sidebar_cursor_right": "Cursor da barra lateral: expandir / entrar",
+      "sidebar_cursor_left": "Cursor da barra lateral: recolher / sair",
+      "sidebar_cursor_activate": "Cursor da barra lateral: abrir",
+      "folder_rename": "Renomear a pasta…",
+      "folder_newFolderTerminal": "Novo terminal na pasta",
+      "folder_toggleBranchAlias": "Usar a branch como nome / Usar o nome da pasta",
+      "folder_bootOptions": "Opções de inicialização…",
+      "folder_projectMemory": "Memória do projeto…",
+      "folder_memoryLocation": "Guardar memória em…",
+      "folder_newSubfolder": "Nova pasta…",
+      "folder_openSubfolder": "Abrir subpasta…",
+      "folder_newWorktree": "Nova worktree…",
+      "folder_worktreeMd": "Criar WORKTREE.md / Abrir WORKTREE.md",
+      "folder_askAgentWorktreeMd": "Pedir a um agente para escrever o WORKTREE.md",
+      "folder_toggleIntercept": "Interceptar tool calls aqui / Parar de interceptar aqui",
+      "folder_toggleAutoOrganize": "Ligar auto-organização / Desligar auto-organização",
+      "folder_toggleOrchestratorDefault": "Novas sessões começam como Orquestrador / Parar de iniciar sessões como Orquestrador",
+      "folder_toggleHidden": "Ocultar / Reexibir pasta",
+      "folder_removeWorktree": "Remover worktree",
+      "folder_toggleOlder": "Mostrar sessões mais antigas / Ocultar sessões antigas",
+      "folder_toggleArchived": "Mostrar arquivadas / Ocultar arquivadas",
+      "repoGroup_rename": "Renomear grupo",
+      "repoGroup_resetName": "Resetar nome (grupo)",
+      "repoGroup_cleanup": "Limpeza… (repositório)",
+      "inbox_open": "Abrir aprovações",
+      "inbox_toggleOrder": "Mais recentes primeiro / Mais antigos primeiro (coluna da Frota)",
+      "inbox_filter": "Filtrar estados (coluna da Frota)",
+      "inbox_showAll": "Mostrar tudo (coluna da Frota)",
+      "view_activity": "Abrir a Atividade",
+      "view_missionProgress": "Abrir o progresso da missão",
+      "view_pastedImages": "Abrir as imagens coladas",
+      "view_claudeStatus": "Abrir o status do serviço Claude",
+      "view_usagePanel": "Abrir o uso do plano",
+      "view_closeTakeover": "Fechar a visualização aberta",
+      "view_cleanup": "Alternar a Limpeza",
+      "view_scheduler": "Alternar o Agendador",
+      "view_systemMonitor": "Alternar o Monitor do sistema",
+      "view_containers": "Alternar os Containers",
+      "view_settings_general": "Abrir Configurações: Geral",
+      "view_settings_keybindings": "Abrir Configurações: Atalhos de teclado",
+      "view_settings_interceptor": "Abrir Configurações: Interceptor",
+      "view_settings_appearance": "Abrir Configurações: Aparência",
+      "view_settings_startup": "Abrir Configurações: Inicialização",
+      "view_settings_claudeConfig": "Abrir Configurações: Config do Claude",
+      "view_settings_endpoints": "Abrir Configurações: Endpoints",
+      "view_settings_push": "Abrir Configurações: Notificações remotas",
+      "view_settings_voice": "Abrir Configurações: Voz",
+      "view_settings_mcp": "Abrir Configurações: MCP",
+      "view_settings_skills": "Abrir Configurações: Skills",
+      "view_settings_mods": "Abrir Configurações: Mods",
+      "view_settings_memory": "Abrir Configurações: Memória",
+      "view_settings_hibernationPolicy": "Abrir Configurações: Política de hibernação",
+      "view_settings_usageHistory": "Abrir Configurações: Histórico de uso",
+      "view_settings_changelog": "Abrir Configurações: Changelog",
+      "view_settings_claudeCode": "Abrir Configurações: Claude Code",
+      "view_settings_cleanup": "Abrir Configurações: Limpeza",
+      "view_settings_containers": "Abrir Configurações: Containers",
+      "view_settings_prStack": "Abrir Configurações: PR Stack",
+      "nav_back": "Voltar à sessão anterior",
+      "nav_forward": "Avançar para a próxima sessão",
+      "pane_focusNext": "Focar o próximo painel",
+      "pane_focusPrev": "Focar o painel anterior",
+      "pane_toggleMaximize": "Maximizar ou restaurar o painel focado",
+      "pane_close": "Fechar o painel focado",
+      "terminal_toggle": "Alternar o painel do terminal",
+      "app_reload": "Recarregar a janela",
+      "app_devtools": "Alternar o DevTools",
+      "app_quit": "Sair do Harnu",
+      "app_fullscreen": "Alternar tela cheia",
+      "app_openKeybindings": "Abrir o keybindings.json",
+      "browser_overlay_toggle": "Alternar comentário no navegador (apontar e comentar)",
+      "browser_zoom_in": "Painel do navegador: aumentar zoom",
+      "browser_zoom_out": "Painel do navegador: diminuir zoom",
+      "browser_zoom_reset": "Painel do navegador: restaurar zoom",
+      "browser_devtools": "Painel do navegador: abrir DevTools",
+      "browser_reload": "Painel do navegador: recarregar",
+      "browser_back": "Painel do navegador: voltar",
+      "browser_forward": "Painel do navegador: avançar",
+      "browser_focusAddress": "Painel do navegador: focar na barra de endereço"
     }
   },
   "notifications": {
@@ -1652,14 +1876,6 @@
       "actions": "Ações",
       "folders": "Pastas",
       "sessions": "Sessões"
-    },
-    "actions": {
-      "newSession": "Nova sessão",
-      "addFolder": "Adicionar pasta",
-      "switchProject": "Trocar de projeto",
-      "resumeLast": "Resume última sessão",
-      "toggleFleetRail": "Alternar Fleet rail",
-      "openInbox": "Abrir aprovações"
     }
   },
   "sentinel": {
@@ -1755,7 +1971,9 @@
       "description": "Coloca uma confirmação na frente de toda ação do agente — criar sessão, abrir terminal, worktree, escrever na memória. Desligado por padrão: os agentes agem livremente e toda chamada fica registrada no log de auditoria abaixo. Ligue se preferir aprovar uma a uma."
     },
     "agentTerminalWrites": "Permitir que agentes digitem em terminais",
-    "agentTerminalWritesHint": "Desligado, os agentes ainda podem ler os terminais que você permitir, mas toda tentativa de digitar é recusada."
+    "agentTerminalWritesHint": "Desligado, os agentes ainda podem ler os terminais que você permitir, mas toda tentativa de digitar é recusada.",
+    "agentBrowserWrites": "Permitir que agentes controlem painéis do navegador",
+    "agentBrowserWritesHint": "Desligado, todo comando de escrita do navegador é recusado (abrir, navegar…). Listar e fechar continuam funcionando."
   },
   "bundledSkills": {
     "title": "Skills inclusas",
@@ -3769,6 +3987,95 @@
     "binaryBody": "Arquivo binário — não há o que renderizar, apenas o caminho e as contagens.",
     "unchangedLines": "{n} linhas inalteradas",
     "noNewline": " ⏎ sem quebra de linha no fim do arquivo",
+    "selection": {
+      "barLabel": "Seleção",
+      "selectFile": "Selecionar o arquivo inteiro {path}",
+      "selectFileTitle": "Selecionar o arquivo inteiro",
+      "range": {
+        "file": "arquivo inteiro",
+        "line": "L{line}",
+        "lines": "L{start}–{end}",
+        "oldLine": "antiga L{line}",
+        "oldLines": "antigas L{start}–{end}",
+        "mixed": "{startSide} L{start} – {endSide} L{end}"
+      },
+      "side": {
+        "old": "antiga",
+        "new": "nova"
+      },
+      "hint": {
+        "clamp": "Um intervalo fica dentro de um hunk",
+        "headMoved": "O head mudou ({from} → {to}). Seleção limpa.",
+        "baseMoved": "A base mudou ({from} → {to}). Seleção limpa."
+      },
+      "action": {
+        "copy": "Copiar como texto",
+        "clear": "Limpar seleção",
+        "dismiss": "Dispensar",
+        "tryAgain": "Tentar de novo",
+        "openMods": "Abrir ajustes de Mods",
+        "reopenCompanion": "Reabrir \"Perguntar a uma sessão nova\"",
+        "refresh": "Atualizar",
+        "reselect": "Limpar e selecionar de novo",
+        "narrow": "Reduzir a seleção"
+      },
+      "state": {
+        "queued": "Atualizando…",
+        "delivered": "O companion vê isto",
+        "cleared": "A conversa foi limpa",
+        "ended": "O companion foi fechado"
+      },
+      "noBinding": {
+        "off": "O Harnu mod está desligado",
+        "cli-too-old": "Esta versão do Claude Code é antiga demais para o Harnu mod",
+        "cli-unknown": "O Harnu não conseguiu ler a versão do Claude Code",
+        "pre-disclosure": "O Harnu está esperando você ver o aviso do mod",
+        "not-claude": "Esta sessão começou sem o Harnu mod",
+        "unknown": "Esta sessão começou sem o Harnu mod"
+      },
+      "outcome": {
+        "NO_BINDING": "Não conectado ao Harnu mod",
+        "NO_LEASE": "A conexão com o companion foi perdida",
+        "STICKY_LEGACY": "O canal do mod está desligado nesta sessão",
+        "HEADLESS": "Esta sessão não pode receber seleções",
+        "EXTERNAL": "Esta sessão não pode receber seleções",
+        "FEATURE_OFF": "A entrega pelo mod está desligada",
+        "MODE_SHADOW": "O canal do mod está em modo de observação",
+        "ORIGIN_DENIED": "O Harnu não conseguiu enviar isto (interno)",
+        "TARGET_DENIED": "Esta sessão não pode receber seleções",
+        "FOLDER_BLOCKED": "Esta pasta está bloqueada para agentes",
+        "BAD_ARGS": "Essa seleção não pode ser enviada",
+        "QUEUE_FULL": "O companion está ocupado",
+        "SID_UNSETTLED": "O companion está começando uma nova conversa",
+        "AUDIT_FAILED": "Não foi possível registrar o envio — nada foi enviado",
+        "head-moved": "O head mudou — esta seleção está desatualizada",
+        "base-mismatch": "A base mudou — esta seleção está desatualizada",
+        "head-unreadable": "O Harnu não consegue ler o commit do head",
+        "no-companion": "Abra \"Perguntar a uma sessão nova\" primeiro",
+        "CMD_PRECONDITION": "O companion recusou essa seleção",
+        "CMD_UNSUPPORTED": "O Harnu mod desta sessão é antigo demais para isto",
+        "FEATURE_DISABLED": "A entrega pelo mod está desligada",
+        "CMD_FAILED": "O companion não conseguiu receber essa seleção",
+        "CMD_EXPIRED": "O companion não conseguiu receber essa seleção",
+        "expired": "Não entregue — o companion não pegou",
+        "lost": "Enviado, mas o Harnu não recebeu confirmação",
+        "dropped": {
+          "lease-lost": "A conexão com o companion foi perdida",
+          "rebound": "A conversa foi limpa — envie a seleção de novo",
+          "session-end": "O companion terminou",
+          "revoked": "A entrega pelo mod foi desligada",
+          "host-shutdown": "O Harnu está encerrando",
+          "cancelled": "Cancelado"
+        },
+        "unknown": "O Harnu não conseguiu concluir esse envio"
+      },
+      "copied": "Copiado",
+      "copyFailed": "Não foi possível copiar para a área de transferência",
+      "guide": {
+        "refresh": "Use “{action}” no cabeçalho da revisão",
+        "freshCompanion": "Feche este companion e use “{action}” no cabeçalho da revisão"
+      }
+    },
     "truncated": "Este diff foi cortado para manter o painel responsivo: {n} arquivos não aparecem, de {rows} linhas alteradas no total.",
     "receipt": {
       "commits": "commits",
@@ -4242,5 +4549,157 @@
       },
       "manualRemove": "Para remover à mão, apague {path} de `CLAUDE_CODE_PLUGIN_DIRS`."
     }
+  },
+  "browserPane": {
+    "network": {
+      "label": "Rede",
+      "hint": "A captura de rede está ligada. Ela para sozinha e não grava corpos de resposta, a menos que o agente peça."
+    },
+    "label": "Navegador",
+    "newTab": "Nova aba",
+    "menu": "Mais ações",
+    "back": "Voltar",
+    "forward": "Avançar",
+    "reload": "Recarregar",
+    "stop": "Parar",
+    "address": "Endereço",
+    "addressPlaceholder": "Digite um endereço",
+    "pauseAgent": "Pausar o agente por 10 min",
+    "resumeAgent": "Retomar o agente",
+    "devtools": "Abrir DevTools",
+    "openFailed": "Não foi possível abrir o navegador",
+    "origin": {
+      "local": "local",
+      "external": "externo",
+      "page": "página"
+    },
+    "flag": {
+      "label": "aberto pelo agente · {host}",
+      "dismiss": "Dispensar o aviso",
+      "prefix": "aberto pelo agente"
+    },
+    "chip": {
+      "connectedTo": "Conectado a {session}",
+      "connectedToAgent": "Conectado a um agente",
+      "canDrive": "Um agente pode controlar aqui",
+      "canRead": "Um agente pode ler aqui",
+      "paused": "Agente pausado · {time}",
+      "resume": "Retomar",
+      "disconnected": "Desconectado",
+      "disconnect": "Desconectar o agente",
+      "disconnectHint": "Encerra o acesso do agente a este painel para sempre",
+      "disconnectedToast": "Agente desconectado deste painel",
+      "disconnectFailed": "Não foi possível desconectar o agente",
+      "reading": "lendo",
+      "driving": "operando",
+      "pausedLabel": "Agente pausado",
+      "connectedPrefix": "Conectado a"
+    },
+    "notice": {
+      "blocked": "Bloqueado: endereços {scheme}: não podem ser abertos",
+      "blockedAny": "Bloqueado: este tipo de endereço não pode ser aberto",
+      "certificate": "Certificado autoassinado aceito para {host}",
+      "dialog": "A página abriu um diálogo {dialog} e o Harnu o dispensou",
+      "crashed": "A página parou de responder",
+      "dismiss": "Dispensar",
+      "offline": "Bloqueado: este painel está offline e não pode abrir outros endereços. Ative Rede ativa para seguir links externos.",
+      "agentInput": "Ignorado — uma sessão acabou de agir nesta página"
+    },
+    "zoom": {
+      "in": "Aumentar zoom",
+      "out": "Diminuir zoom",
+      "reset": "Voltar o zoom para 100%",
+      "offInDevice": "O zoom fica desligado enquanto um dispositivo é emulado",
+      "label": "Zoom"
+    },
+    "device": {
+      "button": "Modo dispositivo",
+      "chipHint": "Trocar o dispositivo",
+      "custom": "Tamanho personalizado…",
+      "width": "Largura",
+      "height": "Altura",
+      "dpr": "Densidade de pixels",
+      "mobile": "Mobile",
+      "apply": "Aplicar",
+      "back": "Voltar",
+      "reset": "Resetar dispositivo",
+      "rotate": "Girar",
+      "scheme": "Claro ou escuro",
+      "schemeLight": "Claro",
+      "schemeDark": "Escuro",
+      "reducedMotion": "Movimento reduzido",
+      "invalid": "Use de 100 a 10000 para o tamanho e de 0,5 a 5 para a densidade de pixels",
+      "failed": "Não foi possível trocar o dispositivo"
+    },
+    "download": {
+      "prompt": "Salvar {name} em .harnu/out/downloads/?",
+      "save": "Salvar",
+      "cancel": "Cancelar"
+    },
+    "noticeDownloaded": "{name} salvo",
+    "noticeDownloadCancelled": "Download cancelado",
+    "noticeDownloadFailed": "O download falhou",
+    "network": {
+      "off": "Offline",
+      "on": "Rede ativa",
+      "offHint": "Offline: a página não alcança a rede. Clique para permitir neste painel.",
+      "onHint": "Rede ativa: a página alcança a rede. Clique para desligar."
+    },
+    "discarded": {
+      "titleIdle": "Pausado para economizar memória",
+      "titleRestored": "Ainda não carregado",
+      "hidden": "{address} · oculto há {min} min",
+      "reload": "Clique para recarregar",
+      "load": "Carregar a página"
+    },
+    "fileRemoved": {
+      "title": "Arquivo removido",
+      "waiting": "Aguardando ele voltar…"
+    },
+    "pageEvent": {
+      "sent": "Evento da página enviado à sessão",
+      "sentComment": "Comentário enviado para ‹{session}›",
+      "heldTitle": "Um painel enviou um evento, mas nenhuma sessão pode recebê-lo",
+      "heldBody": "Selecione uma sessão desta pasta, ou conecte o painel a uma, e use o painel de novo."
+    },
+    "comment": {
+      "hint": "Clique em um elemento para comentar",
+      "toggle": "Comentar na página",
+      "toggleOff": "Parar de comentar (Esc)",
+      "commentOn": "Comentário em",
+      "attached": "recorte + HTML + {styles} estilos anexados",
+      "attachedHtmlOnly": "HTML + {styles} estilos anexados",
+      "attachedNone": "nada anexado",
+      "placeholder": "O que deve mudar?",
+      "sendTo": "Enviar para",
+      "noSession": "Nenhuma sessão — copia para a área de transferência",
+      "owner": "dono",
+      "keepDraft": "Manter como rascunho",
+      "send": "Enviar",
+      "composerLabel": "Comentar o elemento selecionado",
+      "draftsCount": "nenhum rascunho | {n} rascunho | {n} rascunhos",
+      "sentCount": "{n} enviado | {n} enviados",
+      "sendBatch": "Enviar {n} comentário | Enviar {n} comentários",
+      "pin": "Marcador {n}",
+      "charsLeft": "{n} restantes",
+      "refusedTitle": "Comentário não enviado",
+      "refused": {
+        "BAD_ARGS": "O pedido não era válido.",
+        "PANE_NOT_FOUND": "Este painel não existe mais.",
+        "BROWSER_DISCONNECTED": "O agente está desconectado deste painel, então os comentários estão desligados.",
+        "NOTHING_TO_SEND": "Não há nada para enviar: escreva um texto primeiro.",
+        "DELIVERY_FAILED": "A sessão não conseguiu receber a mensagem. O rascunho foi mantido."
+      },
+      "noSessionTitle": "Nenhuma sessão para receber",
+      "noSessionBody": "O comentário foi copiado para a área de transferência.",
+      "noSessionLost": "Não foi possível copiar o comentário. Ele continua como rascunho neste painel.",
+      "hintExit": "para sair",
+      "disconnectedHint": "Comentários desligados aqui: você desconectou o agente deste painel."
+    }
+  },
+  "splitMenu": {
+    "label": "Mais opções de divisão",
+    "terminal": "Terminal",
+    "browser": "Navegador"
   }
 }

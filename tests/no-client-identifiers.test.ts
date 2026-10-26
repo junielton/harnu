@@ -97,6 +97,8 @@ const ALLOWED_LOWER_PREFIXES = [
   'rv',
   // `pt`: a Tailwind padding utility (`pt-18`), not a tracker key.
   'pt',
+  // `top`: a Tailwind inset utility (`top-14`, the canvas toolbar's own row), not a tracker key.
+  'top',
   'agent',
   'agents',
   'argv',

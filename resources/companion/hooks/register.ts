@@ -36,6 +36,9 @@ import {
   type SensorInput
 } from './lib/fleet-sensor'
 import {
+  applyBand,
+  bandFeatures,
+  bandLive,
   classifyCommand,
   compactData,
   forBoot,
@@ -44,8 +47,12 @@ import {
   markResulted,
   markStarted,
   parseChannel,
+  parseBandSet,
+  parseBandState,
   parseCommands,
   parseConfigUpdate,
+  parseContextAppend,
+  BAND_SWEEP_MS,
   IMPLEMENTED_COMMANDS,
   UI_TEXT_MAX,
   withCursor,
@@ -53,6 +60,7 @@ import {
 } from './lib/command-core'
 import { toAdmitted, type Admitted } from './lib/admitted'
 import { createRing } from './lib/ring'
+import { bandView } from './surface'
 import { measurePayload, readPayload } from './lib/usage-sensor'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
@@ -79,6 +87,7 @@ const PROBES = { plugin: 'harnu-companion', key: 'probes' } as const
 const FLEET = { plugin: 'harnu-companion', key: 'fleet' } as const
 const PERMISSION_MODE = { plugin: 'harnu-companion', key: 'permissionMode' } as const
 const CHANNEL = { plugin: 'harnu-companion', key: 'channel' } as const
+const BAND = { plugin: 'harnu-companion', key: 'band' } as const
 
 /** The feature an event type belongs to. `null`: reportable whenever the channel is alive. */
 const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
@@ -120,6 +129,8 @@ let backoffMs = BACKOFF_MIN_MS
 let heartbeat: Timer | null = null
 let sentSinceBeat = false
 let driftBlocked = false
+/** The model of the last `usage.measured` read: `/model` has no event, so a beat compares (T577). */
+let lastModel: string | null = null
 let endpoint: Endpoint | null = null
 let pumpFlight: Promise<void> | null = null
 let pumpKick = false
@@ -137,6 +148,11 @@ let channel: ChannelState | null = null
 let stateChain: Promise<unknown> = Promise.resolve()
 /** Command ids a running call of THIS load will answer. */
 const inFlight = new Set<string>()
+/** T257: the highest `ui.band.set` `n` this load has applied; a lower one never overwrites it. */
+let bandN = 0
+let bandTimer: Timer | null = null
+/** Band writes run one at a time, so two commands cannot apply out of order. */
+let bandChain: Promise<unknown> = Promise.resolve()
 
 /** Modules admitted before the hello answered (the usual case: they load before `session.start`). */
 let pendingAdmitted: Admitted[] = []
@@ -177,6 +193,9 @@ function resetState(): void {
   channel = null
   stateChain = Promise.resolve()
   inFlight.clear()
+  bandN = 0
+  bandTimer = null
+  bandChain = Promise.resolve()
   pollStale = 0
   pendingAdmitted = []
 }
@@ -364,10 +383,32 @@ function snapshot($: Dollar, reason: EventPayloads['session.snapshot']['reason']
 async function readUsage($: Dollar): Promise<void> {
   if (!enabled('sense.usage')) return
   try {
-    const [usage, model] = await Promise.all([$.session.usage(), $.session.model()])
+    // The model is noted as soon as it is known, even if the usage read then throws: the
+    // watcher must not turn one rejected read into a read on every beat.
+    const modelRead = $.session.model().then((m) => {
+      if (typeof m === 'string' && m !== '') lastModel = m
+      return m
+    })
+    const [usage, model] = await Promise.all([$.session.usage(), modelRead])
     emit($, { t: 'usage.measured', d: readPayload(usage, model) })
   } catch (err) {
     reportModError('session.usage', err)
+  }
+}
+
+/**
+ * One heartbeat's look at `$.session.model()`. No hook fires on `/model` (`session.measure` moves
+ * on context, rate limits and cost only), so a changed model is sent as a full read and the footer
+ * follows within one beat instead of waiting for the next turn. Never on a turn's path (MOD-6).
+ */
+async function watchModel($: Dollar): Promise<void> {
+  if (!enabled('sense.usage')) return
+  try {
+    const model = await $.session.model()
+    if (typeof model !== 'string' || model === '' || model === lastModel) return
+    await readUsage($)
+  } catch {
+    // advisory, like the drift check: a failed look changes nothing and is not reported every beat
   }
 }
 
@@ -602,7 +643,11 @@ async function doHello($: Dollar, resumeConn?: Conn, fresh = false): Promise<voi
     startHeartbeatOnce($)
     pump($)
     // P2W1: the cursor belongs to this boot; the loop starts (or restarts) under a new generation.
-    channel = forBoot(await ensureChannel($), bootId)
+    const prior = await ensureChannel($)
+    channel = forBoot(prior, bootId)
+    // A new boot numbers its commands from 1 again: what this load remembers of the old one (the
+    // highest `n`, the standing line) belongs to a queue that no longer exists.
+    if (channel !== prior) resetBand($)
     void writeChannel($)
     restartPollLoop($)
     await acceptCommands($, parseCommands(b.commands))
@@ -747,6 +792,7 @@ async function beat($: Dollar): Promise<void> {
       return
     }
     await maybeDriftCheck($)
+    void watchModel($) // un-awaited: a slow read never delays the pump or the lease renewal
     if (ring.size() > 0) pump($)
     else if (!sentSinceBeat) pump($, true)
     sentSinceBeat = false
@@ -1005,6 +1051,96 @@ function runStatus($: Dollar, c: Command<'ui.status'>): Handled {
 }
 
 /**
+ * T257 `context.append`: one hidden user-role row through `$.session.append`. The mod keeps no copy
+ * of it (`durable: false`). The poll loop never awaits this call (`runCommand` is `void`ed), so a
+ * slow append delays only its own `command.result`.
+ */
+async function runContextAppend($: Dollar, c: Command<'context.append'>): Promise<HandlerResult> {
+  const a = parseContextAppend(c.args)
+  if (!a.ok) return precondition(a.message)
+  const r = await $.session.append({
+    message: { type: 'user', content: [{ type: 'text', text: a.text }] }
+  })
+  if (typeof r.deny === 'string') {
+    return { ok: false, code: 'CMD_FAILED', message: `refused: ${r.deny}`.slice(0, 512) }
+  }
+  return okResult()
+}
+
+function stopBandTimer(): void {
+  bandTimer?.cancel()
+  bandTimer = null
+}
+
+/**
+ * Asks the engine to draw `ui.render` again after the band state changed (T257): reading the key in
+ * the hook subscribes it, but a hook that returned early may never have read it, and a redraw that
+ * depends on that is a redraw that sometimes does not come. An engine without the call keeps the
+ * state; the next render reads it.
+ */
+async function redrawBand($: Dollar): Promise<void> {
+  try {
+    await $.ui.invalidate('ui.render')
+  } catch {
+    // best effort: the band state is the truth, the redraw is a courtesy
+  }
+}
+
+/** A new host boot: forget the old queue's numbering and any line it left standing. */
+function resetBand($: Dollar): void {
+  const run = bandChain.then(async () => {
+    bandN = 0
+    const stored = parseBandState((await $.state.get(BAND)).value)
+    if (stored === null) return
+    stopBandTimer()
+    await $.state.set(BAND, null)
+    await redrawBand($)
+  })
+  bandChain = run.catch(() => undefined)
+}
+
+/** Clears a band whose `expiresAt` has passed, so a dead host cannot leave a stale line (P4W2 §7.4). */
+function sweepBand($: Dollar): void {
+  const run = bandChain.then(async () => {
+    const stored = parseBandState((await $.state.get(BAND)).value)
+    if (stored !== null && bandLive(stored, await $.clock.now())) return
+    if (stored !== null) {
+      await $.state.set(BAND, null)
+      await redrawBand($)
+    }
+    stopBandTimer()
+  })
+  bandChain = run.catch(() => undefined)
+}
+
+function startBandTimer($: Dollar): void {
+  if (bandTimer !== null) return
+  bandTimer = $.clock.every(BAND_SWEEP_MS, () => sweepBand($))
+}
+
+/** T257 `ui.band.set`: stores the band under `$.state.band`; the `ui.render` hook draws it. */
+async function runBandSet($: Dollar, c: Command<'ui.band.set'>): Promise<HandlerResult> {
+  const req = parseBandSet(c.args)
+  if (req === null) return precondition('the band parts are missing, empty or over a limit')
+  let applied = false
+  const run = bandChain.then(async () => {
+    const stored = parseBandState((await $.state.get(BAND)).value)
+    const d = applyBand(req, c.n, await $.clock.now(), stored, bandN)
+    if (!d.apply) return
+    applied = true
+    bandN = c.n
+    await $.state.set(BAND, d.next)
+    if (d.next === null) stopBandTimer()
+    else startBandTimer($)
+    await redrawBand($)
+  })
+  bandChain = run.catch(() => undefined)
+  await run
+  // A set the mod refused as older changed nothing, and the audit must not say it did.
+  return applied ? okResult() : precondition('an older band set: a newer one is already applied')
+}
+
+/**
  * The closed switch (SEC-5, contract §9): the only place a command name becomes a `$` call. The
  * engine refuses a `$` passed through a dynamic callee, so a later wave adds its `case` here, and
  * its name to `IMPLEMENTED_COMMANDS`, instead of registering a function.
@@ -1023,6 +1159,10 @@ function runHandler($: Dollar, c: Command): Handled {
       return runToast($, c as Command<'ui.toast'>)
     case 'ui.status':
       return runStatus($, c as Command<'ui.status'>)
+    case 'context.append':
+      return runContextAppend($, c as Command<'context.append'>)
+    case 'ui.band.set':
+      return runBandSet($, c as Command<'ui.band.set'>)
     default:
       return { ok: false, code: 'CMD_UNSUPPORTED' }
   }
@@ -1346,12 +1486,31 @@ export const register: Register = (on) => {
     })
   })
 
+  // T257: the band above the prompt. Registered here, never from a command, so a CLI without the
+  // hook (or without `AbovePrompt`) fails this registration and declares neither feature.
+  hook('ui.render', () => {
+    on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+      const below = await next(e) // MOD-8: the rest of the chain draws first, always
+      try {
+        // Read first, even when nothing is drawn: this is what subscribes the hook to the key.
+        const band = parseBandState((await $.state.get(BAND)).value)
+        if (e.surface !== 'terminal' || e.props.hasSurvey || e.props.maxRows < 1) return below
+        if (!bandLive(band, await $.clock.now())) return below
+        return bandView($.ui.resolve(e), band, e.props.bodyColumns, below) ?? below
+      } catch {
+        return below
+      }
+    })
+  })
+
   const all = (...names: string[]): boolean => names.every((n) => registered[n] === true)
   const features: FeatureId[] = []
   if (all('session.start', 'session.end', 'classic.SessionStart')) {
     // `act.channel`, `act.compact` and `act.ui` need no hook of their own: the poll loop and `$`.
     features.push('sense.identity', 'act.channel', 'act.compact', 'act.ui')
     if (all('turn.start')) features.push('act.turn')
+    // T257: both ride on the band hook; with it missing neither is declared (contract §11).
+    features.push(...bandFeatures(registered, true))
   }
   if (all('prompt.submit', 'turn.start', 'turn.complete')) features.push('sense.turn')
   if (

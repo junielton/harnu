@@ -140,6 +140,32 @@ describe('injection decision', () => {
   })
 })
 
+describe('the global mode and the graduated families (T577)', () => {
+  it('telemetry and planUsage active everywhere do not make the global mode active', () => {
+    const shipped = defaultPrefs()
+    // identity and the channel read the GLOBAL mode: a default-active read-only family must not
+    // switch them on for every user
+    expect(companionModeOf(shipped, 'ok', new Set())).toBe('shadow')
+    expect(companionModeOf(shipped, 'ok', new Set(['/work/ramped']))).toBe('shadow')
+    expect(companionModeOf(shipped, 'above', new Set())).toBe('shadow')
+    expect(companionModeOf({ ...shipped, allFolders: true }, 'ok', new Set())).toBe('shadow')
+  })
+
+  it('a ramped folder with another family active still reads active', () => {
+    const p = { ...defaultPrefs(), families: { taskState: 'active' as const } }
+    expect(companionModeOf(p, 'ok', new Set(['/work/ramped']))).toBe('active')
+    expect(companionModeOf(p, 'ok', new Set())).toBe('shadow')
+  })
+
+  it('the shipped prefs resolve telemetry active and persist nothing (only overrides are written)', () => {
+    const r = buildRollout(defaultPrefs(), 'above', new Set())
+    expect(effectiveMode('telemetry', '/any/folder', r)).toBe('active')
+    expect(effectiveMode('planUsage', null, r)).toBe('active')
+    expect(effectiveMode('taskState', '/any/folder', r)).toBe('shadow')
+    expect(serializePrefs(defaultPrefs())).toBe('{\n  "v": 1\n}\n')
+  })
+})
+
 describe('the mode seam', () => {
   it('the listener does not wait for the CLI gate', () => {
     expect(listenerWantedFor({ ...defaultPrefs() })).toBe(true)

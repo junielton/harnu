@@ -435,7 +435,8 @@ describe('telemetry adapter', () => {
       expect(mine(x)!.modelId).toBe(SL.modelId)
       await x.send(D7_TURN, 'turn.completed', { turnId: 't1' })
       expect(mine(x)!.modelId).toBe('claude-haiku-4-5-20251001')
-      expect(mine(x)!.modelName).toBe(SL.modelName) // never the companion’s (Q13)
+      // T577: the statusLine's name is stale once the companion names another model
+      expect(mine(x)!.modelName).toBe('Haiku 4.5')
     })
 
     it('model group in shadow never writes', async () => {

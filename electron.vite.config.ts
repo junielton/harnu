@@ -8,7 +8,18 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()]
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        // T564 U1: the app preload plus the browser-pane GUEST preload (spec §3.3). The guest runs sandboxed
+        // with contextIsolation, so it is its own single self-contained entry and never shares code with the
+        // app preload: the guest must never see `window.api`.
+        input: {
+          index: resolve('src/preload/index.ts'),
+          'browser-guest': resolve('src/preload/browser-guest.ts')
+        }
+      }
+    }
   },
   renderer: {
     resolve: {

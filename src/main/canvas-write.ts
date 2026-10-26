@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { atomicWriteFile } from './mcp/atomic-write'
 import { markdownKnownRoots } from './markdown-read'
 import { checkCanvasPathAllowed } from './canvas-read'
-import { suppressNextCanvasChange } from './canvas-watch'
+import { recordCanvasSelfWrite, settleCanvasSelfWrite } from './canvas-watch'
 import {
   MAX_CANVAS_BYTES,
   serializeCanvasDocument,
@@ -73,8 +73,19 @@ function deny(code: CanvasDenyCode, error?: string): CanvasWriteErr {
  *
  * `doc` is typed `unknown` on purpose: this is a trust boundary, and the pure
  * validator is the only thing allowed to decide the payload is a document.
+ *
+ * `selfWrite` is true ONLY for the open pane's own Save (the `canvas:write` IPC):
+ * the write is then recorded so the watcher swallows its echo instead of telling
+ * the pane its own file changed. `writerId` names that pane: when other panes
+ * have the file open too, they still hear the echo (BUG-209). It defaults to false — every other writer, an
+ * agent's `draw_canvas` first of all, must reach an open pane, which reloads
+ * silently when clean and raises the stale banner when dirty (spec §7.3).
  */
-export async function writeCanvasFile(rawPath: string, doc: unknown): Promise<CanvasWriteResult> {
+export async function writeCanvasFile(
+  rawPath: string,
+  doc: unknown,
+  opts: { selfWrite?: boolean; writerId?: string } = {}
+): Promise<CanvasWriteResult> {
   if (typeof rawPath !== 'string' || rawPath.length === 0)
     return deny('invalid-path', 'invalid path')
   const resolved = resolve(rawPath)
@@ -98,10 +109,18 @@ export async function writeCanvasFile(rawPath: string, doc: unknown): Promise<Ca
   }
 
   try {
-    // Arm the suppression BEFORE the write: `atomicWriteFile`'s rename is what
-    // chokidar reports, and arming after it would race the event.
-    suppressNextCanvasChange(resolved)
-    await atomicWriteFile(resolved, body, 0o644)
+    // Record BEFORE the write: `atomicWriteFile`'s rename is what chokidar
+    // reports, and recording after it would race the event.
+    if (opts.selfWrite === true) recordCanvasSelfWrite(resolved, body, opts.writerId)
+    try {
+      await atomicWriteFile(resolved, body, 0o644)
+    } catch (e) {
+      // The rename never landed: the previous Save is the pane's own write again.
+      if (opts.selfWrite === true) settleCanvasSelfWrite(resolved, false)
+      throw e
+    }
+    // Landed: from here only this Save's bytes are an echo, never the one before it (BUG-214).
+    if (opts.selfWrite === true) settleCanvasSelfWrite(resolved, true)
     return { ok: true, path: resolved, bytes }
   } catch {
     // The temp file is already cleaned up by `atomicWriteFile`; the previous
@@ -113,9 +132,14 @@ export async function writeCanvasFile(rawPath: string, doc: unknown): Promise<Ca
 export function registerCanvasWriteHandlers(): void {
   ipcMain.handle(
     'canvas:write',
-    (_e, args: { path: string; doc: unknown }): Promise<CanvasWriteResult> => {
-      const { path, doc } = args ?? ({} as { path: string; doc: unknown })
-      return writeCanvasFile(path, doc)
+    (_e, args: { path: string; doc: unknown; writerId?: unknown }): Promise<CanvasWriteResult> => {
+      const { path, doc, writerId } = args ?? ({} as { path: string; doc: unknown })
+      // `writerId` names the saving pane so the watcher can tell the OTHER panes
+      // on this file about the Save (BUG-209). Untrusted: only a string counts.
+      return writeCanvasFile(path, doc, {
+        selfWrite: true,
+        writerId: typeof writerId === 'string' ? writerId : undefined
+      })
     }
   )
 }

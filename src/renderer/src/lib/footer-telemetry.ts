@@ -4,6 +4,7 @@
  * free (type-only imports) so `tests/footer-telemetry.test.ts` runs in the node vitest env.
  */
 import type { SessionTelemetry } from '../../../preload'
+import { prettyModelName } from '../../../shared/model-name'
 
 /** Mirrors `TELEMETRY_TTL_MS` in `src/main/statusline-parse.ts` (a test pins them equal). */
 export const FOOTER_TELEMETRY_TTL_MS = 24 * 3600_000
@@ -29,15 +30,7 @@ export type FooterTelemetryState =
   | { kind: 'stale'; tele: SessionTelemetry; ageMs: number; reason: 'expired' | 'none' }
   | { kind: 'none' }
 
-const MODEL_ID_RE = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/i
-
-/** `claude-opus-4-8[1m]` → `Opus 4.8`. An id this does not recognise is shown as it is. */
-export function prettyModelName(modelId: string): string {
-  const m = MODEL_ID_RE.exec(modelId)
-  if (!m) return modelId
-  const family = m[1]!.charAt(0).toUpperCase() + m[1]!.slice(1).toLowerCase()
-  return `${family} ${m[3] ? `${m[2]}.${m[3]}` : m[2]}`
-}
+export { prettyModelName }
 
 /** A transcript reading shaped like a telemetry record, so the chip selection stays one code path. */
 export function transcriptTelemetry(

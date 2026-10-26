@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
-import { nextTick } from 'vue'
 import { Graph } from '@antv/x6'
 import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
 import {
@@ -23,9 +21,9 @@ import {
 import { CANVAS_SUFFIX } from '../src/main/canvas-core'
 import { paneComponents } from '../src/renderer/src/lib/pane-components'
 import { paneRegistry } from '../src/renderer/src/lib/pane-registry'
-import { i18n } from '@renderer/i18n'
 import type { CanvasDocument } from '../src/main/canvas-core'
 import { installJsdomSvgShim, svgHost } from './helpers/jsdom-svg'
+import { mountPane, settle, unmountPanes } from './helpers/canvas-pane-harness'
 
 // jsdom implements the SVG tree but none of its geometry — X6 cannot construct
 // a graph without it. See the shim's header: it polyfills a jsdom gap, it does
@@ -265,14 +263,6 @@ const canvasWatchStop = vi.fn(async () => undefined)
 const markdownRead = vi.fn(async () => ({ ok: false as const, code: 'not-found', error: 'x' }))
 let canvasChangedCb: ((p: { path: string }) => void) | null = null
 
-const PANE = {
-  id: 'h-canvas',
-  type: 'canvas' as const,
-  cwd: '/wt',
-  ratio: 1,
-  filePath: '/wt/board.harnucanvas.json'
-}
-
 beforeEach(() => {
   canvasRead.mockClear()
   canvasWatchStart.mockClear()
@@ -302,20 +292,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-function mountPane(pane = PANE) {
-  return mount(DiagramPane, {
-    props: { pane: { ...pane }, worktreePath: '/wt' },
-    global: { plugins: [i18n] },
-    attachTo: document.body
-  })
-}
-
-async function settle(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await flushPromises()
-    await nextTick()
-  }
-}
+afterEach(unmountPanes)
 
 describe('DiagramPane', () => {
   it('reads the file through the confined canvas IPC and renders it (AC U2-2)', async () => {
@@ -325,8 +302,15 @@ describe('DiagramPane', () => {
     const svg = w.find('[data-testid="diagram-canvas-host"] svg')
     expect(svg.exists()).toBe(true)
     // Every node's label reaches the DOM — "renders its nodes" is the AC, and a
-    // graph object with the right cell count would not prove it.
-    const text = w.find('[data-testid="diagram-canvas-host"]').text()
+    // graph object with the right cell count would not prove it. X6 renders cells
+    // in time-sliced jobs (it yields after ~33ms and resumes on a timer), so on a
+    // busy runner the last cells land a few macrotasks after the first: wait for
+    // them, bounded by wall time, before reading.
+    const hostText = (): string => w.find('[data-testid="diagram-canvas-host"]').text()
+    const labels = ['Browser', 'Main', 'annotation', 'reads']
+    const deadline = Date.now() + 5000
+    while (!labels.every((l) => hostText().includes(l)) && Date.now() < deadline) await settle()
+    const text = hostText()
     expect(text).toContain('Browser')
     expect(text).toContain('Main')
     expect(text).toContain('annotation')
@@ -337,9 +321,14 @@ describe('DiagramPane', () => {
   it('starts and stops the disk watch with the pane lifecycle', async () => {
     const w = mountPane()
     await settle()
-    expect(canvasWatchStart).toHaveBeenCalledWith('/wt/board.harnucanvas.json')
+    expect(canvasWatchStart).toHaveBeenCalledWith(
+      '/wt/board.harnucanvas.json',
+      expect.stringMatching(/^diagram-/)
+    )
     w.unmount()
-    expect(canvasWatchStop).toHaveBeenCalledWith('/wt/board.harnucanvas.json')
+    // BUG-209: the stop releases the ref the SAME pane took, so main knows who is still open.
+    const paneId = (canvasWatchStart.mock.calls[0] as unknown[])[1]
+    expect(canvasWatchStop).toHaveBeenCalledWith('/wt/board.harnucanvas.json', paneId)
   })
 
   it('a change on disk reloads silently while the pane is clean (§7.3 case A)', async () => {
@@ -460,7 +449,7 @@ describe('DiagramPane', () => {
   })
 
   it('an invalid pane path fails closed instead of calling the reader', async () => {
-    const w = mountPane({ ...PANE, filePath: '' })
+    const w = mountPane({ filePath: '' })
     await settle()
     expect(canvasRead).not.toHaveBeenCalled()
     expect(w.text()).toContain("isn't a canvas file")

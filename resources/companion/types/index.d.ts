@@ -56,6 +56,20 @@ declare module 'claude-code' {
         resulted: string[]
         turnId: string | null
       }
+      /**
+       * T257 / P4W2: the one line above the prompt, written by `ui.band.set` and read by the
+       * `AbovePrompt` hook. `n` is the `Command.n` that set it (a lower `n` never overwrites a
+       * higher one); `expiresAt` is the mod's clock plus `BAND_TTL_MS` at apply time. Display text
+       * only, no link and no ticket. `null` once cleared or expired.
+       */
+      band: {
+        v: 1
+        lead: string
+        detail?: string
+        hint?: string
+        n: number
+        expiresAt: number
+      } | null
     }
   }
 }

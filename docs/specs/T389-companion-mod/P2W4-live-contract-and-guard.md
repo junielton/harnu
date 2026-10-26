@@ -186,6 +186,14 @@ registerGateRow('guard.set', {
 registerGateRow('context.append', { feature: 'act.context', internal: ['contextInjector'] })
 ```
 
+**Extend, do not replace.** The review selection (T257) registered `context.append` before this
+wave, with the gesture `review.selection.send` and a validator for its own key. A later
+`registerGateRow` for a name replaces the row, which would silently remove that gesture; the gate
+therefore merges the review gesture and its validator back into whatever this wave registers, and
+calls `validate(args, cause)` with the cause so each validator accepts only its own keys. Keep
+`feature: 'act.context'`, and give `validate` the orchestrator and mission keys only. The review
+key is also admitted in `shadow` (contract §9, observe-only commands); this wave's keys are not.
+
 Algorithm for `on === true`:
 
 1. `arm(sid, folder, source)` writes the entry with `enforcer: 'script'` and ensures the hook

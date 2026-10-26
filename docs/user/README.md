@@ -18,6 +18,7 @@ Harnu is a desktop app that turns the sprawl of running and idle Claude Code ses
 - [PR Stack](pr-stack.md) — the merge chain of your open PRs on a canvas: which
   branch to deploy to staging, which PR to merge next, and the base-merged hazard.
 - [Canvas pane](canvas.md) — the whiteboard that lives in your worktree as a file: how to open one, how to read and move around a board, and what is still read-only.
+- [Browser pane](browser-pane.md) — a real Chromium page in the split stack for your dev server or any site: the address bar, what the badges and the chip mean, what you can hand to or take from a session, and what the page is not allowed to do.
 - [Claude Boot](claude-boot.md) — per-folder launch options, model/effort, custom endpoints.
 - [Usage](usage.md) — the plan usage popover, usage history, the usage dashboard.
 - [System Monitor](system-monitor.md) — the live process/session task-manager view, and why a parked session shows a dash.

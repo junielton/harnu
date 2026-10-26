@@ -69,6 +69,46 @@ function swallow(e: KeyboardEvent): false {
   return false
 }
 
+/**
+ * Every chord {@link installTerminalKeymap} swallows, per platform, in the
+ * canonical grammar the Settings recorder writes (`keybindings-core.ts`
+ * `chordFromEvent`: off macOS Ctrl is written `Cmd`). Data only — the Settings
+ * pane reads it to warn that an app shortcut on one of these chords is dead
+ * while a terminal has focus (T486 §5.2). `tests/terminal-keymap-chords.test.ts`
+ * drives the handler with every modifier combination and fails if the two drift.
+ */
+export const TERMINAL_KEYMAP_CHORDS: {
+  readonly mac: readonly string[]
+  readonly other: readonly string[]
+} = {
+  mac: [
+    // Copy / paste: ⌘ (Shift optional), or Ctrl+Shift (⌘ optional).
+    'Cmd+C',
+    'Cmd+Shift+C',
+    'Ctrl+Shift+C',
+    'Cmd+Ctrl+Shift+C',
+    'Cmd+V',
+    'Cmd+Shift+V',
+    'Ctrl+Shift+V',
+    'Cmd+Ctrl+Shift+V',
+    'Shift+Enter',
+    'Ctrl+Backspace',
+    'Shift+Backspace',
+    // Font size: ⌘ and/or Ctrl, Shift optional.
+    ...['=', '-', '0'].flatMap((k) =>
+      ['Cmd+', 'Ctrl+', 'Cmd+Ctrl+'].flatMap((m) => [m + k, m + 'Shift+' + k])
+    )
+  ],
+  other: [
+    'Cmd+Shift+C',
+    'Cmd+Shift+V',
+    'Shift+Enter',
+    'Cmd+Backspace',
+    'Shift+Backspace',
+    ...['=', '-', '0'].flatMap((k) => ['Cmd+' + k, 'Cmd+Shift+' + k])
+  ]
+}
+
 export function installTerminalKeymap(term: Terminal, hooks: TerminalKeymapHooks): void {
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== 'keydown') return true

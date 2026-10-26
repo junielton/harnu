@@ -26,10 +26,9 @@
 /* -------------------------------------------------------------------------- */
 
 /**
- * Every action id that can be dispatched. The 26 rebindable renderer bindings
- * (8 of them — the Topbar's per-folder actions and the usage overview — ship
- * with no default chord)
- * plus the reserved `app.*` menu roles. Kept here (not in `menu.ts`) so both
+ * Every action id that can be dispatched: the rebindable renderer bindings
+ * (most ship with no default chord — T486 gave every user-invokable action an
+ * id) plus the reserved `app.*` menu roles. Kept here (not in `menu.ts`) so both
  * processes share one union; `menu.ts` re-exports it for back-compat.
  */
 export type ShortcutActionId =
@@ -54,6 +53,81 @@ export type ShortcutActionId =
   | 'session.resumeLast'
   | 'session.rename'
   | 'session.close'
+  | 'session.newInFolder'
+  | 'session.fork'
+  | 'session.openToSide'
+  | 'session.contextMenu'
+  | 'session.restart'
+  | 'session.copyId'
+  | 'session.copyTranscriptPath'
+  | 'session.copyResumeCommand'
+  | 'session.copyContextDigest'
+  | 'session.toggleNoFlicker'
+  | 'session.toggleArchived'
+  | 'session.delete'
+  | 'session.retryBoot'
+  | 'session.dismiss'
+  | 'session.closeTerminal'
+  | 'sidebar.jump'
+  | 'sidebar.rescan'
+  | 'sidebar.cycleDrillDepth'
+  | 'sidebar.toggleCollapseAll'
+  | 'sidebar.hiddenFolders'
+  | 'folder.rename'
+  | 'folder.newFolderTerminal'
+  | 'folder.toggleBranchAlias'
+  | 'folder.bootOptions'
+  | 'folder.projectMemory'
+  | 'folder.memoryLocation'
+  | 'folder.newSubfolder'
+  | 'folder.openSubfolder'
+  | 'folder.newWorktree'
+  | 'folder.worktreeMd'
+  | 'folder.askAgentWorktreeMd'
+  | 'folder.toggleIntercept'
+  | 'folder.toggleAutoOrganize'
+  | 'folder.toggleOrchestratorDefault'
+  | 'folder.toggleHidden'
+  | 'folder.removeWorktree'
+  | 'folder.toggleOlder'
+  | 'folder.toggleArchived'
+  | 'repoGroup.rename'
+  | 'repoGroup.resetName'
+  | 'repoGroup.cleanup'
+  | 'inbox.open'
+  | 'inbox.toggleOrder'
+  | 'inbox.filter'
+  | 'inbox.showAll'
+  | 'view.activity'
+  | 'view.missionProgress'
+  | 'view.pastedImages'
+  | 'view.claudeStatus'
+  | 'view.usagePanel'
+  | 'view.closeTakeover'
+  | 'view.cleanup'
+  | 'view.scheduler'
+  | 'view.systemMonitor'
+  | 'view.containers'
+  | 'view.settings.general'
+  | 'view.settings.keybindings'
+  | 'view.settings.interceptor'
+  | 'view.settings.appearance'
+  | 'view.settings.startup'
+  | 'view.settings.claudeConfig'
+  | 'view.settings.endpoints'
+  | 'view.settings.push'
+  | 'view.settings.voice'
+  | 'view.settings.mcp'
+  | 'view.settings.skills'
+  | 'view.settings.mods'
+  | 'view.settings.memory'
+  | 'view.settings.hibernationPolicy'
+  | 'view.settings.usageHistory'
+  | 'view.settings.changelog'
+  | 'view.settings.claudeCode'
+  | 'view.settings.cleanup'
+  | 'view.settings.containers'
+  | 'view.settings.prStack'
   | 'sidebar.cursor.down'
   | 'sidebar.cursor.up'
   | 'sidebar.cursor.right'
@@ -64,13 +138,57 @@ export type ShortcutActionId =
   | 'app.quit'
   | 'app.fullscreen'
   | 'app.openKeybindings'
+  | 'nav.back'
+  | 'nav.forward'
+  | 'pane.focusNext'
+  | 'pane.focusPrev'
+  | 'pane.toggleMaximize'
+  | 'pane.close'
+  | 'terminal.toggle'
+  // T564 U1 (spec §2.5): the browser pane's own actions, scoped to a focused browser pane.
+  | 'browser.overlay.toggle'
+  | 'browser.zoom.in'
+  | 'browser.zoom.out'
+  | 'browser.zoom.reset'
+  | 'browser.devtools'
+  | 'browser.reload'
+  | 'browser.back'
+  | 'browser.forward'
+  | 'browser.focusAddress'
 
-export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal'
+export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal' | 'browser'
+
+/**
+ * The Settings pane's group headers (T486 §5.2), in display order. Every
+ * descriptor belongs to exactly one; a group with no visible row is hidden.
+ */
+export type KeybindingGroup =
+  'sessions' | 'sidebar' | 'folders' | 'views' | 'panes' | 'takeovers' | 'app'
+
+export const KEYBINDING_GROUPS: readonly KeybindingGroup[] = [
+  'sessions',
+  'sidebar',
+  'folders',
+  'views',
+  'panes',
+  'takeovers',
+  'app'
+]
 
 export interface KeyBindingDescriptor {
   id: ShortcutActionId
-  /** Canonical chord string, or `null` for a menu role with no default accelerator. */
+  /**
+   * Canonical chord string, or `null` for a menu role with no default accelerator.
+   * The default on every platform unless `defaultKeysMac` overrides it on macOS —
+   * read it through {@link defaultKeysFor}, never directly.
+   */
   defaultKeys: string | null
+  /**
+   * The macOS default when it differs from `defaultKeys` (T486 §10): `nav.back` is
+   * `Cmd+[` on a Mac (⌥← is word-jump in every macOS text field) and `Alt+ArrowLeft`
+   * elsewhere. Absent ⇒ `defaultKeys` everywhere.
+   */
+  defaultKeysMac?: string | null
   scope: ShortcutScope
   /**
    * Has a native menu item — so the chord fires even while the terminal pane
@@ -80,12 +198,94 @@ export interface KeyBindingDescriptor {
    * marker.
    */
   menu: boolean
+  /**
+   * Shielded (T486 §7.4): the chord is taken on `window` in the CAPTURE phase,
+   * before xterm can turn it into terminal input, so it works while a terminal
+   * holds focus. `App.vue`'s one shield listener is the only key path such an
+   * action has — it gets no renderer watcher.
+   */
+  shield?: boolean
   /** Un-rebindable. An override targeting a reserved id, or landing on a
    * reserved chord, is rejected at parse with a named warning. */
   reserved: boolean
-  /** i18n key for the human-readable action name. */
+  /** i18n key for the human-readable action name — always `labelKeyFor(id)`. */
   labelKey: string
+  /** The Settings pane group the row is listed under (T486). */
+  group: KeybindingGroup
+  /** false ⇒ never listed in the command palette (T486 §9). Default true. */
+  palette?: boolean
+  /** Listed in the palette's empty-query view (T486 §9). Default false. */
+  paletteFeatured?: boolean
 }
+
+/**
+ * The i18n key for an action's label. The ids contain dots and vue-i18n reads a
+ * key as a dotted PATH, so `keybindings.actions.session.new` would walk
+ * `actions → session → new` and miss; the locale files store each label under
+ * the id with every `.` written as `_` (`keybindings.actions.session_new`).
+ * Nothing builds a label key from an id any other way (T486 §4).
+ */
+export function labelKeyFor(id: string): string {
+  return 'keybindings.actions.' + id.replace(/\./g, '_')
+}
+
+/**
+ * A row's default chord on this platform (T486 §10). Every reader of a default —
+ * `resolveKeybindings`, `menu.ts`, the Settings pane's "default" reminder,
+ * `EmptyState` — goes through here, so a platform-split row has one answer.
+ */
+export function defaultKeysFor(
+  d: Pick<KeyBindingDescriptor, 'defaultKeys' | 'defaultKeysMac'>,
+  mac: boolean
+): string | null {
+  return mac && d.defaultKeysMac !== undefined ? d.defaultKeysMac : d.defaultKeys
+}
+
+/**
+ * The Settings pane's "not in terminal" marker (T486 §3.1): an action with neither
+ * a native menu item nor the shield is renderer-only, so its chord does not fire
+ * while a terminal holds focus. The pane reads this and nothing else; it is only
+ * accurate on macOS for a menu-backed Ctrl+letter chord (§7.1), so fixing that is
+ * one change here.
+ */
+export function isNotInTerminal(d: { menu: boolean; shield?: boolean }): boolean {
+  return !d.menu && !d.shield
+}
+
+interface DefOpts {
+  scope?: ShortcutScope
+  menu?: boolean
+  shield?: boolean
+  /** macOS default, when it differs (`defaultKeysMac`). */
+  mac?: string | null
+  reserved?: boolean
+  palette?: boolean
+  paletteFeatured?: boolean
+}
+
+/** One table row. `scope` defaults to `'global'`, `menu`/`reserved` to false. */
+function def(
+  id: ShortcutActionId,
+  group: KeybindingGroup,
+  defaultKeys: string | null,
+  opts: DefOpts = {}
+): KeyBindingDescriptor {
+  return {
+    id,
+    defaultKeys,
+    ...(opts.mac !== undefined ? { defaultKeysMac: opts.mac } : {}),
+    scope: opts.scope ?? 'global',
+    menu: opts.menu ?? false,
+    ...(opts.shield ? { shield: true } : {}),
+    reserved: opts.reserved ?? false,
+    labelKey: labelKeyFor(id),
+    group,
+    palette: opts.palette ?? true,
+    paletteFeatured: opts.paletteFeatured ?? false
+  }
+}
+
+const MENU = { menu: true } as const
 
 /**
  * THE table. Every default chord in Harnu is written here exactly once.
@@ -97,267 +297,181 @@ export interface KeyBindingDescriptor {
  * share a chord.
  */
 export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
-  {
-    id: 'session.new',
-    defaultKeys: 'Cmd+N',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.session.new'
-  },
-  {
-    id: 'app.search',
-    defaultKeys: 'Cmd+K',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.app.search'
-  },
-  {
-    id: 'inbox.toggle',
-    defaultKeys: 'Cmd+Shift+A',
-    scope: 'global',
-    menu: false,
-    reserved: false,
-    labelKey: 'keybindings.actions.inbox.toggle'
-  },
-  {
-    id: 'view.fleetRail',
-    defaultKeys: 'Cmd+Shift+B',
-    scope: 'global',
-    menu: false,
-    reserved: false,
-    labelKey: 'keybindings.actions.view.fleetRail'
-  },
-  {
-    id: 'view.toggleSidebar',
-    defaultKeys: 'Cmd+B',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.view.toggleSidebar'
-  },
-  {
-    id: 'view.toggleHelper',
-    defaultKeys: 'Cmd+Alt+B',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.view.toggleHelper'
-  },
-  {
-    id: 'project.switch',
-    defaultKeys: 'Cmd+Shift+P',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.project.switch'
-  },
-  {
-    id: 'folder.add',
-    defaultKeys: 'Cmd+O',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.folder.add'
-  },
-  {
-    id: 'view.review',
-    defaultKeys: 'Cmd+Shift+D',
-    scope: 'global',
-    menu: false,
-    reserved: false,
-    labelKey: 'keybindings.actions.view.review'
-  },
+  def('session.new', 'sessions', 'Cmd+N', { ...MENU, paletteFeatured: true }),
+  // Opens the palette itself, so it is never listed in it.
+  def('app.search', 'app', 'Cmd+K', { ...MENU, palette: false }),
+  def('inbox.toggle', 'views', 'Cmd+Shift+A', { paletteFeatured: true }),
+  // Alias of `inbox.toggle` — listing it would show the same action twice.
+  def('view.fleetRail', 'views', 'Cmd+Shift+B', { palette: false }),
+  def('view.toggleSidebar', 'views', 'Cmd+B', MENU),
+  def('view.toggleHelper', 'views', 'Cmd+Alt+B', MENU),
+  def('project.switch', 'app', 'Cmd+Shift+P', { ...MENU, palette: false }),
+  def('folder.add', 'folders', 'Cmd+O', { ...MENU, paletteFeatured: true }),
+  def('view.review', 'takeovers', 'Cmd+Shift+D'),
   // The Topbar's per-folder actions. No default chord — they ship unbound and
   // are listed so the user can give them one. `menu: true` (the `&Folder` menu
   // in `menu.ts`) so a chord the user binds still fires over the terminal pane.
-  {
-    id: 'view.roadmap',
-    defaultKeys: null,
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.view.roadmap'
-  },
-  {
-    id: 'view.prStack',
-    defaultKeys: null,
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.view.prStack'
-  },
-  {
-    id: 'folder.openInFileManager',
-    defaultKeys: null,
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.folder.openInFileManager'
-  },
-  {
-    id: 'folder.openInVSCode',
-    defaultKeys: null,
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.folder.openInVSCode'
-  },
-  {
-    id: 'folder.openGithubPulls',
-    defaultKeys: null,
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.folder.openGithubPulls'
-  },
-  {
-    id: 'folder.browseFiles',
-    defaultKeys: null,
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.folder.browseFiles'
-  },
-  {
-    id: 'folder.newTerminal',
-    defaultKeys: null,
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.folder.newTerminal'
-  },
-  {
-    // ⌘, / Ctrl+, — the platform convention for an app's settings (macOS
-    // "Settings…", VS Code "Preferences"). Lives in the app menu on macOS and
-    // the File menu elsewhere.
-    id: 'view.settings',
-    defaultKeys: 'Cmd+,',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.view.settings'
-  },
-  {
-    // The Usage Dashboard takeover (the footer's usage panel → "Open dashboard").
-    // No default chord.
-    id: 'view.usageDashboard',
-    defaultKeys: null,
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.view.usageDashboard'
-  },
-  {
-    id: 'session.resumeLast',
-    defaultKeys: 'Cmd+Shift+R',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.session.resumeLast'
-  },
-  {
-    id: 'session.rename',
-    defaultKeys: 'Cmd+R',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.session.rename'
-  },
-  {
-    id: 'session.close',
-    defaultKeys: 'Cmd+W',
-    scope: 'global',
-    menu: true,
-    reserved: false,
-    labelKey: 'keybindings.actions.session.close'
-  },
-  {
-    id: 'sidebar.cursor.down',
-    defaultKeys: 'ArrowDown',
-    scope: 'global',
-    menu: false,
-    reserved: false,
-    labelKey: 'keybindings.actions.sidebar.cursor.down'
-  },
-  {
-    id: 'sidebar.cursor.up',
-    defaultKeys: 'ArrowUp',
-    scope: 'global',
-    menu: false,
-    reserved: false,
-    labelKey: 'keybindings.actions.sidebar.cursor.up'
-  },
-  {
-    id: 'sidebar.cursor.right',
-    defaultKeys: 'ArrowRight',
-    scope: 'global',
-    menu: false,
-    reserved: false,
-    labelKey: 'keybindings.actions.sidebar.cursor.right'
-  },
-  {
-    id: 'sidebar.cursor.left',
-    defaultKeys: 'ArrowLeft',
-    scope: 'global',
-    menu: false,
-    reserved: false,
-    labelKey: 'keybindings.actions.sidebar.cursor.left'
-  },
-  {
-    id: 'sidebar.cursor.activate',
-    defaultKeys: 'Enter',
-    scope: 'global',
-    menu: false,
-    reserved: false,
-    labelKey: 'keybindings.actions.sidebar.cursor.activate'
-  },
-  // Reserved — un-rebindable. Handled entirely in the main process.
-  {
-    id: 'app.reload',
-    defaultKeys: 'F5',
-    scope: 'global',
-    menu: true,
-    reserved: true,
-    labelKey: 'keybindings.actions.app.reload'
-  },
-  {
-    id: 'app.devtools',
-    defaultKeys: 'F12',
-    scope: 'global',
-    menu: true,
-    reserved: true,
-    labelKey: 'keybindings.actions.app.devtools'
-  },
-  {
-    id: 'app.quit',
-    defaultKeys: 'Cmd+Q',
-    scope: 'global',
-    menu: true,
-    reserved: true,
-    labelKey: 'keybindings.actions.app.quit'
-  },
-  {
-    id: 'app.fullscreen',
-    defaultKeys: 'F11',
-    scope: 'global',
-    menu: true,
-    reserved: true,
-    labelKey: 'keybindings.actions.app.fullscreen'
-  },
-  {
-    // T1 P5 — opens `keybindings.json` in a MarkdownPane helper pane. Reserved
-    // (un-rebindable) and its chord is itself reserved (Q5). `menu: true` so
-    // the OS consumes ⌘⌥K / Ctrl+Alt+K even over the terminal pane; the actual
-    // "open a pane" work is done by the renderer's `useShortcuts` handler.
-    id: 'app.openKeybindings',
-    defaultKeys: 'Cmd+Alt+K',
-    scope: 'global',
-    menu: true,
-    reserved: true,
-    labelKey: 'keybindings.actions.app.openKeybindings'
-  }
+  def('view.roadmap', 'takeovers', null, MENU),
+  def('view.prStack', 'takeovers', null, MENU),
+  def('folder.openInFileManager', 'folders', null, MENU),
+  def('folder.openInVSCode', 'folders', null, MENU),
+  def('folder.openGithubPulls', 'folders', null, MENU),
+  def('folder.browseFiles', 'folders', null, MENU),
+  def('folder.newTerminal', 'folders', null, MENU),
+  // ⌘, / Ctrl+, — the platform convention for an app's settings (macOS
+  // "Settings…", VS Code "Preferences"). Lives in the app menu on macOS and
+  // the File menu elsewhere.
+  def('view.settings', 'views', 'Cmd+,', MENU),
+  // The Usage Dashboard takeover (the footer's usage panel → "Open dashboard").
+  // No default chord.
+  def('view.usageDashboard', 'takeovers', null, MENU),
+  def('session.resumeLast', 'sessions', 'Cmd+Shift+R', { ...MENU, paletteFeatured: true }),
+  def('session.rename', 'sessions', 'Cmd+R', MENU),
+  def('session.close', 'sessions', 'Cmd+W', MENU),
+  // T486 §3.2 — the Session menu's items and the folder `+`. Unbound except two
+  // sidebar-navigation gestures: ⌘↩ / Ctrl+↩ opens to the side, ⇧F10 opens the
+  // context menu. `session.fork` ships unbound (operator decision, 2026-10-14).
+  def('session.newInFolder', 'sessions', null),
+  def('session.fork', 'sessions', null),
+  def('session.openToSide', 'sessions', 'Cmd+Enter'),
+  // Focus-dependent (it targets the cursor row), so never listed in the palette.
+  def('session.contextMenu', 'sessions', 'Shift+F10', { palette: false }),
+  def('session.restart', 'sessions', null),
+  def('session.copyId', 'sessions', null),
+  def('session.copyTranscriptPath', 'sessions', null),
+  def('session.copyResumeCommand', 'sessions', null),
+  def('session.copyContextDigest', 'sessions', null),
+  def('session.toggleNoFlicker', 'sessions', null),
+  def('session.toggleArchived', 'sessions', null),
+  def('session.delete', 'sessions', null),
+  def('session.retryBoot', 'sessions', null),
+  def('session.dismiss', 'sessions', null),
+  def('session.closeTerminal', 'sessions', null),
+  // T486 §3.3 — the sidebar header's buttons. ⌘⇧F / Ctrl+Shift+F toggles the
+  // jump palette; xterm sends nothing for a Ctrl/⌘+Shift+letter chord, so it
+  // fires over a focused terminal although it has no menu item.
+  def('sidebar.jump', 'sidebar', 'Cmd+Shift+F'),
+  def('sidebar.rescan', 'sidebar', null),
+  def('sidebar.cycleDrillDepth', 'sidebar', null),
+  def('sidebar.toggleCollapseAll', 'sidebar', null),
+  def('sidebar.hiddenFolders', 'sidebar', null),
+  def('sidebar.cursor.down', 'sidebar', 'ArrowDown', { palette: false }),
+  def('sidebar.cursor.up', 'sidebar', 'ArrowUp', { palette: false }),
+  def('sidebar.cursor.right', 'sidebar', 'ArrowRight', { palette: false }),
+  def('sidebar.cursor.left', 'sidebar', 'ArrowLeft', { palette: false }),
+  def('sidebar.cursor.activate', 'sidebar', 'Enter', { palette: false }),
+  // T486 §3.4 — the Folder menu's items, the folder row's older / archived peeks
+  // and the repo-group menu. Unbound except F2, which renames the cursor folder
+  // row (else the active folder). Block agents, Modes ▸ and Set / Clear parent
+  // folder stay click-only (§3.9).
+  def('folder.rename', 'folders', 'F2'),
+  def('folder.newFolderTerminal', 'folders', null),
+  def('folder.toggleBranchAlias', 'folders', null),
+  def('folder.bootOptions', 'folders', null),
+  def('folder.projectMemory', 'folders', null),
+  def('folder.memoryLocation', 'folders', null),
+  def('folder.newSubfolder', 'folders', null),
+  def('folder.openSubfolder', 'folders', null),
+  def('folder.newWorktree', 'folders', null),
+  def('folder.worktreeMd', 'folders', null),
+  def('folder.askAgentWorktreeMd', 'folders', null),
+  def('folder.toggleIntercept', 'folders', null),
+  def('folder.toggleAutoOrganize', 'folders', null),
+  def('folder.toggleOrchestratorDefault', 'folders', null),
+  def('folder.toggleHidden', 'folders', null),
+  def('folder.removeWorktree', 'folders', null),
+  def('folder.toggleOlder', 'folders', null),
+  def('folder.toggleArchived', 'folders', null),
+  def('repoGroup.rename', 'folders', null),
+  def('repoGroup.resetName', 'folders', null),
+  def('repoGroup.cleanup', 'folders', null),
+  // T486 §3.5 — the Fleet rail's header buttons and the Topbar / footer
+  // popovers (their open flags live in `stores/ui.ts`). All unbound.
+  // "Open approvals" stays in the empty palette, as it was before T486.
+  def('inbox.open', 'views', null, { paletteFeatured: true }),
+  def('inbox.toggleOrder', 'views', null),
+  def('inbox.filter', 'views', null),
+  def('inbox.showAll', 'views', null),
+  def('view.activity', 'views', null),
+  def('view.missionProgress', 'views', null),
+  def('view.pastedImages', 'views', null),
+  def('view.claudeStatus', 'views', null),
+  def('view.usagePanel', 'views', null),
+  // T486 §3.6 — Esc closes the open takeover through the X's own door
+  // (`closeAllTakeovers`). Renderer-only on purpose: an Esc accelerator in the
+  // native menu would take Esc from every terminal. The four footer takeovers
+  // ship unbound and run their button's toggle.
+  def('view.closeTakeover', 'takeovers', 'Escape'),
+  def('view.cleanup', 'takeovers', null),
+  def('view.scheduler', 'takeovers', null),
+  def('view.systemMonitor', 'takeovers', null),
+  def('view.containers', 'takeovers', null),
+  // T486 §3.5 — one id per Settings tab (`SETTINGS_TAB_IDS` in `stores/ui.ts`,
+  // whose registrations `App.vue` generates). Only Keyboard Shortcuts is bound:
+  // ⌘⌥S / Ctrl+Alt+S, menu-backed ("Keyboard Shortcuts…" in `menu.ts`).
+  def('view.settings.keybindings', 'views', 'Cmd+Alt+S', MENU),
+  def('view.settings.general', 'views', null),
+  def('view.settings.interceptor', 'views', null),
+  def('view.settings.appearance', 'views', null),
+  def('view.settings.startup', 'views', null),
+  def('view.settings.claudeConfig', 'views', null),
+  def('view.settings.endpoints', 'views', null),
+  def('view.settings.push', 'views', null),
+  def('view.settings.voice', 'views', null),
+  def('view.settings.mcp', 'views', null),
+  def('view.settings.skills', 'views', null),
+  def('view.settings.mods', 'views', null),
+  def('view.settings.memory', 'views', null),
+  def('view.settings.hibernationPolicy', 'views', null),
+  def('view.settings.usageHistory', 'views', null),
+  def('view.settings.changelog', 'views', null),
+  def('view.settings.claudeCode', 'views', null),
+  def('view.settings.cleanup', 'views', null),
+  def('view.settings.containers', 'views', null),
+  def('view.settings.prStack', 'views', null),
+  // T486 §10 — session navigation history, the browser convention per platform:
+  // ⌘[ / ⌘] on macOS (⌥← is word-jump in every macOS text field), Alt+← / Alt+→
+  // elsewhere. Menu-backed (`&Session`) and shielded: xterm turns Alt+← into a
+  // word-jump, and off macOS an accelerator fires only for a key the page left
+  // unhandled, so the shield keeps the chord from the terminal (§7.4).
+  def('nav.back', 'app', 'Alt+ArrowLeft', { ...MENU, shield: true, mac: 'Cmd+[' }),
+  def('nav.forward', 'app', 'Alt+ArrowRight', { ...MENU, shield: true, mac: 'Cmd+]' }),
+  // T486 §3.7 — the pane focus ring (§8). F6 / ⇧F6 are shielded so they work
+  // while a terminal holds focus (the program there loses F6). ⌘⇧M / Ctrl+Shift+M
+  // needs no shield: xterm lets a Ctrl/⌘+Shift+letter chord bubble. The four
+  // focus-dependent ids stay out of the palette: its focus trap moves focus, so
+  // "the focused pane" is unknowable at activation (§9.1). The terminal toggle
+  // ships unbound (operator decision) and is shielded, because its third state
+  // ("already focused → collapse") happens while a terminal has focus (§7.3).
+  def('pane.focusNext', 'panes', 'F6', { shield: true, palette: false }),
+  def('pane.focusPrev', 'panes', 'Shift+F6', { shield: true, palette: false }),
+  def('pane.toggleMaximize', 'panes', 'Cmd+Shift+M', { palette: false }),
+  def('pane.close', 'panes', null, { palette: false }),
+  def('terminal.toggle', 'panes', null, { shield: true }),
+  // Reserved — un-rebindable. Handled entirely in the main process, so none of
+  // them has a renderer handler the palette could run.
+  def('app.reload', 'app', 'F5', { ...MENU, reserved: true, palette: false }),
+  def('app.devtools', 'app', 'F12', { ...MENU, reserved: true, palette: false }),
+  def('app.quit', 'app', 'Cmd+Q', { ...MENU, reserved: true, palette: false }),
+  def('app.fullscreen', 'app', 'F11', { ...MENU, reserved: true, palette: false }),
+  // T1 P5 — opens `keybindings.json` in a MarkdownPane helper pane. Reserved
+  // (un-rebindable) and its chord is itself reserved (Q5). `menu: true` so
+  // the OS consumes ⌘⌥K / Ctrl+Alt+K even over the terminal pane; the actual
+  // "open a pane" work is done by the renderer's `useShortcuts` handler, which
+  // is also why it stays in the palette.
+  def('app.openKeybindings', 'app', 'Cmd+Alt+K', { ...MENU, reserved: true }),
+  // T564 U1 (spec §2.5): the browser pane's own actions. `browser` scope, so they only fire from a
+  // focused browser pane and never conflict with a `global` chord (`browser` wins on a forwarded chord). Focus-dependent, so never
+  // listed in the command palette (same reasoning as the `pane.*` rows).
+  def('browser.overlay.toggle', 'panes', 'Cmd+Shift+C', { scope: 'browser', palette: false }),
+  def('browser.zoom.in', 'panes', 'Cmd+=', { scope: 'browser', palette: false }),
+  def('browser.zoom.out', 'panes', 'Cmd+-', { scope: 'browser', palette: false }),
+  def('browser.zoom.reset', 'panes', 'Cmd+0', { scope: 'browser', palette: false }),
+  def('browser.devtools', 'panes', 'Cmd+Alt+I', { scope: 'browser', palette: false }),
+  def('browser.reload', 'panes', 'Cmd+R', { scope: 'browser', palette: false }),
+  def('browser.back', 'panes', 'Cmd+[', { scope: 'browser', palette: false }),
+  def('browser.forward', 'panes', 'Cmd+]', { scope: 'browser', palette: false }),
+  def('browser.focusAddress', 'panes', 'Cmd+L', { scope: 'browser', palette: false })
 ]
 
 export const DESCRIPTOR_BY_ID: Readonly<Record<ShortcutActionId, KeyBindingDescriptor>> =
@@ -637,6 +751,129 @@ export function renderKeysString(keys: string | null, opts: RenderOpts): string[
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Settings pane search (T486 §5.2)                                          */
+/* -------------------------------------------------------------------------- */
+
+const MAC_MODIFIER_SYMBOLS: Record<string, string> = {
+  '⌘': 'Cmd',
+  '⇧': 'Shift',
+  '⌥': 'Alt',
+  '⌃': 'Ctrl'
+}
+
+/** The macOS key glyphs `renderChord` emits, mapped back to grammar tokens. */
+const MAC_KEY_SYMBOLS: Record<string, string> = {
+  '↑': 'ArrowUp',
+  '↓': 'ArrowDown',
+  '←': 'ArrowLeft',
+  '→': 'ArrowRight',
+  '↩': 'Enter',
+  '⎋': 'Escape',
+  '⌫': 'Backspace',
+  '⌦': 'Delete',
+  '⇥': 'Tab'
+}
+
+/**
+ * How the pane's search reads a query:
+ * - `chord` — the query is unmistakably a key combo (`Ctrl+J`, `ctrl+shift+f`,
+ *   `F6`, `Esc`, `⌘K`); keep exactly the rows bound to it.
+ * - `union` — a lone named key (`delete`, `left`, `tab`) is also an ordinary
+ *   word, so keep the chord matches AND the text matches ("delete" must still
+ *   find "Delete the session…" while that row is unbound).
+ * - `text` — a case-insensitive substring of label, rendered chord or id.
+ */
+export type ShortcutQuery =
+  { mode: 'text'; needle: string } | { mode: 'chord' | 'union'; needle: string; chord: string }
+
+export function parseShortcutQuery(query: string): ShortcutQuery {
+  const q = query.trim()
+  const needle = q.toLowerCase()
+  if (!q) return { mode: 'text', needle }
+  // "Ctrl+" is a combo still being typed, not `Ctrl+=` (`Cmd++` stays a chord).
+  if (q.endsWith('+') && !q.endsWith('++')) return { mode: 'text', needle }
+
+  const hasSymbol = /[⌘⇧⌥⌃]/.test(q)
+  let candidate = q
+  if (hasSymbol) {
+    const mods: string[] = []
+    let rest = ''
+    for (const ch of q) {
+      if (MAC_MODIFIER_SYMBOLS[ch]) mods.push(MAC_MODIFIER_SYMBOLS[ch])
+      else rest += ch
+    }
+    rest = rest.replace(/^\++/, '')
+    candidate = [...mods, MAC_KEY_SYMBOLS[rest] ?? rest].filter(Boolean).join('+')
+  }
+
+  const parsed = parseChord(candidate)
+  if (!parsed.ok) return { mode: 'text', needle }
+  const c = parsed.chord
+  const chord = normalizeChord(c)
+  const modified = c.cmd || c.ctrl || c.alt || c.shift
+  if (hasSymbol || q.includes('+') || modified || /^F\d+$/.test(c.key) || c.key === 'Escape') {
+    return { mode: 'chord', needle, chord }
+  }
+  // A named key (`Delete`, `ArrowLeft`, `Tab`…) — not a single letter, digit or
+  // punctuation mark, which only ever mean text.
+  if (c.key.length > 1) return { mode: 'union', needle, chord }
+  return { mode: 'text', needle }
+}
+
+export interface SearchableBinding {
+  id: string
+  keys: string | null
+  scope: ShortcutScope
+}
+
+/**
+ * Does `row` (its label already resolved in the active locale) match `query`?
+ * Chord equality goes through {@link scopeChordKey}, so off macOS a typed
+ * `Ctrl+B` finds the `Cmd+B` default.
+ */
+export function matchesShortcutQuery(
+  row: SearchableBinding,
+  label: string,
+  query: ShortcutQuery,
+  mac: boolean
+): boolean {
+  if (!query.needle) return true
+  const byChord = (): boolean => {
+    if (query.mode === 'text' || !row.keys) return false
+    const keys = canonicalizeChord(row.keys)
+    if (!keys) return false
+    return scopeChordKey(row.scope, keys, mac) === scopeChordKey(row.scope, query.chord, mac)
+  }
+  const byText = (): boolean => {
+    const rendered = renderKeysString(row.keys, { mac }).join(mac ? '' : '+')
+    return [label, rendered, row.id].some((s) => s.toLowerCase().includes(query.needle))
+  }
+  if (query.mode === 'chord') return byChord()
+  if (query.mode === 'union') return byChord() || byText()
+  return byText()
+}
+
+/**
+ * A chord the recorder must refuse for this action because it can never fire
+ * (T486 §5.2, AC-50). A `menu: false` action's only path is the renderer's
+ * `useMagicKeys` watcher, which matches on the lowercased `e.code` and `e.key`;
+ * Shift rewrites `e.key` for punctuation (`⌘⇧,` arrives as `<`), and on macOS
+ * Option rewrites it for letters (`⌥A` arrives as `å`), so neither combo ever
+ * matches. A menu-backed action fires through its native accelerator instead, and
+ * a shielded one through the shield, which matches the physical key (`e.code`).
+ */
+export function isUnreachableChord(
+  chord: Chord,
+  d: { menu: boolean; shield?: boolean },
+  mac: boolean
+): boolean {
+  if (!isNotInTerminal(d)) return false
+  if (chord.shift && PUNCT_KEYS.has(chord.key)) return true
+  if (mac && chord.alt && /^[A-Z]$/.test(chord.key)) return true
+  return false
+}
+
+/* -------------------------------------------------------------------------- */
 /*  KeyboardEvent → Chord (the record-a-chord capture control, P4)            */
 /* -------------------------------------------------------------------------- */
 
@@ -747,6 +984,7 @@ export interface ResolvedBinding {
   id: ShortcutActionId
   /** Resolved canonical chord — `null` means the user unbound it. */
   keys: string | null
+  /** This platform's default (`defaultKeysFor`). */
   defaultKeys: string | null
   scope: ShortcutScope
   menu: boolean
@@ -797,8 +1035,9 @@ export function scopeChordKey(scope: ShortcutScope, chord: string, mac: boolean)
 function reservedChordKeys(mac: boolean): Set<string> {
   const s = new Set<string>()
   for (const d of KEYBINDINGS) {
-    if (!d.reserved || !d.defaultKeys) continue
-    const c = canonicalizeChord(d.defaultKeys)
+    const keys = defaultKeysFor(d, mac)
+    if (!d.reserved || !keys) continue
+    const c = canonicalizeChord(keys)
     if (c) s.add(scopeChordKey(d.scope, c, mac))
   }
   return s
@@ -918,7 +1157,8 @@ export function resolveKeybindings(
   // Build the resolved list.
   const list: ResolvedBinding[] = KEYBINDINGS.filter((d) => !d.reserved).map((d) => {
     const has = overridden.has(d.id)
-    const keys = has ? (overrideKeys.get(d.id) ?? null) : d.defaultKeys
+    const defaultKeys = defaultKeysFor(d, mac)
+    const keys = has ? (overrideKeys.get(d.id) ?? null) : defaultKeys
     const source: ResolvedBinding['source'] = !has
       ? 'default'
       : keys === null
@@ -927,7 +1167,7 @@ export function resolveKeybindings(
     return {
       id: d.id,
       keys,
-      defaultKeys: d.defaultKeys,
+      defaultKeys,
       scope: d.scope,
       menu: d.menu,
       reserved: d.reserved,

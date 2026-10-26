@@ -11,6 +11,7 @@
  */
 
 import type { RateWindow, SessionTelemetry } from './statusline-parse'
+import { baseModelId, prettyModelName } from '../shared/model-name'
 
 /** What the companion reported for one session. Every group is optional: absent = no figure yet. */
 export interface CompanionPart {
@@ -19,7 +20,10 @@ export interface CompanionPart {
   cost?: { usd: number; atMs: number }
   context?: { percent: number | null; window: number; tokens?: number; atMs: number }
   rateLimits?: { fiveHour: RateWindow | null; sevenDay: RateWindow | null; atMs: number }
-  /** Slice S3: the last main-loop `turn.completed.usage.model`. */
+  /**
+   * The main loop's model: the last main-loop `turn.completed.usage.model` (S3) or a
+   * `usage.measured` read of `$.session.model()`, which also moves on `/model` (T577).
+   */
   model?: { id: string; atMs: number }
 }
 
@@ -107,6 +111,11 @@ export function compose(
     out.rateLimitsAtMs = base.rateLimitsAtMs ?? base.updatedAtMs
   }
   if (part.model) {
+    // The statusLine's display name stays when it names the same model (it knows the "(1M
+    // context)" variants); otherwise it is stale (`/model` just changed it) or absent.
+    if (baseModelId(base.modelId) !== baseModelId(part.model.id) || !base.modelName) {
+      out.modelName = prettyModelName(part.model.id)
+    }
     out.modelId = part.model.id
     newest = Math.max(newest, part.model.atMs)
   }

@@ -8,6 +8,7 @@ import { Clock } from 'lucide-vue-next'
 import { relativeTime } from '../composables/useRelativeTime'
 import {
   DESCRIPTOR_BY_ID,
+  defaultKeysFor,
   renderKeysString,
   type ShortcutActionId
 } from '../../../main/keybindings-core'
@@ -35,7 +36,7 @@ const keybindings = useKeybindingsStore()
 const shortcuts = computed<Shortcut[]>(() =>
   SHORTCUT_ACTIONS.map((s) => {
     const rb = keybindings.resolved.byId[s.id]
-    const chord = rb ? rb.keys : DESCRIPTOR_BY_ID[s.id].defaultKeys
+    const chord = rb ? rb.keys : defaultKeysFor(DESCRIPTOR_BY_ID[s.id], isMac)
     return { key: s.key, keys: renderKeysString(chord, { mac: isMac }) }
   })
 )

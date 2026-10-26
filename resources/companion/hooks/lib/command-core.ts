@@ -1,6 +1,11 @@
 import {
+  BAND_DETAIL_MAX,
+  BAND_HINT_MAX,
+  BAND_LEAD_MAX,
+  BAND_TTL_MS,
   CMD_DONE_MAX,
   CONFIG_BOUNDS,
+  CONTEXT_MAX_CHARS,
   type Command,
   type CommandName,
   type Config,
@@ -100,7 +105,9 @@ export const IMPLEMENTED_COMMANDS: ReadonlySet<string> = new Set([
   'turn.abort',
   'session.compact',
   'ui.toast',
-  'ui.status'
+  'ui.status',
+  'context.append',
+  'ui.band.set'
 ])
 
 /** The tokenless second lock (contract §9): every other command is `CMD_UNSUPPORTED` without a token. */
@@ -200,6 +207,189 @@ export function parseConfigUpdate(args: unknown): Partial<Config> | null {
     out[k as keyof Config] = v
   }
   return out
+}
+
+// ---- context.append (T257 U2a-ii) ------------------------------------------------------------------
+
+/** The one context key this build of the mod appends: the others belong to a later wave (P2W4). */
+export const REVIEW_SELECTION_KEY = 'harnu.review-selection'
+
+/**
+ * `context.append` (second lock, spec T257 §6.3): exactly `{ key, text, durable }`, the review key,
+ * `durable: false` and 1 to `CONTEXT_MAX_CHARS` characters. The mod stores nothing of it: a row is
+ * appended once and is lost with the conversation on a compaction, by design.
+ */
+export function parseContextAppend(
+  args: unknown
+): { ok: true; text: string } | { ok: false; message: string } {
+  if (!isRec(args)) return { ok: false, message: 'the arguments are not an object' }
+  if (Object.keys(args).some((k) => k !== 'key' && k !== 'text' && k !== 'durable'))
+    return { ok: false, message: 'an unknown argument' }
+  if (args.key !== REVIEW_SELECTION_KEY)
+    return { ok: false, message: 'this mod appends only the review selection key' }
+  if (args.durable !== false) return { ok: false, message: 'only a non-durable row is supported' }
+  const text = args.text
+  if (typeof text !== 'string' || text.length === 0)
+    return { ok: false, message: 'the text is empty' }
+  if (text.length > CONTEXT_MAX_CHARS)
+    return { ok: false, message: `the text is over ${CONTEXT_MAX_CHARS} characters` }
+  return { ok: true, text }
+}
+
+// ---- ui.band.set (T257 U2a-ii, P4W2 §7.4) --------------------------------------------------------------
+
+/** The `$.state` key `band`: the one line the view draws. `n` is the `Command.n` that set it. */
+export interface BandState {
+  v: 1
+  lead: string
+  detail?: string
+  hint?: string
+  n: number
+  expiresAt: number
+}
+
+/** C0 and C1 controls, line and paragraph separators, and the bidi overrides a path could carry. */
+// eslint-disable-next-line no-control-regex
+const BAND_UNSAFE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g
+const clean = (s: string): string => s.replace(BAND_UNSAFE, '')
+
+/** What `ui.band.set` asks for: clear the band, or set these (already cleaned) parts. */
+export type BandRequest =
+  { kind: 'clear' } | { kind: 'set'; lead: string; detail?: string; hint?: string }
+
+/**
+ * `ui.band.set` (second lock, contract §9): `parts` are cleaned of control characters and checked
+ * against the lengths the host checked; a `link` is dropped and the line is kept (the band carries
+ * no href). `null` is a precondition failure (no parts, an empty or over-long part).
+ */
+export function parseBandSet(args: unknown): BandRequest | null {
+  if (!isRec(args)) return null
+  if (args.line === null) return { kind: 'clear' }
+  if (typeof args.line !== 'string' || !isRec(args.parts)) return null
+  const part = (v: unknown, max: number): string | null | undefined => {
+    if (v === undefined) return undefined
+    if (typeof v !== 'string') return null
+    const s = clean(v)
+    return s.length > max ? null : s
+  }
+  const lead = part(args.parts.lead, BAND_LEAD_MAX)
+  const detail = part(args.parts.detail, BAND_DETAIL_MAX)
+  const hint = part(args.parts.hint, BAND_HINT_MAX)
+  if (lead === undefined || lead === null || lead.trim() === '') return null
+  if (detail === null || hint === null) return null
+  return {
+    kind: 'set',
+    lead,
+    ...(detail !== undefined && detail !== '' ? { detail } : {}),
+    ...(hint !== undefined && hint !== '' ? { hint } : {})
+  }
+}
+
+/** What `$.state` held under `band`, read defensively: any other plugin can write it. */
+export function parseBandState(raw: unknown): BandState | null {
+  if (!isRec(raw) || raw.v !== 1) return null
+  if (typeof raw.lead !== 'string' || raw.lead === '') return null
+  if (!Number.isSafeInteger(raw.n) || typeof raw.expiresAt !== 'number') return null
+  if (!Number.isFinite(raw.expiresAt)) return null
+  return {
+    v: 1,
+    lead: raw.lead,
+    ...(typeof raw.detail === 'string' && raw.detail !== '' ? { detail: raw.detail } : {}),
+    ...(typeof raw.hint === 'string' && raw.hint !== '' ? { hint: raw.hint } : {}),
+    n: raw.n as number,
+    expiresAt: raw.expiresAt
+  }
+}
+
+/** A band stands until its `expiresAt`; the clock is the mod's. */
+export const bandLive = (b: BandState | null, now: number): b is BandState =>
+  b !== null && now < b.expiresAt
+
+/**
+ * The next band state, or `null` for "leave it": a lower `n` never overwrites a higher one, and a
+ * clear is a state too. `known` is the highest `n` this load has applied.
+ */
+export function applyBand(
+  req: BandRequest,
+  n: number,
+  now: number,
+  stored: BandState | null,
+  known: number
+): { apply: true; next: BandState | null } | { apply: false } {
+  if (n < Math.max(known, stored?.n ?? 0)) return { apply: false }
+  if (req.kind === 'clear') return { apply: true, next: null }
+  return {
+    apply: true,
+    next: {
+      v: 1,
+      lead: req.lead,
+      ...(req.detail !== undefined ? { detail: req.detail } : {}),
+      ...(req.hint !== undefined ? { hint: req.hint } : {}),
+      n,
+      expiresAt: now + BAND_TTL_MS
+    }
+  }
+}
+
+/**
+ * The features the band hook buys (contract §11): `act.context` and `ui.band`, only when the
+ * `ui.render` registration took AND the base set (identity, channel) is declared. A CLI without the
+ * hook declares neither, and the host never enables them.
+ */
+export const bandFeatures = (
+  registered: Readonly<Record<string, boolean>>,
+  base: boolean
+): FeatureId[] => (base && registered['ui.render'] === true ? ['act.context', 'ui.band'] : [])
+
+/** The band sweep: how often a standing line is checked against its `expiresAt`. */
+export const BAND_SWEEP_MS = 30_000
+
+/** Below this the band is the compact line (the range alone); at it and above, the full one. */
+export const BAND_MIN_COLUMNS = 40
+const BAND_MARK = '\u25c6 Harnu '
+
+/**
+ * The range at the end of a band lead the host built (`⧉ speech.ts L85–92`, `⧉ speech.ts old L85
+ * – new L92`, `⧉ L85`, `⧉ speech.ts (file)`), or `null` when the lead does not end in one. The host
+ * already puts the range in the lead, so the compact line needs no new field and no contract change.
+ * The longest form is tried first, so a range across both sides is not read as its last half.
+ */
+// Built from strings: the API-surface scan reads a `$` in code as the engine's `$` (MOD-1).
+const RANGE_TAIL = new RegExp(
+  '(?:^| )((?:old|new) L\\d+ \\u2013 (?:old|new) L\\d+|(?:old )?L\\d+(?:\\u2013\\d+)?|\\(file\\))$'
+)
+
+const MIXED_RANGE = new RegExp('^(?:old|new) L(\\d+) \\u2013 (?:old|new) L(\\d+)$')
+
+/**
+ * The compact line, for a pane under {@link BAND_MIN_COLUMNS}: `⧉ L21`, `⧉ L21–24`, `⧉ (file)`, and
+ * for a range across both sides its explicit form `⧉ old L85 – new L92`, shortened to `⧉ L85–L92`
+ * when that does not fit. No mark, no file name. The first form that fits is returned; when none
+ * does (the shortest is 4 columns, `⧉ L9`) nothing is drawn: a cut-off range would name the wrong
+ * lines.
+ */
+function fitCompact(lead: string, columns: number): string | null {
+  const range = RANGE_TAIL.exec(lead)?.[1]
+  if (range === undefined) return null
+  const mixed = MIXED_RANGE.exec(range)
+  const forms = [`\u29c9 ${range}`, ...(mixed ? [`\u29c9 L${mixed[1]}\u2013L${mixed[2]}`] : [])]
+  return forms.find((f) => f.length <= columns) ?? null
+}
+
+/**
+ * The text of the one row, fitted to `bodyColumns` (P4W2 §7.4): under 40 the compact line (range
+ * only, {@link fitCompact}), 40-79 the lead, 80-109 the lead (no link), 110-143 lead and detail, 144
+ * and up lead, detail and hint. A part that is not there leaves no separator. Cut at the width with
+ * an ellipsis, never wider.
+ */
+export function fitBand(b: BandState, columns: number): string | null {
+  if (!Number.isFinite(columns) || columns < 0) return null
+  if (columns < BAND_MIN_COLUMNS) return fitCompact(b.lead, columns)
+  const parts = [b.lead]
+  if (columns >= 110 && b.detail !== undefined) parts.push(b.detail)
+  if (columns >= 144 && b.hint !== undefined) parts.push(b.hint)
+  const row = `${BAND_MARK}${parts.join(' \u00b7 ')}`
+  return row.length <= columns ? row : `${row.slice(0, Math.max(1, columns - 1))}\u2026`
 }
 
 // ---- the engine's rejections ---------------------------------------------------------------------------

@@ -138,7 +138,8 @@ describe('compose: the model group waits for the turn sensor (AC-P1W6-29)', () =
     const withModel: CompanionPart = { ...FULL_PART, model: { id: 'claude-haiku-4-5', atMs: T } }
     const t = compose(SL, withModel, true, SID)!
     expect(t.modelId).toBe('claude-haiku-4-5')
-    expect(t.modelName).toBe(SL.modelName) // never the companion's (Q13)
+    // T577: the statusLine's name is stale once the companion names another model
+    expect(t.modelName).toBe('Haiku 4.5')
   })
 })
 

@@ -79,8 +79,13 @@ import {
   X,
   type LucideIcon
 } from 'lucide-vue-next'
-import { registerFocusedPane, unregisterFocusedPane } from '../composables/useTerminalFocus'
+import {
+  registerFocusedPane,
+  unregisterFocusedPane,
+  useFocusRegion
+} from '../composables/useTerminalFocus'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { DEFAULT_TERMINAL_FONT_SIZE, useSettingsStore } from '../stores/settings'
 import { useHelpersStore, isAgentTerminalPane, type AnyHelperPane } from '../stores/helpers'
 import { adoptTerminal } from '../lib/adopt-pty'
@@ -138,10 +143,24 @@ const emit = defineEmits<{ headerMouseDown: [ev: MouseEvent] }>()
 
 const { t: i18n } = useI18n()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const settings = useSettingsStore()
 const helpers = useHelpersStore()
 const theme = useThemeStore()
 const hostRef = useTemplateRef<HTMLDivElement>('host')
+const rootRef = useTemplateRef<HTMLDivElement>('root')
+// T486 U5b — a region of the pane focus ring: F6 focuses the terminal (or the
+// root while its terminal is not live yet), `pane.close` runs the header X's close.
+// The root itself draws the design.md §6 "Pane focus" outline only while IT holds
+// focus (`focus:`, not `focus-within:`): a focused xterm shows its cursor instead.
+useFocusRegion(props.pane.id, rootRef, {
+  focus: () => {
+    const live = liveHelpers.get(props.pane.id)
+    if (live) live.term.focus()
+    else rootRef.value?.focus()
+  },
+  close: onClose
+})
 
 // WebLinksAddon's default handler calls `window.open()` with no URL, which
 // Electron's `setWindowOpenHandler` always denies (about:blank isn't
@@ -795,7 +814,10 @@ function onPromote(): void {
     the grid still sizes correctly below the bar.
   -->
   <div
-    class="relative h-full w-full overflow-hidden bg-bg"
+    ref="root"
+    class="no-default-ring relative h-full w-full overflow-hidden bg-bg focus:outline focus:outline-1 focus:-outline-offset-1 focus:outline-accent-line"
+    tabindex="-1"
+    :data-focus-region="pane.id"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"
@@ -884,7 +906,12 @@ function onPromote(): void {
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
+        :title="
+          keybindings.withChord(
+            isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize'),
+            'pane.toggleMaximize'
+          )
+        "
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         @mousedown.stop
         @click="onToggleMaximize"
@@ -895,7 +922,7 @@ function onPromote(): void {
       <button
         class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="$t('helperPane.close')"
+        :title="keybindings.withChord($t('helperPane.close'), 'pane.close')"
         :aria-label="$t('helperPane.close')"
         @mousedown.stop
         @click="onClose"

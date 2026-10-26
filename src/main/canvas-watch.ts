@@ -6,17 +6,24 @@
  *  - a ref count per absolute path (how many mounted DiagramPanes have this
  *    canvas open right now); the watcher only subscribes chokidar to paths with
  *    a ref > 0.
- *  - a one-shot self-write suppression flag per path — `canvas-write.ts` arms it
- *    immediately before its atomic rename, so the `change` event that same
- *    rename fires does not loop back to the pane that just saved as a false
- *    "changed on disk" push.
+ *  - a self-write fingerprint per path — when the PANE's own Save writes a
+ *    canvas, `canvas-write.ts` records a hash of the exact bytes it wrote (and the
+ *    one before it, until the new Save lands, BUG-214), so the
+ *    `change` event that same rename fires does not loop back to the pane that
+ *    just saved as a false "changed on disk" push. Only the pane's own Save
+ *    records one; an agent's `draw_canvas` never does, so an open pane always
+ *    hears about it (BUG-202). The fingerprint also names the WRITING pane
+ *    (`writerId`): when another pane has the same file open, the echo is still
+ *    broadcast — tagged with that id — so the writer ignores it and every other
+ *    pane reloads or goes stale (BUG-209).
  *
  * The state is deliberately SEPARATE from the markdown watcher's rather than
  * shared: the two panes have different channels and different reload semantics
  * (§7.3's clean/dirty cases), and a shared ref map would let a markdown pane's
  * unwatch silently stop a canvas pane's watch on the same path.
  *
- * The broadcast carries the PATH ONLY. The renderer re-reads through the
+ * The broadcast carries the path, plus the `writerId` of a Save echo another
+ * pane must still hear. The renderer re-reads through the
  * confined `canvas:read` IPC, so there is one containment/size-cap/validation
  * implementation, not two — and the pane decides what to do with the news
  * based on whether it is dirty (§7.3 cases A and B).
@@ -24,12 +31,34 @@
 
 import chokidar, { type FSWatcher } from 'chokidar'
 import { ipcMain, type BrowserWindow } from 'electron'
-import { resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { readFile, stat } from 'node:fs/promises'
+import { basename, dirname, resolve } from 'node:path'
 import { markdownKnownRoots } from './markdown-read'
 import { checkCanvasPathAllowed } from './canvas-read'
 
 const refCounts = new Map<string, number>()
-const suppressed = new Set<string>()
+/** Of those refs, how many each identified pane holds (`paneId` = the pane's `writerId`). */
+const paneRefs = new Map<string, Map<string, number>>()
+/** One Save by a pane: the hash of the bytes it wrote, and which pane wrote them. */
+interface SavedBytes {
+  hash: string
+  writerId?: string
+}
+/** What the panes' own Saves left on a path (see {@link recordCanvasSelfWrite}). */
+interface SelfWrite {
+  /** The newest Save. */
+  current: SavedBytes
+  /** The Save before it — only meaningful while a newer Save is in flight. */
+  previous?: SavedBytes
+  /** Saves recorded but not yet landed (their rename has not resolved). */
+  inFlight: number
+}
+const selfWrites = new Map<string, SelfWrite>()
+
+function fingerprint(bytes: string | Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
 
 /** Current ref count for `path` (0 if never registered). */
 export function canvasRefCount(path: string): number {
@@ -37,45 +66,171 @@ export function canvasRefCount(path: string): number {
 }
 
 /** Register one more interest in `path`. Returns 'first' on the 0→1 transition
- *  (the caller should start watching), else 'more'. */
-export function addCanvasRef(path: string): 'first' | 'more' {
+ *  (the caller should start watching), else 'more'. `paneId` names the pane
+ *  holding the ref, so a Save echo can tell whether anyone else is listening. */
+export function addCanvasRef(path: string, paneId?: string): 'first' | 'more' {
   const next = (refCounts.get(path) ?? 0) + 1
   refCounts.set(path, next)
+  if (paneId !== undefined) {
+    const panes = paneRefs.get(path) ?? new Map<string, number>()
+    panes.set(paneId, (panes.get(paneId) ?? 0) + 1)
+    paneRefs.set(path, panes)
+  }
   return next === 1 ? 'first' : 'more'
 }
 
 /** Release one interest in `path`. Returns 'last' on the 1→0 transition (the
  *  caller should stop watching), 'more' if refs remain, 'none' if `path` had no
  *  refs to begin with (defensive — never goes negative). */
-export function removeCanvasRef(path: string): 'last' | 'more' | 'none' {
+export function removeCanvasRef(path: string, paneId?: string): 'last' | 'more' | 'none' {
   const current = refCounts.get(path) ?? 0
   if (current <= 0) return 'none'
+  const panes = paneRefs.get(path)
+  const held = paneId === undefined ? 0 : (panes?.get(paneId) ?? 0)
+  if (panes && paneId !== undefined && held > 0) {
+    if (held === 1) panes.delete(paneId)
+    else panes.set(paneId, held - 1)
+    if (panes.size === 0) paneRefs.delete(path)
+  }
   const next = current - 1
   if (next === 0) {
     refCounts.delete(path)
+    paneRefs.delete(path)
+    // Nothing watches the path any more, so changes made from now on are never
+    // seen — a fingerprint kept past this point could later swallow somebody
+    // else's write that happens to restore the same bytes.
+    selfWrites.delete(path)
     return 'last'
   }
   refCounts.set(path, next)
   return 'more'
 }
 
-/** Arm a one-shot suppression for the NEXT change event on `path`. */
-export function suppressNextCanvasChange(path: string): void {
-  suppressed.add(path)
+/**
+ * Record that the pane itself is about to write `body` to `path`, so the change
+ * event that write fires can be recognised as the pane's own and swallowed.
+ *
+ * This is a CONTENT fingerprint, not a one-shot flag, on purpose. chokidar's
+ * `awaitWriteFinish` folds writes that land inside its settle window into one
+ * event, and a flag armed by the Save would swallow that merged event even when
+ * an agent's write was part of it — silently losing the agent's change. Judging
+ * by what is actually on disk when the event is handled cannot make that mistake.
+ */
+export function recordCanvasSelfWrite(path: string, body: string, writerId?: string): void {
+  const before = selfWrites.get(path)
+  selfWrites.set(path, {
+    current: { hash: fingerprint(body), writerId },
+    previous: before?.current,
+    inFlight: (before?.inFlight ?? 0) + 1
+  })
 }
 
-/** Consume (and clear) the suppression flag for `path`. True at most once per
- *  `suppressNextCanvasChange` call. */
-export function consumeCanvasSuppression(path: string): boolean {
-  if (!suppressed.has(path)) return false
-  suppressed.delete(path)
-  return true
+/**
+ * The Save recorded by {@link recordCanvasSelfWrite} has finished: its rename landed
+ * (`landed`) or it failed and the file still holds the Save before it. From here on only
+ * the newest landed Save counts as a pane's own echo.
+ *
+ * Between the record and this call the file holds either the previous Save or the new
+ * one, and a chokidar event for the previous Save — held back by `awaitWriteFinish` — can
+ * be handled in that window (BUG-214). {@link consumeCanvasSelfWrite} swallows it.
+ */
+export function settleCanvasSelfWrite(path: string, landed: boolean): void {
+  const entry = selfWrites.get(path)
+  if (!entry) return
+  entry.inFlight = Math.max(0, entry.inFlight - 1)
+  if (!landed) {
+    // The rename never landed, so the file still holds the previous Save (if any).
+    if (entry.previous === undefined) {
+      selfWrites.delete(path)
+      return
+    }
+    entry.current = entry.previous
+  }
+  // With nothing in flight the previous Save is history: its bytes turning up again are
+  // somebody else restoring them, not an echo.
+  if (entry.inFlight === 0) entry.previous = undefined
+}
+
+/** What {@link canvasSuppressionSnapshot} saw when a read of the file began. */
+export interface CanvasSuppressionSnapshot {
+  entry: SelfWrite
+  /** The previous Save, set only if a newer Save was in flight at that moment. */
+  previous?: SavedBytes
+}
+
+/**
+ * Take this BEFORE reading the file, and hand it to {@link consumeCanvasSelfWrite}.
+ * The read is async: it can open the file while a newer Save is in flight (and get the
+ * previous Save's bytes) yet finish after that Save settled — judged by the state at the
+ * end of the read alone, the previous Save's echo would look foreign (BUG-214).
+ */
+export function canvasSuppressionSnapshot(path: string): CanvasSuppressionSnapshot | undefined {
+  const entry = selfWrites.get(path)
+  if (entry === undefined) return undefined
+  return { entry, previous: entry.inFlight > 0 ? entry.previous : undefined }
+}
+
+/**
+ * Is `current` — what is on disk right now — exactly what a pane's own Save wrote
+ * to `path`? A match means the event is that pane's echo, and returns the Save it
+ * matched so the echo is tagged with ITS writer. While a newer Save is in flight
+ * the Save before it counts too: its echo can arrive after the newer Save was
+ * recorded and before its rename landed. `atReadStart` extends that to a read that
+ * began inside the window and finished after it (same record only).
+ * Anything else (including a missing file) is somebody else's change, and it
+ * clears the fingerprint: from then on the panes' last writes are history.
+ */
+export function consumeCanvasSelfWrite(
+  path: string,
+  current: Buffer | null,
+  atReadStart?: CanvasSuppressionSnapshot
+): { writerId?: string } | undefined {
+  const mine = selfWrites.get(path)
+  if (mine === undefined) return undefined
+  if (current !== null) {
+    const hash = fingerprint(current)
+    const matched =
+      hash === mine.current.hash
+        ? mine.current
+        : mine.inFlight > 0 && hash === mine.previous?.hash
+          ? mine.previous
+          : atReadStart?.entry === mine && hash === atReadStart.previous?.hash
+            ? atReadStart.previous
+            : undefined
+    if (matched !== undefined) return { writerId: matched.writerId }
+  }
+  selfWrites.delete(path)
+  return undefined
+}
+
+/** {@link consumeCanvasSelfWrite} as a yes/no: should this event be swallowed as an echo? */
+export function consumeCanvasSuppression(
+  path: string,
+  current: Buffer | null,
+  atReadStart?: CanvasSuppressionSnapshot
+): boolean {
+  return consumeCanvasSelfWrite(path, current, atReadStart) !== undefined
+}
+
+/**
+ * Is anybody other than `writerId` watching `path`? When the panes on the path
+ * named themselves, the writer's own refs are subtracted from the total, so a
+ * writer that has already closed leaves every remaining ref belonging to somebody
+ * else. Without names (an older caller on either side) only the ref count can
+ * answer, and a lone ref is taken to be the writer's.
+ */
+function othersWatching(path: string, writerId: string | undefined): boolean {
+  const total = canvasRefCount(path)
+  const panes = paneRefs.get(path)
+  if (writerId === undefined || panes === undefined) return total > 1
+  return total - (panes.get(writerId) ?? 0) > 0
 }
 
 /** Test-only: reset all module state between test cases. */
 export function __resetCanvasWatchStateForTests(): void {
   refCounts.clear()
-  suppressed.clear()
+  paneRefs.clear()
+  selfWrites.clear()
 }
 
 let watcher: FSWatcher | null = null
@@ -92,6 +247,11 @@ function ensureWatcher(): FSWatcher {
   })
   watcher.on('change', (p) => void notifyCanvasChanged(p))
   watcher.on('unlink', (p) => void notifyCanvasChanged(p))
+  // An OS that refuses the watch (inotify limit, ENOSPC) surfaces here, after
+  // chokidar already lists the file: the open wait cannot tell, so say so.
+  watcher.on('error', (err) =>
+    console.warn('[canvas-watch] watcher error; changes may be missed:', err)
+  )
   return watcher
 }
 
@@ -101,6 +261,13 @@ function ensureWatcher(): FSWatcher {
  * same gate `canvas:read` uses), then checks the ref map as the sole "is this
  * open anywhere" source of truth. On a real, non-suppressed, in-root, reffed
  * change it broadcasts `{ path: resolvedPath }`.
+ *
+ * A pane's own Save echo is swallowed outright only while no OTHER pane is on
+ * the file — judged by pane identity, not the ref count, so a writer that closed
+ * before its echo arrived does not hide the Save from the pane left open. When
+ * another pane is listening, the echo is broadcast with the writer's id: the
+ * writer drops it, the rest reload (clean) or show the stale banner (dirty) —
+ * BUG-209.
  */
 export async function notifyCanvasChanged(
   resolvedPath: string
@@ -108,10 +275,121 @@ export async function notifyCanvasChanged(
   const gate = checkCanvasPathAllowed(resolve(resolvedPath), await markdownKnownRoots())
   if (!gate.ok) return gate.code
   if (canvasRefCount(resolvedPath) <= 0) return 'not-open'
-  if (consumeCanvasSuppression(resolvedPath)) return 'ok' // our own Save: swallow
+  // Read what is on disk NOW: the event is the pane's own echo only if it is
+  // still exactly the bytes the pane's Save wrote. A file that has since
+  // vanished (or been replaced) is somebody else's change.
+  const atReadStart = canvasSuppressionSnapshot(resolvedPath)
+  const onDisk = await readFile(resolvedPath).catch(() => null)
+  const echo = consumeCanvasSelfWrite(resolvedPath, onDisk, atReadStart)
+  // Tag the echo with the pane whose Save it matched — not the newest Save's writer (BUG-214).
+  const writerId = echo?.writerId
+  if (echo !== undefined && !othersWatching(resolvedPath, writerId)) return 'ok' // our own Save, nobody else listening: swallow
   const win = windowGetter?.()
-  if (win && !win.isDestroyed()) win.webContents.send('canvas:changed', { path: resolvedPath })
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(
+      'canvas:changed',
+      writerId === undefined ? { path: resolvedPath } : { path: resolvedPath, writerId }
+    )
+  }
   return 'ok'
+}
+
+/** How long `startCanvasWatch` waits for chokidar before giving up and resolving anyway. */
+const WATCH_READY_TIMEOUT_MS = 3000
+const WATCH_READY_POLL_MS = 5
+/** After a missed deadline, how long the background re-check keeps waiting for the watch. */
+const WATCH_LATE_LIMIT_MS = 60_000
+const WATCH_LATE_POLL_MS = 50
+
+let watchReadyTimeoutMs = WATCH_READY_TIMEOUT_MS
+
+/** Test-only: shorten the readiness deadline (`undefined` restores the default). */
+export function __setWatchReadyTimeoutForTests(ms: number | undefined): void {
+  watchReadyTimeoutMs = ms ?? WATCH_READY_TIMEOUT_MS
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Does a `getWatched()` listing include `path`? `FSWatcher.add` returns at once
+ * and its `ready` event fires only for the FIRST batch of paths, so there is no
+ * per-path signal to await. chokidar lists a file under its directory in the
+ * same synchronous step that attaches the OS watch, which is the moment a write
+ * starts producing events. chokidar keys directories with forward slashes on
+ * every platform, so a Windows `C:\…` path is matched in that form too.
+ */
+export function isCanvasWatched(watched: Record<string, string[]>, path: string): boolean {
+  if ((watched[dirname(path)] ?? []).includes(basename(path))) return true
+  const unix = path.replace(/\\/g, '/')
+  const cut = unix.lastIndexOf('/')
+  return (watched[unix.slice(0, cut)] ?? []).includes(unix.slice(cut + 1))
+}
+
+function isWatching(w: FSWatcher, path: string): boolean {
+  return isCanvasWatched(w.getWatched(), path)
+}
+
+async function whenWatching(w: FSWatcher, path: string): Promise<void> {
+  // A file that does not exist is never watched; the pane shows its own error.
+  if (
+    !(await stat(path).then(
+      () => true,
+      () => false
+    ))
+  )
+    return
+  const deadline = Date.now() + watchReadyTimeoutMs
+  while (watcher === w && !isWatching(w, path) && Date.now() < deadline) {
+    await sleep(WATCH_READY_POLL_MS)
+  }
+  if (watcher !== w || isWatching(w, path)) return
+  // The deadline passed: the pane reads now rather than hang, which reopens the
+  // gap a write can fall into. Remember the bytes it is about to read and
+  // compare once the watch is live, so such a write still reaches the panes.
+  console.warn(
+    `[canvas-watch] watch on ${path} not live after ${watchReadyTimeoutMs} ms; reading anyway`
+  )
+  const before = await readFile(path).then(fingerprint, () => null)
+  void recheckOnceWatching(w, path, before)
+}
+
+async function recheckOnceWatching(
+  w: FSWatcher,
+  path: string,
+  before: string | null
+): Promise<void> {
+  const deadline = Date.now() + WATCH_LATE_LIMIT_MS
+  while (watcher === w && canvasRefCount(path) > 0 && !isWatching(w, path)) {
+    if (Date.now() >= deadline) {
+      console.warn(`[canvas-watch] watch on ${path} never went live; changes may be missed`)
+      return
+    }
+    await sleep(WATCH_LATE_POLL_MS)
+  }
+  if (watcher !== w || canvasRefCount(path) <= 0) return
+  const now = await readFile(path).then(fingerprint, () => null)
+  if (now !== before) await notifyCanvasChanged(path)
+}
+
+/**
+ * Register one pane's interest in `rawPath` and resolve only once the file is
+ * being watched (BUG-210). The pane reads the canvas AFTER this resolves, so a
+ * write can no longer fall between its read and the watch going live: it is
+ * either in the read or produces an event. Resolving early used to leave that
+ * gap, and the operator's next Save reverted the write that fell into it.
+ */
+export async function startCanvasWatch(rawPath: unknown, paneId?: string): Promise<void> {
+  if (typeof rawPath !== 'string' || rawPath.length === 0) return
+  const p = resolve(rawPath)
+  // IPC payloads cross the trust boundary — confine against the SAME gate as
+  // canvas:read before ever subscribing chokidar to a renderer-supplied path.
+  const gate = checkCanvasPathAllowed(p, await markdownKnownRoots())
+  if (!gate.ok) return
+  const first = addCanvasRef(p, paneId) === 'first'
+  const w = ensureWatcher()
+  if (first) w.add(p)
+  // A second pane on the file waits too: the first pane's add may still be pending.
+  await whenWatching(w, p)
 }
 
 /**
@@ -121,22 +399,20 @@ export async function notifyCanvasChanged(
  */
 export function registerCanvasWatchHandlers(getWindow: () => BrowserWindow | null): void {
   windowGetter = getWindow
-  ipcMain.handle('canvas:watchStart', async (_e, args: { path: string }) => {
+  ipcMain.handle('canvas:watchStart', (_e, args: { path: string; paneId?: unknown }) =>
+    startCanvasWatch(args?.path, paneIdOf(args))
+  )
+  ipcMain.handle('canvas:watchStop', (_e, args: { path: string; paneId?: unknown }) => {
     const raw = args?.path
     if (typeof raw !== 'string' || raw.length === 0) return
     const p = resolve(raw)
-    // IPC payloads cross the trust boundary — confine against the SAME gate as
-    // canvas:read before ever subscribing chokidar to a renderer-supplied path.
-    const gate = checkCanvasPathAllowed(p, await markdownKnownRoots())
-    if (!gate.ok) return
-    if (addCanvasRef(p) === 'first') ensureWatcher().add(p)
+    if (removeCanvasRef(p, paneIdOf(args)) === 'last' && watcher) watcher.unwatch(p)
   })
-  ipcMain.handle('canvas:watchStop', (_e, args: { path: string }) => {
-    const raw = args?.path
-    if (typeof raw !== 'string' || raw.length === 0) return
-    const p = resolve(raw)
-    if (removeCanvasRef(p) === 'last' && watcher) watcher.unwatch(p)
-  })
+}
+
+/** The renderer-supplied pane id — untrusted, so only a string counts. */
+function paneIdOf(args: { paneId?: unknown } | undefined): string | undefined {
+  return typeof args?.paneId === 'string' ? args.paneId : undefined
 }
 
 /** Close the shared watcher and clear all refs — call from `before-quit`. */
