@@ -18,7 +18,14 @@ import { sortManifestQueue, nextManifestDrainTarget } from './roadmap-core'
 /** The card fields the drain walk reads — a narrowed `RoadmapCard` view. */
 export interface DrainCardView {
   slug: string
+  /** The card's stable id (frontmatter `id`) — what a paused-drain notice names. */
+  id?: string
   status: string
+  /**
+   * BUG-197: an In Progress card whose bound session is not live work
+   * (`classifyWipCard`, ADR-0021). It does NOT count toward the WIP ceiling.
+   */
+  stale?: boolean
   kind?: string
   /** Manifest stamp (staggered ISO) — presence + order drive the queue. */
   approved?: string
@@ -46,6 +53,13 @@ export type DrainPlanResult =
     }
   | { ok: true; mode: 'confirm'; reason: string }
 
+/** BUG-197: why a pass paused — the ceiling, the live count and who holds the slots. */
+export interface DrainWipPause {
+  limit: number
+  live: number
+  holders: Array<{ slug: string; id: string }>
+}
+
 /** Progress event the renderer strip renders (`roadmap:drainEvent`). */
 export interface DrainEvent {
   folder: string
@@ -65,6 +79,11 @@ export interface DrainEvent {
   failedCards: Array<{ slug: string; reason: string }>
   /** Queued stamped cards never attempted because the WIP ceiling was reached. */
   wipBlocked: number
+  /**
+   * BUG-197: present only on a terminal event that left stamped cards unattempted
+   * at the ceiling. The renderer turns it into ONE Activity notice per pause.
+   */
+  wipPause?: DrainWipPause
   /** False on the terminal event of a pass. */
   active: boolean
 }
@@ -187,7 +206,11 @@ function formatDispatchedWith(r: DrainRouting): string {
  */
 export async function runDrainPass(folder: string, deps: DrainPassDeps): Promise<DrainPassResult> {
   const { cards, wipLimit } = await deps.loadState(folder)
-  let wip = cards.filter((c) => c.status === 'in-progress').length
+  // BUG-197: only LIVE In Progress cards hold a slot (stale ones are flagged by the shell).
+  const holders: Array<{ slug: string; id: string }> = cards
+    .filter((c) => c.status === 'in-progress' && !c.stale)
+    .map((c) => ({ slug: c.slug, id: c.id ?? c.slug }))
+  let wip = holders.length
   const queue = sortManifestQueue(
     cards.filter(
       (c) =>
@@ -217,6 +240,9 @@ export async function runDrainPass(folder: string, deps: DrainPassDeps): Promise
       failed: failedCards.length,
       failedCards: [...failedCards],
       wipBlocked: active ? 0 : wipBlockedCount(),
+      ...(!active && wipBlockedCount() > 0
+        ? { wipPause: { limit: wipLimit, live: wip, holders: [...holders] } }
+        : {}),
       active
     })
 
@@ -285,6 +311,7 @@ export async function runDrainPass(folder: string, deps: DrainPassDeps): Promise
     )
     dispatched += 1
     wip += 1
+    holders.push({ slug: target.slug, id: target.id ?? target.slug })
     progress(true)
   }
   progress(false)

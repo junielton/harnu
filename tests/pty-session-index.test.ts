@@ -160,3 +160,43 @@ describe('T215 — the recipient predicate over the index lifecycle', () => {
     expect(harnuOwnsSession(idx.has('manually-dispatched'), false)).toBe(true)
   })
 })
+
+describe('PtySessionIndex.resolveAlias (BUG-197)', () => {
+  it('returns the key itself when it was never re-keyed', () => {
+    const idx = new PtySessionIndex()
+    expect(idx.resolveAlias('synthetic-1')).toBe('synthetic-1')
+  })
+
+  it('follows a synthetic → real re-key, and it outlives the process', () => {
+    const idx = new PtySessionIndex()
+    idx.register('synthetic-1', 'pty-1')
+    idx.rekey('synthetic-1', 'real-1')
+    expect(idx.resolveAlias('synthetic-1')).toBe('real-1')
+    idx.removeByPtyId('pty-1')
+    expect(idx.resolveAlias('synthetic-1')).toBe('real-1')
+  })
+
+  it('follows a chain of re-keys', () => {
+    const idx = new PtySessionIndex()
+    idx.register('a', 'pty-1')
+    idx.rekey('a', 'b')
+    idx.rekey('b', 'c')
+    expect(idx.resolveAlias('a')).toBe('c')
+  })
+
+  it('a re-key of an unregistered key records nothing', () => {
+    const idx = new PtySessionIndex()
+    idx.rekey('ghost', 'real')
+    expect(idx.resolveAlias('ghost')).toBe('ghost')
+  })
+
+  it('is bounded — the oldest alias is evicted past the cap', () => {
+    const idx = new PtySessionIndex()
+    for (let i = 0; i < 600; i++) {
+      idx.register(`s${i}`, `p${i}`)
+      idx.rekey(`s${i}`, `r${i}`)
+    }
+    expect(idx.resolveAlias('s0')).toBe('s0')
+    expect(idx.resolveAlias('s599')).toBe('r599')
+  })
+})

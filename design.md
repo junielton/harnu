@@ -2703,6 +2703,42 @@ dropping OR dispatching a card that pushes In Progress past the ceiling **warns*
 toast (with an explicit override — the card moves anyway), never blocks. The raw count
 (`wipStatus`/`wouldExceedWip` in `roadmap-core`) is measured BEFORE the move.
 
+**WIP ceiling counts live work only (BUG-197, ADR-0021).** The chip's `{n}` is the number
+of In Progress cards whose bound session is LIVE (process attached, parked, recently
+active or still booting), not the raw column length; the limit `{limit}` is the repo's
+setting (default 5, range 1–10). Main computes the verdict (`computeWipVerdict`), the
+board only draws it — there is no second copy of the rule in the renderer. Three states,
+existing tokens only:
+
+- **Normal** — `text-text-4`, no fill (below the ceiling).
+- **At ceiling** — `text-warning`, no fill: the last slot is used, nothing is held back.
+- **Paused** — `bg-red-soft text-warning` plus the `pause` icon (12px, before the label) and
+  the label `"Paused · {n}/{limit}"`: the manifest drain is holding stamped Ready cards back
+  because the ceiling is full. Cleared the moment a slot frees or no stamped card waits.
+
+The chip is a button (`aria-haspopup="dialog"`). It opens a small anchored panel
+(`bg-surface`, `border border-border`, `rounded-lg`, `shadow-pop`, `.anim-fade-in-scale`,
+w-72) with: a **"Holding the slots"** list (one row per live In Progress card — id + title,
+`text-[12px]`), the **stale count** ("{n} stale cards don't count"), and the limit
+**stepper** — a `−` / value / `+` group (`tabular-nums`, value `text-text`, buttons
+`text-text-3 hover:bg-surface-2`, disabled at the bounds) with a "Reset to 5" text button
+that appears only when the value differs from the default. Esc / outside click closes it.
+
+**Stale badge on an In Progress card.** A card the verdict marks stale shows a `Stale`
+pill in its badge row (`bg-surface-2 text-text-3`, `rounded-sm`, 10px/`font-medium`, a
+`clock-alert` icon at 10px; tooltip = the reason: no session, never started, session not
+found, inactive for 7+ days). Under the card body it adds one quiet action row — two ghost
+buttons, `Move to Review` and `Move to Backlog` (`text-[11px] text-text-3
+hover:text-text`, `h-6`, `rounded-sm`) — wired to the existing `roadmap:setStatus` writer.
+There is no Done action: Done stays the operator's Close. A stale card keeps its column;
+nothing moves on its own.
+
+**Paused-drain notice.** When a pass ends with stamped Ready cards held back, ONE
+persisted Activity notice (kind `warning`, target = this board) reads `"{folder}: dispatch
+paused — {live} of {limit} slots in use ({cards}). Move or finish one to resume."`, naming
+the live holders. The same pause (same limit, same holders) does not notify again; the
+memory resets when the pause ends. The chip's Paused state is the persistent form.
+
 **Filter bar (T80 S2 PR2, 38px, `--bg`, `border-b --border`, directly under the board
 header, above the columns).** Same visual system as the mockup's `.filterbar`
 (`.harnu/memory/mockups/card-modal/v1-dossier.html`), existing tokens only:

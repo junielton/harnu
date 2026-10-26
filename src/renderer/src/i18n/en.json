@@ -2177,6 +2177,31 @@
     "wipHint": "In-Progress WIP limit — the 4–5 simultaneous-supervision ceiling as a board rule.",
     "wipExceeded": "Over the WIP limit of {limit}",
     "wipExceededHint": "You're supervising more than the 4–5 agents you can realistically review at once. The card still moved — just a heads-up.",
+    "wipChip": {
+      "title": "WIP ceiling",
+      "holding": "Holding the slots",
+      "holdingEmpty": "No live session holds a slot.",
+      "staleNote": "{count} stale card(s) don’t count — move them out of In Progress.",
+      "pausedNote": "Dispatch is paused: stamped Ready cards wait for a free slot.",
+      "limit": "Limit",
+      "decrease": "Lower the limit",
+      "increase": "Raise the limit",
+      "reset": "Reset to {default}",
+      "hint": "Only live sessions count toward the limit. Set per repo."
+    },
+    "wipChipPaused": "Paused · {count}/{limit}",
+    "cardStale": {
+      "badge": "Stale",
+      "moveReview": "Move to Review",
+      "moveBacklog": "Move to Backlog",
+      "moveFailed": "Couldn’t move the card ({code}).",
+      "reason": {
+        "no-session": "No session is bound to this card, so it doesn’t count toward the WIP limit.",
+        "unmaterialized": "Its session never started, so it doesn’t count toward the WIP limit.",
+        "unknown-session": "Its session was not found, so it doesn’t count toward the WIP limit.",
+        "inactive": "Its session has been inactive for over a week, so it doesn’t count toward the WIP limit."
+      }
+    },
     "dropBlockedDone": "Done is reached by closing a reviewed card, not by dragging.",
     "closeNoEvidenceTitle": "Close without evidence?",
     "closeNoEvidenceBody": "This card has no commits, PR, or gates attached.",
@@ -2365,7 +2390,7 @@
       "drainCounter": "{done}/{total} dispatched",
       "needsConfirm": "{folder}: {cards} fell back to a per-card confirm ({reasons}) — open that Roadmap board and click Dispatch.",
       "spawnFailed": "{folder}: {cards} failed to dispatch ({reasons}) — any worktree created for it was rolled back. Fix the cause and resubmit the manifest.",
-      "wipPaused": "{folder}: {count} stamped card(s) waiting for a free WIP slot — the drain resumes when a session finishes."
+      "wipPaused": "{folder}: dispatch paused — {live} of {limit} slots in use ({cards}). Move or finish one to resume."
     },
     "create": {
       "title": "New card",

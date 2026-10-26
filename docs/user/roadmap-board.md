@@ -90,6 +90,16 @@ When a session wants to launch several ready cards at once, it submits them as a
 
 If you edit a card's title, spec, or body after it's already been approved this way, that edit still goes through, but the approval is voided — the card falls back to asking again individually the next time something tries to dispatch it, rather than silently keeping the old approval.
 
+## The In progress limit
+
+The **In progress** column has a limit — 5 by default — shown as a small chip at the top right of the board (for example `In Progress 3/5`). It exists to keep you from supervising more agents than you can really watch, and it is what pauses a batch of approved cards when it is full: they wait for a free slot and start on their own once one opens.
+
+Only **live work** counts toward the limit. A card holds a slot while its session has a running process, is parked to save memory, was active within the last week, or is still starting up. A card whose session never started, can't be found, or has been quiet for over a week doesn't count. Those cards stay where they are but get a grey **Stale** badge, with two one-click buttons underneath: **Move to Review** and **Move to Backlog**. Nothing moves on its own, and there is no button to send a card to Done — that is still your Close.
+
+When the limit is full and approved cards are waiting, the chip turns warning-colored and reads `Paused · 5/5`, and you get one notice in the Activity bell naming the limit, how many slots are used and which cards hold them. You won't get the same notice again for the same situation.
+
+Click the chip to see which cards are holding the slots and to change the limit with the − and + buttons (1 to 10). The limit is per repository, and a worktree under `.claude/worktrees/` shares its repository's value.
+
 ## Model routing
 
 Which model and effort level a card actually launches with comes from a routing table you configure yourself, per card kind (scout / bug / feature / chore get one set of defaults, review gets another), reachable from a folder's launch settings. A session can suggest a model or effort when it proposes a card or a dispatch batch, but that's only ever a hint shown to you — the table you've configured is what actually decides what launches. Once a card has been dispatched, it records which model/effort it actually ran with, so you can always check what really happened rather than relying on the suggestion.
