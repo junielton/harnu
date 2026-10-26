@@ -17,6 +17,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **Colour and dash the arrows on a canvas.** Select an arrow (or arrows together with shapes) and the Properties panel offers **Color** (default, green, amber, red, muted) and **Stroke** (solid, dashed, dotted). The arrowhead follows the line colour, one pick is one undo step, and colours follow the theme. Arrows have no Accent choice because accent is already how an arrow looks by default. Heads up: Harnu 0.3.46 and earlier drops all of an arrow's extra data (its colour and line style, and anything else stored on the arrow) whenever it writes the board, both when you press Save and when a session running in that version draws on it. Shapes, shape styles, text, labels, routes and ids survive; the first release with this feature keeps arrow styles.
 - **Sessions can style the arrows they draw.** `draw_canvas` accepts a `style` field (a colour and a line pattern) when adding or updating an arrow, merged into what is there: a session that changes an arrow's label or colour keeps the line pattern you set from the panel, and the other way round.
 
+### Changed
+
+- **Rename folder and Rename repo use the shared dialog shell.** Their corners are 1px rounder, and the card can grow to 84% of the window height (it was 80%) before its body scrolls; Esc, clicking outside and Tab behave as before.
+
 ## 2026-10-20
 
 ### Added
