@@ -366,7 +366,7 @@ _another_ folder.
 | `folder-tree`                            | Browse project files (Topbar button + Explorer pane header, T100)                                                                                                                                                                      |
 | `kanban-square`                          | Roadmap board (FolderMenu + session Context menu + Topbar button)                                                                                                                                                                      |
 | `git-pull-request`                       | PR Stack Canvas (FolderMenu + Topbar button + the canvas' own header)                                                                                                                                                                  |
-| `git-pull-request-arrow`                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com)                                                                                                                                      |
+| `github`                                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com). Lucide's brand glyph, deprecated upstream as a brand icon: if a future lucide major drops it, the import breaks at build time       |
 | `message-square`                         | Unresolved review threads on a PR Stack card (T275 — readiness chip at `full`, identity-row badge at `compact`); Review pane companion link                                                                                            |
 | `text-select`                            | Select the whole file (Review pane file header, T257); `lucide-vue-next` ships it as `TextSelect`. The delivery chip (T257 U2b) carries no glyph of its own.                                                                           |
 | `git-branch`                             | Branch badge (git folder) / repo-group header                                                                                                                                                                                          |
@@ -5027,6 +5027,7 @@ already looking at that repo's session.
 - **Order:** `[bell] [board] [pr-stack] │ [folder] [editor] [github-pulls] [explorer]
 [split] [panel-right]`. The two view buttons sit **before** the external-tool openers:
   they act _inside_ Harnu, the ones after them leave for the OS or another app.
+- **GitHub pull requests** (`github` — lucide's brand glyph, so it reads as "leaves for GitHub" and not as the PR Stack Canvas button; deprecated upstream as a brand icon, so a future lucide major may drop it and break the import at build time; `topbar.githubPulls`): opens
 - **Open in editor** (`topbar.openInEditor`, T581): launches the editor chosen in Settings → General →
   **Editor** (default VS Code) on the active folder. The glyph is that editor's mark (§5 "Editor marks");
   the `title` and `aria-label` read "Open in {editor}" with the editor's display name, so the button
