@@ -371,7 +371,7 @@ describe('chips (AC-7)', () => {
       'sidebar.toggleCollapseAll',
       'sidebar.hiddenFolders',
       'folder.openInFileManager',
-      'folder.openInVSCode',
+      'folder.openInEditor',
       'folder.openGithubPulls',
       'folder.newTerminal',
       // T486 §3.4 — every unbound folder id (`folder.rename` has F2).

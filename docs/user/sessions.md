@@ -184,7 +184,7 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar                            |
 
 The Topbar's folder actions — roadmap board, PR Stack, open in file manager,
-open in VS Code, pull requests on GitHub, Browse files, and open a terminal —
+open in your [editor](settings.md#editor), pull requests on GitHub, Browse files, and open a terminal —
 have no shortcut out of the box, and neither does the usage overview, but you
 can give each one a chord (see
 [Customizing shortcuts](#customizing-shortcuts)). They're also in the native
@@ -316,8 +316,9 @@ It's a VS Code-shaped array, one entry per action, merged over the defaults:
 
 The Topbar's folder actions have no default chord. Their command ids are
 `view.roadmap`, `view.prStack`, `folder.openInFileManager`,
-`folder.openInVSCode`, `folder.openGithubPulls`, `folder.browseFiles`, and
-`folder.newTerminal`. The usage overview is `view.usageDashboard`, and Settings
+`folder.openInEditor`, `folder.openGithubPulls`, `folder.browseFiles`, and
+`folder.newTerminal`. (`folder.openInEditor` used to be called `folder.openInVSCode`; a
+binding saved under the old name still works.) The usage overview is `view.usageDashboard`, and Settings
 (`Cmd/Ctrl+,` by default) is `view.settings`.
 
 - `Cmd` means ⌘ on macOS and `Ctrl` on Linux/Windows — one file works on every

@@ -143,7 +143,7 @@ stacks into one column.
 The view is the folder's home screen:
 
 - **Header** — the folder's name, full path, git branch, whether it's the main worktree or a linked one, and live git status (uncommitted count, ahead/behind).
-- **Actions** — New session, [Roadmap board](roadmap-board.md), [PR Stack](pr-stack.md), Browse files, Open in VS Code, Open folder in your file manager, and a terminal in that folder.
+- **Actions** — New session, [Roadmap board](roadmap-board.md), [PR Stack](pr-stack.md), Browse files, Open in your [editor](settings.md#editor), Open folder in your file manager, and a terminal in that folder.
 - **Sessions** — the folder's sessions, newest first; click one to open it. A folder with no sessions shows a **New session** button instead of an empty list. **Older** and **Archived** sit below as expandable sections, so you no longer need the hover-only peek icons on the sidebar row to reach them.
 - **Where we left off** — the top of the repo's [project memory](project-memory.md) snapshot, when it has one.
 - **Roadmap** — how many cards sit in each column, and every card currently in progress or in review by name.
@@ -356,7 +356,7 @@ hasn't said anything yet shows no number at all rather than a `0`.
 
 Selecting a folder never stops a running session. Pressing **Enter** on a folder with the arrow-key sidebar navigation does the same as clicking it. Sessions keep running in the background with their scrollback and conversation intact; clicking one brings you straight back to it.
 
-**Folder actions no longer need a session.** The Topbar's buttons (Roadmap board, PR Stack, Browse files, Open in VS Code, Pull requests on GitHub, Open folder, terminal) act on whichever folder you have selected. Previously they were only available while a session was selected, which made a folder with no sessions a dead end — you had to start a session just to open that folder's board.
+**Folder actions no longer need a session.** The Topbar's buttons (Roadmap board, PR Stack, Browse files, Open in your [editor](settings.md#editor), Pull requests on GitHub, Open folder, terminal) act on whichever folder you have selected. Previously they were only available while a session was selected, which made a folder with no sessions a dead end — you had to start a session just to open that folder's board.
 
 **Pull requests on GitHub.** When the selected folder's `origin` remote points at github.com, the Topbar shows a pull-request button that opens the repo's **Pull requests** page in your browser. Both HTTPS and SSH remotes work, including SSH host aliases like `git@github.com-work:owner/repo.git`. The button is hidden when the folder isn't a git repo, has no `origin`, or its `origin` is somewhere else (GitLab, Bitbucket, a GitHub Enterprise host). It only reads `origin`, so a fork whose `origin` is your own copy opens your fork's pull requests, not the upstream's.
 

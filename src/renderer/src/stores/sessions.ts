@@ -371,6 +371,11 @@ export interface Session {
    */
   isShellTerminal?: true
   /**
+   * T581: set on a folder terminal opened by "Open in {editor}" for a terminal editor
+   * — the program the shell runs instead of the user's shell. Never set on a Claude session.
+   */
+  shellCommand?: { cmd: string; args: string[] }
+  /**
    * `session-<8 hex>` when this session is an agent-teams TEAMMATE (T99 — this
    * is a plain on-disk JSONL fact, present on every line of a teammate
    * transcript). The hex suffix is the first 8 chars of the team lead's own
@@ -3484,7 +3489,10 @@ export const useSessionsStore = defineStore('sessions', () => {
    * empty `fullPath`) but not a full app restart. Returns the new id, or `null`
    * when `folderPath` doesn't match anything in the current model.
    */
-  function createFolderTerminal(folderPath: string): string | null {
+  function createFolderTerminal(
+    folderPath: string,
+    command?: { cmd: string; args: string[] }
+  ): string | null {
     const folder = findFolderByPath(folderPath)
     if (!folder) return null
 
@@ -3506,7 +3514,8 @@ export const useSessionsStore = defineStore('sessions', () => {
       resumable: true,
       bridged: false,
       synthetic: false,
-      isShellTerminal: true
+      isShellTerminal: true,
+      ...(command ? { shellCommand: { cmd: command.cmd, args: [...command.args] } } : {})
     }
     folder.sessions.push(terminal)
     folder.expanded = true

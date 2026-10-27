@@ -195,7 +195,7 @@ describe('AC-11 — the §3.4 rows T1 already shipped', () => {
     'folder.browseFiles': null,
     'folder.newTerminal': null,
     'folder.openInFileManager': null,
-    'folder.openInVSCode': null,
+    'folder.openInEditor': null,
     'folder.openGithubPulls': null
   }
   for (const [id, defaultKeys] of Object.entries(T1_FOLDER_ROWS)) {
