@@ -9,6 +9,7 @@ import EmptyState from './components/EmptyState.vue'
 import FolderView from './components/FolderView.vue'
 import CloudSessionPanel from './components/CloudSessionPanel.vue'
 import { isCloudStub } from './lib/cloud-session'
+import { sessionTitle } from './lib/session-label'
 import Onboarding from './components/Onboarding.vue'
 import AddFolderDialog from './components/AddFolderDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
@@ -858,11 +859,11 @@ useShortcuts(
       handler: () => folderActions.openInFileManager()
     },
     {
-      id: 'folder.openInVSCode',
+      id: 'folder.openInEditor',
       scope: 'global',
-      keys: kb('folder.openInVSCode'),
+      keys: kb('folder.openInEditor'),
       enabled: () => !!sessions.activeFolderPath,
-      handler: () => folderActions.openInVSCode()
+      handler: () => folderActions.openInEditor()
     },
     {
       id: 'folder.openGithubPulls',
@@ -1563,6 +1564,7 @@ async function onAddFolderSubmit(payload: { path: string; alias: string }): Prom
  */
 let unsubscribeUpdater: (() => void) | null = null
 let unsubscribeUpdateError: (() => void) | null = null
+let unsubscribeQuitGuard: (() => void) | null = null
 let unsubscribeUpdateManualAvailable: (() => void) | null = null
 let unsubscribeChangelogActivate: (() => void) | null = null
 onMounted(() => {
@@ -1611,6 +1613,29 @@ onMounted(() => {
       }
     })
   })
+  // T579: main is about to show the native "agents still working" dialog and asks for readable
+  // session names + the translated copy. `{app}`/`{count}`/`{n}` stay literal — main fills them.
+  unsubscribeQuitGuard = window.api.onQuitGuardLabelsRequest((req) => {
+    const labels: Record<string, string> = {}
+    for (const id of req.ids) {
+      const s = sessions.findSessionById(id)
+      if (s) labels[id] = sessionTitle(s, sessions.allSessions, t)
+    }
+    const literal = { app: '{app}', count: '{count}', n: '{n}' }
+    window.api.quitGuardLabelsReply({
+      requestId: req.requestId,
+      labels,
+      strings: {
+        messageOne: t('quitGuard.messageOne', literal),
+        messageMany: t('quitGuard.messageMany', literal),
+        detail: t('quitGuard.detail', literal),
+        andMore: t('quitGuard.andMore', literal),
+        quitAnyway: t('quitGuard.quitAnyway'),
+        cancel: t('quitGuard.cancel'),
+        dontAskAgain: t('quitGuard.dontAskAgain')
+      }
+    })
+  })
   void claudeChangelog.init()
   // T389 P1W4: the Harnu mod state, and the one-time notice that precedes loading it.
   void companion.init()
@@ -1624,6 +1649,8 @@ onUnmounted(() => {
   unsubscribeUpdater = null
   unsubscribeUpdateError?.()
   unsubscribeUpdateError = null
+  unsubscribeQuitGuard?.()
+  unsubscribeQuitGuard = null
   unsubscribeUpdateManualAvailable?.()
   unsubscribeUpdateManualAvailable = null
   claudeChangelog.dispose()

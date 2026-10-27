@@ -118,8 +118,12 @@
     "terminal": "Terminal",
     "split": "Dividir horizontal",
     "openFolder": "Abrir pasta",
-    "openInVSCode": "Abrir no VS Code",
-    "openInVSCodeFailed": "Não foi possível abrir o VS Code",
+    "openInEditor": "Abrir no {editor}",
+    "editorGeneric": "editor",
+    "openInEditorFailed": "Não foi possível abrir o {editor}",
+    "openInEditorNotFound": "`{command}` não encontrado no PATH. Confira Configurações → Geral → Editor.",
+    "openInEditorVSCodeHint": "Não foi possível iniciar a CLI do VS Code (`code`). No VS Code, abra a Paleta de Comandos e execute \"Shell Command: Install 'code' command in PATH\", depois tente de novo.",
+    "openInEditorBadCommand": "O comando do editor personalizado está vazio ou malformado. Confira Configurações → Geral → Editor.",
     "openExplorer": "Navegar arquivos",
     "githubPulls": "Pull requests no GitHub",
     "roadmapBoard": "Board do roadmap",
@@ -811,7 +815,6 @@
     "openRoadmap": "Board do roadmap",
     "openPrStack": "PR Stack",
     "browseFiles": "Navegar arquivos",
-    "openInVSCode": "Abrir no VS Code",
     "openFolder": "Abrir pasta",
     "terminalHere": "Terminal aqui",
     "fanout": {
@@ -1100,6 +1103,15 @@
       }
     }
   },
+  "quitGuard": {
+    "messageOne": "1 agente ainda está trabalhando",
+    "messageMany": "{count} agentes ainda estão trabalhando",
+    "detail": "Sair do {app} agora interrompe esses agentes.",
+    "andMore": "e mais {n}",
+    "quitAnyway": "Sair mesmo assim",
+    "cancel": "Cancelar",
+    "dontAskAgain": "Não perguntar novamente"
+  },
   "settings": {
     "title": "Configurações",
     "close": "Fechar",
@@ -1158,6 +1170,11 @@
       "languageEn": "English",
       "languagePtBR": "Português (Brasil)"
     },
+    "quit": {
+      "eyebrow": "Saída",
+      "confirmLabel": "Confirmar antes de sair com agentes trabalhando",
+      "confirmHint": "Pergunta antes se alguma sessão estiver no meio de um turno ao fechar a janela ou sair. Desativado, pula a pergunta."
+    },
     "terminal": {
       "eyebrow": "Terminal",
       "fontSize": "Tamanho da fonte"
@@ -1172,6 +1189,18 @@
       "hint": "Escala a tipografia e os ícones de todo o app.",
       "decrease": "Diminuir escala da interface",
       "increase": "Aumentar escala da interface"
+    },
+    "editor": {
+      "eyebrow": "Editor",
+      "label": "Abrir em",
+      "presetHint": "Executa `{command}`.",
+      "terminalHint": "Executa `{command}` em um painel de terminal.",
+      "custom": "Personalizado…",
+      "commandLabel": "Comando",
+      "commandPlaceholder": "nvim {'{path}'}",
+      "commandHint": "Dividido em argumentos, sem shell. `{'{path}'}` vira a pasta como um único argumento; sem ele, a pasta é adicionada no fim.",
+      "terminalToggle": "Executa em um terminal",
+      "terminalToggleHint": "Abre o comando em um painel de terminal em vez de iniciá-lo separado."
     },
     "storage": {
       "eyebrow": "Armazenamento"
@@ -1316,7 +1345,7 @@
       "view_roadmap": "Alternar o quadro de roadmap",
       "view_prStack": "Alternar o PR Stack",
       "folder_openInFileManager": "Abrir a pasta ativa no gerenciador de arquivos",
-      "folder_openInVSCode": "Abrir a pasta ativa no VS Code",
+      "folder_openInEditor": "Abrir a pasta ativa no editor",
       "folder_openGithubPulls": "Abrir os pull requests no GitHub",
       "folder_browseFiles": "Navegar pelos arquivos",
       "folder_newTerminal": "Abrir um terminal",

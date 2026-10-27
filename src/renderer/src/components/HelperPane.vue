@@ -182,6 +182,21 @@ function paneKindToPtyKind(pane: AnyHelperPane): HelperPtyKind {
   return paneRegistry[pane.type]?.ptyKind ?? 'shell'
 }
 
+/**
+ * T581: the program a `shell` pane runs instead of the user's shell — a terminal
+ * editor opened from "Open in {editor}". Read off the pane's `payload` (plain
+ * strings, so it clones across IPC). Absent for every ordinary shell.
+ */
+function paneShellCommand(pane: AnyHelperPane): { cmd: string; args: string[] } | undefined {
+  if (pane.type !== 'shell') return undefined
+  const payload = (pane as { payload?: { cmd?: unknown; args?: unknown } }).payload
+  if (!payload || typeof payload.cmd !== 'string' || payload.cmd === '') return undefined
+  const args = Array.isArray(payload.args)
+    ? payload.args.filter((a): a is string => typeof a === 'string')
+    : []
+  return { cmd: payload.cmd, args }
+}
+
 function paneClaudeSessionId(pane: AnyHelperPane): string | undefined {
   if (pane.type === 'claude') return pane.sessionId
   if (pane.type === 'claude-fork-pending') return pane.sourceSessionId
@@ -406,6 +421,7 @@ async function createLiveHelper(
 
   const kind = paneKindToPtyKind(props.pane)
   const claudeSessionId = paneClaudeSessionId(props.pane)
+  const shellCommand = paneShellCommand(props.pane)
 
   // T474: an agent terminal's PTY already exists (main spawned it at `spawn_terminal`), so the
   // pane adopts it instead of creating one — a second PTY here would orphan the first.
@@ -421,6 +437,7 @@ async function createLiveHelper(
           cols: term.cols,
           rows: term.rows,
           claudeSessionId,
+          ...(shellCommand ? { cmd: shellCommand.cmd, args: shellCommand.args } : {}),
           // T245: read from the REGISTRY, not from a `type === 'review-companion'`
           // literal here — the pane type is what knows it is read-only, and a
           // future read-only type must not have to remember this call site.

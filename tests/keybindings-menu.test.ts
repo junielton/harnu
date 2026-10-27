@@ -118,7 +118,7 @@ describe('buildAppMenu — threads the resolved table into every item', () => {
       'Browse Files',
       'New Terminal',
       'Open in File Manager',
-      'Open in VS Code',
+      'Open in Editor',
       'Pull Requests on GitHub'
     ]) {
       const item = folderItem(defaults, label)

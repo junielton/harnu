@@ -455,6 +455,24 @@ _another_ folder.
 | `arrow-up`                               | Canvas properties panel → Layers: Bring forward (T536 U4)                                                                                                                                                                              |
 | `arrow-up-to-line`                       | Canvas properties panel → Layers: Bring to front (T536 U4)                                                                                                                                                                             |
 
+### Editor marks (brand glyphs, T581)
+
+The Topbar "Open in {editor}" button (and the Folder View action) shows the **configured editor's own
+mark** so the button says which editor it launches. This is the one place §5's Lucide-only rule is
+relaxed, under these rules:
+
+- **Source:** monochrome single-path marks copied from [Simple Icons](https://simpleicons.org) (CC0).
+  Paths are inlined in `components/EditorIcon.vue`; **no npm dependency**, and no icon is read from the
+  OS or a fetched URL.
+- **Colour:** `fill="currentColor"`, never the brand colour — the mark inherits the toolbar's
+  `--text-3` → `--text` pair exactly like a Lucide icon, so the cluster stays one visual family.
+- **Size:** 14px in the Topbar (26×26 button), 13px in the Folder View action bar — the same box as the
+  Lucide glyph it replaces. The mark is `aria-hidden`; the button's `aria-label` carries the name.
+- **Presets with a mark:** VS Code, Cursor, Zed, Sublime Text, JetBrains (IntelliJ IDEA / WebStorm),
+  Neovim, Helix. A preset with no Simple Icons mark falls back to the generic `code` Lucide glyph.
+- **Custom editor:** always the generic `code` Lucide glyph (`<>`) — Harnu never guesses a brand from a
+  command string.
+
 ### Novelty dot (on an icon button)
 
 Visual indicator attached to an icon button to signal new content or an
@@ -1214,7 +1232,7 @@ when every row is already a default.
 which are not shown because they cannot be rebound. T486 grows the table toward ~108
 visible rows, and most of the actions it adds ship unbound (their rows start on "Set a
 shortcut…"), which is why the pane is searchable, grouped and filterable (below). Seven of the T1 rows — the Topbar's per-folder actions (`view.roadmap`,
-`view.prStack`, `folder.openInFileManager`, `folder.openInVSCode`,
+`view.prStack`, `folder.openInFileManager`, `folder.openInEditor`,
 `folder.openGithubPulls`, `folder.browseFiles`, `folder.newTerminal`) — ship with no
 default chord, so their rows start on the empty "Set a shortcut…" state, as does
 `view.usageDashboard` (View menu). They are `menu: true`, backed by a native **Folder**
@@ -5006,10 +5024,18 @@ already looking at that repo's session.
   `--accent-soft` background + `--accent` ink (replacing the idle/hover pair), plus
   `aria-pressed` — the button is a toggle (see "Takeover dismissal" above), and a
   pressed-looking button is what makes the second click discoverable.
-- **Order:** `[bell] [board] [pr-stack] │ [folder] [vscode] [github-pulls] [explorer]
+- **Order:** `[bell] [board] [pr-stack] │ [folder] [editor] [github-pulls] [explorer]
 [split] [panel-right]`. The two view buttons sit **before** the external-tool openers:
   they act _inside_ Harnu, the ones after them leave for the OS or another app.
 - **GitHub pull requests** (`github` — lucide's brand glyph, so it reads as "leaves for GitHub" and not as the PR Stack Canvas button; deprecated upstream as a brand icon, so a future lucide major may drop it and break the import at build time; `topbar.githubPulls`): opens
+- **Open in editor** (`topbar.openInEditor`, T581): launches the editor chosen in Settings → General →
+  **Editor** (default VS Code) on the active folder. The glyph is that editor's mark (§5 "Editor marks");
+  the `title` and `aria-label` read "Open in {editor}" with the editor's display name, so the button
+  never claims an editor it will not launch. A **GUI** editor starts detached; a **terminal** editor
+  (Neovim, Helix, or a custom command flagged "Runs in a terminal") opens in a new shell pane in the
+  folder's split stack. Failure is a danger toast (§8), never a silent no-op. Same anatomy as the other
+  openers, no active state (it leaves Harnu, or lands in a pane).
+- **GitHub pull requests** (`git-pull-request-arrow`, `topbar.githubPulls`): opens
   `https://github.com/<owner>/<repo>/pulls` in the browser for the active folder's
   `origin`. **Hidden, not disabled,** when the folder has no `origin` or it isn't on
   github.com — there is nothing to open. Same anatomy as the other openers, no active
@@ -6791,13 +6817,28 @@ content, the card was widened to `min(92vw, 940px)`.
     new token** — reuses `--accent`, `--surface-2`, and the text tokens.
 
 - **General:** the remaining settings (Interface — UI language + scale —,
-  Terminal, Integrations — Session state hooks/statusLine/OS notifications/Sound —,
+  Terminal, Editor, Integrations — Session state hooks/statusLine/OS notifications/Sound —,
   Intelligence, Sidebar, Storage).
   - **Interface → Language**: UI language selector (System default / English /
     Português (Brasil)) — segmented control with the same anatomy as the section's
     other toggles. `System default` clears the override and goes back to following
     the system language; the other options persist to `om2tab.locale` and switch the
     locale **live**. No new token.
+  - **Editor → Open in** (T581, `id="set-editor"`): which editor the Topbar "Open in {editor}"
+    button and the `folder.openInEditor` shortcut launch. A section with the `Editor` eyebrow
+    (same 11px/500 uppercase eyebrow as Terminal / Interface). The row is label + hint on the left and
+    a native `<select>` on the right (the Roadmap filter bar's select frame: `h-[28px]`,
+    `bg-surface`, `border-border-2`, radius `--radius-sm`, 12px text, `focus:border-accent-line`)
+    listing the presets (VS Code, Cursor, Zed, Sublime Text, JetBrains — the IntelliJ IDEA or
+    WebStorm launcher, whichever is found — Neovim, Helix) and **Custom…** last. Default VS Code. Picking **Custom…** reveals, below the row:
+    - a **Command** text field (Inputs frame, `font-mono`, `{path}` placeholder example `nvim {path}`)
+      with a `SettingHint` explaining that the line is split into arguments without a shell and
+      `{path}` becomes one argument; a command with no `{path}` gets the folder path appended;
+    - a **Runs in a terminal** `ToggleSwitch` row (off = GUI editor, spawned detached; on = opens in a
+      Harnu terminal pane).
+      A preset row shows a one-line `SettingHint` naming the command it runs (`code`, `nvim`, …) and,
+      for a terminal preset, that it opens in a terminal pane. The choice persists in `settings.json`
+      and applies on the next click — no restart. No new token.
   - **Interface → Interface scale**: `Minus`/`Plus` stepper
     (**same anatomy as Terminal → Font size** — 28×28 buttons, radius `5px`,
     `border --border`/`bg --surface`, lucide icons `13px`; central value
@@ -12441,7 +12482,7 @@ tagging it would imply the rest of the view is equally local.
 
 **Action bar.** One accent-filled primary (`New session`, `--accent` on
 `--accent-ink`) followed by bordered secondaries: Roadmap board, PR Stack, Browse
-files, Open in VS Code, Open folder, Terminal here. Buttons are radius
+files, Open in {editor} (the configured editor, with its mark), Open folder, Terminal here. Buttons are radius
 `--radius-sm`, `7px 12px`, 12px text, with a 13px lucide icon at 1.6 stroke. This
 duplicates the Topbar cluster on purpose: the view is the folder's home, and a
 home you must leave to act on is not one. Identical in both profiles.
@@ -13031,6 +13072,12 @@ this`) — never that a question was asked or answered, and nothing is ever "rev
   any failure code this build does not know — a code or message from main is never shown. A
   sentence that says what to do next is guidance in `text-3`, not a button, unless the bar can do
   it itself.
+- **Open in editor** — the label interpolates the editor's display name: "Open in {editor}"
+  (`Open in Cursor`, `Open in Neovim`); a custom editor reads "Open in editor". Failure titles read
+  "Couldn't open {editor}". VS Code keeps its install hint (`Install 'code' command in PATH`); any
+  other editor says "`{command}` not found on PATH." and points at the setting ("Check Settings →
+  General → Editor."). Complete sentences, so they end with a period; `PATH` and command names stay
+  untranslated.
 - **Mods audit chips** — facts in the form "can …": "can run processes", "can read every
   prompt". Never a verdict: no "safe", "verified", "trusted", "secure", "malicious" or
   "approved", in any language, and never a colour that grades a mod.

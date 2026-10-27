@@ -6,13 +6,7 @@
  *
  * Electron-bound glue (ipcMain); the decisions live in `view-host`, `access`, `nav-policy` and `bounds`.
  */
-import {
-  app,
-  ipcMain,
-  type BrowserWindow,
-  type IpcMainEvent,
-  type IpcMainInvokeEvent
-} from 'electron'
+import { ipcMain, type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { PAUSE_MS } from './access'
 import { checkTopLevelNavigation } from './nav-policy'
 import {
@@ -217,7 +211,14 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     host().answerDownload(payload.paneId, payload.allow === true)
     return true
   })
+}
 
-  // Quitting destroys every guest with the window.
-  app.on('before-quit', () => host().destroyAll())
+/**
+ * Release every browser pane. Called from `index.ts`'s `before-quit` teardown, BELOW the quit guard's
+ * early return — never a listener of its own: Electron runs every `before-quit` listener even after one
+ * calls `preventDefault()`, so a separate listener would destroy the panes when the operator cancels
+ * the "agents are still working" confirm (T579).
+ */
+export function closeBrowserIpc(): void {
+  getBrowserHost().destroyAll()
 }

@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { SessionEntry, SessionStatus } from '../main/claude-reader'
 import type { FolderEntry, GitMeta } from '../main/folder-model'
+import type { EditorSetting } from '../main/editor-launch'
+import type { OpenInEditorResult } from '../main/external'
 import type {
   AvailableSkill,
   BundledSkillsView,
@@ -58,6 +60,7 @@ import type { IdentityClaim, IdentityOutcome } from '../main/companion/identity-
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
 import type { PrStackSnapshot, WorktreeNode as PrStackWorktree } from '../main/pr-stack-core'
 import type { PrStackPrefs } from '../main/pr-stack-prefs'
+import type { QuitDialogStrings, QuitGuardPrefs } from '../main/quit-guard'
 import type { MissionDoor, MissionDoorResult, MissionListResult } from '../main/mission-ipc'
 import type {
   ReviewSnapshot,
@@ -1008,6 +1011,9 @@ export interface UserProjectsPayload {
   hiddenPaths: string[]
 }
 
+// T581: wire types of the configurable "Open in editor" button.
+export type { EditorSetting, OpenInEditorResult }
+
 /**
  * On-disk settings schema (terminal-font-settings spec §5). Mirrors
  * `SettingsData` in `src/main/settings.ts`; duplicated here as the wire format
@@ -1017,6 +1023,8 @@ export interface UserProjectsPayload {
 export interface SettingsData {
   terminalFontSize: number
   uiZoom: number
+  /** T581: which editor the Topbar "Open in {editor}" button launches. Absent = VS Code. */
+  editor?: EditorSetting
 }
 
 // ---- Harnu MCP control server wire types (2026-06-25 design) ---------------
@@ -1319,17 +1327,19 @@ const api = {
 
   // ---- Open in external app (Topbar buttons) -------------------------------
   // `openPath` reveals a folder in the OS file manager (resolves with '' on
-  // success, or an error message string). `openInVSCode` spawns the `code` CLI
-  // detached; it resolves `{ ok, error? }` and never rejects, so a missing
-  // `code` binary degrades gracefully instead of crashing.
+  // success, or an error message string). `openInEditor` (T581) launches the editor
+  // configured in Settings: a GUI editor is spawned detached, a terminal editor is
+  // resolved and handed back as `{ cmd, args }` for the renderer to run in a shell
+  // pane. It never rejects, so a missing binary degrades gracefully into a typed
+  // `{ ok: false, code }` the renderer turns into a toast.
   openPath: (path: string): Promise<string> => ipcRenderer.invoke('external:openPath', path),
   // Reveal a file highlighted in the OS file manager (T46 — Pasted-images "Reveal").
   showItemInFolder: (path: string): Promise<string> =>
     ipcRenderer.invoke('external:showItemInFolder', path),
   // T45: pull + pin the folder Harnu was launched with (`harnu .`), if any.
   cliOpenPending: (): Promise<void> => ipcRenderer.invoke('cli:openPending'),
-  openInVSCode: (path: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('external:openInVSCode', path),
+  openInEditor: (path: string): Promise<OpenInEditorResult> =>
+    ipcRenderer.invoke('external:openInEditor', path),
   // The folder's `origin` as its github.com `/pulls` URL, or `null` when there
   // is no GitHub origin (the Topbar hides its button then). Never rejects.
   githubPullsUrl: (path: string): Promise<string | null> =>
@@ -2745,6 +2755,31 @@ const api = {
   prStackPrefs: (): Promise<PrStackPrefs> => ipcRenderer.invoke('pr-stack:prefs'),
   prStackSetPrefs: (prefs: PrStackPrefs): Promise<PrStackPrefs> =>
     ipcRenderer.invoke('pr-stack:setPrefs', prefs),
+
+  // ---- Quit guard (T579) ------------------------------------------------------
+  /** Settings → General: "Confirm before quitting while agents are working". Whole-object GET/PUT. */
+  quitGuardPrefs: (): Promise<QuitGuardPrefs> => ipcRenderer.invoke('quit-guard:prefs'),
+  quitGuardSetPrefs: (prefs: QuitGuardPrefs): Promise<QuitGuardPrefs> =>
+    ipcRenderer.invoke('quit-guard:setPrefs', prefs),
+  /**
+   * Main is about to show the native "agents still working" dialog and asks for readable
+   * session names + translated copy; answer with `quitGuardLabelsReply` (it falls back after ~400 ms).
+   */
+  onQuitGuardLabelsRequest: (
+    cb: (req: { requestId: number; ids: string[]; maxNames: number }) => void
+  ): (() => void) => {
+    const handler = (
+      _e: unknown,
+      req: { requestId: number; ids: string[]; maxNames: number }
+    ): void => cb(req)
+    ipcRenderer.on('quitGuard:labelsRequest', handler)
+    return () => ipcRenderer.off('quitGuard:labelsRequest', handler)
+  },
+  quitGuardLabelsReply: (reply: {
+    requestId: number
+    labels: Record<string, string>
+    strings: QuitDialogStrings
+  }): void => ipcRenderer.send('quitGuard:labelsReply', reply),
 
   // ---- Mission progress (T370, T358 S9; UI-only, never exposed to an agent) --
   /**

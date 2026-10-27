@@ -12,6 +12,9 @@ export type SpawnKind = 'shell' | 'claude-new' | 'claude-resume' | 'claude-fork'
 
 export interface SpawnSpec {
   kind: SpawnKind
+  /** T581: `shell` only — a program to run instead of the user's shell (a terminal editor). */
+  cmd?: string
+  args?: string[]
   /** Session uuid for resume; the source uuid for a fork. Absent otherwise. */
   claudeSessionId?: string
   /** One-shot launch override for a new session (plain, IPC-cloneable). */
@@ -111,7 +114,10 @@ export function resolveSpawnSpec(sessionEntry: Session | undefined, sessionId: s
   // A folder terminal is an explicit shell — checked first so it can never be
   // mistaken for a resumable/forkable Claude session.
   if (sessionEntry?.isShellTerminal) {
-    return { kind: 'shell' }
+    const command = sessionEntry.shellCommand
+    return command
+      ? { kind: 'shell', cmd: command.cmd, args: [...command.args] }
+      : { kind: 'shell' }
   }
   if (sessionEntry && isForkSynthetic(sessionEntry)) {
     return {

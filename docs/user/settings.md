@@ -2,7 +2,7 @@
 
 Settings is organized into tabs. Most are covered in depth on their own pages — this page is the map, plus the tabs that don't have a home elsewhere.
 
-- **General** — app-wide preferences that don't fit a more specific tab.
+- **General** — app-wide preferences that don't fit a more specific tab, including the [editor](#editor) the Topbar's open button launches.
 - **Keyboard Shortcuts** — covered below.
 - **Appearance** — pick a theme. Harnu ships 13: nine dark (including Tokyo Night, Dracula, Catppuccin Mocha, One Dark, GitHub Dark, Gruvbox Dark, Nord) and four light (Light, Catppuccin Latte, GitHub Light, Gruvbox Light), plus a Monospace theme. Your choice is remembered across restarts. A theme installed via an [extension](extensions.md) shows up in the same grid, marked with a small puzzle-piece badge.
 - **Startup** — your global [Claude Boot](claude-boot.md) defaults (model, effort, flags) applied to every session unless a folder or session overrides them.
@@ -34,6 +34,19 @@ Under the switch you may see the folder the mod is loaded from (with a **Reveal 
 
 The per-session state is in the hover preview and in the [System Monitor](system-monitor.md#what-you-see). If a session says `legacy` and you want to know why, see [Troubleshooting](troubleshooting.md#harnu-mod-legacy).
 
+## Editor
+
+The Topbar has an **Open in {editor}** button (and the folder's page has the same action) that opens the selected folder in your editor. By default it launches VS Code with the `code` command. **Settings → General → Editor** changes that:
+
+- **Presets** — VS Code, Cursor, Zed, Sublime Text, JetBrains (IntelliJ IDEA or WebStorm, whichever launcher Harnu finds), Neovim and Helix. The button shows that editor's own icon, and its tooltip reads "Open in Cursor", "Open in Neovim" and so on. The row's hint names the command a preset runs (`cursor`, `nvim`, …).
+- **GUI editors** (VS Code, Cursor, Zed, Sublime Text, JetBrains) start as a separate process, so they keep running when you close Harnu.
+- **Terminal editors** (Neovim, Helix) open inside Harnu: a terminal pane in the selected session's split, running the editor in that folder. With only a folder selected and no session, it opens as a terminal for that folder instead. Quit the editor as you normally would; the pane stays open until you close it.
+- **Custom…** — type a command with a `{path}` placeholder, for example `nvim {path}` or `code --reuse-window {path}`. Harnu splits it into arguments itself, with no shell involved: quotes group words, `{path}` becomes the folder as exactly one argument (so spaces or symbols in a folder name are safe), and a command without `{path}` gets the folder added at the end. `|`, `;`, `&&` and `$VARIABLE` have no special meaning. Switch on **Runs in a terminal** for a terminal editor; leave it off for a GUI one. A custom editor uses the generic `<>` icon and reads "Open in editor".
+
+Harnu only looks for the command on your `PATH` (plus the usual install locations on macOS); it does not scan for installed editors. If it can't find the command, a toast names it and points back to this setting. For VS Code, install the shell command from VS Code's Command Palette ("Shell Command: Install 'code' command in PATH").
+
+The choice is saved in `settings.json` and applies on the next click, no restart. The action also has a [shortcut](sessions.md#customizing-shortcuts) you can bind: `folder.openInEditor`.
+
 ## Keyboard Shortcuts
 
 **Settings → Keyboard Shortcuts** is a point-and-click editor for the same `keybindings.json` covered in [Sessions → Customizing shortcuts](sessions.md#customizing-shortcuts) — you never have to open the file by hand. Open it straight on this tab with `Cmd/Ctrl+Alt+S` or **View → Keyboard Shortcuts…** (on macOS, **Harnu → Keyboard Shortcuts…**, right after Settings…).
@@ -61,6 +74,10 @@ The **General** tab has a SIDEBAR section that controls how the folder/session l
 - **Sort sessions by** — Attention, Recent activity, or Name.
 - **Show sessions within** — hide sessions older than a window (All / 24h / 48h / 7d) inside each folder; the selected and live sessions are never hidden.
 - **Active-elsewhere window** — how recently a non-pinned folder must have been active to show up in the "Active elsewhere" zone.
+
+## Quitting
+
+The **General** tab has a QUITTING section with one switch, **Confirm before quitting while agents are working** (on by default). While it is on, closing the window or quitting (Ctrl+Q, the app menu) shows a native prompt if any session is actively working at that moment, so you don't kill a turn by accident. See [Quitting Harnu](sessions.md#quitting-harnu) for what the prompt shows. The prompt's own **Don't ask again** checkbox turns this switch off; come back here to turn it on again. The choice survives restarts.
 
 ## Daily budget
 
