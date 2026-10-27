@@ -1232,7 +1232,7 @@ when every row is already a default.
 which are not shown because they cannot be rebound. T486 grows the table toward ~108
 visible rows, and most of the actions it adds ship unbound (their rows start on "Set a
 shortcut…"), which is why the pane is searchable, grouped and filterable (below). Seven of the T1 rows — the Topbar's per-folder actions (`view.roadmap`,
-`view.prStack`, `folder.openInFileManager`, `folder.openInVSCode`,
+`view.prStack`, `folder.openInFileManager`, `folder.openInEditor`,
 `folder.openGithubPulls`, `folder.browseFiles`, `folder.newTerminal`) — ship with no
 default chord, so their rows start on the empty "Set a shortcut…" state, as does
 `view.usageDashboard` (View menu). They are `menu: true`, backed by a native **Folder**
@@ -6828,8 +6828,8 @@ content, the card was widened to `min(92vw, 940px)`.
     (same 11px/500 uppercase eyebrow as Terminal / Interface). The row is label + hint on the left and
     a native `<select>` on the right (the Roadmap filter bar's select frame: `h-[28px]`,
     `bg-surface`, `border-border-2`, radius `--radius-sm`, 12px text, `focus:border-accent-line`)
-    listing the presets (VS Code, Cursor, Zed, Sublime Text, JetBrains IDEA, JetBrains WebStorm,
-    Neovim, Helix) and **Custom…** last. Default VS Code. Picking **Custom…** reveals, below the row:
+    listing the presets (VS Code, Cursor, Zed, Sublime Text, JetBrains — the IntelliJ IDEA or
+    WebStorm launcher, whichever is found — Neovim, Helix) and **Custom…** last. Default VS Code. Picking **Custom…** reveals, below the row:
     - a **Command** text field (Inputs frame, `font-mono`, `{path}` placeholder example `nvim {path}`)
       with a `SettingHint` explaining that the line is split into arguments without a shell and
       `{path}` becomes one argument; a command with no `{path}` gets the folder path appended;
