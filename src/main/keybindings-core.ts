@@ -44,7 +44,7 @@ export type ShortcutActionId =
   | 'view.roadmap'
   | 'view.prStack'
   | 'folder.openInFileManager'
-  | 'folder.openInVSCode'
+  | 'folder.openInEditor'
   | 'folder.openGithubPulls'
   | 'folder.browseFiles'
   | 'folder.newTerminal'
@@ -314,7 +314,7 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.roadmap', 'takeovers', null, MENU),
   def('view.prStack', 'takeovers', null, MENU),
   def('folder.openInFileManager', 'folders', null, MENU),
-  def('folder.openInVSCode', 'folders', null, MENU),
+  def('folder.openInEditor', 'folders', null, MENU),
   def('folder.openGithubPulls', 'folders', null, MENU),
   def('folder.browseFiles', 'folders', null, MENU),
   def('folder.newTerminal', 'folders', null, MENU),
@@ -1044,6 +1044,16 @@ function reservedChordKeys(mac: boolean): Set<string> {
 }
 
 /**
+ * Command ids that were renamed. `resolveKeybindings` maps an old id in a user's
+ * `keybindings.json` to its current one, so a saved binding (or unbind) still
+ * applies after the rename. Add the OLD id here whenever a `ShortcutActionId` is
+ * renamed; never remove an entry.
+ */
+export const LEGACY_COMMAND_ALIASES: Readonly<Record<string, ShortcutActionId>> = {
+  'folder.openInVSCode': 'folder.openInEditor'
+}
+
+/**
  * Merge `raw` (the parsed `keybindings.json` array) over the defaults.
  *
  * - `raw == null` → defaults only (still runs conflict detection).
@@ -1094,6 +1104,9 @@ export function resolveKeybindings(
           warnings.push({ code: 'bad-entry' })
           continue
         }
+        // A command id renamed in a later release: a binding saved under the old
+        // id keeps working (T581: `folder.openInVSCode` → `folder.openInEditor`).
+        command = LEGACY_COMMAND_ALIASES[command] ?? command
         const descriptor = DESCRIPTOR_BY_ID[command as ShortcutActionId]
         if (!descriptor) {
           warnings.push({ code: 'unknown-command', command })

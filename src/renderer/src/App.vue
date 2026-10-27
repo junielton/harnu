@@ -858,11 +858,11 @@ useShortcuts(
       handler: () => folderActions.openInFileManager()
     },
     {
-      id: 'folder.openInVSCode',
+      id: 'folder.openInEditor',
       scope: 'global',
-      keys: kb('folder.openInVSCode'),
+      keys: kb('folder.openInEditor'),
       enabled: () => !!sessions.activeFolderPath,
-      handler: () => folderActions.openInVSCode()
+      handler: () => folderActions.openInEditor()
     },
     {
       id: 'folder.openGithubPulls',

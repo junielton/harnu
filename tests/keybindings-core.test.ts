@@ -397,3 +397,35 @@ describe('parseKeybindingsFile', () => {
     expect(r.warnings[0].code).toBe('not-array')
   })
 })
+
+describe('legacy command aliases (T581)', () => {
+  it('a binding saved under folder.openInVSCode still applies to folder.openInEditor (AC-6)', () => {
+    const out = resolveKeybindings([{ command: 'folder.openInVSCode', key: 'Ctrl+Alt+E' }], {
+      mac: false
+    })
+    const b = out.byId['folder.openInEditor']
+    expect(b?.source).toBe('override')
+    expect(b?.keys).not.toBeNull()
+    expect(out.warnings).toEqual([])
+  })
+
+  it('an unbind written against the old id still unbinds', () => {
+    const out = resolveKeybindings([{ command: '-folder.openInVSCode' }], { mac: false })
+    expect(out.byId['folder.openInEditor']?.source).toBe('unbound')
+  })
+
+  it('the old and new id in one file count as a duplicate, last wins', () => {
+    const both = resolveKeybindings(
+      [
+        { command: 'folder.openInVSCode', key: 'Ctrl+Alt+E' },
+        { command: 'folder.openInEditor', key: 'Ctrl+Alt+O' }
+      ],
+      { mac: false }
+    )
+    const last = resolveKeybindings([{ command: 'folder.openInEditor', key: 'Ctrl+Alt+O' }], {
+      mac: false
+    })
+    expect(both.byId['folder.openInEditor']?.keys).toBe(last.byId['folder.openInEditor']?.keys)
+    expect(both.warnings.map((w) => w.code)).toContain('duplicate-command')
+  })
+})

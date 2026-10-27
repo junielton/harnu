@@ -9,6 +9,8 @@ import { useHelpersStore } from '../stores/helpers'
 import { useLayoutStore } from '../stores/layout'
 import { useClaudeBootStore } from '../stores/claudeBoot'
 import { useFolderActions } from '../composables/useFolderActions'
+import { useEditorButton } from '../composables/useEditorButton'
+import EditorIcon from './EditorIcon.vue'
 import { macWindowControlsInset } from '../lib/platform'
 import ActivityBell from './ActivityBell.vue'
 import MissionPill from './MissionPill.vue'
@@ -18,7 +20,6 @@ import {
   Folder as FolderIcon,
   FolderOpen,
   FolderTree,
-  Code,
   CheckSquare,
   Crown,
   Server,
@@ -165,10 +166,11 @@ function onTitleLeave(e: MouseEvent): void {
 
 /**
  * The per-folder actions behind the right-cluster buttons (Split, Browse files,
- * Roadmap board, PR Stack, Open folder, Open in VS Code). Shared with their
+ * Roadmap board, PR Stack, Open folder, Open in {editor}). Shared with their
  * keyboard shortcuts in `App.vue` so both routes run the same code.
  */
 const folderActions = useFolderActions()
+const editorButton = useEditorButton()
 const { folderLabel } = folderActions
 
 /**
@@ -478,12 +480,12 @@ function onKeydown(e: KeyboardEvent): void {
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('topbar.openInVSCode'), 'folder.openInVSCode')"
-          :aria-label="$t('topbar.openInVSCode')"
-          data-test="topbar-vscode"
-          @click="folderActions.openInVSCode()"
+          :title="keybindings.withChord(editorButton.label.value, 'folder.openInEditor')"
+          :aria-label="editorButton.label.value"
+          data-test="topbar-editor"
+          @click="folderActions.openInEditor()"
         >
-          <Code :size="14" :stroke-width="1.5" />
+          <EditorIcon :editor-id="editorButton.editorId.value" :size="14" />
         </button>
         <!-- Only when the folder's `origin` is on github.com — hidden, not
              disabled, otherwise (nothing to open). -->

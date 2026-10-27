@@ -32,6 +32,12 @@ export interface AddHelperOpts {
    * `terminal.paneId` as its id and adopts `terminal.ptyId` instead of minting its own.
    */
   terminal?: AgentTerminalSplit
+  /**
+   * T581: run this program in the new shell pane instead of the user's shell (a terminal
+   * editor opened from "Open in {editor}"). Rides in the pane's `payload`, so it is
+   * persisted and a restored pane starts the same editor on the same folder.
+   */
+  command?: { cmd: string; args: string[] }
 }
 
 /**
@@ -866,7 +872,18 @@ export const useHelpersStore = defineStore('helpers', () => {
     const terminal = opts?.terminal
     if (terminal) return addAgentTerminalHelper(worktreePath, cwd, terminal, opts)
     const id = `h-${crypto.randomUUID()}`
-    return addHelper(worktreePath, { id, type: 'shell', cwd, ratio: 0 }, opts)
+    const command = opts?.command
+    return addHelper(
+      worktreePath,
+      {
+        id,
+        type: 'shell',
+        cwd,
+        ratio: 0,
+        ...(command ? { payload: { cmd: command.cmd, args: [...command.args] } } : {})
+      },
+      opts
+    )
   }
 
   /**

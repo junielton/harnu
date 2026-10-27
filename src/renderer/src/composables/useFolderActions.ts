@@ -15,7 +15,7 @@ export interface FolderActions {
   toggleRoadmap: () => void
   togglePrStack: () => void
   openInFileManager: () => void
-  openInVSCode: () => Promise<void>
+  openInEditor: () => Promise<void>
   openGithubPulls: () => Promise<void>
   browseFiles: () => void
   newTerminal: () => void
@@ -70,22 +70,43 @@ export function useFolderActions(): FolderActions {
   }
 
   /**
-   * "Open in VS Code" → spawn `code <cwd>` in the main process. The IPC
-   * resolves `{ ok, error? }` and never rejects; on failure (e.g. `code` isn't
-   * resolvable anywhere the main process looks) we surface a toast instead of
-   * failing silently.
+   * "Open in {editor}" → launch the editor configured in Settings (T581; VS Code
+   * by default) on the active folder. Main resolves the command from
+   * `settings.json` and either spawns a GUI editor detached or, for a terminal
+   * editor, hands back `{ cmd, args }` for a shell pane to run — in the session's
+   * split stack, or as a folder terminal when only a folder is selected (the same
+   * split `newTerminal` makes). The IPC never rejects; every failure becomes a
+   * toast instead of a silent no-op.
    */
-  async function openInVSCode(): Promise<void> {
+  async function openInEditor(): Promise<void> {
     const wt = sessions.activeFolderPath
     if (!wt) return
-    const res = await window.api.openInVSCode(wt)
+    const res = await window.api.openInEditor(wt)
     if (!res.ok) {
+      const editor = res.editorId === 'custom' || !res.name ? t('topbar.editorGeneric') : res.name
+      let description = res.error
+      if (res.code === 'not-found') {
+        description =
+          res.editorId === 'vscode'
+            ? t('topbar.openInEditorVSCodeHint')
+            : t('topbar.openInEditorNotFound', { command: res.command ?? editor })
+      } else if (res.code === 'bad-command') {
+        description = t('topbar.openInEditorBadCommand')
+      }
       ui.pushToast({
         kind: 'danger',
-        title: t('topbar.openInVSCodeFailed'),
-        description: res.error ?? ''
+        title: t('topbar.openInEditorFailed', { editor }),
+        description
       })
+      return
     }
+    if (res.mode !== 'terminal') return
+    const command = { cmd: res.cmd, args: res.args }
+    if (!sessions.selectedSession) {
+      sessions.createFolderTerminal(wt, command)
+      return
+    }
+    helpers.addShellHelper(wt, wt, { command })
   }
 
   /**
@@ -157,7 +178,7 @@ export function useFolderActions(): FolderActions {
     toggleRoadmap,
     togglePrStack,
     openInFileManager,
-    openInVSCode,
+    openInEditor,
     openGithubPulls,
     browseFiles,
     newTerminal,

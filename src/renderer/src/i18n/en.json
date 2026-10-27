@@ -118,8 +118,12 @@
     "terminal": "Terminal",
     "split": "Split horizontal",
     "openFolder": "Open folder",
-    "openInVSCode": "Open in VS Code",
-    "openInVSCodeFailed": "Couldn't open VS Code",
+    "openInEditor": "Open in {editor}",
+    "editorGeneric": "editor",
+    "openInEditorFailed": "Couldn't open {editor}",
+    "openInEditorNotFound": "`{command}` not found on PATH. Check Settings → General → Editor.",
+    "openInEditorVSCodeHint": "Couldn't launch the VS Code CLI (`code`). In VS Code, open the Command Palette and run \"Shell Command: Install 'code' command in PATH\", then try again.",
+    "openInEditorBadCommand": "The custom editor command is empty or malformed. Check Settings → General → Editor.",
     "openExplorer": "Browse files",
     "githubPulls": "Pull requests on GitHub",
     "roadmapBoard": "Roadmap board",
@@ -811,7 +815,6 @@
     "openRoadmap": "Roadmap board",
     "openPrStack": "PR Stack",
     "browseFiles": "Browse files",
-    "openInVSCode": "Open in VS Code",
     "openFolder": "Open folder",
     "terminalHere": "Terminal here",
     "fanout": {
@@ -1173,6 +1176,18 @@
       "decrease": "Decrease interface scale",
       "increase": "Increase interface scale"
     },
+    "editor": {
+      "eyebrow": "Editor",
+      "label": "Open in",
+      "presetHint": "Runs `{command}`.",
+      "terminalHint": "Runs `{command}` in a terminal pane.",
+      "custom": "Custom…",
+      "commandLabel": "Command",
+      "commandPlaceholder": "nvim {'{path}'}",
+      "commandHint": "Split into arguments without a shell. `{'{path}'}` becomes the folder as one argument; without it, the folder is added at the end.",
+      "terminalToggle": "Runs in a terminal",
+      "terminalToggleHint": "Opens the command in a terminal pane instead of launching it detached."
+    },
     "storage": {
       "eyebrow": "Storage"
     },
@@ -1316,7 +1331,7 @@
       "view_roadmap": "Toggle the roadmap board",
       "view_prStack": "Toggle the PR Stack",
       "folder_openInFileManager": "Open the active folder in the file manager",
-      "folder_openInVSCode": "Open the active folder in VS Code",
+      "folder_openInEditor": "Open the active folder in the editor",
       "folder_openGithubPulls": "Open pull requests on GitHub",
       "folder_browseFiles": "Browse files",
       "folder_newTerminal": "Open a terminal",
