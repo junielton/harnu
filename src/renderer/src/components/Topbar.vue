@@ -25,7 +25,7 @@ import {
   GitBranch,
   KanbanSquare,
   GitPullRequest,
-  GitPullRequestArrow,
+  Github,
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -496,7 +496,7 @@ function onKeydown(e: KeyboardEvent): void {
           data-test="topbar-github-pulls"
           @click="onGithubPullsClick"
         >
-          <GitPullRequestArrow :size="14" :stroke-width="1.5" />
+          <Github :size="14" :stroke-width="1.5" />
         </button>
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"

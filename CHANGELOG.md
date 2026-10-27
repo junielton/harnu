@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-27
+
+### Changed
+
+- The Topbar's **Pull requests on GitHub** button now shows the GitHub logo instead of a pull-request arrow, so it no longer looks like the PR Stack Canvas button next to it and makes clear it opens GitHub in your browser.
+
 ## 2026-10-26
 
 ### Added
