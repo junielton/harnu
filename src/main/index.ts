@@ -59,7 +59,7 @@ import {
   dropOperatorScreenModels,
   livePtyDescriptors
 } from './pty'
-import { registerBrowserIpc } from './browser/browser-ipc'
+import { registerBrowserIpc, closeBrowserIpc } from './browser/browser-ipc'
 import {
   bindBrowserBridge,
   refreshBrowserTrustedHosts,
@@ -1213,6 +1213,8 @@ app.on('before-quit', async (event) => {
   // harnu.mcp.json) is awaited in the watcher branch below.
   closeMcpConfirm()
   closeCommandBridge()
+  // Quitting destroys every browser pane (T579: here, below the guard — not a listener of its own).
+  closeBrowserIpc()
   await closeAllMarkdownWatchers()
   await closeAllCanvasWatchers()
   closeUsagePoller()
