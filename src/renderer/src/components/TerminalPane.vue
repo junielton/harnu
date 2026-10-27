@@ -607,6 +607,7 @@ async function createLiveTerminal(
       rows: t.rows,
       kind: spec.kind,
       claudeSessionId: spec.claudeSessionId,
+      ...(spec.cmd ? { cmd: spec.cmd, args: spec.args ?? [] } : {}),
       cwd,
       noFlicker: prefs.noFlicker === true,
       sessionKey: sessionId,

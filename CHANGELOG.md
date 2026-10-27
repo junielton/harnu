@@ -10,6 +10,19 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-27
+
+### Added
+
+- **Choose which editor "Open in…" launches.** Settings → General → **Editor** now offers VS Code (the default), Cursor, Zed, Sublime Text, JetBrains (IntelliJ IDEA or WebStorm), Neovim and Helix, plus **Custom…** for any other command. The Topbar button (and the one on a folder's page) shows that editor's own mark and reads "Open in Cursor", "Open in Neovim" and so on; nothing changes until you pick something else.
+- **Terminal editors open in a Harnu terminal pane.** Neovim, Helix, or a custom command with **Runs in a terminal** switched on start inside a shell pane in the folder's split (or as a folder terminal when no session is selected), in that folder, instead of as a detached process.
+- **Custom editor commands.** Write the command with a `{path}` placeholder, for example `nvim {path}` or `code --reuse-window {path}`. It is split into arguments without a shell, and the folder is always passed as one argument, so spaces and odd characters in a path are safe; without `{path}`, the folder is added at the end.
+
+### Changed
+
+- **A missing editor now tells you what to do.** If the editor's command isn't found, the toast names the command and points at Settings → General → Editor; VS Code keeps its "Install 'code' command in PATH" hint.
+- The `folder.openInVSCode` shortcut is now `folder.openInEditor`. A chord you already saved in `keybindings.json` under the old name keeps working.
+
 ## 2026-10-26
 
 ### Added

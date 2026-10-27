@@ -548,9 +548,9 @@ app.whenReady().then(async () => {
   // T52: hover-triggered per-folder git status (dirty count + ahead/behind) for
   // the FolderPreview card. Throttled + cached, outside the folder-scan hot path.
   registerFolderGitStatusHandlers()
-  // Open-in-external-app channels (Topbar "Open folder" / "Open in VS Code").
-  // `external:openPath` reveals a folder in the OS file manager; `external:openInVSCode`
-  // spawns the `code` CLI detached and never crashes if it's absent from PATH.
+  // Open-in-external-app channels (Topbar "Open folder" / "Open in {editor}").
+  // `external:openPath` reveals a folder in the OS file manager; `external:openInEditor`
+  // launches the configured editor and never crashes if its binary is absent from PATH.
   registerExternal()
   // Pasted-images gallery: read-only list/read/copy over ~/.claude/image-cache.
   // Stateless (no watcher, no teardown); every handler validates uuid + name.

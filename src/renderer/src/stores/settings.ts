@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { i18n } from '../i18n'
 import { useUiStore } from './ui'
 import { useKeybindingsStore } from './keybindings'
-import type { SettingsData } from '../../../preload'
+import type { EditorSetting, SettingsData } from '../../../preload'
+import { DEFAULT_EDITOR_SETTING, effectiveEditorSetting } from '../../../main/editor-launch'
 
 /**
  * Terminal-font-size settings store (terminal-font-settings spec §6).
@@ -48,6 +49,11 @@ function clampZoom(n: number): number {
 export const useSettingsStore = defineStore('settings', () => {
   const terminalFontSize = ref<number>(DEFAULT_TERMINAL_FONT_SIZE)
   const uiZoom = ref<number>(DEFAULT_UI_ZOOM)
+  // T581: which editor the Topbar "Open in {editor}" button launches. The custom
+  // command is kept as typed here (untrimmed, so a trailing space survives while
+  // the user is mid-word); it is sanitized on the way to disk and compared
+  // sanitized against external edits.
+  const editor = ref<EditorSetting>({ ...DEFAULT_EDITOR_SETTING })
   const path = ref<string>('')
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -55,6 +61,11 @@ export const useSettingsStore = defineStore('settings', () => {
   // versa) never cancels the other's pending write. Both persist through the
   // main-side read-modify-write merge, so independent patches are safe.
   let zoomSaveTimer: ReturnType<typeof setTimeout> | null = null
+  // Editor save: debounced for the custom-command field, and the last value
+  // written is remembered so the watcher's echo of OUR save (which can arrive
+  // after the user typed further) never rewinds the field.
+  let editorSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let lastSavedEditor = ''
 
   // Guard against a double `init()` (e.g. an HMR re-run) so we never stack two
   // `onSettingsChanged` subscriptions. The unsubscribe is retained rather than
@@ -81,6 +92,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // Adopt + apply the persisted UI zoom on boot so the frame comes up scaled.
     uiZoom.value = clampZoom(data.uiZoom)
     window.api.uiZoomApply(uiZoom.value)
+    editor.value = effectiveEditorSetting(data.editor)
 
     unsubscribe = window.api.onSettingsChanged(({ data: incoming, error }) => {
       if (error) {
@@ -102,6 +114,17 @@ export const useSettingsStore = defineStore('settings', () => {
       if (nextZoom !== uiZoom.value) {
         uiZoom.value = nextZoom
         window.api.uiZoomApply(nextZoom)
+      }
+      // An editor change from outside (a hand edit of settings.json). Skip our own echo
+      // and anything that lands while a local edit is still waiting to be saved.
+      const nextEditor = effectiveEditorSetting(incoming.editor)
+      const nextJson = JSON.stringify(nextEditor)
+      if (
+        !editorSaveTimer &&
+        nextJson !== lastSavedEditor &&
+        nextJson !== JSON.stringify(effectiveEditorSetting(editor.value))
+      ) {
+        editor.value = nextEditor
       }
     })
   }
@@ -134,9 +157,30 @@ export const useSettingsStore = defineStore('settings', () => {
     }, SAVE_DEBOUNCE_MS)
   }
 
+  /**
+   * Choose the editor (T581). Applies immediately to the Topbar button and
+   * debounced-persists to `settings.json`; main reads it back from there at
+   * launch time, so the command never travels with the click.
+   */
+  function setEditor(next: EditorSetting): void {
+    editor.value = { ...next }
+    if (editorSaveTimer) clearTimeout(editorSaveTimer)
+    editorSaveTimer = setTimeout(() => {
+      editorSaveTimer = null
+      if (!path.value) return
+      const clean = effectiveEditorSetting(editor.value)
+      lastSavedEditor = JSON.stringify(clean)
+      void window.api.settingsSave(path.value, { editor: clean })
+    }, SAVE_DEBOUNCE_MS)
+  }
+
   /** Relocate settings.json via the native folder picker. */
   async function changeLocation(): Promise<void> {
-    const data: SettingsData = { terminalFontSize: terminalFontSize.value, uiZoom: uiZoom.value }
+    const data: SettingsData = {
+      terminalFontSize: terminalFontSize.value,
+      uiZoom: uiZoom.value,
+      editor: effectiveEditorSetting(editor.value)
+    }
     const res = await window.api.settingsChangeLocation(data)
     if (!res) return
     path.value = res.path
@@ -173,6 +217,10 @@ export const useSettingsStore = defineStore('settings', () => {
       clearTimeout(zoomSaveTimer)
       zoomSaveTimer = null
     }
+    if (editorSaveTimer) {
+      clearTimeout(editorSaveTimer)
+      editorSaveTimer = null
+    }
     unsubscribe?.()
     unsubscribe = null
     started = false
@@ -181,10 +229,12 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     terminalFontSize,
     uiZoom,
+    editor,
     path,
     init,
     setFontSize,
     setUiZoom,
+    setEditor,
     changeLocation,
     reveal,
     openInEditor,

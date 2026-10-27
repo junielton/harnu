@@ -3,6 +3,7 @@ import { join, dirname, resolve, relative, isAbsolute } from 'path'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
 import chokidar, { type FSWatcher } from 'chokidar'
+import { effectiveEditorSetting, sanitizeEditorSetting, type EditorSetting } from './editor-launch'
 
 /**
  * Settings persistence + file-watch (terminal-font-settings spec §4).
@@ -29,10 +30,14 @@ import chokidar, { type FSWatcher } from 'chokidar'
  * - `uiZoom` — whole-UI zoom factor applied via `webFrame.setZoomFactor`
  *   (T54): scales typography *and* icons across the app. Distinct from
  *   `terminalFontSize`, which only tunes the terminal relative to that zoom.
+ * - `editor` — which editor the Topbar "Open in {editor}" button launches
+ *   (T581). Absent means the default (VS Code); main reads it at launch time
+ *   via {@link readEditorSetting}, so the renderer never names the command.
  */
 export interface SettingsData {
   terminalFontSize: number
   uiZoom: number
+  editor?: EditorSetting
 }
 
 const DEFAULT_SETTINGS: SettingsData = {
@@ -73,6 +78,12 @@ export function sanitizePatch(patch: Record<string, unknown>): Partial<SettingsD
       const clamped = Math.min(MAX_UI_ZOOM, Math.max(MIN_UI_ZOOM, v))
       out.uiZoom = Math.round(clamped * 100) / 100
     }
+  }
+  if (patch && typeof patch === 'object' && 'editor' in patch) {
+    // An invalid editor (unknown preset, over-long command) is dropped, so the
+    // previously stored value — or the default — keeps applying.
+    const editor = sanitizeEditorSetting(patch.editor)
+    if (editor) out.editor = editor
   }
   return out
 }
@@ -192,6 +203,23 @@ function resolveAllowedPath(path: string): string {
     throw new Error('settings: path escapes the allowed settings location')
   }
   return resolved
+}
+
+/**
+ * The editor the Topbar button should launch, read from the app's current
+ * settings.json on every call (a hand edit or a Settings change applies on the
+ * next click, no restart). Never rejects: a missing, unreadable or invalid file
+ * yields the default (VS Code).
+ */
+export async function readEditorSetting(): Promise<EditorSetting> {
+  try {
+    const parsed = JSON.parse(await readFile(currentSettingsPath(), 'utf8')) as {
+      editor?: unknown
+    }
+    return effectiveEditorSetting(parsed.editor)
+  } catch {
+    return effectiveEditorSetting(undefined)
+  }
 }
 
 /** Serialize with 2-space indent + trailing newline, VSCode-style. */

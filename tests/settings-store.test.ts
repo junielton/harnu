@@ -265,3 +265,90 @@ describe('useSettingsStore', () => {
     expect(zoomApplyCalls).toEqual([1.5])
   })
 })
+
+describe('useSettingsStore — editor (T581)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    changedCb = null
+    savedCalls = []
+    zoomApplyCalls = []
+    vi.stubGlobal('localStorage', makeLocalStorage())
+    vi.stubGlobal('window', { api: makeApi() })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('defaults to VS Code and adopts the stored editor on init', async () => {
+    const store = useSettingsStore()
+    expect(store.editor).toEqual({ id: 'vscode' })
+    vi.stubGlobal('window', {
+      api: makeApi({
+        settingsLoad: vi.fn(async (path: string) => ({
+          path,
+          data: { terminalFontSize: 13, uiZoom: 1, editor: { id: 'zed' } }
+        }))
+      })
+    })
+    await store.init()
+    expect(store.editor).toEqual({ id: 'zed' })
+  })
+
+  it('an unknown stored editor falls back to VS Code', async () => {
+    vi.stubGlobal('window', {
+      api: makeApi({
+        settingsLoad: vi.fn(async (path: string) => ({
+          path,
+          data: { terminalFontSize: 13, uiZoom: 1, editor: { id: 'emacs' } }
+        }))
+      })
+    })
+    const store = useSettingsStore()
+    await store.init()
+    expect(store.editor).toEqual({ id: 'vscode' })
+  })
+
+  it('setEditor applies at once and debounce-saves the sanitized value', async () => {
+    vi.useFakeTimers()
+    const store = useSettingsStore()
+    await store.init()
+    store.setEditor({ id: 'custom', customCommand: ' nvim {path} ', customTerminal: true })
+    // Kept as typed locally...
+    expect(store.editor.customCommand).toBe(' nvim {path} ')
+    expect(savedCalls).toHaveLength(0)
+    vi.advanceTimersByTime(200)
+    // ...and trimmed on the way to disk.
+    expect(savedCalls).toEqual([
+      {
+        path: '/default/settings.json',
+        data: { editor: { id: 'custom', customCommand: 'nvim {path}', customTerminal: true } }
+      }
+    ])
+  })
+
+  it('ignores the watcher echo of its own save and any change while a save is pending', async () => {
+    vi.useFakeTimers()
+    const store = useSettingsStore()
+    await store.init()
+    store.setEditor({ id: 'custom', customCommand: 'foo' })
+    vi.advanceTimersByTime(200) // saved `foo`
+    store.setEditor({ id: 'custom', customCommand: 'foo --bar' }) // typed further, save pending
+    changedCb?.({
+      data: {
+        terminalFontSize: 13,
+        uiZoom: 1,
+        editor: { id: 'custom', customCommand: 'foo' }
+      } as never
+    })
+    expect(store.editor.customCommand).toBe('foo --bar')
+  })
+
+  it('adopts an external edit of settings.json', async () => {
+    const store = useSettingsStore()
+    await store.init()
+    changedCb?.({ data: { terminalFontSize: 13, uiZoom: 1, editor: { id: 'helix' } } as never })
+    expect(store.editor).toEqual({ id: 'helix' })
+  })
+})

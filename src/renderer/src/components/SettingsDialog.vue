@@ -39,6 +39,12 @@ import PrStackSettingsPane from './PrStackSettingsPane.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import SettingHint from './ui/SettingHint.vue'
+import {
+  CUSTOM_EDITOR_ID,
+  EDITOR_PRESETS,
+  effectiveEditorSetting,
+  findPreset
+} from '../../../main/editor-launch'
 import Button from './ui/Button.vue'
 import { useCompanionStore } from '../stores/companion'
 import { settingsStatusKey } from '../lib/companion-view'
@@ -429,6 +435,30 @@ const settingsIndex: Array<{
       'ícone'
     ],
     anchor: 'set-uiZoom'
+  },
+  {
+    tabId: 'general',
+    labelKey: 'settings.editor.label',
+    keywords: [
+      'editor',
+      'ide',
+      'vscode',
+      'vs code',
+      'code',
+      'cursor',
+      'zed',
+      'sublime',
+      'jetbrains',
+      'intellij',
+      'webstorm',
+      'neovim',
+      'nvim',
+      'vim',
+      'helix',
+      'editor de código',
+      'abrir'
+    ],
+    anchor: 'set-editor'
   },
   {
     tabId: 'general',
@@ -830,6 +860,44 @@ function zoomIn(): void {
   const next = UI_ZOOM_STEPS.find((s) => s > settings.uiZoom)
   if (next === undefined) return
   settings.setUiZoom(next)
+}
+
+// Editor picker (T581): which editor the Topbar "Open in {editor}" button
+// launches. A preset, or Custom with a command template + a "runs in a terminal"
+// switch. The value lives in `settings.json` through the settings store.
+const editorSetting = computed(() => effectiveEditorSetting(settings.editor))
+const editorIsCustom = computed(() => editorSetting.value.id === CUSTOM_EDITOR_ID)
+const editorPreset = computed(() => findPreset(editorSetting.value.id))
+const editorPresetCommand = computed(() => editorPreset.value?.candidates.default[0] ?? '')
+
+function onEditorSelect(e: Event): void {
+  const id = (e.target as HTMLSelectElement).value
+  if (id === CUSTOM_EDITOR_ID) {
+    // Keep what was typed before if the user flips away and back.
+    settings.setEditor({
+      id: CUSTOM_EDITOR_ID,
+      customCommand: settings.editor.customCommand ?? '',
+      customTerminal: settings.editor.customTerminal === true
+    })
+  } else {
+    settings.setEditor({ id })
+  }
+}
+
+function onEditorCommandInput(e: Event): void {
+  settings.setEditor({
+    id: CUSTOM_EDITOR_ID,
+    customCommand: (e.target as HTMLInputElement).value,
+    customTerminal: settings.editor.customTerminal === true
+  })
+}
+
+function onEditorTerminalToggle(on: boolean): void {
+  settings.setEditor({
+    id: CUSTOM_EDITOR_ID,
+    customCommand: settings.editor.customCommand ?? '',
+    customTerminal: on
+  })
 }
 
 function close(): void {
@@ -1496,6 +1564,102 @@ onBeforeUnmount(() => {
                       <Plus :size="13" :stroke-width="1.8" />
                     </button>
                   </div>
+                </div>
+              </section>
+
+              <!-- Editor — which editor the Topbar "Open in {editor}" button launches (T581) -->
+              <section style="margin-bottom: 16px">
+                <div
+                  class="text-text-3"
+                  style="
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    margin-bottom: 8px;
+                  "
+                >
+                  {{ $t('settings.editor.eyebrow') }}
+                </div>
+                <div
+                  id="set-editor"
+                  :class="highlightedAnchor === 'set-editor' ? 'anim-setting-flash' : ''"
+                  style="display: flex; flex-direction: column; gap: 10px"
+                >
+                  <div class="flex items-center justify-between" style="gap: 12px">
+                    <div style="flex: 1; min-width: 0">
+                      <div class="text-text-2" style="font-size: 12px">
+                        {{ $t('settings.editor.label') }}
+                      </div>
+                      <SettingHint v-if="editorPreset">
+                        {{
+                          editorPreset.mode === 'terminal'
+                            ? $t('settings.editor.terminalHint', { command: editorPresetCommand })
+                            : $t('settings.editor.presetHint', { command: editorPresetCommand })
+                        }}
+                      </SettingHint>
+                    </div>
+                    <select
+                      class="shrink-0 border border-border-2 bg-surface text-text-2 outline-none focus:border-accent-line"
+                      style="
+                        height: 28px;
+                        border-radius: var(--radius-sm);
+                        padding: 0 8px;
+                        font-size: 12px;
+                      "
+                      :aria-label="$t('settings.editor.label')"
+                      :value="editorSetting.id"
+                      data-test="settings-editor-select"
+                      @change="onEditorSelect"
+                    >
+                      <option v-for="p in EDITOR_PRESETS" :key="p.id" :value="p.id">
+                        {{ p.name }}
+                      </option>
+                      <option :value="CUSTOM_EDITOR_ID">{{ $t('settings.editor.custom') }}</option>
+                    </select>
+                  </div>
+                  <template v-if="editorIsCustom">
+                    <div class="flex items-center justify-between" style="gap: 12px">
+                      <div style="flex: 1; min-width: 0">
+                        <div class="text-text-2" style="font-size: 12px">
+                          {{ $t('settings.editor.commandLabel') }}
+                        </div>
+                        <SettingHint>{{ $t('settings.editor.commandHint') }}</SettingHint>
+                      </div>
+                      <input
+                        type="text"
+                        spellcheck="false"
+                        autocomplete="off"
+                        class="shrink-0 border border-border bg-bg font-mono text-text outline-none focus:border-accent-line"
+                        style="
+                          width: 220px;
+                          height: 28px;
+                          border-radius: 5px;
+                          padding: 0 8px;
+                          font-size: 12px;
+                        "
+                        :aria-label="$t('settings.editor.commandLabel')"
+                        :placeholder="$t('settings.editor.commandPlaceholder')"
+                        :value="settings.editor.customCommand ?? ''"
+                        data-test="settings-editor-command"
+                        @input="onEditorCommandInput"
+                      />
+                    </div>
+                    <div class="flex items-center justify-between" style="gap: 12px">
+                      <div style="flex: 1; min-width: 0">
+                        <div class="text-text-2" style="font-size: 12px">
+                          {{ $t('settings.editor.terminalToggle') }}
+                        </div>
+                        <SettingHint>{{ $t('settings.editor.terminalToggleHint') }}</SettingHint>
+                      </div>
+                      <ToggleSwitch
+                        :model-value="editorSetting.customTerminal === true"
+                        :aria-label="$t('settings.editor.terminalToggle')"
+                        data-test="settings-editor-terminal"
+                        @update:model-value="onEditorTerminalToggle"
+                      />
+                    </div>
+                  </template>
                 </div>
               </section>
 

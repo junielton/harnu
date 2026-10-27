@@ -265,9 +265,9 @@ export function buildAppMenu(
           click: (): void => emit('folder.openInFileManager')
         },
         {
-          label: 'Open in VS Code',
-          accelerator: a('folder.openInVSCode'),
-          click: (): void => emit('folder.openInVSCode')
+          label: 'Open in Editor',
+          accelerator: a('folder.openInEditor'),
+          click: (): void => emit('folder.openInEditor')
         },
         {
           label: 'Pull Requests on GitHub',
