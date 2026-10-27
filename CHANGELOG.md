@@ -12,9 +12,6 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-10-27
 
-### Changed
-
-- The Topbar's **Pull requests on GitHub** button now shows the GitHub logo instead of a pull-request arrow, so it no longer looks like the PR Stack Canvas button next to it and makes clear it opens GitHub in your browser.
 ### Added
 
 - **Harnu asks before quitting while agents are mid-turn.** Closing the window (the X button) or quitting with Ctrl+Q or the app menu now shows a native prompt — "2 agents are still working" — listing the sessions by name (up to five, then "and N more") when any session is actively working. **Cancel** keeps the app, the window and every terminal alive; **Quit anyway** quits exactly as before. Idle, parked, finished and errored sessions never trigger it, and it never gets in the way of an update restart or a system shutdown. Tick **Don't ask again** to stop it, and turn it back on from Settings → General → Quitting.
@@ -26,6 +23,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **A missing editor now tells you what to do.** If the editor's command isn't found, the toast names the command and points at Settings → General → Editor; VS Code keeps its "Install 'code' command in PATH" hint.
 - The `folder.openInVSCode` shortcut is now `folder.openInEditor`. A chord you already saved in `keybindings.json` under the old name keeps working.
+- The Topbar's **Pull requests on GitHub** button now shows the GitHub logo instead of a pull-request arrow, so it no longer looks like the PR Stack Canvas button next to it and makes clear it opens GitHub in your browser.
 
 ## 2026-10-26
 
