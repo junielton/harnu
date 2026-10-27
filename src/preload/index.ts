@@ -58,6 +58,7 @@ import type { IdentityClaim, IdentityOutcome } from '../main/companion/identity-
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
 import type { PrStackSnapshot, WorktreeNode as PrStackWorktree } from '../main/pr-stack-core'
 import type { PrStackPrefs } from '../main/pr-stack-prefs'
+import type { QuitDialogStrings, QuitGuardPrefs } from '../main/quit-guard'
 import type { MissionDoor, MissionDoorResult, MissionListResult } from '../main/mission-ipc'
 import type {
   ReviewSnapshot,
@@ -2745,6 +2746,31 @@ const api = {
   prStackPrefs: (): Promise<PrStackPrefs> => ipcRenderer.invoke('pr-stack:prefs'),
   prStackSetPrefs: (prefs: PrStackPrefs): Promise<PrStackPrefs> =>
     ipcRenderer.invoke('pr-stack:setPrefs', prefs),
+
+  // ---- Quit guard (T579) ------------------------------------------------------
+  /** Settings → General: "Confirm before quitting while agents are working". Whole-object GET/PUT. */
+  quitGuardPrefs: (): Promise<QuitGuardPrefs> => ipcRenderer.invoke('quit-guard:prefs'),
+  quitGuardSetPrefs: (prefs: QuitGuardPrefs): Promise<QuitGuardPrefs> =>
+    ipcRenderer.invoke('quit-guard:setPrefs', prefs),
+  /**
+   * Main is about to show the native "agents still working" dialog and asks for readable
+   * session names + translated copy; answer with `quitGuardLabelsReply` (it falls back after ~400 ms).
+   */
+  onQuitGuardLabelsRequest: (
+    cb: (req: { requestId: number; ids: string[]; maxNames: number }) => void
+  ): (() => void) => {
+    const handler = (
+      _e: unknown,
+      req: { requestId: number; ids: string[]; maxNames: number }
+    ): void => cb(req)
+    ipcRenderer.on('quitGuard:labelsRequest', handler)
+    return () => ipcRenderer.off('quitGuard:labelsRequest', handler)
+  },
+  quitGuardLabelsReply: (reply: {
+    requestId: number
+    labels: Record<string, string>
+    strings: QuitDialogStrings
+  }): void => ipcRenderer.send('quitGuard:labelsReply', reply),
 
   // ---- Mission progress (T370, T358 S9; UI-only, never exposed to an agent) --
   /**

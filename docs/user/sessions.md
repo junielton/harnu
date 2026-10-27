@@ -26,6 +26,16 @@ Each session's terminal is a real xterm.js terminal, not a log viewer — it beh
 
 Switching away from a session doesn't stop it. Claude keeps working, output keeps streaming, and scrollback keeps filling in the background — switching tabs only detaches the view, it never tears down the process. The terminal (and any background process it's running, like a dev server) only actually stops if you explicitly restart or delete the session, or quit Harnu.
 
+### Quitting Harnu
+
+Quitting stops every terminal, so a session that is mid-turn loses that turn. When you close the window (the X button) or quit (Ctrl+Q, the app menu) while at least one session is **working**, Harnu first shows a native prompt like "2 agents are still working". It lists the sessions by name (up to five, then "and N more") and says that quitting interrupts them.
+
+- **Cancel** (the default) keeps Harnu, the window and every terminal exactly as they were.
+- **Quit anyway** quits normally.
+- **Don't ask again** (a checkbox) stops the prompt from appearing on later quits. Turn it back on in [Settings → General → Quitting](settings.md#quitting).
+
+Only sessions that are actively working count. Idle, parked (hibernated), finished and errored sessions never trigger the prompt, so quitting with nothing running is instant. The prompt also stays out of the way of an update restart ("Restart now") and of a system shutdown or logout. It is a native dialog, so it appears even if Harnu's window has stopped responding.
+
 ### Pasted screenshots
 
 When you paste a screenshot into a session, Claude Code saves it into a hidden per-session cache (the system temp folder for current Claude Code versions, `~/.claude/image-cache/` for older ones — Harnu reads both). Harnu surfaces that cache as a small `🖼 N` pill in the footer — it only appears when the session actually has images, and the count updates live, so pasting a screenshot into the session you're looking at makes the pill react without switching away and back. When a new screenshot lands, the pill gives a brief pop so you notice it registered; it stays quiet when you merely switch to a session that already has images, and on the very first image (the pill fading in is signal enough).

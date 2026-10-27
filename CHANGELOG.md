@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-27
+
+### Added
+
+- **Harnu asks before quitting while agents are mid-turn.** Closing the window (the X button) or quitting with Ctrl+Q or the app menu now shows a native prompt — "2 agents are still working" — listing the sessions by name (up to five, then "and N more") when any session is actively working. **Cancel** keeps the app, the window and every terminal alive; **Quit anyway** quits exactly as before. Idle, parked, finished and errored sessions never trigger it, and it never gets in the way of an update restart or a system shutdown. Tick **Don't ask again** to stop it, and turn it back on from Settings → General → Quitting.
+
 ## 2026-10-26
 
 ### Added

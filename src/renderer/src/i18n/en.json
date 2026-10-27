@@ -1100,6 +1100,15 @@
       }
     }
   },
+  "quitGuard": {
+    "messageOne": "1 agent is still working",
+    "messageMany": "{count} agents are still working",
+    "detail": "Quitting {app} now interrupts them.",
+    "andMore": "and {n} more",
+    "quitAnyway": "Quit anyway",
+    "cancel": "Cancel",
+    "dontAskAgain": "Don't ask again"
+  },
   "settings": {
     "title": "Settings",
     "close": "Close",
@@ -1157,6 +1166,11 @@
       "languageSystem": "System default",
       "languageEn": "English",
       "languagePtBR": "Português (Brasil)"
+    },
+    "quit": {
+      "eyebrow": "Quitting",
+      "confirmLabel": "Confirm before quitting while agents are working",
+      "confirmHint": "Asks first if any session is mid-turn when you close the window or quit. Off skips the prompt."
     },
     "terminal": {
       "eyebrow": "Terminal",
