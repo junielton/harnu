@@ -75,6 +75,10 @@ The **General** tab has a SIDEBAR section that controls how the folder/session l
 - **Show sessions within** — hide sessions older than a window (All / 24h / 48h / 7d) inside each folder; the selected and live sessions are never hidden.
 - **Active-elsewhere window** — how recently a non-pinned folder must have been active to show up in the "Active elsewhere" zone.
 
+## Quitting
+
+The **General** tab has a QUITTING section with one switch, **Confirm before quitting while agents are working** (on by default). While it is on, closing the window or quitting (Ctrl+Q, the app menu) shows a native prompt if any session is actively working at that moment, so you don't kill a turn by accident. See [Quitting Harnu](sessions.md#quitting-harnu) for what the prompt shows. The prompt's own **Don't ask again** checkbox turns this switch off; come back here to turn it on again. The choice survives restarts.
+
 ## Daily budget
 
 **Settings → Usage history** has a **Daily budget** group that drives the `Today` row in the footer's usage popover — what that row actually means is explained under [Usage](usage.md#today--your-daily-budget).

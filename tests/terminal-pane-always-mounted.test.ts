@@ -37,6 +37,7 @@ function mockApi(): void {
     onUpdateDownloaded: on(),
     onUpdateError: on(),
     onUpdateManualAvailable: on(),
+    onQuitGuardLabelsRequest: on(),
     onClaudeChangelogActivate: on(),
     onClaudeChangelogUpdated: on(),
     onClaudeChangelogNewVersion: on(),

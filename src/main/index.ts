@@ -59,7 +59,7 @@ import {
   dropOperatorScreenModels,
   livePtyDescriptors
 } from './pty'
-import { registerBrowserIpc } from './browser/browser-ipc'
+import { registerBrowserIpc, closeBrowserIpc } from './browser/browser-ipc'
 import {
   bindBrowserBridge,
   refreshBrowserTrustedHosts,
@@ -160,6 +160,7 @@ import {
   type SessionRegistryWatcherHandle
 } from './session-registry-watch'
 import { registerDigestEngine, closeDigestEngine } from './memory-digest'
+import { bypassQuitConfirm, guardQuit, registerQuitConfirm } from './quit-confirm'
 import {
   registerOrchestratorGuard,
   arm as armOrchestrator,
@@ -349,6 +350,12 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+
+  // T579: the X button. `before-quit` carries the same guard for Ctrl+Q / the app menu; once
+  // the operator picks "Quit anyway" both pass, so a quit attempt asks once.
+  mainWindow.on('close', (event) => guardQuit(event, () => mainWindow))
+  // Windows logoff / shutdown: never hold the session hostage.
+  mainWindow.on('session-end', () => bypassQuitConfirm('system-shutdown'))
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -613,6 +620,8 @@ app.whenReady().then(async () => {
   registerRoadmapHandlers(() => mainWindow)
   registerHelpersHandlers()
   registerSettingsHandlers(() => mainWindow)
+  // T579: confirm before quitting while agents are working (prefs IPC + OS-shutdown bypass).
+  registerQuitConfirm()
   // T1: the `keybindings.json` override layer. Sits next to settings.json and
   // follows its relocation. The renderer store calls `keybindings:load` at boot;
   // a hand-edit re-resolves and pushes `keybindings:changed`. P3: the resolved
@@ -1173,6 +1182,9 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', async (event) => {
+  // T579: ask first when agents are mid-turn. Cancel keeps everything alive (nothing below runs).
+  guardQuit(event, () => mainWindow)
+  if (event.defaultPrevented) return
   // We always synchronously kill PTYs; the watcher close is async but
   // best-effort. Defer Electron's actual quit until the watcher is closed
   // so chokidar's file descriptors are released cleanly.
@@ -1201,6 +1213,8 @@ app.on('before-quit', async (event) => {
   // harnu.mcp.json) is awaited in the watcher branch below.
   closeMcpConfirm()
   closeCommandBridge()
+  // Quitting destroys every browser pane (T579: here, below the guard — not a listener of its own).
+  closeBrowserIpc()
   await closeAllMarkdownWatchers()
   await closeAllCanvasWatchers()
   closeUsagePoller()

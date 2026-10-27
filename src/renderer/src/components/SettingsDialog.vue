@@ -814,6 +814,29 @@ function toggleAutoname(): void {
   }
 }
 
+// Quit guard (T579): "confirm before quitting while agents are working". Persisted main-side
+// (`<userData>/quit-guard-prefs.json`) because the main process decides at quit time, possibly
+// with a hung renderer. Default ON; the dialog's "Don't ask again" flips this off.
+const quitConfirmEnabled = ref(true)
+async function loadQuitConfirm(): Promise<void> {
+  try {
+    quitConfirmEnabled.value = (await window.api.quitGuardPrefs()).confirmOnQuit
+  } catch {
+    /* keep the default (ask) */
+  }
+}
+async function toggleQuitConfirm(): Promise<void> {
+  const next = !quitConfirmEnabled.value
+  quitConfirmEnabled.value = next
+  try {
+    quitConfirmEnabled.value = (
+      await window.api.quitGuardSetPrefs({ version: 1, confirmOnQuit: next })
+    ).confirmOnQuit
+  } catch {
+    quitConfirmEnabled.value = !next
+  }
+}
+
 // Interface language (T68). `'system'` = follow the OS/`navigator` language (no
 // stored override); the two locales pin the choice. Applied live via `setLocale`,
 // which persists (or clears) `om2tab.locale`. Seeded from the persisted override.
@@ -963,6 +986,7 @@ watch(isOpen, (open) => {
     void loadResponderStatus()
     void loadRampProjects()
     loadAutonameEnabled()
+    void loadQuitConfirm()
     void boot.init()
     window.addEventListener('keydown', onKeydown, true)
   } else {
@@ -1438,6 +1462,39 @@ onBeforeUnmount(() => {
                     :model-value="language"
                     :aria-label="$t('settings.interface.languageLabel')"
                     @update:model-value="setLanguage($event as LanguageChoice)"
+                  />
+                </div>
+              </section>
+
+              <!-- Quitting — confirm before quitting while agents are working (T579) -->
+              <section style="margin-bottom: 16px">
+                <div
+                  class="text-text-3"
+                  style="
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    margin-bottom: 8px;
+                  "
+                >
+                  {{ $t('settings.quit.eyebrow') }}
+                </div>
+                <div
+                  id="set-quit-confirm"
+                  class="flex items-start justify-between"
+                  style="gap: 12px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.quit.confirmLabel') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.quit.confirmHint') }}</SettingHint>
+                  </div>
+                  <ToggleSwitch
+                    :model-value="quitConfirmEnabled"
+                    :aria-label="$t('settings.quit.confirmLabel')"
+                    @update:model-value="toggleQuitConfirm()"
                   />
                 </div>
               </section>
