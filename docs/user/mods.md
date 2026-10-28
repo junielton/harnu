@@ -97,7 +97,12 @@ environment variables** and **draws in the terminal**. They are what the source 
 it talks to Harnu on this machine, reads session state, watches prompts, permission
 requests and mod registration, and draws one line above the prompt of a review companion
 (the selection you made in the Review pane) and, in every session, the [report cards](#report-cards)
-and [compact agent messages](#compact-agent-messages) described below. The registration hook only watches which mods a session admits; it never
+and [compact agent messages](#compact-agent-messages) described below. To number the loop ticks of a
+mission, it also hooks every row a scheduled prompt or a delivery adds to the conversation
+(`session.append`) and reads them: it looks only at the rows a schedule fired and keeps nothing but
+the tick's number and a short snapshot of the mission, and it never changes or refuses a row. The
+Mods tab shows no separate badge for it: the **can read every prompt** badge already covers it. The
+registration hook only watches which mods a session admits; it never
 refuses one, and a test in Harnu's repository fails if it ever does. The static read
 cannot tell a watcher from a gate, so the chips are shown anyway, the same as for any mod
 with those hooks.
@@ -180,7 +185,8 @@ touched.
   Harnu sends to the session (the missions it owns or is linked to), not from the prompt. A tick
   that finds the same state as the one before is a single dim line, "no change since #14"; one that
   finds a change shows a `changed` row instead (`stp-3 verified · PR #269 merged`). The tick number
-  `#N` counts the ticks of that mission that arrived while the session was running. A tick row
+  `#N` counts the ticks of that mission that arrived while the session was running. On a terminal
+  too narrow for a card (about 36 columns or fewer) a tick is a single line cut at the edge instead. A tick row
   that was already in a resumed transcript has no number and no comparison: it shows the mission as
   it is now. The card is green when the mission is
   done, and the accent colour otherwise.

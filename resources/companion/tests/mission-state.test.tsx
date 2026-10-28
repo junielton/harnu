@@ -464,6 +464,13 @@ const rawAppend = ($: any, uuid: string, text = TICK, over: Record<string, unkno
     uuid,
     ...over
   })
+/*
+ * There is no test for "a row the engine refused is not numbered" (a repro was written and then
+ * removed, T589 review #9): the engine refuses only a plugin's own append, and the test harness fails
+ * any test in which a hook is skipped ("returned a deny of a row the engine appends"), so a refusal of
+ * a prompt or delivery row cannot be staged. The hooks guard it anyway: a row is numbered only when
+ * `next` returned a stored row (`kept.uuid`).
+ */
 /** A fired tick, and the moment the mod's timer takes to write its ledger. */
 const appendTick = async (
   $: any,
