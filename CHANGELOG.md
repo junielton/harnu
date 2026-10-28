@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-28
+
+### Changed
+
+- **Orchestration reports use the same format as every other final report.** When an orchestrated delivery finishes, its wrap-up is now the `report-back` rail (`✓` / `-` / `!` / `✗` rows with topology, heartbeat, one row per unit with its PR and `ACs n/m met`, review findings and the delivery report) under the status card, with what you owe in the `you` line and links at the bottom. The emoji checklist (`✅` / `⚠️`) it used to print is gone.
+
 ## 2026-10-27
 
 ### Added

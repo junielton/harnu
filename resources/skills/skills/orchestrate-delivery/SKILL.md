@@ -545,20 +545,28 @@ whichever post-mortem someone remembers to run.
 
 ## Final output
 
-**Mandatory header.** The `status` skill's six-line glance card comes FIRST,
-built from `mission_get`, the board and `gh pr list`/`checks` — then the ✅/⚠️
-lines below it. See `status` for the card's shape; this skill does
-not restate its rules. Its mission header is `derived.progress` as the pill
+**End the run with a `report-back` final report** — that skill owns the format
+(rail, ledger, links, summary); this skill does not restate it. The `status`
+skill's glance card heads it, built from `mission_get`, the board and
+`gh pr list`/`checks`; the card's `you` / `open` rows and links fold into the
+report's ledger and links block per `report-back`'s "For other skills" rule —
+never print two. The card's mission header is `derived.progress` as the pill
 shows it — "Step N of M" — never a count of proven steps you made yourself.
 
-```
-✅ Topology: [single | parallel xN | stacked xN] + integration branch (or why none)
-✅ Heartbeat: loop @<cadence> + watchdog worker (or why none)
-✅ <card-slug> (branch): one-line summary + PR URL + `ACs n/m met, k need a human`
-✅ Review findings: N found, M fixed, rest noted on the PRs
-✅ Delivery report: <path> · tracker: <n> ACs ticked, <k> left for manual check
-⚠️ Unmet / blocked / open questions / debt, if any
-```
+The rail's rows are this orchestration's own steps, in this order, each with a
+concrete outcome:
+
+- `Topology` — single | parallel xN | stacked xN, plus the integration branch (or why none)
+- `Heartbeat` — loop @<cadence> + watchdog worker (or why none)
+- one row per unit — `<card-slug> (branch)`: one-line summary, `PR #n`, and
+  `ACs n/m met, k need a human`
+- `Review findings` — N found, M fixed, rest noted on the PRs
+- `Delivery report` — the path, plus `<n> ACs ticked, <k> left for manual check`
+
+A unit with unmet ACs, a blocked step, an open question or debt takes `!` or `✗`
+on its own row (reason in its prose); what only the operator can resolve goes on
+the `you` line, and an unanswered question on `open`. Full PR URLs live in the
+links block only.
 
 The board is the durable record and the Delivery Report is the human handoff — this
 summary is only for the operator's glance.
