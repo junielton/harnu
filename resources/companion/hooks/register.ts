@@ -69,6 +69,7 @@ import {
   plainObject,
   rowChip,
   tickMissionId,
+  tickMissionIn,
   type RowFrom,
   type RowTask
 } from './lib/quiet-rows'
@@ -1206,6 +1207,42 @@ async function runMissionState($: Dollar, c: Command<'mission.state'>): Promise<
 }
 
 /**
+ * T589: a fired tick, as the engine appends it. This is the one place the order of ticks is known
+ * (a render draws rows in whatever order the engine mounts them, a resumed session bottom-up), and a
+ * hook outside drawing may write `$.state`: the row is numbered here against the state pushed now,
+ * and the draw only reads it. A tick with nothing pushed for its mission is left to the draw.
+ */
+async function noteTick($: Dollar, uuid: string, text: string): Promise<void> {
+  const missionId = tickMissionIn(text)
+  if (missionId === null) return
+  const pushed = parseStored((await $.state.get(MISSIONS)).value)
+  const entry = pushed?.missions.find((m) => m.id === missionId)
+  if (!entry) return
+  const stored = parseLedger((await $.state.get(TICK_ROWS)).value)
+  const plan = planTick(tickMem ?? stored, entry, uuid, await $.clock.now())
+  if (plan.ledger === null) return
+  tickMem = plan.ledger
+  await $.state.set(TICK_ROWS, plan.ledger)
+}
+
+/** The part of an appended row `appendedTick` reads. */
+interface AppendedRow {
+  uuid: string
+  origin: { kind: string }
+  message: { content: { type: string; text?: string }[] }
+}
+
+async function appendedTick($: Dollar, e: AppendedRow): Promise<void> {
+  try {
+    if (!enabled('ui.quietRows') || e.origin.kind !== 'scheduled-trigger') return
+    const text = e.message.content.map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('\n')
+    await noteTick($, e.uuid, text)
+  } catch (err) {
+    reportModError('session.append', err)
+  }
+}
+
+/**
  * T589: the card of one loop tick, or `null` when there is nothing to draw it from (no pushed state,
  * the mission is not in it, or it is not state at all). The first drawing of a row numbers it and
  * remembers it (`$.state.tickRows`, written by a timer); reading both keys subscribes the hook to them.
@@ -1640,6 +1677,23 @@ export const register: Register = (on) => {
         reportModError('ui.render:UserMessage', err)
         return next(e)
       }
+    })
+  })
+
+  // T589: numbers a fired tick as it arrives (see `noteTick`). Two doors carry a fired prompt; the
+  // pass-through comes first, so the row is always kept before the mod looks at it.
+  hook('session.append:prompt', () => {
+    on('session.append', { door: 'prompt' }, async ($, e, next) => {
+      const kept = await next(e)
+      await appendedTick($, e)
+      return kept
+    })
+  })
+  hook('session.append:delivery', () => {
+    on('session.append', { door: 'delivery' }, async ($, e, next) => {
+      const kept = await next(e)
+      await appendedTick($, e)
+      return kept
     })
   })
 

@@ -151,6 +151,19 @@ export function tickMissionId(text: unknown): string | null {
   return m ? m[1] : null
 }
 
+/** How far into a row's text the tick line may sit: a framing line or two may stand before it. */
+const TICK_SEARCH_LINES = 6
+
+/** The mission id of a fired tick as the engine appends it, the line being anywhere in its first lines. */
+export function tickMissionIn(text: unknown): string | null {
+  if (typeof text !== 'string') return null
+  for (const l of text.split(/\r?\n/, TICK_SEARCH_LINES)) {
+    const m = TICK_LINE.exec(l)
+    if (m) return m[1]
+  }
+  return null
+}
+
 /** A scheduled row with no live card to draw (no mission id, no pushed state): its first line, plain. */
 export function tickChip(text: unknown): Chip | null {
   const first = bodyLines(str(text) ?? '')[0]
