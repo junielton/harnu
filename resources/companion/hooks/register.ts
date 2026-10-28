@@ -63,8 +63,23 @@ import { createRing } from './lib/ring'
 import { bandView } from './surface'
 import { reportView } from './report-card'
 import { splitReports } from './lib/report-card'
-import { chipView } from './quiet-rows'
-import { QUIET_KINDS, plainObject, rowChip, type RowFrom, type RowTask } from './lib/quiet-rows'
+import { chipView, tickView } from './quiet-rows'
+import {
+  QUIET_KINDS,
+  plainObject,
+  rowChip,
+  tickMissionId,
+  type RowFrom,
+  type RowTask
+} from './lib/quiet-rows'
+import {
+  parseLedger,
+  parseMissionState,
+  parseStored,
+  planTick,
+  type TickCard,
+  type TickLedger
+} from './lib/mission-state'
 import { measurePayload, readPayload } from './lib/usage-sensor'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
@@ -92,6 +107,8 @@ const FLEET = { plugin: 'harnu-companion', key: 'fleet' } as const
 const PERMISSION_MODE = { plugin: 'harnu-companion', key: 'permissionMode' } as const
 const CHANNEL = { plugin: 'harnu-companion', key: 'channel' } as const
 const BAND = { plugin: 'harnu-companion', key: 'band' } as const
+const MISSIONS = { plugin: 'harnu-companion', key: 'missions' } as const
+const TICK_ROWS = { plugin: 'harnu-companion', key: 'tickRows' } as const
 
 /** The feature an event type belongs to. `null`: reportable whenever the channel is alive. */
 const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
@@ -157,6 +174,16 @@ let bandN = 0
 let bandTimer: Timer | null = null
 /** Band writes run one at a time, so two commands cannot apply out of order. */
 let bandChain: Promise<unknown> = Promise.resolve()
+/** T589: the highest `mission.state` `n` this load has applied; a lower one never overwrites it. */
+let missionN = 0
+/**
+ * T589: the tick ledger as this load knows it. A render hook may not write `$.state` ("drawing is
+ * pure"), so a newly drawn row is numbered here at once, which also keeps two rows drawn together in
+ * order, and a timer writes the whole ledger a moment later. `null` until a row was drawn: the stored
+ * ledger is the truth after a reload.
+ */
+let tickMem: TickLedger | null = null
+let tickTimer: Timer | null = null
 
 /** Modules admitted before the hello answered (the usual case: they load before `session.start`). */
 let pendingAdmitted: Admitted[] = []
@@ -200,6 +227,9 @@ function resetState(): void {
   bandN = 0
   bandTimer = null
   bandChain = Promise.resolve()
+  missionN = 0
+  tickMem = null
+  tickTimer = null
   pollStale = 0
   pendingAdmitted = []
 }
@@ -651,7 +681,10 @@ async function doHello($: Dollar, resumeConn?: Conn, fresh = false): Promise<voi
     channel = forBoot(prior, bootId)
     // A new boot numbers its commands from 1 again: what this load remembers of the old one (the
     // highest `n`, the standing line) belongs to a queue that no longer exists.
-    if (channel !== prior) resetBand($)
+    if (channel !== prior) {
+      resetBand($)
+      missionN = 0
+    }
     void writeChannel($)
     restartPollLoop($)
     await acceptCommands($, parseCommands(b.commands))
@@ -1145,6 +1178,47 @@ async function runBandSet($: Dollar, c: Command<'ui.band.set'>): Promise<Handler
 }
 
 /**
+ * T589 `mission.state`: stores the pushed missions under `$.state.missions`; the `UserMessage` hook
+ * draws a loop tick from them. The args are checked again here (the host's gate was the first lock).
+ */
+async function runMissionState($: Dollar, c: Command<'mission.state'>): Promise<HandlerResult> {
+  const req = parseMissionState(c.args)
+  if (req === null) return precondition('the mission state is out of shape or over a limit')
+  if (c.n <= missionN) return precondition('an older mission state: a newer one is already applied')
+  missionN = c.n
+  await $.state.set(MISSIONS, { v: 1, n: c.n, at: await $.clock.now(), missions: req.missions })
+  try {
+    await $.ui.invalidate('ui.render')
+  } catch {
+    // best effort: the stored state is the truth, the redraw is a courtesy
+  }
+  return okResult()
+}
+
+/**
+ * T589: the card of one loop tick, or `null` when there is nothing to draw it from (no pushed state,
+ * the mission is not in it, or it is not state at all). The first drawing of a row numbers it and
+ * remembers it (`$.state.tickRows`, written by a timer); reading both keys subscribes the hook to them.
+ */
+async function tickFor($: Dollar, missionId: string, rid: string): Promise<TickCard | null> {
+  const pushed = parseStored((await $.state.get(MISSIONS)).value)
+  const stored = parseLedger((await $.state.get(TICK_ROWS)).value)
+  const entry = pushed?.missions.find((m) => m.id === missionId)
+  if (!entry) return null
+  const plan = planTick(tickMem ?? stored, entry, rid, await $.clock.now())
+  if (plan.ledger !== null) {
+    tickMem = plan.ledger
+    if (tickTimer === null) {
+      tickTimer = $.clock.after(0, () => {
+        tickTimer = null
+        if (tickMem !== null) void $.state.set(TICK_ROWS, tickMem).catch(() => undefined)
+      })
+    }
+  }
+  return plan.card
+}
+
+/**
  * The closed switch (SEC-5, contract §9): the only place a command name becomes a `$` call. The
  * engine refuses a `$` passed through a dynamic callee, so a later wave adds its `case` here, and
  * its name to `IMPLEMENTED_COMMANDS`, instead of registering a function.
@@ -1167,6 +1241,8 @@ function runHandler($: Dollar, c: Command): Handled {
       return runContextAppend($, c as Command<'context.append'>)
     case 'ui.band.set':
       return runBandSet($, c as Command<'ui.band.set'>)
+    case 'mission.state':
+      return runMissionState($, c as Command<'mission.state'>)
     default:
       return { ok: false, code: 'CMD_UNSUPPORTED' }
   }
@@ -1531,12 +1607,18 @@ export const register: Register = (on) => {
   // cannot read is left to the engine. The host enables the feature per binding ("Draw agent
   // messages compactly").
   hook('ui.render:UserMessage', () => {
-    on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
+    on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
       try {
         if (e.surface !== 'terminal' || !enabled('ui.quietRows')) return next(e)
         if (e.props.isExpanded === true) return next(e)
         const kind = e.props.origin?.kind
         if (typeof kind !== 'string' || !QUIET_KINDS.has(kind)) return next(e)
+        // A loop tick that names a mission, with state pushed for it, is the live card.
+        const missionId = kind === 'scheduled-trigger' ? tickMissionId(e.props.text) : null
+        if (missionId !== null) {
+          const card = await tickFor($, missionId, e.requestId)
+          if (card !== null) return tickView($.ui.resolve(e), card)
+        }
         const chip = rowChip(
           kind,
           e.props.text,

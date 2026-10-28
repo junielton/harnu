@@ -1,5 +1,6 @@
 import type { ElementTable } from 'claude-code'
 import type { Chip } from './lib/quiet-rows'
+import type { TickCard } from './lib/mission-state'
 
 /**
  * The quiet rows' views (T589, mockups 02 and 03). Pure builders: they receive the resolved
@@ -22,6 +23,81 @@ export function chipView(els: Els, chip: Chip) {
           {chip.text}
         </Text>
       </Box>
+    </Box>
+  )
+}
+
+const LABEL_W = 9
+
+/**
+ * The loop tick (mock 02): a bordered card with the mission's title and position, what is running
+ * now or what changed, and what the operator owes. A tick that found nothing new is one dim line.
+ * The border and the bar are the accent while the mission runs and green when it is done; the `⚑`
+ * rows are always yellow, because they are the one thing that waits for a person. Rows wrap: only
+ * the "no change" line is cut at the edge (the full prompt is one ctrl+o away).
+ */
+export function tickView(els: Els, card: TickCard) {
+  const { Box, Text } = els
+  const head = '⟳ tick #' + card.n + ' · ' + card.title
+  if (card.kind === 'nochange') {
+    const where = card.detail.split(' · ')[0]
+    const line = head + ' · ' + where + ' · no change since #' + card.sinceN
+    return (
+      <Box flexDirection="row" marginTop={1}>
+        <Box flexGrow={1} flexShrink={1}>
+          <Text dimColor wrap="truncate-end">
+            {line}
+          </Text>
+        </Box>
+        <Box flexShrink={0} paddingLeft={1}>
+          <Text dimColor>ctrl+o</Text>
+        </Box>
+      </Box>
+    )
+  }
+  return (
+    <Box
+      flexDirection="column"
+      marginTop={1}
+      borderStyle="round"
+      borderColor={card.tone}
+      paddingX={1}
+    >
+      <Box flexDirection="row" justifyContent="space-between" gap={2}>
+        <Box flexShrink={1}>
+          <Text bold color={card.tone}>
+            {head}
+          </Text>
+        </Box>
+        <Box flexDirection="row" flexShrink={0}>
+          <Text color={card.tone}>{'▰'.repeat(card.bar.filled)}</Text>
+          <Text dimColor>{'▱'.repeat(card.bar.total - card.bar.filled)}</Text>
+          <Text dimColor>{' ' + card.detail}</Text>
+        </Box>
+      </Box>
+      {card.rows.map((r) => (
+        <Box flexDirection="row">
+          <Box width={LABEL_W} flexShrink={0}>
+            <Text dimColor>{r.label}</Text>
+          </Box>
+          <Box flexGrow={1} flexShrink={1}>
+            <Text>{r.text}</Text>
+          </Box>
+        </Box>
+      ))}
+      {card.you.map((y) => (
+        <Box flexDirection="row">
+          <Box width={2} flexShrink={0}>
+            <Text color="warning">⚑</Text>
+          </Box>
+          <Box width={LABEL_W - 2} flexShrink={0}>
+            <Text dimColor>you</Text>
+          </Box>
+          <Box flexGrow={1} flexShrink={1}>
+            <Text>{y}</Text>
+          </Box>
+        </Box>
+      ))}
     </Box>
   )
 }

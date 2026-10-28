@@ -53,8 +53,10 @@
     "channel",
     "conn",
     "fleet",
+    "missions",
     "permissionMode",
     "probes",
-    "sid"
+    "sid",
+    "tickRows"
   ]
 }

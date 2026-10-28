@@ -336,7 +336,8 @@ test('the second tick over the same state is one line; a later change is a card 
   expect(
     await textOf(two, /tick #2 · Acme content migration · Step 3 of 5 · no change since #1/)
   ).toBeTruthy()
-  expect(await two.find({ type: 'Box', props: { borderColor: 'claude' } })).toBeUndefined()
+  const boxes = await two.findAll({ type: 'Box' })
+  expect(boxes.map((b: any) => b.props.borderColor).filter(Boolean)).toEqual([]) // no card, one line
   expect(await textOf(two, /executor card-acme/)).toBeUndefined()
   rig.state.set('missions', { v: 1, n: 2, at: NOW, missions: [moved()] })
   const three = await mountTick($, on, rig, 'row-3')
