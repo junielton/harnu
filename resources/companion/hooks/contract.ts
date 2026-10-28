@@ -75,6 +75,17 @@ export const BAND_LEAD_MAX = 32
 export const BAND_DETAIL_MAX = 48
 export const BAND_HINT_MAX = 32
 export const CMD_DONE_MAX = 64
+/** T589 `mission.state`: how often the host re-reads the missions of a live session, and its debounce. */
+export const MISSION_POLL_MS = 20_000
+export const MISSION_DEBOUNCE_MS = 500
+/** `MissionStateArgs` caps. The host cuts to them and the mod checks them again (a longer one is refused). */
+export const MISSION_STATE_MAX_MISSIONS = 4
+export const MISSION_STATE_MAX_STEPS = 40
+export const MISSION_STATE_MAX_BLOCKERS = 6
+export const MISSION_STATE_MAX_YOU = 6
+export const MISSION_STATE_MAX_PRS = 8
+export const MISSION_STATE_MAX_CHILDREN = 4
+export const MISSION_STATE_TEXT_MAX = 120
 /** Host wait for a result after `expiresAt`, unless the command has its own (§7.2). */
 export const CMD_RESULT_GRACE_DEFAULT_MS = 5_000
 /**
@@ -433,7 +444,45 @@ export interface CommandArgs {
   'guard.set': { armed: boolean; enforce?: boolean }
   'sentinel.set': { tools: string[] }
   'ui.band.set': { line: string | null; parts?: BandParts; link?: BandLink }
+  'mission.state': MissionStateArgs
   'plan.capture': { title?: boolean }
+}
+
+/** A step's state, as `derived.progress.states` names it (Mission v3 §3.1). */
+export type MissionStepStatus = 'verified' | 'done' | 'running' | 'waiting' | 'blocked' | 'todo'
+
+/**
+ * One mission a session owns or is linked to as a child, as the host projects it for the mod's quiet
+ * rows (T589). Display data only: the host cuts and strips every string, and the mod never acts on it.
+ * `children` is filled for the steps of `progress.current` only; the rest carry none.
+ */
+export interface MissionStateEntry {
+  id: string // `mnt-<8 hex>`
+  title: string
+  card?: string // the linked board card
+  role: 'owner' | 'child'
+  progress: {
+    total: number
+    current: { from: number; to: number } | null
+    done: number
+    verified: number
+    allDone: boolean
+  }
+  steps: {
+    id: string
+    title: string
+    state: MissionStepStatus
+    card?: string // the step's card link, the executor's name on the tick card
+    children: { taskState: string; lastTransitionAt: number | null }[]
+    prs: { number: number; state: string }[] // OPEN | MERGED | CLOSED
+  }[]
+  blockers: { reason: string; owner: 'agent' | 'operator'; stepId?: string }[]
+  /** What the operator owes, as the host words it. */
+  you: { kind: string; text: string }[]
+}
+
+export interface MissionStateArgs {
+  missions: MissionStateEntry[]
 }
 
 export type CommandName = keyof CommandArgs
