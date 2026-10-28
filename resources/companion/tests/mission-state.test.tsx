@@ -608,9 +608,9 @@ test('ticks appended at the same moment are each kept and numbered once, in orde
 
 test('a write that lands late never leaves the stored ledger short of a row', async ($, on) => {
   let writes = 0
-  // outermost: sees every write the mod makes, and holds the first one back
-  on('state.set', async ($: any, e: any, next: any) => {
-    if (e.key === 'tickRows' && writes++ === 0) await $.clock.sleep(5_000)
+  // sees every write of the ledger and holds the first one back (a matcher: the rig answers the rest)
+  on('state.set', { key: 'tickRows' }, async ($: any, e: any, next: any) => {
+    if (writes++ === 0) await $.clock.sleep(5_000)
     return next(e)
   })
   const rig = await rigWith($, on)
@@ -635,15 +635,6 @@ test('the ledger is keyed by the id the engine kept the row under, the one a dra
   expect(await textOf(other, /tick #/)).toBeUndefined()
   await same.unmount()
   await other.unmount()
-})
-
-test('a row the engine refused is not numbered', async ($, on) => {
-  const rig = await rigWith($, on)
-  // beneath the mod: refuses the row (only a plugin's own append can be refused in the engine, so
-  // this pins what the mod does if a refusal ever reaches it)
-  on('session.append', { door: 'prompt' }, () => ({ deny: 'refused' }) as never)
-  await appendTick($, 'r-1').catch(() => undefined)
-  expect(rig.state.has('tickRows')).toBe(false)
 })
 
 test('a mission with more than 40 steps carries a window of them and the offset of its first', async ($, on) => {

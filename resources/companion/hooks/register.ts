@@ -184,6 +184,8 @@ let missionN = 0
  * draw reads this copy first. `null` until a tick arrived: the stored ledger is the truth after a reload.
  */
 let tickMem: TickLedger | null = null
+/** Ledger writes run one at a time, each writing the newest ledger, so a late one cannot undo a later row. */
+let tickWrite: Promise<unknown> = Promise.resolve()
 
 /** Modules admitted before the hello answered (the usual case: they load before `session.start`). */
 let pendingAdmitted: Admitted[] = []
@@ -229,6 +231,7 @@ function resetState(): void {
   bandChain = Promise.resolve()
   missionN = 0
   tickMem = null
+  tickWrite = Promise.resolve()
   pollStale = 0
   pendingAdmitted = []
 }
@@ -1217,10 +1220,15 @@ async function noteTick($: Dollar, uuid: string, text: string): Promise<void> {
   const entry = pushed?.missions.find((m) => m.id === missionId)
   if (!entry) return
   const stored = parseLedger((await $.state.get(TICK_ROWS)).value)
-  const plan = planTick(tickMem ?? stored, entry, uuid, await $.clock.now())
+  const now = await $.clock.now()
+  // From here to the assignment there is no `await`: two ticks in flight cannot plan from the same
+  // ledger, so none is lost and no two share a number.
+  const plan = planTick(tickMem ?? stored, entry, uuid, now)
   if (plan.ledger === null) return
   tickMem = plan.ledger
-  await $.state.set(TICK_ROWS, plan.ledger)
+  const run = tickWrite.then(() => $.state.set(TICK_ROWS, tickMem ?? plan.ledger))
+  tickWrite = run.catch(() => undefined)
+  await run
 }
 
 /** The part of an appended row `appendedTick` reads. */
@@ -1230,11 +1238,11 @@ interface AppendedRow {
   message: { content: { type: string; text?: string }[] }
 }
 
-async function appendedTick($: Dollar, e: AppendedRow): Promise<void> {
+async function appendedTick($: Dollar, e: AppendedRow, uuid: string): Promise<void> {
   try {
     if (!enabled('ui.quietRows') || e.origin.kind !== 'scheduled-trigger') return
     const text = e.message.content.map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('\n')
-    await noteTick($, e.uuid, text)
+    await noteTick($, uuid, text)
   } catch (err) {
     reportModError('session.append', err)
   }
@@ -1677,14 +1685,20 @@ export const register: Register = (on) => {
   hook('session.append:prompt', () => {
     on('session.append', { door: 'prompt' }, async ($, e, next) => {
       const kept = await next(e)
-      await appendedTick($, e)
+      // The ledger is keyed by the id the engine kept the row under, which a draw reads as requestId;
+      // a row it did not keep (no `uuid`) is never numbered. (The engine refuses only a plugin's own
+      // append, so on these doors this is a guard, not a case the engine produces.)
+      if (kept.uuid !== undefined) await appendedTick($, e, kept.uuid)
       return kept
     })
   })
   hook('session.append:delivery', () => {
     on('session.append', { door: 'delivery' }, async ($, e, next) => {
       const kept = await next(e)
-      await appendedTick($, e)
+      // The ledger is keyed by the id the engine kept the row under, which a draw reads as requestId;
+      // a row it did not keep (no `uuid`) is never numbered. (The engine refuses only a plugin's own
+      // append, so on these doors this is a guard, not a case the engine produces.)
+      if (kept.uuid !== undefined) await appendedTick($, e, kept.uuid)
       return kept
     })
   })

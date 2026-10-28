@@ -1,6 +1,6 @@
 import type { ElementTable } from 'claude-code'
 import type { Chip } from './lib/quiet-rows'
-import { fitHeader, type TickCard } from './lib/mission-state'
+import { fitHeader, fitNoChange, type TickCard } from './lib/mission-state'
 
 /**
  * The quiet rows' views (T589, mockups 02 and 03). Pure builders: they receive the resolved
@@ -38,10 +38,9 @@ const LABEL_W = 9
  */
 export function tickView(els: Els, card: TickCard, columns?: number) {
   const { Box, Text } = els
-  const head = '⟳ tick' + (card.n === null ? '' : ' #' + card.n) + ' · ' + card.title
   if (card.kind === 'nochange') {
-    const where = card.detail.split(' · ')[0]
-    const line = head + ' · ' + where + ' · no change since #' + card.sinceN
+    // The line, a space and `ctrl+o`, and one spare cell: "no change since #N" is the last to be cut.
+    const line = fitNoChange(card, columns === undefined ? 1000 : columns - 8)
     return (
       <Box flexDirection="row" marginTop={1}>
         <Box flexGrow={1} flexShrink={1}>
@@ -80,7 +79,7 @@ export function tickView(els: Els, card: TickCard, columns?: number) {
         </Box>
       </Box>
       {card.rows.map((r) => (
-        <Box flexDirection="row">
+        <Box key={r.label} flexDirection="row">
           <Box width={LABEL_W} flexShrink={0}>
             <Text dimColor>{r.label}</Text>
           </Box>
@@ -89,8 +88,8 @@ export function tickView(els: Els, card: TickCard, columns?: number) {
           </Box>
         </Box>
       ))}
-      {card.you.map((y) => (
-        <Box flexDirection="row">
+      {card.you.map((y, i) => (
+        <Box key={'you-' + i} flexDirection="row">
           <Box width={2} flexShrink={0}>
             <Text color="warning">⚑</Text>
           </Box>

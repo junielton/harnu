@@ -39,9 +39,12 @@ const text = (v: unknown, max = MISSION_STATE_TEXT_MAX, allowEmpty = false): v i
 
 function validEntry(e: unknown): e is MissionStateEntry {
   if (!isRec(e)) return false
-  if (!onlyKeys(e, ['id', 'title', 'card', 'role', 'progress', 'steps', 'blockers', 'you'])) {
+  if (
+    !onlyKeys(e, ['id', 'title', 'card', 'offset', 'role', 'progress', 'steps', 'blockers', 'you'])
+  ) {
     return false
   }
+  if (e.offset !== undefined && (!isInt(e.offset) || e.offset > 100_000)) return false
   if (typeof e.id !== 'string' || !MISSION_ID.test(e.id)) return false
   if (!text(e.title) || (e.card !== undefined && !text(e.card, 60))) return false
   if (e.role !== 'owner' && e.role !== 'child') return false
@@ -136,7 +139,7 @@ export interface TickSnap {
 /** The current step: the first of `progress.current`, or `null` when none is running or all are done. */
 function currentStep(e: MissionStateEntry): MissionStateEntry['steps'][number] | null {
   const c = e.progress.current
-  return c === null ? null : (e.steps[c.from - 1] ?? null)
+  return c === null ? null : (e.steps[c.from - 1 - (e.offset ?? 0)] ?? null)
 }
 
 /** The child that stands for a step's executor: a working one first, else the first. */
@@ -453,9 +456,11 @@ export function fitHeader(card: TickCard, inner: number): FittedHeader {
   const prefix = '⟳ tick' + (card.n === null ? '' : ' #' + card.n) + ' · '
   const budget = inner - 1 - HEADER_GAP
   const short = card.detail.split(' · ')[0]
+  // A mission with no steps has no bar: nothing to draw, and no space to leave for it.
+  const hasBar = card.bar.total > 0
   const tries: [boolean, string][] = [
-    [true, card.detail],
-    [true, short],
+    [hasBar, card.detail],
+    [hasBar, short],
     [false, short]
   ]
   for (const [barOn, detail] of tries) {
@@ -479,4 +484,22 @@ export function fitHeader(card: TickCard, inner: number): FittedHeader {
     bar: null,
     detail: short
   }
+}
+
+/**
+ * The one dim line of a tick that found nothing new, fitted to `avail` cells: the title gives way
+ * first, then the step count, and "no change since #N" is never the part that is cut.
+ */
+export function fitNoChange(card: TickCard, avail: number): string {
+  const head = '⟳ tick' + (card.n === null ? '' : ' #' + card.n)
+  const tail = ' · no change since #' + card.sinceN
+  const where = ' · ' + card.detail.split(' · ')[0]
+  for (const w of [where, '']) {
+    const room = avail - (cells(head) + 3 + cells(w) + cells(tail))
+    if (cells(card.title) <= room) return head + ' · ' + card.title + w + tail
+    if (room >= 8) {
+      return head + ' · ' + [...card.title].slice(0, room - 1).join('') + '…' + w + tail
+    }
+  }
+  return head + tail
 }

@@ -33,8 +33,15 @@ export type MissionStateSender = (req: {
 
 export interface MissionStateFeedDeps {
   host: Pick<CompanionHostFacade, 'bus' | 'onBindingChange'>
-  /** The open missions of the repos of these folders. Default: the missions IPC's own read. */
-  listViews?(folders: readonly string[]): Promise<{ views: readonly MissionViewIn[] }>
+  /**
+   * The open missions of the repos of these folders that these sessions own or are linked to. Default:
+   * the missions IPC's own read. `unreadable` names the mission files it could not parse: a read that
+   * lost a mission to one says nothing about whether the mission is gone.
+   */
+  listViews?(
+    folders: readonly string[],
+    sessions: readonly string[]
+  ): Promise<{ views: readonly MissionViewIn[]; unreadable: readonly string[] }>
   /** Enqueues a `mission.state` for a sid. The default is the app's one channel. */
   send?: MissionStateSender
   pollMs?: number
@@ -52,6 +59,8 @@ interface Tracked {
   sentKey: string | null
   /** True while the mod may hold missions (a non-empty state was sent and not yet cleared). */
   holds: boolean
+  /** The ids of the missions the mod holds. */
+  sentIds: string[]
   /** Set by a hello: the next read sends even when nothing changed. */
   force: boolean
   debounce: ReturnType<typeof setTimeout> | null
@@ -67,11 +76,13 @@ const defaultSend: MissionStateSender = ({ sid, args }) =>
   })
 
 async function defaultListViews(
-  folders: readonly string[]
-): Promise<{ views: readonly MissionViewIn[] }> {
+  folders: readonly string[],
+  sessions: readonly string[]
+): Promise<{ views: readonly MissionViewIn[]; unreadable: readonly string[] }> {
   // Loaded on first use: the missions IPC pulls in Electron, which the tests of this file never need.
   const { listMissionViews } = await import('../mission-ipc')
-  return { views: (await listMissionViews(folders)).views as unknown as MissionViewIn[] }
+  const r = await listMissionViews(folders, Date.now(), { onlySessions: new Set(sessions) })
+  return { views: r.views as unknown as MissionViewIn[], unreadable: r.unreadable }
 }
 
 /** A binding whose session gets its missions: bound, lease live, interactive, enabled for the feature. */
@@ -117,6 +128,7 @@ export function createMissionStateFeed(deps: MissionStateFeedDeps): MissionState
       }
       t.sentKey = key
       t.holds = entries.length > 0
+      t.sentIds = entries.map((e) => e.id)
     } catch {
       log('mission state send failed')
     }
@@ -127,10 +139,12 @@ export function createMissionStateFeed(deps: MissionStateFeedDeps): MissionState
     const key = missionStateKey(entries)
     const force = t.force
     t.force = false
+    // A push armed by an earlier read is superseded by this one: never send a state that was replaced.
+    if (t.debounce) clearTimeout(t.debounce)
+    t.debounce = null
     // A session that never had a mission, and whose mod holds none, hears nothing.
     if (entries.length === 0 && !t.holds) return
     if (!force && key === t.sentKey) return
-    if (t.debounce) clearTimeout(t.debounce)
     t.debounce = setTimeout(() => {
       t.debounce = null
       push(t, entries, key)
@@ -154,15 +168,28 @@ export function createMissionStateFeed(deps: MissionStateFeedDeps): MissionState
         }
         for (const [cwd, group] of byFolder) {
           let views: readonly MissionViewIn[]
+          let unreadable: readonly string[]
           try {
-            views = (await listViews([cwd])).views
+            ;({ views, unreadable } = await listViews(
+              [cwd],
+              group.map((t) => t.view.sid)
+            ))
           } catch {
             continue // a failed read changes nothing; the next poll tries again
           }
           if (disposed) return
           for (const t of group) {
             if (tracked.get(t.view.key) !== t) continue
-            want(t, projectMissions(views, t.view.sid))
+            const entries = projectMissions(views, t.view.sid)
+            // A mission file that would not parse may be one of this session's: what the mod holds
+            // is kept until the read is whole, never replaced by a list that is short of a mission.
+            if (
+              unreadable.length > 0 &&
+              t.sentIds.some((id) => !entries.some((e) => e.id === id))
+            ) {
+              continue
+            }
+            want(t, entries)
           }
         }
       } while (again && !disposed)
@@ -194,7 +221,14 @@ export function createMissionStateFeed(deps: MissionStateFeedDeps): MissionState
       t.view = b
       t.force = true
     } else {
-      tracked.set(b.key, { view: b, sentKey: null, holds: false, force: true, debounce: null })
+      tracked.set(b.key, {
+        view: b,
+        sentKey: null,
+        holds: false,
+        sentIds: [],
+        force: true,
+        debounce: null
+      })
     }
     startPoll()
     readSoon()

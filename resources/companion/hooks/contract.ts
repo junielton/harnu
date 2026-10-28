@@ -460,6 +460,11 @@ export interface MissionStateEntry {
   id: string // `mnt-<8 hex>`
   title: string
   card?: string // the linked board card
+  /**
+   * `steps` holds at most MISSION_STATE_MAX_STEPS of the mission's steps, a window around the current
+   * one: this is the 0-based position of the first. Absent: `steps` starts at the mission's first step.
+   */
+  offset?: number
   role: 'owner' | 'child'
   progress: {
     total: number

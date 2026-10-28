@@ -126,11 +126,21 @@ function prsOf(
 function project(v: MissionViewIn, role: 'owner' | 'child'): MissionStateEntry {
   const m = v.mission
   const p = v.progress
-  const counted = m.steps.filter((s) => s.kind !== 'fixed-start').slice(0, MISSION_STATE_MAX_STEPS)
+  const all = m.steps.filter((s) => s.kind !== 'fixed-start')
+  // Past the cap, a window of steps around the current one, so the card still has its step: the
+  // positions in `progress` are the mission's own, and `offset` says where the window starts.
+  const start =
+    all.length <= MISSION_STATE_MAX_STEPS
+      ? 0
+      : Math.max(
+          0,
+          Math.min(all.length - MISSION_STATE_MAX_STEPS, (p.current?.from ?? all.length) - 1 - 10)
+        )
+  const counted = all.slice(start, start + MISSION_STATE_MAX_STEPS)
   const signals = new Map(v.derived.steps.map((s) => [s.stepId, s]))
   const cur = p.current
   const steps = counted.map((s, i) => {
-    const position = i + 1
+    const position = start + i + 1
     const sig = signals.get(s.id)
     const inRange = cur !== null && position >= cur.from && position <= cur.to
     const cardLink = s.links.find((l) => l.kind === 'card')
@@ -172,6 +182,7 @@ function project(v: MissionViewIn, role: 'owner' | 'child'): MissionStateEntry {
     id: m.id,
     title: line(v.title),
     ...(m.linkedCard ? { card: line(m.linkedCard, 60) } : {}),
+    ...(start > 0 ? { offset: start } : {}),
     role,
     progress: {
       total: p.total,
@@ -203,8 +214,9 @@ export function projectMissions(views: readonly MissionViewIn[], sid: string): M
 }
 
 /**
- * The key two projections are compared by. It leaves out the time since an executor's last move, which
- * the mod computes itself, so a quiet mission is not re-sent every poll.
+ * The key two projections are compared by: the whole projection. It carries the time an executor last
+ * changed state (a fact that moves only when it does), never the time since, which the mod computes
+ * itself, so a quiet mission is not re-sent every poll.
  */
 export function missionStateKey(entries: readonly MissionStateEntry[]): string {
   return JSON.stringify(entries)
