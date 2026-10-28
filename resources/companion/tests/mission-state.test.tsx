@@ -300,6 +300,7 @@ const rigWith = async ($: any, on: any, saved: Record<string, unknown> = seeded(
     return <Text>engine</Text>
   })
   await boot($, rig)
+  currentRig = rig
   return rig
 }
 const textOf = async (ui: any, re: RegExp) => (await ui.find({ type: 'Text', text: re }))?.text
@@ -453,7 +454,9 @@ test('the same boot keeps them: a re-hello is not a restart', async ($, on) => {
 // ---- a tick is numbered when it is appended, in the order it arrived -----------------------------
 
 /** What the engine raises when a scheduled prompt fires: the row, its id, who caused it. */
-const appendTick = ($: any, uuid: string, text = TICK, over: Record<string, unknown> = {}) =>
+/** The rig of the running test: a fired tick's ledger write is a timer, and the held clock must move for it. */
+let currentRig: Rig | null = null
+const rawAppend = ($: any, uuid: string, text = TICK, over: Record<string, unknown> = {}) =>
   $.session.append({
     message: { type: 'user', isMeta: true, content: [{ type: 'text', text }] },
     door: 'prompt',
@@ -461,6 +464,17 @@ const appendTick = ($: any, uuid: string, text = TICK, over: Record<string, unkn
     uuid,
     ...over
   })
+/** A fired tick, and the moment the mod's timer takes to write its ledger. */
+const appendTick = async (
+  $: any,
+  uuid: string,
+  text = TICK,
+  over: Record<string, unknown> = {}
+) => {
+  const kept = await rawAppend($, uuid, text, over)
+  await currentRig?.clock.advance(1)
+  return kept
+}
 
 test('ticks appended live are numbered and compared in arrival order, whatever order they are drawn', async ($, on) => {
   const rig = await rigWith($, on)
@@ -497,6 +511,7 @@ test('without the feature, or without pushed state, a fired tick writes nothing'
     script: channelScript([], ['sense.identity', 'act.channel'])
   })
   await boot($, off)
+  currentRig = off
   await appendTick($, 'u-1')
   expect(off.state.has('tickRows')).toBe(false)
 })
@@ -533,7 +548,7 @@ test('a tick appended before anything was pushed is an unnumbered card once the 
 // ---- the header fits inside the border, at any width ---------------------------------------------
 
 /** The cells a header draws: its left text, the two-cell gap, the bar and its detail, one spare cell. */
-const headerCells = (h: ReturnType<typeof fitHeader>) =>
+const headerCells = (h: NonNullable<ReturnType<typeof fitHeader>>) =>
   [...h.left].length + 2 + (h.bar ? h.bar.total + 1 : 0) + [...h.detail].length
 
 test('a header that fits is left alone; at exactly its width one spare cell is still kept free', () => {
@@ -557,11 +572,14 @@ test('narrower still: the title shrinks to a floor, then "· V verified" goes, t
     null,
     NOW
   )
-  // down to a 36-column terminal (32 inner cells): below that there is no room for the tick label
-  for (let inner = 120; inner >= 32; inner--) {
+  // at every width a card is fitted or there is none (null: the caller draws the plain chip)
+  for (let inner = 120; inner >= 16; inner--) {
     const h = fitHeader(card, inner)
-    expect(headerCells(h), 'inner ' + inner).toBeLessThanOrEqual(inner - 1)
+    if (h !== null) expect(headerCells(h), 'inner ' + inner).toBeLessThanOrEqual(inner - 1)
   }
+  expect(fitHeader(card, 20)).toBeNull()
+  expect(fitHeader(card, 16)).toBeNull()
+  expect(fitHeader(card, 40)).not.toBeNull()
   const mid = fitHeader(card, 60)
   expect(mid.detail).toBe('Step 3 of 5 · 1 verified')
   expect(mid.left.endsWith('…')).toBe(true)
@@ -675,11 +693,14 @@ test('the "no change" line keeps its tail on a narrow terminal: the title gives 
   expect(wide).toBe(
     '⟳ tick #15 · A very long mission title that needs room · Step 3 of 5 · no change since #14'
   )
-  for (let avail = 80; avail >= 36; avail--) {
+  for (let avail = 80; avail >= 16; avail--) {
     const line = fitNoChange(card, avail)
+    if (line === null) continue // too narrow for the tick label: the plain chip is drawn
     expect([...line].length, 'avail ' + avail).toBeLessThanOrEqual(avail)
     expect(line.endsWith('no change since #14'), 'avail ' + avail).toBe(true)
   }
+  expect(fitNoChange(card, 20)).toBeNull()
+  expect(fitNoChange(card, 36)).not.toBeNull()
   expect(fitNoChange(card, 60)).toMatch(/^⟳ tick #15 · .*… · Step 3 of 5 · no change since #14$/)
   expect(fitNoChange(card, 45)).toMatch(/^⟳ tick #15 · .*… · no change since #14$/)
 })
@@ -708,4 +729,52 @@ test('a mission with no steps has no bar, and so no stray space in front of its 
   const h = fitHeader(tickCard(none, 1, null, NOW), 80)
   expect(h.bar).toBeNull()
   expect(h.detail).toBe('0 steps · 0 verified')
+})
+
+// ---- narrower than a card can be: the plain one-line chip (T589 delta 3, AC-3) -------------------
+
+test('at 30 columns a tick is a one-line chip that never exceeds the width, card or no change alike', async ($, on) => {
+  const rig = await rigWith($, on)
+  await appendTick($, 't-1')
+  await appendTick($, 't-2')
+  for (const rid of ['t-1', 't-2']) {
+    const ui = await $.ui.mount({
+      ...ROW,
+      surface: 'terminal',
+      requestId: rid,
+      viewport: { columns: 30, rows: 40 },
+      props: tickProps()
+    } as never)
+    const boxes = await ui.findAll({ type: 'Box' })
+    expect(boxes.map((b: any) => b.props.borderColor).filter(Boolean)).toEqual([]) // no card
+    const line = await ui.find({ type: 'Text', text: /tick/ })
+    expect(line.props.wrap).toBe('truncate-end')
+    expect(await textOf(ui, /^⟳$/)).toBeTruthy()
+    await ui.unmount()
+  }
+  void rig
+})
+
+// ---- the append path does not wait for the display-only write (T589 delta 3) ---------------------
+
+test('the session.append hook resolves without waiting for the ledger write, and the write still lands', async ($, on) => {
+  let writes = 0
+  on('state.set', { key: 'tickRows' }, async ($: any, e: any, next: any) => {
+    writes++
+    await $.clock.sleep(5_000) // a slow store
+    return next(e)
+  })
+  const rig = await rigWith($, on)
+  const kept = await rawAppend($, 'h-1') // no clock movement at all: it must come back
+  expect(kept.uuid).toBe('h-1')
+  expect(writes).toBe(0) // the write has not even started: it is a timer, after the row is kept
+  // the draw already has its number (planned in memory), before the write lands
+  const ui = await mountTick($, on, rig, 'h-1')
+  expect(await textOf(ui, /^⟳ tick #1 · /)).toBeTruthy()
+  await ui.unmount()
+  await rig.clock.advance(1)
+  expect(writes).toBe(1)
+  await rig.clock.advance(6_000)
+  await rig.clock.settle()
+  expect(ledgerOf(rig).byMission['mnt-7be1529e'].rows.map((r: any) => r.rid)).toEqual(['h-1'])
 })

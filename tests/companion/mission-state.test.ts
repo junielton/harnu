@@ -295,4 +295,29 @@ describe('the mission state feed', () => {
     expect(titles).not.toContain('a state that was superseded')
     r.feed.dispose()
   })
+
+  it('a hello after a lease loss in the same boot clears a mission that closed meanwhile (T589 delta 3)', async () => {
+    const r = rig()
+    r.emit('hello', binding(), 'spawn')
+    await flush(MISSION_DEBOUNCE_MS + 5)
+    expect(r.sent).toHaveLength(1)
+    r.emit('lease', binding({ lease: 'lost' })) // the feed forgets the binding ...
+    r.views.current = [] // ... the mission closes meanwhile ...
+    r.emit('hello', binding(), 'resume') // ... and the mod, which still holds it, says hello again
+    await flush(MISSION_DEBOUNCE_MS + 5)
+    expect(r.sent).toHaveLength(2)
+    expect(r.sent[1].args.missions).toEqual([]) // an empty snapshot is right here
+    r.feed.dispose()
+  })
+
+  it('a binding that never held a mission still hears nothing at a hello, even after a lease loss', async () => {
+    const r = rig()
+    r.views.current = []
+    r.emit('hello', binding(), 'spawn')
+    r.emit('lease', binding({ lease: 'lost' }))
+    r.emit('hello', binding(), 'resume')
+    await flush(MISSION_DEBOUNCE_MS + MISSION_POLL_MS)
+    expect(r.sent).toHaveLength(0)
+    r.feed.dispose()
+  })
 })

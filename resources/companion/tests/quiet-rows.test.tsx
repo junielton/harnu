@@ -254,3 +254,75 @@ test('a task notice with no task and odd text still draws a chip', async ($, on)
   expect(await textOf(ui, /something happened/)).toBeTruthy()
   await ui.unmount()
 })
+
+// ---- the idle notice as it really arrives: framed (T589 delta 3, AC-4) ---------------------------
+
+const TEAMMATE = (body: string) =>
+  `Another Claude session sent a message:\n<teammate-message teammate_id="ideas-pm" color="purple">\n${body}\n</teammate-message>`
+const CROSS = (body: string) =>
+  `Another Claude session sent a message:\n<cross-session-message from="uds:/run/user/1000/cc-socks/1.sock" from-name="ideas-pm" from-mode="prompting">\n${body}\n</cross-session-message>`
+
+const FRAMED: [string, string, Record<string, unknown>, Record<string, unknown>][] = [
+  [
+    'a peer row in a teammate-message wrapper',
+    TEAMMATE(IDLE),
+    { kind: 'peer' },
+    { from: { name: 'ideas-pm' } }
+  ],
+  [
+    'a peer row in a cross-session-message wrapper',
+    CROSS(IDLE),
+    { kind: 'peer' },
+    { from: { name: 'ideas-pm' } }
+  ],
+  [
+    'a peer-send-message row in a wrapper',
+    TEAMMATE(IDLE),
+    { kind: 'peer-send-message' },
+    { from: { name: 'ideas-pm' } }
+  ],
+  [
+    'a task-notification under the idle notice marker, JSON on the same line',
+    `[Cross-session idle notice] ${IDLE}`,
+    { kind: 'task-notification' },
+    {}
+  ],
+  [
+    'a task-notification under the idle notice marker, JSON on the next line',
+    `[Cross-session idle notice]\n${IDLE}`,
+    { kind: 'task-notification' },
+    {}
+  ],
+  [
+    'a task-notification with the marker and a wrapper',
+    `[Cross-session idle notice]\n${TEAMMATE(IDLE)}`,
+    { kind: 'task-notification' },
+    {}
+  ]
+]
+for (const [name, text, origin, over] of FRAMED) {
+  test(`${name} is the idle chip, with no framing and no raw JSON`, async ($, on) => {
+    const { ui } = await mountRow($, on, ENABLE, props(text, origin, over))
+    const line = await ui.find({ type: 'Text', text: /idle/ })
+    expect(line.text).toMatch(/^ideas-pm idle \d\d:\d\d · «done, 20 ideas/)
+    expect(await textOf(ui, /^◌/)).toBeTruthy()
+    for (const t of await ui.findAll({ type: 'Text' })) {
+      expect(String(t.text)).not.toMatch(
+        /idle_notification|\{"|Cross-session|teammate-message|sent a message/
+      )
+    }
+    await ui.unmount()
+  })
+}
+
+test('an idle notice marker with plain words is an idle chip of those words, without the marker', async ($, on) => {
+  const { ui } = await mountRow(
+    $,
+    on,
+    ENABLE,
+    props('[Cross-session idle notice] acme-phase-a is now idle.', { kind: 'task-notification' })
+  )
+  expect(await textOf(ui, /^◌/)).toBeTruthy()
+  expect(await textOf(ui, /^acme-phase-a is now idle\.$/)).toBeTruthy()
+  await ui.unmount()
+})
