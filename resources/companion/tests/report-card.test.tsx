@@ -186,7 +186,7 @@ test('only the report fence is replaced; a tree block beside it stays text', () 
 
 test('the card tone follows the markers: all ✓ green, any ✗ red, else accent', () => {
   const tone = (...rail: string[]) =>
-    cardTone(reports(splitReports(fence('x  ▰▰ 1/2', ...rail, '', row('', 'you', '—'))))[0])
+    cardTone(reports(splitReports(fence('x  ▰▱ 1/2', ...rail, '', row('', 'you', '—'))))[0])
   expect(tone('├─ ✓ a — b', '└─ ✓ c — d')).toBe('ok')
   expect(tone('├─ ✓ a — b', '└─ ✗ c — d')).toBe('fail')
   expect(tone('├─ ✓ a — b', '└─ ! c — d')).toBe('accent')
@@ -368,8 +368,11 @@ const colours = async (ui: any) => {
   }
 }
 
-test('a finished status card draws a green border and a green bar (en and pt-BR)', async ($, on) => {
-  for (const text of [`Done.\n\n${DONE_EN}`, `Pronto.\n\n${DONE_PT}`]) {
+for (const [lang, text] of [
+  ['en', `Done.\n\n${DONE_EN}`],
+  ['pt-BR', `Pronto.\n\n${DONE_PT}`]
+] as const) {
+  test(`a finished status card draws a green border and a green bar (${lang})`, async ($, on) => {
     const ui = await mountWith($, on, ENABLE, text)
     const c = await colours(ui)
     expect(c.borders).toContain('success')
@@ -377,8 +380,8 @@ test('a finished status card draws a green border and a green bar (en and pt-BR)
     expect(c.fills).toContain('success')
     expect(c.fills).not.toContain('claude')
     await ui.unmount()
-  }
-})
+  })
+}
 
 test('a report with a ✗ draws a red border and a red bar', async ($, on) => {
   const ui = await mountWith($, on, ENABLE, EN_MESSAGE)

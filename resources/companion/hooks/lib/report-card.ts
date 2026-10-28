@@ -249,11 +249,32 @@ export function splitReports(text: string): Segment[] | null {
   }
 }
 
-/** The card's border: green when every marker is `✓`, red when any is `✗`, else the accent. */
+const PCT_DONE_RE = new RegExp('(?:^|[^\\d])100%')
+const TRAILING_CHECK_RE = new RegExp('✓\\s*$')
+
+/**
+ * Is the header's front finished? A full first bar, a trailing `✓` ("Step 5 of 5 ✓") or `100%`.
+ * A later phase still open in the same header (`S2 ▱▱ 0/2`) keeps it unfinished.
+ */
+function headerDone(header: Header | null): boolean {
+  if (header === null) return false
+  if (header.detail.includes('▱')) return false
+  if (header.mark === '✓') return true
+  if (header.bar !== null && header.bar.total > 0 && header.bar.filled === header.bar.total) {
+    return true
+  }
+  return TRAILING_CHECK_RE.test(header.detail) || PCT_DONE_RE.test(header.detail)
+}
+
+/**
+ * The card's state, which colours its border AND its bar: red when any marker is `✗`, green when
+ * the header says the front is finished or every rail marker is `✓`, else the accent.
+ */
 export function cardTone(report: Report): 'ok' | 'fail' | 'accent' {
   const marks: Glyph[] = report.rail.map((r) => r.glyph)
   if (report.header?.mark) marks.push(report.header.mark)
   if (marks.includes('✗')) return 'fail'
+  if (headerDone(report.header)) return 'ok'
   if (marks.length > 0 && marks.every((m) => m === '✓')) return 'ok'
   return 'accent'
 }
