@@ -12,6 +12,7 @@ import {
 } from '../hooks/lib/mission-state'
 import { judgeCommand } from '../hooks/lib/commands'
 import {
+  BOOT,
   START,
   defaultScript,
   helloOk,
@@ -406,4 +407,30 @@ test('pushed state that is not one never throws: the tick falls back to the chip
   const ui = await mountTick($, on, rig, 'row-1')
   expect(await textOf(ui, /tick · mnt-7be1529e/)).toBeTruthy()
   await ui.unmount()
+})
+
+// ---- a host boot is a new world ------------------------------------------------------------------
+
+test('a mod reloaded under a new boot does not keep the missions of the old one', async ($, on) => {
+  const rig = installRig(on, {
+    script: channelScript(),
+    savedState: {
+      ...seeded(),
+      channel: { bootId: 'b_an-older-boot', cursor: 41, started: [], resulted: [], turnId: null }
+    }
+  })
+  await boot($, rig)
+  expect(rig.state.get('missions')).toBeNull()
+})
+
+test('the same boot keeps them: a re-hello is not a restart', async ($, on) => {
+  const rig = installRig(on, {
+    script: channelScript(),
+    savedState: {
+      ...seeded(),
+      channel: { bootId: BOOT, cursor: 3, started: [], resulted: [], turnId: null }
+    }
+  })
+  await boot($, rig)
+  expect(rig.state.get('missions')).toMatchObject({ v: 1, n: 1 })
 })
