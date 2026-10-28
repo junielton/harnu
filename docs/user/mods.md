@@ -96,7 +96,8 @@ read every prompt**, **can decide permissions**, **can refuse other mods**, **ca
 environment variables** and **draws in the terminal**. They are what the source declares:
 it talks to Harnu on this machine, reads session state, watches prompts, permission
 requests and mod registration, and draws one line above the prompt of a review companion
-(the selection you made in the Review pane). The registration hook only watches which mods a session admits; it never
+(the selection you made in the Review pane) and, in every session, the [report cards](#report-cards)
+described below. The registration hook only watches which mods a session admits; it never
 refuses one, and a test in Harnu's repository fails if it ever does. The static read
 cannot tell a watcher from a gate, so the chips are shown anyway, the same as for any mod
 with those hooks.
@@ -127,6 +128,38 @@ What the chip in the Review pane means by **Companion sees this**: the note is i
 companion's context, nothing more. It never says that the companion read it, used it or
 answered about it. See [Review pane](review-pane.md#sharing-a-selection-with-the-companion)
 for the rest, including **Copy as text**, which works with no mod at all.
+
+## Report cards
+
+When a session's reply contains a **status glance card** or a **report-back final report**
+(the formats of Harnu's bundled `status` and `report-back` skills), the Harnu mod draws it in
+the terminal as a card instead of showing the raw text:
+
+- a **bordered card** with the front's title, a progress bar and the ledger rows (what is
+  running, what is done, what is next). The border and the bar are green when the front is
+  finished (a full bar, a trailing `✓` such as "Step 5 of 5 ✓", or 100%, or every step of the
+  report succeeded and the header shows no unfinished bar), red when any step failed, and the accent colour otherwise;
+- a separate **yellow box** for what is owed to you, headed by its label and a count;
+- the **checklist** with aligned labels and coloured marks: `✓` green, `!` yellow, `✗` red,
+  `-` dim;
+- the report's links, with PR numbers and URLs you can click.
+
+The sentence before the report and the summary after it are still drawn as normal markdown.
+On a narrow terminal only a checklist row is cut with an ellipsis (**Ctrl+O** shows the whole
+message as written); what is owed to you, the ledger rows and every link wrap instead, so
+nothing you must act on is hidden. The drawing is display only: the stored message, what the model reads and the
+transcript file are never changed.
+
+The mod recognises a report by its **shape** (the `▰▱` progress bar, the `├─` / `└─` rail with
+its `✓ ! ✗ -` marks, and the fixed label column), not by the words of its labels, so a report
+written in Portuguese or any other language is drawn the same way. Anything that is not a
+complete report is left exactly as it was: a reply still streaming, a report cut off before its
+closing fence, a `tree` listing, a lone link.
+
+**Turning it off.** **Settings → General → Harnu mod → Draw reports as cards** (on by
+default; it can only be on while the Harnu mod itself is on). A session reads the setting when it
+starts, so a change reaches sessions you start afterwards; sessions already running keep what
+they had until they restart.
 
 ## Harnu mod outside Harnu
 

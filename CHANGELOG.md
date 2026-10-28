@@ -12,6 +12,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-10-28
 
+### Added
+
+- **Status and report-back replies are drawn as a card.** When a session's reply contains a `status` glance card or a `report-back` final report, the Harnu mod draws it in the terminal as a card: a bordered box with the title, a progress bar and the ledger, a separate yellow box for what needs you, the checklist with aligned labels and coloured `✓ ! ✗ -` marks, and PR numbers and URLs as links. The card border and its progress bar are green when the front is finished (a full bar, "Step 5 of 5 ✓" or 100%, or every step succeeded and no bar is unfinished), red when one step failed, otherwise the accent colour. On a narrow terminal only a checklist row is cut short; what is owed to you and every link wrap. Anything that is not a complete report (a half-streamed block, a `tree` listing, a bare link) is shown exactly as before, and the message itself never changes: Ctrl+O shows it as written. It works in any language, because it reads the report's shape, not its labels. Turn it off with **Draw reports as cards** in Settings → General → Harnu mod; sessions already running keep their setting until they restart.
+
 ### Changed
 
 - **Orchestration reports use the same format as every other final report.** When an orchestrated delivery finishes, its wrap-up is now the `report-back` rail (`✓` / `-` / `!` / `✗` rows with topology, heartbeat, one row per unit with its PR and `ACs n/m met`, review findings and the delivery report) under the status card, with what you owe in the `you` line and links at the bottom. The emoji checklist (`✅` / `⚠️`) it used to print is gone.

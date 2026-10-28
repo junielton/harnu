@@ -7,12 +7,14 @@ import {
   setCompanionEnabled,
   setCompanionPrefsPath,
   setFamilyMode,
+  setPrefsKey,
   rolloutView
 } from '../../src/main/companion/companion-prefs'
 import {
   computeEnable,
   registerFeaturePolicy,
   registerP1FeaturePolicies,
+  registerReportCardPolicy,
   resetFeaturePoliciesForTests
 } from '../../src/main/companion/feature-policy'
 import type { BindingView } from '../../src/main/companion/session-table'
@@ -142,5 +144,32 @@ describe('computeEnable', () => {
     expect(ext).not.toContain('act.channel')
     expect(ext).not.toContain('gate.guard')
     expect(ext).not.toContain('sense.compact')
+  })
+})
+
+describe('ui.reportCard (T585)', () => {
+  const declared = ['sense.identity', 'ui.reportCard']
+  beforeEach(() => registerReportCardPolicy())
+
+  it('is on by default, for any binding that declared it', () => {
+    expect(enable('interactive', declared)).toEqual(['sense.identity', 'ui.reportCard'])
+    expect(enable('external', declared)).toContain('ui.reportCard')
+  })
+
+  it('is never enabled for a mod that did not declare it', () => {
+    expect(enable('interactive', ['sense.identity'])).toEqual(['sense.identity'])
+  })
+
+  it('follows the "Draw reports as cards" key', () => {
+    setPrefsKey('reportCards', false)
+    expect(enable('interactive', declared)).toEqual(['sense.identity'])
+    setPrefsKey('reportCards', true)
+    expect(enable('interactive', declared)).toContain('ui.reportCard')
+  })
+
+  it('a headless session never draws, and the kill switch overrides the key', async () => {
+    expect(enable('headless', declared)).not.toContain('ui.reportCard')
+    await setCompanionEnabled(false)
+    expect(enable('interactive', declared)).toEqual([])
   })
 })

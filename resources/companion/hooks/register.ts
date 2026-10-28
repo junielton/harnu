@@ -61,6 +61,8 @@ import {
 import { toAdmitted, type Admitted } from './lib/admitted'
 import { createRing } from './lib/ring'
 import { bandView } from './surface'
+import { reportView } from './report-card'
+import { splitReports } from './lib/report-card'
 import { measurePayload, readPayload } from './lib/usage-sensor'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
@@ -1503,6 +1505,25 @@ export const register: Register = (on) => {
     })
   })
 
+  // T583 U2: the report card. A second hook of its own, so a CLI without the `AssistantMessage`
+  // site fails only this registration and the band above is unaffected. The host enables the
+  // feature per binding (the "Draw reports as cards" switch), so the drawing needs no `$.state`.
+  hook('ui.render:AssistantMessage', () => {
+    on('ui.render', { component: 'AssistantMessage' }, ($, e, next) => {
+      try {
+        if (e.surface !== 'terminal' || !enabled('ui.reportCard')) return next(e)
+        // A summary stands for text the model wrote: drawing it as a card would hide that.
+        if (e.props.isSummary === true) return next(e)
+        const segments = splitReports(e.props.text)
+        if (segments === null) return next(e)
+        return reportView($.ui.resolve(e), segments, e.props.isFirstOfReply === true)
+      } catch (err) {
+        reportModError('ui.render:AssistantMessage', err)
+        return next(e)
+      }
+    })
+  })
+
   const all = (...names: string[]): boolean => names.every((n) => registered[n] === true)
   const features: FeatureId[] = []
   if (all('session.start', 'session.end', 'classic.SessionStart')) {
@@ -1512,6 +1533,9 @@ export const register: Register = (on) => {
     // T257: both ride on the band hook; with it missing neither is declared (contract §11).
     features.push(...bandFeatures(registered, true))
   }
+  // T583 U2: the card rides only on its own hook, so it is declared wherever that hook registered,
+  // not only in the identity branch above (a session hook that failed must not take it away).
+  if (registered['ui.render:AssistantMessage'] === true) features.push('ui.reportCard')
   if (all('prompt.submit', 'turn.start', 'turn.complete')) features.push('sense.turn')
   if (
     all(
