@@ -50,23 +50,32 @@ const STATUS_EN = fence(
   row('?', 'open', 'S3 is done, not yet verified')
 )
 
+// The `status` skill's own three-front example, verbatim (resources/skills/skills/status/SKILL.md).
 const THREE_FRONTS = fence(
   '  **T215** message_session   spec ▰▰▰▱ 3/4 · impl ▱▱▱▱ 0/4',
-  row('', 'now', 'gate decision → spec PR · `ab53791f` · 14 min'),
-  row('', 'done', 'O-1 answered · gate decided · `#224` merged'),
-  row('', 'next', 'predicate spec · implementation · live probe'),
-  row('', 'you', "— nothing, you're clear"),
-  row('?', 'open', '`--permission-mode auto` never probed'),
+  '  now      gate decision → spec PR · `ab53791f` · 14 min',
+  '  done     O-1 answered · gate decided · `#224` merged',
+  '  next     predicate spec · implementation · live probe',
+  "  you      — nothing, you're clear",
+  '? open     `--permission-mode auto` never probed',
   '',
   '! **T216** delivery assurance  S1 ▰▰▱▱ 2/4 · S2–S4 ▱▱▱ 0/3',
-  row('!', 'now', 'idle 3 h — waiting on `T215`'),
-  row('', 'done', 'research · S0 skills · S1 spec (`#225` merged)'),
-  row('', 'next', 'S1 implementation (needs `T215` for the send-back)'),
-  row('⚑', 'you', 'decide whether S1 lands before `T215` or waits for it'),
-  row('?', 'open', 'wave collision across worktrees (§11 Q4)'),
+  '! now      idle 3 h — waiting on `T215`',
+  '  done     research · S0 skills · S1 spec (`#225` merged)',
+  '  next     S1 implementation (needs `T215` for the send-back)',
+  '⚑ you      decide whether S1 lands before `T215` or waits for it',
+  '? open     wave collision across worktrees (§11 Q4)',
+  '',
+  '✓ **T217** bundled skills      ▰▰▰▰ 4/4 · shipped `0.3.27`',
+  '  now      —',
+  '  done     staging + namespacing verified live',
+  '  next     —',
+  '⚑ you      close the card · close `BUG-86`',
+  '  open     —',
   '',
   'PR `#224` · spec merged → https://github.com/org/repo/pull/224',
-  'PR `#225` · S1 spec → https://github.com/org/repo/pull/225'
+  'PR `#225` · S1 spec → https://github.com/org/repo/pull/225',
+  'Release `0.3.27` → https://github.com/org/repo/releases/tag/v0.3.27'
 )
 
 // pt-BR labels, padded to the same 9 columns: the parser keys on shape, never on the words.
@@ -152,11 +161,27 @@ test('a status glance card parses: bold id, bar, gutter rows', () => {
 
 test('three fronts in one fence become three reports', () => {
   const rs = reports(splitReports(THREE_FRONTS))
-  expect(rs).toHaveLength(2) // the two with a header; the links belong to the last
+  expect(rs).toHaveLength(3)
   expect(rs[0].header?.title).toBe('T215 message_session')
+  expect(rs[0].links).toHaveLength(0)
   expect(rs[1].header).toMatchObject({ mark: '!', title: 'T216 delivery assurance' })
   expect(rs[1].ledger[0]).toMatchObject({ gutter: 'warn', label: 'now' })
-  expect(rs[1].links).toHaveLength(2)
+  expect(rs[1].links).toHaveLength(0)
+  // the third front is shipped, and the links block that follows belongs to it
+  expect(rs[2].header).toMatchObject({
+    mark: '✓',
+    title: 'T217 bundled skills',
+    bar: { filled: 4, total: 4 }
+  })
+  expect(rs[2].ledger.map((x) => [x.gutter, x.label])).toEqual([
+    ['none', 'now'],
+    ['none', 'done'],
+    ['none', 'next'],
+    ['owed', 'you'],
+    ['none', 'open']
+  ])
+  expect(rs[2].links).toHaveLength(3)
+  expect(rs.map((r) => cardTone(r))).toEqual(['accent', 'accent', 'ok'])
 })
 
 test('pt-BR labels and a ledger continuation line parse by shape', () => {
@@ -453,6 +478,51 @@ test('the checklist glyph and the ledger gutter are fixed 2-cell columns that ne
   )
   // 6 rail rows + the open ledger row + the owed row in its box
   expect(fixed.length).toBe(8)
+  await ui.unmount()
+})
+
+// Delta 3 (1): the engine puts a blank row above the first block of a reply; drawing our own tree
+// must not lose it, or the reply sticks to the prompt line above it.
+test('the first block of a reply keeps the engine top margin', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE, { isFirstOfReply: true })
+  const root: any = await ui.drawn()
+  expect(root.type).toBe('Box')
+  expect(root.props.marginTop).toBe(1)
+  await ui.unmount()
+})
+
+test('a later block of the reply has no top margin', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE, { isFirstOfReply: false })
+  const root: any = await ui.drawn()
+  expect(root.props.marginTop ?? 0).toBe(0)
+  await ui.unmount()
+})
+
+// Delta 3 (2): the glyph and gutter colours are part of the card's meaning (✓ green ... ✗ red). This
+// passes on the code as it stands; it is a regression guard, so there is no failing-first commit.
+test('checklist glyphs and ledger gutters keep their colours', async ($, on) => {
+  const text = `Mixed.\n\n${fence(
+    'x  ▰▱ 1/2',
+    '├─ ✓ a — b',
+    '├─ ! c — d',
+    '├─ ✗ e — f',
+    '└─ - g — h',
+    '',
+    row('?', 'open', 'a question'),
+    row('!', 'now', 'a stale executor'),
+    row('⚑', 'you', 'a thing to do')
+  )}`
+  const ui = await mountWith($, on, ENABLE, text)
+  const colourOf = async (glyph: string) =>
+    (await ui.findAll({ type: 'Text', text: new RegExp('^' + glyph + '$') })).map(
+      (f: any) => f.props.color
+    )
+  expect(await colourOf('✓')).toEqual(['success'])
+  expect(await colourOf('!')).toEqual(['warning', 'warning']) // the rail's `!` and the `!` gutter
+  expect(await colourOf('✗')).toEqual(['error'])
+  expect(await colourOf('-')).toEqual(['inactive'])
+  expect(await colourOf('\\?')).toEqual(['warning'])
+  expect(await colourOf('⚑')).toEqual(['warning'])
   await ui.unmount()
 })
 
