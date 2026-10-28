@@ -310,6 +310,30 @@ next: <next check>`, the headline taken from `derived.progress`. Silence about h
    the mission. The line expands into the `status` glance card when `Needs you`
    or `Open` changed since the last tick.
 
+### The tick prompt's first line
+
+Every tick prompt you arm — the text you hand to `/loop` or `ScheduleWakeup`, and
+the same text each time you re-arm — starts with ONE fixed line naming the
+mission, exactly:
+
+```
+/harnu:mission tick · <missionId>
+```
+
+That is the skill invocation, one space, `tick`, `·` (a space, the middle dot
+U+00B7, a space), then the mission id (`mnt-` and eight hex characters). Nothing
+else on that line; any free text goes on the lines below it. For example:
+
+```
+/harnu:mission tick · mnt-7be1529e
+Watch the two executors; ping the operator only at the merge door.
+```
+
+Why: the Harnu mod draws each tick as a live card from the mission's current
+state, keyed by that id — it finds the id on this first line rather than guessing
+from prose. A tick whose first line is missing or reshaped falls back to the raw
+prompt text. The id is the one `mission_create` returned.
+
 ### Pacing
 
 When the loop paces itself, match the interval to what actually changes:
