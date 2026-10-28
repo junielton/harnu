@@ -624,20 +624,23 @@ test('ticks appended at the same moment are each kept and numbered once, in orde
   expect(ledgerOf(rig).byMission['mnt-7be1529e'].next).toBe(4)
 })
 
-test('a write that lands late never leaves the stored ledger short of a row', async ($, on) => {
+test('a held write never leaves the stored ledger short of a row once it lands', async ($, on) => {
   let writes = 0
+  let release!: () => void
+  const gate = new Promise<void>((r) => (release = r))
   // sees every write of the ledger and holds the first one back (a matcher: the rig answers the rest)
-  on('state.set', { key: 'tickRows' }, async ($: any, e: any, next: any) => {
-    if (writes++ === 0) await $.clock.sleep(5_000)
+  on('state.set', { key: 'tickRows' }, async (_$: any, e: any, next: any) => {
+    if (writes++ === 0) await gate
     return next(e)
   })
   const rig = await rigWith($, on)
-  const both = Promise.all([appendTick($, 'w-1'), appendTick($, 'w-2')])
-  await rig.clock.advance(6_000)
-  await both
+  await Promise.all([appendTick($, 'w-1'), appendTick($, 'w-2')])
+  await appendTick($, 'w-3') // arrives while the first write is held
+  release()
+  await rig.clock.advance(1)
   await rig.clock.settle()
   const rows = ledgerOf(rig).byMission['mnt-7be1529e'].rows
-  expect(rows.map((r: any) => r.rid)).toEqual(['w-1', 'w-2'])
+  expect(rows.map((r: any) => r.rid)).toEqual(['w-1', 'w-2', 'w-3'])
 })
 
 test('the ledger is keyed by the id the engine kept the row under, the one a draw reads as requestId', async ($, on) => {
@@ -759,9 +762,11 @@ test('at 30 columns a tick is a one-line chip that never exceeds the width, card
 
 test('the session.append hook resolves without waiting for the ledger write, and the write still lands', async ($, on) => {
   let writes = 0
-  on('state.set', { key: 'tickRows' }, async ($: any, e: any, next: any) => {
+  let release!: () => void
+  const gate = new Promise<void>((r) => (release = r))
+  on('state.set', { key: 'tickRows' }, async (_$: any, e: any, next: any) => {
     writes++
-    await $.clock.sleep(5_000) // a slow store
+    await gate // a slow store
     return next(e)
   })
   const rig = await rigWith($, on)
@@ -773,8 +778,9 @@ test('the session.append hook resolves without waiting for the ledger write, and
   expect(await textOf(ui, /^⟳ tick #1 · /)).toBeTruthy()
   await ui.unmount()
   await rig.clock.advance(1)
-  expect(writes).toBe(1)
-  await rig.clock.advance(6_000)
+  expect(writes).toBe(1) // started, and held
+  expect(rig.state.has('tickRows')).toBe(false)
+  release()
   await rig.clock.settle()
   expect(ledgerOf(rig).byMission['mnt-7be1529e'].rows.map((r: any) => r.rid)).toEqual(['h-1'])
 })

@@ -76,25 +76,51 @@ function bodyLines(text: string): string[] {
 
 const REPORT_HEADER = new RegExp('^Report for session \\S+ · mission (\\S+) · step (\\S+)\\s*$')
 
-function idleChip(raw: string, from: RowFrom | undefined): Chip | null {
-  if (!raw.trimStart().startsWith('{')) return null
-  let o: unknown
+// The marker the engine puts in front of an idle notice that reaches a session as a notification.
+const IDLE_MARKER = new RegExp('\\[Cross-session idle notice\\]\\s*', 'gi')
+
+/** The row's text with the engine's framing and the idle marker removed: what the sender wrote. */
+function unframed(raw: string): string {
+  return bodyLines(raw.replace(IDLE_MARKER, '\n')).join('\n')
+}
+
+/** The JSON object inside a text, from its first `{` to its last `}`, or `null`. */
+function jsonIn(text: string): Record<string, unknown> | null {
+  const a = text.indexOf('{')
+  const b = text.lastIndexOf('}')
+  if (a < 0 || b <= a) return null
   try {
-    o = JSON.parse(raw)
+    const o: unknown = JSON.parse(text.slice(a, b + 1))
+    return typeof o === 'object' && o !== null && !Array.isArray(o)
+      ? (o as Record<string, unknown>)
+      : null
   } catch {
     return null
   }
-  if (typeof o !== 'object' || o === null) return null
-  const r = o as Record<string, unknown>
-  if (r.type !== 'idle_notification') return null
-  const who = str(r.from) ?? str(from?.name) ?? 'teammate'
-  const at = typeof r.timestamp === 'string' ? new Date(r.timestamp) : null
-  const when =
-    at && !Number.isNaN(at.getTime())
-      ? ` ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
-      : ''
-  const said = str(r.result) ? ` · «${firstSentence(String(r.result))}»` : ''
-  return { glyph: '◌', tone: 'inactive', text: cut(`${who} idle${when}${said}`, CHIP_TEXT_MAX) }
+}
+
+/**
+ * An idle notice, in any of its shapes: the bare JSON, the JSON inside a `<teammate-message>` or
+ * `<cross-session-message>` wrapper, or behind the `[Cross-session idle notice]` marker, under a
+ * peer or a task-notification origin. Plain words behind the marker are an idle chip of those words.
+ */
+function idleChip(raw: string, from: RowFrom | undefined): Chip | null {
+  const body = unframed(raw)
+  const r = jsonIn(body)
+  if (r !== null && r.type === 'idle_notification') {
+    const who = str(r.from) ?? str(from?.name) ?? 'teammate'
+    const at = typeof r.timestamp === 'string' ? new Date(r.timestamp) : null
+    const when =
+      at && !Number.isNaN(at.getTime())
+        ? ` ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+        : ''
+    const said = str(r.result) ? ` · «${firstSentence(String(r.result))}»` : ''
+    return { glyph: '◌', tone: 'inactive', text: cut(`${who} idle${when}${said}`, CHIP_TEXT_MAX) }
+  }
+  if (new RegExp('\\[Cross-session idle notice\\]', 'i').test(raw) && body !== '') {
+    return { glyph: '◌', tone: 'inactive', text: cut(oneLine(body), CHIP_TEXT_MAX) }
+  }
+  return null
 }
 
 /** A peer's message (mock 03): who, the report's mission and step when it has the header, the first sentence. */
@@ -123,6 +149,8 @@ const BG_TASK = new RegExp(
 
 /** A background task's notice (mock 03): its summary, its exit code and how long it ran. */
 export function noticeChip(text: unknown, task: RowTask | undefined): Chip | null {
+  const idle = idleChip(str(text) ?? '', undefined)
+  if (idle) return idle
   const lines = bodyLines(str(text) ?? '')
   if (lines.length === 0) return null
   const line = oneLine(lines.join(' '))

@@ -99,6 +99,9 @@ export function createMissionStateFeed(deps: MissionStateFeedDeps): MissionState
   const debounceMs = deps.debounceMs ?? MISSION_DEBOUNCE_MS
   const log = deps.log ?? ((m: string): void => console.warn(`[companion] ${m}`))
   const tracked = new Map<number, Tracked>()
+  // What a binding's mod was last told it holds, kept when the binding is dropped for a lost lease: a
+  // hello again in the same boot finds the mod still holding it, and an empty snapshot is how it clears.
+  const held = new Map<number, { holds: boolean; sentIds: string[] }>()
   let poll: ReturnType<typeof setInterval> | null = null
   let soon: ReturnType<typeof setTimeout> | null = null
   let running = false
@@ -112,9 +115,11 @@ export function createMissionStateFeed(deps: MissionStateFeedDeps): MissionState
     soon = null
   }
 
-  function drop(key: number): void {
+  function drop(key: number, forget = false): void {
     const t = tracked.get(key)
     if (t?.debounce) clearTimeout(t.debounce)
+    if (t && !forget) held.set(key, { holds: t.holds, sentIds: t.sentIds })
+    if (forget) held.delete(key)
     tracked.delete(key)
     if (tracked.size === 0) stopTimers()
   }
@@ -221,11 +226,12 @@ export function createMissionStateFeed(deps: MissionStateFeedDeps): MissionState
       t.view = b
       t.force = true
     } else {
+      const was = held.get(b.key)
       tracked.set(b.key, {
         view: b,
         sentKey: null,
-        holds: false,
-        sentIds: [],
+        holds: was?.holds ?? false,
+        sentIds: was?.sentIds ?? [],
         force: true,
         debounce: null
       })
@@ -245,7 +251,7 @@ export function createMissionStateFeed(deps: MissionStateFeedDeps): MissionState
   const offs = [
     deps.host.bus.on('hello', onHello),
     deps.host.bus.on('lease', onChange),
-    deps.host.bus.on('end', (b) => drop(b.key)),
+    deps.host.bus.on('end', (b) => drop(b.key, true)),
     deps.host.onBindingChange(onChange)
   ]
 
@@ -253,7 +259,7 @@ export function createMissionStateFeed(deps: MissionStateFeedDeps): MissionState
     dispose() {
       disposed = true
       for (const off of offs) off()
-      for (const key of [...tracked.keys()]) drop(key)
+      for (const key of [...tracked.keys()]) drop(key, true)
       stopTimers()
     }
   }

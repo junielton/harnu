@@ -186,6 +186,7 @@ let missionN = 0
 let tickMem: TickLedger | null = null
 /** Ledger writes run one at a time, each writing the newest ledger, so a late one cannot undo a later row. */
 let tickWrite: Promise<unknown> = Promise.resolve()
+let tickTimer: Timer | null = null
 
 /** Modules admitted before the hello answered (the usual case: they load before `session.start`). */
 let pendingAdmitted: Admitted[] = []
@@ -232,6 +233,7 @@ function resetState(): void {
   missionN = 0
   tickMem = null
   tickWrite = Promise.resolve()
+  tickTimer = null
   pollStale = 0
   pendingAdmitted = []
 }
@@ -1226,9 +1228,16 @@ async function noteTick($: Dollar, uuid: string, text: string): Promise<void> {
   const plan = planTick(tickMem ?? stored, entry, uuid, now)
   if (plan.ledger === null) return
   tickMem = plan.ledger
-  const run = tickWrite.then(() => $.state.set(TICK_ROWS, tickMem ?? plan.ledger))
-  tickWrite = run.catch(() => undefined)
-  await run
+  // The write is display-only and may be slow: it runs from a timer, after the engine has its row back,
+  // one at a time, each writing the newest ledger. The draw reads `tickMem` and needs no wait.
+  if (tickTimer === null) {
+    tickTimer = $.clock.after(0, () => {
+      tickTimer = null
+      tickWrite = tickWrite
+        .then(() => $.state.set(TICK_ROWS, tickMem ?? plan.ledger))
+        .catch(() => undefined)
+    })
+  }
 }
 
 /** The part of an appended row `appendedTick` reads. */

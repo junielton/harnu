@@ -327,7 +327,10 @@ export function tickCard(
 
 // ---- the ledger of drawn ticks -------------------------------------------------------------------
 
-/** The newest this many rows of one mission are kept; an older row, drawn again, is simply numbered anew. */
+/**
+ * The newest this many rows of one mission are kept. A row dropped from the ledger and drawn again
+ * is no longer known: it draws as an unnumbered card of the mission as it is now.
+ */
 export const TICK_ROWS_MAX = 50
 
 /** One tick row as it was first drawn: its number, what the mission looked like, and the card it got. */
@@ -446,13 +449,13 @@ const HEADER_GAP = 2
 const cells = (s: string): number => [...s].length
 
 /**
- * What the header row draws in `inner` cells (the card's width less its border and padding). The title
- * gives way first, down to a floor; then `· V verified` goes; then the bar. One cell is always left
- * free. Below about 32 inner cells (a 36-column terminal) even the label and `Step N of M` cannot
- * both fit, and the result is best effort. A terminal font may draw `⟳` or a bar glyph wider than the layout counts, and a header that
- * fills its row to the last cell would push the border out by that one cell.
+ * What the header row draws in `inner` cells (the card's width less its border and padding), or `null`
+ * when no header can fit: the caller then draws the plain one-line chip. The title gives way first,
+ * down to a floor; then `· V verified` goes; then the bar. One cell is always left free: a terminal
+ * font may draw `⟳` or a bar glyph wider than the layout counts, and a header that fills its row to
+ * the last cell would push the border out by that one cell. A result never exceeds `inner - 1` cells.
  */
-export function fitHeader(card: TickCard, inner: number): FittedHeader {
+export function fitHeader(card: TickCard, inner: number): FittedHeader | null {
   const prefix = '⟳ tick' + (card.n === null ? '' : ' #' + card.n) + ' · '
   const budget = inner - 1 - HEADER_GAP
   const short = card.detail.split(' · ')[0]
@@ -477,8 +480,10 @@ export function fitHeader(card: TickCard, inner: number): FittedHeader {
       }
     }
   }
-  // No room for a readable title beside the detail: keep the detail, cut the title to what is left.
-  const room = Math.max(2, budget - cells(short) - cells(prefix))
+  // No room for a readable title beside the detail: keep the detail, cut the title to what is left,
+  // and if even two cells of it do not fit there is no card at this width.
+  const room = budget - cells(short) - cells(prefix)
+  if (room < 2) return null
   return {
     left: prefix + [...card.title].slice(0, room - 1).join('') + '…',
     bar: null,
@@ -488,9 +493,10 @@ export function fitHeader(card: TickCard, inner: number): FittedHeader {
 
 /**
  * The one dim line of a tick that found nothing new, fitted to `avail` cells: the title gives way
- * first, then the step count, and "no change since #N" is never the part that is cut.
+ * first, then the step count, and "no change since #N" is never the part that is cut. `null` when not
+ * even the tick label and that tail fit: the caller then draws the plain one-line chip.
  */
-export function fitNoChange(card: TickCard, avail: number): string {
+export function fitNoChange(card: TickCard, avail: number): string | null {
   const head = '⟳ tick' + (card.n === null ? '' : ' #' + card.n)
   const tail = ' · no change since #' + card.sinceN
   const where = ' · ' + card.detail.split(' · ')[0]
@@ -501,5 +507,13 @@ export function fitNoChange(card: TickCard, avail: number): string {
       return head + ' · ' + [...card.title].slice(0, room - 1).join('') + '…' + w + tail
     }
   }
-  return head + tail
+  return cells(head + tail) <= avail ? head + tail : null
+}
+
+/** What a tick says as a plain chip (`⟳` is the chip's glyph): for a terminal too narrow for a card. */
+export function tickChipText(card: TickCard): string {
+  const n = card.n === null ? '' : ' #' + card.n
+  const where = card.detail.split(' · ')[0]
+  const tail = card.kind === 'nochange' ? ' · no change since #' + card.sinceN : ''
+  return 'tick' + n + ' · ' + card.title + ' · ' + where + tail
 }

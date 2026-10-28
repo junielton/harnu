@@ -1,6 +1,6 @@
 import type { ElementTable } from 'claude-code'
 import type { Chip } from './lib/quiet-rows'
-import { fitHeader, fitNoChange, type TickCard } from './lib/mission-state'
+import { fitHeader, fitNoChange, tickChipText, type TickCard } from './lib/mission-state'
 
 /**
  * The quiet rows' views (T589, mockups 02 and 03). Pure builders: they receive the resolved
@@ -41,6 +41,8 @@ export function tickView(els: Els, card: TickCard, columns?: number) {
   if (card.kind === 'nochange') {
     // The line, a space and `ctrl+o`, and one spare cell: "no change since #N" is the last to be cut.
     const line = fitNoChange(card, columns === undefined ? 1000 : columns - 8)
+    if (line === null)
+      return chipView(els, { glyph: '⟳', tone: 'inactive', text: tickChipText(card) })
     return (
       <Box flexDirection="row" marginTop={1}>
         <Box flexGrow={1} flexShrink={1}>
@@ -56,6 +58,10 @@ export function tickView(els: Els, card: TickCard, columns?: number) {
   }
   // The card is a border and a cell of padding on each side wide.
   const header = fitHeader(card, columns === undefined ? 1000 : columns - 4)
+  // Too narrow for a card: the plain one-line chip, cut at the edge, never a border that overflows.
+  if (header === null) {
+    return chipView(els, { glyph: '⟳', tone: 'inactive', text: tickChipText(card) })
+  }
   return (
     <Box
       flexDirection="column"
