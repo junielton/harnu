@@ -35,6 +35,8 @@ export interface CompanionIpcExtras {
   debug?: boolean
   /** T585: the "Draw reports as cards" switch (a feature key of the host, not the kill switch). */
   setReportCards(on: boolean): void
+  /** T589: the "Draw agent messages compactly" switch (a feature key of the host, not the kill switch). */
+  setQuietRows(on: boolean): void
   /** P4W3: the "Harnu mod outside Harnu" switch, its path line and the last outside session seen. */
   externalGet(): Promise<ExternalPaneState>
   /** P4W3: turns it on (the settings write, after the renderer's confirm) or off (the exact undo). */
@@ -181,6 +183,12 @@ export function registerCompanionIpc(
   ipcMain.handle('companion:setReportCards', (_e, on: unknown) => {
     if (typeof on !== 'boolean') return { ok: false }
     extras.setReportCards(on)
+    return { ok: true }
+  })
+  // T589: the same shape as the report-card switch: renderer IPC only, a boolean or nothing.
+  ipcMain.handle('companion:setQuietRows', (_e, on: unknown) => {
+    if (typeof on !== 'boolean') return { ok: false }
+    extras.setQuietRows(on)
     return { ok: true }
   })
   ipcMain.handle('companion:disclosureShown', async () => {

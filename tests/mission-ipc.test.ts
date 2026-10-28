@@ -175,6 +175,35 @@ describe('listMissionViews', () => {
     expect(views[0].root).toBe(root)
   })
 
+  it('T589: with onlySessions it derives only the missions those sessions own or are linked to', async () => {
+    const CHILD = '99999999-aaaa-4bbb-8ccc-dddddddddddd'
+    const OTHER = '77777777-aaaa-4bbb-8ccc-dddddddddddd'
+    const linked = mission('mnt-0000000b', {
+      status: 'active',
+      owner: { sessionId: OTHER, folder: '/repo' }
+    })
+    linked.steps[1].links = [{ kind: 'session', ref: CHILD }]
+    await createMissionFile(root, mission('mnt-0000000a', { status: 'active' })) // owned by OWNER
+    await createMissionFile(root, linked) // CHILD is linked on a step
+    await createMissionFile(
+      root,
+      mission('mnt-0000000c', { status: 'active', owner: { sessionId: OTHER, folder: '/repo' } })
+    ) // neither
+    const r = await ipc.listMissionViews([root], Date.now(), {
+      onlySessions: new Set([OWNER, CHILD])
+    })
+    expect(r.views.map((v) => v.mission.id).sort()).toEqual(['mnt-0000000a', 'mnt-0000000b'])
+    expect(h.deriveCalls).toBe(2) // the third was never derived
+    h.deriveCalls = 0
+    const none = await ipc.listMissionViews([root], Date.now(), {
+      onlySessions: new Set(['nobody'])
+    })
+    expect(none.views).toEqual([])
+    expect(h.deriveCalls).toBe(0)
+    // without the option, every mission is derived as before
+    expect((await ipc.listMissionViews([root])).views).toHaveLength(3)
+  })
+
   it('never carries legacyRaw to the renderer', async () => {
     await createMissionFile(
       root,

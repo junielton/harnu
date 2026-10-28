@@ -63,6 +63,25 @@ import { createRing } from './lib/ring'
 import { bandView } from './surface'
 import { reportView } from './report-card'
 import { splitReports } from './lib/report-card'
+import { chipView, tickView } from './quiet-rows'
+import {
+  QUIET_KINDS,
+  plainObject,
+  rowChip,
+  tickMissionId,
+  tickMissionIn,
+  type RowFrom,
+  type RowTask
+} from './lib/quiet-rows'
+import {
+  parseLedger,
+  parseMissionState,
+  looseCard,
+  parseStored,
+  planTick,
+  type TickCard,
+  type TickLedger
+} from './lib/mission-state'
 import { measurePayload, readPayload } from './lib/usage-sensor'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
@@ -90,6 +109,8 @@ const FLEET = { plugin: 'harnu-companion', key: 'fleet' } as const
 const PERMISSION_MODE = { plugin: 'harnu-companion', key: 'permissionMode' } as const
 const CHANNEL = { plugin: 'harnu-companion', key: 'channel' } as const
 const BAND = { plugin: 'harnu-companion', key: 'band' } as const
+const MISSIONS = { plugin: 'harnu-companion', key: 'missions' } as const
+const TICK_ROWS = { plugin: 'harnu-companion', key: 'tickRows' } as const
 
 /** The feature an event type belongs to. `null`: reportable whenever the channel is alive. */
 const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
@@ -155,6 +176,17 @@ let bandN = 0
 let bandTimer: Timer | null = null
 /** Band writes run one at a time, so two commands cannot apply out of order. */
 let bandChain: Promise<unknown> = Promise.resolve()
+/** T589: the highest `mission.state` `n` this load has applied; a lower one never overwrites it. */
+let missionN = 0
+/**
+ * T589: the tick ledger as this load knows it. `session.append` numbers a fired tick (a render hook
+ * may not write `$.state`), and the write may not have reached `$.state` when a draw reads it, so the
+ * draw reads this copy first. `null` until a tick arrived: the stored ledger is the truth after a reload.
+ */
+let tickMem: TickLedger | null = null
+/** Ledger writes run one at a time, each writing the newest ledger, so a late one cannot undo a later row. */
+let tickWrite: Promise<unknown> = Promise.resolve()
+let tickTimer: Timer | null = null
 
 /** Modules admitted before the hello answered (the usual case: they load before `session.start`). */
 let pendingAdmitted: Admitted[] = []
@@ -198,6 +230,10 @@ function resetState(): void {
   bandN = 0
   bandTimer = null
   bandChain = Promise.resolve()
+  missionN = 0
+  tickMem = null
+  tickWrite = Promise.resolve()
+  tickTimer = null
   pollStale = 0
   pendingAdmitted = []
 }
@@ -649,7 +685,10 @@ async function doHello($: Dollar, resumeConn?: Conn, fresh = false): Promise<voi
     channel = forBoot(prior, bootId)
     // A new boot numbers its commands from 1 again: what this load remembers of the old one (the
     // highest `n`, the standing line) belongs to a queue that no longer exists.
-    if (channel !== prior) resetBand($)
+    if (channel !== prior) {
+      resetBand($)
+      resetMissions($)
+    }
     void writeChannel($)
     restartPollLoop($)
     await acceptCommands($, parseCommands(b.commands))
@@ -1101,6 +1140,16 @@ function resetBand($: Dollar): void {
   bandChain = run.catch(() => undefined)
 }
 
+/** A new host boot: the mission state it pushed belongs to a queue that no longer exists (T589). */
+function resetMissions($: Dollar): void {
+  missionN = 0
+  // Nothing stored, nothing to clear: a fresh session keeps its state free of a null key.
+  void $.state
+    .get(MISSIONS)
+    .then((stored) => (stored.value == null ? undefined : $.state.set(MISSIONS, null)))
+    .catch(() => undefined)
+}
+
 /** Clears a band whose `expiresAt` has passed, so a dead host cannot leave a stale line (P4W2 §7.4). */
 function sweepBand($: Dollar): void {
   const run = bandChain.then(async () => {
@@ -1143,6 +1192,89 @@ async function runBandSet($: Dollar, c: Command<'ui.band.set'>): Promise<Handler
 }
 
 /**
+ * T589 `mission.state`: stores the pushed missions under `$.state.missions`; the `UserMessage` hook
+ * draws a loop tick from them. The args are checked again here (the host's gate was the first lock).
+ */
+async function runMissionState($: Dollar, c: Command<'mission.state'>): Promise<HandlerResult> {
+  const req = parseMissionState(c.args)
+  if (req === null) return precondition('the mission state is out of shape or over a limit')
+  if (c.n <= missionN) return precondition('an older mission state: a newer one is already applied')
+  missionN = c.n
+  await $.state.set(MISSIONS, { v: 1, n: c.n, at: await $.clock.now(), missions: req.missions })
+  try {
+    await $.ui.invalidate('ui.render')
+  } catch {
+    // best effort: the stored state is the truth, the redraw is a courtesy
+  }
+  return okResult()
+}
+
+/**
+ * T589: a fired tick, as the engine appends it. This is the one place the order of ticks is known
+ * (a render draws rows in whatever order the engine mounts them, a resumed session bottom-up), and a
+ * hook outside drawing may write `$.state`: the row is numbered here against the state pushed now,
+ * and the draw only reads it. A tick with nothing pushed for its mission is left to the draw.
+ */
+async function noteTick($: Dollar, uuid: string, text: string): Promise<void> {
+  const missionId = tickMissionIn(text)
+  if (missionId === null) return
+  const pushed = parseStored((await $.state.get(MISSIONS)).value)
+  const entry = pushed?.missions.find((m) => m.id === missionId)
+  if (!entry) return
+  const stored = parseLedger((await $.state.get(TICK_ROWS)).value)
+  const now = await $.clock.now()
+  // From here to the assignment there is no `await`: two ticks in flight cannot plan from the same
+  // ledger, so none is lost and no two share a number.
+  const plan = planTick(tickMem ?? stored, entry, uuid, now)
+  if (plan.ledger === null) return
+  tickMem = plan.ledger
+  // The write is display-only and may be slow: it runs from a timer, after the engine has its row back,
+  // one at a time, each writing the newest ledger. The draw reads `tickMem` and needs no wait.
+  if (tickTimer === null) {
+    tickTimer = $.clock.after(0, () => {
+      tickTimer = null
+      tickWrite = tickWrite
+        .then(() => $.state.set(TICK_ROWS, tickMem ?? plan.ledger))
+        .catch(() => undefined)
+    })
+  }
+}
+
+/** The part of an appended row `appendedTick` reads. */
+interface AppendedRow {
+  uuid: string
+  origin: { kind: string }
+  message: { content: { type: string; text?: string }[] }
+}
+
+async function appendedTick($: Dollar, e: AppendedRow, uuid: string): Promise<void> {
+  try {
+    if (!enabled('ui.quietRows') || e.origin.kind !== 'scheduled-trigger') return
+    const text = e.message.content.map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('\n')
+    await noteTick($, uuid, text)
+  } catch (err) {
+    reportModError('session.append', err)
+  }
+}
+
+/**
+ * T589: the card of one loop tick, or `null` when there is nothing to draw it from (no pushed state,
+ * the mission is not in it, or it is not state at all). A row `noteTick` numbered keeps its number and
+ * its comparison; any other is the mission as it is now. Reading both keys subscribes the hook to them.
+ */
+async function tickFor($: Dollar, missionId: string, rid: string): Promise<TickCard | null> {
+  const pushed = parseStored((await $.state.get(MISSIONS)).value)
+  const stored = parseLedger((await $.state.get(TICK_ROWS)).value)
+  const entry = pushed?.missions.find((m) => m.id === missionId)
+  if (!entry) return null
+  const now = await $.clock.now()
+  const ledger = tickMem ?? stored
+  const known = ledger.byMission[missionId]?.rows.some((r) => r.rid === rid) === true
+  // A row the mod saw arrive is numbered and compared; one it did not is the mission as it is now.
+  return known ? planTick(ledger, entry, rid, now).card : looseCard(entry, now)
+}
+
+/**
  * The closed switch (SEC-5, contract §9): the only place a command name becomes a `$` call. The
  * engine refuses a `$` passed through a dynamic callee, so a later wave adds its `case` here, and
  * its name to `IMPLEMENTED_COMMANDS`, instead of registering a function.
@@ -1165,6 +1297,8 @@ function runHandler($: Dollar, c: Command): Handled {
       return runContextAppend($, c as Command<'context.append'>)
     case 'ui.band.set':
       return runBandSet($, c as Command<'ui.band.set'>)
+    case 'mission.state':
+      return runMissionState($, c as Command<'mission.state'>)
     default:
       return { ok: false, code: 'CMD_UNSUPPORTED' }
   }
@@ -1524,6 +1658,60 @@ export const register: Register = (on) => {
     })
   })
 
+  // T589: the quiet rows. A third hook of its own, for the same reason. It touches only the origins a
+  // person did not type (`QUIET_KINDS`), never a row the view draws in full (ctrl+o), and a row it
+  // cannot read is left to the engine. The host enables the feature per binding ("Draw agent
+  // messages compactly").
+  hook('ui.render:UserMessage', () => {
+    on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+      try {
+        if (e.surface !== 'terminal' || !enabled('ui.quietRows')) return next(e)
+        if (e.props.isExpanded === true) return next(e)
+        const kind = e.props.origin?.kind
+        if (typeof kind !== 'string' || !QUIET_KINDS.has(kind)) return next(e)
+        // A loop tick that names a mission, with state pushed for it, is the live card.
+        const missionId = kind === 'scheduled-trigger' ? tickMissionId(e.props.text) : null
+        if (missionId !== null) {
+          const card = await tickFor($, missionId, e.requestId)
+          if (card !== null) return tickView($.ui.resolve(e), card, e.viewport?.columns)
+        }
+        const chip = rowChip(
+          kind,
+          e.props.text,
+          plainObject<RowFrom>(e.props.from),
+          plainObject<RowTask>(e.props.task)
+        )
+        return chip === null ? next(e) : chipView($.ui.resolve(e), chip)
+      } catch (err) {
+        reportModError('ui.render:UserMessage', err)
+        return next(e)
+      }
+    })
+  })
+
+  // T589: numbers a fired tick as it arrives (see `noteTick`). Two doors carry a fired prompt; the
+  // pass-through comes first, so the row is always kept before the mod looks at it.
+  hook('session.append:prompt', () => {
+    on('session.append', { door: 'prompt' }, async ($, e, next) => {
+      const kept = await next(e)
+      // The ledger is keyed by the id the engine kept the row under, which a draw reads as requestId;
+      // a row it did not keep (no `uuid`) is never numbered. (The engine refuses only a plugin's own
+      // append, so on these doors this is a guard, not a case the engine produces.)
+      if (kept.uuid !== undefined) await appendedTick($, e, kept.uuid)
+      return kept
+    })
+  })
+  hook('session.append:delivery', () => {
+    on('session.append', { door: 'delivery' }, async ($, e, next) => {
+      const kept = await next(e)
+      // The ledger is keyed by the id the engine kept the row under, which a draw reads as requestId;
+      // a row it did not keep (no `uuid`) is never numbered. (The engine refuses only a plugin's own
+      // append, so on these doors this is a guard, not a case the engine produces.)
+      if (kept.uuid !== undefined) await appendedTick($, e, kept.uuid)
+      return kept
+    })
+  })
+
   const all = (...names: string[]): boolean => names.every((n) => registered[n] === true)
   const features: FeatureId[] = []
   if (all('session.start', 'session.end', 'classic.SessionStart')) {
@@ -1536,6 +1724,7 @@ export const register: Register = (on) => {
   // T583 U2: the card rides only on its own hook, so it is declared wherever that hook registered,
   // not only in the identity branch above (a session hook that failed must not take it away).
   if (registered['ui.render:AssistantMessage'] === true) features.push('ui.reportCard')
+  if (registered['ui.render:UserMessage'] === true) features.push('ui.quietRows')
   if (all('prompt.submit', 'turn.start', 'turn.complete')) features.push('sense.turn')
   if (
     all(

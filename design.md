@@ -1557,7 +1557,9 @@ switches; the Mods tab moves the whole block when it lands. The first is **Draw 
 cards** (T585, `id="set-companion-report-cards"`): the same row anatomy as above (`--text-2`
 12px label, one `SettingHint`, `ToggleSwitch` on the right, `margin-top: 10px`), default **on**;
 the switch takes the toggle's disabled treatment, with the hint `The Harnu mod is off. Turn it
-on first.`, while the mod itself is off. No new variant. Searchable via "harnu mod",
+on first.`, while the mod itself is off. The second is **Draw agent messages compactly** (T589,
+`id="set-companion-quiet-rows"`), the same row anatomy, default **on**, with the same disabled
+treatment. No new variant. Searchable via "harnu mod",
 "mod", "mods", "plugin". The kill switch is renderer IPC only: nothing an agent can call
 reaches it. No new design token.
 

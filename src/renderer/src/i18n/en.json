@@ -4557,6 +4557,10 @@
         "label": "Draw reports as cards",
         "description": "Show a status or report-back reply as a card in the transcript. The message itself is unchanged, and Ctrl+O still shows it as written. Sessions already running keep their setting until they restart."
       },
+      "quietRows": {
+        "label": "Draw agent messages compactly",
+        "description": "Show reports from other sessions and task notices as one line, and a loop tick as a live mission card. What you type is never touched, and Ctrl+O still shows every row as written. Sessions already running keep their setting until they restart."
+      },
       "policy": "Blocked by your organization's policy.",
       "modsOff": "Turned off by a setting or by your organization's policy.",
       "remoteOff": "Mods are turned off remotely for this Claude Code install.",

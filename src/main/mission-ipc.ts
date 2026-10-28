@@ -173,7 +173,14 @@ async function buildMissionView(
  */
 export async function listMissionViews(
   folders: readonly string[],
-  now = Date.now()
+  now = Date.now(),
+  opts: {
+    /**
+     * Only the missions one of these sessions owns or is linked to as a child are derived (the files
+     * are all read; the derive, the costly part, is skipped for the rest). Absent: every open mission.
+     */
+    onlySessions?: ReadonlySet<string>
+  } = {}
 ): Promise<MissionListResult> {
   const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
   if (roots.length === 0) return { views: [], unreadable: [], shadowed: [] }
@@ -184,7 +191,15 @@ export async function listMissionViews(
   const unreadable = read.unreadable.map((u) => u.name)
   // One list per repo root, so the jobs below can be taken round-robin across repos.
   const perRoot = new Map<string, RootedMission[]>()
-  for (const m of read.missions) perRoot.set(m.root, [...(perRoot.get(m.root) ?? []), m])
+  const only = opts.onlySessions
+  const wanted = (m: Mission): boolean =>
+    only === undefined ||
+    only.has(m.owner.sessionId) ||
+    m.steps.some((s) => s.links.some((l) => l.kind === 'session' && only.has(l.ref)))
+  for (const m of read.missions) {
+    if (!wanted(m.mission)) continue
+    perRoot.set(m.root, [...(perRoot.get(m.root) ?? []), m])
+  }
   const lists = [...perRoot.values()]
   const jobs: Array<{ root: string; mission: Mission; log: string }> = []
   for (let k = 0; lists.some((list) => k < list.length); k++) {

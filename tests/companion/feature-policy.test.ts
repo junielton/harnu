@@ -14,6 +14,7 @@ import {
   computeEnable,
   registerFeaturePolicy,
   registerP1FeaturePolicies,
+  registerQuietRowsPolicy,
   registerReportCardPolicy,
   resetFeaturePoliciesForTests
 } from '../../src/main/companion/feature-policy'
@@ -169,6 +170,36 @@ describe('ui.reportCard (T585)', () => {
 
   it('a headless session never draws, and the kill switch overrides the key', async () => {
     expect(enable('headless', declared)).not.toContain('ui.reportCard')
+    await setCompanionEnabled(false)
+    expect(enable('interactive', declared)).toEqual([])
+  })
+})
+
+describe('ui.quietRows (T589)', () => {
+  const declared = ['sense.identity', 'ui.quietRows']
+  beforeEach(() => registerQuietRowsPolicy())
+
+  it('is on by default, for any binding that declared it, outside Harnu included', () => {
+    expect(enable('interactive', declared)).toEqual(['sense.identity', 'ui.quietRows'])
+    expect(enable('external', declared)).toContain('ui.quietRows')
+  })
+
+  it('is never enabled for a mod that did not declare it', () => {
+    expect(enable('interactive', ['sense.identity'])).toEqual(['sense.identity'])
+  })
+
+  it('follows the "Draw agent messages compactly" key, which is its own', () => {
+    setPrefsKey('quietRows', false)
+    expect(enable('interactive', declared)).toEqual(['sense.identity'])
+    setPrefsKey('quietRows', true)
+    expect(enable('interactive', declared)).toContain('ui.quietRows')
+    setPrefsKey('reportCards', false) // the report-card switch does not move it
+    expect(enable('interactive', declared)).toContain('ui.quietRows')
+    setPrefsKey('reportCards', true)
+  })
+
+  it('a headless session never draws, and the kill switch overrides the key', async () => {
+    expect(enable('headless', declared)).not.toContain('ui.quietRows')
     await setCompanionEnabled(false)
     expect(enable('interactive', declared)).toEqual([])
   })
