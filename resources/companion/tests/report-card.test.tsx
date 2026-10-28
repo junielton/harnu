@@ -341,11 +341,14 @@ test('a summary block is never redrawn', async ($, on) => {
   await ui.unmount()
 })
 
-test('onScreen is carried: a drawn card does not touch it', async ($, on) => {
+const SCREEN = { first: 0, last: 3, of: 12 }
+
+/** What the engine's own drawing, beneath the mod, is handed: the props `next(e)` passed down. */
+const mountSeen = async ($: any, on: any, text: string, over: Record<string, unknown>) => {
   const rig = installRig(on, { script: scriptWith(ENABLE) })
-  const seen: unknown[] = []
+  const seen: { isSummary: unknown; onScreen: unknown }[] = []
   on('ui.render', ($: any, e: any) => {
-    seen.push(e.props.onScreen)
+    seen.push({ isSummary: e.props.isSummary, onScreen: e.props.onScreen })
     const { Text } = $.ui.resolve(e)
     return <Text>engine</Text>
   })
@@ -354,11 +357,23 @@ test('onScreen is carried: a drawn card does not touch it', async ($, on) => {
   const ui = await $.ui.mount({
     ...ASSISTANT,
     surface: 'terminal',
-    props: props(EN_MESSAGE, { onScreen: 'full' })
+    props: props(text, over)
   } as never)
-  // the hook never rewrites props, so what the engine below sees is what the engine sent
-  expect(seen.every((s) => s === 'full')).toBe(true)
+  return { ui, seen }
+}
+
+test('isSummary and onScreen reach the engine unchanged when the mod steps aside', async ($, on) => {
+  const { ui, seen } = await mountSeen($, on, EN_MESSAGE, { isSummary: true, onScreen: SCREEN })
+  expect(seen.length).toBeGreaterThan(0)
+  for (const s of seen) expect(s).toEqual({ isSummary: true, onScreen: SCREEN })
+  await ui.unmount()
+})
+
+test('a card is drawn for a block on screen; the props are never rewritten', async ($, on) => {
+  const { ui } = await mountSeen($, on, EN_MESSAGE, { onScreen: SCREEN })
   expect(await textOf(ui, /avatar-cache/)).toBeTruthy()
+  // a rewrite that changed `onScreen` would have been refused and the engine's drawing kept
+  expect(await textOf(ui, /^engine$/)).toBeUndefined()
   await ui.unmount()
 })
 
