@@ -107,6 +107,21 @@ export function registerReportCardPolicy(): void {
 }
 registerReportCardPolicy()
 
+/**
+ * T589: the quiet rows. `ui.quietRows` makes the mod draw a peer report, a task notice or a loop tick
+ * on a `UserMessage` row as one line or a live card (display only; the operator's own words are never
+ * touched). It follows its own switch, "Draw agent messages compactly" (`quietRows`), on by default,
+ * and no binding class narrows it. It is also the feature `mission.state` rides on.
+ */
+export function registerQuietRowsPolicy(): void {
+  registerPrefsKey<boolean>('quietRows', { default: true, parse: (raw) => raw !== false })
+  registerFeaturePolicy(
+    'ui.quietRows',
+    () => prefsKey<boolean>('quietRows') && getCompanionMode() !== 'off'
+  )
+}
+registerQuietRowsPolicy()
+
 /** The external profile's ceiling (contract §21 item 3); each rule still has to pass. */
 const EXTERNAL_ALLOWED: ReadonlySet<FeatureId> = new Set([
   'sense.identity',
@@ -117,6 +132,7 @@ const EXTERNAL_ALLOWED: ReadonlySet<FeatureId> = new Set([
   'ui.command',
   'ui.band',
   'ui.reportCard',
+  'ui.quietRows',
   'gate.approval'
 ])
 

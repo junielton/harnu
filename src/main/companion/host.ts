@@ -56,6 +56,7 @@ import {
   setPlanUsagePollObserver
 } from './ingest/plan-usage-gate'
 import { registerModsObserved, type ModsObserved } from './mods-observed'
+import { createMissionStateFeed, type MissionStateFeed } from './mission-state'
 import {
   familyMode,
   getCompanionMode,
@@ -115,6 +116,7 @@ let telemetry: TelemetryAdapter | null = null
 let turnLedger: TurnLedger | null = null
 let ledgerTimer: ReturnType<typeof setInterval> | null = null
 let modsObserved: ModsObserved | null = null
+let missionState: MissionStateFeed | null = null
 
 /**
  * P4W1 part B: the mods the companion saw admitted in sessions with a live lease, for the Mods
@@ -350,6 +352,9 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
 
   // P4W1 part B: the `modsLive` key (default off), the `sense.mods` rule and the observation store.
   modsObserved = registerModsObserved({ host: core.facade })
+  // T589: the missions a session owns or is linked to, pushed to its mod for the quiet rows.
+  missionState?.dispose()
+  missionState = createMissionStateFeed({ host: core.facade })
   // The shared policy probe: one run per boot and CLI binary, lazily, off the spawn path.
   const probe = createAppPolicyProbe(companionStagedDir)
   // The Mods pane (P4W1) reads the same staged directory and the same probe: row 1 is the staged
@@ -439,6 +444,7 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
       buildCompanionStatus({
         enabled: () => getCompanionPrefs().enabled,
         reportCards: () => prefsKey<boolean>('reportCards'),
+        quietRows: () => prefsKey<boolean>('quietRows'),
         disclosureShownAt: () => getCompanionPrefs().disclosureShownAt ?? null,
         stagedDir: companionStagedDir,
         modVersion: () => manifest.version,
@@ -455,6 +461,10 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     stagedDir: async () => companionStagedDir() ?? (await ensureStaged()),
     setReportCards: (on) => {
       setPrefsKey('reportCards', on)
+      pushUpdated()
+    },
+    setQuietRows: (on) => {
+      setPrefsKey('quietRows', on)
       pushUpdated()
     },
     externalGet: () => external!.get(),
@@ -485,6 +495,8 @@ export function closeCompanionHost(): Promise<void> {
   setPlanUsagePollObserver(null)
   telemetry?.dispose()
   telemetry = null
+  missionState?.dispose()
+  missionState = null
   flushParityLedger()
   external?.stop()
   return core.close()

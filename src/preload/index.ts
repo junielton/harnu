@@ -3098,6 +3098,9 @@ const api = {
   /** T585: "Draw reports as cards". Sessions started after the change read it; running ones keep theirs. */
   companionSetReportCards: (on: boolean): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('companion:setReportCards', on),
+  /** T589: "Draw agent messages compactly". Sessions started after the change read it; running ones keep theirs. */
+  companionSetQuietRows: (on: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('companion:setQuietRows', on),
   /** Stamps that the one-time notice was rendered; sessions spawned after it carry the mod. */
   companionDisclosureShown: (): Promise<void> => ipcRenderer.invoke('companion:disclosureShown'),
   /** Opens the folder the sessions load the mod from. */

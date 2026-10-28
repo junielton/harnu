@@ -73,6 +73,8 @@ const companionEnabled = computed(() => companion.status?.enabled ?? true)
 const companionStagedDir = computed(() => companion.status?.stagedDir ?? null)
 // T585: the report-card feature switch. It only matters while the mod itself is on.
 const companionReportCards = computed(() => companion.status?.reportCards ?? true)
+// T589: the quiet-rows feature switch, next to it.
+const companionQuietRows = computed(() => companion.status?.quietRows ?? true)
 const companionStatusKey = computed(() => settingsStatusKey(companion.status))
 // T239: the voice master switch shown under Sound. The full pane is its own tab.
 const voiceStore = useVoiceStore()
@@ -1861,6 +1863,30 @@ onBeforeUnmount(() => {
                           :disabled="!companionEnabled"
                           :aria-label="$t('harnuMod.settings.reportCards.label')"
                           @update:model-value="companion.setReportCards($event)"
+                        />
+                      </div>
+                      <!-- T589: the quiet rows (design §6 → Settings row, next to the report card). -->
+                      <div
+                        id="set-companion-quiet-rows"
+                        class="flex items-start justify-between"
+                        style="gap: 12px; margin-top: 10px"
+                      >
+                        <div style="flex: 1; min-width: 0">
+                          <div class="text-text-2" style="font-size: 12px">
+                            {{ $t('harnuMod.settings.quietRows.label') }}
+                          </div>
+                          <SettingHint>{{
+                            $t('harnuMod.settings.quietRows.description')
+                          }}</SettingHint>
+                          <SettingHint v-if="!companionEnabled">{{
+                            $t('harnuMod.external.needsMod')
+                          }}</SettingHint>
+                        </div>
+                        <ToggleSwitch
+                          :model-value="companionQuietRows"
+                          :disabled="!companionEnabled"
+                          :aria-label="$t('harnuMod.settings.quietRows.label')"
+                          @update:model-value="companion.setQuietRows($event)"
                         />
                       </div>
                     </div>
