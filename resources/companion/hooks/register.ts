@@ -1532,8 +1532,10 @@ export const register: Register = (on) => {
     if (all('turn.start')) features.push('act.turn')
     // T257: both ride on the band hook; with it missing neither is declared (contract §11).
     features.push(...bandFeatures(registered, true))
-    if (registered['ui.render:AssistantMessage'] === true) features.push('ui.reportCard')
   }
+  // T583 U2: the card rides only on its own hook, so it is declared wherever that hook registered,
+  // not only in the identity branch above (a session hook that failed must not take it away).
+  if (registered['ui.render:AssistantMessage'] === true) features.push('ui.reportCard')
   if (all('prompt.submit', 'turn.start', 'turn.complete')) features.push('sense.turn')
   if (
     all(

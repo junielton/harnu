@@ -60,11 +60,26 @@ const RAIL_OPEN_RE = new RegExp('^│$')
 const RAIL_ROW_RE = new RegExp('^[├└]─ ([✓✗!-]) (\\S.*)$')
 const MARK_RE = /^([✓✗!-]) (?=\S)/
 const GUTTERS: Record<string, Gutter> = { ' ': 'none', '⚑': 'owed', '?': 'open', '!': 'warn' }
-const OPEN_FENCE_RE = new RegExp('^ {0,3}(`{3,}|~{3,})\\s*([\\w-]*)\\s*$')
+// The info string may carry attributes (`text title="x"`); a backtick fence's cannot hold a backtick.
+const OPEN_FENCE_RE = new RegExp('^ {0,3}(?:(`{3,})\\s*([^`]*)|(~{3,})\\s*(.*))$')
+const SPACE_RE = new RegExp('\\s+')
 const TRAILING_SPACE_RE = new RegExp('\\s+$')
 const PR_REF_RE = new RegExp('^#(\\d+)$')
 const LINK_ROW_RE = new RegExp('^(\\S.*?) → (\\S.*)$')
-const URL_TAIL_RE = new RegExp('[.,;:!?)\\]]+$')
+const SENTENCE_TAIL = '.,;:!?'
+
+/** A URL as written in prose: trailing punctuation, and a closer with no opener, are not part of it. */
+function trimUrl(url: string): string {
+  let u = url
+  for (;;) {
+    const last = u[u.length - 1]
+    const count = (c: string): number => u.split(c).length - 1
+    if (SENTENCE_TAIL.includes(last)) u = u.slice(0, -1)
+    else if (last === ')' && count('(') < count(')')) u = u.slice(0, -1)
+    else if (last === ']' && count('[') < count(']')) u = u.slice(0, -1)
+    else return u
+  }
+}
 const PLAIN_INFO = new Set(['', 'text', 'txt', 'plain'])
 
 const cleanTitle = (s: string): string => s.replace(/\*\*/g, '').replace(/`/g, '').trim()
@@ -116,13 +131,21 @@ function parseLedger(line: string): LedgerRow | null {
   return { gutter, label: label.trim(), lines: [cp.slice(11).join('').trim()] }
 }
 
-function classify(line: string, next: string | undefined, first: boolean): Line {
+function classify(line: string, next: string | undefined, first: boolean, prev: Line['k']): Line {
   if (line === '') return { k: 'blank' }
   if (RAIL_OPEN_RE.test(line)) return { k: 'opener' }
   const rail = RAIL_ROW_RE.exec(line)
   if (rail) return { k: 'rail', row: { glyph: rail[1] as Glyph, text: rail[2].trim() } }
+  // A `▰▱` run makes a header only where a header can start: the block's first line, a line after a
+  // blank, or one that is not shaped like a ledger row. Inside the rows a bar is a row's value.
   const header = parseHeader(line)
-  if (header) return { k: 'header', header }
+  if (header) {
+    const asRow = parseLedger(line)
+    const opens = first || prev === 'blank'
+    if (asRow === null || (opens && asRow.gutter !== 'owed' && asRow.gutter !== 'open')) {
+      return { k: 'header', header }
+    }
+  }
   // `report-back` without a bar: just the front name, directly above the rail's opener.
   if (first && next === '│' && /^\S/.test(line) && !line.includes(' → ')) {
     return { k: 'header', header: { mark: null, title: cleanTitle(line), bar: null, detail: '' } }
@@ -158,7 +181,7 @@ function parseBlock(raw: string[]): Parsed {
     return r
   }
   for (let i = 0; i < lines.length; i++) {
-    const c = classify(lines[i], lines[i + 1], !seen)
+    const c = classify(lines[i], lines[i + 1], !seen, prev)
     if (c.k === 'blank') {
       prev = 'blank'
       continue
@@ -217,9 +240,10 @@ export function splitReports(text: string): Segment[] | null {
         pending.push(all[i])
         continue
       }
-      const fenceChar = open[1][0]
+      const fence = open[1] ?? open[3]
+      const lang = (open[2] ?? open[4] ?? '').trim().split(SPACE_RE)[0].toLowerCase()
       const close = new RegExp(
-        '^ {0,3}' + (fenceChar === '`' ? '`' : '~') + '{' + open[1].length + ',}\\s*$'
+        '^ {0,3}' + (fence[0] === '`' ? '`' : '~') + '{' + fence.length + ',}\\s*$'
       )
       let end = -1
       for (let j = i + 1; j < all.length; j++) {
@@ -231,7 +255,7 @@ export function splitReports(text: string): Segment[] | null {
       if (end === -1) return null // an unterminated fence: a block still streaming, or a broken one
       const inner = all.slice(i + 1, end)
       const whole = all.slice(i, end + 1)
-      if (!PLAIN_INFO.has(open[2].toLowerCase()) || !looksLikeReport(inner)) {
+      if (!PLAIN_INFO.has(lang) || !looksLikeReport(inner)) {
         pending.push(...whole)
       } else {
         const parsed = parseBlock(inner)
@@ -268,13 +292,16 @@ function headerDone(header: Header | null): boolean {
 
 /**
  * The card's state, which colours its border AND its bar: red when any marker is `✗`, green when
- * the header says the front is finished or every rail marker is `✓`, else the accent.
+ * the header says the front is finished, or (no bar to contradict it) every rail marker is `✓`,
+ * else the accent.
  */
 export function cardTone(report: Report): 'ok' | 'fail' | 'accent' {
   const marks: Glyph[] = report.rail.map((r) => r.glyph)
   if (report.header?.mark) marks.push(report.header.mark)
   if (marks.includes('✗')) return 'fail'
   if (headerDone(report.header)) return 'ok'
+  // An unfinished bar or count keeps the card on the accent, whatever the rail says.
+  if (report.header?.bar) return 'accent'
   if (marks.length > 0 && marks.every((m) => m === '✓')) return 'ok'
   return 'accent'
 }
@@ -314,7 +341,7 @@ export function inlineOf(text: string, index: ReadonlyMap<string, string>): Inli
     } else if (m[2] !== undefined) {
       out.push({ t: 'bold', s: m[2] })
     } else if (m[3] !== undefined) {
-      const url = m[3].replace(URL_TAIL_RE, '')
+      const url = trimUrl(m[3])
       out.push({ t: 'link', s: url, href: url })
       push(m[3].slice(url.length))
     } else {

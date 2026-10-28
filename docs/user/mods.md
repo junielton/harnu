@@ -138,15 +138,16 @@ the terminal as a card instead of showing the raw text:
 - a **bordered card** with the front's title, a progress bar and the ledger rows (what is
   running, what is done, what is next). The border and the bar are green when the front is
   finished (a full bar, a trailing `✓` such as "Step 5 of 5 ✓", or 100%, or every step of the
-  report succeeded), red when any step failed, and the accent colour otherwise;
+  report succeeded and the header shows no unfinished bar), red when any step failed, and the accent colour otherwise;
 - a separate **yellow box** for what is owed to you, headed by its label and a count;
 - the **checklist** with aligned labels and coloured marks: `✓` green, `!` yellow, `✗` red,
   `-` dim;
 - the report's links, with PR numbers and URLs you can click.
 
 The sentence before the report and the summary after it are still drawn as normal markdown.
-Rows that do not fit the width are cut with an ellipsis; **Ctrl+O** shows the whole message as
-written. The drawing is display only: the stored message, what the model reads and the
+On a narrow terminal only a checklist row is cut with an ellipsis (**Ctrl+O** shows the whole
+message as written); what is owed to you, the ledger rows and every link wrap instead, so
+nothing you must act on is hidden. The drawing is display only: the stored message, what the model reads and the
 transcript file are never changed.
 
 The mod recognises a report by its **shape** (the `▰▱` progress bar, the `├─` / `└─` rail with

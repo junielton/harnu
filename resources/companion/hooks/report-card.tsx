@@ -14,8 +14,9 @@ import {
  * The report card's view (T583 U2, mock 02 "Card + checklist"). A pure builder: it receives the
  * resolved elements, never `$` (MOD-1), and reads no state. The bordered card holds the title, the
  * progress bar and the ledger; what the operator owes sits in its own yellow box; the rail is the
- * checklist with aligned labels; links close the report. Rows truncate at the edge
- * (`wrap: 'truncate-end'`); the full text stays in the stored message (ctrl+o).
+ * checklist with aligned labels; links close the report. Only a checklist row is cut at the edge
+ * (`wrap: 'truncate-end'`, the full text stays in the stored message, ctrl+o): what the operator
+ * owes, the ledger and every URL wrap, so nothing that matters is hidden on a narrow terminal.
  */
 
 type Els = ElementTable<'terminal'>
@@ -57,19 +58,15 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
           </Text>
         ) : null}
         <Box width={labelW} flexShrink={0}>
-          <Text dimColor wrap="truncate-end">
-            {r.label}
-          </Text>
+          <Text dimColor>{r.label}</Text>
         </Box>
         <Box flexGrow={1} flexShrink={1}>
-          <Text wrap="truncate-end">{inline(r.lines[0], links)}</Text>
+          <Text>{inline(r.lines[0], links)}</Text>
         </Box>
       </Box>
       {r.lines.slice(1).map((l) => (
         <Box flexDirection="row" paddingLeft={gutterW + labelW}>
-          <Text dimColor wrap="truncate-end">
-            {inline(l, links)}
-          </Text>
+          <Text dimColor>{inline(l, links)}</Text>
         </Box>
       ))}
     </Box>
@@ -96,15 +93,11 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
           <Box flexDirection="column" borderStyle="round" borderColor={tone} paddingX={1}>
             {head ? (
               <Box flexDirection="row" justifyContent="space-between" gap={2}>
-                <Text bold color={tone} wrap="truncate-end">
+                <Text bold color={tone}>
                   {head.mark ? `${head.mark} ` : ''}
                   {head.title}
                 </Text>
-                {head.detail !== '' ? (
-                  <Text dimColor wrap="truncate-end">
-                    {head.detail}
-                  </Text>
-                ) : null}
+                {head.detail !== '' ? <Text dimColor>{head.detail}</Text> : null}
               </Box>
             ) : null}
             {head?.bar ? (
@@ -118,7 +111,7 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
         ) : null}
         {owed.length > 0 ? (
           <Box flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1}>
-            <Text bold color="warning" wrap="truncate-end">
+            <Text bold color="warning">
               {`${owed[0].label} · ${owed.length}`}
             </Text>
             {owed.map((x, i) => (
@@ -126,14 +119,12 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
                 <Box flexDirection="row">
                   <Text color="warning">{`${owed.length > 1 ? i + 1 : '⚑'} `}</Text>
                   <Box flexGrow={1} flexShrink={1}>
-                    <Text wrap="truncate-end">{inline(x.lines[0], links)}</Text>
+                    <Text>{inline(x.lines[0], links)}</Text>
                   </Box>
                 </Box>
                 {x.lines.slice(1).map((l) => (
                   <Box flexDirection="row" paddingLeft={2}>
-                    <Text dimColor wrap="truncate-end">
-                      {inline(l, links)}
-                    </Text>
+                    <Text dimColor>{inline(l, links)}</Text>
                   </Box>
                 ))}
               </Box>
@@ -164,7 +155,7 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
         {r.links.length > 0 ? (
           <Box flexDirection="column" paddingX={1} marginTop={1}>
             {r.links.map((l) => (
-              <Text dimColor wrap="truncate-end">
+              <Text dimColor>
                 {`${l.label} → `}
                 {/^https?:\/\//.test(l.target) ? <Link href={l.target} /> : l.target}
               </Text>
