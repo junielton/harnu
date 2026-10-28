@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { CMD_TTL_MS, type MissionStateEntry } from '../hooks/contract'
 import {
   changesBetween,
+  fitHeader,
   parseMissionState,
   planTick,
   sameSnap,
@@ -526,4 +527,66 @@ test('a tick appended before anything was pushed is an unnumbered card once the 
   const ui = await mountTick($, on, rig, 'u-1')
   expect(await textOf(ui, /^⟳ tick · Acme content migration$/)).toBeTruthy()
   await ui.unmount()
+})
+
+// ---- the header fits inside the border, at any width ---------------------------------------------
+
+/** The cells a header draws: its left text, the two-cell gap, the bar and its detail, one spare cell. */
+const headerCells = (h: ReturnType<typeof fitHeader>) =>
+  [...h.left].length + 2 + (h.bar ? h.bar.total + 1 : 0) + [...h.detail].length
+
+test('a header that fits is left alone; at exactly its width one spare cell is still kept free', () => {
+  const card = tickCard(entry(), 1, null, NOW)
+  const full = fitHeader(card, 200)
+  expect(full.left).toBe('⟳ tick #1 · Acme content migration')
+  expect(full.detail).toBe('Step 3 of 5 · 1 verified')
+  expect(full.bar).toEqual({ filled: 3, total: 5 })
+  const need = headerCells(full)
+  expect(fitHeader(card, need + 1)).toEqual(full) // the inner width with its spare cell
+  const tight = fitHeader(card, need) // one cell narrower than that: the title gives way first
+  expect(tight.left.endsWith('…')).toBe(true)
+  expect(tight.detail).toBe('Step 3 of 5 · 1 verified')
+  expect(headerCells(tight)).toBeLessThanOrEqual(need - 1)
+})
+
+test('narrower still: the title shrinks to a floor, then "· V verified" goes, then the bar', () => {
+  const card = tickCard(
+    entry({ title: 'A very long mission title that needs room' }),
+    14,
+    null,
+    NOW
+  )
+  for (let inner = 120; inner >= 16; inner--) {
+    const h = fitHeader(card, inner)
+    expect(headerCells(h), 'inner ' + inner).toBeLessThanOrEqual(inner - 1)
+  }
+  const mid = fitHeader(card, 50)
+  expect(mid.detail).toBe('Step 3 of 5 · 1 verified')
+  expect(mid.left.endsWith('…')).toBe(true)
+  const narrow = fitHeader(card, 40)
+  expect(narrow.detail).toBe('Step 3 of 5')
+  expect(narrow.bar).not.toBeNull()
+  const tiny = fitHeader(card, 30)
+  expect(tiny.bar).toBeNull()
+  expect(tiny.detail).toBe('Step 3 of 5')
+})
+
+test('a tick card at 60 columns keeps its header inside the border', async ($, on) => {
+  const rig = await rigWith($, on)
+  await appendTick($, 'row-1')
+  const ui = await $.ui.mount({
+    ...ROW,
+    surface: 'terminal',
+    requestId: 'row-1',
+    viewport: { columns: 60, rows: 40 },
+    props: tickProps(TICK.replace('mnt-7be1529e', 'mnt-7be1529e'))
+  } as never)
+  const rows = await ui.findAll({ type: 'Text', text: /tick #1|Step 3 of 5|▰|▱/ })
+  const cells = rows
+    .map((r: any) => [...String(r.text)].length)
+    .reduce((a: number, b: number) => a + b, 0)
+  expect(rows.length).toBeGreaterThan(0)
+  expect(cells + 2).toBeLessThanOrEqual(60 - 4 - 1) // border, padding and the spare cell
+  await ui.unmount()
+  void rig
 })
