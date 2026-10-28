@@ -53,9 +53,11 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
     <Box flexDirection="column">
       <Box flexDirection="row">
         {gutterW > 0 ? (
-          <Text color="warning">
-            {r.gutter === 'open' ? '? ' : r.gutter === 'warn' ? '! ' : '  '}
-          </Text>
+          <Box width={2} flexShrink={0}>
+            <Text color="warning">
+              {r.gutter === 'open' ? '?' : r.gutter === 'warn' ? '!' : ' '}
+            </Text>
+          </Box>
         ) : null}
         <Box width={labelW} flexShrink={0}>
           <Text dimColor>{r.label}</Text>
@@ -117,7 +119,9 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
             {owed.map((x, i) => (
               <Box flexDirection="column">
                 <Box flexDirection="row">
-                  <Text color="warning">{`${owed.length > 1 ? i + 1 : '⚑'} `}</Text>
+                  <Box width={2} flexShrink={0}>
+                    <Text color="warning">{owed.length > 1 ? String(i + 1) : '⚑'}</Text>
+                  </Box>
                   <Box flexGrow={1} flexShrink={1}>
                     <Text>{inline(x.lines[0], links)}</Text>
                   </Box>
@@ -135,7 +139,9 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
           <Box flexDirection="column" paddingX={1}>
             {r.rail.map((x, i) => (
               <Box flexDirection="row">
-                <Text color={GLYPH_COLOR[x.glyph]}>{`${x.glyph} `}</Text>
+                <Box width={2} flexShrink={0}>
+                  <Text color={GLYPH_COLOR[x.glyph]}>{x.glyph}</Text>
+                </Box>
                 {splits[i] ? (
                   <Box width={railW} flexShrink={0}>
                     <Text dimColor wrap="truncate-end">
