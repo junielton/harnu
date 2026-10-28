@@ -443,6 +443,19 @@ test('owed rows, ledger rows and link rows wrap; only rail rows truncate', async
   await ui.unmount()
 })
 
+// Review finding 5, as it reproduces: on a narrow terminal the checklist's glyph column shrank, so
+// `✓ commit` drew as `✓commit` and the label column moved. Every glyph, and the ledger gutter, now
+// sits in a fixed 2-cell box that never shrinks, whatever the row's text.
+test('the checklist glyph and the ledger gutter are fixed 2-cell columns that never shrink', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE)
+  const fixed = (await ui.findAll({ type: 'Box' })).filter(
+    (b: any) => b.props.width === 2 && b.props.flexShrink === 0
+  )
+  // 6 rail rows + the open ledger row + the owed row in its box
+  expect(fixed.length).toBe(8)
+  await ui.unmount()
+})
+
 test('the whole-green card is green', async ($, on) => {
   const green = `Done.\n\n${fence('x  ▰▰ 2/2', '├─ ✓ a — b', '└─ ✓ c — d', '', row('', 'you', "— nothing, you're clear"))}`
   const ui = await mountWith($, on, ENABLE, green)
