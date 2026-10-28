@@ -15,6 +15,7 @@
     "classic.SubagentStop",
     "plugin.register",
     "prompt.submit",
+    "session.append",
     "session.end",
     "session.measure",
     "session.start",
@@ -53,8 +54,10 @@
     "channel",
     "conn",
     "fleet",
+    "missions",
     "permissionMode",
     "probes",
-    "sid"
+    "sid",
+    "tickRows"
   ]
 }

@@ -27,6 +27,8 @@ import {
   validBand,
   validReviewSelectionAppend
 } from './review-selection-core'
+import { MISSION_STATE_SUBSYSTEM } from './mission-state-core'
+import { parseMissionState } from '../../../resources/companion/hooks/lib/mission-state'
 
 export const COMMAND_NAMES: readonly CommandName[] = [
   'flush',
@@ -42,6 +44,7 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   'guard.set',
   'sentinel.set',
   'ui.band.set',
+  'mission.state',
   'plan.capture'
 ]
 
@@ -178,10 +181,28 @@ function registerReviewSelectionRows(): void {
 }
 registerReviewSelectionRows()
 
+/**
+ * T589: the mission state the quiet rows draw ticks from. Display data for the session's own mod, so
+ * it rides on the `ui.quietRows` feature and needs no trust class; only the mission-state feed may
+ * send it, and the shape is the same check the mod runs again.
+ */
+function registerMissionStateRow(): void {
+  registerGateRow('mission.state', {
+    feature: 'ui.quietRows',
+    internal: [MISSION_STATE_SUBSYSTEM],
+    validate: (args, cause) =>
+      cause.kind === 'internal' &&
+      cause.subsystem === MISSION_STATE_SUBSYSTEM &&
+      parseMissionState(args) !== null
+  })
+}
+registerMissionStateRow()
+
 export function resetGateRowsForTests(): void {
   rows.clear()
   registerP2W1Rows()
   registerReviewSelectionRows()
+  registerMissionStateRow()
 }
 
 export type OriginResult = { ok: true; row: GateRow } | { ok: false; reason: 'ORIGIN_DENIED' }
@@ -241,7 +262,9 @@ export function shadowRefusal(
     name === 'flush' ||
     name === 'config.update' ||
     name === 'sentinel.set' ||
-    name === 'ui.band.set'
+    name === 'ui.band.set' ||
+    // T589: display data only, like the band; the default channel is shadow and it must still arrive.
+    name === 'mission.state'
   ) {
     return null
   }

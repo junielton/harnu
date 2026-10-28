@@ -156,7 +156,7 @@ Shape: Role + task + 2 few-shot examples of past posts (ask user for them → go
 **Example 3 — mission stack:**
 Input: "a boot prompt for a session that coordinates feature X in a worktree: dispatch executors, demand evidence, call me only at the gates, run on its own until it's done"
 Route: Opus high (coordination judgment, but specs already exist — Fable only if the mission has genuinely frontier ambiguity). Harness: the mission stack.
-Shape: Goal/Why/Boundaries + "invoke `harnu:orchestrate-delivery` (coordination-only contract), then `harnu:mission` with `set <objective>`, then drive ticks with the loop skill, self-paced" + pinned cheap models for worker subagents + verification via evidence, not self-reports. Template in `references/harness-routing.md`.
+Shape: Goal/Why/Boundaries + "invoke `harnu:orchestrate-delivery` (coordination-only contract), then `harnu:mission` with `set <objective>`, then drive ticks with the loop skill, self-paced (each tick prompt opens with the first line `harnu:mission` defines)" + pinned cheap models for worker subagents + verification via evidence, not self-reports. Template in `references/harness-routing.md`.
 
 **Example 4 — anti-pattern fixes:**
 Draft contains: "use the opus model for this and explain your reasoning step by step"
