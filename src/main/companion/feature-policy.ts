@@ -12,7 +12,7 @@
 import { normalizeFolder, type RolloutView } from './arbitration-core'
 import { gateForCli } from './enable-policy'
 import type { FeatureId } from './contract'
-import { prefsKey } from './companion-prefs'
+import { prefsKey, registerPrefsKey } from './companion-prefs'
 import { familyMode, getCompanionMode } from './mode'
 import type { BindingView, EnablePolicy, TrustClass } from './session-table'
 
@@ -92,6 +92,21 @@ export function registerReviewSelectionPolicies(): void {
 }
 registerReviewSelectionPolicies()
 
+/**
+ * T585: the report card. `ui.reportCard` makes the mod draw a status / report-back report as a
+ * card (display only). It is on by default and follows one switch, "Draw reports as cards"
+ * (`reportCards`); no binding class narrows it, because it acts on nothing. The answer is read
+ * when the binding says hello, so a running session keeps what it started with.
+ */
+export function registerReportCardPolicy(): void {
+  registerPrefsKey<boolean>('reportCards', { default: true, parse: (raw) => raw !== false })
+  registerFeaturePolicy(
+    'ui.reportCard',
+    () => prefsKey<boolean>('reportCards') && getCompanionMode() !== 'off'
+  )
+}
+registerReportCardPolicy()
+
 /** The external profile's ceiling (contract §21 item 3); each rule still has to pass. */
 const EXTERNAL_ALLOWED: ReadonlySet<FeatureId> = new Set([
   'sense.identity',
@@ -101,6 +116,7 @@ const EXTERNAL_ALLOWED: ReadonlySet<FeatureId> = new Set([
   'sense.usage',
   'ui.command',
   'ui.band',
+  'ui.reportCard',
   'gate.approval'
 ])
 

@@ -33,6 +33,8 @@ export interface CompanionIpcExtras {
   stagedDir(): Promise<string | null>
   /** P2W1: `HARNU_COMPANION_DEBUG=1`, read once by `host.ts`; registers `companion:debug:enqueue`. */
   debug?: boolean
+  /** T585: the "Draw reports as cards" switch (a feature key of the host, not the kill switch). */
+  setReportCards(on: boolean): void
   /** P4W3: the "Harnu mod outside Harnu" switch, its path line and the last outside session seen. */
   externalGet(): Promise<ExternalPaneState>
   /** P4W3: turns it on (the settings write, after the renderer's confirm) or off (the exact undo). */
@@ -174,6 +176,12 @@ export function registerCompanionIpc(
   ipcMain.handle('companion:setEnabled', async (_e, on: unknown) => {
     await setCompanionEnabled(on === true)
     return { enabled: on === true }
+  })
+  // T585: renderer IPC only, like the kill switch; main refuses anything but a boolean.
+  ipcMain.handle('companion:setReportCards', (_e, on: unknown) => {
+    if (typeof on !== 'boolean') return { ok: false }
+    extras.setReportCards(on)
+    return { ok: true }
   })
   ipcMain.handle('companion:disclosureShown', async () => {
     await markDisclosureShown()

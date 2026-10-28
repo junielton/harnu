@@ -55,11 +55,16 @@ export const MAX_BLOCK_LINES = 80
 export const MAX_TEXT_CHARS = 100_000
 
 const BAR_RE = /[▰▱]{2,}/
-const RAIL_OPEN_RE = /^│$/
-const RAIL_ROW_RE = /^[├└]─ ([✓✗!-]) (\S.*)$/
+// Built from strings: the API-surface scan reads a `$` in code as the engine's `$` (MOD-1).
+const RAIL_OPEN_RE = new RegExp('^│$')
+const RAIL_ROW_RE = new RegExp('^[├└]─ ([✓✗!-]) (\\S.*)$')
 const MARK_RE = /^([✓✗!-]) (?=\S)/
 const GUTTERS: Record<string, Gutter> = { ' ': 'none', '⚑': 'owed', '?': 'open', '!': 'warn' }
-const OPEN_FENCE_RE = /^ {0,3}(`{3,}|~{3,})\s*([\w-]*)\s*$/
+const OPEN_FENCE_RE = new RegExp('^ {0,3}(`{3,}|~{3,})\\s*([\\w-]*)\\s*$')
+const TRAILING_SPACE_RE = new RegExp('\\s+$')
+const PR_REF_RE = new RegExp('^#(\\d+)$')
+const LINK_ROW_RE = new RegExp('^(\\S.*?) → (\\S.*)$')
+const URL_TAIL_RE = new RegExp('[.,;:!?)\\]]+$')
 const PLAIN_INFO = new Set(['', 'text', 'txt', 'plain'])
 
 const cleanTitle = (s: string): string => s.replace(/\*\*/g, '').replace(/`/g, '').trim()
@@ -125,7 +130,7 @@ function classify(line: string, next: string | undefined, first: boolean): Line 
   const ledger = parseLedger(line)
   if (ledger) return { k: 'ledger', row: ledger }
   if (/^ {11,}\S/.test(line)) return { k: 'cont', text: line.trim() }
-  const link = /^(\S.*?) → (\S.*)$/.exec(line)
+  const link = LINK_ROW_RE.exec(line)
   if (link) {
     return { k: 'link', row: { label: link[1].replace(/`/g, '').trim(), target: link[2].trim() } }
   }
@@ -141,7 +146,7 @@ type Parsed = Report[] | 'invalid'
 
 function parseBlock(raw: string[]): Parsed {
   if (raw.length > MAX_BLOCK_LINES) return 'invalid'
-  const lines = raw.map((l) => l.replace(/\s+$/, '').normalize('NFC'))
+  const lines = raw.map((l) => l.replace(TRAILING_SPACE_RE, '').normalize('NFC'))
   if (lines.some((l) => [...l].length > MAX_ROW_CHARS)) return 'invalid'
   const reports: Report[] = []
   let cur: Report | null = null
@@ -213,7 +218,9 @@ export function splitReports(text: string): Segment[] | null {
         continue
       }
       const fenceChar = open[1][0]
-      const close = new RegExp(`^ {0,3}${fenceChar === '`' ? '`' : '~'}{${open[1].length},}\\s*$`)
+      const close = new RegExp(
+        '^ {0,3}' + (fenceChar === '`' ? '`' : '~') + '{' + open[1].length + ',}\\s*$'
+      )
       let end = -1
       for (let j = i + 1; j < all.length; j++) {
         if (close.test(all[j])) {
@@ -280,13 +287,13 @@ export function inlineOf(text: string, index: ReadonlyMap<string, string>): Inli
     push(text.slice(at, m.index))
     at = m.index + m[0].length
     if (m[1] !== undefined) {
-      const ref = /^#(\d+)$/.exec(m[1])
+      const ref = PR_REF_RE.exec(m[1])
       const href = ref ? index.get(ref[1]) : undefined
       out.push(href ? { t: 'link', s: m[1], href } : { t: 'code', s: m[1] })
     } else if (m[2] !== undefined) {
       out.push({ t: 'bold', s: m[2] })
     } else if (m[3] !== undefined) {
-      const url = m[3].replace(/[.,;:!?)\]]+$/, '')
+      const url = m[3].replace(URL_TAIL_RE, '')
       out.push({ t: 'link', s: url, href: url })
       push(m[3].slice(url.length))
     } else {

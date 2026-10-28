@@ -1553,7 +1553,11 @@ ghost `Button`, and **at most one** status line (`--text-3`, 11px, no icon, **no
 colour**: `legacy` is not an error). Which line: the CLI is older than the minimum, the CLI
 is newer than the last version tested (the mod only observes), or nothing. The block hosts a
 region `id="set-companion-keys"` at its end, where later waves mount their own feature
-switches; the Mods tab moves the whole block when it lands. Searchable via "harnu mod",
+switches; the Mods tab moves the whole block when it lands. The first is **Draw reports as
+cards** (T585, `id="set-companion-report-cards"`): the same row anatomy as above (`--text-2`
+12px label, one `SettingHint`, `ToggleSwitch` on the right, `margin-top: 10px`), default **on**;
+the switch takes the toggle's disabled treatment, with the hint `The Harnu mod is off. Turn it
+on first.`, while the mod itself is off. No new variant. Searchable via "harnu mod",
 "mod", "mods", "plugin". The kill switch is renderer IPC only: nothing an agent can call
 reaches it. No new design token.
 

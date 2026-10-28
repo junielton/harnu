@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-28
+
+### Added
+
+- **Status and report-back replies are drawn as a card.** When a session's reply contains a `status` glance card or a `report-back` final report, the Harnu mod draws it in the terminal as a card: a bordered box with the title, a progress bar and the ledger, a separate yellow box for what needs you, the checklist with aligned labels and coloured `✓ ! ✗ -` marks, and PR numbers and URLs as links. The card border is green when every step succeeded, red when one failed, otherwise the accent colour. Anything that is not a complete report (a half-streamed block, a `tree` listing, a bare link) is shown exactly as before, and the message itself never changes: Ctrl+O shows it as written. It works in any language, because it reads the report's shape, not its labels. Turn it off with **Draw reports as cards** in Settings → General → Harnu mod; sessions already running keep their setting until they restart.
+
 ## 2026-10-27
 
 ### Added
