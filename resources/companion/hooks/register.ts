@@ -63,6 +63,8 @@ import { createRing } from './lib/ring'
 import { bandView } from './surface'
 import { reportView } from './report-card'
 import { splitReports } from './lib/report-card'
+import { chipView } from './quiet-rows'
+import { QUIET_KINDS, plainObject, rowChip, type RowFrom, type RowTask } from './lib/quiet-rows'
 import { measurePayload, readPayload } from './lib/usage-sensor'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
@@ -1524,6 +1526,31 @@ export const register: Register = (on) => {
     })
   })
 
+  // T589: the quiet rows. A third hook of its own, for the same reason. It touches only the origins a
+  // person did not type (`QUIET_KINDS`), never a row the view draws in full (ctrl+o), and a row it
+  // cannot read is left to the engine. The host enables the feature per binding ("Draw agent
+  // messages compactly").
+  hook('ui.render:UserMessage', () => {
+    on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
+      try {
+        if (e.surface !== 'terminal' || !enabled('ui.quietRows')) return next(e)
+        if (e.props.isExpanded === true) return next(e)
+        const kind = e.props.origin?.kind
+        if (typeof kind !== 'string' || !QUIET_KINDS.has(kind)) return next(e)
+        const chip = rowChip(
+          kind,
+          e.props.text,
+          plainObject<RowFrom>(e.props.from),
+          plainObject<RowTask>(e.props.task)
+        )
+        return chip === null ? next(e) : chipView($.ui.resolve(e), chip)
+      } catch (err) {
+        reportModError('ui.render:UserMessage', err)
+        return next(e)
+      }
+    })
+  })
+
   const all = (...names: string[]): boolean => names.every((n) => registered[n] === true)
   const features: FeatureId[] = []
   if (all('session.start', 'session.end', 'classic.SessionStart')) {
@@ -1536,6 +1563,7 @@ export const register: Register = (on) => {
   // T583 U2: the card rides only on its own hook, so it is declared wherever that hook registered,
   // not only in the identity branch above (a session hook that failed must not take it away).
   if (registered['ui.render:AssistantMessage'] === true) features.push('ui.reportCard')
+  if (registered['ui.render:UserMessage'] === true) features.push('ui.quietRows')
   if (all('prompt.submit', 'turn.start', 'turn.complete')) features.push('sense.turn')
   if (
     all(
