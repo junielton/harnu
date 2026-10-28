@@ -439,3 +439,64 @@ test('the same boot keeps them: a re-hello is not a restart', async ($, on) => {
   await boot($, rig)
   expect(rig.state.get('missions')).toMatchObject({ v: 1, n: 1 })
 })
+
+// ---- a tick is numbered when it is appended, in the order it arrived -----------------------------
+
+/** What the engine raises when a scheduled prompt fires: the row, its id, who caused it. */
+const appendTick = ($: any, uuid: string, text = TICK, over: Record<string, unknown> = {}) =>
+  $.session.append({
+    message: { type: 'user', isMeta: true, content: [{ type: 'text', text }] },
+    door: 'prompt',
+    origin: { kind: 'scheduled-trigger' },
+    uuid,
+    ...over
+  })
+
+test('ticks appended live are numbered and compared in arrival order, whatever order they are drawn', async ($, on) => {
+  const rig = await rigWith($, on)
+  await appendTick($, 'u-1')
+  await appendTick($, 'u-2') // same state: "no change since #1"
+  rig.state.set('missions', { v: 1, n: 2, at: NOW, missions: [moved()] })
+  await appendTick($, 'u-3') // the mission moved: a card with what changed
+  // the engine may draw the newest row first (a resumed session did): the numbers do not follow it
+  const three = await mountTick($, on, rig, 'u-3')
+  const one = await mountTick($, on, rig, 'u-1')
+  const two = await mountTick($, on, rig, 'u-2')
+  expect(await textOf(three, /tick #3 · Acme content migration/)).toBeTruthy()
+  expect(await textOf(three, /stp-3 verified · stp-4 running · PR #264 merged/)).toBeTruthy()
+  expect(await textOf(one, /tick #1 · Acme content migration/)).toBeTruthy()
+  expect(await textOf(one, /executor card-acme working/)).toBeTruthy()
+  expect(await textOf(two, /tick #2 .* no change since #1/)).toBeTruthy()
+  for (const ui of [one, two, three]) await ui.unmount()
+})
+
+test('the tick line is found after a framing line; other origins, doors and missions are not ticks', async ($, on) => {
+  const rig = await rigWith($, on)
+  await appendTick($, 'u-1', 'Scheduled task fired:\n' + TICK)
+  await appendTick($, 'u-2', TICK, { origin: { kind: 'composer' } })
+  await appendTick($, 'u-3', '/harnu:mission tick · mnt-00000000\nsomething else')
+  await appendTick($, 'u-4', 'please tick mnt-7be1529e')
+  const ledger: any = rig.state.get('tickRows')
+  expect(ledger.byMission['mnt-7be1529e'].rows.map((r: any) => r.rid)).toEqual(['u-1'])
+  expect(Object.keys(ledger.byMission)).toEqual(['mnt-7be1529e'])
+})
+
+test('without the feature, or without pushed state, a fired tick writes nothing', async ($, on) => {
+  const off = installRig(on, {
+    savedState: seeded(),
+    script: channelScript([], ['sense.identity', 'act.channel'])
+  })
+  await boot($, off)
+  await appendTick($, 'u-1')
+  expect(off.state.has('tickRows')).toBe(false)
+})
+
+test('a row that arrived after its draw (no pushed state yet) still gets a number when drawn', async ($, on) => {
+  const rig = await rigWith($, on, {})
+  await appendTick($, 'u-1') // nothing pushed yet: not numbered at append
+  expect(rig.state.has('tickRows')).toBe(false)
+  rig.state.set('missions', seeded().missions)
+  const ui = await mountTick($, on, rig, 'u-1')
+  expect(await textOf(ui, /tick #1/)).toBeTruthy() // the draw-time numbering still covers it
+  await ui.unmount()
+})
