@@ -101,7 +101,7 @@ declare module 'claude-code' {
           blockers: { reason: string; owner: 'agent' | 'operator'; stepId?: string }[]
           you: { kind: string; text: string }[]
         }[]
-      }
+      } | null
       /**
        * T589: the loop ticks this session has drawn, per mission: the number of each tick row (by its
        * `requestId`), what the mission looked like then, and the card it got. The newest 50 per mission.

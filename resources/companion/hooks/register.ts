@@ -683,7 +683,7 @@ async function doHello($: Dollar, resumeConn?: Conn, fresh = false): Promise<voi
     // highest `n`, the standing line) belongs to a queue that no longer exists.
     if (channel !== prior) {
       resetBand($)
-      missionN = 0
+      resetMissions($)
     }
     void writeChannel($)
     restartPollLoop($)
@@ -1134,6 +1134,16 @@ function resetBand($: Dollar): void {
     await redrawBand($)
   })
   bandChain = run.catch(() => undefined)
+}
+
+/** A new host boot: the mission state it pushed belongs to a queue that no longer exists (T589). */
+function resetMissions($: Dollar): void {
+  missionN = 0
+  // Nothing stored, nothing to clear: a fresh session keeps its state free of a null key.
+  void $.state
+    .get(MISSIONS)
+    .then((stored) => (stored.value == null ? undefined : $.state.set(MISSIONS, null)))
+    .catch(() => undefined)
 }
 
 /** Clears a band whose `expiresAt` has passed, so a dead host cannot leave a stale line (P4W2 §7.4). */

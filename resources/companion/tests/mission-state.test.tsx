@@ -279,8 +279,10 @@ const tickProps = (text = TICK, over: Record<string, unknown> = {}) => ({
   isExpanded: false,
   ...over
 })
+/** State from this boot: a hello under another boot starts the pushes over (it clears them). */
 const seeded = (e: MissionStateEntry[] = [entry()]) => ({
-  missions: { v: 1, n: 1, at: NOW, missions: e }
+  missions: { v: 1, n: 1, at: NOW, missions: e },
+  channel: { bootId: BOOT, cursor: 0, started: [], resulted: [], turnId: null }
 })
 const mountTick = async (
   $: any,
@@ -403,7 +405,10 @@ test('a ledger that is not one reads as empty; the row still draws its card', as
 })
 
 test('pushed state that is not one never throws: the tick falls back to the chip', async ($, on) => {
-  const rig = await rigWith($, on, { missions: { v: 1, missions: 'x' } })
+  const rig = await rigWith($, on, {
+    ...seeded(),
+    missions: { v: 1, n: 1, at: NOW, missions: 'x' }
+  })
   const ui = await mountTick($, on, rig, 'row-1')
   expect(await textOf(ui, /tick · mnt-7be1529e/)).toBeTruthy()
   await ui.unmount()
