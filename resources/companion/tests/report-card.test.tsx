@@ -193,6 +193,51 @@ test('the card tone follows the markers: all ✓ green, any ✗ red, else accent
   expect(tone('├─ ✓ a — b', '└─ - c — d')).toBe('accent')
 })
 
+// A finished card reads as done (green) whatever carries the proof: a full bar, a trailing ✓, a
+// complete step count. T585 delta: the T579 status card ("Passo 2 de 2 ✓", no rail) drew accent.
+const DONE_EN = fence(
+  '  **T381** mission v3       ▰▰▰▰▰ Step 5 of 5 ✓',
+  row('', 'now', '—'),
+  row('', 'done', 'S1 core · S2 reads · S3 renderer · S4 skills · S5 amendments'),
+  row('', 'you', "— nothing, you're clear")
+)
+const DONE_PT = T579_PT.replace(
+  row('⚑', 'você', 'testar o teclado num build empacotado · fechar a mission'),
+  row('', 'você', '— nada, está tudo certo')
+).replace('  '.padEnd(11) + 'Cancel mantém app e browser panes · Quit fecha\n', '')
+const IN_PROGRESS = fence(
+  '  **T381** mission v3       ▰▰▰▱▱ Step 4 of 5 · 2 verified',
+  row('', 'now', 'S4 skills'),
+  row('⚑', 'you', 'tick the due check on S3')
+)
+const TEN_CELL_DONE = fence(
+  'avatar-cache  ▰▰▰▰▰▰▰▰▰▰ 100%',
+  '│',
+  '├─ ! a — caveat',
+  '',
+  row('', 'you', '—')
+)
+
+const toneOf = (text: string) => cardTone(reports(splitReports(text))[0])
+
+test('a finished header is done: a full bar, a trailing ✓ or 100%', () => {
+  expect(toneOf(DONE_EN)).toBe('ok')
+  expect(toneOf(DONE_PT)).toBe('ok')
+  expect(toneOf(TEN_CELL_DONE)).toBe('ok')
+})
+
+test('a header with a ✓ mark and no rail is done; a ✗ anywhere is still red', () => {
+  expect(toneOf(fence('✓ **T9** x  ▰▰▰ 3/3', row('', 'you', '—')))).toBe('ok')
+  expect(toneOf(fence('  **T9** x  ▰▰▰▰▰ 5/5 ✓', '├─ ✗ a — b', row('', 'you', '—')))).toBe('fail')
+  expect(toneOf(REPORT_BACK_EN)).toBe('fail')
+})
+
+test('an unfinished card is accent, also when a later phase of its header is still open', () => {
+  expect(toneOf(IN_PROGRESS)).toBe('accent')
+  expect(toneOf(THREE_FRONTS)).toBe('accent')
+  expect(toneOf(fence('  **T9** x  S1 ▰▰ 2/2 · S2 ▱▱ 0/2', row('', 'you', '—')))).toBe('accent')
+})
+
 // ---- malformed and partial reports fall back (AC-3) ----------------------------------------------
 
 const FALLBACKS: [string, string][] = [
@@ -312,6 +357,44 @@ test('the whole-green card is green', async ($, on) => {
   const borders = (await ui.findAll({ type: 'Box' })).map((b: any) => b.props.borderColor)
   expect(borders).toContain('success')
   expect(borders).not.toContain('warning') // nothing owed: no yellow box
+  await ui.unmount()
+})
+
+const colours = async (ui: any) => {
+  const boxes = await ui.findAll({ type: 'Box' })
+  return {
+    borders: boxes.map((b: any) => b.props.borderColor).filter(Boolean),
+    fills: boxes.map((b: any) => b.props.backgroundColor).filter(Boolean)
+  }
+}
+
+test('a finished status card draws a green border and a green bar (en and pt-BR)', async ($, on) => {
+  for (const text of [`Done.\n\n${DONE_EN}`, `Pronto.\n\n${DONE_PT}`]) {
+    const ui = await mountWith($, on, ENABLE, text)
+    const c = await colours(ui)
+    expect(c.borders).toContain('success')
+    expect(c.borders).not.toContain('claude')
+    expect(c.fills).toContain('success')
+    expect(c.fills).not.toContain('claude')
+    await ui.unmount()
+  }
+})
+
+test('a report with a ✗ draws a red border and a red bar', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE)
+  const c = await colours(ui)
+  expect(c.borders).toContain('error')
+  expect(c.fills).toContain('error')
+  expect(c.fills).not.toContain('claude')
+  await ui.unmount()
+})
+
+test('an in-progress card keeps the accent border and bar', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, `Status.\n\n${IN_PROGRESS}`)
+  const c = await colours(ui)
+  expect(c.borders).toContain('claude')
+  expect(c.fills).toContain('claude')
+  expect(c.borders).not.toContain('success')
   await ui.unmount()
 })
 
