@@ -72,10 +72,10 @@ function rig() {
     }
   }
   const views = { current: [mission()] as unknown[] }
-  const listViews = vi.fn(async (_folders: readonly string[]) => ({
+  const unreadable = { current: [] as string[] }
+  const listViews = vi.fn(async (_folders: readonly string[], _sessions: readonly string[]) => ({
     views: views.current,
-    unreadable: [],
-    shadowed: []
+    unreadable: unreadable.current
   }))
   const sent: { sid: string; args: { missions: { id: string; title: string }[] } }[] = []
   const send = vi.fn((req: { sid: string; args: never }) => {
@@ -90,7 +90,16 @@ function rig() {
   })
   const emit = (name: string, ...a: unknown[]) =>
     (handlers[name] ?? []).forEach((fn) => (fn as (...x: unknown[]) => void)(...a))
-  return { feed, emit, views, listViews, sent, send, change: (b: BindingView) => changeFn?.(b) }
+  return {
+    feed,
+    emit,
+    views,
+    unreadable,
+    listViews,
+    sent,
+    send,
+    change: (b: BindingView) => changeFn?.(b)
+  }
 }
 
 const flush = async (ms = 0) => {
@@ -110,7 +119,7 @@ describe('the mission state feed', () => {
     expect(r.sent).toHaveLength(1)
     expect(r.sent[0].sid).toBe(SID)
     expect(r.sent[0].args.missions.map((m) => m.id)).toEqual(['mnt-7be1529e'])
-    expect(r.listViews).toHaveBeenCalledWith(['/work/acme/www'])
+    expect(r.listViews).toHaveBeenCalledWith(['/work/acme/www'], [SID])
     r.feed.dispose()
   })
 
@@ -226,6 +235,64 @@ describe('the mission state feed', () => {
     r.emit('hello', binding({ key: 2, sid: 'other-session' }), 'spawn')
     await flush(5)
     expect(r.listViews).toHaveBeenCalledTimes(1)
+    r.feed.dispose()
+  })
+
+  it('asks for the missions of the sessions in a folder only, so a folder with none costs no derive (T589 review #5)', async () => {
+    const r = rig()
+    r.emit('hello', binding({ key: 1 }), 'spawn')
+    r.emit('hello', binding({ key: 2, sid: 'other-session' }), 'spawn')
+    r.emit('hello', binding({ key: 3, sid: 'third', cwd: '/work/else' }), 'spawn')
+    await flush(5)
+    const calls = r.listViews.mock.calls.map(([f, s]) => [[...f], [...s].sort()])
+    expect(calls).toContainEqual([['/work/acme/www'], [SID, 'other-session'].sort()])
+    expect(calls).toContainEqual([['/work/else'], ['third']])
+    r.feed.dispose()
+  })
+
+  it('never tells a session it has no missions because a mission file could not be read (T589 review #1)', async () => {
+    const r = rig()
+    r.emit('hello', binding(), 'spawn')
+    await flush(MISSION_DEBOUNCE_MS + 5)
+    expect(r.sent).toHaveLength(1)
+    r.views.current = [] // the file failed to parse: the read says nothing about this mission
+    r.unreadable.current = ['mnt-7be1529e-acme.md']
+    await flush(MISSION_POLL_MS + MISSION_DEBOUNCE_MS + 5)
+    expect(r.sent).toHaveLength(1) // not an empty push
+    r.unreadable.current = [] // readable again, and really gone
+    await flush(MISSION_POLL_MS + MISSION_DEBOUNCE_MS + 5)
+    expect(r.sent).toHaveLength(2)
+    expect(r.sent[1].args.missions).toEqual([])
+    r.feed.dispose()
+  })
+
+  it('an unreadable file elsewhere does not hold back the missions that did read (T589 review #1)', async () => {
+    const r = rig()
+    r.emit('hello', binding(), 'spawn')
+    await flush(MISSION_DEBOUNCE_MS + 5)
+    r.unreadable.current = ['broken.md']
+    r.views.current = [mission({ title: 'Acme migration, renamed' })]
+    await flush(MISSION_POLL_MS + MISSION_DEBOUNCE_MS + 5)
+    expect(r.sent).toHaveLength(2)
+    expect(r.sent[1].args.missions[0].title).toBe('Acme migration, renamed')
+    r.feed.dispose()
+  })
+
+  it('a pending push is dropped when a later read finds the state the mod already holds (T589 review #2)', async () => {
+    const r = rig()
+    r.emit('hello', binding({ key: 1 }), 'spawn')
+    await flush(MISSION_DEBOUNCE_MS + 5)
+    expect(r.sent).toHaveLength(1)
+    // a change is read and its push armed ...
+    r.views.current = [mission({ title: 'a state that was superseded' })]
+    r.emit('hello', binding({ key: 2, sid: 'other-session' }), 'spawn') // another session says hello: a read
+    await flush(5)
+    // ... and before it fires, the state reverts to what the mod holds and is read again
+    r.views.current = [mission()]
+    r.emit('hello', binding({ key: 3, sid: 'third-session' }), 'spawn')
+    await flush(MISSION_DEBOUNCE_MS + 5)
+    const titles = r.sent.filter((x) => x.sid === SID).map((x) => x.args.missions[0].title)
+    expect(titles).not.toContain('a state that was superseded')
     r.feed.dispose()
   })
 })

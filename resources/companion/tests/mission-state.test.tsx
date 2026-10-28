@@ -4,6 +4,7 @@ import { CMD_TTL_MS, type MissionStateEntry } from '../hooks/contract'
 import {
   changesBetween,
   fitHeader,
+  fitNoChange,
   parseMissionState,
   planTick,
   sameSnap,
@@ -590,4 +591,130 @@ test('a tick card at 60 columns keeps its header inside the border', async ($, o
   expect(cells + 2).toBeLessThanOrEqual(60 - 4 - 1) // border, padding and the spare cell
   await ui.unmount()
   void rig
+})
+
+// ---- the code review: ledger races, key, refused rows, window, no-change fit ---------------------
+
+const ledgerOf = (rig: Rig): any => rig.state.get('tickRows')
+
+test('ticks appended at the same moment are each kept and numbered once, in order of arrival', async ($, on) => {
+  const rig = await rigWith($, on)
+  await Promise.all([appendTick($, 'c-1'), appendTick($, 'c-2'), appendTick($, 'c-3')])
+  const rows = ledgerOf(rig).byMission['mnt-7be1529e'].rows
+  expect(rows.map((r: any) => r.rid).sort()).toEqual(['c-1', 'c-2', 'c-3'])
+  expect(rows.map((r: any) => r.n)).toEqual([1, 2, 3]) // no two ticks share a number, none is lost
+  expect(ledgerOf(rig).byMission['mnt-7be1529e'].next).toBe(4)
+})
+
+test('a write that lands late never leaves the stored ledger short of a row', async ($, on) => {
+  let writes = 0
+  // outermost: sees every write the mod makes, and holds the first one back
+  on('state.set', async ($: any, e: any, next: any) => {
+    if (e.key === 'tickRows' && writes++ === 0) await $.clock.sleep(5_000)
+    return next(e)
+  })
+  const rig = await rigWith($, on)
+  const both = Promise.all([appendTick($, 'w-1'), appendTick($, 'w-2')])
+  await rig.clock.advance(6_000)
+  await both
+  await rig.clock.settle()
+  const rows = ledgerOf(rig).byMission['mnt-7be1529e'].rows
+  expect(rows.map((r: any) => r.rid)).toEqual(['w-1', 'w-2'])
+})
+
+test('the ledger is keyed by the id the engine kept the row under, the one a draw reads as requestId', async ($, on) => {
+  const rig = await rigWith($, on)
+  const kept = await appendTick($, 'k-1')
+  expect(kept.uuid).toBe('k-1')
+  expect(ledgerOf(rig).byMission['mnt-7be1529e'].rows[0].rid).toBe(kept.uuid)
+  const same = await mountTick($, on, rig, kept.uuid)
+  expect(await textOf(same, /^⟳ tick #1 · /)).toBeTruthy()
+  // a draw under any other id is visibly a loose card: no number, never a wrong one
+  const other = await mountTick($, on, rig, 'not-the-row')
+  expect(await textOf(other, /^⟳ tick · Acme content migration$/)).toBeTruthy()
+  expect(await textOf(other, /tick #/)).toBeUndefined()
+  await same.unmount()
+  await other.unmount()
+})
+
+test('a row the engine refused is not numbered', async ($, on) => {
+  const rig = await rigWith($, on)
+  // beneath the mod: refuses the row (only a plugin's own append can be refused in the engine, so
+  // this pins what the mod does if a refusal ever reaches it)
+  on('session.append', { door: 'prompt' }, () => ({ deny: 'refused' }) as never)
+  await appendTick($, 'r-1').catch(() => undefined)
+  expect(rig.state.has('tickRows')).toBe(false)
+})
+
+test('a mission with more than 40 steps carries a window of them and the offset of its first', async ($, on) => {
+  const steps = Array.from({ length: 40 }, (_, i) => ({
+    id: 'stp-' + (i + 21),
+    title: 'step ' + (i + 21),
+    state: i + 21 < 50 ? ('verified' as const) : ('todo' as const),
+    children: [] as { taskState: string; lastTransitionAt: number | null }[],
+    prs: [] as { number: number; state: string }[]
+  }))
+  steps[29] = {
+    ...steps[29],
+    state: 'running',
+    children: [{ taskState: 'working', lastTransitionAt: NOW - 3 * MIN }]
+  }
+  const big = entry({
+    progress: { total: 60, current: { from: 50, to: 50 }, done: 49, verified: 49, allDone: false },
+    steps,
+    offset: 20
+  } as never)
+  expect(parseMissionState({ missions: [big] })).not.toBeNull()
+  expect(parseMissionState({ missions: [{ ...big, offset: -1 }] })).toBeNull()
+  expect(parseMissionState({ missions: [{ ...big, offset: 1.5 }] })).toBeNull()
+  const c = tickCard(big, 1, null, NOW)
+  expect(c.rows[0]).toEqual({ label: 'now', text: 'stp-50 · executor working 3 min' })
+  void on
+})
+
+test('the "no change" line keeps its tail on a narrow terminal: the title gives way, then the count', () => {
+  const card = tickCard(
+    entry({ title: 'A very long mission title that needs room' }),
+    15,
+    { n: 14, snap: snapOf(entry(), NOW) },
+    NOW
+  )
+  expect(card.kind).toBe('nochange')
+  const wide = fitNoChange(card, 200)
+  expect(wide).toBe(
+    '⟳ tick #15 · A very long mission title that needs room · Step 3 of 5 · no change since #14'
+  )
+  for (let avail = 80; avail >= 36; avail--) {
+    const line = fitNoChange(card, avail)
+    expect([...line].length, 'avail ' + avail).toBeLessThanOrEqual(avail)
+    expect(line.endsWith('no change since #14'), 'avail ' + avail).toBe(true)
+  }
+  expect(fitNoChange(card, 60)).toMatch(/^⟳ tick #15 · .*… · Step 3 of 5 · no change since #14$/)
+  expect(fitNoChange(card, 45)).toMatch(/^⟳ tick #15 · .*… · no change since #14$/)
+})
+
+test('a "no change" tick at 60 columns keeps "no change since" on its line', async ($, on) => {
+  const rig = await rigWith($, on)
+  await appendTick($, 'n-1')
+  await appendTick($, 'n-2')
+  const ui = await $.ui.mount({
+    ...ROW,
+    surface: 'terminal',
+    requestId: 'n-2',
+    viewport: { columns: 60, rows: 40 },
+    props: tickProps()
+  } as never)
+  expect(await textOf(ui, /no change since #1$/)).toBeTruthy()
+  await ui.unmount()
+  void rig
+})
+
+test('a mission with no steps has no bar, and so no stray space in front of its count', () => {
+  const none = entry({
+    progress: { total: 0, current: null, done: 0, verified: 0, allDone: false },
+    steps: []
+  })
+  const h = fitHeader(tickCard(none, 1, null, NOW), 80)
+  expect(h.bar).toBeNull()
+  expect(h.detail).toBe('0 steps · 0 verified')
 })

@@ -210,3 +210,60 @@ describe('the key that says whether anything changed', () => {
     expect(missionStateKey([])).toBe(missionStateKey([]))
   })
 })
+
+describe('a mission with more than 40 steps (T589 review)', () => {
+  const many = (): MissionViewIn => {
+    const steps = Array.from({ length: 60 }, (_, i) => step('stp-' + (i + 2)))
+    const states: Record<string, string> = {}
+    steps.forEach(
+      (s, i) => (states[s.id] = i + 1 < 50 ? 'verified' : i + 1 === 50 ? 'running' : 'todo')
+    )
+    return view({
+      mission: { ...view().mission, steps },
+      progress: {
+        total: 60,
+        current: { from: 50, to: 50 },
+        allDone: false,
+        done: 49,
+        verified: 49,
+        states,
+        leftBehind: [],
+        unprovable: [],
+        computedAt: 'x'
+      },
+      derived: {
+        steps: [
+          {
+            stepId: 'stp-51',
+            children: [
+              {
+                sessionId: CHILD,
+                taskState: 'working',
+                lastTransitionAt: '2026-10-28T15:48:00.000Z'
+              }
+            ],
+            links: []
+          }
+        ]
+      }
+    })
+  }
+
+  it('keeps the window around the current step, with the offset of its first step', () => {
+    const [m] = projectMissions([many()], OWNER)
+    expect(m.steps).toHaveLength(40)
+    expect(m.progress.current).toEqual({ from: 50, to: 50 }) // the server's, never rewritten
+    expect(m.offset).toBeGreaterThan(0)
+    const at = m.steps[50 - 1 - (m.offset ?? 0)]
+    expect(at.id).toBe('stp-51')
+    expect(at.children).toEqual([
+      { taskState: 'working', lastTransitionAt: Date.parse('2026-10-28T15:48:00.000Z') }
+    ])
+    expect(parseMissionState({ missions: [m] })).not.toBeNull()
+  })
+
+  it('a mission within the cap carries no offset', () => {
+    const [m] = projectMissions([view()], OWNER)
+    expect(m.offset).toBeUndefined()
+  })
+})
