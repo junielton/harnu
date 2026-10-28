@@ -304,6 +304,7 @@ const textOf = async (ui: any, re: RegExp) => (await ui.find({ type: 'Text', tex
 
 test('a tick that names a mission with pushed state draws the live card', async ($, on) => {
   const rig = await rigWith($, on)
+  await appendTick($, 'row-1')
   const ui = await mountTick($, on, rig, 'row-1')
   expect(await textOf(ui, /^engine$/)).toBeUndefined()
   expect(await textOf(ui, /tick #1 · Acme content migration/)).toBeTruthy()
@@ -333,6 +334,8 @@ test('the bar follows the position and the card goes green when the mission is d
 
 test('the second tick over the same state is one line; a later change is a card with what changed', async ($, on) => {
   const rig = await rigWith($, on)
+  await appendTick($, 'row-1')
+  await appendTick($, 'row-2')
   const one = await mountTick($, on, rig, 'row-1')
   expect(await textOf(one, /tick #1/)).toBeTruthy()
   const two = await mountTick($, on, rig, 'row-2')
@@ -343,6 +346,7 @@ test('the second tick over the same state is one line; a later change is a card 
   expect(boxes.map((b: any) => b.props.borderColor).filter(Boolean)).toEqual([]) // no card, one line
   expect(await textOf(two, /executor card-acme/)).toBeUndefined()
   rig.state.set('missions', { v: 1, n: 2, at: NOW, missions: [moved()] })
+  await appendTick($, 'row-3')
   const three = await mountTick($, on, rig, 'row-3')
   expect(await textOf(three, /tick #3/)).toBeTruthy()
   expect(await textOf(three, /changed/)).toBeTruthy()
@@ -354,9 +358,12 @@ test('the second tick over the same state is one line; a later change is a card 
 
 test('a row drawn again keeps its number and, once a later tick exists, its own words', async ($, on) => {
   const rig = await rigWith($, on)
+  await appendTick($, 'row-1')
+  await appendTick($, 'row-2')
   const one = await mountTick($, on, rig, 'row-1')
   const two = await mountTick($, on, rig, 'row-2')
   rig.state.set('missions', { v: 1, n: 2, at: NOW, missions: [moved()] })
+  await appendTick($, 'row-3')
   await mountTick($, on, rig, 'row-3')
   await one.unmount()
   await two.unmount()
@@ -397,8 +404,9 @@ test('an expanded tick (ctrl+o) is the engine row, untouched', async ($, on) => 
   await ui.unmount()
 })
 
-test('a ledger that is not one reads as empty; the row still draws its card', async ($, on) => {
+test('a ledger that is not one reads as empty; a tick appended after it is numbered from 1', async ($, on) => {
   const rig = await rigWith($, on, { ...seeded(), tickRows: 'garbage' })
+  await appendTick($, 'row-1')
   const ui = await mountTick($, on, rig, 'row-1')
   expect(await textOf(ui, /tick #1/)).toBeTruthy()
   await ui.unmount()
@@ -491,12 +499,31 @@ test('without the feature, or without pushed state, a fired tick writes nothing'
   expect(off.state.has('tickRows')).toBe(false)
 })
 
-test('a row that arrived after its draw (no pushed state yet) still gets a number when drawn', async ($, on) => {
+test('a row never appended in this process is an unnumbered card, with no comparison, and writes nothing', async ($, on) => {
+  // a resumed transcript: the engine draws its rows in an order of its own (bottom-up in 2.1.312),
+  // so a number taken from the draw order would put #2 above #1. Such a row says what is true now.
+  const rig = await rigWith($, on)
+  const a = await mountTick($, on, rig, 'old-1')
+  const b = await mountTick($, on, rig, 'old-2')
+  for (const ui of [a, b]) {
+    expect(await textOf(ui, /^⟳ tick · Acme content migration$/)).toBeTruthy()
+    expect(await textOf(ui, /tick #/)).toBeUndefined()
+    expect(await textOf(ui, /no change since/)).toBeUndefined()
+    expect(await textOf(ui, /stp-3 · executor card-acme working 12 min/)).toBeTruthy()
+    expect(await textOf(ui, /Step 3 of 5 · 1 verified/)).toBeTruthy()
+  }
+  await rig.clock.settle()
+  expect(rig.state.has('tickRows')).toBe(false)
+  await a.unmount()
+  await b.unmount()
+})
+
+test('a tick appended before anything was pushed is an unnumbered card once the state arrives', async ($, on) => {
   const rig = await rigWith($, on, {})
   await appendTick($, 'u-1') // nothing pushed yet: not numbered at append
   expect(rig.state.has('tickRows')).toBe(false)
   rig.state.set('missions', seeded().missions)
   const ui = await mountTick($, on, rig, 'u-1')
-  expect(await textOf(ui, /tick #1/)).toBeTruthy() // the draw-time numbering still covers it
+  expect(await textOf(ui, /^⟳ tick · Acme content migration$/)).toBeTruthy()
   await ui.unmount()
 })
