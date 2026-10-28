@@ -30,6 +30,7 @@ const isInt = (v: unknown, min = 0): v is number => Number.isInteger(v) && (v as
 const STEP_STATES: readonly string[] = ['verified', 'done', 'running', 'waiting', 'blocked', 'todo']
 const MISSION_ID = new RegExp('^mnt-[0-9a-f]{8}$')
 // C0 controls except none, DEL and C1: a pushed string is one printable line.
+// eslint-disable-next-line no-control-regex -- the point is to refuse control characters
 const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]')
 
 /** A printable one-line string of 1 to `max` characters (`allowEmpty`: 0 to `max`). */

@@ -97,7 +97,7 @@ environment variables** and **draws in the terminal**. They are what the source 
 it talks to Harnu on this machine, reads session state, watches prompts, permission
 requests and mod registration, and draws one line above the prompt of a review companion
 (the selection you made in the Review pane) and, in every session, the [report cards](#report-cards)
-described below. The registration hook only watches which mods a session admits; it never
+and [compact agent messages](#compact-agent-messages) described below. The registration hook only watches which mods a session admits; it never
 refuses one, and a test in Harnu's repository fails if it ever does. The static read
 cannot tell a watcher from a gate, so the chips are shown anyway, the same as for any mod
 with those hooks.
@@ -160,6 +160,39 @@ closing fence, a `tree` listing, a lone link.
 default; it can only be on while the Harnu mod itself is on). A session reads the setting when it
 starts, so a change reaches sessions you start afterwards; sessions already running keep what
 they had until they restart.
+
+## Compact agent messages
+
+In a session with the Harnu mod on, the rows in the transcript that **you did not type** are
+drawn short. Anything you type, and anything that comes from a person at another client, is never
+touched.
+
+- **A report from another session** is one line: `✉` the sender, `report · mnt-… stp-…` when it
+  is a `Report for session … · mission … · step …` report, and the first sentence of its summary.
+- **A finished background task** is one line: `✓ bg task <name> · exit 0` (`✗` when it failed,
+  with how long it ran).
+- **A teammate's idle notice** is one line: `◌ <name> idle 07:14 · «what they said»`.
+- **A loop tick over a mission** is a **live card**: the mission's title, a progress bar with
+  "Step 3 of 5 · 1 verified", `now` (the step that is running, its executor, what it is doing and
+  for how long), `waits` (the blocker or the open PRs it waits on) and a yellow `⚑ you` row for
+  each thing you owe. A tick qualifies when its prompt starts with the line
+  `/harnu:mission tick · <mission id>`. The card is drawn from the mission's current state, which
+  Harnu sends to the session (the missions it owns or is linked to), not from the prompt. A tick
+  that finds the same state as the one before is a single dim line, "no change since #14"; one that
+  finds a change shows a `changed` row instead (`stp-3 verified · PR #269 merged`). The tick number
+  `#N` counts the ticks of that mission in the session. The card is green when the mission is
+  done, and the accent colour otherwise.
+
+The labels of the card (`now`, `waits`, `changed`, `you`, "no change since") are English in every
+language. A row the mod cannot read, a tick with no mission id, a session outside Harnu (which gets
+no mission state) or a mission Harnu does not know is drawn as a plain one-line chip from its text,
+or left as the engine draws it. A line is cut at the edge of the terminal, never hidden: **Ctrl+O**
+shows every row as written, and the stored message and what the model reads are never changed.
+
+**Turning it off.** **Settings → General → Harnu mod → Draw agent messages compactly** (on by
+default; it can only be on while the Harnu mod itself is on). A session reads the setting when it
+starts, so a change reaches sessions you start afterwards; sessions already running keep what they
+had until they restart.
 
 ## Harnu mod outside Harnu
 

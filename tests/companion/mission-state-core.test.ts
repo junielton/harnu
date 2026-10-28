@@ -15,7 +15,6 @@ import { parseMissionState } from '../../resources/companion/hooks/lib/mission-s
 const OWNER = '19cc0181-9f04-41a9-b93a-18231ee36b64'
 const CHILD = '2a2a2a2a-0000-4000-8000-000000000002'
 const OTHER = '3b3b3b3b-0000-4000-8000-000000000003'
-const T = Date.parse('2026-10-28T16:00:00.000Z')
 
 const step = (id: string, over: Record<string, unknown> = {}) => ({
   id,

@@ -51,6 +51,7 @@ export interface MissionViewIn {
 }
 
 // A pushed string is one printable line: C0 controls, DEL, C1 and the Unicode line separators go.
+// eslint-disable-next-line no-control-regex -- the point is to strip control characters
 const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]', 'g')
 
 /** One printable line of at most `max` characters; an empty one is `fallback`. */
