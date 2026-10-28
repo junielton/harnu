@@ -162,11 +162,11 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
           </Box>
         ) : null}
         {r.links.length > 0 ? (
-          <Box flexDirection="column" paddingX={1}>
+          <Box flexDirection="column" paddingX={1} marginTop={1}>
             {r.links.map((l) => (
               <Text dimColor wrap="truncate-end">
                 {`${l.label} → `}
-                {/^https?:\/\//.test(l.target) ? <Link href={l.target}>{l.target}</Link> : l.target}
+                {/^https?:\/\//.test(l.target) ? <Link href={l.target} /> : l.target}
               </Text>
             ))}
           </Box>
@@ -179,7 +179,15 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
     <Box flexDirection="row">
       <Text>{firstOfReply ? '● ' : '  '}</Text>
       <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-        {segments.map((s) => (s.kind === 'text' ? <Markdown text={s.text} /> : card(s.report)))}
+        {segments.map((s, i) =>
+          s.kind === 'text' ? (
+            <Box flexDirection="column" marginTop={i > 0 ? 1 : 0}>
+              <Markdown text={s.text} />
+            </Box>
+          ) : (
+            card(s.report)
+          )
+        )}
       </Box>
     </Box>
   )
