@@ -44,6 +44,7 @@ function rig(
     kinds?: Record<string, string | null>
     probe?: StatusDeps['probe']
     r?: RolloutView
+    reportCards?: boolean
     spawned?: { owner: SpawnOwner; atAgoMs: number; skip?: 'pre-disclosure' | 'cli-unknown' }[]
   } = {}
 ) {
@@ -61,6 +62,7 @@ function rig(
   const requestProbe = vi.fn()
   const deps: StatusDeps = {
     enabled: () => r.enabled,
+    reportCards: () => over.reportCards ?? true,
     disclosureShownAt: () => 1_789_000_000_000,
     stagedDir: () => '/ud/companion/0.1.0/harnu-companion',
     modVersion: () => '0.1.0',
@@ -90,6 +92,11 @@ function rig(
 }
 
 describe('buildCompanionStatus', () => {
+  it('carries the "Draw reports as cards" switch (T585)', () => {
+    expect(buildCompanionStatus(rig().deps).reportCards).toBe(true)
+    expect(buildCompanionStatus(rig({ reportCards: false }).deps).reportCards).toBe(false)
+  })
+
   it('reports a live session under its row key and its bound sid, with the ownership of every family', () => {
     const { deps } = rig({ bindings: [view()] })
     const s = buildCompanionStatus(deps)

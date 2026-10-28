@@ -4553,6 +4553,10 @@
       "description": "Harnu loads a small mod into the sessions it starts. It runs unsandboxed inside the `claude` process and talks only to Harnu on this machine.",
       "offHint": "Off stops Harnu from using it now and from loading it into new sessions. Off means hooks and polling.",
       "reveal": "Reveal folder",
+      "reportCards": {
+        "label": "Draw reports as cards",
+        "description": "Show a status or report-back reply as a card in the transcript. The message itself is unchanged, and Ctrl+O still shows it as written. Sessions already running keep their setting until they restart."
+      },
       "policy": "Blocked by your organization's policy.",
       "modsOff": "Turned off by a setting or by your organization's policy.",
       "remoteOff": "Mods are turned off remotely for this Claude Code install.",

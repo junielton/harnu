@@ -3095,6 +3095,9 @@ const api = {
   /** The kill switch. Off revokes every running mod at once; on reaches new sessions only. */
   companionSetEnabled: (on: boolean): Promise<{ enabled: boolean }> =>
     ipcRenderer.invoke('companion:setEnabled', on),
+  /** T585: "Draw reports as cards". Sessions started after the change read it; running ones keep theirs. */
+  companionSetReportCards: (on: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('companion:setReportCards', on),
   /** Stamps that the one-time notice was rendered; sessions spawned after it carry the mod. */
   companionDisclosureShown: (): Promise<void> => ipcRenderer.invoke('companion:disclosureShown'),
   /** Opens the folder the sessions load the mod from. */

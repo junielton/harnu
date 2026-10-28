@@ -4553,6 +4553,10 @@
       "description": "O Harnu carrega um mod pequeno nas sessões que ele inicia. Ele roda sem sandbox dentro do processo `claude` e fala apenas com o Harnu nesta máquina.",
       "offHint": "Desligado impede o Harnu de usá-lo agora e de carregá-lo em novas sessões. Desligado significa hooks e polling.",
       "reveal": "Mostrar pasta",
+      "reportCards": {
+        "label": "Desenhar relatórios como cards",
+        "description": "Mostra uma resposta de status ou de report-back como um card no transcript. A mensagem em si não muda, e o Ctrl+O continua mostrando o texto original. Sessões já em andamento mantêm a configuração até reiniciar."
+      },
       "policy": "Bloqueado pela política da sua organização.",
       "modsOff": "Desligado por uma configuração ou pela política da sua organização.",
       "remoteOff": "Os mods estão desligados remotamente nesta instalação do Claude Code.",

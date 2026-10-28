@@ -39,6 +39,8 @@ export const ALLOWED_PATHS = [
   /^tests\/roadmap-core\.test\.ts$/, // accent-folding slugify fixture
   /^tests\/mission-core\.test\.ts$/,
   /^tests\/mcp-memory-core\.test\.ts$/,
+  // pt-BR report fixtures: the report card parses by shape, so it must be tested on translated labels.
+  /^resources\/companion\/tests\/report-card\.test\.tsx$/,
   // Asserts that a bundled skill contains NO Portuguese, so it must name the words.
   /^tests\/bundled-report-skills\.test\.ts$/,
   // This gate and its test.

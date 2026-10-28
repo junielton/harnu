@@ -438,6 +438,7 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     status: () =>
       buildCompanionStatus({
         enabled: () => getCompanionPrefs().enabled,
+        reportCards: () => prefsKey<boolean>('reportCards'),
         disclosureShownAt: () => getCompanionPrefs().disclosureShownAt ?? null,
         stagedDir: companionStagedDir,
         modVersion: () => manifest.version,
@@ -452,6 +453,10 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
         refusalTexts: SIDELOAD_REFUSAL_TEXTS
       }),
     stagedDir: async () => companionStagedDir() ?? (await ensureStaged()),
+    setReportCards: (on) => {
+      setPrefsKey('reportCards', on)
+      pushUpdated()
+    },
     externalGet: () => external!.get(),
     externalSet: async (on) => {
       const r = await external!.set(on)
