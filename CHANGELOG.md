@@ -18,6 +18,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **Loop tick prompts name their mission on a fixed first line.** The `mission` and `orchestrate-delivery` skills now tell an orchestrator to start every `/loop` or wakeup prompt it arms with `/harnu:mission tick · <missionId>`, so Harnu can recognise which mission a tick belongs to.
 - **Orchestration reports use the same format as every other final report.** When an orchestrated delivery finishes, its wrap-up is now the `report-back` rail (`✓` / `-` / `!` / `✗` rows with topology, heartbeat, one row per unit with its PR and `ACs n/m met`, review findings and the delivery report) under the status card, with what you owe in the `you` line and links at the bottom. The emoji checklist (`✅` / `⚠️`) it used to print is gone.
 
 ## 2026-10-27

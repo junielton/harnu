@@ -278,7 +278,9 @@ link the sessions that built it.** A session link says who built the step — th
 operator reads it that way, and the end's verification counts on it. One mission
 per owner session, so parallel orchestrations in one checkout never overwrite
 each other. Then **arm the ticks yourself** — a loop over `mission`, self-paced,
-stopped when the mission closes. On `MISSION_CLOSED`, stop the loop: the
+stopped when the mission closes. Every tick prompt you arm starts with the fixed
+first line `mission` defines (see "The tick prompt's first line" there), naming
+this mission's id. On `MISSION_CLOSED`, stop the loop: the
 operator ended the mission (closed or discarded it), and every write refuses from
 then on — report it, never retry or open a replacement mission. Do not wait to be asked "how is it
 going": an orchestration whose heartbeat depends on the operator remembering to
@@ -429,7 +431,9 @@ So on any turn where you are not certain the loop is still armed:
 2. **Do the missed work before reporting it.** A unit pushed-and-clean with no PR
    needs its shipper dispatched on this turn, not described. Whatever the loop
    would have done in the ticks it missed, do now.
-3. **Re-arm, and say the cadence in one clause.** If it is genuinely over — every
+3. **Re-arm, and say the cadence in one clause.** The re-armed prompt starts with
+   the same fixed first line (`mission`'s "The tick prompt's first line"). If it
+   is genuinely over — every
    unit in `review`, mission closed — say that instead, and stop the loop
    deliberately rather than by neglect.
 
