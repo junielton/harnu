@@ -172,8 +172,9 @@ export function reportView(els: Els, segments: Segment[], firstOfReply: boolean)
     )
   }
 
+  // The engine leaves a blank row above the first block of a reply; our own tree must keep it.
   return (
-    <Box flexDirection="row">
+    <Box flexDirection="row" marginTop={firstOfReply ? 1 : 0}>
       <Text>{firstOfReply ? '● ' : '  '}</Text>
       <Box flexDirection="column" flexGrow={1} flexShrink={1}>
         {segments.map((s, i) =>
