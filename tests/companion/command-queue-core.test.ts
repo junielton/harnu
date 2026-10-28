@@ -173,6 +173,18 @@ describe('coalescing (undelivered only)', () => {
     expect(takeCommands(q, 0, 1000).map((c) => c.args)).toEqual([{ text: 'two' }])
   })
 
+  it('a new mission.state replaces an older undelivered one, never a delivered one (T589)', () => {
+    const q = createQueue(BOOT)
+    add(q, spec('mission.state', { missions: [] }))
+    const r = add(q, spec('mission.state', { missions: [{ id: 'mnt-00000001' }] }))
+    if (!r.ok) throw new Error('refused')
+    expect(r.replaced).toHaveLength(1)
+    expect(takeCommands(q, 0, 1000).map((c) => c.name)).toEqual(['mission.state'])
+    ackQueue(q, 2)
+    add(q, spec('mission.state', { missions: [] }))
+    expect(liveCount(q)).toBe(2)
+  })
+
   it('does not replace a delivered ui.status', () => {
     const q = createQueue(BOOT)
     add(q, spec('ui.status', { text: 'one' }))
