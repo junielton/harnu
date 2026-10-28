@@ -1656,7 +1656,7 @@ export const register: Register = (on) => {
         const missionId = kind === 'scheduled-trigger' ? tickMissionId(e.props.text) : null
         if (missionId !== null) {
           const card = await tickFor($, missionId, e.requestId)
-          if (card !== null) return tickView($.ui.resolve(e), card)
+          if (card !== null) return tickView($.ui.resolve(e), card, e.viewport?.columns)
         }
         const chip = rowChip(
           kind,

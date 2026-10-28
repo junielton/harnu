@@ -423,3 +423,60 @@ export function planTick(
     latest: true
   }
 }
+
+// ---- the header, fitted to the width -------------------------------------------------------------
+
+export interface FittedHeader {
+  /** `⟳ tick #14 · title`, the title cut with `…` when it has to give way. */
+  left: string
+  /** The bar's cells, or `null` when there is no room for it. */
+  bar: { filled: number; total: number } | null
+  /** `Step 3 of 5 · 1 verified`, or just `Step 3 of 5`. */
+  detail: string
+}
+
+/** The title is cut no shorter than this before anything else gives way. */
+const TITLE_FLOOR = 10
+/** The gap between the two halves of the header row. */
+const HEADER_GAP = 2
+
+const cells = (s: string): number => [...s].length
+
+/**
+ * What the header row draws in `inner` cells (the card's width less its border and padding). The title
+ * gives way first, down to a floor; then `· V verified` goes; then the bar. One cell is always left
+ * free. Below about 32 inner cells (a 36-column terminal) even the label and `Step N of M` cannot
+ * both fit, and the result is best effort. A terminal font may draw `⟳` or a bar glyph wider than the layout counts, and a header that
+ * fills its row to the last cell would push the border out by that one cell.
+ */
+export function fitHeader(card: TickCard, inner: number): FittedHeader {
+  const prefix = '⟳ tick' + (card.n === null ? '' : ' #' + card.n) + ' · '
+  const budget = inner - 1 - HEADER_GAP
+  const short = card.detail.split(' · ')[0]
+  const tries: [boolean, string][] = [
+    [true, card.detail],
+    [true, short],
+    [false, short]
+  ]
+  for (const [barOn, detail] of tries) {
+    const right = (barOn ? card.bar.total + 1 : 0) + cells(detail)
+    const room = budget - right - cells(prefix)
+    if (cells(card.title) <= room) {
+      return { left: prefix + card.title, bar: barOn ? card.bar : null, detail }
+    }
+    if (room >= TITLE_FLOOR) {
+      return {
+        left: prefix + [...card.title].slice(0, room - 1).join('') + '…',
+        bar: barOn ? card.bar : null,
+        detail
+      }
+    }
+  }
+  // No room for a readable title beside the detail: keep the detail, cut the title to what is left.
+  const room = Math.max(2, budget - cells(short) - cells(prefix))
+  return {
+    left: prefix + [...card.title].slice(0, room - 1).join('') + '…',
+    bar: null,
+    detail: short
+  }
+}

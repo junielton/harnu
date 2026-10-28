@@ -556,7 +556,8 @@ test('narrower still: the title shrinks to a floor, then "· V verified" goes, t
     null,
     NOW
   )
-  for (let inner = 120; inner >= 16; inner--) {
+  // down to a 36-column terminal (32 inner cells): below that there is no room for the tick label
+  for (let inner = 120; inner >= 32; inner--) {
     const h = fitHeader(card, inner)
     expect(headerCells(h), 'inner ' + inner).toBeLessThanOrEqual(inner - 1)
   }

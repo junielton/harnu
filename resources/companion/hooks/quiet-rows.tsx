@@ -1,6 +1,6 @@
 import type { ElementTable } from 'claude-code'
 import type { Chip } from './lib/quiet-rows'
-import type { TickCard } from './lib/mission-state'
+import { fitHeader, type TickCard } from './lib/mission-state'
 
 /**
  * The quiet rows' views (T589, mockups 02 and 03). Pure builders: they receive the resolved
@@ -36,7 +36,7 @@ const LABEL_W = 9
  * rows are always yellow, because they are the one thing that waits for a person. Rows wrap: only
  * the "no change" line is cut at the edge (the full prompt is one ctrl+o away).
  */
-export function tickView(els: Els, card: TickCard) {
+export function tickView(els: Els, card: TickCard, columns?: number) {
   const { Box, Text } = els
   const head = '⟳ tick' + (card.n === null ? '' : ' #' + card.n) + ' · ' + card.title
   if (card.kind === 'nochange') {
@@ -55,6 +55,8 @@ export function tickView(els: Els, card: TickCard) {
       </Box>
     )
   }
+  // The card is a border and a cell of padding on each side wide.
+  const header = fitHeader(card, columns === undefined ? 1000 : columns - 4)
   return (
     <Box
       flexDirection="column"
@@ -65,14 +67,16 @@ export function tickView(els: Els, card: TickCard) {
     >
       <Box flexDirection="row" justifyContent="space-between" gap={2}>
         <Box flexShrink={1}>
-          <Text bold color={card.tone}>
-            {head}
+          <Text bold color={card.tone} wrap="truncate-end">
+            {header.left}
           </Text>
         </Box>
         <Box flexDirection="row" flexShrink={0}>
-          <Text color={card.tone}>{'▰'.repeat(card.bar.filled)}</Text>
-          <Text dimColor>{'▱'.repeat(card.bar.total - card.bar.filled)}</Text>
-          <Text dimColor>{' ' + card.detail}</Text>
+          {header.bar ? <Text color={card.tone}>{'▰'.repeat(header.bar.filled)}</Text> : null}
+          {header.bar ? (
+            <Text dimColor>{'▱'.repeat(header.bar.total - header.bar.filled)}</Text>
+          ) : null}
+          <Text dimColor>{(header.bar ? ' ' : '') + header.detail}</Text>
         </Box>
       </Box>
       {card.rows.map((r) => (
