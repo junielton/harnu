@@ -1,6 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test code reads drawn trees loosely */
 import { expect, test } from 'claude-code/testing'
-import { cardTone, splitReports, type Report, type Segment } from '../hooks/lib/report-card'
+import {
+  cardTone,
+  inlineOf,
+  splitReports,
+  type Report,
+  type Segment
+} from '../hooks/lib/report-card'
 import { helloOk, installRig, START, defaultScript, type Script } from './support/rig'
 
 /**
@@ -187,10 +193,24 @@ test('only the report fence is replaced; a tree block beside it stays text', () 
 test('the card tone follows the markers: all ✓ green, any ✗ red, else accent', () => {
   const tone = (...rail: string[]) =>
     cardTone(reports(splitReports(fence('x  ▰▱ 1/2', ...rail, '', row('', 'you', '—'))))[0])
-  expect(tone('├─ ✓ a — b', '└─ ✓ c — d')).toBe('ok')
   expect(tone('├─ ✓ a — b', '└─ ✗ c — d')).toBe('fail')
   expect(tone('├─ ✓ a — b', '└─ ! c — d')).toBe('accent')
   expect(tone('├─ ✓ a — b', '└─ - c — d')).toBe('accent')
+})
+
+// Review finding 1: an unfinished header keeps the card accent even when every rail row is ✓; the
+// rail decides only for a report whose header carries no bar or count.
+test('an unfinished bar stays accent although every rail marker is ✓', () => {
+  const rail = ['├─ ✓ a — b', '└─ ✓ c — d']
+  const withHeader = (h: string) => toneOf(fence(h, ...rail, '', row('', 'you', '—')))
+  expect(withHeader('x  ▰▱ 1/2')).toBe('accent')
+  expect(withHeader('x  ▰▰▰▱▱ Step 3 of 5')).toBe('accent')
+  expect(withHeader('x  ▰▰▰▰▰▰▰▱▱▱ 70%')).toBe('accent')
+  // a finished header, or one with no bar at all, lets the all-✓ rail read as done
+  expect(withHeader('x  ▰▰ 2/2')).toBe('ok')
+  expect(toneOf(fence('x', '│', ...rail, '', row('', 'you', '—')))).toBe('ok')
+  // and a ✗ still wins
+  expect(toneOf(fence('x  ▰▱ 1/2', '├─ ✗ a — b', '', row('', 'you', '—')))).toBe('fail')
 })
 
 // A finished card reads as done (green) whatever carries the proof: a full bar, a trailing ✓, a
@@ -236,6 +256,58 @@ test('an unfinished card is accent, also when a later phase of its header is sti
   expect(toneOf(IN_PROGRESS)).toBe('accent')
   expect(toneOf(THREE_FRONTS)).toBe('accent')
   expect(toneOf(fence('  **T9** x  S1 ▰▰ 2/2 · S2 ▱▱ 0/2', row('', 'you', '—')))).toBe('accent')
+})
+
+// Review finding 2: a `▰▱` run inside a ledger VALUE is part of that row, not a new header.
+test('a progress bar inside a ledger value stays a ledger row', () => {
+  const [r] = reports(
+    splitReports(
+      fence(
+        '  **T1** mission  ▰▰▱▱ Step 2 of 4',
+        row('', 'now', 'build ▰▰▱▱ 2/4 · linking'),
+        row('', 'done', 'S1'),
+        row('?', 'open', 'is ▰▱ enough?'),
+        row('⚑', 'you', 'merge ▰▰▰▱ later')
+      )
+    )
+  )
+  expect(r.header).toMatchObject({ title: 'T1 mission', bar: { filled: 2, total: 4 } })
+  expect(r.ledger.map((x) => x.label)).toEqual(['now', 'done', 'open', 'you'])
+  expect(r.ledger[0].lines).toEqual(['build ▰▰▱▱ 2/4 · linking'])
+})
+
+test('a barred front name with no id is still the header when it opens the block', () => {
+  const [r] = reports(
+    splitReports(fence('  wave     ▰▰▱▱▱ 3 units running · 0 PRs open', row('', 'now', 'T164')))
+  )
+  expect(r.header).toMatchObject({ title: 'wave', bar: { filled: 2, total: 5 } })
+  expect(r.ledger).toHaveLength(1)
+})
+
+// Review finding 3: an info string with attributes does not break the pairing of fences.
+test('a fence whose info string has attributes still pairs and still draws', () => {
+  const titled = REPORT_BACK_EN.replace('```\n', '```text title="report"\n')
+  const segments = splitReports(`Intro.\n\n${titled}\n\nEnd.`)
+  expect(segments?.map((s) => s.kind)).toEqual(['text', 'report', 'text'])
+})
+
+test('a code fence with attributes beside a report stays plain text', () => {
+  const code = '```ts title="a.ts"\nconst a = 1\n```'
+  const segments = splitReports(`${code}\n\n${REPORT_BACK_EN}`)
+  expect(segments?.map((s) => s.kind)).toEqual(['text', 'report'])
+  expect((segments?.[0] as { text: string }).text).toContain('const a = 1')
+})
+
+// Review finding 6: a URL keeps a ")" that closes its own "(".
+test('a URL keeps a balanced closing parenthesis and drops an unbalanced one', () => {
+  const link = (text: string) => inlineOf(text, new Map()).find((p) => p.t === 'link') as any
+  expect(link('see https://en.wikipedia.org/wiki/Foo_(bar) now').href).toBe(
+    'https://en.wikipedia.org/wiki/Foo_(bar)'
+  )
+  expect(link('(see https://example.com/a)').href).toBe('https://example.com/a')
+  expect(link('https://example.com/a_(b).').href).toBe('https://example.com/a_(b)')
+  expect(link('https://example.com/a.').href).toBe('https://example.com/a')
+  expect(link('https://example.com/a?x=1,').href).toBe('https://example.com/a?x=1')
 })
 
 // ---- malformed and partial reports fall back (AC-3) ----------------------------------------------
@@ -348,6 +420,26 @@ test('long rows truncate at the edge; the card border follows the state', async 
   const borders = boxes.map((b: any) => b.props.borderColor).filter(Boolean)
   expect(borders).toContain('error') // the report has a ✗
   expect(borders).toContain('warning') // and an owed row
+  await ui.unmount()
+})
+
+// Review finding 4: what is owed and every URL wrap; only a rail row may be cut at the edge.
+test('owed rows, ledger rows and link rows wrap; only rail rows truncate', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE)
+  const mustWrap = [
+    /decide the retry config/,
+    /does the cache invalidate/,
+    /diff \+ threads/,
+    /Task PROJ-231/
+  ]
+  for (const re of mustWrap) {
+    const found = await ui.findAll({ type: 'Text', text: re })
+    expect(found.length).toBeGreaterThan(0)
+    for (const f of found) expect(f.props.wrap === 'truncate-end').toBe(false)
+  }
+  const rail = await ui.findAll({ type: 'Text', text: /commit \+ push|Copilot|CI green/ })
+  expect(rail.length).toBeGreaterThan(0)
+  for (const f of rail) expect(f.props.wrap).toBe('truncate-end')
   await ui.unmount()
 })
 
