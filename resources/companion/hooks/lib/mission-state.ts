@@ -221,7 +221,8 @@ export interface CardRow {
 export interface TickCard {
   /** `nochange`: one dim line; `card`: the bordered card. */
   kind: 'card' | 'nochange'
-  n: number
+  /** The tick's number, or `null` for a row the mod never saw arrive (it says what is true now, no more). */
+  n: number | null
   title: string
   /** Filled cells of the bar and its length: position, like the pill (`Step 3 of 5` fills 3 of 5). */
   bar: { filled: number; total: number }
@@ -295,7 +296,7 @@ function waitsRow(e: MissionStateEntry): CardRow | null {
  */
 export function tickCard(
   e: MissionStateEntry,
-  n: number,
+  n: number | null,
   prev: { n: number; snap: TickSnap } | null,
   nowMs: number
 ): TickCard {
@@ -367,6 +368,15 @@ export function parseLedger(raw: unknown): TickLedger {
     }
   }
   return raw as unknown as TickLedger
+}
+
+/**
+ * The card of a row the mod never saw arrive in this process (a resumed transcript, or a tick that
+ * came before any state did). Its place among the ticks is unknown, since the engine draws rows in an
+ * order of its own, so it carries no number and no comparison: the mission as it is now.
+ */
+export function looseCard(e: MissionStateEntry, nowMs: number): TickCard {
+  return tickCard(e, null, null, nowMs)
 }
 
 export interface TickPlan {

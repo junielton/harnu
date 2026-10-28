@@ -76,6 +76,7 @@ import {
 import {
   parseLedger,
   parseMissionState,
+  looseCard,
   parseStored,
   planTick,
   type TickCard,
@@ -178,13 +179,11 @@ let bandChain: Promise<unknown> = Promise.resolve()
 /** T589: the highest `mission.state` `n` this load has applied; a lower one never overwrites it. */
 let missionN = 0
 /**
- * T589: the tick ledger as this load knows it. A render hook may not write `$.state` ("drawing is
- * pure"), so a newly drawn row is numbered here at once, which also keeps two rows drawn together in
- * order, and a timer writes the whole ledger a moment later. `null` until a row was drawn: the stored
- * ledger is the truth after a reload.
+ * T589: the tick ledger as this load knows it. `session.append` numbers a fired tick (a render hook
+ * may not write `$.state`), and the write may not have reached `$.state` when a draw reads it, so the
+ * draw reads this copy first. `null` until a tick arrived: the stored ledger is the truth after a reload.
  */
 let tickMem: TickLedger | null = null
-let tickTimer: Timer | null = null
 
 /** Modules admitted before the hello answered (the usual case: they load before `session.start`). */
 let pendingAdmitted: Admitted[] = []
@@ -230,7 +229,6 @@ function resetState(): void {
   bandChain = Promise.resolve()
   missionN = 0
   tickMem = null
-  tickTimer = null
   pollStale = 0
   pendingAdmitted = []
 }
@@ -1244,25 +1242,19 @@ async function appendedTick($: Dollar, e: AppendedRow): Promise<void> {
 
 /**
  * T589: the card of one loop tick, or `null` when there is nothing to draw it from (no pushed state,
- * the mission is not in it, or it is not state at all). The first drawing of a row numbers it and
- * remembers it (`$.state.tickRows`, written by a timer); reading both keys subscribes the hook to them.
+ * the mission is not in it, or it is not state at all). A row `noteTick` numbered keeps its number and
+ * its comparison; any other is the mission as it is now. Reading both keys subscribes the hook to them.
  */
 async function tickFor($: Dollar, missionId: string, rid: string): Promise<TickCard | null> {
   const pushed = parseStored((await $.state.get(MISSIONS)).value)
   const stored = parseLedger((await $.state.get(TICK_ROWS)).value)
   const entry = pushed?.missions.find((m) => m.id === missionId)
   if (!entry) return null
-  const plan = planTick(tickMem ?? stored, entry, rid, await $.clock.now())
-  if (plan.ledger !== null) {
-    tickMem = plan.ledger
-    if (tickTimer === null) {
-      tickTimer = $.clock.after(0, () => {
-        tickTimer = null
-        if (tickMem !== null) void $.state.set(TICK_ROWS, tickMem).catch(() => undefined)
-      })
-    }
-  }
-  return plan.card
+  const now = await $.clock.now()
+  const ledger = tickMem ?? stored
+  const known = ledger.byMission[missionId]?.rows.some((r) => r.rid === rid) === true
+  // A row the mod saw arrive is numbered and compared; one it did not is the mission as it is now.
+  return known ? planTick(ledger, entry, rid, now).card : looseCard(entry, now)
 }
 
 /**

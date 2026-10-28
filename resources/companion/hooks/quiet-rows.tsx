@@ -38,7 +38,7 @@ const LABEL_W = 9
  */
 export function tickView(els: Els, card: TickCard) {
   const { Box, Text } = els
-  const head = '⟳ tick #' + card.n + ' · ' + card.title
+  const head = '⟳ tick' + (card.n === null ? '' : ' #' + card.n) + ' · ' + card.title
   if (card.kind === 'nochange') {
     const where = card.detail.split(' · ')[0]
     const line = head + ' · ' + where + ' · no change since #' + card.sinceN

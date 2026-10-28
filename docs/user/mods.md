@@ -180,7 +180,9 @@ touched.
   Harnu sends to the session (the missions it owns or is linked to), not from the prompt. A tick
   that finds the same state as the one before is a single dim line, "no change since #14"; one that
   finds a change shows a `changed` row instead (`stp-3 verified · PR #269 merged`). The tick number
-  `#N` counts the ticks of that mission in the session. The card is green when the mission is
+  `#N` counts the ticks of that mission that arrived while the session was running. A tick row
+  that was already in a resumed transcript has no number and no comparison: it shows the mission as
+  it is now. The card is green when the mission is
   done, and the accent colour otherwise.
 
 The labels of the card (`now`, `waits`, `changed`, `you`, "no change since") are English in every
