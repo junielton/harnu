@@ -43,7 +43,7 @@ const summary = computed(() => {
 <template>
   <div
     v-if="items.length > 0"
-    class="flex-none border-b border-border px-2.5 pb-1.5 pt-2"
+    class="flex-none border-b border-border py-2 pl-3 pr-2.5"
     data-up-next
   >
     <button
@@ -80,7 +80,7 @@ const summary = computed(() => {
         data-up-next-row
       >
         <span
-          class="w-[30px] shrink-0 text-right tabular-nums"
+          class="w-7 shrink-0 text-left tabular-nums"
           :class="item.now ? 'font-semibold text-green' : 'text-text-3'"
           >{{ timeLabel(item) }}</span
         >

@@ -80,7 +80,7 @@ const rowNames = (w: ReturnType<typeof mount>): string[] =>
 const pinnedNames = (w: ReturnType<typeof mount>): string[] =>
   w
     .findAll('[role="option"]')
-    .filter((r) => r.find('[data-pin-icon]').exists())
+    .filter((r) => r.get('[data-action="pin"]').attributes('aria-pressed') === 'true')
     .map((r) => r.get('[data-worker-name]').text())
 
 beforeEach(() => {
@@ -100,7 +100,7 @@ describe('pinned workers inside a folder (T590 AC-6)', () => {
     w.unmount()
   })
 
-  it('pinning from the row action puts a pin icon on the worker and sorts it first (AC-6)', async () => {
+  it('pinning from the pin slot pins the worker and sorts it first (AC-6)', async () => {
     const w = await mountView()
     expect(rowNames(w)).toEqual(['worker-a', 'worker-b', 'worker-c', 'worker-d'])
     const rowC = w.findAll('[role="option"]').find((r) => r.text().includes('worker-c'))!
@@ -121,7 +121,7 @@ describe('pinned workers inside a folder (T590 AC-6)', () => {
     expect(row.text()).toContain('worker-b')
     expect(row.classes()).toContain('opacity-[0.55]')
     expect(row.attributes('data-dsqa')).toContain('off')
-    expect(row.find('[data-pin-icon]').exists()).toBe(true)
+    expect(row.get('[data-action="pin"]').attributes('aria-pressed')).toBe('true')
     w.unmount()
   })
 
@@ -137,12 +137,12 @@ describe('pinned workers inside a folder (T590 AC-6)', () => {
     w.unmount()
   })
 
-  it('unpinning from the row drops the icon and returns the worker to storage order', async () => {
+  it('unpinning from the pin slot returns the worker to storage order', async () => {
     state = [worker('a', true, 1), worker('b', false, 2), worker('c', true)]
     const w = await mountView()
     for (const r of w
       .findAll('[role="option"]')
-      .filter((x) => x.find('[data-pin-icon]').exists())) {
+      .filter((x) => x.get('[data-action="pin"]').attributes('aria-pressed') === 'true')) {
       await r.get('[data-action="pin"]').trigger('click')
     }
     await settle()

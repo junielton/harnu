@@ -197,7 +197,7 @@ groups rows by folder — today the Scheduler worker list (§6 "Scheduler (takeo
   in `main.css` (`.fh-blue { --fh: var(--term-ansi-blue) }`, one class per pool member). Everything
   inside reads `var(--fh)` — **no raw colour, no hex**. Tints are always
   `color-mix(in srgb, var(--fh) N%, transparent)` (or `…, var(--color-surface)` for a header wash), with
-  `N` taken from the Scheduler spec: **7%** header wash, **14%** cycle-bar track, **18%** avatar fill.
+  `N` taken from the Scheduler spec: **7%** header wash, **18%** avatar fill.
 - **Risk, mitigated by construction:** coral (`bright-red`) sits next to `--red`. A hue is therefore
   only ever painted on _chrome_ (a 3px stripe, an avatar, a header wash, a 2px bar, a name in the Up next
   strip); a failure is always a **word + dot + `--red`** (`failing`, `failed · 2 in a row`). Never use
@@ -11871,38 +11871,45 @@ Pinned / Enabled / Off list; with 17–45 workers across 6 folders that turned t
 alias and made three "PR Review Watcher"s from different repos indistinguishable. The column is now,
 top to bottom: **toolbar → state chips → Up next → scrolling folder groups**.
 
-**Toolbar (`margin: 8px 10px 0`, flex, `gap: 4px`).** A search field (`flex: 1`, `26px`, `0 8px`,
+**One padding for the whole column: `12px` left / `10px` right** — the toolbar, the chips, Up next, the
+folder headers and the rows all start and end on the same two verticals, so the list reads as one column
+(revision 2; the first build used `10px` on both sides for the controls and `14px` on rows).
+
+**Toolbar (`margin: 10px 10px 0 12px`, flex, `gap: 6px`).** A search field (`flex: 1`, `26px`, `0 8px`,
 `border border-border-2`, `rounded-sm`, `bg-bg`; `Search` icon 11px `--text-4`; 11px text, placeholder
 "Filter workers or folders" in `--text-4`, typed text in `--text`) and, to its right, a **Collapse all /
-Expand all** `.iconbtn` (`ChevronsDownUp` / `ChevronsUpDown`, 12px; the icon and its label swap with the
+Expand all** button — `26×26px`, `border border-border-2`, `bg-bg`, `rounded-sm`, the same box as the
+search field so the two read as one control row (`ChevronsDownUp` / `ChevronsUpDown`, 12px, `--text-3`,
+`--text` + `bg-surface-2` on hover; the icon and its label swap with the
 state — it reads "Expand all" when every visible group is collapsed). Search matches the worker name, the
 folder (alias and path) and the prompt, case-insensitively.
 
-**State chips (`padding: 8px 10px`, `flex-wrap`, `gap: 4px`, `border-b border-border`).** `All · Running ·
-Failing · Waiting · Off`, one active at a time, `All` by default. Each chip is `20px`, `0 7px`, `border
-border-border-2`, `rounded-sm`, 11px, a 6px state dot (none on `All`) + label + a live count in `<b>` 600
+**State chips (`padding: 8px 10px 10px 12px`, one row — `nowrap`, `gap: 6px`, `border-b border-border`).**
+`Running · Failing · Waiting · Off` — **no "All" chip**: no chip active _is_ "all", and **clicking the active
+chip clears the filter** (one active at a time, none by default). Each chip is `20px`, `0 8px`, `border
+border-border-2`, `rounded-sm`, 11px, a 6px state dot + label + a live count in `<b>` 600
 `--text`. The count is the number of workers that chip would show **given the current search**. Dot and
 label inks are the row-state pairs below (`Running` `--green`, `Failing` `--red`, `Waiting`/`Off`
-`--text-3`/`--text-4`, `All` `--text-3`). Active chip: `All`/`Waiting`/`Off` `bg-surface-2`, `Running`
+`--text-3`/`--text-4`). Active chip: `Waiting`/`Off` `bg-surface-2`, `Running`
 `bg-green-soft border-green-line`, `Failing` `bg-red-soft border-red-line`. **Failing = `failed` +
 `disabled`** (both are "this cadence stopped producing anything trustworthy"); **Off = `off` only**.
 Filtering hides a folder group that has no visible worker; nothing else moves.
 
-**Up next (`padding: 8px 10px 6px`, `border-b border-border`).** The next **four** due runs across _all_
+**Up next (`padding: 8px 10px 8px 12px`, `border-b border-border`).** The next **four** due runs across _all_
 folders (running now first, then soonest `nextAt`; off/disabled workers are never due). Header = a
 `<button>` (`aria-expanded`) with a leading `ChevronDown` 11px (`-90°` collapsed), `Up next` as a 10px/600
 uppercase `0.04em` `--text-3` heading (`--text-2` on hover) and, right-aligned, a 10px `--text-4` summary:
 expanded `{n} in the next {x}`; collapsed, the **next run in one line** (`now · Delivery watchdog · portal`).
-Each row is `20px`, 11px, `gap: 7px`: relative time (`30px`, right-aligned, tabular, `--text-3`;
+Each row is `20px`, 11px, `gap: 7px`: relative time (`28px`, **left-aligned**, tabular, `--text-3`;
 `now` in `--green` 600 when the worker is running), a 6×6 `rounded-[2px]` square in the folder hue, the
 worker name (`--text`, ellipsised), and the folder name right-aligned in `var(--fh)`. Hidden while a state
-chip other than `All` or a search is active (it answers "what is next", not "what matches"). Collapsed
+chip or a search is active (it answers "what is next", not "what matches"). Collapsed
 state persists per viewer like the folder groups.
 
 **Folder group.** One per folder, in this order: folders holding a **running or failing** worker first,
 then alphabetical by folder name. Hue per §2 "Folder hue". The group root sets `--fh`.
 
-- **Header** — `44px`, `padding: 0 8px 0 12px`, `gap: 8px`, `border-b border-border`, `cursor: pointer`,
+- **Header** — `44px`, `padding: 0 10px 0 12px`, `gap: 8px`, `border-b border-border`, `cursor: pointer`,
   background `color-mix(in srgb, var(--fh) 7%, var(--color-surface))`, a **3px `::before` stripe** in
   `var(--fh)` on the left edge. A `<button>` (`aria-expanded`) toggling the group.
   - **Avatar** `22×22px`, `rounded-sm`, the folder's first letter uppercased, 11px/700 `var(--fh)` on
@@ -11923,32 +11930,38 @@ then alphabetical by folder name. Hue per §2 "Folder hue". The group root sets 
   changes the selection:** the detail stays on the selected worker even when its row is hidden. Collapse and filters are independent: a filter narrows what a group holds, a collapsed group stays collapsed (its header pills still say what matched).
 
 **Pinned workers (T483, reshaped).** There are no Pinned or Enabled/Off groups any more. A pinned worker
-carries an accent `Pin` icon (10px, `--accent`) before its name and **sorts first inside its folder**, by
-`pinnedAt` ascending (first pinned stays first — no drag-reorder in v1); then the rest in storage order.
-The pin action and the detail pane's pin toggle are unchanged. The default selection is the first row in
-display order (the first row of the first folder).
+**sorts first inside its folder**, by `pinnedAt` ascending (first pinned stays first — no drag-reorder in
+v1); then the rest in storage order. The pin itself is the row's **one pin toggle** (below). The detail
+pane's pin toggle is unchanged. The default selection is the first row in display order (the first row of
+the first folder).
 
-**Row anatomy** (`46px`, `padding: 0 10px 0 14px`, `border-bottom border-border`, `cursor: pointer`,
-`position: relative`):
+**Row anatomy** (revision 2 — `46px`, `padding: 0 10px 0 12px`, `border-bottom border-border`,
+`cursor: pointer`, `position: relative`). **Two lines on one right edge**, in a flex column (`gap: 3px`,
+min-width 0):
 
-- **Main column** (flex column, `gap: 3px`, min-width 0): the **name line** (12px/500 `--text`, ellipsised,
-  the pin icon first) over the **meta line** (11px `--text-4`, separators `--text-disabled`) —
+- **Line 1** (flex, `gap: 8px`): the **pin slot** + the **name** (12px/500 `--text`, ellipsised) on the
+  left, the **state** (6px dot + label, 11px, one of the five states below) right-aligned. The pin slot is
+  **reserved on every row** — `14×14px`, `margin-left: -2px` (so the 10px glyph's ink lines up with the
+  folder avatar's edge), `rounded-sm` — so names line up whether or not a worker is pinned.
+- **Line 2** (flex, `gap: 8px`): the **meta** (11px `--text-4`, separators `--text-disabled`) —
   `every {x} · {model} · {mode}` with `act` in `--warning` (an `act` worker runs with permissions
-  bypassed; the colour is the only signal, kept from the T295 badge) — and, right-aligned in that same
-  line, the **run ticks**. There is **no last-result line** and the folder is no longer repeated on the
-  row (the group header carries it).
+  bypassed; the colour is the only signal, kept from the T295 badge) — starting at the row's left padding
+  (under the pin slot, not under the name), and the **run ticks** in a **fixed `48px` box**
+  (10 ticks × 3px + 9 gaps × 2px), right-aligned on the same edge as the state above it.
+- **What shrinks:** only the name — it ellipsises first. The state, the meta and the ticks **never
+  shrink** (`flex-shrink: 0`; the meta clips only as a last resort). There is **no last-result line**, **no
+  cycle bar**, and the folder is not repeated on the row (the group header carries it).
 - **Run ticks** — the last 10 runs, oldest left, `3px` wide, `2px` gap, `10px` tall box, `rounded-[1px]`:
   `ok` `--green` 7px short bar · `error` `--red` full height · `timeout` `--warning` full height · a run in
-  flight `--green` full height, breathing (`.anim-tick-pulse`, opacity 1 → 0.35, 1.6s — a 3px bar has no room for the `.anim-pulse-dot` halo) · an empty slot `--border-2`. Fewer than 10 runs
-  pad on the **left**, so the newest run is always the rightmost tick.
-- **State column** (right-aligned, 11px, flex: none): a 6px dot + a label, one of the five states below.
-  Unchanged by T590.
-- **Cycle bar** — a `2px` strip along the row's bottom edge (`left: 14px; right: 10px; bottom: -1px`), track
-  `color-mix(in srgb, var(--fh) 14%, transparent)`, fill `var(--fh)` — `--green` while the worker is
-  running — `width` = how far into its cadence the worker is (`(now − lastRunAt) / everyMinutes`, clamped
-  0–100%; a worker with no run yet or an off worker shows no bar).
-- Hover: `bg-surface`. Nothing else about the row's geometry moves on hover — the actions cluster (below)
-  slides in over the same fixed layout rather than reflowing it.
+  flight `--green` full height, breathing (`.anim-tick-pulse`, opacity 1 → 0.35, 1.6s — a 3px bar has no
+  room for the `.anim-pulse-dot` halo) · an empty slot `--border-2`. Fewer than 10 runs pad on the
+  **left**, so the newest run is always the rightmost tick.
+- **The one pin.** The slot before the name is the pin **toggle** (a `<button>`, `aria-pressed`,
+  labelled Pin / Unpin; `Pin` glyph 10px): **pinned** `--color-accent`; **unpinned** `--color-text-disabled`,
+  always visible, `--color-text-4` while the row is hovered; hovering the slot itself lifts an unpinned pin
+  to `--text` on `bg-surface-2`. There is no second pin in the hover actions.
+- Hover: `bg-surface`. Line 1's right edge swaps the state for the actions (below); nothing else about the
+  row's geometry moves.
 
 **Five row states, five token pairs:**
 
@@ -11969,24 +11982,21 @@ it gets its own quieter `--text-4`/`--text-disabled` pair and, on top of the row
 applies to nothing else — `failed`/`disabled` stay at full strength, because a red row that is also dimmed
 would read as "less broken" than it is.
 
-**Selected row: a 2px accent rail, painted as a `::before` bar — never a border.** `.wrow.is-selected::before
-{ position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--color-accent) }`, layered
-over the `bg-surface` wash `.is-selected` itself already applies. This is the exact contract the Review
-pane's blast-radius marker already established (§ "Diff — file box" above, "It is a bar child, not a border
-on the box"): a left **border** on a row that also carries its own `border-bottom` would either collide with
-that border's shorthand or get silently clipped, and — because the list column has no per-row rounding —
-would still shift every row's content box by its own width the instant it toggled on. The rail is a sibling
-layer instead, so selecting a row costs zero reflow. (The folder header's 3px stripe is a different layer on
-a different element and never competes with it.)
+**Selected row: the `bg-surface` wash and nothing else (revision 2).** The first build of this list kept the
+2px accent rail the Review pane's blast-radius marker established (a `::before` bar, never a border, so
+selecting costs zero reflow). The operator found the result too busy — a rail, a cycle bar, a stripe on every
+folder header and a pin icon on top of each other — so **for this list the rail is gone**: selection and
+hover share the same `bg-surface` wash, and the selected row is told apart by the detail pane beside it
+(and `aria-selected`). This reverses the rail **only here**; every other selectable list keeps its rail. The
+folder header's 3px stripe is a different element and is unchanged.
 
 **Row actions — hover-revealed icon buttons.** `display: none` at rest, `display: flex` on `:hover` or
-keyboard focus within the row (the mockup's `.is-hovered` is a screenshot aid for the same state): **Pin /
-Unpin** (T483 — `Pin` when unpinned, `PinOff` when pinned, `.iconbtn`, `--text-3` at rest, `--text` on
-hover), **Run now** / **Stop** (`Play` / `Square`, `.iconbtn`) and **Delete** (`Trash2`, `.iconbtn.is-danger`
-— `--text-3` at rest, `--red` on hover). `22×22px`, `hover:bg-surface-2`. The actions cluster **takes the
-state column's slot** at the row's trailing edge — the state column is hidden while the cluster shows. They
-are `display: none`, never `opacity: 0`: an invisible cluster would still reserve ~94px of a 46px row's meta
-line, which is exactly the room the `every · model · mode` text and the run ticks need.
+keyboard focus within the row (the mockup's `.is-hovered` is a screenshot aid for the same state): **Run
+now** / **Stop** (`Play` / `Square`, `.iconbtn`, `--text-3` at rest, `--text` on hover) and **Delete**
+(`Trash2`, `.iconbtn.is-danger` — `--text-3` at rest, `--red` on hover). **Pin is not here** — the slot before
+the name is the one pin. `22×22px`, `hover:bg-surface-2`. The actions cluster **takes the state's slot** on
+line 1 — the state is hidden while the cluster shows. They are `display: none`, never `opacity: 0`: an
+invisible cluster would still reserve width on line 1 and squeeze the name.
 
 **Empty states.** No worker matches the search or chip: a centred block (`padding: 40px 20px`, 12px
 `--text-3`) — `No worker matches “{q}”` in `--text-2`/500 over `Search covers worker names, folders and

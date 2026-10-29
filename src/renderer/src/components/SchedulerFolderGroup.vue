@@ -51,7 +51,7 @@ const pct = (fraction: number): string => `${fraction * 100}%`
   >
     <button
       type="button"
-      class="relative flex h-11 w-full items-center gap-2 border-b border-border bg-[color-mix(in_srgb,var(--fh)_7%,var(--color-surface))] pl-3 pr-2 text-left"
+      class="relative flex h-11 w-full items-center gap-2 border-b border-border bg-[color-mix(in_srgb,var(--fh)_7%,var(--color-surface))] pl-3 pr-2.5 text-left"
       :aria-expanded="!collapsed"
       :aria-label="
         collapsed

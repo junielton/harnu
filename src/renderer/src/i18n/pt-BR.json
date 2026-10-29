@@ -4250,7 +4250,6 @@
       "collapseAll": "Recolher tudo",
       "expandAll": "Expandir tudo",
       "chipsLabel": "Filtrar por estado",
-      "chipAll": "Todos",
       "chipRunning": "Rodando",
       "chipFailing": "Falhando",
       "chipWaiting": "Aguardando",

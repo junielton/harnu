@@ -7,7 +7,11 @@
  */
 import { useI18n } from 'vue-i18n'
 import { ChevronsDownUp, ChevronsUpDown, Search } from 'lucide-vue-next'
-import { STATE_FILTERS, type StateFilter } from './scheduler-list'
+import type { StateFilter } from './scheduler-list'
+
+/** Revision 2 dropped the "All" chip: no active chip IS "all", and the active chip clears itself. */
+const CHIPS = ['running', 'failing', 'waiting', 'off'] as const satisfies readonly StateFilter[]
+type Chip = (typeof CHIPS)[number]
 
 defineProps<{
   query: string
@@ -25,29 +29,25 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const LABEL_KEY: Record<StateFilter, string> = {
-  all: 'scheduler.list.chipAll',
+const LABEL_KEY: Record<Chip, string> = {
   running: 'scheduler.list.chipRunning',
   failing: 'scheduler.list.chipFailing',
   waiting: 'scheduler.list.chipWaiting',
   off: 'scheduler.list.chipOff'
 }
-const INK: Record<StateFilter, string> = {
-  all: 'text-text-3',
+const INK: Record<Chip, string> = {
   running: 'text-green',
   failing: 'text-red',
   waiting: 'text-text-3',
   off: 'text-text-4'
 }
-const DOT: Record<StateFilter, string> = {
-  all: '',
+const DOT: Record<Chip, string> = {
   running: 'bg-green',
   failing: 'bg-red',
   waiting: 'bg-text-4',
   off: 'bg-text-disabled'
 }
-const ACTIVE: Record<StateFilter, string> = {
-  all: 'bg-surface-2',
+const ACTIVE: Record<Chip, string> = {
   running: 'bg-green-soft border-green-line',
   failing: 'bg-red-soft border-red-line',
   waiting: 'bg-surface-2',
@@ -57,7 +57,7 @@ const ACTIVE: Record<StateFilter, string> = {
 
 <template>
   <div class="flex-none" data-list-filters>
-    <div class="mx-2.5 mt-2 flex items-center gap-1">
+    <div class="ml-3 mr-2.5 mt-2.5 flex items-center gap-1.5">
       <label
         class="flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-sm border border-border-2 bg-bg px-2 text-[11px] text-text-4 focus-within:border-accent-line"
       >
@@ -74,7 +74,7 @@ const ACTIVE: Record<StateFilter, string> = {
       </label>
       <button
         type="button"
-        class="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
+        class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-border-2 bg-bg text-text-3 transition hover:bg-surface-2 hover:text-text"
         :aria-label="allCollapsed ? t('scheduler.list.expandAll') : t('scheduler.list.collapseAll')"
         :title="allCollapsed ? t('scheduler.list.expandAll') : t('scheduler.list.collapseAll')"
         data-toggle-all
@@ -87,21 +87,21 @@ const ACTIVE: Record<StateFilter, string> = {
     </div>
 
     <div
-      class="flex flex-wrap gap-1 border-b border-border px-2.5 py-2"
+      class="flex gap-1.5 border-b border-border pb-2.5 pl-3 pr-2.5 pt-2"
       role="group"
       :aria-label="t('scheduler.list.chipsLabel')"
     >
       <button
-        v-for="f in STATE_FILTERS"
+        v-for="f in CHIPS"
         :key="f"
         type="button"
-        class="inline-flex h-5 items-center gap-[5px] rounded-sm border border-border-2 bg-transparent px-[7px] text-[11px] transition-colors"
+        class="inline-flex h-5 items-center gap-[5px] rounded-sm border border-border-2 bg-transparent px-2 text-[11px] transition-colors"
         :class="[INK[f], filter === f ? ACTIVE[f] : 'hover:bg-surface']"
         :aria-pressed="filter === f"
         :data-chip="f"
-        @click="emit('update:filter', f)"
+        @click="emit('update:filter', filter === f ? 'all' : f)"
       >
-        <span v-if="DOT[f]" class="h-1.5 w-1.5 shrink-0 rounded-full" :class="DOT[f]" />
+        <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="DOT[f]" />
         {{ t(LABEL_KEY[f]) }}
         <b class="font-semibold text-text">{{ counts[f] }}</b>
       </button>

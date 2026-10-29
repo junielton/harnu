@@ -54,7 +54,6 @@ import { workerState } from './scheduler-format'
 import {
   buildFolderGroups,
   chipCounts,
-  cycleFraction,
   defaultSelectionId,
   filterEntries,
   nextDueAt,
@@ -252,19 +251,6 @@ function toggleUpNext(): void {
 // Up next answers "what is next", not "what matches": it steps aside while filtering.
 const upNextItems = computed(() => (isFiltering.value ? [] : upNext(entries.value, nowMs.value)))
 
-function lastStartedAt(e: ListEntry): number | undefined {
-  return e.runs[e.runs.length - 1]?.startedAt
-}
-function cycleFor(e: ListEntry): number | null {
-  return cycleFraction({
-    enabled: e.worker.enabled,
-    running: e.running,
-    lastStartedAt: lastStartedAt(e),
-    everyMinutes: e.worker.everyMinutes,
-    nowMs: nowMs.value
-  })
-}
-
 // ── actions ──────────────────────────────────────────────────────────────
 function selectWorker(id: string): void {
   scheduler.selectedId = id
@@ -375,7 +361,6 @@ async function createWorker(): Promise<void> {
                 :running-since-ms="runningSinceById[e.worker.id]"
                 :now-ms="nowMs"
                 :ticks="runTicks(e.runs, e.running)"
-                :cycle="cycleFor(e)"
                 @select="selectWorker(e.worker.id)"
                 @pin="togglePin(e.worker)"
                 @run-now="runNow(e.worker.id)"

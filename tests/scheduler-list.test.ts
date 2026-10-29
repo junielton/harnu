@@ -4,7 +4,6 @@ import {
   TICK_COUNT,
   buildFolderGroups,
   chipCounts,
-  cycleFraction,
   defaultSelectionId,
   filterEntries,
   folderHue,
@@ -162,25 +161,6 @@ describe('runTicks (AC-5)', () => {
 
   it('a worker that never ran is ten empty slots', () => {
     expect(runTicks([], false)).toEqual(Array(10).fill('none'))
-  })
-})
-
-describe('cycleFraction (AC-5)', () => {
-  const base = { enabled: true, running: false, everyMinutes: 30, nowMs: NOW }
-  it('is how far into the cadence the worker is since its last run', () => {
-    expect(cycleFraction({ ...base, lastStartedAt: NOW - 15 * MIN })).toBeCloseTo(0.5)
-  })
-  it('clamps to 0..1', () => {
-    expect(cycleFraction({ ...base, lastStartedAt: NOW - 90 * MIN })).toBe(1)
-    expect(cycleFraction({ ...base, lastStartedAt: NOW + 5 * MIN })).toBe(0)
-  })
-  it('is null when there is nothing to measure (no run yet, or the worker is off)', () => {
-    expect(cycleFraction({ ...base, lastStartedAt: undefined })).toBeNull()
-    expect(cycleFraction({ ...base, enabled: false, lastStartedAt: NOW - MIN })).toBeNull()
-  })
-  it('a running worker with a previous run still reports its fraction; with none it is full', () => {
-    expect(cycleFraction({ ...base, running: true, lastStartedAt: NOW - 3 * MIN })).toBeCloseTo(0.1)
-    expect(cycleFraction({ ...base, running: true, lastStartedAt: undefined })).toBe(1)
   })
 })
 

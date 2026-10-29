@@ -83,25 +83,6 @@ export function nextDueAt(worker: Worker, runs: readonly Run[]): number {
   return last ? last.startedAt + worker.everyMinutes * 60_000 : 0
 }
 
-/**
- * How far into its cadence the worker is, `0..1`, for the 2px cycle bar. `null`
- * (no bar) when the worker is off or has never run; a running worker that never
- * finished a run reads full.
- */
-export function cycleFraction(args: {
-  enabled: boolean
-  running: boolean
-  lastStartedAt: number | undefined
-  everyMinutes: number
-  nowMs: number
-}): number | null {
-  if (!args.enabled && !args.running) return null
-  if (args.lastStartedAt === undefined) return args.running ? 1 : null
-  const span = args.everyMinutes * 60_000
-  if (span <= 0) return 1
-  return Math.min(1, Math.max(0, (args.nowMs - args.lastStartedAt) / span))
-}
-
 // ── entries, filters, search ───────────────────────────────────────────────
 
 /** One worker plus everything the list needs to place and draw it. */
@@ -116,7 +97,6 @@ export interface ListEntry {
 }
 
 export type StateFilter = 'all' | 'running' | 'failing' | 'waiting' | 'off'
-export const STATE_FILTERS: readonly StateFilter[] = ['all', 'running', 'failing', 'waiting', 'off']
 
 /** Failing is `failed` + `disabled`: both mean "this cadence stopped producing anything trustworthy". */
 export function stateFilterFor(state: WorkerDisplayState): Exclude<StateFilter, 'all'> {

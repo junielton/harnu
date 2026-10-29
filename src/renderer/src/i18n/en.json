@@ -4250,7 +4250,6 @@
       "collapseAll": "Collapse all",
       "expandAll": "Expand all",
       "chipsLabel": "Filter by state",
-      "chipAll": "All",
       "chipRunning": "Running",
       "chipFailing": "Failing",
       "chipWaiting": "Waiting",

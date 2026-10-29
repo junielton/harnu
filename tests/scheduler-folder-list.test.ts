@@ -12,7 +12,7 @@ import type { Run, Worker } from '../src/preload'
  * T590 — the Scheduler takeover's folder-grouped worker list (approved mockup
  * `pastas--combinada`), driven through the real `SchedulerView`: folder groups and their
  * headers, collapse (per folder + all, persisted), the search field and state chips, the
- * Up next strip, and the row's run ticks / cycle bar.
+ * Up next strip, and the row's pin slot, run ticks and hover actions (revision 2 — no cycle bar, no selection rail).
  */
 
 const FOLDERS_KEY = 'om2tab.scheduler.collapsedFolders'
@@ -261,26 +261,33 @@ describe('collapse (AC-2)', () => {
 })
 
 describe('search and state chips (AC-3)', () => {
-  it('chips show live counts; Failing is failed + disabled', async () => {
+  it('chips show live counts (there is no All chip); Failing is failed + disabled', async () => {
     state.push(worker('x1', '/org/delta', { enabled: false, failureStreak: 3 }))
     const w = await mountView(['b1'])
     const count = (c: string): string => w.get(`[data-chip="${c}"] b`).text()
-    expect(count('all')).toBe('6')
     expect(count('running')).toBe('1')
     expect(count('failing')).toBe('2') // a2 failed + x1 auto-disabled
     expect(count('waiting')).toBe('2') // a1, d1
     expect(count('off')).toBe('1') // g1
+    expect(w.find('[data-chip="all"]').exists()).toBe(false)
+    expect(w.findAll('[data-chip]').map((c) => c.attributes('data-chip'))).toEqual([
+      'running',
+      'failing',
+      'waiting',
+      'off'
+    ])
     w.unmount()
   })
 
-  it('the Failing chip narrows rows and hides groups with nothing to show; All restores', async () => {
+  it('the Failing chip narrows rows and hides groups with nothing to show; clicking it again clears', async () => {
     const w = await mountView()
     await w.get('[data-chip="failing"]').trigger('click')
     expect(w.get('[data-chip="failing"]').attributes('aria-pressed')).toBe('true')
     expect(rowNames(w)).toEqual(['worker-a2'])
     expect(groupNames(w)).toEqual(['alpha'])
 
-    await w.get('[data-chip="all"]').trigger('click')
+    await w.get('[data-chip="failing"]').trigger('click')
+    expect(w.get('[data-chip="failing"]').attributes('aria-pressed')).toBe('false')
     expect(rowNames(w)).toHaveLength(5)
     expect(groupNames(w)).toHaveLength(4)
     w.unmount()
@@ -312,7 +319,7 @@ describe('search and state chips (AC-3)', () => {
 
     await w.get('[data-clear-filter]').trigger('click')
     expect((w.get('[data-list-search]').element as HTMLInputElement).value).toBe('')
-    expect(w.get('[data-chip="all"]').attributes('aria-pressed')).toBe('true')
+    expect(w.findAll('[data-chip][aria-pressed="true"]')).toHaveLength(0)
     expect(rowNames(w)).toHaveLength(5)
     expect(w.find('[data-list-empty]').exists()).toBe(false)
     w.unmount()
@@ -398,31 +405,109 @@ describe('worker row (AC-5)', () => {
     w.unmount()
   })
 
-  it('has a 2px cycle bar showing how far into its cadence the worker is', async () => {
-    const w = await mountView()
-    // a1: last run 15m ago of a 30m cadence -> ~50%
-    const bar = rowFor(w, 'worker-a1').get('[data-cycle-bar]')
-    expect(bar.classes()).toContain('h-[2px]')
-    const width = parseInt((bar.get('b').element as HTMLElement).style.width, 10)
-    expect(width).toBeGreaterThanOrEqual(49)
-    expect(width).toBeLessThanOrEqual(52)
-    // an off worker and a never-run one draw no bar
-    expect(rowFor(w, 'worker-g1').find('[data-cycle-bar]').exists()).toBe(false)
-    w.unmount()
-  })
-
-  it('the cycle bar turns green while the worker runs', async () => {
+  it('has no cycle bar (revision 2)', async () => {
     const w = await mountView(['b1'])
-    expect(rowFor(w, 'worker-b1').get('[data-cycle-bar] b').classes()).toContain('bg-green')
-    expect(rowFor(w, 'worker-a1').get('[data-cycle-bar] b').classes()).not.toContain('bg-green')
+    expect(w.find('[data-cycle-bar]').exists()).toBe(false)
     w.unmount()
   })
 
-  it('keeps the selected-row 2px accent rail', async () => {
+  it('selection is the surface wash only — no accent rail, no border (revision 2)', async () => {
     const w = await mountView()
     const selected = rowFor(w, 'worker-a1')
     expect(selected.attributes('aria-selected')).toBe('true')
-    expect(selected.find('span.bg-accent.w-\\[2px\\]').exists()).toBe(true)
+    expect(selected.classes()).toContain('bg-surface')
+    expect(selected.find('span.bg-accent').exists()).toBe(false)
+    expect(selected.find('[class*="w-[2px]"]').exists()).toBe(false)
+    const other = rowFor(w, 'worker-d1')
+    expect(other.attributes('aria-selected')).toBe('false')
+    expect(other.classes()).not.toContain('bg-surface')
+    w.unmount()
+  })
+
+  it('is two lines on one right edge: pin slot + name + state, then meta + a fixed 48px tick box', async () => {
+    const w = await mountView()
+    const row = rowFor(w, 'worker-a1')
+    const pin = row.get('[data-action="pin"]')
+    expect(pin.classes()).toEqual(expect.arrayContaining(['h-[14px]', 'w-[14px]', 'shrink-0']))
+    // name truncates; state, meta and ticks never shrink
+    expect(row.get('[data-worker-name]').classes()).toContain('truncate')
+    expect(row.get('[data-row-state]').classes()).toContain('shrink-0')
+    expect(row.get('[data-run-ticks]').classes()).toEqual(
+      expect.arrayContaining(['w-12', 'shrink-0'])
+    )
+    // the pin slot is on the name's line, the ticks on the meta line
+    const line1 = pin.element.closest('div.gap-2')!
+    expect(line1.contains(row.get('[data-worker-name]').element)).toBe(true)
+    expect(line1.contains(row.get('[data-row-state]').element)).toBe(true)
+    expect(line1.contains(row.get('[data-run-ticks]').element)).toBe(false)
+    w.unmount()
+  })
+
+  it('has ONE pin: the slot before the name, accent when pinned, disabled ink when not', async () => {
+    state = state.map((x) => (x.id === 'a2' ? { ...x, pinnedAt: 5 } : x))
+    const w = await mountView()
+    for (const r of w.findAll('[role="option"]')) {
+      expect(r.findAll('[data-action="pin"]')).toHaveLength(1)
+      expect(r.find('[data-row-actions] [data-action="pin"]').exists()).toBe(false)
+    }
+    const pinned = rowFor(w, 'worker-a2').get('[data-action="pin"]')
+    expect(pinned.attributes('aria-pressed')).toBe('true')
+    expect(pinned.classes()).toContain('text-accent')
+    const free = rowFor(w, 'worker-a1').get('[data-action="pin"]')
+    expect(free.attributes('aria-pressed')).toBe('false')
+    expect(free.classes()).toContain('text-text-disabled')
+    expect(free.classes()).toContain('group-hover:text-text-4')
+    w.unmount()
+  })
+
+  it("hover shows only Run now / Stop + Delete, in the state's place on line 1", async () => {
+    const w = await mountView(['b1'])
+    const labels = (name: string): string[] =>
+      rowFor(w, name)
+        .findAll('[data-row-actions] button')
+        .map((b) => b.attributes('aria-label')!)
+    expect(labels('worker-a1')).toEqual(['Run now', 'Delete'])
+    expect(labels('worker-b1')).toEqual(['Stop', 'Delete'])
+    const row = rowFor(w, 'worker-a1')
+    expect(row.get('[data-row-state]').classes()).toContain('group-hover:hidden')
+    expect(row.get('[data-row-actions]').classes()).toEqual(
+      expect.arrayContaining(['hidden', 'group-hover:flex'])
+    )
+    w.unmount()
+  })
+
+  it('uses uniform 12px left / 10px right padding on toolbar, chips, Up next, headers and rows', async () => {
+    const w = await mountView()
+    const row = rowFor(w, 'worker-a1')
+    expect(row.classes()).toEqual(expect.arrayContaining(['pl-3', 'pr-2.5']))
+    expect(w.get('[data-folder-header]').classes()).toEqual(
+      expect.arrayContaining(['pl-3', 'pr-2.5'])
+    )
+    expect(w.get('[data-up-next]').classes()).toEqual(expect.arrayContaining(['pl-3', 'pr-2.5']))
+    const chips = w.get('[data-chip="running"]').element.parentElement!
+    expect(chips.className).toContain('pl-3')
+    expect(chips.className).toContain('pr-2.5')
+    expect(chips.className).not.toContain('flex-wrap')
+    const toolbar = w.get('[data-list-search]').element.closest('div')!
+    expect(toolbar.className).toContain('ml-3')
+    expect(toolbar.className).toContain('mr-2.5')
+    w.unmount()
+  })
+
+  it('the Collapse all button is 26x26, bordered and on the search field ground', async () => {
+    const w = await mountView()
+    const btn = w.get('[data-toggle-all]')
+    expect(btn.classes()).toEqual(
+      expect.arrayContaining(['h-[26px]', 'w-[26px]', 'border', 'border-border-2', 'bg-bg'])
+    )
+    w.unmount()
+  })
+
+  it('the Up next time column is a 28px left-aligned column', async () => {
+    const w = await mountView(['b1'])
+    const time = w.get('[data-up-next-row] span')
+    expect(time.classes()).toEqual(expect.arrayContaining(['w-7', 'text-left']))
+    expect(time.classes()).not.toContain('text-right')
     w.unmount()
   })
 })
