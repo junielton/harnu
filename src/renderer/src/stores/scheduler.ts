@@ -29,7 +29,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
   const pendingDrafts = new Map<string, Partial<Worker>>()
 
   /**
-   * T590: the list draws the last-10-runs ticks and the cycle bar on EVERY row, so
+   * T590: the list draws a tick for each of the last ten runs and the cycle bar on EVERY row, so
    * every worker's history is kept warm here — not just the selected worker's. A
    * worker that appears (created, imported) or whose tick just finished is refreshed
    * the moment main says so, instead of waiting for the next 30s sweep.
@@ -157,7 +157,9 @@ export const useSchedulerStore = defineStore('scheduler', () => {
 
   /** Refresh the run history of every worker (one `scheduler:runs` call each). */
   async function loadAllRuns(): Promise<void> {
-    await Promise.all(workers.value.map((w) => loadRuns(w.id)))
+    // allSettled: one worker's unreadable history must not hide every other row's ticks,
+    // and `init()` runs fire-and-forget from the footer, so nothing here may reject.
+    await Promise.allSettled((workers.value ?? []).map((w) => loadRuns(w.id)))
   }
 
   return {
