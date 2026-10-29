@@ -28,7 +28,7 @@
         "src/renderer/src/components/SchedulerView.vue",
         "src/renderer/src/components/SchedulerWorkerRow.vue"
       ],
-      "notes": "Round 2 convergence: C's search, state chips and Up next; B's 44px tinted folder header, now with on/off counts, next run, failing/running pills and health bar, collapsible; A's compact 46px row (every · model · mode) with run ticks; no last-result line. Up next is collapsible (chevron toggle; collapsed it keeps a one-line summary of the next run)."
+      "notes": "Revision 2 (approved 2026-10-29 after the operator found the first build too busy): no cycle bar, no selected-row accent rail (selection = surface background only); rows are two lines — line 1: reserved 14px pin slot + name (ellipsis) + state right-aligned, line 2: meta (every · model · mode) + 48px run ticks right-aligned, both on one right edge; a single pin toggle (accent when pinned, --text-disabled when not, --text-4 on row hover) replaces the Pin hover action — hover shows only Run now/Stop + Delete in the state slot; uniform 12px left / 10px right padding; collapse-all button 26px bordered like the search field; state chips on one row without All (clicking the active chip clears it); Up next time column left-aligned; long names truncate, state/meta/ticks never shrink."
     }
   ],
   "parts": [
@@ -70,7 +70,7 @@
         {
           "screen": "pastas--combinada",
           "state": "filtro-falhas",
-          "via": "All chip"
+          "via": "Failing chip again (clears the filter)"
         },
         {
           "screen": "pastas--combinada",

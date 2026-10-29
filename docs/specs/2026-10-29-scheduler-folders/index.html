@@ -219,8 +219,8 @@
           <p>
             <strong>Common proposal for the 3 variants.</strong> Group by folder (header with an
             identity colour, initial, count, health). The pin becomes an icon on the name and sorts
-            inside the folder; folders with something running/failing rise. Each row gains a 2px
-            <em>cycle bar</em> in the folder colour showing how much of the interval has passed.
+            inside the folder; folders with something running or failing rise.
+            <em>(Round 1 also drew a 2px cycle bar per row; revision 2 dropped it.)</em>
           </p>
           <p>
             <strong>Token decision to approve.</strong> The system has no per-folder colour. The
@@ -250,18 +250,25 @@
             <div class="chips" data-role="viewports"></div>
             <div class="chips" data-role="states"></div>
             <a class="open" href="screens/pastas--combinada.html" target="_blank"
-              >abrir sozinha ↗</a
+              >open on its own ↗</a
             >
           </div>
           <p class="notes">
-            C's search, chips and "Up next"; B's tall folder header (44px), now with branch, on/off
-            counts, next run, <em>failing</em>/<em>running</em> pills and a health bar, collapsible
-            (button beside the search); A's compact row (<code>every · model · mode</code>,
-            <code>act</code> in amber) with the ticks. No last-result line. "Up next" collapses from
-            its own header; collapsed it shows only the next run.
+            Revision 2 (calmer). Search and "Up next" from C; B's tall folder header (44px) with
+            branch, on/off counts, next run, <em>failing</em>/<em>running</em> pills and a health
+            bar, collapsible (button beside the search); two-line rows: pin slot + name + state,
+            then <code>every · model · mode</code> (<code>act</code> in amber) + run ticks, both on
+            one right edge. No cycle bar, no selected-row rail, no last-result line. "Up next"
+            collapses from its own header; collapsed it shows only the next run.
           </p>
           <div class="viewport"><iframe loading="lazy" title="pastas--combinada"></iframe></div>
-          <p class="approval">Approval: <strong>approved · 2026-10-29</strong></p>
+          <p class="approval">
+            Approval:
+            <strong
+              >approved · 2026-10-29 (revision 2: no cycle bar and no selection rail, two
+              right-aligned lines per row, single pin, uniform padding, chips without All)</strong
+            >
+          </p>
         </article>
       </section>
 
@@ -308,7 +315,7 @@
               <a href="screens/pastas--combinada.html?state=filtro-falhas" target="_blank"
                 >pastas--combinada?filtro-falhas</a
               >
-              <small>via "chip All"</small>
+              <small>via "chip Failing de novo (limpa o filtro)"</small>
             </li>
             <li>
               <a href="screens/pastas--combinada.html?state=default" target="_blank"
