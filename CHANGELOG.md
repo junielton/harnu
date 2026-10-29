@@ -12,6 +12,15 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-10-29
 
+### Added
+
+- **The Scheduler's worker list is grouped by folder.** Instead of one flat Pinned / Enabled / Off list, each folder gets a tinted header with its initial, worker count, git branch, how many workers are on and off, when the next run is due, **failing** / **running** pills and a small health bar — and folders with something running or failing come first. Click a header to fold a folder; a button next to the new search field folds or opens them all, and Harnu remembers what you folded. The search matches worker names, folders and prompts, and the **All · Running · Failing · Waiting · Off** chips show live counts. An **Up next** strip lists the next four runs across every folder and folds to a one-line summary.
+- **Each Scheduler row shows how the worker has been doing.** The row now reads `every 30m · haiku · observe` (an `act` worker in amber) with a tick for each of its last ten runs — green ok, red failed, amber timed out, pulsing green running — and a thin bar along the bottom showing how far the worker is through its interval. The history now loads for every worker, not only the selected one.
+
+### Changed
+
+- A pinned Scheduler worker is now marked with a pin icon and sorts first inside its folder, instead of living in a separate **Pinned** group. The **Enabled** and **Off** groups are gone (use the **Off** chip), and the old last-result line is not on the row.
+
 ### Fixed
 
 - The terminal's right edge is no longer cut off. Harnu sized the terminal grid to the full pane width, so a box's right border and the last one or two characters of wrapped lines slid under the scrollbar; the grid now leaves the scrollbar's width free, in the main pane and in split panes alike. The old scrollbar styling rules that matched nothing in the current terminal were removed.
