@@ -808,6 +808,17 @@ textarea,
   overflow-wrap: anywhere;
 }
 
+/* BUG-234 — xterm 6's DOM renderer appends its hidden "W" measuring element INSIDE
+   `.xterm-rows`, so the element inherits the `letter-spacing` xterm just wrote
+   there. It then measures an understated glyph advance and sets
+   `letter-spacing = cell.width - W`, which creeps up on every re-measure (resize,
+   font-size change) until the row text outgrows its own `overflow: hidden` box and
+   the last column renders half-clipped. Pinning the spacing to 0 on the measuring
+   element breaks the loop. */
+.xterm .xterm-width-cache-measure-container {
+  letter-spacing: 0 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
