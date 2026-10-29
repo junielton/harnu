@@ -15,7 +15,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function stubDom(captured: { css: string }, padX = '0'): HTMLElement {
+function stubDom(captured: { css: string }, padX = '0', clientWidth = 800): HTMLElement {
   const span = {
     style: {
       set cssText(v: string) {
@@ -40,7 +40,7 @@ function stubDom(captured: { css: string }, padX = '0'): HTMLElement {
   return {
     appendChild: () => {},
     removeChild: () => {},
-    clientWidth: 800,
+    clientWidth,
     clientHeight: 600
   } as unknown as HTMLElement
 }
@@ -65,9 +65,9 @@ describe('measureCells fontSize parameter', () => {
     const captured = { css: '' }
     const el = stubDom(captured)
     const dims = measureCells(el, undefined, 20)
-    // charWidth = 80/10 = 8 → cols = floor((800 - 14 scrollbar)/8) = 98;
+    // charWidth = 80/10 = 8 → cols = floor((800 - 14 scrollbar - 8 gutter)/8) = 97;
     // charHeight = 20 → rows = floor(600/20) = 30.
-    expect(dims.cols).toBe(98)
+    expect(dims.cols).toBe(97)
     expect(dims.rows).toBe(30)
   })
 })
@@ -81,25 +81,50 @@ describe('measureCells fontSize parameter', () => {
 describe('measureCells scrollbar reservation', () => {
   it('excludes the 14px default xterm scrollbar from the usable width', () => {
     const el = stubDom({ css: '' })
-    // 800px host, 8px cells: without the scrollbar 100 cols, with it (786px) 98.
-    expect(measureCells(el).cols).toBe(98)
+    // 800px host, 8px cells: without the scrollbar 100 cols, with it (786px) 98,
+    // minus the one-cell safety gutter → 97.
+    expect(measureCells(el).cols).toBe(97)
   })
 
   it('subtracts the host padding on top of the scrollbar', () => {
     const el = stubDom({ css: '' }, '8')
-    // 800 - 16 padding - 14 scrollbar = 770px → floor(770/8) = 96.
-    expect(measureCells(el).cols).toBe(96)
+    // 800 - 16 padding - 14 scrollbar - 8 gutter = 762px → floor(762/8) = 95.
+    expect(measureCells(el).cols).toBe(95)
   })
 
   it('honours a custom scrollbar width (overviewRuler.width)', () => {
     const el = stubDom({ css: '' })
-    // 800 - 20 = 780px → floor(780/8) = 97.
-    expect(measureCells(el, undefined, 13, 20).cols).toBe(97)
+    // 800 - 20 - 8 gutter = 772px → floor(772/8) = 96.
+    expect(measureCells(el, undefined, 13, 20).cols).toBe(96)
   })
 
-  it('leaves the width untouched when the scrollbar width is 0', () => {
+  it('only the safety gutter is left out when the scrollbar width is 0', () => {
     const el = stubDom({ css: '' })
-    expect(measureCells(el, undefined, 13, 0).cols).toBe(100)
+    expect(measureCells(el, undefined, 13, 0).cols).toBe(99)
+  })
+})
+
+/**
+ * BUG-234 safety margin: on top of the scrollbar, the grid leaves one whole cell
+ * free at the right edge, so a sub-pixel disagreement between our measurement
+ * and what xterm really draws can never cost the last column.
+ */
+describe('measureCells right-edge safety gutter', () => {
+  it('gives up one column when the host fits exactly N cells after the scrollbar', () => {
+    // 8px cells, 14px scrollbar: 414px host → exactly 50 cells of usable width.
+    const el = stubDom({ css: '' }, '0', 414)
+    expect(measureCells(el).cols).toBe(49)
+  })
+
+  it('also gives up one column when the fit is loose, down to the next whole cell', () => {
+    // 421px host → 407px usable = 50 cells + 7px; a bare fit is 50, the gutter makes it 49.
+    const el = stubDom({ css: '' }, '0', 421)
+    expect(measureCells(el).cols).toBe(49)
+  })
+
+  it('is exactly one cell wide: one more cell of width brings the column back', () => {
+    const el = stubDom({ css: '' }, '0', 422)
+    expect(measureCells(el).cols).toBe(50)
   })
 })
 
@@ -129,21 +154,23 @@ describe('measureXtermCells rendered letter-spacing', () => {
 
   it('shrinks cols when xterm advances each glyph by extra letter-spacing', () => {
     const host = stubXtermHost('0.4px')
-    // span cell 8px + 0.4px spacing = 8.4px rendered; usable 800 - 14 = 786px
-    // → floor(786 / 8.4) = 93 (it was 98 sized by the bare 8px span).
-    expect(measureXtermCells(host)?.cols).toBe(93)
+    // span cell 8px + 0.4px spacing = 8.4px rendered; usable 800 - 14 - 8.4 gutter
+    // = 777.6px → floor(777.6 / 8.4) = 92 (it was 97 sized by the bare 8px span).
+    expect(measureXtermCells(host)?.cols).toBe(92)
   })
 
   it('never lets cols × rendered advance exceed the usable width', () => {
     const host = stubXtermHost('0.05px', '8')
     const dims = measureXtermCells(host)!
     expect(dims.cols * (8 + 0.05)).toBeLessThanOrEqual(800 - 16 - 14)
+    // ...and with one whole cell of slack, not just "fits".
+    expect(dims.cols * (8 + 0.05)).toBeLessThanOrEqual(800 - 16 - 14 - (8 + 0.05))
   })
 
   it('keeps the span-sized grid when letter-spacing is "normal" or negative', () => {
-    expect(measureXtermCells(stubXtermHost('normal'))?.cols).toBe(98)
+    expect(measureXtermCells(stubXtermHost('normal'))?.cols).toBe(97)
     // A negative spacing only tightens the glyphs; the grid stays as wide as the span says.
-    expect(measureXtermCells(stubXtermHost('-0.0165px'))?.cols).toBe(98)
+    expect(measureXtermCells(stubXtermHost('-0.0165px'))?.cols).toBe(97)
   })
 })
 
