@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-29
+
+### Fixed
+
+- The terminal's right edge is no longer cut off. Harnu sized the terminal grid to the full pane width, so a box's right border and the last one or two characters of wrapped lines slid under the scrollbar; the grid now leaves the scrollbar's width free, in the main pane and in split panes alike. The old scrollbar styling rules that matched nothing in the current terminal were removed.
+
 ## 2026-10-28
 
 ### Added

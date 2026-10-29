@@ -11,6 +11,16 @@
 /** Family of the bundled Nerd Font; matches the `@font-face` in `fonts.css`. */
 const TERMINAL_FONT_FAMILY = 'JetBrainsMono Nerd Font Mono'
 
+/**
+ * Width xterm 6 reserves for its overlay vertical scrollbar:
+ * `verticalScrollbarSize = options.overviewRuler?.width || 14`. The official
+ * FitAddon subtracts it; our manual sizing must too, or the grid's last columns
+ * (a box's right border, the tail of wrapped lines) render under the scrollbar.
+ * Pass the terminal's `overviewRuler.width` when it is set; the default matches
+ * xterm's.
+ */
+export const XTERM_SCROLLBAR_WIDTH = 14
+
 export interface CellDims {
   cols: number
   rows: number
@@ -50,8 +60,16 @@ export function ensureTerminalFontLoaded(): Promise<void> {
  * When `cellHOverride` is provided, that height is used in place of the
  * span-measured height — the call from `measureXtermCells` passes xterm's
  * actual `.xterm-rows > div` height there.
+ *
+ * `scrollbarWidth` is carved out of the usable width (see
+ * `XTERM_SCROLLBAR_WIDTH`) so `cols` never extends under xterm's scrollbar.
  */
-export function measureCells(el: HTMLElement, cellHOverride?: number, fontSize = 13): CellDims {
+export function measureCells(
+  el: HTMLElement,
+  cellHOverride?: number,
+  fontSize = 13,
+  scrollbarWidth = XTERM_SCROLLBAR_WIDTH
+): CellDims {
   const cs = getComputedStyle(document.documentElement)
   const fontFamily = cs.getPropertyValue('--font-mono').trim() || 'monospace'
   const lineHeight = 1.55
@@ -72,7 +90,7 @@ export function measureCells(el: HTMLElement, cellHOverride?: number, fontSize =
   const padX = parseFloat(elCs.paddingLeft) + parseFloat(elCs.paddingRight)
   const padY = parseFloat(elCs.paddingTop) + parseFloat(elCs.paddingBottom)
 
-  const innerW = Math.max(0, el.clientWidth - padX)
+  const innerW = Math.max(0, el.clientWidth - padX - scrollbarWidth)
   const innerH = Math.max(0, el.clientHeight - padY)
 
   const cols = Math.max(2, Math.floor(innerW / Math.max(1, charWidth)))
@@ -99,10 +117,14 @@ export function measureCells(el: HTMLElement, cellHOverride?: number, fontSize =
  *     in the current `--font-mono` and divides. See CDP investigation
  *     2026-05-28.
  */
-export function measureXtermCells(host: HTMLElement, fontSize = 13): CellDims | null {
+export function measureXtermCells(
+  host: HTMLElement,
+  fontSize = 13,
+  scrollbarWidth = XTERM_SCROLLBAR_WIDTH
+): CellDims | null {
   const xtermRow = host.querySelector('.xterm-rows')?.firstElementChild as HTMLElement | null
   if (!xtermRow) return null
   const actualCharH = xtermRow.getBoundingClientRect().height
   if (!actualCharH) return null
-  return measureCells(host, actualCharH, fontSize)
+  return measureCells(host, actualCharH, fontSize, scrollbarWidth)
 }
