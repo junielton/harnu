@@ -21,6 +21,15 @@ const TERMINAL_FONT_FAMILY = 'JetBrainsMono Nerd Font Mono'
  */
 export const XTERM_SCROLLBAR_WIDTH = 14
 
+/**
+ * Whole cells kept free at the right edge, beyond the scrollbar (BUG-234). Even
+ * with the rendered letter-spacing accounted for, a sub-pixel disagreement between
+ * our measurement and what xterm really draws would otherwise cost the last column
+ * a fraction of its width; one spare cell makes the grid immune to it. The price is
+ * one column whenever the fit is tight.
+ */
+export const SAFETY_GUTTER_CELLS = 1
+
 export interface CellDims {
   cols: number
   rows: number
@@ -64,6 +73,8 @@ export function ensureTerminalFontLoaded(): Promise<void> {
  * `scrollbarWidth` is carved out of the usable width (see
  * `XTERM_SCROLLBAR_WIDTH`) so `cols` never extends under xterm's scrollbar.
  *
+ * `SAFETY_GUTTER_CELLS` whole cells are also left free at the right edge.
+ *
  * `letterSpacing` is the extra advance xterm's DOM renderer adds to every glyph
  * (see `measureXtermCells`); it widens the cell so `cols × advance` still fits.
  */
@@ -94,7 +105,8 @@ export function measureCells(
   const padX = parseFloat(elCs.paddingLeft) + parseFloat(elCs.paddingRight)
   const padY = parseFloat(elCs.paddingTop) + parseFloat(elCs.paddingBottom)
 
-  const innerW = Math.max(0, el.clientWidth - padX - scrollbarWidth)
+  const gutter = SAFETY_GUTTER_CELLS * Math.max(1, charWidth)
+  const innerW = Math.max(0, el.clientWidth - padX - scrollbarWidth - gutter)
   const innerH = Math.max(0, el.clientHeight - padY)
 
   const cols = Math.max(2, Math.floor(innerW / Math.max(1, charWidth)))

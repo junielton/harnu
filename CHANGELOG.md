@@ -15,7 +15,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - The terminal's right edge is no longer cut off. Harnu sized the terminal grid to the full pane width, so a box's right border and the last one or two characters of wrapped lines slid under the scrollbar; the grid now leaves the scrollbar's width free, in the main pane and in split panes alike. The old scrollbar styling rules that matched nothing in the current terminal were removed.
-- The terminal's last column no longer renders half-cut. The terminal drew every character slightly wider than the grid it was sized for (the gap grew with each resize or font-size change), so the final character of a full-width line was clipped at the edge, more so in wider panes. Harnu now stops the terminal's width measurement from feeding back on itself and sizes the grid by the width each character really takes, in the main pane and in split panes alike.
+- The terminal's last column no longer renders half-cut. The terminal drew every character slightly wider than the grid it was sized for (the gap grew with each resize or font-size change), so the final character of a full-width line was clipped at the edge, more so in wider panes. Harnu now stops the terminal's width measurement from feeding back on itself, sizes the grid by the width each character really takes, and keeps one character of margin at the right edge (so a tight fit gives up one column), in the main pane and in split panes alike.
 
 ## 2026-10-28
 
