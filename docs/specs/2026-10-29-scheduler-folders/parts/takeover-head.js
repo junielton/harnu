@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- standalone mockup runtime (browser script), not app code */
 /* parts/takeover-head.js — the Scheduler's TakeoverShell header, unchanged from today.
  * Light DOM so tokens cascade. Attribute: sub (the live subtitle). */
 customElements.define(

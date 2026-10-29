@@ -33,7 +33,7 @@ export type FolderHue = (typeof FOLDER_HUES)[number]
 /**
  * `FNV-1a(path) % 6`. Stable per path — never per render order — so a folder keeps
  * its colour across restarts, sorts and filters, and adding a folder never recolours
- * another. Hashes UTF-16 code units; the exact hash is part of the design contract.
+ * another. Hashes 16-bit code units; the exact hash is part of the design contract.
  */
 export function folderHue(path: string): FolderHue {
   let h = 0x811c9dc5
