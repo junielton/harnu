@@ -14,10 +14,11 @@
  * last-result line. It reads `--fh` — the folder hue the enclosing
  * `SchedulerFolderGroup` sets — for the 2px cycle bar only.
  *
- * Row actions (Pin / Run now / Stop / Delete) are always in the DOM at `opacity-0`
- * and revealed by real `:hover` via Tailwind's `group`/`group-hover` — the
+ * Row actions (Pin / Run now / Stop / Delete) are always in the DOM and take the
+ * state column's slot on real `:hover` / focus via Tailwind's `group` variants — the
  * mockup's static `is-hovered` variant is a screenshot aid, not a distinct
- * runtime state.
+ * runtime state. They are `display: none` at rest, never `opacity-0`: an invisible
+ * cluster would still reserve ~94px of the 46px row's meta line.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -177,7 +178,7 @@ const stateLabel = computed(() => {
       </div>
     </div>
 
-    <div class="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+    <div class="hidden shrink-0 gap-0.5 group-focus-within:flex group-hover:flex">
       <button
         type="button"
         class="flex h-[22px] w-[22px] items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
@@ -221,7 +222,10 @@ const stateLabel = computed(() => {
       </button>
     </div>
 
-    <div class="flex shrink-0 items-center gap-[5px] text-[11px]" :class="textClass">
+    <div
+      class="flex shrink-0 items-center gap-[5px] text-[11px] group-focus-within:hidden group-hover:hidden"
+      :class="textClass"
+    >
       <span
         class="h-1.5 w-1.5 shrink-0 rounded-full"
         :class="[dotClass, state === 'running' ? 'anim-pulse-dot' : '']"

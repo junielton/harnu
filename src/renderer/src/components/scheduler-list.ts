@@ -313,8 +313,8 @@ export function upNext(entries: readonly ListEntry[], nowMs: number, limit = 4):
       running: e.running,
       item: {
         worker: e.worker,
-        now: e.running || e.nextAt <= nowMs,
-        inMs: e.running ? 0 : Math.max(0, e.nextAt - nowMs),
+        now: e.running || e.nextAt - nowMs < 1000,
+        inMs: e.running || e.nextAt - nowMs < 1000 ? 0 : e.nextAt - nowMs,
         nextAt: e.nextAt
       }
     }))

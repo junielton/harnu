@@ -11979,13 +11979,14 @@ would still shift every row's content box by its own width the instant it toggle
 layer instead, so selecting a row costs zero reflow. (The folder header's 3px stripe is a different layer on
 a different element and never competes with it.)
 
-**Row actions — hover-revealed, three icon buttons.** `.wrow-actions { opacity: 0; transition: opacity
-var(--dur) var(--ease) }`, revealed on `:hover` or `.is-hovered` (keyboard/touch parity, the same idiom every
-other hover-gated row action in this app follows): **Pin / Unpin** (T483 — `Pin` when unpinned, `PinOff`
-when pinned, `.iconbtn`, `--text-3` at rest, `--text` on hover), **Run now** (`Play`, `.iconbtn`) and
-**Delete** (`Trash2`, `.iconbtn.is-danger` — `--text-3` at rest, `--red` on hover). `22×22px`,
-`hover:bg-surface-2`. The actions cluster and the state column share the same slot at the row's trailing
-edge; hovering (or the `.is-hovered` state) is what decides which one is currently showing.
+**Row actions — hover-revealed icon buttons.** `display: none` at rest, `display: flex` on `:hover` or
+keyboard focus within the row (the mockup's `.is-hovered` is a screenshot aid for the same state): **Pin /
+Unpin** (T483 — `Pin` when unpinned, `PinOff` when pinned, `.iconbtn`, `--text-3` at rest, `--text` on
+hover), **Run now** / **Stop** (`Play` / `Square`, `.iconbtn`) and **Delete** (`Trash2`, `.iconbtn.is-danger`
+— `--text-3` at rest, `--red` on hover). `22×22px`, `hover:bg-surface-2`. The actions cluster **takes the
+state column's slot** at the row's trailing edge — the state column is hidden while the cluster shows. They
+are `display: none`, never `opacity: 0`: an invisible cluster would still reserve ~94px of a 46px row's meta
+line, which is exactly the room the `every · model · mode` text and the run ticks need.
 
 **Empty states.** No worker matches the search or chip: a centred block (`padding: 40px 20px`, 12px
 `--text-3`) — `No worker matches “{q}”` in `--text-2`/500 over `Search covers worker names, folders and

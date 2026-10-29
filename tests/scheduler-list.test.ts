@@ -389,6 +389,12 @@ describe('upNext (AC-4)', () => {
     expect(out[0].now).toBe(true)
   })
 
+  it('a run due in under a second already reads as now, never "0s"', () => {
+    const out = upNext([entry(worker('a'), { runs: [run('a', 'ok', NOW - 30 * MIN + 400)] })], NOW)
+    expect(out[0].now).toBe(true)
+    expect(out[0].inMs).toBe(0)
+  })
+
   it('a failed-but-armed worker is still due', () => {
     const out = upNext([entry(worker('a'), { runs: [run('a', 'error', NOW - 10 * MIN)] })], NOW)
     expect(out).toHaveLength(1)
