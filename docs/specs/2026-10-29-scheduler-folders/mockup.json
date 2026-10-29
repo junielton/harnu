@@ -1,0 +1,102 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-10-29",
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css",
+  "viewports": [1280, 900],
+  "targets": [
+    "src/renderer/src/components/SchedulerView.vue",
+    "src/renderer/src/components/SchedulerWorkerRow.vue",
+    "design.md"
+  ],
+  "screens": [
+    {
+      "id": "pastas--combinada",
+      "title": "Scheduler — list by folder",
+      "status": "approved",
+      "approvedAt": "2026-10-29",
+      "states": [
+        "default",
+        "upnext-recolhido",
+        "colapsado",
+        "filtro-falhas",
+        "busca-vazia",
+        "hover"
+      ],
+      "targets": [
+        "src/renderer/src/components/SchedulerView.vue",
+        "src/renderer/src/components/SchedulerWorkerRow.vue"
+      ],
+      "notes": "Round 2 convergence: C's search, state chips and Up next; B's 44px tinted folder header, now with on/off counts, next run, failing/running pills and health bar, collapsible; A's compact 46px row (every · model · mode) with run ticks; no last-result line. Up next is collapsible (chevron toggle; collapsed it keeps a one-line summary of the next run)."
+    }
+  ],
+  "parts": [
+    {
+      "id": "takeover-head",
+      "variants": ["default"]
+    }
+  ],
+  "flows": [
+    {
+      "id": "recolher-pastas",
+      "title": "Collapse and reopen the folders",
+      "steps": [
+        {
+          "screen": "pastas--combinada",
+          "state": "default",
+          "via": "Collapse all button on the list bar"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "colapsado",
+          "via": "Expand all (ou click on a folder header)"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "filtrar-falhas",
+      "title": "See only what is failing",
+      "steps": [
+        {
+          "screen": "pastas--combinada",
+          "state": "default",
+          "via": "Failing chip"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "filtro-falhas",
+          "via": "All chip"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "recolher-upnext",
+      "title": "Collapse and reopen Up next",
+      "steps": [
+        {
+          "screen": "pastas--combinada",
+          "state": "default",
+          "via": "Up next header"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "upnext-recolhido",
+          "via": "Up next header"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "default"
+        }
+      ]
+    }
+  ]
+}
