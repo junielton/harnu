@@ -1,14 +1,18 @@
 <script setup lang="ts">
 /**
- * One worker row in the Scheduler takeover's list column (T295 Task 9).
- * Anatomy per `docs/specs/2026-09-07-scheduler-takeover/spec.html`,
- * `data-dsqa` roots `worker-row--waiting|running|failed|disabled|off|selected`.
+ * One worker row in the Scheduler takeover's list column (T295 Task 9, reshaped
+ * by T590 for the folder-grouped list — design.md "Scheduler (takeover)" → "Worker
+ * list"; approved mockup `docs/specs/2026-10-29-scheduler-folders/`).
  *
  * Two things are load-bearing per the contract, not just decoration:
  * - The selected rail is a 2px absolutely-positioned strip, never a border on
  *   the row box (a border would shift the row's content by its own width).
  * - An `off` row dims to 55% opacity as a WHOLE, including its state text —
  *   `opacity` on the root, not a muted color on individual children.
+ *
+ * The row no longer repeats its folder (the group header carries it) and has no
+ * last-result line. It reads `--fh` — the folder hue the enclosing
+ * `SchedulerFolderGroup` sets — for the 2px cycle bar only.
  *
  * Row actions (Pin / Run now / Stop / Delete) are always in the DOM at `opacity-0`
  * and revealed by real `:hover` via Tailwind's `group`/`group-hover` — the
@@ -19,6 +23,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Pin, PinOff, Play, Square, Trash2 } from 'lucide-vue-next'
 import { workerState, formatCountdown, formatDuration } from './scheduler-format'
+import type { TickKind } from './scheduler-list'
 import type { RunStatus, Worker } from '../../../preload'
 
 const props = defineProps<{
@@ -39,8 +44,10 @@ const props = defineProps<{
   runningSinceMs?: number
   /** Shared "now" clock from the parent — one ticking ref, not N per-row timers. */
   nowMs: number
-  folderLabel: string
-  branchLabel?: string | null
+  /** The last 10 runs, oldest left (`runTicks`). */
+  ticks: readonly TickKind[]
+  /** How far into its cadence the worker is, `0..1`; `null` draws no bar. */
+  cycle: number | null
 }>()
 
 const emit = defineEmits<{
@@ -82,10 +89,19 @@ const TEXT_CLASS: Record<string, string> = {
   off: 'text-text-4'
 }
 
+const TICK_CLASS: Record<TickKind, string> = {
+  ok: 'h-[7px] bg-green',
+  error: 'h-[10px] bg-red',
+  timeout: 'h-[10px] bg-warning',
+  running: 'h-[10px] bg-green anim-tick-pulse',
+  none: 'h-[10px] bg-border-2'
+}
+
 const dotClass = computed(() => DOT_CLASS[state.value])
 const textClass = computed(() => TEXT_CLASS[state.value])
 
 const everyLabel = computed(() => formatCountdown(props.worker.everyMinutes * 60_000))
+const isAct = computed(() => props.worker.mode === 'act')
 
 const stateLabel = computed(() => {
   switch (state.value) {
@@ -109,7 +125,7 @@ const stateLabel = computed(() => {
 
 <template>
   <div
-    class="group relative flex h-[46px] shrink-0 cursor-pointer items-center gap-2 border-b border-border pl-3 pr-2.5 transition-colors"
+    class="group relative flex h-[46px] shrink-0 cursor-pointer items-center gap-2 border-b border-border pl-3.5 pr-2.5 transition-colors"
     :class="[selected ? 'bg-surface' : 'hover:bg-surface', state === 'off' ? 'opacity-[0.55]' : '']"
     :data-dsqa="dsqa"
     role="option"
@@ -121,26 +137,43 @@ const stateLabel = computed(() => {
     <span v-if="selected" class="absolute inset-y-0 left-0 w-[2px] bg-accent" aria-hidden="true" />
 
     <div class="flex min-w-0 flex-1 flex-col gap-[3px]">
-      <div class="truncate text-[12px] font-medium text-text">
-        {{ worker.name || t('scheduler.settings.namePlaceholder') }}
+      <div class="flex items-center gap-[5px] overflow-hidden text-[12px] font-medium text-text">
+        <Pin
+          v-if="pinned"
+          :size="10"
+          :stroke-width="1.8"
+          class="shrink-0 text-accent"
+          data-pin-icon
+          aria-hidden="true"
+        />
+        <span class="truncate" data-worker-name>
+          {{ worker.name || t('scheduler.settings.namePlaceholder') }}
+        </span>
       </div>
       <div
         class="flex items-center gap-[5px] overflow-hidden whitespace-nowrap text-[11px] text-text-4"
-        :title="branchLabel ? `${folderLabel} · ${branchLabel}` : folderLabel"
       >
-        <!-- The alias is the informative half, the branch secondary: both can
-             shrink, but the branch shrinks 3x as eagerly (`shrink-[3]` vs the
-             alias's default `shrink`), so a long worktree alias only starts
-             truncating once the branch has already given up all its room —
-             never the other way around. `every Xm` never shrinks at all: the
-             schedule is the one thing this line must never lose. -->
-        <span class="min-w-0 shrink truncate">{{ folderLabel }}</span>
-        <template v-if="branchLabel">
-          <span class="shrink-0 text-text-disabled">·</span>
-          <span class="min-w-0 shrink-[3] truncate">{{ branchLabel }}</span>
-        </template>
-        <span class="shrink-0 text-text-disabled">·</span>
         <span class="shrink-0">{{ t('scheduler.row.every') }} {{ everyLabel }}</span>
+        <span class="shrink-0 text-text-disabled">·</span>
+        <span class="min-w-0 shrink truncate">{{ worker.model }}</span>
+        <span class="shrink-0 text-text-disabled">·</span>
+        <span class="shrink-0" :class="isAct ? 'text-warning' : ''" data-worker-mode>{{
+          worker.mode
+        }}</span>
+        <span class="flex-1" />
+        <span
+          class="flex h-[10px] shrink-0 items-end gap-[2px]"
+          :title="t('scheduler.list.lastRuns')"
+          data-run-ticks
+        >
+          <i
+            v-for="(kind, i) in ticks"
+            :key="i"
+            class="block w-[3px] rounded-[1px]"
+            :class="TICK_CLASS[kind]"
+            :data-tick="kind"
+          />
+        </span>
       </div>
     </div>
 
@@ -195,5 +228,21 @@ const stateLabel = computed(() => {
       />
       <span>{{ stateLabel }}</span>
     </div>
+
+    <!-- Cycle bar: how far into its cadence the worker is. Track = the folder hue at
+         14%, fill = the folder hue (green while running). `--fh` comes from the
+         enclosing folder group. -->
+    <span
+      v-if="cycle !== null"
+      class="pointer-events-none absolute bottom-[-1px] left-3.5 right-2.5 h-[2px] bg-[color-mix(in_srgb,var(--fh)_14%,transparent)]"
+      data-cycle-bar
+      aria-hidden="true"
+    >
+      <b
+        class="block h-full"
+        :class="running ? 'bg-green' : 'bg-[var(--fh)]'"
+        :style="{ width: `${Math.round(cycle * 100)}%` }"
+      />
+    </span>
   </div>
 </template>

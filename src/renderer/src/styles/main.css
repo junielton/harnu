@@ -196,6 +196,38 @@ textarea,
 .anim-overlay-fade {
   animation: overlay-fade var(--dur) var(--ease) both;
 }
+/* Folder hue (design.md §2 "Folder hue", T590). One class per pool member sets the
+   single custom property `--fh` from the terminal ANSI palette, which every theme
+   defines; everything inside a folder group reads `var(--fh)` — no raw colour. The
+   pool and the stable path-hash live in `components/scheduler-list.ts` (FOLDER_HUES). */
+/* Live run tick (design.md "Scheduler (takeover)" — run ticks): a 3px bar has no room
+   for the `.anim-pulse-dot` halo, so a run in flight just breathes. */
+@keyframes tick-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.anim-tick-pulse {
+  animation: tick-pulse 1.6s var(--ease) infinite;
+}
+.fh-blue {
+  --fh: var(--term-ansi-blue);
+}
+.fh-magenta {
+  --fh: var(--term-ansi-magenta);
+}
+.fh-cyan {
+  --fh: var(--term-ansi-cyan);
+}
+.fh-yellow {
+  --fh: var(--term-ansi-yellow);
+}
+.fh-bright-red {
+  --fh: var(--term-ansi-bright-red);
+}
+.fh-bright-blue {
+  --fh: var(--term-ansi-bright-blue);
+}
 /* Live pulse (design.md §6/§7). The halo is an `::after` ring animated with
    transform/opacity only — compositor-only, so it never repaints the window
    (a `box-shadow` animation did, every frame). The positioning is `:where()`

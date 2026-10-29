@@ -11910,8 +11910,8 @@ then alphabetical by folder name. Hue per §2 "Folder hue". The group root sets 
   - **Line 1:** folder name (12px/600 `--text`, ellipsised) + worker count (11px `--text-4`).
   - **Line 2 (10px `--text-4`, separators `--text-disabled`):** `⑂ {branch}` (`GitBranch` 9px — omitted when
     the folder is not a git repo) · `{n} on` · `{m} off` (only when `m > 0`) · `next in {x}` — or
-    `running now` (`--green`) when something is running, or `nothing scheduled` when no enabled worker is
-    due. The title attribute carries the full path.
+    `running now` (`--green`) when something is running, `due now` when the soonest worker is overdue, or
+    `nothing scheduled` when no enabled worker is due. The title attribute carries the full path.
   - **Summary (right, `gap: 6px`):** a `{n} failing` pill (`--red` on `--red-soft`) and/or a `{n} running`
     pill (`--green` on `--green-soft`, pulsing dot) — `16px`, `0 5px`, `rounded-sm`, 10px; a **health bar**
     (`40×3px`, `rounded-sm`, track `--border-2`) of segments in proportion `running` `--green` · `failing`
@@ -11920,8 +11920,7 @@ then alphabetical by folder name. Hue per §2 "Folder hue". The group root sets 
 - **Collapse.** Per-group, from the header. Collapsed, only the header remains. State is a per-viewer
   convenience in `localStorage` (`om2tab.scheduler.collapsedFolders`, a JSON list of folder paths; also
   `om2tab.scheduler.upNextCollapsed`), every access in try/catch, default expanded. **Collapsing never
-  changes the selection:** the detail stays on the selected worker even when its row is hidden. An active
-  filter or search shows its matches regardless of the collapsed state of their group.
+  changes the selection:** the detail stays on the selected worker even when its row is hidden. Collapse and filters are independent: a filter narrows what a group holds, a collapsed group stays collapsed (its header pills still say what matched).
 
 **Pinned workers (T483, reshaped).** There are no Pinned or Enabled/Off groups any more. A pinned worker
 carries an accent `Pin` icon (10px, `--accent`) before its name and **sorts first inside its folder**, by
@@ -11940,7 +11939,7 @@ display order (the first row of the first folder).
   row (the group header carries it).
 - **Run ticks** — the last 10 runs, oldest left, `3px` wide, `2px` gap, `10px` tall box, `rounded-[1px]`:
   `ok` `--green` 7px short bar · `error` `--red` full height · `timeout` `--warning` full height · a run in
-  flight `--green` full height, pulsing (`.anim-pulse-dot`) · an empty slot `--border-2`. Fewer than 10 runs
+  flight `--green` full height, breathing (`.anim-tick-pulse`, opacity 1 → 0.35, 1.6s — a 3px bar has no room for the `.anim-pulse-dot` halo) · an empty slot `--border-2`. Fewer than 10 runs
   pad on the **left**, so the newest run is always the rightmost tick.
 - **State column** (right-aligned, 11px, flex: none): a 6px dot + a label, one of the five states below.
   Unchanged by T590.
