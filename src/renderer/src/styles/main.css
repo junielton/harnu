@@ -108,17 +108,6 @@ textarea,
   background: var(--color-border-2);
 }
 
-.xterm-viewport::-webkit-scrollbar {
-  width: 8px;
-}
-.xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
-}
-.xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-2);
-}
-
 /* Eyebrow / section label — design.md §3 (Eyebrow scale) + §6 (Section label).
    Typography only (size/weight/tracking/uppercase); the COLOR is applied per
    context (default text-4; the Fleet status board tints each section header by
