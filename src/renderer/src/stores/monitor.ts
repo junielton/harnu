@@ -71,6 +71,8 @@ export const useMonitorStore = defineStore('monitor', () => {
   return {
     lastHeap,
     lastSample,
+    /** Raw ring buffer — read through `sessionHistory`/`harnuHistory`; exposed for devtools and fixtures. */
+    history,
     harnuRows,
     sessionRows,
     harnuTotalBytes,

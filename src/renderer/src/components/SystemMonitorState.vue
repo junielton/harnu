@@ -30,19 +30,21 @@ const modQuiet = computed(() => props.companion?.state !== 'live')
 </script>
 
 <template>
-  <span
-    class="inline-flex shrink-0 items-center gap-1.5 text-[11px]"
-    :class="live ? 'text-green' : 'text-text-3'"
-  >
-    <span class="h-1.5 w-1.5 rounded-full" :class="live ? 'bg-green' : 'bg-text-4'" />
-    {{ live ? t('systemMonitor.stateLive') : t('systemMonitor.stateParked') }}
+  <span class="inline-flex shrink-0 items-center gap-2">
+    <span
+      class="inline-flex shrink-0 items-center gap-1.5 text-[11px]"
+      :class="live ? 'text-green' : 'text-text-3'"
+    >
+      <span class="h-1.5 w-1.5 rounded-full" :class="live ? 'bg-green' : 'bg-text-4'" />
+      {{ live ? t('systemMonitor.stateLive') : t('systemMonitor.stateParked') }}
+    </span>
+    <span
+      v-if="showReasonChip"
+      class="inline-flex h-[17px] shrink-0 items-center rounded-sm bg-surface-2 px-1.5 font-mono text-[10.5px] text-text-3"
+      data-testid="reason-chip"
+      >{{ row.reason }}<template v-if="showIdle"> · {{ formatIdle(row.idleMs) }}</template></span
+    >
   </span>
-  <span
-    v-if="showReasonChip"
-    class="inline-flex h-[17px] shrink-0 items-center rounded-sm bg-surface-2 px-1.5 font-mono text-[10.5px] text-text-3"
-    data-testid="reason-chip"
-    >{{ row.reason }}<template v-if="showIdle"> · {{ formatIdle(row.idleMs) }}</template></span
-  >
   <span
     v-if="showNextSweep"
     class="inline-flex shrink-0 items-center gap-1 text-[10.5px] text-warning"

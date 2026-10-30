@@ -180,8 +180,8 @@ const headerHeapTextClass = computed(() => monitorHeapTextClass(monitor.lastHeap
 </script>
 
 <template>
-  <div class="scrollable min-h-0 flex-1 overflow-y-auto">
-    <div class="grid min-h-full grid-cols-[320px_1fr] max-[1000px]:grid-cols-1">
+  <div class="scrollable @container min-h-0 flex-1 overflow-y-auto">
+    <div class="grid min-h-full grid-cols-[320px_1fr] @max-[1000px]:grid-cols-1">
       <SystemMonitorSidebar
         :processes="monitor.harnuRows"
         :heap="monitor.lastHeap"

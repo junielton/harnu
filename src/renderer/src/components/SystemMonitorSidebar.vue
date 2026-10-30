@@ -37,7 +37,7 @@ const maxRss = computed(() => Math.max(0, ...props.processes.map((p) => p.rssByt
 
 <template>
   <aside
-    class="flex flex-col gap-4 border-r border-border bg-sidebar p-4 max-[1000px]:border-b max-[1000px]:border-r-0"
+    class="flex flex-col gap-4 border-r border-border bg-sidebar p-4 @max-[1000px]:border-b @max-[1000px]:border-r-0"
     data-testid="monitor-sidebar"
   >
     <div class="flex items-center gap-2.5">

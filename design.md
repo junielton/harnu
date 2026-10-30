@@ -8742,9 +8742,12 @@ refcount that never reaches zero). Nothing in this redesign samples more often o
 from `/proc`: every number is derived from the payload that already arrives.
 
 **Layout.** A two-column grid inside the body: `grid-cols-[320px_1fr]`, stacking to one
-column below a **1000px window width** (`max-[1000px]:grid-cols-1`; the sidebar then sits
-above the KPI strip). The left column is `bg-sidebar` with a `border-r border-border`,
-`p-4`, `gap-4`. The right column is `p-4` (`px-[18px]`), `gap-3.5`, `min-w-0`.
+column when the **monitor's own width** drops below ~1000px (a container query on the
+body, `@max-[1000px]:grid-cols-1` — not the window width, because the app sidebar and the
+Fleet rail already take a third of a 1280px window; the sidebar then sits above the KPI
+strip, its border moving from the right edge to the bottom). The left column is `bg-sidebar` with a
+`border-r border-border`, `p-4`, `gap-4`. The right column is `p-4` (`px-[18px]`), `gap-3.5`,
+`min-w-0`. A KPI value never wraps (`whitespace-nowrap`), and its legend wraps item by item.
 
 #### Left column — the Harnu sidebar
 
@@ -8847,12 +8850,12 @@ One rounded container (`bg-sidebar`, `border border-border`, `rounded-[var(--rad
 `overflow-hidden`) with a header row and one row per session. Rows are `gap-3 px-3` grids with
 `border-t border-border` between them and a **2px rail** along the left edge in `var(--fh)`
 (a parked row's name text at 60% opacity). Columns: **Name** | **RAM** | **CPU** | **Last 60s** |
-**State**, as `grid-cols-[minmax(150px,1fr)_150px_52px_76px_minmax(0,1.8fr)]`; the header is
+**State**, as `grid-cols-[minmax(190px,1.2fr)_140px_52px_76px_minmax(0,1.6fr)]`; the header is
 30px, `bg-surface`, `text-[10.5px] uppercase tracking-wide text-text-4`, with the `Info` hint on
 RAM; a session row is at least 36px high.
 
 - **Name** — expand chevron (a 16px slot, empty for a parked row so names align), the 18px
-  avatar, the alias (`font-medium`), `· {branch}` (`text-text-4`).
+  avatar, the alias (`font-medium`, never shrinks below its text unless the cell is truly full), `· {branch}` (`text-text-4`, the part that truncates first).
 - **RAM** — the number (`font-mono`, 60px, right) then a 4px bar in `var(--fh)` on a `bg-border-2`
   track, **relative to the largest session**. A parked row shows `−{size}` in `text-green`
   (`—` for a null `savedBytes`), no bar.

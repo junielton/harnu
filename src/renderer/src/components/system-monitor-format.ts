@@ -356,4 +356,4 @@ export interface SessionView {
  * class strings so Tailwind's source scan sees them.
  */
 export const TABLE_GRID =
-  'grid grid-cols-[minmax(150px,1fr)_150px_52px_76px_minmax(0,1.8fr)] @max-[760px]:grid-cols-[minmax(150px,1fr)_150px_52px_minmax(0,1.8fr)]'
+  'grid grid-cols-[minmax(190px,1.2fr)_140px_52px_76px_minmax(0,1.6fr)] @max-[760px]:grid-cols-[minmax(190px,1.2fr)_140px_52px_minmax(0,1.6fr)]'

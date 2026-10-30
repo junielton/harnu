@@ -172,7 +172,7 @@ describe('AC-1 — layout: Harnu sidebar + right column', () => {
     expect(side.get('[data-testid="monitor-totals"]').text()).toContain('Harnu + sessions')
     expect(w.find('[data-testid="monitor-kpis"]').exists()).toBe(true)
     expect(w.get('.grid').classes()).toEqual(
-      expect.arrayContaining(['grid-cols-[320px_1fr]', 'max-[1000px]:grid-cols-1'])
+      expect.arrayContaining(['grid-cols-[320px_1fr]', '@max-[1000px]:grid-cols-1'])
     )
     w.unmount()
   })

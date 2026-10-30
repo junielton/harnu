@@ -22,7 +22,7 @@ const { t } = useI18n()
         <MemoryStick :size="12" :stroke-width="1.8" />{{ t('systemMonitor.kpi.totalRam') }}
       </div>
       <div
-        class="font-mono text-[22px] font-semibold leading-tight tracking-tight"
+        class="font-mono text-[22px] font-semibold leading-tight tracking-tight whitespace-nowrap"
         data-testid="kpi-ram"
       >
         {{ formatBytes(totals.totalBytes) }}
@@ -37,13 +37,17 @@ const { t } = useI18n()
           :style="{ width: `${totals.totalBytes > 0 ? 100 - totals.harnuSharePct : 0}%` }"
         />
       </div>
-      <div class="flex items-center gap-1.5 text-[11px] text-text-3">
-        <span
-          class="inline-block h-2 w-2 rounded-[2px] bg-[color-mix(in_srgb,var(--color-text-4)_45%,var(--color-surface))]"
-        />{{ t('systemMonitor.kpi.ramHarnu', { size: formatBytes(totals.harnuBytes) }) }}
-        <span class="ml-1 inline-block h-2 w-2 rounded-[2px] bg-accent" />{{
-          t('systemMonitor.kpi.ramSessions', { size: formatBytes(totals.sessionsBytes) })
-        }}
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-text-3">
+        <span class="inline-flex items-center gap-1 whitespace-nowrap">
+          <span
+            class="inline-block h-2 w-2 rounded-[2px] bg-[color-mix(in_srgb,var(--color-text-4)_45%,var(--color-surface))]"
+          />{{ t('systemMonitor.kpi.ramHarnu', { size: formatBytes(totals.harnuBytes) }) }}
+        </span>
+        <span class="inline-flex items-center gap-1 whitespace-nowrap">
+          <span class="inline-block h-2 w-2 rounded-[2px] bg-accent" />{{
+            t('systemMonitor.kpi.ramSessions', { size: formatBytes(totals.sessionsBytes) })
+          }}
+        </span>
       </div>
     </div>
 
@@ -54,7 +58,7 @@ const { t } = useI18n()
         <Cpu :size="12" :stroke-width="1.8" />{{ t('systemMonitor.kpi.cpu') }}
       </div>
       <div
-        class="font-mono text-[22px] font-semibold leading-tight tracking-tight"
+        class="font-mono text-[22px] font-semibold leading-tight tracking-tight whitespace-nowrap"
         data-testid="kpi-cpu"
       >
         {{ formatPct1(totals.cpuPct) }}
@@ -71,7 +75,7 @@ const { t } = useI18n()
         <Moon :size="12" :stroke-width="1.8" />{{ t('systemMonitor.kpi.sessions') }}
       </div>
       <div
-        class="font-mono text-[22px] font-semibold leading-tight tracking-tight"
+        class="font-mono text-[22px] font-semibold leading-tight tracking-tight whitespace-nowrap"
         data-testid="kpi-sessions"
       >
         {{ totals.live }}

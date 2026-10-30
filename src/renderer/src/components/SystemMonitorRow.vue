@@ -71,7 +71,7 @@ const showPing = computed(() => live.value && props.companion?.state === 'live')
         <span v-else class="inline-block h-4 w-4 shrink-0" aria-hidden="true" />
         <SystemMonitorAvatar :initial="view.initial" size="sm" />
         <span
-          class="truncate text-[12px] font-medium text-text"
+          class="shrink-0 truncate text-[12px] font-medium text-text"
           :class="live ? '' : 'opacity-60'"
           data-testid="row-name"
           >{{ view.name }}</span
