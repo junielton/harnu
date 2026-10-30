@@ -28,9 +28,23 @@ export const useSchedulerStore = defineStore('scheduler', () => {
   const saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const pendingDrafts = new Map<string, Partial<Worker>>()
 
+  /**
+   * T590: the list draws a tick for each of the last ten runs and the cycle bar on EVERY row, so
+   * every worker's history is kept warm here — not just the selected worker's. A
+   * worker that appears (created, imported) or whose tick just finished is refreshed
+   * the moment main says so, instead of waiting for the next 30s sweep.
+   */
   function applyState(state: SchedulerState): void {
+    const knownIds = new Set(workers.value.map((w) => w.id))
+    const wasRunning = new Set(runningIds.value)
     workers.value = state.workers
     runningIds.value = state.runningIds
+    for (const w of state.workers) {
+      if (!knownIds.has(w.id)) void loadRuns(w.id)
+    }
+    for (const id of wasRunning) {
+      if (!state.runningIds.includes(id)) void loadRuns(id)
+    }
   }
 
   async function init(): Promise<void> {
@@ -38,6 +52,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     loaded.value = true
     unsubChanged?.()
     unsubChanged = window.api.onSchedulerChanged(applyState)
+    await loadAllRuns()
   }
 
   function dispose(): void {
@@ -140,6 +155,13 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     return runs
   }
 
+  /** Refresh the run history of every worker (one `scheduler:runs` call each). */
+  async function loadAllRuns(): Promise<void> {
+    // allSettled: one worker's unreadable history must not hide every other row's ticks,
+    // and `init()` runs fire-and-forget from the footer, so nothing here may reject.
+    await Promise.allSettled((workers.value ?? []).map((w) => loadRuns(w.id)))
+  }
+
   return {
     workers,
     runsByWorker,
@@ -155,6 +177,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     remove,
     runNow,
     stop,
-    loadRuns
+    loadRuns,
+    loadAllRuns
   }
 })

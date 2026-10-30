@@ -3,18 +3,17 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import SchedulerView from '../src/renderer/src/components/SchedulerView.vue'
-import { useSchedulerStore } from '../src/renderer/src/stores/scheduler'
 import { i18n } from '@renderer/i18n'
 import { stubTakeoverShellTargets } from './helpers/takeover-shell-stub'
 import type { Worker } from '../src/preload'
 
 /**
- * T483 — the Scheduler list's Pinned group, the pin actions (row + detail) and the collapsible
- * Off group, driven through the real `SchedulerView` with a stateful `window.api` stub that plays
- * main's part (`schedulerSetPinned` flips `pinnedAt`, exactly as `scheduler:setPinned` does).
+ * T483 / T590 — pinning in the folder-grouped Scheduler list: a pinned worker wears an accent pin
+ * icon and sorts first inside its folder (there are no Pinned / Enabled / Off groups any more), and
+ * the pin actions (row + detail) flip the same state. Driven through the real `SchedulerView` with a
+ * stateful `window.api` stub that plays main's part (`schedulerSetPinned` flips `pinnedAt`, exactly
+ * as `scheduler:setPinned` does).
  */
-
-const OFF_KEY = 'om2tab.scheduler.offCollapsed'
 
 function worker(id: string, enabled: boolean, pinnedAt?: number): Worker {
   return {
@@ -76,10 +75,13 @@ async function mountView(): Promise<ReturnType<typeof mount>> {
   return wrapper
 }
 
-const header = (w: ReturnType<typeof mount>, g: string): ReturnType<typeof w.find> =>
-  w.find(`[data-group-header="${g}"]`)
-const rowIds = (w: ReturnType<typeof mount>, g: string): string[] =>
-  w.findAll(`[data-group="${g}"] [role="option"]`).map((r) => r.text().match(/worker-\w+/)![0])
+const rowNames = (w: ReturnType<typeof mount>): string[] =>
+  w.findAll('[role="option"] [data-worker-name]').map((n) => n.text())
+const pinnedNames = (w: ReturnType<typeof mount>): string[] =>
+  w
+    .findAll('[role="option"]')
+    .filter((r) => r.get('[data-action="pin"]').attributes('aria-pressed') === 'true')
+    .map((r) => r.get('[data-worker-name]').text())
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -89,57 +91,63 @@ beforeEach(() => {
   stubApi()
 })
 
-describe('Pinned group (AC-1, AC-4, AC-5)', () => {
-  it('renders no Pinned header when nothing is pinned (AC-5)', async () => {
+describe('pinned workers inside a folder (T590 AC-6)', () => {
+  it('has no Pinned / Enabled / Off group headers at all', async () => {
+    state = [worker('a', true, 1), worker('b', false), worker('c', true)]
     const w = await mountView()
-    expect(header(w, 'pinned').exists()).toBe(false)
-    expect(header(w, 'enabled').text()).toContain('Enabled · 2')
-    expect(header(w, 'off').text()).toContain('Off · 2')
+    expect(w.find('[data-group-header]').exists()).toBe(false)
+    expect(w.findAll('[data-folder-group]')).toHaveLength(1)
     w.unmount()
   })
 
-  it('pinning from the row action moves the worker into Pinned and out of Off (AC-1)', async () => {
+  it('pinning from the pin slot pins the worker and sorts it first (AC-6)', async () => {
     const w = await mountView()
-    const rowB = w.findAll('[role="option"]').find((r) => r.text().includes('worker-b'))!
-    await rowB.get('[data-action="pin"]').trigger('click')
+    expect(rowNames(w)).toEqual(['worker-a', 'worker-b', 'worker-c', 'worker-d'])
+    const rowC = w.findAll('[role="option"]').find((r) => r.text().includes('worker-c'))!
+    await rowC.get('[data-action="pin"]').trigger('click')
     await settle()
 
-    expect(setPinned).toHaveBeenCalledWith('b', true)
-    expect(header(w, 'pinned').text()).toContain('Pinned · 1')
-    expect(rowIds(w, 'pinned')).toEqual(['worker-b'])
-    expect(rowIds(w, 'off')).toEqual(['worker-d'])
-    expect(header(w, 'off').text()).toContain('Off · 1')
+    expect(setPinned).toHaveBeenCalledWith('c', true)
+    expect(pinnedNames(w)).toEqual(['worker-c'])
+    expect(rowNames(w)).toEqual(['worker-c', 'worker-a', 'worker-b', 'worker-d'])
     w.unmount()
   })
 
-  it('a pinned OFF worker stays in Pinned, still dimmed and still labelled off (AC-4)', async () => {
+  it('a pinned OFF worker stays in its folder, still dimmed and still labelled off', async () => {
     state = [worker('a', true, 5), worker('b', false, 10)]
     const w = await mountView()
     // `a` is the default selection; `b` is the unselected pinned-off row.
-    const row = w.findAll('[data-group="pinned"] [role="option"]')[1]
+    const row = w.findAll('[role="option"]')[1]
     expect(row.text()).toContain('worker-b')
     expect(row.classes()).toContain('opacity-[0.55]')
     expect(row.attributes('data-dsqa')).toContain('off')
+    expect(row.get('[data-action="pin"]').attributes('aria-pressed')).toBe('true')
     w.unmount()
   })
 
-  it('lists Pinned by pinnedAt ascending (AC-4)', async () => {
-    state = [worker('a', true, 300), worker('b', false, 100), worker('c', true, 200)]
+  it('orders pinned workers by pinnedAt ascending, ahead of the rest', async () => {
+    state = [
+      worker('a', true, 300),
+      worker('b', false, 100),
+      worker('c', true, 200),
+      worker('d', true)
+    ]
     const w = await mountView()
-    expect(rowIds(w, 'pinned')).toEqual(['worker-b', 'worker-c', 'worker-a'])
+    expect(rowNames(w)).toEqual(['worker-b', 'worker-c', 'worker-a', 'worker-d'])
     w.unmount()
   })
 
-  it('unpinning from the row returns the worker to Enabled or Off by `enabled` (AC-3)', async () => {
-    state = [worker('a', true, 1), worker('b', false, 2)]
+  it('unpinning from the pin slot returns the worker to storage order', async () => {
+    state = [worker('a', true, 1), worker('b', false, 2), worker('c', true)]
     const w = await mountView()
-    for (const r of w.findAll('[data-group="pinned"] [role="option"]')) {
+    for (const r of w
+      .findAll('[role="option"]')
+      .filter((x) => x.get('[data-action="pin"]').attributes('aria-pressed') === 'true')) {
       await r.get('[data-action="pin"]').trigger('click')
     }
     await settle()
-    expect(header(w, 'pinned').exists()).toBe(false)
-    expect(rowIds(w, 'enabled')).toEqual(['worker-a'])
-    expect(rowIds(w, 'off')).toEqual(['worker-b'])
+    expect(pinnedNames(w)).toEqual([])
+    expect(rowNames(w)).toEqual(['worker-a', 'worker-b', 'worker-c'])
     w.unmount()
   })
 })
@@ -155,61 +163,8 @@ describe('detail pin toggle (AC-6)', () => {
     await toggle.trigger('click')
     await settle()
     expect(setPinned).toHaveBeenCalledWith('b', false)
-    expect(header(w, 'pinned').exists()).toBe(false)
+    expect(pinnedNames(w)).toEqual([])
     expect(w.get('[data-action="detail-pin"]').attributes('aria-pressed')).toBe('false')
-    w.unmount()
-  })
-})
-
-describe('collapsible Off group (AC-7)', () => {
-  it('collapses from its header, persists, and never clears the selection', async () => {
-    const w = await mountView()
-    const store = useSchedulerStore()
-    const offRow = w.findAll('[role="option"]').find((r) => r.text().includes('worker-d'))!
-    await offRow.trigger('click')
-    expect(store.selectedId).toBe('d')
-
-    await header(w, 'off').trigger('click')
-    await settle()
-    expect(rowIds(w, 'off')).toEqual([])
-    expect(header(w, 'off').text()).toContain('Off · 2')
-    expect(header(w, 'off').attributes('aria-expanded')).toBe('false')
-    expect(store.selectedId).toBe('d')
-    expect(w.text()).toContain('worker-d') // detail title still shows the selected worker
-    expect(localStorage.getItem(OFF_KEY)).toBe('1')
-
-    await header(w, 'off').trigger('click')
-    await settle()
-    expect(rowIds(w, 'off')).toEqual(['worker-b', 'worker-d'])
-    expect(localStorage.getItem(OFF_KEY)).toBe('0')
-    w.unmount()
-  })
-
-  it('reopens collapsed when the stored preference says so, and defaults to expanded', async () => {
-    localStorage.setItem(OFF_KEY, '1')
-    const w = await mountView()
-    expect(rowIds(w, 'off')).toEqual([])
-    w.unmount()
-
-    localStorage.clear()
-    const again = await mountView()
-    expect(rowIds(again, 'off')).toEqual(['worker-b', 'worker-d'])
-    again.unmount()
-  })
-})
-
-describe('default selection (AC-8)', () => {
-  it('selects the first pinned worker when any is pinned', async () => {
-    state = [worker('a', true), worker('b', false, 5)]
-    const w = await mountView()
-    expect(useSchedulerStore().selectedId).toBe('b')
-    w.unmount()
-  })
-
-  it('selects the first Enabled worker when nothing is pinned', async () => {
-    state = [worker('a', false), worker('b', true)]
-    const w = await mountView()
-    expect(useSchedulerStore().selectedId).toBe('b')
     w.unmount()
   })
 })

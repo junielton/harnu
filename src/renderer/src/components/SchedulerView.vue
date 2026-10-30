@@ -43,14 +43,29 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useNow } from '@vueuse/core'
-import { ChevronDown, Clock, Plus } from 'lucide-vue-next'
+import { Clock, Plus } from 'lucide-vue-next'
 import { useSchedulerStore } from '../stores/scheduler'
 import { useSessionsStore } from '../stores/sessions'
+import SchedulerFolderGroup from './SchedulerFolderGroup.vue'
+import SchedulerListFilters from './SchedulerListFilters.vue'
+import SchedulerUpNext from './SchedulerUpNext.vue'
 import SchedulerWorkerRow from './SchedulerWorkerRow.vue'
-import { defaultSelectionId, groupWorkers } from './scheduler-format'
+import { workerState } from './scheduler-format'
+import {
+  buildFolderGroups,
+  chipCounts,
+  defaultSelectionId,
+  filterEntries,
+  nextDueAt,
+  runTicks,
+  stateFilterFor,
+  upNext,
+  type ListEntry,
+  type StateFilter
+} from './scheduler-list'
 import SchedulerWorkerDetail from './SchedulerWorkerDetail.vue'
 import Button from './ui/Button.vue'
-import type { Run, Worker } from '../../../preload'
+import type { Worker } from '../../../preload'
 
 const scheduler = useSchedulerStore()
 const sessions = useSessionsStore()
@@ -59,35 +74,20 @@ const { t } = useI18n()
 const now = useNow({ interval: 1000 })
 const nowMs = computed(() => now.value.getTime())
 
-// ── boot + a 30s history refresh (matches the ticker's own cadence) ─────────
+// ── boot + a 30s history refresh (matches the ticker's own cadence). The store
+// keeps EVERY worker's last runs warm (T590: ticks + cycle bar on every row);
+// this sweep is the safety net under its event-driven refreshes. ────────────
 let refreshTimer: ReturnType<typeof setInterval> | null = null
-
-async function refreshAllRuns(): Promise<void> {
-  await Promise.all(scheduler.workers.map((w) => scheduler.loadRuns(w.id)))
-}
 
 onMounted(async () => {
   await scheduler.init()
-  await refreshAllRuns()
   refreshTimer = setInterval(() => {
-    void refreshAllRuns()
+    void scheduler.loadAllRuns()
   }, 30_000)
 })
 onBeforeUnmount(() => {
   if (refreshTimer) clearInterval(refreshTimer)
 })
-
-// A worker created between refresh ticks (e.g. "New worker") gets its
-// (empty) run history loaded right away rather than waiting up to 30s.
-watch(
-  () => scheduler.workers.map((w) => w.id),
-  (ids, prevIds) => {
-    const prevSet = new Set(prevIds ?? [])
-    for (const id of ids) {
-      if (!prevSet.has(id)) void scheduler.loadRuns(id)
-    }
-  }
-)
 
 // ── running-since approximation (shared by rows + the detail pane) ─────────
 const runningSinceById = ref<Record<string, number>>({})
@@ -103,26 +103,75 @@ watch(
       if (!curr.includes(id)) delete next[id]
     }
     runningSinceById.value = next
-    // A tick that just finished may have changed this worker's last-run
-    // status — refresh its history so the row/detail reflect it right away
-    // instead of waiting for the next 30s sweep.
-    for (const id of prevSet) {
-      if (!curr.includes(id)) void scheduler.loadRuns(id)
-    }
   }
 )
 
-// ── grouping (T483) — "Pinned" (any state, by pin time), then "Enabled", then
-// "Off". A worker is in exactly one group; a disabled-by-streak worker is still
-// `enabled === false`, so it groups under "Off" alongside a worker the operator
-// switched off — the row itself is what tells the two apart. ────────────────
-const groups = computed(() => groupWorkers(scheduler.workers))
-const pinnedWorkers = computed(() => groups.value.pinned)
-const enabledWorkers = computed(() => groups.value.enabled)
-const offWorkers = computed(() => groups.value.off)
+// ── entries → folder groups (T590) ────────────────────────────────────────
+// Every worker with what the list needs to place and draw it. Group order and
+// header stats come from ALL workers; the search and the chips only narrow which
+// rows are shown, so a folder's hue, health and position don't jump while filtering.
+function folderNameFor(path: string): string {
+  const folder = sessions.folders.find((f) => f.path === path)
+  return folder?.alias || path.split('/').filter(Boolean).pop() || path || '—'
+}
+function folderBranchFor(path: string): string | null {
+  return sessions.folders.find((f) => f.path === path)?.gitBranch ?? null
+}
 
-// ── selection: keep it valid, default to the first VISIBLE row (the first
-// pinned worker when any is pinned) ────────────────────────────────────────
+const entries = computed<ListEntry[]>(() =>
+  scheduler.workers.map((worker) => {
+    const runs = scheduler.runsByWorker[worker.id] ?? []
+    const running = scheduler.runningIds.includes(worker.id)
+    const nextAt = nextDueAt(worker, runs)
+    return {
+      worker,
+      runs,
+      running,
+      nextAt,
+      state: workerState(worker, { running, nextAt, lastStatus: runs[runs.length - 1]?.status })
+    }
+  })
+)
+
+const groups = computed(() =>
+  buildFolderGroups(entries.value, (path) => ({
+    name: folderNameFor(path),
+    branch: folderBranchFor(path)
+  }))
+)
+
+// ── search + state chips (T590) ───────────────────────────────────────────
+const query = ref('')
+const stateFilter = ref<StateFilter>('all')
+
+const searched = computed(() =>
+  filterEntries(entries.value, { query: query.value, filter: 'all', folderName: folderNameFor })
+)
+const counts = computed(() => chipCounts(searched.value))
+const visibleIds = computed(
+  () =>
+    new Set(
+      searched.value
+        .filter((e) => stateFilter.value === 'all' || stateFilterFor(e.state) === stateFilter.value)
+        .map((e) => e.worker.id)
+    )
+)
+const shownGroups = computed(() =>
+  groups.value
+    .map((group) => ({
+      group,
+      rows: group.entries.filter((e) => visibleIds.value.has(e.worker.id))
+    }))
+    .filter((g) => g.rows.length > 0)
+)
+const isFiltering = computed(() => query.value.trim() !== '' || stateFilter.value !== 'all')
+function clearFilter(): void {
+  query.value = ''
+  stateFilter.value = 'all'
+}
+
+// ── selection: keep it valid, default to the first VISIBLE row (the first row
+// of the first folder) ─────────────────────────────────────────────────────
 watch(
   () => scheduler.workers,
   (workers) => {
@@ -136,43 +185,71 @@ const selectedWorker = computed<Worker | undefined>(() =>
   scheduler.workers.find((w) => w.id === scheduler.selectedId)
 )
 
-// ── Off group collapse (T483) — a per-viewer convenience, never load-bearing:
-// every storage access is guarded and the view renders correctly without it.
-// Collapsing never touches `selectedId`. ───────────────────────────────────
-const OFF_COLLAPSED_KEY = 'om2tab.scheduler.offCollapsed'
-function readOffCollapsed(): boolean {
+// ── collapse state (T590) — per-viewer conveniences, never load-bearing: every
+// storage access is guarded and the view renders correctly without it. Collapsing
+// never touches `selectedId`. ──────────────────────────────────────────────
+const FOLDERS_COLLAPSED_KEY = 'om2tab.scheduler.collapsedFolders'
+const UPNEXT_COLLAPSED_KEY = 'om2tab.scheduler.upNextCollapsed'
+
+function readCollapsedFolders(): string[] {
   try {
-    return localStorage.getItem(OFF_COLLAPSED_KEY) === '1'
+    const raw = JSON.parse(localStorage.getItem(FOLDERS_COLLAPSED_KEY) ?? '[]')
+    return Array.isArray(raw) ? raw.filter((p): p is string => typeof p === 'string') : []
+  } catch {
+    return []
+  }
+}
+function readUpNextCollapsed(): boolean {
+  try {
+    return localStorage.getItem(UPNEXT_COLLAPSED_KEY) === '1'
   } catch {
     return false
   }
 }
-const offCollapsed = ref(readOffCollapsed())
-function toggleOff(): void {
-  offCollapsed.value = !offCollapsed.value
+function writeStorage(key: string, value: string): void {
   try {
-    localStorage.setItem(OFF_COLLAPSED_KEY, offCollapsed.value ? '1' : '0')
+    localStorage.setItem(key, value)
   } catch {
     /* storage unavailable — the in-memory state still works for this viewer */
   }
 }
 
-function folderAliasFor(path: string): string {
-  return sessions.folders.find((f) => f.path === path)?.alias || path || '—'
+const collapsedFolders = ref<string[]>(readCollapsedFolders())
+function isCollapsed(path: string): boolean {
+  return collapsedFolders.value.includes(path)
 }
-function folderBranchFor(path: string): string | null {
-  return sessions.folders.find((f) => f.path === path)?.gitBranch ?? null
+function setCollapsedFolders(next: string[]): void {
+  collapsedFolders.value = next
+  writeStorage(FOLDERS_COLLAPSED_KEY, JSON.stringify(next))
+}
+function toggleFolder(path: string): void {
+  setCollapsedFolders(
+    isCollapsed(path)
+      ? collapsedFolders.value.filter((p) => p !== path)
+      : [...collapsedFolders.value, path]
+  )
+}
+const allCollapsed = computed(
+  () => shownGroups.value.length > 0 && shownGroups.value.every((g) => isCollapsed(g.group.path))
+)
+function toggleAllFolders(): void {
+  if (allCollapsed.value) {
+    const shown = new Set(shownGroups.value.map((g) => g.group.path))
+    setCollapsedFolders(collapsedFolders.value.filter((p) => !shown.has(p)))
+  } else {
+    setCollapsedFolders([
+      ...new Set([...collapsedFolders.value, ...shownGroups.value.map((g) => g.group.path)])
+    ])
+  }
 }
 
-function nextAtFor(worker: Worker): number {
-  const runs = scheduler.runsByWorker[worker.id] ?? []
-  const last = runs[runs.length - 1]
-  return last ? last.startedAt + worker.everyMinutes * 60_000 : 0
+const upNextCollapsed = ref(readUpNextCollapsed())
+function toggleUpNext(): void {
+  upNextCollapsed.value = !upNextCollapsed.value
+  writeStorage(UPNEXT_COLLAPSED_KEY, upNextCollapsed.value ? '1' : '0')
 }
-function lastStatusFor(worker: Worker): Run['status'] | undefined {
-  const runs = scheduler.runsByWorker[worker.id] ?? []
-  return runs[runs.length - 1]?.status
-}
+// Up next answers "what is next", not "what matches": it steps aside while filtering.
+const upNextItems = computed(() => (isFiltering.value ? [] : upNext(entries.value, nowMs.value)))
 
 // ── actions ──────────────────────────────────────────────────────────────
 function selectWorker(id: string): void {
@@ -243,102 +320,77 @@ async function createWorker(): Promise<void> {
     <template v-else>
       <div class="flex min-h-0 flex-1">
         <div
-          class="scrollable w-[300px] flex-none overflow-y-auto border-r border-border bg-sidebar"
-          role="listbox"
-          :aria-label="t('scheduler.title')"
+          class="flex w-[340px] flex-none flex-col overflow-hidden border-r border-border bg-sidebar"
+          data-worker-list
         >
-          <div v-if="pinnedWorkers.length > 0" data-group="pinned">
-            <div
-              data-group-header="pinned"
-              class="flex h-6 items-center bg-surface px-3 text-[11px] uppercase tracking-wide text-text-3"
-            >
-              {{ t('scheduler.groupPinned', { n: pinnedWorkers.length }) }}
-            </div>
-            <SchedulerWorkerRow
-              v-for="w in pinnedWorkers"
-              :key="w.id"
-              :worker="w"
-              :selected="w.id === scheduler.selectedId"
-              :running="scheduler.runningIds.includes(w.id)"
-              :last-status="lastStatusFor(w)"
-              :next-at="nextAtFor(w)"
-              :running-since-ms="runningSinceById[w.id]"
+          <SchedulerListFilters
+            v-model:query="query"
+            v-model:filter="stateFilter"
+            :counts="counts"
+            :all-collapsed="allCollapsed"
+            @toggle-all="toggleAllFolders"
+          />
+          <SchedulerUpNext
+            :items="upNextItems"
+            :collapsed="upNextCollapsed"
+            :folder-name="folderNameFor"
+            @toggle="toggleUpNext"
+          />
+
+          <div
+            class="scrollable min-h-0 flex-1 overflow-y-auto"
+            role="listbox"
+            :aria-label="t('scheduler.title')"
+          >
+            <SchedulerFolderGroup
+              v-for="{ group, rows } in shownGroups"
+              :key="group.path"
+              :group="group"
+              :collapsed="isCollapsed(group.path)"
               :now-ms="nowMs"
-              :folder-label="folderAliasFor(w.folder)"
-              :branch-label="folderBranchFor(w.folder)"
-              @select="selectWorker(w.id)"
-              @pin="togglePin(w)"
-              @run-now="runNow(w.id)"
-              @stop="stopWorker(w.id)"
-              @delete="deleteWorker(w.id)"
-            />
-          </div>
-          <div v-if="enabledWorkers.length > 0" data-group="enabled">
-            <div
-              data-group-header="enabled"
-              class="flex h-6 items-center bg-surface px-3 text-[11px] uppercase tracking-wide text-text-3"
+              @toggle="toggleFolder(group.path)"
             >
-              {{ t('scheduler.groupEnabled', { n: enabledWorkers.length }) }}
-            </div>
-            <SchedulerWorkerRow
-              v-for="w in enabledWorkers"
-              :key="w.id"
-              :worker="w"
-              :selected="w.id === scheduler.selectedId"
-              :running="scheduler.runningIds.includes(w.id)"
-              :last-status="lastStatusFor(w)"
-              :next-at="nextAtFor(w)"
-              :running-since-ms="runningSinceById[w.id]"
-              :now-ms="nowMs"
-              :folder-label="folderAliasFor(w.folder)"
-              :branch-label="folderBranchFor(w.folder)"
-              @select="selectWorker(w.id)"
-              @pin="togglePin(w)"
-              @run-now="runNow(w.id)"
-              @stop="stopWorker(w.id)"
-              @delete="deleteWorker(w.id)"
-            />
-          </div>
-          <div v-if="offWorkers.length > 0" data-group="off">
-            <button
-              type="button"
-              data-group-header="off"
-              class="flex h-6 w-full items-center gap-1 bg-surface px-3 text-left text-[11px] uppercase tracking-wide text-text-3 transition-colors hover:text-text"
-              :aria-expanded="!offCollapsed"
-              @click="toggleOff"
-            >
-              <ChevronDown
-                :size="11"
-                :stroke-width="1.6"
-                class="shrink-0 text-text-4 transition-transform"
-                :class="offCollapsed ? '-rotate-90' : ''"
-                style="
-                  transition-duration: var(--dur-fast);
-                  transition-timing-function: var(--ease);
-                "
-              />
-              {{ t('scheduler.groupOff', { n: offWorkers.length }) }}
-            </button>
-            <template v-if="!offCollapsed">
               <SchedulerWorkerRow
-                v-for="w in offWorkers"
-                :key="w.id"
-                :worker="w"
-                :selected="w.id === scheduler.selectedId"
-                :running="scheduler.runningIds.includes(w.id)"
-                :last-status="lastStatusFor(w)"
-                :next-at="nextAtFor(w)"
-                :running-since-ms="runningSinceById[w.id]"
+                v-for="e in rows"
+                :key="e.worker.id"
+                :worker="e.worker"
+                :selected="e.worker.id === scheduler.selectedId"
+                :running="e.running"
+                :last-status="e.runs[e.runs.length - 1]?.status"
+                :next-at="e.nextAt"
+                :running-since-ms="runningSinceById[e.worker.id]"
                 :now-ms="nowMs"
-                :folder-label="folderAliasFor(w.folder)"
-                :branch-label="folderBranchFor(w.folder)"
-                @select="selectWorker(w.id)"
-                @pin="togglePin(w)"
-                @run-now="runNow(w.id)"
-                @stop="stopWorker(w.id)"
-                @delete="deleteWorker(w.id)"
+                :ticks="runTicks(e.runs, e.running)"
+                @select="selectWorker(e.worker.id)"
+                @pin="togglePin(e.worker)"
+                @run-now="runNow(e.worker.id)"
+                @stop="stopWorker(e.worker.id)"
+                @delete="deleteWorker(e.worker.id)"
               />
-            </template>
+            </SchedulerFolderGroup>
+
+            <div
+              v-if="shownGroups.length === 0"
+              class="px-5 py-10 text-center text-[12px] text-text-3"
+              data-list-empty
+            >
+              <b class="mb-1 block font-medium text-text-2">{{
+                query.trim()
+                  ? t('scheduler.list.emptyTitle', { q: query.trim() })
+                  : t('scheduler.list.emptyTitleFilter')
+              }}</b>
+              {{ t('scheduler.list.emptyBody') }}
+              <div>
+                <button
+                  type="button"
+                  class="mt-2.5 h-[22px] rounded-sm border border-border-2 bg-transparent px-2 text-[11px] text-text-2 transition-colors hover:bg-surface hover:text-text"
+                  data-clear-filter
+                  @click="clearFilter"
+                >
+                  {{ t('scheduler.list.clearFilter') }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
