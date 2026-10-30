@@ -273,7 +273,7 @@ const headerHeapTextClass = computed(() => monitorHeapTextClass(monitor.lastHeap
               />
             </span>
             <span class="text-right">{{ t('systemMonitor.columnCpu') }}</span>
-            <span class="@max-[760px]:hidden">{{ t('systemMonitor.columnLast60') }}</span>
+            <span class="@max-[960px]:hidden">{{ t('systemMonitor.columnLast60') }}</span>
             <span class="text-right">{{ t('systemMonitor.columnState') }}</span>
           </div>
           <SystemMonitorRow

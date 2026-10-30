@@ -44,7 +44,7 @@ const showPing = computed(() => live.value && props.companion?.state === 'live')
 <template>
   <div :class="`fh-${view.hue}`" data-testid="session-row-group">
     <div
-      class="group relative min-h-9 items-center gap-3 border-t border-border px-3 py-1"
+      class="group relative h-9 items-center gap-3 border-t border-border px-3 py-1"
       :class="[TABLE_GRID, hasChildren ? 'cursor-pointer' : '']"
       data-testid="session-row"
       :data-state="row.state"
@@ -71,14 +71,15 @@ const showPing = computed(() => live.value && props.companion?.state === 'live')
         <span v-else class="inline-block h-4 w-4 shrink-0" aria-hidden="true" />
         <SystemMonitorAvatar :initial="view.initial" size="sm" />
         <span
-          class="shrink-0 truncate text-[12px] font-medium text-text"
+          class="min-w-0 shrink-[0.2] truncate text-[12px] font-medium text-text"
           :class="live ? '' : 'opacity-60'"
           data-testid="row-name"
+          :title="view.branch ? `${view.name} · ${view.branch}` : view.name"
           >{{ view.name }}</span
         >
         <span
           v-if="view.branch"
-          class="truncate text-[11px] text-text-4"
+          class="min-w-0 shrink-[3] truncate text-[11px] text-text-4 @max-[760px]:hidden"
           :class="live ? '' : 'opacity-60'"
           >· {{ view.branch }}</span
         >
@@ -111,13 +112,15 @@ const showPing = computed(() => live.value && props.companion?.state === 'live')
         >{{ formatCpu(live ? row.cpuPct : null) }}</span
       >
 
-      <span class="@max-[760px]:hidden">
+      <span class="@max-[960px]:hidden">
         <SystemMonitorSpark v-if="live" :values="history" :width="72" :height="14" />
       </span>
 
       <span class="flex min-w-0 items-center justify-end gap-2">
-        <span class="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap-y-1">
-          <SystemMonitorState :row="row" :companion="companion" />
+        <span
+          class="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2 overflow-hidden"
+        >
+          <SystemMonitorState :row="row" :companion="companion" compact />
         </span>
         <SystemMonitorActions
           :show-park="showPark"
@@ -166,7 +169,7 @@ const showPing = computed(() => live.value && props.companion?.state === 'live')
         <span class="text-right font-mono text-[11.5px] text-text-2">{{
           c.isSelf ? '' : formatCpu(c.cpuPct)
         }}</span>
-        <span class="@max-[760px]:hidden" />
+        <span class="@max-[960px]:hidden" />
         <span />
       </div>
     </template>

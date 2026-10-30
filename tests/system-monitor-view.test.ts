@@ -302,13 +302,51 @@ describe('AC-4 — table view and persisted toggle', () => {
     w.unmount()
   })
 
-  it('the State cell wraps instead of clipping, and the grid hides Last 60s in a narrow table', async () => {
+  it('keeps every row one fixed 36px line: the State cell never wraps, the chip and mod cell truncate', async () => {
+    localStorage.setItem(MONITOR_VIEW_KEY, 'table')
+    const w = await mountMonitor()
+    for (const row of w.findAll('[data-testid="session-row"]')) {
+      expect(row.classes(), 'a session row must be a fixed height').toContain('h-9')
+      expect(row.classes()).not.toContain('min-h-9')
+      expect(row.html(), 'nothing in a row may wrap').not.toContain('flex-wrap')
+    }
+    const api = w
+      .findAll('[data-testid="session-row"]')
+      .find((r) => r.text().includes('api-gateway'))!
+    const chip = api.get('[data-testid="reason-chip"]')
+    expect(chip.classes()).toEqual(expect.arrayContaining(['min-w-0', 'truncate']))
+    expect(chip.attributes('title')).toBe('hard-idle · 38 min')
+    // the sweep note drops to its icon in a narrower table; the words stay for tooltip and screen readers
+    const sweep = api.get('[data-testid="next-sweep"]')
+    expect(sweep.attributes('title')).toBe('next to be swept')
+    expect(sweep.find('span').classes()).toContain('@max-[960px]:sr-only')
+    w.unmount()
+  })
+
+  it('narrow tables drop Last 60s below 960px, then the branch below 760px, and keep a 250px+ State track', async () => {
     localStorage.setItem(MONITOR_VIEW_KEY, 'table')
     const w = await mountMonitor()
     const row = w.get('[data-testid="session-row"]')
-    expect(row.html()).toContain('flex-wrap')
-    expect(row.classes().join(' ')).toContain('@max-[760px]:grid-cols-')
+    const classes = row.classes().join(' ')
+    expect(classes).toContain(
+      '@max-[960px]:grid-cols-[minmax(160px,1fr)_130px_52px_minmax(280px,1.8fr)]'
+    )
+    expect(classes).toContain(
+      '@max-[760px]:grid-cols-[minmax(130px,0.8fr)_120px_46px_minmax(250px,1.6fr)]'
+    )
+    expect(row.get('[data-testid="row-name"]').attributes('title')).toContain('·')
+    expect(row.html()).toContain('@max-[760px]:hidden')
     expect(w.get('[data-testid="table-view"]').classes()).toContain('@container')
+    w.unmount()
+  })
+
+  it('a card keeps its wrapping footer: only the table is single-line', async () => {
+    const w = await mountMonitor()
+    const card = w
+      .findAll('[data-testid="session-card"]')
+      .find((c) => c.text().includes('api-gateway'))!
+    expect(card.html()).toContain('flex-wrap')
+    expect(card.get('[data-testid="reason-chip"]').classes()).toContain('shrink-0')
     w.unmount()
   })
 })

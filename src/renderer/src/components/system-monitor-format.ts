@@ -351,9 +351,10 @@ export interface SessionView {
 
 /**
  * The table's column template (design.md "Table view"). Shared by the header and every
- * row so the columns line up; below ~760px of table width (a container query on the
- * table) the Last-60s column drops out and so does its track. Kept as whole literal
+ * row so the columns line up; below ~960px of table width (a container query on the
+ * table) the Last-60s column drops out, and below ~760px the branch hides and the tracks
+ * tighten, so the State column keeps its room. Every row is a fixed 36px, so nothing here may wrap. Kept as whole literal
  * class strings so Tailwind's source scan sees them.
  */
 export const TABLE_GRID =
-  'grid grid-cols-[minmax(190px,1.2fr)_140px_52px_76px_minmax(0,1.6fr)] @max-[760px]:grid-cols-[minmax(190px,1.2fr)_140px_52px_minmax(0,1.6fr)]'
+  'grid grid-cols-[minmax(160px,1fr)_130px_52px_76px_minmax(280px,1.8fr)] @max-[960px]:grid-cols-[minmax(160px,1fr)_130px_52px_minmax(280px,1.8fr)] @max-[760px]:grid-cols-[minmax(130px,0.8fr)_120px_46px_minmax(250px,1.6fr)]'

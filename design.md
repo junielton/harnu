@@ -8847,25 +8847,37 @@ holds the parked pip and the reason chip. No chevron: a parked session has no ch
 ##### Table view
 
 One rounded container (`bg-sidebar`, `border border-border`, `rounded-[var(--radius)]`,
-`overflow-hidden`) with a header row and one row per session. Rows are `gap-3 px-3` grids with
-`border-t border-border` between them and a **2px rail** along the left edge in `var(--fh)`
-(a parked row's name text at 60% opacity). Columns: **Name** | **RAM** | **CPU** | **Last 60s** |
-**State**, as `grid-cols-[minmax(190px,1.2fr)_140px_52px_76px_minmax(0,1.6fr)]`; the header is
-30px, `bg-surface`, `text-[10.5px] uppercase tracking-wide text-text-4`, with the `Info` hint on
-RAM; a session row is at least 36px high.
+`overflow-hidden`, a `@container`) with a header row and one row per session. Rows are `gap-3 px-3`
+grids with `border-t border-border` between them and a **2px rail** along the left edge in
+`var(--fh)` (a parked row's name text at 60% opacity). Columns: **Name** | **RAM** | **CPU** |
+**Last 60s** | **State**, as
+`grid-cols-[minmax(160px,1fr)_130px_52px_76px_minmax(280px,1.8fr)]`; the header is 30px,
+`bg-surface`, `text-[10.5px] uppercase tracking-wide text-text-4`, with the `Info` hint on RAM.
+**Every session row is a fixed 36px (`h-9`) and nothing in it wraps** — a row never grows and
+no cell ever paints over its neighbour.
 
 - **Name** — expand chevron (a 16px slot, empty for a parked row so names align), the 18px
-  avatar, the alias (`font-medium`, never shrinks below its text unless the cell is truly full), `· {branch}` (`text-text-4`, the part that truncates first).
+  avatar, the alias (`font-medium`), `· {branch}` (`text-text-4`, the part that truncates first).
+  Both carry the full `name · branch` as a tooltip.
 - **RAM** — the number (`font-mono`, 60px, right) then a 4px bar in `var(--fh)` on a `bg-border-2`
   track, **relative to the largest session**. A parked row shows `−{size}` in `text-green`
   (`—` for a null `savedBytes`), no bar.
 - **CPU** — `font-mono`, right-aligned; parked: `—` in `text-text-4`.
 - **Last 60s** — the 72×14 sparkline, 1.3px, `var(--fh)`; empty for a parked row.
-- **State** — right-aligned, `min-w-0`, **wrapping** (`flex-wrap`, `justify-end`): the pip, the
-  reason chip, the sweep note, the Harnu mod cell, then the actions. The cell wraps onto a second
-  line rather than clipping, and the **sparkline column hides** when the table is narrower than
-  ~760px (a container query on the table), so the State column is never cut off — including in
-  a 1280px window, where the right column is only ~600px wide next to the app sidebar.
+- **State** — right-aligned, `min-w-0`, **one line, `flex-nowrap`, `overflow-hidden`**: the pip,
+  the reason chip, the sweep note, the Harnu mod cell, then the actions (their 3 × 22px slots
+  stay reserved). When there is not room, things give way in this order, always inside the cell:
+  the **chip and the mod cell truncate** with an ellipsis (`min-w-0 truncate`; the full text is
+  their tooltip), and the **sweep note drops to its `Moon` icon** in a table narrower than
+  ~960px (the text stays as the tooltip and for screen readers). The pip and the icon never shrink.
+
+**Narrow tables** (a container query on the table). Below ~960px the **Last 60s column drops
+out** (`grid-cols-[minmax(160px,1fr)_130px_52px_minmax(280px,1.8fr)]`) so State keeps its room.
+Below ~760px — the case in a 1280px window, where the monitor is only ~700px wide next to the
+app sidebar and the Fleet rail — the columns tighten again to
+`grid-cols-[minmax(130px,0.8fr)_120px_46px_minmax(250px,1.6fr)]` and the **branch hides** (it
+stays in the name's tooltip). At every width the State column stays inside its own track and
+inside the 36px row: it never overlaps the CPU column and never makes a row taller.
 
 ##### Expand
 
