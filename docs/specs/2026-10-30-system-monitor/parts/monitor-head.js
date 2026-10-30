@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- standalone mockup runtime (browser script), not app code */
 /* parts/monitor-head.js — the System Monitor's TakeoverShell header (Cpu icon, title,
  * subtitle, inline heap gauge, close). Light DOM so tokens cascade. Attribute: sub. */
 customElements.define(

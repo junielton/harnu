@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- standalone mockup runtime (browser script), not app code */
 /* mockup.js — runtime shared by every screen of a mockup. Copied verbatim from the
  * create-mockup skill; never edited per project. Works over file:// and http://.
  *
