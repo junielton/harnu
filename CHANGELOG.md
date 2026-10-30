@@ -20,6 +20,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **The System Monitor is redesigned.** A Harnu sidebar on the left shows the main-process heap (with its 70% and 85% marks), every Electron process with a bar, and the Harnu-plus-sessions total. A KPI strip on top of the right side gives total RAM (split between Harnu and sessions), CPU, and how many sessions are live and parked with the RAM that parking reclaimed. Sessions are now cards by default — each wearing its folder's colour, with a 60-second sparkline and a bar showing where its memory goes — or a table through the new Cards / Table toggle, which remembers your choice. Expanding a session still lists its own memory and its child processes, and Park now, Close and Test Harnu mod channel work as before. When the heap warns or goes critical, the sidebar gauge, its number and the header gauge turn amber or red with a warning icon.
 - **Scheduler folders and rows keep a steady order.** Folders stay alphabetical whatever is running or failing, and inside a folder the workers that are on sit above the ones that are off (pinned first within each), so nothing reshuffles under your pointer.
 
 ## 2026-10-29

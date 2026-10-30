@@ -8789,8 +8789,7 @@ var(--color-surface))`), sessions are `bg-accent`. A legend below: `Harnu {size}
   `size` is the sum of the known `savedBytes`. When no `savedBytes` is known the line is hidden —
   never `~0 MB`.
 
-All sums treat a `null` reading as "not counted", never as `0` in a displayed row; a total that
-has no known input at all renders `—`.
+All sums treat a `null` reading as "not counted", never as `0` in a displayed row. The CPU total renders `—` when no process reports a CPU reading (a platform without `/proc`), and the reclaimed line is hidden when no `savedBytes` is known.
 
 **Sessions header.** `SESSIONS` (same label style as the sidebar header), `{live} live · {size}`
 (`text-[11px] text-text-3`), a spacer, and the **Cards / Table segmented toggle**: an inline
