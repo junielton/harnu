@@ -5,10 +5,12 @@
  * list"; approved mockup `docs/specs/2026-10-29-scheduler-folders/`, revision 2).
  *
  * Two lines on one right edge, in a 46px row with 12px / 10px padding:
- * - line 1: the 14px pin slot (the list's ONE pin toggle), the name (ellipsis —
+ * - line 1 (a fixed 20px — see below): the 14px pin slot (the list's ONE pin toggle), the name (ellipsis —
  *   the only thing that ever shrinks) and the state (dot + label), right-aligned;
  * - line 2: `every · model · mode` and the run ticks in a fixed 48px box.
- * On hover the state gives its slot to Run now / Stop + Delete.
+ * On hover the state gives its slot to Run now / Stop + Delete. Line 1 is a fixed
+ * 20px and the 20px buttons fit it exactly, so the swap changes no box size and
+ * nothing moves (AC-8).
  *
  * Load-bearing per the contract:
  * - Selection is the `bg-surface` wash and nothing else — no accent rail, no
@@ -139,8 +141,8 @@ const stateLabel = computed(() => {
     @keydown.enter="emit('select')"
   >
     <div class="flex min-w-0 flex-1 flex-col gap-[3px]">
-      <!-- line 1: pin slot + name | state (or, on hover, the actions) -->
-      <div class="flex min-w-0 items-center gap-2">
+      <!-- line 1: pin slot + name | state (or, on hover, the actions). Fixed 20px so the swap moves nothing. -->
+      <div class="flex h-[20px] min-w-0 items-center gap-2" data-row-line1>
         <div
           class="flex min-w-0 flex-1 items-center gap-[5px] overflow-hidden text-[12px] font-medium text-text"
         >
@@ -178,13 +180,13 @@ const stateLabel = computed(() => {
         </div>
 
         <div
-          class="hidden shrink-0 gap-0.5 group-focus-within:flex group-hover:flex"
+          class="hidden h-[20px] shrink-0 gap-0.5 group-focus-within:flex group-hover:flex"
           data-row-actions
         >
           <button
             v-if="!running"
             type="button"
-            class="flex h-[22px] w-[22px] items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
+            class="flex h-[20px] w-[20px] items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
             :aria-label="t('scheduler.row.runNow')"
             :title="t('scheduler.row.runNow')"
             @click.stop="emit('run-now')"
@@ -194,7 +196,7 @@ const stateLabel = computed(() => {
           <button
             v-else
             type="button"
-            class="flex h-[22px] w-[22px] items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
+            class="flex h-[20px] w-[20px] items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
             :aria-label="t('scheduler.row.stop')"
             :title="t('scheduler.row.stop')"
             @click.stop="emit('stop')"
@@ -203,7 +205,7 @@ const stateLabel = computed(() => {
           </button>
           <button
             type="button"
-            class="flex h-[22px] w-[22px] items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-red"
+            class="flex h-[20px] w-[20px] items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-red"
             :aria-label="t('scheduler.row.delete')"
             :title="t('scheduler.row.delete')"
             @click.stop="emit('delete')"

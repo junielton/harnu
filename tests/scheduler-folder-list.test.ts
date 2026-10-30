@@ -127,7 +127,7 @@ afterEach(() => {
 })
 
 describe('folder groups (AC-1)', () => {
-  it('groups by folder; folders with a running or failing worker first, then alphabetical', async () => {
+  it('groups by folder in a fixed alphabetical order, whatever is running or failing', async () => {
     const w = await mountView(['b1'])
     expect(groupNames(w)).toEqual(['alpha', 'beta', 'delta', 'gamma'])
     w.unmount()
@@ -175,6 +175,58 @@ describe('folder groups (AC-1)', () => {
   it('default selection is the first row of the first folder', async () => {
     const w = await mountView()
     expect(useSchedulerStore().selectedId).toBe('a1')
+    w.unmount()
+  })
+})
+
+describe('group separator (AC-12)', () => {
+  // jsdom resolves no Tailwind, so the 1px line is asserted through its token classes.
+  const groups = (w: W): ReturnType<W['find']>[] => w.findAll('[data-folder-group]')
+  const separated = (g: ReturnType<W['find']>): boolean =>
+    g.classes().includes('border-b') && g.classes().includes('border-border')
+
+  async function expectSeparators(w: W): Promise<void> {
+    const all = groups(w)
+    expect(all.length).toBeGreaterThanOrEqual(3)
+    // every group draws a 1px token line under itself ...
+    for (const g of all) expect(separated(g)).toBe(true)
+    // ... except the last one, which must leave no stray line under the list
+    // (`last:border-b-0` rides on every group; `:last-child` picks the one that ends the list)
+    for (const g of all) expect(g.classes()).toContain('last:border-b-0')
+    // `last:` only works when the groups are the list's own children and the last one ends it
+    const list = w.get('[role="listbox"]').element
+    for (const g of all) expect(g.element.parentElement).toBe(list)
+    expect(list.lastElementChild).toBe(all[all.length - 1].element)
+  }
+
+  it('separates consecutive collapsed groups by 1px, with no extra line after the last', async () => {
+    localStorage.setItem(
+      FOLDERS_KEY,
+      JSON.stringify(['/org/alpha', '/org/beta', '/org/delta', '/org/gamma'])
+    )
+    const w = await mountView()
+    await expectSeparators(w)
+    // a collapsed header must not add its own line on top of the group's (that would be 2px)
+    for (const g of groups(w)) {
+      expect(g.get('[data-folder-header]').classes()).not.toContain('border-b')
+    }
+    w.unmount()
+  })
+
+  it('separates consecutive expanded groups by 1px, with no extra line after the last', async () => {
+    const w = await mountView()
+    await expectSeparators(w)
+    // expanded, the header keeps its own line above the rows
+    for (const g of groups(w)) {
+      expect(g.get('[data-folder-header]').classes()).toContain('border-b')
+    }
+    w.unmount()
+  })
+
+  it('keeps the separators when collapsed and expanded groups are mixed', async () => {
+    localStorage.setItem(FOLDERS_KEY, JSON.stringify(['/org/beta']))
+    const w = await mountView()
+    await expectSeparators(w)
     w.unmount()
   })
 })
@@ -476,6 +528,34 @@ describe('worker row (AC-5)', () => {
     w.unmount()
   })
 
+  it('fixes line 1 at 20px and sizes the state swap to fit, so hover moves nothing (AC-8)', async () => {
+    const w = await mountView(['b1'])
+    for (const name of ['worker-a1', 'worker-b1', 'worker-g1']) {
+      const row = rowFor(w, name)
+      const line1 = row.get('[data-row-line1]')
+      expect(line1.classes()).toContain('h-[20px]')
+      // the action buttons may not be taller than the line they swap into
+      for (const b of row.findAll('[data-row-actions] button')) {
+        expect(b.classes()).toContain('h-[20px]')
+        expect(b.classes()).not.toContain('h-[22px]')
+      }
+      expect(row.get('[data-row-actions]').classes()).toContain('h-[20px]')
+    }
+    w.unmount()
+  })
+
+  it('keeps enabled workers above off ones inside a folder, whatever their state (AC-9)', async () => {
+    state = [
+      worker('o1', '/org/alpha', { name: 'worker-o1', enabled: false }),
+      worker('e1', '/org/alpha', { name: 'worker-e1' }),
+      worker('o2', '/org/alpha', { name: 'worker-o2', enabled: false, pinnedAt: 7 }),
+      worker('e2', '/org/alpha', { name: 'worker-e2' })
+    ]
+    const w = await mountView(['e2'])
+    expect(rowNames(w)).toEqual(['worker-e1', 'worker-e2', 'worker-o2', 'worker-o1'])
+    w.unmount()
+  })
+
   it('uses uniform 12px left / 10px right padding on toolbar, chips, Up next, headers and rows', async () => {
     const w = await mountView()
     const row = rowFor(w, 'worker-a1')
@@ -508,6 +588,22 @@ describe('worker row (AC-5)', () => {
     const time = w.get('[data-up-next-row] span')
     expect(time.classes()).toEqual(expect.arrayContaining(['w-7', 'text-left']))
     expect(time.classes()).not.toContain('text-right')
+    w.unmount()
+  })
+})
+
+describe('search field focus (AC-11)', () => {
+  it('opts the input out of the global focus ring so only the wrapping label shows focus', async () => {
+    const w = await mountView()
+    const input = w.get('[data-list-search]')
+    expect(input.classes()).toContain('no-default-ring')
+    expect(input.element.closest('label')!.className).toContain('focus-within:border-accent-line')
+    w.unmount()
+  })
+
+  it('leaves the Collapse all button on the global keyboard ring', async () => {
+    const w = await mountView()
+    expect(w.get('[data-toggle-all]').classes()).not.toContain('no-default-ring')
     w.unmount()
   })
 })

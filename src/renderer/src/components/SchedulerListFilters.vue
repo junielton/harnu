@@ -64,7 +64,7 @@ const ACTIVE: Record<Chip, string> = {
         <Search :size="11" :stroke-width="1.8" class="shrink-0" aria-hidden="true" />
         <input
           type="text"
-          class="min-w-0 flex-1 bg-transparent text-[11px] text-text outline-none placeholder:text-text-4"
+          class="no-default-ring min-w-0 flex-1 bg-transparent text-[11px] text-text outline-none placeholder:text-text-4"
           :value="query"
           :placeholder="t('scheduler.list.searchPlaceholder')"
           :aria-label="t('scheduler.list.searchLabel')"
