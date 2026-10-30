@@ -127,7 +127,7 @@ afterEach(() => {
 })
 
 describe('folder groups (AC-1)', () => {
-  it('groups by folder; folders with a running or failing worker first, then alphabetical', async () => {
+  it('groups by folder in a fixed alphabetical order, whatever is running or failing', async () => {
     const w = await mountView(['b1'])
     expect(groupNames(w)).toEqual(['alpha', 'beta', 'delta', 'gamma'])
     w.unmount()
@@ -476,6 +476,34 @@ describe('worker row (AC-5)', () => {
     w.unmount()
   })
 
+  it('fixes line 1 at 20px and sizes the state swap to fit, so hover moves nothing (AC-8)', async () => {
+    const w = await mountView(['b1'])
+    for (const name of ['worker-a1', 'worker-b1', 'worker-g1']) {
+      const row = rowFor(w, name)
+      const line1 = row.get('[data-row-line1]')
+      expect(line1.classes()).toContain('h-[20px]')
+      // the action buttons may not be taller than the line they swap into
+      for (const b of row.findAll('[data-row-actions] button')) {
+        expect(b.classes()).toContain('h-[20px]')
+        expect(b.classes()).not.toContain('h-[22px]')
+      }
+      expect(row.get('[data-row-actions]').classes()).toContain('h-[20px]')
+    }
+    w.unmount()
+  })
+
+  it('keeps enabled workers above off ones inside a folder, whatever their state (AC-9)', async () => {
+    state = [
+      worker('o1', '/org/alpha', { name: 'worker-o1', enabled: false }),
+      worker('e1', '/org/alpha', { name: 'worker-e1' }),
+      worker('o2', '/org/alpha', { name: 'worker-o2', enabled: false, pinnedAt: 7 }),
+      worker('e2', '/org/alpha', { name: 'worker-e2' })
+    ]
+    const w = await mountView(['e2'])
+    expect(rowNames(w)).toEqual(['worker-e1', 'worker-e2', 'worker-o2', 'worker-o1'])
+    w.unmount()
+  })
+
   it('uses uniform 12px left / 10px right padding on toolbar, chips, Up next, headers and rows', async () => {
     const w = await mountView()
     const row = rowFor(w, 'worker-a1')
@@ -508,6 +536,22 @@ describe('worker row (AC-5)', () => {
     const time = w.get('[data-up-next-row] span')
     expect(time.classes()).toEqual(expect.arrayContaining(['w-7', 'text-left']))
     expect(time.classes()).not.toContain('text-right')
+    w.unmount()
+  })
+})
+
+describe('search field focus (AC-11)', () => {
+  it('opts the input out of the global focus ring so only the wrapping label shows focus', async () => {
+    const w = await mountView()
+    const input = w.get('[data-list-search]')
+    expect(input.classes()).toContain('no-default-ring')
+    expect(input.element.closest('label')!.className).toContain('focus-within:border-accent-line')
+    w.unmount()
+  })
+
+  it('leaves the Collapse all button on the global keyboard ring', async () => {
+    const w = await mountView()
+    expect(w.get('[data-toggle-all]').classes()).not.toContain('no-default-ring')
     w.unmount()
   })
 })

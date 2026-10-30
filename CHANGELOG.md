@@ -10,16 +10,27 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-30
+
+### Fixed
+
+- **Hovering a Scheduler row no longer makes the list jump.** The row's state label and its Run now / Delete buttons now share a fixed-height line, so swapping them on hover or keyboard focus moves nothing.
+- **The Scheduler search field no longer shows a box inside a box when focused.** Only the field's own border lights up; the Collapse all button keeps its keyboard focus ring.
+
+### Changed
+
+- **Scheduler folders and rows keep a steady order.** Folders stay alphabetical whatever is running or failing, and inside a folder the workers that are on sit above the ones that are off (pinned first within each), so nothing reshuffles under your pointer.
+
 ## 2026-10-29
 
 ### Added
 
-- **The Scheduler's worker list is grouped by folder.** Instead of one flat Pinned / Enabled / Off list, each folder gets a tinted header with its initial, worker count, git branch, how many workers are on and off, when the next run is due, **failing** / **running** pills and a small health bar — and folders with something running or failing come first. Click a header to fold a folder; a button next to the new search field folds or opens them all, and Harnu remembers what you folded. The search matches worker names, folders and prompts, and the **Running · Failing · Waiting · Off** chips show live counts (click the active chip to clear it). An **Up next** strip lists the next four runs across every folder and folds to a one-line summary.
+- **The Scheduler's worker list is grouped by folder.** Instead of one flat Pinned / Enabled / Off list, each folder gets a tinted header with its initial, worker count, git branch, how many workers are on and off, when the next run is due, **failing** / **running** pills and a small health bar — in a fixed alphabetical order that never reshuffles while workers run or fail. Click a header to fold a folder; a button next to the new search field folds or opens them all, and Harnu remembers what you folded. The search matches worker names, folders and prompts, and the **Running · Failing · Waiting · Off** chips show live counts (click the active chip to clear it). An **Up next** strip lists the next four runs across every folder and folds to a one-line summary.
 - **Each Scheduler row shows how the worker has been doing.** A row is two lines on one right edge: the worker's name and state, then `every 30m · haiku · observe` (an `act` worker in amber) with a tick for each of its last ten runs — green ok, red failed, amber timed out, pulsing green running. The history now loads for every worker, not only the selected one.
 
 ### Changed
 
-- A pinned Scheduler worker now sorts first inside its folder instead of living in a separate **Pinned** group, and the pin is one button in front of the worker's name (accent when pinned, dim otherwise; the hover actions are just **Run now** / **Stop** and **Delete**). The **Enabled** and **Off** groups are gone (use the **Off** chip), the old last-result line is not on the row, and the selected row is marked by its background alone — the thin accent line on its left edge is gone from this list.
+- A pinned Scheduler worker now sorts first inside its folder's on or off group instead of living in a separate **Pinned** group; inside a folder, workers that are on are listed above workers that are off, and running, waiting or failing never moves a row, and the pin is one button in front of the worker's name (accent when pinned, dim otherwise; the hover actions are just **Run now** / **Stop** and **Delete**). The **Enabled** and **Off** groups are gone (use the **Off** chip), the old last-result line is not on the row, and the selected row is marked by its background alone — the thin accent line on its left edge is gone from this list.
 
 ### Fixed
 

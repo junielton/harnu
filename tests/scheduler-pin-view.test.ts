@@ -102,7 +102,8 @@ describe('pinned workers inside a folder (T590 AC-6)', () => {
 
   it('pinning from the pin slot pins the worker and sorts it first (AC-6)', async () => {
     const w = await mountView()
-    expect(rowNames(w)).toEqual(['worker-a', 'worker-b', 'worker-c', 'worker-d'])
+    // enabled band first (a, c), then the off band (b, d) — storage order inside each
+    expect(rowNames(w)).toEqual(['worker-a', 'worker-c', 'worker-b', 'worker-d'])
     const rowC = w.findAll('[role="option"]').find((r) => r.text().includes('worker-c'))!
     await rowC.get('[data-action="pin"]').trigger('click')
     await settle()
@@ -125,7 +126,7 @@ describe('pinned workers inside a folder (T590 AC-6)', () => {
     w.unmount()
   })
 
-  it('orders pinned workers by pinnedAt ascending, ahead of the rest', async () => {
+  it('orders pinned workers by pinnedAt ascending, ahead of the rest of their enabled / off band', async () => {
     state = [
       worker('a', true, 300),
       worker('b', false, 100),
@@ -133,11 +134,11 @@ describe('pinned workers inside a folder (T590 AC-6)', () => {
       worker('d', true)
     ]
     const w = await mountView()
-    expect(rowNames(w)).toEqual(['worker-b', 'worker-c', 'worker-a', 'worker-d'])
+    expect(rowNames(w)).toEqual(['worker-c', 'worker-a', 'worker-d', 'worker-b'])
     w.unmount()
   })
 
-  it('unpinning from the pin slot returns the worker to storage order', async () => {
+  it('unpinning from the pin slot returns the worker to its place in its enabled / off band', async () => {
     state = [worker('a', true, 1), worker('b', false, 2), worker('c', true)]
     const w = await mountView()
     for (const r of w
@@ -147,7 +148,7 @@ describe('pinned workers inside a folder (T590 AC-6)', () => {
     }
     await settle()
     expect(pinnedNames(w)).toEqual([])
-    expect(rowNames(w)).toEqual(['worker-a', 'worker-b', 'worker-c'])
+    expect(rowNames(w)).toEqual(['worker-a', 'worker-c', 'worker-b'])
     w.unmount()
   })
 })

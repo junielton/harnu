@@ -174,7 +174,12 @@ export interface FolderGroup {
   health: { running: number; failing: number; waiting: number; off: number }
 }
 
-function pinOrder(a: ListEntry, b: ListEntry): number {
+/**
+ * Inside a folder: enabled workers above off ones; within each band, pinned first
+ * (by `pinnedAt`), then storage order. Runtime state never decides a position.
+ */
+function rowOrder(a: ListEntry, b: ListEntry): number {
+  if (a.worker.enabled !== b.worker.enabled) return a.worker.enabled ? -1 : 1
   const pa = typeof a.worker.pinnedAt === 'number' ? a.worker.pinnedAt : Infinity
   const pb = typeof b.worker.pinnedAt === 'number' ? b.worker.pinnedAt : Infinity
   if (pa === pb) return 0
@@ -182,9 +187,10 @@ function pinOrder(a: ListEntry, b: ListEntry): number {
 }
 
 /**
- * Group by folder. Folders holding a running or failing worker come first, then
- * alphabetical by folder name. Inside a folder a pinned worker sorts first (by
- * `pinnedAt`), then storage order — the Pinned and Enabled/Off groups are gone.
+ * Group by folder, in a fixed order: alphabetical by folder name, then path —
+ * activity never moves a folder. Inside a folder enabled workers sit above off
+ * ones, and within each band a pinned worker sorts first (by `pinnedAt`), then
+ * storage order — see `rowOrder`.
  */
 export function buildFolderGroups(
   entries: readonly ListEntry[],
@@ -201,7 +207,7 @@ export function buildFolderGroups(
   for (const [path, list] of byPath) {
     const { name, branch } = info(path)
     // `Array.prototype.sort` is stable, so equal pin times keep storage order.
-    const sorted = [...list].sort(pinOrder)
+    const sorted = [...list].sort(rowOrder)
     const total = sorted.length
     let on = 0
     let running = 0
@@ -255,14 +261,11 @@ export function buildFolderGroups(
     })
   }
 
-  const hot = (g: FolderGroup): boolean => g.running > 0 || g.failing > 0
-  return groups.sort((a, b) => {
-    if (hot(a) !== hot(b)) return hot(a) ? -1 : 1
-    return (
+  return groups.sort(
+    (a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
       a.path.localeCompare(b.path)
-    )
-  })
+  )
 }
 
 /** The default selection is the first row in display order: the first row of the first folder. */

@@ -11906,8 +11906,10 @@ worker name (`--text`, ellipsised), and the folder name right-aligned in `var(--
 chip or a search is active (it answers "what is next", not "what matches"). Collapsed
 state persists per viewer like the folder groups.
 
-**Folder group.** One per folder, in this order: folders holding a **running or failing** worker first,
-then alphabetical by folder name. Hue per §2 "Folder hue". The group root sets `--fh`.
+**Folder group.** One per folder, in a **fixed order: alphabetical by folder name, then by path.** Activity
+never reorders folders — a folder that starts running or failing keeps its place, and its header pills say
+what is happening (a list that reshuffles under the pointer is unreadable). Hue per §2 "Folder hue". The
+group root sets `--fh`.
 
 - **Header** — `44px`, `padding: 0 10px 0 12px`, `gap: 8px`, `border-b border-border`, `cursor: pointer`,
   background `color-mix(in srgb, var(--fh) 7%, var(--color-surface))`, a **3px `::before` stripe** in
@@ -11929,9 +11931,11 @@ then alphabetical by folder name. Hue per §2 "Folder hue". The group root sets 
   `om2tab.scheduler.upNextCollapsed`), every access in try/catch, default expanded. **Collapsing never
   changes the selection:** the detail stays on the selected worker even when its row is hidden. Collapse and filters are independent: a filter narrows what a group holds, a collapsed group stays collapsed (its header pills still say what matched).
 
-**Pinned workers (T483, reshaped).** There are no Pinned or Enabled/Off groups any more. A pinned worker
-**sorts first inside its folder**, by `pinnedAt` ascending (first pinned stays first — no drag-reorder in
-v1); then the rest in storage order. The pin itself is the row's **one pin toggle** (below). The detail
+**Row order inside a folder (T483, reshaped; revision 3).** There are no Pinned or Enabled/Off group
+headers, but there are two silent **bands**: **enabled workers sit above off workers**. Within each band a
+pinned worker **sorts first**, by `pinnedAt` ascending (first pinned stays first — no drag-reorder in v1);
+then the rest in storage order. So the order is: pinned on · on · pinned off · off. **Runtime state
+(running, waiting, failing) never moves a row** — only `enabled` and `pinnedAt` do. The pin itself is the row's **one pin toggle** (below). The detail
 pane's pin toggle is unchanged. The default selection is the first row in display order (the first row of
 the first folder).
 
@@ -11939,7 +11943,7 @@ the first folder).
 `cursor: pointer`, `position: relative`). **Two lines on one right edge**, in a flex column (`gap: 3px`,
 min-width 0):
 
-- **Line 1** (flex, `gap: 8px`): the **pin slot** + the **name** (12px/500 `--text`, ellipsised) on the
+- **Line 1** (flex, `gap: 8px`, **a fixed `20px` high**): the **pin slot** + the **name** (12px/500 `--text`, ellipsised) on the
   left, the **state** (6px dot + label, 11px, one of the five states below) right-aligned. The pin slot is
   **reserved on every row** — `14×14px`, `margin-left: -2px` (so the 10px glyph's ink lines up with the
   folder avatar's edge), `rounded-sm` — so names line up whether or not a worker is pinned.
@@ -11994,9 +11998,17 @@ folder header's 3px stripe is a different element and is unchanged.
 keyboard focus within the row (the mockup's `.is-hovered` is a screenshot aid for the same state): **Run
 now** / **Stop** (`Play` / `Square`, `.iconbtn`, `--text-3` at rest, `--text` on hover) and **Delete**
 (`Trash2`, `.iconbtn.is-danger` — `--text-3` at rest, `--red` on hover). **Pin is not here** — the slot before
-the name is the one pin. `22×22px`, `hover:bg-surface-2`. The actions cluster **takes the state's slot** on
-line 1 — the state is hidden while the cluster shows. They are `display: none`, never `opacity: 0`: an
-invisible cluster would still reserve width on line 1 and squeeze the name.
+the name is the one pin. `20×20px` — exactly the line-1 height — `hover:bg-surface-2`. The actions cluster
+**takes the state's slot** on line 1 — the state is hidden while the cluster shows. They are
+`display: none`, never `opacity: 0`: an invisible cluster would still reserve width on line 1 and squeeze
+the name. **Hover and focus change no box size:** line 1 is `20px` at rest and on hover, and the buttons
+fit inside it, so the swap moves neither the row nor anything on it or below it (the row is `46px`
+regardless). Pinned by `tests/e2e/ci/scheduler-row-hover.spec.ts`, which compares every row's and every
+inner box's `getBoundingClientRect` before and after hover and focus.
+
+**Search field focus.** The field's focus shows once, on the wrapping label (`focus-within:border-accent-line`).
+The `<input>` carries `no-default-ring` so the global `:focus-visible` outline does not draw a second box
+inside the first. The **Collapse all** button next to it keeps the global keyboard ring.
 
 **Empty states.** No worker matches the search or chip: a centred block (`padding: 40px 20px`, 12px
 `--text-3`) — `No worker matches “{q}”` in `--text-2`/500 over `Search covers worker names, folders and

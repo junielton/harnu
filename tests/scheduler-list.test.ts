@@ -255,7 +255,7 @@ describe('buildFolderGroups (AC-1, AC-6)', () => {
     expect(beta.branch).toBeNull()
   })
 
-  it('sorts folders holding a running or failing worker first, then alphabetically', () => {
+  it('keeps folders alphabetical by name, then path — running or failing never moves a folder (AC-10)', () => {
     const groups = buildFolderGroups(
       [
         entry(worker('1', { folder: '/org/zeta' })),
@@ -266,7 +266,32 @@ describe('buildFolderGroups (AC-1, AC-6)', () => {
       ],
       info
     )
-    expect(groups.map((g) => g.name)).toEqual(['gamma', 'omega', 'alpha', 'beta', 'zeta'])
+    expect(groups.map((g) => g.name)).toEqual(['alpha', 'beta', 'gamma', 'omega', 'zeta'])
+  })
+
+  it('breaks a name tie by path (AC-10)', () => {
+    const groups = buildFolderGroups(
+      [
+        entry(worker('1', { folder: '/org-b/www' })),
+        entry(worker('2', { folder: '/org-a/www' }), { running: true })
+      ],
+      info
+    )
+    expect(groups.map((g) => g.path)).toEqual(['/org-a/www', '/org-b/www'])
+  })
+
+  it('a folder keeps its place when a worker starts running or fails (AC-10)', () => {
+    const idle = [
+      entry(worker('1', { folder: '/org/alpha' })),
+      entry(worker('2', { folder: '/org/zeta' }))
+    ]
+    const busy = [
+      entry(worker('1', { folder: '/org/alpha' })),
+      entry(worker('2', { folder: '/org/zeta' }), { running: true })
+    ]
+    expect(buildFolderGroups(busy, info).map((g) => g.path)).toEqual(
+      buildFolderGroups(idle, info).map((g) => g.path)
+    )
   })
 
   it('sorts a pinned worker first inside its folder, by pinnedAt, then storage order (AC-6)', () => {
@@ -280,6 +305,47 @@ describe('buildFolderGroups (AC-1, AC-6)', () => {
       info
     )
     expect(groups[0].entries.map((e) => e.worker.id)).toEqual(['d', 'b', 'a', 'c'])
+  })
+
+  it('sorts enabled workers above off workers inside a folder (AC-9)', () => {
+    const groups = buildFolderGroups(
+      [
+        entry(worker('a', { enabled: false })),
+        entry(worker('b')),
+        entry(worker('c', { enabled: false })),
+        entry(worker('d'))
+      ],
+      info
+    )
+    expect(groups[0].entries.map((e) => e.worker.id)).toEqual(['b', 'd', 'a', 'c'])
+  })
+
+  it('pins sort first inside each band: pinned on, on, pinned off, off (AC-9)', () => {
+    const groups = buildFolderGroups(
+      [
+        entry(worker('a', { enabled: false })),
+        entry(worker('b', { enabled: false, pinnedAt: 50 })),
+        entry(worker('c')),
+        entry(worker('d', { pinnedAt: 200 })),
+        entry(worker('e', { pinnedAt: 100 })),
+        entry(worker('f', { enabled: false, pinnedAt: 10 }))
+      ],
+      info
+    )
+    expect(groups[0].entries.map((e) => e.worker.id)).toEqual(['e', 'd', 'c', 'f', 'b', 'a'])
+  })
+
+  it('running, waiting and failing never move a row — only enabled and pinnedAt do (AC-9)', () => {
+    const idle = [entry(worker('a')), entry(worker('b')), entry(worker('c'))]
+    const busy = [
+      entry(worker('a')),
+      entry(worker('b'), { running: true }),
+      entry(worker('c'), { runs: [run('c', 'error', 1)] })
+    ]
+    const ids = (list: ListEntry[]): string[] =>
+      buildFolderGroups(list, info)[0].entries.map((e) => e.worker.id)
+    expect(ids(busy)).toEqual(ids(idle))
+    expect(ids(busy)).toEqual(['a', 'b', 'c'])
   })
 
   it('a pinned OFF worker still lives in its folder, not in a separate group (AC-6)', () => {
@@ -335,6 +401,23 @@ describe('defaultSelectionId', () => {
       info
     )
     expect(defaultSelectionId(groups)).toBe('c')
+  })
+  it('follows the fixed folder order — a running folder further down is not selected (AC-10)', () => {
+    const groups = buildFolderGroups(
+      [
+        entry(worker('a', { folder: '/org/alpha' })),
+        entry(worker('z', { folder: '/org/zeta' }), { running: true })
+      ],
+      info
+    )
+    expect(defaultSelectionId(groups)).toBe('a')
+  })
+  it('lands on the first enabled worker when the stored first one is off (AC-9)', () => {
+    const groups = buildFolderGroups(
+      [entry(worker('off', { enabled: false })), entry(worker('on'))],
+      info
+    )
+    expect(defaultSelectionId(groups)).toBe('on')
   })
   it('is null for an empty list', () => {
     expect(defaultSelectionId([])).toBeNull()
