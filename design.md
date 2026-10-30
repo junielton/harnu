@@ -11911,7 +11911,13 @@ never reorders folders — a folder that starts running or failing keeps its pla
 what is happening (a list that reshuffles under the pointer is unreadable). Hue per §2 "Folder hue". The
 group root sets `--fh`.
 
-- **Header** — `44px`, `padding: 0 10px 0 12px`, `gap: 8px`, `border-b border-border`, `cursor: pointer`,
+- **Separator between groups** — the group root carries `border-b border-border last:border-b-0`: a 1px
+  token line under every group except the last, so consecutive folder groups never touch (collapsed, the
+  tinted headers would otherwise read as one block) and nothing is drawn under the list. The groups are
+  direct children of the scrolling list, which is what makes `last:` pick the final one.
+- **Header** — `44px`, `padding: 0 10px 0 12px`, `gap: 8px`, `border-b border-border` **only while
+  expanded** (it separates the header from its rows; collapsed, the group's own line is the only one, so it
+  never doubles to 2px), `cursor: pointer`,
   background `color-mix(in srgb, var(--fh) 7%, var(--color-surface))`, a **3px `::before` stripe** in
   `var(--fh)` on the left edge. A `<button>` (`aria-expanded`) toggling the group.
   - **Avatar** `22×22px`, `rounded-sm`, the folder's first letter uppercased, 11px/700 `var(--fh)` on

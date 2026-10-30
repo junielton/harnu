@@ -179,6 +179,58 @@ describe('folder groups (AC-1)', () => {
   })
 })
 
+describe('group separator (AC-12)', () => {
+  // jsdom resolves no Tailwind, so the 1px line is asserted through its token classes.
+  const groups = (w: W): ReturnType<W['find']>[] => w.findAll('[data-folder-group]')
+  const separated = (g: ReturnType<W['find']>): boolean =>
+    g.classes().includes('border-b') && g.classes().includes('border-border')
+
+  async function expectSeparators(w: W): Promise<void> {
+    const all = groups(w)
+    expect(all.length).toBeGreaterThanOrEqual(3)
+    // every group draws a 1px token line under itself ...
+    for (const g of all) expect(separated(g)).toBe(true)
+    // ... except the last one, which must leave no stray line under the list
+    // (`last:border-b-0` rides on every group; `:last-child` picks the one that ends the list)
+    for (const g of all) expect(g.classes()).toContain('last:border-b-0')
+    // `last:` only works when the groups are the list's own children and the last one ends it
+    const list = w.get('[role="listbox"]').element
+    for (const g of all) expect(g.element.parentElement).toBe(list)
+    expect(list.lastElementChild).toBe(all[all.length - 1].element)
+  }
+
+  it('separates consecutive collapsed groups by 1px, with no extra line after the last', async () => {
+    localStorage.setItem(
+      FOLDERS_KEY,
+      JSON.stringify(['/org/alpha', '/org/beta', '/org/delta', '/org/gamma'])
+    )
+    const w = await mountView()
+    await expectSeparators(w)
+    // a collapsed header must not add its own line on top of the group's (that would be 2px)
+    for (const g of groups(w)) {
+      expect(g.get('[data-folder-header]').classes()).not.toContain('border-b')
+    }
+    w.unmount()
+  })
+
+  it('separates consecutive expanded groups by 1px, with no extra line after the last', async () => {
+    const w = await mountView()
+    await expectSeparators(w)
+    // expanded, the header keeps its own line above the rows
+    for (const g of groups(w)) {
+      expect(g.get('[data-folder-header]').classes()).toContain('border-b')
+    }
+    w.unmount()
+  })
+
+  it('keeps the separators when collapsed and expanded groups are mixed', async () => {
+    localStorage.setItem(FOLDERS_KEY, JSON.stringify(['/org/beta']))
+    const w = await mountView()
+    await expectSeparators(w)
+    w.unmount()
+  })
+})
+
 describe('collapse (AC-2)', () => {
   it('a folder collapses from its header, persists, and never changes the selection', async () => {
     const w = await mountView()

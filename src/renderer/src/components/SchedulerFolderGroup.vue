@@ -7,7 +7,10 @@
  * The 44px header carries the folder's identity — a stripe, an avatar and a wash
  * in the folder hue — plus its health at a glance: branch, on/off counts, the
  * next run, failing / running pills and a proportional health bar. The rows are
- * the default slot, hidden while the group is collapsed. The hue is the single
+ * the default slot, hidden while the group is collapsed. A 1px token line under the
+ * group (none under the last) keeps consecutive groups from reading as one block; the
+ * header's own line above the rows only exists while expanded, so it never doubles up.
+ * The hue is the single
  * custom property `--fh`, set by the `.fh-*` helper class on the root (design.md
  * §2 "Folder hue"); nothing in here names a raw colour.
  */
@@ -42,7 +45,7 @@ const pct = (fraction: number): string => `${fraction * 100}%`
 
 <template>
   <div
-    class="relative"
+    class="relative border-b border-border last:border-b-0"
     :class="`fh-${group.hue}`"
     role="group"
     :aria-label="group.name"
@@ -51,7 +54,8 @@ const pct = (fraction: number): string => `${fraction * 100}%`
   >
     <button
       type="button"
-      class="relative flex h-11 w-full items-center gap-2 border-b border-border bg-[color-mix(in_srgb,var(--fh)_7%,var(--color-surface))] pl-3 pr-2.5 text-left"
+      class="relative flex h-11 w-full items-center gap-2 bg-[color-mix(in_srgb,var(--fh)_7%,var(--color-surface))] pl-3 pr-2.5 text-left"
+      :class="collapsed ? '' : 'border-b border-border'"
       :aria-expanded="!collapsed"
       :aria-label="
         collapsed

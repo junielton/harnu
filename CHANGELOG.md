@@ -16,6 +16,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **Hovering a Scheduler row no longer makes the list jump.** The row's state label and its Run now / Delete buttons now share a fixed-height line, so swapping them on hover or keyboard focus moves nothing.
 - **The Scheduler search field no longer shows a box inside a box when focused.** Only the field's own border lights up; the Collapse all button keeps its keyboard focus ring.
+- **Scheduler folder groups are now separated by a 1px line.** Collapsed folder headers no longer touch and read as one block; the line holds expanded too, and nothing is drawn under the last group.
 
 ### Changed
 
