@@ -180,7 +180,7 @@ Three consequences of the owner-approved Brand v0 values (2026-10-03):
 ### Folder hue (T590)
 
 A **folder** (a repo or directory the app tracks work in) can carry an identity colour when a surface
-groups rows by folder — today the Scheduler worker list (§6 "Scheduler (takeover)"). The colour is
+groups rows by folder — today the Scheduler worker list (§6 "Scheduler (takeover)") and the System Monitor's session cards and rows (§6 "System Monitor (takeover)"). The helper is shared: `lib/folder-hue.ts`. The colour is
 **a hue, not a status**: it never says "ok" or "broken", only "this is the same folder as the row above".
 
 - **Source: the terminal ANSI palette (`--term-ansi-*`, §9).** It is already defined in every theme, so a
@@ -8710,122 +8710,249 @@ markup; the accessible label (`footer.a11yHeapGauge`) goes through `$t()`.
 
 ### System Monitor (takeover)
 
-A Chrome-task-manager-style live view of every process's resource cost — the answer to
-"what's using RAM/CPU right now, and why", built after Harnu's main process OOM'd on
-2026-07-14 with zero visibility while it was forming (`docs/specs/T127-system-monitor.md`).
-This is the **observe + act** surface — per-row Park now/Close ship in this slice;
-the footer heap gauge is another (S3). The hibernation-policy editor these actions feed into
-is a dedicated Settings tab, documented below (§ "Hibernation policy pane").
+A live view of every process's resource cost — the answer to "what's using RAM/CPU right now,
+and why", built after Harnu's main process OOM'd on 2026-07-14 with zero visibility while it
+was forming (`docs/specs/T127-system-monitor.md`). This is the **observe + act** surface —
+per-session Park now/Close live here; the footer heap gauge is another way in (S3). The
+hibernation-policy editor these actions feed into is a dedicated Settings tab, documented
+below (§ "Hibernation policy pane").
 
-**Visual pattern: main-pane takeover, not a modal.** `TakeoverShell` chrome (T300/U3,
-see "TakeoverShell — shared chrome" above) — replaces the `<main>` content (sidebar and
-topbar stay visible), icon `Cpu`, a title, close `X`. Teleported into the shell's
-header: an inline heap gauge, only rendered once the first heap sample has arrived. Body
-`overflow-y-auto` with a sticky column header. A footer bar states the sampling cadence
-and links to the hibernation policy editor in Settings.
+The layout is the approved mockup **f--combinada** (T591, `docs/specs/2026-10-30-system-monitor/`):
+a Harnu sidebar on the left, a KPI strip on top of the right side, and the sessions below as
+**cards** (default) or a **table**. The flat four-column table that preceded it is gone.
+
+**Visual pattern: main-pane takeover, not a modal.** `TakeoverShell` chrome (T300/U3, see
+"TakeoverShell — shared chrome" above) — replaces the `<main>` content (the app sidebar and
+topbar stay visible), icon `Cpu`, a title, close `X`. Teleported into the shell's header
+(`#takeover-shell-actions`): the summary `{n} processes · {live} live · {parked} parked`
+(`text-[11px] text-text-3`), a spacer, and the **header heap gauge** — `heap`, a 96×6px track
+and the %, `font-mono text-[11.5px]`, rendered only once the first heap sample has arrived.
+The body is one `overflow-y-auto` scroller holding the two columns; a footer bar states the
+sampling cadence and links to the hibernation policy editor in Settings.
 
 **Data source: the two S1 cadences, both fed into `stores/monitor.ts`.** `monitor:heap`
-(always-on, 30s, `v8.getHeapStatistics()` only) feeds the heap gauge; `monitor:sample`
-(1–2s, `app.getAppMetrics()` + a `/proc` walk) feeds the table — but only while this
+(always-on, 30s, `v8.getHeapStatistics()` only) feeds the heap gauges; `monitor:sample`
+(1–2s, `app.getAppMetrics()` + a `/proc` walk) feeds everything else — but only while this
 takeover is mounted and the window is focused. `SystemMonitor.vue` acquires the full
 sampler (`monitorStart()`) on mount and on window `focus`, and releases it
 (`monitorStop()`) on unmount and on window `blur` — a local `acquired` boolean guards
 against a double-acquire (main's refcount only balances 1:1; an extra release is
 harmless — `Math.max(0, refcount - 1)` — but an extra acquire would leak a live
-refcount that never reaches zero).
+refcount that never reaches zero). Nothing in this redesign samples more often or reads more
+from `/proc`: every number is derived from the payload that already arrives.
 
-**Row model — two groups, one row shape (`SystemMonitorRow`).** A 4-column grid (Name /
-RAM / CPU / State-detail), default-sorted RAM descending (`null` — unmeasured or
-parked — always sorts last, never mixed with real numbers):
+**Layout.** A two-column grid inside the body: `grid-cols-[320px_1fr]`, stacking to one
+column below a **1000px window width** (`max-[1000px]:grid-cols-1`; the sidebar then sits
+above the KPI strip). The left column is `bg-sidebar` with a `border-r border-border`,
+`p-4`, `gap-4`. The right column is `p-4` (`px-[18px]`), `gap-3.5`, `min-w-0`.
 
-- **Harnu group** — one row per Electron process (`main` / `renderer` / `GPU` /
-  `network` / …, from `app.getAppMetrics()`, untranslated technical labels). The
-  `main` row alone carries the inline heap gauge (track + %, `--warning` at `warn`,
-  `--red` at `critical`, a `TriangleAlert` icon when non-`ok`) — this is the exact
-  2026-07-14 OOM signal made visible.
-- **Harnu mod cell (T389 P1W4).** A live session row's state-detail column gains one
-  `text-[11px] text-text-3` span after the state pip: **Harnu mod live** / **off** /
-  **legacy**, with the reason in the `title` tooltip (`harnuMod.reason.*`). Same rule as
-  the hover preview: `legacy` is quiet, never `--warning` or `--red`; nothing renders when
-  the state is `null`. `SystemMonitorRow` takes it as an optional `companion` prop and
-  `SystemMonitor` reads `stores/companion.ts`; parked rows show none.
-- **Test Harnu mod channel (T389 P2W1).** A live row whose Harnu mod state is `live` gains one
-  more per-row action beside Park now and Close: a `RadioTower`-icon button, `22×22px`,
-  `hover:bg-surface-2`, `--text-3` glyph, revealed on row hover like the other two (a `22×22px`
-  placeholder keeps the pip aligned on rows without it). It sends the session a `flush` and a
-  terminal toast and answers with one Harnu toast: `info` "Harnu mod channel answered in {ms} ms",
-  or `warning` "Harnu mod channel did not answer" / "…is not available: {reason}". The reason
-  comes from a fixed three-word map (`legacy`, `shadow`, `headless`), never from text the session
-  sent. In the terminal the session shows the line `harnu-companion: Harnu mod channel check`
-  for the default 4 s; the engine draws the prefix. There is no abort or compact control: none is
-  designed yet. No new token, size or motion.
-- **Sessions group** — one row per live-or-parked session. **Live**, expandable
-  (`ChevronRight`/`ChevronDown`) into its real `/proc` descendants (flat list, `└`
-  prefix, no further nesting) when it has any. Name is the owning folder's alias (or a
-  path-basename fallback) + `· <branch>`, mirroring the sidebar's own labeling.
-  **Own-memory row.** `sampler.ts` deliberately excludes the session's root pid from
-  its descendant list (its cost rolls into the row's own total instead) — expanded
-  without explanation, that reads as the children silently not summing to the parent.
-  The first row under an expanded session is therefore a synthetic **own memory**
-  row (`system-monitor-format.ts#selfSample`: the row's total minus every listed
-  descendant, `null` — never a misleading `0` — if any one reading is unknown) with a
-  `•` marker instead of `└` and muted italic text so it never reads as a real `/proc`
-  entry; hovering the label explains what it is. This is a client-side subtraction
-  over numbers already sampled — no extra `/proc` reads, no added sampling cost.
-  **Parked**: `procs` is always empty (no caret), RAM/CPU render as an em-dash
-  (`—`, `system-monitor-format.ts#formatBytes/formatPct` — never a false `0`), and a
-  second `<tr>` right below it explains why: the policy `reason` chip, the RAM
-  reclaimed (`savedBytes`, when known — `"saved ~290 MB"`, `--color-green`), and a
-  hint to wake it by selecting it in the sidebar. **Live + a sweep candidate**
-  (`reason` is `'lru'`/`'hard-idle'`) gets the same reason chip plus its idle duration
-  inline next to the state pip, rather than a whole explain row — that distinction
-  stays exclusive to already-parked rows, both because the row has room and because a
-  parked row's idle clock has stopped. A live row whose `sweepRank === 1` (the
-  coldest hard-idle candidate — i.e. `evaluateFleet`'s next actual sweep victim) gets
-  a small `--warning` "next to be swept" note.
-- **Per-row actions.** A live, resumable session row (`parkable: true`)
-  gets a `Pause`-icon **Park now** button (`--warning`); every session row gets an
-  `X`-icon **Close** button (`--red`). Both render at `22×22px`, `hover:bg-surface-2`,
-  invisible at rest and revealed on row hover (`opacity-0 group-hover:opacity-100`,
-  `transition`) so the table reads clean when nothing is being acted on — the exact
-  `.actions`-on-hover mockup S2 shaped the row's 4-column layout for. The Park slot
-  always reserves its `22×22px` box (an invisible placeholder when the row isn't
-  parkable) so the state pip lands at the same x position for every session row,
-  parkable or not — a row-to-row-varying actions width would otherwise shift the
-  right-justified state pip out of alignment. **Park now**
-  kills the session's PTY (`ptyDestroy`) then flags it parked (`monitor:park`); the
-  row shows an em-dash + reason on the very next sample, same as an auto-parked
-  session. **Close** calls the sidebar's own `closeSession` — no new verb, matching
-  §3's "wake reuses the existing select-the-session path" posture for the whole
-  action surface.
+#### Left column — the Harnu sidebar
 
-**Group headers** are a plain `<tr colspan="4">` (`bg-surface`, `--text-3` uppercase
-11px), showing the running totals (`{n} processes · {size}"`, `"{live} live · {n}
-parked"`) — same visual grammar as a table section break elsewhere in the app.
+Top to bottom, `gap-4`:
 
-**RAM column hint.** An 11px `Info` glyph sits right of the "RAM" header label
-(`normal-case`, `--text-4`, `cursor-help`), carrying a native-title tooltip that
-explains the number is per-process RSS summed across rows — shared libraries get
-counted once per process that holds them, so the total can read higher than an
-OS-level tool (KDE System Monitor, `htop`) that deduplicates shared pages. Static
-copy, no extra sampling — the same "answer the obvious next question inline" posture
-as the own-memory row above.
+1. **Header.** `HARNU` (`text-[10.5px] font-semibold uppercase tracking-wide text-text-2`) then
+   `{n} processes · {size}` (`text-[11px] text-text-3`; `monitor.harnuCount`).
+2. **Heap card.** `bg-surface`, `border border-border`, `rounded-[var(--radius-lg)]`, `px-3.5 py-3`,
+   `gap-2`. A `text-[10.5px] uppercase tracking-wide text-text-4` label "Main-process heap";
+   the **big %** (`font-mono text-[30px] font-semibold tracking-tight`) with `{used} of {limit}`
+   (`text-[11px] text-text-4`, the same baseline) beside it; then a **10px track**
+   (`h-2.5 rounded-full bg-border-2`) whose fill is `bg-text-3`, with two 1px **tick marks**
+   (`bg-text-4`, 3px taller than the track above and below) at **70%** (`warn`) and **85%**
+   (`critical`) — the thresholds in `thresholds.ts`, unchanged. Under the track a tick-label row
+   (`font-mono text-[10px] text-text-4`, 12px high): `warn 70%` is right-aligned to its tick
+   (`-translate-x-full pr-1`) and `85% crit` is left-aligned to its tick (`pl-1`), so the two
+   labels sit on opposite sides of their ticks and **never overlap** at any width.
+3. **Process rows** (the Electron processes, one per `app.getAppMetrics()` entry, untranslated
+   technical labels, RAM-descending). Each is a 30px row, `border-t border-border` between rows,
+   `text-[12px]`: the name (66px), a **muted bar** (flex-1, 4px, `bg-border-2` track, `bg-text-4`
+   fill, **relative to the largest process**), the RSS (`font-mono`, 56px, right) and the CPU
+   (`font-mono text-text-4`, 38px, right).
+4. **Totals line**, pinned to the bottom of the column (`mt-auto`, `border-t border-border`,
+   `pt-3`, `text-[11px] text-text-3`): `Harnu + sessions` on the left, `{total} · {cpu} CPU` on
+   the right (`font-mono`). It counts Harnu plus **live** sessions — a parked session costs nothing.
 
-**State pip.** `live` — `--green` dot + text; `parked` — `--text-4` dot, `--text-3`
-text. Same `state.live`/`state.parked` shape the sidebar's own session rows use.
+#### Right column — KPI strip, Sessions header, sessions
 
-**Policy link.** The footer's "Edit hibernation policy → Settings" deep-links straight
-into the Settings dialog's Hibernation policy tab (`ui.openSettings('hibernationPolicy')`).
+**KPI strip.** Three tiles, `grid-cols-[1.4fr_1fr_1.2fr] gap-2.5`; each tile is `bg-sidebar`,
+`border border-border`, `rounded-[var(--radius-lg)]`, `px-3 py-2.5`, `gap-1.5`. A tile's label is
+`text-[10.5px] uppercase tracking-wide text-text-4` with a 12px icon; its value is
+`font-mono text-[22px] font-semibold tracking-tight`; its sub line is `text-[11px] text-text-3`.
 
-**Entry point.** The footer heap gauge ("Heap gauge (footer, T127 S3)" above) is the
-way in — clicking it calls `ui.openSystemMonitor()`. The takeover mutex in
-`stores/ui.ts` treats it as a third peer of `roadmap`/`usageDashboardOpen` — opening
-any one of the three closes the other two.
+- **Total RAM** (`MemoryStick`) — Harnu plus live sessions. Under the value a **split bar**
+  (6px, `rounded-[3px]`, 2px gap): Harnu is neutral (`color-mix(in srgb, var(--color-text-4) 45%,
+var(--color-surface))`), sessions are `bg-accent`. A legend below: `Harnu {size}` and
+  `Sessions {size}`, each with an 8px swatch in its bar colour.
+- **CPU** (`Cpu`) — the summed CPU, one decimal (`18.4%`); sub line `across {n} processes`, where
+  `n` is the Harnu processes plus every live session's listed `/proc` children.
+- **Sessions** (`Moon`) — `{live} live · {parked} parked` (the numbers `font-mono`, the words
+  `text-[11px] text-text-3`); sub line `~{size} reclaimed by parking` in `text-green`, where
+  `size` is the sum of the known `savedBytes`. When no `savedBytes` is known the line is hidden —
+  never `~0 MB`.
 
-**Copy (§8):** process/session technical labels (`main`, `renderer`, `claude`, branch
-names, the policy `reason` codes `lru`/`hard-idle`/`selected`/`active`/`not-parkable`/
-`parked`) stay untranslated, same rule as git branches and tool names elsewhere;
-everything else (state words, hints, column headers) goes through `$t()`.
+All sums treat a `null` reading as "not counted", never as `0` in a displayed row; a total that
+has no known input at all renders `—`.
+
+**Sessions header.** `SESSIONS` (same label style as the sidebar header), `{live} live · {size}`
+(`text-[11px] text-text-3`), a spacer, and the **Cards / Table segmented toggle**: an inline
+two-button group, `border border-border-2`, `rounded-[var(--radius-sm)]`, `overflow-hidden`;
+each button `h-6 px-2.5 text-[11px]`, the active one `bg-surface-2 text-text`, the other
+transparent `text-text-3`. It is a `role="group"` of two `aria-pressed` buttons. The choice
+persists in `localStorage` under **`om2tab.systemMonitor.view`** (`cards` | `table`; anything
+else reads as `cards`; every read/write is `try/catch`-wrapped).
+
+**Folder hue.** Every session carries its folder's hue — the same FNV-1a rule, pool and
+`.fh-*` classes as the Scheduler (§2 "Folder hue"); the helper moved from `scheduler-list.ts`
+to the shared `lib/folder-hue.ts` and `scheduler-list.ts` re-exports it. The hash input is the
+session's **folder path**; a session that cannot be resolved locally hashes its `sessionKey`.
+The root of a card/row carries `fh-<name>` and everything inside reads `var(--fh)`. Tints are
+`color-mix(in srgb, var(--fh) N%, …)` only: **18%** avatar fill, **4%** expanded-row wash, the
+**25 / 75 / 55 / 40 / 30%** composition-bar shades.
+
+**Folder avatar.** An initial in a rounded square: `font-bold`, `text-[var(--fh)]`, fill
+`color-mix(in srgb, var(--fh) 18%, transparent)`. 30×30px `rounded` + `text-[13px]` on a card,
+18×18px `rounded-sm` + `text-[10px]` in a table row. The letter is `folderInitial(name)`.
+
+##### Cards view (default)
+
+A grid, `grid-cols-[repeat(auto-fill,minmax(270px,1fr))]`, `gap-3`, `items-start`. Sessions are
+RAM-descending; parked ones (`null` RSS) last. A card is `bg-sidebar`, `border border-border`,
+`rounded-[var(--radius-lg)]`, `px-3.5 py-3`, `gap-2.5`, `overflow-hidden`, with a **3px stripe**
+along its top edge in `var(--fh)`. Top to bottom:
+
+1. **Header.** The 30px avatar, then the folder alias (`text-[13px] font-semibold`) over the
+   branch (`text-[11px] text-text-4`), then the **actions** (below), then the expand chevron.
+2. **Metrics.** `RAM` and `CPU`, each a `font-mono text-[22px] font-semibold` number (the unit
+   `text-[11px] text-text-3 font-normal`) over a `text-[10.5px] uppercase text-text-4` label;
+   the 60s **sparkline** (110×30, 1.8px, `var(--fh)`) pushed to the right.
+3. **Composition bar** — the session's memory split into **own** + its children: a 6px bar
+   (`rounded-[3px]`, 1px gap), one segment per entry in `--fh` shades `25% / 75% / 55% / 40% /
+30%` over `--surface`, widths relative to the session's total RSS; below it a legend
+   (`text-[11px] text-text-3`, 7px swatches, name + MB). At most five entries: own, the four
+   largest children, and any remainder folded into one `other` entry. Hidden when the total is `null`.
+4. **Footer** (`border-t border-border`, `pt-2`, `min-h-[30px]`, wraps): the **state pip**
+   (live: `text-green`; parked: `text-text-3`; a 6px dot), the **reason chip** when noteworthy
+   (`lru`/`hard-idle`, with ` · {idle}`), the **"next to be swept"** note (`--warning`, `Moon`
+   icon, only on `sweepRank === 1`), a spacer, and the **Harnu mod cell** (`text-[11px]
+text-text-3`; `legacy`/`off` `text-text-4` — quiet, never `--warning`/`--red`).
+5. **Expanded children** (see "Expand"), under the footer, separated by `border-t border-border`.
+
+**Parked card.** `bg-transparent`, `border-dashed`, stripe at 40% opacity, no sparkline, no
+composition bar. The metrics row shows `−{size}` (`text-green`, `font-mono text-[22px]`) over
+`reclaimed` — an **em dash** (`—`) instead of a number when `savedBytes` is `null` — and, right-
+aligned (`text-[11px] text-text-4`, max 140px), `Select it in the sidebar to wake it`. The footer
+holds the parked pip and the reason chip. No chevron: a parked session has no children.
+
+##### Table view
+
+One rounded container (`bg-sidebar`, `border border-border`, `rounded-[var(--radius)]`,
+`overflow-hidden`) with a header row and one row per session. Rows are `gap-3 px-3` grids with
+`border-t border-border` between them and a **2px rail** along the left edge in `var(--fh)`
+(a parked row's name text at 60% opacity). Columns: **Name** | **RAM** | **CPU** | **Last 60s** |
+**State**, as `grid-cols-[minmax(150px,1fr)_150px_52px_76px_minmax(0,1.8fr)]`; the header is
+30px, `bg-surface`, `text-[10.5px] uppercase tracking-wide text-text-4`, with the `Info` hint on
+RAM; a session row is at least 36px high.
+
+- **Name** — expand chevron (a 16px slot, empty for a parked row so names align), the 18px
+  avatar, the alias (`font-medium`), `· {branch}` (`text-text-4`).
+- **RAM** — the number (`font-mono`, 60px, right) then a 4px bar in `var(--fh)` on a `bg-border-2`
+  track, **relative to the largest session**. A parked row shows `−{size}` in `text-green`
+  (`—` for a null `savedBytes`), no bar.
+- **CPU** — `font-mono`, right-aligned; parked: `—` in `text-text-4`.
+- **Last 60s** — the 72×14 sparkline, 1.3px, `var(--fh)`; empty for a parked row.
+- **State** — right-aligned, `min-w-0`, **wrapping** (`flex-wrap`, `justify-end`): the pip, the
+  reason chip, the sweep note, the Harnu mod cell, then the actions. The cell wraps onto a second
+  line rather than clipping, and the **sparkline column hides** when the table is narrower than
+  ~760px (a container query on the table), so the State column is never cut off — including in
+  a 1280px window, where the right column is only ~600px wide next to the app sidebar.
+
+##### Expand
+
+A live session with listed `/proc` children shows a chevron (`ChevronRight` collapsed,
+`ChevronDown` expanded; `aria-expanded`) in the card header / the Name cell. Expanding changes
+**only that session**, in both views, and is not persisted. The expanded content is:
+
+- an **own memory** entry first — the row total minus every listed child
+  (`system-monitor-format.ts#selfSample`; `null`, never a misleading `0`, if any single reading
+  is unknown), marked `•` (not `└`) and in muted italic with a hover hint explaining it is the
+  session's own process, not a child; then
+- one entry per `/proc` child, `└`-prefixed, flat (no nesting), RAM-descending.
+
+In a **card** these are 24px rows under the footer (`text-[11.5px] text-text-3`): marker, name,
+spacer, RAM (`font-mono`, 60px), CPU (`font-mono`, 40px). In the **table** they are 28px
+indented rows (name indented 46px) with a `color-mix(in srgb, var(--fh) 4%, var(--color-sidebar))`
+wash: the RAM cell carries a **3px `--fh` bar relative to the session total**, and the own-memory
+entry shows only its number.
+
+##### Per-session actions
+
+A live, resumable session (`parkable: true`) gets a `Pause`-icon **Park now** (`--warning`);
+every session gets an `X`-icon **Close** (`--red`); a live session whose Harnu mod is `live`
+gets a `RadioTower`-icon **Test Harnu mod channel** (`--text-3`). Behaviour is unchanged
+from T127 S4 / T389 P2W1: Park now kills the PTY and flags it parked (`monitor:park`) and the
+row shows an em dash plus its reason on the next sample; Close calls the sidebar's own
+`closeSession`; Test Harnu mod channel sends a `flush` plus a terminal toast and answers with
+one Harnu toast (`info` "Harnu mod channel answered in {ms} ms", or `warning` "…did not answer"
+/ "…is not available: {reason}", the reason from a fixed three-word map, never session text).
+
+Each button is `22×22px`, `rounded-sm`, `hover:bg-surface-2`. The group is **invisible at rest and
+shown on hover and on keyboard focus** (`opacity-0 transition group-hover:opacity-100
+group-focus-within:opacity-100`) so the surface reads clean, and **every slot keeps its 22×22px
+box** — an invisible placeholder where an action is absent — so nothing shifts and the pip,
+chip and mod cell sit at the same x on every row. In a **card** the group sits in the header,
+between the name block and the chevron; in the **table** it is the last item of the State cell.
+There is no abort or compact control: none is designed yet.
+
+##### Sparklines and the ring buffer
+
+A sparkline is a single `<polyline>` in a fixed-size `<svg>` (`fill: none`, `stroke-linejoin:
+round`, `stroke-linecap: round`, `aria-hidden`), scaled to its own min–max with a 1px inset, and
+it plots **RAM (RSS)**. Fewer than two readings draw nothing; a `null` reading breaks the line.
+
+The history lives in `stores/monitor.ts`: **the last 40 samples (≈ 60 s at the 1.5 s cadence)**,
+per Harnu process (`harnu:<pid>`) and per session (`session:<sessionKey>`), appended from every
+`monitor:sample` that arrives. The store **never starts sampling itself**; a key absent from the
+latest sample is **pruned** the same tick (a closed session or a dead pid leaves no residue), so
+the buffer is bounded by (live keys × 40) and cannot grow without limit.
+
+##### Heap states
+
+The sidebar gauge, its big number and the header gauge move together on `HeapSample.status`
+(thresholds unchanged: `warn` ≥ 70%, `critical` ≥ 85%):
+
+| Status     | Fill / number                 | Extra                                             |
+| ---------- | ----------------------------- | ------------------------------------------------- |
+| `ok`       | `bg-text-3` / `text`          | none                                              |
+| `warn`     | `bg-warning` / `text-warning` | `TriangleAlert` (11px) before `{used} of {limit}` |
+| `critical` | `bg-red` / `text-red`         | the same `TriangleAlert`, in `text-red`           |
+
+The footer `HeapGauge` keeps its own green / amber / red scale (`heapBarClass`) — the monitor's
+neutral `ok` fill is deliberate: a healthy heap should not draw the eye.
+
+##### Copy (§8)
+
+Process/session technical labels (`main`, `renderer`, `claude`, branch names, the policy
+`reason` codes `lru`/`hard-idle`/`selected`/`active`/`not-parkable`/`parked`) stay untranslated,
+same rule as git branches and tool names elsewhere; everything else — section labels, KPI
+labels and sub lines, the toggle, state words, hints, column headers — goes through `$t()`
+(`systemMonitor.*`, in `en.json` and `pt-BR.json` together). Short labels carry no trailing period;
+the wake hint and the own-memory hint are sentences.
+
+##### Unchanged from T127 / T389
+
+- **Harnu mod cell (T389 P1W4).** A live session shows one `text-[11px] text-text-3` span:
+  **Harnu mod live** / **off** / **legacy**, the reason in the `title` tooltip (`harnuMod.reason.*`).
+  `legacy` is quiet; nothing renders when the state is `null`; a parked session shows none.
+- **Parked reason and savings.** A parked session's `procs` is always empty, RAM/CPU render as
+  an em dash (`formatBytes`/`formatPct` — never a false `0`), and the reason chip, the reclaimed
+  RAM (`savedBytes`) and the wake hint are the card's / row's explanation.
+- **RAM column hint.** An 11px `Info` glyph beside the RAM header (table) carries a native-title
+  tooltip: RAM is per-process RSS, shared libraries count once per process, so totals can read
+  higher than an OS-level tool that deduplicates shared pages.
+- **Policy link.** The footer's "Edit hibernation policy → Settings" opens the Settings dialog's
+  Hibernation policy tab (`ui.openSettings('hibernationPolicy')`).
+- **Entry point.** The footer heap gauge ("Heap gauge (footer, T127 S3)" above) is the way in —
+  clicking it calls `ui.openSystemMonitor()`. The takeover mutex in `stores/ui.ts` treats it as
+  a peer of the other takeovers.
 
 ### Hibernation policy pane (Settings tab)
 
