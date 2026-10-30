@@ -20,7 +20,8 @@ import {
  * One session in the table view (design.md "System Monitor (takeover)" → "Table
  * view"), plus — when expanded — its own-memory entry and `/proc` children as indented
  * rows with a wash of the folder hue. Columns: Name | RAM | CPU | Last 60s | State.
- * The State column wraps instead of clipping; the sparkline column hides in a narrow table.
+ * Every row is one fixed 36px line: the State column truncates its chip and mod cell
+ * (full text in the tooltip) instead of wrapping, and the sparkline column hides in a narrow table.
  */
 const props = defineProps<{
   view: SessionView
