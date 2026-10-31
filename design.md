@@ -7039,12 +7039,12 @@ be a recount.)
 Open) selects the chapter: the other tiles fall to `opacity-50` (locked ones to
 `opacity-30`), the selected tile takes the `running` look, and the Steward and Side
 quests blocks are replaced by the **focus panel** — `rounded border
-border-accent-line bg-surface`, header (`px-2.5 py-1.5`, `border-b`): a **Back**
-button, "{n} · {title}" (`12px / 600`) and the mission's own headline at the right
+border-accent-line bg-surface`, header (`px-2.5 py-1.5`, `border-b`): a compact **Back**
+button (`h-5`, the ledger's Open button look), "{n} · {title}" (`12px / 600`) and the mission's own headline at the right
 ("Step 2 of 4", `10.5px`, `text-text-4`). Below it one row per counted step of the
 chapter's mission, exactly the Campaign popover's objectives: rail letter, §6 step
 glyph, title, and the four **gate dots with their names** ("PR · CI · main ·
-verifier"). The current step's row is `bg-accent-soft`. A chapter whose mission is
+verifier") — beside the title when the panel is `340px` or wider (a container query), under it when narrower, so a narrow right column never crushes the titles. The current step's row is `bg-accent-soft`. A chapter whose mission is
 not open (locked, not started, closed) shows one line saying why, no steps. Back
 (or selecting nothing) returns to the default state. Esc still closes the whole
 map.
