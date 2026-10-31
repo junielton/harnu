@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — Mission → Campaign (v6)</title>
+    <style>
+      :root {
+        --ix-bg: #f6f6f7;
+        --ix-fg: #1b1b1f;
+        --ix-muted: #6b6b76;
+        --ix-line: #dcdce2;
+        --ix-card: #fff;
+        --ix-accent: #2f5bea;
+        --ix-draft: #b7791f;
+        --ix-ok: #2f855a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ix-bg: #121216;
+          --ix-fg: #ececf1;
+          --ix-muted: #9a9aa6;
+          --ix-line: #2b2b33;
+          --ix-card: #1b1b21;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        color: var(--ix-fg);
+        background: var(--ix-bg);
+      }
+      header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--ix-line);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ix-draft);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status[data-status='approved'] {
+        background: var(--ix-ok);
+      }
+      nav.toc {
+        font-size: 13px;
+        color: var(--ix-muted);
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      nav.toc a {
+        color: inherit;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        margin-bottom: 48px;
+      }
+      section > h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .prose {
+        max-width: 72ch;
+        color: var(--ix-fg);
+      }
+      .prose p {
+        margin: 0 0 10px;
+      }
+      /* one card per screen */
+      .screen {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .screen .bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .screen h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .screen h3 code {
+        font-size: 12px;
+        color: var(--ix-muted);
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .screen .notes {
+        font-size: 13px;
+        color: var(--ix-muted);
+        margin: 0 0 12px;
+        max-width: 80ch;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chips button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--ix-line);
+        background: transparent;
+        color: var(--ix-fg);
+        cursor: pointer;
+      }
+      .chips button[aria-pressed='true'] {
+        background: var(--ix-accent);
+        border-color: var(--ix-accent);
+        color: #fff;
+      }
+      .open {
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .viewport {
+        overflow: hidden;
+        border: 1px solid var(--ix-line);
+        border-radius: 6px;
+        background: #fff;
+      }
+      .viewport iframe {
+        display: block;
+        border: 0;
+        transform-origin: top left;
+      }
+      .screen .approval {
+        font-size: 12px;
+        margin-top: 8px;
+        color: var(--ix-muted);
+      }
+      /* flows */
+      .flow {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .flow ol {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 0;
+        margin: 8px 0 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .flow li {
+        counter-increment: step;
+        font-size: 13px;
+      }
+      .flow li::before {
+        content: counter(step) '. ';
+        color: var(--ix-muted);
+      }
+      .flow li + li::before {
+        content: '→ ' counter(step) '. ';
+      }
+      .flow li small {
+        color: var(--ix-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Mission → Campaign — approved v6</h1>
+      <span class="status" data-status="approved">approved</span>
+      <nav class="toc">
+        <a href="#contexto">Contexto</a><a href="#v6">V6</a><a href="#fluxos">Fluxos</a
+        ><a href="parts/index.html">Partes</a>
+      </nav>
+    </header>
+    <main>
+      <section id="contexto">
+        <h2>Contexto e decisões</h2>
+        <div class="prose">
+          <p>
+            A Mission today is one quest: one declared end and a flat list of steps. A real 93-hour
+            delivery needed five missions opened by hand, 26 worktrees, 73 sessions and at least
+            eight unplanned detours that had nowhere to live. The operator ended up asking the
+            orchestrator to hand-draw the campaign on a canvas while the pill read "Step 1 of 4".
+          </p>
+          <p>
+            Concepts under test: <b>Campaign</b> (chapters = missions, v3 untouched),
+            <b>side quests</b> (<code>required: false</code>, <code>discovered-from</code>),
+            <b>gates from facts</b> (PR · CI · main · verifier), <b>locked-until-ready</b>,
+            <b>radiant steps</b> (48 / 88), <b>decision nodes</b>, an <b>owed-to-you lane</b> aged
+            by risk, a <b>batch merge door</b>, and the <b>Steward</b> (a headless agent bound to
+            the mission).
+          </p>
+          <p>
+            Four screens, one sample data set (a scrubbed content migration for the fictional client
+            Acme). Shared anatomy and parts come from design.md §6 "Mission progress"; the screens
+            were picked from five reviewed variants (v1 popovers and v4 map) and approved on
+            2026-10-30. The spec is <code>spec.md</code> in this folder.
+          </p>
+        </div>
+      </section>
+
+      <section id="telas">
+        <h2>Telas</h2>
+        <h3 id="v6" style="margin: 32px 0 8px; font-size: 16px">
+          V6 — Keeper (merge: v1 popovers + v4 map)
+        </h3>
+        <p class="notes" style="font-size: 13px; color: var(--ix-muted); max-width: 80ch">
+          What the operator kept after reviewing five variants (v1 to v5, not committed): the
+          Journal pill and two-pane popovers from v1, the Control-room dashboard map from v4 with
+          the declared end added to its header.
+        </p>
+        <article class="screen" data-screen="v6--pill" data-states="active needs-you delivered">
+          <div class="bar">
+            <h3>Keeper (merge: v1 popovers + v4 map) · Topbar pill <code>v6--pill</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/v6--pill.html" target="_blank">abrir sozinha ↗</a>
+          </div>
+          <p class="notes">
+            v1 pill as reviewed: book icon + Ch. 9/12 + 12-tick margin rail + radiant 48/88; warning
+            &quot;4 for you&quot;; green when delivered.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="v6--pill"></iframe></div>
+          <p class="approval">Aprovação: <strong>approved · 2026-10-30</strong></p>
+        </article>
+        <article
+          class="screen"
+          data-screen="v6--campaign"
+          data-states="default side needs-you merge-batch"
+        >
+          <div class="bar">
+            <h3>
+              Keeper (merge: v1 popovers + v4 map) · Campaign popover <code>v6--campaign</code>
+            </h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/v6--campaign.html" target="_blank">abrir sozinha ↗</a>
+          </div>
+          <p class="notes">
+            v1 two-pane journal popover as reviewed (.pop--wide 520px): Main quest / Side quests /
+            Locked on the left, the open chapter objectives with gates on the right, You + Steward
+            under it.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="v6--campaign"></iframe></div>
+          <p class="approval">Aprovação: <strong>approved · 2026-10-30</strong></p>
+        </article>
+        <article
+          class="screen"
+          data-screen="v6--chapter"
+          data-states="default gate-red decision side"
+        >
+          <div class="bar">
+            <h3>Keeper (merge: v1 popovers + v4 map) · Chapter popover <code>v6--chapter</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/v6--chapter.html" target="_blank">abrir sozinha ↗</a>
+          </div>
+          <p class="notes">
+            v1 chapter popover as reviewed: step letters in the margin, gates per step, decision
+            node on F, collapsible side-steps bucket, You lane.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="v6--chapter"></iframe></div>
+          <p class="approval">Aprovação: <strong>approved · 2026-10-30</strong></p>
+        </article>
+        <article class="screen" data-screen="v6--map" data-states="default chapter-focus">
+          <div class="bar">
+            <h3>Keeper (merge: v1 popovers + v4 map) · Campaign map <code>v6--map</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/v6--map.html" target="_blank">abrir sozinha ↗</a>
+          </div>
+          <p class="notes">
+            v4 dashboard map as reviewed, plus the declared end under the title: dependency board
+            with arrows and side quests docked under their source chapter; right column You ledger,
+            Steward feed, side quests.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="v6--map"></iframe></div>
+          <p class="approval">Aprovação: <strong>approved · 2026-10-30</strong></p>
+        </article>
+      </section>
+
+      <section id="fluxos">
+        <h2>Fluxos</h2>
+        <article class="flow" data-flow="v6-pill-to-chapter">
+          <h3>
+            Pill → campaign → chapter 9 → back <code>v6-pill-to-chapter</code> —
+            <a href="screens/v6--pill.html?state=active" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/v6--pill.html?state=active" target="_blank">v6--pill?state=active</a>
+              <small>via "click the campaign pill"</small>
+            </li>
+            <li>
+              <a href="screens/v6--campaign.html?state=default" target="_blank"
+                >v6--campaign?state=default</a
+              >
+              <small>via "click chapter 9"</small>
+            </li>
+            <li>
+              <a href="screens/v6--chapter.html?state=default" target="_blank"
+                >v6--chapter?state=default</a
+              >
+              <small>via "back to campaign"</small>
+            </li>
+            <li>
+              <a href="screens/v6--campaign.html?state=default" target="_blank"
+                >v6--campaign?state=default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="v6-merge-batch">
+          <h3>
+            Merge 3 PRs in order <code>v6-merge-batch</code> —
+            <a href="screens/v6--campaign.html?state=needs-you" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/v6--campaign.html?state=needs-you" target="_blank"
+                >v6--campaign?state=needs-you</a
+              >
+              <small>via "Merge 3 in order…"</small>
+            </li>
+            <li>
+              <a href="screens/v6--campaign.html?state=merge-batch" target="_blank"
+                >v6--campaign?state=merge-batch</a
+              >
+              <small>via "confirm"</small>
+            </li>
+            <li>
+              <a href="screens/v6--campaign.html?state=default" target="_blank"
+                >v6--campaign?state=default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="v6-red-main-side-quest">
+          <h3>
+            Red main becomes a side quest <code>v6-red-main-side-quest</code> —
+            <a href="screens/v6--chapter.html?state=gate-red" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/v6--chapter.html?state=gate-red" target="_blank"
+                >v6--chapter?state=gate-red</a
+              >
+              <small>via "Open as side quest"</small>
+            </li>
+            <li>
+              <a href="screens/v6--chapter.html?state=side" target="_blank"
+                >v6--chapter?state=side</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="v6-open-map">
+          <h3>
+            Campaign → map → chapter 9 focus <code>v6-open-map</code> —
+            <a href="screens/v6--campaign.html?state=default" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/v6--campaign.html?state=default" target="_blank"
+                >v6--campaign?state=default</a
+              >
+              <small>via "Open map"</small>
+            </li>
+            <li>
+              <a href="screens/v6--map.html?state=default" target="_blank">v6--map?state=default</a>
+              <small>via "click chapter 9"</small>
+            </li>
+            <li>
+              <a href="screens/v6--map.html?state=chapter-focus" target="_blank"
+                >v6--map?state=chapter-focus</a
+              >
+            </li>
+          </ol>
+        </article>
+      </section>
+    </main>
+    <script>
+      /* index runtime: sizes each frame to the chosen viewport, swaps ?state=, listens for
+   mockup:size from the screens. Do not add behaviour here; screens own their behaviour. */
+      ;(() => {
+        const VIEWPORTS = [1280, 900] // MUST mirror mockup.json "viewports"
+        const frames = new Map() // iframe -> {w, h}
+        const fit = (card) => {
+          const vp = card.querySelector('.viewport'),
+            ifr = vp.querySelector('iframe'),
+            f = frames.get(ifr)
+          const s = Math.min(1, vp.parentElement.clientWidth / f.w)
+          ifr.style.width = f.w + 'px'
+          ifr.style.height = f.h + 'px'
+          ifr.style.transform = `scale(${s})`
+          vp.style.height = Math.ceil(f.h * s) + 'px'
+          vp.style.width = Math.ceil(f.w * s) + 'px'
+        }
+        const load = (card) => {
+          const ifr = card.querySelector('iframe')
+          const state =
+            card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state ||
+            card.dataset.states.split(/\s+/)[0]
+          ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`
+        }
+        document.querySelectorAll('.screen').forEach((card) => {
+          const ifr = card.querySelector('iframe')
+          frames.set(ifr, { w: VIEWPORTS[0], h: 600 })
+          const vps = card.querySelector('[data-role="viewports"]')
+          VIEWPORTS.forEach((w, i) => {
+            const b = document.createElement('button')
+            b.textContent = w + 'px'
+            b.dataset.w = w
+            b.setAttribute('aria-pressed', String(i === 0))
+            b.onclick = () => {
+              vps
+                .querySelectorAll('button')
+                .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+              frames.get(ifr).w = w
+              fit(card)
+            }
+            vps.append(b)
+          })
+          const sts = card.querySelector('[data-role="states"]')
+          card.dataset.states
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((st, i) => {
+              const b = document.createElement('button')
+              b.textContent = st
+              b.dataset.state = st
+              b.setAttribute('aria-pressed', String(i === 0))
+              b.onclick = () => {
+                sts
+                  .querySelectorAll('button')
+                  .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+                load(card)
+              }
+              sts.append(b)
+            })
+          new IntersectionObserver(
+            (es, io) =>
+              es.forEach((e) => {
+                if (e.isIntersecting) {
+                  io.disconnect()
+                  load(card)
+                }
+              }),
+            { rootMargin: '600px' }
+          ).observe(card)
+          fit(card)
+        })
+        addEventListener('message', (e) => {
+          const m = e.data
+          if (!m || m.type !== 'mockup:size') return
+          for (const [ifr, f] of frames)
+            if (ifr.contentWindow === e.source) {
+              f.h = Math.max(320, m.height)
+              fit(ifr.closest('.screen'))
+            }
+        })
+        addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit))
+      })()
+    </script>
+  </body>
+</html>

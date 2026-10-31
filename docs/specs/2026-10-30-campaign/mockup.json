@@ -1,0 +1,159 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-10-30",
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css",
+  "viewports": [1280, 900],
+  "targets": [
+    "src/renderer/src/components/CampaignMap.vue",
+    "src/renderer/src/components/MissionPill.vue",
+    "src/renderer/src/components/MissionPopover.vue",
+    "src/renderer/src/components/MissionStepRail.vue",
+    "design.md"
+  ],
+  "screens": [
+    {
+      "id": "v6--pill",
+      "title": "Keeper (merge: v1 popovers + v4 map) · Topbar pill",
+      "status": "approved",
+      "approvedAt": "2026-10-30",
+      "states": ["active", "needs-you", "delivered"],
+      "targets": ["src/renderer/src/components/MissionPill.vue"],
+      "notes": "v1 pill as reviewed: book icon + Ch. 9/12 + 12-tick margin rail + radiant 48/88; warning \"4 for you\"; green when delivered."
+    },
+    {
+      "id": "v6--campaign",
+      "title": "Keeper (merge: v1 popovers + v4 map) · Campaign popover",
+      "status": "approved",
+      "approvedAt": "2026-10-30",
+      "states": ["default", "side", "needs-you", "merge-batch"],
+      "targets": [
+        "src/renderer/src/components/MissionPopover.vue",
+        "src/renderer/src/components/MissionStepRail.vue"
+      ],
+      "notes": "v1 two-pane journal popover as reviewed (.pop--wide 520px): Main quest / Side quests / Locked on the left, the open chapter objectives with gates on the right, You + Steward under it."
+    },
+    {
+      "id": "v6--chapter",
+      "title": "Keeper (merge: v1 popovers + v4 map) · Chapter popover",
+      "status": "approved",
+      "approvedAt": "2026-10-30",
+      "states": ["default", "gate-red", "decision", "side"],
+      "targets": [
+        "src/renderer/src/components/MissionPopover.vue",
+        "src/renderer/src/components/MissionStepRail.vue"
+      ],
+      "notes": "v1 chapter popover as reviewed: step letters in the margin, gates per step, decision node on F, collapsible side-steps bucket, You lane."
+    },
+    {
+      "id": "v6--map",
+      "title": "Keeper (merge: v1 popovers + v4 map) · Campaign map",
+      "status": "approved",
+      "approvedAt": "2026-10-30",
+      "states": ["default", "chapter-focus"],
+      "targets": ["src/renderer/src/components/CampaignMap.vue"],
+      "notes": "v4 dashboard map as reviewed, plus the declared end under the title: dependency board with arrows and side quests docked under their source chapter; right column You ledger, Steward feed, side quests."
+    }
+  ],
+  "parts": [
+    {
+      "id": "pill",
+      "variants": ["accent", "warning", "green"]
+    },
+    {
+      "id": "gates",
+      "variants": ["green", "red", "running"]
+    },
+    {
+      "id": "you",
+      "variants": ["clear", "warning", "success"]
+    },
+    {
+      "id": "steward",
+      "variants": ["line", "feed"]
+    }
+  ],
+  "flows": [
+    {
+      "id": "v6-pill-to-chapter",
+      "title": "Pill → campaign → chapter 9 → back",
+      "steps": [
+        {
+          "screen": "v6--pill",
+          "state": "active",
+          "via": "click the campaign pill"
+        },
+        {
+          "screen": "v6--campaign",
+          "state": "default",
+          "via": "click chapter 9"
+        },
+        {
+          "screen": "v6--chapter",
+          "state": "default",
+          "via": "back to campaign"
+        },
+        {
+          "screen": "v6--campaign",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "v6-merge-batch",
+      "title": "Merge 3 PRs in order",
+      "steps": [
+        {
+          "screen": "v6--campaign",
+          "state": "needs-you",
+          "via": "Merge 3 in order…"
+        },
+        {
+          "screen": "v6--campaign",
+          "state": "merge-batch",
+          "via": "confirm"
+        },
+        {
+          "screen": "v6--campaign",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "v6-red-main-side-quest",
+      "title": "Red main becomes a side quest",
+      "steps": [
+        {
+          "screen": "v6--chapter",
+          "state": "gate-red",
+          "via": "Open as side quest"
+        },
+        {
+          "screen": "v6--chapter",
+          "state": "side"
+        }
+      ]
+    },
+    {
+      "id": "v6-open-map",
+      "title": "Campaign → map → chapter 9 focus",
+      "steps": [
+        {
+          "screen": "v6--campaign",
+          "state": "default",
+          "via": "Open map"
+        },
+        {
+          "screen": "v6--map",
+          "state": "default",
+          "via": "click chapter 9"
+        },
+        {
+          "screen": "v6--map",
+          "state": "chapter-focus"
+        }
+      ]
+    }
+  ]
+}
