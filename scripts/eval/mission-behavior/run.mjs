@@ -44,6 +44,7 @@ import {
 import { buildApp, killAllLaunched, startHarnu } from './harnu.mjs'
 import { killAgents, replyAsks, runAgent } from './agent.mjs'
 import {
+  campaignsDirOf,
   checkBreaks,
   fillTemplate,
   gradeFolder,
@@ -184,7 +185,9 @@ function operatorDoor(folder, slug, action) {
  * `vars.seeded.<slug>.updatedAt` so a scenario can assert it survived.
  *
  * `{ slug, title?, status, ageMinutes, legacy?, owner? (agent, default A), links?:
- * [{ step: 'fixed-start' | 'fixed-end', kind, ref }] }`
+ * [{ step: 'fixed-start' | 'fixed-end', kind, ref }], steps?: [{ title, verification?,
+ * links?: [{ kind, ref }] }] }` — `steps` are custom steps placed before the fixed end
+ * (a tick scenario needs a step with a PR link, which no verb can make red).
  */
 function seedMission(vars, rawSpec) {
   const spec = fillTemplate(rawSpec, vars)
@@ -226,7 +229,19 @@ function seedMission(vars, rawSpec) {
           step(1, 'fixed-start', 'Scope confirmed', 'existence'),
           step(2, 'fixed-end', 'Delivered and verified', 'verifier')
         ]
-      : [step(1, 'fixed-end', 'Delivered and verified', 'verifier')],
+      : [
+          ...(spec.steps ?? []).map((c, i) => ({
+            id: `stp-${i + 1}`,
+            ordinal: i + 1,
+            kind: 'custom',
+            title: c.title,
+            verification: c.verification ?? 'verifier',
+            proof: 'unproven',
+            links: (c.links ?? []).map((l) => ({ kind: l.kind, ref: l.ref })),
+            blockers: []
+          })),
+          step((spec.steps ?? []).length + 1, 'fixed-end', 'Delivered and verified', 'verifier')
+        ],
     blockers: [],
     openQuestions: [],
     createdAt: at,
@@ -236,6 +251,39 @@ function seedMission(vars, rawSpec) {
   const content = buildMissionFileContent(mission, `# ${spec.title ?? spec.slug}\n\n## Log\n`)
   writeFileSync(path.join(dir, `${id}-${spec.slug}.md`), content, 'utf8')
   vars.seeded[spec.slug] = { id, updatedAt: at }
+}
+
+// ---- seeded gate facts (a red CI no sandbox can produce) --------------------------
+
+/**
+ * A step's `ci` gate reads GitHub, and the throwaway repo has no remote, so no verb and no
+ * scripted agent can make one red. Harnu's own answer for an unreachable GitHub is the
+ * sticky last-known cache (`mission-link-cache.json` in userData, Mission v3 §3.7), which a
+ * read falls back to with `stale: true`. A scenario that needs a red gate declares
+ * `gateCache: [{ pr, ci }]`, and this writes those sightings (the PR seen OPEN, its head CI)
+ * for its sandbox repo BEFORE the instance boots — the cache is read once, on first use —
+ * so the tick under test sees `gates.ci: "red"` through the real `mission_get`.
+ */
+function seedGateCache(userData, scenarios) {
+  const entries = {}
+  const at = new Date().toISOString()
+  for (const s of scenarios) {
+    const root = path.resolve(path.join(sandboxRoot(), s.name))
+    for (const g of s.gateCache ?? []) {
+      entries[`${root}\u0000pr\u0000${g.pr}`] = {
+        state: g.state ?? 'OPEN',
+        prNumber: g.pr,
+        at
+      }
+      entries[`${root}\u0000pr-ci\u0000${g.pr}`] = { state: g.ci, prNumber: g.pr, at }
+    }
+  }
+  if (Object.keys(entries).length === 0) return
+  mkdirSync(userData, { recursive: true })
+  writeFileSync(
+    path.join(userData, 'mission-link-cache.json'),
+    JSON.stringify({ version: 1, entries }, null, 1)
+  )
 }
 
 // ---- legacy goal files (S7 migration) -------------------------------------------
@@ -425,6 +473,27 @@ async function runPhase(phase, ctx) {
     return
   }
 
+  if (phase.precondition) {
+    // A scenario whose premise is a DERIVED fact (a red `ci` gate) must know the premise holds
+    // before it spends a model run on it. The harness reads the fact itself, through the real
+    // transport, and stops the scenario when it is not so — a seeding gap is a harness failure,
+    // never a pass or a model failure.
+    const pre = fillTemplate(phase.precondition, vars)
+    const id = vars.m[pre.mission]?.id
+    if (!id) throw new Error(`precondition: no mission "${pre.mission}"`)
+    const got = await harnu.call('mission_get', { folder: vars.folder, missionId: id })
+    if (got.isError) throw new Error(`precondition: mission_get: ${JSON.stringify(got.payload)}`)
+    const row = (got.payload.derived?.steps ?? []).find((r) => r.stepId === pre.stepId)
+    const gate = row?.gates?.[pre.gate]
+    if (gate !== pre.equals) {
+      throw new Error(
+        `precondition: ${pre.mission} ${pre.stepId} gates.${pre.gate} is ${JSON.stringify(gate)}, expected ${pre.equals}`
+      )
+    }
+    log(`    precondition: ${pre.mission} ${pre.stepId} gates.${pre.gate} = ${gate}`)
+    return
+  }
+
   if (phase.burst) {
     // Concurrent calls straight through the real transport: the only way to
     // GUARANTEE overlapping writes (scripted agents land seconds apart).
@@ -562,6 +631,9 @@ function gradeAndBreak(vars, assertions, breaks, dir) {
   const graded = gradeFolder(vars.folder, assertions, vars)
   if (existsSync(missionsDirOf(vars.folder))) {
     cpSync(missionsDirOf(vars.folder), path.join(dir, 'missions'), { recursive: true })
+  }
+  if (existsSync(campaignsDirOf(vars.folder))) {
+    cpSync(campaignsDirOf(vars.folder), path.join(dir, 'campaigns'), { recursive: true })
   }
   const goals = path.join(vars.folder, '.harnu', 'goals')
   if (existsSync(goals)) cpSync(goals, path.join(dir, 'goals'), { recursive: true })
@@ -717,6 +789,7 @@ async function main() {
         log('  building the app (electron-vite build)…')
         buildApp(REPO_ROOT)
       }
+      seedGateCache(path.join(runDir, 'userData'), active)
       harnu = await startHarnu({ repoRoot: REPO_ROOT, runDir, log: (s) => log(`  ${s}`) })
     }
     for (const s of scenarios) {

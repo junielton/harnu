@@ -1,0 +1,238 @@
+{
+  "name": "tick-red-gate",
+  "order": 22,
+  "title": "a tick on a step with a red ci gate opens a side step and makes zero gh / get_fleet calls",
+  "reviewFocus": null,
+  "label": "campaign AC-3b.4 (c)",
+  "description": "Campaign spec \u00a76 row 2 / \u00a78 AC-4 (c). The mission has a step whose linked PR has a failing head CI. A sandbox repo has no GitHub, so the harness seeds Harnu's own sticky last-known cache before the instance boots (`gateCache`), and a precondition reads the step's gates through the real `mission_get` and stops the scenario if `ci` is not `red`. The owner A reads the shipped `mission` skill and runs one tick. It must read `gates` from `mission_get` (not `gh pr view`/`get_fleet`; `Bash` is granted and `gh` is reachable so a call would show), open a side step (`required: false`, `discoveredFrom` the red step), and never claim a verdict on the red step. The harness records the tick's tools (`EVAL-TURN[tick]`).",
+  "agents": ["A"],
+  "gateCache": [
+    {
+      "pr": 7,
+      "state": "OPEN",
+      "ci": "failing"
+    }
+  ],
+  "phases": [
+    {
+      "copyIn": [
+        {
+          "from": "resources/skills/skills/mission/SKILL.md",
+          "to": ".eval/mission-SKILL.md"
+        }
+      ]
+    },
+    {
+      "seed": {
+        "slug": "importer",
+        "title": "Ship the importer",
+        "status": "active",
+        "ageMinutes": 30,
+        "steps": [
+          {
+            "title": "Ship the importer",
+            "links": [
+              {
+                "kind": "pr",
+                "ref": "#7"
+              }
+            ]
+          },
+          {
+            "title": "Document the importer"
+          }
+        ]
+      }
+    },
+    {
+      "precondition": {
+        "mission": "importer",
+        "stepId": "{{m.importer.custom.0}}",
+        "gate": "ci",
+        "equals": "red"
+      }
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "tools": ["Read", "Bash"],
+      "record": {
+        "mission": "importer",
+        "tag": "tick"
+      },
+      "prompt": "Skill file: .eval/mission-SKILL.md.\n\nRun one coordination tick of your mission now (a bare `mission` invocation). The mission is the repo's only one; its first step has a pull request linked. Nobody has told you what the pull request's state is \u2014 find out the way the skill says."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "the mission is still active \u2014 the tick delivered nothing",
+      "mission": "importer",
+      "path": "status",
+      "equals": "active"
+    },
+    {
+      "label": "a side step was opened from the red step",
+      "mission": "importer",
+      "stepCount": {
+        "required": false,
+        "discoveredFrom": "stp-1"
+      },
+      "equals": 1
+    },
+    {
+      "label": "the side step says why (the mission has started, so a reason is stored)",
+      "mission": "importer",
+      "stepCount": {
+        "required": false,
+        "addedReason": {
+          "$exists": true
+        }
+      },
+      "equals": 1
+    },
+    {
+      "label": "the red step is not claimed or verified by the tick",
+      "mission": "importer",
+      "step": "title:Ship the importer",
+      "path": "proof",
+      "equals": "unproven"
+    },
+    {
+      "label": "no verdict recorded on the red step",
+      "mission": "importer",
+      "step": "title:Ship the importer",
+      "path": "verifiedBy",
+      "exists": false
+    },
+    {
+      "label": "the tick read the mission",
+      "mission": "importer",
+      "logLine": "EVAL-TURN[tick]",
+      "contains": "mission_get"
+    },
+    {
+      "label": "the tick never reached for gh or the shell",
+      "mission": "importer",
+      "logLine": "EVAL-TURN[tick]",
+      "notContains": "Bash"
+    },
+    {
+      "label": "the tick never polled the fleet",
+      "mission": "importer",
+      "logLine": "EVAL-TURN[tick]",
+      "notContains": "get_fleet"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "no-side-step",
+      "mutate": [
+        {
+          "mission": "importer",
+          "removeSteps": {
+            "required": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "detour-counted-as-required",
+      "mutate": [
+        {
+          "mission": "importer",
+          "eachStep": {
+            "match": {
+              "discoveredFrom": "stp-1"
+            },
+            "set": {
+              "required": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "side-step-lost-its-origin",
+      "mutate": [
+        {
+          "mission": "importer",
+          "eachStep": {
+            "match": {
+              "required": false
+            },
+            "unset": "discoveredFrom"
+          }
+        }
+      ]
+    },
+    {
+      "name": "red-step-claimed",
+      "mutate": [
+        {
+          "mission": "importer",
+          "step": "title:Ship the importer",
+          "set": {
+            "proof": "claimed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "red-step-verdict-written",
+      "mutate": [
+        {
+          "mission": "importer",
+          "step": "title:Ship the importer",
+          "set": {
+            "verifiedBy": {
+              "sessionId": "{{session.A}}",
+              "verdict": "met",
+              "at": "2026-10-31T12:00:00.000Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "tick-ran-gh",
+      "mutate": [
+        {
+          "mission": "importer",
+          "logAppend": "EVAL-TURN[tick] asked=false tools=mission_get,Bash"
+        }
+      ]
+    },
+    {
+      "name": "tick-polled-the-fleet",
+      "mutate": [
+        {
+          "mission": "importer",
+          "logAppend": "EVAL-TURN[tick] asked=false tools=mission_get,get_fleet"
+        }
+      ]
+    },
+    {
+      "name": "tick-never-read-the-mission",
+      "mutate": [
+        {
+          "mission": "importer",
+          "logRemove": "mission_get"
+        }
+      ]
+    },
+    {
+      "name": "mission-closed-by-the-tick",
+      "mutate": [
+        {
+          "mission": "importer",
+          "set": {
+            "status": "delivered"
+          }
+        }
+      ]
+    }
+  ]
+}

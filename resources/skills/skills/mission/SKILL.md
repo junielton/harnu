@@ -8,8 +8,8 @@ description: Run one coordination tick over dispatched work: read the Mission wi
 **Mandatory header.** The one-line `tick —` report expands into the `status`
 skill's six-line glance card whenever anything in `Needs you` or `Open` changed
 since the previous tick, and `mission done`'s closing summary always opens with
-the card. Build it from `mission_get` (plus `gh` for what the mission does not
-link) — see that skill for the card's exact shape and rules; this skill does not
+the card. Build it from `mission_get` (and `campaign_get` when the mission is a
+chapter of a campaign) — see that skill for the card's exact shape and rules; this skill does not
 restate them.
 
 One mission at a time, **per owner session**, written down. The point: an
@@ -23,21 +23,23 @@ resume coordinating in seconds.
 Your mission is a structured Harnu record, stored in the repo's main checkout
 under `.harnu/missions/` and reached ONLY through the `mission_*` verbs:
 
-| You want to…                                  | Call                                                   |
-| --------------------------------------------- | ------------------------------------------------------ |
-| declare the mission and its plan              | `mission_create { steps }`                             |
-| read it, with everything Harnu derives live   | `mission_get`                                          |
-| see every mission in the repo                 | `mission_list`                                         |
-| add a unit of work found mid-mission          | `mission_add_step`                                     |
-| tie a step to a child session, worktree, card | `mission_link_child`                                   |
-| owe a human sign-off on a step's deliverable  | `mission_add_check`                                    |
-| say "I believe this step is done"             | `mission_update_step` with `set: { proof: 'claimed' }` |
-| record a verification                         | `mission_verify_step` (never on work you authored)     |
-| flag / clear a blocker                        | `mission_set_blocker` / `mission_clear_blocker`        |
-| change what "done" means                      | `mission_set_end` (staged; the operator approves)      |
-| write the tick's Log line, a child's report   | `mission_log`                                          |
-| ask the operator to close                     | `mission_request_close`                                |
-| adopt a legacy `.harnu/goals/*.md` file       | `mission_import_legacy`                                |
+| You want to…                                   | Call                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------- |
+| declare the mission and its plan               | `mission_create { steps }`                                    |
+| read it, with everything Harnu derives live    | `mission_get`                                                 |
+| see every mission in the repo                  | `mission_list`                                                |
+| add a unit of work found mid-mission           | `mission_add_step`                                            |
+| open a detour (a fix, a deferred cleanup)      | `mission_add_step { required: false, discoveredFrom }`        |
+| read the campaign this mission is a chapter of | `campaign_get` (only when `mission_get` shows a `campaignId`) |
+| tie a step to a child session, worktree, card  | `mission_link_child`                                          |
+| owe a human sign-off on a step's deliverable   | `mission_add_check`                                           |
+| say "I believe this step is done"              | `mission_update_step` with `set: { proof: 'claimed' }`        |
+| record a verification                          | `mission_verify_step` (never on work you authored)            |
+| flag / clear a blocker                         | `mission_set_blocker` / `mission_clear_blocker`               |
+| change what "done" means                       | `mission_set_end` (staged; the operator approves)             |
+| write the tick's Log line, a child's report    | `mission_log`                                                 |
+| ask the operator to close                      | `mission_request_close`                                       |
+| adopt a legacy `.harnu/goals/*.md` file        | `mission_import_legacy`                                       |
 
 Never read or edit a `.harnu/missions/*.md` file by hand, and never keep state
 the verbs do not hold in your head or in prose — the verbs are the only writers,
@@ -50,6 +52,22 @@ proofs, and the deterministic stall flag (`derived.stale`). Read them.
 Do not re-derive a stall from Log timestamps, do not poll `get_fleet` for
 children the mission already links, and do not recompute a verdict glyph the
 projection already gives you.
+
+**Dispatch state comes from `gates` and the `ledger`, never from `gh`.** Each
+`derived.steps[]` row carries `gates: { pr, ci, main, verifier, checks }` — each
+`green`, `red`, `running`, `off` (no signal yet) or `na` — and `mission_get`
+returns the `ledger`: the dated rows Harnu itself wrote (dispatched, worktree
+cut, PR opened / merged, CI changed, verified, session died, compaction). A tick
+makes **zero `gh pr view` calls** and **no `get_fleet` call** to learn whether a
+PR is open, merged or green, who was dispatched, or when: that is one
+`mission_get`. `gates.stale: true` means last-known, not re-checked (GitHub was
+unreachable); read it as such, never as a downgrade. After a compaction, read
+the ledger, not the PR list, to rebuild what happened.
+
+**A gate is a fact, not a verdict.** `verified` is derived from the gates and the
+step's proof together; you never write it, and you never write a verdict a gate
+contradicts (no `claimed`, no `mission_verify_step`, no "done" in the Log on a
+step whose `ci` or `main` is `red`).
 
 **`derived.progress` is where the mission is — never recount it.** It carries
 `total`, `current` (`{ from, to }`, a range when steps run in parallel, `null`
@@ -198,6 +216,11 @@ id> })`. It replaces the old hand-assembly of `get_fleet` + `get_approval` +
      (parked, not dead), `peer`, `pendingApprovals`.
    - `derived.steps[].links[]` — a worktree's `exists`/`branch`/`head` and its
      PRs, a card's board `status`, a PR's `state`.
+   - `derived.steps[].gates` — the five facts above, per step. A `red` is work
+     for you (below); a `running` is a wait, not a stall.
+   - `ledger` / `ledgerCount` — the last rows Harnu wrote, oldest first, each
+     with its own timestamp: the age of a PR or of a red CI is `now` minus the
+     row's `at`.
    - `derived.steps[].existence` — the live proof of an `existence` step.
    - `derived.stale` — `true` means an `active` mission with no evidence for over
      an hour and no linked session working. It is a flag to investigate (a stuck
@@ -295,6 +318,24 @@ missionId, stepId, verdict, evidence, sessionId })`. **The verifying session
      fix) → `mission_add_step` with its `reason`, then dispatch and link it like
      any planned unit.
 
+   - **A gate is red → open a side step, this tick.** `ci` red on a step's PR,
+     `main` red after its merge, a `verifier` verdict `unmet`, a `pr` closed
+     unmerged: record the detour as
+     `mission_add_step { title: 'Fix <gate> on <step title>', verification:
+'verifier', required: false, discoveredFrom: <the red step's id>, reason:
+'<the gate and the PR number>' }`, log the fact (`mission_log`), and send the
+     delta to the step's SAME child if one is linked (below). The side step never
+     moves the "Step N of M" headline and keeps its origin visible. Do not open a
+     second side step for a gate that already has one: read the steps first. Do
+     not touch the red step's proof — it reads `verified` again by itself when
+     the gates turn green.
+   - **Escalate to the You lane only what is the operator's to do** — a merge, a
+     decision, a credential, a red `main` nobody can fix without them. Raise
+     `mission_set_blocker { owner: 'operator', reason, unblocks }` with **the age
+     and the risk in the reason** ("`#7` CI red for 3 h; the stack behind it
+     cannot merge"), age from the ledger. A red gate an executor can fix is a side
+     step, not a You item.
+
    - **Wrong result** → send the specific delta back to the SAME child, not a
      redo.
 
@@ -314,7 +355,8 @@ missionId, stepId, verdict, evidence, sessionId })`. **The verifying session
 <action taken>`).
 
 6. **Report ONE line** to the user: `tick — Step N of M · <essential state> |
-next: <next check>`, the headline taken from `derived.progress`. Silence about healthy in-flight work is the feature; detail lives in
+next: <next check>`, the headline taken from `derived.progress` (for a chapter of a campaign, the
+   `status` skill's campaign headline, `Ch. N/M · Step a/b`). Silence about healthy in-flight work is the feature; detail lives in
    the mission. The line expands into the `status` glance card when `Needs you`
    or `Open` changed since the last tick.
 

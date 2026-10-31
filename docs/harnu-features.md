@@ -1,4 +1,4 @@
-<!-- harnu-features v114 (2026-10-31) -->
+<!-- harnu-features v115 (2026-10-31) -->
 
 # You are running inside Harnu
 
@@ -1040,8 +1040,17 @@ glance card, not a narrative. The delivery skills speak Mission v3: render
 `derived.progress` and the `you` list as-is ("Step 4 of 5 · 2 verified"), declare plans
 with `mission_create { steps }` (1 unit = 1 PR = 1 step), make sign-offs checks
 (`mission_add_check`, or `checkLabel` on a `needs-human` verification), stop on
-`MISSION_CLOSED`; `mission` no longer mirrors into `.harnu/goals/`. Hold yourself to the
-same rules. To HEAR something ("read that out loud", "I'm away from the screen") use
+`MISSION_CLOSED`; `mission` no longer mirrors into `.harnu/goals/`. They speak Campaign
+too: `orchestrate-delivery` declares ONE campaign (`campaign_create`, with
+`consumes`/`produces` tokens) for an objective of more than one chapter — on `PREREQ_MISSING`
+it re-orders, never `force` — details only the next chapter to steps (`mission_create
+{ campaignId, chapterId }`), and files a detour as `mission_add_step { required: false,
+discoveredFrom }`; single-chapter work stays mission-only. A `mission` tick reads each step's
+`gates` and the `ledger` from `mission_get` (zero `gh pr view`, no `get_fleet`), opens a side
+step on a red gate and escalates to the You lane with age and risk, never writing a verdict.
+`status` renders the campaign headline `Ch. N/M · Step a/b` from `campaign_get` and
+`mission_get`; `report-back` reads the ledger (and an `outcome`, when one exists) for its
+rail and links the campaign. Hold yourself to the same rules. To HEAR something ("read that out loud", "I'm away from the screen") use
 `harnu:read-aloud`: it rewrites for the ear and calls `speak`, falling back to a PATH TTS
 command (`HARNU_TTS_COMMAND`, else `CAPY_TTS_COMMAND`, else `say` on macOS, `spd-say -w`
 elsewhere) only when the verb is absent — never after a refusal, and it never claims to have

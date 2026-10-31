@@ -96,6 +96,59 @@ ambiguity — one binary question. A question costs the operator a full round-tr
 of wall-clock; a dispatch that turns out slightly wrong costs a rebase. When both
 are available, dispatch. The one question you always ask is the end, below.
 
+**One chapter or several? — the campaign gate.** Count the chapters before you
+declare anything. An objective is **one chapter** when a single mission can carry
+it: its units are independent or stack on each other's code, and nothing a later
+unit needs has to exist in the world first. An objective is **more than one
+chapter** when its stages gate each other — stage 2 consumes something stage 1
+produces (images on a CDN, page templates, credentials, a decision) — or when it
+is too large to plan to the step now. **Single-chapter work keeps the mission-only
+path below, unchanged.** For more than one chapter, declare ONE campaign, not
+loose missions:
+
+`campaign_create { folder, title, declaredEnd, sessionId, chapters: [{ title,
+consumes?, produces?, radiant? }], scope }` — a chapter IS a mission, created
+later; the campaign only holds the plan.
+
+- **One campaign per objective.** Chapters in delivery order, one per stage the
+  spec names. `declaredEnd` is the whole objective's end (kind, target,
+  evidence), proposed from the spec and confirmed in the one end question below.
+  `scope` carries the spec / PRD / ADR paths.
+- **Tokens are how the order is checked.** Give every chapter the `produces` and
+  `consumes` tokens the spec names — free strings such as `images-on-cdn`,
+  `page-templates`. Harnu refuses a chapter that consumes a token no EARLIER
+  chapter produces: `PREREQ_MISSING`, naming the token and the chapter, and
+  nothing is written. **Fix the plan and send the call again: re-order so the
+  producer comes first, or add the producing chapter that is missing.** Never
+  pass `force` to get past it — a forced gap is logged as a `surprise` the
+  operator reads at the close, and it only hides a plan that would have run
+  its chapters in the wrong order.
+- **Rolling wave: detail only the next chapter.** Create the mission of the
+  chapter that starts now — `mission_create { campaignId, chapterId, steps, … }`
+  with the `cmp-…` and `chp-…` ids the campaign ACK returned — and declare its
+  whole plan in that call (1 unit = 1 PR = 1 step, as below). Chapters after it
+  stay coarse: a title, tokens, nothing else, no mission. Detail the next
+  chapter only when the one before is verified, with what you learned in it.
+  A plan for chapter 9 written on day one is a guess the operator will have to
+  read as a promise.
+- **A detour is a side step, not a new mission.** Something found on the way —
+  a fix a unit's PR needs first, a deferred cleanup — is
+  `mission_add_step { required: false, discoveredFrom: <the step it came from>,
+reason }`. It never moves the headline ("Step N of M") and keeps its origin
+  visible. A detour as large as a chapter of its own is a side-quest chapter
+  (`campaign_add_chapter { required: false, discoveredFrom }`); chapters are
+  append-only, so you add them, never reorder or delete them.
+- **Frozen, ID'd acceptance criteria before any dispatch.** Every unit of the
+  chapter you just detailed gets its ACs written with ids and a verification
+  mode (Phase 2) BEFORE its session is created, and they are frozen from then
+  on: an AC is never edited after dispatch — a change is a new AC id with the
+  reason in `mission_log`. Later chapters' ACs are written when their wave
+  starts, not before.
+- **Reading and closing.** `campaign_get` returns the chapter progress Harnu
+  derived ("Chapter N of M") — render it, never recount it. When every required
+  chapter reads done, `campaign_request_close` asks the operator to close; only
+  they end a campaign, and `CAMPAIGN_CLOSED` means stop and report.
+
 **Declare the mission now — after the topology line, before any dispatch.** Call
 `mission_create` in this phase, not after the first unit is out: the mission is
 how the operator sees the delivery, and an end they never agreed to is a finish
@@ -104,7 +157,9 @@ line they will dispute at the close. Propose the declared end from the spec
 the proposal is the recommended option. Pass the spec / PRD / ADR paths as
 `scope` (an attachment, never a step), and declare the whole plan in the same
 call — `mission_create { steps }` — so the mission shows every unit before the
-first executor starts. Shape the steps by these rules:
+first executor starts. (For a campaign, this is the mission of the chapter that
+starts now, created with its `campaignId` and `chapterId`.) Shape the steps by
+these rules:
 
 - **1 unit = 1 PR = 1 step.** One step per deliverable that moves where the work
   is, so the operator's pill ("Step N of M") moves when a unit moves. Sub-phases
@@ -118,7 +173,7 @@ first executor starts. Shape the steps by these rules:
 
 **The answer comes before the first dispatch.** Ask, then stop: write no packet,
 create no session and link no child until the operator has answered the end
-question. The end question in chat is the agreement: the mission is born
+question (for a campaign, one question: the end of the whole objective). The end question in chat is the agreement: the mission is born
 `active`, and nothing else waits on the operator. If they correct the end, stage
 the correction with `mission_set_end`. Once they have answered, dispatch at
 once.

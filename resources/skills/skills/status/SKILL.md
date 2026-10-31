@@ -186,6 +186,24 @@ total, verified, claimed }` — that field is deprecated and disagrees with the
 pill. A `mission_list` row's `progress` may be one poll old (see its
 `computedAt`); the card uses `mission_get`'s.
 
+**A mission that is a chapter of a campaign gets the campaign headline.** When
+`mission_get` shows a `campaignId`, call `campaign_get({ folder, campaignId })`
+and render what Harnu derived, once, in the operator's pill's own words:
+`Ch. N/M · Step a/b`. N = the campaign's `derived.progress.current.from` ("Ch.
+a–b/M" when `from` ≠ `to`), M = its `total`; `Ch. M/M ✓` only when `allDone`.
+`Step a/b` is the open chapter's mission headline: a = its `derived.progress`
+`current.from`, b = its `total`. The bar draws one cell per required chapter, `▰`
+for each of the campaign's `done`. A chapter whose mission does not exist yet is
+coarse by design (rolling wave): print `Ch. N/M` alone, with no step part — never
+invent one. **Never recount chapters** — not by missions found, not by proofs,
+not from `campaign_list`'s `progress`, which may be one poll old; side-quest
+chapters and side steps are outside the headline by construction. The `you` line
+is the open chapter's, from `mission_get`: its first item verbatim, then `(+N
+more)`; with no open chapter mission it reads `— nothing, you're clear`, unless
+the campaign carries a `pendingClose`, which is "close the campaign". The
+campaign is ONE front: the card's header names it, its chapter missions are not
+separate cards.
+
 ## The links — what the reader might open
 
 After the last card, one blank line, then every PR, issue, CI run, board card,
@@ -235,7 +253,9 @@ missionId })` for every mission that is not `closed`.** Each mission is one
    reworded into something Harnu did not say, never an item you derived
    yourself. A `delivered` mission's `you` line asks the operator to close it.
    `stale` never appears in `mission_list`'s `status` — it is `derived.stale` on
-   `mission_get`, and it puts `!` on the header and on `now`.
+   `mission_get`, and it puts `!` on the header and on `now`. A mission with a
+   `campaignId` also needs `campaign_get` for the headline (above); read it once
+   per campaign, not once per chapter.
 
 2. **Legacy goal files — only the ones no mission covers.** A goal file whose
    frontmatter names a mission (`mission: mnt-…`) is that mission's front, so
@@ -246,9 +266,11 @@ yet a Mission` to its `open` line. A legacy `.harnu/GOAL.md` counts the same way
 3. **The board** — `get_board` when it exists; until then `memory_read
 roadmap/<slug>` for each front's card: column, per-AC table, evidence, open
    questions. A card-only front (no mission) is built from this alone.
-4. **`gh pr list --state open` and `gh pr checks <n>`** — CI and merge state. A
-   PR a mission links is already resolved in `derived.steps[].links` (its
-   `state`); `gh` adds only what the projection does not carry, like checks.
+4. **`gh pr list --state open` and `gh pr checks <n>`** — only for PRs no
+   mission links (a card-only front). A PR a mission links is already resolved:
+   its `state` in `derived.steps[].links`, its CI and merge state in that
+   step's `gates` (`pr`, `ci`, `main`), and what happened and when in the
+   mission's `ledger`. Reading `gh` for those is waste and can disagree.
 5. **`get_fleet`** — only for fronts with no mission. A mission's linked sessions
    are already in its projection; polling the whole fleet for them is waste.
 
@@ -298,6 +320,21 @@ asks for it. The card prints that, once:
 
 Note what it does **not** print: no `3/5 proven`, no second line restating the
 step count, no `Progress` row. The header is the progress.
+
+## Example — a chapter of a campaign
+
+`campaign_get` returned `total: 5`, `current: { from: 2, to: 2 }`, `done: 1`; the
+open chapter's `mission_get` returned `total: 4`, `current: { from: 2, to: 2 }`,
+`done: 1` and a `you` line asking for a merge. One card, one front:
+
+```
+  **T595** page migration   ▰▱▱▱▱ Ch. 2/5 · Step 2/4
+  now      S2 templates · `8f2c11ab` · 25 min
+  done     Ch. 1 images on the CDN · S1 template shell
+  next     S3 placeholder states · S4 visual check
+⚑ you      merge `#312` · green, the rest of the chapter waits on it
+? open     Ch. 3 migrate 88 pages is still coarse
+```
 
 ## Example — three named fronts
 
