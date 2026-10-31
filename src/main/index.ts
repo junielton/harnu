@@ -210,6 +210,7 @@ import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
 import { registerMissionIpc } from './mission-ipc'
+import { registerCampaignIpc } from './campaign-ipc'
 import { registerReviewHandlers } from './review-ipc'
 import { resolveCliFolderArg } from './cli-folder-arg'
 import { registerMcpServer, closeMcpServer } from './mcp/server'
@@ -604,6 +605,7 @@ app.whenReady().then(async () => {
   registerPrStack()
   // T370 (T358 S9): mission progress read + the operator doors.
   registerMissionIpc()
+  registerCampaignIpc()
   // T164 U2: branch-vs-base diff + the evidence header's receipts, plus the
   // per-repo blast-radius list (operator-owned, never reachable from an MCP verb).
   registerReviewHandlers(() => mainWindow)

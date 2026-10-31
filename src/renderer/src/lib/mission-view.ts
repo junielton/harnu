@@ -14,7 +14,8 @@ import type { MissionView } from '../../../main/mission-ipc'
 import { progressHeadline, type StepState } from '../../../main/mission-progress'
 import type { MissionChildState } from '../../../main/mcp/fleet-snapshot'
 import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
-import type { Blocker, Check, MissionStep } from '../../../main/mission-core'
+import type { Blocker, Check, LedgerRow, MissionStep } from '../../../main/mission-core'
+import type { MissionYouItem } from '../../../main/mcp/tool-handlers'
 import type { GateState, StepGates } from '../../../main/mission-gates'
 import { owedKeys } from './mission-cue'
 
@@ -151,6 +152,21 @@ export interface GateDot {
   state: GateState
 }
 
+/**
+ * Gate dots (design.md §6 "Mission progress" → Gate dots; campaign spec §3.2). One 7px ring per
+ * fact, tokens only: green/red fill, a half-filled accent ring that pulses while it is in
+ * progress, a hollow ring when there is no signal yet, a dashed faint ring when the gate does not
+ * apply. Shared by the step rail and the Campaign popover's objectives.
+ */
+export const GATE_DOT_CLASS: Record<GateState, string> = {
+  green: 'border-green bg-green',
+  red: 'border-red bg-red',
+  running:
+    'anim-tick-pulse border-accent bg-linear-to-r from-accent from-50% to-transparent to-[50%]',
+  off: 'border-text-4',
+  na: 'border-dashed border-text-4 opacity-50'
+}
+
 /** The server's gates as dots. A derive that predates gates reads as four off dots. */
 function gateDots(gates: Partial<StepGates> | undefined): GateDot[] {
   return GATE_DOT_NAMES.map((name) => ({ name, state: gates?.[name] ?? 'off' }))
@@ -257,6 +273,13 @@ export interface MissionModel {
   /** Steps added after creation (they carry `addedReason`). */
   addedCount: number
   youLook: YouLook
+  /**
+   * T596 (campaign spec Amendments d/e) — what the operator owes as aged rows: the server's `you`
+   * items plus a "Decide" row per undecided decision node. `youLook` follows these rows.
+   */
+  youRows: YouRow[]
+  /** T596 (Amendment c) — the last {@link LEDGER_TAIL} ledger rows, newest first. */
+  ledgerTail: LedgerRow[]
   /** The `you` list is non-empty: the operator owes this mission something (pins the sidebar chip). */
   needsYou: boolean
   stale: boolean
@@ -340,6 +363,168 @@ export function youLook(view: MissionView): YouLook {
   return 'warning'
 }
 
+/** How many ledger rows the chapter popover's tail shows (campaign spec Amendment c). */
+export const LEDGER_TAIL = 5
+
+/**
+ * The mission's last {@link LEDGER_TAIL} ledger rows, newest first. The ledger is
+ * append-only and written by Harnu; it is read here and never recounted.
+ */
+export function ledgerTail(view: MissionView, n: number = LEDGER_TAIL): LedgerRow[] {
+  const rows = view.mission.ledger ?? []
+  return rows.slice(-n).reverse()
+}
+
+/** How much an owed item blocks others — the row's risk dot (design.md §6 "Mission progress"). */
+export type YouRisk = 'high' | 'mid' | 'low'
+
+/**
+ * One row of the You lane (campaign spec Amendments d/e). `item` is the server's `you` item, or
+ * `null` for a "Decide" row, which the renderer derives from an undecided decision node (the
+ * server's `you` list has no such kind). `ageMs` is set only where the record holds a timestamp —
+ * never guessed.
+ */
+export interface YouRow {
+  kind: MissionYouItem['kind'] | 'decide'
+  item: MissionYouItem | null
+  /** The decision step a "Decide" row is about. */
+  stepId: string | null
+  ageMs: number | null
+  risk: YouRisk
+}
+
+const RISK: Record<YouRow['kind'], YouRisk> = {
+  rescope: 'high',
+  blocker: 'high',
+  decide: 'high',
+  'main-red': 'high',
+  close: 'mid',
+  'human-steps': 'mid',
+  approvals: 'mid',
+  'needs-input': 'mid',
+  checks: 'low',
+  'review-import': 'low'
+}
+
+/** Items that block others sit first; a "Decide" row goes right after the last of them. */
+const BLOCKING_FIRST: ReadonlySet<MissionYouItem['kind']> = new Set([
+  'rescope',
+  'close',
+  'blocker',
+  'main-red'
+])
+
+function ageSince(iso: string | undefined, now: number): number | null {
+  const at = iso ? Date.parse(iso) : NaN
+  return Number.isFinite(at) ? Math.max(0, now - at) : null
+}
+
+/** The timestamp (if the record has one) behind an owed item. */
+function itemAge(view: MissionView, item: MissionYouItem, now: number): number | null {
+  const m = view.mission
+  switch (item.kind) {
+    case 'blocker': {
+      const all = [...m.blockers, ...m.steps.flatMap((s) => s.blockers)]
+      return ageSince(all.find((b) => b.reason === item.reason)?.raisedAt, now)
+    }
+    case 'close':
+      return ageSince(m.pendingClose?.at, now)
+    case 'main-red':
+      return ageSince(
+        (m.ledger ?? []).find((r) => r.kind === 'pr-merged' && r.pr === item.pr)?.at,
+        now
+      )
+    case 'checks': {
+      // The oldest unticked check on the steps named: how long the operator has owed it.
+      const created = m.steps
+        .filter((s) => item.stepIds.includes(s.id))
+        .flatMap((s) =>
+          (s.checks ?? []).filter((c) => !c.ticked).map((c) => Date.parse(c.createdAt))
+        )
+        .filter(Number.isFinite)
+      return created.length > 0 ? Math.max(0, now - Math.min(...created)) : null
+    }
+    default:
+      return null
+  }
+}
+
+/**
+ * The You lane as rows (campaign spec Amendments d/e): the server's `you` items in the server's
+ * order, with one "Decide" row per undecided decision node inserted after the blocking items.
+ */
+export function youRows(view: MissionView, now: number = Date.now()): YouRow[] {
+  const rows: YouRow[] = view.you.map((item) => ({
+    kind: item.kind,
+    item,
+    stepId: null,
+    ageMs: itemAge(view, item, now),
+    risk: RISK[item.kind]
+  }))
+  const decide: YouRow[] = view.mission.steps
+    .filter((s) => s.decision !== undefined && s.decision.chosen === undefined)
+    .map((s) => ({
+      kind: 'decide' as const,
+      item: null,
+      stepId: s.id,
+      ageMs: null,
+      risk: RISK.decide
+    }))
+  if (decide.length === 0) return rows
+  let at = 0
+  rows.forEach((r, i) => {
+    if (r.item && BLOCKING_FIRST.has(r.item.kind)) at = i + 1
+  })
+  return [...rows.slice(0, at), ...decide, ...rows.slice(at)]
+}
+
+/**
+ * One You-lane row in the operator's words — never the English `mission_get` sentence. Shared by
+ * the chapter popover and the Campaign popover's aggregated lane. `sessionName` resolves a child
+ * session's display name (the caller owns the sessions store).
+ */
+export function youRowText(
+  t: PluralTranslate,
+  view: MissionView,
+  row: YouRow,
+  sessionName: (sessionId: string) => string
+): string {
+  const titles = (ids: readonly string[]): string =>
+    ids.map((id) => view.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
+  const item = row.item
+  if (!item) {
+    const title = view.mission.steps.find((s) => s.id === row.stepId)?.decision?.title ?? ''
+    return t('mission.you.decide', { title })
+  }
+  switch (item.kind) {
+    case 'rescope':
+      return t('mission.you.rescope', { kind: item.end.kind, target: item.end.target })
+    case 'close':
+      return t('mission.you.close', {})
+    case 'blocker':
+      return t('mission.you.blocker', { reason: item.reason, unblocks: item.unblocks })
+    case 'checks':
+      return t('mission.you.checks', { count: item.count, steps: titles(item.stepIds) }, item.count)
+    case 'human-steps':
+      return t('mission.you.humanSteps', { steps: titles(item.stepIds) }, item.stepIds.length)
+    case 'review-import':
+      return t('mission.you.reviewImport', {})
+    case 'main-red':
+      return t('mission.you.mainRed', { pr: item.pr, step: titles([item.stepId]) })
+    case 'approvals':
+      return t('mission.you.approvals', { count: item.count, session: sessionName(item.sessionId) })
+    case 'needs-input':
+      return t('mission.you.needsInput', { session: sessionName(item.sessionId) })
+  }
+}
+
+/** The You block's look from its rows: same rule as {@link youLook}, plus the derived "Decide" rows. */
+function rowsLook(view: MissionView, rows: readonly YouRow[]): YouLook {
+  if (rows.length === 0) return 'clear'
+  // The server has nothing for the operator but a derived "Decide" row does: that is a warning.
+  return view.you.length === 0 ? 'warning' : youLook(view)
+}
+
 /** A step is reached — its unticked checks are due (Mission v3 §3.6). */
 const REACHED: ReadonlySet<StepState> = new Set(['done', 'verified', 'running', 'waiting'])
 
@@ -375,7 +560,6 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
   const inProgress = m.steps.filter((s) => p.states[s.id] !== undefined)
   // Campaign spec §3.2: `required: false` steps live in the Side bucket, never on the rail.
   const counted = inProgress.filter((s) => s.required !== false)
-  const sideSteps = inProgress.filter((s) => s.required === false)
   const letterOf = new Map(
     counted.map((s, i) => [
       s.id,
@@ -393,6 +577,13 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
   const firstCurrentPos = p.current?.from ?? null
   // With no current step (all done), mission-level blockers sit on the last step.
   const blockerPos = firstCurrentPos ?? counted.length
+
+  const sideRows: SideStepModel[] = (p.side?.steps ?? []).flatMap((x) => {
+    const step = m.steps.find((s) => s.id === x.id)
+    return step
+      ? [{ step, state: x.state, origin: x.discoveredFrom ? nameOf(x.discoveredFrom) : null }]
+      : []
+  })
 
   const steps = counted.map((step, i): StepModel => {
     const position = i + 1
@@ -443,6 +634,7 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
     }
   })
 
+  const youRowList = youRows(view, now)
   const lastEvidence = view.derived.stall.lastEvidenceAt
   const staleForMs = lastEvidence ? Math.max(0, now - Date.parse(lastEvidence)) : null
   return {
@@ -455,17 +647,17 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
     leftBehind: p.leftBehind.length,
     steps,
     side: {
-      count: sideSteps.length,
-      open: sideSteps.filter((x) => !isFinished(p.states[x.id])).length,
-      done: sideSteps.filter((x) => isFinished(p.states[x.id])).length,
-      steps: sideSteps.map((x) => ({
-        step: x,
-        state: p.states[x.id],
-        origin: x.discoveredFrom ? nameOf(x.discoveredFrom) : null
-      }))
+      // The server's Side bucket (`progress.side`): the count and every state are Harnu-derived;
+      // the stored step only lends its title.
+      count: sideRows.length,
+      open: sideRows.filter((x) => !isFinished(x.state)).length,
+      done: sideRows.filter((x) => isFinished(x.state)).length,
+      steps: sideRows
     },
     addedCount: m.steps.filter((s) => s.addedReason).length,
-    youLook: youLook(view),
+    youLook: rowsLook(view, youRowList),
+    youRows: youRowList,
+    ledgerTail: ledgerTail(view),
     needsYou: view.you.length > 0,
     stale: view.derived.stale,
     staleForMs
