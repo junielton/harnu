@@ -6,6 +6,7 @@
  * a renderer test that matches it proves the renderer shows the server's numbers
  * rather than recounting them. `closeWarnings` is the main process's too.
  */
+import { computeStepGates } from '../../src/main/mission-gates'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { MissionView } from '../../src/main/mission-ipc'
@@ -116,6 +117,8 @@ export function fixtureView(
           links: [],
           existence: s.verification === 'existence' ? { proven: !!sig?.existenceProven } : null,
           pulse: { commits: null, lastCommitAt: null, lastActivityAt: null },
+          gates: computeStepGates({ step: s, pr: null, mainCi: null }),
+          prNumber: null,
           ...over.derivedStep?.[s.id]
         }
       }),
