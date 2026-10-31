@@ -206,6 +206,7 @@ import { registerReaperHandlers } from './reaper/reaper-ipc'
 import { registerContainersHandlers } from './containers/containers-ipc'
 import { registerGcHandlers } from './gc/gc-ipc'
 import { registerScheduler, setSchedulerCompanionProvider } from './scheduler-shell'
+import { reconcileStewardsOnBoot, registerStewardWiring } from './steward-bridge'
 import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
@@ -659,9 +660,14 @@ app.whenReady().then(async () => {
   // receives Claude Code hook events → real per-session task-state. Opt-out
   // (installs observer hooks into ~/.claude/settings.json unless disabled);
   // async + best-effort, degrades to the activity heuristic if it can't install.
-  void registerHookBridge(() => mainWindow).catch((err) =>
-    console.error('[hook-bridge] register failed', err)
-  )
+  void registerHookBridge(() => mainWindow)
+    // Campaign ch.5a: once the bridge is listening, answer the steward's hooks and re-point every
+    // steward's `.claude/settings.local.json` hooks at the live port/token (both change per boot).
+    .then(async () => {
+      registerStewardWiring()
+      await reconcileStewardsOnBoot()
+    })
+    .catch((err) => console.error('[hook-bridge] register failed', err))
   // Harnu mod host (T389). Dark by default: it only listens when the developer mode file asks for
   // it, so a default install opens no socket and creates no directory.
   void registerCompanionHost(() => mainWindow).catch((err) =>

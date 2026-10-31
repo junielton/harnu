@@ -238,7 +238,9 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     folder: ALLOWED,
     campaignId: 'cmp-0000abcd',
     sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-  }
+  },
+  // Campaign ch.5a (T597).
+  rebase_stack: { folder: ALLOWED, missionId: 'mnt-0000abcd', onto: 'origin/main' }
 }
 
 /** Mirrors the shell: the gate folder is plucked from the catalog `folder` arg. */

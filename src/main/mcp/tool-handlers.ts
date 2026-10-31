@@ -322,11 +322,16 @@ import {
   createWorkerForAgent,
   deleteWorkerForAgent,
   isSchedulerNotReady,
+  isWorkerIsSteward,
   isWorkerNotFound,
   listWorkersForAgent,
   updateWorkerForAgent,
+  wakeStewardForMission,
   type UpdateWorkerPatch
 } from '../scheduler-shell'
+import { startStewardForMission } from '../steward-shell'
+import { rebaseStack, repoCommonDir, worktreeToplevel } from '../steward-rebase'
+import type { WakeReason } from '../steward-core'
 import type { Effort, NotifyOn, WorkerMode } from '../scheduler-core'
 import { getContainersService } from '../containers/containers-ipc'
 import type { AgentActVerb } from '../containers/containers-wire'
@@ -2704,7 +2709,10 @@ const listWorkersHandler: Handler = async (args, ctx) => {
     mode: w.mode,
     everyMinutes: w.everyMinutes,
     enabled: w.enabled,
-    agentControllable: !isFolderDenied(w.folder, ctx.denyFolders),
+    // Campaign ch.5a: a steward is a system worker — never agent-controllable, whatever the folder.
+    agentControllable:
+      w.category === 'steward' ? false : !isFolderDenied(w.folder, ctx.denyFolders),
+    ...(w.category === 'steward' ? { category: w.category, missionId: w.missionId } : {}),
     ...(w.lastRun ? { lastRun: w.lastRun } : {})
   }))
   return textResult({ workers })
@@ -2780,6 +2788,7 @@ const updateWorkerHandler: Handler = async (args) => {
     // matched on `code`, never `instanceof`.
     if (isSchedulerNotReady(err)) return errorResult((err as Error).message)
     if (isWorkerNotFound(err)) return errorResult((err as Error).message)
+    if (isWorkerIsSteward(err)) return errorResult((err as Error).message)
     throw err
   }
   const { worker, missingSkills, rejectedSkills, tickInFlight } = result
@@ -2810,6 +2819,7 @@ const deleteWorkerHandler: Handler = async (args) => {
   } catch (err) {
     if (isSchedulerNotReady(err)) return errorResult((err as Error).message)
     if (isWorkerNotFound(err)) return errorResult((err as Error).message)
+    if (isWorkerIsSteward(err)) return errorResult((err as Error).message)
     throw err
   }
   return textResult({ ok: true, op: 'delete_worker', id, wasRunning: result.wasRunning })
@@ -3582,6 +3592,16 @@ const missionCreateHandler: Handler = async (args, ctx) => {
       ? await bindMissionToChapter(root, campaignId, chapterId, createMission, ctx)
       : await createMission()
   if (!created.ok) return errorResult(created.error)
+  // Campaign ch.5a (spec §3.4): a mission gets a steward unless it opts out. The mission is on disk
+  // already, so a steward that cannot start is reported in the ACK, never a failed create.
+  const steward =
+    args.steward === false
+      ? { created: false }
+      : await startStewardForMission({
+          missionId: created.mission.id,
+          ownerFolder: path.resolve(folder),
+          title
+        })
   return textResult({
     ok: true,
     op: 'mission_create',
@@ -3589,7 +3609,8 @@ const missionCreateHandler: Handler = async (args, ctx) => {
     slug: created.mission.slug,
     steps: created.mission.steps,
     ...(created.mission.scope ? { scope: created.mission.scope } : {}),
-    ...(campaignId && chapterId ? { campaignId, chapterId } : {})
+    ...(campaignId && chapterId ? { campaignId, chapterId } : {}),
+    steward
   })
 }
 
@@ -4533,6 +4554,18 @@ function observeLedger(
     }
   })
   addObservedLedger(mission.id, added)
+  // Campaign ch.5a: what this read OBSERVED is an event too — a CI change, a PR opening or merging,
+  // a builder ending. One wake per read, named for the most specific thing seen.
+  if (added.length > 0) {
+    void wakeSteward(
+      mission.id,
+      added.some((r) => r.kind === 'ci')
+        ? 'ci'
+        : added.some((r) => r.kind === 'session-died')
+          ? 'child-idle'
+          : 'ledger'
+    )
+  }
 }
 
 /**
@@ -4856,10 +4889,19 @@ async function appendLedgerTo(
         }
         await atomicWriteFile(loaded.file, buildMissionFileContent(next, loaded.log), 0o644)
       })
+      // Campaign ch.5a: a ledger row is an event the mission's steward wakes on.
+      await wakeSteward(t.missionId, row.kind === 'ci' ? 'ci' : 'ledger')
     } catch (err) {
       console.warn(`[mission-ledger] could not record ${row.kind} on ${t.missionId}:`, err)
     }
   }
+}
+
+/** Wake a mission's steward; fire-and-forget, and never a reason for the caller to fail. */
+function wakeSteward(missionId: string, reason: WakeReason): Promise<unknown> {
+  return wakeStewardForMission(missionId, reason).catch((err) => {
+    console.warn(`[steward] could not wake the steward of ${missionId}:`, err)
+  })
 }
 
 /** The open missions of `folder`'s repo, without creating a data dir where there is none. */
@@ -5576,7 +5618,7 @@ const missionClearBlockerHandler: Handler = async (args, ctx) => {
     return errorResult('BAD_ARGS: pass exactly one of reason / index')
   }
   const stepId = strField(args, 'stepId')
-  return editMission(args, ctx, (m) => {
+  const cleared = await editMission(args, ctx, (m) => {
     const target = blockerTarget(m, stepId)
     if (!target.ok) return target
     const at =
@@ -5603,6 +5645,10 @@ const missionClearBlockerHandler: Handler = async (args, ctx) => {
       }
     }
   })
+  // Campaign ch.5a: a cleared blocker is a steward wake-up, once the write has landed.
+  const missionId = strField(args, 'missionId')
+  if (!cleared.isError && missionId) await wakeSteward(missionId, 'blocker-cleared')
+  return cleared
 }
 
 /** One timestamped Log entry, led by a newline when `before` does not end with one. */
@@ -5780,6 +5826,111 @@ const missionVerifyStepHandler: Handler = async (args, ctx) => {
   })
 }
 
+// ---- Campaign ch.5a: rebase_stack ---------------------------------------------
+
+/** A step that is still open (its proof is not final). */
+const stepIsOpen = (s: MissionStep): boolean =>
+  s.kind === 'custom' && s.proof !== 'verified' && s.proof !== 'self-verified'
+
+/** The linked worktrees (not the main checkout) a step's `worktree` links resolve to. */
+async function stepWorktrees(root: string, step: MissionStep): Promise<string[]> {
+  const found = new Set<string>()
+  for (const l of step.links) {
+    if (l.kind !== 'worktree') continue
+    const p = linkPath(root, l.ref)
+    const st = await fs.stat(p).catch(() => null)
+    if (!st) continue
+    const top = await worktreeToplevel(st.isDirectory() ? p : path.dirname(p))
+    if (top) found.add(top)
+  }
+  return [...found]
+}
+
+const rebaseStackHandler: Handler = async (args, ctx) => {
+  const folder = ctx.folder
+  if (!folder) return errorResult('BAD_ARGS: folder is required')
+  const missionId = strField(args, 'missionId') ?? ''
+  const onto = strField(args, 'onto') ?? ''
+  const from = strField(args, 'from')
+  const wantedStep = strField(args, 'stepId')
+  const root = missionRoot(folder)
+  const refusal = missionFolderRefusal(folder, root, ctx)
+  if (refusal) return errorResult(refusal)
+
+  const loaded = await loadMission(root, missionId)
+  if (!loaded.ok) return errorResult(loaded.error)
+  if (loaded.mission.status === 'closed') return errorResult(missionClosedMessage(missionId))
+  const mission = loaded.mission
+
+  // Which step, and which of its linked worktrees.
+  const candidates: Array<{ step: MissionStep; worktree: string }> = []
+  const pool = wantedStep
+    ? mission.steps.filter((s) => s.id === wantedStep)
+    : mission.steps.filter(stepIsOpen)
+  if (wantedStep && pool.length === 0)
+    return errorResult(stepNotFoundMessage(missionId, wantedStep))
+  const repoDir = await repoCommonDir(root)
+  for (const step of pool) {
+    for (const wt of await stepWorktrees(root, step)) {
+      if (wt === root) continue // never the main checkout: the rebase core would refuse it anyway
+      if (repoDir && (await repoCommonDir(wt)) !== repoDir) {
+        return errorResult(
+          `WORKTREE_NOT_IN_REPO: ${wt}, linked on ${step.id}, belongs to a different repository than this mission — rebase_stack only rebases this repo's own worktrees.`
+        )
+      }
+      candidates.push({ step, worktree: wt })
+    }
+  }
+  if (candidates.length === 0) {
+    return errorResult(
+      `NO_STEP_WORKTREE: ${wantedStep ? wantedStep : 'no open step of this mission'} links a linked worktree — mission_link_child { kind: 'worktree', ref: <path> } the step's worktree first.`
+    )
+  }
+  if (candidates.length > 1) {
+    return errorResult(
+      `STEP_AMBIGUOUS: several steps link a worktree (${candidates.map((c) => `${c.step.id} → ${c.worktree}`).join('; ')}) — pass stepId.`
+    )
+  }
+  const { step, worktree } = candidates[0]
+
+  const res = await rebaseStack({ worktree, onto, ...(from ? { from } : {}) })
+  if (res.ok) {
+    return textResult({
+      ok: true,
+      op: 'rebase_stack',
+      stepId: step.id,
+      branch: res.branch,
+      before: res.before,
+      after: res.after,
+      rebased: res.rebased,
+      // The local branch moved; no remote ref did. Publishing is the owner's move.
+      pushed: false
+    })
+  }
+  if (res.code === 'REBASE_CONFLICT') {
+    const reason = `Rebase of ${res.branch} onto ${onto} conflicted in ${res.conflicts.join(', ')}`
+    // The tree is exactly as it was (the core verified). Flag the step, once; the retry of an
+    // unchanged conflict updates the existing blocker instead of stacking a second.
+    await editMission(args, ctx, (m) => {
+      const target = m.steps.find((s) => s.id === step.id)
+      if (!target) return { ok: false, error: stepNotFoundMessage(m.id, step.id) }
+      const unblocks =
+        'Resolve the conflict by hand (rebase the branch yourself, or fix the overlap), then clear this blocker.'
+      const existing = target.blockers.find((b) => b.reason === reason)
+      if (existing) {
+        existing.unblocks = unblocks
+        return { ok: true, mission: m, unchanged: true, ack: { ok: true } }
+      }
+      target.blockers.push({ reason, unblocks, owner: 'agent', raisedAt: new Date().toISOString() })
+      return { ok: true, mission: m, ack: { ok: true } }
+    })
+    return errorResult(
+      `REBASE_CONFLICT: ${reason}. The rebase was aborted and ${worktree} is exactly as it was (HEAD ${res.head}). An agent-owned blocker is set on ${step.id}; do not retry — tell the operator.`
+    )
+  }
+  return errorResult(`${res.code}: ${res.detail}`)
+}
+
 const missionRequestCloseHandler: Handler = async (args, ctx) => {
   const requestedBy = strField(args, 'sessionId')
   if (requestedBy !== undefined && !SESSION_UUID_RE.test(requestedBy)) {
@@ -5801,6 +5952,43 @@ const missionRequestCloseHandler: Handler = async (args, ctx) => {
   })
 }
 
+/** Campaign spec §3.2: what a Log entry can be. */
+const LOG_KINDS: ReadonlySet<string> = new Set(['note', 'decision', 'surprise', 'steward'])
+
+/**
+ * Campaign ch.5a (spec §3.4): "every action it takes is a `steward` Log entry". Called by the
+ * control server after a steward's successful write, so the entry exists whether or not the model
+ * remembers to write one. Never throws: the action already happened.
+ */
+export async function appendStewardLog(
+  folder: string,
+  missionId: string,
+  op: string,
+  args: Record<string, unknown>
+): Promise<void> {
+  try {
+    const root = missionRoot(folder)
+    await withMissionIdMintLock(missionId, async () => {
+      const loaded = await loadMission(root, missionId)
+      if (!loaded.ok || loaded.mission.status === 'closed') return
+      const { folder: _f, missionId: _m, ...rest } = args
+      void _f
+      void _m
+      const brief = JSON.stringify(rest, (_k, v) =>
+        typeof v === 'string' && v.length > 200 ? `${v.slice(0, 199)}…` : v
+      )
+      const text = `${op} ${brief.length > 600 ? `${brief.slice(0, 599)}…` : brief}`
+      await atomicWriteFile(
+        loaded.file,
+        loaded.raw + missionLogEntry(loaded.raw, ' · steward', text),
+        0o644
+      )
+    })
+  } catch (err) {
+    console.warn(`[steward] could not log ${op} on ${missionId}:`, err)
+  }
+}
+
 const missionLogHandler: Handler = async (args, ctx) => {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -5818,8 +6006,12 @@ const missionLogHandler: Handler = async (args, ctx) => {
     if (stepId && !loaded.mission.steps.some((s) => s.id === stepId)) {
       return errorResult(stepNotFoundMessage(id, stepId))
     }
-    // Append to the raw file: the frontmatter bytes stay exactly as they were.
-    const entry = missionLogEntry(loaded.raw, stepId ? ` · ${stepId}` : '', note)
+    // Append to the raw file: the frontmatter bytes stay exactly as they were. The heading carries the
+    // entry's kind (`### <time> · steward · stp-2`), so the Log can be read by kind; a plain note keeps
+    // the heading it always had.
+    const kind = strField(args, 'kind')
+    const kindTag = kind && kind !== 'note' && LOG_KINDS.has(kind) ? ` · ${kind}` : ''
+    const entry = missionLogEntry(loaded.raw, `${kindTag}${stepId ? ` · ${stepId}` : ''}`, note)
     if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
     await atomicWriteFile(loaded.file, loaded.raw + entry, 0o644)
     return textResult({ ok: true, op: 'mission_log' })
@@ -6920,6 +7112,7 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   campaign_create: campaignCreateHandler,
   campaign_add_chapter: campaignAddChapterHandler,
   campaign_get: campaignGetHandler,
+  rebase_stack: rebaseStackHandler,
   campaign_list: campaignListHandler,
   campaign_request_close: campaignRequestCloseHandler
 }
