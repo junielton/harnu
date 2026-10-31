@@ -94,3 +94,21 @@ export function pickLedgerTargets(
   if (linked.length > 0) return linked
   return open.length === 1 ? [{ missionId: open[0].id }] : []
 }
+
+/**
+ * The ledger as `mission_get` reads it: the rows written into the mission file
+ * (dispatch, worktree, manifest, verdict, compaction) and the rows observed while
+ * reading it (kept beside the link cache), in time order. Equal times keep the file's
+ * rows first, then the observed ones, so the order never depends on the sort engine.
+ */
+export function mergeLedger(
+  file: readonly LedgerRow[] | undefined,
+  observed: readonly LedgerRow[]
+): LedgerRow[] {
+  return [...(file ?? []), ...observed]
+    .map((row, i) => ({ row, i, t: Date.parse(row.at) }))
+    .sort((a, b) =>
+      Number.isFinite(a.t) && Number.isFinite(b.t) && a.t !== b.t ? a.t - b.t : a.i - b.i
+    )
+    .map((x) => x.row)
+}

@@ -28,6 +28,7 @@ import type { MissionPrJoin } from '../src/main/pr-stack'
 const h = vi.hoisted(() => ({
   userDataDir: '',
   taskStates: new Map<string, string>(),
+  live: new Set<string>(),
   pr: { state: 'OPEN', ci: 'pending' } as { state: string; ci: string }
 }))
 
@@ -49,7 +50,7 @@ vi.mock('../src/main/hook-bridge', async (importOriginal) => ({
 }))
 vi.mock('../src/main/pty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/pty')>()),
-  liveSessionKeys: () => new Set()
+  liveSessionKeys: () => h.live
 }))
 vi.mock('../src/main/hibernation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/hibernation')>()),
@@ -223,6 +224,7 @@ beforeEach(async () => {
   await fs.mkdir(root)
   execFileSync('git', ['init', '-q', '-b', 'main', root])
   h.taskStates = new Map()
+  h.live = new Set()
   h.pr = { state: 'OPEN', ci: 'pending' }
   vi.resetModules()
   const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
@@ -319,6 +321,7 @@ describe('read-time events — observed once, kept out of the mission file', () 
   })
 
   it('records session-died once when a linked builder ends', async () => {
+    h.live = new Set([BUILDER])
     h.taskStates.set(BUILDER, 'working' satisfies TaskState)
     await ledgerOf()
     expect(ofKind(await ledgerOf(), 'session-died')).toHaveLength(0)
@@ -328,6 +331,21 @@ describe('read-time events — observed once, kept out of the mission file', () 
     expect(rows).toEqual([
       expect.objectContaining({ stepId: 'stp-1', ref: BUILDER, detail: 'failed' })
     ])
+  })
+
+  it('records session-died when a builder seen alive loses its process', async () => {
+    h.live = new Set([BUILDER])
+    h.taskStates.set(BUILDER, 'working' satisfies TaskState)
+    await ledgerOf()
+    h.live = new Set() // the PTY is gone: the hook state is no longer disclosed
+    await ledgerOf()
+    const rows = ofKind(await ledgerOf(), 'session-died')
+    expect(rows).toEqual([expect.objectContaining({ ref: BUILDER, detail: 'exited' })])
+  })
+
+  it('a builder that was never seen alive is not reported dead', async () => {
+    await ledgerOf()
+    expect(ofKind(await ledgerOf(), 'session-died')).toHaveLength(0)
   })
 
   it('never rewrites the mission file on a read, whatever it observes', async () => {

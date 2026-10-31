@@ -102,6 +102,8 @@ const Mission = z.object({
 })
 
 /** design §7 — one linked child's live state (the scoped fleet projection's row). */
+const GateStateSchema = z.enum(['green', 'red', 'running', 'off', 'na'])
+
 const ChildState = z
   .object({
     sessionId: z.string(),
@@ -468,7 +470,19 @@ const CONTRACT: ContractRow[] = [
                       lastCommitAt: z.string().nullable(),
                       lastActivityAt: z.string().nullable()
                     })
-                    .strict()
+                    .strict(),
+                  // Campaign spec §3.2: the derived gates + the PR they read.
+                  gates: z
+                    .object({
+                      pr: GateStateSchema,
+                      ci: GateStateSchema,
+                      main: GateStateSchema,
+                      verifier: GateStateSchema,
+                      checks: GateStateSchema,
+                      stale: z.literal(true).optional()
+                    })
+                    .strict(),
+                  prNumber: z.number().int().nullable()
                 })
                 .strict()
             )
@@ -487,12 +501,18 @@ const CONTRACT: ContractRow[] = [
               'checks',
               'human-steps',
               'review-import',
+              'main-red',
               'approvals',
               'needs-input'
             ])
           })
           .passthrough()
       ),
+      // Campaign spec §3.2: the ledger tail (last 20) and the total row count.
+      ledger: z.array(
+        z.object({ at: z.string(), kind: z.string(), ref: z.string() }).passthrough()
+      ),
+      ledgerCount: z.number().int().min(0),
       // Mission v2 §3.5: what mission_request_close would refuse now, or null.
       closeReadiness: z
         .object({

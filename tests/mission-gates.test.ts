@@ -3,7 +3,7 @@
  * facts (PR, CI, main CI) come in, five states go out; nothing is stored.
  */
 import { describe, it, expect } from 'vitest'
-import { computeStepGates, GATE_NAMES, type GateInput } from '../src/main/mission-gates'
+import { ciOfRuns, computeStepGates, GATE_NAMES, type GateInput } from '../src/main/mission-gates'
 
 const base: GateInput = {
   step: { verification: 'verifier', proof: 'unproven' },
@@ -109,5 +109,34 @@ describe('computeStepGates', () => {
     })
     expect(g.stale).toBe(true)
     expect(computeStepGates(base).stale).toBeUndefined()
+  })
+})
+
+describe('ciOfRuns — CI of a merge commit from its workflow runs', () => {
+  it('no runs is unknown, not green', () => {
+    expect(ciOfRuns([])).toBe('unknown')
+  })
+
+  it('any failing run wins, then any unfinished run, then all-success', () => {
+    expect(
+      ciOfRuns([
+        { status: 'completed', conclusion: 'success' },
+        { status: 'completed', conclusion: 'failure' }
+      ])
+    ).toBe('failing')
+    expect(
+      ciOfRuns([{ status: 'completed', conclusion: 'success' }, { status: 'in_progress' }])
+    ).toBe('pending')
+    expect(
+      ciOfRuns([
+        { status: 'completed', conclusion: 'success' },
+        { status: 'completed', conclusion: 'skipped' }
+      ])
+    ).toBe('passing')
+  })
+
+  it('a cancelled or timed-out run is failing', () => {
+    expect(ciOfRuns([{ status: 'completed', conclusion: 'cancelled' }])).toBe('failing')
+    expect(ciOfRuns([{ status: 'completed', conclusion: 'timed_out' }])).toBe('failing')
   })
 })

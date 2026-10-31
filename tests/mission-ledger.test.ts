@@ -16,6 +16,7 @@ import {
   hasLedgerRow,
   lastLedgerDetail,
   ledgerTail,
+  mergeLedger,
   pickLedgerTargets,
   LEDGER_TAIL
 } from '../src/main/mission-ledger'
@@ -153,5 +154,26 @@ describe('pickLedgerTargets — which mission a dispatch belongs to', () => {
 
   it('a closed mission never receives a row', () => {
     expect(pickLedgerTargets([closed], { folder: '/repo' })).toEqual([])
+  })
+})
+
+describe('mergeLedger — file rows and observed rows read as one ledger', () => {
+  const row = (atIso: string, ref: string): { at: string; kind: 'ci'; ref: string } => ({
+    at: atIso,
+    kind: 'ci',
+    ref
+  })
+
+  it('orders by time, keeps insertion order on ties, and never mutates its inputs', () => {
+    const file = [row('2026-10-30T10:00:00.000Z', 'a'), row('2026-10-30T10:02:00.000Z', 'c')]
+    const observed = [row('2026-10-30T10:01:00.000Z', 'b'), row('2026-10-30T10:02:00.000Z', 'd')]
+    const merged = mergeLedger(file, observed)
+    expect(merged.map((r) => r.ref)).toEqual(['a', 'b', 'c', 'd'])
+    expect(file).toHaveLength(2)
+    expect(observed).toHaveLength(2)
+  })
+
+  it('handles a mission with no file ledger', () => {
+    expect(mergeLedger(undefined, [])).toEqual([])
   })
 })

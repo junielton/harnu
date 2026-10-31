@@ -302,14 +302,19 @@ describe('mission_get — derived live signals (design §7)', () => {
         children: [],
         links: [],
         existence: { proven: false, reason: expect.any(String) },
-        pulse: { commits: null, lastCommitAt: null, lastActivityAt: null }
+        pulse: { commits: null, lastCommitAt: null, lastActivityAt: null },
+        // Campaign spec §3.2: a step with no PR has no signal yet.
+        gates: { pr: 'off', ci: 'off', main: 'off', verifier: 'na', checks: 'na' },
+        prNumber: null
       },
       {
         stepId: 'stp-2',
         children: [],
         links: [],
         existence: null,
-        pulse: { commits: null, lastCommitAt: null, lastActivityAt: null }
+        pulse: { commits: null, lastCommitAt: null, lastActivityAt: null },
+        gates: { pr: 'off', ci: 'off', main: 'off', verifier: 'off', checks: 'na' },
+        prNumber: null
       }
     ])
     expect(h.joinCalls).toBe(0) // nothing to join → gh never asked

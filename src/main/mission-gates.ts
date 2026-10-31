@@ -38,6 +38,39 @@ export interface GateInput {
   stale?: boolean
 }
 
+/** One workflow run as `gh run list --json status,conclusion` reports it. */
+export interface CiRun {
+  status?: string
+  conclusion?: string
+}
+
+const RUN_FAIL = new Set([
+  'failure',
+  'timed_out',
+  'cancelled',
+  'startup_failure',
+  'action_required'
+])
+const RUN_PASS = new Set(['success', 'neutral', 'skipped'])
+
+/**
+ * CI of one commit from its workflow runs: any failing run wins, then any run still
+ * going, then all-success. No runs at all is `unknown` — a commit nothing ran on is
+ * not a green one.
+ */
+export function ciOfRuns(runs: readonly CiRun[]): GateCi {
+  if (runs.length === 0) return 'unknown'
+  let pending = false
+  for (const r of runs) {
+    const status = (r.status ?? '').toLowerCase()
+    const conclusion = (r.conclusion ?? '').toLowerCase()
+    if (status && status !== 'completed') pending = true
+    else if (RUN_FAIL.has(conclusion)) return 'failing'
+    else if (!RUN_PASS.has(conclusion)) pending = true
+  }
+  return pending ? 'pending' : 'passing'
+}
+
 function fromCi(ci: GateCi | null | undefined): GateState {
   if (ci === 'passing') return 'green'
   if (ci === 'failing') return 'red'

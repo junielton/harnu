@@ -19,8 +19,14 @@ import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { app } from 'electron'
 import { atomicWriteFile } from './mcp/atomic-write'
+import { LEDGER_KINDS, type LedgerRow } from './mission-core'
 
-export type LinkCacheKind = 'pr' | 'worktree'
+/**
+ * `pr` / `worktree` — the link's own state. `pr-ci` — the last CI state of a PR's head
+ * (`passing` / `failing`), `pr-main` — the last CI state of its merge commit on the
+ * default branch (campaign spec §3.2 gates).
+ */
+export type LinkCacheKind = 'pr' | 'worktree' | 'pr-ci' | 'pr-main'
 
 /** One remembered resolution. `at` is when this state was first seen. */
 export interface LinkResolution {
@@ -45,6 +51,15 @@ const FILE_NAME = 'mission-link-cache.json'
 const VERSION = 1
 
 const entries = new Map<string, LinkResolution>()
+/**
+ * Campaign spec §3.2 — ledger rows Harnu OBSERVED while reading a mission (a PR
+ * opened / merged, a CI change, a linked session ending), per mission id. They live
+ * here, beside the other last-known facts, and not in the mission file: a read never
+ * rewrites it (Mission v3 §3.7), so `updatedAt` stays a pure evidence signal.
+ */
+const observedLedger = new Map<string, LedgerRow[]>()
+/** Bound on one mission's observed rows; past it the oldest are dropped. */
+export const OBSERVED_LEDGER_MAX = 500
 let loading: Promise<void> | null = null
 let dirty = false
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -59,6 +74,17 @@ function keyOf(root: string, kind: LinkCacheKind, ref: string): string {
 function sidecarPath(): string {
   if (file === null) file = path.join(app.getPath('userData'), FILE_NAME)
   return file
+}
+
+function isLedgerRow(v: unknown): v is LedgerRow {
+  const r = v as Partial<LedgerRow> | null
+  return (
+    !!r &&
+    typeof r === 'object' &&
+    typeof r.at === 'string' &&
+    typeof r.ref === 'string' &&
+    (LEDGER_KINDS as readonly unknown[]).includes(r.kind)
+  )
 }
 
 function isResolution(v: unknown): v is LinkResolution {
@@ -82,7 +108,7 @@ export function ensureLinkCacheLoaded(): Promise<void> {
       } catch {
         return // missing or corrupt: start empty
       }
-      const body = parsed as { version?: unknown; entries?: unknown } | null
+      const body = parsed as { version?: unknown; entries?: unknown; ledger?: unknown } | null
       if (!body || body.version !== VERSION || typeof body.entries !== 'object' || !body.entries) {
         return
       }
@@ -95,6 +121,17 @@ export function ensureLinkCacheLoaded(): Promise<void> {
       entries.clear()
       for (const [k, v] of merged) entries.set(k, v)
       trim()
+      if (body.ledger && typeof body.ledger === 'object') {
+        for (const [missionId, rows] of Object.entries(body.ledger as Record<string, unknown>)) {
+          if (!Array.isArray(rows)) continue
+          // Disk first, then what was observed in memory meanwhile (newer).
+          const memory = observedLedger.get(missionId) ?? []
+          observedLedger.set(
+            missionId,
+            [...rows.filter(isLedgerRow), ...memory].slice(-OBSERVED_LEDGER_MAX)
+          )
+        }
+      }
     })()
   }
   return loading
@@ -161,6 +198,19 @@ export function rememberResolved(
   scheduleWrite()
 }
 
+/** The rows observed so far for a mission, oldest first. */
+export function getObservedLedger(missionId: string): readonly LedgerRow[] {
+  return observedLedger.get(missionId) ?? []
+}
+
+/** Append observed rows for a mission (the only operation on them). */
+export function addObservedLedger(missionId: string, rows: readonly LedgerRow[]): void {
+  if (rows.length === 0) return
+  const next = [...(observedLedger.get(missionId) ?? []), ...rows].slice(-OBSERVED_LEDGER_MAX)
+  observedLedger.set(missionId, next)
+  scheduleWrite()
+}
+
 /** Drop a link's last-known state — only on a contrary observation (a PR closed unmerged). */
 export function forgetResolved(root: string, kind: LinkCacheKind, ref: string): void {
   if (entries.delete(keyOf(root, kind, ref))) scheduleWrite()
@@ -176,7 +226,15 @@ export async function flushLinkCache(): Promise<void> {
   writing = writing.then(async () => {
     if (!dirty) return
     dirty = false
-    const body = JSON.stringify({ version: VERSION, entries: Object.fromEntries(entries) }, null, 1)
+    const body = JSON.stringify(
+      {
+        version: VERSION,
+        entries: Object.fromEntries(entries),
+        ...(observedLedger.size > 0 ? { ledger: Object.fromEntries(observedLedger) } : {})
+      },
+      null,
+      1
+    )
     try {
       await fs.mkdir(path.dirname(sidecarPath()), { recursive: true })
       await atomicWriteFile(sidecarPath(), body, 0o600)

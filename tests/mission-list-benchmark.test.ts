@@ -42,7 +42,9 @@ vi.mock('node:child_process', async (importOriginal) => {
   type Cb = (err: Error | null, out?: { stdout: string; stderr: string }) => void
   const execFile = (file: string, args: string[], opts: object, cb: Cb): void => {
     if (file === 'gh') {
-      h.ghCalls++
+      // The claim is about the PR LIST (single-flight per repo); the merge-commit CI
+      // lookups of the campaign `main` gate (spec §3.2) are separate, cached calls.
+      if (args[0] === 'pr' && args[1] === 'list') h.ghCalls++
       const prs = [7, 8, 9].map((n) => ({
         number: n,
         headRefName: `feat/b${n}`,

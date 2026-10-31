@@ -159,7 +159,7 @@ async function buildMissionView(
     mission: projected,
     title: missionTitle(log, mission.slug),
     derived,
-    you: youItems(mission, children, derived.progress),
+    you: youItems(mission, children, derived.progress, derived.steps),
     progress: derived.progress,
     closeWarnings: closeWarnings(mission, derived.progress)
   }
