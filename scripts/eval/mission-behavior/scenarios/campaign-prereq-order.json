@@ -1,0 +1,107 @@
+{
+  "name": "campaign-prereq-order",
+  "order": 21,
+  "title": "a plan that consumes before it produces is refused, the skill re-orders and never forces",
+  "reviewFocus": null,
+  "label": "campaign AC-3b.4 (b)",
+  "description": "Campaign spec \u00a73.5 / \u00a78 AC-4 (b). The spec numbers its chapters in the order the work was first discussed: chapter 1 consumes `page-templates`, chapter 2 produces it. The owner is told to try the spec's numbering first, so `campaign_create` answers PREREQ_MISSING (the refusal is in Harnu's audit log; state cannot hold a refusal). The skill must then re-order the chapters so the producer comes first and must NOT pass `force`: a forced gap is logged as a `surprise` in the campaign Log, so the final state has the producer before the consumer and no surprise.",
+  "agents": ["A"],
+  "phases": [
+    {
+      "copyIn": [
+        {
+          "from": "resources/skills/skills/orchestrate-delivery/SKILL.md",
+          "to": ".eval/orchestrate-delivery-SKILL.md"
+        },
+        {
+          "from": "scripts/eval/mission-behavior/fixtures/campaign-spec-misordered.md",
+          "to": "docs/page-publishing-spec.md"
+        }
+      ]
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "tools": ["Read"],
+      "prompt": "Skill file: .eval/orchestrate-delivery-SKILL.md.\n\nThe operator hands you this objective: \"Deliver the page publishing described in docs/page-publishing-spec.md.\" Treat Phase 0 as done: the spec is committed on the default branch and the repo is ready to dispatch into.\n\nYou proposed the end and the operator already confirmed it: the pages are done when every product page is served from its template, proven by the final PR merged with green CI.\n\nThe operator numbered the chapters in the spec, so declare them first in exactly that order. This sandbox cannot dispatch. Do Phase 1 only (declare the delivery); write no packet and link no session. Start the orchestration now."
+    }
+  ],
+  "assert": [
+    {
+      "campaignCount": 1
+    },
+    {
+      "label": "both chapters were declared",
+      "campaign": "*",
+      "path": "chapters",
+      "length": 2
+    },
+    {
+      "label": "the producer of page-templates comes before its consumer",
+      "campaign": "*",
+      "chapterBefore": ["produces:page-templates", "consumes:page-templates"]
+    },
+    {
+      "label": "the gap was fixed, not forced \u2014 no surprise in the campaign Log",
+      "campaign": "*",
+      "logNotContains": "\u00b7 surprise"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "left-in-the-refused-order",
+      "mutate": [
+        {
+          "campaign": "*",
+          "swapChapters": ["produces:page-templates", "consumes:page-templates"]
+        }
+      ]
+    },
+    {
+      "name": "forced-past-the-gap",
+      "mutate": [
+        {
+          "campaign": "*",
+          "logAppend": "### 2026-10-31T12:00:00.000Z \u00b7 surprise\n\nchp-1 consumes page-templates, which no earlier chapter produces."
+        }
+      ]
+    },
+    {
+      "name": "consumes-dropped-to-pass",
+      "mutate": [
+        {
+          "campaign": "*",
+          "chapter": "consumes:page-templates",
+          "unset": "consumes"
+        }
+      ]
+    },
+    {
+      "name": "campaign-never-declared",
+      "mutate": [
+        {
+          "dropCampaign": "*"
+        }
+      ]
+    },
+    {
+      "name": "a-chapter-deleted-to-pass",
+      "mutate": [
+        {
+          "campaign": "*",
+          "set": {
+            "chapters": [
+              {
+                "id": "chp-1",
+                "ordinal": 1,
+                "title": "Build the page templates",
+                "required": true,
+                "produces": ["page-templates"]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
