@@ -332,26 +332,27 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 
 ### Layout dimensions
 
-| Dimension                              | Value                                                | Use                                                                                                                                                                                                                                                                                                                                                                                |
-| -------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sidebar — minimum width                | 200px                                                | Drag-resize floor                                                                                                                                                                                                                                                                                                                                                                  |
-| Sidebar — default width                | 268px                                                | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
-| Sidebar — maximum width                | 480px                                                | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — minimum width             | 260px                                                | Drag-resize floor (4th column, T83)                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — default width             | 300px                                                | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
-| Inbox rail — maximum width             | 440px                                                | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — minimized strip           | 44px                                                 | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
-| Progress popover — standard / wide     | 400px / 520px                                        | The Mission progress popover is 400px; the Campaign popover (`.pop--wide`, §6 "Campaign progress") is the one 520px variant — two panes need the room                                                                                                                                                                                                                              |
-| Resizable divider — hit area           | 6px                                                  | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
-| Resizable divider — visible stripe     | 1px                                                  | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                                                                                                                                                                                                             |
-| Footer / status bar — height           | 24px (`h-6`)                                         | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
-| Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)` | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
-| Settings pane — bounded list           | max-height `280px`                                   | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                                                                                                                                                                                              |
-| Cleanup side panel — width             | 320px                                                | Docked detail panel beside the treemap (§6 "Workspace GC — unified Cleanup"); overlays the map below 1100px instead of docking                                                                                                                                                                                                                                                     |
-| Cleanup treemap — region minimum width | 340px                                                | A repo region never lays out narrower; the map wraps onto another shelf (row) instead of squeezing, and the canvas height is computed from the data, not fixed (§6 "Workspace GC — unified Cleanup / Treemap")                                                                                                                                                                     |
-| Cleanup list dialog — width            | `min(720px, 90vw)`                                   | The bulk-clean / remove-selected confirm: wider than the 560px Dialog so a row holds name + chips; the card is capped at `--dialog-max-h` (see "Dialog — viewport cap") and its body — list and refused section together — is the one scroller                                                                                                                                     |
-| Dialog — viewport cap                  | `--dialog-max-h` = `84vh`                            | Upper bound of a dialog card's height, written `max-h-(--dialog-max-h)`. The card is a flex column: header and footer `shrink-0`, the body `min-h-0 flex-1 overflow-y-auto` is the only scroller, so title and actions never leave the window (BUG-184: Cleanup bulk confirm, Containers remove). 84vh sits mid-range of the shipped 80–88vh caps and leaves ≥ 8vh above and below |
-| macOS window-controls inset            | 78px (macOS only; 0 elsewhere)                       | Left inset on the corner header (sidebar always; topbar when sidebar collapsed) so content clears the macOS traffic lights                                                                                                                                                                                                                                                         |
+| Dimension                              | Value                                                          | Use                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar — minimum width                | 200px                                                          | Drag-resize floor                                                                                                                                                                                                                                                                                                                                                                  |
+| Sidebar — default width                | 268px                                                          | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
+| Sidebar — maximum width                | 480px                                                          | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — minimum width             | 260px                                                          | Drag-resize floor (4th column, T83)                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — default width             | 300px                                                          | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
+| Inbox rail — maximum width             | 440px                                                          | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — minimized strip           | 44px                                                           | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
+| Progress popover — standard / wide     | 400px / 520px                                                  | The Mission progress popover is 400px; the Campaign popover (`.pop--wide`, §6 "Campaign progress") is the one 520px variant — two panes need the room                                                                                                                                                                                                                              |
+| Campaign map — board                   | tile `164×96px` · gutter `36px` · row gap `40px` · lane `20px` | The one fixed canvas of the Campaign map (§6 "Campaign map"): 4 columns × 164 + 3 × 36 + the 20px return lane = 784px wide; a dock chip is 164×20px. Mockup `v6--map`; scrolls inside its wrapper, never reflows                                                                                                                                                                   |
+| Resizable divider — hit area           | 6px                                                            | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
+| Resizable divider — visible stripe     | 1px                                                            | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                                                                                                                                                                                                             |
+| Footer / status bar — height           | 24px (`h-6`)                                                   | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
+| Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)`           | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
+| Settings pane — bounded list           | max-height `280px`                                             | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                                                                                                                                                                                              |
+| Cleanup side panel — width             | 320px                                                          | Docked detail panel beside the treemap (§6 "Workspace GC — unified Cleanup"); overlays the map below 1100px instead of docking                                                                                                                                                                                                                                                     |
+| Cleanup treemap — region minimum width | 340px                                                          | A repo region never lays out narrower; the map wraps onto another shelf (row) instead of squeezing, and the canvas height is computed from the data, not fixed (§6 "Workspace GC — unified Cleanup / Treemap")                                                                                                                                                                     |
+| Cleanup list dialog — width            | `min(720px, 90vw)`                                             | The bulk-clean / remove-selected confirm: wider than the 560px Dialog so a row holds name + chips; the card is capped at `--dialog-max-h` (see "Dialog — viewport cap") and its body — list and refused section together — is the one scroller                                                                                                                                     |
+| Dialog — viewport cap                  | `--dialog-max-h` = `84vh`                                      | Upper bound of a dialog card's height, written `max-h-(--dialog-max-h)`. The card is a flex column: header and footer `shrink-0`, the body `min-h-0 flex-1 overflow-y-auto` is the only scroller, so title and actions never leave the window (BUG-184: Cleanup bulk confirm, Containers remove). 84vh sits mid-range of the shipped 80–88vh caps and leaves ≥ 8vh above and below |
+| macOS window-controls inset            | 78px (macOS only; 0 elsewhere)                                 | Left inset on the corner header (sidebar always; topbar when sidebar collapsed) so content clears the macOS traffic lights                                                                                                                                                                                                                                                         |
 
 Sidebar width is **state persisted globally** (`localStorage`,
 key `om2tab.sidebarWidth`) — same anatomy as the theme. Out of range it is
@@ -6900,6 +6901,21 @@ undecided decisions); delivered reads **"Ch. {m}/{m} ✓"** with no step part. T
 as the Mission pill: `accent` active, `warning` when anything is owed or blocked,
 `success` when delivered (`check` icon).
 
+**Pill margin rail and radiant counter (T607, mockup `v6--pill`).** After the label
+the campaign pill draws a **margin rail**: one tick per _required_ chapter, in plan
+order (side chapters are not ticks), `aria-hidden` — the label already says the
+position. A tick is `2px × 8px`, `rounded-[1px]`, `1px` apart, from the chapter's
+state in the server's `progress.states`: `done` → `bg-green`; `inReview` →
+`bg-green` at `opacity-50`; `running` or inside the server's `current` range →
+`bg-accent`, **`4px`** wide (`bg-warning` while the pill is in its warning tone);
+`locked` → `bg-border-2` at `opacity-50`; `todo` → `bg-border-2`. Delivered: every
+tick `bg-green`, none wide. A campaign with no required chapters draws no rail. When
+the server reports a radiant (`progress.radiant`, present only when some chapter
+declares one) the pill ends with the **radiant counter** `"{done}/{total}"`
+(`tabular-nums`, `opacity-70`, the pill's `10.5px`) — the server's numbers, never a
+sum of the chapters' own `radiant.total`. The tick rail and the counter are the
+only additions to the pill's anatomy; a mission with no campaign has neither.
+
 **Campaign popover (`CampaignPopover.vue`, `.pop--wide` 520px).** The Mission
 popover's shell (`rounded border border-border-2 bg-surface shadow-pop`,
 `anim-fade-in-scale`, `max-height: 560px`), width **520px**. Header
@@ -6922,12 +6938,118 @@ selected chapter's **objectives**: its mission's counted steps as compact rows
 chapters, each row tagged "ch. {n}") and a footer (`padding: 8px 14px`,
 `border-t border-border`): **End campaign…** (Ghost) — rendered **disabled with a
 tooltip** until main exposes a campaign end door — and **Open map** (Primary) —
-disabled with a tooltip until the map takeover lands. The **Steward** line and the
+enabled since T607: it closes the Topbar popover and opens the Campaign map takeover
+for this campaign (§6 "Campaign map"). The **Steward** line and the
 **merge-batch** dialog of the mockup belong to chapter 5 and render nothing here.
 
 States (mockup `v6--campaign`): `default`; `side` (a side quest selected —
 eyebrow "Side quest · not required for the end", its origin chapter and gates);
 `needs-you` (the You lane's first item boxed in the warning look).
+
+### Campaign map (takeover)
+
+**T607 (campaign chapter 4c); spec §5, approved mockup `screens/v6--map.html`.** A
+main-pane takeover (`CampaignMap.vue`, view id `campaignMap`, **global** scope — the
+campaign is read by id from `stores/campaigns.ts`) rendered through `TakeoverShell`
+like every takeover (§6 "Takeover dismissal"): the shell owns the 40px header, the
+title "Campaign map", the `Map` icon in its icon zone and the close ✕ ("Close
+campaign map", Esc through `view.closeTakeover`). It opens from the Campaign
+popover's **Open map**. **Tokens only; no new color, easing or animation** — the one
+new dimension is the board canvas (§4 Layout dimensions). Every number it prints is
+the server's (`CampaignView.progress`, each chapter mission's own `progress`); the
+renderer never counts chapters, units or steps.
+
+**Layout.** Under the shell header a campaign strip (`padding: 8px 12px`,
+`border-b border-border`, `bg-surface`): line 1 the campaign title (`13px / 600`)
+and the server headline "Chapter {n} of {m}" (`11px`, `text-text-3`); line 2 the
+declared end ("End: …", `11px`, `text-text-3`, truncated); at the right, when the
+server reports a radiant, the **radiant counter** — "**{done} / {total}** units"
+(`11px`, mono numerals `text-text`) and a `160px × 3px` `bg-border-2` track with an
+`accent` fill at the server's ratio. Below it the body is two columns,
+`grid-template-columns: 2fr 1fr` from `720px` wide (stacked, board first, below
+that): the **board** on the left (`overflow-auto`, `padding: 20px`,
+`border-r border-border`) and the **right column** (`padding: 14px 16px`,
+`gap: 14px`, `bg-bg`, `overflow-auto`). The footer strip (`h-[30px]`, `border-t
+border-border`, `bg-sidebar`, `11px`, `text-text-4`) prints the server's counts line
+(the Campaign popover's) and, at the right, "gates: PR · CI · main · verifier".
+
+**Board.** A fixed canvas (§4: tile `164×96px`, gutter `36px`, row gap `40px`, lane
+`20px`) laid out by `lib/campaign-map.ts`. Required chapters are **tiles** in plan
+order on a 4-column grid; arrows are the chapters' **dependencies** — a chapter
+that consumes a token is entered from each earlier required chapter that produces
+it, a chapter that unlocks on another chapter from that chapter, and a chapter
+nothing explicit enters follows the plan order from the previous one. An edge
+whose end has no tile (a side chapter, an unknown id) is not drawn. Arrows are
+`1.25px` strokes with a `6px` arrowhead in `text-text-4`; **`ok`** (the source is
+done) `stroke-green`; **`cur`** (the target is the current chapter) `stroke-accent`;
+**`lock`** (the target is locked) dashed `3 3`. Neighbours in a row are joined
+straight; any other arrow leaves through the gutter right of its source, runs along
+the channel above the target's row and drops into the target's top edge (the last
+column leaves through the return lane).
+
+A **tile** is `rounded-sm border border-border-2 bg-surface`, `padding: 6px 8px`,
+`gap: 3px`: line 1 the chapter number (`10px`, mono, `text-text-4`) and title
+(`12px`, truncated); a two-line clamped sub-line (`10.5px`, `text-text-4`) — the
+current step's title when the chapter's mission is open, "Waits for …" when it is
+locked; and a last line with the **four gate dots** of the mission's current step
+(the §6 "Gate dots", only when the chapter's mission is open — a chapter with no
+open mission shows none rather than invented ones) and the **state word** at the
+right (`10px`, `text-text-4`). By state: `done` — state word `text-green` with ✓;
+`inReview` — `border-warning-line`, word `text-warning`; `running` (the current
+chapter) — `border-accent`, `ring-2 ring-accent-soft`, title `text-text`, word
+`text-accent` / 600, and the **"▼ You are here"** tag (`9.5px / 700`, `bg-accent`
+on `text-accent-ink`, `rounded-sm`, `top: -9px; right: 8px`) on every chapter the
+server's current range names; `locked` — `border-dashed`, `opacity-60`, the
+`Lock` glyph (10px) before the state word; `todo` — plain. Every tile is a
+button: clicking it opens **chapter-focus**.
+
+**Docks.** A side chapter (`required: false`) with a resolvable `discoveredFrom`
+hangs **under its origin tile**: a `164×20px` chip (`border-dashed border-border-2`,
+`rounded-sm`, `10.5px`) per side chapter, 24px apart starting 8px under the tile,
+joined by a dashed `1px` stem at the tile's left (`x + 10`). The chip wears ✓
+(`text-green`) when the server says the chapter is done, otherwise ◇
+(`text-warning`, and `border-warning-line` while it is not `todo`). A chip is a
+button too. A side chapter with no origin is not drawn on the board; it is still in
+the side-quests list. (The mockup's ◇{n} count on a tile is **not** drawn: it would
+be a recount.)
+
+**Right column.** Top to bottom:
+
+1. **You ledger** — the campaign's whole You lane: the Campaign popover's rows
+   (one per owed item of every open chapter), in the Mission v3 order. A box
+   `border border-warning-line bg-warning-soft rounded` (the "clear" look is
+   `border-border-2 bg-surface-2`); header `px-2.5 py-1.5` with "YOU" (`10.5px /
+700`, uppercase, `0.07em`, `text-warning`) and "{n} owed" (`11px`,
+   `text-text-2`); a row is a 4-column grid `8px · 1fr · 24px · auto` (risk dot —
+   `bg-red` high, `bg-warning` mid, a hollow `border-text-4` ring low; the item's
+   words with a dim "ch. {n}" tag; the age, `10.5px`, `text-text-4`; an **Open**
+   button, the §6 secondary button at `h-5`) with `border-t border-border` between
+   rows. **Open focuses the chapter** that owes the item. Nothing owed reads "—
+   nothing, you're clear". (The mockup's risk mix "1 high · 1 mid · 1 low" is not
+   drawn: it would be a recount.)
+2. **Steward** — eyebrow "STEWARD" and the steward feed. Chapter 5 wires the feed;
+   until then it renders its **empty state**, "No steward yet" (`11.5px`,
+   `text-text-4`).
+3. **Side quests** — eyebrow with the server's meta "{total} · {done} done · {open}
+   open" at the right, then a bordered box of rows (`12px 1fr auto 38px` grid): ✓ /
+   ◇ glyph, the title (truncated), "ch. {n}" (the origin chapter's number), the state
+   word. A row is a button that opens chapter-focus on that quest.
+
+**chapter-focus** (mockup state). Clicking a tile (or a dock, or a ledger row's
+Open) selects the chapter: the other tiles fall to `opacity-50` (locked ones to
+`opacity-30`), the selected tile takes the `running` look, and the Steward and Side
+quests blocks are replaced by the **focus panel** — `rounded border
+border-accent-line bg-surface`, header (`px-2.5 py-1.5`, `border-b`): a compact **Back**
+button (`h-5`, the ledger's Open button look), "{n} · {title}" (`12px / 600`) and the mission's own headline at the right
+("Step 2 of 4", `10.5px`, `text-text-4`). Below it one row per counted step of the
+chapter's mission, exactly the Campaign popover's objectives: rail letter, §6 step
+glyph, title, and the four **gate dots with their names** ("PR · CI · main ·
+verifier") — beside the title when the panel is `340px` or wider (a container query), under it when narrower, so a narrow right column never crushes the titles. The current step's row is `bg-accent-soft`. A chapter whose mission is
+not open (locked, not started, closed) shows one line saying why, no steps. Back
+(or selecting nothing) returns to the default state. Esc still closes the whole
+map.
+
+States (mockup `v6--map`): `default`; `chapter-focus`.
 
 ### Dialog
 

@@ -45,6 +45,15 @@ export interface CampaignYouRow {
   row: YouRow
 }
 
+/** One tick of the pill's margin rail: a required chapter, in plan order (T607). */
+export interface CampaignTick {
+  chapterId: string
+  /** The server's state for the chapter (`progress.states`). */
+  state: ChapterState
+  /** The chapter sits inside the server's current range. */
+  current: boolean
+}
+
 export interface CampaignModel {
   tone: PillTone
   /** The server headline: "Chapter N of M" / range / done / empty. */
@@ -71,6 +80,10 @@ export interface CampaignModel {
   radiant: { done: number; total: number } | null
   /** The chapter the open-chapter pane starts on: the server's current marker, else the first open. */
   currentId: string | null
+  /** Every chapter the server's current range names (`current.from`…`to`); `[]` once all are done. */
+  currentIds: string[]
+  /** The pill's margin rail: one tick per required chapter, in plan order (T607). */
+  ticks: CampaignTick[]
   you: CampaignYouRow[]
 }
 
@@ -99,6 +112,8 @@ export function buildCampaignModel(
   const currentFrom = p.current?.from ?? null
   const requiredIds = cv.campaign.chapters.filter((c) => c.required).map((c) => c.id)
   const currentId = currentFrom !== null ? (requiredIds[currentFrom - 1] ?? null) : null
+  // The range is positions among the required chapters, as the server counted them.
+  const currentIds = p.current === null ? [] : requiredIds.slice(p.current.from - 1, p.current.to)
 
   const you: CampaignYouRow[] = []
   const rows = cv.campaign.chapters.map((chapter): CampaignChapterRow => {
@@ -152,6 +167,14 @@ export function buildCampaignModel(
     },
     radiant: p.radiant ? { done: p.radiant.done, total: p.radiant.total } : null,
     currentId,
+    currentIds,
+    ticks: cv.campaign.chapters
+      .filter((c) => c.required)
+      .map((c) => ({
+        chapterId: c.id,
+        state: p.states[c.id] ?? 'todo',
+        current: currentIds.includes(c.id)
+      })),
     you
   }
 }

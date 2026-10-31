@@ -7,9 +7,9 @@
  * dots on the right — then the You lane and the footer.
  *
  * Read-only: every number is the server's (`CampaignView.progress`, each mission's own
- * `progress`), and there is no campaign door in main yet, so "End campaign…" and "Open map" are
- * rendered disabled with the reason in their tooltip. The Steward line and the merge-batch dialog
- * of the mockup belong to chapter 5 and render nothing here.
+ * `progress`), and there is no campaign door in main yet, so "End campaign…" is rendered disabled
+ * with the reason in its tooltip. "Open map" (T607) opens the Campaign map takeover. The Steward
+ * line and the merge-batch dialog of the mockup belong to chapter 5 and render nothing here.
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -29,6 +29,7 @@ import {
 import { sessionTitle } from '../lib/session-label'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useSessionsStore } from '../stores/sessions'
+import { useUiStore } from '../stores/ui'
 import Button from './ui/Button.vue'
 import MissionStepGlyph from './MissionStepGlyph.vue'
 
@@ -37,6 +38,7 @@ const emit = defineEmits<{ openChapter: [missionId: string] }>()
 
 const { t } = useI18n()
 const sessions = useSessionsStore()
+const ui = useUiStore()
 
 const allRows = computed<CampaignChapterRow[]>(() => [
   ...props.model.main,
@@ -152,6 +154,12 @@ const youLook = computed<'clear' | 'warning' | 'success'>(() => {
 })
 const ageText = (row: YouRow): string | null =>
   row.ageMs === null ? null : formatDuration(row.ageMs)
+
+/** T607: close the Topbar popover that hosts this one and open the map takeover for this campaign. */
+function openMap(): void {
+  ui.closePopover('missionProgress')
+  ui.openCampaignMap(props.view.campaign.id)
+}
 
 // An in-app popover: registers with the native-overlay freeze (a browser pane under it freezes).
 const rootEl = ref<HTMLElement | null>(null)
@@ -494,16 +502,9 @@ useNativeOverlay('campaign-popover', rootEl)
           <Flag :size="14" :stroke-width="1.8" />{{ $t('campaign.end.open') }}
         </Button>
       </span>
-      <span class="ml-auto" :title="$t('campaign.map.unavailable')">
-        <Button
-          variant="primary"
-          disabled
-          data-test="campaign-open-map"
-          :title="$t('campaign.map.unavailable')"
-        >
-          <MapIcon :size="14" :stroke-width="1.8" />{{ $t('campaign.map.open') }}
-        </Button>
-      </span>
+      <Button variant="primary" class="ml-auto" data-test="campaign-open-map" @click="openMap">
+        <MapIcon :size="14" :stroke-width="1.8" />{{ $t('campaign.map.open') }}
+      </Button>
     </div>
   </div>
 </template>
