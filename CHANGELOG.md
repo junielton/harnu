@@ -10,6 +10,14 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-31
+
+### Changed
+
+- **The orchestration skills now hand workers fixed role prompts instead of re-written ones.** `orchestrate-delivery` carries a boot template per role (executor, shipper, lander, reviewer) that cites the right skill by name (`ship`, `land-prs`, `review-peer`) rather than restating its steps, and no longer suggests a plain `gh pr create` when no ship pipeline exists. Every done condition it writes — and the `mission` skill's dispatch packets — must be checkable by the worker alone (commits pushed, tree clean, a report file written); "a message was delivered to another session" is now ruled out, after one worker was re-prompted 578 times by a Stop hook waiting on it.
+- **The orchestrator now closes a delivery that ends "on main" by dispatching a lander session**, sizes small fixes without a spec, names the Figma or mockup implementation and QA skills in a UI unit's packet, and hands a long delivery to a fresh owner session at each wave boundary (about 400k tokens of context, or a human merge-and-build pause) with a ready-made resume prompt.
+- **The `status` skill now also fires on Portuguese phrasings** such as "como estamos", "onde estamos", "qual o estado" and "tem PR?".
+
 ## 2026-10-30
 
 ### Added
