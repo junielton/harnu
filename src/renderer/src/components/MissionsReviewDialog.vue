@@ -100,6 +100,8 @@ function owed(v: MissionView): string {
       )
     case 'review-import':
       return t('mission.you.reviewImport')
+    case 'main-red':
+      return t('mission.you.mainRed', { pr: item.pr, step: stepTitles(v, [item.stepId]) })
     default:
       // Nothing owed (a finished mission nobody asked to close): say where it stands.
       return item === null

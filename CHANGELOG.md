@@ -12,6 +12,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-10-30
 
+### Added
+
+- **A mission step is now proven by facts, with four dots to show it.** Each step in the Mission popover ends its label with four dots — PR merged, CI green on the PR, `main` green after the merge, and the verifier's verdict. Hover one for its name and state; the dots keep the last known values (and say so) when GitHub can't be reached. If `main` goes red after a merge, the step keeps its place and a "main is red after #N" line appears under **You**.
+- **Missions keep a ledger Harnu writes itself.** Dispatches, worktree cuts, pull requests opening and merging, CI changes, verifier verdicts, a linked session ending and compactions are recorded as they happen. Sessions can read the latest 20 rows with `mission_get` (and the row count in `mission_list`) but can't write them, so a coordinating session no longer has to re-derive what it already dispatched.
+
 ### Fixed
 
 - **Hovering a Scheduler row no longer makes the list jump.** The row's state label and its Run now / Delete buttons now share a fixed-height line, so swapping them on hover or keyboard focus moves nothing.

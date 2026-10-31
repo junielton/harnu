@@ -82,6 +82,8 @@ function youText(item: MissionYouItem): string {
       return t('mission.you.humanSteps', { steps: stepTitles(item.stepIds) }, item.stepIds.length)
     case 'review-import':
       return t('mission.you.reviewImport')
+    case 'main-red':
+      return t('mission.you.mainRed', { pr: item.pr, step: stepTitles([item.stepId]) })
     case 'approvals':
       return t('mission.you.approvals', { count: item.count, session: sessionName(item.sessionId) })
     case 'needs-input':

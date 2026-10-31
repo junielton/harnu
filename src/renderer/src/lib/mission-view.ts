@@ -15,6 +15,7 @@ import { progressHeadline, type StepState } from '../../../main/mission-progress
 import type { MissionChildState } from '../../../main/mcp/fleet-snapshot'
 import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
 import type { Blocker, Check, MissionStep } from '../../../main/mission-core'
+import type { GateState, StepGates } from '../../../main/mission-gates'
 import { owedKeys } from './mission-cue'
 
 /**
@@ -103,6 +104,24 @@ export interface StepModel {
   pulse: StepPulseModel | null
   /** T547 — the open and merged PRs this step reaches, newest first (at most {@link MAX_STEP_PRS}). */
   prs: StepPrModel[]
+  /** Campaign spec §3.2 — the four gate dots, in the order the rail draws them. */
+  gates: GateDot[]
+  /** The gates are last-known values (GitHub was unreachable), not a live read. */
+  gatesStale: boolean
+}
+
+/** The gate dots a step shows, left to right; the `checks` gate has no dot (it is the checkboxes). */
+export const GATE_DOT_NAMES = ['pr', 'ci', 'main', 'verifier'] as const
+export type GateDotName = (typeof GATE_DOT_NAMES)[number]
+
+export interface GateDot {
+  name: GateDotName
+  state: GateState
+}
+
+/** The server's gates as dots. A derive that predates gates reads as four off dots. */
+function gateDots(gates: Partial<StepGates> | undefined): GateDot[] {
+  return GATE_DOT_NAMES.map((name) => ({ name, state: gates?.[name] ?? 'off' }))
 }
 
 const MAX_STEP_PRS = 3
@@ -331,6 +350,7 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
     const position = i + 1
     const st = p.states[step.id]
     const current = p.current !== null && position >= p.current.from && position <= p.current.to
+    const derivedStep = view.derived.steps.find((x) => x.stepId === step.id)
     const linked = derivedOf(step.id)
     const children = linked.filter((c) => homes.get(c.sessionId) === step.id)
     const isEnd = step.kind === 'fixed-end'
@@ -358,7 +378,9 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
       checks: step.checks ?? [],
       checksDue: REACHED.has(st),
       pulse: current ? stepPulse(view, step.id, linked, now) : null,
-      prs: stepPrs(view.derived.steps.find((x) => x.stepId === step.id)?.links ?? [])
+      prs: stepPrs(derivedStep?.links ?? []),
+      gates: gateDots(derivedStep?.gates),
+      gatesStale: derivedStep?.gates?.stale === true
     }
   })
 

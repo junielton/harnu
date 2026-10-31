@@ -4423,6 +4423,24 @@
       "todo": "To do",
       "leftBehind": "Left behind"
     },
+    "gates": {
+      "label": "Step gates",
+      "name": {
+        "pr": "PR merged",
+        "ci": "CI green on PR",
+        "main": "main green after merge",
+        "verifier": "Verifier verdict"
+      },
+      "state": {
+        "green": "green",
+        "red": "red",
+        "running": "in progress",
+        "off": "not yet",
+        "na": "n/a"
+      },
+      "tooltip": "{gate}: {state}",
+      "tooltipStale": "{gate}: {state} (last known)"
+    },
     "sub": {
       "totalChanged": "Total: {total} steps (was {was}) — {n} added",
       "delivered": "Delivered — awaiting your close"
@@ -4493,6 +4511,7 @@
       "checks": "Tick the due check on {steps}. | Tick {count} due checks on {steps}.",
       "humanSteps": "Confirm the human step: {steps}. | Confirm the human steps: {steps}.",
       "reviewImport": "Review the imported end — it is a placeholder until you approve a re-scope.",
+      "mainRed": "main is red after #{pr} — {step} is merged, but its merge commit fails CI on main.",
       "approvals": "Answer the pending approvals ({count}) from {session} in the Approval Inbox.",
       "needsInput": "{session} is waiting on you — open it and answer.",
       "more": "+{n} more",
