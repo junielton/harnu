@@ -95,7 +95,14 @@ function normalizeWorker(w: Worker): Worker {
     runOnBoot: w.runOnBoot === true,
     model: typeof w.model === 'string' ? w.model : 'haiku',
     effort: w.effort ?? 'low',
-    mode: w.mode === 'act' ? 'act' : 'observe',
+    // Campaign ch.5a: a steward is a system worker. It keeps its mode only together with its
+    // category and mission binding; a hand-edited `mode: 'steward'` without them is a plain observer.
+    mode:
+      w.mode === 'act'
+        ? 'act'
+        : w.mode === 'steward' && w.category === 'steward' && typeof w.missionId === 'string'
+          ? 'steward'
+          : 'observe',
     timeoutSeconds: typeof w.timeoutSeconds === 'number' ? w.timeoutSeconds : 300,
     carryLastResult: w.carryLastResult === true,
     notifyOn: resolveNotifyOn(w),
@@ -105,6 +112,9 @@ function normalizeWorker(w: Worker): Worker {
     ...(Array.isArray(w.extraReadCommands) ? { extraReadCommands: w.extraReadCommands } : {}),
     ...(typeof w.systemPrompt === 'string' ? { systemPrompt: w.systemPrompt } : {}),
     failureStreak: typeof w.failureStreak === 'number' ? w.failureStreak : 0,
+    ...(w.category === 'steward' && typeof w.missionId === 'string'
+      ? { category: 'steward' as const, missionId: w.missionId }
+      : {}),
     // T483: the pin is part of the definition. Whitelisted here or the first load after a restart
     // strips it. Only a finite number counts; anything else resolves to unpinned.
     ...(typeof w.pinnedAt === 'number' && Number.isFinite(w.pinnedAt)

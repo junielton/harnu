@@ -55,7 +55,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import { parseMcpRequest, BODY_MAX } from './http-guard'
 import { type McpOp, type McpToolDef } from './tool-catalog'
-import { WIRED_TOOLS, type ToolHandlerCtx } from './tool-handlers'
+import { WIRED_TOOLS, appendStewardLog, missionRoot, type ToolHandlerCtx } from './tool-handlers'
 import { getContainersService } from '../containers/containers-ipc'
 import { containersConfirmPrompt } from './containers-listing'
 import { planToolCall } from './plan-tool-call'
@@ -116,7 +116,8 @@ import {
 import { parsePlanMission } from './validate'
 import { parseAgentBootOverride } from './agent-boot'
 import { listInflightSessions } from './inflight-session-registry'
-import { folderForWorkerId } from '../scheduler-shell'
+import { folderForWorkerId, stewardForWorkerId, WorkerIsStewardError } from '../scheduler-shell'
+import { stewardCallRefusal, verifyStewardBearer } from '../steward-core'
 import { inFlightFolderFor } from './agent-inflight-registry'
 import { snapshotInheritOnce, addInheritOnce, closeInheritOnce } from './inherit-once-registry'
 import { pushShadowEntry } from '../responder-registry'
@@ -197,6 +198,19 @@ let running = false
 let autoRegisterEnabled = true
 /** Per-MCP-session transports, keyed by the SDK-minted session id. */
 const transports = new Map<string, StreamableHTTPServerTransport>()
+
+/**
+ * Campaign ch.5a: who a call comes from. Absent = an ordinary MCP client (the main bearer). A
+ * steward's tick presents its own derived bearer, so the server — not the model's obedience to
+ * argv — enforces its closed allowlist and its argument rules.
+ */
+export interface McpCaller {
+  kind: 'steward'
+  workerId: string
+}
+
+/** The caller each open MCP session was opened by ('' = ordinary), so a session id cannot be borrowed. */
+const transportCallers = new Map<string, string>()
 /** Injected deps (bridge + confirm); set in {@link registerMcpServer}. */
 let deps: McpServerDeps | null = null
 
@@ -1007,8 +1021,31 @@ const QUEUED_BROWSER_OPS: ReadonlySet<string> = new Set([
  * Exported so a test can drive a verb through the REAL gate (the gate-folder resolution above
  * `planToolCall` is where a read of a blocked folder is stopped).
  */
-export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallToolResult> {
+export async function handleToolCall(
+  def: McpToolDef,
+  rawArgs: unknown,
+  caller?: McpCaller
+): Promise<CallToolResult> {
   const args = asRecord(rawArgs)
+  // Campaign ch.5a: a steward is judged BEFORE the gate, the confirm or the queues — a refusal
+  // here parks nothing and spends nothing.
+  const steward = caller ? stewardForWorkerId(caller.workerId) : undefined
+  if (caller) {
+    if (!steward) {
+      return errorResult(
+        'STEWARD_GONE: this steward no longer exists (its mission was closed) — stop.'
+      )
+    }
+    const refusal = stewardCallRefusal({ op: def.op, args, missionId: steward.missionId })
+    if (refusal) return errorResult(refusal)
+  }
+  // A steward is a system worker: refuse an edit or delete of one before the gate can park a confirm.
+  if (
+    (def.op === 'update_worker' || def.op === 'delete_worker') &&
+    stewardForWorkerId(strField(args, 'id') ?? '')
+  ) {
+    return errorResult(new WorkerIsStewardError(strField(args, 'id') ?? '').message)
+  }
   // T482 F1: a send's place in its terminal's line is decided HERE, synchronously, before the
   // first `await` of the pipeline (prefs, project file, folder scan). Taken later, two sends could
   // swap order depending on which one's I/O finished first.
@@ -1018,7 +1055,13 @@ export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise
   const browserPaneId = QUEUED_BROWSER_OPS.has(def.op) ? strField(args, 'paneId') : undefined
   if (browserPaneId) browserWriteQueue.reserve(args, browserPaneId)
   try {
-    return await runToolCall(def, args)
+    const result = await runToolCall(def, args)
+    // Every action a steward takes is a `steward` Log entry on its mission — written here so it
+    // exists whether or not the model remembers to write one. Reads and `mission_log` itself are not actions.
+    if (steward && def.mutates && def.op !== 'mission_log' && ackIsSuccess(result)) {
+      await appendStewardLog(missionRoot(steward.folder), steward.missionId, def.op, args)
+    }
+    return result
   } finally {
     browserWriteQueue.drop(args)
     // A call that never reached the handler (refused, parked for a confirm) must not hold the
@@ -1737,7 +1780,7 @@ async function applyInheritDiscoveryScope(
 // ---- SDK server + transport wiring ------------------------------------------
 
 /** Register every catalog tool on a fresh {@link McpServer}. Dispatches through {@link WIRED_TOOLS} — the `handler`-enriched array — never the raw `MCP_TOOLS`. */
-function registerTools(server: McpServer): void {
+function registerTools(server: McpServer, caller?: McpCaller): void {
   for (const def of WIRED_TOOLS) {
     server.registerTool(
       def.name,
@@ -1749,23 +1792,27 @@ function registerTools(server: McpServer): void {
         // deferred — the client reads this `_meta` key off the tools/list entry.
         ...(def.alwaysLoad ? { _meta: { 'anthropic/alwaysLoad': true } } : {})
       },
-      (rawArgs: unknown): Promise<CallToolResult> => handleToolCall(def, rawArgs)
+      (rawArgs: unknown): Promise<CallToolResult> => handleToolCall(def, rawArgs, caller)
     )
   }
 }
 
 /** Open a fresh MCP session: a transport + a tool-registered server, connected. */
-async function openSession(): Promise<StreamableHTTPServerTransport> {
+async function openSession(caller?: McpCaller): Promise<StreamableHTTPServerTransport> {
   if (!TransportCtor || !McpServerCtor) throw new Error('mcp sdk not loaded')
   const transport: StreamableHTTPServerTransport = new TransportCtor({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (sid: string) => {
       transports.set(sid, transport)
+      transportCallers.set(sid, caller?.workerId ?? '')
     }
   })
   transport.onclose = (): void => {
     const sid = transport.sessionId
-    if (sid) transports.delete(sid)
+    if (sid) {
+      transports.delete(sid)
+      transportCallers.delete(sid)
+    }
   }
   // T93: serve the compact self-awareness digest as InitializeResult.instructions.
   // `claude` auto-injects it as `## harnu` into the session context — the native
@@ -1776,7 +1823,7 @@ async function openSession(): Promise<StreamableHTTPServerTransport> {
     { name: MCP_SERVER_NAME, version: '1' },
     { instructions: buildHarnuMcpInstructions(memoryLanguageLine(appLocale())) }
   )
-  registerTools(server)
+  registerTools(server, caller)
   await server.connect(transport)
   return transport
 }
@@ -1818,10 +1865,21 @@ function readBody(
 
 /** The loopback request handler: guard → route to a (new or existing) transport. */
 async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  // Campaign ch.5a: a steward tick presents `stw_<workerId>_<mac>`, derived from the server secret.
+  // The guard (Host/Origin/body cap/constant-time compare) is the SAME one, run with the secret
+  // substituted; what the bearer proves is WHICH worker is calling, bound to its MCP session below.
+  const auth = req.headers.authorization
+  const presented = typeof auth === 'string' ? auth.replace(/^Bearer\s+/i, '') : ''
+  const stewardWorkerId = presented ? verifyStewardBearer(token, presented) : null
+  if (stewardWorkerId && !stewardForWorkerId(stewardWorkerId)) {
+    res.writeHead(403)
+    res.end()
+    return
+  }
   const guard = parseMcpRequest({
     method: req.method,
     url: req.url,
-    headers: req.headers,
+    headers: stewardWorkerId ? { ...req.headers, authorization: `Bearer ${token}` } : req.headers,
     token,
     contentLength: contentLengthOf(req.headers['content-length'])
   })
@@ -1842,6 +1900,17 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
   const sidHeader = req.headers['mcp-session-id']
   const sessionId = Array.isArray(sidHeader) ? sidHeader[0] : sidHeader
   let transport = sessionId ? transports.get(sessionId) : undefined
+  // A session belongs to the caller that opened it: a steward bearer on the main client's session id
+  // (or the reverse) inherits nothing.
+  if (
+    transport &&
+    sessionId &&
+    (transportCallers.get(sessionId) ?? '') !== (stewardWorkerId ?? '')
+  ) {
+    res.writeHead(403)
+    res.end()
+    return
+  }
   if (!transport) {
     if (!isInitializeRequestFn(body)) {
       res.writeHead(400, { 'content-type': 'application/json' })
@@ -1854,7 +1923,9 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       )
       return
     }
-    transport = await openSession()
+    transport = await openSession(
+      stewardWorkerId ? { kind: 'steward', workerId: stewardWorkerId } : undefined
+    )
   }
   await transport.handleRequest(req, res, body)
 }
