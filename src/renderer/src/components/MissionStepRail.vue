@@ -76,7 +76,7 @@ const GATE_DOT_CLASS: Record<GateDot['state'], string> = {
   green: 'border-green bg-green',
   red: 'border-red bg-red',
   running:
-    'anim-tick-pulse border-accent bg-linear-to-r from-accent from-50% to-transparent to-50%',
+    'anim-tick-pulse border-accent bg-linear-to-r from-accent from-50% to-transparent to-[50%]',
   off: 'border-text-4',
   na: 'border-dashed border-text-4 opacity-50'
 }
