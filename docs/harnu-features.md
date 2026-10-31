@@ -1035,6 +1035,15 @@ command (`HARNU_TTS_COMMAND`, else `CAPY_TTS_COMMAND`, else `say` on macOS, `spd
 elsewhere) only when the verb is absent — never after a refusal, and it never claims to have
 spoken when it didn't.
 
+Three conversation skills leave a record: `harnu:one-by-one` drains a spec's open `D-n`
+decisions one question per message (resolved row in the spec, one `memory_append decisions`
+line per answer; a mission decision node's `chosen` is the operator's **Choose…** door — you
+point at it, you never write it); `harnu:grill-me` stress-tests a spec and places every raised
+item as a `D-n` row, an Amendments row or a non-goal, ending with what it wrote and what it
+could not place; `harnu:step-by-step` walks the operator through manual actions and adds each as
+a `mission_add_check` (stable label, deduped) — you never tick a check, you only report it
+open or ticked from `mission_get`.
+
 **Nothing is on by default**; an off skill is never staged. If the user wants what one does
 ("orchestrate this delivery", "verify the ACs", "run a coordination tick") and you see no
 `harnu:` skill, point them at **Settings → Skills** (a switch per skill, global or per

@@ -8,17 +8,20 @@ say so.
 
 ## What ships
 
-| Skill                  | What it does                                                                                                                                                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `orchestrate-delivery` | Decompose an objective into board cards, dispatch one Harnu session per unit, monitor until each opens a PR, then hand back a report.                                                                                                |
-| `delivery-verifier`    | Grade a finished unit's acceptance criteria one at a time, from evidence in the repo rather than from what the session says about itself.                                                                                            |
-| `mission`              | Run one coordination tick over dispatched work and report a single line.                                                                                                                                                             |
-| `delivery-watchdog`    | Sweep a repo for delivery work that is finished but parked — pushed with no PR, a card the board is lying about — and raise one notification naming the fix.                                                                         |
-| `conductor`            | Drive the Harnu fleet through the `harnu` MCP verbs — see every session and worktree, create sessions, terminals and worktrees.                                                                                                      |
-| `status`               | Render a fixed six-line "glance card" of where every feature or mission stands, plus the links worth opening, built from the board, the mission files and open PRs.                                                                  |
-| `read-aloud`           | Speak a short, ear-friendly summary of a result out loud — through Harnu's own voice inside the app, or a text-to-speech command on your PATH outside it.                                                                            |
-| `report-back`          | The final-report format every multi-step run ends with: one line per step with its concrete outcome, what you owe (always printed, even when it is nothing), the links worth opening, and a summary of at most three lines.          |
-| `draft-to-prompt`      | Turn a rough idea or a messy draft into a finished prompt for a Claude model — including a boot prompt for a new session or worktree — with the model, effort and any long-running harness it needs spelled out as run instructions. |
+| Skill                  | What it does                                                                                                                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `orchestrate-delivery` | Decompose an objective into board cards, dispatch one Harnu session per unit, monitor until each opens a PR, then hand back a report.                                                                                                                                           |
+| `delivery-verifier`    | Grade a finished unit's acceptance criteria one at a time, from evidence in the repo rather than from what the session says about itself.                                                                                                                                       |
+| `mission`              | Run one coordination tick over dispatched work and report a single line.                                                                                                                                                                                                        |
+| `delivery-watchdog`    | Sweep a repo for delivery work that is finished but parked — pushed with no PR, a card the board is lying about — and raise one notification naming the fix.                                                                                                                    |
+| `conductor`            | Drive the Harnu fleet through the `harnu` MCP verbs — see every session and worktree, create sessions, terminals and worktrees.                                                                                                                                                 |
+| `status`               | Render a fixed six-line "glance card" of where every feature or mission stands, plus the links worth opening, built from the board, the mission files and open PRs.                                                                                                             |
+| `read-aloud`           | Speak a short, ear-friendly summary of a result out loud — through Harnu's own voice inside the app, or a text-to-speech command on your PATH outside it.                                                                                                                       |
+| `report-back`          | The final-report format every multi-step run ends with: one line per step with its concrete outcome, what you owe (always printed, even when it is nothing), the links worth opening, and a summary of at most three lines.                                                     |
+| `draft-to-prompt`      | Turn a rough idea or a messy draft into a finished prompt for a Claude model — including a boot prompt for a new session or worktree — with the model, effort and any long-running harness it needs spelled out as run instructions.                                            |
+| `one-by-one`           | Work through a pile of open decisions one question at a time, and write each answer where it lasts — the resolved row in your spec, a line in project memory, and a pointer to the Mission's **Choose…** button when the mission has a decision for it.                         |
+| `grill-me`             | Have a spec or plan stress-tested by one question at a time, with a recommended answer each. Every question that survives is written into the spec — an open decision, an amendment, or a non-goal — and the session ends by listing what it wrote and what it could not place. |
+| `step-by-step`         | Be walked through a list of manual actions only you can do — dashboard clicks, DNS, secrets, a release — one step per message. Each action also becomes a check on the relevant Mission step, which only you can tick.                                                          |
 
 Each row in the panel shows the skill's name and its own one-line purpose, taken
 straight from the skill file — so the panel can never describe a skill differently
@@ -60,6 +63,31 @@ it re-arms its own loop when you do.
 It stays quiet when nothing is parked, and with "carry last result" on it will not
 notify twice about the same finding — it only speaks again when something actually
 moved. If it never says anything, that is the intended behaviour, not a broken worker.
+
+### `one-by-one`, `grill-me` and `step-by-step` leave a record
+
+These three are conversation skills — they talk to you one question or one step at a
+time — but none of them lets the answer die in the transcript.
+
+- **`one-by-one`** reads the **Open decisions** table of your spec (the `D-n` rows) and
+  asks one decision per message, with a recommendation. After each answer it marks that
+  row `resolved` (with your choice and the date) and appends one line to the project
+  memory's decisions. It never decides for you: a decision you skip stays open. If the
+  Mission has a decision step for it, the session tells you where to click — the Step
+  pill → **Choose…** — because only you can make that choice.
+- **`grill-me`** is the stress test you run between a draft and an approval. It asks
+  one question at a time and looks up anything the code or memory already answers. What
+  you raise is written into the spec as it goes: a new open decision, a row in
+  **Amendments** (the original text is never silently rewritten), or a line under
+  non-goals. It finishes with two lists — what it wrote and what it could not place — and
+  starts nothing.
+- **`step-by-step`** guides you through actions only you can perform. Before the first
+  step it adds one **check** per action to the Mission step it belongs to (running it
+  again with the same list adds nothing). It runs only read-only checks to confirm a
+  step worked, and it never ticks a check for you — you tick them in the Mission
+  popover, and the closing report says which are still open.
+
+All three work without a spec or a mission; they just have nowhere to write, and say so.
 
 ### The delivery skills work on Missions
 
