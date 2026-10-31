@@ -156,3 +156,9 @@ Chapters 1 and 2 are detailed to steps now; 3–6 keep the step list coarse unti
 1. Steward per mission (recommended: closed scope, dies at close) or per repo (one, like the watchdog).
 2. Whether `rebase_stack` may run on an operator-created worktree or only on ones Harnu created.
 3. Memory draft granularity: one decision per `decision` log entry, or the consolidator may merge several.
+
+## Amendments
+
+| date       | kind      | what changed                                                                                                                                                                                                                                                                                                                             | by   |
+| ---------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 2026-10-31 | amendment | §6, `orchestrate-delivery` row: "every unit gets frozen, ID'd acceptance criteria before dispatch" is now carried out by `harnu:spec` (triage, authoring, `check`) and Phase 2's derive, per `docs/specs/2026-11-harnu-spec/spec.md`. The mission is born at triage and Phase 1 adopts it; this section keeps the rest of §6 as written. | T605 |
