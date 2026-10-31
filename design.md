@@ -246,17 +246,17 @@ Two families, no exceptions.
 
 ### Scale
 
-| Role     | Size / Line | Weight | Letter-spacing    | Use                                      |
-| -------- | ----------- | ------ | ----------------- | ---------------------------------------- |
-| Display  | 32 / 36     | 500    | -0.02em           | Onboarding hero                          |
-| Title    | 20 / 28     | 500    | -0.015em          | Section headers (Welcome panel)          |
-| Subtitle | 15 / 22     | 500    | 0                 | Dialog titles                            |
-| Body     | 13 / 20     | 400    | 0                 | Running text in dialogs, descriptions    |
-| UI       | 12.5 / 18   | 450    | 0                 | Session rows, menu items                 |
-| Caption  | 11 / 16     | 400    | 0                 | Hints, helper text                       |
-| Eyebrow  | 10.5 / 14   | 500    | +0.07em UPPERCASE | Section labels, group headers            |
-| Code     | 13 / 20     | 400    | 0                 | JetBrains Mono — paths, commands, values |
-| Code-sm  | 11 / 14     | 400    | 0                 | JetBrains Mono — kbd, badges, timestamps |
+| Role     | Size / Line | Weight | Letter-spacing    | Use                                                                                                        |
+| -------- | ----------- | ------ | ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| Display  | 32 / 36     | 500    | -0.02em           | Onboarding hero                                                                                            |
+| Title    | 20 / 28     | 500    | -0.015em          | Section headers (Welcome panel)                                                                            |
+| Subtitle | 15 / 22     | 500    | 0                 | Sub-headings (the dialog header title is the `--text-dialog-title` 13.5 / 20 / 600 exception, §6 "Dialog") |
+| Body     | 13 / 20     | 400    | 0                 | Running text in dialogs, descriptions                                                                      |
+| UI       | 12.5 / 18   | 450    | 0                 | Session rows, menu items                                                                                   |
+| Caption  | 11 / 16     | 400    | 0                 | Hints, helper text                                                                                         |
+| Eyebrow  | 10.5 / 14   | 500    | +0.07em UPPERCASE | Section labels, group headers                                                                              |
+| Code     | 13 / 20     | 400    | 0                 | JetBrains Mono — paths, commands, values                                                                   |
+| Code-sm  | 11 / 14     | 400    | 0                 | JetBrains Mono — kbd, badges, timestamps                                                                   |
 
 ### Tailwind type tokens
 
@@ -292,7 +292,7 @@ documented exception in the component's own §6 section.
 | `s-2` | 8px   | Gap in flex rows, inner padding of dense items       |
 | `s-3` | 12px  | Padding of small cards, gap in lists                 |
 | `s-4` | 16px  | Padding of standard containers, gap between sections |
-| `s-5` | 24px  | Padding of dialogs, gap between blocks               |
+| `s-5` | 24px  | Gap between blocks (dialog padding: §6 "Dialog")     |
 | `s-6` | 32px  | Margin between large sections                        |
 | `s-7` | 48px  | Hero padding, strong visual separation               |
 
@@ -332,25 +332,26 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 
 ### Layout dimensions
 
-| Dimension                              | Value                                                | Use                                                                                                                                                                                                                                                                                                                                                                                |
-| -------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sidebar — minimum width                | 200px                                                | Drag-resize floor                                                                                                                                                                                                                                                                                                                                                                  |
-| Sidebar — default width                | 268px                                                | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
-| Sidebar — maximum width                | 480px                                                | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — minimum width             | 260px                                                | Drag-resize floor (4th column, T83)                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — default width             | 300px                                                | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
-| Inbox rail — maximum width             | 440px                                                | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — minimized strip           | 44px                                                 | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
-| Resizable divider — hit area           | 6px                                                  | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
-| Resizable divider — visible stripe     | 1px                                                  | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                                                                                                                                                                                                             |
-| Footer / status bar — height           | 24px (`h-6`)                                         | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
-| Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)` | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
-| Settings pane — bounded list           | max-height `280px`                                   | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                                                                                                                                                                                              |
-| Cleanup side panel — width             | 320px                                                | Docked detail panel beside the treemap (§6 "Workspace GC — unified Cleanup"); overlays the map below 1100px instead of docking                                                                                                                                                                                                                                                     |
-| Cleanup treemap — region minimum width | 340px                                                | A repo region never lays out narrower; the map wraps onto another shelf (row) instead of squeezing, and the canvas height is computed from the data, not fixed (§6 "Workspace GC — unified Cleanup / Treemap")                                                                                                                                                                     |
-| Cleanup list dialog — width            | `min(720px, 90vw)`                                   | The bulk-clean / remove-selected confirm: wider than the 560px Dialog so a row holds name + chips; the card is capped at `--dialog-max-h` (see "Dialog — viewport cap") and its body — list and refused section together — is the one scroller                                                                                                                                     |
-| Dialog — viewport cap                  | `--dialog-max-h` = `84vh`                            | Upper bound of a dialog card's height, written `max-h-(--dialog-max-h)`. The card is a flex column: header and footer `shrink-0`, the body `min-h-0 flex-1 overflow-y-auto` is the only scroller, so title and actions never leave the window (BUG-184: Cleanup bulk confirm, Containers remove). 84vh sits mid-range of the shipped 80–88vh caps and leaves ≥ 8vh above and below |
-| macOS window-controls inset            | 78px (macOS only; 0 elsewhere)                       | Left inset on the corner header (sidebar always; topbar when sidebar collapsed) so content clears the macOS traffic lights                                                                                                                                                                                                                                                         |
+| Dimension                              | Value                                                         | Use                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar — minimum width                | 200px                                                         | Drag-resize floor                                                                                                                                                                                                                                                                                                                                                                  |
+| Sidebar — default width                | 268px                                                         | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
+| Sidebar — maximum width                | 480px                                                         | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — minimum width             | 260px                                                         | Drag-resize floor (4th column, T83)                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — default width             | 300px                                                         | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
+| Inbox rail — maximum width             | 440px                                                         | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — minimized strip           | 44px                                                          | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
+| Resizable divider — hit area           | 6px                                                           | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
+| Resizable divider — visible stripe     | 1px                                                           | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                                                                                                                                                                                                             |
+| Footer / status bar — height           | 24px (`h-6`)                                                  | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
+| Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)`          | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
+| Settings pane — bounded list           | max-height `280px`                                            | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                                                                                                                                                                                              |
+| Cleanup side panel — width             | 320px                                                         | Docked detail panel beside the treemap (§6 "Workspace GC — unified Cleanup"); overlays the map below 1100px instead of docking                                                                                                                                                                                                                                                     |
+| Cleanup treemap — region minimum width | 340px                                                         | A repo region never lays out narrower; the map wraps onto another shelf (row) instead of squeezing, and the canvas height is computed from the data, not fixed (§6 "Workspace GC — unified Cleanup / Treemap")                                                                                                                                                                     |
+| Cleanup list dialog — width            | `min(720px, 90vw)`                                            | The bulk-clean / remove-selected confirm: wider than the 560px Dialog so a row holds name + chips; the card is capped at `--dialog-max-h` (see "Dialog — viewport cap") and its body — list and refused section together — is the one scroller                                                                                                                                     |
+| Dialog — viewport cap                  | `--dialog-max-h` = `84vh`                                     | Upper bound of a dialog card's height, written `max-h-(--dialog-max-h)`. The card is a flex column: header and footer `shrink-0`, the body `min-h-0 flex-1 overflow-y-auto` is the only scroller, so title and actions never leave the window (BUG-184: Cleanup bulk confirm, Containers remove). 84vh sits mid-range of the shipped 80–88vh caps and leaves ≥ 8vh above and below |
+| Dialog — width scale                   | `--dialog-w-sm / -md / -lg / -xl` = `480 / 560 / 720 / 940px` | Width of a dialog card is `min(<size>, 90vw)`; a dialog picks a size, it does not invent a width (§6 "Dialog" → Size scale). `xl` must pass a fixed `height`, still ≤ the cap                                                                                                                                                                                                      |
+| macOS window-controls inset            | 78px (macOS only; 0 elsewhere)                                | Left inset on the corner header (sidebar always; topbar when sidebar collapsed) so content clears the macOS traffic lights                                                                                                                                                                                                                                                         |
 
 Sidebar width is **state persisted globally** (`localStorage`,
 key `om2tab.sidebarWidth`) — same anatomy as the theme. Out of range it is
@@ -533,7 +534,7 @@ Hover: lighten the background. Active: scale(0.98). Disabled: opacity 0.4.
 
 ### Form controls — canonical components
 
-> **Rule:** these four controls are **single components** in `components/ui/`.
+> **Rule:** these five controls are **single components** in `components/ui/`.
 > Never reimplement a toggle, an option group, inline help text, or a button —
 > use the component. A visual tweak changes in one place and reflects across the whole app.
 > (It was scattered reimplementation that let the active/inactive state and the help
@@ -590,6 +591,13 @@ label). Always `--text-3` (never `--text-4`, which fades out in low-contrast
 themes), `11px` / line-height `1.5` (`sm` = `10.5px`). `--text-4` stays
 reserved for ultra-secondary, non-prose meta: paths, `tabular-nums` counts,
 session timestamps, chart axes, separators, and icons.
+
+**`Dialog`** — the **only** modal shell (a blocking overlay with a card). Scrim, card, pinned
+header/footer, the one scrolling body, the `84vh` cap, Esc for the topmost dialog, focus trap and
+focus restore are all its job; a call site passes `open`, a `size` (`sm`/`md`/`lg`/`xl`), a `title`
+(or `#header` + `ariaLabel`) and slots (`default` body, `meta` + `footer` actions), and handles
+`@close`. Full spec: §6 "Dialog". Never write a `fixed inset-0` scrim by hand (the shell ratchet fails
+it). The Command palette and the Image lightbox are the two documented exceptions.
 
 ### Keyboard shortcuts (`<kbd>`)
 
@@ -6810,11 +6818,151 @@ Non-interactive: the popover is reached from the Topbar pill.
 
 ### Dialog
 
-- Backdrop: `rgba(0,0,0,0.55)`, full-screen, click outside = close
-- Card: width `min(560px, 90vw)`, background `--surface`, border `--border-2`, radius 9px
-- Header: padding `14px 18px 10px`, border-bottom, contains title + close button
-- Body: padding `14px 18px`
-- Footer: padding `10px 14px`, border-top, background `#0f0f12` (slightly darker), buttons right-aligned
+The one modal shell (`components/ui/Dialog.vue`, T460). Every blocking overlay with a card is a
+`Dialog`; **hand-rolled scrims are a bug** (a contract test enforces it — see "Enforcement"). Two
+surfaces deliberately keep their own shell because they have no header/footer anatomy: the
+**Command palette** and the **Image lightbox**; they use the same scrim and z tokens. Surfaces that
+have not migrated yet still carry their own copy of this anatomy (the ratchet lists them); the first
+two on the shell are `RenameFolderDialog` and `RenameRepoDialog`.
+
+`Dialog` is **controlled**: it never closes itself, it emits `close(reason)` (`esc` · `scrim` ·
+`button`) and the owner runs the close logic it already has (`ui.closeDialog()`, an `emit`, a
+dirty/busy guard). Esc routing lives in `useDialogStack`, Tab wrap and focus restore in
+`useFocusTrap`.
+
+#### Anatomy
+
+```
+Scrim  (--color-scrim, fixed, inset 0, flex-centered)           z = layer
+└─ Card (--color-surface, 1px --color-border-2, --radius-lg, --shadow-pop)
+   ├─ Header   shrink-0 · padding 14/18/10 · border-b --color-border
+   │     [icon] Title (13.5/20 600)  [subtitle: mono 11.5 --color-text-4]        [✕ 24×24]
+   ├─ Body     flex-1 · min-h-0 · overflow-y-auto (.scrollable) · padding 14/18   ← the ONLY scroller
+   └─ Footer   shrink-0 · padding 12/18 · border-t --color-border
+         [meta · left, optional]                         [Cancel] [Primary]   gap 8, right-aligned
+```
+
+- **The card never scrolls and is never taller than the cap.** Header and footer are `shrink-0`; the
+  body is `flex-1 min-h-0 overflow-y-auto`. A secondary section (e.g. a "refused" list) lives _inside_
+  the body — it does not get its own cap unless it is a self-contained widget (a code `<pre>`, a
+  filmstrip), and never grows the card.
+- **No footer** is allowed (a viewer-style or single-action card); **no header** is not — a dialog
+  always has an accessible name (`title`, or `ariaLabel` when the `#header` slot replaces the title row).
+- **Padding is off the 4px scale on purpose** — `14/18/10` header, `14/18` body, `12/18` footer: the
+  rhythm 14+ dialogs shipped with, documented here once as an exception (§4 `s-5` is a gap, not a
+  dialog padding). Implementations use Tailwind's fractional spacing (`px-4.5` = 18px, `pt-3.5` = 14px,
+  `pb-2.5` = 10px, `py-3` = 12px), never `[14px]`-style arbitrary values.
+- Footer actions go in the footer slots (`footer` right, `meta` left), dismiss left of commit. The
+  destructive action is `danger`-coloured and is never the default (Enter) action. **Footer buttons keep
+  the 28px dialog box** (`7px 14px`, 12.5 / 500, `--radius-sm`) every dialog shipped with: `ui/Button` at
+  `md` renders 34px and would grow every footer by 6px, so moving the footers onto `Button` waits on a
+  28px size for it (an open decision).
+- The close button is 24×24 (a documented exception to the 22×22 icon-only trigger of §6 "Buttons"),
+  `X` icon 14px/1.5, `--color-text-3` → `--color-text` + `--color-surface-2` on hover, labelled by the
+  shared key `dialog.close`. It is absent when the dialog is not dismissible.
+- The subtitle is mono 11.5px `--color-text-4`, truncated: the folder basename or path next to the title.
+
+#### Size scale
+
+Width is always `min(<size>, 90vw)` (written `w-(--dialog-w-<size>) max-w-[90vw]`). A dialog picks a
+size; it does not invent a width.
+
+| Size | Token           | Width | Use                                                            | Replaces (today)                                                                                                                                                                    |
+| ---- | --------------- | ----- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sm` | `--dialog-w-sm` | 480px | Confirms and one-field forms                                   | 440 (Mission close, mods confirm), 460 (Containers remove, Review confirm), 480 (Remove worktree, Rename ×2, Bulk close)                                                            |
+| `md` | `--dialog-w-md` | 560px | **Default.** Forms, plans, launch options                      | 520 (New folder, Memory location), 540 (New session, MCP confirm), 560 (Add folder, Claude Boot, New worktree, Open subfolder, Dehydrate, Sweep, Missions review, dispatch confirm) |
+| `lg` | `--dialog-w-lg` | 720px | Long lists with chips; the card dossier                        | 720 (Cleanup list — replaces `--gc-dialog-w`), 760 (Card create, Card detail)                                                                                                       |
+| `xl` | `--dialog-w-xl` | 940px | Tabbed/navigated surfaces. **Must pass `height`** (fixed size) | 940 (Settings)                                                                                                                                                                      |
+
+#### Viewport cap (mandatory)
+
+`max-height: var(--dialog-max-h)` = `84vh` on **every** card, written `max-h-(--dialog-max-h)`. There is
+no variant without it. 84vh is the middle of the shipped 80–88vh range and leaves ≥ 8vh above and
+below. A fixed `height` (`xl` Settings `min(80vh, 720px)`, Open subfolder `min(70vh, 560px)`) is
+allowed only if it is ≤ the cap (`Dialog` reports a taller one in dev), so the card is still capped and
+the nav/pane or list keeps its own scroll inside the body. At a 560px-tall window the card is 470px:
+header + footer ≈ 100px, the body scrolls the rest.
+
+#### Placement
+
+Centered (default). `placement="top"` (`10vh` from the top) is for the MCP confirm only: a card whose
+height changes as its queue grows would jump if it were centered. (The Command palette keeps its own
+shell and its own top anchor.)
+
+#### Variants (content, not shells)
+
+| Variant                 | Size                                      | What differs                                                                                                                                                                                                                  |
+| ----------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Confirm**             | `sm`                                      | Body is a sentence + optional callout (`--color-warning-soft`). Footer: Cancel + primary. **Initial focus: Cancel.**                                                                                                          |
+| **Destructive confirm** | `sm`/`md`                                 | Header gets a leading `--color-red` icon; body names exactly what is lost; callout uses `--color-red-soft`; action is `danger`. `aria-describedby` → the body copy. **Initial focus: Cancel** (never the destructive button). |
+| **Form**                | `sm`/`md`                                 | Label (11px / 500 / eyebrow case) + input (32px, `--radius-sm`) + hint. Enter submits; the secondary action ("Reset") goes in the footer's left (`meta`) slot. Initial focus: the first input.                                |
+| **Long list**           | `lg`                                      | One scroll region (the body). Totals live in the footer `meta`. Rows are 28–34px; chips/sizes right-aligned. Secondary sections (refused, warnings) scroll with the rest.                                                     |
+| **Large / tabbed**      | `xl` + `height`                           | Settings. The body hosts two independent scrollers (nav, pane); the card never resizes between tabs.                                                                                                                          |
+| **Dossier**             | `lg`                                      | Card detail/create. A custom `header` slot (status chip, kind/tier pickers, close) replaces the title row; `aria-label` names it.                                                                                             |
+| **Gate**                | `md`, `placement="top"`, `layer="raised"` | MCP confirm. Not dismissible: no ✕, Esc and scrim clicks do nothing (but Esc is swallowed so it cannot reach a takeover behind).                                                                                              |
+
+#### Layers (z-order)
+
+The only z-index source for dialogs (the "Floating surfaces" table below cites these tokens):
+
+| Token               | Value | Surface                                                                       |
+| ------------------- | ----- | ----------------------------------------------------------------------------- |
+| `--z-dialog`        | 60    | every Dialog; the Image lightbox                                              |
+| `--z-dialog-raised` | 65    | fail-closed gates that no other surface may cover (MCP confirm)               |
+| `--z-palette`       | 70    | Command palette; comboboxes' dropdown panels (they must float above a dialog) |
+
+Card create / Card detail / dispatch confirm are `z-[65]` today with no recoverable reason (history is
+squashed); they move to `--z-dialog` unless batch 6 finds one. Raw `z-index` / `z-[N]` on a dialog is a
+bug, as before.
+
+#### Scrim and tokens
+
+| Token                                          | Value                           | Used by                                                                                                      |
+| ---------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `--color-scrim`                                | `rgba(0, 0, 0, 0.55)`           | every Dialog and the palette (`bg-scrim`)                                                                    |
+| `--color-scrim-strong`                         | `rgba(0, 0, 0, 0.82)`           | Image lightbox only (`bg-scrim-strong`)                                                                      |
+| `--dialog-max-h`                               | `84vh`                          | the cap (§4 "Dialog — viewport cap")                                                                         |
+| `--dialog-w-sm / -md / -lg / -xl`              | `480px / 560px / 720px / 940px` | size scale                                                                                                   |
+| `--z-dialog / --z-dialog-raised / --z-palette` | `60 / 65 / 70`                  | layers                                                                                                       |
+| `--text-dialog-title` (+ `--line-height`)      | `13.5px / 20px`                 | header title (documented type exception to §3's Subtitle; weight via `font-semibold`) — in `main.css @theme` |
+
+All theme-invariant (declared once in `@theme`, like the shape/motion tokens); the scrim stays black at
+0.55 in light themes, which is today's behaviour. The Cleanup list's `--gc-dialog-w` becomes
+`--dialog-w-lg` (same value) when its dialog migrates.
+
+#### Motion
+
+Scrim: `.anim-overlay-fade`. Card: `.anim-fade-in-scale`. No exit animation (the surface unmounts), as
+today. `prefers-reduced-motion` is handled by the global reset in `main.css`. No ad-hoc keyframes.
+
+#### Keyboard
+
+- **Esc** closes **only the topmost** dialog and never reaches a takeover behind it (one capture
+  listener for the whole stack, `useDialogStack`). Ignored when the event originates inside a nested
+  dropdown panel (`[data-esc-owner]`, and the existing `[data-branch-combobox-panel]`), which owns that Esc.
+- **Scrim closes on `mousedown` where `target === currentTarget`**, never on `click` (so a drag that
+  ends outside the card does not dismiss it). A mousedown inside the card does not reach `document`.
+- **Tab / Shift+Tab** wrap inside the card. Initial focus: the dialog's declared field/button
+  (`initialFocus`), else the first focusable, else the card. Closing restores focus to the opener.
+- **Stacking.** A dialog under another one stops trapping Tab and stops restoring focus (the trap is
+  _suspended_); when the one on top closes, focus returns to where it was **inside** the lower dialog,
+  not to the page opener.
+- A dirty or busy dialog keeps its own guard: the primitive emits `close(reason)`; the owner decides
+  (toast-with-Discard, flush a debounced save, ignore while `busy`).
+
+#### Accessibility
+
+`role="dialog"`, `aria-modal="true"`, `aria-labelledby` → the title element (or `aria-label` for a custom
+header; always an i18n string), `aria-describedby` for confirms. The scrim is `role="presentation"`.
+The page behind is not scrollable (`html, body, #app { overflow: hidden }`), so no scroll lock is
+needed — a contract test pins that assumption.
+
+#### Enforcement
+
+`tests/dialog-shell-ratchet.test.ts` fails on `fixed inset-0` together with a raw black scrim
+(`rgba(0, 0, 0` / `bg-black/`) in any component except `ui/Dialog.vue` and an explicit allow-list that
+may only shrink. `tests/dialog-contract.test.ts` pins the behaviour above (C01–C22) and that this
+section and the tokens in `themes.css` / `main.css` agree.
 
 ### Settings dialog
 
@@ -7789,9 +7937,10 @@ subfolder just selects (idempotent via `addUserProject`). **UI-only** channel.
 
 ### Rename folder
 
-`RenameFolderDialog.vue` — **non-destructive** `Dialog` variant (z-60, peer via
-`ui.dialog === 'renameFolder'` + `ui.folderActionPath`). Same `Dialog` anatomy;
-same input tokens as `AddFolderDialog`. **Existing tokens only.**
+`RenameFolderDialog.vue` — **non-destructive** `Dialog` form (`size="sm"`, peer via
+`ui.dialog === 'renameFolder'` + `ui.folderActionPath`). Shell, width, radius, scrim, layer, Esc
+and focus come from §6 "Dialog"; this section keeps only what is specific. Same input tokens as
+`AddFolderDialog`. **Existing tokens only.**
 
 - **Trigger:** item `Rename…` (`pencil-line` icon) in `FolderMenu`.
 - **Header:** title `Rename folder` + folder basename (mono `--text-4`), `X` button.
@@ -7809,7 +7958,7 @@ auto-discovered; empty alias → basename), the store re-hydrates and `mergeFold
 ### Rename repo
 
 `RenameRepoDialog.vue` — twin of `RenameFolderDialog` (renames the repo **group**,
-not a folder): **non-destructive** `Dialog` variant (z-60, peer via
+not a folder): **non-destructive** `Dialog` form (`size="sm"`, peer via
 `ui.dialog === 'renameRepo'` + `ui.renameRepoTarget = { repoId, derivedLabel }`).
 Same anatomy/tokens as `RenameFolderDialog`. **Existing tokens only.**
 
@@ -7980,30 +8129,35 @@ in `App.vue` and coordinated by the `ui` store with a **mutex** (one at a time).
 stacking order is fixed — the higher the `z-index`, the higher priority
 the surface:
 
-| Surface              | Component                  | `z-index` | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| -------------------- | -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Hover preview        | `SessionPreview.vue`       | 40        | `pointer-events: auto` — interactive/scrollable card (T86 §3.9); row+card hover zone with grace delay                                                                                                                                                                                                                                                                                                                                      |
-| Hover preview        | `FolderPreview.vue`        | 40        | Folder card. Peer of `SessionPreview` — they share the `ui.preview` slot (a `sessionId` **or** a `folderPath`); `pointer-events: auto` (T86 §3.9)                                                                                                                                                                                                                                                                                          |
-| Context menu         | `SessionMenu.vue`          | 50        | Suppresses preview on open                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Split menu           | `SplitMenu.vue`            | 50        | Mutex via `useUiStore.splitMenu`. Dropdown anchored to the Topbar's Split button. Peer of `SessionMenu` — never open simultaneously                                                                                                                                                                                                                                                                                                        |
-| Footer fleet popover | `StatusFooter.vue`         | 50        | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal. Open flag in the `ui` store (`ui.popovers.usagePanel`, see "Anchored popovers" below)                                                                                                                                                                                                                                                  |
-| Sidebar jump palette | `SidebarJumpPalette.vue`   | 50        | T288. Peer of the menus in the `ui` mutex (`ui.sidebarJumpPalette`), but the ONLY surface here NOT `<Teleport>`ed to `<body>`: it is `position: absolute` inside the sidebar `<aside>` so it tracks the sidebar's width and clipping. Not modal — closes on Esc / click-outside / the Search button                                                                                                                                        |
-| Dialog (modal)       | `AddFolderDialog.vue`      | 60        | Suppresses menu + preview                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Dialog (modal)       | `SettingsDialog.vue`       | 60        | Peer of `AddFolderDialog` — they share the dialog slot (z-60) via the `ui.dialog` mutex; only one dialog open at a time                                                                                                                                                                                                                                                                                                                    |
-| Dialog (modal)       | `ClaudeBootDialog.vue`     | 60        | Per-folder Claude Boot. Peer of the dialogs via `ui.dialog === 'claudeBoot'` (+ `ui.claudeBootPath`); opened from `FolderMenu`                                                                                                                                                                                                                                                                                                             |
-| Dialog (modal)       | `NewSessionDialog.vue`     | 60        | Launch-options before creating a session. Peer via `ui.dialog === 'newSession'` (+ `ui.newSessionPath`); opened from "+ New session"                                                                                                                                                                                                                                                                                                       |
-| Dialog (modal)       | `RemoveWorktreeDialog.vue` | 60        | **Destructive** worktree-removal confirmation. Peer via `ui.dialog === 'removeWorktree'` (+ `ui.removeWorktreeTarget`); opened from the `FolderMenu`'s destructive item (linked worktree only)                                                                                                                                                                                                                                             |
-| Dialog (modal)       | `NewWorktreeDialog.vue`    | 60        | **Non-destructive** worktree plan + creation (dry-run preview → progress stepper in the same card). Peer via `ui.dialog === 'newWorktree'` (+ `ui.newWorktreePath`); opened from the `FolderMenu`'s `New worktree…` item (git folder only)                                                                                                                                                                                                 |
-| Dialog (modal)       | `NewFolderDialog.vue`      | 60        | Creates + pins a subfolder **non-destructively**. Peer via `ui.dialog === 'newFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `New folder…` item                                                                                                                                                                                                                                                                        |
-| Dialog (modal)       | `OpenSubfolderDialog.vue`  | 60        | Searchable subfolder picker (recursive, depth-capped) → pins the chosen one. Peer via `ui.dialog === 'openSubfolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Open subfolder…` item                                                                                                                                                                                                                                     |
-| Dialog (modal)       | `RenameFolderDialog.vue`   | 60        | Renames a folder's alias. Peer via `ui.dialog === 'renameFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Rename…` item                                                                                                                                                                                                                                                                                                 |
-| Image lightbox       | `ImageLightbox.vue`        | 60        | Full-viewport viewer for one pasted screenshot. Its index lives in the `ui` store (`ui.imageLightboxIndex`, T486 U4a) beside the anchored popovers' flags, but **outside the mutex** — a single entry point: a tile in the footer's images popover. While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it, and closing that popover ends it                                                       |
-| Dialog (modal)       | `RenameRepoDialog.vue`     | 60        | Renames a repo-group's alias. Peer via `ui.dialog === 'renameRepo'` (+ `ui.renameRepoTarget`); opened from the `RepoGroupHeader`'s context-menu `Rename repo` item                                                                                                                                                                                                                                                                         |
-| Agent-action confirm | `McpConfirmOverlay.vue`    | 65        | **Fail-CLOSED** confirm for a mutation requested by an MCP agent (`onMcpConfirmPending`). **Auto-shows** from its own local state (doesn't enter the `ui` mutex — it's a security gate, can't be suppressed by another surface) and **doesn't close** on Esc / click-outside: the verdict-producing exits are Allow, Deny, or the timeout (denies) — **Dismiss** is a non-verdict exit, "not now". Reuses the Inbox rail's visual language |
-| Command palette      | `CommandPalette.vue`       | **70**    | Suppresses dialog + menu + preview                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Surface              | Component                  | `z-index`         | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------- | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Hover preview        | `SessionPreview.vue`       | 40                | `pointer-events: auto` — interactive/scrollable card (T86 §3.9); row+card hover zone with grace delay                                                                                                                                                                                                                                                                                                                                      |
+| Hover preview        | `FolderPreview.vue`        | 40                | Folder card. Peer of `SessionPreview` — they share the `ui.preview` slot (a `sessionId` **or** a `folderPath`); `pointer-events: auto` (T86 §3.9)                                                                                                                                                                                                                                                                                          |
+| Context menu         | `SessionMenu.vue`          | 50                | Suppresses preview on open                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Split menu           | `SplitMenu.vue`            | 50                | Mutex via `useUiStore.splitMenu`. Dropdown anchored to the Topbar's Split button. Peer of `SessionMenu` — never open simultaneously                                                                                                                                                                                                                                                                                                        |
+| Footer fleet popover | `StatusFooter.vue`         | 50                | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal. Open flag in the `ui` store (`ui.popovers.usagePanel`, see "Anchored popovers" below)                                                                                                                                                                                                                                                  |
+| Sidebar jump palette | `SidebarJumpPalette.vue`   | 50                | T288. Peer of the menus in the `ui` mutex (`ui.sidebarJumpPalette`), but the ONLY surface here NOT `<Teleport>`ed to `<body>`: it is `position: absolute` inside the sidebar `<aside>` so it tracks the sidebar's width and clipping. Not modal — closes on Esc / click-outside / the Search button                                                                                                                                        |
+| Dialog (modal)       | `AddFolderDialog.vue`      | 60                | Suppresses menu + preview                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Dialog (modal)       | `SettingsDialog.vue`       | 60                | Peer of `AddFolderDialog` — they share the dialog slot (z-60) via the `ui.dialog` mutex; only one dialog open at a time                                                                                                                                                                                                                                                                                                                    |
+| Dialog (modal)       | `ClaudeBootDialog.vue`     | 60                | Per-folder Claude Boot. Peer of the dialogs via `ui.dialog === 'claudeBoot'` (+ `ui.claudeBootPath`); opened from `FolderMenu`                                                                                                                                                                                                                                                                                                             |
+| Dialog (modal)       | `NewSessionDialog.vue`     | 60                | Launch-options before creating a session. Peer via `ui.dialog === 'newSession'` (+ `ui.newSessionPath`); opened from "+ New session"                                                                                                                                                                                                                                                                                                       |
+| Dialog (modal)       | `RemoveWorktreeDialog.vue` | 60                | **Destructive** worktree-removal confirmation. Peer via `ui.dialog === 'removeWorktree'` (+ `ui.removeWorktreeTarget`); opened from the `FolderMenu`'s destructive item (linked worktree only)                                                                                                                                                                                                                                             |
+| Dialog (modal)       | `NewWorktreeDialog.vue`    | 60                | **Non-destructive** worktree plan + creation (dry-run preview → progress stepper in the same card). Peer via `ui.dialog === 'newWorktree'` (+ `ui.newWorktreePath`); opened from the `FolderMenu`'s `New worktree…` item (git folder only)                                                                                                                                                                                                 |
+| Dialog (modal)       | `NewFolderDialog.vue`      | 60                | Creates + pins a subfolder **non-destructively**. Peer via `ui.dialog === 'newFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `New folder…` item                                                                                                                                                                                                                                                                        |
+| Dialog (modal)       | `OpenSubfolderDialog.vue`  | 60                | Searchable subfolder picker (recursive, depth-capped) → pins the chosen one. Peer via `ui.dialog === 'openSubfolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Open subfolder…` item                                                                                                                                                                                                                                     |
+| Dialog (modal)       | `RenameFolderDialog.vue`   | `--z-dialog` (60) | Renames a folder's alias. Peer via `ui.dialog === 'renameFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Rename…` item                                                                                                                                                                                                                                                                                                 |
+| Image lightbox       | `ImageLightbox.vue`        | 60                | Full-viewport viewer for one pasted screenshot. Its index lives in the `ui` store (`ui.imageLightboxIndex`, T486 U4a) beside the anchored popovers' flags, but **outside the mutex** — a single entry point: a tile in the footer's images popover. While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it, and closing that popover ends it                                                       |
+| Dialog (modal)       | `RenameRepoDialog.vue`     | `--z-dialog` (60) | Renames a repo-group's alias. Peer via `ui.dialog === 'renameRepo'` (+ `ui.renameRepoTarget`); opened from the `RepoGroupHeader`'s context-menu `Rename repo` item                                                                                                                                                                                                                                                                         |
+| Agent-action confirm | `McpConfirmOverlay.vue`    | 65                | **Fail-CLOSED** confirm for a mutation requested by an MCP agent (`onMcpConfirmPending`). **Auto-shows** from its own local state (doesn't enter the `ui` mutex — it's a security gate, can't be suppressed by another surface) and **doesn't close** on Esc / click-outside: the verdict-producing exits are Allow, Deny, or the timeout (denies) — **Dismiss** is a non-verdict exit, "not now". Reuses the Inbox rail's visual language |
+| Command palette      | `CommandPalette.vue`       | **70**            | Suppresses dialog + menu + preview                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Rule: when introducing a new floating surface, **add a row here
 in the same commit**. Raw `z-index` in components (with no table entry) is a bug.
+
+**Dialog layers (T460).** Dialogs read their `z-index` from three tokens, not from a number: `--z-dialog`
+(60), `--z-dialog-raised` (65, fail-closed gates) and `--z-palette` (70, the Command palette and the
+comboboxes' dropdown panels) — see §6 "Dialog" → Layers. A migrated dialog's row above cites the token;
+the rows that still say `60` / `65` / `70` are surfaces that have not moved onto the `Dialog` shell yet.
 
 **Anchored popovers (T486 U4a).** The popovers that hang off a button — the Topbar's
 Activity bell and Mission pill, the footer's pasted images, Claude service status and
@@ -13294,6 +13448,19 @@ codebase is a bug to fix.
 
   /* Dialog viewport cap (§4 "Dialog — viewport cap") */
   --dialog-max-h: 84vh;
+
+  /* Dialog shell (§6 "Dialog"): scrim, size scale, z-layers, title type */
+  --color-scrim: rgba(0, 0, 0, 0.55);
+  --color-scrim-strong: rgba(0, 0, 0, 0.82);
+  --dialog-w-sm: 480px;
+  --dialog-w-md: 560px;
+  --dialog-w-lg: 720px;
+  --dialog-w-xl: 940px;
+  --z-dialog: 60;
+  --z-dialog-raised: 65;
+  --z-palette: 70;
+  --text-dialog-title: 13.5px;
+  --text-dialog-title--line-height: 20px;
 
   /* motion */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);

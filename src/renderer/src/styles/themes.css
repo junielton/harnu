@@ -63,6 +63,21 @@
    * its body scrolls, header and footer stay on screen. Theme-invariant. */
   --dialog-max-h: 84vh;
 
+  /* Dialog shell tokens (design.md §6 "Dialog", T460): the scrim behind every modal card, the size
+   * scale a dialog picks from (width is always min(<size>, 90vw)) and the dialog z-layers. All
+   * theme-invariant — the scrim stays black at 0.55 in light themes. `--color-scrim-strong` is the
+   * Image lightbox's heavier scrim; `--z-palette` also carries the comboboxes' dropdown panels,
+   * which must float above a dialog. */
+  --color-scrim: rgba(0, 0, 0, 0.55);
+  --color-scrim-strong: rgba(0, 0, 0, 0.82);
+  --dialog-w-sm: 480px;
+  --dialog-w-md: 560px;
+  --dialog-w-lg: 720px;
+  --dialog-w-xl: 940px;
+  --z-dialog: 60;
+  --z-dialog-raised: 65;
+  --z-palette: 70;
+
   /* motion */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 100ms;
