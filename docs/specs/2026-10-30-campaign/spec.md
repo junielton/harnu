@@ -1,6 +1,6 @@
 # Campaign — a quest line above the Mission
 
-_Draft spec, 2026-10-30. Written by the orchestrator from the exploration (`.harnu/out/mission-campaign-exploration.md`), four research reports, one 93-hour real orchestration transcript (scrubbed) and the approved mockup v6 (`.harnu/out/mockups/2026-10-30-mission-campaign/`, screens `v6--*`). An executor lands this file in `docs/specs/2026-10-30-campaign/spec.md` and the mockup in `docs/design/2026-10-30-mission-campaign/` as the first unit of chapter 4._
+_Draft spec, 2026-10-30. Written by the orchestrator from the exploration, four research reports, one 93-hour real orchestration transcript (scrubbed) and the approved mockup v6. Both now live in this folder: this file and the mockup (`index.html`, `mockup.json`, `screens/v6--*.html`, scrubbed of client identifiers). §3.2 was aligned to the data model chapters 1 and 2 shipped (T604); later changes are recorded, append-only, in the Amendments table at the end._
 
 ## 1. Problem
 
@@ -56,12 +56,12 @@ Stored as `.harnu/campaigns/<id>-<slug>.md` in the main checkout, shared by ever
 ### 3.2 Mission additions (`mission-core.ts`)
 
 - `MissionStep.required?: boolean` (default `true`). A `required: false` step is excluded from `progress.total`, from `current`, from `leftBehind`, and rendered in the Side bucket.
-- `MissionStep.discoveredFrom?: { stepId: string }`.
+- `MissionStep.discoveredFrom?: string` — the id of the step this side step was discovered from (`src/main/mission-core.ts:98`).
 - `MissionStep.edges?: { kind: 'blocks' | 'validates' | 'related'; to: string }[]` (typed edges; `blocks` is the only one progress reads: a step with an open `blocks` edge into it is `locked`).
-- `MissionStep.decision?: { title: string; options: string[]; chosen?: string; chosenAt?: string; blocks: string[] }` — a decision node; choosing is an operator door and writes a `decision` log entry (§3.6).
-- `MissionStep.gates` is **derived, never stored**: `{ pr: GateState; ci: GateState; main: GateState; verifier: GateState; checks: GateState }`, `GateState = 'green' | 'red' | 'running' | 'off' | 'na'`. Sticky like proof (a resolved green never downgrades on an unreachable GitHub; `stale: true` instead). A step reads `verified` only when every applicable gate is green.
+- `MissionStep.decision?: { title: string; options: string[]; chosen?: number; blocks: string[] }` — a decision node; `chosen` is the index into `options` and there is no `chosenAt` (`src/main/mission-core.ts:115-121`). Choosing is an operator door and writes a `decision` log entry (§3.6).
+- `MissionStep.gates` is **derived, never stored**: `{ pr: GateState; ci: GateState; main: GateState; verifier: GateState; checks: GateState; stale?: true }`, `GateState = 'green' | 'red' | 'running' | 'off' | 'na'` (`src/main/mission-gates.ts:12-18`, computed by `computeStepGates`, `src/main/mission-gates.ts:105`). Sticky like proof (a resolved green never downgrades on an unreachable GitHub; `stale: true` instead). **Today gates only inform:** a step's `verified` still comes from its stored proof, and progress does not read gates. The rule "a step reads `verified` only when every applicable gate is green" is Amendment (a), delivered in chapter 3.
 - `Mission.campaignId?: string`, `Mission.chapterId?: string`.
-- `Mission.ledger: LedgerRow[]` — **written by Harnu**, never by a verb: `{ at, unit?: stepId, sessionId?, worktree?, branch?, pr?, event: 'dispatched' | 'worktree' | 'pr-opened' | 'pr-merged' | 'ci' | 'verified' | 'session-died' | 'compaction', detail? }`. Sources: `create_session`, `create_worktree`, `submit_manifest`, PR resolution, the session projection, the PreCompact hook.
+- `Mission.ledger?: LedgerRow[]` — **written by Harnu**, never by a verb, append-only (`appendLedgerRow`, `src/main/mission-ledger.ts:17-24`): `{ at, kind, stepId?, ref, sessionId?, worktree?, branch?, pr?, detail? }` where `ref` is the thing the event is about (a session id, a worktree path, `#<pr>`, a card slug) and `kind` is one of the eight values `'dispatched' | 'worktree' | 'pr-opened' | 'pr-merged' | 'ci' | 'verified' | 'session-died' | 'compaction'` (`src/main/mission-core.ts:141-172`, field at `:223`). Sources: `create_session`, `create_worktree`, `submit_manifest`, PR resolution, the session projection, and the PreCompact hook. The compaction writer `recordMissionCompaction` exists (`src/main/mcp/tool-handlers.ts:4848`); its hook caller lands in chapter 5 (Amendment b).
 - `Mission.log` entries gain `kind: 'note' | 'decision' | 'surprise' | 'steward'`.
 - `Mission.outcome?: Outcome` (§3.6).
 
@@ -108,6 +108,8 @@ Approve re-scope · End mission / campaign · Mark verified / Unmark · Add / ti
 
 ## 5. UI (the approved mockup v6)
 
+Committed next to this spec: open `index.html` in this folder (screens `screens/v6--pill.html`, `screens/v6--campaign.html`, `screens/v6--chapter.html`, `screens/v6--map.html`; shared parts in `parts/`). The mockup sample data is a fictional content migration for "Acme".
+
 - **Pill** (`MissionPill.vue`): "Ch. 9/12 · Step 2/4"; warning adds "· n for you"; green "Ch. 12/12 ✓". A session owning a mission with no campaign keeps today's pill.
 - **Campaign popover** (`CampaignPopover.vue`, `.pop--wide` 520px): Main quest / Side quests / Locked on the left, the open chapter's objectives with gates on the right, You lane + Steward line, footer "End campaign…" / "Open map".
 - **Chapter popover** (`MissionPopover.vue` extended): gates per step, decision node, Side bucket, Steward line, back to campaign.
@@ -132,7 +134,7 @@ Approve re-scope · End mission / campaign · Mark verified / Unmark · Add / ti
 | 1   | **Gates from facts + Harnu-written ledger** | — → `gates`, `ledger`                | 1a derived gates in `mission-pulse.ts` + sticky cache; 1b ledger rows from `create_session`/`create_worktree`/`submit_manifest`/PR resolution/session death; 1c popover shows gates + ledger tail; 1d notice coalescing per unit |
 | 2   | **Side steps, typed edges, decision nodes** | `gates` → `side-steps`               | 2a schema + progress rule (`required`, `discoveredFrom`, `edges`, `locked`); 2b decision node + Choose door; 2c Side bucket + decision UI in `MissionPopover`                                                                    |
 | 3   | **Campaign record, verbs, skills**          | `side-steps` → `campaign`            | 3a `campaign-core.ts` + verbs + prerequisite pass; 3b `orchestrate-delivery` / `mission` / `status` / `report-back` rewritten to the contract; 3c eval scenarios                                                                 |
-| 4   | **UI: pill, popovers, map**                 | `campaign` → `campaign-ui`           | 4a land spec + mockup in `docs/`; 4b pill + `CampaignPopover`; 4c `CampaignMap` takeover; 4d `design.md`, i18n parity, user docs                                                                                                 |
+| 4   | **UI: pill, popovers, map**                 | `campaign` → `campaign-ui`           | 4a spec + mockup landed in `docs/specs/2026-10-30-campaign/` (T604); 4b pill + `CampaignPopover`; 4c `CampaignMap` takeover; 4d `design.md`, i18n parity, user docs                                                              |
 | 5   | **Steward**                                 | `ledger`, `campaign` → `steward`     | 5a `steward` mode allowlist + `rebase_stack`; 5b event wake-ups + three hooks installed/removed by Harnu; 5c `delivery-watchdog` → steward tick; 5d Merge batch door                                                             |
 | 6   | **Close-out → memory, recall**              | `campaign`, `ledger` → `memory-loop` | 6a `outcome` + consolidator worker; 6b end dialog "Also record" + `memory_append supersedes`; 6c recall at create + in the Brief; 6d `delivery-verifier` evidence bundle                                                         |
 
@@ -156,3 +158,15 @@ Chapters 1 and 2 are detailed to steps now; 3–6 keep the step list coarse unti
 1. Steward per mission (recommended: closed scope, dies at close) or per repo (one, like the watchdog).
 2. Whether `rebase_stack` may run on an operator-created worktree or only on ones Harnu created.
 3. Memory draft granularity: one decision per `decision` log entry, or the consolidator may merge several.
+
+## Amendments
+
+Append-only: a row is never edited or removed; a later row supersedes an earlier one by saying so.
+
+| Date       | Section      | Change                                                                                                                                                                                                                   | Decided by                                                       |
+| ---------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| 2026-10-31 | §3.2/§7 ch.3 | (a) A step reads `verified` only when every applicable gate is green (pr, ci, main, verifier, checks; `na` and `off` excluded per gate rules). Today gates only inform. Lands in chapter 3 (T595).                       | operator                                                         |
+| 2026-10-31 | §3.2/§7      | (b) Compaction ledger trigger: the writer `recordMissionCompaction` exists, and its PreCompact hook caller lands with the steward hooks in chapter 5 (5b).                                                               | orchestrator default; the operator may override                  |
+| 2026-10-31 | §7 ch.1      | (c) 1c shipped as gate dots only. The popover ledger tail moves to chapter 4 (4b). 1d (notice coalescing) moved to T599.                                                                                                 | wave-1 delivery report (as shipped in T593)                      |
+| 2026-10-31 | §5           | (d) The chapter popover (`MissionPopover.vue`) also gets the mockup's You lane: a list with one primary item boxed, then one row per item with its age. This replaces today's single box with "+N more". Chapter 4 (4b). | orchestrator, from approved mockup v6; the operator may override |
+| 2026-10-31 | §5/§7 ch.4   | (e) T594 tech debt that chapter 4 owes: a dedicated "Decide: …" you-item for an undecided decision node.                                                                                                                 | wave-1 delivery report (T594 tech debt)                          |
