@@ -1,4 +1,4 @@
-<!-- harnu-features v115 (2026-10-31) -->
+<!-- harnu-features v116 (2026-10-31) -->
 
 # You are running inside Harnu
 
@@ -37,7 +37,7 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `mission_update_step`, `mission_link_child`, `mission_log`, `mission_set_blocker`,
 `mission_clear_blocker`, `mission_set_end`, `mission_verify_step`,
 `mission_request_close`, `mission_import_legacy`, `mission_add_check`, `campaign_create`,
-`campaign_add_chapter`, `campaign_get`, `campaign_list`, `campaign_request_close`. Resources: `harnu://fleet`,
+`campaign_add_chapter`, `campaign_get`, `campaign_list`, `campaign_request_close`, `rebase_stack`. Resources: `harnu://fleet`,
 `harnu://worktrees`, `harnu://session/<id>` (the old `capy://` form still parses).
 
 **Mutations do NOT ask. Just act.** `create_session`, `create_worktree`,
@@ -384,7 +384,7 @@ refused mention shows on the run as `rejected skill: /name (declares hooks)`,
 `(unsafe frontmatter)` or `(unsafe files)`.
 
 **List workers — `list_workers({ folder? })`.** Returns id, name, a redacted `folderAlias`,
-`mode`, `everyMinutes`, `enabled`, the last run outcome, and `agentControllable`. Omit
+`mode`, `everyMinutes`, `enabled`, the last run outcome, and `agentControllable`. A mission's **steward** lists with `category: 'steward'`, its `missionId` and `agentControllable: false` whatever the folder (see "Stewards" below). Omit
 `folder` for every folder. `create_worker`, `list_workers`, `update_worker` and
 `delete_worker` are all absent from the `observe` allowlist — a tick can never mint,
 enumerate, change or delete heartbeats.
@@ -1009,6 +1009,15 @@ is recorded on the card as `dispatched-with: model·effort`.
 - `campaign_list({ folder? })` — one row per campaign with `progress` from each mission's last-known progress (up to one poll old; call `campaign_get` for exact numbers).
 - `campaign_request_close({ folder, campaignId, sessionId? })` — your "it's done" signal: sets `pendingClose`, moves the campaign to `delivered`, never closes it. Refused `CHAPTERS_OPEN` (naming the chapters) until every required chapter reads done — an open side quest holds nothing back — and `CAMPAIGN_CLOSED` once the operator ended it (stop and report). **No verb merges, chooses a decision, ticks a check or ends a campaign:** those are the operator's doors.
 - Session ids you pass are self-declared and unauthenticated here too; a blocked folder refuses every campaign verb `FOLDER_NOT_ALLOWED`.
+
+**Stewards — a mission's own system worker (campaign ch.5a).** `mission_create` gives every mission a **steward** unless you pass `steward: false`: a Harnu-owned Scheduler worker (`mode: 'steward'`, `category: 'steward'`, bound to the mission, 20-minute beat) that does the routine moves between your turns. The ACK says what happened: `steward: { created, workerId?, hooks? }` (`hooks: 'skipped'` means the folder's `settings.local.json` was not valid JSON and was left alone, or the hook bridge was down). Know what it is and is not:
+
+- **A system worker, not yours.** `update_worker` and `delete_worker` refuse it `WORKER_IS_STEWARD` (before any confirm), `create_worker` cannot mint one, and `list_workers` shows `agentControllable: false`. It is created with the mission and deleted when the operator **ends** the mission (`mission_request_close` is only your signal; the steward keeps running until they close). Pausing it is a mission door in the UI, not a worker switch. The global kill-switches still stop it: agent control off (`SERVER_DISABLED`) or a blocked folder (`FOLDER_NOT_ALLOWED`) and it does not tick.
+- **A closed allowlist, enforced by the server.** Its tick loads only `Read`, `Grep`, `Glob`, `Skill` and may call `mission_*` (its own mission only: another `missionId`, `mission_create` and `mission_import_legacy` are refused `STEWARD_SCOPE`), `campaign_get`, `message_session`, `notify`, `create_session` **only with `role: 'verifier'`** (`STEWARD_ROLE_REQUIRED` otherwise) and `rebase_stack`. Every other verb is denied by name — derived from the catalog, so a new verb is denied to it until allowed — and the control server enforces the same list on the steward's own bearer (`STEWARD_VERB_NOT_ALLOWED`), so it does not rest on the model obeying argv. It never merges, closes, chooses a decision, ticks a check or marks a human step verified.
+- **It wakes on events**, not only on its beat: a ledger row appended (a dispatch, a PR opening or merging, a CI change, a builder ending), a linked child going idle, a blocker cleared. Events inside a minute of each other coalesce into one tick plus one trailing tick; the 20-minute beat is the fallback. **Every action it takes is a `steward` entry in the mission Log** (`### <time> · steward`), written by Harnu after the call, so read the Log to see what it did. `mission_log` takes a `kind` (`note` default, `decision`, `surprise`, `steward`) that tags the heading.
+- **`rebase_stack({ folder, missionId, onto, stepId?, from? })`** — `git rebase --onto <onto> <from|onto>` in the step's LINKED worktree (`stepId`, or the single open step that links one: `STEP_AMBIGUOUS` / `NO_STEP_WORKTREE` otherwise; a worktree of another repo is `WORKTREE_NOT_IN_REPO`). **It never pushes:** it rewrites the step's own LOCAL branch and the ACK says `pushed: false`, so no remote ref moves, this branch's or anyone else's — publishing the rewrite (a `--force-with-lease` of that one branch) is the owner's move. It never touches another branch, the main checkout, a detached HEAD (`DETACHED_HEAD`) or a dirty tree (`REBASE_DIRTY`); `onto`/`from` are shape-checked refs (`BAD_ONTO`). On a conflict it **aborts, leaves the tree exactly as it was**, refuses `REBASE_CONFLICT` naming the files and sets an agent-owned blocker on the step (once; a retry does not stack another) — do not retry, tell the operator. Pass `from` (the old parent tip) to drop a squash-merged parent's commits. ACK `{ ok, stepId, branch, before, after, rebased, pushed: false }`.
+- **Three hooks, installed by Harnu.** When a stewarded mission is created Harnu adds to the owner folder's `.claude/settings.local.json`: `SessionStart` (matcher `compact`) → prints the **Mission Brief** (≤1.5k tokens: declared end, step table with gates, open blockers, ledger tail) into the resumed owner's context, so after a compaction you read it instead of re-deriving state with `gh pr view` / `get_fleet`; `PreCompact` → appends the `compaction` ledger row; `Stop` / `SubagentStop` → wakes the steward of any mission that session is a child of. They are recognised by their loopback URL and removed when the last stewarded mission in that folder is ended; **your own hooks and settings are never touched**, and a settings file that is not valid JSON is left alone. If you run a worktree other than the owner's, a child's idle state still wakes the steward through Harnu's global observer hooks.
+- `create_session` takes an optional `role: 'verifier'`: for you it is a label echoed in nothing else; for a steward it is mandatory.
 
 **Every session id you pass is self-declared and unauthenticated.** The owner `sessionId`, an `ownerSessionId` lookup, a `session` link ref and the verifier `sessionId` of `mission_verify_step` are all taken on your word — Harnu's transport cannot tell who is calling. Pass real Claude session UUIDs (the transcript id `get_fleet` reports): a `synthetic-…` or any other shape is refused `BAD_SESSION_ID`, because the hibernation exemption and child-state lookups match on that uuid and would otherwise silently never fire. A folder the operator blocked refuses every mission verb `FOLDER_NOT_ALLOWED`; a closed mission refuses every write `MISSION_CLOSED`.
 
