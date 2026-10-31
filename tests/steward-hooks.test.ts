@@ -15,7 +15,7 @@ import {
 } from '../src/main/steward-hooks'
 import type { Mission } from '../src/main/mission-core'
 
-const TOKEN = 'tok-123'
+const TOKEN = 'bridge-secret'
 const PORT = 4711
 
 const userHook = { type: 'command', command: 'echo user-pre-compact' }
