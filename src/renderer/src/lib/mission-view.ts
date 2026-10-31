@@ -77,6 +77,10 @@ export interface StepModel {
   visual: StepVisual
   /** The step carries the current marker (`progress.current.from`…`to`). */
   current: boolean
+  /** Rail letter (A, B, C… by position); `null` for the end step and past Z. Side origins name it. */
+  letter: string | null
+  /** Campaign spec §3.2 — the decision node this step is, or `null`. */
+  decision: DecisionModel | null
   /** The first current step — where mission-level callouts render. */
   firstCurrent: boolean
   /** The declared end step (`kind: 'fixed-end'`, never found by position). */
@@ -108,6 +112,34 @@ export interface StepModel {
   gates: GateDot[]
   /** The gates are last-known values (GitHub was unreachable), not a live read. */
   gatesStale: boolean
+}
+
+/** A decision node as the rail draws it (Campaign spec §3.2, mockup state `decision`). */
+export interface DecisionModel {
+  title: string
+  options: string[]
+  /** Index into `options` once the operator chose; `null` until then. */
+  chosen: number | null
+  /** The rail letters of the steps it locks (a step without a letter is named by its title). */
+  blocks: string[]
+  /** The operator may still choose: nothing was chosen yet. */
+  canChoose: boolean
+}
+
+/** One row of the Side bucket (Campaign spec §3.2, mockup state `side`). */
+export interface SideStepModel {
+  step: MissionStep
+  state: StepState
+  /** What it was discovered from: a rail letter, or a side step's title; `null` when it names none. */
+  origin: string | null
+}
+
+export interface SideBucketModel {
+  count: number
+  /** Not yet done or verified. */
+  open: number
+  done: number
+  steps: SideStepModel[]
 }
 
 /** The gate dots a step shows, left to right; the `checks` gate has no dot (it is the checkboxes). */
@@ -220,6 +252,8 @@ export interface MissionModel {
   /** `progress.leftBehind.length`. */
   leftBehind: number
   steps: StepModel[]
+  /** Campaign spec §3.2 — the Side bucket under the main rail (`required: false` steps). */
+  side: SideBucketModel
   /** Steps added after creation (they carry `addedReason`). */
   addedCount: number
   youLook: YouLook
@@ -329,13 +363,27 @@ function childHomes(
   return home
 }
 
+/** A step the server counts as finished. */
+const isFinished = (st: StepState): boolean => st === 'verified' || st === 'done'
+
 export function buildMissionModel(view: MissionView, now: number = Date.now()): MissionModel {
   const m = view.mission
   const p = view.progress
   const state = missionState(view)
   // The rail is exactly the steps the server counted. A legacy fixed start is
   // scope (Mission v3 §3.3), so it is absent from `progress.states`.
-  const counted = m.steps.filter((s) => p.states[s.id] !== undefined)
+  const inProgress = m.steps.filter((s) => p.states[s.id] !== undefined)
+  // Campaign spec §3.2: `required: false` steps live in the Side bucket, never on the rail.
+  const counted = inProgress.filter((s) => s.required !== false)
+  const sideSteps = inProgress.filter((s) => s.required === false)
+  const letterOf = new Map(
+    counted.map((s, i) => [
+      s.id,
+      s.kind !== 'fixed-end' && i < 26 ? String.fromCharCode(65 + i) : null
+    ])
+  )
+  const nameOf = (id: string): string =>
+    letterOf.get(id) ?? m.steps.find((s) => s.id === id)?.title ?? id
   const derivedOf = (id: string): MissionChildState[] =>
     view.derived.steps.find((d) => d.stepId === id)?.children ?? []
   const homes = childHomes(
@@ -360,6 +408,16 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
     return {
       step,
       position,
+      letter: letterOf.get(step.id) ?? null,
+      decision: step.decision
+        ? {
+            title: step.decision.title,
+            options: step.decision.options,
+            chosen: step.decision.chosen ?? null,
+            blocks: step.decision.blocks.map(nameOf),
+            canChoose: step.decision.chosen === undefined
+          }
+        : null,
       state: st,
       visual: p.leftBehind.includes(step.id) ? 'left-behind' : st,
       current,
@@ -395,6 +453,16 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
     verified: p.verified,
     leftBehind: p.leftBehind.length,
     steps,
+    side: {
+      count: sideSteps.length,
+      open: sideSteps.filter((x) => !isFinished(p.states[x.id])).length,
+      done: sideSteps.filter((x) => isFinished(p.states[x.id])).length,
+      steps: sideSteps.map((x) => ({
+        step: x,
+        state: p.states[x.id],
+        origin: x.discoveredFrom ? nameOf(x.discoveredFrom) : null
+      }))
+    },
     addedCount: m.steps.filter((s) => s.addedReason).length,
     youLook: youLook(view),
     needsYou: view.you.length > 0,
