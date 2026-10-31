@@ -5115,7 +5115,6 @@ function parseStepRelations(
   return { ok: true, relations }
 }
 
-/** Every step a relation names must exist in the mission, and none may name `selfId`. */
 /** What a step stores of its relations: a default (`required: true`) or an empty list is not written. */
 function storedRelations(r: StepRelations): StepRelations {
   return {
@@ -5126,6 +5125,7 @@ function storedRelations(r: StepRelations): StepRelations {
   }
 }
 
+/** Every step a relation names must exist in the mission, and none may name `selfId`. */
 function checkStepRelations(m: Mission, r: StepRelations, selfId?: string): string | null {
   const named = [
     ...(r.discoveredFrom ? [r.discoveredFrom] : []),
