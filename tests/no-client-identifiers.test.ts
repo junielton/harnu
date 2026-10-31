@@ -107,6 +107,8 @@ const ALLOWED_LOWER_PREFIXES = [
   'argv',
   'bug',
   'capy', // pre-rename product name — kept while historical docs still carry it
+  // T595: a Campaign chapter id (`chp-<n>`, campaign spec §3.1) — Harnu's own vocabulary, like `stp`.
+  'chp',
   'harnu',
   'claude',
   'exit',

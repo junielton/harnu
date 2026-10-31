@@ -357,7 +357,7 @@ describe('AC-3a.1/3a.2 — campaign_create writes the record in the MAIN checkou
     expect(ack.slug).toBe('content-migration-2')
   })
 
-  it('refuses an incomplete declared end (DECLARED_END_INCOMPLETE) and a non-UUID owner (BAD_SESSION_ID), writing nothing', async () => {
+  it('refuses an incomplete declared end (the wire schema names the blank field) and a non-UUID owner (BAD_SESSION_ID), writing nothing', async () => {
     const before = await campaignFiles(main)
     const noEvidence = await call('campaign_create', {
       folder: main,
@@ -366,8 +366,11 @@ describe('AC-3a.1/3a.2 — campaign_create writes the record in the MAIN checkou
       sessionId: OWNER,
       chapters: [{ title: 'c' }]
     })
+    // On the wire the catalog schema (trim + min 1) refuses a blank evidence before the
+    // handler runs — the same as mission_create. DECLARED_END_INCOMPLETE is the handler's
+    // second line of defence for a caller that bypasses the schema.
     expect(noEvidence.isError).toBe(true)
-    expect(noEvidence.text).toMatch(/^DECLARED_END_INCOMPLETE/)
+    expect(noEvidence.text).toMatch(/evidence/)
     const badOwner = await call('campaign_create', {
       folder: main,
       title: 'X',
