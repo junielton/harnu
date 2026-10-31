@@ -94,6 +94,17 @@ watch(
 /** Popover width (design.md §4 / §6) — flip to right-aligned when it would overflow. */
 const POPOVER_W = computed(() => (campaign.value && stage.value === 'campaign' ? 520 : 400))
 const alignRight = ref(false)
+/** The pill's left edge when the popover opened — the campaign popover's anchor (T596). */
+const pillLeft = ref(0)
+/**
+ * Campaign flow: the popovers (520px, then 400px) are shifted to stay inside the window — left-aligned
+ * to the pill where they fit, otherwise pushed left just enough, never past the window's left edge.
+ * A mission with no campaign keeps the left/right flip above.
+ */
+const campaignShift = computed(() => {
+  const max = window.innerWidth - 8 - POPOVER_W.value
+  return Math.round(Math.max(8 - pillLeft.value, Math.min(0, max - pillLeft.value)))
+})
 
 // Every open — the pill's click, `view.missionProgress`, an Activity row — places
 // the popover and refreshes the mission. `sync` so the placement is set before
@@ -105,8 +116,8 @@ watch(
     stage.value = 'campaign'
     chapterMissionId.value = view.value?.mission.id ?? null
     const left = rootEl.value?.getBoundingClientRect().left ?? 0
-    // The campaign popover is the widest one; flip for it so neither stage ever overflows.
-    alignRight.value = left + (campaign.value ? 520 : POPOVER_W.value) > window.innerWidth - 8
+    pillLeft.value = left
+    alignRight.value = left + POPOVER_W.value > window.innerWidth - 8
     void missions.refresh()
     void campaigns.refresh()
   },
@@ -179,12 +190,12 @@ const title = computed(() => {
   <div
     v-if="view && model"
     ref="rootEl"
-    class="relative flex shrink-0"
+    class="relative flex min-w-0 shrink"
     style="-webkit-app-region: no-drag"
   >
     <button
       type="button"
-      class="flex shrink-0 cursor-pointer items-center rounded border tabular-nums transition hover:brightness-110"
+      class="flex min-w-0 shrink cursor-pointer items-center rounded border tabular-nums transition hover:brightness-110"
       :class="PILL_TONE_CLASS[tone]"
       style="gap: 4px; padding: 1px 7px; font-size: 10.5px; font-weight: 500; height: 18px"
       :title="keybindings.withChord(title, 'view.missionProgress')"
@@ -201,7 +212,7 @@ const title = computed(() => {
         :stroke-width="1.8"
         class="shrink-0"
       />
-      <template v-if="label">{{ label }}</template>
+      <span v-if="label" class="truncate">{{ label }}</span>
     </button>
     <template v-if="open">
       <CampaignPopover
@@ -209,7 +220,7 @@ const title = computed(() => {
         :view="campaignView"
         :model="campaign"
         class="absolute top-full z-50 mt-1.5"
-        :class="alignRight ? 'right-0' : 'left-0'"
+        :style="{ left: `${campaignShift}px` }"
         @open-chapter="openChapter"
       />
       <MissionPopover
@@ -218,7 +229,7 @@ const title = computed(() => {
         :model="chapterRow.mission"
         :campaign-back="campaignBack"
         class="absolute top-full z-50 mt-1.5"
-        :class="alignRight ? 'right-0' : 'left-0'"
+        :style="{ left: `${campaignShift}px` }"
         @back="backToCampaign"
       />
       <MissionPopover

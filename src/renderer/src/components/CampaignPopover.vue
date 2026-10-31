@@ -44,12 +44,14 @@ const allRows = computed<CampaignChapterRow[]>(() => [
   ...props.model.locked
 ])
 
-/** The selected chapter; starts on the server's current marker (else the first open chapter). */
+/** The selected chapter; starts on the server's current marker (else the last chapter, once all are done). */
 const selectedId = ref<string | null>(null)
 watch(
   () => [props.view.campaign.id, props.model.currentId] as const,
   () => {
-    selectedId.value = props.model.currentId ?? props.model.main[0]?.chapter.id ?? null
+    // Nothing current means every chapter is done: start on the last one.
+    selectedId.value =
+      props.model.currentId ?? props.model.main[props.model.main.length - 1]?.chapter.id ?? null
   },
   { immediate: true }
 )
