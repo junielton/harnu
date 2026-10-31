@@ -1,0 +1,1818 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: f--combinada</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa='f--combinada'] .tbody {
+        display: flex;
+        flex-direction: column;
+      }
+      .f-wrap {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 320px 1fr;
+      }
+      @media (max-width: 1000px) {
+        .f-wrap {
+          grid-template-columns: 1fr;
+        }
+      }
+      .left {
+        border-right: 1px solid var(--color-border);
+        background: var(--color-sidebar);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .right {
+        padding: 16px 18px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-width: 0;
+      }
+      .sec {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 11px;
+        color: var(--color-text-3);
+      }
+      .sec b {
+        color: var(--color-text-2);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .gauge {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .gauge .row1 {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .gauge .big {
+        font-size: 30px;
+      }
+      .gtrack {
+        position: relative;
+        height: 10px;
+        border-radius: 5px;
+        background: var(--color-border-2);
+      }
+      .gtrack b {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        border-radius: 5px;
+        background: var(--color-text-3);
+      }
+      .gtrack.is-warn b {
+        background: var(--color-warning);
+      }
+      .gtrack .t {
+        position: absolute;
+        top: -3px;
+        bottom: -3px;
+        width: 1px;
+        background: var(--color-text-4);
+      }
+      .gticks {
+        position: relative;
+        height: 12px;
+        font-size: 10px;
+        color: var(--color-text-4);
+        font-family: var(--mk-mono);
+      }
+      .gticks span {
+        position: absolute;
+        transform: translateX(-50%);
+        white-space: nowrap;
+      }
+      .gticks .tl {
+        transform: translateX(-100%);
+        padding-right: 4px;
+      }
+      .gticks .tr0 {
+        transform: none;
+        padding-left: 4px;
+      }
+      .pr {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 30px;
+        border-top: 1px solid var(--color-border);
+        font-size: 12px;
+      }
+      .pl .pr:first-child {
+        border-top: 0;
+      }
+      .pr .nm {
+        width: 66px;
+      }
+      .pr .bar {
+        flex: 1;
+      }
+      .pr .num {
+        width: 56px;
+        text-align: right;
+      }
+      .pr .cpu {
+        width: 38px;
+      }
+      .totals {
+        margin-top: auto;
+        padding-top: 12px;
+        border-top: 1px solid var(--color-border);
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        color: var(--color-text-3);
+      }
+      .kpis3 {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr 1.2fr;
+        gap: 10px;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+      }
+      .seg button {
+        font: inherit;
+        font-size: 11px;
+        height: 24px;
+        padding: 0 10px;
+        border: 0;
+        background: transparent;
+        color: var(--color-text-3);
+        cursor: pointer;
+      }
+      .seg button.on {
+        background: var(--color-surface-2);
+        color: var(--color-text);
+      }
+      .big {
+        font-size: 22px;
+        font-weight: 600;
+        font-family: var(--mk-mono);
+        letter-spacing: -0.02em;
+      }
+      .big small {
+        font-size: 11px;
+        color: var(--color-text-3);
+        font-weight: 400;
+      }
+      /* cards (C) */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+        gap: 12px;
+        align-items: start;
+      }
+      .card {
+        position: relative;
+        background: var(--color-sidebar);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow: hidden;
+      }
+      .card::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 3px;
+        background: var(--fh);
+      }
+      .card.is-parked {
+        background: transparent;
+        border-style: dashed;
+      }
+      .card.is-parked::before {
+        opacity: 0.4;
+      }
+      [data-state='hover'] .card.is-hovered {
+        border-color: var(--color-border-2);
+      }
+      .cd-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .cd-t {
+        min-width: 0;
+        flex: 1;
+      }
+      .cd-t .nm {
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .cd-mid {
+        display: flex;
+        align-items: flex-end;
+        gap: 18px;
+      }
+      .cd-mid .spark {
+        margin-left: auto;
+      }
+      .cd-mid.parked {
+        align-items: center;
+      }
+      .cd-mid .wake {
+        color: var(--color-text-4);
+        font-size: 11px;
+        margin-left: auto;
+        text-align: right;
+        max-width: 140px;
+      }
+      .kbar {
+        display: flex;
+        height: 6px;
+        border-radius: 3px;
+        overflow: hidden;
+        gap: 1px;
+      }
+      .ks {
+        display: inline-block;
+        height: 100%;
+      }
+      .kl .ks {
+        width: 7px;
+        height: 7px;
+        border-radius: 2px;
+        margin-right: 4px;
+      }
+      .k0 {
+        background: color-mix(in srgb, var(--fh) 25%, var(--color-surface));
+      }
+      .k1 {
+        background: color-mix(in srgb, var(--fh) 75%, var(--color-surface));
+      }
+      .k2 {
+        background: color-mix(in srgb, var(--fh) 55%, var(--color-surface));
+      }
+      .k3 {
+        background: color-mix(in srgb, var(--fh) 40%, var(--color-surface));
+      }
+      .k4 {
+        background: color-mix(in srgb, var(--fh) 30%, var(--color-surface));
+      }
+      .klist {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        font-size: 11px;
+        color: var(--color-text-3);
+      }
+      .kl {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .cd-foot {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--color-border);
+        min-height: 30px;
+      }
+      .cd-kids {
+        border-top: 1px solid var(--color-border);
+        padding-top: 6px;
+        font-size: 11.5px;
+        color: var(--color-text-3);
+      }
+      .kr {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+      }
+      .kr .num {
+        width: 60px;
+        text-align: right;
+      }
+      .kr .cpu {
+        width: 40px;
+      }
+      /* table (A) */
+      .tbl {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--color-sidebar);
+      }
+      .tr {
+        display: grid;
+        grid-template-columns: minmax(170px, 1fr) 150px 52px 76px minmax(330px, 1.8fr);
+        align-items: center;
+        gap: 12px;
+        height: 36px;
+        padding: 0 12px;
+        border-top: 1px solid var(--color-border);
+      }
+      .th {
+        height: 30px;
+        border-top: 0;
+        color: var(--color-text-4);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        background: var(--color-surface);
+      }
+      .c-ram {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .c-ram .num {
+        width: 60px;
+        text-align: right;
+        flex: none;
+      }
+      .c-ram .bar {
+        flex: 1;
+      }
+      .c-cpu .num {
+        display: block;
+        text-align: right;
+      }
+      .c-state {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
+      }
+      .tr.is-sess {
+        position: relative;
+      }
+      .tr.is-sess::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--fh);
+      }
+      .tr.is-parked .nm,
+      .tr.is-parked .br {
+        opacity: 0.6;
+      }
+      .kid {
+        height: 28px;
+        background: color-mix(in srgb, var(--fh) 4%, var(--color-sidebar));
+        font-size: 11.5px;
+        color: var(--color-text-3);
+      }
+      .kid .c-name {
+        padding-left: 46px;
+      }
+      /* states */
+      [data-dsqa='f--combinada']:not([data-state='expandido']):not([data-state='tabela-expandida'])
+        .cd-kids,
+      [data-dsqa='f--combinada']:not([data-state='expandido']):not([data-state='tabela-expandida'])
+        .kid {
+        display: none;
+      }
+      [data-dsqa='f--combinada'][data-state='expandido'] .card.is-big {
+        grid-row: span 2;
+      }
+      [data-dsqa='f--combinada']:not([data-state='tabela']):not([data-state='tabela-expandida'])
+        .v-table {
+        display: none;
+      }
+      [data-dsqa='f--combinada'][data-state='tabela'] .v-cards,
+      [data-dsqa='f--combinada'][data-state='tabela-expandida'] .v-cards {
+        display: none;
+      }
+      [data-dsqa='f--combinada'][data-state='tabela'] .seg .b-cards,
+      [data-dsqa='f--combinada'][data-state='tabela-expandida'] .seg .b-cards {
+        background: transparent;
+        color: var(--color-text-3);
+      }
+      [data-dsqa='f--combinada']:not([data-state='tabela']):not([data-state='tabela-expandida'])
+        .seg
+        .b-table {
+        background: transparent;
+        color: var(--color-text-3);
+      }
+      [data-dsqa='f--combinada'][data-state='tabela-expandida'] .chev-open.x-open {
+        display: none;
+      }
+      [data-dsqa='f--combinada'][data-state='tabela-expandida'] .chev-close.x-open {
+        display: inline-flex;
+      }
+    </style>
+  </head>
+  <body data-states="default expandido tabela tabela-expandida hover heap-alerta">
+    <div data-dsqa="f--combinada" class="app">
+      <mk-monitor-head sub="5 processes · 4 live · 2 parked"></mk-monitor-head>
+      <div class="tbody">
+        <div class="f-wrap">
+          <aside class="left" data-dsqa-part="harnu-sidebar">
+            <div class="sec"><b>Harnu</b><span>5 processes · 1.05 GB</span></div>
+            <div class="gauge">
+              <div class="lbl">Main-process heap</div>
+              <div class="heap-ok">
+                <div class="row1">
+                  <span class="big">3%</span><span class="dim">104 MB of 3.9 GB</span>
+                </div>
+                <div class="gtrack">
+                  <b style="width: 3%"></b><i class="t" style="left: 70%"></i
+                  ><i class="t" style="left: 85%"></i>
+                </div>
+                <div class="gticks">
+                  <span class="tl" style="left: 70%">warn 70%</span
+                  ><span class="tr0" style="left: 85%">85% crit</span>
+                </div>
+              </div>
+              <div class="heap-warn">
+                <div class="row1">
+                  <span class="big is-warn">78%</span
+                  ><span class="is-warn"
+                    ><svg
+                      class="ic"
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path
+                        d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
+                      />
+                      <path d="M12 9v4" />
+                      <path d="M12 17h.01" />
+                    </svg>
+                    3.0 GB of 3.9 GB</span
+                  >
+                </div>
+                <div class="gtrack is-warn">
+                  <b style="width: 78%"></b><i class="t" style="left: 70%"></i
+                  ><i class="t" style="left: 85%"></i>
+                </div>
+                <div class="gticks">
+                  <span class="tl" style="left: 70%">warn 70%</span
+                  ><span class="tr0" style="left: 85%">85% crit</span>
+                </div>
+              </div>
+            </div>
+            <div class="pl">
+              <div class="pr">
+                <span class="nm">main</span
+                ><span class="bar is-mute"><b style="width: 100%"></b></span
+                ><span class="num">360 MB</span><span class="num cpu dim">0.4%</span>
+              </div>
+              <div class="pr">
+                <span class="nm">renderer</span
+                ><span class="bar is-mute"><b style="width: 98.6%"></b></span
+                ><span class="num">355 MB</span><span class="num cpu dim">2.1%</span>
+              </div>
+              <div class="pr">
+                <span class="nm">GPU</span
+                ><span class="bar is-mute"><b style="width: 58.9%"></b></span
+                ><span class="num">212 MB</span><span class="num cpu dim">0.3%</span>
+              </div>
+              <div class="pr">
+                <span class="nm">network</span
+                ><span class="bar is-mute"><b style="width: 21.7%"></b></span
+                ><span class="num">78 MB</span><span class="num cpu dim">0.0%</span>
+              </div>
+              <div class="pr">
+                <span class="nm">utility</span
+                ><span class="bar is-mute"><b style="width: 19.2%"></b></span
+                ><span class="num">69 MB</span><span class="num cpu dim">0.0%</span>
+              </div>
+            </div>
+            <div class="totals">
+              <span>Harnu + sessions</span><span class="num">3.44 GB · 18.4% CPU</span>
+            </div>
+          </aside>
+          <section class="right">
+            <div class="kpis3" data-dsqa-part="kpis">
+              <div class="kpi">
+                <div class="k-l">
+                  <svg
+                    class="ic"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M6 19v-3" />
+                    <path d="M10 19v-3" />
+                    <path d="M14 19v-3" />
+                    <path d="M18 19v-3" />
+                    <path d="M8 11V9" />
+                    <path d="M16 11V9" />
+                    <path d="M12 11V9" />
+                    <path d="M2 15h20" />
+                    <path
+                      d="M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1.1a2 2 0 0 0 0 3.837V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5.1a2 2 0 0 0 0-3.837Z"
+                    /></svg
+                  >Total RAM
+                </div>
+                <div class="k-v">3.44 GB</div>
+                <div class="split">
+                  <i class="sp-h" style="width: 30.5%"></i><i class="sp-s" style="width: 69.5%"></i>
+                </div>
+                <div class="k-s">
+                  <span class="sw sw-h"></span>Harnu 1.05 GB <span class="sw sw-s"></span>Sessions
+                  2.39 GB
+                </div>
+              </div>
+              <div class="kpi">
+                <div class="k-l">
+                  <svg
+                    class="ic"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect width="16" height="16" x="4" y="4" rx="2" />
+                    <rect width="6" height="6" x="9" y="9" rx="1" />
+                    <path d="M15 2v2" />
+                    <path d="M15 20v2" />
+                    <path d="M2 15h2" />
+                    <path d="M2 9h2" />
+                    <path d="M20 15h2" />
+                    <path d="M20 9h2" />
+                    <path d="M9 2v2" />
+                    <path d="M9 20v2" /></svg
+                  >CPU
+                </div>
+                <div class="k-v">18.4%</div>
+                <div class="k-s">across 13 processes</div>
+              </div>
+              <div class="kpi">
+                <div class="k-l">
+                  <svg
+                    class="ic"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg
+                  >Sessions
+                </div>
+                <div class="k-v">4 <small>live</small> · 2 <small>parked</small></div>
+                <div class="k-s is-green">~600 MB reclaimed by parking</div>
+              </div>
+            </div>
+            <div class="sec">
+              <b>Sessions</b><span>4 live · 2.39 GB</span><span class="sp"></span>
+              <span class="seg" data-dsqa-part="view-toggle"
+                ><button type="button" class="b-cards on" data-goto="f--combinada?state=default">
+                  Cards</button
+                ><button type="button" class="b-table on" data-goto="f--combinada?state=tabela">
+                  Table
+                </button></span
+              >
+            </div>
+            <div class="grid v-cards">
+              <div class="card h-blue is-big" data-dsqa-part="session-card">
+                <div class="cd-top">
+                  <span class="fav h-blue lg">H</span>
+                  <div class="cd-t">
+                    <div class="nm">harnu</div>
+                    <div class="br">main</div>
+                  </div>
+                  <span class="acts">
+                    <button type="button" class="iconbtn" aria-label="Test Harnu mod channel">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
+                        <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" />
+                        <circle cx="12" cy="12" r="2" />
+                        <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
+                        <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-warn" aria-label="Park now">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                  ><button
+                    type="button"
+                    class="chev chev-open x-open"
+                    data-goto="f--combinada?state=expandido"
+                    aria-label="Expand harnu"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg></button
+                  ><button
+                    type="button"
+                    class="chev chev-close x-open"
+                    data-goto="f--combinada?state=default"
+                    aria-label="Collapse harnu"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="cd-mid">
+                  <div>
+                    <div class="big">940<small> MB</small></div>
+                    <div class="lbl">RAM</div>
+                  </div>
+                  <div>
+                    <div class="big">12%</div>
+                    <div class="lbl">CPU</div>
+                  </div>
+                  <svg
+                    class="spark is-hue fat"
+                    width="110"
+                    height="30"
+                    viewBox="0 0 110 30"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      points="0.0,12.3 2.8,1.0 5.6,8.5 8.5,5.1 11.3,12.2 14.1,4.2 16.9,14.3 19.7,17.8 22.6,18.9 25.4,14.6 28.2,19.6 31.0,25.6 33.8,21.9 36.7,20.2 39.5,28.3 42.3,13.6 45.1,13.3 47.9,8.7 50.8,16.1 53.6,12.9 56.4,10.2 59.2,2.1 62.1,5.2 64.9,3.7 67.7,11.9 70.5,14.7 73.3,11.5 76.2,23.1 79.0,16.7 81.8,21.9 84.6,23.0 87.4,27.0 90.3,22.6 93.1,29.0 95.9,22.0 98.7,20.5 101.5,22.0 104.4,13.2 107.2,14.8 110.0,2.0"
+                    />
+                  </svg>
+                </div>
+                <div class="kbar">
+                  <i class="ks k0" style="width: 9%"></i><i class="ks k1" style="width: 65.1%"></i
+                  ><i class="ks k2" style="width: 19.6%"></i><i class="ks k3" style="width: 4%"></i
+                  ><i class="ks k4" style="width: 2.2%"></i>
+                </div>
+                <div class="klist">
+                  <span class="kl"
+                    ><i class="ks k0"></i><em>own</em> <span class="num">85</span></span
+                  ><span class="kl"><i class="ks k1"></i>claude <span class="num">612</span></span
+                  ><span class="kl"><i class="ks k2"></i>node <span class="num">184</span></span
+                  ><span class="kl"><i class="ks k3"></i>rg <span class="num">38</span></span
+                  ><span class="kl"><i class="ks k4"></i>bash <span class="num">21</span></span>
+                </div>
+                <div class="cd-foot">
+                  <span class="pip st-live"><i class="dot"></i>live</span><span class="sp"></span
+                  ><span class="mod mod-live">Harnu mod live</span>
+                </div>
+                <div class="cd-kids">
+                  <div class="kr">
+                    <span class="tree">•</span><em>own memory</em><span class="sp"></span
+                    ><span class="num">85 MB</span><span class="num cpu"></span>
+                  </div>
+                  <div class="kr">
+                    <span class="tree">└</span>claude<span class="sp"></span
+                    ><span class="num">612 MB</span><span class="num cpu">9.4%</span>
+                  </div>
+                  <div class="kr">
+                    <span class="tree">└</span>node<span class="sp"></span
+                    ><span class="num">184 MB</span><span class="num cpu">1.9%</span>
+                  </div>
+                  <div class="kr">
+                    <span class="tree">└</span>rg<span class="sp"></span
+                    ><span class="num">38 MB</span><span class="num cpu">0.4%</span>
+                  </div>
+                  <div class="kr">
+                    <span class="tree">└</span>bash<span class="sp"></span
+                    ><span class="num">21 MB</span><span class="num cpu">0.0%</span>
+                  </div>
+                </div>
+              </div>
+              <div class="card h-magenta is-hovered" data-dsqa-part="session-card">
+                <div class="cd-top">
+                  <span class="fav h-magenta lg">P</span>
+                  <div class="cd-t">
+                    <div class="nm">portal</div>
+                    <div class="br">feat/checkout</div>
+                  </div>
+                  <span class="acts">
+                    <button type="button" class="iconbtn" aria-label="Test Harnu mod channel">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
+                        <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" />
+                        <circle cx="12" cy="12" r="2" />
+                        <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
+                        <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-warn" aria-label="Park now">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                  ><button
+                    type="button"
+                    class="chev chev-open"
+                    data-goto="f--combinada?state=expandido"
+                    aria-label="Expand portal"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg></button
+                  ><button
+                    type="button"
+                    class="chev chev-close"
+                    data-goto="f--combinada?state=default"
+                    aria-label="Collapse portal"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="cd-mid">
+                  <div>
+                    <div class="big">720<small> MB</small></div>
+                    <div class="lbl">RAM</div>
+                  </div>
+                  <div>
+                    <div class="big">3.2%</div>
+                    <div class="lbl">CPU</div>
+                  </div>
+                  <svg
+                    class="spark is-hue fat"
+                    width="110"
+                    height="30"
+                    viewBox="0 0 110 30"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      points="0.0,11.3 2.8,1.0 5.6,3.5 8.5,4.8 11.3,11.2 14.1,11.2 16.9,17.0 19.7,21.4 22.6,19.6 25.4,20.4 28.2,18.4 31.0,15.5 33.8,17.6 36.7,21.0 39.5,19.9 42.3,16.9 45.1,10.4 47.9,15.8 50.8,3.2 53.6,1.9 56.4,4.4 59.2,6.6 62.1,9.9 64.9,12.8 67.7,8.0 70.5,12.9 73.3,17.8 76.2,11.6 79.0,13.7 81.8,20.8 84.6,18.9 87.4,29.0 90.3,25.3 93.1,20.2 95.9,21.9 98.7,11.3 101.5,12.5 104.4,5.9 107.2,8.5 110.0,11.4"
+                    />
+                  </svg>
+                </div>
+                <div class="kbar">
+                  <i class="ks k0" style="width: 8.3%"></i><i class="ks k1" style="width: 75%"></i
+                  ><i class="ks k2" style="width: 16.7%"></i>
+                </div>
+                <div class="klist">
+                  <span class="kl"
+                    ><i class="ks k0"></i><em>own</em> <span class="num">60</span></span
+                  ><span class="kl"><i class="ks k1"></i>claude <span class="num">540</span></span
+                  ><span class="kl"><i class="ks k2"></i>node <span class="num">120</span></span>
+                </div>
+                <div class="cd-foot">
+                  <span class="pip st-live"><i class="dot"></i>live</span><span class="sp"></span
+                  ><span class="mod mod-live">Harnu mod live</span>
+                </div>
+              </div>
+              <div class="card h-cyan" data-dsqa-part="session-card">
+                <div class="cd-top">
+                  <span class="fav h-cyan lg">W</span>
+                  <div class="cd-t">
+                    <div class="nm">web-api</div>
+                    <div class="br">fix/auth-refresh</div>
+                  </div>
+                  <span class="acts">
+                    <span class="iconslot"></span>
+                    <button type="button" class="iconbtn is-warn" aria-label="Park now">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                  ><button
+                    type="button"
+                    class="chev chev-open"
+                    data-goto="f--combinada?state=expandido"
+                    aria-label="Expand web-api"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg></button
+                  ><button
+                    type="button"
+                    class="chev chev-close"
+                    data-goto="f--combinada?state=default"
+                    aria-label="Collapse web-api"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="cd-mid">
+                  <div>
+                    <div class="big">380<small> MB</small></div>
+                    <div class="lbl">RAM</div>
+                  </div>
+                  <div>
+                    <div class="big">0.6%</div>
+                    <div class="lbl">CPU</div>
+                  </div>
+                  <svg
+                    class="spark is-hue fat"
+                    width="110"
+                    height="30"
+                    viewBox="0 0 110 30"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      points="0.0,1.0 2.8,6.8 5.6,4.0 8.5,9.8 11.3,14.8 14.1,22.7 16.9,23.5 19.7,13.9 22.6,23.3 25.4,29.0 28.2,20.1 31.0,22.7 33.8,16.2 36.7,24.8 39.5,14.6 42.3,9.6 45.1,11.9 47.9,13.0 50.8,9.9 53.6,10.8 56.4,4.1 59.2,2.2 62.1,5.3 64.9,12.4 67.7,8.9 70.5,15.3 73.3,13.3 76.2,18.1 79.0,28.3 81.8,22.4 84.6,17.6 87.4,18.9 90.3,16.3 93.1,14.4 95.9,10.6 98.7,6.1 101.5,7.3 104.4,3.7 107.2,7.2 110.0,11.6"
+                    />
+                  </svg>
+                </div>
+                <div class="kbar">
+                  <i class="ks k0" style="width: 13.2%"></i
+                  ><i class="ks k1" style="width: 86.8%"></i>
+                </div>
+                <div class="klist">
+                  <span class="kl"
+                    ><i class="ks k0"></i><em>own</em> <span class="num">50</span></span
+                  ><span class="kl"><i class="ks k1"></i>claude <span class="num">330</span></span>
+                </div>
+                <div class="cd-foot">
+                  <span class="pip st-live"><i class="dot"></i>live</span
+                  ><span class="chip">lru · 12m</span><span class="sp"></span
+                  ><span class="mod mod-off">Harnu mod off</span>
+                </div>
+              </div>
+              <div class="card h-yellow" data-dsqa-part="session-card">
+                <div class="cd-top">
+                  <span class="fav h-yellow lg">A</span>
+                  <div class="cd-t">
+                    <div class="nm">api-gateway</div>
+                    <div class="br">main</div>
+                  </div>
+                  <span class="acts">
+                    <span class="iconslot"></span>
+                    <button type="button" class="iconbtn is-warn" aria-label="Park now">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                  ><button
+                    type="button"
+                    class="chev chev-open"
+                    data-goto="f--combinada?state=expandido"
+                    aria-label="Expand api-gateway"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg></button
+                  ><button
+                    type="button"
+                    class="chev chev-close"
+                    data-goto="f--combinada?state=default"
+                    aria-label="Collapse api-gateway"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="cd-mid">
+                  <div>
+                    <div class="big">410<small> MB</small></div>
+                    <div class="lbl">RAM</div>
+                  </div>
+                  <div>
+                    <div class="big">0.0%</div>
+                    <div class="lbl">CPU</div>
+                  </div>
+                  <svg
+                    class="spark is-hue fat"
+                    width="110"
+                    height="30"
+                    viewBox="0 0 110 30"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      points="0.0,4.9 2.8,12.1 5.6,18.3 8.5,14.2 11.3,17.7 14.1,18.8 16.9,28.8 19.7,19.5 22.6,25.6 25.4,21.8 28.2,20.1 31.0,28.3 33.8,13.4 36.7,13.2 39.5,8.5 42.3,16.0 45.1,12.7 47.9,10.0 50.8,1.8 53.6,5.0 56.4,3.5 59.2,11.7 62.1,14.5 64.9,11.4 67.7,23.0 70.5,16.6 73.3,21.8 76.2,22.9 79.0,27.0 81.8,22.5 84.6,29.0 87.4,22.0 90.3,20.5 93.1,21.9 95.9,13.0 98.7,14.6 101.5,16.1 104.4,1.0 107.2,5.8 110.0,11.8"
+                    />
+                  </svg>
+                </div>
+                <div class="kbar">
+                  <i class="ks k0" style="width: 12.2%"></i
+                  ><i class="ks k1" style="width: 87.8%"></i>
+                </div>
+                <div class="klist">
+                  <span class="kl"
+                    ><i class="ks k0"></i><em>own</em> <span class="num">50</span></span
+                  ><span class="kl"><i class="ks k1"></i>claude <span class="num">360</span></span>
+                </div>
+                <div class="cd-foot">
+                  <span class="pip st-live"><i class="dot"></i>live</span
+                  ><span class="chip">hard-idle · 38m</span
+                  ><span class="sweep"
+                    ><svg
+                      class="ic"
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg
+                    >next to be swept</span
+                  ><span class="sp"></span><span class="mod mod-legacy">Harnu mod legacy</span>
+                </div>
+              </div>
+              <div class="card h-coral is-parked" data-dsqa-part="session-card">
+                <div class="cd-top">
+                  <span class="fav h-coral lg">E</span>
+                  <div class="cd-t">
+                    <div class="nm">example-web</div>
+                    <div class="br">main</div>
+                  </div>
+                  <span class="acts">
+                    <span class="iconslot"></span>
+                    <span class="iconslot"></span>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button
+                  ></span>
+                </div>
+                <div class="cd-mid parked">
+                  <div>
+                    <div class="big is-green">−290<small> MB</small></div>
+                    <div class="lbl">reclaimed</div>
+                  </div>
+                  <div class="wake">Select it in the sidebar to wake it</div>
+                </div>
+                <div class="cd-foot">
+                  <span class="pip st-parked"><i class="dot"></i>parked</span
+                  ><span class="chip">lru</span><span class="sp"></span>
+                </div>
+              </div>
+              <div class="card h-lav is-parked" data-dsqa-part="session-card">
+                <div class="cd-top">
+                  <span class="fav h-lav lg">W</span>
+                  <div class="cd-t">
+                    <div class="nm">org/www</div>
+                    <div class="br">release/2.4</div>
+                  </div>
+                  <span class="acts">
+                    <span class="iconslot"></span>
+                    <span class="iconslot"></span>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button
+                  ></span>
+                </div>
+                <div class="cd-mid parked">
+                  <div>
+                    <div class="big is-green">−310<small> MB</small></div>
+                    <div class="lbl">reclaimed</div>
+                  </div>
+                  <div class="wake">Select it in the sidebar to wake it</div>
+                </div>
+                <div class="cd-foot">
+                  <span class="pip st-parked"><i class="dot"></i>parked</span
+                  ><span class="chip">hard-idle</span><span class="sp"></span>
+                </div>
+              </div>
+            </div>
+            <div class="tbl v-table">
+              <div class="tr th">
+                <span>Name</span
+                ><span class="thi"
+                  >RAM
+                  <svg
+                    class="ic"
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 16v-4" />
+                    <path d="M12 8h.01" /></svg></span
+                ><span style="text-align: right">CPU</span><span>Last 60s</span
+                ><span style="text-align: right">State</span>
+              </div>
+              <div class="tr is-sess h-blue" data-dsqa-part="session-row">
+                <span class="c-name"
+                  ><button
+                    type="button"
+                    class="chev chev-open x-open"
+                    data-goto="f--combinada?state=tabela-expandida"
+                    aria-label="Expand harnu"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg></button
+                  ><button
+                    type="button"
+                    class="chev chev-close x-open"
+                    data-goto="f--combinada?state=tabela"
+                    aria-label="Collapse harnu"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg></button
+                  ><span class="fav h-blue">H</span><span class="nm">harnu</span
+                  ><span class="br">· main</span></span
+                >
+                <span class="c-ram"
+                  ><span class="num">940 MB</span
+                  ><span class="bar is-hue"><b style="width: 100%"></b></span
+                ></span>
+                <span class="c-cpu"><span class="num">12%</span></span>
+                <span class="c-trend"
+                  ><svg
+                    class="spark is-hue"
+                    width="72"
+                    height="14"
+                    viewBox="0 0 72 14"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      points="0.0,3.2 1.8,7.3 3.7,7.6 5.5,7.6 7.4,8.5 9.2,12.6 11.1,7.8 12.9,10.4 14.8,11.7 16.6,12.2 18.5,7.9 20.3,7.7 22.2,10.5 24.0,6.1 25.8,6.7 27.7,2.6 29.5,5.4 31.4,2.2 33.2,2.8 35.1,5.5 36.9,7.2 38.8,2.1 40.6,3.2 42.5,10.6 44.3,9.5 46.2,6.9 48.0,13.0 49.8,11.6 51.7,10.5 53.5,9.1 55.4,10.9 57.2,10.4 59.1,3.4 60.9,5.8 62.8,6.1 64.6,3.0 66.5,4.0 68.3,5.1 70.2,1.0 72.0,4.7"
+                    /></svg
+                ></span>
+                <span class="c-state"
+                  ><span class="st-wrap"
+                    ><span class="pip st-live"><i class="dot"></i>live</span
+                    ><span class="mod mod-live">Harnu mod live</span></span
+                  ><span class="acts">
+                    <button type="button" class="iconbtn" aria-label="Test Harnu mod channel">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
+                        <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" />
+                        <circle cx="12" cy="12" r="2" />
+                        <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
+                        <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-warn" aria-label="Park now">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                ></span>
+              </div>
+              <div class="tr kid h-blue">
+                <span class="c-name"><span class="tree">•</span><em>own memory</em></span
+                ><span class="c-ram"><span class="num">85 MB</span></span
+                ><span class="c-cpu"><span class="num"></span></span><span class="c-trend"></span
+                ><span class="c-state"></span>
+              </div>
+              <div class="tr kid h-blue">
+                <span class="c-name"><span class="tree">└</span>claude</span
+                ><span class="c-ram"
+                  ><span class="num">612 MB</span
+                  ><span class="bar is-hue thin"><b style="width: 65.1%"></b></span></span
+                ><span class="c-cpu"><span class="num">9.4%</span></span
+                ><span class="c-trend"></span><span class="c-state"></span>
+              </div>
+              <div class="tr kid h-blue">
+                <span class="c-name"><span class="tree">└</span>node</span
+                ><span class="c-ram"
+                  ><span class="num">184 MB</span
+                  ><span class="bar is-hue thin"><b style="width: 19.6%"></b></span></span
+                ><span class="c-cpu"><span class="num">1.9%</span></span
+                ><span class="c-trend"></span><span class="c-state"></span>
+              </div>
+              <div class="tr kid h-blue">
+                <span class="c-name"><span class="tree">└</span>rg</span
+                ><span class="c-ram"
+                  ><span class="num">38 MB</span
+                  ><span class="bar is-hue thin"><b style="width: 4%"></b></span></span
+                ><span class="c-cpu"><span class="num">0.4%</span></span
+                ><span class="c-trend"></span><span class="c-state"></span>
+              </div>
+              <div class="tr kid h-blue">
+                <span class="c-name"><span class="tree">└</span>bash</span
+                ><span class="c-ram"
+                  ><span class="num">21 MB</span
+                  ><span class="bar is-hue thin"><b style="width: 2.2%"></b></span></span
+                ><span class="c-cpu"><span class="num">0.0%</span></span
+                ><span class="c-trend"></span><span class="c-state"></span>
+              </div>
+              <div class="tr is-sess is-hovered h-magenta" data-dsqa-part="session-row">
+                <span class="c-name"
+                  ><button
+                    type="button"
+                    class="chev chev-open"
+                    data-goto="f--combinada?state=tabela-expandida"
+                    aria-label="Expand portal"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg></button
+                  ><button
+                    type="button"
+                    class="chev chev-close"
+                    data-goto="f--combinada?state=tabela"
+                    aria-label="Collapse portal"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg></button
+                  ><span class="fav h-magenta">P</span><span class="nm">portal</span
+                  ><span class="br">· feat/checkout</span></span
+                >
+                <span class="c-ram"
+                  ><span class="num">720 MB</span
+                  ><span class="bar is-hue"><b style="width: 76.6%"></b></span
+                ></span>
+                <span class="c-cpu"><span class="num">3.2%</span></span>
+                <span class="c-trend"
+                  ><svg
+                    class="spark is-hue"
+                    width="72"
+                    height="14"
+                    viewBox="0 0 72 14"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      points="0.0,5.6 1.8,3.5 3.7,7.6 5.5,9.2 7.4,9.1 9.2,9.6 11.1,9.2 12.9,11.4 14.8,11.1 16.6,7.4 18.5,6.9 20.3,9.3 22.2,8.3 24.0,7.1 25.8,4.0 27.7,6.0 29.5,6.3 31.4,1.8 33.2,6.4 35.1,3.5 36.9,7.2 38.8,7.0 40.6,7.6 42.5,9.4 44.3,8.6 46.2,13.0 48.0,8.9 49.8,12.2 51.7,8.5 53.5,7.9 55.4,8.3 57.2,4.4 59.1,5.2 60.9,2.8 62.8,1.0 64.6,1.1 66.5,2.2 68.3,4.5 70.2,1.4 72.0,5.3"
+                    /></svg
+                ></span>
+                <span class="c-state"
+                  ><span class="st-wrap"
+                    ><span class="pip st-live"><i class="dot"></i>live</span
+                    ><span class="mod mod-live">Harnu mod live</span></span
+                  ><span class="acts">
+                    <button type="button" class="iconbtn" aria-label="Test Harnu mod channel">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
+                        <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" />
+                        <circle cx="12" cy="12" r="2" />
+                        <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
+                        <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-warn" aria-label="Park now">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                ></span>
+              </div>
+              <div class="tr is-sess h-cyan" data-dsqa-part="session-row">
+                <span class="c-name"
+                  ><button
+                    type="button"
+                    class="chev chev-open"
+                    data-goto="f--combinada?state=tabela-expandida"
+                    aria-label="Expand web-api"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg></button
+                  ><button
+                    type="button"
+                    class="chev chev-close"
+                    data-goto="f--combinada?state=tabela"
+                    aria-label="Collapse web-api"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg></button
+                  ><span class="fav h-cyan">W</span><span class="nm">web-api</span
+                  ><span class="br">· fix/auth-refresh</span></span
+                >
+                <span class="c-ram"
+                  ><span class="num">380 MB</span
+                  ><span class="bar is-hue"><b style="width: 40.4%"></b></span
+                ></span>
+                <span class="c-cpu"><span class="num">0.6%</span></span>
+                <span class="c-trend"
+                  ><svg
+                    class="spark is-hue"
+                    width="72"
+                    height="14"
+                    viewBox="0 0 72 14"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      points="0.0,8.0 1.8,6.3 3.7,7.7 5.5,10.7 7.4,9.6 9.2,13.0 11.1,10.2 12.9,12.4 14.8,10.6 16.6,9.2 18.5,5.9 20.3,4.8 22.2,6.8 24.0,2.2 25.8,1.9 27.7,3.3 29.5,1.5 31.4,1.7 33.2,4.0 35.1,8.0 36.9,7.5 38.8,5.2 40.6,11.4 42.5,8.4 44.3,7.7 46.2,12.2 48.0,11.2 49.8,12.8 51.7,6.6 53.5,6.8 55.4,6.3 57.2,5.4 59.1,6.9 60.9,6.3 62.8,2.8 64.6,5.7 66.5,1.0 68.3,4.5 70.2,8.0 72.0,6.1"
+                    /></svg
+                ></span>
+                <span class="c-state"
+                  ><span class="st-wrap"
+                    ><span class="pip st-live"><i class="dot"></i>live</span
+                    ><span class="chip">lru · 12m</span
+                    ><span class="mod mod-off">Harnu mod off</span></span
+                  ><span class="acts">
+                    <span class="iconslot"></span>
+                    <button type="button" class="iconbtn is-warn" aria-label="Park now">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                ></span>
+              </div>
+              <div class="tr is-sess h-yellow" data-dsqa-part="session-row">
+                <span class="c-name"
+                  ><button
+                    type="button"
+                    class="chev chev-open"
+                    data-goto="f--combinada?state=tabela-expandida"
+                    aria-label="Expand api-gateway"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg></button
+                  ><button
+                    type="button"
+                    class="chev chev-close"
+                    data-goto="f--combinada?state=tabela"
+                    aria-label="Collapse api-gateway"
+                  >
+                    <svg
+                      class="ic"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg></button
+                  ><span class="fav h-yellow">A</span><span class="nm">api-gateway</span
+                  ><span class="br">· main</span></span
+                >
+                <span class="c-ram"
+                  ><span class="num">410 MB</span
+                  ><span class="bar is-hue"><b style="width: 43.6%"></b></span
+                ></span>
+                <span class="c-cpu"><span class="num">0.0%</span></span>
+                <span class="c-trend"
+                  ><svg
+                    class="spark is-hue"
+                    width="72"
+                    height="14"
+                    viewBox="0 0 72 14"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      points="0.0,9.8 1.8,8.1 3.7,6.6 5.5,11.5 7.4,9.2 9.2,9.4 11.1,10.4 12.9,6.0 14.8,9.3 16.6,10.3 18.5,3.6 20.3,5.4 22.2,4.1 24.0,2.1 25.8,4.8 27.7,5.9 29.5,1.4 31.4,6.6 33.2,6.8 35.1,5.3 36.9,6.8 38.8,8.6 40.6,8.1 42.5,13.0 44.3,12.2 46.2,10.9 48.0,13.0 49.8,6.1 51.7,10.0 53.5,4.4 55.4,2.7 57.2,5.1 59.1,1.0 60.9,2.4 62.8,3.3 64.6,2.9 66.5,4.6 68.3,3.1 70.2,7.5 72.0,5.8"
+                    /></svg
+                ></span>
+                <span class="c-state"
+                  ><span class="st-wrap"
+                    ><span class="pip st-live"><i class="dot"></i>live</span
+                    ><span class="chip">hard-idle · 38m</span
+                    ><span class="sweep"
+                      ><svg
+                        class="ic"
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg
+                      >next to be swept</span
+                    ><span class="mod mod-legacy">Harnu mod legacy</span></span
+                  ><span class="acts">
+                    <span class="iconslot"></span>
+                    <button type="button" class="iconbtn is-warn" aria-label="Park now">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                      </svg>
+                    </button>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                ></span>
+              </div>
+              <div class="tr is-sess is-parked h-coral" data-dsqa-part="session-row">
+                <span class="c-name"
+                  ><span class="chev"></span><span class="fav h-coral">E</span
+                  ><span class="nm">example-web</span><span class="br">· main</span></span
+                >
+                <span class="c-ram"><span class="num is-green">−290 MB</span></span>
+                <span class="c-cpu"><span class="num dim">—</span></span>
+                <span class="c-trend"></span>
+                <span class="c-state"
+                  ><span class="st-wrap"
+                    ><span class="pip st-parked"><i class="dot"></i>parked</span
+                    ><span class="chip">lru</span></span
+                  ><span class="acts">
+                    <span class="iconslot"></span>
+                    <span class="iconslot"></span>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                ></span>
+              </div>
+              <div class="tr is-sess is-parked h-lav" data-dsqa-part="session-row">
+                <span class="c-name"
+                  ><span class="chev"></span><span class="fav h-lav">W</span
+                  ><span class="nm">org/www</span><span class="br">· release/2.4</span></span
+                >
+                <span class="c-ram"><span class="num is-green">−310 MB</span></span>
+                <span class="c-cpu"><span class="num dim">—</span></span>
+                <span class="c-trend"></span>
+                <span class="c-state"
+                  ><span class="st-wrap"
+                    ><span class="pip st-parked"><i class="dot"></i>parked</span
+                    ><span class="chip">hard-idle</span></span
+                  ><span class="acts">
+                    <span class="iconslot"></span>
+                    <span class="iconslot"></span>
+                    <button type="button" class="iconbtn is-danger" aria-label="Close">
+                      <svg
+                        class="ic"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg></button></span
+                ></span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="tfoot">
+        <span>Sampling every 1.5s · stops when this pane closes</span><span class="sp"></span
+        ><a class="link">Edit hibernation policy → Settings</a>
+      </div>
+    </div>
+    <script src="../parts/monitor-head.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>
