@@ -55,3 +55,7 @@ Verdict: S-1 buildable with guesses, S-6 not buildable alone.
 | AC-5 "Open-decisions row cites" has no atom column                                                                     | **Fixed.** AC-5 says the question cell.                                                                                                                                                       |
 | Exploration says Large adds "Design"; the template has no Design section                                               | **Deferred, template friction.** The gate has no section for design prose; a Complex spec puts reference material under Problem as `###` subsections, as this one does. Reported on the card. |
 | Intermediate PRs S-3 to S-7 land without a CHANGELOG entry                                                             | **Not an issue.** The CHANGELOG gate triggers on `src/` changes; none of these slices touch `src/`. The entry lands in S-8.                                                                   |
+
+## Update 2026-10-31 — decisions applied
+
+The operator resolved D-1 to D-8 (D-1 to D-7 on the default, D-8 changed). Two rows above describe the pre-decision draft and are superseded: the "Harnu repo only, with a by-hand fallback" answer to the `check` wiring finding is replaced by vendoring the checker inside the skill directory (the staging already copies subdirectories, so `check` works in any repo), and the CI gate now imports the vendored gate core, so the two cannot drift (AC-30, AC-31).
