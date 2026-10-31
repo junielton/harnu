@@ -67,19 +67,31 @@ Free, and they catch the dumb failures. Run these before any judgement; each is
 pass/fail with no interpretation. The table is the **code** rubric's; the other
 three rubrics below carry their own.
 
-| Check                         | Command                                                | Failure means                                                    |
-| ----------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
-| Commits exist                 | `git rev-list --count <base>..<head>`                  | the unit delivered nothing — stop here, everything is `unmet`    |
-| Nothing uncommitted           | `git status --porcelain` in the worktree               | work exists but is not on the branch                             |
-| Right base                    | `gh pr view <n> --json baseRefName`                    | the PR targets the wrong branch                                  |
-| Gates green                   | the repo's own gate command                            | broken build or tests                                            |
-| Tests ran after the last edit | test-run timestamp vs. last commit time                | a "lucky pass": passing output from before the final change      |
-| Scope respected               | diff file list vs. the unit's scope boundary           | scope creep — the most common reason a grader rejects agent work |
-| Acceptance tests untouched    | did the diff edit the tests encoding the ACs?          | the contract was edited to fit the code                          |
-| Visual ACs have a capture     | a screenshot exists for every AC about rendered output | nobody ever opened the page                                      |
+| Check                         | Command                                                | Failure means                                                      |
+| ----------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
+| Commits exist                 | `git rev-list --count <base>..<head>`                  | the unit delivered nothing — stop here, everything is `unmet`      |
+| Nothing uncommitted           | `git status --porcelain` in the worktree               | work exists but is not on the branch                               |
+| Right base                    | `gh pr view <n> --json baseRefName`                    | the PR targets the wrong branch                                    |
+| Gates green                   | the repo's own gate command                            | broken build or tests                                              |
+| Tests ran after the last edit | test-run timestamp vs. last commit time                | a "lucky pass": passing output from before the final change        |
+| Scope respected               | diff file list vs. the unit's scope boundary           | scope creep — the most common reason a grader rejects agent work   |
+| Acceptance tests untouched    | did the diff edit the tests encoding the ACs?          | the contract was edited to fit the code                            |
+| Proof changed                 | did the diff edit a test file named by an AC `proof:`? | a weak proof can pass green by being loosened — flag it, see below |
+| Visual ACs have a capture     | a screenshot exists for every AC about rendered output | nobody ever opened the page                                        |
 
 A failure here is a **finding on the unit**, reported regardless of how the ACs
 grade.
+
+**"Proof changed" is always a visible finding, never a silent pass.** When the unit
+has a spec, each AC's `proof:` names what proves it (`test:<file>::<name>`,
+`script:<cmd>`, …). If the diff edits any test file a proof names — added, loosened,
+renamed or deleted assertions — list it as `proof changed: <AC id> · <file>` in the
+unit's findings and in the Delivery Report's "Check by hand" list, with the hunk,
+even when the AC then grades `met`. A test written by the executor in the same PR
+for a brand-new AC is the normal case and needs only the line; an _existing_ proof
+that was edited needs a reason the operator can read. Two weak proofs on Campaign
+wave 1 (a loosened benchmark, a fixture seeded instead of scrubbed) passed green
+and were noticed only because someone read the diff.
 
 ## Step 2 — Grade one AC per call
 
@@ -201,6 +213,21 @@ row carries its evidence reference, and every verdict carries who produced it:
 
 An executor's own tick is recorded as `by: executor` and **never counted** in the
 report totals. Self-verification does not catch the failures that matter.
+
+**When the unit has a spec, write the deviations into the spec too.** Besides the
+card table, append one row per AC to the spec's `## Amendments · Deviations` section,
+in the unit's PR (the shipper's branch, so the row lands with the code it describes):
+
+| date       | kind      | what changed                                               | by       |
+| ---------- | --------- | ---------------------------------------------------------- | -------- |
+| 2026-11-02 | deviation | AC-3 #a1b2 met · `tests/list.test.ts::paginates` · ci#1234 | verifier |
+
+`what changed` is the AC id with its hash, the verdict and the one-line evidence; an
+AC that met exactly as written still gets its row (`met as written`), because the
+absence of a row is how silent rescoping hides. Append only — never edit a row, the
+spec body above, or another unit's rows. A spec without that section gets it added
+as the last section. This is how the spec learns what actually shipped, instead of
+reading `_Draft_` long after the merge.
 
 **When the unit is a Mission step, record the step's verdict on it:**
 `mission_verify_step({ folder, missionId, stepId, verdict, evidence, sessionId:
