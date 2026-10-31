@@ -6265,6 +6265,12 @@ own border without colliding with the row divider below):
   `stopPropagation`s so it never triggers the row's navigate-and-dismiss.
 - **Relative timestamp**: `text-text-4`, `10px`, `tabular-nums`, right-aligned
   — replaced by the dismiss × on row hover (above).
+- **Folded repeats (T599).** Repeat idle / task-finished notices for the same
+  unit (one mission step, or one card) within 10 minutes share one row: the
+  row's timestamp moves to the latest one and a count line appears under the
+  text — `activityBell.alreadyReported`, "already reported · ×N", `--text-4`,
+  `10px`, `tabular-nums`, shown only from ×2. A different unit or a different
+  notice kind in the same window is never folded. No new token or row height.
 - Rows separated by a `1px --border` top rule; **order: most-recent-first**.
 
 **Grouped entry (BUG-173).** A record that carries `items` is a **list
