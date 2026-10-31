@@ -408,6 +408,31 @@ folder, missionId, stepId, note })`. Then stop.
   under a name you no longer hold. A report naming a different session id is not
   yours: tell the sender so in one line, and do not act on it or pass it on.
 
+### Done conditions in dispatch packets
+
+Every done condition you put in a dispatch packet or a `/goal` must be checkable
+by the worker alone, from its own worktree: "commits pushed + tree clean +
+`.harnu/REPORT.md` written" for an executor, "PR open + CI green +
+`.harnu/REPORT-ship.md` written" for a shipper. **Never write "a message was
+delivered to another session" as a done condition.** The worker cannot verify it
+and cannot make it true when the recipient is parked, renamed or gone, so a Stop
+hook keeps re-prompting a turn that can never end — one worker was re-prompted 578
+times, roughly $130. The report message is best-effort; the file is the
+deliverable (rule 4 above says the same from the child's side). The
+`orchestrate-delivery` skill carries the per-role templates.
+
+### Wave boundary — hand the mission to a fresh owner
+
+A mission outlives its owner session: one orchestrator session per delivery wave.
+When your context passes ~400k tokens, or the wave ends at a human pause (a merge
+and a build the operator must do), stop owning it: leave the steps, links, blockers
+and a `mission_log` handover line current, then give the operator the resume
+prompt from `orchestrate-delivery` ("Wave boundary") for a fresh session — it
+opens with `/harnu:status` and `mission_get <missionId>` and names the mission id,
+card slugs, previous owner session id and watchdog worker id. The new owner
+re-derives state from the mission, never from your transcript, and re-announces its
+address to each live child (owner rules above).
+
 ## `mission done`
 
 Verify against evidence, not memory. When every unit is verified and the end's

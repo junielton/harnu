@@ -33,6 +33,13 @@ Confirm a `WORKTREE.md` manifest exists at the repo root (worktrees are born usa
 through it); if it is missing, flag it as a blocker before dispatching anything to
 a worktree.
 
+**Size gate — a small fix skips the spec.** If the objective is a small fix (one
+area, no new interface, no new behaviour contract, reviewable at a glance), do not
+commission a spec bundle or a scout: the card's objective and its ACs are the
+spec, and the delivery is a single unit. The spec bundle below is for work large
+enough that a fresh worktree could not infer the contract. When in doubt, the test
+is whether a reviewer could judge the PR without a document beside it.
+
 **Require a spec bundle readable from a fresh worktree.** Every unit needs its
 acceptance criteria, spec, design links and tracker link available on the BASE
 BRANCH — committed, not sitting untracked in `.harnu/`, which a fresh worktree
@@ -155,6 +162,13 @@ For each unit, create a card (`create_card`, with kind + complexity +
   attach the capture to the card (`update_card { images }`). **Name the routes in
   the packet** — the executor should not have to infer which page it changed. An AC
   about something visible is never satisfied by an argument that the code is right.
+- **UI rule — a UI unit's packet names its skills.** When the unit builds or
+  changes UI, the packet cites by name the implementation skill that matches the
+  source of truth — `/dtk:implement-design` when the contract is a Figma design,
+  `/dtk:implement-mockup` when it is an approved mockup — and the QA skill that
+  closes it: `/dtk:dsqa` after a Figma build, `/dtk:mockup-qa` after a mockup
+  build. Name the skills; do not restate their steps (see "Boot templates by
+  role"). The visual-proof step above still applies on top of them.
 - **Git conventions**: point the executor at the repo's own conventions doc for
   branch naming and PR title/description rules — reference it, do not restate the
   rules in the packet, because restated copies drift.
@@ -174,7 +188,8 @@ For each unit, create a card (`create_card`, with kind + complexity +
   PR pipeline therefore runs in a FRESH session in the same worktree — dispatched
   by you, never by the executor:
 
-  - The executor's own run ends at **commit + push + clean tree**. It verifies its
+  - The executor's own run ends at **commit + push + clean tree + `.harnu/REPORT.md`
+    written** (see "Done conditions" below). It verifies its
     commits exist (`git rev-list --count <base>..HEAD` > 0) and that
     `git status --porcelain` is empty. It must **not** invoke `ship` — or any
     pipeline whose first step is a self-review — in its own session.
@@ -192,9 +207,12 @@ For each unit, create a card (`create_card`, with kind + complexity +
     Dispatch the shipper only once the executor has reported a clean tree, and
     tell it in the packet that it touches that worktree no further after
     reporting.
-  - Pass the shipper three overrides: the base branch per the topology, "open the
-    PR only — never merge", and "skip the notify step — the orchestrator reports
-    centrally". If no such pipeline exists, plain `gh pr create` is fine.
+  - The shipper's boot prompt is the **shipper template** in "Boot templates by
+    role" below — pasted, not paraphrased. It invokes the `ship` pipeline; the
+    orchestrator never has the shipper hand-roll the steps, and there is no
+    `gh pr create` fallback. If the `ship` skill is missing from the shipper's
+    session, that is a blocker to raise (`mission_set_blocker`), not a licence to
+    improvise a PR by hand.
 
 - **Report format**: branch + head sha + one-line summary + per-AC self-assessment
   (recorded, never trusted — Phase 5 grades independently) + unresolved findings.
@@ -232,6 +250,87 @@ For each unit, create a card (`create_card`, with kind + complexity +
   each live child — the `mission` skill's owner rules say how.
 
 A packet an executor can misread is your defect, not theirs.
+
+### Done conditions — checkable by the worker alone
+
+Every done condition you write into a packet, a boot template or a `/goal` must be
+something the worker can verify from its own worktree, with no other session's
+cooperation:
+
+- **Executor:** commits pushed (`git rev-list --count <base>..HEAD` > 0) + tree
+  clean (`git status --porcelain` empty) + `.harnu/REPORT.md` written.
+- **Shipper:** PR open + CI green + `.harnu/REPORT-ship.md` written.
+- **Lander:** every PR in the list handed back `ready`, `awaiting-reviewer` or
+  `blocked-<why>` + branches pushed, tree clean + `.harnu/REPORT-land.md` written.
+- **Reviewer:** the review written to `.harnu/REPORT-review.md`.
+
+**Never make "a message was delivered to another session" a done condition** —
+not in a packet, not in a `/goal`, not in a Stop hook. The worker cannot check it,
+and cannot make it true when the recipient is parked, renamed or gone. A done
+condition it can neither verify nor satisfy never clears, so the Stop hook
+re-prompts it forever: one worker was re-prompted 578 times, roughly $130 spent
+on a turn that could never end. The report message is a best-effort courtesy that
+makes your next tick happen sooner; the file is the deliverable, and the file is
+what "done" is graded on.
+
+### Boot templates by role
+
+Each dispatched role starts from a fixed template. **Paste it; do not paraphrase
+it.** Fill only the `<…>` slots. A boot prompt you re-word each time is a new
+prompt each time, and every re-wording is a chance to drop an override, a done
+condition or the return address.
+
+**Cite a skill by name; never restate its steps in the prompt — a restated copy
+drifts.** The skill is the single source of the procedure and improves in one
+place; a prompt that lists "review, commit, open the PR, assign reviewers" freezes
+today's version of it into every future delivery. The template says which skill to
+invoke and what to override, nothing more.
+
+Every template ends with the same two blocks: the **return address** (your session
+id, your current name from `ListAgents`, and the `mission` skill's child-reporting
+hard rules, verbatim — see "A return address…" above) and the **exit line** (write
+the report file, then send; unreachable owner → the file only).
+
+- **Executor** — the delegation packet from the list above, in full: objective,
+  ACs with ids, honest exit clause, scope boundary, context pointers, visual proof
+  when it renders UI, the repo's method as steps, the done condition above, report
+  format, return address. It never invokes `ship`.
+- **Shipper** — dispatched by you into the executor's worktree once the tree is
+  clean and pushed:
+
+  ```
+  Invoke `/dtk:ship` with these overrides:
+  - base branch: <base per the topology>
+  - open the PR only — never merge
+  - skip the notify step — the orchestrator reports centrally
+  Done = PR open + CI green + `.harnu/REPORT-ship.md` written.
+  After you report, touch this worktree no further.
+  <return address> <exit line>
+  ```
+
+- **Lander** — dispatched for the closing phase (below), into a fresh worktree of
+  the repo:
+
+  ```
+  Invoke `land-prs` on: <PR numbers, in landing order>.
+  Target: <the branch the declared end names>. Merge policy: <the declared end's
+  words on merging, verbatim>.
+  Done = every PR handed back ready, awaiting-reviewer or blocked-<why>, branches
+  pushed, tree clean, `.harnu/REPORT-land.md` written.
+  <return address> <exit line>
+  ```
+
+- **Reviewer** — when a unit wants a cold code review beyond Phase 4's per-AC
+  grading:
+
+  ```
+  Invoke `/dtk:review-peer` on PR #<n>. Post nothing to the PR.
+  Done = findings written to `.harnu/REPORT-review.md`.
+  <return address> <exit line>
+  ```
+
+Phase 4's blind verifiers are subagents with their own packet from the
+`delivery-verifier` skill; they are not one of these roles.
 
 **Parallel units:** move their cards to `ready` (`move_card`), then submit ONE
 dispatch batch with `submit_manifest`, cards in drain order. The drain cuts one
@@ -411,6 +510,66 @@ what would unblock it + whose move it is), record the finding in its card body
 (`update_card`), move the card back to `backlog` (`move_card`), and report the
 blockage instead of insisting. Do not keep a tick counter of your own.
 
+### Wave boundary — one orchestrator session per delivery wave
+
+An orchestrator session is cheap while its context is small and expensive once it
+is not: every tick re-reads the whole transcript. One delivery drove an owner
+session to ~941k tokens of context (about $566); the next waves paid for every
+wave before them. So the owner session is scoped to **one wave**, and the next
+wave starts in a fresh session. Start it when either holds:
+
+- the owner session's context passes **~400k tokens**; or
+- the wave ends at a **human pause** — a merge and a build the operator must do
+  before the next wave can branch from the result.
+
+Before you stand down, leave the world carrying the state: mission steps, links
+and ledger current, blockers raised for whatever the operator owes, the wave's
+Delivery Report written, `memory_append` of anything the next wave must know. The
+state lives in the mission and the board — never in this transcript.
+
+Then hand the operator the resume prompt to paste into a fresh session, verbatim
+with the slots filled:
+
+```
+/harnu:status
+Resume the delivery on mission <missionId> as its new owner. Start with
+`mission_get <missionId>`, then `/harnu:orchestrate-delivery` from Phase 3.
+Cards in flight: <card slugs>.
+Previous owner session: <ownerSessionId> (do not message it; read the mission).
+Watchdog worker: <worker id, or none>.
+Re-announce your session id to every live child and re-arm the tick loop and
+the watchdog's target before doing anything else.
+```
+
+The new owner re-derives everything from `mission_get`, the board and git (see
+"Resume — every turn re-arms"); the template names the mission and the slugs so it
+knows where to look, and nothing in it is a claim to trust. A mission has one
+owner, so the previous owner's loop ends with its session; log the handover
+(`mission_log`) and re-announce the new address to each live child as the
+`mission` skill's owner rules say.
+
+## Closing phase — when the declared end is "on main"
+
+When the mission's declared end is that the work lands on the default branch, the
+last step is a merge train, and it is **not yours**. The orchestrator never merges.
+After Phase 5 has produced the Delivery Report and every unit is verified:
+
+1. Dispatch ONE session with the **lander template** ("Boot templates by role"),
+   listing the PRs in landing order and quoting the declared end's merge policy
+   verbatim. It invokes `land-prs`, which triages, reviews, rebases, addresses
+   change requests and hands each PR back `ready`, `awaiting-reviewer` or
+   `blocked-<why>`.
+2. Link the lander to the final step (`mission_link_child`), subscribe to its idle
+   notice like any other child, and read `.harnu/REPORT-land.md` on the tick that
+   finds it idle.
+3. A PR the lander hands back `blocked-<why>` or `awaiting-reviewer` is an
+   operator item: `mission_set_blocker { owner: 'operator' }` naming it. Verify
+   the end ("on main") from the merged state on the default branch, not from the
+   lander's report.
+
+When the end is anything other than "on main", there is no closing phase: the
+delivery ends at Phase 5 with PRs open.
+
 ## Resume — every turn re-arms
 
 A delivery is long-lived and the session driving it is not, so treat **every turn
@@ -536,7 +695,9 @@ whichever post-mortem someone remembers to run.
 
 ## Boundaries
 
-- Open PRs only. Never merge. Never move a card to `done`.
+- Open PRs only. The orchestrator never merges — when the declared end is "on
+  main", the merge train belongs to the dispatched lander session (Closing
+  phase). Never move a card to `done`.
 - Never touch product code, run builds, or commit in this session — delegate. If
   promoted to Orchestrator, Harnu's structural guard enforces this for you.
 - Do not touch branches, worktrees or cards this orchestration did not create.
