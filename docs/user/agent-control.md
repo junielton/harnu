@@ -249,7 +249,7 @@ These decisions stay yours, and no session can make any of them: **approving a n
 
 A mission is one piece of work with one finish line. A delivery that is really several of them, in an order, with detours along the way, is a **Campaign**: an ordered list of **chapters**, where each chapter is its own mission. A session keeps one so "chapter 9 of 12" is a record Harnu holds, not a picture someone drew by hand.
 
-Campaigns live in your repo's main checkout under `.harnu/campaigns/`, one file each, shared by every worktree and kept out of git, exactly like missions. Everything below happens directly, without asking you, and a folder you blocked for agents is off limits here too. (The screens that show a campaign — the pill, the popovers and the map — are still to come; today a session reads a campaign through these actions.)
+Campaigns live in your repo's main checkout under `.harnu/campaigns/`, one file each, shared by every worktree and kept out of git, exactly like missions. Everything below happens directly, without asking you, and a folder you blocked for agents is off limits here too. (You see a campaign on screen too: see "Seeing a campaign in the top bar" below. The full-screen map is still to come.)
 
 What a session can do:
 
@@ -260,6 +260,16 @@ What a session can do:
 - **Ask you to close the campaign** (`campaign_request_close`). Only possible once every required chapter is done; open side quests don't hold it back. The campaign is then marked delivered and waits for you.
 
 No session can merge a pull request, choose between a decision's options, tick a check or end a campaign: those stay yours.
+
+### Seeing a campaign in the top bar
+
+When the session you are looking at owns a mission that is a chapter of a campaign, the top-bar pill beside the session name changes from "Step 8 of 9" to **"Ch. 2/3 · Step 8/9"**: the chapter the campaign is on, then the step the mission is on. When something is waiting on you it adds **"· 3 for you"** (everything the campaign's open chapters owe you, added up) and turns amber; once every required chapter is done it reads a green **"Ch. 3/3 ✓"**. A session whose mission is not part of a campaign keeps the pill it always had.
+
+Click the pill to open the **campaign popover**, a wider panel with two sides. On the left, the chapters in three groups: **Main quest** (done, in review and running chapters, in order), **Side quests** (detours, which never count toward "chapter N of M") and **Locked** (chapters waiting on something). On the right, the objectives of the chapter you select (it starts on the one the campaign is on): every step with the four small dots that show whether its pull request is merged, CI is green, `main` is green after the merge and a verifier signed it off. Under both, **You** lists everything the campaign's open chapters owe you, the first item in a box and the rest as rows, each tagged with its chapter. Every number is the one Harnu computed; nothing is recounted on screen.
+
+**Open chapter →** shows that chapter's own mission popover, with a **‹ Campaign** link at the top to go back. That popover has two additions that every mission popover now has: **You** is a list with one row per thing you owe (with how long it has been waiting, wherever Harnu has a time for it), including a **Decide: …** row when a decision is waiting for you, and a **Ledger** section shows the last five things Harnu itself recorded for the mission (a dispatch, a pull request opened or merged, a CI result, a verdict), newest first.
+
+Two buttons at the bottom of the campaign popover are there but switched off for now: **End campaign…** (ending a campaign from the app isn't built yet; end its chapters' missions instead) and **Open map** (the map comes later). Hover either to see why.
 
 ## Batching approvals (only matters if you turned confirmations on)
 
