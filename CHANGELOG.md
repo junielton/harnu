@@ -15,11 +15,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Added
 
 - **Three conversation skills now ship with Harnu and leave a record: `one-by-one`, `grill-me` and `step-by-step`.** Switch them on in **Settings → Skills** (off by default, like every bundled skill). `one-by-one` asks the open decisions of your spec one at a time and writes each answer into the spec's Open decisions table and the project memory; `grill-me` stress-tests a spec or plan and places everything you raise as an open decision, an amendment or a non-goal, then lists what it could not place; `step-by-step` walks you through manual actions and adds each one as a check on the Mission step it belongs to. None of them decides for you or ticks a check on your behalf — a Mission decision is still made with **Choose…**, and checks are still ticked by you.
+
 ### Changed
 
 - **The orchestration skills now hand workers fixed role prompts instead of re-written ones.** `orchestrate-delivery` carries a boot template per role (executor, shipper, lander, reviewer) that cites the right skill by name (`ship`, `land-prs`, `review-peer`) rather than restating its steps, and no longer suggests a plain `gh pr create` when no ship pipeline exists. Every done condition it writes — and the `mission` skill's dispatch packets — must be checkable by the worker alone (commits pushed, tree clean, a report file written); "a message was delivered to another session" is now ruled out, after one worker was re-prompted 578 times by a Stop hook waiting on it.
 - **The orchestrator now closes a delivery that ends "on main" by dispatching a lander session**, sizes small fixes without a spec, names the Figma or mockup implementation and QA skills in a UI unit's packet, and hands a long delivery to a fresh owner session at each wave boundary (about 400k tokens of context, or a human merge-and-build pause) with a ready-made resume prompt.
 - **The `status` skill now also fires on Portuguese phrasings** such as "como estamos", "onde estamos", "qual o estado" and "tem PR?".
+
 ### Fixed
 
 - **The mission ledger now dates a pull request by when it happened.** A "PR opened" or "PR merged" row carries the time GitHub reports for it, not the moment Harnu first noticed it, so the ledger reads in the order things actually occurred. When GitHub gives no time, the row falls back to when Harnu saw it and is marked "observed".
