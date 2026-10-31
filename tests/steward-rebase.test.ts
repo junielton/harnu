@@ -25,6 +25,17 @@ const ENV = {
   GIT_CONFIG_SYSTEM: '/dev/null'
 }
 
+// `rebaseStack` inherits `process.env`; CI has no global git identity, so a rebase replay would
+// fail with GIT_FAILED there. Give the process the same identity the fixture uses.
+for (const key of [
+  'GIT_AUTHOR_NAME',
+  'GIT_AUTHOR_EMAIL',
+  'GIT_COMMITTER_NAME',
+  'GIT_COMMITTER_EMAIL'
+] as const) {
+  process.env[key] = ENV[key]
+}
+
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, env: ENV, encoding: 'utf8' }).trim()
 }
