@@ -32,6 +32,9 @@ import {
  */
 
 const READ_TOOLS = [
+  // Campaign ch.3a (T595)
+  'campaign_get',
+  'campaign_list',
   'get_fleet',
   'get_session',
   'list_worktrees',
@@ -84,7 +87,11 @@ const MUTATE_TOOLS = [
   // T358 S7
   'mission_import_legacy',
   // Mission v3 §3.6
-  'mission_add_check'
+  'mission_add_check',
+  // Campaign ch.3a (T595): the three writes run free, like the mission writes.
+  'campaign_create',
+  'campaign_add_chapter',
+  'campaign_request_close'
 ] as const
 
 describe('MCP_TOOLS catalog shape', () => {
@@ -328,7 +335,11 @@ describe('T120 declarative gate fields — the def is the single source of truth
     // T358 S7
     'mission_import_legacy',
     // Mission v3 §3.6
-    'mission_add_check'
+    'mission_add_check',
+    // Campaign ch.3a (T595): the writes run free like the mission writes.
+    'campaign_create',
+    'campaign_add_chapter',
+    'campaign_request_close'
   ]
   const bootstrapExpected = ['adopt_folder', 'plan_mission']
 

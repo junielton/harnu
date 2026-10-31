@@ -1908,7 +1908,13 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   mission_verify_step: parseMissionVerb('mission_verify_step'),
   mission_request_close: parseMissionVerb('mission_request_close'),
   mission_import_legacy: parseMissionVerb('mission_import_legacy'),
-  mission_add_check: parseMissionVerb('mission_add_check')
+  mission_add_check: parseMissionVerb('mission_add_check'),
+  // Campaign ch.3a: validated against their own catalog schema, like the mission verbs.
+  campaign_create: parseMissionVerb('campaign_create'),
+  campaign_add_chapter: parseMissionVerb('campaign_add_chapter'),
+  campaign_get: parseMissionVerb('campaign_get'),
+  campaign_list: parseMissionVerb('campaign_list'),
+  campaign_request_close: parseMissionVerb('campaign_request_close')
 }
 
 /**

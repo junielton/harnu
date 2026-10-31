@@ -221,6 +221,10 @@ export interface Mission {
   legacyRaw?: string
   /** Campaign spec §3.2 — what Harnu did and saw, append-only. Absent until the first event. */
   ledger?: LedgerRow[]
+  /** Campaign spec §3.2 — the campaign this mission is a chapter of (set with `chapterId`, at creation). */
+  campaignId?: string
+  /** Campaign spec §3.2 — the chapter of `campaignId` this mission IS (the chapter records this mission's id). */
+  chapterId?: string
 }
 
 // ---- Validation schemas (one per interface, typed against it) ---------------
@@ -366,7 +370,9 @@ const MissionSchema: z.ZodType<Mission> = z
       })
       .optional(),
     legacyRaw: z.string().optional(),
-    ledger: z.array(LedgerRowSchema).optional()
+    ledger: z.array(LedgerRowSchema).optional(),
+    campaignId: z.string().optional(),
+    chapterId: z.string().optional()
   })
   .passthrough()
 
