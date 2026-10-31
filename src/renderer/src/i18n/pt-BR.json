@@ -4421,7 +4421,24 @@
       "waiting": "Aguardando",
       "blocked": "Bloqueado",
       "todo": "A fazer",
+      "locked": "Travado",
       "leftBehind": "Deixado para trás"
+    },
+    "side": {
+      "title": "Passos paralelos",
+      "show": "Mostrar passos paralelos",
+      "hide": "Ocultar passos paralelos",
+      "metaOpen": "{open} abertos",
+      "metaBoth": "{open} abertos · {done} feitos",
+      "discoveredFrom": "descoberto a partir de {origin}",
+      "open": "Aberto"
+    },
+    "decision": {
+      "blocks": "Bloqueia {steps}",
+      "options": "Opções",
+      "choose": "Escolher…",
+      "pickFirst": "Escolha uma opção primeiro",
+      "chose": "Escolheu {option}"
     },
     "gates": {
       "label": "Gates do passo",

@@ -158,6 +158,11 @@ function onDeleteCheck(stepId: string, checkId: string): void {
   void door({ door: 'deleteCheck', stepId, checkId } as Omit<MissionDoor, 'root' | 'missionId'>)
 }
 
+/** Campaign spec §4 — Choose: the operator picks a decision node's option (`mission:choose`). */
+function onChoose(stepId: string, index: number): void {
+  void door({ door: 'chooseDecision', stepId, index } as Omit<MissionDoor, 'root' | 'missionId'>)
+}
+
 // An in-app popover: registers with the native-overlay freeze (a browser pane under it freezes, spec §2.4).
 const rootEl = ref<HTMLElement | null>(null)
 useNativeOverlay('mission-popover', rootEl)
@@ -233,6 +238,7 @@ useNativeOverlay('mission-popover', rootEl)
         @add-check="onAddCheck"
         @tick-check="onTickCheck"
         @delete-check="onDeleteCheck"
+        @choose="onChoose"
       />
 
       <div class="bg-border" style="height: 1px; margin: 12px 0" />

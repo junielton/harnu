@@ -4421,7 +4421,24 @@
       "waiting": "Waiting",
       "blocked": "Blocked",
       "todo": "To do",
+      "locked": "Locked",
       "leftBehind": "Left behind"
+    },
+    "side": {
+      "title": "Side steps",
+      "show": "Show side steps",
+      "hide": "Hide side steps",
+      "metaOpen": "{open} open",
+      "metaBoth": "{open} open · {done} done",
+      "discoveredFrom": "discovered from {origin}",
+      "open": "Open"
+    },
+    "decision": {
+      "blocks": "Blocks {steps}",
+      "options": "Options",
+      "choose": "Choose…",
+      "pickFirst": "Pick an option first",
+      "chose": "Chose {option}"
     },
     "gates": {
       "label": "Step gates",
