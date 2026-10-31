@@ -289,7 +289,7 @@ describe("AC-5a.2 — rebase_stack runs in the step's linked worktree", () => {
     const head = git(other.wt, 'rev-parse', 'HEAD')
     commit(other.main, 'x.txt', 'x\n', 'other main moved')
     const res = await call('rebase_stack', { folder: r.main, missionId: id, onto: 'main' })
-    expect(res.text).toMatch(/^WORKTREE_NOT_IN_REPO|^NO_STEP_WORKTREE/)
+    expect(res.text).toMatch(/^WORKTREE_NOT_IN_REPO/)
     expect(git(other.wt, 'rev-parse', 'HEAD')).toBe(head)
   })
 
@@ -322,5 +322,136 @@ describe("AC-5a.2 — rebase_stack runs in the step's linked worktree", () => {
     await runOperatorDoor({ door: 'end', root: r.main, missionId: id, closedAs: 'discarded' })
     const res = await call('rebase_stack', { folder: r.main, missionId: id, onto: 'main' })
     expect(res.text).toMatch(/MISSION_CLOSED/)
+  })
+})
+
+/** A roadmap card with a stamped owner branch, as dispatch leaves it (`executedIn`). */
+async function card(root: string, slug: string, executedIn?: string): Promise<void> {
+  const dir = path.join(root, '.harnu', 'memory', 'roadmap')
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(
+    path.join(dir, `${slug}.md`),
+    `---\nid: ${slug}\ntitle: ${slug}\nstatus: in-progress\nkind: feature\ncomplexity: standard\n${executedIn ? `executedIn: ${executedIn}\n` : ''}---\n\n# ${slug}\n`
+  )
+}
+
+describe("Delta 1 — only the step's OWN worktree is rebased (path trust)", () => {
+  it("NOT_STEP_WORKTREE: a same-repo sibling worktree whose branch is not the step's card branch is never rewritten", async () => {
+    const r = await repo()
+    await card(r.main, 'T900', 'step-1')
+    const id = await mission(r, r.wt)
+    await ok('mission_link_child', {
+      folder: r.main,
+      missionId: id,
+      stepId: 'stp-1',
+      link: { kind: 'card', ref: 'T900' }
+    })
+    // The operator's own worktree, in the same repo, which the step ALSO links.
+    const operatorWt = path.join(path.dirname(r.main), 'operators-own')
+    git(r.main, 'worktree', 'add', '-q', '-b', 'operators-branch', operatorWt)
+    commit(r.main, 'other.txt', 'other\n', 'main moved')
+    await ok('mission_link_child', {
+      folder: r.main,
+      missionId: id,
+      stepId: 'stp-1',
+      link: { kind: 'worktree', ref: operatorWt }
+    })
+    const head = git(operatorWt, 'rev-parse', 'HEAD')
+    const res = await call('rebase_stack', { folder: r.main, missionId: id, onto: 'main' })
+    // The step's own worktree (r.wt, branch step-1) is the only candidate; the sibling is dropped.
+    expect(res.isError, res.text).toBe(false)
+    expect(git(operatorWt, 'rev-parse', 'HEAD')).toBe(head)
+    // And with ONLY the sibling linked, there is nothing of the step's own to rebase.
+    const r2 = await repo()
+    await card(r2.main, 'T901', 'step-1')
+    const id2 = await mission(r2)
+    await ok('mission_link_child', {
+      folder: r2.main,
+      missionId: id2,
+      stepId: 'stp-1',
+      link: { kind: 'card', ref: 'T901' }
+    })
+    const sibling = path.join(path.dirname(r2.main), 'sibling')
+    git(r2.main, 'worktree', 'add', '-q', '-b', 'not-mine', sibling)
+    await ok('mission_link_child', {
+      folder: r2.main,
+      missionId: id2,
+      stepId: 'stp-1',
+      link: { kind: 'worktree', ref: sibling }
+    })
+    const sibHead = git(sibling, 'rev-parse', 'HEAD')
+    commit(r2.main, 'x.txt', 'x\n', 'main moved again')
+    const refused = await call('rebase_stack', { folder: r2.main, missionId: id2, onto: 'main' })
+    expect(refused.isError).toBe(true)
+    expect(refused.text).toMatch(/^NOT_STEP_WORKTREE/)
+    expect(git(sibling, 'rev-parse', 'HEAD')).toBe(sibHead)
+  })
+
+  it("NOT_STEP_WORKTREE: with no card to say which branch is the step's, a worktree another step or mission also links is refused", async () => {
+    const r = await repo()
+    const idA = await mission(r, r.wt)
+    const idB = await ok('mission_create', {
+      folder: r.main,
+      title: 'Second mission',
+      declaredEnd: END,
+      sessionId: OWNER,
+      steward: false,
+      steps: [{ title: 'Other', verification: 'verifier' }]
+    }).then((a) => a.missionId as string)
+    await ok('mission_link_child', {
+      folder: r.main,
+      missionId: idB,
+      stepId: 'stp-1',
+      link: { kind: 'worktree', ref: r.wt }
+    })
+    const head = git(r.wt, 'rev-parse', 'HEAD')
+    commit(r.main, 'other.txt', 'other\n', 'main moved')
+    for (const id of [idA, idB]) {
+      const res = await call('rebase_stack', { folder: r.main, missionId: id, onto: 'main' })
+      expect(res.text, id).toMatch(/^NOT_STEP_WORKTREE/)
+    }
+    expect(git(r.wt, 'rev-parse', 'HEAD')).toBe(head)
+  })
+
+  it('a step whose card was dispatched to that very branch is accepted', async () => {
+    const r = await repo()
+    await card(r.main, 'T902', 'step-1')
+    const id = await mission(r, r.wt)
+    await ok('mission_link_child', {
+      folder: r.main,
+      missionId: id,
+      stepId: 'stp-1',
+      link: { kind: 'card', ref: 'T902' }
+    })
+    commit(r.main, 'other.txt', 'other\n', 'main moved')
+    const ack = await ok('rebase_stack', { folder: r.main, missionId: id, onto: 'main' })
+    expect(ack).toMatchObject({ ok: true, branch: 'step-1', rebased: true, pushed: false })
+  })
+
+  it("fails CLOSED when the mission's own repository cannot be identified", async () => {
+    const r = await repo()
+    // A "repo" whose .git is an empty directory: missionRoot finds it, git cannot read it.
+    const fake = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-rbverb-fake-')), 'main')
+    await fs.mkdir(path.join(fake, '.git'), { recursive: true })
+    const ack = await ok('mission_create', {
+      folder: fake,
+      title: 'Fake repo mission',
+      declaredEnd: END,
+      sessionId: OWNER,
+      steward: false,
+      steps: [{ title: 'S', verification: 'verifier' }]
+    })
+    await ok('mission_link_child', {
+      folder: fake,
+      missionId: ack.missionId,
+      stepId: 'stp-1',
+      link: { kind: 'worktree', ref: r.wt }
+    })
+    const head = git(r.wt, 'rev-parse', 'HEAD')
+    commit(r.main, 'other.txt', 'other\n', 'main moved')
+    const res = await call('rebase_stack', { folder: fake, missionId: ack.missionId, onto: 'main' })
+    expect(res.isError).toBe(true)
+    expect(res.text).toMatch(/^WORKTREE_NOT_IN_REPO/)
+    expect(git(r.wt, 'rev-parse', 'HEAD')).toBe(head)
   })
 })

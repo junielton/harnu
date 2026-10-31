@@ -330,7 +330,7 @@ import {
   type UpdateWorkerPatch
 } from '../scheduler-shell'
 import { startStewardForMission } from '../steward-shell'
-import { rebaseStack, repoCommonDir, worktreeToplevel } from '../steward-rebase'
+import { currentBranch, rebaseStack, repoCommonDir, worktreeToplevel } from '../steward-rebase'
 import type { WakeReason } from '../steward-core'
 import type { Effort, NotifyOn, WorkerMode } from '../scheduler-core'
 import { getContainersService } from '../containers/containers-ipc'
@@ -5846,6 +5846,48 @@ async function stepWorktrees(root: string, step: MissionStep): Promise<string[]>
   return [...found]
 }
 
+/**
+ * Why `worktree` is NOT `step`'s own (a reason), or `null` when it is. A worktree being linked on the
+ * step proves little — a step may link a sibling it only reads — so ownership needs evidence:
+ *
+ *  1. if a card the step links was dispatched (`executedIn` is the owner branch Harnu stamped), the
+ *     worktree's branch must be exactly that branch;
+ *  2. otherwise (nothing names the branch) the worktree must be claimed by THIS step alone — not
+ *     linked by any other step of this or another open mission — and must not be a trunk branch.
+ */
+async function foreignWorktreeReason(
+  root: string,
+  mission: Mission,
+  step: MissionStep,
+  worktree: string
+): Promise<string | null> {
+  const branch = await currentBranch(worktree)
+  if (branch === 'main' || branch === 'master') return `it is on ${branch}`
+  const owned = new Set<string>()
+  for (const l of step.links) {
+    if (l.kind !== 'card') continue
+    const read = await readCard(root, l.ref).catch(() => null)
+    if (read?.ok && read.card.executedIn) owned.add(read.card.executedIn)
+  }
+  if (owned.size > 0) {
+    return branch && owned.has(branch)
+      ? null
+      : `its branch ${branch ?? '(detached)'} is not the branch ${[...owned].join(', ')} the step's card was dispatched to`
+  }
+  const others = (await readAllMissions(root)).missions
+    .map((m) => m.mission)
+    .filter((m) => m.status !== 'closed')
+  for (const m of others) {
+    for (const s of m.steps) {
+      if (m.id === mission.id && s.id === step.id) continue
+      if ((await stepWorktrees(root, s)).includes(worktree)) {
+        return `${m.id === mission.id ? s.id : `${m.id}/${s.id}`} links it too, and nothing names which branch is this step's`
+      }
+    }
+  }
+  return null
+}
+
 const rebaseStackHandler: Handler = async (args, ctx) => {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -5870,10 +5912,17 @@ const rebaseStackHandler: Handler = async (args, ctx) => {
   if (wantedStep && pool.length === 0)
     return errorResult(stepNotFoundMessage(missionId, wantedStep))
   const repoDir = await repoCommonDir(root)
+  // Fail CLOSED: if the mission's own repository cannot be identified, no worktree can be shown to
+  // belong to it, so nothing is rebased.
+  if (!repoDir) {
+    return errorResult(
+      `WORKTREE_NOT_IN_REPO: could not identify the repository of ${root}, so no worktree can be shown to belong to it — rebase_stack rebases nothing.`
+    )
+  }
   for (const step of pool) {
     for (const wt of await stepWorktrees(root, step)) {
       if (wt === root) continue // never the main checkout: the rebase core would refuse it anyway
-      if (repoDir && (await repoCommonDir(wt)) !== repoDir) {
+      if ((await repoCommonDir(wt)) !== repoDir) {
         return errorResult(
           `WORKTREE_NOT_IN_REPO: ${wt}, linked on ${step.id}, belongs to a different repository than this mission — rebase_stack only rebases this repo's own worktrees.`
         )
@@ -5886,6 +5935,21 @@ const rebaseStackHandler: Handler = async (args, ctx) => {
       `NO_STEP_WORKTREE: ${wantedStep ? wantedStep : 'no open step of this mission'} links a linked worktree — mission_link_child { kind: 'worktree', ref: <path> } the step's worktree first.`
     )
   }
+  // Path trust: a worktree linked on the step is not yet the step's OWN. Keep only the ones that are —
+  // a sibling (the operator's, another mission's) is never rewritten.
+  const own: typeof candidates = []
+  const foreign: string[] = []
+  for (const c of candidates) {
+    const why = await foreignWorktreeReason(root, mission, c.step, c.worktree)
+    if (why) foreign.push(`${c.worktree} (${why})`)
+    else own.push(c)
+  }
+  if (own.length === 0) {
+    return errorResult(
+      `NOT_STEP_WORKTREE: none of the worktrees linked on ${wantedStep ?? 'the open steps'} is this step's own — ${foreign.join('; ')}. rebase_stack rewrites only a step's own branch.`
+    )
+  }
+  candidates.splice(0, candidates.length, ...own)
   if (candidates.length > 1) {
     return errorResult(
       `STEP_AMBIGUOUS: several steps link a worktree (${candidates.map((c) => `${c.step.id} → ${c.worktree}`).join('; ')}) — pass stepId.`

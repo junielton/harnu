@@ -17,7 +17,7 @@ import {
   readAllMissions,
   recordMissionCompaction
 } from './mcp/tool-handlers'
-import { listStewards, wakeStewardForMission } from './scheduler-shell'
+import { listStewards, wakeStewardForMission, whenSchedulerLoaded } from './scheduler-shell'
 import { reconcileStewards } from './steward-shell'
 import { handleStewardRoute, type StewardRouteDeps } from './steward-routes'
 
@@ -87,7 +87,10 @@ export function registerStewardWiring(): () => void {
 }
 
 /** Boot: re-point every steward's hooks at the live bridge and retire the ones whose mission closed. */
-export function reconcileStewardsOnBoot(): Promise<void> {
+export async function reconcileStewardsOnBoot(): Promise<void> {
+  // The hook bridge and the Scheduler boot on separate clocks; reconcile reads the Scheduler's list,
+  // so it waits for the store to have loaded rather than reconciling against an empty cache.
+  await whenSchedulerLoaded()
   return reconcileStewards(async (folder, missionId) => {
     const loaded = await loadMission(missionRoot(folder), missionId)
     if (!loaded.ok) return 'unknown'

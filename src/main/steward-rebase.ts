@@ -171,3 +171,9 @@ export async function repoCommonDir(dir: string): Promise<string | null> {
   const r = await git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
   return r.ok && r.out ? r.out : null
 }
+
+/** The branch checked out in `dir`, or `null` when detached (or not a checkout). */
+export async function currentBranch(dir: string): Promise<string | null> {
+  const r = await git(dir, ['symbolic-ref', '--short', '-q', 'HEAD'])
+  return r.ok && r.out ? r.out : null
+}
