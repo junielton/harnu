@@ -4,7 +4,7 @@
   "title": "a plan that consumes before it produces is refused, the skill re-orders and never forces",
   "reviewFocus": null,
   "label": "campaign AC-3b.4 (b)",
-  "description": "Campaign spec \u00a73.5 / \u00a78 AC-4 (b). The spec numbers its chapters in the order the work was first discussed: chapter 1 consumes `page-templates`, chapter 2 produces it. The owner is told to try the spec's numbering first, so `campaign_create` answers PREREQ_MISSING (the refusal is in Harnu's audit log; state cannot hold a refusal). The skill must then re-order the chapters so the producer comes first and must NOT pass `force`: a forced gap is logged as a `surprise` in the campaign Log, so the final state has the producer before the consumer and no surprise.",
+  "description": "Campaign spec \u00a73.5 / \u00a78 AC-4 (b). The spec numbers its chapters in the order the work was first discussed: chapter 1 consumes `page-templates`, chapter 2 produces it. The owner is told to send its first declaration in the spec's numbering (a sonnet owner holding the skill otherwise pre-sorts, and the refusal path goes unexercised), so `campaign_create` answers PREREQ_MISSING (the refusal is in Harnu's audit log; state cannot hold a refusal). The skill must then re-order the chapters so the producer comes first and must NOT pass `force`: a forced gap is logged as a `surprise` in the campaign Log, so the final state has the producer before the consumer and no surprise.",
   "agents": ["A"],
   "phases": [
     {
@@ -23,7 +23,7 @@
       "agent": "A",
       "role": "owner",
       "tools": ["Read"],
-      "prompt": "Skill file: .eval/orchestrate-delivery-SKILL.md.\n\nThe operator hands you this objective: \"Deliver the page publishing described in docs/page-publishing-spec.md.\" Treat Phase 0 as done: the spec is committed on the default branch and the repo is ready to dispatch into.\n\nYou proposed the end and the operator already confirmed it: the pages are done when every product page is served from its template, proven by the final PR merged with green CI.\n\nThe operator numbered the chapters in the spec, so declare them first in exactly that order. This sandbox cannot dispatch. Do Phase 1 only (declare the delivery); write no packet and link no session. Start the orchestration now."
+      "prompt": "Skill file: .eval/orchestrate-delivery-SKILL.md.\n\nThe operator hands you this objective: \"Deliver the page publishing described in docs/page-publishing-spec.md.\" Treat Phase 0 as done: the spec is committed on the default branch and the repo is ready to dispatch into.\n\nYou proposed the end and the operator already confirmed it: the pages are done when every product page is served from its template, proven by the final PR merged with green CI.\n\nThe operator numbered the chapters in the spec and wants to see what Harnu says about that numbering, so your FIRST declaration must list the chapters in exactly that order, even if you expect an objection. Do not pre-sort it. This sandbox cannot dispatch. Do Phase 1 only (declare the delivery); write no packet and link no session. Start the orchestration now."
     }
   ],
   "assert": [
