@@ -318,6 +318,12 @@ export interface Toast {
    */
   sessionId?: string
   /**
+   * Unit of work + notice kind (T599) — threaded to the persisted record so the
+   * Activity history folds repeats of the same notice for one unit into one row.
+   */
+  unit?: string
+  notificationType?: string
+  /**
    * The view this toast should open on click, if any (T163) — the
    * view-targeted twin of `sessionId` above. Threaded through to the
    * persisted `NotificationRecord` the same way, so a notification with no
@@ -1126,6 +1132,8 @@ export const useUiStore = defineStore('ui', () => {
         title: toast.title,
         description: toast.description,
         sessionId: toast.sessionId,
+        unit: toast.unit,
+        notificationType: toast.notificationType,
         target: toast.target,
         action: toast.action ? { label: toast.action.label } : undefined
       })

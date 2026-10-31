@@ -1960,7 +1960,8 @@
     "sessionSays": "A sessão diz",
     "dismissAria": "Descartar",
     "expandAria": "Mostrar texto completo",
-    "collapseAria": "Recolher"
+    "collapseAria": "Recolher",
+    "alreadyReported": "já informado · ×{count}"
   },
   "mcpServer": {
     "title": "Servidor de controle (MCP)",
