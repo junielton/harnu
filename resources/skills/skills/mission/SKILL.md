@@ -283,6 +283,14 @@ missionId, stepId, verdict, evidence, sessionId })`. **The verifying session
      branch, what counts as done) → `mission_set_end` in the same turn, with the
      new end and the operator's words as the `reason`.
 
+   - **An open decision (`D-n`) in the spec was resolved** → one structured line to
+     `memory_append` (`decisions`) and nothing else:
+     `D-n · <question> · chosen: <option> · <date>`. The reasoning, the discussion
+     and the rejected options stay in the spec's decisions table; the memory line is
+     the index entry that makes the choice findable by `memory_query`. Choosing a
+     mission decision node stays the operator's door — you record the line after
+     they have chosen, you never choose for them.
+
    - **New work discovered mid-mission** (a split from verification, a deferred
      fix) → `mission_add_step` with its `reason`, then dispatch and link it like
      any planned unit.
