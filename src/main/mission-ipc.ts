@@ -21,6 +21,7 @@
  * `mission_request_close`) or add a check, never apply.
  */
 
+import { retireStewardForClosedMission } from './steward-shell'
 import { ipcMain } from 'electron'
 import { scanFolders } from './claude-reader'
 import type { FolderEntry } from './folder-model'
@@ -389,7 +390,14 @@ export async function runOperatorDoor(
   )
   if (!written.ok) return written
   // Ended: it leaves every surface — nothing to derive.
-  if (written.mission.status === 'closed') return { ok: true, view: null }
+  if (written.mission.status === 'closed') {
+    // Campaign ch.5a: the mission's steward (a system worker) and its hooks end with the mission.
+    await retireStewardForClosedMission({
+      missionId: written.mission.id,
+      ownerFolder: written.mission.owner.folder
+    })
+    return { ok: true, view: null }
+  }
   try {
     const ctx: ToolHandlerCtx = {
       folder: root,

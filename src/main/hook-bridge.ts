@@ -45,6 +45,7 @@ import {
 import { interceptActivePaths } from './user-projects'
 import { registerApprovalResolver, closeApprovals } from './approval-resolver'
 import { registerSentinel } from './sentinel-resolver'
+import { STEWARD_ROUTES, type StewardRoute } from './steward-routes'
 
 // The public surface moved to the hub; re-exported so no importer changes (ARB-5).
 export {
@@ -92,6 +93,11 @@ export function startHookServer(
     getMode?: () => ResponderMode
     registry?: { list: () => readonly Resolver[] }
     deadlineMs?: number
+    /**
+     * Campaign ch.5a: the answer to a steward hook (`POST /steward/<token>/<route>`). Returns the
+     * text the hook prints. Absent = the routes answer empty.
+     */
+    steward?: (route: StewardRoute, body: Record<string, unknown>) => Promise<string>
   } = {}
 ): Promise<StartedServer> {
   // Defaults preserve pure-observer behavior, so existing call-sites/tests that
@@ -109,7 +115,8 @@ export function startHookServer(
         res.end(body)
       }
       const parts = (req.url ?? '').split('/').filter(Boolean) // ['hook', token, event, tag]
-      if (req.method !== 'POST' || parts[0] !== 'hook') return respond(404)
+      const isSteward = parts[0] === 'steward' // ['steward', token, route]
+      if (req.method !== 'POST' || (parts[0] !== 'hook' && !isSteward)) return respond(404)
       // http-guard parity (lesson 004): DNS-rebind guard on Host + Origin, and a
       // constant-time token compare (no early-exit timing side-channel). The
       // token is a per-boot 122-bit randomUUID in the path, so this is
@@ -119,6 +126,35 @@ export function startHookServer(
       const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined
       if (origin !== undefined && !isAllowedOrigin(origin)) return respond(403)
       if (!constantTimeEqual(parts[1] ?? '', token)) return respond(403)
+
+      if (isSteward) {
+        const route = STEWARD_ROUTES.find((r) => r === parts[2])
+        if (!route) return respond(404)
+        let rawBody = ''
+        req.on('data', (c) => {
+          rawBody += c
+          if (rawBody.length > 1 << 20) req.destroy()
+        })
+        req.on('end', async () => {
+          let payload: Record<string, unknown> = {}
+          try {
+            const parsed = JSON.parse(rawBody || '{}')
+            if (parsed && typeof parsed === 'object') payload = parsed as Record<string, unknown>
+          } catch {
+            payload = {}
+          }
+          let text = ''
+          try {
+            text = (await opts.steward?.(route, payload)) ?? ''
+          } catch (err) {
+            console.warn(`[steward] ${route} route failed (answering empty):`, err)
+          }
+          res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+          res.end(text)
+        })
+        req.on('error', () => respond(400))
+        return
+      }
 
       const event = parts[2] ?? ''
       const tag = parts[3] ?? '_'
@@ -288,6 +324,15 @@ export function hookSettingsBlobJson(): string | null {
   return buildHookSettingsBlobJson(currentPort, currentToken)
 }
 
+/**
+ * Campaign ch.5a: where the steward's hooks point — the live hook bridge's loopback port and its
+ * per-boot token — or `null` while the bridge is not listening. Sync, like
+ * {@link hookSettingsBlobJson}. The token is a secret: never log the return value.
+ */
+export function getStewardHookEndpoint(): { port: number; token: string } | null {
+  return currentPort && currentToken ? { port: currentPort, token: currentToken } : null
+}
+
 /** True if something is accepting TCP connections on a loopback port. */
 function probePort(port: number, timeoutMs = 250): Promise<boolean> {
   return new Promise((resolve) => {
@@ -354,6 +399,16 @@ export function handleBridgeEvent(ev: BridgeEvent, getWindow: () => BrowserWindo
   ingest({ ...ev, source: 'hook' }, getWindow)
 }
 
+/** Campaign ch.5a: who answers a steward hook. Set from `index.ts`, so this file imports no mission code. */
+let stewardRouteHandler:
+  ((route: StewardRoute, body: Record<string, unknown>) => Promise<string>) | null = null
+
+export function setStewardRouteHandler(
+  fn: ((route: StewardRoute, body: Record<string, unknown>) => Promise<string>) | null
+): void {
+  stewardRouteHandler = fn
+}
+
 export async function registerHookBridge(getWindow: () => BrowserWindow | null): Promise<void> {
   currentToken = randomUUID()
   // Register the zero-risk demo resolver + load the persisted mode before the
@@ -367,7 +422,8 @@ export async function registerHookBridge(getWindow: () => BrowserWindow | null):
   setInterceptFolders(await interceptActivePaths())
   const started = await startHookServer((ev) => handleBridgeEvent(ev, getWindow), currentToken, {
     getMode,
-    registry: responderRegistry
+    registry: responderRegistry,
+    steward: async (route, body) => (await stewardRouteHandler?.(route, body)) ?? ''
   })
   serverClose = started.close
   currentPort = started.port

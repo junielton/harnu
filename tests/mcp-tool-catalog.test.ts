@@ -91,7 +91,9 @@ const MUTATE_TOOLS = [
   // Campaign ch.3a (T595): the three writes run free, like the mission writes.
   'campaign_create',
   'campaign_add_chapter',
-  'campaign_request_close'
+  'campaign_request_close',
+  // Campaign ch.5a (T597): a local write, free like the mission writes.
+  'rebase_stack'
 ] as const
 
 describe('MCP_TOOLS catalog shape', () => {
@@ -339,7 +341,9 @@ describe('T120 declarative gate fields — the def is the single source of truth
     // Campaign ch.3a (T595): the writes run free like the mission writes.
     'campaign_create',
     'campaign_add_chapter',
-    'campaign_request_close'
+    'campaign_request_close',
+    // Campaign ch.5a (T597): a local write, free like the mission writes.
+    'rebase_stack'
   ]
   const bootstrapExpected = ['adopt_folder', 'plan_mission']
 

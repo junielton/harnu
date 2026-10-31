@@ -261,6 +261,21 @@ What a session can do:
 
 No session can merge a pull request, choose between a decision's options, tick a check or end a campaign: those stay yours.
 
+## A steward for every mission
+
+When a session starts a mission, Harnu gives that mission a **steward**: a small background helper that belongs to the mission, not to you or to the session. It wakes when something happens on the mission — a pull request opens or merges, CI turns red or green, a child session goes idle, a blocker is cleared — and otherwise checks in every 20 minutes. It does the routine moves so you don't have to relay them: rebase a stack of branches after the one below it lands, start a separate verifier session when a pull request is ready, or nudge a child that has stalled.
+
+What it cannot do matters more. It works on its own mission only. It cannot merge, close or discard anything, choose between a decision's options, tick a check or mark a human step verified: those stay yours. It starts sessions only to verify, and it never pushes: when it rebases a branch it rewrites your **local** branch and nothing on the remote moves, so you publish the result yourself. If a rebase hits a conflict it stops, puts the tree back exactly as it was, and flags the step as blocked so you see it. It only ever rebases the branch that belongs to the step it is working on: a worktree you opened yourself, or one another step or mission also uses, is refused and left alone.
+
+You can see what it did: every action it takes is a line tagged `steward` in the mission's Log.
+
+A few things to know:
+
+- **It is part of the mission.** It is created with the mission and deleted when you end the mission. It shows up in the worker list as a system worker; it can't be edited, switched off or deleted there (the mission's own controls will cover pausing it; the screens for that are still to come).
+- **Your kill-switches still apply.** If you turn agent control off or block the folder, the steward stops ticking, like every other agent.
+- **Harnu adds three hooks to your folder.** For the steward to work, Harnu writes three entries into the folder's `.claude/settings.local.json`: after Claude compacts a long conversation, the session that owns the mission is handed a short summary of where the mission stands; the compaction is noted in the mission's record; and when a child session stops, the steward wakes. Your own hooks and settings in that file are never touched, a file that isn't valid JSON is left alone, and the entries are removed when you end the last stewarded mission in that folder.
+- **Opting out.** A session can ask for a mission with no steward and no hooks.
+
 ## Batching approvals (only matters if you turned confirmations on)
 
 With "Ask before agent actions" on, approving every action one at a time gets tedious when a session is doing a lot of related work at once — say, setting up three worktrees for three tasks. Instead of asking three separate times, a session can request one **mission grant**: a single approval that names a goal, the folders and specific actions it covers, a budget (how many actions), and a time limit. Say yes once, and everything within that scope runs on its own until the budget or the clock runs out; anything outside the scope still asks you individually. You can see any live grant's remaining budget and time in the Approval Inbox, and revoke it early if you change your mind. A grant can never reach into a folder you blocked.

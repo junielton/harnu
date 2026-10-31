@@ -14,6 +14,26 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Every mission now has a steward.** A mission gets a Harnu-owned helper that wakes when something
+  happens on it (a PR opens or merges, CI changes, a child session goes idle, a blocker is cleared, or
+  every 20 minutes) and does the routine moves for you: rebase a stack after a parent lands, start a
+  verifier session when a PR is ready, nudge a stalled child. It can only do that: it never merges,
+  closes, chooses a decision or ticks a check, and it works on its own mission alone. It is created
+  with the mission and deleted when you end it, it cannot be edited or deleted on its own, and it stops
+  when agent control is off or its folder is blocked. Every action it takes is a `steward` line in the
+  mission Log. Pass `steward: false` to `mission_create` to opt out.
+- **`rebase_stack`.** A new verb that rebases a step's own branch onto a new base in its worktree. It
+  never pushes, aborts and leaves the tree untouched on a conflict, and flags the step with a blocker.
+- **Mission Brief after a compaction.** When a mission has a steward, Harnu adds three hooks to the
+  folder's `.claude/settings.local.json` (and removes them when the mission ends, leaving your own
+  hooks alone): after a context compaction the owner session gets a short brief of the mission, the
+  compaction is recorded in the mission ledger, and a child session stopping wakes the steward.
+- `mission_log` takes a `kind` (`note`, `decision`, `surprise`, `steward`), shown in the Log heading.
+- The steward only rebases a step's own branch: a worktree you opened yourself, or one that another
+  step or mission also uses, is refused (`NOT_STEP_WORKTREE`) and never rewritten. A pile of blockers
+  can no longer crowd the Mission Brief's step table out, and a steward is no longer missed at startup
+  when the hook bridge finishes booting before the Scheduler.
+
 - **Sessions can now keep a Campaign: an ordered list of chapters, each of them its own mission.** Five new actions (`campaign_create`, `campaign_add_chapter`, `campaign_get`, `campaign_list`, `campaign_request_close`) store it in your repo's main checkout under `.harnu/campaigns/`, shared by every worktree. A chapter that needs something no earlier chapter produces is refused before anything is written; a mission can now be created as a chapter (`campaignId` and `chapterId` on `mission_create`). Harnu counts chapters done, in review, running and locked from the missions themselves, so nobody can mark a chapter done by saying so. No session can end a campaign: `campaign_request_close` only asks you. The campaign screens come in a later release; today sessions read it through these actions.
 - **Specs get a template and a CI gate.** `docs/specs/TEMPLATE.md` fixes the shape of a spec (problem and request atoms, goals, slices with the files each may touch, an acceptance-criteria table with one typed proof per row, open decisions, and an append-only amendments and deviations section), with a `status: draft|approved` and `tier: medium|large|complex` header. A new spec gate, run by CI and by `/local-ci`, lints every approved spec: duplicate AC ids, a slice citing an AC that does not exist, an AC without proof, a `prd`/`adr`/`mockup` path that is not tracked, any gitignored `.harnu/out` path, and any section the tier does not allow. Drafts and older specs are skipped.
 - **Three conversation skills now ship with Harnu and leave a record: `one-by-one`, `grill-me` and `step-by-step`.** Switch them on in **Settings → Skills** (off by default, like every bundled skill). `one-by-one` asks the open decisions of your spec one at a time and writes each answer into the spec's Open decisions table and the project memory; `grill-me` stress-tests a spec or plan and places everything you raise as an open decision, an amendment or a non-goal, then lists what it could not place; `step-by-step` walks you through manual actions and adds each one as a check on the Mission step it belongs to. None of them decides for you or ticks a check on your behalf — a Mission decision is still made with **Choose…**, and checks are still ticked by you.
