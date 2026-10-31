@@ -316,8 +316,14 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Usage Dashboard ranked list (§6)                   | `src/renderer/src/components/UsageDashboardRankList.vue`                         |
 | Usage Dashboard session anatomy (§6)               | `src/renderer/src/components/UsageDashboardAnatomy.vue`                          |
 | Usage Dashboard explorer table (§6)                | `src/renderer/src/components/UsageDashboardExplorerTable.vue`                    |
-| System Monitor (takeover, T127 S2)                 | `src/renderer/src/components/SystemMonitor.vue`                                  |
-| System Monitor row (process/session/child)         | `src/renderer/src/components/SystemMonitorRow.vue`                               |
+| System Monitor (takeover, T127 S2 / T591)          | `src/renderer/src/components/SystemMonitor.vue`                                  |
+| System Monitor Harnu sidebar (T591)                | `src/renderer/src/components/SystemMonitorSidebar.vue`                           |
+| System Monitor KPI strip (T591)                    | `src/renderer/src/components/SystemMonitorKpis.vue`                              |
+| System Monitor session card (T591)                 | `src/renderer/src/components/SystemMonitorCard.vue`                              |
+| System Monitor table row + children (T591)         | `src/renderer/src/components/SystemMonitorRow.vue`                               |
+| System Monitor state / actions (T591)              | `SystemMonitorState.vue` + `SystemMonitorActions.vue`                            |
+| System Monitor spark / avatar (T591)               | `SystemMonitorSpark.vue` + `SystemMonitorAvatar.vue`                             |
+| System Monitor history + folder hue (T591)         | `lib/monitor-history.ts` + `stores/monitor.ts`; `lib/folder-hue.ts`              |
 | Heap gauge (footer, T127 S3)                       | `src/renderer/src/components/HeapGauge.vue`                                      |
 | Hibernation policy pane (Settings tab, T127 S4)    | `src/renderer/src/components/HibernationPolicyPane.vue`                          |
 | Cleanup takeover (unified Workspace GC, T443)      | `src/renderer/src/components/CleanupView.vue`                                    |

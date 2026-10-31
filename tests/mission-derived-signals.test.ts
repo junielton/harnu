@@ -908,6 +908,47 @@ describe('mission_get — the step pulse (T547)', () => {
     )
   })
 
+  it('BUG-235 AC-3: a worktree whose branch PR is MERGED reports 0 commits, link and pulse', async () => {
+    h.join = (refs) => {
+      const base = joinWith(10, 3 * 60_000)(refs)
+      for (const w of Object.values(base.worktrees)) {
+        if (w.exists) w.prs = [prEntry(8, 'feat/x', 'MERGED')] as never
+      }
+      return base
+    }
+    h.taskStates.set(CHILD, 'idle')
+    h.live = new Set([CHILD])
+    const id = await seed({ steps: unit() })
+    const row = (await get(id)).derived.steps.find((s) => s.stepId === 'stp-2')!
+    const wt = row.links.find((l) => l.kind === 'worktree') as { commits?: number }
+    expect(wt.commits).toBe(0)
+    expect(row.pulse.commits).toBe(0)
+  })
+
+  it('BUG-235 AC-3: an open PR (even beside a merged one) or no PR keeps the git count', async () => {
+    h.join = (refs) => {
+      const base = joinWith(10, 3 * 60_000)(refs)
+      for (const w of Object.values(base.worktrees)) {
+        if (w.exists)
+          w.prs = [prEntry(8, 'feat/x', 'MERGED'), prEntry(7, 'feat/x', 'OPEN')] as never
+      }
+      return base
+    }
+    const open = await seed({ steps: unit() })
+    expect((await get(open)).derived.steps.find((s) => s.stepId === 'stp-2')!.pulse.commits).toBe(
+      10
+    )
+    h.join = (refs) => {
+      const base = joinWith(10, 3 * 60_000)(refs)
+      for (const w of Object.values(base.worktrees)) w.prs = []
+      return base
+    }
+    const none = await seed({ steps: unit() })
+    expect((await get(none)).derived.steps.find((s) => s.stepId === 'stp-2')!.pulse.commits).toBe(
+      10
+    )
+  })
+
   it('AC-2: a child idle only because its own subagents are active reads working', async () => {
     h.taskStates.set(CHILD, 'idle')
     h.live = new Set([CHILD])

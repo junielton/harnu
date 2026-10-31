@@ -94,6 +94,8 @@ const GH_FIELDS = [
   'url',
   'author',
   'updatedAt',
+  'createdAt',
+  'mergedAt',
   'mergeStateStatus',
   'additions',
   'deletions',

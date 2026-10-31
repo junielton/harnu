@@ -29,7 +29,12 @@ const h = vi.hoisted(() => ({
   userDataDir: '',
   taskStates: new Map<string, string>(),
   live: new Set<string>(),
-  pr: { state: 'OPEN', ci: 'pending' } as { state: string; ci: string }
+  pr: { state: 'OPEN', ci: 'pending' } as {
+    state: string
+    ci: string
+    createdAt?: string
+    mergedAt?: string
+  }
 }))
 
 vi.mock('electron', () => ({
@@ -82,6 +87,8 @@ vi.mock('../src/main/pr-stack', async (importOriginal) => ({
           url: 'https://example.test/pull/7',
           author: 'dev',
           updatedAt: null,
+          createdAt: h.pr.createdAt ?? null,
+          mergedAt: h.pr.mergedAt ?? null,
           headOid: null,
           nodeId: null
         }
@@ -318,6 +325,40 @@ describe('read-time events — observed once, kept out of the mission file', () 
     expect(ofKind(rows, 'pr-merged')).toEqual([
       expect.objectContaining({ stepId: 'stp-1', ref: '#7', pr: 7 })
     ])
+  })
+
+  it('BUG-235 AC-1: pr-opened and pr-merged carry the PR event time, not the observation time', async () => {
+    h.pr = { state: 'OPEN', ci: 'pending', createdAt: '2026-10-31T08:00:00Z' }
+    let rows = await ledgerOf()
+    const opened = ofKind(rows, 'pr-opened')[0]
+    expect(opened.at).toBe('2026-10-31T08:00:00.000Z')
+    expect(opened.detail).toBeUndefined()
+    h.pr = {
+      state: 'MERGED',
+      ci: 'passing',
+      createdAt: '2026-10-31T08:00:00Z',
+      mergedAt: '2026-10-31T08:53:20Z'
+    }
+    rows = await ledgerOf()
+    const merged = ofKind(rows, 'pr-merged')[0]
+    expect(merged.at).toBe('2026-10-31T08:53:20.000Z')
+    expect(merged.detail).toBeUndefined()
+    // ci keeps the observation time, and the ledger stays in time order
+    expect(Date.parse(ofKind(rows, 'ci')[0].at)).toBeGreaterThan(Date.parse(merged.at))
+    expect(rows.map((r) => Date.parse(r.at))).toEqual(
+      [...rows.map((r) => Date.parse(r.at))].sort((a, b) => a - b)
+    )
+  })
+
+  it('BUG-235 AC-1: without a GitHub time the row falls back to the observation time and says so', async () => {
+    const before = Date.now()
+    await ledgerOf()
+    h.pr = { state: 'MERGED', ci: 'passing' }
+    const rows = await ledgerOf()
+    for (const row of [ofKind(rows, 'pr-opened')[0], ofKind(rows, 'pr-merged')[0]]) {
+      expect(row.detail).toBe('observed')
+      expect(Date.parse(row.at)).toBeGreaterThanOrEqual(before)
+    }
   })
 
   it('records session-died once when a linked builder ends', async () => {
