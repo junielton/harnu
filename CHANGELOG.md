@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-31
+
+### Added
+
+- **Three conversation skills now ship with Harnu and leave a record: `one-by-one`, `grill-me` and `step-by-step`.** Switch them on in **Settings → Skills** (off by default, like every bundled skill). `one-by-one` asks the open decisions of your spec one at a time and writes each answer into the spec's Open decisions table and the project memory; `grill-me` stress-tests a spec or plan and places everything you raise as an open decision, an amendment or a non-goal, then lists what it could not place; `step-by-step` walks you through manual actions and adds each one as a check on the Mission step it belongs to. None of them decides for you or ticks a check on your behalf — a Mission decision is still made with **Choose…**, and checks are still ticked by you.
+
 ## 2026-10-30
 
 ### Added
