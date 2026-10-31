@@ -138,6 +138,17 @@ after the join, backticks kept (`printf '%s' "$text" | sha256sum | cut -c1-4`). 
 `links: spec <path>[, prd <path>][, adr <path>]`. Outside the markers sit the line `spec-slice: S-n` and the orchestrator's
 envelope (return address, exit sequence, method, honest exit clause), which derive never touches.
 
+**The AC line grammar.** One line, fields separated by a space, an em dash and a space:
+`- [ ] <id> #<hash> — <statement> — proof: <proof>`. `<id>` is the spec's AC id verbatim, `<hash>` the four hex characters of
+`acHash`, `<statement>` and `<proof>` the table cells verbatim (markdown backticks kept; the table forbids a vertical bar in
+either, so no escaping exists). A reader splits at the first `—` after the hash and at the last `— proof:`, so a
+statement may itself contain an em dash. A ticked box (`[x]`) is preserved by an update: derive rewrites the id, hash,
+statement and proof, never the box.
+
+**The new card's title** is `<S-n> · <slice title>`, the slice heading with its `S-n · ` prefix kept, e.g.
+`S-1 · Spec check: gate, capability order and atom coverage`. The plan carries it as `title`; the slug is left to `create_card`, and derive never
+computes one.
+
 **The derive planner** (`scripts/ci/spec-derive.mjs`, S-6) is `node scripts/ci/spec-derive.mjs <spec-path> --board <file>`.
 `<file>` is JSON, `[{ slug, status, title, body }]`, which the orchestrator writes from `list`-style board reads. It prints
 `{ create: [{ slice, title, block }], update: [{ slug, slice, block }], skip: [{ slug?, slice, reason }], refuse: [{ slice, reason }] }`

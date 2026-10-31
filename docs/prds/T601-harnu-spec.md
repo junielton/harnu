@@ -64,15 +64,15 @@ The spec is frozen at the first dispatch. A change of mind is a row in the spec'
 - **A question grows into an architectural decision.** It leaves chat for an ADR, not a spec.
 - **The entry is a Small door but the work turns out larger.** The operator re-runs `/harnu:spec` with the new facts; triage is cheap and the tier changes.
 - **No card exists yet** (a vague idea): triage proposes the tier from what the brainstorm produces, and the card is created at dispatch, not by this skill.
-- **The spec already has `card` rows** and the operator wants a change: Amendments only (AC-14).
+- **The spec already has `card` rows** and the operator wants a change: Amendments only (AC-18).
 - **A gate or check fails when the skill runs it**: the skill fixes the spec and re-runs; it does not flip to approved while a finding stands.
 
 ## 5. Success
 
-- A one-line bug, a PR comment and a question end in one message with no artifact (measured by the fixtures of AC-8).
-- A recorded authoring run passes the gate and both checks on its first run (AC-11).
+- A one-line bug, a PR comment and a question end in one message with no artifact (measured by the fixtures of AC-9).
+- A recorded authoring run passes the gate and both checks on its first run (AC-15).
 - The campaign spec's compaction contradiction fails `check` with both slices named (AC-4).
-- A second Phase 2 pass over an unchanged spec creates and updates nothing (AC-18).
+- A second Phase 2 pass over an unchanged spec creates and updates nothing (AC-22).
 
 ## 6. Not in this PRD
 
