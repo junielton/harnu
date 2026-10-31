@@ -99,6 +99,9 @@ const ALLOWED_LOWER_PREFIXES = [
   'pt',
   // `top`: a Tailwind inset utility (`top-14`, the canvas toolbar's own row), not a tracker key.
   'top',
+  // `from`: a Tailwind gradient-stop utility (`from-50%`, the mission gate dots' half-filled ring), not a
+  // tracker key.
+  'from',
   'agent',
   'agents',
   'argv',

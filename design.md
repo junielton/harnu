@@ -6513,6 +6513,29 @@ step-row hover / focus elsewhere — it never adds a line to the rail) and opens
 (any case) is deduped by the server (`deduped: true`): nothing is added and no
 duplicate row appears. Checks never change the step's visual or the headline.
 
+**Gate dots (campaign spec §3.2, T593).** Four dots follow the step label on **every**
+rail row, in a fixed order: **PR · CI · main · verifier** — the facts that prove a
+step done, read from the server's derived `gates` (`derived.steps[].gates`) and never
+recomputed in the renderer (the fifth gate, `checks`, has no dot: it is the checkboxes
+below). Anatomy: an inline group (`gap: 4px`, `role="group"`, label "Step gates"),
+each dot `7px × 7px`, `rounded-full`, `1.5px` border, no text. States, tokens only:
+
+| State     | Meaning                            | Look                                                                                         |
+| --------- | ---------------------------------- | -------------------------------------------------------------------------------------------- |
+| `green`   | the fact holds                     | `bg-green` + `border-green`                                                                  |
+| `red`     | the fact failed                    | `bg-red` + `border-red`                                                                      |
+| `running` | in progress / waiting on something | `border-accent`, left half filled `accent` (`bg-linear-to-r`), `.anim-tick-pulse` (breathes) |
+| `off`     | no signal yet                      | hollow `border-text-4`                                                                       |
+| `na`      | does not apply to this step        | dashed `border-text-4`, `opacity-50`                                                         |
+
+Each dot carries a `title` (and the same `aria-label`) that names the gate and the
+state — "PR merged: green", "main green after merge: red" — never a colour alone.
+When the server marked the gates `stale: true` (GitHub was unreachable, the values
+are the last known) the title ends "(last known)". No new token, size or animation
+beyond the `7px` dot; the mockup is `parts/gates.js` / screen `v6--chapter` state
+`gate-red`. A red `main` on a done step also lands one **You** item, "main is red
+after #{pr}" — nothing stored is downgraded.
+
 **Callouts** (`padding: 6px 8px`, `rounded-sm`, `11px`, `line-height: 1.5`,
 `border`, `margin-top: 5px`, 13px icon): Warning = `bg-warning-soft
 text-warning border-warning-line`. Blocked (`triangle-alert`) — "**Blocked** —

@@ -12,6 +12,7 @@ import { progressHeadline } from '../src/main/mission-progress'
 import {
   buildMissionModel,
   formatDuration,
+  GATE_DOT_NAMES,
   missionForSession,
   missionState,
   OPERATOR_VERIFIER_ID,
@@ -274,5 +275,62 @@ describe('formatDuration', () => {
 describe('OPERATOR_VERIFIER_ID', () => {
   it('mirrors the main-process OPERATOR_VERIFIER', () => {
     expect(OPERATOR_VERIFIER_ID).toBe(OPERATOR_VERIFIER)
+  })
+})
+
+describe('gate dots — four facts per step (campaign spec §3.2, mockup parts/gates.js)', () => {
+  const stepId = 'stp-3'
+
+  it('every step carries four dots in the mockup order: pr, ci, main, verifier', () => {
+    const m = buildMissionModel(fixtureView('faq-like'), NOW)
+    expect(GATE_DOT_NAMES).toEqual(['pr', 'ci', 'main', 'verifier'])
+    for (const s of m.steps) {
+      expect(s.gates.map((g) => g.name)).toEqual(['pr', 'ci', 'main', 'verifier'])
+    }
+  })
+
+  it('the dots follow the server gates and never recompute them (the checks gate has no dot)', () => {
+    const view = fixtureView('faq-like', {
+      derivedStep: {
+        [stepId]: {
+          prNumber: 12,
+          gates: { pr: 'green', ci: 'green', main: 'red', verifier: 'off', checks: 'running' }
+        }
+      }
+    })
+    const s = buildMissionModel(view, NOW).steps.find((x) => x.step.id === stepId)!
+    expect(s.gates).toEqual([
+      { name: 'pr', state: 'green' },
+      { name: 'ci', state: 'green' },
+      { name: 'main', state: 'red' },
+      { name: 'verifier', state: 'off' }
+    ])
+    expect(s.gatesStale).toBe(false)
+  })
+
+  it('a stale gate set is flagged so the tooltip can say "last known"', () => {
+    const view = fixtureView('faq-like', {
+      derivedStep: {
+        [stepId]: {
+          gates: {
+            pr: 'green',
+            ci: 'green',
+            main: 'green',
+            verifier: 'green',
+            checks: 'na',
+            stale: true
+          }
+        }
+      }
+    })
+    const s = buildMissionModel(view, NOW).steps.find((x) => x.step.id === stepId)!
+    expect(s.gatesStale).toBe(true)
+  })
+
+  it('a view whose derive predates gates still renders four off dots', () => {
+    const view = fixtureView('faq-like')
+    for (const d of view.derived.steps) delete (d as { gates?: unknown }).gates
+    const s = buildMissionModel(view, NOW).steps[0]
+    expect(s.gates.map((g) => g.state)).toEqual(['off', 'off', 'off', 'off'])
   })
 })

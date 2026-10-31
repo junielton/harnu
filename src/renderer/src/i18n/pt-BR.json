@@ -4423,6 +4423,24 @@
       "todo": "A fazer",
       "leftBehind": "Deixado para trás"
     },
+    "gates": {
+      "label": "Gates do passo",
+      "name": {
+        "pr": "PR mergeado",
+        "ci": "CI verde no PR",
+        "main": "main verde após o merge",
+        "verifier": "Veredito do verificador"
+      },
+      "state": {
+        "green": "verde",
+        "red": "vermelho",
+        "running": "em andamento",
+        "off": "ainda não",
+        "na": "n/a"
+      },
+      "tooltip": "{gate}: {state}",
+      "tooltipStale": "{gate}: {state} (último conhecido)"
+    },
     "sub": {
       "totalChanged": "Total: {total} passos (eram {was}) — {n} adicionado(s)",
       "delivered": "Entregue — aguardando seu fechamento"
@@ -4493,6 +4511,7 @@
       "checks": "Marque a checagem pendente em {steps}. | Marque as {count} checagens pendentes em {steps}.",
       "humanSteps": "Confirme o passo humano: {steps}. | Confirme os passos humanos: {steps}.",
       "reviewImport": "Revise o fim importado — ele é provisório até você aprovar um re-escopo.",
+      "mainRed": "main está vermelha após #{pr} — {step} foi mergeado, mas o commit de merge falha no CI da main.",
       "approvals": "Responda às aprovações pendentes ({count}) de {session} no Approval Inbox.",
       "needsInput": "{session} está esperando por você — abra e responda.",
       "more": "+{n} a mais",

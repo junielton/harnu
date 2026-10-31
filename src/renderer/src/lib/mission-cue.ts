@@ -100,6 +100,7 @@ function keyOf(item: MissionYouItem): [OwedKey, number] | null {
       return ['human-steps', item.stepIds.length]
     case 'review-import':
       return ['review-import', 1]
+    case 'main-red':
     case 'approvals':
     case 'needs-input':
       return null

@@ -16,6 +16,7 @@ import { promisify } from 'node:util'
 import { ipcMain } from 'electron'
 import { spawnEnvOnce } from './appimage-env'
 import { isOpenPrViewJson, matchPrLinkToRemote } from './github-remote'
+import { ciOfRuns, type CiRun, type GateCi } from './mission-gates'
 import { readPrefs, writePrefs, type PrStackPrefs } from './pr-stack-prefs'
 import { GH_PR_LIST_OPTS } from './reaper/scan-core'
 import {
@@ -431,6 +432,82 @@ export async function findPrsForWorktrees(
   const numbers: Record<number, PrEntry | null> = {}
   for (const n of refs.numbers) numbers[n] = prs.find((p) => p.number === n) ?? null
   return { ghAvailable, worktrees, branches, numbers }
+}
+
+/** Per `repo#number`: the main-CI lookup in flight or last landed (60 s, failures not kept). */
+const mainCiCache = new Map<string, { settledAt: number | null; result: Promise<GateCi | null> }>()
+
+/** CI of PR `number`'s merge commit on the default branch; `null` when it cannot be read. */
+async function mainCiOf(repoPath: string, number: number): Promise<GateCi | null> {
+  const view = await runFile('gh', ['pr', 'view', String(number), '--json', 'mergeCommit'], {
+    ...GH_OPTS,
+    cwd: repoPath
+  })
+  const oid = (JSON.parse(view.stdout) as { mergeCommit?: { oid?: unknown } | null }).mergeCommit
+    ?.oid
+  if (typeof oid !== 'string' || oid.length === 0) return null
+  const runs = await runFile(
+    'gh',
+    ['run', 'list', '--commit', oid, '--limit', '30', '--json', 'status,conclusion'],
+    { ...GH_OPTS, cwd: repoPath }
+  )
+  return ciOfRuns(JSON.parse(runs.stdout) as CiRun[])
+}
+
+/**
+ * Campaign spec §3.2 `main` gate — the CI status of each merged PR's merge commit
+ * on the default branch (`gh pr view --json mergeCommit`, then the workflow runs of
+ * that commit). Degrades like {@link findPrsForWorktrees}: `gh` absent or failing is
+ * `ghAvailable: false` with no answers, never a throw, so the caller reads its sticky
+ * last-known value. `waitMs` bounds how long THIS call waits; the lookup keeps running
+ * and lands in the 60 s cache.
+ */
+export async function findMainCi(
+  repoPath: string,
+  numbers: readonly number[],
+  opts: { waitMs?: number } = {}
+): Promise<{ ghAvailable: boolean | null; byNumber: Record<number, GateCi | null> }> {
+  if (numbers.length === 0) return { ghAvailable: null, byNumber: {} }
+  const repo = path.resolve(repoPath)
+  const byNumber: Record<number, GateCi | null> = {}
+  let failed = false
+  const one = async (n: number): Promise<void> => {
+    const key = `${repo}#${n}`
+    const hit = mainCiCache.get(key)
+    let entry = hit
+    if (!hit || (hit.settledAt !== null && Date.now() - hit.settledAt >= PR_CACHE_TTL_MS)) {
+      const fresh = { settledAt: null as number | null, result: mainCiOf(repo, n) }
+      mainCiCache.set(key, fresh)
+      void fresh.result.then(
+        () => {
+          fresh.settledAt = Date.now()
+        },
+        () => {
+          if (mainCiCache.get(key) === fresh) mainCiCache.delete(key)
+        }
+      )
+      entry = fresh
+    }
+    try {
+      byNumber[n] = await entry!.result
+    } catch {
+      failed = true
+    }
+  }
+  const all = Promise.all(numbers.map(one))
+  if (opts.waitMs === undefined) await all
+  else {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<'late'>((resolve) => {
+      timer = setTimeout(() => resolve('late'), opts.waitMs)
+    })
+    try {
+      if ((await Promise.race([all.then(() => 'done' as const), late])) === 'late') failed = true
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  return { ghAvailable: !failed, byNumber: failed ? {} : byNumber }
 }
 
 /** A `gh`/`git` round-trip for a link click must not stall the click for long. */

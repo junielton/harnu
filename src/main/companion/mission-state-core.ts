@@ -90,6 +90,8 @@ function youText(y: MissionYouItem): { kind: string; text: string } {
       return { kind: y.kind, text: line(`tick ${y.stepIds.join(', ')}`) }
     case 'review-import':
       return { kind: y.kind, text: 'review the imported end' }
+    case 'main-red':
+      return { kind: y.kind, text: `main is red after #${y.pr}` }
     case 'approvals':
       return { kind: y.kind, text: `${plural(y.count, 'approval')} parked` }
     case 'needs-input':

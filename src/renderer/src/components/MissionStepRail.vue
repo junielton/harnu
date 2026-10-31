@@ -27,6 +27,7 @@ import {
   formatDuration,
   OPERATOR_VERIFIER_ID,
   pulseText,
+  type GateDot,
   type MissionModel,
   type StepModel,
   type StepPrModel,
@@ -63,6 +64,28 @@ const VISUAL_KEY: Record<StepVisual, string> = {
   blocked: 'blocked',
   todo: 'todo',
   'left-behind': 'leftBehind'
+}
+
+/**
+ * Gate dots (design.md §6 "Mission progress" → Gate dots; campaign spec §3.2). One
+ * 7px ring per fact, tokens only: green/red fill, a half-filled accent ring that
+ * pulses while it is in progress, a hollow ring when there is no signal yet, a
+ * dashed faint ring when the gate does not apply.
+ */
+const GATE_DOT_CLASS: Record<GateDot['state'], string> = {
+  green: 'border-green bg-green',
+  red: 'border-red bg-red',
+  running:
+    'anim-tick-pulse border-accent bg-linear-to-r from-accent from-50% to-transparent to-[50%]',
+  off: 'border-text-4',
+  na: 'border-dashed border-text-4 opacity-50'
+}
+
+function gateTitle(s: StepModel, g: GateDot): string {
+  return t(s.gatesStale ? 'mission.gates.tooltipStale' : 'mission.gates.tooltip', {
+    gate: t(`mission.gates.name.${g.name}`),
+    state: t(`mission.gates.state.${g.state}`)
+  })
 }
 
 function labelClass(s: StepModel): string {
@@ -265,6 +288,26 @@ function onCheckChange(stepId: string, checkId: string, e: Event): void {
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center" style="gap: 6px; row-gap: 4px">
           <span :class="labelClass(s)" style="font-size: 12.5px">{{ s.step.title }}</span>
+          <span
+            class="inline-flex items-center"
+            style="gap: 4px"
+            role="group"
+            :aria-label="$t('mission.gates.label')"
+            data-gates
+          >
+            <span
+              v-for="g in s.gates"
+              :key="g.name"
+              class="shrink-0 rounded-full border-[1.5px]"
+              :class="GATE_DOT_CLASS[g.state]"
+              style="width: 7px; height: 7px"
+              role="img"
+              :title="gateTitle(s, g)"
+              :aria-label="gateTitle(s, g)"
+              :data-gate="g.name"
+              :data-state="g.state"
+            />
+          </span>
           <span
             v-if="s.added"
             class="mission-badge border-accent-line bg-accent-soft text-accent"

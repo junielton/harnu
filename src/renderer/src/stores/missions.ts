@@ -98,6 +98,8 @@ function owedWhat(view: MissionView): string {
       )
     case 'review-import':
       return t('mission.you.reviewImport')
+    case 'main-red':
+      return t('mission.you.mainRed', { pr: item.pr, step: stepTitles(view, [item.stepId]) })
     default:
       return t('mission.state.needsYou')
   }

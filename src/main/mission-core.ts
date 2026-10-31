@@ -107,6 +107,44 @@ export interface LegacyImport {
   needsReview: 'declaredEnd'[]
 }
 
+/**
+ * Campaign spec §3.2 — the eight events Harnu itself records on a mission. Order is
+ * the order the spec lists them; a row's `kind` is validated against it on every
+ * write, so a stray string can never land in the ledger.
+ */
+export const LEDGER_KINDS = [
+  'dispatched',
+  'worktree',
+  'pr-opened',
+  'pr-merged',
+  'ci',
+  'verified',
+  'session-died',
+  'compaction'
+] as const
+export type LedgerKind = (typeof LEDGER_KINDS)[number]
+
+/**
+ * Campaign spec §3.2 — one row of what Harnu did or observed. Written server-side
+ * only (the create_session / create_worktree / submit_manifest handlers, link
+ * resolution, the verifier verdict, the compaction hook); no verb takes a row as an
+ * argument and the only operation is append.
+ */
+export interface LedgerRow {
+  at: string
+  kind: LedgerKind
+  /** The step the event belongs to, when one could be named. */
+  stepId?: string
+  /** The thing the event is about: a session id, a worktree path, `#<pr>`, a card slug. */
+  ref: string
+  sessionId?: string
+  worktree?: string
+  branch?: string
+  pr?: number
+  /** A short fact: the CI state, the verdict, the folder. */
+  detail?: string
+}
+
 /** design.md §1.1 — one mission, stored as one `.harnu/missions/<id>-<slug>.md`. */
 export interface Mission {
   id: string
@@ -155,6 +193,8 @@ export interface Mission {
   legacy?: LegacyImport
   /** design.md §9 — that legacy file's full content, byte-for-byte (the no-loss guarantee). */
   legacyRaw?: string
+  /** Campaign spec §3.2 — what Harnu did and saw, append-only. Absent until the first event. */
+  ledger?: LedgerRow[]
 }
 
 // ---- Validation schemas (one per interface, typed against it) ---------------
@@ -199,6 +239,20 @@ const CheckSchema: z.ZodType<Check> = z
     source: z.enum(['agent', 'operator', 'verifier']),
     createdAt: z.string(),
     ticked: z.object({ at: z.string() }).passthrough().optional()
+  })
+  .passthrough()
+
+const LedgerRowSchema: z.ZodType<LedgerRow> = z
+  .object({
+    at: z.string(),
+    kind: z.enum(LEDGER_KINDS),
+    stepId: z.string().optional(),
+    ref: z.string(),
+    sessionId: z.string().optional(),
+    worktree: z.string().optional(),
+    branch: z.string().optional(),
+    pr: z.number().int().optional(),
+    detail: z.string().optional()
   })
   .passthrough()
 
@@ -269,7 +323,8 @@ const MissionSchema: z.ZodType<Mission> = z
         needsReview: z.array(z.enum(['declaredEnd']))
       })
       .optional(),
-    legacyRaw: z.string().optional()
+    legacyRaw: z.string().optional(),
+    ledger: z.array(LedgerRowSchema).optional()
   })
   .passthrough()
 

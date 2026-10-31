@@ -42,13 +42,26 @@ import { addTaskEventObserver, getTaskStates } from '../hook-bridge'
 import { lastSubagentActivity } from '../subagent-activity'
 import { buildStepPulse, withHelperActivity, type MissionStepPulse } from '../mission-pulse'
 import { listPendingApprovals } from '../approval-resolver'
-import { findPrsForWorktrees, type MissionPrJoin } from '../pr-stack'
+import { findMainCi, findPrsForWorktrees, type MissionPrJoin } from '../pr-stack'
 import {
+  addObservedLedger,
   ensureLinkCacheLoaded,
   forgetResolved,
   getLastKnown,
+  getObservedLedger,
   rememberResolved
 } from '../mission-link-cache'
+import { computeStepGates, type GateCi, type GatePrFacts, type StepGates } from '../mission-gates'
+import {
+  appendLedgerRow,
+  hasLedgerRow,
+  lastLedgerDetail,
+  ledgerTail,
+  mergeLedger,
+  pickLedgerTargets,
+  type LedgerHints,
+  type LedgerRowInput
+} from '../mission-ledger'
 import type { PrEntry } from '../pr-stack-core'
 import { getScreenStates, getShellSessions } from '../detect/screen-detect'
 import {
@@ -135,6 +148,7 @@ import { hibernatedKeys, isHibernated } from '../hibernation'
 import {
   applyAddCheck,
   buildMissionFileContent,
+  type LedgerRow,
   CHECK_LABEL_MAX,
   createMissionFile,
   OPERATOR_VERIFIER,
@@ -994,12 +1008,33 @@ const createSessionHandler: Handler = async (args, ctx) => {
     release: (f) => releaseInFlight(f),
     deadlineFired: () => ctx.deadlineFlag?.fired === true
   }
-  return runCreateSession(
+  const res = await runCreateSession(
     folder,
     payload,
     { effectiveModel: resolvedBoot.effectiveModel, effectiveEffort: resolvedBoot.effectiveEffort },
     deps
   )
+  // Campaign spec §3.2: the dispatch is a ledger event — written here, once, on success.
+  const sessionId = createdSessionId(res)
+  if (sessionId) {
+    await recordLedgerEvent(folder, { folder }, { kind: 'dispatched', ref: sessionId, sessionId })
+  }
+  return res
+}
+
+/** The session id a successful `create_session` ACK names (materialized, else synthetic). */
+function createdSessionId(res: CallToolResult): string | null {
+  if (res.isError) return null
+  const first = res.content[0]
+  if (!first || first.type !== 'text') return null
+  try {
+    const ack = asRecord(JSON.parse(first.text))
+    if (ack.ok !== true) return null
+    const result = asRecord(ack.result)
+    return strField(result, 'sessionId') ?? strField(result, 'syntheticId') ?? null
+  } catch {
+    return null
+  }
 }
 
 /** Whether Harnu knows `sessionId`: the scan, or either in-flight registry (a live born-synthetic). */
@@ -1465,6 +1500,12 @@ const createWorktreeHandler: Handler = async (args, ctx) => {
         ? { inherit: { optedOut: ctx.opts.worktreeInherit.optedOut } }
         : {})
     })
+    // Campaign spec §3.2: the cut is a ledger event, written once the worktree exists.
+    await recordLedgerEvent(
+      ctx.folder,
+      { folder: result.path, branch: result.branch },
+      { kind: 'worktree', ref: result.path, worktree: result.path, branch: result.branch }
+    )
     // T64/BUG-12: echo the base the worktree was actually cut from (the passed
     // folder's HEAD, not the main checkout's) + the branch, so the agent has
     // proprioception for stacked fan-out instead of a silently wrong base.
@@ -2206,6 +2247,14 @@ async function stampManifestAndAck(
     substrateOverrides
   )
   const skipped = resolved.map((r) => r.slug).filter((slug) => !selectedSlugs.includes(slug))
+  // Campaign spec §3.2: each stamped card drains into a dispatch — one ledger row per card.
+  for (const slug of stampResult.stamped) {
+    await recordLedgerEvent(
+      folder,
+      { card: slug },
+      { kind: 'dispatched', ref: slug, detail: 'manifest' }
+    )
+  }
   pushShadowEntry({
     sessionId: '',
     event: shadow.event,
@@ -3734,6 +3783,8 @@ export type MissionYouItem =
   | { kind: 'checks'; count: number; stepIds: string[] }
   | { kind: 'human-steps'; stepIds: string[] }
   | { kind: 'review-import' }
+  /** Campaign spec §3.2 — a step is done, its PR merged, and the merge commit's CI on main is red. */
+  | { kind: 'main-red'; stepId: string; pr: number }
   | { kind: 'approvals'; count: number; sessionId: string }
   | { kind: 'needs-input'; sessionId: string }
 
@@ -3749,7 +3800,9 @@ export type MissionYouItem =
 export function youItems(
   m: Mission,
   children: readonly MissionChildState[],
-  progress: MissionProgress
+  progress: MissionProgress,
+  /** The derived steps, for the gates (campaign spec §3.2); omitted = no gate items. */
+  steps: readonly Pick<MissionStepSignals, 'stepId' | 'gates' | 'prNumber'>[] = []
 ): MissionYouItem[] {
   if (m.status === 'closed') return []
   const items: MissionYouItem[] = []
@@ -3783,6 +3836,18 @@ export function youItems(
     .map((s) => s.id)
   if (humans.length > 0) items.push({ kind: 'human-steps', stepIds: humans })
   if (m.legacy?.needsReview.includes('declaredEnd')) items.push({ kind: 'review-import' })
+  // A red main after a merge downgrades nothing stored — the step stays as it was —
+  // but it is the operator's to know about (campaign spec §8 AC-1).
+  for (const st of steps) {
+    const state = progress.states[st.stepId]
+    if (
+      st.gates.main === 'red' &&
+      st.prNumber !== null &&
+      (state === 'done' || state === 'verified')
+    ) {
+      items.push({ kind: 'main-red', stepId: st.stepId, pr: st.prNumber })
+    }
+  }
   for (const c of children) {
     if (c.pendingApprovals > 0) {
       items.push({ kind: 'approvals', count: c.pendingApprovals, sessionId: c.sessionId })
@@ -3810,6 +3875,8 @@ function youSentence(item: MissionYouItem): string {
       return `Confirm the human step${s(item.stepIds.length)} ${item.stepIds.join(', ')}.`
     case 'review-import':
       return 'Review the imported end — it is a placeholder until you approve a re-scope.'
+    case 'main-red':
+      return `main is red after #${item.pr} — ${item.stepId} is merged but its merge commit fails CI.`
     case 'approvals':
       return `Answer ${item.count} pending approval${s(item.count)} in the Approval Inbox — from linked session ${item.sessionId.slice(0, 8)}.`
     case 'needs-input':
@@ -3981,6 +4048,8 @@ export type MissionLinkSignal =
       url?: string
       /** The branch the PR merges INTO (Mission v2 §3.6); absent when the PR is unknown. */
       baseRefName?: string
+      /** Campaign spec §3.2 — CI of the PR head (live, or the last known when `stale`). */
+      ci?: GateCi
       /**
        * Mission v3 §3.7 — GitHub could not say (unreachable, or the PR is not
        * among the recent ones): the last-known state is shown, or, if the link
@@ -3988,6 +4057,47 @@ export type MissionLinkSignal =
        */
       stale?: true
     }
+
+/** A CI word from `pr-stack-core` (or the cache) as the gates' four states. */
+function gateCiOf(ci: string | undefined): GateCi {
+  return ci === 'passing' || ci === 'failing' || ci === 'pending' ? ci : 'unknown'
+}
+
+/**
+ * The PR a step's gates read, from its resolved links: a `pr` link first, else a PR
+ * joined through a linked worktree or card. An open or merged PR beats a closed one;
+ * among equals the newest number wins. `stale` = the values are last-known.
+ */
+function stepPrFacts(
+  links: readonly MissionLinkSignal[]
+): { facts: GatePrFacts; stale: boolean } | null {
+  const found: Array<{ facts: GatePrFacts; stale: boolean; direct: boolean }> = []
+  for (const l of links) {
+    if (l.kind === 'pr') {
+      if (l.number !== null && l.state !== undefined) {
+        found.push({
+          facts: { number: l.number, state: l.state, ci: l.ci ?? 'unknown' },
+          stale: l.stale === true,
+          direct: true
+        })
+      }
+    } else if (l.kind === 'worktree' || l.kind === 'card') {
+      for (const p of l.prs) {
+        if (p.state === 'OPEN' || p.state === 'MERGED' || p.state === 'CLOSED') {
+          found.push({
+            facts: { number: p.number, state: p.state, ci: gateCiOf(p.ci) },
+            stale: false,
+            direct: false
+          })
+        }
+      }
+    }
+  }
+  const rank = (f: { facts: GatePrFacts; direct: boolean }): number =>
+    (f.facts.state === 'CLOSED' ? 0 : 2) + (f.direct ? 1 : 0)
+  found.sort((a, b) => rank(b) - rank(a) || b.facts.number - a.facts.number)
+  return found.length > 0 ? { facts: found[0].facts, stale: found[0].stale } : null
+}
 
 export interface MissionStepSignals {
   stepId: string
@@ -3999,6 +4109,13 @@ export interface MissionStepSignals {
   existence: { proven: boolean; reason?: string } | null
   /** T547 — signs of movement inside the step: commits landed and the newest activity. */
   pulse: MissionStepPulse
+  /**
+   * Campaign spec §3.2 — the facts that prove the step: PR, CI, main CI, verifier,
+   * checks. Computed on every read, never stored; `stale: true` = last-known values.
+   */
+  gates: StepGates
+  /** The PR the gates read, or `null` when the step has none. */
+  prNumber: number | null
 }
 
 /** The PR number a `pr` link names: `owner/repo#123`, `#123`, `123` or a `/pull/123` URL. */
@@ -4180,6 +4297,142 @@ async function missionChildren(
   return projected.map((c) => withHelperActivity(c, lastSubagentActivity(c.sessionId), now))
 }
 
+/** How long `mission_get` waits for a merged PR's merge-commit CI before reading last-known. */
+const MAIN_CI_GET_WAIT_MS = 3000
+/** A merge commit that has been green this long is not asked about again. */
+const MAIN_CI_FINAL_AFTER_MS = 30 * 60 * 1000
+
+/**
+ * CI of each merged PR's merge commit on the default branch (campaign spec §3.2
+ * `main` gate), sticky: a result that has stayed green for {@link MAIN_CI_FINAL_AFTER_MS}
+ * is final and not asked again, everything else is re-checked (`findMainCi` caches for
+ * 60 s), and an unreachable GitHub — or a lookup still running past `waitMs` — reads
+ * the last-known value (`stale: true`) or nothing. The lookup itself keeps running and
+ * lands in the cache, so the next read has it. `pending` is live-only — never remembered.
+ */
+async function resolveMainCi(
+  root: string,
+  numbers: readonly number[],
+  ghAvailable: boolean | null,
+  waitMs: number
+): Promise<Map<number, { ci: GateCi | null; stale: boolean }>> {
+  const out = new Map<number, { ci: GateCi | null; stale: boolean }>()
+  const ask: number[] = []
+  for (const n of numbers) {
+    const known = getLastKnown(root, 'pr-main', String(n))
+    if (known?.state === 'passing' && Date.now() - Date.parse(known.at) > MAIN_CI_FINAL_AFTER_MS) {
+      out.set(n, { ci: 'passing', stale: false })
+    } else {
+      ask.push(n)
+    }
+  }
+  const live =
+    ask.length > 0 && ghAvailable !== false
+      ? await findMainCi(root, ask, { waitMs })
+      : { ghAvailable: false as boolean | null, byNumber: {} as Record<number, GateCi | null> }
+  for (const n of ask) {
+    const seen = live.ghAvailable ? live.byNumber[n] : undefined
+    if (seen !== undefined && seen !== null) {
+      if (seen === 'passing' || seen === 'failing') {
+        rememberResolved(root, 'pr-main', String(n), { state: seen, prNumber: n })
+      }
+      out.set(n, { ci: seen, stale: false })
+      continue
+    }
+    const known = getLastKnown(root, 'pr-main', String(n))
+    if (live.ghAvailable === false && known) {
+      out.set(n, { ci: gateCiOf(known.state), stale: true })
+    } else {
+      out.set(n, { ci: null, stale: false })
+    }
+  }
+  return out
+}
+
+/** `taskState`s of a session whose process has ended — the ledger's `session-died`. */
+const SESSION_DEATH_STATES: ReadonlySet<string> = new Set(['completed', 'failed', 'stopped'])
+/** `taskState`s that prove a session is alive right now. */
+const SESSION_ALIVE_STATES: ReadonlySet<string> = new Set(['working', 'needs-input', 'idle'])
+/**
+ * Linked sessions seen alive by a read in this process. A session whose PTY is gone has
+ * no disclosed `taskState` at all (the hook state is hidden without a live PTY), so its
+ * death is "alive before, no state now" — which needs the "before". The ledger's own
+ * `dispatched` row is the same evidence across a restart.
+ */
+const seenAlive = new Set<string>()
+const SEEN_ALIVE_MAX = 2000
+
+/**
+ * Campaign spec §3.2 — record what this read OBSERVED: a PR opened or merged, a CI
+ * change, a linked builder ending. Only a new fact appends a row (deduped against the
+ * ledger so far, file rows and observed rows together), so N reads of an unchanged
+ * world record nothing. The rows go to the link-cache sidecar, never to the mission
+ * file: a read does not rewrite it (Mission v3 §3.7). Synchronous on purpose — the
+ * check and the insert share one tick, so two concurrent reads cannot both add a row.
+ */
+function observeLedger(
+  mission: Mission,
+  steps: readonly MissionStepSignals[],
+  prByStep: ReadonlyArray<{ facts: GatePrFacts } | null>,
+  now: number
+): void {
+  if (mission.status === 'closed') return
+  const at = new Date(now).toISOString()
+  const seen = { ledger: mergeLedger(mission.ledger, getObservedLedger(mission.id)) }
+  const added: LedgerRow[] = []
+  const push = (row: LedgerRowInput): void => {
+    const full: LedgerRow = { at, ...row }
+    added.push(full)
+    seen.ledger.push(full)
+  }
+  steps.forEach((st, i) => {
+    const stepId = st.stepId
+    const facts = prByStep[i]?.facts
+    if (facts) {
+      const ref = `#${facts.number}`
+      if (facts.state === 'OPEN' && !hasLedgerRow(seen, 'pr-opened', ref)) {
+        push({ kind: 'pr-opened', stepId, ref, pr: facts.number })
+      }
+      if (facts.state === 'MERGED' && !hasLedgerRow(seen, 'pr-merged', ref)) {
+        push({ kind: 'pr-merged', stepId, ref, pr: facts.number })
+      }
+      if (
+        facts.ci !== 'unknown' &&
+        lastLedgerDetail(seen, 'ci', ref) !== facts.ci &&
+        facts.state !== 'CLOSED'
+      ) {
+        push({ kind: 'ci', stepId, ref, pr: facts.number, detail: facts.ci })
+      }
+    }
+    for (const c of st.children) {
+      if (c.sessionId === mission.owner.sessionId || !c.known) continue
+      if (c.taskState !== undefined && SESSION_ALIVE_STATES.has(c.taskState)) {
+        seenAlive.add(c.sessionId)
+        if (seenAlive.size > SEEN_ALIVE_MAX) {
+          const oldest = seenAlive.values().next().value
+          if (oldest !== undefined) seenAlive.delete(oldest)
+        }
+        continue
+      }
+      if (hasLedgerRow(seen, 'session-died', c.sessionId)) continue
+      // Parked and still-spawning sessions are not dead; a session with no state and
+      // no process is, once it is known to have lived.
+      const exited = c.taskState === undefined && !c.hibernated && !c.inflight
+      const ended = c.taskState !== undefined && SESSION_DEATH_STATES.has(c.taskState)
+      const wasAlive = seenAlive.has(c.sessionId) || hasLedgerRow(seen, 'dispatched', c.sessionId)
+      if (!ended && !(exited && wasAlive)) continue
+      push({
+        kind: 'session-died',
+        stepId,
+        ref: c.sessionId,
+        sessionId: c.sessionId,
+        detail: c.taskState ?? 'exited'
+      })
+    }
+  })
+  addObservedLedger(mission.id, added)
+}
+
 /**
  * Derive design §7's live signals for one mission: each step's linked children
  * (scoped projection), its worktree/card/pr links joined to commits and PRs
@@ -4193,7 +4446,7 @@ export async function deriveMissionSignals(
   ctx: ToolHandlerCtx,
   now: number,
   /** `prWaitMs`: how long to wait for GitHub before reading the sticky last-known states. */
-  opts: { prWaitMs?: number } = {}
+  opts: { prWaitMs?: number; mainCiWaitMs?: number } = {}
 ): Promise<{ derived: MissionDerived; children: MissionChildState[] }> {
   const scopeLinks = missionScope(mission)
   const links = [...mission.steps.flatMap((s) => s.links), ...(mission.scope ?? [])]
@@ -4308,6 +4561,9 @@ export async function deriveMissionSignals(
             url: pr.url,
             baseRefName: pr.base
           })
+          if (pr.ci === 'passing' || pr.ci === 'failing') {
+            rememberResolved(root, 'pr-ci', String(number), { state: pr.ci, prNumber: number })
+          }
         } else {
           // Closed unmerged: the one contrary observation that downgrades.
           forgetResolved(root, 'pr', String(number))
@@ -4319,7 +4575,8 @@ export async function deriveMissionSignals(
           exists: pr.state === 'OPEN' || pr.state === 'MERGED',
           state: pr.state,
           url: pr.url,
-          baseRefName: pr.base
+          baseRefName: pr.base,
+          ci: gateCiOf(pr.ci)
         }
       }
       // gh unreachable, or the PR is not among the recent ones: unknown.
@@ -4333,6 +4590,7 @@ export async function deriveMissionSignals(
         state: known.state as PrEntry['state'],
         ...(known.url ? { url: known.url } : {}),
         ...(known.baseRefName ? { baseRefName: known.baseRefName } : {}),
+        ci: gateCiOf(getLastKnown(root, 'pr-ci', String(number))?.state),
         stale: true
       }
     }
@@ -4355,7 +4613,7 @@ export async function deriveMissionSignals(
       ? { proven: false, reason: unfitReason(scopeUnfit) }
       : existenceOf(scopeResolved, join.ghAvailable)
   }
-  const steps = mission.steps.map((s): MissionStepSignals => {
+  const stepRows = mission.steps.map((s): Omit<MissionStepSignals, 'gates' | 'prNumber'> => {
     const resolved = s.links.map(resolve).filter((l): l is MissionLinkSignal => l !== null)
     const unfit = s === fixedStart ? unfitOf(resolved) : undefined
     const stepChildren = s.links
@@ -4377,6 +4635,29 @@ export async function deriveMissionSignals(
             : existenceOf(resolved, join.ghAvailable)
     }
   })
+  // Campaign spec §3.2 — the gates: the PR, its CI and the CI of its merge commit on
+  // the default branch, read once per merged PR and kept sticky like every other fact.
+  const prByStep = stepRows.map((st) => stepPrFacts(st.links))
+  const mergedNumbers = [
+    ...new Set(prByStep.flatMap((f) => (f?.facts.state === 'MERGED' ? [f.facts.number] : [])))
+  ]
+  const mainCi = await resolveMainCi(root, mergedNumbers, join.ghAvailable, opts.mainCiWaitMs ?? 0)
+  const steps = stepRows.map((st, i): MissionStepSignals => {
+    const found = prByStep[i]
+    const merged = found?.facts.state === 'MERGED'
+    const main = merged ? mainCi.get(found.facts.number) : undefined
+    const step = mission.steps[i]
+    return {
+      ...st,
+      prNumber: found?.facts.number ?? null,
+      gates: computeStepGates({
+        step,
+        pr: found?.facts ?? null,
+        mainCi: main?.ci ?? null,
+        stale: found?.stale === true || main?.stale === true
+      })
+    }
+  })
   // T547: a commit landing on a linked worktree is evidence the work moves, even
   // while the child session itself reads idle.
   const commitEvidence = steps.flatMap((st) =>
@@ -4393,6 +4674,7 @@ export async function deriveMissionSignals(
     now
   )
   rememberProgress(mission.id, progress)
+  observeLedger(mission, steps, prByStep, now)
   return {
     children,
     derived: {
@@ -4435,6 +4717,84 @@ export async function readAllMissions(root: string): Promise<{
     else unreadable.push(entry.name)
   }
   return { missions, unreadable }
+}
+
+/**
+ * Campaign spec §3.2 — append one ledger row to each target mission, under its lock.
+ * The ledger is Harnu's own record, so this is called by the handlers that DO the
+ * thing (never from a verb argument), and it never fails the action it describes:
+ * a mission that cannot be read or written is skipped with a warning. The append also
+ * stamps `updatedAt` — a dispatch is real evidence the mission is moving (the stall
+ * rule's input). A closed mission is a record and never receives a row.
+ */
+async function appendLedgerTo(
+  root: string,
+  targets: readonly { missionId: string; stepId?: string }[],
+  row: LedgerRowInput
+): Promise<void> {
+  for (const t of targets) {
+    try {
+      await withMissionIdMintLock(t.missionId, async () => {
+        const loaded = await loadMission(root, t.missionId)
+        if (!loaded.ok || loaded.mission.status === 'closed') return
+        const at = new Date().toISOString()
+        const next: Mission = {
+          ...appendLedgerRow(
+            loaded.mission,
+            { ...row, ...(t.stepId ? { stepId: t.stepId } : {}) },
+            at
+          ),
+          updatedAt: at
+        }
+        await atomicWriteFile(loaded.file, buildMissionFileContent(next, loaded.log), 0o644)
+      })
+    } catch (err) {
+      console.warn(`[mission-ledger] could not record ${row.kind} on ${t.missionId}:`, err)
+    }
+  }
+}
+
+/** The open missions of `folder`'s repo, without creating a data dir where there is none. */
+async function openMissionsOf(root: string): Promise<Mission[]> {
+  if (!(await pathExists(missionsDir(root)))) return []
+  return (await readAllMissions(root)).missions
+    .map((m) => m.mission)
+    .filter((m) => m.status !== 'closed')
+}
+
+/**
+ * Campaign spec §3.2 — record a write-time event (dispatch, worktree cut, manifest
+ * drain) on the mission it belongs to: the one whose step links the worktree or card,
+ * else the repo's only open mission. Best-effort; never throws.
+ */
+export async function recordLedgerEvent(
+  folder: string,
+  hints: LedgerHints,
+  row: LedgerRowInput
+): Promise<void> {
+  try {
+    const root = missionRoot(folder)
+    const missions = await openMissionsOf(root)
+    await appendLedgerTo(root, pickLedgerTargets(missions, hints), row)
+  } catch (err) {
+    console.warn(`[mission-ledger] could not record ${row.kind}:`, err)
+  }
+}
+
+/**
+ * Campaign spec §3.2 — a session's context was compacted: note it on the open
+ * mission(s) that session OWNS. Called by the compaction hook (chapter 5 installs it).
+ */
+export async function recordMissionCompaction(folder: string, sessionId: string): Promise<void> {
+  try {
+    const root = missionRoot(folder)
+    const owned = (await openMissionsOf(root))
+      .filter((m) => m.owner.sessionId === sessionId)
+      .map((m) => ({ missionId: m.id }))
+    await appendLedgerTo(root, owned, { kind: 'compaction', ref: sessionId, sessionId })
+  } catch (err) {
+    console.warn('[mission-ledger] could not record compaction:', err)
+  }
 }
 
 /** One readable mission copy with the repo root it was read from. */
@@ -4554,11 +4914,18 @@ const missionGetHandler: Handler = async (args, ctx) => {
   // design §3/§8: `active ↔ stale` is derived on every read and NEVER written back —
   // the stored status stays `active`, so nothing that reads it (S2's never-park
   // exemption) loses a mission exactly when it stalls.
-  const { derived, children } = await deriveMissionSignals(root, mission, log, ctx, Date.now())
-  const items = youItems(mission, children, derived.progress)
+  // An agent reading one mission waits a moment for the merge-commit CI of a merged PR;
+  // the 20 s polls do not (the lookup runs on and lands in the cache for the next read).
+  const { derived, children } = await deriveMissionSignals(root, mission, log, ctx, Date.now(), {
+    mainCiWaitMs: MAIN_CI_GET_WAIT_MS
+  })
+  const items = youItems(mission, children, derived.progress, derived.steps)
   // design §9: an imported mission's legacyRaw (up to the whole legacy file) is
-  // left out of the projection — every tick reads this — and pointed at instead.
-  const { legacyRaw, ...projected } = mission
+  // left out of the projection — every tick reads this — and pointed at instead. The
+  // ledger is left out too: the tail below is the read (campaign spec §3.2).
+  const { legacyRaw, ledger: _ledger, ...projected } = mission
+  void _ledger
+  const ledger = mergeLedger(mission.ledger, getObservedLedger(mission.id))
   return textResult({
     ok: true,
     op: 'mission_get',
@@ -4569,6 +4936,9 @@ const missionGetHandler: Handler = async (args, ctx) => {
     title: missionTitle(log, mission.slug),
     log,
     derived,
+    // Campaign spec §3.2: what Harnu did and saw, last 20 rows (oldest first) + the total.
+    ledger: ledgerTail({ ledger }),
+    ledgerCount: ledger.length,
     // Mission v3 §3.12: the ordered list, and its first item as the one line.
     you: youLine(items),
     youItems: items,
@@ -4610,6 +4980,8 @@ const missionListHandler: Handler = async (_args, ctx) => {
       claimed: progressSteps(m).filter((s) => s.proof === 'claimed').length
     },
     blocked: m.blockers.length > 0 || m.steps.some((s) => s.blockers.length > 0),
+    // Campaign spec §3.2: how many rows the ledger holds; mission_get returns the tail.
+    ledgerCount: mergeLedger(m.ledger, getObservedLedger(m.id)).length,
     updatedAt: m.updatedAt
   }))
   return textResult({
@@ -5120,6 +5492,13 @@ const missionVerifyStepHandler: Handler = async (args, ctx) => {
     // keeps its label — and the human part becomes a check on the step.
     step.proof = verdict === 'met' || verdict === 'needs-human' ? label : 'unproven'
     step.verifiedBy = { sessionId: callerId, at, verdict }
+    // Campaign spec §3.2: the verdict is a ledger event, written here — not by an argument.
+    const withVerdict = (mm: Mission): Mission =>
+      appendLedgerRow(
+        mm,
+        { kind: 'verified', stepId, ref: callerId, sessionId: callerId, detail: verdict },
+        at
+      )
     if (verdict === 'needs-human') {
       try {
         m = applyAddCheck(m, stepId, checkLabel, 'verifier', at)
@@ -5129,7 +5508,7 @@ const missionVerifyStepHandler: Handler = async (args, ctx) => {
     }
     return {
       ok: true,
-      mission: m,
+      mission: withVerdict(m),
       ack: { ok: true, op: 'mission_verify_step', stepId, proof: step.proof, verdict },
       logAppend: `\n### ${at} · ${stepId} · ${step.proof} (${verdict}) by ${callerId}\n\n${evidence}\n`
     }
