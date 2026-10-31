@@ -43,7 +43,6 @@ import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import CampaignGateDots from './CampaignGateDots.vue'
 import MissionStepGlyph from './MissionStepGlyph.vue'
-import Button from './ui/Button.vue'
 
 const { t } = useI18n()
 const ui = useUiStore()
@@ -155,7 +154,7 @@ function subText(row: CampaignChapterRow): string {
     const what = [...w.chapters.map((n) => t('campaign.map.waitsForChapter', { n })), ...w.tokens]
     return what.length > 0 ? t('campaign.map.waitsFor', { what: what.join(', ') }) : ''
   }
-  return currentStep(row)?.step.title ?? row.missionView?.title ?? ''
+  return currentStep(row)?.step.title ?? row.missionView?.mission.declaredEnd.target ?? ''
 }
 
 /** The gates a tile shows: the current step's, else the last counted step's before the end. */
@@ -529,7 +528,7 @@ const focusEmpty = computed(() => {
               />
               <span class="min-w-0" style="line-height: 1.35"
                 >{{ youText(y) }}
-                <span class="text-text-4" style="margin-left: 4px">{{
+                <span class="whitespace-nowrap text-text-4" style="margin-left: 4px">{{
                   $t('campaign.you.chapterTag', { n: y.chapterOrdinal })
                 }}</span></span
               >
@@ -633,16 +632,22 @@ const focusEmpty = computed(() => {
           <!-- chapter-focus: the clicked chapter's mission steps with their gate dots. -->
           <div
             v-else
-            class="rounded border border-accent-line bg-surface"
+            class="@container rounded border border-accent-line bg-surface"
             data-test="campaign-map-focus"
           >
             <div
               class="flex items-center border-b border-border"
               style="gap: 8px; padding: 6px 10px"
             >
-              <Button data-test="campaign-map-focus-back" @click="focusId = null">
-                <ChevronLeft :size="12" :stroke-width="2" />{{ $t('campaign.map.focus.back') }}
-              </Button>
+              <button
+                type="button"
+                class="inline-flex shrink-0 cursor-pointer items-center whitespace-nowrap rounded-sm border border-border-2 bg-surface text-text-2 hover:bg-surface-2 hover:text-text"
+                style="height: 20px; gap: 4px; padding: 0 8px; font-size: 11px; font-weight: 500"
+                data-test="campaign-map-focus-back"
+                @click="focusId = null"
+              >
+                <ChevronLeft :size="11" :stroke-width="2" />{{ $t('campaign.map.focus.back') }}
+              </button>
               <span class="min-w-0 truncate" style="font-size: 12px; font-weight: 600"
                 ><template v-if="focus.chapter.required">{{ focus.chapter.ordinal }} · </template
                 >{{ focus.chapter.title }}</span
@@ -659,14 +664,9 @@ const focusEmpty = computed(() => {
               <div
                 v-for="(s, i) in focus.mission.steps"
                 :key="s.step.id"
-                class="grid items-center text-text-2"
+                class="grid grid-cols-[14px_14px_minmax(0,1fr)] items-center text-text-2 @[340px]:grid-cols-[14px_14px_minmax(0,1fr)_auto]"
                 :class="[i > 0 ? 'border-t border-border' : '', s.current ? 'bg-accent-soft' : '']"
-                style="
-                  grid-template-columns: 14px 14px minmax(0, 1fr) auto;
-                  gap: 6px;
-                  padding: 6px 10px;
-                  font-size: 11.5px;
-                "
+                style="gap: 3px 6px; padding: 6px 10px; font-size: 11.5px"
                 :aria-current="s.current ? 'step' : undefined"
                 data-objective
               >
@@ -686,7 +686,12 @@ const focusEmpty = computed(() => {
                   :title="s.step.title"
                   >{{ s.step.title }}</span
                 >
-                <CampaignGateDots :gates="s.gates" :stale="s.gatesStale" labels />
+                <CampaignGateDots
+                  :gates="s.gates"
+                  :stale="s.gatesStale"
+                  labels
+                  class="col-start-3 @[340px]:col-start-4"
+                />
               </div>
             </template>
             <div
