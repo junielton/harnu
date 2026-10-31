@@ -133,6 +133,8 @@ export function removeStewardHooks(existing: unknown): Settings {
 export const BRIEF_MAX_CHARS = 6000
 /** Budget for the step table; the declared end, blockers and ledger tail are never traded for it. */
 const STEPS_BUDGET = 2400
+/** Budget for the blockers block, so a pile of them cannot crowd out the step table or the ledger. */
+const BLOCKERS_BUDGET = 1100
 const LEDGER_ROWS = 8
 const TITLE_CHARS = 70
 
@@ -175,17 +177,30 @@ export function buildMissionBrief(input: {
     `Proof: ${clip(m.declaredEnd.evidence, 400)}`
   ]
 
-  const blockers = [
-    ...m.blockers.map(
-      (b) => `- mission [${b.owner}] ${clip(b.reason, 160)} → ${clip(b.unblocks, 120)}`
-    ),
-    ...m.steps.flatMap((s) =>
-      s.blockers.map(
-        (b) => `- ${s.id} [${b.owner}] ${clip(b.reason, 160)} → ${clip(b.unblocks, 120)}`
-      )
-    )
+  // Blockers have their own budget (spec: the declared end and the human's moves are never traded for
+  // the table). The operator's come first — they are what a person has to act on — then the agent's.
+  const allBlockers = [
+    ...m.blockers.map((b) => ({ b, where: 'mission' })),
+    ...m.steps.flatMap((s) => s.blockers.map((b) => ({ b, where: s.id })))
+  ].sort((a, c) => Number(c.b.owner === 'operator') - Number(a.b.owner === 'operator'))
+  const blockerLines: string[] = []
+  let blockerUsed = 0
+  for (const { b, where } of allBlockers) {
+    const line = `- ${where} [${b.owner}] ${clip(b.reason, 160)} → ${clip(b.unblocks, 120)}`
+    if (blockerUsed + line.length + 1 > BLOCKERS_BUDGET) break
+    blockerLines.push(line)
+    blockerUsed += line.length + 1
+  }
+  const blockerBlock = [
+    '',
+    '## Open blockers',
+    ...(allBlockers.length === 0 ? ['- none'] : blockerLines),
+    ...(blockerLines.length < allBlockers.length
+      ? [
+          `- … ${allBlockers.length - blockerLines.length} more open blockers — mission_get lists them`
+        ]
+      : [])
   ]
-  const blockerBlock = ['', '## Open blockers', ...(blockers.length > 0 ? blockers : ['- none'])]
 
   // Every step is listed with its gates. Only when the table would blow its budget do the finished
   // steps collapse into a count, so the budget is spent on what is still open.

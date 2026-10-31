@@ -251,4 +251,31 @@ describe('AC-5a.5 — the Mission Brief (≤ 1.5k tokens)', () => {
     expect(brief).toContain('#399') // newest ledger row survives
     expect(brief).not.toContain('#0 ') // oldest does not
   })
+
+  it('Delta 1: many blockers get their own cap and cannot push the step table or the ledger out of the budget', () => {
+    const blocker = (n: number, owner: 'agent' | 'operator') => ({
+      reason: `Blocker number ${n} with a long explanation of why this work cannot move right now ${'x'.repeat(120)}`,
+      unblocks: `Somebody does thing ${n} and then the whole chain of events can finally continue ${'y'.repeat(80)}`,
+      owner,
+      raisedAt: '2026-10-31T09:00:00.000Z'
+    })
+    const base = mission()
+    const many = mission({
+      blockers: Array.from({ length: 60 }, (_, i) => blocker(i, i === 59 ? 'operator' : 'agent')),
+      steps: base.steps.map((s, i) =>
+        i === 1
+          ? { ...s, blockers: Array.from({ length: 60 }, (_, k) => blocker(100 + k, 'agent')) }
+          : s
+      )
+    })
+    const brief = buildMissionBrief({ mission: many, title: 'Ship it' })
+    expect(brief.length).toBeLessThanOrEqual(BRIEF_MAX_CHARS)
+    expect(brief).toContain('every page migrated')
+    // The step table and the ledger tail survive whole.
+    expect(brief).toMatch(/stp-2[^\n]*Migrate the pages/)
+    expect(brief).toMatch(/ci[^\n]*#305[^\n]*red/)
+    // The blocker block says how much it left out, and the operator's blocker (the human's move) is kept.
+    expect(brief).toMatch(/\d+ more (open )?blockers/)
+    expect(brief).toContain('Blocker number 59')
+  })
 })

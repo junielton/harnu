@@ -250,6 +250,22 @@ let ready: Promise<void> = Promise.resolve()
 let storeLoaded = false
 
 /**
+ * Campaign ch.5a Delta 1: resolves once `initScheduler` has read the store into `workersCache`.
+ * Unlike {@link ready} (an already-resolved placeholder until `registerScheduler` runs), this stays
+ * PENDING until the load really happened — which is what a caller that may run before the Scheduler
+ * is registered (the hook bridge's boot reconcile) needs to wait on.
+ */
+let resolveSchedulerLoaded: () => void = () => {}
+const schedulerLoaded: Promise<void> = new Promise<void>((resolve) => {
+  resolveSchedulerLoaded = resolve
+})
+
+/** Wait for the Scheduler's store to have loaded. Pending until `registerScheduler` has run and loaded it. */
+export function whenSchedulerLoaded(): Promise<void> {
+  return schedulerLoaded
+}
+
+/**
  * Thrown by every write path that runs before the store has loaded. A typed
  * error, not a silent no-op: an invisible refusal would just trade one silent
  * failure for another, and the caller (an MCP verb, an IPC handler) has to be
@@ -672,6 +688,7 @@ async function initScheduler(): Promise<void> {
   // read, before anything that could await and let a write interleave. From
   // here on an empty `workersCache` means the operator owns zero workers.
   storeLoaded = true
+  resolveSchedulerLoaded()
   // BUG-166: every worker now carries an explicit `allowNetwork`, written back in the same write
   // that records the notice that is owed for it, so the two can never be split by a crash. The
   // notice is then delivered in the background, with retry (see deliverNetworkNotice).
