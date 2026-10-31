@@ -1,0 +1,1040 @@
+/* Shared anatomy for the Mission → Campaign exploration. var(--token) only.
+ * Mirrors design.md §6 "Mission progress" (pill, popover, step rail) so every variant
+ * starts from the real anatomy and differs by composition, never by values. */
+* {
+  box-sizing: border-box;
+}
+:root {
+  --mk-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; /* no token: --font-sans lives in main.css @theme */
+  --mk-mono:
+    'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; /* no token: --font-mono lives in main.css @theme */
+}
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: 12px/1.4 var(--mk-sans);
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+.ic {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+.sp {
+  flex: 1;
+}
+.mono {
+  font-family: var(--mk-mono);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+.dim {
+  color: var(--color-text-4);
+}
+.muted {
+  color: var(--color-text-3);
+}
+.is-green {
+  color: var(--color-green);
+}
+.is-warn {
+  color: var(--color-warning);
+}
+.is-red {
+  color: var(--color-red);
+}
+.is-accent {
+  color: var(--color-accent);
+}
+.eyebrow {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-4);
+}
+.eyebrow-lg {
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-4);
+}
+
+/* ---- Topbar title row (host for the pills) ---------------------------------------- */
+.topbar {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar .crumb {
+  font-size: 12.5px;
+  color: var(--color-text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.topbar .crumb b {
+  color: var(--color-text);
+  font-weight: 500;
+}
+.topbar .crumb .sep {
+  color: var(--color-text-4);
+}
+.pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* Pill — byte-identical anatomy to the provider/orchestrator pills (design.md §6). */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 1px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  background: transparent;
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter var(--dur) var(--ease);
+}
+.pill:hover {
+  filter: brightness(1.1);
+}
+.pill--neutral {
+  border-color: var(--color-border-2);
+  color: var(--color-text-3);
+}
+.pill--accent {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.pill--warning {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+.pill--green {
+  border-color: var(--color-green);
+  color: var(--color-green);
+}
+.pill .ic {
+  width: 10px;
+  height: 10px;
+}
+.pill .sub {
+  opacity: 0.7;
+}
+
+/* ---- Popover shell (reused verbatim from the Activity bell) -------------------------- */
+.pop {
+  width: 400px;
+  max-height: 560px;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border-2);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+}
+.pop--wide {
+  width: 520px; /* no token: a variant may widen the shell; say so in its notes */
+}
+.pop-head {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+.pop-head .row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.pop-head .ttl {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+.pop-head .headline {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-4);
+  font-variant-numeric: tabular-nums;
+}
+.pop-head .sub {
+  font-size: 11px;
+  color: var(--color-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pop-head .counts {
+  font-size: 11px;
+  color: var(--color-text-4);
+  margin-top: 3px;
+}
+.pop-head .scope {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.pop-head .scope .path {
+  font-family: var(--mk-mono);
+  font-size: 10.5px;
+}
+.pop-body {
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.pop-foot {
+  padding: 8px 14px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 12px 0;
+}
+.pop-body::-webkit-scrollbar {
+  width: 8px;
+}
+.pop-body::-webkit-scrollbar-thumb {
+  background: var(--color-border-2);
+  border-radius: 999px;
+}
+
+/* ---- Buttons (components/ui/Button.vue, md) ---------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+}
+.btn--ghost {
+  color: var(--color-text-2);
+}
+.btn--ghost:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.btn--primary {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+.btn--success {
+  background: var(--color-green-soft);
+  color: var(--color-green);
+  border-color: var(--color-green-line);
+}
+.btn--warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-color: var(--color-warning-line);
+}
+.btn .ic {
+  width: 14px;
+  height: 14px;
+}
+.link {
+  color: var(--color-accent);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 11px;
+}
+.link:hover {
+  text-decoration: underline;
+}
+.textbtn {
+  font-size: 11px;
+  color: var(--color-text-4);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.textbtn:hover {
+  color: var(--color-text-2);
+}
+
+/* ---- Badges (§6 Badges) ----------------------------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.badge--default {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-3);
+}
+.badge--accent {
+  border-color: var(--color-accent-line);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.badge--success {
+  border-color: var(--color-green-line);
+  background: var(--color-green-soft);
+  color: var(--color-green);
+}
+.badge--warning {
+  border-color: var(--color-warning-line);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+.badge--danger {
+  border-color: var(--color-red-line);
+  background: var(--color-red-soft);
+  color: var(--color-red);
+}
+.badge .ic {
+  width: 10px;
+  height: 10px;
+}
+
+/* ---- Callouts ----------------------------------------------------------------------- */
+.callout {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 5px;
+}
+.callout .ic {
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+}
+.callout--warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-color: var(--color-warning-line);
+}
+.callout--danger {
+  background: var(--color-red-soft);
+  color: var(--color-red);
+  border-color: var(--color-red-line);
+}
+.callout--success {
+  background: var(--color-green-soft);
+  color: var(--color-green);
+  border-color: var(--color-green-line);
+}
+.callout--accent {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: var(--color-accent-line);
+}
+.callout b {
+  font-weight: 600;
+}
+
+/* ---- Step rail (MissionStepRail.vue) — seven visuals -------------------------------- */
+.rail {
+  display: flex;
+  flex-direction: column;
+}
+.step {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  padding-bottom: 16px;
+}
+.step.last {
+  padding-bottom: 0;
+}
+.step .col {
+  position: relative;
+  width: 16px;
+  flex: none;
+  display: flex;
+  justify-content: center;
+}
+.step .line {
+  position: absolute;
+  top: 15px;
+  bottom: -16px;
+  width: 2px;
+  background: var(--color-border-2);
+}
+.step.last .line {
+  display: none;
+}
+.glyph {
+  position: relative;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface);
+  flex: none;
+}
+.glyph--verified {
+  background: var(--color-green);
+  color: var(--color-bg);
+}
+.glyph--verified::after {
+  content: '';
+  width: 5px;
+  height: 3px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-1px) rotate(-45deg);
+}
+.glyph--done {
+  border: 1.5px solid var(--color-text-3);
+  color: var(--color-text-3);
+}
+.glyph--done::after {
+  content: '';
+  width: 4px;
+  height: 2px;
+  border-left: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-1px) rotate(-45deg);
+}
+.glyph--running::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: mk-pulse 1.6s var(--ease) infinite;
+}
+.glyph--waiting {
+  border: 1.5px solid var(--color-text-3);
+  background: linear-gradient(90deg, var(--color-text-3) 50%, transparent 50%);
+}
+.glyph--blocked {
+  color: var(--color-warning);
+  font-size: 11px;
+  line-height: 1;
+}
+.glyph--blocked::after {
+  content: '⚠';
+}
+.glyph--left-behind {
+  color: var(--color-warning);
+  font-size: 11px;
+  line-height: 1;
+}
+.glyph--left-behind::after {
+  content: '↩';
+}
+.glyph--todo::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-text-4);
+}
+.glyph--locked {
+  color: var(--color-text-4);
+  font-size: 9px;
+  line-height: 1;
+}
+.glyph--locked::after {
+  content: '🔒';
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+.glyph--side {
+  color: var(--color-text-4);
+  font-size: 10px;
+  line-height: 1;
+}
+.glyph--side::after {
+  content: '◇';
+}
+.glyph--decision {
+  color: var(--color-accent);
+  font-size: 10px;
+  line-height: 1;
+}
+.glyph--decision::after {
+  content: '◆';
+}
+.glyph.current-ring {
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+@keyframes mk-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+.step .body {
+  min-width: 0;
+  flex: 1;
+}
+.step .label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  row-gap: 4px;
+}
+.step .label {
+  font-size: 12.5px;
+  color: var(--color-text-4);
+  opacity: 0.7;
+}
+.step.is-done .label {
+  color: var(--color-text-3);
+  opacity: 1;
+}
+.step.is-current .label {
+  color: var(--color-text);
+  font-weight: 500;
+  opacity: 1;
+}
+.step.is-left-behind .label {
+  color: var(--color-text-2);
+  opacity: 1;
+}
+.step .caption {
+  font-size: 11px;
+  color: var(--color-text-4);
+  line-height: 1.5;
+  margin-top: 3px;
+}
+.step .pulse {
+  font-size: 11px;
+  color: var(--color-text-3);
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.step .pr {
+  font-size: 11px;
+  color: var(--color-text-3);
+  margin-top: 3px;
+}
+.step .addcheck {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-4);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.step .addcheck:hover {
+  color: var(--color-text-2);
+}
+
+/* Checks */
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--color-text-2);
+  margin-top: 3px;
+}
+.check input {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+.check.is-ticked span {
+  color: var(--color-text-4);
+  text-decoration: line-through;
+}
+.check .due {
+  font-size: 10.5px;
+  color: var(--color-warning);
+}
+
+/* Child session rows */
+.sess {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-surface-2);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  margin: 5px 0 0 2px;
+  font-size: 11.5px;
+}
+.sess .arrow {
+  color: var(--color-text-4);
+  font-size: 11px;
+}
+.sess .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-4);
+  flex: none;
+}
+.sess .dot--working {
+  background: var(--color-green);
+  animation: mk-pulse 1.6s var(--ease) infinite;
+}
+.sess .dot--needs-input {
+  background: var(--color-warning);
+  animation: mk-pulse 0.9s var(--ease) infinite;
+}
+.sess .name {
+  font-family: var(--mk-mono);
+  font-size: 11px;
+  color: var(--color-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess .state {
+  font-size: 10.5px;
+  color: var(--color-text-4);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.sess .go {
+  color: var(--color-text-4);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+/* ---- Gates — four facts per step: PR · CI · main · verifier --------------------------- */
+.gates {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.gate {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-text-4);
+  background: transparent;
+  flex: none;
+}
+.gate--green {
+  background: var(--color-green);
+  border-color: var(--color-green);
+}
+.gate--red {
+  background: var(--color-red);
+  border-color: var(--color-red);
+}
+.gate--running {
+  border-color: var(--color-accent);
+  background: linear-gradient(90deg, var(--color-accent) 50%, transparent 50%);
+  animation: mk-pulse 1.6s var(--ease) infinite;
+}
+.gate--na {
+  border-style: dashed;
+  opacity: 0.5;
+}
+.gates .lbl {
+  font-size: 10px;
+  color: var(--color-text-4);
+  margin-left: 2px;
+}
+
+/* ---- You lane ------------------------------------------------------------------------ */
+.you {
+  margin-top: 2px;
+}
+.you .eyebrow {
+  margin-bottom: 5px;
+}
+.you-clear {
+  font-size: 11.5px;
+  color: var(--color-text-4);
+}
+.you-box {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.you-box .ic {
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+}
+.you-box--warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-color: var(--color-warning-line);
+}
+.you-box--success {
+  background: var(--color-green-soft);
+  color: var(--color-green);
+  border-color: var(--color-green-line);
+}
+.you-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 11.5px;
+  color: var(--color-text-2);
+}
+.you-item:first-child {
+  border-top: 0;
+}
+.you-item .age {
+  font-size: 10.5px;
+  color: var(--color-text-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.you-item .risk {
+  font-size: 10px;
+}
+.you-item .risk--high {
+  color: var(--color-red);
+}
+.you-item .risk--mid {
+  color: var(--color-warning);
+}
+.you-item .risk--low {
+  color: var(--color-text-4);
+}
+.you-more {
+  font-size: 11px;
+  color: var(--color-text-3);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.you-more:hover {
+  text-decoration: underline;
+}
+
+/* ---- Steward line (headless, mission-bound agent) ---------------------------------- */
+.steward {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-3);
+  margin-top: 8px;
+}
+.steward .bot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.5px solid var(--color-accent);
+  position: relative;
+  flex: none;
+}
+.steward .bot::before,
+.steward .bot::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  width: 2px;
+  height: 2px;
+  background: var(--color-accent);
+}
+.steward .bot::before {
+  left: 2px;
+}
+.steward .bot::after {
+  right: 2px;
+}
+.steward .who {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+.steward .next {
+  margin-left: auto;
+  color: var(--color-text-4);
+  white-space: nowrap;
+}
+.steward-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+.steward-feed .ev {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.steward-feed .ev .t {
+  color: var(--color-text-4);
+  font-variant-numeric: tabular-nums;
+  width: 42px;
+  flex: none;
+}
+
+/* ---- Chapter row (a Mission as one row of the campaign) ----------------------------- */
+.chapter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.chapter:hover {
+  background: var(--color-surface-2);
+}
+.chapter .n {
+  font-family: var(--mk-mono);
+  font-size: 10.5px;
+  color: var(--color-text-4);
+  width: 18px;
+  text-align: right;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.chapter .t {
+  font-size: 12.5px;
+  color: var(--color-text-4);
+  opacity: 0.7;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chapter.is-done .t {
+  color: var(--color-text-3);
+  opacity: 1;
+}
+.chapter.is-current .t {
+  color: var(--color-text);
+  font-weight: 500;
+  opacity: 1;
+}
+.chapter .m {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--color-text-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.chapter .bar {
+  width: 48px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--color-border-2);
+  overflow: hidden;
+  flex: none;
+}
+.chapter .bar i {
+  display: block;
+  height: 100%;
+  background: var(--color-green);
+}
+.chapter.is-current .bar i {
+  background: var(--color-accent);
+}
+
+/* ---- Takeover shell (map) ----------------------------------------------------------- */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 820px; /* no token: fixed mockup canvas */
+}
+.thead {
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.thead .ttl {
+  font-size: 13px;
+  font-weight: 600;
+}
+.thead .sub {
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.tbody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+.tfoot {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-4);
+  font-size: 11px;
+  background: var(--color-sidebar);
+}
+.iconbtn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-3);
+  cursor: pointer;
+  flex: none;
+}
+.iconbtn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+/* Card (a chapter as a box on the map) */
+.card {
+  border: 1px solid var(--color-border-2);
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.card--done {
+  border-color: var(--color-green-line);
+  background: var(--color-green-soft);
+}
+.card--current {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.card--running {
+  border-color: var(--color-warning-line);
+  background: var(--color-warning-soft);
+}
+.card--blocked {
+  border-color: var(--color-warning);
+}
+.card--locked {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.card--side {
+  border-style: dashed;
+  border-color: var(--color-border-2);
+}
+.card .n {
+  font-family: var(--mk-mono);
+  font-size: 10px;
+  color: var(--color-text-4);
+}
+.card .t {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text);
+  margin-top: 2px;
+}
+.card .s {
+  font-size: 11px;
+  color: var(--color-text-3);
+  margin-top: 3px;
+}
+.card--locked .t {
+  color: var(--color-text-3);
+  font-weight: 400;
+}
+
+/* Dialog (a state of the screen under it) */
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-bg) 60%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialog {
+  width: 460px; /* no token: dialog max-width */
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-2);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-pop);
+}
+.dialog .dh {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 600;
+}
+.dialog .db {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--color-text-2);
+}
+.dialog .df {
+  padding: 10px 16px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hidden {
+  display: none !important;
+}

@@ -178,7 +178,35 @@ import {
   type StepLink
 } from '../mission-core'
 import { probeGitMeta } from '../git-probe'
-import { computeProgress, progressSteps, type MissionProgress } from '../mission-progress'
+import {
+  computeProgress,
+  progressHeadline,
+  progressSteps,
+  type MissionProgress
+} from '../mission-progress'
+import {
+  applyAddChapter,
+  buildCampaignFileContent,
+  buildChapter,
+  CAMPAIGN_ID_RE,
+  campaignsDir,
+  createCampaignFile,
+  mintCampaignId,
+  missingPrerequisites,
+  parseCampaignFile,
+  readCampaignLog,
+  withCampaignLock,
+  type Campaign,
+  type Chapter,
+  type MissingPrerequisite,
+  type NewChapter
+} from '../campaign-core'
+import {
+  campaignCloseRefusal,
+  computeCampaignProgress,
+  type CampaignProgress,
+  type ChapterFacts
+} from '../campaign-progress'
 import { importLegacyGoalFile } from '../mission-migration'
 import { atomicWriteFile } from './atomic-write'
 import {
@@ -3496,6 +3524,14 @@ const missionCreateHandler: Handler = async (args, ctx) => {
   if (!SESSION_UUID_RE.test(sessionId))
     return errorResult(badSessionIdMessage('sessionId', sessionId))
   const linkedCard = strField(args, 'linkedCard')
+  // Campaign spec §3.2: the mission IS a chapter of a campaign — both ids, or neither.
+  const campaignId = strField(args, 'campaignId')
+  const chapterId = strField(args, 'chapterId')
+  if ((campaignId === undefined) !== (chapterId === undefined)) {
+    return errorResult(
+      'BAD_ARGS: campaignId and chapterId go together — name the campaign and the chapter this mission IS, or neither.'
+    )
+  }
 
   const root = missionRoot(folder)
   // The gate checked the raw `folder` arg; a worktree outside its main checkout's
@@ -3511,31 +3547,40 @@ const missionCreateHandler: Handler = async (args, ctx) => {
   // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
 
-  const created = await writeNewMission(
-    root,
-    title,
-    (id, slug, now) => ({
-      id,
-      slug,
-      folder: root,
-      owner: { sessionId, folder: path.resolve(folder) },
-      ...(linkedCard ? { linkedCard } : {}),
-      // Mission v3 §3.4: born active — the end agreed in chat is the agreement.
-      status: 'active',
-      declaredEnd,
-      declaredEndApproval: { at: now, bodyHash: declaredEndHash(declaredEnd), via: 'chat' },
-      // Mission v3 §3.3: scope is an attachment, never a step.
-      ...(scope.links.length > 0 ? { scope: scope.links } : {}),
-      steps: planWithEnd(plan.plan),
-      blockers: [],
-      openQuestions: [],
-      createdAt: now,
-      updatedAt: now,
-      provenance: { author: 'agent', at: now, ...(gitBranch ? { branch: gitBranch } : {}) }
-    }),
-    // The title has no Mission field (design §1.1); it heads the Log body.
-    `# ${title}\n\n## Log\n`
-  )
+  const createMission = (): Promise<MissionWrite> =>
+    writeNewMission(
+      root,
+      title,
+      (id, slug, now) => ({
+        id,
+        slug,
+        folder: root,
+        owner: { sessionId, folder: path.resolve(folder) },
+        ...(linkedCard ? { linkedCard } : {}),
+        ...(campaignId && chapterId ? { campaignId, chapterId } : {}),
+        // Mission v3 §3.4: born active — the end agreed in chat is the agreement.
+        status: 'active',
+        declaredEnd,
+        declaredEndApproval: { at: now, bodyHash: declaredEndHash(declaredEnd), via: 'chat' },
+        // Mission v3 §3.3: scope is an attachment, never a step.
+        ...(scope.links.length > 0 ? { scope: scope.links } : {}),
+        steps: planWithEnd(plan.plan),
+        blockers: [],
+        openQuestions: [],
+        createdAt: now,
+        updatedAt: now,
+        provenance: { author: 'agent', at: now, ...(gitBranch ? { branch: gitBranch } : {}) }
+      }),
+      // The title has no Mission field (design §1.1); it heads the Log body.
+      `# ${title}\n\n## Log\n`
+    )
+  // A chapter's mission is created and bound under the campaign's lock, so two creates
+  // for one chapter can never both land (CHAPTER_ALREADY_BOUND); every campaign refusal
+  // happens before the mission is written.
+  const created: MissionWrite =
+    campaignId && chapterId
+      ? await bindMissionToChapter(root, campaignId, chapterId, createMission, ctx)
+      : await createMission()
   if (!created.ok) return errorResult(created.error)
   return textResult({
     ok: true,
@@ -3543,7 +3588,8 @@ const missionCreateHandler: Handler = async (args, ctx) => {
     missionId: created.mission.id,
     slug: created.mission.slug,
     steps: created.mission.steps,
-    ...(created.mission.scope ? { scope: created.mission.scope } : {})
+    ...(created.mission.scope ? { scope: created.mission.scope } : {}),
+    ...(campaignId && chapterId ? { campaignId, chapterId } : {})
   })
 }
 
@@ -4729,7 +4775,9 @@ export async function deriveMissionSignals(
     steps.map((s) => ({
       stepId: s.stepId,
       children: s.children.map((c) => ({ sessionId: c.sessionId, taskState: c.taskState })),
-      existenceProven: s.existence?.proven === true
+      existenceProven: s.existence?.proven === true,
+      // Amendment (a): the gates govern `verified`, so progress reads the SAME gates the rows carry.
+      gates: s.gates
     })),
     now
   )
@@ -6169,6 +6217,633 @@ const browserPatchHandler: Handler = async (args, ctx) => {
 }
 
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
+// ---- campaign_* verbs (T595, chapter 3a — campaign spec §3.1/§3.3/§3.5) ------
+//
+// A campaign is the quest line ABOVE a mission: ordered chapters, each of which IS a
+// mission. Stored in the repo's MAIN checkout like missions (`missionRoot`), so every
+// worktree shares it. No verb here merges, chooses a decision, ticks a check or closes a
+// campaign: `campaign_request_close` only signals. Same locking rule as missions: each
+// read-modify-write runs under `withCampaignLock(id)` exactly ONCE (the lock is not
+// re-entrant), and no helper below takes it on its own.
+
+interface CampaignFileEntry {
+  id: string
+  slug: string
+  name: string
+}
+
+/** Every `<id>-<slug>.md` in `root`'s campaigns dir; `[]` when there is none yet. */
+async function listCampaignEntries(root: string): Promise<CampaignFileEntry[]> {
+  await dataDirReady(root)
+  let names: string[]
+  try {
+    names = await fs.readdir(campaignsDir(root))
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw err
+  }
+  const out: CampaignFileEntry[] = []
+  for (const name of names.sort()) {
+    const m = /^(cmp-[0-9a-f]{8})-(.+)\.md$/.exec(name)
+    if (m) out.push({ id: m[1], slug: m[2], name })
+  }
+  return out
+}
+
+type LoadedCampaign =
+  | { ok: true; file: string; raw: string; campaign: Campaign; log: string }
+  | { ok: false; error: string }
+
+/** Read + parse one campaign by id; a steerable error when absent or corrupt. */
+export async function loadCampaign(root: string, id: string): Promise<LoadedCampaign> {
+  if (!CAMPAIGN_ID_RE.test(id)) {
+    return { ok: false, error: `BAD_ARGS: campaignId "${id}" is not a campaign id (cmp-<8 hex>).` }
+  }
+  const entry = (await listCampaignEntries(root)).find((e) => e.id === id)
+  if (!entry) {
+    return {
+      ok: false,
+      error: `CAMPAIGN_NOT_FOUND: no campaign ${id} in this repo — campaign_list shows the ones that exist.`
+    }
+  }
+  const file = path.join(campaignsDir(root), entry.name)
+  const raw = await fs.readFile(file, 'utf8')
+  const parsed = parseCampaignFile(raw)
+  if ('error' in parsed) {
+    return { ok: false, error: `CAMPAIGN_UNREADABLE: ${entry.name} — ${parsed.error}` }
+  }
+  return { ok: true, file, raw, campaign: parsed, log: readCampaignLog(raw) }
+}
+
+/** Every readable campaign under `root`, with its Log; corrupt files are reported, not thrown. */
+async function readAllCampaigns(root: string): Promise<{
+  campaigns: Array<{ campaign: Campaign; log: string; file: string }>
+  unreadable: string[]
+}> {
+  const campaigns: Array<{ campaign: Campaign; log: string; file: string }> = []
+  const unreadable: string[] = []
+  for (const entry of await listCampaignEntries(root)) {
+    const loaded = await loadCampaign(root, entry.id)
+    if (loaded.ok) campaigns.push({ campaign: loaded.campaign, log: loaded.log, file: loaded.file })
+    else unreadable.push(entry.name)
+  }
+  return { campaigns, unreadable }
+}
+
+/** A refusal for a folder (or its repo root) the operator blocked for agents. */
+function campaignFolderRefusal(folder: string, root: string, ctx: ToolHandlerCtx): string | null {
+  if (isFolderDenied(folder, ctx.denyFolders) || isFolderDenied(root, ctx.denyFolders)) {
+    return 'FOLDER_NOT_ALLOWED: the operator blocked this folder for agents — its campaigns are off limits. Tell the operator; they can unblock it from the folder menu.'
+  }
+  return null
+}
+
+function campaignClosedMessage(id: string): string {
+  return `CAMPAIGN_CLOSED: campaign ${id} was closed by the operator — a closed campaign is immutable by verb.`
+}
+
+function chapterNotFoundMessage(campaignId: string, chapterId: string): string {
+  return `CHAPTER_NOT_FOUND: campaign ${campaignId} has no chapter ${chapterId} — campaign_get lists its chapters.`
+}
+
+/** A campaign slug from its title; `campaign` when the title has nothing slug-able. */
+function campaignSlugBase(title: string): string {
+  const slug = slugifyTitle(title)
+  // `slugifyTitle` falls back to `card` for an empty result — wrong noun here.
+  return slug === 'card' && !/card/i.test(title) ? 'campaign' : slug
+}
+
+/** Per-repo create lock: serializes id-mint + slug pick so concurrent creates stay unique. */
+const campaignCreateLocks = new Map<string, Promise<unknown>>()
+
+const CHAPTERS_MAX = 50
+const TOKENS_MAX = 20
+
+/** A token list as stored: trimmed, deduped, non-empty; `undefined` when absent. */
+function parseTokens(raw: unknown): string[] | undefined | null {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw) || raw.length > TOKENS_MAX) return null
+  const out: string[] = []
+  for (const t of raw) {
+    if (typeof t !== 'string') return null
+    const token = t.trim()
+    if (!token || token.length > 100) return null
+    if (!out.includes(token)) out.push(token)
+  }
+  return out
+}
+
+/**
+ * One chapter's declared fields (the shape shared by `campaign_create`'s `chapters[]` and
+ * `campaign_add_chapter`), or a BAD_ARGS refusal. The id, ordinal and `missionId` are never
+ * taken from an argument.
+ */
+function parseChapterInput(
+  raw: unknown
+): { ok: true; chapter: NewChapter } | { ok: false; error: string } {
+  const bad = (why: string): { ok: false; error: string } => ({
+    ok: false,
+    error: `BAD_ARGS: a chapter is { title (1..200 chars), required?, consumes?, produces?, radiant? } — ${why}.`
+  })
+  if (typeof raw !== 'object' || raw === null) return bad('not an object')
+  const r = raw as Record<string, unknown>
+  const title = typeof r.title === 'string' ? r.title.replace(/\s+/g, ' ').trim() : ''
+  if (!title || title.length > 200) return bad('title must be 1..200 characters')
+  if (r.required !== undefined && typeof r.required !== 'boolean')
+    return bad('required must be a boolean')
+  const consumes = parseTokens(r.consumes)
+  const produces = parseTokens(r.produces)
+  if (consumes === null || produces === null) {
+    return bad(`consumes/produces are arrays of at most ${TOKENS_MAX} non-empty tokens`)
+  }
+  let radiant: NewChapter['radiant']
+  if (r.radiant !== undefined) {
+    const rd = r.radiant as Record<string, unknown> | null
+    const template = typeof rd?.template === 'string' ? rd.template.trim() : ''
+    const total = rd?.total
+    if (!template || typeof total !== 'number' || !Number.isInteger(total) || total < 1) {
+      return bad('radiant is { template, total >= 1 }')
+    }
+    radiant = { template, total }
+  }
+  return {
+    ok: true,
+    chapter: {
+      title,
+      required: r.required !== false,
+      ...(consumes ? { consumes } : {}),
+      ...(produces ? { produces } : {}),
+      ...(radiant ? { radiant } : {})
+    }
+  }
+}
+
+/** The PREREQ_MISSING refusal (spec §3.5): names every gap, and the way out. */
+function prereqMessage(missing: readonly MissingPrerequisite[]): string {
+  const lines = missing.map(
+    (m) =>
+      `chapter "${m.title}" (${m.chapterId}) consumes "${m.token}", which no earlier chapter produces`
+  )
+  return `PREREQ_MISSING: ${lines.join('; ')} — put the chapter that produces it first, or pass force: true to accept the gap (it is logged as a surprise). Nothing was written.`
+}
+
+/** The Log entry a forced prerequisite gap leaves (campaign spec §3.5: `force` logs a `surprise`). */
+function surpriseEntry(at: string, missing: readonly MissingPrerequisite[]): string {
+  const lines = missing.map(
+    (m) =>
+      `PREREQ_MISSING accepted with force: chapter "${m.title}" (${m.chapterId}) consumes "${m.token}", which no earlier chapter produces.`
+  )
+  return `\n### ${at} · surprise\n\n${lines.join('\n')}\n`
+}
+
+type CampaignWrite = { ok: true; campaign: Campaign } | { ok: false; error: string }
+
+/**
+ * Mint a fresh id and a repo-unique slug (from `title`) and exclusively write the campaign
+ * `build` returns, with `log` as its body. Runs under the repo's campaign-create lock;
+ * `createCampaignFile` rejects EEXIST on a genuine id collision — the id is redrawn.
+ */
+async function writeNewCampaign(
+  root: string,
+  title: string,
+  build: (id: string, slug: string, now: string) => Campaign,
+  log: (now: string) => string
+): Promise<CampaignWrite> {
+  return serializeByKey(campaignCreateLocks, root, async (): Promise<CampaignWrite> => {
+    const entries = await listCampaignEntries(root)
+    const takenIds = entries.map((e) => e.id)
+    const slug = resolveUniqueSlug(campaignSlugBase(title), new Set(entries.map((e) => e.slug)))
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const now = new Date().toISOString()
+      const campaign = build(mintCampaignId(takenIds), slug, now)
+      try {
+        await createCampaignFile(root, campaign, log(now))
+        return { ok: true, campaign }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+          return { ok: false, error: `WRITE_FAILED: ${(err as Error).message}` }
+        }
+        takenIds.push(campaign.id)
+      }
+    }
+    return { ok: false, error: 'WRITE_FAILED: could not mint a free campaign id' }
+  })
+}
+
+const campaignCreateHandler: Handler = async (args, ctx) => {
+  const folder = ctx.folder
+  if (!folder) return errorResult('BAD_ARGS: folder is required')
+  const title = strField(args, 'title')?.replace(/\s+/g, ' ').trim()
+  if (!title) return errorResult('BAD_ARGS: title is required')
+  const problems = declaredEndProblems(args.declaredEnd)
+  if (problems.length > 0) {
+    return errorResult(
+      `DECLARED_END_INCOMPLETE: missing or invalid ${problems.join(', ')} — a campaign needs a complete declared end at creation: kind (${DECLARED_END_KINDS.join(' | ')}), a concrete target, and the evidence that proves it.`
+    )
+  }
+  const rawEnd = args.declaredEnd as Record<string, string>
+  const declaredEnd: DeclaredEnd = {
+    kind: rawEnd.kind as DeclaredEnd['kind'],
+    target: rawEnd.target.trim(),
+    evidence: rawEnd.evidence.trim()
+  }
+  const sessionId = strField(args, 'sessionId') ?? ''
+  if (!SESSION_UUID_RE.test(sessionId))
+    return errorResult(badSessionIdMessage('sessionId', sessionId))
+  const root = missionRoot(folder)
+  const refusal = campaignFolderRefusal(folder, root, ctx)
+  if (refusal) return errorResult(refusal)
+
+  const rawChapters = args.chapters
+  if (!Array.isArray(rawChapters) || rawChapters.length < 1 || rawChapters.length > CHAPTERS_MAX) {
+    return errorResult(`BAD_ARGS: chapters must be an array of 1..${CHAPTERS_MAX} chapters.`)
+  }
+  const chapters: Chapter[] = []
+  for (const raw of rawChapters) {
+    const parsed = parseChapterInput(raw)
+    if (!parsed.ok) return errorResult(parsed.error)
+    chapters.push(buildChapter(parsed.chapter, chapters.length + 1))
+  }
+  // Spec §3.5: the prerequisite pass — before any write.
+  const missing = missingPrerequisites(chapters)
+  const force = args.force === true
+  if (missing.length > 0 && !force) return errorResult(prereqMessage(missing))
+
+  const scope = await resolveScopeLinks(root, args.scope)
+  if (!scope.ok) return errorResult(scope.error)
+  const { gitBranch } = await probeGitMeta(folder)
+  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+
+  const created = await writeNewCampaign(
+    root,
+    title,
+    (id, slug, now) => ({
+      id,
+      slug,
+      folder: root,
+      owner: { sessionId, folder: path.resolve(folder) },
+      title,
+      declaredEnd,
+      chapters,
+      status: 'active',
+      ...(scope.links.length > 0 ? { scope: scope.links } : {}),
+      createdAt: now,
+      updatedAt: now,
+      provenance: { author: 'agent', at: now, ...(gitBranch ? { branch: gitBranch } : {}) }
+    }),
+    (now) => `# ${title}\n\n## Log\n${missing.length > 0 ? surpriseEntry(now, missing) : ''}`
+  )
+  if (!created.ok) return errorResult(created.error)
+  return textResult({
+    ok: true,
+    op: 'campaign_create',
+    campaignId: created.campaign.id,
+    slug: created.campaign.slug,
+    chapters: created.campaign.chapters,
+    ...(created.campaign.scope ? { scope: created.campaign.scope } : {}),
+    ...(missing.length > 0
+      ? { forced: missing.map((m) => ({ chapterId: m.chapterId, token: m.token })) }
+      : {})
+  })
+}
+
+type CampaignEdit =
+  | {
+      ok: true
+      campaign: Campaign
+      ack: Record<string, unknown>
+      logAppend?: string
+    }
+  | { ok: false; error: string }
+
+/**
+ * One locked read → mutate → write of a campaign's frontmatter. `fn` gets a private copy; its
+ * result is re-validated by `buildCampaignFileContent` before an atomic replace, and
+ * `updatedAt` is stamped here so no verb forgets it. The Log body is carried over, plus
+ * `logAppend`. A closed campaign is a record: refused CAMPAIGN_CLOSED before `fn` runs.
+ */
+async function editCampaign(
+  args: Record<string, unknown>,
+  ctx: ToolHandlerCtx,
+  fn: (campaign: Campaign, root: string) => CampaignEdit | Promise<CampaignEdit>
+): Promise<CallToolResult> {
+  const folder = ctx.folder
+  if (!folder) return errorResult('BAD_ARGS: folder is required')
+  const id = strField(args, 'campaignId') ?? ''
+  const root = missionRoot(folder)
+  const refusal = campaignFolderRefusal(folder, root, ctx)
+  if (refusal) return errorResult(refusal)
+  return withCampaignLock(id, async () => {
+    const loaded = await loadCampaign(root, id)
+    if (!loaded.ok) return errorResult(loaded.error)
+    if (loaded.campaign.status === 'closed') return errorResult(campaignClosedMessage(id))
+    const edit = await fn(structuredClone(loaded.campaign), root)
+    if (!edit.ok) return errorResult(edit.error)
+    const next: Campaign = { ...edit.campaign, updatedAt: new Date().toISOString() }
+    let content: string
+    try {
+      content = buildCampaignFileContent(next, loaded.log + (edit.logAppend ?? ''))
+    } catch (err) {
+      return errorResult(`BAD_ARGS: ${(err as Error).message}`)
+    }
+    // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort the write.
+    if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+    await atomicWriteFile(loaded.file, content, 0o644)
+    return textResult(edit.ack)
+  })
+}
+
+const campaignAddChapterHandler: Handler = async (args, ctx) => {
+  const parsed = parseChapterInput(args)
+  if (!parsed.ok) return errorResult(parsed.error)
+  const input: NewChapter = { ...parsed.chapter }
+  const df = args.discoveredFrom as Record<string, unknown> | undefined
+  if (df !== undefined) {
+    if (typeof df?.chapterId !== 'string' || !df.chapterId) {
+      return errorResult('BAD_ARGS: discoveredFrom is { chapterId, stepId? }.')
+    }
+    input.discoveredFrom = {
+      chapterId: df.chapterId,
+      ...(typeof df.stepId === 'string' && df.stepId ? { stepId: df.stepId } : {})
+    }
+  }
+  const un = args.unlocks as Record<string, unknown> | undefined
+  if (un !== undefined) {
+    if (
+      !['decision', 'chapter', 'pr'].includes(un?.kind as string) ||
+      typeof un.ref !== 'string' ||
+      !un.ref
+    ) {
+      return errorResult("BAD_ARGS: unlocks is { kind: 'decision' | 'chapter' | 'pr', ref }.")
+    }
+    input.unlocks = { kind: un.kind as ChapterUnlockKind, ref: un.ref }
+  }
+  const force = args.force === true
+  return editCampaign(args, ctx, (c) => {
+    const known = new Set(c.chapters.map((x) => x.id))
+    if (input.discoveredFrom && !known.has(input.discoveredFrom.chapterId)) {
+      return { ok: false, error: chapterNotFoundMessage(c.id, input.discoveredFrom.chapterId) }
+    }
+    if (input.unlocks?.kind === 'chapter' && !known.has(input.unlocks.ref)) {
+      return { ok: false, error: chapterNotFoundMessage(c.id, input.unlocks.ref) }
+    }
+    const at = new Date().toISOString()
+    const next = applyAddChapter(c, input, at)
+    // Spec §3.5: only the chapter being added is judged — earlier ones were accepted (or forced).
+    const missing = missingPrerequisites(next.chapters, next.chapters.length - 1)
+    if (missing.length > 0 && !force) return { ok: false, error: prereqMessage(missing) }
+    const added = next.chapters[next.chapters.length - 1]
+    return {
+      ok: true,
+      campaign: next,
+      ack: {
+        ok: true,
+        op: 'campaign_add_chapter',
+        campaignId: c.id,
+        chapterId: added.id,
+        totalChapters: next.chapters.length,
+        ...(missing.length > 0
+          ? { forced: missing.map((m) => ({ chapterId: m.chapterId, token: m.token })) }
+          : {})
+      },
+      ...(missing.length > 0 ? { logAppend: surpriseEntry(at, missing) } : {})
+    }
+  })
+}
+
+type ChapterUnlockKind = 'decision' | 'chapter' | 'pr'
+
+/**
+ * Each chapter's bound-mission facts from what is on disk plus the last progress derive —
+ * no GitHub, no live signals. Enough for everything a campaign decides from a mission's
+ * STATUS (done), and the best last-known for the rest (`campaign_list`, the close check).
+ */
+async function cachedChapterFacts(root: string, campaign: Campaign): Promise<ChapterFacts[]> {
+  return Promise.all(
+    campaign.chapters.map(async (c): Promise<ChapterFacts> => {
+      if (!c.missionId) return { chapterId: c.id, mission: null }
+      const loaded = await loadMission(root, c.missionId)
+      if (!loaded.ok) return { chapterId: c.id, mission: null }
+      const m = loaded.mission
+      return {
+        chapterId: c.id,
+        mission: {
+          status: m.status,
+          ...(m.closedAs ? { closedAs: m.closedAs } : {}),
+          progress: lastProgress.get(m.id) ?? null
+        }
+      }
+    })
+  )
+}
+
+const campaignGetHandler: Handler = async (args, ctx) => {
+  const folder = ctx.folder
+  if (!folder) return errorResult('BAD_ARGS: folder is required')
+  const campaignId = strField(args, 'campaignId')
+  const ownerSessionId = strField(args, 'ownerSessionId')
+  if (!campaignId === !ownerSessionId) {
+    return errorResult('BAD_ARGS: pass exactly one of campaignId / ownerSessionId')
+  }
+  const root = missionRoot(folder)
+  const refusal = campaignFolderRefusal(folder, root, ctx)
+  if (refusal) return errorResult(refusal)
+
+  let found: { campaign: Campaign; log: string }
+  if (campaignId) {
+    const loaded = await loadCampaign(root, campaignId)
+    if (!loaded.ok) return errorResult(loaded.error)
+    found = loaded
+  } else {
+    const owned = (await readAllCampaigns(root)).campaigns
+      .filter(
+        (c) => c.campaign.owner.sessionId === ownerSessionId && c.campaign.status !== 'closed'
+      )
+      .sort((a, b) => b.campaign.updatedAt.localeCompare(a.campaign.updatedAt))
+    if (owned.length === 0) {
+      return errorResult(
+        `CAMPAIGN_NOT_FOUND: session ${ownerSessionId} owns no open campaign in this repo.`
+      )
+    }
+    found = owned[0]
+  }
+  const { campaign, log } = found
+  const now = Date.now()
+  // Each chapter's mission is derived fresh (the same derive `mission_get` runs), so the
+  // chapter states below come from live facts, not from a poll that may be a minute old.
+  const facts: ChapterFacts[] = []
+  const missions = new Map<string, Mission>()
+  for (const c of campaign.chapters) {
+    if (!c.missionId) {
+      facts.push({ chapterId: c.id, mission: null })
+      continue
+    }
+    const loaded = await loadMission(root, c.missionId)
+    if (!loaded.ok) {
+      facts.push({ chapterId: c.id, mission: null })
+      continue
+    }
+    missions.set(c.id, loaded.mission)
+    const m = loaded.mission
+    const progress =
+      m.status === 'closed'
+        ? null
+        : (await deriveMissionSignals(root, m, loaded.log, ctx, now)).derived.progress
+    facts.push({
+      chapterId: c.id,
+      mission: { status: m.status, ...(m.closedAs ? { closedAs: m.closedAs } : {}), progress }
+    })
+  }
+  const progress = computeCampaignProgress(campaign, facts, now)
+  const rows = campaign.chapters.map((c, i) => {
+    const m = missions.get(c.id)
+    const mp = facts[i].mission?.progress ?? null
+    return {
+      chapterId: c.id,
+      ordinal: c.ordinal,
+      title: c.title,
+      required: c.required,
+      state: progress.states[c.id],
+      missionId: c.missionId ?? null,
+      mission: m
+        ? {
+            status: m.status,
+            ...(m.closedAs ? { closedAs: m.closedAs } : {}),
+            headline: mp ? progressHeadline(mp) : null
+          }
+        : null,
+      ...(c.missionId && !m ? { missionProblem: 'the bound mission could not be read' } : {})
+    }
+  })
+  return textResult({
+    ok: true,
+    op: 'campaign_get',
+    campaign,
+    title: campaign.title,
+    log,
+    derived: { computedAt: new Date(now).toISOString(), progress, chapters: rows },
+    closeReadiness: campaignCloseRefusal(campaign, progress)
+  })
+}
+
+const campaignListHandler: Handler = async (_args, ctx) => {
+  const folder = ctx.folder
+  let roots: string[]
+  if (folder) {
+    const root = missionRoot(folder)
+    const refusal = campaignFolderRefusal(folder, root, ctx)
+    if (refusal) return errorResult(refusal)
+    roots = [root]
+  } else {
+    roots = [...new Set(ctx.folders.map((f) => missionRoot(f.path)))].filter(
+      (root) => !isFolderDenied(root, ctx.denyFolders)
+    )
+  }
+  const now = Date.now()
+  const rows: Record<string, unknown>[] = []
+  const unreadable: string[] = []
+  for (const root of roots) {
+    const read = await readAllCampaigns(root)
+    unreadable.push(...read.unreadable.map((n) => path.join(campaignsDir(root), n)))
+    for (const { campaign: c } of read.campaigns) {
+      const progress = computeCampaignProgress(c, await cachedChapterFacts(root, c), now)
+      rows.push({
+        id: c.id,
+        slug: c.slug,
+        title: c.title,
+        status: c.status,
+        folder: c.folder,
+        ownerSessionId: c.owner.sessionId,
+        // Last-known (see computedAt): campaign_get derives each mission fresh.
+        progress,
+        updatedAt: c.updatedAt
+      })
+    }
+  }
+  return textResult({
+    ok: true,
+    op: 'campaign_list',
+    campaigns: rows,
+    ...(unreadable.length > 0 ? { unreadable } : {})
+  })
+}
+
+const campaignRequestCloseHandler: Handler = async (args, ctx) => {
+  const requestedBy = strField(args, 'sessionId')
+  if (requestedBy !== undefined && !SESSION_UUID_RE.test(requestedBy)) {
+    return errorResult(badSessionIdMessage('sessionId', requestedBy))
+  }
+  return editCampaign(args, ctx, async (c, root) => {
+    // The same check campaign_get reports as `closeReadiness`.
+    const progress: CampaignProgress = computeCampaignProgress(
+      c,
+      await cachedChapterFacts(root, c),
+      Date.now()
+    )
+    const refused = campaignCloseRefusal(c, progress)
+    if (refused) return { ok: false, error: `${refused.code}: ${refused.reason}` }
+    // The agent's request lands on `delivered` + `pendingClose`; only the operator's UI
+    // reaches `closed`.
+    c.status = 'delivered'
+    c.pendingClose = { at: new Date().toISOString(), requestedBy: requestedBy ?? c.owner.sessionId }
+    return {
+      ok: true,
+      campaign: c,
+      ack: { ok: true, op: 'campaign_request_close', pendingClose: true }
+    }
+  })
+}
+
+/**
+ * Create a chapter's mission and bind it to the chapter, under the campaign's lock: validate
+ * the campaign and chapter first (nothing is written on a refusal), write the mission via
+ * `create`, then record its id on the chapter. If the campaign cannot be rewritten after the
+ * mission landed, the error says so and names the mission — it is never silently half-bound.
+ */
+async function bindMissionToChapter(
+  root: string,
+  campaignId: string,
+  chapterId: string,
+  create: () => Promise<MissionWrite>,
+  ctx: ToolHandlerCtx
+): Promise<MissionWrite> {
+  return withCampaignLock(campaignId, async (): Promise<MissionWrite> => {
+    const loaded = await loadCampaign(root, campaignId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const { campaign } = loaded
+    if (campaign.status === 'closed') return { ok: false, error: campaignClosedMessage(campaignId) }
+    const chapter = campaign.chapters.find((c) => c.id === chapterId)
+    if (!chapter) return { ok: false, error: chapterNotFoundMessage(campaignId, chapterId) }
+    if (chapter.missionId) {
+      return {
+        ok: false,
+        error: `CHAPTER_ALREADY_BOUND: chapter ${chapterId} of campaign ${campaignId} already is mission ${chapter.missionId} — a chapter takes one mission; add a chapter (campaign_add_chapter) for further work.`
+      }
+    }
+    // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
+    if (ctx.deadlineFlag?.fired) return { ok: false, error: 'DEADLINE_FIRED' }
+    const made = await create()
+    if (!made.ok) return made
+    const next: Campaign = {
+      ...campaign,
+      chapters: campaign.chapters.map((c) =>
+        c.id === chapterId ? { ...c, missionId: made.mission.id } : c
+      ),
+      updatedAt: new Date().toISOString()
+    }
+    try {
+      await atomicWriteFile(loaded.file, buildCampaignFileContent(next, loaded.log), 0o644)
+    } catch (err) {
+      return {
+        ok: false,
+        error: `WRITE_FAILED: mission ${made.mission.id} was created but campaign ${campaignId} could not record it on chapter ${chapterId}: ${(err as Error).message}`
+      }
+    }
+    return made
+  })
+}
+
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
   get_fleet: getFleetHandler,
   get_session: getSessionHandler,
@@ -6241,7 +6916,12 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   mission_verify_step: missionVerifyStepHandler,
   mission_request_close: missionRequestCloseHandler,
   mission_import_legacy: missionImportLegacyHandler,
-  mission_add_check: missionAddCheckHandler
+  mission_add_check: missionAddCheckHandler,
+  campaign_create: campaignCreateHandler,
+  campaign_add_chapter: campaignAddChapterHandler,
+  campaign_get: campaignGetHandler,
+  campaign_list: campaignListHandler,
+  campaign_request_close: campaignRequestCloseHandler
 }
 
 /**

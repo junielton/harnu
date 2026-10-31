@@ -1,0 +1,209 @@
+{
+  "name": "campaign-declare",
+  "order": 20,
+  "title": "a 3-chapter objective \u2192 one campaign, a chapter-1 mission with steps, chapters 2\u20133 coarse",
+  "reviewFocus": null,
+  "label": "campaign AC-3b.4 (a)",
+  "description": "Campaign spec \u00a76 row 1 / \u00a78 AC-4 (a). The owner A reads the shipped `orchestrate-delivery` skill and is handed a three-chapter objective whose spec sits in the repo (chapter 2 consumes what chapter 1 produces, chapter 3 consumes both). Phase 1 must declare ONE campaign with the three chapters and their `consumes`/`produces` tokens, detail ONLY the next chapter to steps (rolling wave), and create that chapter's mission bound to the campaign and its chapter. Chapters 2 and 3 stay coarse: no mission yet. The operator's confirmation of the end is part of the prompt, and dispatch is out of scope for the turn.",
+  "agents": ["A"],
+  "phases": [
+    {
+      "copyIn": [
+        {
+          "from": "resources/skills/skills/orchestrate-delivery/SKILL.md",
+          "to": ".eval/orchestrate-delivery-SKILL.md"
+        },
+        {
+          "from": "scripts/eval/mission-behavior/fixtures/campaign-spec.md",
+          "to": "docs/page-migration-spec.md"
+        }
+      ]
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "tools": ["Read"],
+      "prompt": "Skill file: .eval/orchestrate-delivery-SKILL.md.\n\nThe operator hands you this objective: \"Deliver the page migration described in docs/page-migration-spec.md.\" Treat Phase 0 as done: the spec is committed on the default branch and the repo is ready to dispatch into.\n\nYou proposed the end and the operator already confirmed it: the migration is done when every page is served from a template and no page links an image off the old host, proven by the final PR merged with green CI.\n\nThis sandbox cannot dispatch. Do Phase 1 only (declare the delivery); write no packet and link no session. Start the orchestration now."
+    }
+  ],
+  "assert": [
+    {
+      "campaignCount": 1
+    },
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "the campaign is born active, owned by A",
+      "campaign": "*",
+      "path": "status",
+      "equals": "active"
+    },
+    {
+      "campaign": "*",
+      "path": "owner.sessionId",
+      "equals": "{{session.A}}"
+    },
+    {
+      "campaign": "*",
+      "path": "declaredEnd.target",
+      "exists": true
+    },
+    {
+      "label": "three chapters, one per spec chapter",
+      "campaign": "*",
+      "path": "chapters",
+      "length": 3
+    },
+    {
+      "label": "chapter 1 produces the first token",
+      "campaign": "*",
+      "chapter": "index:0",
+      "path": "produces",
+      "includes": "images-on-cdn"
+    },
+    {
+      "label": "chapter 2 consumes it and produces the next",
+      "campaign": "*",
+      "chapter": "index:1",
+      "path": "consumes",
+      "includes": "images-on-cdn"
+    },
+    {
+      "campaign": "*",
+      "chapter": "index:1",
+      "path": "produces",
+      "includes": "page-templates"
+    },
+    {
+      "label": "chapter 3 consumes the templates",
+      "campaign": "*",
+      "chapter": "index:2",
+      "path": "consumes",
+      "includes": "page-templates"
+    },
+    {
+      "label": "chapter 1 has its mission (rolling wave)",
+      "campaign": "*",
+      "chapter": "index:0",
+      "path": "missionId",
+      "exists": true
+    },
+    {
+      "label": "chapter 2 stays coarse \u2014 no mission yet",
+      "campaign": "*",
+      "chapter": "index:1",
+      "path": "missionId",
+      "exists": false
+    },
+    {
+      "label": "chapter 3 stays coarse \u2014 no mission yet",
+      "campaign": "*",
+      "chapter": "index:2",
+      "path": "missionId",
+      "exists": false
+    },
+    {
+      "label": "the mission and the chapter name each other",
+      "bound": {
+        "campaign": "*",
+        "chapter": "index:0",
+        "mission": "*"
+      }
+    },
+    {
+      "label": "the chapter-1 mission is detailed to steps",
+      "mission": "*",
+      "path": "steps",
+      "lengthAtLeast": 2
+    },
+    {
+      "label": "the spec rides on the campaign as an attachment, not a step",
+      "campaign": "*",
+      "path": "scope",
+      "includes": {
+        "kind": "worktree",
+        "ref": "docs/page-migration-spec.md"
+      }
+    }
+  ],
+  "breaks": [
+    {
+      "name": "campaign-never-declared",
+      "mutate": [
+        {
+          "dropCampaign": "*"
+        }
+      ]
+    },
+    {
+      "name": "mission-not-bound-to-its-chapter",
+      "mutate": [
+        {
+          "mission": "*",
+          "unset": "chapterId"
+        }
+      ]
+    },
+    {
+      "name": "chapter-3-mission-created-early",
+      "mutate": [
+        {
+          "campaign": "*",
+          "chapter": "index:2",
+          "set": {
+            "missionId": "mnt-deadbeef"
+          }
+        }
+      ]
+    },
+    {
+      "name": "chapter-1-not-detailed",
+      "mutate": [
+        {
+          "mission": "*",
+          "removeSteps": {
+            "kind": "custom"
+          }
+        }
+      ]
+    },
+    {
+      "name": "consumes-not-declared",
+      "mutate": [
+        {
+          "campaign": "*",
+          "chapter": "index:1",
+          "unset": "consumes"
+        }
+      ]
+    },
+    {
+      "name": "chapters-collapsed-into-one",
+      "mutate": [
+        {
+          "campaign": "*",
+          "set": {
+            "chapters": [
+              {
+                "id": "chp-1",
+                "ordinal": 1,
+                "title": "All of it",
+                "required": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "scope-dropped",
+      "mutate": [
+        {
+          "campaign": "*",
+          "unset": "scope"
+        }
+      ]
+    }
+  ]
+}

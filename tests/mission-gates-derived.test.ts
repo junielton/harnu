@@ -218,8 +218,10 @@ describe('AC-1 — a step is proven by facts', () => {
     const before = await rawOf(id)
     const p = await get(id)
     expect(p.derived.steps[0].gates.main).toBe('red')
-    // Nothing is downgraded: the step still reads verified, and the file is untouched.
-    expect(p.derived.progress.states['stp-1']).toBe('verified')
+    // Nothing STORED is downgraded: the file is untouched and the proof is still `verified`.
+    // Amendment (a) (T595): gates now govern what the step READS — a red `main` is an
+    // applicable gate that is not green, so it reads `done`, not `verified`.
+    expect(p.derived.progress.states['stp-1']).toBe('done')
     expect(await rawOf(id)).toBe(before)
     expect(p.youItems).toContainEqual({ kind: 'main-red', stepId: 'stp-1', pr: 8 })
     expect(p.you).toContain('main is red after #8')

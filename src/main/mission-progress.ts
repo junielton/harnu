@@ -8,6 +8,7 @@
  * any more — scope is an attachment (§3.3) — so it is excluded here.
  */
 import type { Mission, MissionStep } from './mission-core'
+import { GATE_NAMES, type StepGates } from './mission-gates'
 import type { MissionChildState } from './mcp/fleet-snapshot'
 
 export type StepState =
@@ -26,6 +27,12 @@ export interface StepSignalsLite {
   children: Pick<MissionChildState, 'sessionId' | 'taskState'>[]
   /** An existence-level step proven by its links right now. */
   existenceProven: boolean
+  /**
+   * The step's derived gates (Campaign spec §3.2, Amendment (a)). They GOVERN `verified`:
+   * a step whose stored proof is `verified` reads `done` while any applicable gate is red or
+   * running. Absent = none derived, so nothing is held back.
+   */
+  gates?: StepGates
 }
 
 export interface MissionProgress {
@@ -54,6 +61,22 @@ export interface MissionProgress {
   computedAt: string
 }
 
+/**
+ * Campaign spec Amendment (a) (operator decision, 2026-10-31): do the step's gates allow it to
+ * read `verified`? Every APPLICABLE gate must be green. A gate is applicable unless it is `off`
+ * (no signal yet) or `na` (does not apply); the `checks` gate also applies only when the step
+ * actually has checks — whatever the facts say, a step with none has nothing to tick. A step
+ * with no PR (pr gate `off`) is therefore unchanged, and gates never upgrade: only a stored
+ * `verified` proof can read `verified`.
+ */
+function gatesAllowVerified(step: MissionStep, gates: StepGates | undefined): boolean {
+  if (!gates) return true
+  return GATE_NAMES.every((name) => {
+    if (name === 'checks' && (step.checks?.length ?? 0) === 0) return true
+    return gates[name] !== 'red' && gates[name] !== 'running'
+  })
+}
+
 /** §3.1 step state, first match wins. */
 function stepState(step: MissionStep, sig: StepSignalsLite | undefined, owner: string): StepState {
   const by = step.verifiedBy
@@ -66,11 +89,10 @@ function stepState(step: MissionStep, sig: StepSignalsLite | undefined, owner: s
   if (by?.verdict === 'needs-human') return 'done'
   // A human step the operator ticked is `proof: 'verified'` with the operator as
   // verifier (`applyOperatorVerifyStep`), so the first clause covers it.
-  if (
-    step.proof === 'verified' ||
-    (step.verification === 'existence' && sig?.existenceProven === true)
-  )
-    return 'verified'
+  // Amendment (a): a stored `verified` proof READS `verified` only while the step's
+  // applicable gates are all green; otherwise it reads `done` (the stored proof is untouched).
+  if (step.proof === 'verified') return gatesAllowVerified(step, sig?.gates) ? 'verified' : 'done'
+  if (step.verification === 'existence' && sig?.existenceProven === true) return 'verified'
   if (step.proof === 'claimed' || (step.proof === 'self-verified' && by?.verdict === 'met'))
     return 'done'
   // The owner is never a builder: its own link on a step does not make it run.

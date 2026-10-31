@@ -64,6 +64,19 @@ export const MISSION_VERBS = [
 ]
 
 /**
+ * The `campaign_*` verbs (campaign spec §3.3), allowed beside the mission ones. Kept a
+ * separate list so the mission-verb pin in the unit suite stays exact; a second pin
+ * holds this one to the catalog's `campaign_*` verbs.
+ */
+export const CAMPAIGN_VERBS = [
+  'campaign_create',
+  'campaign_add_chapter',
+  'campaign_get',
+  'campaign_list',
+  'campaign_request_close'
+]
+
+/**
  * The fixed frame every scripted prompt runs in. Deliberately tiny: a headless
  * run costs real API time, and the scenario's own lines carry the calls.
  */
@@ -87,13 +100,24 @@ function scriptedFrame(sessionId, body) {
  * how a question to the operator is expressed instead, so a missing tool is
  * never mistaken for a rule of the skill.
  */
-function ownerFrame(sessionId, folder, body) {
+function ownerFrame(sessionId, folder, body, tools = []) {
+  // A phase that grants `Bash` is testing whether the agent reaches for `gh` or the
+  // fleet to learn dispatch state, so `gh` must be reachable (it fails: the sandbox
+  // repo has no remote). Otherwise "no gh call" would hold only because the frame
+  // said `gh` does not exist.
+  const bash = tools.includes('Bash')
+  const absent = bash
+    ? 'board, worktree, session, notify, memory'
+    : 'board, worktree, session, notify, memory, gh'
   return [
     'You are the owner session of a Harnu orchestration, running headless for a behavior test.',
     `Your own Claude session UUID is ${sessionId} — pass it wherever a verb asks for your session id.`,
     `The repo is your current directory; pass folder="${folder}" to every mcp__harnu__ verb.`,
     'Read the skill file named below first, then act exactly as it says for the situation described. Decide your calls yourself.',
-    'This sandbox has only the mcp__harnu__mission_* verbs and the built-in tools you were given. Every other verb the skill mentions (board, worktree, session, notify, memory, gh) does not exist here: skip what needs it, never ask for it.',
+    'This sandbox has only the mcp__harnu__mission_* and mcp__harnu__campaign_* verbs and the built-in tools you were given. Every other verb the skill mentions (' +
+      absent +
+      ') does not exist here: skip what needs it, never ask for it.' +
+      (bash ? ' Bash exists, but this repo has no GitHub remote.' : ''),
     'AskUserQuestion does not exist here either. When the skill tells you to ask the operator something, put the question in your final reply and end your turn — the answer arrives in a later turn.',
     'This turn has no memory of earlier turns: the mission (mission_get) is the state.',
     'End your turn with your message to the operator.',
@@ -145,11 +169,11 @@ export function runAgent({
     '--tools',
     tools.join(','),
     '--allowedTools',
-    [...tools, ...MISSION_VERBS.map((v) => `mcp__harnu__${v}`)].join(','),
+    [...tools, ...[...MISSION_VERBS, ...CAMPAIGN_VERBS].map((v) => `mcp__harnu__${v}`)].join(','),
     '--output-format',
     'stream-json',
     '--verbose',
-    owner ? ownerFrame(sessionId, folder, prompt) : scriptedFrame(sessionId, prompt)
+    owner ? ownerFrame(sessionId, folder, prompt, tools) : scriptedFrame(sessionId, prompt)
   ]
   const started = Date.now()
   return new Promise((resolve) => {

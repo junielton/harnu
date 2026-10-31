@@ -24,7 +24,11 @@ import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 
 import { applyBreak, gradeState } from '../scripts/eval/mission-behavior/grade.mjs'
-import { MISSION_VERBS, replyAsks } from '../scripts/eval/mission-behavior/agent.mjs'
+import {
+  CAMPAIGN_VERBS,
+  MISSION_VERBS,
+  replyAsks
+} from '../scripts/eval/mission-behavior/agent.mjs'
 import { MCP_TOOLS } from '../src/main/mcp/tool-catalog'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
@@ -88,6 +92,9 @@ interface StepSpec {
   verifiedBy?: Json
   checks?: Json[]
   addedReason?: string
+  /** `false` = a side step (campaign spec §3.2). */
+  required?: boolean
+  discoveredFrom?: string
 }
 
 function step(n: number, s: StepSpec): Json {
@@ -102,7 +109,9 @@ function step(n: number, s: StepSpec): Json {
     blockers: s.blockers ?? [],
     ...(s.verifiedBy ? { verifiedBy: s.verifiedBy } : {}),
     ...(s.checks ? { checks: s.checks } : {}),
-    ...(s.addedReason ? { addedReason: s.addedReason } : {})
+    ...(s.addedReason ? { addedReason: s.addedReason } : {}),
+    ...(s.required === false ? { required: false } : {}),
+    ...(s.discoveredFrom ? { discoveredFrom: s.discoveredFrom } : {})
   }
 }
 
@@ -134,8 +143,53 @@ function missionFile(i: number, { slug, data = {}, steps, log = '' }: MissionSpe
   }
 }
 
-function stateOf(missions: MissionSpec[], files: Record<string, string | null> = {}): Json {
-  return { missions: missions.map((m, i) => missionFile(i, m)), unreadable: [], files }
+interface CampaignSpec {
+  slug: string
+  data?: Json
+  chapters: Json[]
+  log?: string
+}
+
+/** One campaign file (campaign spec §3.1): born active, owned by A. */
+function campaignFile(i: number, { slug, data = {}, chapters, log = '' }: CampaignSpec): Json {
+  return {
+    file: `cmp-0000000${i}-${slug}.md`,
+    data: {
+      id: `cmp-0000000${i}`,
+      slug,
+      folder: '/tmp/eval',
+      owner: { sessionId: A, folder: '/tmp/eval' },
+      title: slug,
+      declaredEnd: { kind: 'code', target: 'x', evidence: 'y' },
+      status: 'active',
+      createdAt: AT,
+      updatedAt: AT,
+      ...data,
+      chapters
+    },
+    log: `# ${slug}\n\n## Log\n${log}`
+  }
+}
+
+const chapter = (n: number, title: string, extra: Json = {}): Json => ({
+  id: `chp-${n}`,
+  ordinal: n,
+  title,
+  required: true,
+  ...extra
+})
+
+function stateOf(
+  missions: MissionSpec[],
+  files: Record<string, string | null> = {},
+  campaigns: CampaignSpec[] = []
+): Json {
+  return {
+    missions: missions.map((m, i) => missionFile(i, m)),
+    campaigns: campaigns.map((c, i) => campaignFile(i, c)),
+    unreadable: [],
+    files
+  }
 }
 
 const end = (extra: Partial<StepSpec> = {}): StepSpec => ({
@@ -177,6 +231,8 @@ const ALL = readdirSync(SCENARIOS)
 
 /** The scenarios this file grades offline — every one in the directory. */
 const COVERED = [
+  'campaign-declare',
+  'campaign-prereq-order',
   'close-end-to-end',
   'concurrent-writes',
   'end-before-dispatch',
@@ -188,7 +244,8 @@ const COVERED = [
   'rule-change',
   'self-verification',
   'signoff-as-check',
-  'stall-detection'
+  'stall-detection',
+  'tick-red-gate'
 ]
 
 describe('the scenario set (Mission v3 §3.11, AC-11)', () => {
@@ -213,6 +270,11 @@ describe('the scenario set (Mission v3 §3.11, AC-11)', () => {
     // picks it fails as a harness artifact, not as the model's choice.
     const catalog = MCP_TOOLS.map((t) => t.name).filter((n) => n.startsWith('mission_'))
     expect([...MISSION_VERBS].sort()).toEqual([...catalog].sort())
+  })
+
+  it('an eval agent may call every campaign_* verb the catalog ships', () => {
+    const catalog = MCP_TOOLS.map((t) => t.name).filter((n) => n.startsWith('campaign_'))
+    expect([...CAMPAIGN_VERBS].sort()).toEqual([...catalog].sort())
   })
 
   it('the shadow dual-write scenario is retired (closes T371)', () => {
@@ -736,5 +798,133 @@ describe('replyAsks — how a headless owner asks the operator', () => {
     expect(replyAsks('Is "PR merging feat/notes-export into main" the right end?')).toBe(true)
     expect(replyAsks('Please confirm the end before I dispatch.')).toBe(true)
     expect(replyAsks('Dispatched both units.')).toBe(false)
+  })
+})
+
+// ---- campaign scenarios (campaign spec §6 / §8 AC-4, chapter 3b) ----------------------
+
+describe('campaign-declare — one campaign, chapter 1 detailed, chapters 2–3 coarse', () => {
+  const sc = loadScenario('campaign-declare')
+  const v = vars(['page-migration'])
+
+  it('passes on the declared campaign and catches every break', () => {
+    const state = stateOf(
+      [
+        {
+          slug: 'page-migration',
+          data: { campaignId: 'cmp-00000000', chapterId: 'chp-1' },
+          steps: [unit('Upload images to the CDN'), end()]
+        }
+      ],
+      {},
+      [
+        {
+          slug: 'page-migration',
+          data: { scope: [{ kind: 'worktree', ref: 'docs/page-migration-spec.md' }] },
+          chapters: [
+            chapter(1, 'Image pipeline', {
+              missionId: 'mnt-0000abc0',
+              produces: ['images-on-cdn']
+            }),
+            chapter(2, 'Page templates', {
+              consumes: ['images-on-cdn'],
+              produces: ['page-templates']
+            }),
+            chapter(3, 'Page migration', {
+              consumes: ['page-templates', 'images-on-cdn'],
+              radiant: { template: 'migrate page {slug}', total: 88 }
+            })
+          ]
+        }
+      ]
+    )
+    expectGraderSound(state, sc.assert, sc.breaks, v)
+  })
+
+  it('does not pass on the mission-only state the old skill leaves', () => {
+    const state = stateOf([{ slug: 'page-migration', steps: [unit('Upload images'), end()] }])
+    const graded = gradeState(state, sc.assert, v) as Graded
+    expect(graded.ok).toBe(false)
+  })
+})
+
+describe('campaign-prereq-order — a refused order is re-ordered, never forced', () => {
+  const sc = loadScenario('campaign-prereq-order')
+  const v = vars([])
+
+  it('passes on the re-ordered campaign and catches every break', () => {
+    const state = stateOf([], {}, [
+      {
+        slug: 'page-publishing',
+        chapters: [
+          chapter(1, 'Build the page templates', { produces: ['page-templates'] }),
+          chapter(2, 'Publish the pages', { consumes: ['page-templates'] })
+        ]
+      }
+    ])
+    expectGraderSound(state, sc.assert, sc.breaks, v)
+  })
+
+  it('does not pass on the refused order', () => {
+    const state = stateOf([], {}, [
+      {
+        slug: 'page-publishing',
+        chapters: [
+          chapter(1, 'Publish the pages', { consumes: ['page-templates'] }),
+          chapter(2, 'Build the page templates', { produces: ['page-templates'] })
+        ],
+        log: '\n### t · surprise\n\nforced\n'
+      }
+    ])
+    expect((gradeState(state, sc.assert, v) as Graded).ok).toBe(false)
+  })
+})
+
+describe('tick-red-gate — a red ci gate opens a side step, with no gh and no fleet poll', () => {
+  const sc = loadScenario('tick-red-gate')
+  const v = vars(['importer'])
+
+  it('seeds the sticky cache for its PR before the instance boots', () => {
+    expect(sc.gateCache).toEqual([{ pr: 7, state: 'OPEN', ci: 'failing' }])
+    const pre = sc.phases.findIndex((p) => 'precondition' in p)
+    const agent = sc.phases.findIndex((p) => p.agent === 'A')
+    expect(pre, 'the red gate is checked before the model is spent').toBeGreaterThan(-1)
+    expect(pre).toBeLessThan(agent)
+  })
+
+  it('grants Bash, so a gh call would show', () => {
+    const turn = sc.phases.find((p) => p.agent === 'A') as { tools?: string[] }
+    expect(turn.tools).toContain('Bash')
+  })
+
+  it('passes on the ticked state and catches every break', () => {
+    const state = stateOf([
+      {
+        slug: 'importer',
+        steps: [
+          unit('Ship the importer', { links: [{ kind: 'pr', ref: '#7' }] }),
+          unit('Document the importer'),
+          unit('Fix the failing CI on #7', {
+            addedReason: 'the PR head CI is red; the step cannot read verified',
+            required: false,
+            discoveredFrom: 'stp-1'
+          }),
+          end()
+        ],
+        log: '\n### t · tick\nEVAL-TURN[tick] asked=false tools=mission_get,mission_add_step,mission_log\n'
+      }
+    ])
+    expectGraderSound(state, sc.assert, sc.breaks, v)
+  })
+
+  it('does not pass on a tick that did nothing about the red gate', () => {
+    const state = stateOf([
+      {
+        slug: 'importer',
+        steps: [unit('Ship the importer', { links: [{ kind: 'pr', ref: '#7' }] }), end()],
+        log: '\nEVAL-TURN[tick] asked=false tools=mission_get\n'
+      }
+    ])
+    expect((gradeState(state, sc.assert, v) as Graded).ok).toBe(false)
   })
 })

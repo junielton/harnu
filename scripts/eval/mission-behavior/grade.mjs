@@ -25,6 +25,11 @@ export function missionsDirOf(folder) {
   return path.join(folder, '.harnu', 'missions')
 }
 
+/** `<folder>/.harnu/campaigns` — where a repo's campaign files live (campaign spec §3.1). */
+export function campaignsDirOf(folder) {
+  return path.join(folder, '.harnu', 'campaigns')
+}
+
 /**
  * Split one mission file into its YAML frontmatter and its free-text Log body.
  * Returns `null` when the file has no frontmatter block.
@@ -42,19 +47,29 @@ function splitFile(raw) {
  * `files` (paths relative to `folder`) are read too, byte-exact as `latin1`
  * strings (`null` when absent), for the `{ file }` assertions.
  *
- * @returns {{ missions: Array<{ file: string, data: any, log: string }>, unreadable: string[], files: Record<string, string | null> }}
+ * Campaign files (`.harnu/campaigns/*.md`, campaign spec §3.1) are read the same way, into
+ * `campaigns`.
+ *
+ * @returns {{ missions: Array<{ file: string, data: any, log: string }>, campaigns: Array<{ file: string, data: any, log: string }>, unreadable: string[], files: Record<string, string | null> }}
  */
 export function loadMissionState(folder, files = []) {
-  const dir = missionsDirOf(folder)
   const missions = []
+  const campaigns = []
   const unreadable = []
   const plain = {}
   for (const rel of files) {
     const abs = path.join(folder, rel)
     plain[rel] = existsSync(abs) ? readFileSync(abs, 'latin1') : null
   }
-  const state = { missions, unreadable, files: plain }
-  if (!existsSync(dir)) return state
+  const state = { missions, campaigns, unreadable, files: plain }
+  readRecords(missionsDirOf(folder), missions, unreadable)
+  readRecords(campaignsDirOf(folder), campaigns, unreadable)
+  return state
+}
+
+/** Parse every `*.md` record in `dir` into `into`; a corrupt one is reported, never skipped. */
+function readRecords(dir, into, unreadable) {
+  if (!existsSync(dir)) return
   for (const file of readdirSync(dir)
     .filter((n) => n.endsWith('.md'))
     .sort()) {
@@ -67,12 +82,11 @@ export function loadMissionState(folder, files = []) {
     try {
       const data = yaml.load(split.inner, { schema: yaml.CORE_SCHEMA })
       if (!data || typeof data !== 'object') throw new Error('frontmatter is not a mapping')
-      missions.push({ file, data, log: split.body })
+      into.push({ file, data, log: split.body })
     } catch (e) {
       unreadable.push(`${file}: ${e.message.split('\n')[0]}`)
     }
   }
-  return state
 }
 
 /** Write a state back out as mission files (used to materialize a break). */
@@ -83,6 +97,13 @@ export function writeMissionState(folder, state) {
   for (const m of state.missions) {
     const fm = yaml.dump(m.data, { lineWidth: -1, noRefs: true })
     writeFileSync(path.join(dir, m.file), `---\n${fm}---\n${m.log}`, 'utf8')
+  }
+  const cdir = campaignsDirOf(folder)
+  rmSync(cdir, { recursive: true, force: true })
+  if ((state.campaigns ?? []).length > 0) mkdirSync(cdir, { recursive: true })
+  for (const c of state.campaigns ?? []) {
+    const fm = yaml.dump(c.data, { lineWidth: -1, noRefs: true })
+    writeFileSync(path.join(cdir, c.file), `---\n${fm}---\n${c.log}`, 'utf8')
   }
   for (const [rel, content] of Object.entries(state.files ?? {})) {
     if (content === null) continue
@@ -120,6 +141,38 @@ function filesNamed(assertions, vars) {
 export function findMission(state, slug) {
   if (slug === '*') return state.missions.length === 1 ? state.missions[0] : undefined
   return state.missions.find((m) => m.data.slug === slug)
+}
+
+/**
+ * Find a campaign by slug. `*` is the repo's ONLY campaign (an owner turn names its
+ * own, so the scenario cannot know the slug) — `undefined` unless exactly one exists.
+ */
+export function findCampaign(state, slug) {
+  const all = state.campaigns ?? []
+  if (slug === '*') return all.length === 1 ? all[0] : undefined
+  return all.find((c) => c.data.slug === slug)
+}
+
+/** Every chapter of a campaign (an empty list when the file carries none). */
+function chaptersOf(campaign) {
+  return Array.isArray(campaign.data.chapters) ? campaign.data.chapters : []
+}
+
+/** Resolve a chapter selector: `index:<n>` (0-based, in order), `id:<chp-n>` or `title:<exact>`. */
+export function findChapter(campaign, selector) {
+  const chapters = chaptersOf(campaign)
+  if (selector.startsWith('index:')) return chapters[Number(selector.slice('index:'.length))]
+  if (selector.startsWith('id:')) return chapters.find((c) => c.id === selector.slice(3))
+  if (selector.startsWith('title:')) return chapters.find((c) => c.title === selector.slice(6))
+  // The chapter that produces / consumes a prerequisite token — a scenario cannot know the
+  // titles an owner picks, but it does know the tokens the spec names.
+  for (const key of ['produces', 'consumes']) {
+    if (selector.startsWith(`${key}:`)) {
+      const token = selector.slice(key.length + 1)
+      return chapters.find((c) => Array.isArray(c[key]) && c[key].includes(token))
+    }
+  }
+  throw new Error(`unknown chapter selector "${selector}"`)
 }
 
 /** Every step of a mission (an empty list when the file carries none). */
@@ -246,9 +299,11 @@ export function fillTemplate(value, vars) {
 /** One-line label for an assertion, for the report. */
 function describe(a) {
   if (a.label) return a.label
-  const where = [a.file, a.mission, a.step, a.path].filter(Boolean).join(' › ')
+  const where = [a.file, a.campaign, a.chapter, a.mission, a.step, a.path]
+    .filter((x) => typeof x === 'string' && x)
+    .join(' › ')
   const what = Object.keys(a)
-    .filter((k) => !['file', 'mission', 'step', 'path', 'label'].includes(k))
+    .filter((k) => !['file', 'campaign', 'chapter', 'mission', 'step', 'path', 'label'].includes(k))
     .map((k) => `${k} ${JSON.stringify(a[k])}`)
     .join(', ')
   return `${where || 'state'}: ${what}`
@@ -260,7 +315,7 @@ function describe(a) {
  *
  * Shapes:
  *  - `{ missionCount: n }`
- *  - `{ mission, [step], [path], equals | notEquals | exists | includes | excludes | length | oneOf }`
+ *  - `{ mission, [step], [path], equals | notEquals | exists | includes | excludes | length | lengthAtLeast | oneOf }`
  *  - `{ mission, anyBlocker: {…}, present? }` / `{ mission, anyLink: {…}, present? }` — some
  *    blocker (the mission's own or any step's) / some step link deep-partially matches;
  *    `present: false` asserts none does. For a behavior the model may place anywhere.
@@ -273,6 +328,15 @@ function describe(a) {
  *  - any deep-partial value may be an operator: `{ $exists }`, `{ $truthy }`, `{ $match, $flags? }`
  *  - `{ mission, [step], path, sha256: "<hex>" }` — the field's UTF-8 bytes hash to it
  *  - `{ file, sha256: "<hex>" }` / `{ file, exists: bool }` — a plain sandbox file
+ *  - `{ campaignCount: n }`
+ *  - `{ campaign, [chapter], [path], equals | notEquals | exists | includes | excludes | length | oneOf }`
+ *    — a campaign (`*` = the repo's only one), or one of its chapters (`index:<n>`, `id:<chp-n>`,
+ *    `title:<exact>`, `produces:<token>`, `consumes:<token>`)
+ *  - `{ campaign, logContains | logNotContains: "…" }`
+ *  - `{ campaign, chapterCount: {…}, equals: n }` — chapters deep-partially matching
+ *  - `{ campaign, chapterBefore: ["<selector>", "<selector>"] }` — the first chapter sits before the second
+ *  - `{ bound: { campaign, chapter, mission } }` — the chapter's mission is that mission AND the
+ *    mission names that campaign and chapter back (the two halves of the binding agree)
  */
 export function evaluate(state, a) {
   const label = describe(a)
@@ -294,6 +358,63 @@ export function evaluate(state, a) {
         return got === a.sha256 ? pass() : fail(`sha256 ${got}`)
       }
       return fail('file assertion has no matcher')
+    }
+    if ('campaignCount' in a) {
+      const n = (state.campaigns ?? []).length
+      return n === a.campaignCount ? pass() : fail(`found ${n} campaign file(s)`)
+    }
+    if ('bound' in a) {
+      const campaign = findCampaign(state, a.bound.campaign)
+      const chapter = campaign && findChapter(campaign, a.bound.chapter)
+      const mission = findMission(state, a.bound.mission)
+      if (!campaign || !chapter || !mission) {
+        return fail(
+          `missing: ${[!campaign && 'campaign', !chapter && 'chapter', !mission && 'mission'].filter(Boolean).join(', ')}`
+        )
+      }
+      const ok =
+        chapter.missionId === mission.data.id &&
+        mission.data.campaignId === campaign.data.id &&
+        mission.data.chapterId === chapter.id
+      return ok
+        ? pass()
+        : fail(
+            `chapter.missionId=${chapter.missionId} mission.campaignId=${mission.data.campaignId} mission.chapterId=${mission.data.chapterId}`
+          )
+    }
+    if ('campaign' in a) {
+      const campaign = findCampaign(state, a.campaign)
+      if (!campaign) {
+        return fail(
+          a.campaign === '*'
+            ? `expected exactly one campaign, found ${(state.campaigns ?? []).length}`
+            : `no campaign with slug "${a.campaign}"`
+        )
+      }
+      if ('logContains' in a) {
+        return campaign.log.includes(a.logContains) ? pass() : fail('the Log does not contain it')
+      }
+      if ('logNotContains' in a) {
+        return campaign.log.includes(a.logNotContains) ? fail('the Log contains it') : pass()
+      }
+      if ('chapterCount' in a) {
+        const n = chaptersOf(campaign).filter((c) => partialMatch(c, a.chapterCount)).length
+        return n === a.equals ? pass() : fail(`counted ${n}`)
+      }
+      if ('chapterBefore' in a) {
+        const [first, second] = a.chapterBefore.map((sel) => findChapter(campaign, sel))
+        if (!first || !second) return fail('a chapter named by chapterBefore is missing')
+        const chapters = chaptersOf(campaign)
+        return chapters.indexOf(first) < chapters.indexOf(second)
+          ? pass()
+          : fail(`"${first.title}" does not come before "${second.title}"`)
+      }
+      let target = campaign.data
+      if (a.chapter) {
+        target = findChapter(campaign, a.chapter)
+        if (!target) return fail(`no chapter "${a.chapter}"`)
+      }
+      return matchPath(target, a, pass, fail)
     }
     const mission = findMission(state, a.mission)
     if (!mission) {
@@ -338,38 +459,46 @@ export function evaluate(state, a) {
       target = findStep(mission, a.step)
       if (!target) return fail(`no step "${a.step}"`)
     }
-    const got = getPath(target, a.path)
-    const shown = JSON.stringify(got)
-    if ('sha256' in a) {
-      if (typeof got !== 'string') return fail(`not a string: ${shown?.slice(0, 80)}`)
-      const digest = sha256Of(got, 'utf8')
-      return digest === a.sha256 ? pass() : fail(`sha256 ${digest} (${got.length} chars)`)
-    }
-    if ('equals' in a) return partialMatch(got, a.equals) ? pass() : fail(`got ${shown}`)
-    if ('notEquals' in a) return partialMatch(got, a.notEquals) ? fail(`got ${shown}`) : pass()
-    if ('oneOf' in a) return a.oneOf.includes(got) ? pass() : fail(`got ${shown}`)
-    if ('exists' in a) {
-      const present = got !== undefined && got !== null
-      return present === a.exists ? pass() : fail(`got ${shown}`)
-    }
-    if ('length' in a) {
-      return Array.isArray(got) && got.length === a.length ? pass() : fail(`got ${shown}`)
-    }
-    if ('includes' in a) {
-      const wanted = Array.isArray(a.includes) ? a.includes : [a.includes]
-      if (!Array.isArray(got)) return fail(`not a list: ${shown}`)
-      const missing = wanted.filter((w) => !got.some((g) => partialMatch(g, w)))
-      return missing.length === 0 ? pass() : fail(`missing ${JSON.stringify(missing)}`)
-    }
-    if ('excludes' in a) {
-      if (!Array.isArray(got)) return fail(`not a list: ${shown}`)
-      const present = got.filter((g) => partialMatch(g, a.excludes))
-      return present.length === 0 ? pass() : fail(`present: ${JSON.stringify(present)}`)
-    }
-    return fail('assertion has no matcher')
+    return matchPath(target, a, pass, fail)
   } catch (e) {
     return fail(`grader error: ${e.message}`)
   }
+}
+
+/** The shared path matchers: `equals`, `notEquals`, `oneOf`, `exists`, `length`, `includes`, `excludes`, `sha256`. */
+function matchPath(target, a, pass, fail) {
+  const got = getPath(target, a.path)
+  const shown = JSON.stringify(got)
+  if ('sha256' in a) {
+    if (typeof got !== 'string') return fail(`not a string: ${shown?.slice(0, 80)}`)
+    const digest = sha256Of(got, 'utf8')
+    return digest === a.sha256 ? pass() : fail(`sha256 ${digest} (${got.length} chars)`)
+  }
+  if ('equals' in a) return partialMatch(got, a.equals) ? pass() : fail(`got ${shown}`)
+  if ('notEquals' in a) return partialMatch(got, a.notEquals) ? fail(`got ${shown}`) : pass()
+  if ('oneOf' in a) return a.oneOf.includes(got) ? pass() : fail(`got ${shown}`)
+  if ('exists' in a) {
+    const present = got !== undefined && got !== null
+    return present === a.exists ? pass() : fail(`got ${shown}`)
+  }
+  if ('length' in a) {
+    return Array.isArray(got) && got.length === a.length ? pass() : fail(`got ${shown}`)
+  }
+  if ('lengthAtLeast' in a) {
+    return Array.isArray(got) && got.length >= a.lengthAtLeast ? pass() : fail(`got ${shown}`)
+  }
+  if ('includes' in a) {
+    const wanted = Array.isArray(a.includes) ? a.includes : [a.includes]
+    if (!Array.isArray(got)) return fail(`not a list: ${shown}`)
+    const missing = wanted.filter((w) => !got.some((g) => partialMatch(g, w)))
+    return missing.length === 0 ? pass() : fail(`missing ${JSON.stringify(missing)}`)
+  }
+  if ('excludes' in a) {
+    if (!Array.isArray(got)) return fail(`not a list: ${shown}`)
+    const present = got.filter((g) => partialMatch(g, a.excludes))
+    return present.length === 0 ? pass() : fail(`present: ${JSON.stringify(present)}`)
+  }
+  return fail('assertion has no matcher')
 }
 
 /**
@@ -415,6 +544,10 @@ export function gradeState(state, assertions, vars) {
  *  - `{ mission, clearBlockers: true }` — every blocker gone (the mission's and each step's)
  *  - `{ mission, eachBlocker: { set: { "<path>": value } } }` — applied to every blocker
  *  - `{ mission, eachLink: { match: {…}, remove: true } }` — every step link matching removed
+ *  - `{ mission, removeSteps: {…} }` — every step deep-partially matching is gone
+ *  - `{ mission, eachStep: { match: {…}, set?: {…}, unset?: "path" | ["path"] } }` — applied to every matching step
+ *  - `{ campaign, [chapter], set | unset | logAppend | logRemove }` / `{ campaign, swapChapters: [sel, sel] }`
+ *    / `{ dropCampaign: "<slug>" }` — the same, against a campaign file (selectors as in the assertions)
  *  A `mission`/`drop` of `*` is the single mission, as in the assertions.
  */
 export function applyBreak(state, brk, vars) {
@@ -436,8 +569,44 @@ export function applyBreak(state, brk, vars) {
       next.files = { ...next.files, [op.file]: op.delete ? null : op.write }
       continue
     }
+    if (op.dropCampaign) {
+      const gone = findCampaign(next, op.dropCampaign)
+      next.campaigns = (next.campaigns ?? []).filter((c) => c !== gone)
+      continue
+    }
+    if (op.campaign) {
+      const campaign = findCampaign(next, op.campaign)
+      if (!campaign) throw new Error(`break "${brk.name}": no campaign "${op.campaign}"`)
+      if (op.logAppend) campaign.log += `\n${op.logAppend}\n`
+      if (op.logRemove) campaign.log = campaign.log.split(op.logRemove).join('')
+      if (op.swapChapters) {
+        const [i, j] = op.swapChapters.map((sel) =>
+          chaptersOf(campaign).indexOf(findChapter(campaign, sel))
+        )
+        if (i < 0 || j < 0) throw new Error(`break "${brk.name}": swapChapters names no chapter`)
+        const chapters = campaign.data.chapters
+        ;[chapters[i], chapters[j]] = [chapters[j], chapters[i]]
+      }
+      let target = campaign.data
+      if (op.chapter) {
+        target = findChapter(campaign, op.chapter)
+        if (!target) throw new Error(`break "${brk.name}": no chapter "${op.chapter}"`)
+      }
+      for (const [p, v] of Object.entries(op.set ?? {})) setPath(target, p, v)
+      if (op.unset) unsetPath(target, op.unset)
+      continue
+    }
     const mission = findMission(next, op.mission)
     if (!mission) throw new Error(`break "${brk.name}": no mission "${op.mission}"`)
+    if (op.removeSteps) {
+      mission.data.steps = stepsOf(mission).filter((st) => !partialMatch(st, op.removeSteps))
+    }
+    if (op.eachStep) {
+      for (const st of stepsOf(mission).filter((x) => partialMatch(x, op.eachStep.match ?? {}))) {
+        for (const [p, v] of Object.entries(op.eachStep.set ?? {})) setPath(st, p, v)
+        for (const p of [].concat(op.eachStep.unset ?? [])) unsetPath(st, p)
+      }
+    }
     if (op.clearBlockers) {
       mission.data.blockers = []
       for (const st of stepsOf(mission)) st.blockers = []
