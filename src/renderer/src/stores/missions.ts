@@ -366,7 +366,11 @@ export const useMissionsStore = defineStore('missions', () => {
     doorsInFlight.value++
     let res: MissionDoorResult
     try {
-      res = await window.api.missionOperatorDoor(door)
+      // Campaign spec §4: Choose has its own channel; every other door shares one.
+      res =
+        door.door === 'chooseDecision'
+          ? await window.api.missionChoose(door)
+          : await window.api.missionOperatorDoor(door)
     } catch (err) {
       res = { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {

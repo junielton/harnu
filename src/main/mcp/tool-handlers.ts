@@ -163,10 +163,13 @@ import {
   withMissionIdMintLock,
   MISSION_ID_RE,
   MISSION_STEP_CONTROLLED_FIELDS,
+  STEP_ID_RE,
   type Blocker,
   type DeclaredEnd,
   type Mission,
   type MissionStep,
+  type StepDecision,
+  type StepEdge,
   type StepLink
 } from '../mission-core'
 import { probeGitMeta } from '../git-probe'
@@ -3825,11 +3828,15 @@ export function youItems(
   // in progress but never clears it, and a gate the work moved past (a later step
   // running, or the mission otherwise reached it) must not drop off the list.
   const current = progress.current
-  const counted = m.steps.filter((s) => s.kind !== 'fixed-start')
+  // The headline's own steps: `current` counts positions among them, so a side step
+  // (`required: false`, campaign spec §3.2) must not shift the index.
+  const counted = m.steps.filter((s) => s.kind !== 'fixed-start' && s.required !== false)
   const humans = counted
     .filter((s, i) => {
       if (s.verification !== 'human') return false
       if (s.proof === 'verified' && s.verifiedBy?.sessionId === OPERATOR_VERIFIER) return false
+      // A decision the operator has made is finished — nothing left to confirm.
+      if (s.decision?.chosen !== undefined) return false
       const isCurrent = current !== null && i + 1 >= current.from && i + 1 <= current.to
       return reached(s.id) || isCurrent || progress.leftBehind.includes(s.id)
     })
@@ -5008,7 +5015,14 @@ type MissionEdit =
   | { ok: false; error: string }
 
 /** The step fields `mission_update_step` may set (anything else is refused). */
-const MISSION_STEP_EDITABLE_FIELDS = ['title', 'proof'] as const
+const MISSION_STEP_EDITABLE_FIELDS = [
+  'title',
+  'proof',
+  'required',
+  'discoveredFrom',
+  'edges',
+  'decision'
+] as const
 
 function missionClosedMessage(id: string): string {
   return `MISSION_CLOSED: mission ${id} was closed by the operator — a closed mission is immutable by verb.`
@@ -5016,6 +5030,115 @@ function missionClosedMessage(id: string): string {
 
 function stepNotFoundMessage(id: string, stepId: string): string {
   return `STEP_NOT_FOUND: mission ${id} has no step ${stepId} — mission_get lists its steps.`
+}
+
+/** Campaign spec §3.2 — the optional relation fields a step can be declared with. */
+interface StepRelations {
+  required?: boolean
+  discoveredFrom?: string
+  edges?: StepEdge[]
+  decision?: StepDecision
+}
+
+const STEP_EDGE_KINDS: readonly string[] = ['blocks', 'validates', 'related']
+const isStepId = (v: unknown): v is string => typeof v === 'string' && STEP_ID_RE.test(v)
+
+/**
+ * Parse `required` / `discoveredFrom` / `edges` / `decision` from a verb's args (add)
+ * or `set` (update). Shape only — whether the referenced steps exist is checked
+ * against the mission in {@link checkStepRelations}. A `decision` that already carries
+ * `chosen` is CONTROLLED_FIELD: only the operator's Choose door writes it.
+ */
+function parseStepRelations(
+  src: Record<string, unknown>
+): { ok: true; relations: StepRelations } | { ok: false; error: string } {
+  const bad = (what: string): { ok: false; error: string } => ({
+    ok: false,
+    error: `BAD_ARGS: ${what}`
+  })
+  const relations: StepRelations = {}
+  if (src.required !== undefined) {
+    if (typeof src.required !== 'boolean') return bad('required must be a boolean')
+    relations.required = src.required
+  }
+  if (src.discoveredFrom !== undefined) {
+    if (!isStepId(src.discoveredFrom)) return bad('discoveredFrom must be a step id (stp-<n>)')
+    relations.discoveredFrom = src.discoveredFrom
+  }
+  if (src.edges !== undefined) {
+    if (!Array.isArray(src.edges) || src.edges.length > 20) {
+      return bad('edges must be an array of at most 20 { kind: blocks | validates | related, to }')
+    }
+    const edges: StepEdge[] = []
+    for (const e of src.edges as unknown[]) {
+      const o = (typeof e === 'object' && e !== null ? e : {}) as Record<string, unknown>
+      if (typeof o.kind !== 'string' || !STEP_EDGE_KINDS.includes(o.kind) || !isStepId(o.to)) {
+        return bad('each edge needs kind (blocks | validates | related) and to (a step id)')
+      }
+      edges.push({ kind: o.kind as StepEdge['kind'], to: o.to })
+    }
+    relations.edges = edges
+  }
+  if (src.decision !== undefined) {
+    const d = (
+      typeof src.decision === 'object' && src.decision !== null ? src.decision : null
+    ) as Record<string, unknown> | null
+    if (!d) return bad('decision must be { title, options, blocks }')
+    if ('chosen' in d) {
+      return {
+        ok: false,
+        error:
+          "CONTROLLED_FIELD: chosen is the operator's — a decision is declared without it, and only the Choose door in the UI records which option was picked."
+      }
+    }
+    const title = typeof d.title === 'string' ? d.title.replace(/\s+/g, ' ').trim() : ''
+    const options = d.options
+    const blocks = d.blocks ?? []
+    if (!title || title.length > 200) return bad('decision.title must be 1..200 chars')
+    if (
+      !Array.isArray(options) ||
+      options.length < 2 ||
+      options.length > 10 ||
+      !options.every((o) => typeof o === 'string' && o.trim().length > 0 && o.length <= 200)
+    ) {
+      return bad('decision.options must be 2..10 non-empty strings (≤ 200 chars)')
+    }
+    if (!Array.isArray(blocks) || blocks.length > 20 || !blocks.every(isStepId)) {
+      return bad('decision.blocks must be an array of at most 20 step ids')
+    }
+    relations.decision = {
+      title,
+      options: (options as string[]).map((o) => o.trim()),
+      blocks: blocks as string[]
+    }
+  }
+  return { ok: true, relations }
+}
+
+/** What a step stores of its relations: a default (`required: true`) or an empty list is not written. */
+function storedRelations(r: StepRelations): StepRelations {
+  return {
+    ...(r.required === false ? { required: false } : {}),
+    ...(r.discoveredFrom ? { discoveredFrom: r.discoveredFrom } : {}),
+    ...(r.edges && r.edges.length > 0 ? { edges: r.edges } : {}),
+    ...(r.decision ? { decision: r.decision } : {})
+  }
+}
+
+/** Every step a relation names must exist in the mission, and none may name `selfId`. */
+function checkStepRelations(m: Mission, r: StepRelations, selfId?: string): string | null {
+  const named = [
+    ...(r.discoveredFrom ? [r.discoveredFrom] : []),
+    ...(r.edges ?? []).map((e) => e.to),
+    ...(r.decision?.blocks ?? [])
+  ]
+  for (const id of named) {
+    if (id === selfId) {
+      return `BAD_ARGS: ${id} cannot name itself — a step is not its own origin, edge target or lock.`
+    }
+    if (!m.steps.some((s) => s.id === id)) return stepNotFoundMessage(m.id, id)
+  }
+  return null
 }
 
 /** Next free `stp-<n>` — ids are never reused, even when ordinals shift. */
@@ -5073,7 +5196,11 @@ const missionAddStepHandler: Handler = async (args, ctx) => {
   const afterStepId = strField(args, 'afterStepId')
   const links = parseStepLinks(args.links)
   if (!links.ok) return errorResult(links.error)
+  const relations = parseStepRelations(args)
+  if (!relations.ok) return errorResult(relations.error)
   return editMission(args, ctx, (m) => {
+    const dangling = checkStepRelations(m, relations.relations)
+    if (dangling) return { ok: false, error: dangling }
     // Mission v3 §3.4: keyed on "started" (a step has a link or a proof), never on
     // a status — planning steps added before any work need no reason.
     const started = isStarted(m)
@@ -5109,7 +5236,8 @@ const missionAddStepHandler: Handler = async (args, ctx) => {
       // Only real growth carries a reason (the "total changed" marker); a
       // planning step added before the start carries none.
       ...(started && reason ? { addedReason: reason } : {}),
-      addedAt: new Date().toISOString()
+      addedAt: new Date().toISOString(),
+      ...storedRelations(relations.relations)
     }
     m.steps.splice(insertAt, 0, step)
     m.steps.forEach((s, i) => (s.ordinal = i + 1))
@@ -5138,7 +5266,7 @@ const missionUpdateStepHandler: Handler = async (args, ctx) => {
   )
   if (controlled.length > 0) {
     return errorResult(
-      `CONTROLLED_FIELD: mission_update_step cannot write ${controlled.join(', ')} — proof reaches verified/self-verified only through verification (and a human step only through the operator), and verifiedBy is recorded by that same path. The one proof value this verb sets is 'claimed'.`
+      `CONTROLLED_FIELD: mission_update_step cannot write ${controlled.join(', ')} — proof reaches verified/self-verified only through verification (and a human step only through the operator), and verifiedBy is recorded by that same path. The one proof value this verb sets is 'claimed'. A decision's chosen option is the operator's (the Choose door), never a verb's.`
     )
   }
   const unknown = keys.filter(
@@ -5146,7 +5274,7 @@ const missionUpdateStepHandler: Handler = async (args, ctx) => {
   )
   if (unknown.length > 0) {
     return errorResult(
-      `BAD_ARGS: unknown set field(s) ${unknown.join(', ')} — editable fields are title | proof ('claimed').`
+      `BAD_ARGS: unknown set field(s) ${unknown.join(', ')} — editable fields are title | proof ('claimed') | required | discoveredFrom | edges | decision.`
     )
   }
   let title: string | undefined
@@ -5154,9 +5282,26 @@ const missionUpdateStepHandler: Handler = async (args, ctx) => {
     title = typeof set.title === 'string' ? set.title.replace(/\s+/g, ' ').trim() : ''
     if (!title || title.length > 200) return errorResult('BAD_ARGS: title must be 1..200 chars')
   }
+  const relations = parseStepRelations(set)
+  if (!relations.ok) return errorResult(relations.error)
+  const rel = relations.relations
   return editMission(args, ctx, (m) => {
     const step = m.steps.find((s) => s.id === stepId)
     if (!step) return { ok: false, error: stepNotFoundMessage(m.id, stepId) }
+    const dangling = checkStepRelations(m, rel, stepId)
+    if (dangling) return { ok: false, error: dangling }
+    if (rel.required === false && step.kind !== 'custom') {
+      return {
+        ok: false,
+        error: `FIXED_STEP: ${stepId} is the mission's fixed ${step.kind === 'fixed-start' ? 'start' : 'end'} — it is part of the frame and cannot be a side step.`
+      }
+    }
+    if (rel.decision && step.decision?.chosen !== undefined) {
+      return {
+        ok: false,
+        error: `DECISION_CHOSEN: ${stepId} was already decided by the operator — its decision can no longer be rewritten.`
+      }
+    }
     const changed: string[] = []
     if (title !== undefined) {
       if (step.kind !== 'custom') {
@@ -5183,6 +5328,25 @@ const missionUpdateStepHandler: Handler = async (args, ctx) => {
       }
       step.proof = 'claimed'
       changed.push('proof')
+    }
+    if (rel.required !== undefined) {
+      // The default is not stored: `required: true` clears the key.
+      if (rel.required) delete step.required
+      else step.required = false
+      changed.push('required')
+    }
+    if (rel.discoveredFrom !== undefined) {
+      step.discoveredFrom = rel.discoveredFrom
+      changed.push('discoveredFrom')
+    }
+    if (rel.edges !== undefined) {
+      if (rel.edges.length > 0) step.edges = rel.edges
+      else delete step.edges
+      changed.push('edges')
+    }
+    if (rel.decision !== undefined) {
+      step.decision = rel.decision
+      changed.push('decision')
     }
     return { ok: true, mission: m, ack: { ok: true, op: 'mission_update_step', stepId, changed } }
   })

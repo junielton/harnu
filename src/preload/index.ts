@@ -2796,6 +2796,13 @@ const api = {
    */
   missionOperatorDoor: (door: MissionDoor): Promise<MissionDoorResult> =>
     ipcRenderer.invoke('mission:operatorDoor', door),
+  /** Campaign spec §4 — Choose: the operator picks an option of a decision node. */
+  missionChoose: (args: {
+    root: string
+    missionId: string
+    stepId: string
+    index: number
+  }): Promise<MissionDoorResult> => ipcRenderer.invoke('mission:choose', args),
 
   // ---- Review pane (T164; UI-only, never exposed to an agent) --------------
   /**

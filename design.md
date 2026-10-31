@@ -6536,6 +6536,40 @@ beyond the `7px` dot; the mockup is `parts/gates.js` / screen `v6--chapter` stat
 `gate-red`. A red `main` on a done step also lands one **You** item, "main is red
 after #{pr}" — nothing stored is downgraded.
 
+**Rail letters, locked, Side bucket and decision node (campaign spec §3.2, T594).**
+Every main step's label row starts with its **rail letter** (A, B, C… by position;
+none on the end step; `10.5px`, `font-weight: 500`, `tabular-nums`, `text-text-4`) —
+the handle a side step cites as its origin. The seven rail glyphs gain an eighth,
+**locked** (`lock` icon 10px, `text-text-4`, inside the same 12px glyph slot): an
+unfinished step has a `blocks` edge into it, or an undecided decision lists it; a
+locked step never takes the current marker and is not counted as left behind.
+
+The **Side bucket** sits under the main rail after a `border-t border-border`
+(`margin-top: 14px`, `padding-top: 10px`) and appears only when a step has
+`required: false`. Header: a full-width button — chevron (12px, right = collapsed,
+down = expanded, `text-text-4`), a 10px outline `diamond` (`text-text-4`), "Side
+steps" (`11.5px`, `text-text-2`) and, right-aligned, the meta (`10.5px`, `tabular-nums`,
+`text-text-4`): collapsed "{n} open", expanded "{n} open · {m} done". It starts
+**collapsed**. Expanded, the rows hang off a dashed 2px `border-border-2` line
+(`left: 5px`): glyph (outline diamond while open, `circle-check` `text-text-3` once
+done/verified) at `left: 0`, the title (`11.5px`, `text-text-3`) over a `10.5px`
+`text-text-4` caption "discovered from {letter}" (a side origin reads its title;
+none, no caption) and, on an open row, the Badge `Open` (default variant) pushed right.
+Side steps never appear on the main rail and never move "Step N of M".
+
+The **decision node** hangs under its step, only while undecided: `rounded-sm border
+border-border-2 bg-surface-2`, `padding: 8px 10px`, `margin-top: 6px`. Header row —
+a filled 10px `diamond` (`accent`), the title (`12px`, weight 500, `text-text`,
+truncating) and, right-aligned, a warning Badge "Blocks {letters}". Each option is a
+`radio` button row (`margin-top: 6px`, `padding: 5px 8px`, `border-border-2`,
+`bg-surface`, `rounded-sm`, `11.5px`, `text-text-2`) with a 10px ring (`border-text-4`);
+the picked option takes `border-accent-line`, `text-text` and a filled `accent` ring.
+Below, the primary button **Choose…** (`h-6`, `bg-accent text-accent-ink`) is disabled
+until an option is picked; pressing it fires the `chooseDecision` door
+(`mission:choose`). Once decided the node collapses to one accent line (`11px`,
+filled diamond) "{title} · Chose {option}". No new token, size or animation; the
+mockup is screen `v6--chapter` states `side` and `decision`.
+
 **Callouts** (`padding: 6px 8px`, `rounded-sm`, `11px`, `line-height: 1.5`,
 `border`, `margin-top: 5px`, 13px icon): Warning = `bg-warning-soft
 text-warning border-warning-line`. Blocked (`triangle-alert`) — "**Blocked** —

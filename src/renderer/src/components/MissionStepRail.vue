@@ -4,9 +4,12 @@
  * Step rail). One row per counted step: the rail glyph (one of the seven
  * visuals the server's progress gives it), the label with its badges, captions,
  * the step's human checks, inline blocker/stale/re-scope callouts and the child
- * sessions whose row sits on this step. Presentation over the view model; it
- * emits the operator's per-step doors (the human-step tick and the checks) for
- * the popover to run, and handles the in-app go-to-session itself.
+ * sessions whose row sits on this step. Campaign spec §3.2 adds the locked glyph,
+ * a decision node under its step (options + Choose…) and the collapsible Side
+ * bucket (`required: false` steps, each with the rail letter it was discovered
+ * from). Presentation over the view model; it emits the operator's per-step doors
+ * (the human-step tick, the checks, Choose) for the popover to run, and handles
+ * the in-app go-to-session itself.
  */
 import { nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -15,7 +18,11 @@ import {
   CircleCheck,
   Clock,
   Contrast,
+  ChevronDown,
+  ChevronRight,
   CornerDownRight,
+  Diamond,
+  Lock,
   LogIn,
   TriangleAlert,
   Undo2,
@@ -50,6 +57,8 @@ const emit = defineEmits<{
   /** `settle(ok)` — the popover calls it once the door answered. */
   tickCheck: [stepId: string, checkId: string, ticked: boolean, settle: (ok: boolean) => void]
   deleteCheck: [stepId: string, checkId: string]
+  /** Campaign spec §4 — the operator picks an option of a decision node. */
+  choose: [stepId: string, index: number]
 }>()
 
 const { t } = useI18n()
@@ -63,6 +72,7 @@ const VISUAL_KEY: Record<StepVisual, string> = {
   waiting: 'waiting',
   blocked: 'blocked',
   todo: 'todo',
+  locked: 'locked',
   'left-behind': 'leftBehind'
 }
 
@@ -169,6 +179,19 @@ function staleDuration(): string {
   return formatDuration(props.model.staleForMs ?? 0)
 }
 
+/** The Side bucket starts collapsed (mockup state `default`); the header toggles it. */
+const sideOpen = ref(false)
+
+/** The option picked per decision node, before the operator commits it with Choose…. */
+const picked = ref<Record<string, number>>({})
+
+function sideMeta(): string {
+  const { open, done } = props.model.side
+  return done > 0 && sideOpen.value
+    ? t('mission.side.metaBoth', { open, done })
+    : t('mission.side.metaOpen', { open })
+}
+
 /** The step whose "+ check" input is open, and what is typed in it. */
 const addingOn = ref<string | null>(null)
 const draftLabel = ref('')
@@ -271,6 +294,12 @@ function onCheckChange(stepId: string, checkId: string, e: Event): void {
             :stroke-width="2"
             class="text-warning"
           />
+          <Lock
+            v-else-if="s.visual === 'locked'"
+            :size="10"
+            :stroke-width="2"
+            class="text-text-4"
+          />
           <Undo2
             v-else-if="s.visual === 'left-behind'"
             :size="12"
@@ -287,6 +316,13 @@ function onCheckChange(stepId: string, checkId: string, e: Event): void {
 
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center" style="gap: 6px; row-gap: 4px">
+          <span
+            v-if="s.letter"
+            class="shrink-0 tabular-nums text-text-4"
+            style="font-size: 10.5px; font-weight: 500"
+            data-letter
+            >{{ s.letter }}</span
+          >
           <span :class="labelClass(s)" style="font-size: 12.5px">{{ s.step.title }}</span>
           <span
             class="inline-flex items-center"
@@ -485,6 +521,72 @@ function onCheckChange(stepId: string, checkId: string, e: Event): void {
           />
         </div>
 
+        <!-- Decision node (Campaign spec §3.2): options, what it blocks, and the operator's Choose…. -->
+        <div
+          v-if="s.decision && s.decision.canChoose"
+          class="rounded-sm border border-border-2 bg-surface-2"
+          style="margin-top: 6px; padding: 8px 10px"
+          data-dsqa-part="decision-node"
+          data-test="mission-decision"
+        >
+          <div class="flex items-center" style="gap: 6px; font-size: 12px; font-weight: 500">
+            <Diamond :size="10" :stroke-width="2" class="shrink-0 fill-accent text-accent" />
+            <span class="min-w-0 truncate text-text" :title="s.decision.title">{{
+              s.decision.title
+            }}</span>
+            <span
+              v-if="s.decision.blocks.length"
+              class="mission-badge ml-auto border-warning-line bg-warning-soft text-warning"
+              >{{ $t('mission.decision.blocks', { steps: s.decision.blocks.join(', ') }) }}</span
+            >
+          </div>
+          <div role="radiogroup" :aria-label="$t('mission.decision.options')">
+            <button
+              v-for="(o, i) in s.decision.options"
+              :key="i"
+              type="button"
+              role="radio"
+              :aria-checked="picked[s.step.id] === i"
+              class="mission-option flex w-full items-center text-left"
+              :class="picked[s.step.id] === i ? 'is-picked' : ''"
+              :disabled="busy"
+              data-test="mission-decision-option"
+              @click="picked[s.step.id] = i"
+            >
+              <i class="mission-option-dot" aria-hidden="true" />{{ o }}
+            </button>
+          </div>
+          <div style="margin-top: 8px">
+            <button
+              type="button"
+              class="inline-flex h-6 items-center rounded-sm bg-accent text-accent-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              style="padding: 0 10px; font-size: 11.5px; font-weight: 500"
+              :disabled="busy || picked[s.step.id] === undefined"
+              :title="
+                picked[s.step.id] === undefined ? $t('mission.decision.pickFirst') : undefined
+              "
+              data-test="mission-decision-choose"
+              @click="emit('choose', s.step.id, picked[s.step.id])"
+            >
+              {{ $t('mission.decision.choose') }}
+            </button>
+          </div>
+        </div>
+        <div
+          v-else-if="s.decision"
+          class="flex items-center text-accent"
+          style="gap: 5px; margin-top: 3px; font-size: 11px"
+          data-test="mission-decision-chosen"
+        >
+          <Diamond :size="10" :stroke-width="2" class="shrink-0 fill-accent" />
+          <span class="min-w-0 truncate"
+            >{{ s.decision.title }} ·
+            {{
+              $t('mission.decision.chose', { option: s.decision.options[s.decision.chosen ?? 0] })
+            }}</span
+          >
+        </div>
+
         <!-- Blocked — decision 12's three fields, one line. -->
         <div
           v-for="(b, i) in s.blockers"
@@ -573,6 +675,68 @@ function onCheckChange(stepId: string, checkId: string, e: Event): void {
         </div>
       </div>
     </div>
+
+    <!-- Side bucket (Campaign spec §3.2): required: false steps, outside the headline. -->
+    <div
+      v-if="model.side.count > 0"
+      class="border-t border-border"
+      style="margin-top: 14px; padding-top: 10px"
+      data-dsqa-part="side-bucket"
+      data-test="mission-side"
+    >
+      <button
+        type="button"
+        class="flex w-full items-center bg-transparent text-left text-text-2"
+        style="gap: 6px; font-size: 11.5px"
+        :aria-expanded="sideOpen"
+        :aria-label="sideOpen ? $t('mission.side.hide') : $t('mission.side.show')"
+        data-test="mission-side-toggle"
+        @click="sideOpen = !sideOpen"
+      >
+        <component
+          :is="sideOpen ? ChevronDown : ChevronRight"
+          :size="12"
+          :stroke-width="2"
+          class="shrink-0 text-text-4"
+        />
+        <Diamond :size="10" :stroke-width="2" class="shrink-0 text-text-4" />
+        {{ $t('mission.side.title') }}
+        <span class="ml-auto tabular-nums text-text-4" style="font-size: 10.5px">{{
+          sideMeta()
+        }}</span>
+      </button>
+      <div v-if="sideOpen" class="mission-sidelist relative" style="margin-top: 6px">
+        <div
+          v-for="sd in model.side.steps"
+          :key="sd.step.id"
+          class="relative flex items-center"
+          style="gap: 8px; padding: 5px 0 5px 20px; min-height: 28px; font-size: 11.5px"
+          :data-side-step="sd.step.id"
+          :data-state="sd.state"
+        >
+          <span class="absolute flex items-center justify-center" style="left: 0; width: 12px">
+            <CircleCheck
+              v-if="sd.state === 'verified' || sd.state === 'done'"
+              :size="12"
+              :stroke-width="2"
+              class="text-text-3"
+            />
+            <Diamond v-else :size="10" :stroke-width="2" class="text-text-4" />
+          </span>
+          <span class="min-w-0 text-text-3">
+            {{ sd.step.title }}
+            <small v-if="sd.origin" class="block text-text-4" style="font-size: 10.5px">{{
+              $t('mission.side.discoveredFrom', { origin: sd.origin })
+            }}</small>
+          </span>
+          <span
+            v-if="sd.state !== 'verified' && sd.state !== 'done'"
+            class="mission-badge ml-auto shrink-0 border-border bg-surface text-text-3"
+            >{{ $t('mission.side.open') }}</span
+          >
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -601,6 +765,39 @@ function onCheckChange(stepId: string, checkId: string, e: Event): void {
 }
 .mission-pulse[data-pulse='quiet'] {
   color: var(--color-warning);
+}
+.mission-option {
+  gap: 8px;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 11.5px;
+  color: var(--color-text-2);
+}
+.mission-option.is-picked {
+  border-color: var(--color-accent-line);
+  color: var(--color-text);
+}
+.mission-option-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-text-4);
+}
+.is-picked .mission-option-dot {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+.mission-sidelist::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 12px;
+  bottom: 12px;
+  border-left: 2px dashed var(--color-border-2);
 }
 .mission-callout {
   display: flex;

@@ -92,6 +92,32 @@ export interface MissionStep {
   addedAt?: string
   /** Mission v3 §3.6 — the step's human checks. */
   checks?: Check[]
+  /** Campaign spec §3.2 — `false` = a side step: outside the headline, listed in the Side bucket. Absent = required. */
+  required?: boolean
+  /** Campaign spec §3.2 — the step this side step was discovered from (a step id). */
+  discoveredFrom?: string
+  /** Campaign spec §3.2 — typed edges; progress reads only `blocks` (the target is `locked` until the source is done). */
+  edges?: StepEdge[]
+  /** Campaign spec §3.2 — a decision node: the steps in `blocks` stay `locked` until the operator chooses. */
+  decision?: StepDecision
+}
+
+/** Campaign spec §3.2 — a typed edge from a step to another step. */
+export interface StepEdge {
+  kind: 'blocks' | 'validates' | 'related'
+  to: string
+}
+
+/**
+ * Campaign spec §3.2 — a decision node. `chosen` (an index into `options`) is written
+ * only by the operator's Choose door ({@link applyChooseDecision}); no verb sets it.
+ */
+export interface StepDecision {
+  title: string
+  options: string[]
+  chosen?: number
+  /** Step ids that read `locked` until `chosen` is set. */
+  blocks: string[]
 }
 
 /**
@@ -275,7 +301,23 @@ const MissionStepSchema: z.ZodType<MissionStep> = z
     blockers: z.array(BlockerSchema),
     addedReason: z.string().optional(),
     addedAt: z.string().optional(),
-    checks: z.array(CheckSchema).optional()
+    checks: z.array(CheckSchema).optional(),
+    required: z.boolean().optional(),
+    discoveredFrom: z.string().optional(),
+    edges: z
+      .array(
+        z.object({ kind: z.enum(['blocks', 'validates', 'related']), to: z.string() }).passthrough()
+      )
+      .optional(),
+    decision: z
+      .object({
+        title: z.string(),
+        options: z.array(z.string()),
+        chosen: z.number().int().optional(),
+        blocks: z.array(z.string())
+      })
+      .passthrough()
+      .optional()
   })
   .passthrough()
 
@@ -505,7 +547,7 @@ export async function createMissionFile(
  * through `mission_verify_step` or the operator's UI (design §4, the same
  * posture as `update_card` refusing `status`/`approved`).
  */
-export const MISSION_STEP_CONTROLLED_FIELDS = ['proof', 'verifiedBy'] as const
+export const MISSION_STEP_CONTROLLED_FIELDS = ['proof', 'verifiedBy', 'chosen'] as const
 
 /** Per-mission-id promise chains — serializes {@link withMissionIdMintLock} calls. */
 const missionLocks = new Map<string, Promise<unknown>>()
@@ -703,6 +745,44 @@ export function applyOperatorVerifyStep(
     delete step.verifiedBy
   }
   next.updatedAt = mark.at
+  return next
+}
+
+/**
+ * Campaign spec §3.2/§4 — the operator's Choose door: record which option of a
+ * decision node was picked. The only writer of `decision.chosen`; choosing unlocks
+ * the steps in `decision.blocks` (progress reads `chosen`) and the caller appends the
+ * `decision` Log entry. A decision is made once: a second choice is refused so a double
+ * click cannot flip it. Pure; throws STEP_NOT_FOUND, NOT_A_DECISION, BAD_ARGS,
+ * ALREADY_CHOSEN or MISSION_CLOSED.
+ */
+export function applyChooseDecision(
+  mission: Mission,
+  stepId: string,
+  index: number,
+  op: { at: string }
+): Mission {
+  assertCheckable(mission)
+  const next = structuredClone(mission)
+  const step = checkStep(next, stepId)
+  const decision = step.decision
+  if (!decision) {
+    throw new Error(
+      `NOT_A_DECISION: step ${stepId} of mission ${mission.id} is not a decision node.`
+    )
+  }
+  if (!Number.isInteger(index) || index < 0 || index >= decision.options.length) {
+    throw new Error(
+      `BAD_ARGS: index must be 0..${decision.options.length - 1} (an option of "${decision.title}").`
+    )
+  }
+  if (decision.chosen !== undefined) {
+    throw new Error(
+      `ALREADY_CHOSEN: "${decision.title}" was decided: ${decision.options[decision.chosen]}.`
+    )
+  }
+  decision.chosen = index
+  next.updatedAt = op.at
   return next
 }
 
