@@ -547,7 +547,7 @@ export async function createMissionFile(
  * through `mission_verify_step` or the operator's UI (design §4, the same
  * posture as `update_card` refusing `status`/`approved`).
  */
-export const MISSION_STEP_CONTROLLED_FIELDS = ['proof', 'verifiedBy'] as const
+export const MISSION_STEP_CONTROLLED_FIELDS = ['proof', 'verifiedBy', 'chosen'] as const
 
 /** Per-mission-id promise chains — serializes {@link withMissionIdMintLock} calls. */
 const missionLocks = new Map<string, Promise<unknown>>()
@@ -745,6 +745,44 @@ export function applyOperatorVerifyStep(
     delete step.verifiedBy
   }
   next.updatedAt = mark.at
+  return next
+}
+
+/**
+ * Campaign spec §3.2/§4 — the operator's Choose door: record which option of a
+ * decision node was picked. The only writer of `decision.chosen`; choosing unlocks
+ * the steps in `decision.blocks` (progress reads `chosen`) and the caller appends the
+ * `decision` Log entry. A decision is made once: a second choice is refused so a double
+ * click cannot flip it. Pure; throws STEP_NOT_FOUND, NOT_A_DECISION, BAD_ARGS,
+ * ALREADY_CHOSEN or MISSION_CLOSED.
+ */
+export function applyChooseDecision(
+  mission: Mission,
+  stepId: string,
+  index: number,
+  op: { at: string }
+): Mission {
+  assertCheckable(mission)
+  const next = structuredClone(mission)
+  const step = checkStep(next, stepId)
+  const decision = step.decision
+  if (!decision) {
+    throw new Error(
+      `NOT_A_DECISION: step ${stepId} of mission ${mission.id} is not a decision node.`
+    )
+  }
+  if (!Number.isInteger(index) || index < 0 || index >= decision.options.length) {
+    throw new Error(
+      `BAD_ARGS: index must be 0..${decision.options.length - 1} (an option of "${decision.title}").`
+    )
+  }
+  if (decision.chosen !== undefined) {
+    throw new Error(
+      `ALREADY_CHOSEN: "${decision.title}" was decided: ${decision.options[decision.chosen]}.`
+    )
+  }
+  decision.chosen = index
+  next.updatedAt = op.at
   return next
 }
 

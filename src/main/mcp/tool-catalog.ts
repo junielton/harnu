@@ -518,6 +518,39 @@ export interface McpToolDef {
  * the approval gate; the mutating tools are `mutates:true` and require it (per
  * their gate fields above). No destructive worktree op is present by design.
  */
+/** Campaign spec §3.2 — the relation fields `mission_add_step` takes (and `mission_update_step.set` mirrors). */
+const MISSION_STEP_RELATIONS_SHAPE = {
+  required: z
+    .boolean()
+    .optional()
+    .describe('false = a side step: outside the headline, listed under progress.side.'),
+  discoveredFrom: z
+    .string()
+    .regex(/^stp-\d+$/)
+    .optional()
+    .describe('The step id this side step was discovered from.'),
+  edges: z
+    .array(
+      z.object({
+        kind: z.enum(['blocks', 'validates', 'related']),
+        to: z.string().regex(/^stp-\d+$/)
+      })
+    )
+    .max(20)
+    .optional()
+    .describe('Typed edges to other steps. `blocks`: the target reads locked until this is done.'),
+  decision: z
+    .object({
+      title: z.string().min(1).max(200),
+      options: z.array(z.string().min(1).max(200)).min(2).max(10),
+      blocks: z.array(z.string().regex(/^stp-\d+$/)).max(20)
+    })
+    .optional()
+    .describe(
+      'Makes the step a decision node; the `blocks` steps read locked until the operator chooses. Never carries `chosen`.'
+    )
+}
+
 export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'get_fleet',
@@ -2190,11 +2223,12 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_add_step',
     description:
-      'Add a middle step to a Mission — DIRECT write, no confirm. The step is inserted before the fixed end (or right after `afterStepId`; never after the fixed end), gets a stable `stp-<n>` id and an `addedAt` stamp, starts `unproven`, and declares its `verification` level up front (existence = Harnu checks a linked artifact exists; verifier = an independent session verifies it; human = only the operator can mark it). Pass `links` to make the step provable at birth (an existence step with no path, card or PR link can never be proven). `reason` is REQUIRED once the mission has STARTED — any step has a link or a proof (refused REASON_REQUIRED without it); the added step and its reason show on the mission, so a growing total is always explained. Before that, steps are planning: no reason is needed and none is stored. ACK: `{ ok, stepId, totalSteps }`.',
+      'Add a middle step to a Mission — DIRECT write, no confirm. The step is inserted before the fixed end (or right after `afterStepId`; never after the fixed end), gets a stable `stp-<n>` id and an `addedAt` stamp, starts `unproven`, and declares its `verification` level up front (existence = Harnu checks a linked artifact exists; verifier = an independent session verifies it; human = only the operator can mark it). Pass `links` to make the step provable at birth (an existence step with no path, card or PR link can never be proven). `reason` is REQUIRED once the mission has STARTED — any step has a link or a proof (refused REASON_REQUIRED without it); the added step and its reason show on the mission, so a growing total is always explained. Before that, steps are planning: no reason is needed and none is stored. Campaign spec §3.2 relations: `required: false` makes it a SIDE step (outside the headline, never left behind, listed in `progress.side`), `discoveredFrom` names the step it came from, `edges` types its links to other steps (`blocks` locks the target until this step is done; `validates` and `related` are informational), and `decision` makes it a decision node whose `blocks` steps read `locked` until the operator chooses. A decision is declared without `chosen` — the operator picks (refused CONTROLLED_FIELD otherwise). Every named step must exist (STEP_NOT_FOUND). ACK: `{ ok, stepId, totalSteps }`.',
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
       title: z.string().min(1).max(200).describe('Step title (1..200 chars, single line).'),
+      ...MISSION_STEP_RELATIONS_SHAPE,
       verification: z
         .enum(['existence', 'verifier', 'human'])
         .describe('How the step gets proven: existence | verifier | human. Immutable afterwards.'),
@@ -2231,7 +2265,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_update_step',
     description:
-      "Edit one Mission step — DIRECT write, no confirm. `set` may carry `title` (custom steps only — the fixed frame's titles are fixed) and `proof: 'claimed'` — the owner's \"I believe this is done, unverified\", allowed only on a verifier/human step that is still unproven. Proof is otherwise a CONTROLLED field, like `verifiedBy`: any other `proof` value (verified, self-verified, unproven) and any `verifiedBy` are refused (CONTROLLED_FIELD) — a step is verified only through verification, never by assertion. ACK: `{ ok, stepId }`.",
+      "Edit one Mission step — DIRECT write, no confirm. `set` may carry `title` (custom steps only — the fixed frame's titles are fixed) and `proof: 'claimed'` — the owner's \"I believe this is done, unverified\", allowed only on a verifier/human step that is still unproven. Proof is otherwise a CONTROLLED field, like `verifiedBy`: any other `proof` value (verified, self-verified, unproven) and any `verifiedBy` are refused (CONTROLLED_FIELD) — a step is verified only through verification, never by assertion. Also settable: `required`, `discoveredFrom`, `edges` and `decision` (same shapes as mission_add_step; a fixed step cannot be made a side step, and a decision the operator already made is no longer rewritable — DECISION_CHOSEN). `chosen` — a decision's picked option — is the operator's: `set.chosen` (or a decision carrying it) is refused CONTROLLED_FIELD. ACK: `{ ok, stepId, changed }`.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
@@ -2239,7 +2273,7 @@ export const MCP_TOOLS: McpToolDef[] = [
       set: z
         .record(z.string(), z.unknown())
         .describe(
-          "Fields to set: title | proof ('claimed' only). proof (any other value) and verifiedBy are CONTROLLED and refused."
+          "Fields to set: title | proof ('claimed' only) | required | discoveredFrom | edges | decision. proof (any other value), verifiedBy and chosen are CONTROLLED and refused."
         )
     }),
     mutates: true,
