@@ -78,8 +78,24 @@ describe('computeStepGates', () => {
         proof: 'verified',
         verifiedBy: { sessionId: 's', at: 'x', verdict: 'needs-human' }
       })
-    ).toBe('running')
+    ).toBe('green')
     expect(v({ verification: 'existence', proof: 'unproven' })).toBe('na')
+  })
+
+  it('BUG-235 AC-2: a verified needs-human verdict is green; the human part lives on the checks gate', () => {
+    const step = (proof: GateInput['step']['proof']): GateInput['step'] => ({
+      verification: 'verifier',
+      proof,
+      verifiedBy: { sessionId: 's', at: 'x', verdict: 'needs-human' },
+      checks: [{ id: 'chk-1', label: 'DSQA', source: 'agent', createdAt: 'x' }]
+    })
+    expect(computeStepGates({ ...base, step: step('verified') })).toMatchObject({
+      verifier: 'green',
+      checks: 'running'
+    })
+    // not independently verified: still waiting on a verifier
+    expect(computeStepGates({ ...base, step: step('self-verified') }).verifier).toBe('running')
+    expect(computeStepGates({ ...base, step: step('claimed') }).verifier).toBe('running')
   })
 
   it('checks: na without any, running while one is unticked, green when all are ticked', () => {

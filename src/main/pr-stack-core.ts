@@ -101,6 +101,10 @@ export interface PrEntry {
   url: string
   author: string
   updatedAt: string | null
+  /** When the PR was opened (`createdAt`), or `null` when `gh` did not say. */
+  createdAt: string | null
+  /** When the PR merged (`mergedAt`), or `null` when it has not or `gh` did not say. */
+  mergedAt: string | null
   /**
    * `headRefOid` — the PR's current head SHA, or `null` when the caller did not
    * ask `gh` for it. The review pane compares it against its local copy of the
@@ -350,7 +354,7 @@ function autoMergeOf(raw: unknown): PrAutoMerge | null {
 
 /**
  * Parses `gh pr list --json
- * number,title,headRefName,baseRefName,state,isDraft,mergeable,reviewDecision,statusCheckRollup,url,author,updatedAt,mergeStateStatus,additions,deletions,changedFiles,reviewRequests,labels,autoMergeRequest`
+ * number,title,headRefName,baseRefName,state,isDraft,mergeable,reviewDecision,statusCheckRollup,url,author,updatedAt,createdAt,mergedAt,mergeStateStatus,additions,deletions,changedFiles,reviewRequests,labels,autoMergeRequest`
  * (`headRefOid` and `id` too, when the caller asked for them — see
  * {@link PrEntry.headOid} and {@link PrEntry.nodeId}).
  *
@@ -407,6 +411,8 @@ export function parsePrList(stdout: string): PrEntry[] {
           ? ((author as Record<string, unknown>).login as string)
           : '',
       updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+      createdAt: typeof raw.createdAt === 'string' && raw.createdAt ? raw.createdAt : null,
+      mergedAt: typeof raw.mergedAt === 'string' && raw.mergedAt ? raw.mergedAt : null,
       headOid: typeof raw.headRefOid === 'string' && raw.headRefOid ? raw.headRefOid : null,
       nodeId: typeof raw.id === 'string' && raw.id ? raw.id : null,
       mergeStateStatus: mergeStateOf(raw.mergeStateStatus),

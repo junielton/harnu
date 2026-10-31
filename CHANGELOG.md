@@ -17,6 +17,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **The orchestration skills now hand workers fixed role prompts instead of re-written ones.** `orchestrate-delivery` carries a boot template per role (executor, shipper, lander, reviewer) that cites the right skill by name (`ship`, `land-prs`, `review-peer`) rather than restating its steps, and no longer suggests a plain `gh pr create` when no ship pipeline exists. Every done condition it writes — and the `mission` skill's dispatch packets — must be checkable by the worker alone (commits pushed, tree clean, a report file written); "a message was delivered to another session" is now ruled out, after one worker was re-prompted 578 times by a Stop hook waiting on it.
 - **The orchestrator now closes a delivery that ends "on main" by dispatching a lander session**, sizes small fixes without a spec, names the Figma or mockup implementation and QA skills in a UI unit's packet, and hands a long delivery to a fresh owner session at each wave boundary (about 400k tokens of context, or a human merge-and-build pause) with a ready-made resume prompt.
 - **The `status` skill now also fires on Portuguese phrasings** such as "como estamos", "onde estamos", "qual o estado" and "tem PR?".
+### Fixed
+
+- **The mission ledger now dates a pull request by when it happened.** A "PR opened" or "PR merged" row carries the time GitHub reports for it, not the moment Harnu first noticed it, so the ledger reads in the order things actually occurred. When GitHub gives no time, the row falls back to when Harnu saw it and is marked "observed".
+- **A signed-off step's verifier dot no longer stays amber.** When an independent verifier signs a step off but leaves a human part, the verifier gate turns green and only the checks gate waits on the human; a self-verified or merely claimed step still waits on a verifier.
+- **A merged unit no longer reads as ten commits of unfinished work.** A worktree whose pull request merged now reports 0 commits in the step's links and pulse, however the PR was merged (squash included); open PRs and branches without a PR count as before.
 
 ## 2026-10-30
 
@@ -34,6 +39,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **The System Monitor is redesigned.** A Harnu sidebar on the left shows the main-process heap (with its 70% and 85% marks), every Electron process with a bar, and the Harnu-plus-sessions total. A KPI strip on top of the right side gives total RAM (split between Harnu and sessions), CPU, and how many sessions are live and parked with the RAM that parking reclaimed. Sessions are now cards by default — each wearing its folder's colour, with a 60-second sparkline and a bar showing where its memory goes — or a table through the new Cards / Table toggle, which remembers your choice. Expanding a session still lists its own memory and its child processes, and Park now, Close and Test Harnu mod channel work as before. When the heap warns or goes critical, the sidebar gauge, its number and the header gauge turn amber or red with a warning icon.
 - **Scheduler folders and rows keep a steady order.** Folders stay alphabetical whatever is running or failing, and inside a folder the workers that are on sit above the ones that are off (pinned first within each), so nothing reshuffles under your pointer.
 
 ## 2026-10-29

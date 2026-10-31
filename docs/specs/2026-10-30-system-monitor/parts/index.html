@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>parts: System Monitor</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      body {
+        padding: 24px;
+        display: grid;
+        gap: 32px;
+      }
+      h2 {
+        font: 600 13px/1 var(--mk-sans);
+        color: var(--color-text-3);
+        margin: 0 0 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <section>
+      <h2>monitor-head · default</h2>
+      <div data-dsqa="part--monitor-head--default">
+        <mk-monitor-head sub="5 processes · 4 live · 2 parked"></mk-monitor-head>
+      </div>
+    </section>
+    <script src="monitor-head.js"></script>
+  </body>
+</html>

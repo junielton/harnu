@@ -1,7 +1,13 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import type { HeapSample, MonitorSample } from '../../../preload'
 import { sortByRssDesc, sumRssBytes, countSessions } from '../components/system-monitor-format'
+import {
+  appendSample,
+  harnuHistoryKey,
+  sessionHistoryKey,
+  type MonitorHistory
+} from '../lib/monitor-history'
 
 /**
  * System Monitor data (T127 S2, design.md "System Monitor (takeover)"). Subscribes
@@ -18,16 +24,23 @@ import { sortByRssDesc, sumRssBytes, countSessions } from '../components/system-
  * concern owned by `SystemMonitor.vue`'s mount/unmount/blur lifecycle — this
  * store only exposes the thin IPC passthrough so that lifecycle code has
  * something to call.
+ *
+ * It also keeps the sparkline history (T591): the last 40 RSS readings per Harnu
+ * process and per session, appended from every sample that arrives anyway. It never
+ * asks for samples itself; a key missing from the latest sample is pruned.
  */
 export const useMonitorStore = defineStore('monitor', () => {
   const lastHeap = ref<HeapSample | null>(null)
   const lastSample = ref<MonitorSample | null>(null)
+  /** Replaced (never mutated) per sample, so a `shallowRef` is all the reactivity it needs. */
+  const history = shallowRef<MonitorHistory>(new Map())
 
   window.api.onMonitorHeap((sample) => {
     lastHeap.value = sample
   })
   window.api.onMonitorSample((sample) => {
     lastSample.value = sample
+    history.value = appendSample(history.value, sample)
   })
 
   /** The 'Harnu' group, sorted by RAM desc (the takeover's default sort). */
@@ -37,6 +50,15 @@ export const useMonitorStore = defineStore('monitor', () => {
 
   const harnuTotalBytes = computed(() => sumRssBytes(lastSample.value?.harnu ?? []))
   const sessionCounts = computed(() => countSessions(lastSample.value?.sessions ?? []))
+
+  /** The last ≤40 RSS readings of a session, oldest first (`[]` for an unknown key). */
+  function sessionHistory(sessionKey: string): readonly (number | null)[] {
+    return history.value.get(sessionHistoryKey(sessionKey)) ?? []
+  }
+  /** The last ≤40 RSS readings of a Harnu process, oldest first. */
+  function harnuHistory(pid: number): readonly (number | null)[] {
+    return history.value.get(harnuHistoryKey(pid)) ?? []
+  }
 
   /** Thin passthrough — refcounted in main; the caller owns when to call these. */
   async function startSampler(): Promise<void> {
@@ -49,10 +71,14 @@ export const useMonitorStore = defineStore('monitor', () => {
   return {
     lastHeap,
     lastSample,
+    /** Raw ring buffer — read through `sessionHistory`/`harnuHistory`; exposed for devtools and fixtures. */
+    history,
     harnuRows,
     sessionRows,
     harnuTotalBytes,
     sessionCounts,
+    sessionHistory,
+    harnuHistory,
     startSampler,
     stopSampler
   }
