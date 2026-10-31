@@ -42,7 +42,12 @@ import { addTaskEventObserver, getTaskStates } from '../hook-bridge'
 import { lastSubagentActivity } from '../subagent-activity'
 import { buildStepPulse, withHelperActivity, type MissionStepPulse } from '../mission-pulse'
 import { listPendingApprovals } from '../approval-resolver'
-import { findMainCi, findPrsForWorktrees, type MissionPrJoin } from '../pr-stack'
+import {
+  findMainCi,
+  findPrsForWorktrees,
+  type MissionPrJoin,
+  type WorktreePrJoin
+} from '../pr-stack'
 import {
   addObservedLedger,
   ensureLinkCacheLoaded,
@@ -4004,6 +4009,9 @@ export interface MissionPrSummary {
   url: string
   /** The branch the PR merges INTO (Mission v2 §3.6) — informative, no derived flag. */
   baseRefName: string
+  /** When GitHub says the PR was opened / merged (ISO); present only when it said. */
+  createdAt?: string
+  mergedAt?: string
 }
 
 function prSummary(p: PrEntry): MissionPrSummary {
@@ -4014,7 +4022,9 @@ function prSummary(p: PrEntry): MissionPrSummary {
     isDraft: p.isDraft,
     ci: p.ci,
     url: p.url,
-    baseRefName: p.base
+    baseRefName: p.base,
+    ...(p.createdAt ? { createdAt: p.createdAt } : {}),
+    ...(p.mergedAt ? { mergedAt: p.mergedAt } : {})
   }
 }
 
@@ -4057,6 +4067,9 @@ export type MissionLinkSignal =
       baseRefName?: string
       /** Campaign spec §3.2 — CI of the PR head (live, or the last known when `stale`). */
       ci?: GateCi
+      /** When GitHub says the PR was opened / merged (ISO); present only when it said. */
+      createdAt?: string
+      mergedAt?: string
       /**
        * Mission v3 §3.7 — GitHub could not say (unreachable, or the PR is not
        * among the recent ones): the last-known state is shown, or, if the link
@@ -4064,6 +4077,20 @@ export type MissionLinkSignal =
        */
       stale?: true
     }
+
+/**
+ * Commits a worktree link reports. Once the branch's PR merged (and no PR on it is
+ * still open) nothing is left to land, whatever the merge style: a squash leaves the
+ * branch's commits "ahead" of the default branch forever, so git's count would read
+ * the finished unit as 10 commits of unmerged work. An open PR, or no PR, keeps the
+ * git count (`undefined` = git could not count).
+ */
+function commitsOf(w: WorktreePrJoin | undefined): number | undefined {
+  if (!w) return undefined
+  const prs = w.prs ?? []
+  if (prs.some((p) => p.state === 'MERGED') && !prs.some((p) => p.state === 'OPEN')) return 0
+  return w.commits
+}
 
 /** A CI word from `pr-stack-core` (or the cache) as the gates' four states. */
 function gateCiOf(ci: string | undefined): GateCi {
@@ -4083,7 +4110,13 @@ function stepPrFacts(
     if (l.kind === 'pr') {
       if (l.number !== null && l.state !== undefined) {
         found.push({
-          facts: { number: l.number, state: l.state, ci: l.ci ?? 'unknown' },
+          facts: {
+            number: l.number,
+            state: l.state,
+            ci: l.ci ?? 'unknown',
+            ...(l.createdAt ? { createdAt: l.createdAt } : {}),
+            ...(l.mergedAt ? { mergedAt: l.mergedAt } : {})
+          },
           stale: l.stale === true,
           direct: true
         })
@@ -4092,7 +4125,13 @@ function stepPrFacts(
       for (const p of l.prs) {
         if (p.state === 'OPEN' || p.state === 'MERGED' || p.state === 'CLOSED') {
           found.push({
-            facts: { number: p.number, state: p.state, ci: gateCiOf(p.ci) },
+            facts: {
+              number: p.number,
+              state: p.state,
+              ci: gateCiOf(p.ci),
+              ...(p.createdAt ? { createdAt: p.createdAt } : {}),
+              ...(p.mergedAt ? { mergedAt: p.mergedAt } : {})
+            },
             stale: false,
             direct: false
           })
@@ -4387,8 +4426,18 @@ function observeLedger(
   const at = new Date(now).toISOString()
   const seen = { ledger: mergeLedger(mission.ledger, getObservedLedger(mission.id)) }
   const added: LedgerRow[] = []
-  const push = (row: LedgerRowInput): void => {
-    const full: LedgerRow = { at, ...row }
+  /**
+   * `eventAt`: omitted = the event has no single time of its own (CI, a session end),
+   * the observation time stands. A PR event passes GitHub's time (ISO) or `null` when
+   * GitHub gave none, and then the row falls back to the observation, saying so.
+   */
+  const push = (row: LedgerRowInput, eventAt?: string | null): void => {
+    const t = eventAt ? Date.parse(eventAt) : NaN
+    const full: LedgerRow = Number.isFinite(t)
+      ? { at: new Date(t).toISOString(), ...row }
+      : eventAt === undefined
+        ? { at, ...row }
+        : { at, ...row, detail: 'observed' }
     added.push(full)
     seen.ledger.push(full)
   }
@@ -4398,10 +4447,10 @@ function observeLedger(
     if (facts) {
       const ref = `#${facts.number}`
       if (facts.state === 'OPEN' && !hasLedgerRow(seen, 'pr-opened', ref)) {
-        push({ kind: 'pr-opened', stepId, ref, pr: facts.number })
+        push({ kind: 'pr-opened', stepId, ref, pr: facts.number }, facts.createdAt ?? null)
       }
       if (facts.state === 'MERGED' && !hasLedgerRow(seen, 'pr-merged', ref)) {
-        push({ kind: 'pr-merged', stepId, ref, pr: facts.number })
+        push({ kind: 'pr-merged', stepId, ref, pr: facts.number }, facts.mergedAt ?? null)
       }
       if (
         facts.ci !== 'unknown' &&
@@ -4540,7 +4589,7 @@ export async function deriveMissionSignals(
         exists: onDisk,
         branch: w?.branch ?? null,
         head: w?.head ?? null,
-        ...(w?.commits !== undefined ? { commits: w.commits } : {}),
+        ...(commitsOf(w) !== undefined ? { commits: commitsOf(w) } : {}),
         prs: (w?.prs ?? []).map(prSummary)
       }
     }
@@ -4566,7 +4615,8 @@ export async function deriveMissionSignals(
             state: pr.state,
             prNumber: number,
             url: pr.url,
-            baseRefName: pr.base
+            baseRefName: pr.base,
+            ...(pr.mergedAt ? { mergedAt: pr.mergedAt } : {})
           })
           if (pr.ci === 'passing' || pr.ci === 'failing') {
             rememberResolved(root, 'pr-ci', String(number), { state: pr.ci, prNumber: number })
@@ -4583,7 +4633,9 @@ export async function deriveMissionSignals(
           state: pr.state,
           url: pr.url,
           baseRefName: pr.base,
-          ci: gateCiOf(pr.ci)
+          ci: gateCiOf(pr.ci),
+          ...(pr.createdAt ? { createdAt: pr.createdAt } : {}),
+          ...(pr.mergedAt ? { mergedAt: pr.mergedAt } : {})
         }
       }
       // gh unreachable, or the PR is not among the recent ones: unknown.
@@ -4597,6 +4649,7 @@ export async function deriveMissionSignals(
         state: known.state as PrEntry['state'],
         ...(known.url ? { url: known.url } : {}),
         ...(known.baseRefName ? { baseRefName: known.baseRefName } : {}),
+        ...(known.mergedAt ? { mergedAt: known.mergedAt } : {}),
         ci: gateCiOf(getLastKnown(root, 'pr-ci', String(number))?.state),
         stale: true
       }

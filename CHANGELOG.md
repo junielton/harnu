@@ -10,6 +10,14 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-31
+
+### Fixed
+
+- **The mission ledger now dates a pull request by when it happened.** A "PR opened" or "PR merged" row carries the time GitHub reports for it, not the moment Harnu first noticed it, so the ledger reads in the order things actually occurred. When GitHub gives no time, the row falls back to when Harnu saw it and is marked "observed".
+- **A signed-off step's verifier dot no longer stays amber.** When an independent verifier signs a step off but leaves a human part, the verifier gate turns green and only the checks gate waits on the human; a self-verified or merely claimed step still waits on a verifier.
+- **A merged unit no longer reads as ten commits of unfinished work.** A worktree whose pull request merged now reports 0 commits in the step's links and pulse, however the PR was merged (squash included); open PRs and branches without a PR count as before.
+
 ## 2026-10-30
 
 ### Added

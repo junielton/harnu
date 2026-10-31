@@ -26,6 +26,10 @@ export interface GatePrFacts {
   state: 'OPEN' | 'MERGED' | 'CLOSED'
   /** CI of the PR head. */
   ci: GateCi
+  /** When GitHub says the PR was opened (ISO); absent when it did not say. */
+  createdAt?: string
+  /** When GitHub says the PR merged (ISO); absent when it did not say. */
+  mergedAt?: string
 }
 
 export interface GateInput {
@@ -82,9 +86,12 @@ function verifierGate(step: GateInput['step']): GateState {
   if (step.verification === 'existence') return 'na'
   const verdict = step.verifiedBy?.verdict
   if (verdict === 'unmet' || verdict === 'blocked') return 'red'
-  if (step.proof === 'verified' && verdict !== 'needs-human') return 'green'
+  // Independently verified is green, whatever the verdict: a `needs-human` verdict
+  // leaves a human part, but that part is carried by the checks gate, not this one.
+  if (step.proof === 'verified') return 'green'
   if (step.verification === 'human') return 'off'
-  // A claim, a self-verification or a verdict that left a human part: waiting on a verifier.
+  // A claim, a self-verification or a `needs-human` verdict nobody independent has
+  // verified: waiting on a verifier.
   if (step.proof === 'unproven' && verdict !== 'needs-human') return 'off'
   return 'running'
 }
