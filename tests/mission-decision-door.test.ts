@@ -327,3 +327,50 @@ describe('the Choose door through mission-ipc (AC-2c)', () => {
     expect((await onDisk(root)).m.steps[1].decision?.chosen).toBe(0)
   })
 })
+
+describe('the you list with decisions and side steps (§3.2)', () => {
+  async function owed(m: Mission): Promise<unknown[]> {
+    const { youItems } = await import('../src/main/mcp/tool-handlers')
+    const { computeProgress } = await import('../src/main/mission-progress')
+    return youItems(m, [], computeProgress(m, [], Date.parse(AT)))
+  }
+  /** stp-1 is verified, so the decision node stp-2 is the current step. */
+  const decisionCurrent = (chosen?: number): Mission => {
+    const m = mission()
+    m.steps[0].proof = 'verified'
+    m.steps[0].verifiedBy = { sessionId: 'other', at: AT, verdict: 'met' }
+    if (chosen !== undefined) m.steps[1].decision!.chosen = chosen
+    return m
+  }
+
+  it('an undecided decision node is owed to the operator; a decided one is not', async () => {
+    expect(await owed(decisionCurrent())).toContainEqual({
+      kind: 'human-steps',
+      stepIds: ['stp-2']
+    })
+    expect(await owed(decisionCurrent(0))).not.toContainEqual(
+      expect.objectContaining({ kind: 'human-steps' })
+    )
+  })
+
+  it('a side step ahead of the current human step does not hide it from the list', async () => {
+    const m = mission()
+    m.steps.unshift({
+      id: 'stp-9',
+      ordinal: 0,
+      kind: 'custom',
+      title: 'Side quest',
+      verification: 'verifier',
+      proof: 'unproven',
+      links: [],
+      blockers: [],
+      required: false
+    })
+    m.steps[2].proof = 'unproven'
+    // stp-1 is the current step; make it the human one to prove the index is the server's.
+    m.steps[1].verification = 'human'
+    delete m.steps[3].decision // stp-2 is no longer a decision node
+    m.steps[3].verification = 'verifier'
+    expect(await owed(m)).toContainEqual({ kind: 'human-steps', stepIds: ['stp-1'] })
+  })
+})

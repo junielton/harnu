@@ -3828,11 +3828,15 @@ export function youItems(
   // in progress but never clears it, and a gate the work moved past (a later step
   // running, or the mission otherwise reached it) must not drop off the list.
   const current = progress.current
-  const counted = m.steps.filter((s) => s.kind !== 'fixed-start')
+  // The headline's own steps: `current` counts positions among them, so a side step
+  // (`required: false`, campaign spec §3.2) must not shift the index.
+  const counted = m.steps.filter((s) => s.kind !== 'fixed-start' && s.required !== false)
   const humans = counted
     .filter((s, i) => {
       if (s.verification !== 'human') return false
       if (s.proof === 'verified' && s.verifiedBy?.sessionId === OPERATOR_VERIFIER) return false
+      // A decision the operator has made is finished — nothing left to confirm.
+      if (s.decision?.chosen !== undefined) return false
       const isCurrent = current !== null && i + 1 >= current.from && i + 1 <= current.to
       return reached(s.id) || isCurrent || progress.leftBehind.includes(s.id)
     })

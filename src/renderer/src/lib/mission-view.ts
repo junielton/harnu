@@ -432,7 +432,8 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
       showVerification: current,
       added: !!step.addedReason,
       rescopePending: isEnd && !!m.pendingRescope,
-      canTick: step.verification === 'human',
+      // A decision node is decided with Choose…, never ticked.
+      canTick: step.verification === 'human' && !step.decision,
       checks: step.checks ?? [],
       checksDue: REACHED.has(st),
       pulse: current ? stepPulse(view, step.id, linked, now) : null,
