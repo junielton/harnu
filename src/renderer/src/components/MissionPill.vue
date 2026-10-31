@@ -6,27 +6,68 @@
  * server's headline — a position, never a count of finished steps. Renders
  * nothing when the selected session owns no open mission (`no-mission` is a
  * state, not a gap).
+ *
+ * T596 (design.md §6 "Campaign progress"): when that mission is a chapter of a
+ * loaded campaign, the same pill reads "Ch. N/M · Step a/b" and opens the
+ * Campaign popover, whose "Open chapter" drills into the chapter popover with a
+ * back link. A mission with no campaign keeps everything above unchanged.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import { Check, ListChecks } from 'lucide-vue-next'
+import { BookOpen, Check, ListChecks } from 'lucide-vue-next'
+import { campaignPillText } from '../lib/campaign-view'
 import { headlineText, PILL_TONE_CLASS, pulseText, type MissionState } from '../lib/mission-view'
+import { useCampaignsStore } from '../stores/campaigns'
 import { useMissionsStore } from '../stores/missions'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
+import CampaignPopover from './CampaignPopover.vue'
 import MissionPopover from './MissionPopover.vue'
 
 const props = defineProps<{ sessionId: string }>()
 
 const { t } = useI18n()
 const missions = useMissionsStore()
+const campaigns = useCampaignsStore()
 const ui = useUiStore()
 const keybindings = useKeybindingsStore()
 missions.ensureStarted()
+campaigns.ensureStarted()
 
 const view = computed(() => missions.viewForSession(props.sessionId))
 const model = computed(() => missions.modelForSession(props.sessionId))
+/** The campaign the own mission is a chapter of; `null` keeps today's mission pill. */
+const campaign = computed(() => campaigns.modelForMission(view.value))
+const campaignView = computed(() => campaigns.forMission(view.value))
+
+/** Which popover the campaign pill shows: the campaign, or one chapter's mission (T596). */
+const stage = ref<'campaign' | 'chapter'>('campaign')
+const chapterMissionId = ref<string | null>(null)
+const chapterRow = computed(() => {
+  const m = campaign.value
+  if (!m) return null
+  const rows = [...m.main, ...m.side, ...m.locked]
+  return (
+    rows.find((r) => r.missionId === chapterMissionId.value && r.mission && r.missionView) ?? null
+  )
+})
+/** The back row's number: the chapter's position among the required ones; `null` for a side quest. */
+const campaignBack = computed(() => {
+  const row = chapterRow.value
+  const cv = campaignView.value
+  if (!row || !cv) return undefined
+  const required = cv.campaign.chapters.filter((c) => c.required)
+  const index = required.findIndex((c) => c.id === row.chapter.id)
+  return { ordinal: index === -1 ? null : index + 1, total: cv.progress.total }
+})
+function openChapter(missionId: string): void {
+  chapterMissionId.value = missionId
+  stage.value = 'chapter'
+}
+function backToCampaign(): void {
+  stage.value = 'campaign'
+}
 
 const rootEl = ref<HTMLElement | null>(null)
 // The open flag lives in the ui store (T486 U4a) so `view.missionProgress` opens
@@ -50,8 +91,8 @@ watch(
   () => ui.closePopover('missionProgress')
 )
 
-/** Popover width (design.md §6) — flip to right-aligned when it would overflow. */
-const POPOVER_W = 400
+/** Popover width (design.md §4 / §6) — flip to right-aligned when it would overflow. */
+const POPOVER_W = computed(() => (campaign.value && stage.value === 'campaign' ? 520 : 400))
 const alignRight = ref(false)
 
 // Every open — the pill's click, `view.missionProgress`, an Activity row — places
@@ -61,9 +102,13 @@ watch(
   open,
   (isOpen) => {
     if (!isOpen) return
+    stage.value = 'campaign'
+    chapterMissionId.value = view.value?.mission.id ?? null
     const left = rootEl.value?.getBoundingClientRect().left ?? 0
-    alignRight.value = left + POPOVER_W > window.innerWidth - 8
+    // The campaign popover is the widest one; flip for it so neither stage ever overflows.
+    alignRight.value = left + (campaign.value ? 520 : POPOVER_W.value) > window.innerWidth - 8
     void missions.refresh()
+    void campaigns.refresh()
   },
   { flush: 'sync' }
 )
@@ -79,6 +124,8 @@ watch(
     if (!req || !id || req.missionId !== id) return
     if (!missions.consumePopoverRequest()) return
     ui.openPopover('missionProgress')
+    // An Activity row names a mission, so a campaign pill opens straight onto its chapter.
+    if (campaign.value) openChapter(id)
   },
   { immediate: true, flush: 'post' }
 )
@@ -93,11 +140,19 @@ const STATE_KEY: Record<MissionState, string> = {
   delivered: 'delivered'
 }
 
-const label = computed(() => (model.value ? headlineText(t, model.value.headline) : ''))
+const label = computed(() => {
+  if (campaign.value) return campaignPillText(t, campaign.value)
+  return model.value ? headlineText(t, model.value.headline) : ''
+})
 
-const done = computed(
-  () => model.value?.headline.kind === 'done' || view.value?.mission.status === 'delivered'
+const done = computed(() =>
+  campaign.value
+    ? campaign.value.done
+    : model.value?.headline.kind === 'done' || view.value?.mission.status === 'delivered'
 )
+
+/** The pill's tone: the campaign's when there is one, otherwise the mission's. */
+const tone = computed(() => campaign.value?.tone ?? model.value?.tone ?? 'accent')
 
 // T547: the first current step's pulse rides on the tooltip; the label stays the headline.
 const pulse = computed(() => {
@@ -110,6 +165,9 @@ const title = computed(() => {
   const named = {
     title: view.value.title,
     state: t(`mission.state.${STATE_KEY[model.value.state]}`)
+  }
+  if (campaign.value && campaignView.value) {
+    return t('campaign.pill.title', { title: campaignView.value.title, label: label.value })
   }
   return pulse.value
     ? t('mission.pillTitleWithPulse', { ...named, pulse: pulse.value })
@@ -127,24 +185,49 @@ const title = computed(() => {
     <button
       type="button"
       class="flex shrink-0 cursor-pointer items-center rounded border tabular-nums transition hover:brightness-110"
-      :class="PILL_TONE_CLASS[model.tone]"
+      :class="PILL_TONE_CLASS[tone]"
       style="gap: 4px; padding: 1px 7px; font-size: 10.5px; font-weight: 500; height: 18px"
       :title="keybindings.withChord(title, 'view.missionProgress')"
       :aria-label="label ? `${label} — ${title}` : title"
       :aria-expanded="open"
-      :data-dsqa="`topbar-pill--${model.tone}`"
+      :data-dsqa="`topbar-pill--${tone}`"
       :data-state="model.state"
+      :data-campaign="campaign ? 'true' : undefined"
       @click="ui.togglePopover('missionProgress')"
     >
-      <component :is="done ? Check : ListChecks" :size="10" :stroke-width="1.8" class="shrink-0" />
+      <component
+        :is="done ? Check : campaign ? BookOpen : ListChecks"
+        :size="10"
+        :stroke-width="1.8"
+        class="shrink-0"
+      />
       <template v-if="label">{{ label }}</template>
     </button>
-    <MissionPopover
-      v-if="open"
-      :view="view"
-      :model="model"
-      class="absolute top-full z-50 mt-1.5"
-      :class="alignRight ? 'right-0' : 'left-0'"
-    />
+    <template v-if="open">
+      <CampaignPopover
+        v-if="campaign && campaignView && stage === 'campaign'"
+        :view="campaignView"
+        :model="campaign"
+        class="absolute top-full z-50 mt-1.5"
+        :class="alignRight ? 'right-0' : 'left-0'"
+        @open-chapter="openChapter"
+      />
+      <MissionPopover
+        v-else-if="campaign && chapterRow?.mission && chapterRow.missionView"
+        :view="chapterRow.missionView"
+        :model="chapterRow.mission"
+        :campaign-back="campaignBack"
+        class="absolute top-full z-50 mt-1.5"
+        :class="alignRight ? 'right-0' : 'left-0'"
+        @back="backToCampaign"
+      />
+      <MissionPopover
+        v-else
+        :view="view"
+        :model="model"
+        class="absolute top-full z-50 mt-1.5"
+        :class="alignRight ? 'right-0' : 'left-0'"
+      />
+    </template>
   </div>
 </template>

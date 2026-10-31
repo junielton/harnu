@@ -12,10 +12,18 @@
 import { computed, ref } from 'vue'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useI18n } from 'vue-i18n'
-import { Check, FileText, Flag, TriangleAlert } from 'lucide-vue-next'
+import { Check, ChevronLeft, FileText, Flag, TriangleAlert } from 'lucide-vue-next'
 import type { MissionDoor, MissionView } from '../../../main/mission-ipc'
-import type { MissionLinkSignal, MissionYouItem } from '../../../main/mcp/tool-handlers'
-import { endWarnings, headlineText, type EndChoice, type MissionModel } from '../lib/mission-view'
+import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
+import {
+  endWarnings,
+  formatDuration,
+  headlineText,
+  type EndChoice,
+  type MissionModel,
+  youRowText,
+  type YouRow
+} from '../lib/mission-view'
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
@@ -23,7 +31,16 @@ import Button from './ui/Button.vue'
 import MissionStepRail from './MissionStepRail.vue'
 import MissionCloseConfirmDialog from './MissionCloseConfirmDialog.vue'
 
-const props = defineProps<{ view: MissionView; model: MissionModel }>()
+const props = defineProps<{
+  view: MissionView
+  model: MissionModel
+  /**
+   * T596 — set when this chapter popover was opened from the Campaign popover: the back row's
+   * "Chapter {ordinal} of {total}" (`ordinal: null` for a side chapter). Absent = no back row.
+   */
+  campaignBack?: { ordinal: number | null; total: number }
+}>()
+const emit = defineEmits<{ back: [] }>()
 
 const { t } = useI18n()
 const missions = useMissionsStore()
@@ -58,41 +75,33 @@ function sessionName(id: string): string {
   return (s && sessionTitle(s, sessions.allSessions, t)) || id.slice(0, 8)
 }
 
-/** Step ids as the operator reads them: their titles. */
-function stepTitles(ids: readonly string[]): string {
-  return ids.map((id) => props.view.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
+/** One You-lane row in the operator's words; a "Decide" row names its decision node. */
+function rowText(row: YouRow): string {
+  return youRowText(t, props.view, row, sessionName)
 }
 
-/** One owed item in the operator's words (never the English `mission_get` sentence). */
-function youText(item: MissionYouItem): string {
-  switch (item.kind) {
-    case 'rescope':
-      return t('mission.you.rescope', { kind: item.end.kind, target: item.end.target })
-    case 'close':
-      return t('mission.you.close')
-    case 'blocker':
-      return t('mission.you.blocker', { reason: item.reason, unblocks: item.unblocks })
-    case 'checks':
-      return t(
-        'mission.you.checks',
-        { count: item.count, steps: stepTitles(item.stepIds) },
-        item.count
-      )
-    case 'human-steps':
-      return t('mission.you.humanSteps', { steps: stepTitles(item.stepIds) }, item.stepIds.length)
-    case 'review-import':
-      return t('mission.you.reviewImport')
-    case 'main-red':
-      return t('mission.you.mainRed', { pr: item.pr, step: stepTitles([item.stepId]) })
-    case 'approvals':
-      return t('mission.you.approvals', { count: item.count, session: sessionName(item.sessionId) })
-    case 'needs-input':
-      return t('mission.you.needsInput', { session: sessionName(item.sessionId) })
-  }
+/** Campaign spec Amendment d: the first row is boxed, every other row stands on its own. */
+const firstRow = computed<YouRow | null>(() => props.model.youRows[0] ?? null)
+const restRows = computed(() => props.model.youRows.slice(1))
+
+const RISK_CLASS: Record<YouRow['risk'], string> = {
+  high: 'text-red',
+  mid: 'text-warning',
+  low: 'text-text-4'
 }
 
-const firstYou = computed<MissionYouItem | null>(() => props.view.you[0] ?? null)
-const youExpanded = ref(false)
+/** "3h 0m" — only where the record had a timestamp. */
+function ageText(row: YouRow): string | null {
+  return row.ageMs === null ? null : formatDuration(row.ageMs)
+}
+
+/** The ledger tail's "3m ago". */
+function ledgerAge(at: string): string {
+  const ms = Date.parse(at)
+  return Number.isFinite(ms)
+    ? t('mission.ledger.ago', { age: formatDuration(Math.max(0, Date.now() - ms)) })
+    : ''
+}
 
 /** Run a door on this mission; a refusal or IPC failure is toasted by the store. */
 async function door(d: Omit<MissionDoor, 'root' | 'missionId'>): Promise<boolean> {
@@ -175,6 +184,23 @@ useNativeOverlay('mission-popover', rootEl)
     style="width: 400px; max-height: 560px"
     :data-dsqa="`mission-popover--${model.state}`"
   >
+    <button
+      v-if="campaignBack"
+      type="button"
+      class="flex shrink-0 cursor-pointer items-center text-text-3 hover:text-text-2"
+      style="gap: 4px; padding: 8px 14px 0; font-size: 11px"
+      data-test="mission-back-to-campaign"
+      @click="emit('back')"
+    >
+      <ChevronLeft :size="12" :stroke-width="1.8" class="shrink-0" />
+      <span>{{ $t('mission.back.campaign') }}</span>
+      <span class="text-text-4">·</span>
+      <span class="tabular-nums">{{
+        campaignBack.ordinal === null
+          ? $t('mission.back.sideQuest')
+          : $t('mission.back.chapter', { n: campaignBack.ordinal, m: campaignBack.total })
+      }}</span>
+    </button>
     <div class="shrink-0 border-b border-border" style="padding: 10px 14px">
       <div class="flex items-center" style="gap: 8px">
         <span class="text-text" style="font-size: 12.5px; font-weight: 500">{{
@@ -279,31 +305,16 @@ useNativeOverlay('mission-popover', rootEl)
             >{{ $t('mission.you.label') }}</span
           >
           <span data-test="mission-you-first">{{
-            firstYou ? youText(firstYou) : $t('mission.you.clear')
+            firstRow ? rowText(firstRow) : $t('mission.you.clear')
           }}</span>
-          <ul
-            v-if="youExpanded && view.you.length > 1"
-            class="list-disc"
-            style="margin: 4px 0 0; padding-left: 15px"
-            data-test="mission-you-rest"
+          <span
+            v-if="firstRow && ageText(firstRow)"
+            class="ml-2 tabular-nums opacity-75"
+            style="font-size: 10.5px"
+            data-test="mission-you-first-age"
+            >{{ ageText(firstRow) }}</span
           >
-            <li v-for="(item, i) in view.you.slice(1)" :key="i">{{ youText(item) }}</li>
-          </ul>
-          <button
-            v-if="view.you.length > 1"
-            type="button"
-            class="block hover:underline"
-            style="margin-top: 3px; font-size: 11px"
-            data-test="mission-you-more"
-            @click="youExpanded = !youExpanded"
-          >
-            {{
-              youExpanded
-                ? $t('mission.you.less')
-                : $t('mission.you.more', { n: view.you.length - 1 })
-            }}
-          </button>
-          <div v-if="firstYou?.kind === 'close'" style="margin-top: 7px">
+          <div v-if="firstRow?.kind === 'close'" style="margin-top: 7px">
             <Button
               variant="success"
               :disabled="missions.doorInFlight"
@@ -313,7 +324,7 @@ useNativeOverlay('mission-popover', rootEl)
               <Check :size="14" :stroke-width="1.8" />{{ $t('mission.close') }}
             </Button>
           </div>
-          <div v-if="firstYou?.kind === 'rescope'" style="margin-top: 7px">
+          <div v-if="firstRow?.kind === 'rescope'" style="margin-top: 7px">
             <Button
               variant="primary"
               :disabled="missions.doorInFlight"
@@ -323,6 +334,58 @@ useNativeOverlay('mission-popover', rootEl)
               <Check :size="14" :stroke-width="1.8" />{{ $t('mission.approveRescope') }}
             </Button>
           </div>
+        </div>
+      </div>
+
+      <!-- The rest of the You lane: one row per owed item with its risk dot and age (Amendment d). -->
+      <div v-if="restRows.length" style="margin-top: 6px" data-test="mission-you-rest">
+        <div
+          v-for="(row, i) in restRows"
+          :key="i"
+          class="flex items-baseline border-t border-border text-text-2 first:border-t-0"
+          style="gap: 8px; padding: 5px 0; font-size: 11.5px"
+          data-test="mission-you-row"
+        >
+          <span
+            class="shrink-0"
+            :class="RISK_CLASS[row.risk]"
+            style="font-size: 10px"
+            aria-hidden="true"
+            >●</span
+          >
+          <span class="min-w-0 flex-1">{{ rowText(row) }}</span>
+          <span
+            v-if="ageText(row)"
+            class="shrink-0 tabular-nums text-text-4"
+            style="font-size: 10.5px"
+            data-test="mission-you-age"
+            >{{ ageText(row) }}</span
+          >
+        </div>
+      </div>
+
+      <!-- The ledger tail (Amendment c): the last rows Harnu wrote, newest first. -->
+      <div v-if="model.ledgerTail.length" style="margin-top: 12px" data-test="mission-ledger">
+        <div
+          class="uppercase text-text-4"
+          style="font-size: 10.5px; font-weight: 500; letter-spacing: 0.07em; margin-bottom: 5px"
+        >
+          {{ $t('mission.ledger.label') }}
+        </div>
+        <div
+          v-for="(r, i) in model.ledgerTail"
+          :key="`${r.at}-${i}`"
+          class="flex items-baseline text-text-3"
+          style="gap: 8px; padding: 2px 0; font-size: 11px"
+          data-test="mission-ledger-row"
+        >
+          <span class="shrink-0">{{ $t(`mission.ledger.kind.${r.kind}`) }}</span>
+          <span class="min-w-0 flex-1 truncate font-mono text-text-2" style="font-size: 10.5px">{{
+            r.ref
+          }}</span>
+          <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
+            ledgerAge(r.at)
+          }}</span>
         </div>
       </div>
 

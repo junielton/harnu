@@ -34,6 +34,7 @@ import {
   formatDuration,
   OPERATOR_VERIFIER_ID,
   pulseText,
+  GATE_DOT_CLASS,
   type GateDot,
   type MissionModel,
   type StepModel,
@@ -74,21 +75,6 @@ const VISUAL_KEY: Record<StepVisual, string> = {
   todo: 'todo',
   locked: 'locked',
   'left-behind': 'leftBehind'
-}
-
-/**
- * Gate dots (design.md §6 "Mission progress" → Gate dots; campaign spec §3.2). One
- * 7px ring per fact, tokens only: green/red fill, a half-filled accent ring that
- * pulses while it is in progress, a hollow ring when there is no signal yet, a
- * dashed faint ring when the gate does not apply.
- */
-const GATE_DOT_CLASS: Record<GateDot['state'], string> = {
-  green: 'border-green bg-green',
-  red: 'border-red bg-red',
-  running:
-    'anim-tick-pulse border-accent bg-linear-to-r from-accent from-50% to-transparent to-[50%]',
-  off: 'border-text-4',
-  na: 'border-dashed border-text-4 opacity-50'
 }
 
 function gateTitle(s: StepModel, g: GateDot): string {
