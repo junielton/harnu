@@ -10,7 +10,15 @@
 import type { Mission, MissionStep } from './mission-core'
 import type { MissionChildState } from './mcp/fleet-snapshot'
 
-export type StepState = 'verified' | 'done' | 'running' | 'waiting' | 'blocked' | 'todo'
+export type StepState =
+  | 'verified'
+  | 'done'
+  | 'running'
+  | 'waiting'
+  | 'blocked'
+  | 'todo'
+  // Campaign spec §3.2 — an open `blocks` edge (or an undecided decision) holds it back.
+  | 'locked'
 
 /** What {@link computeProgress} needs from the live derive, per step. */
 export interface StepSignalsLite {
@@ -34,12 +42,24 @@ export interface MissionProgress {
   leftBehind: string[]
   /** Reached or current existence steps with no link that can resolve (§3.9). */
   unprovable: string[]
+  /**
+   * Campaign spec §3.2 — the Side bucket: `required: false` steps, outside `total`,
+   * `current` and `leftBehind`. Absent when the mission has none, so a mission that
+   * uses no side step keeps the exact v3 shape.
+   */
+  side?: {
+    count: number
+    steps: { id: string; state: StepState; discoveredFrom: string | null }[]
+  }
   computedAt: string
 }
 
 /** §3.1 step state, first match wins. */
 function stepState(step: MissionStep, sig: StepSignalsLite | undefined, owner: string): StepState {
   const by = step.verifiedBy
+  // Campaign spec §3.2: a decision the operator has made is a finished step — the
+  // choice is its whole deliverable (only the Choose door writes `chosen`).
+  if (step.decision?.chosen !== undefined) return 'done'
   // A `needs-human` verdict: the machine part is met and the human part became a
   // check (§3.6), so the step is done — even when the verifier's label says
   // `verified`. A later `met` verdict replaces it.
@@ -68,14 +88,52 @@ export function progressSteps(mission: Pick<Mission, 'steps'>): MissionStep[] {
   return mission.steps.filter((s) => s.kind !== 'fixed-start')
 }
 
+/** A required step (the default) counts in the headline; `required: false` is a side step. */
+const isRequired = (s: MissionStep): boolean => s.required !== false
+
+/**
+ * Campaign spec §3.2 — which steps read `locked`: the target of a `blocks` edge whose
+ * source is not done, or a member of an undecided decision's `blocks`. Only a step that
+ * has not started (`todo`/`waiting`) is locked — a done, running or blocked step keeps
+ * what actually happened. `base` is every step's state before locking, so a chain of
+ * locks resolves from facts and never from other locks.
+ */
+function lockedIds(
+  steps: readonly MissionStep[],
+  base: ReadonlyMap<string, StepState>
+): Set<string> {
+  const locked = new Set<string>()
+  for (const s of steps) {
+    const sourceOpen = !isDone(base.get(s.id) ?? 'todo')
+    for (const e of s.edges ?? []) if (e.kind === 'blocks' && sourceOpen) locked.add(e.to)
+    if (s.decision && s.decision.chosen === undefined)
+      for (const to of s.decision.blocks) locked.add(to)
+  }
+  return new Set(
+    [...locked].filter((id) => {
+      const state = base.get(id)
+      return state === 'todo' || state === 'waiting'
+    })
+  )
+}
+
 export function computeProgress(
   mission: Pick<Mission, 'steps' | 'owner'>,
   signals: readonly StepSignalsLite[],
   now: number
 ): MissionProgress {
   const sig = new Map(signals.map((s) => [s.stepId, s]))
-  const steps = progressSteps(mission)
-  const st = steps.map((s) => stepState(s, sig.get(s.id), mission.owner.sessionId))
+  const all = progressSteps(mission)
+  const base = new Map(
+    all.map((s) => [s.id, stepState(s, sig.get(s.id), mission.owner.sessionId)] as const)
+  )
+  const locked = lockedIds(all, base)
+  const stateOf = new Map(
+    all.map((s) => [s.id, locked.has(s.id) ? 'locked' : base.get(s.id)!] as const)
+  )
+  const steps = all.filter(isRequired)
+  const sideSteps = all.filter((s) => !isRequired(s))
+  const st = steps.map((s) => stateOf.get(s.id)!)
   const lastDone = st.map(isDone).lastIndexOf(true)
   const lastDoneAt = lastDone >= 0 ? Date.parse(steps[lastDone].verifiedBy?.at ?? '') : NaN
   const running = st.flatMap((s, i) => (s === 'running' ? [i] : []))
@@ -90,8 +148,10 @@ export function computeProgress(
       // The first open step after the last done one; when every step after it is
       // done but an earlier one is open, the last step (no ✓). A blocked step
       // later on never pulls the marker forward.
-      let i = st.findIndex((s, k) => k > lastDone && !isDone(s))
-      if (i === -1) i = steps.length - 1
+      // A locked step never takes the marker (Campaign spec §3.2).
+      const open = (s: StepState): boolean => !isDone(s) && s !== 'locked'
+      let i = st.findIndex((s, k) => k > lastDone && open(s))
+      if (i === -1) i = st.some(open) ? steps.length - 1 : Math.max(lastDone, 0)
       current = { from: i + 1, to: i + 1 }
     }
   }
@@ -119,9 +179,22 @@ export function computeProgress(
     allDone,
     done: st.filter(isDone).length,
     verified: st.filter((s) => s === 'verified').length,
-    states: Object.fromEntries(steps.map((s, i) => [s.id, st[i]])),
+    // Side steps are listed too: the rail draws their glyph from the same map.
+    states: Object.fromEntries(all.map((s) => [s.id, stateOf.get(s.id)!])),
     leftBehind,
     unprovable,
+    ...(sideSteps.length > 0
+      ? {
+          side: {
+            count: sideSteps.length,
+            steps: sideSteps.map((s) => ({
+              id: s.id,
+              state: stateOf.get(s.id)!,
+              discoveredFrom: s.discoveredFrom ?? null
+            }))
+          }
+        }
+      : {}),
     computedAt: new Date(now).toISOString()
   }
 }

@@ -92,6 +92,32 @@ export interface MissionStep {
   addedAt?: string
   /** Mission v3 §3.6 — the step's human checks. */
   checks?: Check[]
+  /** Campaign spec §3.2 — `false` = a side step: outside the headline, listed in the Side bucket. Absent = required. */
+  required?: boolean
+  /** Campaign spec §3.2 — the step this side step was discovered from (a step id). */
+  discoveredFrom?: string
+  /** Campaign spec §3.2 — typed edges; progress reads only `blocks` (the target is `locked` until the source is done). */
+  edges?: StepEdge[]
+  /** Campaign spec §3.2 — a decision node: the steps in `blocks` stay `locked` until the operator chooses. */
+  decision?: StepDecision
+}
+
+/** Campaign spec §3.2 — a typed edge from a step to another step. */
+export interface StepEdge {
+  kind: 'blocks' | 'validates' | 'related'
+  to: string
+}
+
+/**
+ * Campaign spec §3.2 — a decision node. `chosen` (an index into `options`) is written
+ * only by the operator's Choose door ({@link applyChooseDecision}); no verb sets it.
+ */
+export interface StepDecision {
+  title: string
+  options: string[]
+  chosen?: number
+  /** Step ids that read `locked` until `chosen` is set. */
+  blocks: string[]
 }
 
 /**
@@ -275,7 +301,23 @@ const MissionStepSchema: z.ZodType<MissionStep> = z
     blockers: z.array(BlockerSchema),
     addedReason: z.string().optional(),
     addedAt: z.string().optional(),
-    checks: z.array(CheckSchema).optional()
+    checks: z.array(CheckSchema).optional(),
+    required: z.boolean().optional(),
+    discoveredFrom: z.string().optional(),
+    edges: z
+      .array(
+        z.object({ kind: z.enum(['blocks', 'validates', 'related']), to: z.string() }).passthrough()
+      )
+      .optional(),
+    decision: z
+      .object({
+        title: z.string(),
+        options: z.array(z.string()),
+        chosen: z.number().int().optional(),
+        blocks: z.array(z.string())
+      })
+      .passthrough()
+      .optional()
   })
   .passthrough()
 
