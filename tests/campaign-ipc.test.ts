@@ -149,6 +149,15 @@ describe('listCampaignViews', () => {
     expect(unreadable).toEqual(['cmp-0000000d-broken.md'])
   })
 
+  it('a file that cannot be read (EISDIR here; EACCES in the wild) is reported and the good file is still listed', async () => {
+    await createCampaignFile(root, campaign('cmp-0000000e', { slug: 'good' }))
+    // A directory wearing a campaign file's name: readFile rejects with EISDIR, not ENOENT.
+    await fs.mkdir(path.join(root, '.harnu', 'campaigns', 'cmp-0000000f-unreadable.md'))
+    const { views, unreadable } = await ipc.listCampaignViews([root])
+    expect(views.map((v) => v.campaign.id)).toEqual(['cmp-0000000e'])
+    expect(unreadable).toEqual(['cmp-0000000f-unreadable.md'])
+  })
+
   it('is empty for a repo with no campaign', async () => {
     expect(await ipc.listCampaignViews([root])).toEqual({ views: [], unreadable: [] })
     expect(await ipc.listCampaignViews([])).toEqual({ views: [], unreadable: [] })

@@ -560,7 +560,6 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
   const inProgress = m.steps.filter((s) => p.states[s.id] !== undefined)
   // Campaign spec §3.2: `required: false` steps live in the Side bucket, never on the rail.
   const counted = inProgress.filter((s) => s.required !== false)
-  const sideSteps = inProgress.filter((s) => s.required === false)
   const letterOf = new Map(
     counted.map((s, i) => [
       s.id,
@@ -578,6 +577,13 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
   const firstCurrentPos = p.current?.from ?? null
   // With no current step (all done), mission-level blockers sit on the last step.
   const blockerPos = firstCurrentPos ?? counted.length
+
+  const sideRows: SideStepModel[] = (p.side?.steps ?? []).flatMap((x) => {
+    const step = m.steps.find((s) => s.id === x.id)
+    return step
+      ? [{ step, state: x.state, origin: x.discoveredFrom ? nameOf(x.discoveredFrom) : null }]
+      : []
+  })
 
   const steps = counted.map((step, i): StepModel => {
     const position = i + 1
@@ -641,14 +647,12 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
     leftBehind: p.leftBehind.length,
     steps,
     side: {
-      count: sideSteps.length,
-      open: sideSteps.filter((x) => !isFinished(p.states[x.id])).length,
-      done: sideSteps.filter((x) => isFinished(p.states[x.id])).length,
-      steps: sideSteps.map((x) => ({
-        step: x,
-        state: p.states[x.id],
-        origin: x.discoveredFrom ? nameOf(x.discoveredFrom) : null
-      }))
+      // The server's Side bucket (`progress.side`): the count and every state are Harnu-derived;
+      // the stored step only lends its title.
+      count: sideRows.length,
+      open: sideRows.filter((x) => !isFinished(x.state)).length,
+      done: sideRows.filter((x) => isFinished(x.state)).length,
+      steps: sideRows
     },
     addedCount: m.steps.filter((s) => s.addedReason).length,
     youLook: rowsLook(view, youRowList),

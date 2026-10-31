@@ -52,14 +52,20 @@ const chapterRow = computed(() => {
     rows.find((r) => r.missionId === chapterMissionId.value && r.mission && r.missionView) ?? null
   )
 })
-/** The back row's number: the chapter's position among the required ones; `null` for a side quest. */
+/**
+ * The back row: "Chapter {n} of {m}" with the SERVER's numbers (`progress.current.from`, `progress.total`).
+ * It names a position only for the chapter the campaign is on; any other chapter says just "Campaign",
+ * and a side chapter says "Side quest" — the renderer never works a position out of the chapter list.
+ */
 const campaignBack = computed(() => {
   const row = chapterRow.value
   const cv = campaignView.value
   if (!row || !cv) return undefined
-  const required = cv.campaign.chapters.filter((c) => c.required)
-  const index = required.findIndex((c) => c.id === row.chapter.id)
-  return { ordinal: index === -1 ? null : index + 1, total: cv.progress.total }
+  return {
+    ordinal: row.current ? (cv.progress.current?.from ?? null) : null,
+    total: cv.progress.total,
+    side: !row.chapter.required
+  }
 })
 function openChapter(missionId: string): void {
   chapterMissionId.value = missionId

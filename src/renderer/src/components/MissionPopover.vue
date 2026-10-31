@@ -38,7 +38,7 @@ const props = defineProps<{
    * T596 — set when this chapter popover was opened from the Campaign popover: the back row's
    * "Chapter {ordinal} of {total}" (`ordinal: null` for a side chapter). Absent = no back row.
    */
-  campaignBack?: { ordinal: number | null; total: number }
+  campaignBack?: { ordinal: number | null; total: number; side?: boolean }
 }>()
 const emit = defineEmits<{ back: [] }>()
 
@@ -194,12 +194,14 @@ useNativeOverlay('mission-popover', rootEl)
     >
       <ChevronLeft :size="12" :stroke-width="1.8" class="shrink-0" />
       <span>{{ $t('mission.back.campaign') }}</span>
-      <span class="text-text-4">·</span>
-      <span class="tabular-nums">{{
-        campaignBack.ordinal === null
-          ? $t('mission.back.sideQuest')
-          : $t('mission.back.chapter', { n: campaignBack.ordinal, m: campaignBack.total })
-      }}</span>
+      <template v-if="campaignBack.ordinal !== null || campaignBack.side">
+        <span class="text-text-4">·</span>
+        <span class="tabular-nums">{{
+          campaignBack.ordinal === null
+            ? $t('mission.back.sideQuest')
+            : $t('mission.back.chapter', { n: campaignBack.ordinal, m: campaignBack.total })
+        }}</span>
+      </template>
     </button>
     <div class="shrink-0 border-b border-border" style="padding: 10px 14px">
       <div class="flex items-center" style="gap: 8px">

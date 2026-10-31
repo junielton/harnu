@@ -225,7 +225,7 @@ useNativeOverlay('campaign-popover', rootEl)
                   ? $t('campaign.group.sideMeta', { n: model.counts.sideOpen })
                   : ''
               },
-              { key: 'locked', rows: model.locked, meta: String(model.locked.length) }
+              { key: 'locked', rows: model.locked, meta: String(model.counts.locked) }
             ]"
             :key="g.key"
           >

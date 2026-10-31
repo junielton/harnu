@@ -73,7 +73,14 @@ export async function listCampaignViews(
   const found: Array<{ root: string; campaign: Campaign; log: string }> = []
   for (const root of roots) {
     for (const name of await campaignFiles(root)) {
-      const raw = await readFile(path.join(campaignsDir(root), name), 'utf8')
+      let raw: string
+      try {
+        raw = await readFile(path.join(campaignsDir(root), name), 'utf8')
+      } catch {
+        // EACCES, a file removed mid-scan…: one bad file never rejects the whole list.
+        unreadable.push(name)
+        continue
+      }
       const parsed = parseCampaignFile(raw)
       if ('error' in parsed) {
         unreadable.push(name)
