@@ -4479,6 +4479,12 @@
         "off": "not yet",
         "na": "n/a"
       },
+      "short": {
+        "pr": "PR",
+        "ci": "CI",
+        "main": "main",
+        "verifier": "verifier"
+      },
       "tooltip": "{gate}: {state}",
       "tooltipStale": "{gate}: {state} (last known)"
     },
@@ -4663,6 +4669,7 @@
         "done": "Step {m}/{m} ✓"
       },
       "forYou": "{n} for you",
+      "radiant": "{done}/{total}",
       "title": "{title} — campaign, {label}"
     },
     "headline": {
@@ -4704,8 +4711,30 @@
       "unavailable": "Ending a campaign from here isn’t available yet — end its chapters’ missions instead."
     },
     "map": {
+      "title": "Campaign map",
+      "close": "Close campaign map",
       "open": "Open map",
-      "unavailable": "The campaign map isn’t available yet."
+      "here": "▼ You are here",
+      "missing": "This campaign isn’t available — it may have been closed.",
+      "tileLabel": "Chapter {n}: {title} — {state}",
+      "dockLabel": "Side quest: {title} — {state}",
+      "waitsFor": "Waits for {what}",
+      "waitsForChapter": "chapter {n}",
+      "gatesLegend": "gates: PR · CI · main · verifier",
+      "ledger": {
+        "owed": "{n} owed",
+        "open": "Open"
+      },
+      "steward": {
+        "title": "Steward",
+        "empty": "No steward yet"
+      },
+      "side": {
+        "meta": "{total} · {done} done · {open} open"
+      },
+      "focus": {
+        "back": "Back"
+      }
     }
   },
   "harnuMod": {
