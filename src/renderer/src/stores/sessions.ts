@@ -87,6 +87,9 @@ import { useUiStore } from './ui'
 import { useRoadmapDrainStore } from './roadmap-drain'
 import { useLayoutStore } from './layout'
 import { dispatchNotification } from './notify-dispatch'
+import { noticeUnitFor } from '../lib/notice-unit'
+import { useMissionsStore } from './missions'
+import { useRoadmapStore } from './roadmap'
 import { speech } from '../lib/speech'
 import { playNotificationSound } from '../lib/notification-sound'
 import {
@@ -4158,6 +4161,22 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
+   * The unit of work (mission step or roadmap card) a session's notices belong to,
+   * for Activity-row coalescing (T599). The stores are read lazily — `missions`
+   * and `roadmap` import this store — and a failure just means "no unit".
+   */
+  function noticeUnitOfSession(sessionId: string): string | undefined {
+    try {
+      return noticeUnitFor(sessionId, {
+        views: useMissionsStore().views,
+        cards: useRoadmapStore().cards
+      })
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
    * Surface a task-state edge, if the pure decision (os-notifications spec §4)
    * says so, on the channel it picks: an in-app **toast** when the window is
    * focused (you're in Harnu), a native **OS notification** when it isn't (pull
@@ -4184,6 +4203,9 @@ export const useSessionsStore = defineStore('sessions', () => {
       sound: decision.sound,
       sessionId: s.sessionId,
       toastKind: TOAST_KIND[decision.kind],
+      // T599: tag the Activity row with its unit so repeats fold into one.
+      unit: noticeUnitOfSession(s.sessionId),
+      notificationType: decision.kind,
       toastAction: {
         label: 'toast.actions.goToSession',
         handler: () => activateSession(s.sessionId)

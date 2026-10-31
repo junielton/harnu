@@ -33,18 +33,53 @@ Confirm a `WORKTREE.md` manifest exists at the repo root (worktrees are born usa
 through it); if it is missing, flag it as a blocker before dispatching anything to
 a worktree.
 
-**Size gate — a small fix skips the spec.** If the objective is a small fix (one
-area, no new interface, no new behaviour contract, reviewable at a glance), do not
-commission a spec bundle or a scout: the card's objective and its ACs are the
-spec, and the delivery is a single unit. The spec bundle below is for work large
-enough that a fresh worktree could not infer the contract. When in doubt, the test
-is whether a reviewer could judge the PR without a document beside it.
+**Triage first — how much of the funnel does this entry deserve?** Name the door you
+came in by and take its first step; most doors never reach a spec.
 
-**Require a spec bundle readable from a fresh worktree.** Every unit needs its
-acceptance criteria, spec, design links and tracker link available on the BASE
-BRANCH — committed, not sitting untracked in `.harnu/`, which a fresh worktree
+| You arrive with           | First step                                       | Becomes                                |
+| ------------------------- | ------------------------------------------------ | -------------------------------------- |
+| A vague idea              | `brainstorming` (one question per turn)          | objective + request atoms R-n          |
+| A task / ticket           | `scope-task` (ACs one by one, what exists, gaps) | report on the card                     |
+| A bug                     | `systematic-debugging` until root cause          | `bug` card with the repro as an AC     |
+| A question                | answer in chat; `memory_query` and lessons first | nothing, or one decisions line         |
+| A PR comment / red CI     | `address-review` / `debug-gh-action`             | commit on the existing branch; no spec |
+| A design / mockup         | `create-mockup` or `implement-design`            | screens approved one by one            |
+| A recurring pain          | `learn-from-review` or a card                    | a lesson, or a `chore` card            |
+| "Where did we leave off?" | `harnu:status` / `resume-task`                   | a read of the mission, nothing written |
+
+**Sizing rule — size decides depth.** **Small = the card's ACs only, no spec:** one
+area, no new interface, no new behaviour contract, reviewable at a glance — do not
+commission a spec bundle or a scout; the card's objective and its ACs are the spec,
+and the delivery is a single unit. **Medium** gets a one-page spec (Problem, Slices,
+ACs); **large** adds Goals and Open decisions; **complex** adds the prd, adr and
+mockup header fields (`docs/specs/TEMPLATE.md` is the shape, `scripts/ci/spec-gate.mjs`
+enforces it on every `status: approved` spec). When in doubt, the test is whether a
+reviewer could judge the PR without a document beside it. A one-line bug and a PR
+comment never enter the spec funnel.
+
+**Require a spec bundle readable from a fresh worktree.** Every unit above Small
+needs its acceptance criteria, spec, design links and tracker link available on the
+BASE BRANCH — committed, not sitting untracked in `.harnu/`, which a fresh worktree
 cannot see. If the objective arrives without acceptance criteria, the first
 delegation is a scout that writes them, not an implementation.
+
+**Refuse to dispatch while the contract lives in `.harnu/out/`.** If the card's
+`spec`, or the `mockup` / `prd` / `adr` the spec's header names, is a path under
+`.harnu/out/`, stop: that directory is gitignored, so every child worktree would be
+dispatched against a contract it cannot read. Landing the bundle comes first.
+
+**Commit 0 is a unit, with an owner.** Landing the spec bundle (spec, mockup, prd,
+adr, on the base branch the children fork from) is the delivery's first named unit,
+not an executor's side job: give it a card, a worktree and one session (the owner is
+named on the card: the orchestrator who dispatches it, or the operator who lands it
+by hand), and nothing else dispatches until its PR has landed on the base. When the
+bundle is already committed on the base, say so in one line and skip the unit.
+
+**A resolved open decision is one line in memory.** When a `D-n` from the spec's Open
+decisions table is resolved, record the resolution in the spec's Amendments table (the body is frozen) and write
+ONE structured line with `memory_append` (`decisions`):
+`D-n · <question> · chosen: <option> · <date>` — nothing else. The rationale stays in
+the spec; `decisions.md` is an index of choices, not a second copy of the argument.
 
 ## Phase 1 — Topology
 
@@ -118,11 +153,28 @@ For each unit, create a card (`create_card`, with kind + complexity +
 - **Objective** and the done criterion for the unit.
 - **Acceptance criteria, with ids and a verification mode** — the contract this
   unit will be graded against in Phase 5. One line each:
-  `- [ ] AC-1 — <observable behavior> — verify: test|visual|manual|review — source: <spec §, design node, ticket id>`
+  `- [ ] AC-1 #a1b2 — <observable behavior> — verify: test|visual|manual|review — source: <spec §, design node, ticket id>`
   Write them from the spec or the tracker, never from imagination, and keep the ids
   stable: evidence, the report and the tracker tick-back all key on them.
   `verify: manual` up front is honest and useful — it pre-declares what will land
   on the human's checklist.
+
+  **When the unit has a spec, the AC block is derived from it, not retyped.** Copy
+  each of the slice's AC lines from the spec's Acceptance criteria table: the
+  **spec's id verbatim**, its statement and its `proof` as written, plus a short
+  content hash — `#` and the first four hex characters of the sha256 of
+  `<statement> | <proof>` with runs of whitespace collapsed
+  (`printf '%s' "$text" | sha256sum | cut -c1-4`) — so the line reads
+  `AC-3 #a1b2`. A reviewer, the executor and the verifier can then tell at a glance
+  whether the card still says what the spec says; a spec AC that changes gets a new
+  hash and a delta to the executor. **Inventing an AC id that is not in the spec is
+  forbidden** — an id you coin cannot be traced to the spec, and the verifier will
+  read it as a criterion nobody agreed to. A criterion the spec lacks is a spec gap:
+  amend the spec (its Amendments table), never the card alone. ACs that exist only
+  on the card (the unit's own `AC-C` changelog line, say) stay card-only and
+  unhashed. The orchestrator pastes this block and the scope boundary below from the
+  spec; the executor's packet still names skills by name only, never restated steps.
+
 - **Provisional ACs — mark what you invented.** ACs traceable to a committed
   spec, a design node or the tracker are the contract. ACs you wrote yourself,
   because the objective arrived without any, are **provisional** — and they carry
@@ -150,6 +202,9 @@ For each unit, create a card (`create_card`, with kind + complexity +
   less than agents told to keep trying.
 - **Scope boundary**: exactly which files and directories it may touch. Out of
   scope means no refactors, no abstractions, no dependency changes beyond the unit.
+  When the unit has a spec, paste the slice's `files-may-touch` line verbatim as the
+  boundary — you do not infer it, and a spec slice without one is sent back to the
+  spec rather than guessed.
 - **Context pointers**: files to read first, relevant memory pages, prior
   decisions.
 - **Visual proof — a unit that changes rendered UI must be looked at before it

@@ -25,7 +25,7 @@
 #   --with-cli       also run the real-CLI integration suites (tests/cli) as step `cli`,
 #                    with HARNU_WITH_CLI=1. Needs `claude` on PATH.
 #   --skip <step>    skip a step by id (repeatable). Ids: format, i18n, english,
-#                    changelog, awareness, user-docs, typecheck, lint, mod, test, cli.
+#                    changelog, awareness, user-docs, spec-gate, typecheck, lint, mod, test, cli.
 #                    `mod` is the companion plugin's validate + test (needs `claude`);
 #                    skipping it is recorded as `skipped`, never as a pass.
 #   --json <path>    write a machine-readable summary for an orchestrator to read.
@@ -116,6 +116,7 @@ run_step english   "English gate"      node scripts/ci/english-gate.mjs
 run_step changelog "CHANGELOG gate"    node scripts/ci/changelog-gate.mjs
 run_step awareness "self-awareness"    node scripts/ci/awareness-gate.mjs
 run_step user-docs "user-docs gate"    node scripts/ci/user-docs-gate.mjs
+run_step spec-gate "spec gate"         node scripts/ci/spec-gate.mjs
 run_step typecheck "typecheck"         npm run typecheck
 run_step lint      "lint"              npm run lint
 run_step mod       "mod (validate+test)" node scripts/ci/mod-step.mjs

@@ -1960,7 +1960,8 @@
     "sessionSays": "Session says",
     "dismissAria": "Dismiss",
     "expandAria": "Show full text",
-    "collapseAria": "Collapse"
+    "collapseAria": "Collapse",
+    "alreadyReported": "already reported · ×{count}"
   },
   "mcpServer": {
     "title": "Control server (MCP)",
