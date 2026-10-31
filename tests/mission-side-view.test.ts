@@ -137,6 +137,11 @@ describe('decision nodes', () => {
     expect(m.steps[1].visual).not.toBe('locked')
   })
 
+  it('a decision node offers Choose, not "Mark verified": the choice is its work', () => {
+    expect(model(decision()).steps[0].canTick).toBe(false)
+    expect(model([step(1, { verification: 'human' }), end(2)]).steps[0].canTick).toBe(true)
+  })
+
   it('a step with no decision has none', () => {
     expect(model([step(1), end(2)]).steps[0].decision).toBeNull()
   })
