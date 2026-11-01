@@ -194,6 +194,12 @@ export const useMissionsStore = defineStore('missions', () => {
   const views = shallowRef<MissionView[]>([])
   /** Wall clock of the last refresh — the stale callout's "now". */
   const refreshedAt = ref(Date.now())
+  /**
+   * Bumped by every successful list read (T596): the campaigns store watches it, so a campaign
+   * refreshes whenever the missions it rolls up have just been re-read — `refreshedAt` alone can
+   * repeat within one millisecond.
+   */
+  const refreshSeq = ref(0)
   /** Doors awaiting their answer — a count, so overlapping doors keep the controls disabled. */
   const doorsInFlight = ref(0)
   const doorInFlight = computed(() => doorsInFlight.value > 0)
@@ -232,6 +238,7 @@ export const useMissionsStore = defineStore('missions', () => {
       )
       views.value = list
       refreshedAt.value = Date.now()
+      refreshSeq.value++
       // Sidebar folders not loaded yet: the list says nothing about reality, and a
       // decision now would rebuild the memory empty and re-cue the backlog later.
       if (folders.length === 0) return
@@ -443,6 +450,7 @@ export const useMissionsStore = defineStore('missions', () => {
   return {
     views,
     refreshedAt,
+    refreshSeq,
     doorInFlight,
     refresh,
     ensureStarted,

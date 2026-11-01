@@ -4555,8 +4555,7 @@
       "mainRed": "main está vermelha após #{pr} — {step} foi mergeado, mas o commit de merge falha no CI da main.",
       "approvals": "Responda às aprovações pendentes ({count}) de {session} no Approval Inbox.",
       "needsInput": "{session} está esperando por você — abra e responda.",
-      "more": "+{n} a mais",
-      "less": "Mostrar menos"
+      "decide": "Decidir: {title}"
     },
     "markVerified": "Marcar verificado",
     "unmark": "Desmarcar",
@@ -4632,6 +4631,81 @@
       "closing": "Fechando {done} de {total}…",
       "done": "{count} missão fechada | {count} missões fechadas",
       "partial": "{failed} de {total} não puderam ser fechadas"
+    },
+    "back": {
+      "campaign": "Campanha",
+      "chapter": "Capítulo {n} de {m}",
+      "sideQuest": "Missão paralela"
+    },
+    "ledger": {
+      "label": "Registro",
+      "ago": "há {age}",
+      "kind": {
+        "dispatched": "Despachado",
+        "worktree": "Worktree",
+        "pr-opened": "PR aberto",
+        "pr-merged": "PR mergeado",
+        "ci": "CI",
+        "verified": "Verificado",
+        "session-died": "Sessão encerrada",
+        "compaction": "Compactada"
+      }
+    }
+  },
+  "campaign": {
+    "pill": {
+      "single": "Cap. {n}/{m}",
+      "range": "Cap. {n}–{to}/{m}",
+      "done": "Cap. {m}/{m} ✓",
+      "step": {
+        "single": "Passo {n}/{m}",
+        "range": "Passos {n}–{to}/{m}",
+        "done": "Passo {m}/{m} ✓"
+      },
+      "forYou": "{n} para você",
+      "title": "{title} — campanha, {label}"
+    },
+    "headline": {
+      "single": "Capítulo {n} de {m}",
+      "range": "Capítulos {n}–{to} de {m}",
+      "done": "Capítulo {m} de {m} ✓"
+    },
+    "counts": "{done} concluídos · {inReview} em revisão · {running} em andamento · {locked} bloqueados · {side} paralelas ({sideDone} concluídas, {sideOpen} abertas)",
+    "radiant": "{done} / {total} unidades",
+    "declaredEnd": "Fim: {target}",
+    "group": {
+      "main": "Missão principal",
+      "side": "Missões paralelas",
+      "locked": "Bloqueados",
+      "mainMeta": "{n} de {m}",
+      "sideMeta": "{n} abertas"
+    },
+    "state": {
+      "done": "concluído",
+      "inReview": "em revisão",
+      "running": "em andamento",
+      "locked": "bloqueado",
+      "todo": "a fazer"
+    },
+    "objectives": "Objetivos",
+    "objectivesStepsOf": "{done} de {total} passos",
+    "openChapter": "Abrir capítulo →",
+    "noMission": "Ainda sem missão — este capítulo não começou.",
+    "missionNotOpen": "A missão deste capítulo está encerrada.",
+    "sideQuest": "Missão paralela",
+    "sideNotRequired": "não necessária para o fim",
+    "discoveredFrom": "Descoberta no capítulo {n} · {title}",
+    "lockedUntil": "Bloqueado até que seus pré-requisitos estejam concluídos.",
+    "you": {
+      "chapterTag": "cap. {n}"
+    },
+    "end": {
+      "open": "Encerrar campanha…",
+      "unavailable": "Ainda não dá para encerrar a campanha por aqui — encerre as missões dos capítulos."
+    },
+    "map": {
+      "open": "Abrir mapa",
+      "unavailable": "O mapa da campanha ainda não está disponível."
     }
   },
   "harnuMod": {

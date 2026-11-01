@@ -341,6 +341,7 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 | Inbox rail — default width             | 300px                                                | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
 | Inbox rail — maximum width             | 440px                                                | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
 | Inbox rail — minimized strip           | 44px                                                 | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
+| Progress popover — standard / wide     | 400px / 520px                                        | The Mission progress popover is 400px; the Campaign popover (`.pop--wide`, §6 "Campaign progress") is the one 520px variant — two panes need the room                                                                                                                                                                                                                              |
 | Resizable divider — hit area           | 6px                                                  | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
 | Resizable divider — visible stripe     | 1px                                                  | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                                                                                                                                                                                                             |
 | Footer / status bar — height           | 24px (`h-6`)                                         | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
@@ -6633,17 +6634,43 @@ go-to-session action raises an info toast ("Session not loaded yet") instead of
 doing nothing.
 
 **The `you` block never hides.** Eyebrow "You" (`9.5px / 700`, uppercase,
-`0.06em`). It shows the **first** item of the ordered `you` list (spec §3.12),
-translated per kind — never the English string `mission_get` prints — and
-"+{n} more" (`11px`, underline-on-hover text button) below it, which expands
-the rest as a plain list. Three looks: **clear** (`text-text-4`, no box —
-"Nothing — you're clear."), **warning** (`bg-warning-soft text-warning
-border-warning-line`, `padding: 8px 10px`, `triangle-alert` 13px), **success**
-(`bg-green-soft text-green border-green-line`, same padding, `check` 13px) —
-success only when the first item is a requested close and the server returns
-no `closeWarnings`. A requested close carries a **Close mission** button
-(Success) that opens the end dialog preset to "Close as delivered"; a staged
-re-scope carries **Approve re-scope** (Primary).
+`0.06em`). It is a **list** (campaign spec Amendment d, T596): the **first** owed
+item sits in the box, translated per kind — never the English string
+`mission_get` prints — and **every other item is its own row under it**, one per
+item, so nothing hides behind a "+N more" (that control is gone). A row
+(`11.5px`, `text-text-2`, `padding: 5px 0`, `border-t border-border`, `gap: 8px`)
+reads: a 10px `●` risk dot, the item, and right-aligned its **age** (`10.5px`,
+`text-text-4`, `tabular-nums`, "3h 0m"). The risk dot is `text-red` for what blocks
+others (a blocker, an undecided decision, a red `main`, a staged re-scope),
+`text-warning` for what waits on the operator's click (a requested close, a human
+step, a child's approvals or input) and `text-text-4` for the small chores (due
+checks, an imported end to review). **An age is shown only where the record holds a
+timestamp** — a blocker's `raisedAt`, the requested close's `pendingClose.at`, the
+merge of a red `main` PR from the ledger — and is left out otherwise; the UI never
+invents one. An undecided **decision node** adds a dedicated **"Decide: {title}"**
+item (campaign spec Amendment e) after the blockers, so the box can say what the
+operator must choose. Three looks: **clear** (`text-text-4`, no box — "Nothing —
+you're clear."), **warning** (`bg-warning-soft text-warning border-warning-line`,
+`padding: 8px 10px`, `triangle-alert` 13px), **success** (`bg-green-soft text-green
+border-green-line`, same padding, `check` 13px) — success only when the first item
+is a requested close and the server returns no `closeWarnings`. A requested close
+carries a **Close mission** button (Success) that opens the end dialog preset to
+"Close as delivered"; a staged re-scope carries **Approve re-scope** (Primary).
+
+**Ledger tail (campaign spec Amendment c, T596).** Under the `you` block a
+mission that has a ledger shows its **last 5 rows, newest first** — the facts
+Harnu wrote (a dispatch, a worktree, a PR opened or merged, CI, a verdict, a dead
+session, a compaction), never anything an agent said. Eyebrow "Ledger" (`10.5px /
+500`, uppercase, `0.07em`, `text-text-4`), then one row each (`11px`,
+`text-text-3`, `gap: 8px`): the event in words, the ref in `font-mono 10.5px`, and
+the age right-aligned (`10.5px`, `text-text-4`, `tabular-nums`). No ledger, no
+section.
+
+**Back link (campaign spec §5, T596).** A chapter popover opened from the
+Campaign popover starts with a **"‹ Campaign · Chapter N of M"** row above the
+title (`11px`, `text-text-3`, `chevron-left` 12px, `padding: 8px 14px 0`) — a text
+button that returns to the Campaign popover; the number comes from the campaign's
+`derived.progress`. A mission with no campaign has no such row.
 
 **Open questions** render only when non-empty: an eyebrow ("Open questions",
 `10.5px / 500`, uppercase, `0.07em`, `text-text-4`) + a plain list (`11.5px`,
@@ -6847,6 +6874,60 @@ Non-interactive: the popover is reached from the Topbar pill.
   warning.
 - ❌ Show a draft state, an Approve button or an approval callout.
 - ❌ Show the mission's stored `status: 'stale'` — there is none; stale is derived.
+
+### Campaign progress (pill, popover)
+
+**T596 (campaign chapter 4b); spec `docs/specs/2026-10-30-campaign/spec.md` §5,
+approved mockup v6 (`screens/v6--pill.html`, `v6--campaign.html`,
+`v6--chapter.html`).** A **Campaign** is the quest line above a Mission; each
+chapter IS a mission. The surfaces below render the campaign's server
+`derived.progress` (`computeCampaignProgress`, `src/main/campaign-progress.ts`) and
+**never recount** — chapter numbers, states, counts and the radiant counter are
+the server's. Data: read over `campaign:list` (`src/main/campaign-ipc.ts`,
+read-only — no campaign door exists yet) into `stores/campaigns.ts`, refreshed
+whenever the mission store refreshes. A session whose mission has no campaign
+(or whose campaign is not loaded) keeps the Mission progress pill and popover
+unchanged. **Tokens only; no new color, size or animation.** The one new width is
+the wide popover (§4 Layout dimensions).
+
+**Pill (`MissionPill.vue`).** Same anatomy as the Mission pill (§6 "Topbar pill":
+height `18px`, `padding: 1px 7px`, `10.5px / 500`, `tabular-nums`, 10px leading
+icon), a `<button>` that toggles the Campaign popover. Label, from the campaign
+headline plus the own mission's headline: **"Ch. {n}/{m} · Step {a}/{b}"**
+(parallel chapters read "Ch. {n}–{to}/{m}"); the warning state appends **"· {k} for
+you"**, k being everything the campaign's open chapters owe (`you` lists, plus
+undecided decisions); delivered reads **"Ch. {m}/{m} ✓"** with no step part. Tones
+as the Mission pill: `accent` active, `warning` when anything is owed or blocked,
+`success` when delivered (`check` icon).
+
+**Campaign popover (`CampaignPopover.vue`, `.pop--wide` 520px).** The Mission
+popover's shell (`rounded border border-border-2 bg-surface shadow-pop`,
+`anim-fade-in-scale`, `max-height: 560px`), width **520px**. Header
+(`padding: 10px 14px`): the campaign title (`12.5px / 500`), the headline
+"Chapter {n} of {m}" right-aligned (`11px`, `text-text-4`), the declared end
+(`11px`, `text-text-3`, truncated), the counts line (`11px`, `text-text-4`: "{done}
+done · {inReview} in review · {running} running · {locked} locked · {side} side
+({sideDone} done, {sideOpen} open)") and, when a chapter declares a radiant, a 3px
+`bg-border-2` track with an `accent` fill and "**{done} / {total}** units" beside
+it. Body, two panes: **left** (`~190px`, `border-r border-border`) the groups
+**Main quest** / **Side quests** / **Locked** (eyebrow `10.5px / 500`, uppercase,
+`0.07em`, `text-text-4`, the group count right-aligned); a chapter row is the §6
+step-rail glyph for its state (`verified`/`done`, `running`, `waiting` for in
+review, `lock` 10px for locked), its number, its title (`12px`; the open chapter
+`text-text` / 500, a click selects it) and a muted state word. **Right** the
+selected chapter's **objectives**: its mission's counted steps as compact rows
+(rail letter, title, the four gate dots of "Gate dots" above) with "{done} of
+{total} steps" and **Open chapter →** (text link, `accent`). Below both panes, the
+**You lane** (the Mission `you` block's three looks, aggregated over the open
+chapters, each row tagged "ch. {n}") and a footer (`padding: 8px 14px`,
+`border-t border-border`): **End campaign…** (Ghost) — rendered **disabled with a
+tooltip** until main exposes a campaign end door — and **Open map** (Primary) —
+disabled with a tooltip until the map takeover lands. The **Steward** line and the
+**merge-batch** dialog of the mockup belong to chapter 5 and render nothing here.
+
+States (mockup `v6--campaign`): `default`; `side` (a side quest selected —
+eyebrow "Side quest · not required for the end", its origin chapter and gates);
+`needs-you` (the You lane's first item boxed in the warning look).
 
 ### Dialog
 

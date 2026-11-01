@@ -4555,8 +4555,7 @@
       "mainRed": "main is red after #{pr} — {step} is merged, but its merge commit fails CI on main.",
       "approvals": "Answer the pending approvals ({count}) from {session} in the Approval Inbox.",
       "needsInput": "{session} is waiting on you — open it and answer.",
-      "more": "+{n} more",
-      "less": "Show less"
+      "decide": "Decide: {title}"
     },
     "markVerified": "Mark verified",
     "unmark": "Unmark",
@@ -4632,6 +4631,81 @@
       "closing": "Closing {done} of {total}…",
       "done": "{count} mission closed | {count} missions closed",
       "partial": "{failed} of {total} could not be closed"
+    },
+    "back": {
+      "campaign": "Campaign",
+      "chapter": "Chapter {n} of {m}",
+      "sideQuest": "Side quest"
+    },
+    "ledger": {
+      "label": "Ledger",
+      "ago": "{age} ago",
+      "kind": {
+        "dispatched": "Dispatched",
+        "worktree": "Worktree",
+        "pr-opened": "PR opened",
+        "pr-merged": "PR merged",
+        "ci": "CI",
+        "verified": "Verified",
+        "session-died": "Session ended",
+        "compaction": "Compacted"
+      }
+    }
+  },
+  "campaign": {
+    "pill": {
+      "single": "Ch. {n}/{m}",
+      "range": "Ch. {n}–{to}/{m}",
+      "done": "Ch. {m}/{m} ✓",
+      "step": {
+        "single": "Step {n}/{m}",
+        "range": "Steps {n}–{to}/{m}",
+        "done": "Step {m}/{m} ✓"
+      },
+      "forYou": "{n} for you",
+      "title": "{title} — campaign, {label}"
+    },
+    "headline": {
+      "single": "Chapter {n} of {m}",
+      "range": "Chapters {n}–{to} of {m}",
+      "done": "Chapter {m} of {m} ✓"
+    },
+    "counts": "{done} done · {inReview} in review · {running} running · {locked} locked · {side} side ({sideDone} done, {sideOpen} open)",
+    "radiant": "{done} / {total} units",
+    "declaredEnd": "End: {target}",
+    "group": {
+      "main": "Main quest",
+      "side": "Side quests",
+      "locked": "Locked",
+      "mainMeta": "{n} of {m}",
+      "sideMeta": "{n} open"
+    },
+    "state": {
+      "done": "done",
+      "inReview": "in review",
+      "running": "running",
+      "locked": "locked",
+      "todo": "to do"
+    },
+    "objectives": "Objectives",
+    "objectivesStepsOf": "{done} of {total} steps",
+    "openChapter": "Open chapter →",
+    "noMission": "No mission yet — this chapter has not started.",
+    "missionNotOpen": "This chapter’s mission is closed.",
+    "sideQuest": "Side quest",
+    "sideNotRequired": "not required for the end",
+    "discoveredFrom": "Discovered from chapter {n} · {title}",
+    "lockedUntil": "Locked until its prerequisites are done.",
+    "you": {
+      "chapterTag": "ch. {n}"
+    },
+    "end": {
+      "open": "End campaign…",
+      "unavailable": "Ending a campaign from here isn’t available yet — end its chapters’ missions instead."
+    },
+    "map": {
+      "open": "Open map",
+      "unavailable": "The campaign map isn’t available yet."
     }
   },
   "harnuMod": {
