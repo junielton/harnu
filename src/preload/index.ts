@@ -60,6 +60,10 @@ import type { IdentityClaim, IdentityOutcome } from '../main/companion/identity-
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
 import type { PrStackSnapshot, WorktreeNode as PrStackWorktree } from '../main/pr-stack-core'
 import type { PrStackPrefs } from '../main/pr-stack-prefs'
+import type {
+  BudgetPrefs as GithubBudgetPrefs,
+  BudgetSnapshot as GithubBudgetSnapshot
+} from '../main/github-budget-core'
 import type { QuitDialogStrings, QuitGuardPrefs } from '../main/quit-guard'
 import type { MissionDoor, MissionDoorResult, MissionListResult } from '../main/mission-ipc'
 import type { MergeBatchResult } from '../main/merge-batch-ipc'
@@ -380,7 +384,13 @@ export type {
 }
 // PR Stack Canvas wire types (T198). The snapshot and its worktree rows come
 // from the pure core; the prefs are the Settings → PR Stack contract.
-export type { PrStackSnapshot, PrStackWorktree, PrStackPrefs }
+export type {
+  PrStackSnapshot,
+  PrStackWorktree,
+  PrStackPrefs,
+  GithubBudgetPrefs,
+  GithubBudgetSnapshot
+}
 // Model routing policy wire types (T97). Pure module (no node deps beyond the
 // JSON-file persistence, which never crosses the IPC boundary) — the renderer
 // imports the table/resolution shapes as type-only for the dispatch confirm +
@@ -2745,8 +2755,16 @@ const api = {
    * recomputed — the canvas and the Cleanup view must never disagree about
    * whether a worktree is done with.
    */
-  prStackLoad: (repoPath: string, worktrees?: PrStackWorktree[]): Promise<PrStackSnapshot> =>
-    ipcRenderer.invoke('pr-stack:load', repoPath, worktrees),
+  prStackLoad: (
+    repoPath: string,
+    worktrees?: PrStackWorktree[],
+    /**
+     * `background: true` marks the canvas' interval refresh: main skips it (and hands back the last
+     * snapshot) while the GitHub budget is `low` or `exhausted`. A load on open, and the manual
+     * refresh, never pass it (T611).
+     */
+    opts?: { background?: boolean }
+  ): Promise<PrStackSnapshot> => ipcRenderer.invoke('pr-stack:load', repoPath, worktrees, opts),
   /**
    * Option+click on a PR link in a transcript: `{ prNumber }` when `url` is an
    * OPEN pull request of the folder's own repo (checked with `gh`), else `null`.
@@ -2757,6 +2775,21 @@ const api = {
   prStackPrefs: (): Promise<PrStackPrefs> => ipcRenderer.invoke('pr-stack:prefs'),
   prStackSetPrefs: (prefs: PrStackPrefs): Promise<PrStackPrefs> =>
     ipcRenderer.invoke('pr-stack:setPrefs', prefs),
+
+  // ---- GitHub API budget (T611) -----------------------------------------------
+  /** The budget now: both buckets, the throttle state, who spent it, the last hour, the pace. */
+  githubBudgetSnapshot: (): Promise<GithubBudgetSnapshot> =>
+    ipcRenderer.invoke('github-budget:snapshot'),
+  /** Throttle prefs (threshold, check delivered missions, pause PR Stack, notify). Whole-object GET/PUT. */
+  githubBudgetPrefs: (): Promise<GithubBudgetPrefs> => ipcRenderer.invoke('github-budget:prefs'),
+  githubBudgetSetPrefs: (prefs: GithubBudgetPrefs): Promise<GithubBudgetPrefs> =>
+    ipcRenderer.invoke('github-budget:setPrefs', prefs),
+  /** Pushed on every poll, every throttle transition and every prefs change. */
+  onGithubBudgetChanged: (cb: (snapshot: GithubBudgetSnapshot) => void): (() => void) => {
+    const handler = (_e: unknown, snapshot: GithubBudgetSnapshot): void => cb(snapshot)
+    ipcRenderer.on('github-budget:changed', handler)
+    return () => ipcRenderer.removeListener('github-budget:changed', handler)
+  },
 
   // ---- Quit guard (T579) ------------------------------------------------------
   /** Settings → General: "Confirm before quitting while agents are working". Whole-object GET/PUT. */

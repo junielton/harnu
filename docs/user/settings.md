@@ -89,6 +89,18 @@ The **General** tab has a QUITTING section with one switch, **Confirm before qui
 
 The alert lives in the other tab: **Settings → General**, in the **OS notifications** group, as **Daily budget alerts**. It is **on by default** and fires at most twice a day — once when you cross 80% of the day's budget, while it is still correctable, and once when you cross 100%. It does not repeat: the crossing is remembered across restarts, so relaunching Harnu mid-afternoon will not replay an alert you already saw, and a new day re-arms both steps. Turning the master **OS notifications** switch off silences it along with everything else.
 
+## GitHub API budget
+
+Harnu asks GitHub (through your `gh` login) about pull requests, CI and reviews, and every one of those requests spends **your** quota: 5,000 REST requests and 5,000 GraphQL points an hour, shared with every other session, script and monitor using the same account. Harnu keeps an eye on that budget so it never spends you dry.
+
+- **It reads the budget once a minute** with `gh api rate_limit`, which GitHub does not charge for. If `gh` is missing or not signed in, Harnu treats the budget as unavailable and only looks again every ten minutes. It follows whichever of the two buckets (REST or GraphQL) has the smaller share left.
+- **It counts its own calls** per feature — missions, PR Stack, Review, Cleanup, the mission steward and the merge batch — so it can tell what it spent from what the rest of your account spent. "Outside Harnu" is GitHub's figure minus Harnu's count, so treat it as an estimate.
+- **Near the limit it slows down.** When the tighter bucket drops to **15 %** or less (10, 15 or 25 %), Harnu keeps mission PR and main-CI results for five minutes instead of one and pauses PR Stack's background refresh (opening the canvas, or pressing Refresh, still reads GitHub). At zero it stops reading GitHub altogether, shows the last values it knew, and starts again by itself after the reset. If `gh` ever prints "rate limit exceeded", Harnu checks the budget at once: when a bucket really is empty it stops as above, but when you still have calls left (GitHub's separate "secondary" limit, which can hit with budget to spare) it only pauses its reads for a minute, or for the wait GitHub asks for, and carries on.
+- **Your own actions are never held back.** Posting a review, merging, and marking a file viewed always go through.
+- **Delivered missions are not checked on GitHub.** A mission that has been delivered keeps the pull-request and CI state it last had. A `Check delivered missions` switch (off by default) turns the checking back on.
+
+The footer pill and the **Settings → GitHub API** pane that show the budget and let you change these choices are still to come. Until they land, the choices live in `github-budget-prefs.json` in Harnu's data folder (`threshold`: 10, 15 or 25; `checkDelivered`; `pausePrStackWhenLow`; `notify`). A missing or damaged file just means the defaults.
+
 ## Cleanup
 
 **Settings → Cleanup** is the one place that controls how Harnu cleans up after finished work. Every change saves as you make it, and the numbers you type are applied about half a second after you stop typing. If you type a value outside the allowed range, Harnu keeps the nearest allowed one and the field shows what it kept. The tab is the settings behind the [Cleanup](cleanup.md) screen, in five groups.

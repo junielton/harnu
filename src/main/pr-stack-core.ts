@@ -965,10 +965,14 @@ export function classifyGhFailure(err: unknown): GhFailure | null {
   if (/gh auth login|not logged in|authentication required|GH_TOKEN/i.test(stderr)) return null
   if (/none of the git remotes|not a github|no github remote/i.test(stderr)) return null
 
+  // T611: a spent budget is not a flaky network. The runner marks the budget `exhausted` from this
+  // same stderr; here it just must not read as `network` ("check your connection").
+  if (/rate limit|GH_THROTTLED|Harnu paused GitHub reads/i.test(stderr)) return 'other'
+
   if (e.killed === true || e.signal != null || e.code === 'ETIMEDOUT') return 'timeout'
   if (e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'outputTooLarge'
   if (
-    /error connecting|could not resolve|no such host|network is unreachable|connection (refused|reset)|timeout|rate limit|HTTP 5\d\d|EOF/i.test(
+    /error connecting|could not resolve|no such host|network is unreachable|connection (refused|reset)|timeout|HTTP 5\d\d|EOF/i.test(
       stderr
     )
   ) {

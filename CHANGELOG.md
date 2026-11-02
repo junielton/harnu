@@ -14,6 +14,21 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Harnu now watches its own GitHub API budget and slows down near the limit.** Every `gh` call
+  Harnu makes spends the same personal GitHub quota your sessions and scripts use (5,000 REST
+  requests and 5,000 GraphQL points an hour), and on a busy day it could run dry with Harnu still
+  polling and showing nothing. Harnu now reads the budget once a minute (`gh api rate_limit`, which
+  is free), counts its own calls per feature (missions, PR Stack, Review, Cleanup, the steward, the
+  merge batch) so it can tell its share from everything else on your token, and follows whichever of
+  the two buckets is tighter. When that bucket drops to 15 % (10, 15 or 25 % in the prefs file) Harnu
+  stretches the mission PR and main-CI caches from 1 minute to 5 and pauses PR Stack's background
+  refresh; when it reaches zero it stops reading GitHub, shows the last values it knew, and resumes
+  by itself after the reset. A "rate limit exceeded" message from `gh` is no longer mistaken for a
+  network failure: Harnu checks the real budget right away, and if you still have calls left (GitHub's
+  secondary limit) it only pauses its reads for a minute, or for the wait GitHub names, instead of
+  stopping until the reset. Your own actions — a review, a merge, marking a file viewed — are never
+  held back. The footer pill and the Settings pane that show all of this arrive next.
+
 - **Closing a mission or campaign now drafts what to remember.** When a session asks you to close a
   mission or campaign, Harnu reads the record (the steps, the Log, the ledger and the pull requests and
   commits linked to them, never a session's transcript) and prepares two things: an **outcome**
@@ -54,6 +69,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **Merge batch is stricter about what it merges.** Each PR is re-read right before its own merge and merged only at the commit whose checks were read (a push in between makes GitHub refuse the merge instead of landing unchecked code). A PR with merge conflicts, or one that does not target the default branch, is no longer merged — a stacked PR must be retargeted first. The batch now also stops when the steward's turn between merges did not run (paused, absent or timed out), when the mission is closed or its steward paused mid-batch, and treats a PR whose checks have not reported yet as still pending instead of "not ready". Only one batch can run on a mission at a time, and the "Stopped at…" panel stays open while the mission popover refreshes.
 
 ### Changed
+
+- **Delivered missions are no longer checked on GitHub.** Once a mission is delivered it keeps the
+  pull-request, CI and main-CI state it last had instead of being asked about on every poll. The
+  `Check delivered missions` preference (off by default, in `github-budget-prefs.json` until the
+  Settings pane lands) brings the old behaviour back.
 
 - `mission_request_close` and `campaign_request_close` now also report `consolidation` (how many drafts
   were prepared, or that nothing was notable).

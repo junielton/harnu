@@ -7,6 +7,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { spawnEnvOnce } from '../appimage-env'
+import { inferGhResource, runGh } from '../gh-runner'
 import type { WorktreeBundle } from './bundle-core'
 import type { RemoteFacts } from './gc-remote-delete'
 import {
@@ -24,7 +25,14 @@ export const realRemoteRunners: RemoteRunners = {
   git: async (repo, args) =>
     (await run('git', ['-C', repo, ...args], { ...OPTS, env: await spawnEnvOnce() })).stdout,
   gh: async (repo, args) =>
-    (await run('gh', args, { ...OPTS, cwd: repo, env: await spawnEnvOnce() })).stdout
+    (
+      await runGh(args, {
+        ...OPTS,
+        cwd: repo,
+        consumer: 'cleanup',
+        resource: inferGhResource(args)
+      })
+    ).stdout
 }
 
 /** The facts right now, never cached: the click-time check reads this. */

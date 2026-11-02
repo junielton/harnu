@@ -210,6 +210,7 @@ import { reconcileStewardsOnBoot, registerStewardWiring } from './steward-bridge
 import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
+import { registerGithubBudget, stopGithubBudget } from './github-budget'
 import { registerMissionIpc } from './mission-ipc'
 import { registerMergeBatchIpc } from './merge-batch-ipc'
 import { registerCampaignIpc } from './campaign-ipc'
@@ -605,6 +606,8 @@ app.whenReady().then(async () => {
   // than recomputed, so the canvas and the Cleanup view can never disagree
   // about whether a worktree is done with.
   registerPrStack()
+  // T611: the GitHub API budget — `gh api rate_limit` poller, throttle state and its IPC.
+  registerGithubBudget()
   // T370 (T358 S9): mission progress read + the operator doors.
   registerMissionIpc()
   registerMergeBatchIpc()
@@ -1192,6 +1195,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', async (event) => {
+  stopGithubBudget()
   // T579: ask first when agents are mid-turn. Cancel keeps everything alive (nothing below runs).
   guardQuit(event, () => mainWindow)
   if (event.defaultPrevented) return

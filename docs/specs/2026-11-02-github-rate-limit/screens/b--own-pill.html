@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: b--own-pill</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa='b--own-pill'] .pop {
+        right: 360px; /* no token: anchored above the GitHub pill */
+      }
+      [data-dsqa='b--own-pill'] .head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px 0;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      [data-dsqa='b--own-pill'] .head .t4 {
+        font-weight: 400;
+        font-size: 11px;
+        margin-left: auto;
+      }
+    </style>
+  </head>
+  <body data-states="closed healthy low exhausted">
+    <div data-dsqa="b--own-pill">
+      <div class="frame">
+        <div class="term">
+          <b>❯</b> claude --resume 7f3c…<br />● Reading src/main/mission-gates.ts<br />● Running npm
+          test -- mission-gates<br />&nbsp;&nbsp;42 passed
+        </div>
+
+        <div class="pop w-320" data-dsqa-part="gh-popover" data-show="healthy low exhausted">
+          <div class="head">
+            <svg
+              class="ic"
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"
+              />
+              <path d="M9 18c-4.51 2-5-2-7-2" /></svg
+            >GitHub API<span class="t4 num">@junielton · updated 20s ago</span>
+          </div>
+
+          <div class="sect">
+            <div class="meters" data-show="healthy">
+              <div class="meter">
+                <div class="top">
+                  <span class="l">REST · 5,000/h</span><span class="v">4,112 left</span>
+                </div>
+                <div class="trk"><i class="f-green" style="width: 18%"></i></div>
+                <span class="bot">resets in 38m</span>
+              </div>
+              <div class="meter">
+                <div class="top">
+                  <span class="l">GraphQL · 5,000 pts/h</span><span class="v">4,690 left</span>
+                </div>
+                <div class="trk"><i class="f-green" style="width: 6%"></i></div>
+                <span class="bot">resets in 38m</span>
+              </div>
+            </div>
+            <div class="meters" data-show="low">
+              <div class="meter">
+                <div class="top">
+                  <span class="l">REST · 5,000/h</span><span class="v is-accent">640 left</span>
+                </div>
+                <div class="trk"><i class="f-accent" style="width: 87%"></i></div>
+                <span class="bot">resets in 21m · at this pace, empty in 6m</span>
+              </div>
+              <div class="meter">
+                <div class="top">
+                  <span class="l">GraphQL · 5,000 pts/h</span><span class="v">3,980 left</span>
+                </div>
+                <div class="trk"><i class="f-green" style="width: 20%"></i></div>
+                <span class="bot">resets in 21m</span>
+              </div>
+            </div>
+            <div class="meters" data-show="exhausted">
+              <div class="meter">
+                <div class="top">
+                  <span class="l">REST · 5,000/h</span><span class="v is-red">0 left</span>
+                </div>
+                <div class="trk"><i class="f-red" style="width: 100%"></i></div>
+                <span class="bot">resets at 14:00 (in 12m)</span>
+              </div>
+              <div class="meter">
+                <div class="top">
+                  <span class="l">GraphQL · 5,000 pts/h</span><span class="v">3,800 left</span>
+                </div>
+                <div class="trk"><i class="f-green" style="width: 24%"></i></div>
+                <span class="bot">resets in 12m</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sect" data-dsqa-part="attribution">
+            <div class="lbl" style="margin-bottom: 7px">Who spent it · this hour</div>
+
+            <div data-show="healthy">
+              <div class="split">
+                <i class="f-accent" style="width: 11.6%"></i
+                ><i class="f-muted" style="width: 6.1%"></i>
+              </div>
+              <div class="legend">
+                <span><span class="sw f-accent"></span>Harnu 582</span
+                ><span><span class="sw f-muted"></span>Outside Harnu 306</span>
+              </div>
+              <div class="consumers">
+                <div class="cons">
+                  <span class="n">Missions · PR and CI</span><span class="c">412</span
+                  ><span class="b"><i style="width: 100%"></i></span>
+                </div>
+                <div class="cons">
+                  <span class="n">PR Stack</span><span class="c">96</span
+                  ><span class="b"><i style="width: 23%"></i></span>
+                </div>
+                <div class="cons">
+                  <span class="n">Review</span><span class="c">38</span
+                  ><span class="b"><i style="width: 9%"></i></span>
+                </div>
+                <div class="cons">
+                  <span class="n">Cleanup</span><span class="c">22</span
+                  ><span class="b"><i style="width: 5%"></i></span>
+                </div>
+                <div class="cons">
+                  <span class="n">Steward</span><span class="c">14</span
+                  ><span class="b"><i style="width: 3%"></i></span>
+                </div>
+                <div class="cons is-outside">
+                  <span class="n">Outside Harnu</span><span class="c">306</span
+                  ><span class="b"><i style="width: 74%"></i></span>
+                </div>
+              </div>
+            </div>
+
+            <div data-show="low">
+              <div class="split">
+                <i class="f-accent" style="width: 46.2%"></i
+                ><i class="f-muted" style="width: 41%"></i>
+              </div>
+              <div class="legend">
+                <span><span class="sw f-accent"></span>Harnu 2,310</span
+                ><span><span class="sw f-muted"></span>Outside Harnu 2,050</span>
+              </div>
+              <div class="consumers">
+                <div class="cons">
+                  <span class="n"
+                    >Missions · PR and CI <span class="tag is-accent">slowed</span></span
+                  ><span class="c">1,840</span><span class="b"><i style="width: 100%"></i></span>
+                </div>
+                <div class="cons">
+                  <span class="n">PR Stack</span><span class="c">310</span
+                  ><span class="b"><i style="width: 17%"></i></span>
+                </div>
+                <div class="cons">
+                  <span class="n">Review</span><span class="c">84</span
+                  ><span class="b"><i style="width: 5%"></i></span>
+                </div>
+                <div class="cons">
+                  <span class="n">Cleanup</span><span class="c">46</span
+                  ><span class="b"><i style="width: 3%"></i></span>
+                </div>
+                <div class="cons">
+                  <span class="n">Steward</span><span class="c">30</span
+                  ><span class="b"><i style="width: 2%"></i></span>
+                </div>
+                <div class="cons is-outside">
+                  <span class="n">Outside Harnu</span><span class="c">2,050</span
+                  ><span class="b"><i style="width: 100%"></i></span>
+                </div>
+              </div>
+              <div class="note tone-accent">
+                <span
+                  ><b>Harnu is polling slower.</b> Mission checks every 5 min and PR Stack refreshes
+                  on open, until the reset at 14:00.</span
+                >
+              </div>
+            </div>
+
+            <div data-show="exhausted">
+              <div class="split">
+                <i class="f-accent" style="width: 52.4%"></i
+                ><i class="f-muted" style="width: 47.6%"></i>
+              </div>
+              <div class="legend">
+                <span><span class="sw f-accent"></span>Harnu 2,620</span
+                ><span><span class="sw f-muted"></span>Outside Harnu 2,380</span>
+              </div>
+              <div class="consumers">
+                <div class="cons is-paused">
+                  <span class="n">Missions · PR and CI <span class="tag">paused</span></span
+                  ><span class="c">2,110</span><span class="b"><i style="width: 100%"></i></span>
+                </div>
+                <div class="cons is-paused">
+                  <span class="n">PR Stack <span class="tag">paused</span></span
+                  ><span class="c">340</span><span class="b"><i style="width: 16%"></i></span>
+                </div>
+                <div class="cons is-paused">
+                  <span class="n">Review <span class="tag">paused</span></span
+                  ><span class="c">92</span><span class="b"><i style="width: 4%"></i></span>
+                </div>
+                <div class="cons is-paused">
+                  <span class="n">Cleanup <span class="tag">paused</span></span
+                  ><span class="c">48</span><span class="b"><i style="width: 2%"></i></span>
+                </div>
+                <div class="cons is-paused">
+                  <span class="n">Steward <span class="tag">paused</span></span
+                  ><span class="c">30</span><span class="b"><i style="width: 1%"></i></span>
+                </div>
+                <div class="cons is-outside">
+                  <span class="n">Outside Harnu</span><span class="c">2,380</span
+                  ><span class="b"><i style="width: 100%"></i></span>
+                </div>
+              </div>
+              <div class="note tone-red">
+                <span
+                  ><b>Limit reached.</b> Harnu paused its GitHub checks until 14:00 and shows the
+                  last known state.</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="link" data-show="healthy" data-goto="d--settings-pane">Details ↗</div>
+          <div class="link" data-show="low exhausted" data-goto="d--settings-pane?state=throttled">
+            Details ↗
+          </div>
+        </div>
+
+        <mk-footer gh="pill" data-goto="b--own-pill?state=healthy"></mk-footer>
+      </div>
+    </div>
+    <script src="../parts/footer.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>
