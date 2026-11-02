@@ -463,6 +463,8 @@ const translateBrowserPane: Translator = (args, gateFolder) => {
  */
 const TRANSLATORS: { [K in McpOp]: Translator } = {
   get_fleet: translateGetFleet,
+  // T614: a global read, like get_fleet.
+  github_budget: translateGetFleet,
   get_approval: translateGetApproval,
   plan_mission: translatePlanMission,
   get_session: translateGetSession,

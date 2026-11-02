@@ -923,6 +923,10 @@ describe('parseToolInput routes list_containers (T328)', () => {
 })
 
 describe('parseToolInput routes the cleanup verbs (T445)', () => {
+  it('github_budget takes no args (T614)', () => {
+    expect(parseToolInput('github_budget', {})).toEqual({ ok: true, value: {} })
+  })
+
   it('list_cleanup accepts no args or an absolute folder, refuses a relative one', () => {
     expect(parseToolInput('list_cleanup', {}).ok).toBe(true)
     expect(parseToolInput('list_cleanup', { folder: '/abs' }).ok).toBe(true)

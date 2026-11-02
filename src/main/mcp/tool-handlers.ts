@@ -48,7 +48,8 @@ import {
   type MissionPrJoin,
   type WorktreePrJoin
 } from '../pr-stack'
-import { checkDeliveredMissions } from '../github-budget-tracker'
+import { checkDeliveredMissions, githubBudget } from '../github-budget-tracker'
+import { githubBudgetPayload } from './github-budget-view'
 import {
   addObservedLedger,
   ensureLinkCacheLoaded,
@@ -3026,6 +3027,14 @@ const removeContainersHandler: Handler = (args, ctx) => {
     ...(args.stacks !== undefined ? { stacks: args.stacks } : {})
   }
   return actOnContainers('remove', raw, [stack], ctx)
+}
+
+// ---- T614 `github_budget` -----------------------------------------------------
+
+/** The shared GitHub budget (T611). Reads the in-memory tracker: no `gh` call, no folder, no write. */
+const githubBudgetHandler: Handler = async () => {
+  githubBudget.tick()
+  return textResult(githubBudgetPayload(githubBudget.snapshot()))
 }
 
 // ---- T445 `list_cleanup` / `release_worktree` --------------------------------
@@ -7330,6 +7339,7 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   list_workers: listWorkersHandler,
   list_containers: listContainersHandler,
   list_cleanup: listCleanupHandler,
+  github_budget: githubBudgetHandler,
   release_worktree: releaseWorktreeHandler,
   stop_containers: stopContainersHandler,
   start_containers: startContainersHandler,

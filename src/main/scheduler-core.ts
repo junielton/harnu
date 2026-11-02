@@ -382,6 +382,9 @@ const OBSERVE_ALLOW_VERBS: readonly string[] = [
   // T445: read-only, so a delivery-watchdog can report how many items are ready to clean. Its sibling
   // `release_worktree` writes a mark and belongs on the deny list below.
   'list_cleanup',
+  // T614 (T611 U3): the GitHub budget snapshot, read from Harnu's in-memory tracker (no `gh` call), so a
+  // watcher can slow its own polling.
+  'github_budget',
   // T369 (Mission progress S8): the two Mission READ verbs, so an observe-mode
   // `delivery-watchdog` can read a mission's stored state and its derived
   // `stale` flag. Every mission WRITE verb is on the deny list below.

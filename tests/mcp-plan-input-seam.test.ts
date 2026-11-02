@@ -126,6 +126,8 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   send_terminal: { folder: ALLOWED, terminalId: 'h-1', input: 'ls', keys: ['Enter'], paste: false },
   // T445: the cleanup read and the release both gate on the `folder` arg.
   list_cleanup: { folder: ALLOWED },
+  // T614: a global read, no folder to carry.
+  github_budget: {},
   release_worktree: { folder: ALLOWED },
   // T329: stacks are addressed by id; there is no folder to carry.
   stop_containers: { stacks: ['wave-1'], force: true },
