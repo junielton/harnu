@@ -19,9 +19,10 @@
 import { injectHookSettings } from './hook-settings-blob'
 import { MCP_TOOLS } from './mcp/tool-catalog'
 import { ALLOWED_TOOLS_RULES, MCP_SERVER_NAMES, mcpToolName } from './mcp/config-file'
+import { STEWARD_MCP_ALLOW, STEWARD_MCP_DENY, STEWARD_NATIVE_TOOLS } from './steward-core'
 
 /** How much a tick is allowed to do. See the spec §4.4/§4.5. */
-export type WorkerMode = 'observe' | 'act'
+export type WorkerMode = 'observe' | 'act' | 'steward'
 
 /** Terminal state of one tick. `stopped` is an operator action, not a failure. */
 export type RunStatus = 'ok' | 'error' | 'timeout' | 'skipped' | 'stopped'
@@ -79,6 +80,13 @@ export interface Worker {
   allowNetwork?: boolean
   /** Advanced: replaces the default system prompt. */
   systemPrompt?: string
+  /**
+   * Campaign ch.5a: `'steward'` marks a SYSTEM worker — Harnu-owned, bound to `missionId`, read-only
+   * to the operator and to agents (no edit, no delete, no enable toggle). Absent = a user worker.
+   */
+  category?: 'steward'
+  /** The mission a steward is bound to; set only with `category: 'steward'`. */
+  missionId?: string
   /** Consecutive failures. Three disables the worker. */
   failureStreak: number
   /**
@@ -515,6 +523,17 @@ export function tickArgv(worker: Worker, ctx: TickContext): string[] {
   if (worker.mode === 'act') {
     argv.push('--permission-mode', 'bypassPermissions')
     if (ctx.mcpConfigPath) argv.push('--allowedTools', ALLOWED_TOOLS_RULES.join(','))
+  } else if (worker.mode === 'steward') {
+    // Campaign ch.5a (spec §3.4): read-only built-ins, an allowlist of Harnu verbs, and EVERY other
+    // catalog verb denied by name (derived, like observe). Never `WebFetch`, whatever `allowNetwork`
+    // says; never the bare `mcp__harnu` server rule, which would allow every verb.
+    argv.push('--tools', STEWARD_NATIVE_TOOLS.join(','))
+    const allow = [...STEWARD_NATIVE_TOOLS]
+    if (ctx.mcpConfigPath) allow.push(...STEWARD_MCP_ALLOW)
+    argv.push('--allowedTools', allow.join(','))
+    const deny = [...OBSERVE_TOOLS_DENY, ...OBSERVE_NETWORK_TOOLS]
+    if (ctx.mcpConfigPath) deny.push(...STEWARD_MCP_DENY)
+    argv.push('--disallowedTools', deny.join(','))
   } else {
     // `extraReadCommands` is deliberately not consulted: observe has no shell (BUG-164).
     // Only the literal `true` opts in to the network (BUG-166).

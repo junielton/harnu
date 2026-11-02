@@ -280,7 +280,12 @@ export const MCP_OPS = [
   'campaign_add_chapter',
   'campaign_get',
   'campaign_list',
-  'campaign_request_close'
+  'campaign_request_close',
+  // Campaign ch.5a (T597, spec §3.4): the steward's one new verb. Rewrites a step's OWN local
+  // branch with `git rebase --onto` in its linked worktree; on a conflict it aborts, leaves the tree
+  // as it was and sets a blocker. It never pushes and never touches another branch. Same gate class
+  // as the mission verbs (a local write the agent could already do with its own tools).
+  'rebase_stack'
 ] as const
 
 /** A router-dispatchable op — one of {@link MCP_OPS}. */
@@ -675,6 +680,12 @@ export const MCP_TOOLS: McpToolDef[] = [
         .optional()
         .describe(
           'Optional launch overrides, model / effort only: an object { model?: string, effort?: string } (e.g. {"model":"sonnet","effort":"high"}). Any other field is refused with INVALID_BOOT_OVERRIDE.'
+        ),
+      role: z
+        .enum(['verifier'])
+        .optional()
+        .describe(
+          "Optional: what the session is for. `verifier` marks a session started to verify a unit's acceptance criteria. A mission's steward may call create_session ONLY with role: 'verifier' (STEWARD_ROLE_REQUIRED otherwise); for any other caller it is a label, echoed in the ACK."
         )
     }),
     mutates: true,
@@ -1972,7 +1983,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_workers',
     description:
-      'List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome.',
+      "List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome. A mission's STEWARD is listed with `category: 'steward'`, its `missionId` and `agentControllable: false`: it is a system worker bound to its mission, and update_worker / delete_worker refuse it (WORKER_IS_STEWARD).",
     inputSchema: z.object({
       folder: z.string().min(1).optional().describe('Absolute path to scope the listing.')
     }),
@@ -2143,7 +2154,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'delete_worker',
     description:
-      'Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.',
+      "Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. A mission's steward (category 'steward') is refused WORKER_IS_STEWARD: it is deleted only when the operator ends its mission. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.",
     inputSchema: z.object({
       id: z.string().min(1).describe("The worker's id, from create_worker or list_workers.")
     }),
@@ -2181,7 +2192,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_create',
     description:
-      "Create a Mission — structured progress tracking for a body of work, stored repo-scoped under the main checkout's `.harnu/missions/` (every worktree of the repo shares it). DIRECT write, no confirm. A complete `declaredEnd` is REQUIRED — kind (code | ui | research | decision | other) + a concrete target + the evidence that proves it; the call is refused (DECLARED_END_INCOMPLETE) without all three. The mission is born `active` — there is no draft and no approval step: the end you agreed with the operator in chat IS the agreement (stamped as `declaredEndApproval.via: 'chat'`). Declare the plan in the same call with `steps` — `{ title, verification }[]`, one step per deliverable that moves where the work is (1 unit = 1 PR = 1 step) — numbered from stp-1 and followed by the fixed last step \"Delivered and verified\" (verifier), found by its kind, never by id. Planning steps need no reason. Pass `scope` — the repo-relative paths of the spec / PRD / ADR — and they are attached to the mission as `scope`: an attachment, never a step, never counted in progress (`derived.scope` reports whether each path exists). `sessionId` names the OWNER: pass your own Claude session UUID. It is SELF-DECLARED and NOT authenticated — Harnu's MCP transport has no per-session identity — so a wrong id is not caught, it just means the mission-owner hibernation exemption never finds you. A Mission (`mission_*`) is unrelated to plan_mission (a capability grant); they share a word, not a mechanism. To make the mission a CHAPTER of a campaign, pass `campaignId` AND `chapterId` together (campaign spec §3.2): the mission records both and the chapter records the mission's id — a chapter takes one mission (CHAPTER_ALREADY_BOUND), the campaign must be open (CAMPAIGN_CLOSED), and an unknown campaign or chapter is CAMPAIGN_NOT_FOUND / CHAPTER_NOT_FOUND; a refusal writes no mission. The ACK echoes `campaignId` and `chapterId` when bound.",
+      "Create a Mission — structured progress tracking for a body of work, stored repo-scoped under the main checkout's `.harnu/missions/` (every worktree of the repo shares it). DIRECT write, no confirm. A complete `declaredEnd` is REQUIRED — kind (code | ui | research | decision | other) + a concrete target + the evidence that proves it; the call is refused (DECLARED_END_INCOMPLETE) without all three. The mission is born `active` — there is no draft and no approval step: the end you agreed with the operator in chat IS the agreement (stamped as `declaredEndApproval.via: 'chat'`). Declare the plan in the same call with `steps` — `{ title, verification }[]`, one step per deliverable that moves where the work is (1 unit = 1 PR = 1 step) — numbered from stp-1 and followed by the fixed last step \"Delivered and verified\" (verifier), found by its kind, never by id. Planning steps need no reason. Pass `scope` — the repo-relative paths of the spec / PRD / ADR — and they are attached to the mission as `scope`: an attachment, never a step, never counted in progress (`derived.scope` reports whether each path exists). `sessionId` names the OWNER: pass your own Claude session UUID. It is SELF-DECLARED and NOT authenticated — Harnu's MCP transport has no per-session identity — so a wrong id is not caught, it just means the mission-owner hibernation exemption never finds you. A Mission (`mission_*`) is unrelated to plan_mission (a capability grant); they share a word, not a mechanism. To make the mission a CHAPTER of a campaign, pass `campaignId` AND `chapterId` together (campaign spec §3.2): the mission records both and the chapter records the mission's id — a chapter takes one mission (CHAPTER_ALREADY_BOUND), the campaign must be open (CAMPAIGN_CLOSED), and an unknown campaign or chapter is CAMPAIGN_NOT_FOUND / CHAPTER_NOT_FOUND; a refusal writes no mission. The ACK echoes `campaignId` and `chapterId` when bound. A mission gets a STEWARD by default (campaign spec §3.4): a Harnu-owned system worker that wakes on mission events (a ledger row, a CI change, a child going idle, a blocker cleared; 20-minute fallback) and does the routine moves — rebase a stack, dispatch a verifier, nudge a stalled child — inside a closed allowlist. Harnu also installs three hooks in your folder's `.claude/settings.local.json` for it (SessionStart(compact) prints the Mission Brief, PreCompact records the compaction, Stop/SubagentStop wake the steward) and removes them, and the steward, when the operator ends the mission. Pass `steward: false` to opt out. The ACK carries `steward: { created, workerId?, hooks? }`.",
     inputSchema: z.object({
       folder: z
         .string()
@@ -2190,6 +2201,12 @@ export const MCP_TOOLS: McpToolDef[] = [
           "Absolute path of the folder/worktree you are working in; the mission is stored in its repo's main checkout."
         ),
       title: z.string().min(1).max(200).describe('Mission title (1..200 chars, single line).'),
+      steward: z
+        .boolean()
+        .optional()
+        .describe(
+          'Give the mission a steward (default true). `false` creates none and installs no hooks.'
+        ),
       campaignId: z
         .string()
         .min(1)
@@ -2378,7 +2395,13 @@ export const MCP_TOOLS: McpToolDef[] = [
         .min(1)
         .optional()
         .describe('Optional step id (stp-<n>) the note is about.'),
-      note: z.string().min(1).max(8_000).describe('Markdown note to append (≤ 8000 chars).')
+      note: z.string().min(1).max(8_000).describe('Markdown note to append (≤ 8000 chars).'),
+      kind: z
+        .enum(['note', 'decision', 'surprise', 'steward'])
+        .optional()
+        .describe(
+          "What the entry is (default note). The heading carries it (`### <time> · <kind>`), so the Log can be read by kind. A mission's steward's own actions are written as `steward` entries by Harnu itself."
+        )
     }),
     mutates: true,
     op: 'mission_log',
@@ -2686,6 +2709,36 @@ export const MCP_TOOLS: McpToolDef[] = [
     }),
     mutates: true,
     op: 'campaign_request_close',
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'rebase_stack',
+    description:
+      "Rebase a mission step's branch onto a new base — `git rebase --onto <onto> <from|onto>` in the step's LINKED worktree (the steward's routine move after a parent lands). DIRECT write, no confirm. It rewrites the step's own LOCAL branch and NOTHING else: it never pushes (ACK `pushed: false` — publishing the rewritten branch, a `--force-with-lease` of that one branch, is the owner's move), never touches another branch, never rebases the main checkout, a detached HEAD or a dirty tree. The step is `stepId`, or — omitted — the one open step that links a linked worktree of this repo (STEP_AMBIGUOUS listing the candidates when several do, NO_STEP_WORKTREE when none). `onto` and `from` are refs or commits, shape-checked and resolved first (BAD_ONTO). Pass `from` — the old parent tip — to drop a squash-merged parent's commits (`git rebase --onto main <parentTip>`). On a conflict it ABORTS, leaves the tree exactly as it was and refuses REBASE_CONFLICT naming the files, and sets an agent-owned blocker on the step (once; a retry does not stack another) — do not retry; tell the operator. Other refusals: REBASE_DIRTY, DETACHED_HEAD, NOT_A_LINKED_WORKTREE, WORKTREE_NOT_IN_REPO, MISSION_CLOSED. ACK: `{ ok, stepId, branch, before, after, rebased, pushed: false }`.",
+    inputSchema: z.object({
+      folder: MISSION_FOLDER_SCHEMA,
+      missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
+      onto: z
+        .string()
+        .min(1)
+        .max(200)
+        .describe('The new base: a branch, tag, remote ref (origin/main) or commit.'),
+      stepId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          'The step (stp-<n>) whose worktree to rebase. Omitted: the single open step with a worktree link.'
+        ),
+      from: z
+        .string()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe('The old base to drop (git rebase --onto <onto> <from>). Default: onto.')
+    }),
+    mutates: true,
+    op: 'rebase_stack',
     silentAllowInAgentFolder: true
   }
 ]
