@@ -1564,6 +1564,24 @@ export const MCP_TOOLS: McpToolDef[] = [
         .min(1)
         .describe(
           'Markdown to append (or, for hot, the full new snapshot). Provenance is stamped by Harnu.'
+        ),
+      supersedes: z
+        .string()
+        .optional()
+        .describe(
+          'decisions only: the id (`e-1a2b3c4d`, from the `> entry:` line memory_query shows) of the entry this one replaces. The old entry gains `superseded_by`; memory_query then shows it with its successor. Refused SUPERSEDES_NOT_FOUND for an id that is not live on the page.'
+        ),
+      watches: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'decisions only: repo paths (a file, or a directory with a trailing /) and single-word topics the entry is about. A new mission or campaign whose scope or chapter titles overlap them gets the entry back in its create ACK `recall`.'
+        ),
+      mission: z
+        .string()
+        .optional()
+        .describe(
+          'The `mnt-…` mission this entry is recorded for; stamped as `provenance.mission`.'
         )
     }),
     mutates: true,

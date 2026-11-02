@@ -279,3 +279,49 @@ describe('AC-5a.5 — the Mission Brief (≤ 1.5k tokens)', () => {
     expect(brief).toContain('Blocker number 59')
   })
 })
+
+describe('AC-6.3 — recall in the Mission Brief', () => {
+  const recall = [
+    { page: 'decisions', line: 12, text: 'Gates govern verified' },
+    { page: 'decisions', line: 31, text: 'Wake the steward on events, 20m fallback' }
+  ]
+
+  it('lists the recalled entries with their page and line, under their own heading', () => {
+    const brief = buildMissionBrief({ mission: mission(), title: 'Ship it', recall })
+    expect(brief).toContain('## Recalled memory')
+    expect(brief).toMatch(/decisions:12[^\n]*Gates govern verified/)
+    expect(brief).toMatch(/decisions:31[^\n]*Wake the steward on events/)
+  })
+
+  it('prints no recall section when nothing matched', () => {
+    expect(buildMissionBrief({ mission: mission(), title: 'Ship it', recall: [] })).not.toContain(
+      'Recalled memory'
+    )
+    expect(buildMissionBrief({ mission: mission(), title: 'Ship it' })).not.toContain(
+      'Recalled memory'
+    )
+  })
+
+  it('stays within the cap on a huge mission with a full recall, and still keeps the declared end', () => {
+    const steps = Array.from({ length: 150 }, (_, i) => ({
+      id: `stp-${i + 1}`,
+      ordinal: i + 1,
+      kind: 'custom' as const,
+      title: `Step number ${i + 1} with a reasonably long descriptive title to take space`,
+      verification: 'verifier' as const,
+      proof: 'unproven' as const,
+      links: [],
+      blockers: []
+    }))
+    const long = Array.from({ length: 5 }, (_, i) => ({
+      page: 'decisions',
+      line: i + 1,
+      text: `Recalled decision number ${i} ${'with a very long sentence '.repeat(20)}`
+    }))
+    const brief = buildMissionBrief({ mission: mission({ steps }), title: 'Ship it', recall: long })
+    expect(brief.length).toBeLessThanOrEqual(BRIEF_MAX_CHARS)
+    expect(brief).toContain('every page migrated')
+    expect(brief).toContain('## Recalled memory')
+    expect(brief).toContain('decisions:1')
+  })
+})

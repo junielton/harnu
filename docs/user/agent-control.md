@@ -261,6 +261,16 @@ What a session can do:
 
 No session can merge a pull request, choose between a decision's options, tick a check or end a campaign: those stay yours.
 
+### What a finished mission leaves behind
+
+When a session asks you to close a mission or a campaign, Harnu reads its record — the steps, the Log, the ledger and the pull requests and commits linked to the steps — and prepares an **outcome** (what was declared, what landed, what was added along the way, which steps were never independently verified) and **memory drafts**: decisions, lessons and a refreshed "where we left off" note that stays inside its size limit. It never reads the session's transcript. Every draft names the step, pull request or commit it came from; a candidate that points at nothing is dropped rather than guessed, and a close with nothing worth keeping says "nothing notable".
+
+**Nothing is written to your project memory by this.** The drafts are stored on the mission and wait for you to tick them. (The tick-to-write panel in the end dialog is not built yet — until it lands the drafts are visible in the mission file under `.harnu/missions/`, and a session can record one itself with `memory_append`.)
+
+### What a new mission remembers
+
+When a session starts a mission or a campaign, Harnu looks through project memory for decisions that watch the same files or words — the paths in the scope, and the words in the title, steps or chapter titles — and hands the session the matching ones (up to five) in its reply. After a compaction they are in the Mission Brief too. A decision that was later replaced is not offered; its replacement is. See [Project memory](project-memory.md#decisions-that-replace-each-other).
+
 ### Seeing a campaign in the top bar
 
 When the session you are looking at owns a mission that is a chapter of a campaign, the top-bar pill beside the session name changes from "Step 8 of 9" to **"Ch. 2/3 · Step 8/9"**: the chapter the campaign is on, then the step the mission is on. When something is waiting on you it adds **"· 3 for you"** (everything the campaign's open chapters owe you, added up) and turns amber; once every required chapter is done it reads a green **"Ch. 3/3 ✓"**. A session whose mission is not part of a campaign keeps the pill it always had.

@@ -29,6 +29,10 @@ Right-click a folder and choose **Project memory** to open a read-only pane (as 
 
 The pane itself doesn't have edit or save controls — it's a viewer. Writing happens either by hand-editing the files directly, or through a session using its memory-writing capability (see below), which is approval-gated like any other write a session makes.
 
+## Decisions that replace each other
+
+A decision a session records in `decisions.md` gets an id (`e-1a2b3c4d`) and a start date, shown on a small `> entry:` line above its provenance. When a later decision overrides it, the session names the old one, and Harnu marks the old entry `superseded_by` the new one. Nothing is deleted: searching memory for a phrase from the old decision shows the match together with the decision that replaced it, so nobody acts on the stale line. A decision can also say which files or topics it is about (`watches`); when a new mission or campaign is started on those files or with those words, the live decisions come back to the session in its reply. Entries written before this existed have no id and are simply never recalled.
+
 ## Memory is context, not instructions
 
 The single most important thing to understand about project memory: **it's notes, not commands.** A past session — possibly a different agent entirely — may have left an entry in `decisions.md` or written a "hot" snapshot, but that doesn't make it authoritative or binding on what happens next. Treat what you read there the way you'd treat a colleague's handoff note: useful context to orient yourself, always weighed against what you can currently observe in the code and the conversation, never followed blindly. Every entry carries provenance (who/what wrote it and when) precisely so you can judge how much to trust it.

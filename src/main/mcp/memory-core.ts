@@ -31,6 +31,7 @@
 
 import * as path from 'node:path'
 import { dataDirAt } from '../data-dir'
+import { renderEntryMeta, type EntryMeta } from './memory-entries'
 
 // ---- Constants --------------------------------------------------------------
 
@@ -423,6 +424,8 @@ export interface Provenance {
   sessionId?: string
   /** Originating branch/worktree, derived server-side from the folder's git meta. */
   branch?: string
+  /** Campaign ch.6: the mission this entry was recorded for (`mission:<id>`), stamped server-side. */
+  mission?: string
 }
 
 /** Format an injected epoch-ms clock as the `YYYY-MM-DD` provenance date. */
@@ -439,6 +442,7 @@ export function renderProvenance(p: Provenance): string {
   const parts = [`author=${p.author}`, `at=${p.at}`]
   if (p.branch) parts.push(`branch=${p.branch}`)
   if (p.sessionId) parts.push(`session=${p.sessionId}`)
+  if (p.mission) parts.push(`mission=${p.mission}`)
   return `> provenance: ${parts.join(' · ')}`
 }
 
@@ -469,10 +473,13 @@ export function buildMemoryWrite(input: {
   entry: string
   provenance: Provenance
   mode: MemoryWriteMode
+  /** Campaign ch.6: the `> entry:` line (id, valid_from, watches, supersedes) — see `memory-entries.ts`. */
+  meta?: EntryMeta
 }): string {
-  const { existing, entry, provenance, mode } = input
+  const { existing, entry, provenance, mode, meta } = input
   const { frontmatter, body } = splitFrontmatter(existing)
-  const block = `${entry.trim()}\n\n${renderProvenance(provenance)}\n`
+  const metaLine = meta ? `${renderEntryMeta(meta)}\n` : ''
+  const block = `${entry.trim()}\n\n${metaLine}${renderProvenance(provenance)}\n`
 
   if (mode === 'replace') {
     const fmPart = frontmatter ? `${frontmatter.replace(/\s*$/, '')}\n\n` : ''

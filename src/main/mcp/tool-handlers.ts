@@ -235,8 +235,16 @@ import {
   queryMemory,
   readMemoryOverview,
   readMemoryPage,
+  recallForScope,
   resolveMemoryLocation
 } from './memory-store'
+import type { RecallHit, RecallQuery } from './memory-entries'
+import {
+  consolidate,
+  parseLogEntries,
+  type Consolidation,
+  type ConsolidatorInput
+} from '../consolidator-core'
 import { checkMarkdownReadAllowed, markdownKnownRoots } from '../markdown-read'
 import { readAgentSpeechPrefs } from '../speech'
 import { resolveSpeakGate, speakUnspokenHint, SPEAK_GATE_ERRORS } from '../speech-gate-core'
@@ -1654,6 +1662,10 @@ const memoryAppendHandler: Handler = async (args, ctx) => {
     ...(branch ? { branch } : {}),
     // T89: central storage seeds a `where.md` backlink to the source project.
     ...(mode === 'central' ? { backlink: { sourcePath: checkout } } : {}),
+    // Campaign ch.6: the entry's chain and recall metadata (validated at the gate).
+    ...(strField(args, 'supersedes') ? { supersedes: strField(args, 'supersedes') } : {}),
+    ...(Array.isArray(args.watches) ? { watches: args.watches.map(String) } : {}),
+    ...(strField(args, 'mission') ? { mission: strField(args, 'mission') } : {}),
     now: Date.now()
   })
   if (!res.ok) return errorResult(`${res.error}: ${res.detail}`)
@@ -1662,7 +1674,8 @@ const memoryAppendHandler: Handler = async (args, ctx) => {
     op: 'memory_append',
     page: res.page,
     file: res.file,
-    bytes: res.bytes
+    bytes: res.bytes,
+    ...(res.entryId ? { entryId: res.entryId } : {})
   })
 }
 
@@ -3513,6 +3526,84 @@ async function writeNewMission(
   })
 }
 
+/**
+ * Campaign ch.6 (AC-6.3): the live memory entries whose `watches` overlap what a new mission or
+ * campaign is about. Best-effort — memory trouble must never fail a create, so it recalls nothing.
+ */
+async function recallFor(folder: string, query: RecallQuery): Promise<RecallHit[]> {
+  try {
+    const { memoryDir } = await resolveMemoryLocation(folder)
+    return await recallForScope(memoryDir, query)
+  } catch (err) {
+    console.warn('[recall] could not read memory:', err)
+    return []
+  }
+}
+
+/**
+ * The steward Brief's recall (AC-6.3): the same match `mission_create` ran, redone at compaction
+ * time so a decision recorded since still reaches the resumed owner. Titles and scope only.
+ */
+export async function recallForMission(mission: Mission, title: string): Promise<RecallHit[]> {
+  return recallFor(mission.owner.folder, {
+    paths: scopePaths(missionScope(mission)),
+    topics: [title, ...mission.steps.map((s) => s.title)]
+  })
+}
+
+/** The repo paths a scope attachment names. */
+const scopePaths = (links: readonly StepLink[]): string[] =>
+  links.filter((l) => l.kind === 'worktree').map((l) => l.ref)
+
+/** The current `hot.md` body, for the consolidator's refresh; `undefined` when there is none. */
+async function readHotBody(folder: string): Promise<string | undefined> {
+  try {
+    const { memoryDir } = await resolveMemoryLocation(folder)
+    return await fs.readFile(path.join(memoryDir, 'hot.md'), 'utf8')
+  } catch {
+    return undefined
+  }
+}
+
+const missionConsolidatorInput = (
+  m: Mission,
+  log: string,
+  currentHot: string | undefined
+): ConsolidatorInput => ({
+  kind: 'mission',
+  id: m.id,
+  title: log.match(/^# (.+)$/m)?.[1] ?? m.slug,
+  declaredEnd: m.declaredEnd,
+  createdAt: m.createdAt,
+  scopePaths: scopePaths(missionScope(m)),
+  steps: m.steps.map((s) => ({
+    id: s.id,
+    title: s.title,
+    kind: s.kind,
+    proof: s.proof,
+    required: s.required !== false,
+    ...(s.addedAt ? { addedAt: s.addedAt } : {}),
+    ...(s.addedReason ? { addedReason: s.addedReason } : {}),
+    ...(s.decision
+      ? {
+          decision: {
+            title: s.decision.title,
+            options: s.decision.options,
+            ...(s.decision.chosen !== undefined ? { chosen: s.decision.chosen } : {})
+          }
+        }
+      : {})
+  })),
+  log: parseLogEntries(log),
+  ledger: m.ledger ?? [],
+  ...(currentHot ? { currentHot } : {})
+})
+
+const consolidationAck = (c: Consolidation): Record<string, unknown> => ({
+  drafts: c.drafts.length,
+  nothingNotable: c.nothingNotable
+})
+
 const missionCreateHandler: Handler = async (args, ctx) => {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -3602,6 +3693,11 @@ const missionCreateHandler: Handler = async (args, ctx) => {
           ownerFolder: path.resolve(folder),
           title
         })
+  // Campaign ch.6 (AC-6.3): what memory already knows about this scope.
+  const recall = await recallFor(folder, {
+    paths: scopePaths(created.mission.scope ?? []),
+    topics: [title, ...created.mission.steps.map((s) => s.title)]
+  })
   return textResult({
     ok: true,
     op: 'mission_create',
@@ -3610,7 +3706,8 @@ const missionCreateHandler: Handler = async (args, ctx) => {
     steps: created.mission.steps,
     ...(created.mission.scope ? { scope: created.mission.scope } : {}),
     ...(campaignId && chapterId ? { campaignId, chapterId } : {}),
-    steward
+    steward,
+    recall
   })
 }
 
@@ -5299,7 +5396,7 @@ function nextStepId(steps: readonly MissionStep[]): string {
 async function editMission(
   args: Record<string, unknown>,
   ctx: ToolHandlerCtx,
-  fn: (mission: Mission) => MissionEdit
+  fn: (mission: Mission, log: string) => MissionEdit
 ): Promise<CallToolResult> {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -5311,7 +5408,7 @@ async function editMission(
     const loaded = await loadMission(root, id)
     if (!loaded.ok) return errorResult(loaded.error)
     if (loaded.mission.status === 'closed') return errorResult(missionClosedMessage(id))
-    const edit = fn(structuredClone(loaded.mission))
+    const edit = fn(structuredClone(loaded.mission), loaded.log)
     if (!edit.ok) return errorResult(edit.error)
     if (edit.unchanged) return textResult(edit.ack)
     const next: Mission = { ...edit.mission, updatedAt: new Date().toISOString() }
@@ -6000,7 +6097,8 @@ const missionRequestCloseHandler: Handler = async (args, ctx) => {
   if (requestedBy !== undefined && !SESSION_UUID_RE.test(requestedBy)) {
     return errorResult(badSessionIdMessage('sessionId', requestedBy))
   }
-  return editMission(args, ctx, (m) => {
+  const currentHot = ctx.folder ? await readHotBody(ctx.folder) : undefined
+  return editMission(args, ctx, (m, log) => {
     // The same checks mission_get reports as `closeReadiness` (Mission v2 §3.5).
     const refused = requestCloseRefusal(m)
     if (refused) return { ok: false, error: `${refused.code}: ${refused.reason}` }
@@ -6008,10 +6106,24 @@ const missionRequestCloseHandler: Handler = async (args, ctx) => {
     // the operator's UI (`applyOperatorEnd`) reaches `closed`.
     m.status = 'delivered'
     m.pendingClose = { at: new Date().toISOString(), requestedBy: requestedBy ?? m.owner.sessionId }
+    // Campaign ch.6 (AC-6.1): one consolidation pass over the structured record. It stores the
+    // outcome and the drafts; writing any of them to memory is the operator's tick (AC-6.2).
+    const c = consolidate(
+      missionConsolidatorInput(m, log, currentHot),
+      new Date().toISOString().slice(0, 10)
+    )
+    m.outcome = c.outcome
+    if (c.drafts.length > 0) m.memoryDrafts = c.drafts
+    else delete m.memoryDrafts
     return {
       ok: true,
       mission: m,
-      ack: { ok: true, op: 'mission_request_close', pendingClose: true }
+      ack: {
+        ok: true,
+        op: 'mission_request_close',
+        pendingClose: true,
+        consolidation: consolidationAck(c)
+      }
     }
   })
 }
@@ -6751,6 +6863,11 @@ const campaignCreateHandler: Handler = async (args, ctx) => {
     (now) => `# ${title}\n\n## Log\n${missing.length > 0 ? surpriseEntry(now, missing) : ''}`
   )
   if (!created.ok) return errorResult(created.error)
+  // Campaign ch.6 (AC-6.3): what memory already knows about this scope and these chapters.
+  const recall = await recallFor(folder, {
+    paths: scopePaths(created.campaign.scope ?? []),
+    topics: [title, ...created.campaign.chapters.map((c) => c.title)]
+  })
   return textResult({
     ok: true,
     op: 'campaign_create',
@@ -6758,6 +6875,7 @@ const campaignCreateHandler: Handler = async (args, ctx) => {
     slug: created.campaign.slug,
     chapters: created.campaign.chapters,
     ...(created.campaign.scope ? { scope: created.campaign.scope } : {}),
+    recall,
     ...(missing.length > 0
       ? { forced: missing.map((m) => ({ chapterId: m.chapterId, token: m.token })) }
       : {})
@@ -6782,7 +6900,7 @@ type CampaignEdit =
 async function editCampaign(
   args: Record<string, unknown>,
   ctx: ToolHandlerCtx,
-  fn: (campaign: Campaign, root: string) => CampaignEdit | Promise<CampaignEdit>
+  fn: (campaign: Campaign, root: string, log: string) => CampaignEdit | Promise<CampaignEdit>
 ): Promise<CallToolResult> {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -6794,7 +6912,7 @@ async function editCampaign(
     const loaded = await loadCampaign(root, id)
     if (!loaded.ok) return errorResult(loaded.error)
     if (loaded.campaign.status === 'closed') return errorResult(campaignClosedMessage(id))
-    const edit = await fn(structuredClone(loaded.campaign), root)
+    const edit = await fn(structuredClone(loaded.campaign), root, loaded.log)
     if (!edit.ok) return errorResult(edit.error)
     const next: Campaign = { ...edit.campaign, updatedAt: new Date().toISOString() }
     let content: string
@@ -7030,7 +7148,8 @@ const campaignRequestCloseHandler: Handler = async (args, ctx) => {
   if (requestedBy !== undefined && !SESSION_UUID_RE.test(requestedBy)) {
     return errorResult(badSessionIdMessage('sessionId', requestedBy))
   }
-  return editCampaign(args, ctx, async (c, root) => {
+  const currentHot = ctx.folder ? await readHotBody(ctx.folder) : undefined
+  return editCampaign(args, ctx, async (c, root, log) => {
     // The same check campaign_get reports as `closeReadiness`.
     const progress: CampaignProgress = computeCampaignProgress(
       c,
@@ -7043,10 +7162,54 @@ const campaignRequestCloseHandler: Handler = async (args, ctx) => {
     // reaches `closed`.
     c.status = 'delivered'
     c.pendingClose = { at: new Date().toISOString(), requestedBy: requestedBy ?? c.owner.sessionId }
+    // Campaign ch.6 (AC-6.1): a chapter is the campaign's "step"; its mission's ledger is the
+    // evidence. Only the structured records are read — never a session.
+    const steps: ConsolidatorInput['steps'] = []
+    const ledger: ConsolidatorInput['ledger'] = []
+    for (const ch of c.chapters) {
+      const loadedMission = ch.missionId ? await loadMission(root, ch.missionId) : null
+      const mission = loadedMission?.ok ? loadedMission.mission : null
+      const delivered =
+        mission !== null &&
+        (mission.status === 'delivered' ||
+          (mission.status === 'closed' && mission.closedAs === 'delivered'))
+      steps.push({
+        id: ch.id,
+        title: ch.title,
+        kind: 'custom',
+        proof: delivered ? 'verified' : 'unproven',
+        required: ch.required
+      })
+      for (const row of mission?.ledger ?? []) ledger.push({ ...row, stepId: ch.id })
+    }
+    const consolidated = consolidate(
+      {
+        kind: 'campaign',
+        id: c.id,
+        title: c.title,
+        declaredEnd: c.declaredEnd,
+        createdAt: c.createdAt,
+        scopePaths: scopePaths(c.scope ?? []),
+        steps,
+        endState: 'verified', // the close was just accepted: every required chapter reads done
+        log: parseLogEntries(log),
+        ledger,
+        ...(currentHot ? { currentHot } : {})
+      },
+      new Date().toISOString().slice(0, 10)
+    )
+    c.outcome = consolidated.outcome
+    if (consolidated.drafts.length > 0) c.memoryDrafts = consolidated.drafts
+    else delete c.memoryDrafts
     return {
       ok: true,
       campaign: c,
-      ack: { ok: true, op: 'campaign_request_close', pendingClose: true }
+      ack: {
+        ok: true,
+        op: 'campaign_request_close',
+        pendingClose: true,
+        consolidation: consolidationAck(consolidated)
+      }
     }
   })
 }

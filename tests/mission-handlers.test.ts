@@ -2130,7 +2130,13 @@ describe('mission_request_close', () => {
   it('mission_request_close sets pendingClose', async () => {
     const { missionId } = await verifiedMission()
     const p = payloadOf(await requestClose(missionId, { sessionId: VERIFIER }))
-    expect(p).toEqual({ ok: true, op: 'mission_request_close', pendingClose: true })
+    expect(p).toEqual({
+      ok: true,
+      op: 'mission_request_close',
+      pendingClose: true,
+      // Campaign ch.6: the close also reports what the consolidator drafted.
+      consolidation: { drafts: expect.any(Number), nothingNotable: expect.any(Boolean) }
+    })
     const m = (await readMissionOnDisk(repo.main, missionId)).mission
     expect(m.pendingClose).toEqual({ at: expect.any(String), requestedBy: VERIFIER })
     // design §3: the request moves the mission to delivered — never to closed.

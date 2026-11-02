@@ -14,6 +14,7 @@
  * returns a NEW object and leaves its input alone; the fs half is `steward-shell.ts`.
  */
 
+import type { RecallHit } from './mcp/memory-entries'
 import type { Mission, MissionStep } from './mission-core'
 
 type Handler = Record<string, unknown>
@@ -135,6 +136,9 @@ export const BRIEF_MAX_CHARS = 6000
 const STEPS_BUDGET = 2400
 /** Budget for the blockers block, so a pile of them cannot crowd out the step table or the ledger. */
 const BLOCKERS_BUDGET = 1100
+/** Budget for the recalled-memory block (campaign ch.6, AC-6.3): a pointer to decisions, not their text. */
+const RECALL_BUDGET = 700
+const RECALL_TEXT_CHARS = 120
 const LEDGER_ROWS = 8
 const TITLE_CHARS = 70
 
@@ -166,6 +170,8 @@ export function buildMissionBrief(input: {
   mission: Mission
   title: string
   gates?: Record<string, GateStates>
+  /** Memory entries whose `watches` overlap the mission's scope (campaign ch.6, AC-6.3). */
+  recall?: readonly RecallHit[]
 }): string {
   const { mission: m, gates } = input
   const head = [
@@ -201,6 +207,25 @@ export function buildMissionBrief(input: {
         ]
       : [])
   ]
+
+  // Recalled memory: what the project already decided about this scope. Its own budget, so it can
+  // neither crowd out the step table nor be crowded out by it.
+  const recallLines: string[] = []
+  let recallUsed = 0
+  for (const r of input.recall ?? []) {
+    const line = `- ${r.page}:${r.line} ${clip(r.text, RECALL_TEXT_CHARS)}`
+    if (recallUsed + line.length + 1 > RECALL_BUDGET) break
+    recallLines.push(line)
+    recallUsed += line.length + 1
+  }
+  const recallBlock =
+    recallLines.length > 0
+      ? [
+          '',
+          '## Recalled memory (decisions touching this scope — memory_query shows the entry)',
+          ...recallLines
+        ]
+      : []
 
   // Every step is listed with its gates. Only when the table would blow its budget do the finished
   // steps collapse into a count, so the budget is spent on what is still open.
@@ -241,7 +266,9 @@ export function buildMissionBrief(input: {
     "Do not re-derive this with `gh` or `get_fleet`: mission_get returns the same, derived fresh. Merging, closing, choosing a decision, ticking a check and marking a human step verified are the operator's doors — ask them, do not try."
   ]
 
-  let text = [...head, ...blockerBlock, ...stepBlock, ...ledgerBlock, ...foot].join('\n')
+  let text = [...head, ...blockerBlock, ...recallBlock, ...stepBlock, ...ledgerBlock, ...foot].join(
+    '\n'
+  )
   // Last resort on a mission whose own prose is huge: cut the tail, never the head.
   if (text.length > BRIEF_MAX_CHARS) text = `${text.slice(0, BRIEF_MAX_CHARS - 1)}…`
   return text

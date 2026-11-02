@@ -10,6 +10,7 @@
 
 import { buildMissionBrief } from './steward-hooks'
 import type { WakeReason } from './steward-core'
+import type { RecallHit } from './mcp/memory-entries'
 import type { Mission } from './mission-core'
 
 export type StewardRoute = 'brief' | 'precompact' | 'wake'
@@ -20,6 +21,8 @@ export interface StewardRouteDeps {
   stewardedMissions(cwd: string): Promise<Array<{ mission: Mission; title: string }>>
   /** Best-effort gates per step id; may throw or return `undefined` (the brief prints without them). */
   gatesFor(mission: Mission): Promise<Record<string, Record<string, string>> | undefined>
+  /** Memory entries recalled for the mission's scope (campaign ch.6); optional, and it may throw. */
+  recallFor?(mission: Mission, title: string): Promise<readonly RecallHit[]>
   /** The compaction ledger row (Amendment b): `recordMissionCompaction`. */
   recordCompaction(folder: string, sessionId: string): Promise<void>
   wake(missionId: string, reason: WakeReason): Promise<unknown>
@@ -47,7 +50,15 @@ export async function handleStewardRoute(
         const briefs: string[] = []
         for (const { mission, title } of owned) {
           const gates = await deps.gatesFor(mission).catch(() => undefined)
-          briefs.push(buildMissionBrief({ mission, title, ...(gates ? { gates } : {}) }))
+          const recall = await deps.recallFor?.(mission, title).catch(() => undefined)
+          briefs.push(
+            buildMissionBrief({
+              mission,
+              title,
+              ...(gates ? { gates } : {}),
+              ...(recall && recall.length > 0 ? { recall } : {})
+            })
+          )
         }
         return briefs.join('\n\n')
       }
