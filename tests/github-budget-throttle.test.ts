@@ -1,7 +1,8 @@
 /**
  * T611 U1 AC-5 / AC-6 — what the throttle does to the consumers.
  *
- *  - `low`: the mission gate caches (`PR_CACHE_TTL_MS`, `mainCiCache`) stretch from 60 s to 5 min;
+ *  - `low`: the mission gate caches (the PR list and a pending main-CI verdict) stretch from 60 s to
+ *    5 min;
  *    PR Stack's background refresh is skipped (a load on open still runs).
  *  - `exhausted`: throttled reads skip `gh` and serve the last known value; normal polling resumes
  *    after the reset.
@@ -10,7 +11,11 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
-const gh = vi.hoisted(() => ({ calls: [] as string[][] }))
+const gh = vi.hoisted(() => ({
+  calls: [] as string[][],
+  /** The workflow-run list `gh run list` answers with (a pending run by default). */
+  runs: [{ status: 'in_progress', conclusion: '' }] as { status: string; conclusion: string }[]
+}))
 
 vi.mock('electron', () => ({ ipcMain: { handle: (): void => {} } }))
 vi.mock('../src/main/appimage-env', () => ({
@@ -31,7 +36,7 @@ vi.mock('node:child_process', async (importOriginal) => {
       args[0] === 'pr' && args[1] === 'view'
         ? JSON.stringify({ mergeCommit: { oid: 'abc123' } })
         : args[0] === 'run'
-          ? JSON.stringify([{ status: 'completed', conclusion: 'success' }])
+          ? JSON.stringify(gh.runs)
           : args[0] === 'api'
             ? '{}'
             : '[]'
@@ -70,6 +75,7 @@ const advance = (ms: number): void => {
 
 beforeEach(async () => {
   gh.calls.length = 0
+  gh.runs = [{ status: 'in_progress', conclusion: '' }]
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(T0)
   vi.resetModules()
@@ -106,7 +112,7 @@ describe('mission PR cache TTL (AC-5)', () => {
     expect(ghCount('pr')).toBe(2)
   })
 
-  it('low: the main-CI cache stretches from 60 s to 5 minutes too', async () => {
+  it('low: a pending main-CI verdict stretches from 60 s to 5 minutes too', async () => {
     const repo = freshRepo()
     goLow()
     await ps.findMainCi(repo, [5])
@@ -117,15 +123,30 @@ describe('mission PR cache TTL (AC-5)', () => {
     expect(gh.calls.length).toBe(first)
     advance(61_000)
     await ps.findMainCi(repo, [5])
-    expect(gh.calls.length).toBe(first * 2)
+    // BUG-240: the merge commit is remembered, so only the run list is asked again.
+    expect(gh.calls.length).toBe(first + 1)
+    expect(gh.calls.at(-1)?.[0]).toBe('run')
   })
 
-  it('normal: the main-CI cache still refreshes after 60 s', async () => {
+  it('normal: a pending main-CI verdict still refreshes after 60 s', async () => {
     const repo = freshRepo()
     await ps.findMainCi(repo, [5])
     advance(61_000)
     await ps.findMainCi(repo, [5])
-    expect(gh.calls.length).toBe(4)
+    expect(gh.calls.length).toBe(3)
+    expect(gh.calls.at(-1)?.[0]).toBe('run')
+  })
+
+  it('normal: a finished main-CI verdict is held for 10 minutes (BUG-240)', async () => {
+    const repo = freshRepo()
+    gh.runs = [{ status: 'completed', conclusion: 'success' }]
+    await ps.findMainCi(repo, [5])
+    advance(9 * 60_000)
+    await ps.findMainCi(repo, [5])
+    expect(gh.calls.length).toBe(2)
+    advance(61_000)
+    await ps.findMainCi(repo, [5])
+    expect(gh.calls.length).toBe(3)
   })
 })
 
@@ -152,6 +173,7 @@ describe('exhausted: last known value, then resume (AC-6)', () => {
 
   it('serves the last known main-CI too, and the throttled lookup spawns nothing', async () => {
     const repo = freshRepo()
+    gh.runs = [{ status: 'completed', conclusion: 'success' }]
     const first = await ps.findMainCi(repo, [5])
     expect(first.byNumber[5]).toBe('passing')
     const spawned = gh.calls.length
