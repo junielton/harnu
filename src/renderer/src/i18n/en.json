@@ -5052,7 +5052,7 @@
   "githubBudget": {
     "pill": {
       "left": "{n} left",
-      "exhausted": "0 left · {countdown}",
+      "exhausted": "{n} left · {countdown}",
       "a11y": "GitHub API budget: {n} calls left",
       "a11yLow": "GitHub API budget low: {n} calls left, Harnu is slowing down",
       "a11yExhausted": "GitHub API limit reached, resets in {countdown}"

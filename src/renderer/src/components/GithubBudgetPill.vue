@@ -44,7 +44,7 @@ const countdown = computed(() => {
 })
 const text = computed(() =>
   store.state === 'exhausted'
-    ? t('githubBudget.pill.exhausted', { countdown: countdown.value })
+    ? t('githubBudget.pill.exhausted', { n: left.value, countdown: countdown.value })
     : t('githubBudget.pill.left', { n: left.value })
 )
 const aria = computed(() => {

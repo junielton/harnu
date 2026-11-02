@@ -97,6 +97,15 @@ describe('footer GitHub pill (AC-1)', () => {
   })
 })
 
+describe('footer GitHub pill — a limit GitHub did not put in `rate_limit`', () => {
+  it('exhausted by a gh error while calls remain: the pill tells the truth, not "0 left"', async () => {
+    const snap = exhausted()
+    snap.rest!.bucket = { ...snap.rest!.bucket, remaining: 3116, used: 1884 }
+    const w = await mountPill(snap)
+    expect(w.get('[data-dsqa="github-footer-pill"]').text()).toBe('3,116 left · 12m')
+  })
+})
+
 describe('popover (AC-2)', () => {
   async function open(snap: BudgetSnapshot): Promise<VueWrapper> {
     const w = await mountPill(snap)
