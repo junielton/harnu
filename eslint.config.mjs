@@ -24,7 +24,9 @@ export default defineConfig(
       '**/.claude-plugin/types/**',
       'coverage/**',
       'playwright-report/**',
-      'test-results/**'
+      'test-results/**',
+      // Bundled by evals/doc-reader/run.sh from gate-entry.ts on every run (T1 spike).
+      'evals/*/hooks/gate.mjs'
     ]
   },
   tseslint.configs.recommended,
@@ -67,8 +69,9 @@ export default defineConfig(
     // Tests, one-off probe scripts, standalone runtime resources (e.g. the
     // orchestrator guard hook script, which runs as plain Node with zero build
     // step — real TS-style return-type annotations there would break execution)
-    // don't need explicit return-type annotations.
-    files: ['tests/**', 'scripts/**', 'resources/**'],
+    // don't need explicit return-type annotations. Eval harness scripts (evals/) are the same
+    // kind of standalone tooling.
+    files: ['tests/**', 'scripts/**', 'resources/**', 'evals/**'],
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off'
     }

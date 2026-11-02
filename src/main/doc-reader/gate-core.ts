@@ -1,0 +1,155 @@
+/**
+ * T1 spike: the doc-reader read gate, the decision a `PreToolUse` hook makes before the main
+ * model reads a large documentation file into its own context.
+ *
+ * The idea comes from Spotify's `shunt` plugin. A full read of a large doc is cheaper when a small
+ * model (the `doc-reader` subagent, on Haiku) reads it and answers a question about it, so only
+ * the answer enters the main model's context. The gate does not trust the model to remember that.
+ * It refuses the full read and says what to do instead.
+ *
+ * PURE: no fs, no electron. The caller supplies `countLines`, so the same rule runs behind the
+ * Hook Bridge and inside the standalone eval plugin (`evals/doc-reader/`).
+ *
+ * What the gate lets through, and why:
+ * - **Any subagent's call.** Subagents cannot start subagents, so pointing one at `doc-reader`
+ *   would strand it. That includes `doc-reader` itself, which must read the files it was sent.
+ * - **A targeted read.** That is a `Read` with `offset` or `limit`, or `head`/`tail`/`sed -n`/
+ *   `grep`. The model already knows which part it needs, which is exactly what it should do
+ *   before an edit.
+ * - **A file that is not documentation, or that is small.** Below the threshold the cost of
+ *   delegating is higher than the saving.
+ * - **Anything it cannot judge.** It fails open: a missing file, an unreadable file, a command it
+ *   does not parse.
+ */
+
+import * as path from 'node:path'
+
+/** Default line threshold. Shunt's default, and the eval decides whether it is right for docs. */
+export const DOC_READER_DEFAULT_MIN_LINES = 350
+
+/** File extensions the gate treats as documentation (lower-case, with the dot). */
+export const DOC_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.md',
+  '.mdx',
+  '.markdown',
+  '.txt',
+  '.rst',
+  '.adoc'
+])
+
+/** The fields of a `PreToolUse` hook payload the gate reads. Everything else is ignored. */
+export interface GateInput {
+  tool_name?: unknown
+  tool_input?: unknown
+  /** Present only when a subagent made the call. */
+  agent_id?: unknown
+  agent_type?: unknown
+  cwd?: unknown
+}
+
+export interface GateOptions {
+  minLines: number
+  /** Line count of an absolute path, or `null` when it is missing or unreadable. */
+  countLines: (absPath: string) => number | null
+  /** How the model is told to call the agent, e.g. `harnu:doc-reader`. */
+  agentName: string
+}
+
+export type GateDecision =
+  | { action: 'allow'; why: AllowReason }
+  | { action: 'deny'; reason: string; path: string; lines: number }
+
+export type AllowReason =
+  'subagent' | 'not-a-read' | 'targeted' | 'not-a-doc' | 'missing' | 'small' | 'unparsed'
+
+/** Parse a threshold from the environment; anything but a positive integer falls back to the default. */
+export function parseMinLines(raw: string | undefined): number {
+  if (raw === undefined || !/^\d+$/.test(raw.trim())) return DOC_READER_DEFAULT_MIN_LINES
+  const n = Number(raw.trim())
+  return n > 0 ? n : DOC_READER_DEFAULT_MIN_LINES
+}
+
+export function isDocPath(p: string): boolean {
+  return DOC_EXTENSIONS.has(path.extname(p).toLowerCase())
+}
+
+/** Commands that put a whole file on screen. `head`/`tail`/`sed`/`grep` are targeted and pass. */
+const WHOLE_FILE_COMMANDS = new Set(['cat', 'less', 'more', 'bat'])
+
+/**
+ * The single file a Bash command reads whole, or `null` when the command is anything else.
+ * Deliberately narrow: one command, no pipe, redirect, chain or substitution, and one file
+ * operand. Anything more complex fails open.
+ */
+export function wholeFileReadTarget(command: string): string | null {
+  const cmd = command.trim()
+  if (cmd === '' || /[|;&<>`$(){}\n]/.test(cmd)) return null
+  const words = cmd.split(/\s+/)
+  const [name, ...args] = words
+  if (!WHOLE_FILE_COMMANDS.has(name)) return null
+  const operands = args.filter((a) => !a.startsWith('-'))
+  if (operands.length !== 1) return null
+  return operands[0].replace(/^(['"])(.*)\1$/, '$2')
+}
+
+function deny(file: string, lines: number, opts: GateOptions): GateDecision {
+  return {
+    action: 'deny',
+    path: file,
+    lines,
+    reason:
+      `${file} is ${lines} lines of documentation (threshold ${opts.minLines}). ` +
+      `Do not load it whole into your context. Ask the ${opts.agentName} agent your question ` +
+      `about it instead (pass the file path and the exact question); it reads the file and ` +
+      `returns only the answer. If you need exact text to quote or edit, Read just that section ` +
+      `with offset and limit.`
+  }
+}
+
+export function decideDocRead(input: GateInput, opts: GateOptions): GateDecision {
+  if (typeof input.agent_id === 'string' && input.agent_id !== '')
+    return { action: 'allow', why: 'subagent' }
+  if (typeof input.agent_type === 'string' && input.agent_type !== '')
+    return { action: 'allow', why: 'subagent' }
+
+  const toolInput =
+    input.tool_input && typeof input.tool_input === 'object'
+      ? (input.tool_input as Record<string, unknown>)
+      : {}
+  const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
+
+  let target: string
+  if (input.tool_name === 'Read') {
+    if (toolInput.offset !== undefined || toolInput.limit !== undefined)
+      return { action: 'allow', why: 'targeted' }
+    if (typeof toolInput.file_path !== 'string' || toolInput.file_path === '')
+      return { action: 'allow', why: 'unparsed' }
+    target = toolInput.file_path
+  } else if (input.tool_name === 'Bash') {
+    if (typeof toolInput.command !== 'string') return { action: 'allow', why: 'unparsed' }
+    const file = wholeFileReadTarget(toolInput.command)
+    if (file === null) return { action: 'allow', why: 'not-a-read' }
+    target = file
+  } else {
+    return { action: 'allow', why: 'not-a-read' }
+  }
+
+  if (!isDocPath(target)) return { action: 'allow', why: 'not-a-doc' }
+  const abs = path.resolve(cwd, target)
+  const lines = opts.countLines(abs)
+  if (lines === null) return { action: 'allow', why: 'missing' }
+  if (lines <= opts.minLines) return { action: 'allow', why: 'small' }
+  return deny(target, lines, opts)
+}
+
+/** The hook's stdout for a decision, in Claude Code's `PreToolUse` output shape. */
+export function gateHookOutput(decision: GateDecision): string {
+  if (decision.action === 'allow') return '{}'
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: decision.reason
+    }
+  })
+}
