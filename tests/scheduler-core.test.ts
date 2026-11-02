@@ -50,6 +50,8 @@ const ALLOWED_VERBS = [
   'list_worktrees',
   'list_containers',
   'list_cleanup',
+  // T614
+  'github_budget',
   'mission_get',
   'mission_list',
   // T481 (agent terminals B4): the two terminal READ verbs.

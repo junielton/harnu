@@ -14,6 +14,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Sessions can read the GitHub budget.** A new read-only `github_budget` verb returns the REST and GraphQL buckets (remaining, reset time, pace), which one is tighter, whether Harnu is slowing down, and how many of the calls in the window were Harnu's own per feature versus everything else on your login. Sessions are told to check it before polling `gh` in a loop, to back off when it reads `low`, and to wait out a GitHub secondary-limit pause when the answer carries `pausedUntil`; read-only Scheduler workers can call it too.
 - **Harnu now watches its own GitHub API budget and slows down near the limit.** Every `gh` call
   Harnu makes spends the same personal GitHub quota your sessions and scripts use (5,000 REST
   requests and 5,000 GraphQL points an hour), and on a busy day it could run dry with Harnu still

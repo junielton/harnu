@@ -43,6 +43,8 @@ const READ_TOOLS = [
   'list_workers',
   'list_containers',
   'list_cleanup',
+  // T614
+  'github_budget',
   'list_terminals',
   // T358 S3: the Mission reads (design §4 "read, no gate").
   'mission_get',
