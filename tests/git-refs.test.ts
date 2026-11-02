@@ -82,7 +82,7 @@ describe('git/refs', () => {
     git(packed, 'init', '-q', '-b', 'main')
     commit(packed, 'p1')
     const packedSha = git(packed, 'rev-parse', 'HEAD')
-    git(packed, 'tag', '-a', '-m', 'annotated', 'v1')
+    git(packed, '-c', 'user.email=t@t', '-c', 'user.name=t', 'tag', '-a', '-m', 'annotated', 'v1')
     git(packed, 'branch', 'side')
     git(packed, 'pack-refs', '--all')
     await expect(fs.stat(path.join(packed, '.git', 'refs', 'heads', 'side'))).rejects.toThrow()
