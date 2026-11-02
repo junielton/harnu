@@ -13,7 +13,7 @@ say so.
 | `orchestrate-delivery` | Decompose an objective into board cards, dispatch one Harnu session per unit, monitor until each opens a PR, then hand back a report.                                                                                                                                           |
 | `delivery-verifier`    | Grade a finished unit's acceptance criteria one at a time, from evidence in the repo rather than from what the session says about itself.                                                                                                                                       |
 | `mission`              | Run one coordination tick over dispatched work and report a single line.                                                                                                                                                                                                        |
-| `delivery-watchdog`    | Sweep a repo for delivery work that is finished but parked — pushed with no PR, a card the board is lying about — and raise one notification naming the fix.                                                                                                                    |
+| `delivery-watchdog`    | The tick of a mission's steward (verify-dispatch, nudge, rebase, log). Without a steward: sweep a repo for delivery work that is finished but parked — pushed with no PR, a card the board is lying about — and raise one notification naming the fix.                          |
 | `conductor`            | Drive the Harnu fleet through the `harnu` MCP verbs — see every session and worktree, create sessions, terminals and worktrees.                                                                                                                                                 |
 | `status`               | Render a fixed six-line "glance card" of where every feature or mission stands, plus the links worth opening, built from the board, the mission files and open PRs.                                                                                                             |
 | `read-aloud`           | Speak a short, ear-friendly summary of a result out loud — through Harnu's own voice inside the app, or a text-to-speech command on your PATH outside it.                                                                                                                       |
@@ -28,6 +28,8 @@ straight from the skill file — so the panel can never describe a skill differe
 from what the session actually reads.
 
 ### `delivery-watchdog` is the second heartbeat over dispatched work
+
+> **Two jobs now.** A mission's [steward](agent-control.md#a-steward-for-every-mission) runs this skill as its tick: woken by an event on the mission (or every 20 minutes), it reads the mission's gates and ledger, starts a verifier session for a PR that is ready, nudges a child that stalled, rebases a stack after a merge, and writes a `steward` line in the Log for each thing it did. It never merges, closes or verifies for you. The rest of this section is the other job — the read-only sweep — which is what the skill does for a repo whose missions have no steward.
 
 When Harnu orchestrates a delivery, the thing keeping it moving is a loop inside the
 orchestrating session — and that session is mortal in ordinary ways. Harnu parks it

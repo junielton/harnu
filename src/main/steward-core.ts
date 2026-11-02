@@ -131,12 +131,20 @@ export function stewardCallRefusal(input: {
 export function stewardBlockedReason(input: {
   serverEnabled: boolean
   folderDenied: boolean
+  /**
+   * Campaign ch.5b (spec §3.4): the operator paused this steward from the mission popover. It is the
+   * last reason checked — the global switches name the broader cause first.
+   */
+  paused?: { reason: string } | null
 }): string | null {
   if (!input.serverEnabled) {
     return 'SERVER_DISABLED: agent control is off — the steward does not tick.'
   }
   if (input.folderDenied) {
     return 'FOLDER_NOT_ALLOWED: the operator blocked this folder for agents — the steward does not tick.'
+  }
+  if (input.paused) {
+    return `STEWARD_PAUSED: the operator paused this steward (${input.paused.reason}) — it does not tick until they resume it.`
   }
   return null
 }
@@ -178,10 +186,15 @@ export function wakeDecision(input: {
 
 // ── the worker ───────────────────────────────────────────────────────────────
 
-/** The tick's standing instructions. The `delivery-watchdog` → steward-tick skill rewrite is T608. */
+/**
+ * The tick's standing instructions. The routine is the bundled `delivery-watchdog` skill in steward mode
+ * (T609, spec §6): the prompt names it, and carries the same four moves so a tick that cannot stage the
+ * skill still knows its scope.
+ */
 export function stewardPrompt(missionId: string): string {
   return [
     `You are the steward of mission ${missionId}. You were woken by a mission event or by the 20-minute fallback.`,
+    'Follow the /delivery-watchdog skill in steward mode.',
     'Your scope is this mission only. Read it with mission_get (it carries the gates, the ledger and the children), then do ONLY the routine moves below and stop:',
     '1. A step whose PR merged and whose stack is now stale: rebase_stack onto the new base. On REBASE_CONFLICT the verb already set the blocker — do not retry; notify the operator once.',
     "2. A step that is PR-ready with no verifier verdict: create_session with role: 'verifier', then mission_link_child the new session to that step.",

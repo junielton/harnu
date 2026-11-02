@@ -258,7 +258,10 @@ describe('no MCP code path reaches an operator door', () => {
     'applyOperatorEnd',
     // Mission v3 §3.6: only the operator ticks or deletes a check.
     'applyTickCheck',
-    'applyDeleteCheck'
+    'applyDeleteCheck',
+    // Campaign spec §3.4: pausing the steward is a mission door, never a verb.
+    'applyPauseSteward',
+    'applyResumeSteward'
   ]
   const mcpDir = path.join(__dirname, '..', 'src', 'main', 'mcp')
 

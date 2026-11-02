@@ -382,6 +382,9 @@ async function runPhase(phase, ctx) {
     })
     const n = ++stats.agentRuns
     const logFile = path.join(scenarioDir, `agent-${n}-${phase.agent}.jsonl`)
+    // A steward turn may `create_session`: the session Harnu spawns into the sandbox asks for workspace
+    // trust like any spawn does, and `create_session` blocks until it materializes — so answer the dialog.
+    if (phase.stewardVerbs === true) harnu.startTrustWatcher()
     const r = await runAgent({
       sessionId,
       folder: vars.folder,
@@ -391,9 +394,19 @@ async function runPhase(phase, ctx) {
       logFile,
       timeoutMs: AGENT_TIMEOUT_MS,
       tools: phase.tools ?? [],
-      role: phase.role ?? 'scripted'
+      role: phase.role ?? 'scripted',
+      stewardVerbs: phase.stewardVerbs === true
     })
     stats.costUsd += r.costUsd
+    if (phase.stewardVerbs === true) {
+      // The dispatch is what is graded, not the verifier's own turn: keep what its screen showed, then
+      // kill it — nothing the scenario spawned keeps running (or billing) once the turn that started it ends.
+      writeFileSync(
+        path.join(scenarioDir, `agent-${n}-${phase.agent}-ptys.txt`),
+        await harnu.dumpPtys()
+      )
+      await harnu.killChildren(vars.folder)
+    }
     log(
       `    agent ${phase.agent} (#${n}, ${(r.ms / 1000).toFixed(1)}s): ${r.toolCalls.join(', ') || 'no tool calls'}` +
         (r.isError || r.code !== 0

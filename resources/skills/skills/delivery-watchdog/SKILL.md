@@ -1,9 +1,79 @@
 ---
 name: delivery-watchdog
-description: Read-only stall detector for deliveries that are already dispatched — reads every active Mission through mission_list/mission_get and raises ONE notification naming the exact next action when one is stale, blocked on the operator, or holding a unit that is finished but parked (pushed with no PR, a card the board is lying about, an executor that vanished). Built to run unattended as a Harnu Scheduler worker in `observe` mode, on the repo an orchestration is running in, so a stalled unit is found in half an hour instead of the next day. Use it as a scheduled worker's prompt, or run it by hand to sweep a repo for parked deliveries — "is anything stuck?", "check if any dispatched work is parked", "sweep the deliveries". Do NOT use to run a coordination tick that acts on what it finds (that is mission, which needs a session's verbs), to grade acceptance criteria (delivery-verifier), or to plan and dispatch a delivery (orchestrate-delivery).
+description: The tick of a mission's steward, and the read-only stall sweep for repos that have none. Use it when your prompt says you are the steward of a mission (woken by an event or the 20-minute beat) — it reads the mission's gates and ledger, starts a verifier session for a PR that is ready, nudges a stalled child, rebases a stack after a merge and logs each action as `steward`. Also built to run unattended as a Harnu Scheduler worker in `observe` mode on a repo with no steward, where it reads every active Mission through mission_list/mission_get and raises ONE notification naming the next action when one is stale, blocked on the operator, or holding a unit that is finished but parked — "is anything stuck?", "sweep the deliveries". Do NOT use to plan and dispatch a delivery (orchestrate-delivery), to grade acceptance criteria (delivery-verifier), or to run an owner's coordination tick (mission).
 ---
 
 # Delivery watchdog
+
+Two modes. Pick by what your prompt says.
+
+| Your prompt says                                           | Mode                                               | You can                                |
+| ---------------------------------------------------------- | -------------------------------------------------- | -------------------------------------- |
+| "You are the steward of mission `<id>`"                    | **Steward tick** — below                           | the steward verbs, on that one mission |
+| anything else (a Scheduler `observe` worker, a hand sweep) | **Sweep** — [further down](#sweep-mode-no-steward) | read, and `notify` once                |
+
+## Steward tick
+
+You are a mission's **steward**: a short-lived headless process Harnu starts when
+something happens on the mission (a PR opened or merged, CI changed, a child went
+idle, a blocker cleared) or on its 20-minute beat. Do the routine moves, log each,
+stop. The operator never sees this turn live, so the **Log is your report**.
+
+**Your reach.** `Read`, `Grep`, `Glob`, every `mission_*` verb **for your own
+mission only**, `campaign_get`, `message_session`, `notify`, `create_session` **only
+with `role: 'verifier'`**, and `rebase_stack`. Nothing else exists for you: no shell,
+no `gh`, no `get_fleet`. You **never** merge, close, choose a decision, tick a check or
+mark a step verified — those are the operator's, and Harnu refuses them to you by name.
+
+**Read first, once.** `mission_get({ folder, missionId })` is the whole state — the
+steps with their `gates` (`pr`, `ci`, `main`, `verifier`, `checks`), the `ledger` (what
+Harnu did and saw, oldest first), each linked child's live state, and the `you` list.
+Read these fields; never rebuild them from `gh`, git or the fleet. A step's `gates`
+are facts, not verdicts: `green` / `red` / `running` / `off` / `na`.
+
+Then do each move below that the state calls for, **in this order**, and nothing else.
+
+1. **A parent merged, a dependent step is stale → `rebase_stack`.** A step's `pr` gate
+   is `green` (its PR merged) and a later step whose branch was cut from it has a linked
+   worktree: `rebase_stack({ folder, missionId, stepId: <the later step>, onto: <the base
+its PR now targets, usually the default branch>, from: <the merged parent's old branch
+tip> })`. Pass `from` so a squash-merged parent's commits drop out. It rewrites a
+   local branch and **never pushes** — say so in the log; publishing it is the owner's.
+   On `REBASE_CONFLICT` the verb already put a blocker on the step and left the tree
+   untouched: **do not retry**, `notify` the operator once, move on.
+2. **A step is PR-ready and has no verifier yet → dispatch one.** PR-ready is
+   `gates.pr: running` (open) **and** `gates.ci: green`, with the step's `verifier` gate
+   not `green`. Skip it if a verifier was already sent for this PR state: the step
+   carries a `session` link whose id is on a `dispatched` ledger row newer than the
+   step's newest `ci` row. Otherwise:
+   `create_session({ folder, role: 'verifier', prePrompt })` — `role: 'verifier'` is
+   mandatory, the server refuses any other session — with a `prePrompt` that names the
+   mission, the step and the PR and says "use the delivery-verifier skill and record the
+   verdict with `mission_verify_step`, passing your own session id". Then
+   `mission_link_child({ folder, missionId, stepId, link: { kind: 'session', ref:
+<the new session id> } })`. Link it the same turn: the link is what lets Harnu tell a
+   verifier from a stranger, and what keeps its owner from being parked. Never verify
+   the step yourself: the verdict is the verifier's alone.
+3. **A linked child is stalled → one nudge.** A child on a step reads `idle` or
+   `needs-input` with no new commit or ledger row for longer than a beat: `message_session`
+   it with the single next thing it should do, in one sentence. One message per child per
+   tick; a `needs-input` child is waiting on the _operator_ — leave it, the `you` list
+   already says so. `hibernated: true` is parked, not stalled.
+4. **A duplicate is not news.** If the situation is the one the last `steward` Log entry
+   already described and nothing in the ledger moved since, do nothing.
+
+**Log every action.** After each move, `mission_log({ folder, missionId, kind: 'steward',
+note })` — one or two lines: what you did **and why** ("dispatched verifier for #7 —
+`pr: running`, `ci: green`, no verifier session linked"). Harnu also writes a bare
+`steward` line for each write you make; yours carries the reasoning. Nothing to do?
+Say so in one line in your reply and write nothing.
+
+**Stop on refusal.** Any `STEWARD_*` refusal, `MISSION_CLOSED` or `SERVER_DISABLED` means
+the operator closed, paused or switched you off: stop, do not work around it.
+
+**Reply** with one line per move taken (or "nothing to do").
+
+## Sweep mode (no steward)
 
 Find delivery work that is **stalled or finished-but-parked** and tell the
 operator, once, in a sentence they can act on. Nothing else.

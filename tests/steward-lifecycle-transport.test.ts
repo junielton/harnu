@@ -339,6 +339,38 @@ describe('AC-5a.3 — the global kill-switches stop a steward too', () => {
   })
 })
 
+describe('AC-5b.2 — a paused steward does not tick', () => {
+  it('a wake is refused with STEWARD_PAUSED while paused, and starts again after Resume', async () => {
+    const repo = await fakeRepo()
+    const missionId = await newMission(repo)
+    const paused = await runOperatorDoor({
+      door: 'pauseSteward',
+      root: repo,
+      missionId,
+      reason: 'CI is flaky today'
+    })
+    expect(paused.ok).toBe(true)
+    const out = await wakeStewardForMission(missionId, 'ledger')
+    expect(out).toMatchObject({ woke: false })
+    expect(String((out as { reason: string }).reason)).toMatch(/STEWARD_PAUSED.*CI is flaky today/)
+    expect(started).toHaveLength(0)
+    await runOperatorDoor({ door: 'resumeSteward', root: repo, missionId })
+    setStewardWakeGapMs(0)
+    const again = await wakeStewardForMission(missionId, 'ledger')
+    expect(again).toMatchObject({ woke: true })
+    expect(started.map((s) => s.missionId)).toEqual([missionId])
+  })
+
+  it('the pause is a mission door: list_workers still shows the steward enabled and read-only', async () => {
+    const repo = await fakeRepo()
+    const missionId = await newMission(repo)
+    await runOperatorDoor({ door: 'pauseSteward', root: repo, missionId, reason: 'r' })
+    const row = (await stewardRows()).find((w) => w.missionId === missionId)
+    expect(row).toMatchObject({ enabled: true, agentControllable: false })
+    await closeAs(repo, missionId)
+  })
+})
+
 describe('AC-5a.1 — the server enforces the allowlist on a steward caller', () => {
   let missionId: string
   let repo: string

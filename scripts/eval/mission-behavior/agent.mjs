@@ -64,6 +64,13 @@ export const MISSION_VERBS = [
 ]
 
 /**
+ * The verbs a mission's steward adds to the mission set (campaign spec §3.4), granted to an owner turn
+ * only when its phase says `"stewardVerbs": true` — the delivery-watchdog's steward mode is graded
+ * through them. `create_session` is the one a steward may call only as a verifier.
+ */
+export const STEWARD_VERBS = ['create_session', 'message_session', 'rebase_stack', 'notify']
+
+/**
  * The `campaign_*` verbs (campaign spec §3.3), allowed beside the mission ones. Kept a
  * separate list so the mission-verb pin in the unit suite stays exact; a second pin
  * holds this one to the catalog's `campaign_*` verbs.
@@ -100,21 +107,29 @@ function scriptedFrame(sessionId, body) {
  * how a question to the operator is expressed instead, so a missing tool is
  * never mistaken for a rule of the skill.
  */
-function ownerFrame(sessionId, folder, body, tools = []) {
+function ownerFrame(sessionId, folder, body, tools = [], stewardVerbs = false) {
   // A phase that grants `Bash` is testing whether the agent reaches for `gh` or the
   // fleet to learn dispatch state, so `gh` must be reachable (it fails: the sandbox
   // repo has no remote). Otherwise "no gh call" would hold only because the frame
   // said `gh` does not exist.
   const bash = tools.includes('Bash')
-  const absent = bash
-    ? 'board, worktree, session, notify, memory'
-    : 'board, worktree, session, notify, memory, gh'
+  const absent = stewardVerbs
+    ? bash
+      ? 'board, worktree, memory'
+      : 'board, worktree, memory, gh'
+    : bash
+      ? 'board, worktree, session, notify, memory'
+      : 'board, worktree, session, notify, memory, gh'
   return [
     'You are the owner session of a Harnu orchestration, running headless for a behavior test.',
     `Your own Claude session UUID is ${sessionId} — pass it wherever a verb asks for your session id.`,
     `The repo is your current directory; pass folder="${folder}" to every mcp__harnu__ verb.`,
     'Read the skill file named below first, then act exactly as it says for the situation described. Decide your calls yourself.',
-    'This sandbox has only the mcp__harnu__mission_* and mcp__harnu__campaign_* verbs and the built-in tools you were given. Every other verb the skill mentions (' +
+    'This sandbox has only the mcp__harnu__mission_* and mcp__harnu__campaign_* verbs' +
+      (stewardVerbs
+        ? ', the steward verbs (create_session — only with role: "verifier" —, message_session, rebase_stack, notify)'
+        : '') +
+      ' and the built-in tools you were given. Every other verb the skill mentions (' +
       absent +
       ') does not exist here: skip what needs it, never ask for it.' +
       (bash ? ' Bash exists, but this repo has no GitHub remote.' : ''),
@@ -149,7 +164,8 @@ export function runAgent({
   logFile,
   timeoutMs,
   tools = [],
-  role = 'scripted'
+  role = 'scripted',
+  stewardVerbs = false
 }) {
   const owner = role === 'owner'
   const args = [
@@ -169,11 +185,18 @@ export function runAgent({
     '--tools',
     tools.join(','),
     '--allowedTools',
-    [...tools, ...[...MISSION_VERBS, ...CAMPAIGN_VERBS].map((v) => `mcp__harnu__${v}`)].join(','),
+    [
+      ...tools,
+      ...[...MISSION_VERBS, ...CAMPAIGN_VERBS, ...(stewardVerbs ? STEWARD_VERBS : [])].map(
+        (v) => `mcp__harnu__${v}`
+      )
+    ].join(','),
     '--output-format',
     'stream-json',
     '--verbose',
-    owner ? ownerFrame(sessionId, folder, prompt, tools) : scriptedFrame(sessionId, prompt)
+    owner
+      ? ownerFrame(sessionId, folder, prompt, tools, stewardVerbs)
+      : scriptedFrame(sessionId, prompt)
   ]
   const started = Date.now()
   return new Promise((resolve) => {

@@ -3951,6 +3951,8 @@ const YOU_CLEAR = "— nothing, you're clear"
 export type MissionYouItem =
   | { kind: 'rescope'; end: DeclaredEnd }
   | { kind: 'close' }
+  /** Campaign spec §3.4 — the operator paused the steward; it does not tick until they resume it. */
+  | { kind: 'steward-paused'; reason: string; at: string }
   | { kind: 'blocker'; reason: string; unblocks: string }
   | { kind: 'checks'; count: number; stepIds: string[] }
   | { kind: 'human-steps'; stepIds: string[] }
@@ -3962,7 +3964,7 @@ export type MissionYouItem =
 
 /**
  * What the operator owes this mission (Mission v3 §3.12), in this order: a
- * re-scope to approve, a pending close, each operator-owned blocker, the due
+ * re-scope to approve, a pending close, a paused steward, each operator-owned blocker, the due
  * checks (unticked checks on a reached step — not `todo`/`blocked`), the `human`
  * steps that are current or left behind and not ticked, an imported end to
  * review, and the linked children's parked approvals and needs-input. A closed
@@ -3980,6 +3982,9 @@ export function youItems(
   const items: MissionYouItem[] = []
   if (m.pendingRescope) items.push({ kind: 'rescope', end: m.pendingRescope })
   if (m.pendingClose) items.push({ kind: 'close' })
+  if (m.stewardPause) {
+    items.push({ kind: 'steward-paused', reason: m.stewardPause.reason, at: m.stewardPause.at })
+  }
   for (const b of [...m.blockers, ...m.steps.flatMap((s) => s.blockers)]) {
     if (b.owner === 'operator')
       items.push({ kind: 'blocker', reason: b.reason, unblocks: b.unblocks })
@@ -4043,6 +4048,8 @@ function youSentence(item: MissionYouItem): string {
       return `Approve the new declared end (${item.end.kind}: ${item.end.target}).`
     case 'close':
       return 'Close the mission — its end is verified and a close was requested.'
+    case 'steward-paused':
+      return `The steward is paused (${item.reason}) — resume it from the mission popover when ready.`
     case 'blocker':
       return `Unblock: ${item.reason} — unblocks when ${item.unblocks}.`
     case 'checks':

@@ -232,7 +232,7 @@ const CI_PASS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED'])
  * disagree about what "green" means, or the canvas and the Cleanup view would
  * tell the operator different stories about the same PR.
  */
-function checkState(raw: Record<string, unknown>): CiState {
+export function checkState(raw: Record<string, unknown>): CiState {
   const status = typeof raw.status === 'string' ? raw.status.toUpperCase() : null
   if (status === 'QUEUED' || status === 'IN_PROGRESS' || status === 'PENDING') return 'pending'
   const conclusion = typeof raw.conclusion === 'string' ? raw.conclusion.toUpperCase() : null

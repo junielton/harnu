@@ -27,7 +27,7 @@ import {
 } from '../lib/campaign-view'
 import { layoutCampaignMap, waitsFor, type MapEdgeKind } from '../lib/campaign-map'
 import {
-  formatDuration,
+  youRowAge,
   headlineText,
   youRowText,
   type GateDot,
@@ -193,8 +193,7 @@ const RISK_DOT: Record<YouRow['risk'], string> = {
   mid: 'bg-warning',
   low: 'border-[1.5px] border-text-4'
 }
-const ageText = (row: YouRow): string | null =>
-  row.ageMs === null ? null : formatDuration(row.ageMs)
+const ageText = (row: YouRow): string | null => youRowAge(row)
 
 const sideRows = computed(() => model.value?.side ?? [])
 const originOf = (row: CampaignChapterRow): number | null => {

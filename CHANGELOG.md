@@ -32,6 +32,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   topics the entry is about) and `mission` (stamped into the entry's provenance). The old entry is
   marked as superseded, and `memory_query` shows a match inside it together with the entry that
   replaced it.
+- **Pause a mission's steward.** The mission popover now has a steward line (its last action, how long ago, and what wakes it next) with **Pause steward…** beside it. Pausing asks for a reason, writes a `steward` line in the mission Log and stops the steward waking — on events and on its 20-minute beat — until you press **Resume steward**. While it is paused the Topbar pill turns warning and the You list says "Steward paused 2h 0m: CI is flaky today". It is your door only: no agent verb can pause or resume a steward.
+- **Merge batch.** When two or more of a mission's PRs are open with green CI, the You list offers "Merge 3 in order…" (in the chapter popover and in the Campaign popover). Confirm and Harnu merges the first PR, lets the steward rebase the rest and re-check their gates, and only then merges the next. It stops on any red — failing checks, a PR that was closed, a merge GitHub refuses, checks that never settle — says why, and asks you again for the rest. Only the mission's own PRs can be merged this way, and it uses the merge method the repository allows (squash first). Nothing about it is available to agents.
+- **A "Stewards" section in the Scheduler.** Mission stewards no longer mix with your own workers: they are listed under their own heading at the bottom of the list, read-only (no switch, no delete, no prompt editing), each with its mission, when it last woke and what it last did. A paused steward says so, with the reason.
+- **`delivery-watchdog` is now the steward's tick.** Woken as a mission's steward, the skill reads the mission's gates and ledger, starts a verifier session for a PR that is ready, nudges a stalled child, rebases a stack after a merge and logs each action as `steward`. Without a steward it stays the read-only sweep it was.
 
 ### Fixed
 
@@ -39,6 +43,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   mark, two identical decisions on the same day now get distinct ids, and a close-out draft is always
   small enough to be written (an oversized Log entry is clipped, a Log line that imitates a provenance
   stamp is escaped, and the "where we left off" note keeps a single heading).
+- **Merge batch is stricter about what it merges.** Each PR is re-read right before its own merge and merged only at the commit whose checks were read (a push in between makes GitHub refuse the merge instead of landing unchecked code). A PR with merge conflicts, or one that does not target the default branch, is no longer merged — a stacked PR must be retargeted first. The batch now also stops when the steward's turn between merges did not run (paused, absent or timed out), when the mission is closed or its steward paused mid-batch, and treats a PR whose checks have not reported yet as still pending instead of "not ready". Only one batch can run on a mission at a time, and the "Stopped at…" panel stays open while the mission popover refreshes.
 
 ### Changed
 

@@ -385,12 +385,43 @@ export type YouRisk = 'high' | 'mid' | 'low'
  * never guessed.
  */
 export interface YouRow {
-  kind: MissionYouItem['kind'] | 'decide'
+  kind: MissionYouItem['kind'] | 'decide' | 'merge-batch'
   item: MissionYouItem | null
   /** The decision step a "Decide" row is about. */
   stepId: string | null
   ageMs: number | null
   risk: YouRisk
+  /** A `merge-batch` row: the PRs ready to merge, in step order (campaign spec §4, T609). */
+  prs?: MergeReadyPr[]
+}
+
+/** One PR that is ready to merge: its step's open PR, CI green. */
+export interface MergeReadyPr {
+  number: number
+  stepId: string
+  /** The step's title — what the dialog names the PR by. */
+  title: string
+}
+
+/** Two or more PRs make a batch; one is just a merge. */
+export const MERGE_BATCH_MIN = 2
+
+/**
+ * The PRs a Merge batch would merge: every counted step whose PR is open (`pr` gate running) with a
+ * green `ci` gate, in step order — the stack order the operator confirms. Read off the derived gates,
+ * never recounted. A step the server reads as `locked` is left out: its blocker is not done.
+ */
+export function mergeReadyPrs(view: MissionView): MergeReadyPr[] {
+  const counted = view.mission.steps.filter((s) => view.progress.states[s.id] !== undefined)
+  const out: MergeReadyPr[] = []
+  for (const step of counted) {
+    const d = view.derived.steps.find((x) => x.stepId === step.id)
+    if (!d || d.prNumber === null) continue
+    if (d.gates.pr !== 'running' || d.gates.ci !== 'green') continue
+    if (view.progress.states[step.id] === 'locked') continue
+    out.push({ number: d.prNumber, stepId: step.id, title: step.title })
+  }
+  return out
 }
 
 const RISK: Record<YouRow['kind'], YouRisk> = {
@@ -400,6 +431,8 @@ const RISK: Record<YouRow['kind'], YouRisk> = {
   'main-red': 'high',
   close: 'mid',
   'human-steps': 'mid',
+  'steward-paused': 'mid',
+  'merge-batch': 'mid',
   approvals: 'mid',
   'needs-input': 'mid',
   checks: 'low',
@@ -410,6 +443,7 @@ const RISK: Record<YouRow['kind'], YouRisk> = {
 const BLOCKING_FIRST: ReadonlySet<MissionYouItem['kind']> = new Set([
   'rescope',
   'close',
+  'steward-paused',
   'blocker',
   'main-red'
 ])
@@ -429,6 +463,8 @@ function itemAge(view: MissionView, item: MissionYouItem, now: number): number |
     }
     case 'close':
       return ageSince(m.pendingClose?.at, now)
+    case 'steward-paused':
+      return ageSince(item.at, now)
     case 'main-red':
       return ageSince(
         (m.ledger ?? []).find((r) => r.kind === 'pr-merged' && r.pr === item.pr)?.at,
@@ -470,12 +506,36 @@ export function youRows(view: MissionView, now: number = Date.now()): YouRow[] {
       ageMs: null,
       risk: RISK.decide
     }))
-  if (decide.length === 0) return rows
+  // Campaign spec §4: two or more green PRs are one owed decision — merge them in order.
+  const ready = mergeReadyPrs(view)
+  const batch: YouRow[] =
+    ready.length >= MERGE_BATCH_MIN
+      ? [
+          {
+            kind: 'merge-batch',
+            item: null,
+            stepId: null,
+            ageMs: null,
+            risk: RISK['merge-batch'],
+            prs: ready
+          }
+        ]
+      : []
+  const derived = [...decide, ...batch]
+  if (derived.length === 0) return rows
   let at = 0
   rows.forEach((r, i) => {
     if (r.item && BLOCKING_FIRST.has(r.item.kind)) at = i + 1
   })
-  return [...rows.slice(0, at), ...decide, ...rows.slice(at)]
+  return [...rows.slice(0, at), ...derived, ...rows.slice(at)]
+}
+
+/**
+ * The age a You row shows in its own slot ("3h 0m"), or `null` for none. A paused steward carries its
+ * age inside its sentence, so its slot stays empty rather than saying it twice.
+ */
+export function youRowAge(row: YouRow): string | null {
+  return row.ageMs === null || row.kind === 'steward-paused' ? null : formatDuration(row.ageMs)
 }
 
 /**
@@ -492,6 +552,13 @@ export function youRowText(
   const titles = (ids: readonly string[]): string =>
     ids.map((id) => view.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
   const item = row.item
+  if (row.kind === 'merge-batch') {
+    const prs = row.prs ?? []
+    return t('mission.you.mergeBatch', {
+      n: prs.length,
+      chain: prs.map((p) => `#${p.number}`).join(' → ')
+    })
+  }
   if (!item) {
     const title = view.mission.steps.find((s) => s.id === row.stepId)?.decision?.title ?? ''
     return t('mission.you.decide', { title })
@@ -509,6 +576,12 @@ export function youRowText(
       return t('mission.you.humanSteps', { steps: titles(item.stepIds) }, item.stepIds.length)
     case 'review-import':
       return t('mission.you.reviewImport', {})
+    case 'steward-paused':
+      // "Steward paused {age}: {reason}" — the age is part of the sentence (campaign spec §3.4).
+      return t('mission.you.stewardPaused', {
+        age: row.ageMs === null ? '' : formatDuration(row.ageMs),
+        reason: item.reason
+      })
     case 'main-red':
       return t('mission.you.mainRed', { pr: item.pr, step: titles([item.stepId]) })
     case 'approvals':

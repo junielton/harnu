@@ -58,6 +58,8 @@ const HAND_ROLLED_SHELLS: readonly string[] = [
   'ImageLightbox.vue',
   'McpConfirmOverlay.vue',
   'MemoryLocationDialog.vue',
+  // T609: added while `ui/Dialog.vue` does not exist yet (same reason as TrustedHostsDialog); migrate with the rest.
+  'MergeBatchDialog.vue',
   'MissionBulkCloseConfirmDialog.vue',
   'MissionCloseConfirmDialog.vue',
   'MissionsReviewDialog.vue',
@@ -71,6 +73,8 @@ const HAND_ROLLED_SHELLS: readonly string[] = [
   'ReviewPane.vue',
   'RoadmapBoard.vue',
   'SettingsDialog.vue',
+  // T609: same as MergeBatchDialog above — the End dialog's anatomy, until `ui/Dialog.vue` exists.
+  'StewardPauseDialog.vue',
   'SweepConfirmDialog.vue',
   // T571: added while `ui/Dialog.vue` (batch 1) does not exist yet, so there is nothing to build on; migrate with the
   // rest and delete this line. Same anatomy as RenameFolderDialog.
