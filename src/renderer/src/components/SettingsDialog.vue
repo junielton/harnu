@@ -36,6 +36,7 @@ import HibernationPolicyPane from './HibernationPolicyPane.vue'
 import CleanupSettingsPane from './CleanupSettingsPane.vue'
 import ContainersSettingsPane from './ContainersSettingsPane.vue'
 import PrStackSettingsPane from './PrStackSettingsPane.vue'
+import GithubBudgetPane from './GithubBudgetPane.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import SettingHint from './ui/SettingHint.vue'
@@ -315,6 +316,26 @@ const tabs: Array<{ id: SettingsTabId; labelKey: string; keywords: string[] }> =
     id: 'usageHistory',
     labelKey: 'settings.tabs.usageHistory',
     keywords: ['usage', 'uso', 'history', 'historico', 'cost', 'custo', 'token', 'plan', 'plano']
+  },
+  {
+    id: 'githubApi',
+    labelKey: 'settings.tabs.githubApi',
+    keywords: [
+      'github',
+      'gh',
+      'api',
+      'rate limit',
+      'limite',
+      'budget',
+      'orcamento',
+      'quota',
+      'throttle',
+      'slow down',
+      'graphql',
+      'rest',
+      'notify',
+      'notificar'
+    ]
   },
   {
     id: 'changelog',
@@ -1194,6 +1215,7 @@ onBeforeUnmount(() => {
             <CleanupSettingsPane v-else-if="activeTab === 'cleanup'" />
             <ContainersSettingsPane v-else-if="activeTab === 'containers'" @navigate="goToTab" />
             <PrStackSettingsPane v-else-if="activeTab === 'prStack'" />
+            <GithubBudgetPane v-else-if="activeTab === 'githubApi'" />
             <template v-else-if="activeTab === 'appearance'">
               <!-- Appearance — theme picker (design §9, themes.css) -->
               <section style="margin-bottom: 16px">

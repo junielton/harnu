@@ -24,6 +24,8 @@ import {
 } from 'lucide-vue-next'
 import { useUiStore } from '../stores/ui'
 import { usePrStackStore } from '../stores/pr-stack'
+import { useGithubBudgetStore } from '../stores/github-budget'
+import { formatClock } from '../lib/github-budget-view'
 import { useReaperStore } from '../stores/reaper'
 import { useSessionsStore } from '../stores/sessions'
 import PrStackCard from './PrStackCard.vue'
@@ -34,9 +36,14 @@ import { formatBytes, prEmptyStateKind, refreshFailureKeys, shortAgo } from './p
 import { GHOST_HEIGHT, GHOST_WIDTH, presetActive, type KpiPreset } from './pr-stack-filter'
 import { CARD_WIDTH, type WorktreeNode } from '../../../main/pr-stack-core'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const ui = useUiStore()
 const store = usePrStackStore()
+const githubBudget = useGithubBudgetStore()
+/** When the GitHub limit resets, for the `rateLimit` failure copy (`{time}`); empty when unknown. */
+const limitResetTime = computed(() =>
+  githubBudget.resetAtMs === null ? '' : formatClock(githubBudget.resetAtMs, String(locale.value))
+)
 const reaper = useReaperStore()
 const sessions = useSessionsStore()
 
@@ -506,7 +513,7 @@ onBeforeUnmount(() => {
             class="pointer-events-none absolute left-0 top-[calc(100%+6px)] z-10 hidden w-[250px] rounded border border-border bg-surface px-2.5 py-2 text-[11px] leading-[1.45] text-text-2 shadow-pop group-focus-within:block group-hover:block"
           >
             <b class="mb-0.5 block font-semibold text-text">{{ t(failureKeys.title) }}</b>
-            {{ t(failureKeys.body, { age: fetchedLabel }) }}
+            {{ t(failureKeys.body, { age: fetchedLabel, time: limitResetTime }) }}
           </div>
         </div>
         <span class="mx-0.5 h-4 w-px bg-border" />

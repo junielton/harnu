@@ -129,6 +129,7 @@ export type SettingsTabId =
   | 'cleanup'
   | 'containers'
   | 'prStack'
+  | 'githubApi'
 
 /**
  * Every `SettingsTabId`, in tab order (T486 §3.5). `App.vue` generates one
@@ -156,7 +157,8 @@ const SETTINGS_TABS: Record<SettingsTabId, true> = {
   claudeCode: true,
   cleanup: true,
   containers: true,
-  prStack: true
+  prStack: true,
+  githubApi: true
 }
 export const SETTINGS_TAB_IDS = Object.keys(SETTINGS_TABS) as readonly SettingsTabId[]
 
@@ -229,6 +231,7 @@ export const POPOVER_IDS = [
   'pastedImages',
   'claudeStatus',
   'usagePanel',
+  'githubBudget',
   'inboxFilter'
 ] as const
 export type PopoverId = (typeof POPOVER_IDS)[number]
@@ -237,10 +240,11 @@ function popoverFlags(): Record<PopoverId, boolean> {
   return Object.fromEntries(POPOVER_IDS.map((id) => [id, false])) as Record<PopoverId, boolean>
 }
 
-/** The footer popovers that close each other when one opens. */
-const POPOVER_MUTEX: Partial<Record<PopoverId, PopoverId>> = {
-  pastedImages: 'usagePanel',
-  usagePanel: 'pastedImages'
+/** The footer popovers that close each other when one opens (T611: the GitHub budget joins them). */
+const POPOVER_MUTEX: Partial<Record<PopoverId, PopoverId[]>> = {
+  pastedImages: ['usagePanel', 'githubBudget'],
+  usagePanel: ['pastedImages', 'githubBudget'],
+  githubBudget: ['pastedImages', 'usagePanel']
 }
 
 /**
@@ -866,8 +870,7 @@ export const useUiStore = defineStore('ui', () => {
    */
   function openPopover(id: PopoverId): boolean {
     if (!popoverAnchors.value[id]) return false
-    const peer = POPOVER_MUTEX[id]
-    if (peer) closePopover(peer)
+    for (const peer of POPOVER_MUTEX[id] ?? []) closePopover(peer)
     popovers.value[id] = true
     return true
   }

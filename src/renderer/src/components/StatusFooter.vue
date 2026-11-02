@@ -72,6 +72,7 @@ import ClaudeStatusPanel from './ClaudeStatusPanel.vue'
 import FooterImagePopover from './FooterImagePopover.vue'
 import ImageLightbox from './ImageLightbox.vue'
 import HeapGauge from './HeapGauge.vue'
+import GithubBudgetPill from './GithubBudgetPill.vue'
 import { severityDotClass, severityLabelKey } from './claude-status-format'
 import {
   footerSessionChips,
@@ -616,6 +617,10 @@ function openFullDashboard(): void {
       <!-- Heap gauge (T127 S3) — the always-on early-warning signal, grafted
            into the fleet pill; opens the System Monitor takeover on click -->
       <HeapGauge />
+
+      <!-- GitHub budget pill (T611) — calls left in the tighter gh bucket, left of the Cleanup
+           pill. Owns its popover; hidden while the budget is unavailable. -->
+      <GithubBudgetPill />
 
       <!-- Cleanup pill (T443) — ONE pill for Workspace GC, replacing the old Cleanup and
            Containers pills. Idle shows what is reclaimable, running mirrors the hero's progress
