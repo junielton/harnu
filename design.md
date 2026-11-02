@@ -12901,7 +12901,10 @@ them:
    While low, Missions carries a `slowed` tag; while exhausted every Harnu row reads `--text-4` with a
    `paused` tag. A **note** closes the block in the Throttle-note anatomy: `accent-soft` / `accent-line`
    ("Harnu is polling slower. …") while low, `red-soft` / `red-line` ("Limit reached. …") while spent;
-   none while healthy.
+   none while healthy. While GitHub's **secondary limit** holds Harnu's reads (the snapshot's
+   `secondaryPauseUntil`, a short pause with calls still left in both buckets) the note is the accent
+   one — "GitHub is slowing requests. Harnu resumes at 14:00." — **in place of** the low / spent note,
+   and the pill keeps showing the real calls left.
 
 A `Details ↗` link (right-aligned, `--accent`, 11px) closes the popover and opens **Settings → GitHub
 API**.

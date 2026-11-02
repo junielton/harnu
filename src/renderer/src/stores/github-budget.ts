@@ -49,6 +49,16 @@ export const useGithubBudgetStore = defineStore('githubBudget', () => {
     return snapshot.value?.throttle.resetAt ?? r.tighterView.bucket.reset * 1000
   })
 
+  /**
+   * Epoch ms until which GitHub's secondary limit holds Harnu's throttled reads (AC-9 amended), or
+   * `null`. It never changes the throttle state; the popover shows its own note while it lasts.
+   */
+  const secondaryPauseUntilMs = computed<number | null>(() => {
+    const iso = snapshot.value?.secondaryPauseUntil
+    const ms = iso ? Date.parse(iso) : NaN
+    return Number.isFinite(ms) ? ms : null
+  })
+
   function apply(next: BudgetSnapshot): void {
     const notice = decideNotice(lastState, next, memory)
     lastState = next.throttle.state
@@ -105,7 +115,10 @@ export const useGithubBudgetStore = defineStore('githubBudget', () => {
     })
   }
 
-  /** Idempotent: reads the snapshot once and subscribes to the main-side pushes. */
+  /**
+   * Idempotent while a start is in flight or done. A failed start (bridge not ready, snapshot
+   * rejected) drops its subscription and clears `started`, so the next call tries again.
+   */
   async function init(): Promise<void> {
     if (started) return
     started = true
@@ -113,7 +126,9 @@ export const useGithubBudgetStore = defineStore('githubBudget', () => {
       off = window.api.onGithubBudgetChanged(apply)
       apply(await window.api.githubBudgetSnapshot())
     } catch {
-      /* bridge not ready (reload, test): the pill simply stays hidden */
+      off?.()
+      off = null
+      started = false
     }
   }
 
@@ -152,5 +167,17 @@ export const useGithubBudgetStore = defineStore('githubBudget', () => {
     started = false
   }
 
-  return { snapshot, prefs, ready, state, resetAtMs, init, refresh, savePrefs, loadPrefs, dispose }
+  return {
+    snapshot,
+    prefs,
+    ready,
+    state,
+    resetAtMs,
+    secondaryPauseUntilMs,
+    init,
+    refresh,
+    savePrefs,
+    loadPrefs,
+    dispose
+  }
 })

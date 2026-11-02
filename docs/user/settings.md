@@ -103,7 +103,7 @@ Harnu asks GitHub (through your `gh` login) about pull requests, CI and reviews,
 
 A **GitHub** pill sits in the footer, left of the Cleanup pill, and shows how many calls are left in the tighter bucket (`4,112 left`). It turns amber while Harnu is slowing down (`640 left`) and red once the limit is spent (`0 left · 12m`, with the time to the reset). It is hidden while the budget is unavailable — `gh` missing, not signed in, or no answer yet.
 
-Click it for the popover: the **REST** and **GraphQL** meters (they turn accent from 80 % used and red from 95 %, like the Plan usage meters), and **Who spent it · this hour** — a split bar of Harnu against everything outside Harnu, and one row per Harnu feature. While Harnu is slowing down the Missions row says _slowed_; once the limit is spent every Harnu row says _paused_, and a note explains what Harnu changed and when it resumes. **Details ↗** opens the Settings pane. Esc or a click outside closes it.
+Click it for the popover: the **REST** and **GraphQL** meters (they turn accent from 80 % used and red from 95 %, like the Plan usage meters), and **Who spent it · this hour** — a split bar of Harnu against everything outside Harnu, and one row per Harnu feature. While Harnu is slowing down the Missions row says _slowed_; once the limit is spent every Harnu row says _paused_, and a note explains what Harnu changed and when it resumes. **Details ↗** opens the Settings pane. When GitHub itself slows Harnu down while your buckets still have calls (its secondary limit), the note says _GitHub is slowing requests. Harnu resumes at 14:00._ and the pill keeps the real number of calls left — it is not the same as running out. Esc or a click outside closes the popover.
 
 ### Settings → GitHub API
 

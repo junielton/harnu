@@ -74,6 +74,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   folder that is not a repository cost nothing; and the CI result of a merged pull request is
   re-checked at most every 10 minutes (every minute while it is still running) instead of every
   minute forever. What a mission reports is unchanged.
+- **The GitHub popover tells GitHub's secondary limit apart from an empty budget.** When GitHub slows
+  requests while both buckets still have calls, the popover shows _GitHub is slowing requests. Harnu
+  resumes at 14:00._ in place of the low or limit-reached note, and the footer pill keeps the real
+  number of calls left, so "Limit reached" now only appears for a bucket that is really empty.
+- The GitHub budget store now retries its first read if the app was not ready for it, instead of staying
+  empty until the next restart.
 - **PR Stack no longer refreshes in the background while the GitHub budget is low.** Only the canvas's
   timed refresh is skipped; opening the canvas and pressing Refresh always read GitHub. When GitHub's
   limit is the reason a refresh failed, the canvas now says _GitHub API limit reached, resets at 14:00_

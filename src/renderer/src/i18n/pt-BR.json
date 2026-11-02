@@ -5078,6 +5078,10 @@
         "body": "Missões checadas a cada 5 min, até a renovação às {time}.",
         "bodyPrStack": "Missões checadas a cada 5 min e o PR Stack atualiza ao abrir, até a renovação às {time}."
       },
+      "secondaryNote": {
+        "title": "O GitHub está desacelerando as requisições.",
+        "body": "O Harnu retoma às {time}."
+      },
       "exhaustedNote": {
         "title": "Limite atingido.",
         "body": "O Harnu pausou as checagens no GitHub até as {time} e mostra o último estado conhecido."

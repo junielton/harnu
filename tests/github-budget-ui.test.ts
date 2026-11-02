@@ -8,7 +8,15 @@ import GithubBudgetPill from '../src/renderer/src/components/GithubBudgetPill.vu
 import GithubBudgetPane from '../src/renderer/src/components/GithubBudgetPane.vue'
 import { useGithubBudgetStore } from '../src/renderer/src/stores/github-budget'
 import { useUiStore } from '../src/renderer/src/stores/ui'
-import { exhausted, healthy, low, prefs, unavailable, NOW } from './helpers/github-budget-snapshot'
+import {
+  exhausted,
+  healthy,
+  low,
+  prefs,
+  secondaryPause,
+  unavailable,
+  NOW
+} from './helpers/github-budget-snapshot'
 
 /**
  * T611 U2 — the footer GitHub pill + popover (mockup `b--own-pill`) and Settings → GitHub API
@@ -172,6 +180,31 @@ describe('popover (AC-2)', () => {
     setActivePinia(createPinia())
     w = await open(healthy())
     expect(w.get('[data-testid="gh-popover-updated"]').text()).toBe('updated 20s ago')
+  })
+
+  it('secondary limit (AC-8): its own accent note, pill keeps the real calls left', async () => {
+    const w = await open(secondaryPause())
+    const note = w.get('[data-testid="gh-note"]')
+    expect(note.text()).toContain('GitHub is slowing requests.')
+    expect(note.text()).toContain('Harnu resumes at')
+    expect(note.classes()).toContain('bg-accent-soft')
+    expect(w.get('[data-dsqa="github-footer-pill"]').text()).toBe('4,112 left')
+    // Never the "Limit reached" note while a bucket still has calls.
+    expect(w.text()).not.toContain('Limit reached')
+  })
+
+  it('secondary limit replaces the low note while the pause lasts', async () => {
+    const snap = { ...low(), secondaryPauseUntil: new Date(NOW + 60_000).toISOString() }
+    const w = await open(snap)
+    const note = w.get('[data-testid="gh-note"]').text()
+    expect(note).toContain('GitHub is slowing requests.')
+    expect(note).not.toContain('polling slower')
+  })
+
+  it('an expired pause shows no secondary note (the push that clears it may lag)', async () => {
+    const snap = { ...healthy(), secondaryPauseUntil: new Date(NOW - 1000).toISOString() }
+    const w = await open(snap)
+    expect(w.find('[data-testid="gh-note"]').exists()).toBe(false)
   })
 
   it('Details closes the popover and opens Settings → GitHub API', async () => {

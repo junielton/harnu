@@ -8,7 +8,14 @@ vi.mock('../src/renderer/src/stores/notify-dispatch', () => ({ dispatchNotificat
 
 import { useGithubBudgetStore } from '../src/renderer/src/stores/github-budget'
 import { useUiStore } from '../src/renderer/src/stores/ui'
-import { exhausted, healthy, low, prefs, unavailable } from './helpers/github-budget-snapshot'
+import {
+  exhausted,
+  healthy,
+  low,
+  prefs,
+  secondaryPause,
+  unavailable
+} from './helpers/github-budget-snapshot'
 
 let push: (s: BudgetSnapshot) => void = () => {}
 const setPrefs = vi.fn(async (p: BudgetPrefs) => p)
@@ -63,6 +70,45 @@ describe('github budget store', () => {
     await store.init()
     await store.init()
     expect(window.api.onGithubBudgetChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries init after a failed first start, without a double subscription', async () => {
+    stubApi(healthy())
+    const api = window.api as unknown as {
+      githubBudgetSnapshot: ReturnType<typeof vi.fn>
+      onGithubBudgetChanged: ReturnType<typeof vi.fn>
+    }
+    const unsubscribe = vi.fn()
+    api.onGithubBudgetChanged.mockImplementation((cb: (s: BudgetSnapshot) => void) => {
+      push = cb
+      return unsubscribe
+    })
+    api.githubBudgetSnapshot.mockRejectedValueOnce(new Error('bridge not ready'))
+    const store = useGithubBudgetStore()
+
+    await store.init()
+    expect(store.ready).toBeNull()
+    // The failed start gave its subscription back.
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+
+    await store.init()
+    expect(store.ready?.tighter).toBe('rest')
+    expect(api.onGithubBudgetChanged).toHaveBeenCalledTimes(2)
+    expect(api.githubBudgetSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('exposes the end of a secondary-limit pause without touching the throttle state', async () => {
+    stubApi(healthy())
+    const store = useGithubBudgetStore()
+    await store.init()
+    expect(store.secondaryPauseUntilMs).toBeNull()
+
+    push(secondaryPause())
+    expect(store.secondaryPauseUntilMs).toBe(Date.parse(secondaryPause().secondaryPauseUntil!))
+    expect(store.state).toBe('normal')
+    // The pause ending is a push with the field cleared.
+    push(healthy())
+    expect(store.secondaryPauseUntilMs).toBeNull()
   })
 
   it('toasts once entering low, with an action that opens Settings → GitHub API', async () => {

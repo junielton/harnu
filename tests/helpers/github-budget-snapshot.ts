@@ -84,6 +84,7 @@ export function healthy(over: Partial<BudgetPrefs> = {}): BudgetSnapshot {
     status: 'ok',
     reason: null,
     login: null,
+    secondaryPauseUntil: null,
     sampledAt: NOW - 20_000,
     rest: view({
       remaining: 4112,
@@ -125,6 +126,7 @@ export function low(over: Partial<BudgetPrefs> = {}): BudgetSnapshot {
     status: 'ok',
     reason: null,
     login: null,
+    secondaryPauseUntil: null,
     sampledAt: NOW - 20_000,
     rest: view({
       remaining: 640,
@@ -184,6 +186,7 @@ export function unavailable(): BudgetSnapshot {
     status: 'unavailable',
     reason: 'missing',
     login: null,
+    secondaryPauseUntil: null,
     sampledAt: null,
     rest: null,
     graphql: null,
@@ -191,4 +194,9 @@ export function unavailable(): BudgetSnapshot {
     throttle: { state: 'normal', since: NOW, threshold: 15, resetAt: null },
     prefs: prefs()
   }
+}
+
+/** GitHub's secondary limit: buckets still have calls, Harnu holds its throttled reads for 60 s. */
+export function secondaryPause(): BudgetSnapshot {
+  return { ...healthy(), secondaryPauseUntil: new Date(NOW + 60_000).toISOString() }
 }

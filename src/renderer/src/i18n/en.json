@@ -5078,6 +5078,10 @@
         "body": "Mission checks every 5 min, until the reset at {time}.",
         "bodyPrStack": "Mission checks every 5 min and PR Stack refreshes on open, until the reset at {time}."
       },
+      "secondaryNote": {
+        "title": "GitHub is slowing requests.",
+        "body": "Harnu resumes at {time}."
+      },
       "exhaustedNote": {
         "title": "Limit reached.",
         "body": "Harnu paused its GitHub checks until {time} and shows the last known state."

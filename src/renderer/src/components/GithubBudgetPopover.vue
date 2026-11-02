@@ -122,7 +122,18 @@ function consumerTag(c: GhConsumer): string | null {
 
 const note = computed<{ tone: 'accent' | 'red'; title: string; body: string } | null>(() => {
   const a = attribution.value
-  if (!a || state.value === 'normal') return null
+  if (!a) return null
+  // A secondary limit (GitHub slowing requests while the buckets still have calls) is not a low or
+  // empty budget: its note replaces theirs while the pause lasts.
+  const until = store.secondaryPauseUntilMs
+  if (until !== null && until > nowMs.value) {
+    return {
+      tone: 'accent',
+      title: t('githubBudget.popover.secondaryNote.title'),
+      body: t('githubBudget.popover.secondaryNote.body', { time: formatClock(until, loc.value) })
+    }
+  }
+  if (state.value === 'normal') return null
   if (state.value === 'exhausted') {
     return {
       tone: 'red',
