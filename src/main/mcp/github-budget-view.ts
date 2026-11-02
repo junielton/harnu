@@ -34,6 +34,8 @@ export interface GithubBudgetPayload {
     since: string
     /** Percent remaining below which the budget reads `low`. */
     threshold: number
+    /** ISO time until which reads must wait (GitHub's secondary limit hit while the buckets had budget). `null` when there is no pause. */
+    pausedUntil: string | null
   }
   /** Why the budget is unavailable. Only present then. */
   reason?: 'missing' | 'unauthenticated' | 'error'
@@ -75,7 +77,8 @@ export function githubBudgetPayload(snap: BudgetSnapshot): GithubBudgetPayload {
     throttle: {
       state: unavailable ? 'unavailable' : snap.throttle.state,
       since: iso(snap.throttle.since),
-      threshold: snap.throttle.threshold
+      threshold: snap.throttle.threshold,
+      pausedUntil: snap.secondaryPauseUntil
     },
     ...(unavailable && snap.reason ? { reason: snap.reason } : {}),
     harnu: { byConsumer: tighterView ? { ...tighterView.byConsumer } : {} },

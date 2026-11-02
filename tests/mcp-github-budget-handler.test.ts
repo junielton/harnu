@@ -96,6 +96,7 @@ describe('github_budget (T614)', () => {
     const throttle = p.throttle as { state: string; since: string; threshold: number }
     expect(throttle.state).toBe('normal')
     expect(throttle.threshold).toBe(15)
+    expect(throttle).toHaveProperty('pausedUntil', null)
     expect(Number.isNaN(Date.parse(throttle.since))).toBe(false)
     const byConsumer = (p.harnu as { byConsumer: Record<string, number> }).byConsumer
     expect(byConsumer.missions).toBe(2)
@@ -107,6 +108,20 @@ describe('github_budget (T614)', () => {
   it('reports low once the tighter bucket is at or under the threshold', async () => {
     githubBudget.applyPoll({ ok: true, buckets: { rest: bucket(4000), graphql: bucket(300) } })
     expect((payload(await handler({}, ctx)).throttle as { state: string }).state).toBe('low')
+  })
+
+  it('AC-1b: exposes a secondary-limit pause as throttle.pausedUntil, without changing the state', async () => {
+    githubBudget.applyPoll({ ok: true, buckets: { rest: bucket(4000), graphql: bucket(4000) } })
+    githubBudget.markRateLimited(90_000)
+    const throttle = payload(await handler({}, ctx)).throttle as {
+      state: string
+      pausedUntil: string | null
+    }
+    expect(throttle.state).toBe('normal')
+    const until = Date.parse(throttle.pausedUntil ?? '')
+    expect(until).toBeGreaterThan(Date.now() + 60_000)
+    expect(until).toBeLessThanOrEqual(Date.now() + 90_000)
+    expect(spawned.gh).toBe(0)
   })
 
   it('AC-1: answers ok:true with state "unavailable" and null buckets when gh is missing', async () => {

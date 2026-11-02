@@ -513,9 +513,9 @@ deleted: false, message }` — report `bucketAfter`/`reason` instead of promisin
 the operator's one personal GitHub quota (5,000 REST requests and 5,000 GraphQL points an hour).
 **Check `github_budget` before you start a polling loop on `gh`, and back off when
 `throttle.state` is `low`** (poll far less often, skip nice-to-have reads); on `exhausted` stop
-reading until `rest.resetAt` / `graphql.resetAt`. It reads Harnu's in-memory tracker: no `gh` call,
+reading until `rest.resetAt` / `graphql.resetAt`. **When `throttle.pausedUntil` is set, wait until then before calling `gh`** (GitHub's secondary limit hit while the buckets still had budget; the state does not change). It reads Harnu's in-memory tracker: no `gh` call,
 no folder, nothing written. ACK `{ ok, login, rest, graphql, tighter, throttle: { state, since,
-threshold }, harnu: { byConsumer }, outside, sampledAt }`. `rest` / `graphql` are `{ limit, remaining,
+threshold, pausedUntil }, harnu: { byConsumer }, outside, sampledAt }`. `rest` / `graphql` are `{ limit, remaining,
 used, resetAt, callsPerMin, minutesToEmpty }` (ISO `resetAt`; the pace is GitHub's `used` over the
 last 10 minutes). `tighter` is the bucket with the lower share left, the one the throttle follows.
 `throttle.state` is `normal`, `low`, `exhausted` or `unavailable`. `harnu.byConsumer` is Harnu's

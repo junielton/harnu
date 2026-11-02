@@ -208,7 +208,7 @@ These two verbs never remove anything, and no session can clean a worktree. (A s
 
 ## Reading the GitHub budget
 
-Every `gh` call Harnu makes spends the same personal GitHub quota your own scripts use. A session can ask Harnu how much is left with `github_budget`: it gets the REST and GraphQL buckets (limit, remaining, when they reset, how fast they are being spent), which bucket is tighter, whether Harnu is slowing down (`normal`, `low`, `exhausted`), and how many of the calls in the current window were Harnu's own, per feature, against everything else on your login. Sessions are told to check it before they poll `gh` in a loop and to back off when it reads `low`. If `gh` is not installed or not signed in, the answer says `unavailable` instead of failing.
+Every `gh` call Harnu makes spends the same personal GitHub quota your own scripts use. A session can ask Harnu how much is left with `github_budget`: it gets the REST and GraphQL buckets (limit, remaining, when they reset, how fast they are being spent), which bucket is tighter, whether Harnu is slowing down (`normal`, `low`, `exhausted`), and how many of the calls in the current window were Harnu's own, per feature, against everything else on your login. Sessions are told to check it before they poll `gh` in a loop, to back off when it reads `low`, and, when GitHub's secondary limit has paused reads, to wait until the time the answer gives (`pausedUntil`). If `gh` is not installed or not signed in, the answer says `unavailable` instead of failing.
 
 The verb only reads what Harnu already tracks: it makes no GitHub call of its own. A read-only (`observe`) [Scheduler worker](scheduler.md) can use it too, so a worker can slow its own polling.
 
