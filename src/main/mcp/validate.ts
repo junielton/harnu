@@ -333,6 +333,12 @@ export interface MemoryAppendArgs {
   page: string
   /** Markdown body to append (or, for `hot`, the full replacement snapshot). */
   entry: string
+  /** Campaign ch.6: the `e-<hex>` id of the `decisions` entry this one replaces. */
+  supersedes?: string
+  /** Campaign ch.6: repo paths / topics the entry is about (recalled when a new mission's scope overlaps). */
+  watches?: string[]
+  /** Campaign ch.6: the `mnt-<hex>` mission this entry is recorded for (`provenance.mission`). */
+  mission?: string
 }
 
 /** Validated args for the `memory_query` read tool. */
@@ -369,7 +375,16 @@ export function parseMemoryRead(input: unknown): ParseResult<MemoryReadArgs> {
 const MemoryAppendSchema = z.object({
   folder: absolutePathSchema,
   page: z.string().min(1),
-  entry: z.string().min(1).max(MEMORY_ENTRY_MAX_CHARS)
+  entry: z.string().min(1).max(MEMORY_ENTRY_MAX_CHARS),
+  supersedes: z
+    .string()
+    .regex(/^e-[0-9a-f]{8}$/, 'supersedes is an entry id like e-1a2b3c4d')
+    .optional(),
+  watches: z.array(z.string().min(1).max(200)).max(20).optional(),
+  mission: z
+    .string()
+    .regex(/^mnt-[0-9a-f]{8}$/, 'mission is a mission id like mnt-1a2b3c4d')
+    .optional()
 })
 
 /**
@@ -383,12 +398,30 @@ const MemoryAppendSchema = z.object({
 export function parseMemoryAppend(input: unknown): ParseResult<MemoryAppendArgs> {
   const parsed = MemoryAppendSchema.safeParse(input)
   if (!parsed.success) return fromZod(parsed.error)
-  const { folder, page, entry } = parsed.data
+  const { folder, page, entry, supersedes, watches, mission } = parsed.data
   const pageResult = parseMemoryPage(page)
   if (!pageResult.ok) return { ok: false, error: 'BAD_ARGS', detail: pageResult.detail }
   const entryCheck = validateEntry(pageResult.value, entry)
   if (!entryCheck.ok) return { ok: false, error: 'BAD_ARGS', detail: entryCheck.detail }
-  return { ok: true, value: { folder, page, entry } }
+  // Entry ids and watches exist on `decisions` only; hot is a replaced snapshot, cards are bodies.
+  if ((supersedes || watches) && pageResult.value.page !== 'decisions') {
+    return {
+      ok: false,
+      error: 'BAD_ARGS',
+      detail: 'supersedes and watches apply to the decisions page only'
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      folder,
+      page,
+      entry,
+      ...(supersedes ? { supersedes } : {}),
+      ...(watches ? { watches } : {}),
+      ...(mission ? { mission } : {})
+    }
+  }
 }
 
 const MemoryQuerySchema = z.object({

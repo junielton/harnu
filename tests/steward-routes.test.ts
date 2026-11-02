@@ -80,6 +80,31 @@ describe('AC-5a.5 — SessionStart(compact) prints the Mission Brief for the mis
     expect(out).not.toContain('mnt-bbbbbbbb')
   })
 
+  it("puts the mission's recalled memory into the brief (AC-6.3)", async () => {
+    const out = await handleStewardRoute(
+      'brief',
+      { session_id: OWNER, cwd: '/repo', source: 'compact' },
+      deps({
+        recallFor: async () => [{ page: 'decisions', line: 7, text: 'Gates govern verified' }]
+      })
+    )
+    expect(out).toMatch(/decisions:7[^\n]*Gates govern verified/)
+  })
+
+  it('still prints the brief when the recall lookup throws', async () => {
+    const out = await handleStewardRoute(
+      'brief',
+      { session_id: OWNER, cwd: '/repo', source: 'compact' },
+      deps({
+        recallFor: async () => {
+          throw new Error('memory unreadable')
+        }
+      })
+    )
+    expect(out).toContain('mnt-aaaaaaaa')
+    expect(out).not.toContain('Recalled memory')
+  })
+
   it('prints nothing for a session that owns no stewarded mission, or for a non-compact start', async () => {
     expect(
       await handleStewardRoute(

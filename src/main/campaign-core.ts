@@ -26,7 +26,9 @@ import * as path from 'node:path'
 import yaml from 'js-yaml'
 import { z } from 'zod'
 import { dataDirAt, mkdirDataDir } from './data-dir'
+import type { MemoryDraft, Outcome } from './consolidator-core'
 import type { DeclaredEnd, StepLink } from './mission-core'
+import { MemoryDraftSchema, OutcomeSchema } from './outcome-schema'
 import { serializeByKey } from './roadmap-core'
 
 // ---- Data model (spec §3.1 — field-for-field) --------------------------------
@@ -77,6 +79,10 @@ export interface Campaign {
   scope?: StepLink[]
   /** Set by `campaign_request_close`; consumed by the operator's end door. */
   pendingClose?: { at: string; requestedBy: string }
+  /** Spec §3.6 — written by Harnu when a close is requested; never by a verb. */
+  outcome?: Outcome
+  /** Spec §3.6 — memory drafts waiting for the operator's tick in the end dialog. */
+  memoryDrafts?: MemoryDraft[]
   createdAt: string
   updatedAt: string
   provenance: { author: 'agent' | 'human'; at: string; branch?: string }
@@ -140,6 +146,8 @@ const CampaignSchema: z.ZodType<Campaign> = z
     closeReason: z.string().optional(),
     scope: z.array(StepLinkSchema).optional(),
     pendingClose: z.object({ at: z.string(), requestedBy: z.string() }).optional(),
+    outcome: OutcomeSchema.optional(),
+    memoryDrafts: z.array(MemoryDraftSchema).optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
     provenance: z.object({

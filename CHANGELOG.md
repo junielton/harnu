@@ -10,6 +10,41 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-02
+
+### Added
+
+- **Closing a mission or campaign now drafts what to remember.** When a session asks you to close a
+  mission or campaign, Harnu reads the record (the steps, the Log, the ledger and the pull requests and
+  commits linked to them, never a session's transcript) and prepares two things: an **outcome**
+  (what was declared, what landed, what changed on the way, what was never independently verified) and
+  **memory drafts** — decisions, lessons and a refreshed "where we left off" that stays within its size
+  cap. Every draft cites the step, PR or commit it came from, a candidate with nothing to cite is
+  dropped, and a close with nothing worth keeping says "nothing notable" instead of padding. Nothing is
+  written to your project memory by this: the drafts wait for your tick (the "Also record" panel in the
+  end dialog is the next piece).
+- **A new mission or campaign recalls what you already decided.** `mission_create` and `campaign_create`
+  now list, in their reply as `recall`, the decisions in project memory that watch the paths in the new
+  scope or the words in its title and chapter titles, and the steward's Mission Brief after a
+  compaction repeats them. A decision that has been replaced is never recalled; its replacement is.
+- **Decisions can replace each other.** `memory_append` on the `decisions` page gives every entry an id
+  and a start date, and accepts `supersedes` (the id of the entry it replaces), `watches` (the paths and
+  topics the entry is about) and `mission` (stamped into the entry's provenance). The old entry is
+  marked as superseded, and `memory_query` shows a match inside it together with the entry that
+  replaced it.
+
+### Fixed
+
+- Decisions recorded at the same moment can no longer overwrite each other or lose a "replaced by"
+  mark, two identical decisions on the same day now get distinct ids, and a close-out draft is always
+  small enough to be written (an oversized Log entry is clipped, a Log line that imitates a provenance
+  stamp is escaped, and the "where we left off" note keeps a single heading).
+
+### Changed
+
+- `mission_request_close` and `campaign_request_close` now also report `consolidation` (how many drafts
+  were prepared, or that nothing was notable).
+
 ## 2026-10-31
 
 ### Added

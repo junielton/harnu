@@ -165,6 +165,9 @@ const translateMemoryAppend: Translator = (args, gateFolder) => {
   const page = strField(args, 'page')
   if (page) input.page = page
   if (args.entry !== undefined) input.entry = args.entry
+  if (args.supersedes !== undefined) input.supersedes = args.supersedes
+  if (args.watches !== undefined) input.watches = args.watches
+  if (args.mission !== undefined) input.mission = args.mission
   return input
 }
 

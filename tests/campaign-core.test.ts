@@ -116,10 +116,40 @@ describe('AC-3a.1 — the campaign file', () => {
     expect(parsed.chapters[0].title).toBe('true')
   })
 
+  it('round-trips the chapter-6 outcome and memory drafts (validated, not stripped)', () => {
+    const c = campaign({
+      outcome: {
+        declaredEnd: { kind: 'code', target: 't', evidence: 'e' },
+        actualEnd: 'Delivered and verified: t',
+        deviations: [],
+        blockers: [],
+        verificationGaps: [],
+        surprises: ['s'],
+        perStep: [{ stepId: 'chp-1', openedAt: '2026-11-01T00:00:00.000Z' }]
+      },
+      memoryDrafts: [
+        {
+          id: 'drf-1',
+          kind: 'lesson',
+          page: 'decisions',
+          entry: '## x',
+          cites: [{ kind: 'step', ref: 'chp-1' }],
+          mission: 'mnt-4ba02726',
+          validFrom: '2026-11-02'
+        }
+      ]
+    })
+    expect(parseCampaignFile(buildCampaignFileContent(c))).toEqual(c)
+    expect(() =>
+      buildCampaignFileContent(campaign({ outcome: { actualEnd: 'partial' } as never }))
+    ).toThrow(/invalid campaign/)
+  })
+
   it('a key a later Harnu adds survives a read → write (passthrough, like missions)', () => {
     const raw = buildCampaignFileContent(campaign())
     const doc = yaml.load(raw.split('---\n')[1]) as Record<string, unknown>
-    doc.outcome = { actualEnd: 'chapter 6 owns this key' }
+    // (`outcome` was this test's stand-in for "a later key"; chapter 6 now owns and validates it.)
+    doc.someFutureKey = { actualEnd: 'a later Harnu owns this key' }
     ;(doc.chapters as Array<Record<string, unknown>>)[0].futureField = 7
     const withExtras = `---\n${yaml.dump(doc, { lineWidth: -1 })}---\n`
     const parsed = parseCampaignFile(withExtras) as Campaign
@@ -127,7 +157,7 @@ describe('AC-3a.1 — the campaign file', () => {
       string,
       unknown
     >
-    expect(rebuilt.outcome).toEqual({ actualEnd: 'chapter 6 owns this key' })
+    expect(rebuilt.someFutureKey).toEqual({ actualEnd: 'a later Harnu owns this key' })
     expect((rebuilt.chapters as Array<Record<string, unknown>>)[0].futureField).toBe(7)
   })
 

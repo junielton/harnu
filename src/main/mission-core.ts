@@ -25,6 +25,8 @@ import * as path from 'node:path'
 import yaml from 'js-yaml'
 import { z } from 'zod'
 import { dataDirAt, mkdirDataDir } from './data-dir'
+import type { MemoryDraft, Outcome } from './consolidator-core'
+import { MemoryDraftSchema, OutcomeSchema } from './outcome-schema'
 import type { MissionProgress } from './mission-progress'
 import { serializeByKey } from './roadmap-core'
 
@@ -221,6 +223,10 @@ export interface Mission {
   legacyRaw?: string
   /** Campaign spec §3.2 — what Harnu did and saw, append-only. Absent until the first event. */
   ledger?: LedgerRow[]
+  /** Campaign spec §3.6 — written by Harnu when a close is requested; never by a verb. */
+  outcome?: Outcome
+  /** Campaign spec §3.6 — memory drafts waiting for the operator's tick in the end dialog. */
+  memoryDrafts?: MemoryDraft[]
   /** Campaign spec §3.2 — the campaign this mission is a chapter of (set with `chapterId`, at creation). */
   campaignId?: string
   /** Campaign spec §3.2 — the chapter of `campaignId` this mission IS (the chapter records this mission's id). */
@@ -371,6 +377,8 @@ const MissionSchema: z.ZodType<Mission> = z
       .optional(),
     legacyRaw: z.string().optional(),
     ledger: z.array(LedgerRowSchema).optional(),
+    outcome: OutcomeSchema.optional(),
+    memoryDrafts: z.array(MemoryDraftSchema).optional(),
     campaignId: z.string().optional(),
     chapterId: z.string().optional()
   })

@@ -15,6 +15,7 @@ import {
   missionRoot,
   missionTitle,
   readAllMissions,
+  recallForMission,
   recordMissionCompaction
 } from './mcp/tool-handlers'
 import { listStewards, wakeStewardForMission, whenSchedulerLoaded } from './scheduler-shell'
@@ -59,6 +60,7 @@ export function stewardRouteDeps(): StewardRouteDeps {
         })
       )
     },
+    recallFor: (mission, title) => recallForMission(mission, title),
     recordCompaction: recordMissionCompaction,
     wake: wakeStewardForMission
   }
