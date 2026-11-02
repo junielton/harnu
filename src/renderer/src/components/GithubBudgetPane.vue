@@ -330,7 +330,7 @@ function onThreshold(v: number | string | boolean | undefined): void {
               pace.note
             }}</small></span
           >
-          <span v-if="pace.split" class="text-[11px] tabular-nums text-text-4">{{
+          <span v-if="pace.split" class="text-[12px] tabular-nums text-text-4">{{
             pace.split
           }}</span>
         </template>
@@ -342,7 +342,7 @@ function onThreshold(v: number | string | boolean | undefined): void {
     >
       {{ t('githubBudget.pane.chartTitle', { resource: resourceName(ready.tighter) }) }}
       <span
-        class="ml-auto flex gap-3 text-[11px] font-normal normal-case tracking-normal text-text-3"
+        class="ml-auto flex gap-3 text-[11px] font-medium normal-case tracking-normal text-text-3"
       >
         <span
           ><span class="mr-[5px] inline-block h-2 w-2 rounded-[2px] bg-accent align-[-1px]" />{{

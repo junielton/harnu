@@ -20,7 +20,6 @@ import {
   formatCountdown,
   loginOf,
   meterFillClass,
-  meterValueClass,
   minutesUntil,
   outsideBarPct,
   paceView,
@@ -57,7 +56,6 @@ interface MeterRow {
   left: string
   pct: number
   fill: string
-  valueClass: string
   bottom: string
 }
 
@@ -91,7 +89,6 @@ function meter(resource: GhResource): MeterRow | null {
     left: t('githubBudget.meter.left', { n: formatCount(b.remaining, loc.value) }),
     pct,
     fill: meterFillClass(pct),
-    valueClass: meterValueClass(pct),
     bottom
   }
 }
@@ -166,7 +163,7 @@ const note = computed<{ tone: 'accent' | 'red'; title: string; body: string } | 
         <div v-for="m in meters" :key="m.resource" class="flex flex-col gap-[3px]">
           <div class="flex items-center justify-between text-[11px]">
             <span class="truncate text-text-3">{{ m.label }}</span>
-            <span class="tabular-nums" :class="m.valueClass">{{ m.left }}</span>
+            <span class="tabular-nums text-text-2">{{ m.left }}</span>
           </div>
           <div class="h-[3px] overflow-hidden rounded-full bg-surface">
             <div class="h-full rounded-full" :class="m.fill" :style="{ width: m.pct + '%' }" />
