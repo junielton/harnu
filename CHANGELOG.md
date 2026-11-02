@@ -33,6 +33,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   marked as superseded, and `memory_query` shows a match inside it together with the entry that
   replaced it.
 
+### Fixed
+
+- Decisions recorded at the same moment can no longer overwrite each other or lose a "replaced by"
+  mark, two identical decisions on the same day now get distinct ids, and a close-out draft is always
+  small enough to be written (an oversized Log entry is clipped, a Log line that imitates a provenance
+  stamp is escaped, and the "where we left off" note keeps a single heading).
+
 ### Changed
 
 - `mission_request_close` and `campaign_request_close` now also report `consolidation` (how many drafts

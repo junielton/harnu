@@ -14,11 +14,13 @@
 import { promises as fs, type Dirent } from 'node:fs'
 import * as path from 'node:path'
 import { probeGitMeta } from '../git-probe'
+import { serializeByKey } from '../roadmap-core'
 import { resolveEffectiveMemoryConfig } from '../memory-location'
 import {
   annotateSuperseded,
   markSuperseded,
   mintEntryId,
+  parseEntries,
   recallEntries,
   type AnnotatedMatch,
   type EntryMeta,
@@ -315,6 +317,9 @@ export async function readMemoryForFolder(folder: string): Promise<MemoryPaneDat
 
 // ---- Append (the serialized mutation) --------------------------------------
 
+/** Per-page-file write queues for {@link appendMemoryEntry}. */
+const memoryPageLocks = new Map<string, Promise<unknown>>()
+
 /** Outcome of a `memory_append`. */
 export type AppendResult =
   | {
@@ -365,63 +370,68 @@ export async function appendMemoryEntry(input: {
   const file = resolvePageFile(input.memoryDir, parsed.value)
   if (!file) return { ok: false, error: 'PATH_ESCAPE', detail: 'page escapes the memory directory' }
 
-  const existing = await readMaybe(file)
-  if (parsed.value.requireExists && existing === null) {
-    return {
-      ok: false,
-      error: 'PAGE_NOT_FOUND',
-      detail: `card "${parsed.value.page}" does not exist — creating cards is not available via memory_append (that is the roadmap-kanban path)`
-    }
-  }
-
-  const provenance: Provenance = { author: input.author, at: formatMemoryDate(input.now) }
-  if (input.branch) provenance.branch = input.branch
-  if (input.sessionId) provenance.sessionId = input.sessionId
-  if (input.mission) provenance.mission = input.mission
-
-  // Campaign ch.6: a `decisions` entry is addressable — it gets an id, a validity date and its
-  // `watches`, so a later one can supersede it and recall can find it.
-  let meta: EntryMeta | undefined
-  let previous = existing ?? ''
-  if (parsed.value.page === 'decisions') {
-    meta = {
-      id: mintEntryId(input.entry, provenance.at),
-      validFrom: provenance.at,
-      ...(input.watches?.length ? { watches: input.watches } : {}),
-      ...(input.supersedes ? { supersedes: input.supersedes } : {})
-    }
-    if (input.supersedes) {
-      const marked = markSuperseded(previous, input.supersedes, meta.id)
-      if (marked === null) {
-        return {
-          ok: false,
-          error: 'SUPERSEDES_NOT_FOUND',
-          detail: `no live entry "${input.supersedes}" on page "${parsed.value.page}" — memory_query shows entry ids (\`> entry: e-…\`); an entry that already has a successor cannot be superseded again`
-        }
+  // Campaign ch.6 (review): read → mark superseded → write is one critical section per page file,
+  // so two concurrent appends can neither drop an entry nor lose a `superseded_by` mark.
+  return serializeByKey(memoryPageLocks, file, async (): Promise<AppendResult> => {
+    const existing = await readMaybe(file)
+    if (parsed.value.requireExists && existing === null) {
+      return {
+        ok: false,
+        error: 'PAGE_NOT_FOUND',
+        detail: `card "${parsed.value.page}" does not exist — creating cards is not available via memory_append (that is the roadmap-kanban path)`
       }
-      previous = marked
     }
-  }
 
-  const content = buildMemoryWrite({
-    existing: previous,
-    entry: input.entry,
-    provenance,
-    mode: parsed.value.mode,
-    ...(meta ? { meta } : {})
+    const provenance: Provenance = { author: input.author, at: formatMemoryDate(input.now) }
+    if (input.branch) provenance.branch = input.branch
+    if (input.sessionId) provenance.sessionId = input.sessionId
+    if (input.mission) provenance.mission = input.mission
+
+    // Campaign ch.6: a `decisions` entry is addressable — it gets an id, a validity date and its
+    // `watches`, so a later one can supersede it and recall can find it.
+    let meta: EntryMeta | undefined
+    let previous = existing ?? ''
+    if (parsed.value.page === 'decisions') {
+      const taken = new Set(parseEntries(previous).map((e) => e.meta.id))
+      meta = {
+        id: mintEntryId(input.entry, provenance.at, taken),
+        validFrom: provenance.at,
+        ...(input.watches?.length ? { watches: input.watches } : {}),
+        ...(input.supersedes ? { supersedes: input.supersedes } : {})
+      }
+      if (input.supersedes) {
+        const marked = markSuperseded(previous, input.supersedes, meta.id)
+        if (marked === null) {
+          return {
+            ok: false,
+            error: 'SUPERSEDES_NOT_FOUND',
+            detail: `no live entry "${input.supersedes}" on page "${parsed.value.page}" — memory_query shows entry ids (\`> entry: e-…\`); an entry that already has a successor cannot be superseded again`
+          }
+        }
+        previous = marked
+      }
+    }
+
+    const content = buildMemoryWrite({
+      existing: previous,
+      entry: input.entry,
+      provenance,
+      mode: parsed.value.mode,
+      ...(meta ? { meta } : {})
+    })
+
+    await mkdirDataDir(path.dirname(file))
+    await fs.writeFile(file, content, 'utf8')
+    await regenerateIndex(input.memoryDir, input.now)
+
+    return {
+      ok: true,
+      page: parsed.value.page,
+      file: parsed.value.file,
+      bytes: Buffer.byteLength(content),
+      ...(meta ? { entryId: meta.id } : {})
+    }
   })
-
-  await mkdirDataDir(path.dirname(file))
-  await fs.writeFile(file, content, 'utf8')
-  await regenerateIndex(input.memoryDir, input.now)
-
-  return {
-    ok: true,
-    page: parsed.value.page,
-    file: parsed.value.file,
-    bytes: Buffer.byteLength(content),
-    ...(meta ? { entryId: meta.id } : {})
-  }
 }
 
 // ---- Query ------------------------------------------------------------------

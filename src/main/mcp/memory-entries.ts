@@ -44,9 +44,17 @@ const ENTRY_PREFIX = '> entry:'
 const PROVENANCE_PREFIX = '> provenance:'
 const ID_RE = /^e-[0-9a-f]{8}$/
 
-/** `e-<8 hex>` derived from the entry text and its date — the same input always names the same entry. */
-export function mintEntryId(entry: string, at: string): string {
-  return `e-${createHash('sha256').update(`${at}\n${entry.trim()}`).digest('hex').slice(0, 8)}`
+/**
+ * `e-<8 hex>` derived from the entry text and its date. Deterministic, but never a duplicate: an id
+ * already `taken` on the page (the same words recorded twice in one day) is re-derived with a counter
+ * until it is free, so two entries can never share an id and a `supersedes` can only ever name one.
+ */
+export function mintEntryId(entry: string, at: string, taken?: ReadonlySet<string>): string {
+  for (let n = 0; ; n++) {
+    const salt = n === 0 ? '' : `\n#${n}`
+    const id = `e-${createHash('sha256').update(`${at}\n${entry.trim()}${salt}`).digest('hex').slice(0, 8)}`
+    if (!taken?.has(id)) return id
+  }
 }
 
 /** True for a well-formed entry id. */
@@ -125,6 +133,7 @@ export function parseEntries(content: string): ParsedEntry[] {
  * stays a chain, never a fork. Nothing else on the page changes.
  */
 export function markSuperseded(content: string, oldId: string, newId: string): string | null {
+  if (oldId === newId) return null // an entry never replaces itself
   const lines = content.split('\n')
   for (let i = 0; i < lines.length; i++) {
     const m = parseMetaLine(lines[i])

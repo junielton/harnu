@@ -191,6 +191,33 @@ function sourceLine(input: ConsolidatorInput, cites: Citation[]): string {
   return `Source: ${input.kind} ${input.id} (${clip(input.title, 60)})${refs.length > 0 ? ` — ${refs.join(', ')}` : ''}.`
 }
 
+const STAMP_LINE = /^\s*>\s*(?:provenance|entry):/i
+
+/**
+ * Log text becomes the body of a memory entry, and Harnu's own `> provenance:` / `> entry:` stamp
+ * lines are what the page parser trusts. A Log line shaped like one would forge an author or split
+ * the entry in two, so it is escaped (`\\>`); every other line is untouched.
+ */
+function neutralize(text: string): string {
+  return text
+    .split('\n')
+    .map((l) => (STAMP_LINE.test(l) ? l.replace('>', '\\>') : l))
+    .join('\n')
+}
+
+/**
+ * `## heading`, the body, then the source line — and never more than {@link MEMORY_ENTRY_MAX_CHARS}:
+ * an over-long Log entry is clipped in the body, so the source line survives and a ticked draft is
+ * never refused `BAD_ENTRY`.
+ */
+function composeEntry(heading: string, body: string, source: string): string {
+  const fixed = `## ${heading}\n`.length + `\n\n${source}`.length
+  let text = neutralize(body)
+  const room = MEMORY_ENTRY_MAX_CHARS - fixed
+  if (text.length > room) text = `${text.slice(0, Math.max(0, room - 1)).trimEnd()}…`
+  return `## ${heading}\n${text}\n\n${source}`
+}
+
 function buildOutcome(input: ConsolidatorInput): Outcome {
   const end = input.steps.find((s) => s.kind === 'fixed-end')
   const reached = input.endState ? input.endState === 'verified' : end?.proof === 'verified'
@@ -251,6 +278,7 @@ function hotLines(hot: string | undefined): string[] {
       (l) =>
         l.trim() !== '' &&
         !/^#\s/.test(l) &&
+        !/^##\s+where we left off\s*$/i.test(l.trim()) &&
         !l.trim().startsWith('> provenance:') &&
         !l.trim().startsWith('>') &&
         !l.includes('memory just created')
@@ -298,7 +326,7 @@ export function consolidate(input: ConsolidatorInput, date: string): Consolidati
     add({
       kind: 'decision',
       page: 'decisions',
-      entry: `## ${clip(e.text, 90)}\n${e.text}\n\n${sourceLine(input, cites)}`,
+      entry: composeEntry(clip(e.text, 90), e.text, sourceLine(input, cites)),
       cites,
       ...(sup && isEntryId(sup) ? { supersedes: sup } : {})
     })
@@ -311,7 +339,7 @@ export function consolidate(input: ConsolidatorInput, date: string): Consolidati
     add({
       kind: 'decision',
       page: 'decisions',
-      entry: `## ${clip(text, 90)}\n${text}\n\n${sourceLine(input, cites)}`,
+      entry: composeEntry(clip(text, 90), text, sourceLine(input, cites)),
       cites
     })
   }
@@ -323,7 +351,7 @@ export function consolidate(input: ConsolidatorInput, date: string): Consolidati
     add({
       kind: 'lesson',
       page: 'decisions',
-      entry: `## Lesson: ${clip(e.text, 80)}\n${e.text}\n\n${sourceLine(input, cites)}`,
+      entry: composeEntry(`Lesson: ${clip(e.text, 80)}`, e.text, sourceLine(input, cites)),
       cites
     })
   }

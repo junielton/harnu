@@ -79,6 +79,34 @@ describe('AC-6.2 — memory_append supersedes + provenance.mission', () => {
     })
   })
 
+  it('identical text appended twice on the same day yields two distinct entries', async () => {
+    const a = await append('## Same words')
+    const b = await append('## Same words')
+    if (!a.ok || !b.ok) throw new Error('setup')
+    expect(a.entryId).not.toBe(b.entryId)
+    const text = await fs.readFile(path.join(dir, 'decisions.md'), 'utf8')
+    expect(text.match(/^> entry: /gm)).toHaveLength(2)
+  })
+
+  it('concurrent appends and supersedes to one page lose no entry and no mark', async () => {
+    const seeds: string[] = []
+    for (let i = 0; i < 5; i++) {
+      const r = await append(`## Seed ${i}`)
+      if (!r.ok) throw new Error('setup')
+      seeds.push(r.entryId!)
+    }
+    const results = await Promise.all([
+      ...seeds.map((id, i) => append(`## Successor ${i}`, { supersedes: id })),
+      ...Array.from({ length: 10 }, (_, i) => append(`## Plain ${i}`))
+    ])
+    expect(results.every((r) => r.ok)).toBe(true)
+    const text = await fs.readFile(path.join(dir, 'decisions.md'), 'utf8')
+    expect(text.match(/^> entry: /gm)).toHaveLength(20)
+    expect(text.match(/superseded_by=e-/g)).toHaveLength(5)
+    for (let i = 0; i < 5; i++) expect(text).toContain(`## Successor ${i}`)
+    for (let i = 0; i < 10; i++) expect(text).toContain(`## Plain ${i}`)
+  })
+
   it('the verb gate accepts the new args and rejects a malformed id', () => {
     const ok = parseMemoryAppend({
       folder: '/tmp/x',

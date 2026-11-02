@@ -55,10 +55,16 @@ describe('AC-6.2 — provenance.mission and the entry meta line', () => {
     expect(lines[3]).toMatch(/^> provenance: .*mission=mnt-4ba02726/)
   })
 
-  it('mints a stable, content-addressed id', () => {
+  it('mints a stable id from the content, and a different one once that id is taken', () => {
     expect(mintEntryId('a', '2026-11-02')).toBe(mintEntryId('a', '2026-11-02'))
     expect(mintEntryId('a', '2026-11-02')).not.toBe(mintEntryId('b', '2026-11-02'))
     expect(mintEntryId('a', '2026-11-02')).toMatch(/^e-[0-9a-f]{8}$/)
+    // identical text on the same day must still be a distinct entry
+    const first = mintEntryId('a', '2026-11-02')
+    const second = mintEntryId('a', '2026-11-02', new Set([first]))
+    const third = mintEntryId('a', '2026-11-02', new Set([first, second]))
+    expect(new Set([first, second, third]).size).toBe(3)
+    expect(second).toMatch(/^e-[0-9a-f]{8}$/)
   })
 })
 
@@ -76,6 +82,10 @@ describe('AC-6.2 — the supersede chain', () => {
 
   it('returns null when the superseded id is not on the page', () => {
     expect(markSuperseded(base, 'e-ffffffff', newId)).toBeNull()
+  })
+
+  it('refuses to supersede an entry with itself', () => {
+    expect(markSuperseded(base, oldId, oldId)).toBeNull()
   })
 
   it('refuses to supersede an entry that already has a successor', () => {
