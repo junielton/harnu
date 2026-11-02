@@ -5929,7 +5929,7 @@ const missionVerifyStepHandler: Handler = async (args, ctx) => {
     // Mission v3 §3.6: `needs-human` means the machine part is met — the proof
     // keeps its label — and the human part becomes a check on the step.
     step.proof = verdict === 'met' || verdict === 'needs-human' ? label : 'unproven'
-    step.verifiedBy = { sessionId: callerId, at, verdict }
+    step.verifiedBy = { sessionId: callerId, at, verdict, evidenceRequired: true }
     // Campaign spec §3.2: the verdict is a ledger event, written here — not by an argument.
     const withVerdict = (mm: Mission): Mission =>
       appendLedgerRow(

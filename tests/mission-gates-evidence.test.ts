@@ -14,7 +14,15 @@ import {
 } from '../src/main/mission-gates'
 
 const MISSION = 'mnt-4ba02726'
-const verifiedBy = { sessionId: 's', at: 'x', verdict: 'met' as const }
+/** A verification recorded after T610: `mission_verify_step` stamps `evidenceRequired`. */
+const verifiedBy = {
+  sessionId: 's',
+  at: 'x',
+  verdict: 'met' as const,
+  evidenceRequired: true as const
+}
+/** One recorded before: no marker, so the gate never asks it for a bundle. */
+const legacyVerifiedBy = { sessionId: 's', at: 'x', verdict: 'met' as const }
 
 function input(over: Partial<GateInput['step']> = {}, rest: Partial<GateInput> = {}): GateInput {
   return {
@@ -64,6 +72,30 @@ describe('hasEvidenceBundle', () => {
     ]) {
       expect(hasEvidenceBundle([link], MISSION, 'stp-16')).toBe(false)
     }
+  })
+})
+
+describe('grandfathering — only a verification that carries the marker needs a bundle', () => {
+  it('a legacy verified step with no bundle still reads green', () => {
+    expect(computeStepGates(input({ verifiedBy: legacyVerifiedBy })).verifier).toBe('green')
+  })
+
+  it('a legacy needs-human verification with no bundle still reads green', () => {
+    const g = computeStepGates(
+      input({ verifiedBy: { ...legacyVerifiedBy, verdict: 'needs-human' } })
+    )
+    expect(g.verifier).toBe('green')
+  })
+
+  it('a new verification (marker present) with no bundle reads running', () => {
+    expect(computeStepGates(input({ verifiedBy })).verifier).toBe('running')
+  })
+
+  it('the marker with a bundle on disk reads green; with the folder gone, running', () => {
+    expect(computeStepGates(input({ links: [bundleLink] })).verifier).toBe('green')
+    expect(computeStepGates(input({ links: [bundleLink] }, { bundleOnDisk: false })).verifier).toBe(
+      'running'
+    )
   })
 })
 

@@ -269,7 +269,7 @@ When a session asks you to close a mission or a campaign, Harnu reads its record
 
 ### Evidence behind a verified step
 
-A step that a verifier session marked verified only counts as proven (the verifier dot in the gate row, and "verified" instead of "done" in the progress count) when the verifier also left its **evidence bundle**: the test output, screenshots and console from re-running the checks at the pull request's head commit in a clean worktree, saved under `.harnu/evidence/<mission id>/<step id>/` in your repo and linked on the step. Until that link exists and the folder is still on disk, the step reads "done" and the verifier dot stays amber. The bundle stays on your machine (`.harnu/` is kept out of git).
+A step that a verifier session marked verified only counts as proven (the verifier dot in the gate row, and "verified" instead of "done" in the progress count) when the verifier also left its **evidence bundle**: the test output, screenshots and console from re-running the checks at the pull request's head commit in a clean worktree, saved under `.harnu/evidence/<mission id>/<step id>/` in your repo and linked on the step. Until that link exists and the folder is still on disk, the step reads "done" and the verifier dot stays amber. This applies to verifications recorded from now on; a step verified before this change keeps reading as it did, with no bundle needed. The bundle stays on your machine (`.harnu/` is kept out of git).
 
 ### What a new mission remembers
 

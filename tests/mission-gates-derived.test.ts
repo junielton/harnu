@@ -18,7 +18,6 @@ import {
   type StepLink
 } from '../src/main/mission-core'
 import { GATE_NAMES, type GateCi, type StepGates } from '../src/main/mission-gates'
-import { withEvidenceBundles } from './helpers/evidence-bundle'
 import type { MissionPrJoin } from '../src/main/pr-stack'
 
 const h = vi.hoisted(() => ({
@@ -134,11 +133,7 @@ function verifiedStep(): MissionStep {
   })
 }
 
-async function seed(
-  steps: MissionStep[],
-  over: Partial<Mission> = {},
-  opts: { bundle?: boolean } = {}
-): Promise<string> {
+async function seed(steps: MissionStep[], over: Partial<Mission> = {}): Promise<string> {
   seq++
   const id = `mnt-${seq.toString(16).padStart(8, '0')}`
   const at = new Date().toISOString()
@@ -150,7 +145,7 @@ async function seed(
     status: 'active',
     declaredEnd: { kind: 'code', target: 't', evidence: 'e' },
     steps: [
-      ...(opts.bundle === false ? steps : await withEvidenceBundles(root, id, steps)),
+      ...steps,
       step(`stp-${steps.length + 1}`, { kind: 'fixed-end', title: 'Delivered and verified' })
     ],
     blockers: [],
@@ -215,21 +210,6 @@ describe('AC-1 — a step is proven by facts', () => {
     expect(p.derived.steps[0].prNumber).toBe(8)
     expect(p.derived.progress.states['stp-1']).toBe('verified')
     expect(p.youItems.some((i) => i.kind === 'main-red')).toBe(false)
-  })
-
-  it('AC-6.4: the same verified step without an evidence bundle reads running, not green', async () => {
-    const id = await seed([verifiedStep()], {}, { bundle: false })
-    const p = await get(id)
-    expect(p.derived.steps[0].gates.verifier).toBe('running')
-    // Amendment (a): an applicable gate that is not green keeps the step at `done`.
-    expect(p.derived.progress.states['stp-1']).toBe('done')
-  })
-
-  it('AC-6.4: a bundle link whose directory is gone reads running', async () => {
-    const id = await seed([verifiedStep()])
-    await fs.rm(path.join(root, '.harnu', 'evidence'), { recursive: true, force: true })
-    const p = await get(id)
-    expect(p.derived.steps[0].gates.verifier).toBe('running')
   })
 
   it('a red main after merge downgrades nothing stored but lands a you item', async () => {

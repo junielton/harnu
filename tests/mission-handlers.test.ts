@@ -1800,7 +1800,12 @@ describe('mission_verify_step never refuses — verified vs self-verified (Revie
     })
     const end = (await readMissionOnDisk(repo.main, missionId)).mission.steps[1]
     expect(end.proof).toBe('verified')
-    expect(end.verifiedBy).toEqual({ sessionId: VERIFIER, at: expect.any(String), verdict: 'met' })
+    expect(end.verifiedBy).toEqual({
+      sessionId: VERIFIER,
+      at: expect.any(String),
+      verdict: 'met',
+      evidenceRequired: true
+    })
   })
 
   it('mission_verify_step sets proof to self-verified when the step has no session link at all', async () => {
@@ -1863,6 +1868,14 @@ describe('mission_verify_step never refuses — verified vs self-verified (Revie
     expect(
       (await readMissionOnDisk(repo.main, missionId)).mission.steps[1].verifiedBy
     ).toMatchObject({ sessionId: declared })
+  })
+
+  it('T610: stamps the verification with evidenceRequired, so the verifier gate asks it for a bundle', async () => {
+    const { missionId } = await missionWithEnd(CHILD)
+    payloadOf(await verify(missionId))
+    expect(
+      (await readMissionOnDisk(repo.main, missionId)).mission.steps[1].verifiedBy
+    ).toMatchObject({ evidenceRequired: true })
   })
 
   it('logs the evidence and verdict, so the operator can audit who said what', async () => {

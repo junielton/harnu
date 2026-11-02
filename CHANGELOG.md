@@ -58,11 +58,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
-- **A step a verifier signed off reads "done" until its evidence is linked.** The verifier gate (the
+- **A new verifier sign-off reads "done" until its evidence is linked.** The verifier gate (the
   fourth dot on a step) now needs the step's evidence bundle as well as the verdict, so a
-  verifier-level step marked verified with no bundle linked, or whose folder is gone, shows an amber
-  dot and counts as done rather than verified. Steps verified before this change read "done" until a
-  bundle is linked.
+  verifier-level step verified from now on with no bundle linked, or whose folder is gone, shows an
+  amber dot and counts as done rather than verified. Steps verified before this change are not
+  affected and keep reading as they did.
 - `mission_request_close` and `campaign_request_close` now also report `consolidation` (how many drafts
   were prepared, or that nothing was notable).
 

@@ -34,8 +34,9 @@ export interface GatePrFacts {
 
 export interface GateInput {
   /** The mission the step belongs to — names its evidence bundle directory. */
-  missionId: string
-  step: Pick<MissionStep, 'id' | 'verification' | 'proof' | 'verifiedBy' | 'checks' | 'links'>
+  missionId?: string
+  step: Pick<MissionStep, 'verification' | 'proof' | 'verifiedBy' | 'checks'> &
+    Partial<Pick<MissionStep, 'id' | 'links'>>
   /** `null` = the step has no PR link that resolved. */
   pr: GatePrFacts | null
   /** CI of the merge commit on the default branch; `null` = not known (yet). */
@@ -117,7 +118,7 @@ export function hasEvidenceBundle(
 
 function verifierGate(
   step: GateInput['step'],
-  missionId: string,
+  missionId: string | undefined,
   bundleOnDisk: boolean | undefined
 ): GateState {
   if (step.verification === 'existence') return 'na'
@@ -125,11 +126,16 @@ function verifierGate(
   if (verdict === 'unmet' || verdict === 'blocked') return 'red'
   // Independently verified is green, whatever the verdict: a `needs-human` verdict
   // leaves a human part, but that part is carried by the checks gate, not this one.
-  // A verifier-level proof also has to leave its evidence: without a linked bundle that
-  // is still on disk, the verdict is a claim nobody can re-read, so the gate keeps waiting.
+  // A verifier-level verification recorded with the `evidenceRequired` marker (T610) also has
+  // to leave its evidence: without a linked bundle that is still on disk, the verdict is a
+  // claim nobody can re-read, so the gate keeps waiting. One recorded before the marker
+  // existed is grandfathered: it reads green on its other gates, as it always did.
   if (step.proof === 'verified') {
-    if (step.verification !== 'verifier') return 'green'
-    return hasEvidenceBundle(step.links, missionId, step.id) && bundleOnDisk !== false
+    if (step.verification !== 'verifier' || !step.verifiedBy?.evidenceRequired) return 'green'
+    return missionId !== undefined &&
+      step.id !== undefined &&
+      hasEvidenceBundle(step.links, missionId, step.id) &&
+      bundleOnDisk !== false
       ? 'green'
       : 'running'
   }
