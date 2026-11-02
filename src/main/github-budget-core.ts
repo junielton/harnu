@@ -14,15 +14,20 @@
  * place that spawns `gh` and feeds this tracker. Spec: docs/specs/2026-11-02-github-rate-limit/.
  */
 
-/** Who spent the call. `budget` is the poller itself (`gh api rate_limit` is free and never counted). */
-export type GhConsumer = 'missions' | 'pr-stack' | 'review' | 'cleanup' | 'steward' | 'merge-batch'
+/**
+ * Who spent the call. `budget` is the budget feature itself: its one REST call per app run that
+ * resolves the signed-in login (`gh api rate_limit`, the poll, is free and never counted).
+ */
+export type GhConsumer =
+  'missions' | 'pr-stack' | 'review' | 'cleanup' | 'steward' | 'merge-batch' | 'budget'
 export const GH_CONSUMERS: readonly GhConsumer[] = [
   'missions',
   'pr-stack',
   'review',
   'cleanup',
   'steward',
-  'merge-batch'
+  'merge-batch',
+  'budget'
 ]
 
 /** GitHub keeps two separate buckets. Each GraphQL call is counted as one point (D-3). */
@@ -263,6 +268,11 @@ export interface BudgetSnapshot {
   reason: PollFailure | null
   /** Epoch ms of the last good poll; `null` before the first. */
   sampledAt: number | null
+  /**
+   * The GitHub user of the `gh` token (`@login` in the popover header). Resolved once per app run;
+   * `null` while `gh` is missing or signed out, or until the lookup has answered.
+   */
+  login: string | null
   rest: ResourceView | null
   graphql: ResourceView | null
   tighter: GhResource | null
@@ -312,6 +322,8 @@ export interface BudgetTracker {
   ): void
   /** A `gh` call failed with a rate-limit error: exhausted now, without waiting for the poll. */
   markExhausted(): void
+  /** The resolved `gh` login (or `null` to forget it). Emits a change when it moves. */
+  setLogin(login: string | null): void
   /** Move out of `exhausted` when its reset has passed. Call from a timer. */
   tick(): void
   setPrefs(prefs: BudgetPrefs): void
@@ -330,6 +342,7 @@ export function createBudgetTracker(
   let status: BudgetStatus = 'ok'
   let reason: PollFailure | null = null
   let sampledAt: number | null = null
+  let login: string | null = null
   let throttle = initialThrottle(now())
   const res: Record<GhResource, ResourceState> = { rest: freshResource(), graphql: freshResource() }
   const listeners = new Set<(snap: BudgetSnapshot) => void>()
@@ -401,6 +414,8 @@ export function createBudgetTracker(
       const changed = status !== 'unavailable' || reason !== result.reason
       status = 'unavailable'
       reason = result.reason
+      // No gh, or signed out: whoever signs in next may be someone else, so forget the login.
+      login = null
       if (changed) emit()
       return
     }
@@ -431,6 +446,12 @@ export function createBudgetTracker(
       while (r.samples.length > 1 && r.samples[0].at < cutoff) r.samples.shift()
     }
     setThrottle(evaluateThrottle(throttle, result.buckets, prefs.threshold, at))
+    emit()
+  }
+
+  function setLogin(next: string | null): void {
+    if (next === login) return
+    login = next
     emit()
   }
 
@@ -502,6 +523,7 @@ export function createBudgetTracker(
       status,
       reason,
       sampledAt,
+      login,
       rest,
       graphql,
       tighter: rest && graphql ? tighterOf({ rest: rest.bucket, graphql: graphql.bucket }) : null,
@@ -519,6 +541,7 @@ export function createBudgetTracker(
     record,
     applyPoll,
     markExhausted,
+    setLogin,
     tick,
     setPrefs,
     getPrefs: () => prefs,

@@ -14,6 +14,7 @@ vi.mock('electron', () => ({
 import {
   createBudgetPoller,
   nextPollDelayMs,
+  probeLogin,
   probeRateLimit,
   POLL_INTERVAL_MS,
   RESET_SLACK_MS,
@@ -60,6 +61,31 @@ describe('probeRateLimit', () => {
       ok: false,
       reason: 'error'
     })
+  })
+})
+
+describe('probeLogin (AC-8b)', () => {
+  it('reads `gh api user --jq .login` and trims it', async () => {
+    expect(await probeLogin(async () => ({ stdout: 'octocat\n' }))).toBe('octocat')
+    expect(await probeLogin(async () => ({ stdout: 'my-app[bot]' }))).toBe('my-app[bot]')
+  })
+
+  it('is null when the call ran but gave nothing usable', async () => {
+    expect(await probeLogin(async () => ({ stdout: '' }))).toBeNull()
+    expect(await probeLogin(async () => ({ stdout: '<html>' }))).toBeNull()
+    expect(
+      await probeLogin(async () => {
+        throw Object.assign(new Error('x'), { code: 1, stderr: 'HTTP 403' })
+      })
+    ).toBeNull()
+  })
+
+  it('rejects when the runner refused to run it (budget spent), so it is not counted as a try', async () => {
+    await expect(
+      probeLogin(async () => {
+        throw Object.assign(new Error('GH_THROTTLED'), { code: 'GH_THROTTLED' })
+      })
+    ).rejects.toMatchObject({ code: 'GH_THROTTLED' })
   })
 })
 
@@ -165,6 +191,105 @@ describe('createBudgetPoller (AC-2)', () => {
     expect(h.tracker.snapshot()).toMatchObject({ status: 'ok' })
     expect(await h.fire()).toBe(POLL_INTERVAL_MS)
     h.poller.stop()
+  })
+
+  describe('the gh login (AC-8b)', () => {
+    function build(results: ProbeResult[], logins: Array<string | null | Error>) {
+      let now = T0
+      const timers: Array<{ at: number; fn: () => void; id: number }> = []
+      let id = 0
+      const tracker = createBudgetTracker({ now: () => now })
+      const probe = async (): Promise<ProbeResult> =>
+        (results.length > 1 ? results.shift() : results[0])!
+      const resolveLogin = vi.fn(async (): Promise<string | null> => {
+        const next = logins.length > 1 ? logins.shift()! : logins[0]
+        if (next instanceof Error) throw next
+        return next
+      })
+      const poller = createBudgetPoller({
+        tracker,
+        probe,
+        resolveLogin,
+        now: () => now,
+        setTimer: (fn, ms) => {
+          timers.push({ at: now + ms, fn, id: ++id })
+          return id
+        },
+        clearTimer: (h) => {
+          const i = timers.findIndex((t) => t.id === h)
+          if (i >= 0) timers.splice(i, 1)
+        }
+      })
+      const fire = async (): Promise<void> => {
+        timers.sort((a, b) => a.at - b.at)
+        const next = timers.shift()!
+        now = next.at
+        next.fn()
+        await vi.waitFor(() => expect(timers.length).toBeGreaterThan(0))
+      }
+      return { poller, tracker, resolveLogin, fire, timers }
+    }
+    it('resolves the login once, at the first good poll, and caches it', async () => {
+      const h = build([{ ok: true, buckets: okBuckets() }], ['octocat'])
+      h.poller.start()
+      await vi.waitFor(() => expect(h.tracker.snapshot().login).toBe('octocat'))
+      await h.fire()
+      await h.fire()
+      expect(h.resolveLogin).toHaveBeenCalledTimes(1)
+      h.poller.stop()
+    })
+
+    it('does not look while gh is missing: the login is null and no call is made', async () => {
+      const h = build([{ ok: false, reason: 'missing' }], ['octocat'])
+      h.poller.start()
+      await vi.waitFor(() => expect(h.timers).toHaveLength(1))
+      expect(h.tracker.snapshot()).toMatchObject({ status: 'unavailable', login: null })
+      expect(h.resolveLogin).not.toHaveBeenCalled()
+      h.poller.stop()
+    })
+
+    it('asks again only after the budget was unavailable and came back', async () => {
+      const h = build(
+        [
+          { ok: true, buckets: okBuckets() },
+          { ok: false, reason: 'unauthenticated' },
+          { ok: true, buckets: okBuckets() }
+        ],
+        ['octocat', 'hubot']
+      )
+      h.poller.start()
+      await vi.waitFor(() => expect(h.tracker.snapshot().login).toBe('octocat'))
+      await h.fire() // gh signed out
+      expect(h.tracker.snapshot()).toMatchObject({ status: 'unavailable', login: null })
+      await h.fire() // back, as someone else
+      await vi.waitFor(() => expect(h.tracker.snapshot().login).toBe('hubot'))
+      expect(h.resolveLogin).toHaveBeenCalledTimes(2)
+      h.poller.stop()
+    })
+
+    it('a lookup that ran and found nothing is not retried every minute', async () => {
+      const h = build([{ ok: true, buckets: okBuckets() }], [null])
+      h.poller.start()
+      await vi.waitFor(() => expect(h.resolveLogin).toHaveBeenCalledTimes(1))
+      await h.fire()
+      await h.fire()
+      expect(h.resolveLogin).toHaveBeenCalledTimes(1)
+      expect(h.tracker.snapshot().login).toBeNull()
+      h.poller.stop()
+    })
+
+    it('a lookup the runner refused (budget spent) is asked again at the next good poll', async () => {
+      const h = build(
+        [{ ok: true, buckets: okBuckets() }],
+        [Object.assign(new Error('GH_THROTTLED'), { code: 'GH_THROTTLED' }), 'octocat']
+      )
+      h.poller.start()
+      await vi.waitFor(() => expect(h.resolveLogin).toHaveBeenCalledTimes(1))
+      expect(h.tracker.snapshot().login).toBeNull()
+      await h.fire()
+      await vi.waitFor(() => expect(h.tracker.snapshot().login).toBe('octocat'))
+      h.poller.stop()
+    })
   })
 
   it('one pollNow in flight is shared, and stop() cancels the schedule', async () => {

@@ -108,6 +108,19 @@ describe('runGh — counting (AC-1, AC-3)', () => {
     expect(snap.graphql?.byConsumer).toMatchObject({ missions: 1, review: 1 })
   })
 
+  it('counts the login lookup under its own `budget` consumer, REST (AC-8b)', async () => {
+    await r.runGh(['api', 'user', '--jq', '.login'], { consumer: 'budget', resource: 'rest' })
+    t.githubBudget.applyPoll({
+      ok: true,
+      buckets: {
+        rest: { limit: 5000, remaining: 5000, used: 0, reset: Date.now() / 1000 + 600 },
+        graphql: { limit: 5000, remaining: 5000, used: 0, reset: Date.now() / 1000 + 600 }
+      }
+    })
+    expect(t.githubBudget.snapshot().rest?.byConsumer.budget).toBe(1)
+    expect(sp.calls[0].args).toEqual(['api', 'user', '--jq', '.login'])
+  })
+
   it('re-attributes a whole call tree with withGhConsumer', async () => {
     await r.withGhConsumer('steward', async () => {
       await r.runGh(['pr', 'view', '1'], { consumer: 'missions', resource: 'graphql' })

@@ -10,7 +10,7 @@
  */
 
 import { BrowserWindow, ipcMain } from 'electron'
-import { runGhBudgetProbe } from './gh-runner'
+import { isGhThrottled, runGh, runGhBudgetProbe } from './gh-runner'
 import {
   classifyPollFailure,
   normalizeBudgetPrefs,
@@ -45,9 +45,42 @@ export async function probeRateLimit(
   }
 }
 
+/** A GitHub login: letters, digits and hyphens (a `[bot]` suffix for app tokens). */
+const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\[bot\])?$/
+
+/**
+ * The signed-in user of the `gh` token: `gh api user --jq .login` through the shared runner
+ * (consumer `budget`, REST; it is one point, counted like any other call). Resolves `null` when the
+ * call ran but gave no usable login; REJECTS when the call could not run at all (the budget is spent
+ * and the runner refused it), so the poller knows it has not really tried.
+ */
+export async function probeLogin(
+  run: () => Promise<{ stdout: string }> = () =>
+    runGh(['api', 'user', '--jq', '.login'], {
+      consumer: 'budget',
+      resource: 'rest',
+      timeout: 15_000,
+      maxBuffer: 1 << 16
+    })
+): Promise<string | null> {
+  try {
+    const login = (await run()).stdout.trim()
+    return LOGIN_RE.test(login) ? login : null
+  } catch (err) {
+    if (isGhThrottled(err)) throw err
+    return null
+  }
+}
+
 export interface PollerDeps {
   tracker: BudgetTracker
   probe: () => Promise<ProbeResult>
+  /**
+   * Resolve the `gh` login. Asked at the first good poll of the app run and again after each time
+   * the budget was `unavailable` and came back — never otherwise. Rejecting means "could not run":
+   * it is asked again at the next good poll.
+   */
+  resolveLogin?: () => Promise<string | null>
   now: () => number
   setTimer: (fn: () => void, ms: number) => unknown
   clearTimer: (handle: unknown) => void
@@ -88,6 +121,8 @@ export function createBudgetPoller(deps: PollerDeps): BudgetPoller {
   let running = false
   let consecutiveErrors = 0
   let inFlight: Promise<void> | null = null
+  /** The login lookup has run (answer or not) since the budget was last `unavailable`. */
+  let loginTried = false
 
   const schedule = (reason: PollFailure | null): void => {
     if (!running) return
@@ -108,7 +143,18 @@ export function createBudgetPoller(deps: PollerDeps): BudgetPoller {
       const result = await deps.probe()
       deps.tracker.applyPoll(result)
       consecutiveErrors = !result.ok && result.reason === 'error' ? consecutiveErrors + 1 : 0
+      // Missing or signed out: the tracker forgot the login, so the next good poll asks again.
+      if (!result.ok && result.reason !== 'error') loginTried = false
       schedule(result.ok ? null : result.reason)
+      if (result.ok && deps.resolveLogin && !loginTried && deps.tracker.snapshot().login === null) {
+        try {
+          const login = await deps.resolveLogin()
+          loginTried = true
+          if (login !== null) deps.tracker.setLogin(login)
+        } catch {
+          /* could not run (budget spent): not a try; the next good poll asks again */
+        }
+      }
     })().finally(() => {
       inFlight = null
     })
@@ -160,6 +206,7 @@ export function registerGithubBudget(): void {
     poller = createBudgetPoller({
       tracker: githubBudget,
       probe: () => probeRateLimit(),
+      resolveLogin: () => probeLogin(),
       now: () => Date.now(),
       setTimer: (fn, ms) => {
         const t = setTimeout(fn, ms)

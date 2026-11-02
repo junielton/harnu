@@ -309,6 +309,32 @@ describe('attribution (AC-3)', () => {
   })
 })
 
+describe('the gh login on the snapshot (AC-8b)', () => {
+  it('is null until resolved, is exposed once set, and tells listeners', () => {
+    const t = createBudgetTracker({ now: () => T0 })
+    const seen: Array<string | null> = []
+    t.onChange((s) => seen.push(s.login))
+    t.applyPoll({ ok: true, buckets: buckets(bucket(4000), bucket(4000)) })
+    expect(t.snapshot().login).toBeNull()
+    t.setLogin('octocat')
+    expect(t.snapshot().login).toBe('octocat')
+    t.setLogin('octocat') // no change, no event
+    expect(seen.filter((l) => l === 'octocat')).toHaveLength(1)
+  })
+
+  it('is forgotten when gh goes missing or signed out, kept through a transient error', () => {
+    const t = createBudgetTracker({ now: () => T0 })
+    t.applyPoll({ ok: true, buckets: buckets(bucket(4000), bucket(4000)) })
+    t.setLogin('octocat')
+    t.applyPoll({ ok: false, reason: 'error' })
+    expect(t.snapshot().login).toBe('octocat')
+    t.applyPoll({ ok: false, reason: 'unauthenticated' })
+    expect(t.snapshot().login).toBeNull()
+    t.applyPoll({ ok: true, buckets: buckets(bucket(4000), bucket(4000)) })
+    expect(t.snapshot().login).toBeNull() // back, but not re-resolved until the poller asks
+  })
+})
+
 describe('what a state does to consumers (AC-5, AC-6)', () => {
   it('mission gate caches: 60 s normal → 5 min low → last known value while exhausted', () => {
     expect(gateCacheTtlMs('normal')).toBe(60_000)

@@ -12,7 +12,8 @@ const h = vi.hoisted(() => ({
   userData: '',
   handlers: new Map<string, (...a: unknown[]) => unknown>(),
   sent: [] as Array<{ channel: string; payload: unknown }>,
-  probeBody: ''
+  probeBody: '',
+  loginOut: 'octocat' as string | Error
 }))
 
 vi.mock('electron', () => ({
@@ -34,6 +35,14 @@ vi.mock('electron', () => ({
   }
 }))
 vi.mock('../src/main/gh-runner', () => ({
+  isGhThrottled: (): boolean => false,
+  runGh: async (args: string[]): Promise<{ stdout: string; stderr: string }> => {
+    if (args[0] === 'api' && args[1] === 'user') {
+      if (h.loginOut instanceof Error) throw h.loginOut
+      return { stdout: `${h.loginOut}\n`, stderr: '' }
+    }
+    throw new Error(`unexpected gh call ${args.join(' ')}`)
+  },
   runGhBudgetProbe: async (): Promise<{ stdout: string; stderr: string }> => {
     if (!h.probeBody) throw Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' })
     return { stdout: h.probeBody, stderr: '' }
@@ -66,6 +75,7 @@ beforeEach(async () => {
   h.handlers.clear()
   h.sent.length = 0
   h.probeBody = body(4000)
+  h.loginOut = 'octocat'
   vi.resetModules()
 })
 
@@ -112,12 +122,28 @@ describe('github-budget IPC (AC-8)', () => {
     })
   })
 
+  it('carries the gh login on the snapshot (AC-8b)', async () => {
+    await boot()
+    await vi.waitFor(async () => {
+      expect((await call<{ login: string | null }>('github-budget:snapshot')).login).toBe('octocat')
+    })
+  })
+
+  it('has a null login when the lookup fails, and still serves the budget', async () => {
+    h.loginOut = new Error('HTTP 403')
+    await boot()
+    const snap = await call<{ login: string | null; status: string }>('github-budget:snapshot')
+    expect(snap).toMatchObject({ login: null, status: 'ok' })
+  })
+
   it('reports `unavailable` when gh is missing', async () => {
     h.probeBody = ''
     const m = await import('../src/main/github-budget')
     m.registerGithubBudget()
     await vi.waitFor(async () => {
-      expect((await call<{ status: string }>('github-budget:snapshot')).status).toBe('unavailable')
+      const snap = await call<{ status: string; login: string | null }>('github-budget:snapshot')
+      expect(snap.status).toBe('unavailable')
+      expect(snap.login).toBeNull() // null while gh is missing or signed out (AC-8b)
     })
   })
 
