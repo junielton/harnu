@@ -14,7 +14,7 @@ import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { app } from 'electron'
 import { runGh } from '../gh-runner'
-import { throttleState } from '../github-budget-tracker'
+import { githubReadsPaused } from '../github-budget-tracker'
 import {
   buildRepoItems,
   ghCacheFresh,
@@ -365,7 +365,7 @@ async function fetchPrFacts(
   let dirty = false
 
   // T611: while the GitHub budget is spent the last known list is served however old it is.
-  if (cached && (ghCacheFresh(cached.fetchedAt, now) || throttleState() === 'exhausted')) {
+  if (cached && (ghCacheFresh(cached.fetchedAt, now) || githubReadsPaused())) {
     prByBranch = cached.prByBranch
     complete = cached.complete
     probed = cached.probed

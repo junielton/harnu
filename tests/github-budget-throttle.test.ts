@@ -179,6 +179,31 @@ describe('exhausted: last known value, then resume (AC-6)', () => {
   })
 })
 
+describe('secondary-limit pause (AC-9 amended)', () => {
+  it('serves the cached PR list while paused, with no gh call, then resumes', async () => {
+    const repo = freshRepo()
+    await join(repo)
+    expect(ghCount('pr')).toBe(1)
+    t.githubBudget.markRateLimited() // budget is fine; GitHub said slow down
+    advance(5 * 60_000 - 1 - 60_000) // past the 60 s cache, still inside nothing else
+    t.githubBudget.markRateLimited() // keep the pause alive for the read below
+    await join(repo)
+    expect(ghCount('pr')).toBe(1)
+    advance(61_000)
+    await join(repo)
+    expect(ghCount('pr')).toBe(2)
+  })
+
+  it('pauses the PR Stack background refresh, but a load on open still reads', async () => {
+    const repo = freshRepo()
+    await ps.loadPrStackThrottled(repo, [])
+    const before = gh.calls.length
+    t.githubBudget.markRateLimited()
+    await ps.loadPrStackThrottled(repo, [], { background: true })
+    expect(gh.calls.length).toBe(before)
+  })
+})
+
 describe('PR Stack background refresh (AC-5)', () => {
   const load = (repo: string, opts?: { background?: boolean }, wt: never[] = []) =>
     ps.loadPrStackThrottled(repo, wt, opts)

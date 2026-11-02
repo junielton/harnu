@@ -33,7 +33,7 @@ import { promisify } from 'node:util'
 import { spawnEnvOnce } from './appimage-env'
 import { folderKey } from './claude-config'
 import { isGhThrottled, runGh } from './gh-runner'
-import { throttleState } from './github-budget-tracker'
+import { githubReadsPaused } from './github-budget-tracker'
 import { ghCacheFresh } from './reaper/scan-core'
 import { parsePrList } from './pr-stack-core'
 import {
@@ -203,11 +203,7 @@ async function fetchPrJson(repoPath: string, force: boolean): Promise<string | n
   const key = folderKey(repoPath)
   const cached = ghCache.get(key)
   // T611: while the GitHub budget is spent the last known list is served however old it is.
-  if (
-    !force &&
-    cached &&
-    (ghCacheFresh(cached.fetchedAt, Date.now()) || throttleState() === 'exhausted')
-  ) {
+  if (!force && cached && (ghCacheFresh(cached.fetchedAt, Date.now()) || githubReadsPaused())) {
     return cached.json
   }
   let json: string | null = null

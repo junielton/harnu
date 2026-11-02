@@ -161,14 +161,20 @@ export function createBudgetPoller(deps: PollerDeps): BudgetPoller {
     return inFlight
   }
 
+  let offRateLimit: (() => void) | null = null
+
   return {
     start() {
       if (running) return
       running = true
+      // AC-9: a rate-limit message from gh means look at the buckets now (the poll is free).
+      offRateLimit = deps.tracker.onRateLimit(() => void pollNow())
       void pollNow()
     },
     stop() {
       running = false
+      offRateLimit?.()
+      offRateLimit = null
       if (timer !== null) deps.clearTimer(timer)
       timer = null
     },

@@ -22,14 +22,25 @@ export function throttleState(): ThrottleState {
   return githubBudget.state()
 }
 
-/** TTL of the mission gate caches right now (60 s normal, 5 min low, forever while exhausted). */
+/**
+ * True while throttled reads must not run: the budget is `exhausted`, or GitHub's secondary limit
+ * paused them for a minute or so (T611 AC-9). The last known value is served meanwhile.
+ */
+export function githubReadsPaused(): boolean {
+  return githubBudget.readsPaused()
+}
+
+/**
+ * TTL of the mission gate caches right now: 60 s normal, 5 min low, and the last known value for as
+ * long as reads are paused.
+ */
 export function missionCacheTtlMs(): number {
-  return gateCacheTtlMs(githubBudget.state())
+  return githubReadsPaused() ? Number.POSITIVE_INFINITY : gateCacheTtlMs(githubBudget.state())
 }
 
 /** True when PR Stack should skip a BACKGROUND refresh (a load on open never asks). */
 export function prStackBackgroundPaused(): boolean {
-  return skipPrStackBackground(githubBudget.state(), githubBudget.getPrefs())
+  return githubReadsPaused() || skipPrStackBackground(githubBudget.state(), githubBudget.getPrefs())
 }
 
 /** True when delivered missions should still be checked on GitHub (D-5, default off). */

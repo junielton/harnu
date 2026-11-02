@@ -80,9 +80,9 @@ Scout findings (main checkout, 2026-11-02):
       `pr-stack-prefs.ts`); IPC `github-budget:snapshot`, `github-budget:prefs`,
       `github-budget:setPrefs` plus a pushed change event; typed preload API — verify: test +
       review — source: mockup D controls
-- [ ] AC-9 — Rate-limit failures stop being classified as `network`: a `gh` stderr matching
-      "rate limit" marks the budget `exhausted` immediately instead of waiting for the next
-      poll — verify: test — source: scout §4
+- [ ] AC-9 — Rate-limit failures stop being classified as `network`; a `gh` stderr matching
+      "rate limit" no longer marks the budget `exhausted` by itself — see **Amendment 1** below
+      — verify: test — source: scout §4
 - [ ] AC-10 — The spec bundle (this folder, mockup and `spec.md`) is committed at
       `docs/specs/2026-11-02-github-rate-limit/`; `CHANGELOG.md` and a `docs/user/` note record that
       delivered missions are no longer polled and that Harnu slows down near the limit — verify:
@@ -121,6 +121,23 @@ sampledAt }`; `state: 'unavailable'` (still `ok: true`) when `gh` is missing —
       agents: check `github_budget` before a polling loop on `gh` and back off when `low`;
       `docs/user/agent-control.md` and `CHANGELOG.md` updated — verify: review — source:
       CLAUDE.md self-awareness contract
+
+## Amendments (2026-11-02, operator)
+
+1. **AC-9 (U1), amended.** The first version marked the budget `exhausted` on any "rate limit" in
+   `gh` stderr. Twice on 2026-11-02 `gh` printed "API rate limit exceeded" while REST had about 3,100
+   and GraphQL about 2,700 left (GitHub's secondary limit), and Harnu paused its reads until the
+   reset for nothing. Now, on a `gh` stderr that matches a rate limit:
+   - (a) poll `gh api rate_limit` at once (it is free);
+   - (b) only a bucket with remaining 0 makes the state `exhausted`, as before;
+   - (c) otherwise it is a secondary limit: pause throttled reads for 60 s, or for the
+     `Retry-After` / `retry after N` value when `gh` prints one, without changing the state; expose
+     it on the snapshot as `secondaryPauseUntil: string | null` (ISO) and push a change event when
+     the pause starts and when it ends;
+   - (d) writes stay unthrottled.
+2. **AC-6 (U2), amended.** The Settings pane uses the app's real `ToggleSwitch`,
+   `SegmentedControl` and `SettingHint`; mockup D's controls are approximations and do not bind the
+   pixel diff.
 
 ## Out of scope
 

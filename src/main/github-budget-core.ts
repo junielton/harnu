@@ -148,9 +148,29 @@ export function classifyPollFailure(err: unknown): PollFailure {
   return 'error'
 }
 
-/** A `gh` stderr that says the budget (or an abuse limit) is spent. */
+/**
+ * A `gh` stderr that talks about a rate limit. It does NOT say which: an empty bucket and GitHub's
+ * secondary (abuse) limit read alike, so this only triggers a look at `gh api rate_limit` (AC-9).
+ */
 export function isRateLimitStderr(stderr: string): boolean {
-  return /rate limit|API rate|secondary rate|abuse detection|retry-after/i.test(stderr)
+  return /rate limit|API rate|secondary rate|abuse detection|retry[- ]after/i.test(stderr)
+}
+
+/** How long reads pause on a secondary limit when `gh` names no wait. */
+export const SECONDARY_PAUSE_MS = 60_000
+/** A wait `gh` names is honoured up to here, so a bogus value cannot freeze reads for a day. */
+export const SECONDARY_PAUSE_MAX_MS = 60 * 60_000
+
+/**
+ * The wait GitHub asked for in `gh`'s stderr: `Retry-After: 120`, `retry after 30 seconds`,
+ * `retry-after 2 minutes`. Seconds unless a minutes unit follows. `null` when it names none.
+ */
+export function parseRetryAfterMs(stderr: string): number | null {
+  const m = /retry[- ]after\b[:=\s]*(\d+)\s*(minutes?|mins?|m\b)?/i.exec(stderr)
+  if (!m) return null
+  const n = Number(m[1])
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.min(SECONDARY_PAUSE_MAX_MS, n * (m[2] ? 60_000 : 1000))
 }
 
 // ── Tighter bucket and the state machine ──────────────────────────────────────
@@ -170,16 +190,11 @@ export interface ThrottleStatus {
   since: number
   /** Epoch ms at which `exhausted` ends. `null` outside `exhausted`. */
   resetAt: number | null
-  /** What set `exhausted`: a poll saw remaining 0, or a `gh` call failed with a rate-limit error. */
-  source: 'poll' | 'stderr' | null
 }
 
 export function initialThrottle(now: number): ThrottleStatus {
-  return { state: 'normal', since: now, resetAt: null, source: null }
+  return { state: 'normal', since: now, resetAt: null }
 }
-
-/** Fallback length of an `exhausted` mark made from stderr when no reset time is known yet. */
-export const EXHAUSTED_FALLBACK_MS = 60_000
 
 function moved(
   prev: ThrottleStatus,
@@ -191,9 +206,9 @@ function moved(
 
 /**
  * D-4 on the tighter bucket, evaluated against a fresh poll (or the clock alone when `buckets` is
- * null). `normal` → `low` at remaining ≤ threshold; `exhausted` at remaining 0; back to `normal` at
- * that bucket's reset. An `exhausted` mark made from stderr holds until its reset even if a poll
- * still shows budget (a secondary limit is not visible in `rate_limit`).
+ * null). `normal` → `low` at remaining ≤ threshold; `exhausted` ONLY at remaining 0 (AC-9: a
+ * rate-limit message alone never does it — a secondary limit leaves the buckets full); back to
+ * `normal` at that bucket's reset.
  */
 export function evaluateThrottle(
   prev: ThrottleStatus,
@@ -201,24 +216,20 @@ export function evaluateThrottle(
   threshold: number,
   now: number
 ): ThrottleStatus {
-  if (prev.state === 'exhausted' && prev.resetAt !== null && now < prev.resetAt) {
-    // Still inside the exhausted window. A poll that disagrees only wins for a poll-sourced mark.
-    if (prev.source === 'stderr' || buckets === null) return prev
-  }
   if (buckets === null) {
-    // No data: only the clock can move us, and only out of `exhausted`.
-    return prev.state === 'exhausted'
-      ? moved(prev, { state: 'normal', resetAt: null, source: null }, now)
-      : prev
+    // No data: only the clock can move us, and only out of `exhausted`, at its reset.
+    if (prev.state !== 'exhausted') return prev
+    if (prev.resetAt !== null && now < prev.resetAt) return prev
+    return moved(prev, { state: 'normal', resetAt: null }, now)
   }
   const tighter = buckets[tighterOf(buckets)]
   if (tighter.remaining <= 0) {
-    return moved(prev, { state: 'exhausted', resetAt: tighter.reset * 1000, source: 'poll' }, now)
+    return moved(prev, { state: 'exhausted', resetAt: tighter.reset * 1000 }, now)
   }
   if (remainingFraction(tighter) * 100 <= threshold) {
-    return moved(prev, { state: 'low', resetAt: null, source: null }, now)
+    return moved(prev, { state: 'low', resetAt: null }, now)
   }
-  return moved(prev, { state: 'normal', resetAt: null, source: null }, now)
+  return moved(prev, { state: 'normal', resetAt: null }, now)
 }
 
 // ── Tracker: counts, history, pace ────────────────────────────────────────────
@@ -276,6 +287,11 @@ export interface BudgetSnapshot {
   rest: ResourceView | null
   graphql: ResourceView | null
   tighter: GhResource | null
+  /**
+   * ISO time until which throttled reads are paused because GitHub's SECONDARY limit hit while the
+   * buckets still had budget (AC-9). `null` when no such pause is on. It does not change `throttle`.
+   */
+  secondaryPauseUntil: string | null
   throttle: { state: ThrottleState; since: number; threshold: number; resetAt: number | null }
   prefs: BudgetPrefs
 }
@@ -320,8 +336,17 @@ export interface BudgetTracker {
   applyPoll(
     result: { ok: true; buckets: RateLimitBuckets } | { ok: false; reason: PollFailure }
   ): void
-  /** A `gh` call failed with a rate-limit error: exhausted now, without waiting for the poll. */
-  markExhausted(): void
+  /**
+   * A `gh` call failed with a rate-limit message (AC-9). Pauses throttled reads at once for
+   * `retryAfterMs` (default 60 s) and asks the rate-limit listeners to poll `gh api rate_limit` now.
+   * The poll then decides: an empty bucket makes the state `exhausted`; otherwise the pause (a
+   * secondary limit) simply runs out. Never changes the state by itself.
+   */
+  markRateLimited(retryAfterMs?: number | null): void
+  /** True while throttled reads must not run: `exhausted`, or inside a secondary-limit pause. */
+  readsPaused(): boolean
+  /** Subscribe to rate-limit hits (the poller listens to poll at once); returns the unsubscribe. */
+  onRateLimit(listener: () => void): () => void
   /** The resolved `gh` login (or `null` to forget it). Emits a change when it moves. */
   setLogin(login: string | null): void
   /** Move out of `exhausted` when its reset has passed. Call from a timer. */
@@ -335,9 +360,24 @@ export interface BudgetTracker {
 }
 
 export function createBudgetTracker(
-  deps: { now?: () => number; prefs?: BudgetPrefs } = {}
+  deps: {
+    now?: () => number
+    prefs?: BudgetPrefs
+    /** Schedules the end-of-pause tick. Defaults to an unref'd `setTimeout`. */
+    setTimer?: (fn: () => void, ms: number) => unknown
+    clearTimer?: (handle: unknown) => void
+  } = {}
 ): BudgetTracker {
   const now = deps.now ?? Date.now
+  const setTimer =
+    deps.setTimer ??
+    ((fn: () => void, ms: number): unknown => {
+      const t = setTimeout(fn, ms)
+      t.unref?.()
+      return t
+    })
+  const clearTimer =
+    deps.clearTimer ?? ((h: unknown): void => clearTimeout(h as ReturnType<typeof setTimeout>))
   let prefs = deps.prefs ?? defaultBudgetPrefs()
   let status: BudgetStatus = 'ok'
   let reason: PollFailure | null = null
@@ -346,8 +386,12 @@ export function createBudgetTracker(
   let throttle = initialThrottle(now())
   const res: Record<GhResource, ResourceState> = { rest: freshResource(), graphql: freshResource() }
   const listeners = new Set<(snap: BudgetSnapshot) => void>()
-  // Polls that arrived: used for the tighter bucket in `markExhausted`.
+  // The last poll's buckets: a prefs change re-evaluates against them.
   let lastBuckets: RateLimitBuckets | null = null
+  /** Epoch ms until which a secondary limit pauses throttled reads; `null` = none. */
+  let secondaryUntil: number | null = null
+  let pauseTimer: unknown = null
+  const rateLimitListeners = new Set<() => void>()
 
   const emit = (): void => {
     if (listeners.size === 0) return
@@ -446,6 +490,8 @@ export function createBudgetTracker(
       while (r.samples.length > 1 && r.samples[0].at < cutoff) r.samples.shift()
     }
     setThrottle(evaluateThrottle(throttle, result.buckets, prefs.threshold, at))
+    // An empty bucket is the stronger fact: `exhausted` already pauses every throttled read.
+    if (throttle.state === 'exhausted') clearPause()
     emit()
   }
 
@@ -455,23 +501,52 @@ export function createBudgetTracker(
     emit()
   }
 
-  function markExhausted(): void {
+  function clearPause(): void {
+    secondaryUntil = null
+    if (pauseTimer !== null) clearTimer(pauseTimer)
+    pauseTimer = null
+  }
+
+  function markRateLimited(retryAfterMs?: number | null): void {
     const at = now()
-    if (throttle.state === 'exhausted') return
-    const known = lastBuckets ? lastBuckets[tighterOf(lastBuckets)].reset * 1000 : 0
-    const resetAt = known > at ? known : at + EXHAUSTED_FALLBACK_MS
-    setThrottle({ state: 'exhausted', since: at, resetAt, source: 'stderr' })
-    emit()
+    const wait = retryAfterMs && retryAfterMs > 0 ? retryAfterMs : SECONDARY_PAUSE_MS
+    // Several failures in a row (calls already in flight) extend the pause, never shorten it.
+    const until = Math.max(secondaryUntil ?? 0, at + Math.min(wait, SECONDARY_PAUSE_MAX_MS))
+    const extended = until !== secondaryUntil
+    secondaryUntil = until
+    if (extended) {
+      if (pauseTimer !== null) clearTimer(pauseTimer)
+      pauseTimer = setTimer(() => tick(), until - at + 5)
+      emit() // the pause started (or was extended)
+    }
+    for (const l of rateLimitListeners) {
+      try {
+        l()
+      } catch {
+        /* a listener must never break the tracker */
+      }
+    }
   }
 
   function tick(): void {
     const at = now()
     for (const resource of GH_RESOURCES) rollWindow(res[resource], at)
     const next = evaluateThrottle(throttle, null, prefs.threshold, at)
+    let changed = false
     if (next !== throttle) {
       setThrottle(next)
-      emit()
+      changed = true
     }
+    if (secondaryUntil !== null && at >= secondaryUntil) {
+      clearPause() // the pause ended
+      changed = true
+    }
+    if (changed) emit()
+  }
+
+  function readsPaused(): boolean {
+    if (throttle.state === 'exhausted' || secondaryUntil !== null) tick()
+    return throttle.state === 'exhausted' || secondaryUntil !== null
   }
 
   function setPrefs(next: BudgetPrefs): void {
@@ -527,6 +602,10 @@ export function createBudgetTracker(
       rest,
       graphql,
       tighter: rest && graphql ? tighterOf({ rest: rest.bucket, graphql: graphql.bucket }) : null,
+      secondaryPauseUntil:
+        secondaryUntil !== null && at < secondaryUntil
+          ? new Date(secondaryUntil).toISOString()
+          : null,
       throttle: {
         state: throttle.state,
         since: throttle.since,
@@ -540,7 +619,12 @@ export function createBudgetTracker(
   return {
     record,
     applyPoll,
-    markExhausted,
+    markRateLimited,
+    readsPaused,
+    onRateLimit(listener) {
+      rateLimitListeners.add(listener)
+      return () => rateLimitListeners.delete(listener)
+    },
     setLogin,
     tick,
     setPrefs,

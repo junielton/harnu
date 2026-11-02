@@ -5,7 +5,9 @@
  * {@link runGh}: it is counted per consumer and per resource (feeds the budget tracker), spawned with
  * the user's login-shell PATH (`spawnEnvOnce`, BUG-34 / BUG-101), refused while the budget is spent
  * (reads only — writes are operator gestures and never throttled, D-6), and a rate-limit error in
- * `gh`'s stderr marks the budget `exhausted` immediately (AC-9) instead of waiting for the next poll.
+ * `gh`'s stderr pauses throttled reads at once and triggers an immediate `gh api rate_limit` poll
+ * (AC-9): an empty bucket then makes the budget `exhausted`, otherwise it was a secondary limit and
+ * reads resume after the pause.
  *
  * `tests/gh-runner-no-direct-spawn.test.ts` fails on any other `gh` spawn in `src/main`.
  * Spec: docs/specs/2026-11-02-github-rate-limit/spec.md.
@@ -15,7 +17,12 @@ import { execFile } from 'node:child_process'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { promisify } from 'node:util'
 import { spawnEnvOnce } from './appimage-env'
-import { isRateLimitStderr, type GhConsumer, type GhResource } from './github-budget-core'
+import {
+  isRateLimitStderr,
+  parseRetryAfterMs,
+  type GhConsumer,
+  type GhResource
+} from './github-budget-core'
 import { githubBudget } from './github-budget-tracker'
 
 const execFileAsync = promisify(execFile)
@@ -86,7 +93,11 @@ export function inferGhWrite(args: readonly string[]): boolean {
 
 function bookkeep(err: unknown): void {
   const stderr = err && typeof err === 'object' ? (err as { stderr?: unknown }).stderr : ''
-  if (typeof stderr === 'string' && isRateLimitStderr(stderr)) githubBudget.markExhausted()
+  // AC-9: the message alone cannot tell an empty bucket from GitHub's secondary limit. Pause
+  // throttled reads (60 s, or the wait gh names) and let a free `gh api rate_limit` decide.
+  if (typeof stderr === 'string' && isRateLimitStderr(stderr)) {
+    githubBudget.markRateLimited(parseRetryAfterMs(stderr))
+  }
 }
 
 /**
@@ -95,7 +106,7 @@ function bookkeep(err: unknown): void {
  * `classifyGhFailure` callers keep working.
  */
 export async function runGh(args: readonly string[], opts: GhRunOptions): Promise<GhResult> {
-  if (opts.write !== true && githubBudget.state() === 'exhausted') throw new GhThrottledError()
+  if (opts.write !== true && githubBudget.readsPaused()) throw new GhThrottledError()
   const consumer = consumerScope.getStore() ?? opts.consumer
   // Counted when spawned: a call that fails still reached GitHub far enough to be charged.
   githubBudget.record(consumer, opts.resource)

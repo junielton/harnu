@@ -60,6 +60,8 @@
     }
   ],
   "decisions": [
-    "2026-11-02: delivered missions are never checked on GitHub, at any budget (operator's choice in the delivery questions). D's switch became 'Check delivered missions' (off) under its own Missions heading; B's low-state note dropped the delivered-missions clause. Both screens keep the approval because the operator chose this exact change."
+    "2026-11-02: delivered missions are never checked on GitHub, at any budget (operator's choice in the delivery questions). D's switch became 'Check delivered missions' (off) under its own Missions heading; B's low-state note dropped the delivered-missions clause. Both screens keep the approval because the operator chose this exact change.",
+    "2026-11-02 (operator, amendment 1) — AC-9: on a gh rate-limit message, poll `gh api rate_limit` at once (free); only a bucket at remaining 0 makes the state `exhausted`; otherwise it is GitHub's secondary limit and throttled reads pause for 60 s (or the Retry-After gh prints) without changing the state, exposed as `secondaryPauseUntil`; writes stay unthrottled.",
+    "2026-11-02 (operator, amendment 2) — AC-6 (U2): the Settings pane uses the app's real ToggleSwitch, SegmentedControl and SettingHint; mockup D's controls are approximations and do not bind the pixel diff."
   ]
 }

@@ -10,6 +10,8 @@ import {
   gateCacheTtlMs,
   initialThrottle,
   isRateLimitStderr,
+  parseRetryAfterMs,
+  SECONDARY_PAUSE_MAX_MS,
   normalizeBudgetPrefs,
   parseRateLimit,
   skipPrStackBackground,
@@ -107,8 +109,7 @@ describe('throttle state machine (AC-4)', () => {
     expect(st).toMatchObject({
       state: 'exhausted',
       since: at(1),
-      resetAt: reset * 1000,
-      source: 'poll'
+      resetAt: reset * 1000
     })
     // Before the reset, with no fresh data, it stays exhausted…
     expect(evaluateThrottle(st, null, 15, at(599)).state).toBe('exhausted')
@@ -129,7 +130,7 @@ describe('throttle state machine (AC-4)', () => {
   })
 })
 
-describe('tracker: throttle driven by polls and by stderr (AC-4, AC-9)', () => {
+describe('tracker: throttle driven by polls (AC-4)', () => {
   it('moves normal → low → exhausted → normal as polls and the clock say', () => {
     let now = T0
     const t = createBudgetTracker({ now: () => now })
@@ -148,37 +149,151 @@ describe('tracker: throttle driven by polls and by stderr (AC-4, AC-9)', () => {
     expect(seen).toContain('exhausted')
   })
 
-  it('a rate-limit error marks it exhausted immediately, until the known reset', () => {
-    let now = T0
-    const t = createBudgetTracker({ now: () => now })
-    // GraphQL is the tighter bucket here, so its reset (+15 min) is the one the mark waits for.
-    t.applyPoll({ ok: true, buckets: buckets(bucket(4000), bucket(3000, 2000, now / 1000 + 900)) })
-    expect(t.state()).toBe('normal')
-    t.markExhausted()
-    expect(t.state()).toBe('exhausted')
-    // A poll that still shows budget does not lift a stderr-sourced mark (secondary limits).
-    now += 60_000
-    t.applyPoll({ ok: true, buckets: buckets(bucket(4000), bucket(3000, 2000, now / 1000 + 900)) })
-    expect(t.state()).toBe('exhausted')
-    now += 900_000
-    expect(t.state()).toBe('normal')
-  })
-
-  it('without any poll, a stderr mark lasts a minute, not forever', () => {
-    let now = T0
-    const t = createBudgetTracker({ now: () => now })
-    t.markExhausted()
-    expect(t.state()).toBe('exhausted')
-    now += 61_000
-    expect(t.state()).toBe('normal')
-  })
-
   it('changing the threshold re-evaluates against the last poll', () => {
     const t = createBudgetTracker({ now: () => T0 })
     t.applyPoll({ ok: true, buckets: buckets(bucket(900), bucket(5000)) }) // 18 %
     expect(t.state()).toBe('normal')
     t.setPrefs({ ...defaultBudgetPrefs(), threshold: 25 })
     expect(t.state()).toBe('low')
+  })
+})
+
+describe('rate-limit message vs empty bucket vs secondary limit (AC-9, amended)', () => {
+  /** A tracker whose end-of-pause timer is driven by hand. */
+  function rig() {
+    let now = T0
+    const timers: Array<{ at: number; fn: () => void }> = []
+    const t = createBudgetTracker({
+      now: () => now,
+      setTimer: (fn, ms) => {
+        const e = { at: now + ms, fn }
+        timers.push(e)
+        return e
+      },
+      clearTimer: (h) => {
+        const i = timers.indexOf(h as (typeof timers)[number])
+        if (i >= 0) timers.splice(i, 1)
+      }
+    })
+    const events: Array<string | null> = []
+    t.onChange((s) => events.push(s.secondaryPauseUntil))
+    const advance = (ms: number): void => {
+      now += ms
+      for (const e of [...timers]) {
+        if (e.at <= now) {
+          timers.splice(timers.indexOf(e), 1)
+          e.fn()
+        }
+      }
+    }
+    return { t, events, advance, now: () => now, timers }
+  }
+  const FULL = buckets(bucket(2900, 2100, T0 / 1000 + 3000), bucket(2700, 2300, T0 / 1000 + 3000))
+
+  it('(c) a message with budget left is a secondary limit: reads pause 60 s, the state does not change', () => {
+    const { t, now } = rig()
+    t.applyPoll({ ok: true, buckets: FULL })
+    expect(t.readsPaused()).toBe(false)
+    t.markRateLimited()
+    expect(t.readsPaused()).toBe(true)
+    expect(t.state()).toBe('normal')
+    expect(t.snapshot().secondaryPauseUntil).toBe(new Date(now() + 60_000).toISOString())
+    expect(t.snapshot().throttle.state).toBe('normal')
+  })
+
+  it('(a) asks the rate-limit listeners to poll at once, and stops when unsubscribed', () => {
+    const { t } = rig()
+    let polls = 0
+    const off = t.onRateLimit(() => polls++)
+    t.markRateLimited()
+    expect(polls).toBe(1)
+    off()
+    t.markRateLimited()
+    expect(polls).toBe(1)
+  })
+
+  it('(b) a poll that finds the buckets full leaves the state alone and the pause running', () => {
+    const { t, advance } = rig()
+    t.applyPoll({ ok: true, buckets: FULL })
+    t.markRateLimited()
+    advance(2_000)
+    t.applyPoll({ ok: true, buckets: FULL })
+    expect(t.state()).toBe('normal')
+    expect(t.readsPaused()).toBe(true)
+    expect(t.snapshot().secondaryPauseUntil).not.toBeNull()
+  })
+
+  it('(b) only a bucket at remaining 0 makes it exhausted — and that supersedes the timed pause', () => {
+    const { t, advance } = rig()
+    t.applyPoll({ ok: true, buckets: FULL })
+    t.markRateLimited()
+    advance(1_000)
+    t.applyPoll({ ok: true, buckets: buckets(bucket(4000), bucket(0, 5000, T0 / 1000 + 900)) })
+    expect(t.state()).toBe('exhausted')
+    expect(t.snapshot().secondaryPauseUntil).toBeNull()
+    expect(t.readsPaused()).toBe(true) // exhausted pauses them anyway
+  })
+
+  it('a rate-limit message alone never makes it exhausted, even with no poll yet', () => {
+    const { t } = rig()
+    t.markRateLimited()
+    expect(t.state()).toBe('normal')
+  })
+
+  it('the pause ends by itself after 60 s', () => {
+    const { t, advance } = rig()
+    t.markRateLimited()
+    advance(59_000)
+    expect(t.readsPaused()).toBe(true)
+    advance(2_000)
+    expect(t.readsPaused()).toBe(false)
+    expect(t.snapshot().secondaryPauseUntil).toBeNull()
+  })
+
+  it('honours the wait gh names (Retry-After) instead of 60 s', () => {
+    const { t, advance, now } = rig()
+    t.markRateLimited(parseRetryAfterMs('HTTP 403: retry-after: 120'))
+    expect(t.snapshot().secondaryPauseUntil).toBe(new Date(now() + 120_000).toISOString())
+    advance(119_000)
+    expect(t.readsPaused()).toBe(true)
+    advance(2_000)
+    expect(t.readsPaused()).toBe(false)
+  })
+
+  it('pushes a change event when the pause starts and when it ends', () => {
+    const { t, events, advance, now } = rig()
+    const start = now()
+    t.markRateLimited()
+    expect(events).toEqual([new Date(start + 60_000).toISOString()])
+    advance(61_000) // the end-of-pause timer fires with no poll and no read in between
+    expect(events).toEqual([new Date(start + 60_000).toISOString(), null])
+  })
+
+  it('a second message during the pause extends it, never shortens it', () => {
+    const { t, advance, now } = rig()
+    t.markRateLimited(120_000)
+    const first = t.snapshot().secondaryPauseUntil
+    advance(10_000)
+    t.markRateLimited() // a 60 s default would end sooner than the 110 s left
+    expect(t.snapshot().secondaryPauseUntil).toBe(first)
+    advance(10_000)
+    t.markRateLimited(300_000)
+    expect(t.snapshot().secondaryPauseUntil).toBe(new Date(now() + 300_000).toISOString())
+  })
+})
+
+describe('parseRetryAfterMs (AC-9)', () => {
+  it('reads Retry-After / retry after N, seconds by default, minutes when said', () => {
+    expect(parseRetryAfterMs('HTTP 403: Retry-After: 45')).toBe(45_000)
+    expect(parseRetryAfterMs('please retry after 30 seconds')).toBe(30_000)
+    expect(parseRetryAfterMs('retry-after 2 minutes')).toBe(120_000)
+    expect(parseRetryAfterMs('Retry-After=90')).toBe(90_000)
+  })
+
+  it('is null when gh names no wait, and clamps a silly one', () => {
+    expect(parseRetryAfterMs('GraphQL: API rate limit exceeded')).toBeNull()
+    expect(parseRetryAfterMs('retry after 0')).toBeNull()
+    expect(parseRetryAfterMs('Retry-After: 999999')).toBe(SECONDARY_PAUSE_MAX_MS)
   })
 })
 

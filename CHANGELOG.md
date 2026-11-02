@@ -23,8 +23,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   the two buckets is tighter. When that bucket drops to 15 % (10, 15 or 25 % in the prefs file) Harnu
   stretches the mission PR and main-CI caches from 1 minute to 5 and pauses PR Stack's background
   refresh; when it reaches zero it stops reading GitHub, shows the last values it knew, and resumes
-  by itself after the reset. A rate-limit error from `gh` is now recognised at once (it used to look
-  like a network failure). Your own actions — a review, a merge, marking a file viewed — are never
+  by itself after the reset. A "rate limit exceeded" message from `gh` is no longer mistaken for a
+  network failure: Harnu checks the real budget right away, and if you still have calls left (GitHub's
+  secondary limit) it only pauses its reads for a minute, or for the wait GitHub names, instead of
+  stopping until the reset. Your own actions — a review, a merge, marking a file viewed — are never
   held back. The footer pill and the Settings pane that show all of this arrive next.
 
 - **Closing a mission or campaign now drafts what to remember.** When a session asks you to close a

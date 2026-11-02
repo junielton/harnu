@@ -292,6 +292,39 @@ describe('createBudgetPoller (AC-2)', () => {
     })
   })
 
+  it('a rate-limit message from gh triggers an immediate poll (AC-9a), and an empty bucket makes it exhausted', async () => {
+    const h = harness([
+      { ok: true, buckets: okBuckets() },
+      {
+        ok: true,
+        buckets: {
+          ...okBuckets(),
+          graphql: { limit: 5000, remaining: 0, used: 5000, reset: T0 / 1000 + 600 }
+        }
+      }
+    ])
+    h.poller.start()
+    await vi.waitFor(() => expect(h.timers).toHaveLength(1))
+    expect(h.probe).toHaveBeenCalledTimes(1)
+    h.tracker.markRateLimited() // what the runner does on a rate-limit stderr
+    await vi.waitFor(() => expect(h.probe).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(h.tracker.state()).toBe('exhausted'))
+    h.poller.stop()
+    h.tracker.markRateLimited()
+    expect(h.probe).toHaveBeenCalledTimes(2) // stopped: no longer listening
+  })
+
+  it('a rate-limit message with budget left only pauses reads: the poll leaves the state normal', async () => {
+    const h = harness([{ ok: true, buckets: okBuckets() }])
+    h.poller.start()
+    await vi.waitFor(() => expect(h.timers).toHaveLength(1))
+    h.tracker.markRateLimited()
+    await vi.waitFor(() => expect(h.probe).toHaveBeenCalledTimes(2))
+    expect(h.tracker.state()).toBe('normal')
+    expect(h.tracker.readsPaused()).toBe(true)
+    h.poller.stop()
+  })
+
   it('one pollNow in flight is shared, and stop() cancels the schedule', async () => {
     const h = harness([{ ok: true, buckets: okBuckets() }])
     h.poller.start()

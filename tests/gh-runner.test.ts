@@ -1,7 +1,7 @@
 /**
  * T611 U1 — the shared `gh` runner: every call is counted per consumer and resource (AC-1, AC-3),
  * reads are refused while the budget is spent but writes never are (AC-6), and a rate-limit error in
- * gh's stderr marks the budget exhausted immediately (AC-9).
+ * gh's stderr pauses throttled reads and asks for a poll (AC-9, amended).
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
@@ -208,16 +208,30 @@ describe('runGh — exhausted budget (AC-6)', () => {
   })
 })
 
-describe('runGh — a rate-limit error marks the budget exhausted at once (AC-9)', () => {
-  it('flips to exhausted on the failing call, with no poll', async () => {
-    expect(t.githubBudget.state()).toBe('normal')
+describe('runGh — a rate-limit message (AC-9, amended)', () => {
+  const full = (graphqlRemaining = 2700) => ({
+    rest: { limit: 5000, remaining: 3100, used: 1900, reset: Date.now() / 1000 + 1800 },
+    graphql: {
+      limit: 5000,
+      remaining: graphqlRemaining,
+      used: 5000 - graphqlRemaining,
+      reset: Date.now() / 1000 + 1800
+    }
+  })
+
+  it('(a) asks for a poll at once and pauses throttled reads — without changing the state', async () => {
+    t.githubBudget.applyPoll({ ok: true, buckets: full() })
+    let polls = 0
+    t.githubBudget.onRateLimit(() => polls++)
     sp.next = { kind: 'fail', stderr: 'GraphQL: API rate limit exceeded for user ID 1.' }
     const err = (await r
       .runGh(['pr', 'list'], { consumer: 'pr-stack', resource: 'graphql' })
       .catch((e: unknown) => e)) as { stderr: string }
     expect(err.stderr).toContain('rate limit')
-    expect(t.githubBudget.state()).toBe('exhausted')
-    // …and the very next read is refused without a spawn.
+    expect(polls).toBe(1)
+    expect(t.githubBudget.state()).toBe('normal') // (c): budget left → not exhausted
+    expect(t.githubBudget.snapshot().secondaryPauseUntil).not.toBeNull()
+    // …and the next read is refused without a spawn.
     sp.calls.length = 0
     await expect(
       r.runGh(['pr', 'list'], { consumer: 'pr-stack', resource: 'graphql' })
@@ -225,12 +239,55 @@ describe('runGh — a rate-limit error marks the budget exhausted at once (AC-9)
     expect(sp.calls).toHaveLength(0)
   })
 
-  it('also reacts to a failing WRITE (it is not throttled, but it is information)', async () => {
+  it('(b) when the poll then finds an empty bucket, the state becomes exhausted', async () => {
+    t.githubBudget.applyPoll({ ok: true, buckets: full() })
+    t.githubBudget.onRateLimit(() => t.githubBudget.applyPoll({ ok: true, buckets: full(0) }))
+    sp.next = { kind: 'fail', stderr: 'API rate limit exceeded' }
+    await r.runGh(['pr', 'list'], { consumer: 'review', resource: 'graphql' }).catch(() => {})
+    expect(t.githubBudget.state()).toBe('exhausted')
+  })
+
+  it('(c) reads resume after the 60 s pause, or the Retry-After it names', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-11-02T12:00:00Z'))
+      vi.resetModules()
+      r = await import('../src/main/gh-runner')
+      t = await import('../src/main/github-budget-tracker')
+      t.githubBudget.applyPoll({ ok: true, buckets: full() })
+      sp.next = { kind: 'fail', stderr: 'HTTP 403: secondary rate limit. Retry-After: 90' }
+      await r.runGh(['pr', 'list'], { consumer: 'missions', resource: 'graphql' }).catch(() => {})
+      sp.next = { kind: 'ok', stdout: '[]' }
+      sp.calls.length = 0
+      vi.setSystemTime(new Date('2026-11-02T12:01:00Z')) // 60 s: still inside the 90 s named
+      await expect(
+        r.runGh(['pr', 'list'], { consumer: 'missions', resource: 'graphql' })
+      ).rejects.toMatchObject({ code: 'GH_THROTTLED' })
+      vi.setSystemTime(new Date('2026-11-02T12:01:31Z'))
+      await r.runGh(['pr', 'list'], { consumer: 'missions', resource: 'graphql' })
+      expect(sp.calls).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('(d) writes are never throttled by a secondary pause', async () => {
+    t.githubBudget.markRateLimited()
+    await r.runGh(['pr', 'merge', '9'], {
+      consumer: 'merge-batch',
+      resource: 'graphql',
+      write: true
+    })
+    expect(sp.calls).toHaveLength(1)
+  })
+
+  it('(d) a failing WRITE with a rate-limit message also starts the pause (information), not exhaustion', async () => {
     sp.next = { kind: 'fail', stderr: 'gh: You have exceeded a secondary rate limit' }
     await expect(
       r.runGh(['pr', 'merge', '1'], { consumer: 'merge-batch', resource: 'graphql', write: true })
     ).rejects.toBeDefined()
-    expect(t.githubBudget.state()).toBe('exhausted')
+    expect(t.githubBudget.state()).toBe('normal')
+    expect(t.githubBudget.readsPaused()).toBe(true)
   })
 
   it('leaves the budget alone for an ordinary failure', async () => {
@@ -239,6 +296,7 @@ describe('runGh — a rate-limit error marks the budget exhausted at once (AC-9)
       r.runGh(['pr', 'view'], { consumer: 'review', resource: 'graphql' })
     ).rejects.toBeDefined()
     expect(t.githubBudget.state()).toBe('normal')
+    expect(t.githubBudget.readsPaused()).toBe(false)
   })
 
   it('the stdin path reports a rate-limit failure the same way', async () => {
@@ -252,6 +310,6 @@ describe('runGh — a rate-limit error marks the budget exhausted at once (AC-9)
       })
       .catch((e: unknown) => e)) as { stderr: string }
     expect(err.stderr).toContain('rate limit')
-    expect(t.githubBudget.state()).toBe('exhausted')
+    expect(t.githubBudget.readsPaused()).toBe(true)
   })
 })
