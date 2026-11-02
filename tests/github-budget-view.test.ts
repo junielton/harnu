@@ -106,6 +106,14 @@ describe('attribution (mockup sample data)', () => {
     expect(consumerRows(v).some((r) => r.consumer === 'merge-batch')).toBe(true)
   })
 
+  it('gives the budget probe no row, but keeps its call in the Harnu total', () => {
+    const v = healthy().rest!
+    v.byConsumer.budget = 1
+    v.harnu += 1
+    expect(consumerRows(v).some((r) => (r.consumer as string) === 'budget')).toBe(false)
+    expect(splitBar(v).harnu).toBe(583)
+  })
+
   it('shares are of everything spent this window', () => {
     // 412 of 888, the table's 46%.
     expect(sharePercent(412, 888)).toBe(46)

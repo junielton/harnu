@@ -155,7 +155,7 @@ describe('popover (AC-2)', () => {
   })
 
   it('shows the @login in the header, and drops it when there is none', async () => {
-    const withLogin = { ...healthy(), login: 'junielton' } as BudgetSnapshot
+    const withLogin = { ...healthy(), login: 'junielton' }
     let w = await open(withLogin)
     expect(w.get('[data-testid="gh-popover-updated"]').text()).toBe('@junielton · updated 20s ago')
     w.unmount()
@@ -270,7 +270,7 @@ describe('Settings → GitHub API (AC-3)', () => {
   })
 
   it('names the gh user in the intro when U1 reports one', async () => {
-    const w = await mountPane({ ...healthy(), login: 'junielton' } as BudgetSnapshot)
+    const w = await mountPane({ ...healthy(), login: 'junielton' })
     expect(w.get('[data-testid="gh-pane-login"]').text()).toBe('@junielton')
   })
 })

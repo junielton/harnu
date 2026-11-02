@@ -55,6 +55,7 @@ function view(args: {
     cleanup: 0,
     steward: 0,
     'merge-batch': 0,
+    budget: 0,
     ...args.byConsumer
   }
   const harnu = Object.values(byConsumer).reduce((a, b) => a + b, 0)
@@ -82,6 +83,7 @@ export function healthy(over: Partial<BudgetPrefs> = {}): BudgetSnapshot {
   return {
     status: 'ok',
     reason: null,
+    login: null,
     sampledAt: NOW - 20_000,
     rest: view({
       remaining: 4112,
@@ -122,6 +124,7 @@ export function low(over: Partial<BudgetPrefs> = {}): BudgetSnapshot {
   return {
     status: 'ok',
     reason: null,
+    login: null,
     sampledAt: NOW - 20_000,
     rest: view({
       remaining: 640,
@@ -180,6 +183,7 @@ export function unavailable(): BudgetSnapshot {
   return {
     status: 'unavailable',
     reason: 'missing',
+    login: null,
     sampledAt: null,
     rest: null,
     graphql: null,

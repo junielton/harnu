@@ -21,7 +21,10 @@ export type { BudgetSnapshot, GhConsumer, GhResource, ThrottleState }
 
 const BUCKET_MINUTES = HISTORY_BUCKET_MS / 60_000
 
-/** Display order of the consumers, as the mockup lists them. `merge-batch` only shows when it spent. */
+/**
+ * Display order of the consumers, as the mockup lists them. `merge-batch` only shows when it spent;
+ * `budget` (U1's own `gh api user` lookup, 0–1 calls) never has a row, it only counts in the total.
+ */
 export const CONSUMER_ORDER: readonly GhConsumer[] = [
   'missions',
   'pr-stack',
@@ -92,7 +95,7 @@ export function minutesUntil(resetMs: number, now: number): number {
  * then drop the handle instead of printing a blank.
  */
 export function loginOf(snapshot: BudgetSnapshot | null): string | null {
-  const login = (snapshot as { login?: string | null } | null)?.login
+  const login = snapshot?.login
   return typeof login === 'string' && login.trim() !== '' ? login.trim() : null
 }
 
@@ -285,6 +288,8 @@ export function cadenceFor(consumer: GhConsumer, i: CadenceInputs): CadenceCell 
     case 'steward':
       return cell({ kind: 'onEvent' }, null)
     case 'merge-batch':
+    case 'budget':
+      // `budget` (the login lookup) never gets a row; it only counts inside Harnu's total.
       return cell({ kind: 'onEvent' }, null)
   }
 }
