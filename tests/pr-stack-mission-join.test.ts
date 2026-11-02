@@ -474,3 +474,62 @@ describe('BUG-240: no git spawns when nothing changed', () => {
     )
   })
 })
+
+describe('BUG-240 AC-5: refs the reader cannot judge', () => {
+  /** What git itself says about a worktree, asked directly. */
+  const realAnswer = (w: string, base: string): object => ({
+    exists: true,
+    branch: git(w, 'rev-parse', '--abbrev-ref', 'HEAD'),
+    head: {
+      sha: git(w, 'rev-parse', 'HEAD'),
+      subject: git(w, 'log', '-1', '--format=%s'),
+      at: git(w, 'log', '-1', '--format=%cI')
+    },
+    commits: Number(git(w, 'rev-list', '--count', `${base}..HEAD`)),
+    prs: []
+  })
+
+  /** Each makes `git/refs` answer "can't tell" while real git still reads the repo. */
+  const unreadable: Record<string, (r: string, w: string) => Promise<void> | void> = {
+    'a reftable directory in the common dir': async (r) => {
+      await fs.mkdir(path.join(r, '.git', 'reftable'))
+    },
+    'extensions.refStorage in the config': (r) => {
+      git(r, 'config', 'core.repositoryformatversion', '1')
+      git(r, 'config', 'extensions.refStorage', 'files')
+    },
+    'a HEAD on a remote-tracking ref, not a branch': (r, w) => {
+      git(r, 'update-ref', 'refs/remotes/origin/keep', git(r, 'rev-parse', 'main'))
+      git(w, 'symbolic-ref', 'HEAD', 'refs/remotes/origin/keep')
+    },
+    'a branch that is itself a symbolic ref': (r, w) => {
+      git(r, 'symbolic-ref', 'refs/heads/alias', 'refs/heads/feat/x')
+      git(w, 'symbolic-ref', 'HEAD', 'refs/heads/alias')
+    }
+  }
+
+  it('the join falls back to git when refs are unreadable', async () => {
+    for (const [label, breakRefs] of Object.entries(unreadable)) {
+      const { repo: r, wt: w } = await freshRepo('unsure')
+      await breakRefs(r, w)
+      vi.resetModules()
+      gh.stdout = '[]'
+      gitLog.calls = []
+      const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+      const expected = realAnswer(w, 'main')
+
+      const first = await findPrsForWorktrees(r, refsOf([w]))
+      expect(gitLog.calls.length, `${label}: the fallback must spawn git`).toBeGreaterThan(0)
+      expect(spawned('log'), `${label}: head asked of git`).toBe(1)
+      expect(spawned('rev-list'), `${label}: count asked of git`).toBeGreaterThan(0)
+      expect(first.worktrees[w], `${label}: first answer`).toEqual(expected)
+
+      // "Can't tell" is never stored: the next call asks git again, and is still right.
+      gitLog.calls = []
+      const second = await findPrsForWorktrees(r, refsOf([w]))
+      expect(spawned('log'), `${label}: not cached`).toBe(1)
+      expect(spawned('rev-list'), `${label}: count not cached`).toBeGreaterThan(0)
+      expect(second.worktrees[w], `${label}: second answer`).toEqual(expected)
+    }
+  })
+})

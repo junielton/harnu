@@ -10,7 +10,9 @@ const gh = vi.hoisted(() => ({
   oid: 'a'.repeat(40) as string | null,
   runs: [] as Array<{ status: string; conclusion: string }>,
   log: [] as string[][],
-  delayMs: 0
+  delayMs: 0,
+  /** Make the next `gh` call of this kind (`pr` view or `run` list) fail once. */
+  failOnce: null as 'pr' | 'run' | null
 }))
 
 vi.mock('electron', () => ({ ipcMain: { handle: (): void => {} } }))
@@ -22,6 +24,11 @@ vi.mock('node:child_process', async (importOriginal) => {
   type Cb = (err: Error | null, out?: { stdout: string; stderr: string }) => void
   const execFile = (_file: string, args: string[], _opts: object, cb: Cb): void => {
     gh.log.push(args)
+    if (gh.failOnce === args[0]) {
+      gh.failOnce = null
+      setTimeout(() => cb(Object.assign(new Error('gh exploded'), { code: 1 })), gh.delayMs)
+      return
+    }
     const stdout =
       args[0] === 'pr'
         ? JSON.stringify({
@@ -48,6 +55,7 @@ beforeEach(() => {
   gh.runs = passing
   gh.log = []
   gh.delayMs = 0
+  gh.failOnce = null
   now = 1_000_000
   vi.spyOn(Date, 'now').mockImplementation(() => now)
 })
@@ -132,5 +140,36 @@ describe('findMainCi', () => {
     await findMainCi('/tmp/r1', [7])
     await findMainCi('/tmp/r2', [7])
     expect(asks('pr')).toBe(2)
+  })
+
+  it('a failed lookup is not cached', async () => {
+    const { findMainCi } = await import('../src/main/pr-stack')
+
+    // The merge-commit lookup rejects once: the caller sees "could not read", and the
+    // next call asks again and succeeds.
+    gh.failOnce = 'pr'
+    const failedPr = await findMainCi('/tmp/r', [7])
+    expect(failedPr).toEqual({ ghAvailable: false, byNumber: {} })
+    const okPr = await findMainCi('/tmp/r', [7])
+    expect(okPr).toEqual({ ghAvailable: true, byNumber: { 7: 'passing' } })
+    expect(asks('pr')).toBe(2)
+
+    // The run list rejects once, after the merge commit is known: only the runs are
+    // asked again, and the merge commit stays cached.
+    gh.failOnce = 'run'
+    now += 11 * MIN
+    expect((await findMainCi('/tmp/r', [7])).ghAvailable).toBe(false)
+    gh.runs = failing
+    const okRun = await findMainCi('/tmp/r', [7])
+    expect(okRun).toEqual({ ghAvailable: true, byNumber: { 7: 'failing' } })
+    expect(asks('pr')).toBe(2)
+    expect(asks('run')).toBe(3)
+
+    // Callers that share a failing flight all see the failure; the one after it retries.
+    gh.delayMs = 20
+    gh.failOnce = 'pr'
+    const burst = await Promise.all([findMainCi('/tmp/r', [9]), findMainCi('/tmp/r', [9])])
+    expect(burst.map((b) => b.ghAvailable)).toEqual([false, false])
+    expect((await findMainCi('/tmp/r', [9])).byNumber[9]).toBe('failing')
   })
 })
