@@ -6,10 +6,14 @@ import { describe, it, expect } from 'vitest'
 import { ciOfRuns, computeStepGates, GATE_NAMES, type GateInput } from '../src/main/mission-gates'
 
 const base: GateInput = {
-  step: { verification: 'verifier', proof: 'unproven' },
+  missionId: 'mnt-4ba02726',
+  step: { id: 'stp-1', verification: 'verifier', proof: 'unproven', links: [] },
   pr: null,
   mainCi: null
 }
+
+// Campaign ch.6 (T610, AC-6.4): a verified verifier-level proof is green only with its bundle linked.
+const bundle = [{ kind: 'worktree' as const, ref: '.harnu/evidence/mnt-4ba02726/stp-1' }]
 
 describe('computeStepGates', () => {
   it('always reports the five keys', () => {
@@ -54,28 +58,28 @@ describe('computeStepGates', () => {
   })
 
   it('verifier follows the step proof', () => {
-    const v = (step: GateInput['step']): string => computeStepGates({ ...base, step }).verifier
-    expect(v({ verification: 'verifier', proof: 'unproven' })).toBe('off')
-    expect(v({ verification: 'verifier', proof: 'claimed' })).toBe('running')
-    expect(v({ verification: 'verifier', proof: 'self-verified' })).toBe('running')
+    const v = (step: Partial<GateInput['step']>): string =>
+      computeStepGates({ ...base, step: { ...base.step, ...step } }).verifier
+    expect(v({ proof: 'unproven' })).toBe('off')
+    expect(v({ proof: 'claimed' })).toBe('running')
+    expect(v({ proof: 'self-verified' })).toBe('running')
     expect(
       v({
-        verification: 'verifier',
         proof: 'verified',
+        links: bundle,
         verifiedBy: { sessionId: 's', at: 'x', verdict: 'met' }
       })
     ).toBe('green')
     expect(
       v({
-        verification: 'verifier',
         proof: 'unproven',
         verifiedBy: { sessionId: 's', at: 'x', verdict: 'unmet' }
       })
     ).toBe('red')
     expect(
       v({
-        verification: 'verifier',
         proof: 'verified',
+        links: bundle,
         verifiedBy: { sessionId: 's', at: 'x', verdict: 'needs-human' }
       })
     ).toBe('green')
@@ -84,8 +88,10 @@ describe('computeStepGates', () => {
 
   it('BUG-235 AC-2: a verified needs-human verdict is green; the human part lives on the checks gate', () => {
     const step = (proof: GateInput['step']['proof']): GateInput['step'] => ({
+      id: 'stp-1',
       verification: 'verifier',
       proof,
+      links: bundle,
       verifiedBy: { sessionId: 's', at: 'x', verdict: 'needs-human' },
       checks: [{ id: 'chk-1', label: 'DSQA', source: 'agent', createdAt: 'x' }]
     })

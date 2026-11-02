@@ -23,6 +23,17 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   dropped, and a close with nothing worth keeping says "nothing notable" instead of padding. Nothing is
   written to your project memory by this: the drafts wait for your tick (the "Also record" panel in the
   end dialog is the next piece).
+- **The end dialog asks what to record.** When you close a mission as delivered, an **Also record**
+  panel lists the memory drafts Harnu prepared — each with its kind, its text, the step, PR or commit it
+  cites and, for a decision that replaces an older one, which one — all unticked. Closing writes only
+  the ones you ticked, through the same path as a session's `memory_append` (so the replaced decision is
+  marked as superseded), and logs which ones landed. A close with nothing worth keeping says "Nothing
+  notable to record." Discard writes nothing. If memory refuses a ticked draft the mission still
+  closes, a warning names the draft, and it stays in the mission file.
+- **A verifier now leaves its evidence.** The `delivery-verifier` skill re-runs the named checks at the
+  pull request's head in a clean worktree and stores the test output, screenshots and console under
+  `.harnu/evidence/<mission>/<step>/`, linked on the step.
+
 - **A new mission or campaign recalls what you already decided.** `mission_create` and `campaign_create`
   now list, in their reply as `recall`, the decisions in project memory that watch the paths in the new
   scope or the words in its title and chapter titles, and the steward's Mission Brief after a
@@ -47,6 +58,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **A step a verifier signed off reads "done" until its evidence is linked.** The verifier gate (the
+  fourth dot on a step) now needs the step's evidence bundle as well as the verdict, so a
+  verifier-level step marked verified with no bundle linked, or whose folder is gone, shows an amber
+  dot and counts as done rather than verified. Steps verified before this change read "done" until a
+  bundle is linked.
 - `mission_request_close` and `campaign_request_close` now also report `consolidation` (how many drafts
   were prepared, or that nothing was notable).
 

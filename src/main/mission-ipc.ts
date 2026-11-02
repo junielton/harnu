@@ -44,6 +44,7 @@ import {
 } from './mission-core'
 import type { MissionProgress } from './mission-progress'
 import { atomicWriteFile } from './mcp/atomic-write'
+import { recordMemoryDrafts, unknownDraftIds, type RecordResult } from './mission-record'
 import {
   deriveMissionSignals,
   loadMission,
@@ -93,6 +94,11 @@ export type MissionDoor =
       missionId: string
       closedAs: 'delivered' | 'discarded'
       reason?: string
+      /**
+       * Campaign ch.6 (T610) — ids of the stored `memoryDrafts` the operator ticked under
+       * "Also record". Only meaningful with `closedAs: 'delivered'`; absent = write nothing.
+       */
+      record?: string[]
     }
   | { door: 'verifyStep'; root: string; missionId: string; stepId: string; verified: boolean }
   // Mission v3 §3.6 — human checks. Only these doors tick or delete one.
@@ -120,7 +126,14 @@ export type MissionDoor =
  * `deduped`: an `addCheck` whose label was already on the step — nothing was written or logged.
  */
 export type MissionDoorResult =
-  { ok: true; view: MissionView | null; deduped?: true } | { ok: false; error: string }
+  | {
+      ok: true
+      view: MissionView | null
+      deduped?: true
+      /** An `end` that ticked memory drafts: which landed, which the memory write refused. */
+      recorded?: RecordResult
+    }
+  | { ok: false; error: string }
 
 /** How long one fleet scan serves `mission:list` passes (Mission v3 §3.8). */
 const SCAN_TTL_MS = 10_000
@@ -262,7 +275,12 @@ function applyDoor(door: MissionDoor, mission: Mission, at: string): Mission {
  * Log, so it learns what the operator did — and a closed mission refuses its
  * verbs with MISSION_CLOSED.
  */
-function doorLogEntry(door: MissionDoor, at: string, applied: Mission): string {
+function doorLogEntry(
+  door: MissionDoor,
+  at: string,
+  applied: Mission,
+  recorded?: RecordResult
+): string {
   const what = ((): string => {
     switch (door.door) {
       case 'approveRescope':
@@ -288,7 +306,7 @@ function doorLogEntry(door: MissionDoor, at: string, applied: Mission): string {
   })()
   const body =
     door.door === 'end'
-      ? door.reason?.trim() || '(no reason given)'
+      ? [door.reason?.trim() || '(no reason given)', ...recordedLines(recorded)].join('\n')
       : door.door === 'addCheck'
         ? door.label
         : door.door === 'pauseSteward'
@@ -298,6 +316,15 @@ function doorLogEntry(door: MissionDoor, at: string, applied: Mission): string {
               `kind: decision\nstep: ${door.stepId}\n${applied.steps.find((s) => s.id === door.stepId)?.decision?.title ?? ''}`
             : ''
   return `\n### ${at} · ${what}\n${body ? `\n${body}\n` : ''}`
+}
+
+/** The Log lines saying what "Also record" wrote to memory, and what it could not. */
+function recordedLines(recorded: RecordResult | undefined): string[] {
+  if (!recorded) return []
+  return [
+    ...(recorded.written.length ? [`recorded to memory: ${recorded.written.join(', ')}`] : []),
+    ...recorded.failed.map((f) => `not recorded: ${f.id} (${f.error})`)
+  ]
 }
 
 /** The option text a Choose door picked, read off the mission it produced. */
@@ -322,10 +349,16 @@ function doorArgsProblem(door: Partial<Record<string, unknown>>): string | null 
   const str = (k: string): boolean => typeof door[k] === 'string'
   switch (door.door) {
     case 'end':
-      return (door.closedAs === 'delivered' || door.closedAs === 'discarded') &&
-        (door.reason === undefined || str('reason'))
+      if (
+        !(door.closedAs === 'delivered' || door.closedAs === 'discarded') ||
+        !(door.reason === undefined || str('reason'))
+      ) {
+        return 'BAD_ARGS: end needs closedAs (delivered | discarded) and an optional string reason'
+      }
+      return door.record === undefined ||
+        (Array.isArray(door.record) && door.record.every((id) => typeof id === 'string'))
         ? null
-        : 'BAD_ARGS: end needs closedAs (delivered | discarded) and an optional string reason'
+        : 'BAD_ARGS: end record must be an array of draft ids'
     case 'verifyStep':
       return str('stepId') && typeof door.verified === 'boolean'
         ? null
@@ -383,13 +416,32 @@ export async function runOperatorDoor(
   const written = await withMissionIdMintLock(
     missionId,
     async (): Promise<
-      { ok: true; mission: Mission; log: string; deduped?: true } | { ok: false; error: string }
+      | { ok: true; mission: Mission; log: string; deduped?: true; recorded?: RecordResult }
+      | { ok: false; error: string }
     > => {
       const loaded = await loadMission(root, missionId)
       if (!loaded.ok) return { ok: false, error: loaded.error }
       try {
         const at = now()
         const mission = applyDoor(door as MissionDoor, loaded.mission, at)
+        // Campaign ch.6 (T610): "Also record" — only a delivered end writes memory, only the
+        // ticked drafts, and only after the end itself validated (a closed mission throws above).
+        let recorded: RecordResult | undefined
+        if (door.door === 'end' && door.closedAs === 'delivered' && door.record?.length) {
+          const unknown = unknownDraftIds(loaded.mission.memoryDrafts, door.record)
+          if (unknown.length) {
+            return {
+              ok: false,
+              error: `UNKNOWN_DRAFT: no stored memory draft ${unknown.join(', ')} on ${missionId}`
+            }
+          }
+          recorded = await recordMemoryDrafts(
+            root,
+            loaded.mission.memoryDrafts,
+            door.record,
+            Date.parse(at)
+          )
+        }
         if (door.door === 'addCheck') {
           const count = (m: Mission): number =>
             m.steps.find((s) => s.id === door.stepId)?.checks?.length ?? 0
@@ -402,9 +454,9 @@ export async function runOperatorDoor(
         const log =
           loaded.log +
           (loaded.log.endsWith('\n') ? '' : '\n') +
-          doorLogEntry(door as MissionDoor, at, mission)
+          doorLogEntry(door as MissionDoor, at, mission, recorded)
         await atomicWriteFile(loaded.file, buildMissionFileContent(mission, log), 0o644)
-        return { ok: true, mission, log }
+        return { ok: true, mission, log, ...(recorded ? { recorded } : {}) }
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
@@ -418,7 +470,7 @@ export async function runOperatorDoor(
       missionId: written.mission.id,
       ownerFolder: written.mission.owner.folder
     })
-    return { ok: true, view: null }
+    return { ok: true, view: null, ...(written.recorded ? { recorded: written.recorded } : {}) }
   }
   try {
     const ctx: ToolHandlerCtx = {

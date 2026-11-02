@@ -6774,6 +6774,31 @@ bg-accent-soft`): **Close as delivered** ("The work is done.") and
   id** ("Design review — DSQA done"): the server's `closeWarnings` decide which
   warnings show, the renderer builds the lines from the view's structured data
   (`endWarnings`). Warnings **never** disable or hide the confirm.
+- **"Also record" panel** (Campaign ch.6, spec §3.6; `data-test="mission-record"`).
+  Between the Reason field and the warnings callout, only while **Close as
+  delivered** is selected and the mission carries `memoryDrafts` (or its
+  `outcome.nothingNotable`). A plain section, no new token: `rounded-sm border
+border-border-2`, `margin-top: 10px`, `padding: 8px 10px`. Eyebrow "Also
+  record" (`9.5px / 700`, uppercase, `letter-spacing: 0.06em`, `text-text-3`)
+  and one hint line under it (`11px`, `text-text-3`): "Tick what Harnu should
+  write to project memory. Nothing is written without a tick." Then one
+  **draft row** per `memoryDrafts` entry (`gap: 8px`, `padding: 6px 0`,
+  `border-t border-border` between rows): a checkbox (`accent-color:
+var(--color-accent)`, **unticked by default**) + a block with the **kind**
+  (`Decision` / `Lesson` / `Hot` — `9.5px / 600` uppercase, `text-text-4`), the
+  entry's heading as the title (`12px / 500`, `text-text`, one line,
+  truncated), the rest of the entry as an excerpt (`11px`, `text-text-3`, at
+  most 3 lines), the **citations** (`font-mono`, `10.5px`, `text-text-2`, one
+  per cited step / PR / commit, separated by `·`) and, when the draft carries
+  `supersedes`, a line "Replaces {entry id}" (`11px`, `text-text-3`, id in
+  `font-mono`). When the consolidator found nothing (`nothingNotable`) the
+  panel shows a single line "Nothing notable to record." (`11.5px`,
+  `text-text-3`) and no rows. **Discard** hides the panel (it writes nothing);
+  ticks are kept in the dialog if the operator switches back. Closing writes
+  only the ticked drafts, in the order the record stores them; a draft the
+  memory write refuses does not stop the close — a warning toast names it and
+  the draft stays on the closed mission's record. The panel scrolls with the
+  dialog body (the dialog is `max-height: 80vh`), so it holds at 900 px tall.
 - **Footer** (`border-t border-border`, `padding: 12px 18px`, `gap: 8px`,
   right-aligned): **Cancel** (Button `ghost`) + the confirm — **Close as
   delivered** (Button `success`, `check` 14px) or **Discard** (Button `danger`,

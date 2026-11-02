@@ -56,7 +56,13 @@ import {
   getObservedLedger,
   rememberResolved
 } from '../mission-link-cache'
-import { computeStepGates, type GateCi, type GatePrFacts, type StepGates } from '../mission-gates'
+import {
+  computeStepGates,
+  hasEvidenceBundle,
+  type GateCi,
+  type GatePrFacts,
+  type StepGates
+} from '../mission-gates'
 import {
   appendLedgerRow,
   hasLedgerRow,
@@ -4316,6 +4322,20 @@ function stepPrFacts(
   return found.length > 0 ? { facts: found[0].facts, stale: found[0].stale } : null
 }
 
+/**
+ * Campaign ch.6 (T610) — whether the evidence bundle a step links is on disk. `undefined`
+ * when the step links no bundle at all (the gate then says why it is waiting).
+ */
+function bundleOnDisk(
+  root: string,
+  missionId: string,
+  step: Pick<MissionStep, 'id' | 'links'>,
+  exists: ReadonlyMap<string, boolean>
+): boolean | undefined {
+  const link = step.links.find((l) => hasEvidenceBundle([l], missionId, step.id))
+  return link ? (exists.get(linkPath(root, link.ref)) ?? false) : undefined
+}
+
 export interface MissionStepSignals {
   stepId: string
   /** Live state of this step's `session` links, from the scoped fleet projection. */
@@ -4894,9 +4914,12 @@ export async function deriveMissionSignals(
       ...st,
       prNumber: found?.facts.number ?? null,
       gates: computeStepGates({
+        missionId: mission.id,
         step,
         pr: found?.facts ?? null,
         mainCi: main?.ci ?? null,
+        // Campaign ch.6 (T610): the verifier gate reads the evidence bundle the step links.
+        bundleOnDisk: bundleOnDisk(root, mission.id, step, exists),
         stale: found?.stale === true || main?.stale === true
       })
     }

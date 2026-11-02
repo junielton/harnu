@@ -21,6 +21,7 @@ import {
 } from '../src/main/mission-core'
 import type { GateCi, GateName, GateState, StepGates } from '../src/main/mission-gates'
 import { computeProgress, type StepSignalsLite } from '../src/main/mission-progress'
+import { withEvidenceBundles } from './helpers/evidence-bundle'
 import type { MissionPrJoin } from '../src/main/pr-stack'
 
 const h = vi.hoisted(() => ({
@@ -289,7 +290,7 @@ async function seed(steps: MissionStep[]): Promise<string> {
     status: 'active',
     declaredEnd: { kind: 'code', target: 't', evidence: 'e' },
     steps: [
-      ...steps,
+      ...(await withEvidenceBundles(root, id, steps)),
       step(`stp-${steps.length + 1}`, { kind: 'fixed-end', title: 'Delivered and verified' })
     ],
     blockers: [],

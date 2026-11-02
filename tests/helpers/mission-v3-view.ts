@@ -117,7 +117,7 @@ export function fixtureView(
           links: [],
           existence: s.verification === 'existence' ? { proven: !!sig?.existenceProven } : null,
           pulse: { commits: null, lastCommitAt: null, lastActivityAt: null },
-          gates: computeStepGates({ step: s, pr: null, mainCi: null }),
+          gates: computeStepGates({ missionId: mission.id, step: s, pr: null, mainCi: null }),
           prNumber: null,
           ...over.derivedStep?.[s.id]
         }
