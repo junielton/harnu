@@ -77,8 +77,24 @@ function mission(): Mission {
 }
 
 /** A fake `gh`: PR state by number, a log of every call, and optional per-PR failures. */
-function fakeGh(prs: Record<number, { ci: 'SUCCESS' | 'FAILURE'; state?: string }>) {
-  const state = new Map(Object.entries(prs).map(([n, v]) => [Number(n), { state: 'OPEN', ...v }]))
+function fakeGh(
+  prs: Record<
+    number,
+    {
+      ci: 'SUCCESS' | 'FAILURE'
+      state?: string
+      base?: string
+      oid?: string
+      mergeable?: string
+    }
+  >
+) {
+  const state = new Map(
+    Object.entries(prs).map(([n, v]) => [
+      Number(n),
+      { state: 'OPEN', base: 'main', oid: `oid${n}`, mergeable: 'MERGEABLE', ...v }
+    ])
+  )
   const calls: string[] = []
   const mergeRefused = new Set<number>()
   const gh = async (args: readonly string[]): Promise<string> => {
@@ -89,6 +105,9 @@ function fakeGh(prs: Record<number, { ci: 'SUCCESS' | 'FAILURE'; state?: string 
       return JSON.stringify({
         state: p.state,
         isDraft: false,
+        baseRefName: p.base,
+        headRefOid: p.oid,
+        mergeable: p.mergeable,
         statusCheckRollup: [{ status: 'COMPLETED', conclusion: p.ci }]
       })
     }
@@ -102,7 +121,8 @@ function fakeGh(prs: Record<number, { ci: 'SUCCESS' | 'FAILURE'; state?: string 
       return JSON.stringify({
         squashMergeAllowed: true,
         mergeCommitAllowed: false,
-        rebaseMergeAllowed: false
+        rebaseMergeAllowed: false,
+        defaultBranchRef: { name: 'main' }
       })
     }
     throw new Error(`unexpected gh ${args.join(' ')}`)
@@ -126,6 +146,7 @@ function env(g: ReturnType<typeof fakeGh>, turns: Array<'ran' | 'skipped' | 'tim
     env: {
       gh: g.gh,
       missionPrs: async () => ({ ok: true as const, prs: new Set([305, 306, 308]) }),
+      missionState: async (): Promise<'open' | 'closed' | 'paused'> => 'open',
       stewardTurn: async (id: string) => {
         seen.push(`steward ${id}`)
         return turns.shift() ?? 'ran'
@@ -158,9 +179,9 @@ describe('merge-batch door — sequencing with a fake gh', () => {
     expect(res).toMatchObject({ ok: true, outcome: { merged: [305, 306, 308], stop: null } })
     const merges = g.calls.filter((c) => c.startsWith('pr merge'))
     expect(merges).toEqual([
-      'pr merge 305 --squash',
-      'pr merge 306 --squash',
-      'pr merge 308 --squash'
+      'pr merge 305 --squash --match-head-commit oid305',
+      'pr merge 306 --squash --match-head-commit oid306',
+      'pr merge 308 --squash --match-head-commit oid308'
     ])
     expect(seen).toEqual([`steward ${ID}`, `steward ${ID}`])
     const { log } = await onDisk()
@@ -180,7 +201,9 @@ describe('merge-batch door — sequencing with a fake gh', () => {
       ok: true,
       outcome: { merged: [305], remaining: [306, 308], stop: { at: 306, reason: 'red' } }
     })
-    expect(g.calls.filter((c) => c.startsWith('pr merge'))).toEqual(['pr merge 305 --squash'])
+    expect(g.calls.filter((c) => c.startsWith('pr merge'))).toEqual([
+      'pr merge 305 --squash --match-head-commit oid305'
+    ])
     const { log } = await onDisk()
     expect(log).toMatch(/merged #305 — stopped at #306 \(red\)/)
     expect(log).toMatch(/Still to merge: #306, #308/)
@@ -215,10 +238,123 @@ describe('merge-batch door — sequencing with a fake gh', () => {
     const e = env(g).env
     e.gh = async (args) =>
       args[0] === 'repo'
-        ? JSON.stringify({ squashMergeAllowed: false, mergeCommitAllowed: true })
+        ? JSON.stringify({
+            squashMergeAllowed: false,
+            mergeCommitAllowed: true,
+            defaultBranchRef: { name: 'main' }
+          })
         : orig(args)
     await door.runMergeBatchDoor({ root, missionId: ID, prs: [305] }, e)
-    expect(g.calls).toContain('pr merge 305 --merge')
+    expect(g.calls).toContain('pr merge 305 --merge --match-head-commit oid305')
+  })
+})
+
+describe('merge-batch door — Delta 1: facts, head pin, guard', () => {
+  it('reads head sha, base and mergeability with the PR, and pins the merge to the head it read', async () => {
+    const g = fakeGh({ 305: { ci: 'SUCCESS', oid: 'deadbeef' } })
+    await door.runMergeBatchDoor({ root, missionId: ID, prs: [305] }, env(g).env)
+    const view = g.calls.find((c) => c.startsWith('pr view 305'))!
+    expect(view).toMatch(/baseRefName/)
+    expect(view).toMatch(/headRefOid/)
+    expect(view).toMatch(/mergeable/)
+    expect(g.calls).toContain('pr merge 305 --squash --match-head-commit deadbeef')
+  })
+
+  it('a head that moves after the read is refused by GitHub (the pin), and the batch stops there', async () => {
+    const g = fakeGh({ 305: { ci: 'SUCCESS' }, 306: { ci: 'SUCCESS' } })
+    const orig = g.gh
+    const e = env(g).env
+    e.gh = async (args) => {
+      if (args[1] === 'merge' && args[2] === '306') {
+        // somebody pushed after the gates were read: gh refuses the stale pin
+        throw new Error('Head branch was modified. Review and try the merge again.')
+      }
+      return orig(args)
+    }
+    const res = await door.runMergeBatchDoor({ root, missionId: ID, prs: [305, 306] }, e)
+    expect(res).toMatchObject({
+      ok: true,
+      outcome: { merged: [305], stop: { at: 306, reason: 'merge-failed' } }
+    })
+  })
+
+  it('a CONFLICTING PR and a PR that does not target the default branch merge nothing', async () => {
+    const conflict = fakeGh({ 305: { ci: 'SUCCESS', mergeable: 'CONFLICTING' } })
+    expect(
+      await door.runMergeBatchDoor({ root, missionId: ID, prs: [305] }, env(conflict).env)
+    ).toMatchObject({ ok: true, outcome: { merged: [], stop: { at: 305, reason: 'conflict' } } })
+    const stacked = fakeGh({ 305: { ci: 'SUCCESS', base: 'feat/parent' } })
+    expect(
+      await door.runMergeBatchDoor({ root, missionId: ID, prs: [305] }, env(stacked).env)
+    ).toMatchObject({ ok: true, outcome: { merged: [], stop: { at: 305, reason: 'wrong-base' } } })
+    expect(conflict.calls.some((c) => c.startsWith('pr merge'))).toBe(false)
+    expect(stacked.calls.some((c) => c.startsWith('pr merge'))).toBe(false)
+  })
+
+  it('a steward turn that did not run stops the batch after the first merge', async () => {
+    const g = fakeGh({ 305: { ci: 'SUCCESS' }, 306: { ci: 'SUCCESS' } })
+    const e = env(g, ['skipped']).env
+    const res = await door.runMergeBatchDoor({ root, missionId: ID, prs: [305, 306] }, e)
+    expect(res).toMatchObject({
+      ok: true,
+      outcome: { merged: [305], stop: { at: 306, reason: 'steward-skipped' } }
+    })
+  })
+
+  it('only one batch runs per mission: a second call while one is in flight is refused BATCH_RUNNING', async () => {
+    const g = fakeGh({ 305: { ci: 'SUCCESS' }, 306: { ci: 'SUCCESS' } })
+    const e = env(g).env
+    let release: () => void = () => {}
+    const gate = new Promise<void>((r) => (release = r))
+    e.stewardTurn = async () => {
+      await gate
+      return 'ran'
+    }
+    const first = door.runMergeBatchDoor({ root, missionId: ID, prs: [305, 306] }, e)
+    await new Promise((r) => setTimeout(r, 20))
+    const second = await door.runMergeBatchDoor({ root, missionId: ID, prs: [306] }, e)
+    expect(second).toMatchObject({ ok: false })
+    expect((second as { error: string }).error).toMatch(/^BATCH_RUNNING/)
+    release()
+    expect(await first).toMatchObject({ ok: true, outcome: { merged: [305, 306] } })
+    // …and the guard is released afterwards (even a stopped batch frees the mission)
+    const g2 = fakeGh({ 305: { ci: 'FAILURE' } })
+    expect(
+      await door.runMergeBatchDoor({ root, missionId: ID, prs: [305] }, env(g2).env)
+    ).toMatchObject({ ok: true })
+  })
+
+  it('the guard is released when the batch throws', async () => {
+    const g = fakeGh({ 305: { ci: 'SUCCESS' } })
+    const e = env(g).env
+    e.missionPrs = async () => {
+      throw new Error('boom')
+    }
+    await expect(door.runMergeBatchDoor({ root, missionId: ID, prs: [305] }, e)).rejects.toThrow()
+    const ok = await door.runMergeBatchDoor({ root, missionId: ID, prs: [305] }, env(g).env)
+    expect(ok).toMatchObject({ ok: true })
+  })
+
+  it('a mission closed or a steward paused between merges stops the batch before the next merge', async () => {
+    for (const [state, reason] of [
+      ['closed', 'mission-closed'],
+      ['paused', 'paused']
+    ] as const) {
+      const g = fakeGh({ 305: { ci: 'SUCCESS' }, 306: { ci: 'SUCCESS' } })
+      const e = env(g).env
+      let phase: 'open' | 'closed' | 'paused' = 'open'
+      e.missionState = async () => phase
+      e.stewardTurn = async () => {
+        phase = state
+        return 'ran'
+      }
+      const res = await door.runMergeBatchDoor({ root, missionId: ID, prs: [305, 306] }, e)
+      expect(res).toMatchObject({
+        ok: true,
+        outcome: { merged: [305], stop: { at: 306, reason } }
+      })
+      expect(g.calls.filter((c) => c.startsWith('pr merge'))).toHaveLength(1)
+    }
   })
 })
 

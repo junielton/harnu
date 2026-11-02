@@ -225,9 +225,15 @@ function resumeSteward(): void {
   void door({ door: 'resumeSteward' } as Omit<MissionDoor, 'root' | 'missionId'>)
 }
 
-/** The Merge batch dialog is open; its rows come from the merge-batch You row. */
-const mergingBatch = ref(false)
-const mergeRow = computed(() => props.model.youRows.find((r) => r.kind === 'merge-batch') ?? null)
+/**
+ * The Merge batch dialog and the PRs it was opened with. A SNAPSHOT, like the Campaign popover's: the
+ * store refreshes after every merge, and once #305 is merged the merge-batch row (and its PR list)
+ * disappears from the view — the open dialog, with its "Stopped at…" panel, must not go with it.
+ */
+const mergeBatch = ref<NonNullable<YouRow['prs']> | null>(null)
+function openMergeBatch(row: YouRow): void {
+  if (row.prs) mergeBatch.value = [...row.prs]
+}
 
 // An in-app popover: registers with the native-overlay freeze (a browser pane under it freezes, spec §2.4).
 const rootEl = ref<HTMLElement | null>(null)
@@ -398,7 +404,7 @@ useNativeOverlay('mission-popover', rootEl)
               variant="primary"
               :disabled="missions.doorInFlight || missions.mergeBatchInFlight"
               data-test="mission-merge-batch"
-              @click="mergingBatch = true"
+              @click="openMergeBatch(firstRow)"
             >
               <GitMerge :size="14" :stroke-width="1.8" />{{
                 $t('mission.mergeBatch.action', { n: firstRow.prs?.length ?? 0 })
@@ -442,7 +448,7 @@ useNativeOverlay('mission-popover', rootEl)
             style="font-size: 11px"
             :disabled="missions.doorInFlight || missions.mergeBatchInFlight"
             data-test="mission-merge-batch"
-            @click="mergingBatch = true"
+            @click="openMergeBatch(row)"
           >
             {{ $t('mission.mergeBatch.action', { n: row.prs?.length ?? 0 }) }}
           </button>
@@ -582,11 +588,11 @@ useNativeOverlay('mission-popover', rootEl)
       @confirm="confirmPause"
     />
     <MergeBatchDialog
-      v-if="mergingBatch && mergeRow"
+      v-if="mergeBatch"
       :root="view.root"
       :mission-id="view.mission.id"
-      :prs="mergeRow.prs ?? []"
-      @close="mergingBatch = false"
+      :prs="mergeBatch"
+      @close="mergeBatch = null"
     />
     <MissionCloseConfirmDialog
       v-if="confirmingClose"

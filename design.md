@@ -6738,8 +6738,8 @@ red", `10.5px`, `border border-border-2 rounded-sm px-1.5`, `text-text-3`). Foot
 non-interactive, each PR row shows its state glyph (`verified` once merged, `running` for the one being
 merged) and the footer reads "Merging…" disabled — a batch waits on the steward and on CI between merges
 and can take minutes. A **stop** replaces the footer's confirm with a warning callout (Warning look,
-`triangle-alert` 13px, eyebrow "Stopped at #306": the reason in words — "has failing checks", "is not
-open any more", "GitHub refused the merge: {message}", "checks still running") over the merged PRs and the
+`triangle-alert` 13px, eyebrow "Stopped at #306": the reason in words — "has failing checks", "conflicts with its base", "does not merge into the default branch", "is not
+open any more", "the steward did not run", "the mission was closed", "the steward was paused", "GitHub refused the merge: {message}", "checks still running") over the merged PRs and the
 PRs still to merge, and the confirm becomes **Merge the rest…** — Harnu asks again, and nothing more is
 merged until the operator answers. Merging is the operator's: no MCP verb reaches this door.
 

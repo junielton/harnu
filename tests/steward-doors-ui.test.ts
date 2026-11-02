@@ -308,6 +308,40 @@ describe('MissionPopover — the steward line and the doors', () => {
     w.unmount()
   })
 
+  it('the open Merge batch dialog keeps its PRs when the refresh makes the merge row disappear (the "Stopped at…" panel survives)', async () => {
+    const view = mergeView()
+    const w = await popover(view)
+    await w.get('[data-test="mission-merge-batch"]').trigger('click')
+    batchAnswers = [
+      {
+        ok: true,
+        outcome: {
+          merged: [305],
+          remaining: [306, 308],
+          stop: { at: 306, reason: 'red', detail: '#306 has failing checks after #305 merged.' },
+          steward: ['ran']
+        }
+      }
+    ]
+    document.querySelector<HTMLButtonElement>('[data-test="merge-batch-go"]')!.click()
+    await flushPromises()
+    expect(document.querySelector('[data-test="merge-batch-stop"]')).not.toBeNull()
+    // The store's refresh lands: #305 merged, so the view no longer lists three ready PRs.
+    const after = fixtureView('faq-like')
+    await w.setProps({ view: after, model: buildMissionModel(after, FIXTURE_NOW) })
+    await flushPromises()
+    expect(document.querySelector('[data-test="merge-batch-dialog"]')).not.toBeNull()
+    const stop = document.querySelector('[data-test="merge-batch-stop"]')!
+    expect(stop.textContent).toContain('Stopped at #306')
+    expect(stop.textContent).toContain('Still to merge: #306 → #308')
+    expect(
+      [...document.querySelectorAll('[data-test="merge-batch-pr"]')].map((e) =>
+        e.getAttribute('data-pr')
+      )
+    ).toEqual(['305', '306', '308'])
+    w.unmount()
+  })
+
   it('a merge-batch You row carries "Merge 3 in order…", which opens the dialog (merging nothing yet)', async () => {
     const w = await popover(mergeView())
     expect(w.text()).toContain('3 PRs ready to merge in order: #305 → #306 → #308')

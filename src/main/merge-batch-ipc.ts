@@ -24,6 +24,7 @@ import {
   type BatchPrFacts,
   type MergeBatchDeps,
   type MergeBatchOutcome,
+  type MissionBatchState,
   type RepoMergeFlags,
   type StewardTurn
 } from './merge-batch-core'
@@ -51,6 +52,8 @@ export interface MergeBatchEnv {
     root: string,
     missionId: string
   ): Promise<{ ok: true; prs: Set<number> } | { ok: false; error: string }>
+  /** The mission's state now (closed / steward paused / open), re-read between merges. */
+  missionState(root: string, missionId: string): Promise<MissionBatchState>
   stewardTurn(missionId: string): Promise<StewardTurn>
   sleep(ms: number): Promise<void>
   now(): number
@@ -97,9 +100,17 @@ async function realMissionPrs(
   return { ok: true, prs }
 }
 
+async function realMissionState(root: string, missionId: string): Promise<MissionBatchState> {
+  const loaded = await loadMission(root, missionId)
+  // An unreadable mission file is not "open": a batch must not carry on blind.
+  if (!loaded.ok || loaded.mission.status === 'closed') return 'closed'
+  return loaded.mission.stewardPause ? 'paused' : 'open'
+}
+
 const realEnv: MergeBatchEnv = {
   gh: realGh,
   missionPrs: realMissionPrs,
+  missionState: realMissionState,
   stewardTurn: (missionId) => runStewardTurn(missionId, STEWARD_TURN_TIMEOUT_MS),
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => Date.now(),
@@ -124,8 +135,21 @@ function readPrFacts(text: string): BatchPrFacts | null {
   const rollup = Array.isArray(v.statusCheckRollup)
     ? (v.statusCheckRollup as Array<Record<string, unknown>>)
     : []
-  return { state, draft: v.isDraft === true, ci: ciOfRollup(rollup) }
+  const mergeable =
+    v.mergeable === 'MERGEABLE' || v.mergeable === 'CONFLICTING' ? v.mergeable : 'UNKNOWN'
+  return {
+    state,
+    draft: v.isDraft === true,
+    ci: ciOfRollup(rollup),
+    baseRef: typeof v.baseRefName === 'string' ? v.baseRefName : '',
+    mergeable,
+    // No head sha means no pin to merge at: treat the PR as not readable rather than merge unpinned.
+    headOid: typeof v.headRefOid === 'string' ? v.headRefOid : ''
+  }
 }
+
+/** Mission ids with a batch in flight: a second batch on the same mission would race the first. */
+const runningBatches = new Set<string>()
 
 /** The Log line the batch leaves: how far it got, and why it stopped. */
 function batchLogEntry(at: string, out: MergeBatchOutcome): string {
@@ -160,57 +184,99 @@ export async function runMergeBatchDoor(
   ) {
     return { ok: false, error: 'BAD_ARGS: mergeBatch needs root, missionId and prs (numbers).' }
   }
-  const root = missionRoot(a.root)
-  const prs = a.prs
-  const owned = await env.missionPrs(root, a.missionId)
+  const missionId = a.missionId
+  // One batch per mission: a second one (a double click, another window) would merge the same stack
+  // in parallel with the first. Taken synchronously, released in `finally` whatever happens.
+  if (runningBatches.has(missionId)) {
+    return {
+      ok: false,
+      error: `BATCH_RUNNING: a merge batch is already running on mission ${missionId} — wait for it to finish or stop.`
+    }
+  }
+  runningBatches.add(missionId)
+  try {
+    return await runBatch(env, a.root, missionId, a.prs)
+  } finally {
+    runningBatches.delete(missionId)
+  }
+}
+
+async function runBatch(
+  env: MergeBatchEnv,
+  rawRoot: string,
+  missionId: string,
+  prs: number[]
+): Promise<MergeBatchResult> {
+  const root = missionRoot(rawRoot)
+  const owned = await env.missionPrs(root, missionId)
   if (!owned.ok) return owned
   const stranger = prs.find((n) => !owned.prs.has(n))
   if (stranger !== undefined) {
     return {
       ok: false,
-      error: `NOT_A_MISSION_PR: #${stranger} is not a PR of mission ${a.missionId} — a batch merges only the mission's own PRs.`
+      error: `NOT_A_MISSION_PR: #${stranger} is not a PR of mission ${missionId} — a batch merges only the mission's own PRs.`
     }
   }
 
-  let method: '--squash' | '--merge' | '--rebase' | null = null
+  // The repo's merge flags and default branch: one `gh repo view`, read once per batch.
+  let repo: { method: '--squash' | '--merge' | '--rebase'; defaultBranch: string } | null = null
+  const repoInfo = async (): Promise<NonNullable<typeof repo>> => {
+    if (repo) return repo
+    const info = parseJson(
+      await env.gh(
+        [
+          'repo',
+          'view',
+          '--json',
+          'squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed,defaultBranchRef'
+        ],
+        root
+      )
+    )
+    const ref = info?.defaultBranchRef as { name?: unknown } | undefined
+    if (typeof ref?.name !== 'string' || ref.name === '') {
+      throw new Error("NO_DEFAULT_BRANCH: could not read the repository's default branch from gh.")
+    }
+    repo = {
+      method: pickMergeMethod(info as RepoMergeFlags | null),
+      defaultBranch: ref.name
+    }
+    return repo
+  }
+
   const deps: MergeBatchDeps = {
     readPr: async (n) => {
       try {
         return readPrFacts(
-          await env.gh(['pr', 'view', String(n), '--json', 'state,isDraft,statusCheckRollup'], root)
+          await env.gh(
+            [
+              'pr',
+              'view',
+              String(n),
+              '--json',
+              'state,isDraft,statusCheckRollup,baseRefName,headRefOid,mergeable'
+            ],
+            root
+          )
         )
       } catch {
         return null
       }
     },
-    merge: async (n) => {
+    defaultBranch: async () => (await repoInfo()).defaultBranch,
+    missionState: () => env.missionState(root, missionId),
+    merge: async (n, headOid) => {
+      if (!headOid) return { ok: false, error: 'no head commit to pin the merge to' }
       try {
-        if (method === null) {
-          let flags: RepoMergeFlags | null = null
-          try {
-            flags = parseJson(
-              await env.gh(
-                [
-                  'repo',
-                  'view',
-                  '--json',
-                  'squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed'
-                ],
-                root
-              )
-            ) as RepoMergeFlags | null
-          } catch {
-            flags = null
-          }
-          method = pickMergeMethod(flags)
-        }
-        await env.gh(['pr', 'merge', String(n), method], root)
+        const { method } = await repoInfo()
+        // `--match-head-commit`: GitHub refuses the merge if the head moved since the gates were read.
+        await env.gh(['pr', 'merge', String(n), method, '--match-head-commit', headOid], root)
         return { ok: true }
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
     },
-    afterMerge: async () => ({ steward: await env.stewardTurn(a.missionId as string) }),
+    afterMerge: async () => ({ steward: await env.stewardTurn(missionId) }),
     sleep: env.sleep,
     now: env.now
   }
@@ -224,8 +290,8 @@ export async function runMergeBatchDoor(
 
   // The Log learns what the operator did — under the lock, but only for the append.
   try {
-    await withMissionIdMintLock(a.missionId, async () => {
-      const loaded = await loadMission(root, a.missionId as string)
+    await withMissionIdMintLock(missionId, async () => {
+      const loaded = await loadMission(root, missionId)
       if (!loaded.ok) return
       const log =
         loaded.log + (loaded.log.endsWith('\n') ? '' : '\n') + batchLogEntry(env.clock(), outcome)

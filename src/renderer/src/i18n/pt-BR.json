@@ -4658,6 +4658,12 @@
         "red": "#{pr} tem checks falhando.",
         "not-ready": "#{pr} não está pronto — um rascunho, ou ainda sem checks passando.",
         "pending": "#{pr} ainda tem checks rodando.",
+        "wrong-base": "#{pr} não mergeia na branch padrão — redirecione-o antes.",
+        "conflict": "#{pr} tem conflito com a base.",
+        "steward-skipped": "O steward não rodou depois do último merge, então #{pr} não foi rebaseado nem reverificado.",
+        "steward-timeout": "O steward não terminou a tempo depois do último merge, então #{pr} não foi rebaseado nem reverificado.",
+        "mission-closed": "A missão foi encerrada — #{pr} não foi mergeado.",
+        "paused": "O steward foi pausado — #{pr} não foi mergeado.",
         "merge-failed": "O GitHub recusou o merge de #{pr}: {detail}"
       }
     },

@@ -43,6 +43,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   mark, two identical decisions on the same day now get distinct ids, and a close-out draft is always
   small enough to be written (an oversized Log entry is clipped, a Log line that imitates a provenance
   stamp is escaped, and the "where we left off" note keeps a single heading).
+- **Merge batch is stricter about what it merges.** Each PR is re-read right before its own merge and merged only at the commit whose checks were read (a push in between makes GitHub refuse the merge instead of landing unchecked code). A PR with merge conflicts, or one that does not target the default branch, is no longer merged — a stacked PR must be retargeted first. The batch now also stops when the steward's turn between merges did not run (paused, absent or timed out), when the mission is closed or its steward paused mid-batch, and treats a PR whose checks have not reported yet as still pending instead of "not ready". Only one batch can run on a mission at a time, and the "Stopped at…" panel stays open while the mission popover refreshes.
 
 ### Changed
 
