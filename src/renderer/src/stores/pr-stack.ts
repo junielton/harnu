@@ -430,12 +430,23 @@ export const usePrStackStore = defineStore('prStack', () => {
     () => fit()
   )
 
-  async function load(repoPath: string, worktrees: WorktreeNode[] = []): Promise<void> {
+  /**
+   * `background: true` marks the interval refresh: main skips it (and answers with the last snapshot)
+   * while the GitHub budget is `low` or `exhausted` (T611). A load on open and the manual refresh
+   * never pass it, so they always run.
+   */
+  async function load(
+    repoPath: string,
+    worktrees: WorktreeNode[] = [],
+    opts?: { background?: boolean }
+  ): Promise<void> {
     currentRepo.value = repoPath
     refreshing.value = true
     if (!snapshot.value) loading.value = true
     try {
-      const next = await window.api.prStackLoad(repoPath, worktrees)
+      const next = opts?.background
+        ? await window.api.prStackLoad(repoPath, worktrees, { background: true })
+        : await window.api.prStackLoad(repoPath, worktrees)
       // A transient `gh` failure comes back as an empty graph. Overwriting a
       // populated canvas with it is the bug: keep the last good snapshot (and
       // its `fetchedAt`) and record the failure. With nothing to keep, take the
@@ -489,7 +500,7 @@ export const usePrStackStore = defineStore('prStack', () => {
     stopTimer()
     if (prefs.value && !prefs.value.autoRefresh) return
     const every = prefs.value?.intervalMs ?? FALLBACK_REFRESH_MS
-    timer = setInterval(() => void load(repoPath, worktrees), every)
+    timer = setInterval(() => void load(repoPath, worktrees, { background: true }), every)
   }
 
   /**

@@ -15,6 +15,17 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Added
 
 - **Sessions can read the GitHub budget.** A new read-only `github_budget` verb returns the REST and GraphQL buckets (remaining, reset time, pace), which one is tighter, whether Harnu is slowing down, and how many of the calls in the window were Harnu's own per feature versus everything else on your login. Sessions are told to check it before polling `gh` in a loop, to back off when it reads `low`, and to wait out a GitHub secondary-limit pause when the answer carries `pausedUntil`; read-only Scheduler workers can call it too.
+- **A GitHub pill in the footer and a Settings → GitHub API tab show where your GitHub budget goes.**
+  The footer now has a **GitHub** pill, left of the Cleanup pill, that shows how many calls are left in
+  the tighter of the REST and GraphQL buckets, amber while Harnu is slowing down and red once the limit
+  is spent (with the time to the reset). Click it for the two meters and **Who spent it · this hour**:
+  Harnu against everything outside Harnu, and one row per feature (missions, PR Stack, Review,
+  Cleanup, the steward). **Settings → GitHub API** adds the pace over the last 10 minutes, the last hour
+  in 5-minute columns, how often each feature checks (with the old cadence struck through while Harnu
+  is slowing down), and the controls: check delivered missions, slow down below 10 / 15 / 25 %, pause
+  PR Stack auto-refresh, and **Tell me when it happens** — one toast when Harnu starts slowing down and
+  one system notification when the limit is reached, each at most once per GitHub window.
+
 - **Harnu now watches its own GitHub API budget and slows down near the limit.** Every `gh` call
   Harnu makes spends the same personal GitHub quota your sessions and scripts use (5,000 REST
   requests and 5,000 GraphQL points an hour), and on a busy day it could run dry with Harnu still
@@ -63,6 +74,16 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   folder that is not a repository cost nothing; and the CI result of a merged pull request is
   re-checked at most every 10 minutes (every minute while it is still running) instead of every
   minute forever. What a mission reports is unchanged.
+- **The GitHub popover tells GitHub's secondary limit apart from an empty budget.** When GitHub slows
+  requests while both buckets still have calls, the popover shows _GitHub is slowing requests. Harnu
+  resumes at 14:00._ in place of the low or limit-reached note, and the footer pill keeps the real
+  number of calls left, so "Limit reached" now only appears for a bucket that is really empty.
+- The GitHub budget store now retries its first read if the app was not ready for it, instead of staying
+  empty until the next restart.
+- **PR Stack no longer refreshes in the background while the GitHub budget is low.** Only the canvas's
+  timed refresh is skipped; opening the canvas and pressing Refresh always read GitHub. When GitHub's
+  limit is the reason a refresh failed, the canvas now says _GitHub API limit reached, resets at 14:00_
+  and keeps the last read, instead of calling it a network problem.
 - Decisions recorded at the same moment can no longer overwrite each other or lose a "replaced by"
   mark, two identical decisions on the same day now get distinct ids, and a close-out draft is always
   small enough to be written (an oversized Log entry is clipped, a Log line that imitates a provenance

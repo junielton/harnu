@@ -936,7 +936,7 @@ export function graphEdges(graph: PrGraph, worktrees: WorktreeNode[] = []): Edge
  * `child_process` into the renderer's type graph.
  */
 /** A transient `gh` failure: the CLI is usable, this call did not come back. */
-export type GhFailure = 'timeout' | 'outputTooLarge' | 'network' | 'other'
+export type GhFailure = 'timeout' | 'outputTooLarge' | 'network' | 'rateLimit' | 'other'
 
 /** What a failed `gh` child error says about the CLI. Duck-typed: execFile errors are plain objects. */
 interface ExecFailure {
@@ -966,8 +966,9 @@ export function classifyGhFailure(err: unknown): GhFailure | null {
   if (/none of the git remotes|not a github|no github remote/i.test(stderr)) return null
 
   // T611: a spent budget is not a flaky network. The runner marks the budget `exhausted` from this
-  // same stderr; here it just must not read as `network` ("check your connection").
-  if (/rate limit|GH_THROTTLED|Harnu paused GitHub reads/i.test(stderr)) return 'other'
+  // same stderr; here it gets its own kind so the canvas can say when the limit resets instead of
+  // telling the operator to check their connection.
+  if (/rate limit|GH_THROTTLED|Harnu paused GitHub reads/i.test(stderr)) return 'rateLimit'
 
   if (e.killed === true || e.signal != null || e.code === 'ETIMEDOUT') return 'timeout'
   if (e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'outputTooLarge'

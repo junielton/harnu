@@ -1142,6 +1142,7 @@
       "cleanup": "Limpeza",
       "containers": "Containers",
       "prStack": "PR Stack",
+      "githubApi": "API do GitHub",
       "voice": "Voz"
     },
     "search": {
@@ -1434,6 +1435,7 @@
       "view_settings_cleanup": "Abrir Configurações: Limpeza",
       "view_settings_containers": "Abrir Configurações: Containers",
       "view_settings_prStack": "Abrir Configurações: PR Stack",
+      "view_settings_githubApi": "Abrir Configurações: API do GitHub",
       "nav_back": "Voltar à sessão anterior",
       "nav_forward": "Avançar para a próxima sessão",
       "pane_focusNext": "Focar o próximo painel",
@@ -3855,7 +3857,11 @@
       },
       "network": {
         "title": "Não foi possível alcançar o GitHub",
-        "body": "A requisição falhou ou atingiu o limite de uso. Mostrando a última leitura ({age}). Clique para tentar de novo."
+        "body": "A requisição falhou. Mostrando a última leitura ({age}). Clique para tentar de novo."
+      },
+      "rateLimit": {
+        "title": "Limite da API do GitHub atingido",
+        "body": "Limite da API do GitHub atingido, renova às {time}. Mostrando a última leitura ({age})."
       },
       "other": {
         "title": "A atualização falhou",
@@ -5042,5 +5048,146 @@
     "label": "Mais opções de divisão",
     "terminal": "Terminal",
     "browser": "Navegador"
+  },
+  "githubBudget": {
+    "pill": {
+      "left": "{n} restantes",
+      "exhausted": "{n} restantes · {countdown}",
+      "a11y": "Orçamento da API do GitHub: {n} chamadas restantes",
+      "a11yLow": "Orçamento da API do GitHub baixo: {n} chamadas restantes, o Harnu está desacelerando",
+      "a11yExhausted": "Limite da API do GitHub atingido, renova em {countdown}"
+    },
+    "meter": {
+      "rest": "REST · {limit}/h",
+      "graphql": "GraphQL · {limit} pts/h",
+      "left": "{n} restantes"
+    },
+    "popover": {
+      "title": "API do GitHub",
+      "updatedSeconds": "atualizado há {n}s",
+      "updatedMinutes": "atualizado há {n}min",
+      "resetsIn": "renova em {countdown}",
+      "resetsAt": "renova às {clock} (em {countdown})",
+      "emptyIn": "neste ritmo, acaba em {countdown}",
+      "whoSpent": "Quem gastou · esta hora",
+      "harnu": "Harnu {n}",
+      "outside": "Fora do Harnu {n}",
+      "details": "Detalhes ↗",
+      "lowNote": {
+        "title": "O Harnu está consultando mais devagar.",
+        "body": "Missões checadas a cada 5 min, até a renovação às {time}.",
+        "bodyPrStack": "Missões checadas a cada 5 min e o PR Stack atualiza ao abrir, até a renovação às {time}."
+      },
+      "secondaryNote": {
+        "title": "O GitHub está desacelerando as requisições.",
+        "body": "O Harnu retoma às {time}."
+      },
+      "exhaustedNote": {
+        "title": "Limite atingido.",
+        "body": "O Harnu pausou as checagens no GitHub até as {time} e mostra o último estado conhecido."
+      }
+    },
+    "consumer": {
+      "missions": "Missões · PR e CI",
+      "prStack": "PR Stack",
+      "review": "Review",
+      "cleanup": "Limpeza",
+      "steward": "Steward",
+      "mergeBatch": "Merge em lote",
+      "outside": "Fora do Harnu"
+    },
+    "tag": {
+      "slowed": "desacelerado",
+      "paused": "pausado"
+    },
+    "table": {
+      "consumer": "Consumidor",
+      "calls": "Chamadas",
+      "share": "Parcela",
+      "every": "Checa a cada",
+      "missions": "Missões · gates de PR e CI",
+      "prStack": "PR Stack",
+      "review": "Review",
+      "cleanup": "Limpeza · checagens de merge",
+      "steward": "Steward",
+      "mergeBatch": "Merge em lote",
+      "delivered": "{n} missão entregue | {n} missões entregues",
+      "outside": "Fora do Harnu · sessões, scripts, monitores"
+    },
+    "cadence": {
+      "every": {
+        "s": "{n} s",
+        "min": "{n} min",
+        "h": "{n} h"
+      },
+      "onOpen": "ao abrir",
+      "onEvent": "por evento",
+      "notChecked": "não checada",
+      "paused": "pausado"
+    },
+    "pane": {
+      "title": "API do GitHub",
+      "intro": {
+        "budgetOf": "Toda sessão, script e o próprio Harnu gastam do mesmo orçamento: o token do gh de ",
+        "budgetLocal": "Toda sessão, script e o próprio Harnu gastam do mesmo orçamento: o token do gh desta máquina",
+        "reads": ". O Harnu o lê a cada 60 s com ",
+        "after": ", que não custa nada."
+      },
+      "restLabel": "REST · por hora",
+      "graphqlLabel": "GraphQL · pontos por hora",
+      "leftOf": "restantes de {limit}",
+      "resetsAtIn": "renova às {clock} · em {countdown}",
+      "resetsAt": "renova às {clock}",
+      "paceLabel": "Ritmo · últimos 10 min",
+      "paceWaiting": "medindo o ritmo…",
+      "paceLasts": "chamadas/min · dura além da renovação",
+      "paceEmptyIn": "chamadas/min · acaba em {countdown}",
+      "paceSplit": "Harnu {harnu}/min · fora {outside}/min",
+      "paceSplitWas": "Harnu {harnu}/min (era {was}) · fora {outside}/min",
+      "chartTitle": "Últimos 60 minutos · chamadas {resource} a cada 5 min",
+      "legendHarnu": "Harnu",
+      "legendSlowed": "Harnu, desacelerado",
+      "legendOutside": "Fora do Harnu",
+      "tableTitle": "Quem gasta · esta hora",
+      "missionsTitle": "Missões",
+      "delivered": {
+        "label": "Checar missões entregues",
+        "hint": "Desligado: uma missão entregue mantém o último estado conhecido de PR e CI e não custa nada, em qualquer orçamento."
+      },
+      "lowTitle": "Quando o orçamento está acabando",
+      "threshold": {
+        "label": "Desacelerar abaixo de",
+        "hint": "O Harnu espaça as próprias checagens quando sobra só essa parte do orçamento mais apertado (REST ou GraphQL) e volta ao normal na renovação."
+      },
+      "pausePrStack": {
+        "label": "Pausar a atualização automática do PR Stack",
+        "hint": "O canvas atualiza quando você o abre, não em segundo plano."
+      },
+      "notify": {
+        "label": "Avise-me quando acontecer",
+        "hint": "Um toast quando o Harnu começa a desacelerar e uma notificação quando o limite é atingido."
+      },
+      "fine": "O Harnu conta apenas as próprias chamadas. \"Fora do Harnu\" é o total que o GitHub informa menos a parte do Harnu.",
+      "unavailable": "O orçamento do GitHub está indisponível: o gh não está instalado, não está logado ou o GitHub ainda não respondeu. Rode gh auth login e o Harnu percebe em até dez minutos.",
+      "lowBanner": {
+        "title": "O Harnu está desacelerando desde as {since}.",
+        "body": "O orçamento {resource} caiu abaixo de {threshold}%. O ritmo normal volta na renovação, às {time}."
+      },
+      "exhaustedBanner": {
+        "title": "Limite {resource} atingido.",
+        "body": "O Harnu pausou as checagens no GitHub até as {time} e mostra o último estado conhecido."
+      }
+    },
+    "notice": {
+      "details": "Detalhes",
+      "low": {
+        "title": "Orçamento do GitHub baixo",
+        "body": "Restam {left} chamadas {resource}. O Harnu está desacelerando até as {time}."
+      },
+      "exhausted": {
+        "title": "Limite do GitHub atingido",
+        "body": "O Harnu pausou as checagens no GitHub até as {time} (em {minutes} min)."
+      }
+    }
   }
 }
