@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — GitHub API rate limit (T611)</title>
+    <style>
+      :root {
+        --ix-bg: #f6f6f7;
+        --ix-fg: #1b1b1f;
+        --ix-muted: #6b6b76;
+        --ix-line: #dcdce2;
+        --ix-card: #fff;
+        --ix-accent: #2f5bea;
+        --ix-draft: #b7791f;
+        --ix-ok: #2f855a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ix-bg: #121216;
+          --ix-fg: #ececf1;
+          --ix-muted: #9a9aa6;
+          --ix-line: #2b2b33;
+          --ix-card: #1b1b21;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        color: var(--ix-fg);
+        background: var(--ix-bg);
+      }
+      header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--ix-line);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ix-draft);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status[data-status='approved'] {
+        background: var(--ix-ok);
+      }
+      nav.toc {
+        font-size: 13px;
+        color: var(--ix-muted);
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      nav.toc a {
+        color: inherit;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        margin-bottom: 48px;
+      }
+      section > h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .prose {
+        max-width: 72ch;
+        color: var(--ix-fg);
+      }
+      .prose p {
+        margin: 0 0 10px;
+      }
+      /* one card per screen */
+      .screen {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .screen .bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .screen h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .screen h3 code {
+        font-size: 12px;
+        color: var(--ix-muted);
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .screen .notes {
+        font-size: 13px;
+        color: var(--ix-muted);
+        margin: 0 0 12px;
+        max-width: 80ch;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chips button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--ix-line);
+        background: transparent;
+        color: var(--ix-fg);
+        cursor: pointer;
+      }
+      .chips button[aria-pressed='true'] {
+        background: var(--ix-accent);
+        border-color: var(--ix-accent);
+        color: #fff;
+      }
+      .open {
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .viewport {
+        overflow: hidden;
+        border: 1px solid var(--ix-line);
+        border-radius: 6px;
+        background: #fff;
+      }
+      .viewport iframe {
+        display: block;
+        border: 0;
+        transform-origin: top left;
+      }
+      .screen .approval {
+        font-size: 12px;
+        margin-top: 8px;
+        color: var(--ix-muted);
+      }
+      /* flows */
+      .flow {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .flow ol {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 0;
+        margin: 8px 0 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .flow li {
+        counter-increment: step;
+        font-size: 13px;
+      }
+      .flow li::before {
+        content: counter(step) '. ';
+        color: var(--ix-muted);
+      }
+      .flow li + li::before {
+        content: '→ ' counter(step) '. ';
+      }
+      .flow li small {
+        color: var(--ix-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>GitHub API rate limit (T611)</h1>
+      <!-- data-status MUST mirror mockup.json "status"; check-mockup.mjs enforces it -->
+      <span class="status" data-status="approved">approved</span>
+      <nav class="toc">
+        <a href="#contexto">Context</a><a href="#telas">Screens</a><a href="#fluxos">Flows</a
+        ><a href="parts/index.html">Parts</a>
+      </nav>
+    </header>
+    <main>
+      <section id="contexto">
+        <h2>Context and decisions</h2>
+        <div class="prose">
+          <p>
+            Every <code>gh</code> call Harnu makes (mission PR and CI gates, PR Stack, Review,
+            Cleanup merge checks, the steward) spends the operator's own GitHub budget: 5,000 REST
+            calls and 5,000 GraphQL points per hour, shared with every session, script and monitor
+            on the same token. On 2026-11-02 it ran dry, and Harnu showed nothing. It also kept
+            checking PRs of missions that were already delivered.
+          </p>
+          <p>
+            <strong>Fixed across all four:</strong> the budget is read with
+            <code>gh api rate_limit</code> every 60 s (that call is free); meters reuse the Plan
+            usage anatomy and its 80/95 color ramp; Harnu counts only its own calls, so "Outside
+            Harnu" is GitHub's total minus Harnu's share; below the threshold (15% by default) Harnu
+            slows its own checks and stops checking delivered missions, and at zero it pauses them
+            and shows the last known state until the reset.
+          </p>
+          <p>
+            <strong>Decision (2026-11-02):</strong> B, its own GitHub pill with attribution, plus D,
+            the Settings pane with the throttle controls, reached from B's Details link. A (inside
+            the usage pill) and C (silent until low) were explored and not chosen.
+          </p>
+          <p>Sample data is fixed: 13:39 is when throttling began, 14:00 is the reset.</p>
+        </div>
+      </section>
+
+      <section id="telas">
+        <h2>Screens</h2>
+        <article
+          class="screen"
+          data-screen="b--own-pill"
+          data-states="closed healthy low exhausted"
+        >
+          <div class="bar">
+            <h3>B · Its own pill with attribution <code>b--own-pill</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/b--own-pill.html" target="_blank">open alone ↗</a>
+          </div>
+          <p class="notes">
+            A GitHub pill that shows calls left, and a popover that answers who spent the budget
+            this hour: Harnu per consumer versus outside Harnu.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="b--own-pill"></iframe></div>
+          <p class="approval">Approval: <strong>approved 2026-11-02</strong></p>
+        </article>
+        <article class="screen" data-screen="d--settings-pane" data-states="default throttled">
+          <div class="bar">
+            <h3>D · Settings → GitHub API <code>d--settings-pane</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/d--settings-pane.html" target="_blank">open alone ↗</a>
+          </div>
+          <p class="notes">
+            The full picture and the throttle controls: budget tiles, pace, the last hour by 5-min
+            bucket, consumers with their check cadence, and the slow-down rules.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="d--settings-pane"></iframe></div>
+          <p class="approval">Approval: <strong>approved 2026-11-02</strong></p>
+        </article>
+      </section>
+
+      <section id="fluxos">
+        <h2>Flows</h2>
+        <article class="flow" data-flow="b-details">
+          <h3>
+            B — from the pill to the details —
+            <a href="screens/b--own-pill.html?state=closed" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/b--own-pill.html?state=closed" target="_blank"
+                >b--own-pill · closed</a
+              >
+              <small>via "click the GitHub pill"</small>
+            </li>
+            <li>
+              <a href="screens/b--own-pill.html?state=healthy" target="_blank"
+                >b--own-pill · healthy</a
+              >
+              <small>via "Details"</small>
+            </li>
+            <li>
+              <a href="screens/d--settings-pane.html?state=default" target="_blank"
+                >d--settings-pane · default</a
+              >
+            </li>
+          </ol>
+        </article>
+      </section>
+    </main>
+    <script>
+      /* index runtime: sizes each frame to the chosen viewport, swaps ?state=, listens for
+   mockup:size from the screens. Do not add behaviour here; screens own their behaviour. */
+      ;(() => {
+        const VIEWPORTS = [1280] // MUST mirror mockup.json "viewports"
+        const frames = new Map() // iframe -> {w, h}
+        const fit = (card) => {
+          const vp = card.querySelector('.viewport'),
+            ifr = vp.querySelector('iframe'),
+            f = frames.get(ifr)
+          const s = Math.min(1, vp.parentElement.clientWidth / f.w)
+          ifr.style.width = f.w + 'px'
+          ifr.style.height = f.h + 'px'
+          ifr.style.transform = `scale(${s})`
+          vp.style.height = Math.ceil(f.h * s) + 'px'
+          vp.style.width = Math.ceil(f.w * s) + 'px'
+        }
+        const load = (card) => {
+          const ifr = card.querySelector('iframe')
+          const state =
+            card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state ||
+            card.dataset.states.split(/\s+/)[0]
+          ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`
+        }
+        document.querySelectorAll('.screen').forEach((card) => {
+          const ifr = card.querySelector('iframe')
+          frames.set(ifr, { w: VIEWPORTS[0], h: 600 })
+          const vps = card.querySelector('[data-role="viewports"]')
+          VIEWPORTS.forEach((w, i) => {
+            const b = document.createElement('button')
+            b.textContent = w + 'px'
+            b.dataset.w = w
+            b.setAttribute('aria-pressed', String(i === 0))
+            b.onclick = () => {
+              vps
+                .querySelectorAll('button')
+                .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+              frames.get(ifr).w = w
+              fit(card)
+            }
+            vps.append(b)
+          })
+          const sts = card.querySelector('[data-role="states"]')
+          card.dataset.states
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((st, i) => {
+              const b = document.createElement('button')
+              b.textContent = st
+              b.dataset.state = st
+              b.setAttribute('aria-pressed', String(i === 0))
+              b.onclick = () => {
+                sts
+                  .querySelectorAll('button')
+                  .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+                load(card)
+              }
+              sts.append(b)
+            })
+          new IntersectionObserver(
+            (es, io) =>
+              es.forEach((e) => {
+                if (e.isIntersecting) {
+                  io.disconnect()
+                  load(card)
+                }
+              }),
+            { rootMargin: '600px' }
+          ).observe(card)
+          fit(card)
+        })
+        addEventListener('message', (e) => {
+          const m = e.data
+          if (!m || m.type !== 'mockup:size') return
+          for (const [ifr, f] of frames)
+            if (ifr.contentWindow === e.source) {
+              f.h = Math.max(320, m.height)
+              fit(ifr.closest('.screen'))
+            }
+        })
+        addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit))
+      })()
+    </script>
+  </body>
+</html>

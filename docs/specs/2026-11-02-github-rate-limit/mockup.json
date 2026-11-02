@@ -1,0 +1,65 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-11-02",
+  "project": "harnu",
+  "card": "T611",
+  "tokensFrom": "src/renderer/src/styles/themes.css",
+  "viewports": [1280],
+  "targets": [
+    "src/renderer/src/components/StatusFooter.vue",
+    "src/renderer/src/components/SettingsDialog.vue",
+    "design.md"
+  ],
+  "screens": [
+    {
+      "id": "b--own-pill",
+      "title": "B · Its own pill with attribution",
+      "status": "approved",
+      "approvedAt": "2026-11-02",
+      "states": ["closed", "healthy", "low", "exhausted"],
+      "targets": ["src/renderer/src/components/StatusFooter.vue"],
+      "notes": "A GitHub pill that shows calls left, and a popover that answers who spent the budget this hour: Harnu per consumer versus outside Harnu."
+    },
+    {
+      "id": "d--settings-pane",
+      "title": "D · Settings → GitHub API",
+      "status": "approved",
+      "approvedAt": "2026-11-02",
+      "states": ["default", "throttled"],
+      "targets": ["src/renderer/src/components/SettingsDialog.vue"],
+      "notes": "The full picture and the throttle controls: budget tiles, pace, the last hour by 5-min bucket, consumers with their check cadence, and the slow-down rules."
+    }
+  ],
+  "parts": [
+    {
+      "id": "footer",
+      "variants": ["pill"]
+    }
+  ],
+  "sampleData": "Healthy: REST 4,112/5,000 left, GraphQL 4,690, resets 14:00 in 38m; this hour 888 calls = Harnu 582 (missions 412, PR Stack 96, Review 38, Cleanup 22, Steward 14) + outside 306. Low: REST 640 left (87% used), GraphQL 3,980, reset in 21m; 4,360 calls = Harnu 2,310 (missions 1,840 incl. 610 for 3 delivered missions, PR Stack 310, Review 84, Cleanup 46, Steward 30) + outside 2,050; throttling since 13:39 at the 15% threshold. Exhausted: REST 0 left, reset 14:00 in 12m; 5,000 calls = Harnu 2,620 + outside 2,380.",
+  "flows": [
+    {
+      "id": "b-details",
+      "title": "B — from the pill to the details",
+      "steps": [
+        {
+          "screen": "b--own-pill",
+          "state": "closed",
+          "via": "click the GitHub pill"
+        },
+        {
+          "screen": "b--own-pill",
+          "state": "healthy",
+          "via": "Details"
+        },
+        {
+          "screen": "d--settings-pane",
+          "state": "default"
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    "2026-11-02: delivered missions are never checked on GitHub, at any budget (operator's choice in the delivery questions). D's switch became 'Check delivered missions' (off) under its own Missions heading; B's low-state note dropped the delivered-missions clause. Both screens keep the approval because the operator chose this exact change."
+  ]
+}
