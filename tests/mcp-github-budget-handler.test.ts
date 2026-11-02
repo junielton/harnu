@@ -64,6 +64,7 @@ beforeEach(() => {
 describe('github_budget (T614)', () => {
   it('AC-1: returns the documented shape, with the tighter bucket and Harnu attribution', async () => {
     githubBudget.applyPoll({ ok: true, buckets: { rest: bucket(4000), graphql: bucket(1000) } })
+    githubBudget.setLogin('octocat')
     githubBudget.record('missions', 'graphql')
     githubBudget.record('missions', 'graphql')
     githubBudget.record('pr-stack', 'graphql')
@@ -85,7 +86,7 @@ describe('github_budget (T614)', () => {
       ].sort()
     )
     expect(p.ok).toBe(true)
-    expect(p.login).toBeNull()
+    expect(p.login).toBe('octocat')
     expect(p.tighter).toBe('graphql')
     expect(p.rest).toMatchObject({ limit: 5000, remaining: 4000, used: 1000 })
     expect(p.graphql).toMatchObject({ limit: 5000, remaining: 1000, used: 4000 })

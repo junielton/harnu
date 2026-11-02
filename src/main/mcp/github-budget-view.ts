@@ -23,7 +23,7 @@ export interface BudgetBucketView {
 
 export interface GithubBudgetPayload {
   ok: true
-  /** The `gh` login. `null`: the tracker does not carry it. */
+  /** The `gh` login. `null` while Harnu has not resolved it (or `gh` is missing or signed out). */
   login: string | null
   rest: BudgetBucketView | null
   graphql: BudgetBucketView | null
@@ -68,7 +68,7 @@ export function githubBudgetPayload(snap: BudgetSnapshot): GithubBudgetPayload {
   const tighterView = live.tighter ? live[live.tighter] : null
   return {
     ok: true,
-    login: null,
+    login: snap.login,
     rest: bucketView(live.rest),
     graphql: bucketView(live.graphql),
     tighter: live.tighter,

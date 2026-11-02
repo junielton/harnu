@@ -520,7 +520,7 @@ used, resetAt, callsPerMin, minutesToEmpty }` (ISO `resetAt`; the pace is GitHub
 last 10 minutes). `tighter` is the bucket with the lower share left, the one the throttle follows.
 `throttle.state` is `normal`, `low`, `exhausted` or `unavailable`. `harnu.byConsumer` is Harnu's
 calls in the tighter bucket's current window per consumer (`missions`, `pr-stack`, `review`,
-`cleanup`, `steward`, `merge-batch`); `outside` is the rest of what that bucket spent (an
+`cleanup`, `steward`, `merge-batch`, `budget` — the login lookup); `outside` is the rest of what that bucket spent (an
 estimate: other tools or machines on the same login). With `gh` missing or signed out the call still
 returns `ok: true` with `throttle.state: 'unavailable'`, a `reason` and null buckets. `login` is
 `null` when Harnu does not know it. `sampledAt` is the last good poll (they run every minute). On
