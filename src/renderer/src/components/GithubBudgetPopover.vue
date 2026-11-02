@@ -150,7 +150,7 @@ const note = computed<{ tone: 'accent' | 'red'; title: string; body: string } | 
 </script>
 
 <template>
-  <div v-if="ready && attribution" data-dsqa-part="gh-popover" :data-state="state">
+  <div v-if="ready && attribution" :data-state="state">
     <div class="flex items-center gap-1.5 px-3 pt-1 text-[12px] font-semibold text-text">
       <Github :size="13" :stroke-width="1.6" class="shrink-0" />
       {{ t('githubBudget.popover.title')

@@ -97,6 +97,7 @@ function openDetails(): void {
     <div
       v-if="open"
       ref="popoverEl"
+      data-dsqa-part="gh-popover"
       class="anim-fade-in-scale absolute bottom-full right-0 z-50 mb-1.5 w-[320px] rounded-lg border border-border-2 bg-surface-2 p-2 shadow-pop"
     >
       <GithubBudgetPopover @details="openDetails" />
