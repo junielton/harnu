@@ -39,6 +39,14 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **Harnu no longer stutters while missions are open.** With many missions on the go, the progress
+  poll started hundreds of `git` and `gh` processes every 20 seconds, which froze scrolling, typing
+  and terminal output in bursts and made held keys repeat too slowly. A poll now reuses what it
+  already knows: a worktree's branch, head and commit count are read from the repository's own files
+  and refreshed the moment you commit, switch branch or fetch; links that point to a file or to a
+  folder that is not a repository cost nothing; and the CI result of a merged pull request is
+  re-checked at most every 10 minutes (every minute while it is still running) instead of every
+  minute forever. What a mission reports is unchanged.
 - Decisions recorded at the same moment can no longer overwrite each other or lose a "replaced by"
   mark, two identical decisions on the same day now get distinct ids, and a close-out draft is always
   small enough to be written (an oversized Log entry is clipped, a Log line that imitates a provenance
