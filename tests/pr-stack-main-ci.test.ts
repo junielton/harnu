@@ -24,7 +24,10 @@ vi.mock('node:child_process', async (importOriginal) => {
     gh.log.push(args)
     const stdout =
       args[0] === 'pr'
-        ? JSON.stringify({ mergeCommit: gh.oid ? { oid: gh.oid } : null })
+        ? JSON.stringify({
+            // One merge commit per PR number, so two PRs never share a run list.
+            mergeCommit: gh.oid ? { oid: gh.oid.slice(0, 30) + args[2].padStart(10, '0') } : null
+          })
         : JSON.stringify(gh.runs)
     setTimeout(() => cb(null, { stdout, stderr: '' }), gh.delayMs)
   }
