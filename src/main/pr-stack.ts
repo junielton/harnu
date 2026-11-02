@@ -23,6 +23,9 @@ import {
   resolveGitDirs,
   type GitDirs
 } from './git/refs'
+import { runGh } from './gh-runner'
+import type { GhConsumer } from './github-budget-core'
+import { missionCacheTtlMs, prStackBackgroundPaused } from './github-budget-tracker'
 import { isOpenPrViewJson, matchPrLinkToRemote } from './github-remote'
 import { ciOfRuns, type CiRun, type GateCi } from './mission-gates'
 import { readPrefs, writePrefs, type PrStackPrefs } from './pr-stack-prefs'
@@ -54,8 +57,8 @@ export type { PrStackSnapshot }
 const execFileAsync = promisify(execFile)
 
 /**
- * Every subprocess on this path goes through here so it is spawned with the
- * user's login-shell PATH (BUG-34). A Dock-launched macOS build inherits
+ * Every `git` subprocess on this path goes through here so it is spawned with the
+ * user's login-shell PATH (BUG-34). `gh` goes through the shared runner (`gh-runner.ts`, T611). A Dock-launched macOS build inherits
  * launchd's minimal PATH, which has no `/opt/homebrew/bin` — bare `gh` is then
  * ENOENT and the canvas reports "GitHub CLI is unavailable here" to a user
  * whose `gh` is installed and authenticated.
@@ -238,12 +241,11 @@ type PrFetch = { prs: PrEntry[]; ghAvailable: boolean; ghFailure: GhFailure | nu
  * not "no PRs" (BUG-148). Sized with the Reaper's bulk-list budget, which the
  * old 15s / 4 MiB one could not survive.
  */
-async function fetchPrs(repoPath: string): Promise<PrFetch> {
+async function fetchPrs(repoPath: string, consumer: GhConsumer = 'pr-stack'): Promise<PrFetch> {
   try {
-    const { stdout } = await runFile(
-      'gh',
+    const { stdout } = await runGh(
       ['pr', 'list', '--state', 'all', '--limit', String(PR_LIST_LIMIT), '--json', GH_FIELDS],
-      { ...GH_PR_LIST_OPTS, cwd: repoPath }
+      { ...GH_PR_LIST_OPTS, cwd: repoPath, consumer, resource: 'graphql' }
     )
     return { prs: parsePrList(stdout), ghAvailable: true, ghFailure: null }
   } catch (err) {
@@ -254,15 +256,19 @@ async function fetchPrs(repoPath: string): Promise<PrFetch> {
   }
 }
 
-/** How long one `gh pr list` serves the mission reads of a repo (Mission v3 §3.8). */
-const PR_CACHE_TTL_MS = 60_000
+/**
+ * How long one `gh pr list` serves the mission reads of a repo (Mission v3 §3.8): 60 s, stretched to
+ * 5 min while the GitHub budget is `low`, and kept as the last known value while it is `exhausted`
+ * (T611). Read per call, so a state change applies to the next read.
+ */
+const prCacheTtlMs = missionCacheTtlMs
 
 /** Per repo root: the fetch in flight, or the last good one and when it landed. */
 const prCache = new Map<string, { settledAt: number | null; result: Promise<PrFetch> }>()
 
 /**
  * Mission v3 §3.8 — {@link fetchPrs} for the mission reads: a single-flight
- * promise per repo root, kept {@link PR_CACHE_TTL_MS} after it lands. Every
+ * promise per repo root, kept {@link prCacheTtlMs} after it lands. Every
  * `mission_get`, every `mission:list` derive and every door re-derive (MCP and
  * IPC run in this one main process) share it, so a list pass over a repo's
  * missions costs one `gh` round trip, not one per mission. A failure is not
@@ -271,10 +277,10 @@ const prCache = new Map<string, { settledAt: number | null; result: Promise<PrFe
 function fetchPrsCached(repoPath: string): Promise<PrFetch> {
   const key = path.resolve(repoPath)
   const hit = prCache.get(key)
-  if (hit && (hit.settledAt === null || Date.now() - hit.settledAt < PR_CACHE_TTL_MS)) {
+  if (hit && (hit.settledAt === null || Date.now() - hit.settledAt < prCacheTtlMs())) {
     return hit.result
   }
-  const entry = { settledAt: null as number | null, result: fetchPrs(key) }
+  const entry = { settledAt: null as number | null, result: fetchPrs(key, 'missions') }
   prCache.set(key, entry)
   void entry.result.then((r) => {
     if (prCache.get(key) !== entry) return
@@ -311,8 +317,7 @@ async function withinBudget(pending: Promise<PrFetch>, ms: number | undefined): 
  */
 async function fetchReviewThreads(repoPath: string): Promise<Map<number, PrThreadCounts> | null> {
   try {
-    const { stdout } = await runFile(
-      'gh',
+    const { stdout } = await runGh(
       [
         'api',
         'graphql',
@@ -323,7 +328,7 @@ async function fetchReviewThreads(repoPath: string): Promise<Map<number, PrThrea
         '-f',
         `query=${REVIEW_THREADS_QUERY}`
       ],
-      { ...GH_OPTS, cwd: repoPath }
+      { ...GH_OPTS, cwd: repoPath, consumer: 'pr-stack', resource: 'graphql' }
     )
     return parseReviewThreads(stdout)
   } catch {
@@ -573,11 +578,12 @@ async function worktreeHead(worktreePath: string): Promise<Omit<WorktreePrJoin, 
 export async function findPrsForWorktrees(
   repoPath: string,
   refs: { worktrees: readonly string[]; branches: readonly string[]; numbers: readonly number[] },
-  opts: { waitMs?: number } = {}
+  opts: { waitMs?: number; skipGh?: boolean } = {}
 ): Promise<MissionPrJoin> {
   const heads = await Promise.all(refs.worktrees.map(worktreeHead))
   const wanted = new Set([...refs.branches, ...heads.flatMap((h) => (h.branch ? [h.branch] : []))])
-  const needsGh = wanted.size > 0 || refs.numbers.length > 0
+  // `skipGh` (T611 D-5, a delivered mission): local git facts only, GitHub is not asked.
+  const needsGh = opts.skipGh !== true && (wanted.size > 0 || refs.numbers.length > 0)
   const fetched = needsGh ? await withinBudget(fetchPrsCached(repoPath), opts.waitMs) : null
   const prs = fetched?.prs ?? []
   // A transient failure is "absent or failed" here too: this join has no
@@ -615,9 +621,11 @@ const CI_FINISHED_TTL_MS = 10 * 60_000
 
 /** A merged PR's merge-commit oid, or `null` when `gh` reports none. */
 async function mergeOidOf(repoPath: string, number: number): Promise<string | null> {
-  const view = await runFile('gh', ['pr', 'view', String(number), '--json', 'mergeCommit'], {
+  const view = await runGh(['pr', 'view', String(number), '--json', 'mergeCommit'], {
     ...GH_OPTS,
-    cwd: repoPath
+    cwd: repoPath,
+    consumer: 'missions',
+    resource: 'graphql'
   })
   const oid = (JSON.parse(view.stdout) as { mergeCommit?: { oid?: unknown } | null }).mergeCommit
     ?.oid
@@ -628,14 +636,19 @@ async function mergeOidOf(repoPath: string, number: number): Promise<string | nu
 function verdictOf(repoPath: string, oid: string): Promise<GateCi> {
   const key = `${repoPath}#${oid}`
   const hit = verdictCache.get(key)
-  if (hit && (hit.settledAt === null || Date.now() - hit.settledAt < hit.ttlMs)) return hit.result
+  // T611: a `low` budget stretches the window, an `exhausted` one keeps the last verdict.
+  if (
+    hit &&
+    (hit.settledAt === null || Date.now() - hit.settledAt < Math.max(hit.ttlMs, prCacheTtlMs()))
+  ) {
+    return hit.result
+  }
   const fresh = {
     settledAt: null as number | null,
     ttlMs: CI_FINISHED_TTL_MS,
-    result: runFile(
-      'gh',
+    result: runGh(
       ['run', 'list', '--commit', oid, '--limit', '30', '--json', 'status,conclusion'],
-      { ...GH_OPTS, cwd: repoPath }
+      { ...GH_OPTS, cwd: repoPath, consumer: 'missions', resource: 'rest' }
     ).then(({ stdout }) => ciOfRuns(JSON.parse(stdout) as CiRun[]))
   }
   verdictCache.set(key, fresh)
@@ -706,6 +719,32 @@ export async function findMainCi(
   return { ghAvailable: !failed, byNumber: failed ? {} : byNumber }
 }
 
+/** The last snapshot served per repo: what a skipped background refresh hands back (T611). */
+const lastSnapshots = new Map<string, PrStackSnapshot>()
+
+/**
+ * `pr-stack:load` behind the GitHub budget (T611, AC-5/AC-6). A load on open — and the manual
+ * refresh — always runs. A BACKGROUND refresh (the canvas' interval timer passes
+ * `{ background: true }`) is skipped while the budget is `low` (when the operator keeps "pause PR
+ * Stack when low" on) or `exhausted`: the last snapshot comes back, with the worktrees the caller
+ * just sent, and no `gh` call is spent. With nothing to serve yet, the load runs.
+ */
+export async function loadPrStackThrottled(
+  repoPath: string,
+  worktrees: WorktreeNode[] = [],
+  opts: { background?: boolean } = {}
+): Promise<PrStackSnapshot> {
+  const key = path.resolve(repoPath)
+  const last = lastSnapshots.get(key)
+  if (opts.background === true && last && prStackBackgroundPaused()) {
+    return { ...last, worktrees, edges: graphEdges(last.graph, worktrees) }
+  }
+  const snap = await loadPrStack(repoPath, worktrees)
+  // A failed read is "unknown", not a snapshot worth serving later.
+  if (snap.ghAvailable && snap.ghFailure === null) lastSnapshots.set(key, snap)
+  return snap
+}
+
 /** A `gh`/`git` round-trip for a link click must not stall the click for long. */
 const LINK_OPTS = { windowsHide: true, timeout: 5_000, maxBuffer: 1 << 20 } as const
 
@@ -728,9 +767,11 @@ async function resolvePrLink(
     )
     const prNumber = matchPrLinkToRemote(remote, url)
     if (prNumber === null) return null
-    const { stdout } = await runFile('gh', ['pr', 'view', String(prNumber), '--json', 'state'], {
+    const { stdout } = await runGh(['pr', 'view', String(prNumber), '--json', 'state'], {
       ...LINK_OPTS,
-      cwd: folderPath
+      cwd: folderPath,
+      consumer: 'pr-stack',
+      resource: 'graphql'
     })
     return isOpenPrViewJson(stdout) ? { prNumber } : null
   } catch {
@@ -742,8 +783,13 @@ async function resolvePrLink(
 export function registerPrStack(): void {
   ipcMain.handle(
     'pr-stack:load',
-    async (_e, repoPath: string, worktrees?: WorktreeNode[]): Promise<PrStackSnapshot> =>
-      loadPrStack(repoPath, Array.isArray(worktrees) ? worktrees : [])
+    async (
+      _e,
+      repoPath: string,
+      worktrees?: WorktreeNode[],
+      opts?: { background?: boolean }
+    ): Promise<PrStackSnapshot> =>
+      loadPrStackThrottled(repoPath, Array.isArray(worktrees) ? worktrees : [], opts)
   )
   ipcMain.handle('pr-stack:resolveLink', (_e, folderPath: unknown, url: unknown) =>
     resolvePrLink(folderPath, url)

@@ -48,6 +48,7 @@ import {
   type MissionPrJoin,
   type WorktreePrJoin
 } from '../pr-stack'
+import { checkDeliveredMissions } from '../github-budget-tracker'
 import {
   addObservedLedger,
   ensureLinkCacheLoaded,
@@ -4726,12 +4727,15 @@ export async function deriveMissionSignals(
   for (const p of worktreePaths) exists.set(p, await pathExists(p))
   // git/gh only for the paths that exist (a plain file link needs neither).
   const gitPaths = worktreePaths.filter((p) => exists.get(p))
+  // T611 D-5: a delivered mission is never asked of GitHub (unless the operator opts back in). Its
+  // local git facts are still read; its PR facts and gates are the sticky last-known ones below.
+  const skipGithub = mission.status === 'delivered' && !checkDeliveredMissions()
   const join: MissionPrJoin =
     gitPaths.length + branches.length + numbers.length > 0
       ? await findPrsForWorktrees(
           root,
           { worktrees: gitPaths, branches, numbers },
-          { waitMs: opts.prWaitMs }
+          { waitMs: opts.prWaitMs, skipGh: skipGithub }
         )
       : { ghAvailable: null, worktrees: {}, branches: {}, numbers: {} }
 
@@ -4884,7 +4888,12 @@ export async function deriveMissionSignals(
   const mergedNumbers = [
     ...new Set(prByStep.flatMap((f) => (f?.facts.state === 'MERGED' ? [f.facts.number] : [])))
   ]
-  const mainCi = await resolveMainCi(root, mergedNumbers, join.ghAvailable, opts.mainCiWaitMs ?? 0)
+  const mainCi = await resolveMainCi(
+    root,
+    mergedNumbers,
+    skipGithub ? false : join.ghAvailable,
+    opts.mainCiWaitMs ?? 0
+  )
   const steps = stepRows.map((st, i): MissionStepSignals => {
     const found = prByStep[i]
     const merged = found?.facts.state === 'MERGED'

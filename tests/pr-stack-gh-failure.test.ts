@@ -62,16 +62,26 @@ describe('classifyGhFailure', () => {
     expect(classifyGhFailure({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' })).toBe('outputTooLarge')
   })
 
-  it('reads network errors and rate limits as network', () => {
+  it('reads network errors as network', () => {
     expect(classifyGhFailure({ code: 1, stderr: 'error connecting to api.github.com' })).toBe(
       'network'
     )
     expect(
       classifyGhFailure({ code: 1, stderr: 'dial tcp: lookup api.github.com: no such host' })
     ).toBe('network')
-    expect(classifyGhFailure({ code: 1, stderr: 'GraphQL: API rate limit exceeded' })).toBe(
-      'network'
-    )
+  })
+
+  // T611 AC-9: a spent budget is not a flaky network. The runner marks the budget exhausted from
+  // this same stderr (tests/gh-runner.test.ts); here it must simply stop reading as `network`.
+  it('no longer reads a rate limit as network', () => {
+    expect(classifyGhFailure({ code: 1, stderr: 'GraphQL: API rate limit exceeded' })).toBe('other')
+    expect(
+      classifyGhFailure({ code: 1, stderr: 'gh: You have exceeded a secondary rate limit' })
+    ).toBe('other')
+    // A throttled read (Harnu's own pause) is not a network failure either.
+    expect(
+      classifyGhFailure({ code: 'GH_THROTTLED', stderr: 'Harnu paused GitHub reads: budget spent' })
+    ).toBe('other')
   })
 
   it('reads a missing binary, no auth, or a non-GitHub remote as genuinely unavailable', () => {

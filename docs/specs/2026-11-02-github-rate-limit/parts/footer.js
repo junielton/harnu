@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- standalone mockup runtime (browser script), not app code */
 /* parts/footer.js — StatusFooter.vue with the GitHub budget slot. Light DOM.
  * Attributes:
  *   gh    = "fleet" (A: a segment inside the fleet pill) | "pill" (B: its own pill)

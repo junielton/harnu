@@ -24,11 +24,9 @@
  */
 
 import { app } from 'electron'
-import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
-import { promisify } from 'node:util'
-import { spawnEnvOnce } from './appimage-env'
+import { runGh } from './gh-runner'
 import { folderKey } from './claude-config'
 import {
   parseViewedStates,
@@ -38,8 +36,6 @@ import {
   type LocalMark,
   type RemoteViewedState
 } from './review-viewed'
-
-const runFile = promisify(execFile)
 
 const GH_TIMEOUT_MS = 15_000
 const GH_MAX_BUFFER = 1 << 22
@@ -153,16 +149,20 @@ const UNMARK_MUTATION = `mutation($id: ID!, $path: String!) {
   unmarkFileAsViewed(input: { pullRequestId: $id, path: $path }) { clientMutationId }
 }`
 
-async function gh(repoPath: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await runFile('gh', args, {
+/**
+ * One `gh api graphql` round trip through the shared runner (login-shell PATH, BUG-34, and the
+ * GitHub budget's counting, T611). `write` marks the viewed-state mutations: an operator gesture,
+ * never throttled (D-6). The read refresh is a throttled read.
+ */
+async function gh(repoPath: string, args: readonly string[], write = false): Promise<string> {
+  const { stdout } = await runGh(args, {
     cwd: repoPath,
     timeout: GH_TIMEOUT_MS,
     windowsHide: true,
     maxBuffer: GH_MAX_BUFFER,
-    // Spawn with the user's login-shell PATH, or a Dock-launched macOS build
-    // resolves `gh` against launchd's minimal PATH and never finds Homebrew
-    // (BUG-34).
-    env: await spawnEnvOnce()
+    consumer: 'review',
+    resource: 'graphql',
+    write
   })
   return stdout
 }
@@ -238,16 +238,20 @@ export async function pushViewed(
   viewed: boolean
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await gh(repoPath, [
-      'api',
-      'graphql',
-      '-f',
-      `query=${viewed ? MARK_MUTATION : UNMARK_MUTATION}`,
-      '-f',
-      `id=${nodeId}`,
-      '-f',
-      `path=${filePath}`
-    ])
+    await gh(
+      repoPath,
+      [
+        'api',
+        'graphql',
+        '-f',
+        `query=${viewed ? MARK_MUTATION : UNMARK_MUTATION}`,
+        '-f',
+        `id=${nodeId}`,
+        '-f',
+        `path=${filePath}`
+      ],
+      true
+    )
   } catch (err) {
     return { ok: false, error: ghErrorMessage(err) }
   }
