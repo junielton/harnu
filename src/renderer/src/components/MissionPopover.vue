@@ -467,61 +467,6 @@ useNativeOverlay('mission-popover', rootEl)
         </div>
       </div>
 
-      <!-- The steward line (T609, mockup v6 owed strip): its last action, and the Pause / Resume door. -->
-      <div
-        v-if="steward"
-        class="flex items-center"
-        style="gap: 6px; margin-top: 10px; font-size: 11.5px"
-        data-test="mission-steward"
-      >
-        <Bot :size="11" :stroke-width="1.7" class="shrink-0 text-text-3" aria-hidden="true" />
-        <span class="shrink-0 text-text-2" style="font-weight: 500">{{
-          $t('mission.steward.label')
-        }}</span>
-        <span class="shrink-0 text-text-4">·</span>
-        <span
-          v-if="stewardPause"
-          class="min-w-0 flex-1 truncate text-warning"
-          data-test="mission-steward-state"
-          >{{ $t('mission.steward.paused') }}</span
-        >
-        <template v-else>
-          <span class="min-w-0 truncate text-text-3" data-test="mission-steward-last">{{
-            stewardLast
-          }}</span>
-          <span
-            v-if="stewardAge"
-            class="shrink-0 text-text-4"
-            style="font-size: 10.5px"
-            data-test="mission-steward-age"
-            >· {{ stewardAge }}</span
-          >
-          <span class="min-w-0 flex-1" />
-        </template>
-        <button
-          v-if="stewardPause"
-          type="button"
-          class="shrink-0 cursor-pointer text-accent hover:underline"
-          style="font-size: 11px"
-          :disabled="missions.doorInFlight"
-          data-test="mission-steward-resume"
-          @click="resumeSteward"
-        >
-          {{ $t('mission.steward.resume') }}
-        </button>
-        <button
-          v-else
-          type="button"
-          class="shrink-0 cursor-pointer text-text-4 hover:text-text-2"
-          style="font-size: 11px"
-          :disabled="missions.doorInFlight"
-          data-test="mission-steward-pause"
-          @click="pausingSteward = true"
-        >
-          {{ $t('mission.steward.pause') }}
-        </button>
-      </div>
-
       <!-- The ledger tail (Amendment c): the last rows Harnu wrote, newest first. -->
       <div v-if="model.ledgerTail.length" style="margin-top: 12px" data-test="mission-ledger">
         <div
@@ -561,6 +506,61 @@ useNativeOverlay('mission-popover', rootEl)
           <li v-for="(q, i) in view.mission.openQuestions" :key="i">{{ q }}</li>
         </ul>
       </div>
+    </div>
+
+    <!-- The steward line (T609, mockup v6 owed strip): pinned above the end door so Pause / Resume is always in reach. -->
+    <div
+      v-if="steward"
+      class="flex shrink-0 items-center border-t border-border"
+      style="gap: 6px; padding: 7px 14px; font-size: 11.5px"
+      data-test="mission-steward"
+    >
+      <Bot :size="11" :stroke-width="1.7" class="shrink-0 text-text-3" aria-hidden="true" />
+      <span class="shrink-0 text-text-2" style="font-weight: 500">{{
+        $t('mission.steward.label')
+      }}</span>
+      <span class="shrink-0 text-text-4">·</span>
+      <span
+        v-if="stewardPause"
+        class="min-w-0 flex-1 truncate text-warning"
+        data-test="mission-steward-state"
+        >{{ $t('mission.steward.paused') }}</span
+      >
+      <template v-else>
+        <span class="min-w-0 truncate text-text-3" data-test="mission-steward-last">{{
+          stewardLast
+        }}</span>
+        <span
+          v-if="stewardAge"
+          class="shrink-0 text-text-4"
+          style="font-size: 10.5px"
+          data-test="mission-steward-age"
+          >· {{ stewardAge }}</span
+        >
+        <span class="min-w-0 flex-1" />
+      </template>
+      <button
+        v-if="stewardPause"
+        type="button"
+        class="shrink-0 cursor-pointer text-accent hover:underline"
+        style="font-size: 11px"
+        :disabled="missions.doorInFlight"
+        data-test="mission-steward-resume"
+        @click="resumeSteward"
+      >
+        {{ $t('mission.steward.resume') }}
+      </button>
+      <button
+        v-else
+        type="button"
+        class="shrink-0 cursor-pointer text-text-4 hover:text-text-2"
+        style="font-size: 11px"
+        :disabled="missions.doorInFlight"
+        data-test="mission-steward-pause"
+        @click="pausingSteward = true"
+      >
+        {{ $t('mission.steward.pause') }}
+      </button>
     </div>
 
     <!-- The end door (Mission v3 §3.5): any non-closed mission, any time. -->

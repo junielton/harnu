@@ -21,6 +21,8 @@ defineProps<{
   titleFor: (missionId: string) => string | null
   /** The operator's reason when the mission's steward is paused, else `null`. */
   pausedFor: (missionId: string) => string | null
+  /** Say, under the rows, that a steward belongs to its mission — drawn when the list has no user worker. */
+  showHint?: boolean
 }>()
 
 const { t } = useI18n()
@@ -102,5 +104,13 @@ const { t } = useI18n()
         </div>
       </li>
     </ul>
+    <p
+      v-if="showHint"
+      class="m-0 text-text-4"
+      style="margin-top: 8px; font-size: 10.5px; line-height: 1.5"
+      data-test="scheduler-stewards-hint"
+    >
+      {{ t('scheduler.stewards.hint') }}
+    </p>
   </section>
 </template>

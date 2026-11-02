@@ -394,7 +394,7 @@ async function createWorker(): Promise<void> {
             </SchedulerFolderGroup>
 
             <div
-              v-if="shownGroups.length === 0"
+              v-if="shownGroups.length === 0 && userWorkers.length > 0"
               class="px-5 py-10 text-center text-[12px] text-text-3"
               data-list-empty
             >
@@ -423,6 +423,7 @@ async function createWorker(): Promise<void> {
             :now-ms="nowMs"
             :title-for="missionTitleFor"
             :paused-for="stewardPauseFor"
+            :show-hint="userWorkers.length === 0"
           />
         </div>
 
@@ -434,13 +435,6 @@ async function createWorker(): Promise<void> {
           :running-since-ms="runningSinceById[selectedWorker.id]"
           :now-ms="nowMs"
         />
-        <div
-          v-else
-          class="flex min-w-0 flex-1 items-center justify-center px-10 text-center text-[12px] text-text-4"
-          data-test="scheduler-stewards-hint"
-        >
-          {{ t('scheduler.stewards.hint') }}
-        </div>
       </div>
 
       <!-- BUG-120: a caption on the view's own ground, NOT a bar. With

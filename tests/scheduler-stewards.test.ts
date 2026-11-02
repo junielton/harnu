@@ -21,13 +21,14 @@ const steward = (over: Partial<StewardSummary> = {}): StewardSummary => ({
   ...over
 })
 
-function render(stewards: StewardSummary[], paused: Record<string, string> = {}) {
+function render(stewards: StewardSummary[], paused: Record<string, string> = {}, showHint = false) {
   return mount(SchedulerStewards, {
     props: {
       stewards,
       nowMs: NOW,
       titleFor: (id: string) => (id === 'mnt-0000000a' ? 'Ship the importer' : null),
-      pausedFor: (id: string) => paused[id] ?? null
+      pausedFor: (id: string) => paused[id] ?? null,
+      showHint
     },
     global: { plugins: [i18n] }
   })
@@ -75,5 +76,12 @@ describe('SchedulerStewards', () => {
       'Paused — CI is flaky today'
     )
     expect(paused.get('[data-test="scheduler-steward-row"]').attributes('data-paused')).toBe('true')
+  })
+
+  it('the hint under the rows appears only when asked (no user worker in the list)', () => {
+    expect(render([steward()]).find('[data-test="scheduler-stewards-hint"]').exists()).toBe(false)
+    expect(
+      render([steward()], {}, true).get('[data-test="scheduler-stewards-hint"]').text()
+    ).toContain('belongs to its mission')
   })
 })

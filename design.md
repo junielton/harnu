@@ -6700,8 +6700,9 @@ verified** is a button wearing the Badge **Accent** anatomy (`check` 10px) and
 No MCP verb reaches any of them. A refused door, or an IPC failure, raises a
 danger toast with the reason ("Mission action refused").
 
-**Steward line (T609, campaign ch.5b; mockup `v6--campaign` owed strip).** One line under the `you`
-block of the Mission popover, drawn only when the mission has a steward (the Scheduler's system worker
+**Steward line (T609, campaign ch.5b; mockup `v6--campaign` owed strip).** One line **pinned above the
+footer** of the Mission popover (outside the scrolling body, `border-t border-border`, `padding: 7px 14px`, so
+Pause / Resume is never scrolled out of reach), drawn only when the mission has a steward (the Scheduler's system worker
 bound to it, §6 "Scheduler" → Stewards): the `bot` glyph (11px, `text-text-3`), "Steward" (`11.5px / 500`,
 `text-text-2`), a `·`, its last action (the last tick's one-line result, `text-text-3`, truncated), the age
 ("4m ago", `text-text-4`) and the next wake ("next: on CI change" while armed). Right-aligned, a bare text
@@ -12485,7 +12486,11 @@ detail pane). Two lines, `gap: 2px`: the mission's title (`12px`, `text-text-2`,
 (`text-warning`) or nothing; then `11px text-text-4`: "Last wake {age} ago · {last action}" (the last tick's
 first result line, truncated; "No tick yet" before the first). A **paused** row (the operator paused it from the
 mission popover) shows its reason instead of the last action, in `text-warning`. The block is hidden when no
-mission has a steward. The footer caption below the view is unchanged.
+mission has a steward. When the Scheduler holds stewards but no user worker, the list column draws no
+empty block above the Stewards section (its "No worker matches this filter" copy is about filtering) and the
+section ends with one hint line (`10.5px`, `text-text-4`, `margin-top: 8px`): "A steward belongs to its
+mission. Pause it from the mission's popover." (Inside the 340px column, never in the detail pane: at 900px
+that pane can be squeezed to a sliver.) The footer caption below the view is unchanged.
 
 #### Worker detail (`SchedulerWorkerDetail.vue`, remaining width)
 
