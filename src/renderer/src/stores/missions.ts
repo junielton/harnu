@@ -32,6 +32,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 import type { MissionDoor, MissionDoorResult, MissionView } from '../../../main/mission-ipc'
+import type { MergeBatchResult } from '../../../main/merge-batch-ipc'
 import { i18n } from '../i18n'
 import {
   decideCue,
@@ -405,6 +406,38 @@ export const useMissionsStore = defineStore('missions', () => {
   }
 
   /**
+   * Campaign spec §4 — the Merge batch door. Long-running (it waits on the steward and on CI between
+   * merges), so it has its own in-flight flag instead of holding every other door shut. A refusal or an
+   * IPC failure toasts and comes back `{ ok: false }`; a STOP (a red gate) is an `ok` outcome the dialog shows.
+   */
+  const mergeBatchInFlight = ref(false)
+  async function runMergeBatch(args: {
+    root: string
+    missionId: string
+    prs: number[]
+  }): Promise<MergeBatchResult> {
+    mergeBatchInFlight.value = true
+    let res: MergeBatchResult
+    try {
+      res = await window.api.missionMergeBatch(args)
+    } catch (err) {
+      res = { ok: false, error: err instanceof Error ? err.message : String(err) }
+    } finally {
+      mergeBatchInFlight.value = false
+    }
+    if (!res.ok) {
+      useUiStore().pushToast({
+        kind: 'danger',
+        title: i18n.global.t('mission.doorFailed'),
+        description: res.error
+      })
+    }
+    writeSeq++
+    void refreshAfterWrite()
+    return res
+  }
+
+  /**
    * Close several missions through the EXISTING end door, one after another
    * (BUG-173 S5, spec §3.5). Never aborts on a failure: each door answers on its
    * own. The in-flight counter is raised once for the batch, each answer is
@@ -457,6 +490,8 @@ export const useMissionsStore = defineStore('missions', () => {
     viewForSession,
     modelForSession,
     runDoor,
+    runMergeBatch,
+    mergeBatchInFlight,
     runDoors,
     popoverRequest,
     requestPopover,

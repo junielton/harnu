@@ -100,6 +100,8 @@ function keyOf(item: MissionYouItem): [OwedKey, number] | null {
       return ['human-steps', item.stepIds.length]
     case 'review-import':
       return ['review-import', 1]
+    // The operator paused the steward themselves: standing, never news — nothing to chime about.
+    case 'steward-paused':
     case 'main-red':
     case 'approvals':
     case 'needs-input':

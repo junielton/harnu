@@ -6693,9 +6693,54 @@ verified** is a button wearing the Badge **Accent** anatomy (`check` 10px) and
 | Add check              | "+ check" on a step                       | inline input            | `applyAddCheck`           |
 | Tick / untick check    | the check's checkbox                      | inline checkbox         | `applyTickCheck`          |
 | Delete check           | the check row's `x` (hover)               | icon button             | `applyDeleteCheck`        |
+| Pause steward…         | the steward line → reason dialog          | Ghost → dialog          | `applyPauseSteward`       |
+| Resume steward         | the steward line / the paused `you` row   | Primary (you) / link    | `applyResumeSteward`      |
+| Merge batch            | the `merge-batch` `you` row → dialog      | Primary → dialog        | `runMergeBatchDoor`       |
 
 No MCP verb reaches any of them. A refused door, or an IPC failure, raises a
 danger toast with the reason ("Mission action refused").
+
+**Steward line (T609, campaign ch.5b; mockup `v6--campaign` owed strip).** One line under the `you`
+block of the Mission popover, drawn only when the mission has a steward (the Scheduler's system worker
+bound to it, §6 "Scheduler" → Stewards): the `bot` glyph (11px, `text-text-3`), "Steward" (`11.5px / 500`,
+`text-text-2`), a `·`, its last action (the last tick's one-line result, `text-text-3`, truncated), the age
+("4m ago", `text-text-4`) and the next wake ("next: on CI change" while armed). Right-aligned, a bare text
+link (`11px`, `text-text-4`, `hover:text-text-2`): **Pause steward…** while it runs, **Resume steward**
+(`text-accent`) while it is paused. A paused steward reads "Steward · paused", in `text-warning`, instead
+of its last action.
+
+**Pause steward dialog (`StewardPauseDialog.vue`).** The End dialog's anatomy, copied (Teleport, z-60,
+overlay fade, fade-in-scale card, `min(440px, 90vw)`, focus trap, `Esc` / backdrop / X cancel, **initial
+focus on the reason field**; the backdrop carries `data-mission-close-confirm` so the pill's click-outside
+leaves the popover open behind it). Header "Pause the steward?" (`13.5px / 600`); body: one sentence
+("It stops waking on events and on its 20-minute beat until you resume it. Nothing is lost — the mission
+keeps its state.") and a **mandatory Reason** field (label `11px`, `text-text-3`; a 2-row textarea in the
+End dialog's field look). The footer is **Cancel** (Ghost) + **Pause steward** (Primary), which stays
+**disabled while the reason is blank**. Pausing writes a `steward` Log entry carrying the reason.
+
+**Paused state.** While paused the mission's state is `needs-you` — the pill wears the warning tone — and
+the `you` list carries "Steward paused {age}: {reason}" (a `steward-paused` item; mid risk; the age is
+part of the sentence, so the row's own age slot stays empty). When it is the first row, it is boxed in the
+warning look with a **Resume steward** button (Primary, `play` 14px) under the sentence. Resuming writes a
+second `steward` Log entry and clears the row.
+
+**Merge batch (T609; mockup `v6--campaign` state `merge-batch`).** A derived `you` row, drawn when two or
+more of a mission's steps have an open PR whose CI is green, in step order: "{n} PRs ready to merge in
+order: #305 → #306 → #308" (mid risk, no age) with the action **Merge {n} in order…** (Primary, `git-merge`
+14px) at the row's end. It opens the **Merge batch dialog (`MergeBatchDialog.vue`)** — the End dialog's
+anatomy again, `min(480px, 90vw)`: header "Merge {n} PRs in order"; a "who" line (the `running` step glyph,
+"**Steward** merges one, then works between merges"); an ordered list — a PR row (the `waiting` step glyph,
+**#305** `font-mono 500`, the step title, a dim "· CI green") and, between two PRs, a "between" row (the
+mockup's `.between`: a 12px `bot` marker and three chips "rebase --onto #306", "re-check gates", "stop on
+red", `10.5px`, `border border-border-2 rounded-sm px-1.5`, `text-text-3`). Footer: **Cancel** (Ghost) +
+**Merge {n} in order** (Primary; **initial focus is Cancel**). While the batch runs the list is
+non-interactive, each PR row shows its state glyph (`verified` once merged, `running` for the one being
+merged) and the footer reads "Merging…" disabled — a batch waits on the steward and on CI between merges
+and can take minutes. A **stop** replaces the footer's confirm with a warning callout (Warning look,
+`triangle-alert` 13px, eyebrow "Stopped at #306": the reason in words — "has failing checks", "is not
+open any more", "GitHub refused the merge: {message}", "checks still running") over the merged PRs and the
+PRs still to merge, and the confirm becomes **Merge the rest…** — Harnu asks again, and nothing more is
+merged until the operator answers. Merging is the operator's: no MCP verb reaches this door.
 
 **End dialog (`MissionCloseConfirmDialog.vue`, spec §3.5).** One dialog ends
 any non-closed mission, with a choice. Ending is the one irreversible door
@@ -6939,8 +6984,9 @@ chapters, each row tagged "ch. {n}") and a footer (`padding: 8px 14px`,
 `border-t border-border`): **End campaign…** (Ghost) — rendered **disabled with a
 tooltip** until main exposes a campaign end door — and **Open map** (Primary) —
 enabled since T607: it closes the Topbar popover and opens the Campaign map takeover
-for this campaign (§6 "Campaign map"). The **Steward** line and the
-**merge-batch** dialog of the mockup belong to chapter 5 and render nothing here.
+for this campaign (§6 "Campaign map"). The **merge-batch** row and dialog of the mockup (T609) are
+the Mission popover's, drawn in the You lane the same way (§6 "Mission progress" → Merge batch); the
+**Steward** line stays with the chapter popover, where its Pause door lives.
 
 States (mockup `v6--campaign`): `default`; `side` (a side quest selected —
 eyebrow "Side quest · not required for the end", its origin chapter and gates);
@@ -12427,6 +12473,19 @@ inside the first. The **Collapse all** button next to it keeps the global keyboa
 `--text-3`) — `No worker matches “{q}”` in `--text-2`/500 over `Search covers worker names, folders and
 prompts.` and a `Clear filter` ghost button (`22px`, `0 8px`, `border border-border-2`, `rounded-sm`,
 11px `--text-2`) that clears both the search and the chip. (The no-workers-at-all empty state is unchanged.)
+
+**Stewards section (T609, campaign ch.5b — `SchedulerStewards.vue`).** A mission's steward is a **system
+worker**, not a user worker (campaign spec §3.4), so it never appears among the folder groups, the chips,
+Up next or the worker counter. It has its own block at the **bottom of the list column**, under the scrolling
+folder groups: `border-t border-border`, `padding: 8px 10px 8px 12px`, an eyebrow "STEWARDS" (`10.5px / 500`,
+uppercase, `0.07em`, `text-text-4`) with the count at the right, then one row per steward. A row is
+**read-only**: no enable switch, no pin, no Run now, no delete, no prompt edit, and it is not selectable (no
+detail pane). Two lines, `gap: 2px`: the mission's title (`12px`, `text-text-2`, truncated) with a `bot` glyph
+(11px, `text-text-3`) before it and, at the right, a state word — "Running" (`text-accent`), "Paused"
+(`text-warning`) or nothing; then `11px text-text-4`: "Last wake {age} ago · {last action}" (the last tick's
+first result line, truncated; "No tick yet" before the first). A **paused** row (the operator paused it from the
+mission popover) shows its reason instead of the last action, in `text-warning`. The block is hidden when no
+mission has a steward. The footer caption below the view is unchanged.
 
 #### Worker detail (`SchedulerWorkerDetail.vue`, remaining width)
 

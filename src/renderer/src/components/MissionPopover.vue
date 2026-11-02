@@ -9,15 +9,25 @@
  * mission UI makes. Ending is the one irreversible door: its buttons only open
  * `MissionCloseConfirmDialog`, and the door fires from that dialog's confirm.
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronLeft, FileText, Flag, TriangleAlert } from 'lucide-vue-next'
+import {
+  Bot,
+  Check,
+  ChevronLeft,
+  FileText,
+  Flag,
+  GitMerge,
+  Play,
+  TriangleAlert
+} from 'lucide-vue-next'
 import type { MissionDoor, MissionView } from '../../../main/mission-ipc'
 import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
 import {
   endWarnings,
   formatDuration,
+  youRowAge,
   headlineText,
   type EndChoice,
   type MissionModel,
@@ -25,11 +35,15 @@ import {
   type YouRow
 } from '../lib/mission-view'
 import { useMissionsStore } from '../stores/missions'
+import { useSchedulerStore } from '../stores/scheduler'
 import { useSessionsStore } from '../stores/sessions'
+import { stewardForMission, summarizeSteward } from '../lib/steward-view'
 import { sessionTitle } from '../lib/session-label'
 import Button from './ui/Button.vue'
 import MissionStepRail from './MissionStepRail.vue'
 import MissionCloseConfirmDialog from './MissionCloseConfirmDialog.vue'
+import StewardPauseDialog from './StewardPauseDialog.vue'
+import MergeBatchDialog from './MergeBatchDialog.vue'
 
 const props = defineProps<{
   view: MissionView
@@ -44,6 +58,7 @@ const emit = defineEmits<{ back: [] }>()
 
 const { t } = useI18n()
 const missions = useMissionsStore()
+const scheduler = useSchedulerStore()
 const sessions = useSessionsStore()
 
 const headline = computed(() => headlineText(t, props.model.headline))
@@ -92,7 +107,7 @@ const RISK_CLASS: Record<YouRow['risk'], string> = {
 
 /** "3h 0m" — only where the record had a timestamp. */
 function ageText(row: YouRow): string | null {
-  return row.ageMs === null ? null : formatDuration(row.ageMs)
+  return youRowAge(row)
 }
 
 /** The ledger tail's "3m ago". */
@@ -171,6 +186,48 @@ function onDeleteCheck(stepId: string, checkId: string): void {
 function onChoose(stepId: string, index: number): void {
   void door({ door: 'chooseDecision', stepId, index } as Omit<MissionDoor, 'root' | 'missionId'>)
 }
+
+// ---- Campaign ch.5b (T609): the steward line and its doors --------------------------------
+
+onMounted(() => {
+  // The steward is the Scheduler's system worker bound to this mission; its last action comes from the
+  // runs the Scheduler recorded. The footer normally has the store loaded already.
+  // Best-effort: with no Scheduler the steward line is simply not drawn.
+  if (!scheduler.loaded) void scheduler.init().catch(() => {})
+})
+
+const steward = computed(() => {
+  const w = stewardForMission(scheduler.workers ?? [], props.view.mission.id)
+  return w
+    ? summarizeSteward(w, scheduler.runsByWorker[w.id] ?? [], scheduler.runningIds.includes(w.id))
+    : null
+})
+const stewardPause = computed(() => props.view.mission.stewardPause ?? null)
+const stewardLast = computed<string>(() => {
+  const s = steward.value
+  if (!s || s.lastAction === null) return t('mission.steward.noAction')
+  return s.lastAction
+})
+const stewardAge = computed<string | null>(() => {
+  const at = steward.value?.lastWakeAt
+  return at == null
+    ? null
+    : t('mission.steward.ago', { age: formatDuration(Math.max(0, Date.now() - at)) })
+})
+
+/** The Pause steward dialog is open — the only way the pause door can fire. */
+const pausingSteward = ref(false)
+async function confirmPause(reason: string): Promise<void> {
+  const ok = await door({ door: 'pauseSteward', reason } as Omit<MissionDoor, 'root' | 'missionId'>)
+  if (ok) pausingSteward.value = false
+}
+function resumeSteward(): void {
+  void door({ door: 'resumeSteward' } as Omit<MissionDoor, 'root' | 'missionId'>)
+}
+
+/** The Merge batch dialog is open; its rows come from the merge-batch You row. */
+const mergingBatch = ref(false)
+const mergeRow = computed(() => props.model.youRows.find((r) => r.kind === 'merge-batch') ?? null)
 
 // An in-app popover: registers with the native-overlay freeze (a browser pane under it freezes, spec §2.4).
 const rootEl = ref<HTMLElement | null>(null)
@@ -326,6 +383,28 @@ useNativeOverlay('mission-popover', rootEl)
               <Check :size="14" :stroke-width="1.8" />{{ $t('mission.close') }}
             </Button>
           </div>
+          <div v-if="firstRow?.kind === 'steward-paused'" style="margin-top: 7px">
+            <Button
+              variant="primary"
+              :disabled="missions.doorInFlight"
+              data-test="mission-resume-steward"
+              @click="resumeSteward"
+            >
+              <Play :size="14" :stroke-width="1.8" />{{ $t('mission.steward.resume') }}
+            </Button>
+          </div>
+          <div v-if="firstRow?.kind === 'merge-batch'" style="margin-top: 7px">
+            <Button
+              variant="primary"
+              :disabled="missions.doorInFlight || missions.mergeBatchInFlight"
+              data-test="mission-merge-batch"
+              @click="mergingBatch = true"
+            >
+              <GitMerge :size="14" :stroke-width="1.8" />{{
+                $t('mission.mergeBatch.action', { n: firstRow.prs?.length ?? 0 })
+              }}
+            </Button>
+          </div>
           <div v-if="firstRow?.kind === 'rescope'" style="margin-top: 7px">
             <Button
               variant="primary"
@@ -356,6 +435,28 @@ useNativeOverlay('mission-popover', rootEl)
             >●</span
           >
           <span class="min-w-0 flex-1">{{ rowText(row) }}</span>
+          <button
+            v-if="row.kind === 'merge-batch'"
+            type="button"
+            class="shrink-0 cursor-pointer text-accent hover:underline"
+            style="font-size: 11px"
+            :disabled="missions.doorInFlight || missions.mergeBatchInFlight"
+            data-test="mission-merge-batch"
+            @click="mergingBatch = true"
+          >
+            {{ $t('mission.mergeBatch.action', { n: row.prs?.length ?? 0 }) }}
+          </button>
+          <button
+            v-else-if="row.kind === 'steward-paused'"
+            type="button"
+            class="shrink-0 cursor-pointer text-accent hover:underline"
+            style="font-size: 11px"
+            :disabled="missions.doorInFlight"
+            data-test="mission-resume-steward"
+            @click="resumeSteward"
+          >
+            {{ $t('mission.steward.resume') }}
+          </button>
           <span
             v-if="ageText(row)"
             class="shrink-0 tabular-nums text-text-4"
@@ -364,6 +465,61 @@ useNativeOverlay('mission-popover', rootEl)
             >{{ ageText(row) }}</span
           >
         </div>
+      </div>
+
+      <!-- The steward line (T609, mockup v6 owed strip): its last action, and the Pause / Resume door. -->
+      <div
+        v-if="steward"
+        class="flex items-center"
+        style="gap: 6px; margin-top: 10px; font-size: 11.5px"
+        data-test="mission-steward"
+      >
+        <Bot :size="11" :stroke-width="1.7" class="shrink-0 text-text-3" aria-hidden="true" />
+        <span class="shrink-0 text-text-2" style="font-weight: 500">{{
+          $t('mission.steward.label')
+        }}</span>
+        <span class="shrink-0 text-text-4">·</span>
+        <span
+          v-if="stewardPause"
+          class="min-w-0 flex-1 truncate text-warning"
+          data-test="mission-steward-state"
+          >{{ $t('mission.steward.paused') }}</span
+        >
+        <template v-else>
+          <span class="min-w-0 truncate text-text-3" data-test="mission-steward-last">{{
+            stewardLast
+          }}</span>
+          <span
+            v-if="stewardAge"
+            class="shrink-0 text-text-4"
+            style="font-size: 10.5px"
+            data-test="mission-steward-age"
+            >· {{ stewardAge }}</span
+          >
+          <span class="min-w-0 flex-1" />
+        </template>
+        <button
+          v-if="stewardPause"
+          type="button"
+          class="shrink-0 cursor-pointer text-accent hover:underline"
+          style="font-size: 11px"
+          :disabled="missions.doorInFlight"
+          data-test="mission-steward-resume"
+          @click="resumeSteward"
+        >
+          {{ $t('mission.steward.resume') }}
+        </button>
+        <button
+          v-else
+          type="button"
+          class="shrink-0 cursor-pointer text-text-4 hover:text-text-2"
+          style="font-size: 11px"
+          :disabled="missions.doorInFlight"
+          data-test="mission-steward-pause"
+          @click="pausingSteward = true"
+        >
+          {{ $t('mission.steward.pause') }}
+        </button>
       </div>
 
       <!-- The ledger tail (Amendment c): the last rows Harnu wrote, newest first. -->
@@ -419,6 +575,19 @@ useNativeOverlay('mission-popover', rootEl)
       </Button>
     </div>
 
+    <StewardPauseDialog
+      v-if="pausingSteward"
+      :busy="missions.doorInFlight"
+      @cancel="pausingSteward = false"
+      @confirm="confirmPause"
+    />
+    <MergeBatchDialog
+      v-if="mergingBatch && mergeRow"
+      :root="view.root"
+      :mission-id="view.mission.id"
+      :prs="mergeRow.prs ?? []"
+      @close="mergingBatch = false"
+    />
     <MissionCloseConfirmDialog
       v-if="confirmingClose"
       :title="view.title"

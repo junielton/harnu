@@ -5,7 +5,7 @@
  *
  *   AC-4b.2  Main quest / Side quests / Locked on the left, the open chapter's objectives with
  *            gate dots on the right, the You lane, the footer ("End campaign…" disabled with a
- *            reason because no campaign end door exists in main yet; "Open map" enabled by T607); no steward line and no merge-batch (chapter 5)
+ *            reason because no campaign end door exists in main yet; "Open map" enabled by T607); the merge-batch row and its dialog are T609's (tests/steward-doors-ui.test.ts)
  *   AC-4b.3  the chapter popover: the back link, the You lane as aged rows (no "+N more"), the
  *            "Decide: …" row, the ledger tail
  */

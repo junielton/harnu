@@ -4266,6 +4266,17 @@
     "subtitle": "{workers} workers · {running} rodando",
     "newWorker": "Novo worker",
     "footerNote": "Verifica a cada 30s · no máximo 2 workers por vez · nada roda com o Harnu fechado",
+    "stewards": {
+      "title": "Stewards",
+      "aria": "Stewards — um por missão, somente leitura",
+      "running": "Rodando",
+      "paused": "Pausado",
+      "lastWake": "Último despertar há {age}",
+      "noTick": "Nenhum ciclo ainda",
+      "pausedReason": "Pausado — {reason}",
+      "unknownMission": "Missão {id}",
+      "hint": "Um steward pertence à missão dele. Pause-o pelo popover da missão."
+    },
     "emptyTitle": "Nenhum worker ainda",
     "emptyBody": "Um worker roda um prompt em uma pasta, numa cadência, sem abrir uma sessão. Bom para observar um repositório, responder comentários de review ou checar algo periodicamente.",
     "list": {
@@ -4558,6 +4569,8 @@
       "checks": "Marque a checagem pendente em {steps}. | Marque as {count} checagens pendentes em {steps}.",
       "humanSteps": "Confirme o passo humano: {steps}. | Confirme os passos humanos: {steps}.",
       "reviewImport": "Revise o fim importado — ele é provisório até você aprovar um re-escopo.",
+      "stewardPaused": "Steward pausado {age}: {reason}",
+      "mergeBatch": "{n} PRs prontos para mergear em ordem: {chain}",
       "mainRed": "main está vermelha após #{pr} — {step} foi mergeado, mas o commit de merge falha no CI da main.",
       "approvals": "Responda às aprovações pendentes ({count}) de {session} no Approval Inbox.",
       "needsInput": "{session} está esperando por você — abra e responda.",
@@ -4600,6 +4613,54 @@
       "elsewhere": "+{n} sessão | +{n} sessões"
     },
     "doorFailed": "Ação da missão recusada",
+    "steward": {
+      "label": "Steward",
+      "lastAction": "{what}",
+      "noAction": "nenhuma ação ainda",
+      "ago": "há {age}",
+      "next": "próximo: {when}",
+      "nextEvents": "no próximo evento",
+      "paused": "pausado",
+      "pause": "Pausar steward…",
+      "resume": "Retomar steward",
+      "pauseDialog": {
+        "title": "Pausar o steward?",
+        "body": "Ele para de acordar por eventos e pelo ciclo de 20 minutos até você retomá-lo. Nada se perde — a missão mantém o estado.",
+        "reason": "Motivo",
+        "reasonPlaceholder": "Vai para o Log da missão e para a lista Você",
+        "confirm": "Pausar steward",
+        "cancel": "Cancelar",
+        "dismiss": "Cancelar e manter o steward rodando"
+      }
+    },
+    "mergeBatch": {
+      "title": "Mergear {n} PRs em ordem",
+      "who": "O {steward} mergeia um e trabalha entre os merges",
+      "stewardWord": "Steward",
+      "ciGreen": "· CI verde",
+      "rebase": "rebase --onto #{pr}",
+      "recheck": "reverificar gates",
+      "stopOnRed": "parar no vermelho",
+      "action": "Mergear {n} em ordem…",
+      "confirm": "Mergear {n} em ordem",
+      "merging": "Mergeando…",
+      "mergeRest": "Mergear o resto…",
+      "cancel": "Cancelar",
+      "close": "Fechar",
+      "dismiss": "Cancelar — nada é mergeado",
+      "running": "Mergeando em ordem — espera o steward e o CI entre os merges, então pode levar alguns minutos.",
+      "stoppedAt": "Parou em #{pr}",
+      "merged": "Mergeados: {list}",
+      "remaining": "Faltam mergear: {list}",
+      "done": "{n} PRs mergeados em ordem.",
+      "reason": {
+        "closed": "#{pr} não está mais aberto.",
+        "red": "#{pr} tem checks falhando.",
+        "not-ready": "#{pr} não está pronto — um rascunho, ou ainda sem checks passando.",
+        "pending": "#{pr} ainda tem checks rodando.",
+        "merge-failed": "O GitHub recusou o merge de #{pr}: {detail}"
+      }
+    },
     "sidebarChip": "Missão: {headline}",
     "sidebarChipNeedsYou": "Missão: {headline} — precisa de você",
     "cue": {

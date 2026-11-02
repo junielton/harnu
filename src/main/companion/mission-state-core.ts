@@ -79,6 +79,8 @@ function youText(y: MissionYouItem): { kind: string; text: string } {
       return { kind: y.kind, text: 'approve the re-scope' }
     case 'close':
       return { kind: y.kind, text: 'close the mission' }
+    case 'steward-paused':
+      return { kind: y.kind, text: line(`steward paused — ${y.reason}`) }
     case 'blocker':
       return { kind: y.kind, text: line(y.reason) }
     case 'checks':

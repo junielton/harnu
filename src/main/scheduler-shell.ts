@@ -469,7 +469,7 @@ async function startTick(worker: Worker, wakeReason?: WakeReason): Promise<void>
   // Campaign ch.5a: the global kill-switches stop a steward like every agent. Checked first, and a
   // blocked beat is not a run: nothing is recorded, no failure counts, the next beat looks again.
   if (worker.category === 'steward') {
-    const blocked = await stewardGateReason(worker.folder)
+    const blocked = await stewardGateReason(worker.folder, worker.missionId)
     if (blocked) return
   }
   lastRunAt[worker.id] = Date.now()
@@ -1069,8 +1069,23 @@ export function setStewardWakeGapMs(ms: number): void {
 /** One pending trailing wake per steward, so a burst of events yields one extra tick, not N. */
 const wakeTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
-/** Why a steward must not tick right now (agent control off, folder blocked), or `null`. */
-async function stewardGateReason(folder: string): Promise<string | null> {
+/**
+ * Campaign ch.5b (spec §3.4): has the operator paused the steward of `missionId`? The default reads
+ * the mission file (imported lazily: the mission store imports this module). Test seam below.
+ */
+let pauseProbe: (folder: string, missionId: string) => Promise<{ reason: string } | null> = async (
+  folder,
+  missionId
+) => (await import('./steward-pause')).readStewardPause(folder, missionId)
+
+export function setStewardPauseProbe(
+  fn: ((folder: string, missionId: string) => Promise<{ reason: string } | null>) | null
+): void {
+  pauseProbe = fn ?? (async (f, m) => (await import('./steward-pause')).readStewardPause(f, m))
+}
+
+/** Why a steward must not tick right now (agent control off, folder blocked, paused), or `null`. */
+async function stewardGateReason(folder: string, missionId?: string): Promise<string | null> {
   const serverEnabled = await readMcpEnabled()
   // Imported lazily: `user-projects` drags in the git probe, which the runner's own tests (rightly)
   // do not provide an `execFile` for, and a steward's gate is the only reader.
@@ -1078,7 +1093,12 @@ async function stewardGateReason(folder: string): Promise<string | null> {
   const denied = (await readUserProjects()).projects
     .filter((p) => p.agentDenied === true)
     .map((p) => p.path)
-  return stewardBlockedReason({ serverEnabled, folderDenied: isFolderDenied(folder, denied) })
+  const paused = missionId ? await pauseProbe(folder, missionId).catch(() => null) : null
+  return stewardBlockedReason({
+    serverEnabled,
+    folderDenied: isFolderDenied(folder, denied),
+    paused
+  })
 }
 
 function stewardConfigPath(workerId: string): string {
@@ -1205,7 +1225,7 @@ export async function wakeStewardForMission(
   const decision = wakeDecision({
     enabled: w.enabled,
     running: liveTicks.has(w.id),
-    blockedReason: await stewardGateReason(w.folder),
+    blockedReason: await stewardGateReason(w.folder, w.missionId),
     now: Date.now(),
     lastStartedAt: lastRunAt[w.id],
     gapMs: wakeGapMs
@@ -1226,6 +1246,34 @@ export async function wakeStewardForMission(
   lastRunAt[w.id] = Date.now()
   void tickStarter(w, reason)
   return { woke: true }
+}
+
+/**
+ * Campaign ch.5b (spec §4, Merge batch): wake the steward of `missionId` and wait for its tick to
+ * end, so the operator's batch merges the next PR only after the steward rebased the stack and the
+ * gates were re-read. `skipped` when there is nothing to wait for — no steward, a paused or blocked
+ * one, or a wake coalesced into a later tick (the honest answer: the steward did not run NOW);
+ * `timeout` when its tick was still running at `timeoutMs`.
+ */
+export async function runStewardTurn(
+  missionId: string,
+  timeoutMs: number
+): Promise<'ran' | 'skipped' | 'timeout'> {
+  const out = await wakeStewardForMission(missionId, 'ledger')
+  if (!out.woke) return 'skipped'
+  const w = workersCache.find((x) => x.category === 'steward' && x.missionId === missionId)
+  if (!w) return 'skipped'
+  const deadline = Date.now() + timeoutMs
+  // A tick registers itself a moment after the wake (it awaits the kill-switch gate first).
+  const appearBy = Date.now() + 5000
+  while (!liveTicks.has(w.id) && Date.now() < Math.min(appearBy, deadline)) {
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  while (liveTicks.has(w.id)) {
+    if (Date.now() >= deadline) return 'timeout'
+    await new Promise((r) => setTimeout(r, 500))
+  }
+  return 'ran'
 }
 
 /**

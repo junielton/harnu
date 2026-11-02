@@ -304,10 +304,19 @@ You can see what it did: every action it takes is a line tagged `steward` in the
 
 A few things to know:
 
-- **It is part of the mission.** It is created with the mission and deleted when you end the mission. It shows up in the worker list as a system worker; it can't be edited, switched off or deleted there (the mission's own controls will cover pausing it; the screens for that are still to come).
+- **It is part of the mission.** It is created with the mission and deleted when you end the mission. It shows up in the Scheduler under its own **Stewards** heading, read-only; it can't be edited, switched off or deleted there. Pausing it is a control of the mission, not of that list (see below).
+- **You can pause it.** Open the mission's popover (the Topbar pill) and press **Pause steward…** next to the steward line. It asks for a reason, writes it in the mission's Log and stops the steward waking until you press **Resume steward**. While it is paused the pill turns warning and the **You** list says "Steward paused 2h 0m: CI is flaky today", so a pause is never forgotten. Agents cannot pause or resume it.
 - **Your kill-switches still apply.** If you turn agent control off or block the folder, the steward stops ticking, like every other agent.
 - **Harnu adds three hooks to your folder.** For the steward to work, Harnu writes three entries into the folder's `.claude/settings.local.json`: after Claude compacts a long conversation, the session that owns the mission is handed a short summary of where the mission stands; the compaction is noted in the mission's record; and when a child session stops, the steward wakes. Your own hooks and settings in that file are never touched, a file that isn't valid JSON is left alone, and the entries are removed when you end the last stewarded mission in that folder.
 - **Opting out.** A session can ask for a mission with no steward and no hooks.
+
+## Merging a stack of PRs in order
+
+When two or more of a mission's PRs are open with green CI, the **You** list offers **Merge 3 in order…** (in the mission popover and in the Campaign popover). The dialog shows the PRs in the order they will merge, with what happens between them: rebase the rest onto the new base, re-check the gates, stop on red. It starts with **Cancel** focused; merging is the one thing here you cannot take back.
+
+Press **Merge 3 in order** and Harnu merges the first PR, wakes the steward to rebase the others and re-read their checks, waits for those checks to settle, and only then merges the next one. This can take a few minutes. It stops — and merges nothing more — if a PR's checks fail, a PR was closed in the meantime, GitHub refuses a merge, or checks have not settled after a few minutes. The dialog then says why, which PRs merged and which are left, and **Merge the rest…** asks you again. Because the steward never pushes, a rebased branch is still local: publish it yourself if the next merge needs it.
+
+Only PRs that belong to the mission can be merged this way, using the merge method the repository allows (squash first, then merge commit, then rebase). Every batch leaves a line in the mission's Log. There is no agent verb for any of this; agents can only tell you the PRs are ready.
 
 ## Batching approvals (only matters if you turned confirmations on)
 

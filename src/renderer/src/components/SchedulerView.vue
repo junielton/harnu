@@ -45,7 +45,10 @@ import { useI18n } from 'vue-i18n'
 import { useNow } from '@vueuse/core'
 import { Clock, Plus } from 'lucide-vue-next'
 import { useSchedulerStore } from '../stores/scheduler'
+import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
+import { splitWorkers, summarizeSteward } from '../lib/steward-view'
+import SchedulerStewards from './SchedulerStewards.vue'
 import SchedulerFolderGroup from './SchedulerFolderGroup.vue'
 import SchedulerListFilters from './SchedulerListFilters.vue'
 import SchedulerUpNext from './SchedulerUpNext.vue'
@@ -68,6 +71,7 @@ import Button from './ui/Button.vue'
 import type { Worker } from '../../../preload'
 
 const scheduler = useSchedulerStore()
+const missions = useMissionsStore()
 const sessions = useSessionsStore()
 const { t } = useI18n()
 
@@ -80,6 +84,8 @@ const nowMs = computed(() => now.value.getTime())
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
+  // The Stewards section names each steward's mission and shows whether it is paused.
+  missions.ensureStarted()
   await scheduler.init()
   refreshTimer = setInterval(() => {
     void scheduler.loadAllRuns()
@@ -118,8 +124,26 @@ function folderBranchFor(path: string): string | null {
   return sessions.folders.find((f) => f.path === path)?.gitBranch ?? null
 }
 
+// Campaign ch.5b (T609): a mission's steward is a SYSTEM worker (spec §3.4) — it is not a row of the
+// folder groups, the chips, Up next or the counter; it has its own read-only Stewards section.
+const split = computed(() => splitWorkers(scheduler.workers))
+const userWorkers = computed(() => split.value.users)
+const stewardSummaries = computed(() =>
+  split.value.stewards.map((w) =>
+    summarizeSteward(w, scheduler.runsByWorker[w.id] ?? [], scheduler.runningIds.includes(w.id))
+  )
+)
+function missionTitleFor(missionId: string): string | null {
+  return missions.views.find((v) => v.mission.id === missionId)?.title ?? null
+}
+function stewardPauseFor(missionId: string): string | null {
+  return (
+    missions.views.find((v) => v.mission.id === missionId)?.mission.stewardPause?.reason ?? null
+  )
+}
+
 const entries = computed<ListEntry[]>(() =>
-  scheduler.workers.map((worker) => {
+  userWorkers.value.map((worker) => {
     const runs = scheduler.runsByWorker[worker.id] ?? []
     const running = scheduler.runningIds.includes(worker.id)
     const nextAt = nextDueAt(worker, runs)
@@ -173,7 +197,7 @@ function clearFilter(): void {
 // ── selection: keep it valid, default to the first VISIBLE row (the first row
 // of the first folder) ─────────────────────────────────────────────────────
 watch(
-  () => scheduler.workers,
+  userWorkers,
   (workers) => {
     if (scheduler.selectedId && workers.some((w) => w.id === scheduler.selectedId)) return
     scheduler.selectedId = defaultSelectionId(groups.value)
@@ -182,7 +206,7 @@ watch(
 )
 
 const selectedWorker = computed<Worker | undefined>(() =>
-  scheduler.workers.find((w) => w.id === scheduler.selectedId)
+  userWorkers.value.find((w) => w.id === scheduler.selectedId)
 )
 
 // ── collapse state (T590) — per-viewer conveniences, never load-bearing: every
@@ -392,6 +416,14 @@ async function createWorker(): Promise<void> {
               </div>
             </div>
           </div>
+
+          <!-- T609: a mission's steward is a system worker — its own read-only section. -->
+          <SchedulerStewards
+            :stewards="stewardSummaries"
+            :now-ms="nowMs"
+            :title-for="missionTitleFor"
+            :paused-for="stewardPauseFor"
+          />
         </div>
 
         <SchedulerWorkerDetail
@@ -402,6 +434,13 @@ async function createWorker(): Promise<void> {
           :running-since-ms="runningSinceById[selectedWorker.id]"
           :now-ms="nowMs"
         />
+        <div
+          v-else
+          class="flex min-w-0 flex-1 items-center justify-center px-10 text-center text-[12px] text-text-4"
+          data-test="scheduler-stewards-hint"
+        >
+          {{ t('scheduler.stewards.hint') }}
+        </div>
       </div>
 
       <!-- BUG-120: a caption on the view's own ground, NOT a bar. With
@@ -434,7 +473,7 @@ async function createWorker(): Promise<void> {
     <span v-if="scheduler.workers.length > 0" class="text-[11px] text-text-3">
       {{
         t('scheduler.subtitle', {
-          workers: scheduler.workers.length,
+          workers: userWorkers.length,
           running: scheduler.runningIds.length
         })
       }}

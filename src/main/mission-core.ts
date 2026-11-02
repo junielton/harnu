@@ -214,6 +214,12 @@ export interface Mission {
   blockers: Blocker[]
   openQuestions: string[]
   pendingClose?: { at: string; requestedBy: string }
+  /**
+   * Campaign spec §3.4 — set only by the operator's "Pause steward…" door ({@link applyPauseSteward}):
+   * while present, the mission's steward does not tick, and the You list says so until it is
+   * resumed. No verb reads or writes it.
+   */
+  stewardPause?: { at: string; reason: string }
   createdAt: string
   updatedAt: string
   provenance: { author: 'agent' | 'human'; at: string; branch?: string }
@@ -359,6 +365,7 @@ const MissionSchema: z.ZodType<Mission> = z
     blockers: z.array(BlockerSchema).default([]),
     openQuestions: z.array(z.string()),
     pendingClose: z.object({ at: z.string(), requestedBy: z.string() }).optional(),
+    stewardPause: z.object({ at: z.string(), reason: z.string() }).optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
     provenance: z.object({
@@ -796,6 +803,40 @@ export function applyChooseDecision(
     )
   }
   decision.chosen = index
+  next.updatedAt = op.at
+  return next
+}
+
+/**
+ * Campaign spec §3.4 — the operator pauses the mission's steward. The reason is mandatory (it is
+ * what the You list shows, and what the next reader of the Log learns). Pure; throws BAD_ARGS,
+ * ALREADY_PAUSED or MISSION_CLOSED.
+ */
+export function applyPauseSteward(mission: Mission, reason: string, op: { at: string }): Mission {
+  assertCheckable(mission)
+  const text = typeof reason === 'string' ? reason.trim() : ''
+  if (!text) {
+    throw new Error('BAD_ARGS: a reason is required to pause the steward.')
+  }
+  if (mission.stewardPause) {
+    throw new Error(
+      `ALREADY_PAUSED: the steward of ${mission.id} is already paused (${mission.stewardPause.reason}).`
+    )
+  }
+  const next = structuredClone(mission)
+  next.stewardPause = { at: op.at, reason: text }
+  next.updatedAt = op.at
+  return next
+}
+
+/** Campaign spec §3.4 — the operator resumes a paused steward. Pure; throws NOT_PAUSED or MISSION_CLOSED. */
+export function applyResumeSteward(mission: Mission, op: { at: string }): Mission {
+  assertCheckable(mission)
+  if (!mission.stewardPause) {
+    throw new Error(`NOT_PAUSED: the steward of ${mission.id} is not paused.`)
+  }
+  const next = structuredClone(mission)
+  delete next.stewardPause
   next.updatedAt = op.at
   return next
 }

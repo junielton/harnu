@@ -4266,6 +4266,17 @@
     "subtitle": "{workers} workers · {running} running",
     "newWorker": "New worker",
     "footerNote": "Checks every 30s · max 2 workers at once · nothing runs while Harnu is closed",
+    "stewards": {
+      "title": "Stewards",
+      "aria": "Stewards — one per mission, read-only",
+      "running": "Running",
+      "paused": "Paused",
+      "lastWake": "Last wake {age} ago",
+      "noTick": "No tick yet",
+      "pausedReason": "Paused — {reason}",
+      "unknownMission": "Mission {id}",
+      "hint": "A steward belongs to its mission. Pause it from the mission’s popover."
+    },
     "emptyTitle": "No workers yet",
     "emptyBody": "A worker runs one prompt in one folder, on a cadence, without opening a session. Good for watching a repo, answering review comments, or checking something on a timer.",
     "list": {
@@ -4558,6 +4569,8 @@
       "checks": "Tick the due check on {steps}. | Tick {count} due checks on {steps}.",
       "humanSteps": "Confirm the human step: {steps}. | Confirm the human steps: {steps}.",
       "reviewImport": "Review the imported end — it is a placeholder until you approve a re-scope.",
+      "stewardPaused": "Steward paused {age}: {reason}",
+      "mergeBatch": "{n} PRs ready to merge in order: {chain}",
       "mainRed": "main is red after #{pr} — {step} is merged, but its merge commit fails CI on main.",
       "approvals": "Answer the pending approvals ({count}) from {session} in the Approval Inbox.",
       "needsInput": "{session} is waiting on you — open it and answer.",
@@ -4600,6 +4613,54 @@
       "elsewhere": "+{n} session | +{n} sessions"
     },
     "doorFailed": "Mission action refused",
+    "steward": {
+      "label": "Steward",
+      "lastAction": "{what}",
+      "noAction": "no action yet",
+      "ago": "{age} ago",
+      "next": "next: {when}",
+      "nextEvents": "on the next event",
+      "paused": "paused",
+      "pause": "Pause steward…",
+      "resume": "Resume steward",
+      "pauseDialog": {
+        "title": "Pause the steward?",
+        "body": "It stops waking on events and on its 20-minute beat until you resume it. Nothing is lost — the mission keeps its state.",
+        "reason": "Reason",
+        "reasonPlaceholder": "Goes to the mission’s Log and the You list",
+        "confirm": "Pause steward",
+        "cancel": "Cancel",
+        "dismiss": "Cancel and keep the steward running"
+      }
+    },
+    "mergeBatch": {
+      "title": "Merge {n} PRs in order",
+      "who": "{steward} merges one, then works between merges",
+      "stewardWord": "Steward",
+      "ciGreen": "· CI green",
+      "rebase": "rebase --onto #{pr}",
+      "recheck": "re-check gates",
+      "stopOnRed": "stop on red",
+      "action": "Merge {n} in order…",
+      "confirm": "Merge {n} in order",
+      "merging": "Merging…",
+      "mergeRest": "Merge the rest…",
+      "cancel": "Cancel",
+      "close": "Close",
+      "dismiss": "Cancel — nothing is merged",
+      "running": "Merging in order — this waits on the steward and on CI between merges, so it can take a few minutes.",
+      "stoppedAt": "Stopped at #{pr}",
+      "merged": "Merged: {list}",
+      "remaining": "Still to merge: {list}",
+      "done": "Merged {n} PRs in order.",
+      "reason": {
+        "closed": "#{pr} is not open any more.",
+        "red": "#{pr} has failing checks.",
+        "not-ready": "#{pr} is not ready — a draft, or no passing checks yet.",
+        "pending": "#{pr} still has checks running.",
+        "merge-failed": "GitHub refused the merge of #{pr}: {detail}"
+      }
+    },
     "sidebarChip": "Mission: {headline}",
     "sidebarChipNeedsYou": "Mission: {headline} — needs you",
     "cue": {

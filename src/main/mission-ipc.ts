@@ -30,6 +30,8 @@ import {
   applyAddCheck,
   applyChooseDecision,
   applyApprovedRescope,
+  applyPauseSteward,
+  applyResumeSteward,
   applyDeleteCheck,
   applyOperatorEnd,
   applyOperatorVerifyStep,
@@ -106,6 +108,9 @@ export type MissionDoor =
   | { door: 'deleteCheck'; root: string; missionId: string; stepId: string; checkId: string }
   // Campaign spec §4 — Choose: the operator picks an option of a decision node.
   | { door: 'chooseDecision'; root: string; missionId: string; stepId: string; index: number }
+  // Campaign spec §3.4 — Pause steward…: a mandatory reason; Resume steward. A mission door, not a worker switch.
+  | { door: 'pauseSteward'; root: string; missionId: string; reason: string }
+  | { door: 'resumeSteward'; root: string; missionId: string }
 
 /**
  * Mission v3 §3.2 — a door answers with the mission it changed, re-derived on
@@ -245,6 +250,10 @@ function applyDoor(door: MissionDoor, mission: Mission, at: string): Mission {
       return applyDeleteCheck(mission, door.stepId, door.checkId, { at })
     case 'chooseDecision':
       return applyChooseDecision(mission, door.stepId, door.index, { at })
+    case 'pauseSteward':
+      return applyPauseSteward(mission, door.reason, { at })
+    case 'resumeSteward':
+      return applyResumeSteward(mission, { at })
   }
 }
 
@@ -270,6 +279,11 @@ function doorLogEntry(door: MissionDoor, at: string, applied: Mission): string {
         return `operator deleted ${door.checkId} on ${door.stepId}`
       case 'chooseDecision':
         return `operator chose "${chosenOption(door, applied)}"`
+      // Campaign spec §3.4: these two are `steward` Log entries (the heading's kind tag).
+      case 'pauseSteward':
+        return 'steward · operator paused the steward'
+      case 'resumeSteward':
+        return 'steward · operator resumed the steward'
     }
   })()
   const body =
@@ -277,10 +291,12 @@ function doorLogEntry(door: MissionDoor, at: string, applied: Mission): string {
       ? door.reason?.trim() || '(no reason given)'
       : door.door === 'addCheck'
         ? door.label
-        : door.door === 'chooseDecision'
-          ? // Campaign spec §3.2 — the Log entry kind: a decision, for what reads the Log.
-            `kind: decision\nstep: ${door.stepId}\n${applied.steps.find((s) => s.id === door.stepId)?.decision?.title ?? ''}`
-          : ''
+        : door.door === 'pauseSteward'
+          ? (applied.stewardPause?.reason ?? '')
+          : door.door === 'chooseDecision'
+            ? // Campaign spec §3.2 — the Log entry kind: a decision, for what reads the Log.
+              `kind: decision\nstep: ${door.stepId}\n${applied.steps.find((s) => s.id === door.stepId)?.decision?.title ?? ''}`
+            : ''
   return `\n### ${at} · ${what}\n${body ? `\n${body}\n` : ''}`
 }
 
@@ -296,7 +312,9 @@ const DOORS: ReadonlySet<string> = new Set([
   'addCheck',
   'tickCheck',
   'deleteCheck',
-  'chooseDecision'
+  'chooseDecision',
+  'pauseSteward',
+  'resumeSteward'
 ])
 
 /** A door's own required fields, or the BAD_ARGS refusal naming them. */
@@ -326,6 +344,10 @@ function doorArgsProblem(door: Partial<Record<string, unknown>>): string | null 
       return str('stepId') && typeof door.index === 'number'
         ? null
         : 'BAD_ARGS: chooseDecision needs stepId and a numeric index'
+    case 'pauseSteward':
+      return typeof door.reason === 'string' && door.reason.trim() !== ''
+        ? null
+        : 'BAD_ARGS: pauseSteward needs a reason — say why the steward is paused'
     default:
       return null
   }
