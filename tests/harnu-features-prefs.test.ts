@@ -72,7 +72,7 @@ describe('harnu-features pref file', () => {
 
 describe('harnu-features doc marker', () => {
   it('parses the shipped doc marker', () => {
-    expect(HARNU_FEATURES_VERSION).toBe('v118')
+    expect(HARNU_FEATURES_VERSION).toBe('v119')
   })
 
   it('accepts both the harnu- and the pre-rename capy- marker prefix', () => {
