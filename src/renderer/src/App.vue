@@ -320,6 +320,9 @@ const showScheduler = computed(() => ui.activeView?.id === 'scheduler')
 // T331: the Containers takeover, opened from its footer pill. Global like
 // Cleanup (every docker stack on the machine), so no onboarding gate.
 const showContainers = computed(() => ui.activeView?.id === 'containers')
+// T607: the Campaign map takeover, opened from the Campaign popover's "Open map". Global —
+// the campaign is read by id from the campaigns store — so no onboarding gate.
+const showCampaignMap = computed(() => ui.activeView?.id === 'campaignMap')
 // T198: the PR Stack Canvas takeover, opened from the folder menu. Per-repo
 // like the roadmap board, so it takes the same onboarding gate.
 const showPrStack = computed(() => !showOnboarding.value && ui.activeView?.id === 'prStack')
@@ -352,6 +355,7 @@ const showActiveView = computed(
     showSystemMonitor.value ||
     showScheduler.value ||
     showContainers.value ||
+    showCampaignMap.value ||
     showRoadmap.value
 )
 /**

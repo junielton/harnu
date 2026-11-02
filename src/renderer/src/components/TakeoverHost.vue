@@ -31,6 +31,7 @@ import SystemMonitor from './SystemMonitor.vue'
 import ReviewPane from './ReviewPane.vue'
 import SchedulerView from './SchedulerView.vue'
 import ContainersView from './ContainersView.vue'
+import CampaignMap from './CampaignMap.vue'
 import { useUiStore } from '../stores/ui'
 import type { ViewId } from '../stores/ui'
 
@@ -44,7 +45,8 @@ const VIEW_COMPONENTS: Record<ViewId, Component> = {
   systemMonitor: SystemMonitor,
   review: ReviewPane,
   scheduler: SchedulerView,
-  containers: ContainersView
+  containers: ContainersView,
+  campaignMap: CampaignMap
 }
 
 const activeComponent = computed<Component | null>(() =>

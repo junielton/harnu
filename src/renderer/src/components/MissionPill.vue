@@ -11,12 +11,17 @@
  * loaded campaign, the same pill reads "Ch. N/M · Step a/b" and opens the
  * Campaign popover, whose "Open chapter" drills into the chapter popover with a
  * back link. A mission with no campaign keeps everything above unchanged.
+ *
+ * T607 (design.md §6 "Campaign progress" → Pill margin rail and radiant counter): the campaign
+ * pill also draws a tick per required chapter (the server's `progress.states`) and, when the
+ * server reports a radiant, its "48/88". Both are decoration over numbers the server already
+ * counted; a mission with no campaign has neither.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { BookOpen, Check, ListChecks } from 'lucide-vue-next'
-import { campaignPillText } from '../lib/campaign-view'
+import { campaignPillText, type CampaignTick } from '../lib/campaign-view'
 import { headlineText, PILL_TONE_CLASS, pulseText, type MissionState } from '../lib/mission-view'
 import { useCampaignsStore } from '../stores/campaigns'
 import { useMissionsStore } from '../stores/missions'
@@ -162,6 +167,20 @@ const label = computed(() => {
   return model.value ? headlineText(t, model.value.headline) : ''
 })
 
+/**
+ * One margin-rail tick's colour (design.md §6): done green, in review half green, the current
+ * chapters accent (warning while the pill is), locked faint. Everything is the server's state.
+ */
+function tickClass(tk: CampaignTick): string {
+  const m = campaign.value
+  if (m?.done || tk.state === 'done') return 'bg-green'
+  if (tk.state === 'inReview') return 'bg-green opacity-50'
+  if (tk.current || tk.state === 'running')
+    return m?.tone === 'warning' ? 'bg-warning' : 'bg-accent'
+  if (tk.state === 'locked') return 'bg-border-2 opacity-50'
+  return 'bg-border-2'
+}
+
 const done = computed(() =>
   campaign.value
     ? campaign.value.done
@@ -219,6 +238,35 @@ const title = computed(() => {
         class="shrink-0"
       />
       <span v-if="label" class="truncate">{{ label }}</span>
+      <span
+        v-if="campaign && campaign.ticks.length > 0"
+        class="inline-flex shrink-0 items-center"
+        style="gap: 1px; height: 8px"
+        aria-hidden="true"
+        data-test="campaign-ticks"
+      >
+        <i
+          v-for="tk in campaign.ticks"
+          :key="tk.chapterId"
+          class="shrink-0 rounded-[1px]"
+          :class="tickClass(tk)"
+          :style="{ width: tk.current ? '4px' : '2px', height: '8px' }"
+          data-tick
+          :data-state="tk.state"
+          :data-current="tk.current ? 'true' : undefined"
+        />
+      </span>
+      <span
+        v-if="campaign?.radiant"
+        class="shrink-0 opacity-70"
+        data-test="campaign-pill-radiant"
+        >{{
+          $t('campaign.pill.radiant', {
+            done: campaign.radiant.done,
+            total: campaign.radiant.total
+          })
+        }}</span
+      >
     </button>
     <template v-if="open">
       <CampaignPopover
