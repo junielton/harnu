@@ -27,9 +27,11 @@ import { applyBreak, gradeState } from '../scripts/eval/mission-behavior/grade.m
 import {
   CAMPAIGN_VERBS,
   MISSION_VERBS,
+  STEWARD_VERBS,
   replyAsks
 } from '../scripts/eval/mission-behavior/agent.mjs'
 import { MCP_TOOLS } from '../src/main/mcp/tool-catalog'
+import { STEWARD_ALLOW_VERBS } from '../src/main/steward-core'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 const SCENARIOS = path.join(REPO_ROOT, 'scripts', 'eval', 'mission-behavior', 'scenarios')
@@ -245,6 +247,7 @@ const COVERED = [
   'self-verification',
   'signoff-as-check',
   'stall-detection',
+  'steward-verifier-dispatch',
   'tick-red-gate'
 ]
 
@@ -275,6 +278,15 @@ describe('the scenario set (Mission v3 §3.11, AC-11)', () => {
   it('an eval agent may call every campaign_* verb the catalog ships', () => {
     const catalog = MCP_TOOLS.map((t) => t.name).filter((n) => n.startsWith('campaign_'))
     expect([...CAMPAIGN_VERBS].sort()).toEqual([...catalog].sort())
+  })
+
+  it('the steward verbs an eval turn may add are exactly the non-mission verbs a steward may call (T609)', () => {
+    const catalog = new Set(MCP_TOOLS.map((t) => t.name))
+    for (const v of STEWARD_VERBS) expect(catalog.has(v), v).toBe(true)
+    const stewardOnly = STEWARD_ALLOW_VERBS.filter(
+      (v) => !v.startsWith('mission_') && !v.startsWith('campaign_')
+    )
+    expect([...STEWARD_VERBS].sort()).toEqual([...stewardOnly].sort())
   })
 
   it('the shadow dual-write scenario is retired (closes T371)', () => {
@@ -918,6 +930,66 @@ describe('tick-red-gate — a red ci gate opens a side step, with no gh and no f
   })
 
   it('does not pass on a tick that did nothing about the red gate', () => {
+    const state = stateOf([
+      {
+        slug: 'importer',
+        steps: [unit('Ship the importer', { links: [{ kind: 'pr', ref: '#7' }] }), end()],
+        log: '\nEVAL-TURN[tick] asked=false tools=mission_get\n'
+      }
+    ])
+    expect((gradeState(state, sc.assert, v) as Graded).ok).toBe(false)
+  })
+})
+
+describe('steward-verifier-dispatch — one PR-ready step yields a verifier dispatch (T609, AC-5b.4)', () => {
+  const sc = loadScenario('steward-verifier-dispatch')
+  const v = vars(['importer'])
+
+  it('seeds a PASSING ci for its PR and checks the green gate before the model is spent', () => {
+    expect(sc.gateCache).toEqual([{ pr: 7, state: 'OPEN', ci: 'passing' }])
+    const pre = sc.phases.findIndex((p) => 'precondition' in p)
+    const agent = sc.phases.findIndex((p) => p.agent === 'A')
+    expect(pre).toBeGreaterThan(-1)
+    expect(pre).toBeLessThan(agent)
+    expect((sc.phases[pre] as { precondition: { equals: string } }).precondition.equals).toBe(
+      'green'
+    )
+  })
+
+  it('wakes the agent as the steward, with the steward verbs and Bash (so a gh call would show)', () => {
+    const turn = sc.phases.find((p) => p.agent === 'A') as {
+      tools?: string[]
+      stewardVerbs?: boolean
+      prompt: string
+    }
+    expect(turn.stewardVerbs).toBe(true)
+    expect(turn.tools).toContain('Bash')
+    expect(turn.prompt).toMatch(/steward of mission/)
+    expect(turn.prompt).toContain('delivery-watchdog-SKILL.md')
+  })
+
+  it('passes on the dispatched state and catches every break', () => {
+    const state = stateOf([
+      {
+        slug: 'importer',
+        data: { ledger: [{ at: AT, kind: 'dispatched', ref: D, sessionId: D }] },
+        steps: [
+          unit('Ship the importer', {
+            links: [
+              { kind: 'pr', ref: '#7' },
+              { kind: 'session', ref: D }
+            ]
+          }),
+          unit('Document the importer'),
+          end()
+        ],
+        log: '\n### t · tick\nEVAL-TURN[tick] asked=false tools=mission_get,create_session,mission_link_child,mission_log\n'
+      }
+    ])
+    expectGraderSound(state, sc.assert, sc.breaks, v)
+  })
+
+  it('does not pass on a tick that dispatched nothing', () => {
     const state = stateOf([
       {
         slug: 'importer',

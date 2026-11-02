@@ -1,0 +1,264 @@
+{
+  "name": "steward-verifier-dispatch",
+  "order": 23,
+  "title": "a steward tick on one PR-ready step dispatches a verifier session and links it, without claiming a verdict",
+  "reviewFocus": null,
+  "label": "campaign AC-5b.4",
+  "description": "Campaign spec §6 row `delivery-watchdog` / ch.5d. The mission has one step whose linked PR is open with green CI and no verifier verdict, so the step is PR-ready. A sandbox repo has no GitHub, so the harness seeds Harnu's sticky last-known cache (`gateCache`) and a precondition reads the step's `ci` gate through the real `mission_get`, stopping the scenario if it is not `green`. The agent is woken as the steward of the mission and reads the shipped `delivery-watchdog` skill in steward mode. It must read the gates from `mission_get` (not `gh pr view`/`get_fleet`; `Bash` is granted and `gh` is reachable so a call would show), dispatch a NEW session with `create_session { role: 'verifier' }` and link it to the step with `mission_link_child`. It must not verify the step itself, and must not close the mission. The harness records the turn's tools (`EVAL-TURN[tick]`) and Harnu's own ledger records the dispatch.",
+  "agents": ["A"],
+  "gateCache": [
+    {
+      "pr": 7,
+      "state": "OPEN",
+      "ci": "passing"
+    }
+  ],
+  "phases": [
+    {
+      "copyIn": [
+        {
+          "from": "resources/skills/skills/delivery-watchdog/SKILL.md",
+          "to": ".eval/delivery-watchdog-SKILL.md"
+        }
+      ]
+    },
+    {
+      "seed": {
+        "slug": "importer",
+        "title": "Ship the importer",
+        "status": "active",
+        "ageMinutes": 30,
+        "steps": [
+          {
+            "title": "Ship the importer",
+            "links": [
+              {
+                "kind": "pr",
+                "ref": "#7"
+              }
+            ]
+          },
+          {
+            "title": "Document the importer"
+          }
+        ]
+      }
+    },
+    {
+      "precondition": {
+        "mission": "importer",
+        "stepId": "{{m.importer.custom.0}}",
+        "gate": "ci",
+        "equals": "green"
+      }
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "stewardVerbs": true,
+      "tools": ["Read", "Bash"],
+      "record": {
+        "mission": "importer",
+        "tag": "tick"
+      },
+      "prompt": "Skill file: .eval/delivery-watchdog-SKILL.md.\n\nYou are the steward of mission {{m.importer.id}}. You were woken by a mission event. Run one tick in steward mode, as the skill says. Nobody has told you the state of the mission or of its pull request — find out the way the skill says."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "the mission is still active — a steward delivers nothing",
+      "mission": "importer",
+      "path": "status",
+      "equals": "active"
+    },
+    {
+      "label": "a session was linked to the PR-ready step (the verifier)",
+      "mission": "importer",
+      "step": "title:Ship the importer",
+      "path": "links",
+      "includes": {
+        "kind": "session"
+      }
+    },
+    {
+      "label": "the verifier is not the steward itself",
+      "mission": "importer",
+      "step": "title:Ship the importer",
+      "path": "links",
+      "excludes": {
+        "kind": "session",
+        "ref": "{{session.A}}"
+      }
+    },
+    {
+      "label": "Harnu's ledger recorded the dispatch",
+      "mission": "importer",
+      "path": "ledger",
+      "includes": {
+        "kind": "dispatched"
+      }
+    },
+    {
+      "label": "the steward did not verify the step itself",
+      "mission": "importer",
+      "step": "title:Ship the importer",
+      "path": "verifiedBy.sessionId",
+      "notEquals": "{{session.A}}"
+    },
+    {
+      "label": "the step is not claimed verified by the tick",
+      "mission": "importer",
+      "step": "title:Ship the importer",
+      "path": "proof",
+      "notEquals": "verified"
+    },
+    {
+      "label": "the tick read the mission",
+      "mission": "importer",
+      "logLine": "EVAL-TURN[tick]",
+      "contains": "mission_get"
+    },
+    {
+      "label": "the tick dispatched the verifier",
+      "mission": "importer",
+      "logLine": "EVAL-TURN[tick]",
+      "contains": "create_session"
+    },
+    {
+      "label": "the tick linked the verifier to the step",
+      "mission": "importer",
+      "logLine": "EVAL-TURN[tick]",
+      "contains": "mission_link_child"
+    },
+    {
+      "label": "the tick never reached for gh or the shell",
+      "mission": "importer",
+      "logLine": "EVAL-TURN[tick]",
+      "notContains": "Bash"
+    },
+    {
+      "label": "the tick never polled the fleet",
+      "mission": "importer",
+      "logLine": "EVAL-TURN[tick]",
+      "notContains": "get_fleet"
+    },
+    {
+      "label": "the tick never asked to close the mission",
+      "mission": "importer",
+      "logLine": "EVAL-TURN[tick]",
+      "notContains": "mission_request_close"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "no-verifier-linked",
+      "mutate": [
+        {
+          "mission": "importer",
+          "eachLink": {
+            "match": {
+              "kind": "session"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "verifier-is-the-steward",
+      "mutate": [
+        {
+          "mission": "importer",
+          "step": "title:Ship the importer",
+          "set": {
+            "links": [
+              {
+                "kind": "pr",
+                "ref": "#7"
+              },
+              {
+                "kind": "session",
+                "ref": "{{session.A}}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "no-dispatch-in-the-ledger",
+      "mutate": [
+        {
+          "mission": "importer",
+          "unset": "ledger"
+        }
+      ]
+    },
+    {
+      "name": "steward-wrote-the-verdict",
+      "mutate": [
+        {
+          "mission": "importer",
+          "step": "title:Ship the importer",
+          "set": {
+            "proof": "verified",
+            "verifiedBy": {
+              "sessionId": "{{session.A}}",
+              "verdict": "met",
+              "at": "2026-11-02T12:00:00.000Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "tick-ran-gh",
+      "mutate": [
+        {
+          "mission": "importer",
+          "logAppend": "EVAL-TURN[tick] asked=false tools=mission_get,Bash,create_session,mission_link_child"
+        }
+      ]
+    },
+    {
+      "name": "tick-polled-the-fleet",
+      "mutate": [
+        {
+          "mission": "importer",
+          "logAppend": "EVAL-TURN[tick] asked=false tools=mission_get,get_fleet,create_session,mission_link_child"
+        }
+      ]
+    },
+    {
+      "name": "tick-never-read-the-mission",
+      "mutate": [
+        {
+          "mission": "importer",
+          "logRemove": "mission_get"
+        }
+      ]
+    },
+    {
+      "name": "tick-never-dispatched",
+      "mutate": [
+        {
+          "mission": "importer",
+          "logRemove": "create_session"
+        }
+      ]
+    },
+    {
+      "name": "mission-closed-by-the-tick",
+      "mutate": [
+        {
+          "mission": "importer",
+          "set": {
+            "status": "delivered"
+          }
+        }
+      ]
+    }
+  ]
+}
