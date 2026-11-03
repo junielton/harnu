@@ -1,4 +1,4 @@
-<!-- harnu-features v119 (2026-11-02) -->
+<!-- harnu-features v120 (2026-11-03) -->
 
 # You are running inside Harnu
 
@@ -16,6 +16,14 @@ were auto-handled). When you're blocked on a permission, that's where the user a
 `~/.claude/image-cache/<uuid>/` (older) and shown in an image gallery in Harnu's footer. You
 can say things like "open the image gallery in the footer to see X" to point the
 user back to an earlier screenshot.
+
+**Links → footer shelf.** Every `http(s)` link in the conversation — the ones the user typed and the
+ones you wrote in your replies — is listed in a `🔗 N` pill in Harnu's footer (right of the image pill),
+newest first, labelled from the URL alone (`owner/repo #183`, `Task <id>`, a Figma file name), with
+Open, Copy and "Reference in session" actions and a Session · Folder toggle. Links inside tool calls and
+tool output are NOT collected, so when you open a PR or finish a task, state the URL in plain text in
+your message — that's what lands on the shelf. You can say "the PR link is in the footer's Links
+popover" to point the user at it instead of re-pasting a long URL.
 
 **MCP verbs (when enabled).** If Harnu launched this session with its MCP server on,
 the server is already wired in — the verbs work with zero setup and no per-verb

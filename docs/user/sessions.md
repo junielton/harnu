@@ -46,6 +46,18 @@ Clicking the thumbnail itself opens the image full size, filling the window. Fro
 
 This gallery is **read-only and temporary**: Harnu only shows what's on disk right now and never writes to either cache, so images disappear when Claude Code prunes the session. If you want to keep one, use **Reveal in folder** or **Copy**.
 
+### Links shelf
+
+The links you and Claude trade in a long session — the task, the pull request Claude opened, the Figma frame, the doc you pasted — scroll away inside the conversation. Harnu collects them in a small `🔗 N` pill in the footer, right of the `🖼 N` one. Like the screenshots pill it only appears when the session you're looking at has something to show, and the count follows the conversation: paste a URL (or let Claude mention one) and the pill reacts within a few seconds, without switching away and back.
+
+Click the pill for the list, newest first. Each row is named from the link itself, with no lookup: a GitHub pull request or issue reads `owner/repo #183`, a ClickUp task reads `Task <id>`, a Figma link shows the file name and the frame (`node 812-4410`), and any other page shows its address without the query string. A small chip says who wrote it (**you** or **agent**), and the time sits on the right. Only what is written in the conversation counts — a URL that merely appeared in a command's output, a fetched page or a log is left out, so the list stays about the links you actually exchanged.
+
+Hover a row to see the sentence the link came from and three actions: **Open** (in your default browser), **Copy** (to the clipboard, with a "Link copied" toast), and **Reference** (types the link into the session's prompt so you can build on it — it doesn't press Enter, so you review the line and send it yourself; it needs a running session, so it's greyed out with the reason otherwise).
+
+The **Session · Folder** toggle in the popover header widens the list from this session to every session in the folder, grouped under each session's name, newest session first. `Esc` or a click outside closes it, and opening it closes the other footer popovers (and vice versa).
+
+The shelf is **read-only and derived**: Harnu reads the session's transcript each time you look, keeps nothing of its own, and never opens a link to find out what it is — if a session is deleted, its links go with it.
+
 ### Hibernated sessions
 
 Harnu caps how many `claude` processes it keeps alive at once (each one holds real memory). When a session has been idle for a while and you're over that cap, Harnu quietly kills its process to free memory — this is called **hibernating** a session. Nothing is lost: the conversation is intact on disk, and clicking the session's row respawns it exactly like a normal resume. A hibernated session just briefly shows no live status until you reopen it.

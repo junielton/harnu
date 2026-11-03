@@ -279,6 +279,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Helper pane (one cell)                             | `src/renderer/src/components/HelperPane.vue`                                     |
 | Agent connection chip (pane header, T474 U1)       | `src/renderer/src/components/AgentConnectionChip.vue` + `lib/agent-chip.ts`      |
 | Image lightbox (Pasted-images gallery, §6)         | `src/renderer/src/components/ImageLightbox.vue`                                  |
+| Links pill + popover (footer, §6 — T617)           | `src/renderer/src/components/FooterLinksPopover.vue`                             |
 | Markdown pane (file-backed viewer, §6 — T74)       | `src/renderer/src/components/MarkdownPane.vue`                                   |
 | Markdown renderer (string→prose, reusable)         | `src/renderer/src/components/MarkdownRenderer.vue` + `lib/markdown.ts` seam      |
 | Memory pane (project memory viewer, §6 — T79)      | `src/renderer/src/components/MemoryPane.vue` + `stores/memory.ts`                |
