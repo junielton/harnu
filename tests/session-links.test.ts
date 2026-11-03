@@ -171,6 +171,45 @@ describe('extractLinksFromJsonl — AC-1', () => {
     expect(byUrl['https://www.figma.com/design/K1/Name']).toBe('and the Figma frame:')
   })
 
+  it('shows a markdown link as its text in the excerpt', () => {
+    const links = extractLinksFromJsonl(
+      jsonl(
+        assistant(
+          [
+            {
+              type: 'text',
+              text: 'The proposal is up as [PR 98](https://github.com/acme/web/pull/98) for review. Also see [the docs](https://example.com/docs).\n- [Changelog](https://example.com/changelog)'
+            }
+          ],
+          '2026-11-03T10:00:00.000Z'
+        )
+      )
+    )
+    const byUrl = Object.fromEntries(links.map((l) => [l.url, l.excerpt]))
+    expect(byUrl['https://github.com/acme/web/pull/98']).toBe(
+      'The proposal is up as PR 98 for review.'
+    )
+    expect(byUrl['https://example.com/docs']).toBe('Also see the docs.')
+    expect(byUrl['https://example.com/changelog']).toBe('Changelog')
+  })
+
+  it('drops emphasis markers and backticks from the excerpt', () => {
+    const [link] = extractLinksFromJsonl(
+      jsonl(
+        assistant(
+          [
+            {
+              type: 'text',
+              text: 'This is **important**: run `gh pr view` on https://example.com/x now.'
+            }
+          ],
+          '2026-11-03T10:00:00.000Z'
+        )
+      )
+    )
+    expect(link.excerpt).toBe('This is important: run gh pr view on https://example.com/x now.')
+  })
+
   it('trims a long excerpt to about 120 characters', () => {
     const long = 'word '.repeat(80) // 400 chars, no sentence end
     const [link] = extractLinksFromJsonl(

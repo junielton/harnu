@@ -234,19 +234,67 @@ function maskUrls(line: string): string {
   return line.replace(URL_RE, (m) => 'x'.repeat(m.length))
 }
 
+const MD_LINK_RE = /\[([^\]\n]*)\]\((https?:\/\/[^\s)]+)\)/g
+
+/**
+ * Collapse the markdown links `[text](url)` of `line` to their text and remap the target `[u0, u1)`.
+ * `md` is true when the target was the destination of a link that has text — that text is then what
+ * the excerpt shows for it, and it is content (never dropped like a trailing bare URL).
+ */
+function flattenMarkdown(
+  line: string,
+  u0: number,
+  u1: number
+): { flat: string; t0: number; t1: number; md: boolean } {
+  let flat = ''
+  let last = 0
+  let t0 = u0
+  let t1 = u1
+  let md = false
+  let placed = false
+  for (const m of line.matchAll(MD_LINK_RE)) {
+    const mEnd = m.index + m[0].length
+    if (!placed && u0 >= last && u1 <= m.index) {
+      t0 = flat.length + (u0 - last)
+      t1 = t0 + (u1 - u0)
+      placed = true
+    }
+    flat += line.slice(last, m.index)
+    const text = m[1].trim() || m[2]
+    if (!placed && u0 >= m.index && u1 <= mEnd) {
+      t0 = flat.length
+      t1 = t0 + text.length
+      md = m[1].trim() !== ''
+      placed = true
+    }
+    flat += text
+    last = mEnd
+  }
+  if (!placed) {
+    t0 = flat.length + (u0 - last)
+    t1 = t0 + (u1 - u0)
+  }
+  flat += line.slice(last)
+  return { flat, t0, t1, md }
+}
+
 /**
  * The sentence around the URL at `[index, end)` of `text`, trimmed to ~120 characters (AC-1).
  *  - mid-sentence → the whole sentence, URL included, so it still reads;
  *  - trailing or leading → the URL is dropped (the row already shows it);
+ *  - a markdown link `[text](url)` → shown as its text, in place;
  *  - alone on its line → the previous non-empty line (`and the Figma frame:` / URL).
  */
-function excerptFor(text: string, index: number, end: number): string {
+function excerptRaw(text: string, index: number, end: number): string {
   const lineStart = text.lastIndexOf('\n', index - 1) + 1
   let lineEnd = text.indexOf('\n', end)
   if (lineEnd === -1) lineEnd = text.length
-  const line = text.slice(lineStart, lineEnd)
-  const u0 = index - lineStart
-  const u1 = end - lineStart
+  const {
+    flat: line,
+    t0: u0,
+    t1: u1,
+    md
+  } = flattenMarkdown(text.slice(lineStart, lineEnd), index - lineStart, end - lineStart)
   const masked = maskUrls(line)
 
   let sStart = 0
@@ -263,9 +311,9 @@ function excerptFor(text: string, index: number, end: number): string {
   const afterIsPunct = /^[\s.,;:!?)\]>'"—–-]*$/.test(after)
 
   let out = ''
-  if (before && afterIsPunct) out = clipTail(before)
-  else if (!before && after && !afterIsPunct) out = clipHead(after)
-  else if (before && after) {
+  if (!md && before && afterIsPunct) out = clipTail(before)
+  else if (!md && !before && after && !afterIsPunct) out = clipHead(after)
+  else if (md || (before && after)) {
     const flat = collapse(stripBullet(seg))
     const url = line.slice(u0, u1)
     const at = Math.max(0, flat.indexOf(url))
@@ -280,6 +328,14 @@ function excerptFor(text: string, index: number, end: number): string {
     if (cleaned) return clipHead(cleaned)
   }
   return ''
+}
+
+/** The excerpt as shown: emphasis markers and backticks are markup, not words. */
+function excerptFor(text: string, index: number, end: number): string {
+  return excerptRaw(text, index, end)
+    .replace(/\*\*|__|`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 // ── Pure core: the transcript fold ───────────────────────────────────────────
