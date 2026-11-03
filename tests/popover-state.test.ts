@@ -102,13 +102,14 @@ afterEach(() => {
 })
 
 describe('ui store — popover state', () => {
-  it('lists the seven lifted popovers', () => {
+  it('lists the eight lifted popovers', () => {
     expect([...POPOVER_IDS].sort()).toEqual(
       [
         'activity',
         'claudeStatus',
         'githubBudget',
         'inboxFilter',
+        'links',
         'missionProgress',
         'pastedImages',
         'usagePanel'
