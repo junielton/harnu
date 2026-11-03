@@ -1,406 +1,151 @@
 <!doctype html>
 <html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Mockup — Links shelf</title>
-    <style>
-      :root {
-        --ix-bg: #f6f6f7;
-        --ix-fg: #1b1b1f;
-        --ix-muted: #6b6b76;
-        --ix-line: #dcdce2;
-        --ix-card: #fff;
-        --ix-accent: #2f5bea;
-        --ix-draft: #b7791f;
-        --ix-ok: #2f855a;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --ix-bg: #121216;
-          --ix-fg: #ececf1;
-          --ix-muted: #9a9aa6;
-          --ix-line: #2b2b33;
-          --ix-card: #1b1b21;
-        }
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        font:
-          15px/1.5 system-ui,
-          sans-serif;
-        color: var(--ix-fg);
-        background: var(--ix-bg);
-      }
-      header {
-        padding: 20px 24px;
-        border-bottom: 1px solid var(--ix-line);
-        display: flex;
-        gap: 16px;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-      header h1 {
-        font-size: 20px;
-        margin: 0;
-      }
-      .status {
-        font-size: 12px;
-        font-weight: 600;
-        padding: 3px 10px;
-        border-radius: 999px;
-        color: #fff;
-        background: var(--ix-draft);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-      }
-      .status[data-status='approved'] {
-        background: var(--ix-ok);
-      }
-      nav.toc {
-        font-size: 13px;
-        color: var(--ix-muted);
-        display: flex;
-        gap: 14px;
-        flex-wrap: wrap;
-        margin-left: auto;
-      }
-      nav.toc a {
-        color: inherit;
-      }
-      main {
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 24px;
-      }
-      section {
-        margin-bottom: 48px;
-      }
-      section > h2 {
-        font-size: 17px;
-        margin: 0 0 12px;
-      }
-      .prose {
-        max-width: 72ch;
-        color: var(--ix-fg);
-      }
-      .prose p {
-        margin: 0 0 10px;
-      }
-      /* one card per screen */
-      .screen {
-        background: var(--ix-card);
-        border: 1px solid var(--ix-line);
-        border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 24px;
-      }
-      .screen .bar {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        flex-wrap: wrap;
-        margin-bottom: 12px;
-      }
-      .screen h3 {
-        margin: 0;
-        font-size: 15px;
-      }
-      .screen h3 code {
-        font-size: 12px;
-        color: var(--ix-muted);
-        font-weight: 400;
-        margin-left: 8px;
-      }
-      .screen .notes {
-        font-size: 13px;
-        color: var(--ix-muted);
-        margin: 0 0 12px;
-        max-width: 80ch;
-      }
-      .chips {
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-      }
-      .chips button {
-        font: inherit;
-        font-size: 12px;
-        padding: 3px 10px;
-        border-radius: 999px;
-        border: 1px solid var(--ix-line);
-        background: transparent;
-        color: var(--ix-fg);
-        cursor: pointer;
-      }
-      .chips button[aria-pressed='true'] {
-        background: var(--ix-accent);
-        border-color: var(--ix-accent);
-        color: #fff;
-      }
-      .open {
-        margin-left: auto;
-        font-size: 13px;
-      }
-      .viewport {
-        overflow: hidden;
-        border: 1px solid var(--ix-line);
-        border-radius: 6px;
-        background: #fff;
-      }
-      .viewport iframe {
-        display: block;
-        border: 0;
-        transform-origin: top left;
-      }
-      .screen .approval {
-        font-size: 12px;
-        margin-top: 8px;
-        color: var(--ix-muted);
-      }
-      /* flows */
-      .flow {
-        background: var(--ix-card);
-        border: 1px solid var(--ix-line);
-        border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 16px;
-      }
-      .flow ol {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        align-items: center;
-        padding: 0;
-        margin: 8px 0 0;
-        list-style: none;
-        counter-reset: step;
-      }
-      .flow li {
-        counter-increment: step;
-        font-size: 13px;
-      }
-      .flow li::before {
-        content: counter(step) '. ';
-        color: var(--ix-muted);
-      }
-      .flow li + li::before {
-        content: '→ ' counter(step) '. ';
-      }
-      .flow li small {
-        color: var(--ix-muted);
-      }
-    </style>
-  </head>
-  <body>
-    <header>
-      <h1>Links shelf (footer)</h1>
-      <!-- data-status MUST mirror mockup.json "status"; check-mockup.mjs enforces it -->
-      <span class="status" data-status="approved">approved</span>
-      <nav class="toc">
-        <a href="#contexto">Contexto</a><a href="#telas">Telas</a><a href="#fluxos">Fluxos</a>
-      </nav>
-    </header>
-    <main>
-      <section id="contexto">
-        <h2>Contexto e decisões</h2>
-        <div class="prose">
-          <p>
-            <strong>Problema:</strong> imagens coladas têm a galeria do footer; links (task, PR,
-            Figma, docs) somem no meio de uma sessão longa e não têm onde serem consultados nem
-            re-referenciados.
-          </p>
-          <p>
-            <strong>Decisões:</strong> sem hook — Harnu já lê o transcript <code>.jsonl</code>,
-            então extrai as URLs dele (inclusive histórico). Um pill <code>🔗 N</code> ao lado do
-            <code>🖼 N</code>, mesma gramática (hide-when-zero, aberto = accent). A linha mostra um
-            rótulo tirado <em>só da URL</em>, sem rede (PR → <code>owner/repo #n</code>, ClickUp →
-            <code>Task &lt;id&gt;</code>, Figma → nome do arquivo + nó, resto → host+caminho em
-            mono). Título de página fica pra v2. O trecho da mensagem só aparece no hover, como
-            contexto. Origem marcada: <code>you</code> (colado por ti) ou
-            <code>agent</code> (produzido pelo agente, ex. PR que ele abriu).
-          </p>
-          <p>
-            <strong>Ações:</strong> Abrir · Copiar · Referenciar (insere a URL no composer, sem
-            Enter — igual ao Re-attach das imagens; desabilitado sem PTY viva).
-          </p>
-          <p>
-            <strong>Em aberto:</strong> o escopo "Folder" (todas as sessões da pasta) ainda não foi
-            confirmado como necessário — pode cair.
-          </p>
-        </div>
-      </section>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Links shelf</title>
+<style>
+  :root { --ix-bg:#f6f6f7; --ix-fg:#1b1b1f; --ix-muted:#6b6b76; --ix-line:#dcdce2; --ix-card:#fff; --ix-accent:#2f5bea; --ix-draft:#b7791f; --ix-ok:#2f855a; }
+  @media (prefers-color-scheme: dark) { :root { --ix-bg:#121216; --ix-fg:#ececf1; --ix-muted:#9a9aa6; --ix-line:#2b2b33; --ix-card:#1b1b21; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 15px/1.5 system-ui, sans-serif; color:var(--ix-fg); background:var(--ix-bg); }
+  header { padding: 20px 24px; border-bottom: 1px solid var(--ix-line); display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size: 20px; margin: 0; }
+  .status { font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; color:#fff; background:var(--ix-draft); text-transform:uppercase; letter-spacing:.04em; }
+  .status[data-status="approved"] { background:var(--ix-ok); }
+  nav.toc { font-size:13px; color:var(--ix-muted); display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; }
+  nav.toc a { color:inherit; }
+  main { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  section { margin-bottom: 48px; }
+  section > h2 { font-size: 17px; margin: 0 0 12px; }
+  .prose { max-width: 72ch; color: var(--ix-fg); }
+  .prose p { margin: 0 0 10px; }
+  /* one card per screen */
+  .screen { background:var(--ix-card); border:1px solid var(--ix-line); border-radius:10px; padding:16px; margin-bottom:24px; }
+  .screen .bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .screen h3 { margin:0; font-size:15px; }
+  .screen h3 code { font-size:12px; color:var(--ix-muted); font-weight:400; margin-left:8px; }
+  .screen .notes { font-size:13px; color:var(--ix-muted); margin:0 0 12px; max-width:80ch; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .chips button { font:inherit; font-size:12px; padding:3px 10px; border-radius:999px; border:1px solid var(--ix-line); background:transparent; color:var(--ix-fg); cursor:pointer; }
+  .chips button[aria-pressed="true"] { background:var(--ix-accent); border-color:var(--ix-accent); color:#fff; }
+  .open { margin-left:auto; font-size:13px; }
+  .viewport { overflow:hidden; border:1px solid var(--ix-line); border-radius:6px; background:#fff; }
+  .viewport iframe { display:block; border:0; transform-origin: top left; }
+  .screen .approval { font-size:12px; margin-top:8px; color:var(--ix-muted); }
+  /* flows */
+  .flow { background:var(--ix-card); border:1px solid var(--ix-line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .flow ol { display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:0; margin:8px 0 0; list-style:none; counter-reset: step; }
+  .flow li { counter-increment: step; font-size:13px; }
+  .flow li::before { content: counter(step) ". "; color:var(--ix-muted); }
+  .flow li + li::before { content: "→ " counter(step) ". "; }
+  .flow li small { color:var(--ix-muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Links shelf (footer)</h1>
+  <!-- data-status MUST mirror mockup.json "status"; check-mockup.mjs enforces it -->
+  <span class="status" data-status="approved">approved</span>
+  <nav class="toc"><a href="#contexto">Contexto</a><a href="#telas">Telas</a><a href="#fluxos">Fluxos</a></nav>
+</header>
+<main>
 
-      <section id="telas">
-        <h2>Telas</h2>
-        <article
-          class="screen"
-          data-screen="footer--links"
-          data-states="fechado aberto hover pasta sem-pty copiado referenciado"
-        >
-          <div class="bar">
-            <h3>Footer: pill + popover de links <code>footer--links</code></h3>
-            <div class="chips" data-role="viewports"></div>
-            <div class="chips" data-role="states"></div>
-            <a class="open" href="screens/footer--links.html" target="_blank">abrir sozinha ↗</a>
-          </div>
-          <p class="notes">
-            Passe o mouse nas linhas (hover real). Estados: fechado · aberto · hover (ações +
-            trecho) · pasta (escopo Folder) · sem-pty (Referenciar desabilitado) · copiado (toast) ·
-            referenciado (URL no composer).
-          </p>
-          <div class="viewport"><iframe loading="lazy" title="footer--links"></iframe></div>
-          <p class="approval">
-            Aprovação: <strong>approved</strong> · 2026-11-03 (re-aprovado com rótulos derivados da
-            URL, sem títulos)
-          </p>
-        </article>
-      </section>
+<section id="contexto">
+  <h2>Contexto e decisões</h2>
+  <div class="prose">
+    <p><strong>Problema:</strong> imagens coladas têm a galeria do footer; links (task, PR, Figma, docs) somem no meio de uma sessão longa e não têm onde serem consultados nem re-referenciados.</p>
+    <p><strong>Decisões:</strong> sem hook — Harnu já lê o transcript <code>.jsonl</code>, então extrai as URLs dele (inclusive histórico). Um pill <code>🔗 N</code> ao lado do <code>🖼 N</code>, mesma gramática (hide-when-zero, aberto = accent). A linha mostra um rótulo tirado <em>só da URL</em>, sem rede (PR → <code>owner/repo #n</code>, ClickUp → <code>Task &lt;id&gt;</code>, Figma → nome do arquivo + nó, resto → host+caminho em mono). Título de página fica pra v2. O trecho da mensagem só aparece no hover, como contexto. Origem marcada: <code>you</code> (colado por ti) ou <code>agent</code> (produzido pelo agente, ex. PR que ele abriu).</p>
+    <p><strong>Ações:</strong> Abrir · Copiar · Referenciar (insere a URL no composer, sem Enter — igual ao Re-attach das imagens; desabilitado sem PTY viva).</p>
+    <p><strong>Em aberto:</strong> o escopo "Folder" (todas as sessões da pasta) ainda não foi confirmado como necessário — pode cair.</p>
+  </div>
+</section>
 
-      <section id="fluxos">
-        <h2>Fluxos</h2>
-        <article class="flow" data-flow="achar-e-referenciar">
-          <h3>
-            Achar um link e referenciar na sessão —
-            <a href="screens/footer--links.html?state=fechado" target="_blank">percorrer ↗</a>
-          </h3>
-          <ol>
-            <li>
-              <a href="screens/footer--links.html?state=fechado" target="_blank">fechado</a>
-              <small>via clicar no pill 🔗 7</small>
-            </li>
-            <li>
-              <a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a>
-              <small>via passar o mouse na 1ª linha</small>
-            </li>
-            <li>
-              <a href="screens/footer--links.html?state=hover" target="_blank">hover</a>
-              <small>via Referenciar</small>
-            </li>
-            <li>
-              <a href="screens/footer--links.html?state=referenciado" target="_blank"
-                >referenciado</a
-              >
-            </li>
-          </ol>
-        </article>
-        <article class="flow" data-flow="copiar">
-          <h3>
-            Copiar um link —
-            <a href="screens/footer--links.html?state=aberto" target="_blank">percorrer ↗</a>
-          </h3>
-          <ol>
-            <li>
-              <a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a>
-              <small>via passar o mouse na 1ª linha</small>
-            </li>
-            <li>
-              <a href="screens/footer--links.html?state=hover" target="_blank">hover</a>
-              <small>via Copiar</small>
-            </li>
-            <li><a href="screens/footer--links.html?state=copiado" target="_blank">copiado</a></li>
-          </ol>
-        </article>
-        <article class="flow" data-flow="escopo-pasta">
-          <h3>
-            Ampliar para a pasta —
-            <a href="screens/footer--links.html?state=aberto" target="_blank">percorrer ↗</a>
-          </h3>
-          <ol>
-            <li>
-              <a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a>
-              <small>via Folder no toggle</small>
-            </li>
-            <li><a href="screens/footer--links.html?state=pasta" target="_blank">pasta</a></li>
-          </ol>
-        </article>
-      </section>
-    </main>
-    <script>
-      /* index runtime: sizes each frame to the chosen viewport, swaps ?state=, listens for
+<section id="telas">
+  <h2>Telas</h2>
+  <article class="screen" data-screen="footer--links" data-states="fechado aberto hover pasta sem-pty copiado referenciado">
+    <div class="bar">
+      <h3>Footer: pill + popover de links <code>footer--links</code></h3>
+      <div class="chips" data-role="viewports"></div>
+      <div class="chips" data-role="states"></div>
+      <a class="open" href="screens/footer--links.html" target="_blank">abrir sozinha ↗</a>
+    </div>
+    <p class="notes">Passe o mouse nas linhas (hover real). Estados: fechado · aberto · hover (ações + trecho) · pasta (escopo Folder) · sem-pty (Referenciar desabilitado) · copiado (toast) · referenciado (URL no composer).</p>
+    <div class="viewport"><iframe loading="lazy" title="footer--links"></iframe></div>
+    <p class="approval">Aprovação: <strong>approved</strong> · 2026-11-03 (re-aprovado com rótulos derivados da URL, sem títulos)</p>
+  </article>
+</section>
+
+<section id="fluxos">
+  <h2>Fluxos</h2>
+  <article class="flow" data-flow="achar-e-referenciar">
+    <h3>Achar um link e referenciar na sessão — <a href="screens/footer--links.html?state=fechado" target="_blank">percorrer ↗</a></h3>
+    <ol>
+      <li><a href="screens/footer--links.html?state=fechado" target="_blank">fechado</a> <small>via clicar no pill 🔗 7</small></li>
+      <li><a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a> <small>via passar o mouse na 1ª linha</small></li>
+      <li><a href="screens/footer--links.html?state=hover" target="_blank">hover</a> <small>via Referenciar</small></li>
+      <li><a href="screens/footer--links.html?state=referenciado" target="_blank">referenciado</a></li>
+    </ol>
+  </article>
+  <article class="flow" data-flow="copiar">
+    <h3>Copiar um link — <a href="screens/footer--links.html?state=aberto" target="_blank">percorrer ↗</a></h3>
+    <ol>
+      <li><a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a> <small>via passar o mouse na 1ª linha</small></li>
+      <li><a href="screens/footer--links.html?state=hover" target="_blank">hover</a> <small>via Copiar</small></li>
+      <li><a href="screens/footer--links.html?state=copiado" target="_blank">copiado</a></li>
+    </ol>
+  </article>
+  <article class="flow" data-flow="escopo-pasta">
+    <h3>Ampliar para a pasta — <a href="screens/footer--links.html?state=aberto" target="_blank">percorrer ↗</a></h3>
+    <ol>
+      <li><a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a> <small>via Folder no toggle</small></li>
+      <li><a href="screens/footer--links.html?state=pasta" target="_blank">pasta</a></li>
+    </ol>
+  </article>
+</section>
+
+</main>
+<script>
+/* index runtime: sizes each frame to the chosen viewport, swaps ?state=, listens for
    mockup:size from the screens. Do not add behaviour here; screens own their behaviour. */
-      ;(() => {
-        const VIEWPORTS = [1280] // MUST mirror mockup.json "viewports"
-        const frames = new Map() // iframe -> {w, h}
-        const fit = (card) => {
-          const vp = card.querySelector('.viewport'),
-            ifr = vp.querySelector('iframe'),
-            f = frames.get(ifr)
-          const s = Math.min(1, vp.parentElement.clientWidth / f.w)
-          ifr.style.width = f.w + 'px'
-          ifr.style.height = f.h + 'px'
-          ifr.style.transform = `scale(${s})`
-          vp.style.height = Math.ceil(f.h * s) + 'px'
-          vp.style.width = Math.ceil(f.w * s) + 'px'
-        }
-        const load = (card) => {
-          const ifr = card.querySelector('iframe')
-          const state =
-            card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state ||
-            card.dataset.states.split(/\s+/)[0]
-          ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`
-        }
-        document.querySelectorAll('.screen').forEach((card) => {
-          const ifr = card.querySelector('iframe')
-          frames.set(ifr, { w: VIEWPORTS[0], h: 600 })
-          const vps = card.querySelector('[data-role="viewports"]')
-          VIEWPORTS.forEach((w, i) => {
-            const b = document.createElement('button')
-            b.textContent = w + 'px'
-            b.dataset.w = w
-            b.setAttribute('aria-pressed', String(i === 0))
-            b.onclick = () => {
-              vps
-                .querySelectorAll('button')
-                .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
-              frames.get(ifr).w = w
-              fit(card)
-            }
-            vps.append(b)
-          })
-          const sts = card.querySelector('[data-role="states"]')
-          card.dataset.states
-            .split(/\s+/)
-            .filter(Boolean)
-            .forEach((st, i) => {
-              const b = document.createElement('button')
-              b.textContent = st
-              b.dataset.state = st
-              b.setAttribute('aria-pressed', String(i === 0))
-              b.onclick = () => {
-                sts
-                  .querySelectorAll('button')
-                  .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
-                load(card)
-              }
-              sts.append(b)
-            })
-          new IntersectionObserver(
-            (es, io) =>
-              es.forEach((e) => {
-                if (e.isIntersecting) {
-                  io.disconnect()
-                  load(card)
-                }
-              }),
-            { rootMargin: '600px' }
-          ).observe(card)
-          fit(card)
-        })
-        addEventListener('message', (e) => {
-          const m = e.data
-          if (!m || m.type !== 'mockup:size') return
-          for (const [ifr, f] of frames)
-            if (ifr.contentWindow === e.source) {
-              f.h = Math.max(320, m.height)
-              fit(ifr.closest('.screen'))
-            }
-        })
-        addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit))
-      })()
-    </script>
-  </body>
+(() => {
+  const VIEWPORTS = [1280]; // MUST mirror mockup.json "viewports"
+  const frames = new Map(); // iframe -> {w, h}
+  const fit = (card) => {
+    const vp = card.querySelector('.viewport'), ifr = vp.querySelector('iframe'), f = frames.get(ifr);
+    const s = Math.min(1, vp.parentElement.clientWidth / f.w);
+    ifr.style.width = f.w + 'px'; ifr.style.height = f.h + 'px'; ifr.style.transform = `scale(${s})`;
+    vp.style.height = Math.ceil(f.h * s) + 'px'; vp.style.width = Math.ceil(f.w * s) + 'px';
+  };
+  const load = (card) => {
+    const ifr = card.querySelector('iframe');
+    const state = card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state || card.dataset.states.split(/\s+/)[0];
+    ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`;
+  };
+  document.querySelectorAll('.screen').forEach((card) => {
+    const ifr = card.querySelector('iframe');
+    frames.set(ifr, { w: VIEWPORTS[0], h: 600 });
+    const vps = card.querySelector('[data-role="viewports"]');
+    VIEWPORTS.forEach((w, i) => {
+      const b = document.createElement('button'); b.textContent = w + 'px'; b.dataset.w = w; b.setAttribute('aria-pressed', String(i === 0));
+      b.onclick = () => { vps.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); frames.get(ifr).w = w; fit(card); };
+      vps.append(b);
+    });
+    const sts = card.querySelector('[data-role="states"]');
+    card.dataset.states.split(/\s+/).filter(Boolean).forEach((st, i) => {
+      const b = document.createElement('button'); b.textContent = st; b.dataset.state = st; b.setAttribute('aria-pressed', String(i === 0));
+      b.onclick = () => { sts.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); load(card); };
+      sts.append(b);
+    });
+    new IntersectionObserver((es, io) => es.forEach((e) => { if (e.isIntersecting) { io.disconnect(); load(card); } }), { rootMargin: '600px' }).observe(card);
+    fit(card);
+  });
+  addEventListener('message', (e) => {
+    const m = e.data; if (!m || m.type !== 'mockup:size') return;
+    for (const [ifr, f] of frames) if (ifr.contentWindow === e.source) { f.h = Math.max(320, m.height); fit(ifr.closest('.screen')); }
+  });
+  addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit));
+})();
+</script>
+</body>
 </html>

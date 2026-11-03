@@ -4,7 +4,9 @@
   "project": "harnu",
   "card": null,
   "tokensFrom": "src/renderer/src/styles/themes.css (@theme block, default theme) + src/renderer/src/styles/main.css (font tokens)",
-  "viewports": [1280],
+  "viewports": [
+    1280
+  ],
   "targets": [
     "src/renderer/src/components/StatusFooter.vue",
     "src/renderer/src/components/FooterLinksPopover.vue"
@@ -15,7 +17,15 @@
       "title": "Footer links pill + popover",
       "status": "approved",
       "approvedAt": "2026-11-03",
-      "states": ["fechado", "aberto", "hover", "pasta", "sem-pty", "copiado", "referenciado"],
+      "states": [
+        "fechado",
+        "aberto",
+        "hover",
+        "pasta",
+        "sem-pty",
+        "copiado",
+        "referenciado"
+      ],
       "targets": [
         "src/renderer/src/components/StatusFooter.vue",
         "src/renderer/src/components/FooterLinksPopover.vue"

@@ -16,3 +16,7 @@ THIRD-PARTY-NOTICES.md
 
 # Engine-written typings next to a loaded mod (T389 companion; generated, never hand-edited)
 **/.claude-plugin/types
+
+# Approved Links shelf spec + mockup, landed verbatim (T617 spec AC-11): they keep their original bytes.
+docs/design/links-shelf
+docs/specs/2026-11-03-links-shelf/spec.md

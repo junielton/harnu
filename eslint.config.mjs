@@ -22,6 +22,8 @@ export default defineConfig(
       '.claude/**',
       // The engine writes these next to a loaded mod (companion mod, T389); never hand-edited.
       '**/.claude-plugin/types/**',
+      // Approved mockups are design artifacts landed verbatim (e.g. docs/design/links-shelf), not app code.
+      'docs/design/**',
       'coverage/**',
       'playwright-report/**',
       'test-results/**'
