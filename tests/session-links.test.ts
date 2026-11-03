@@ -222,9 +222,9 @@ describe('classifyUrl — AC-2', () => {
       detail: 'ClickUp'
     })
     // Team-scoped form: the id is the last segment.
-    expect(classifyUrl('https://app.clickup.com/t/9012345/TW-10301')).toMatchObject({
+    expect(classifyUrl('https://app.clickup.com/t/9012345/PROJ-231')).toMatchObject({
       kind: 'task',
-      label: 'Task TW-10301'
+      label: 'Task PROJ-231'
     })
     expect(classifyUrl('https://www.figma.com/design/Qx7Lm2/Harnu?node-id=812-4410')).toEqual({
       kind: 'figma',

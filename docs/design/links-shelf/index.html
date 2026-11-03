@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -47,58 +47,58 @@
   <h1>Links shelf (footer)</h1>
   <!-- data-status MUST mirror mockup.json "status"; check-mockup.mjs enforces it -->
   <span class="status" data-status="approved">approved</span>
-  <nav class="toc"><a href="#contexto">Contexto</a><a href="#telas">Telas</a><a href="#fluxos">Fluxos</a></nav>
+  <nav class="toc"><a href="#contexto">Context</a><a href="#telas">Screens</a><a href="#fluxos">Flows</a></nav>
 </header>
 <main>
 
 <section id="contexto">
-  <h2>Contexto e decisões</h2>
+  <h2>Context and decisions</h2>
   <div class="prose">
-    <p><strong>Problema:</strong> imagens coladas têm a galeria do footer; links (task, PR, Figma, docs) somem no meio de uma sessão longa e não têm onde serem consultados nem re-referenciados.</p>
-    <p><strong>Decisões:</strong> sem hook — Harnu já lê o transcript <code>.jsonl</code>, então extrai as URLs dele (inclusive histórico). Um pill <code>🔗 N</code> ao lado do <code>🖼 N</code>, mesma gramática (hide-when-zero, aberto = accent). A linha mostra um rótulo tirado <em>só da URL</em>, sem rede (PR → <code>owner/repo #n</code>, ClickUp → <code>Task &lt;id&gt;</code>, Figma → nome do arquivo + nó, resto → host+caminho em mono). Título de página fica pra v2. O trecho da mensagem só aparece no hover, como contexto. Origem marcada: <code>you</code> (colado por ti) ou <code>agent</code> (produzido pelo agente, ex. PR que ele abriu).</p>
-    <p><strong>Ações:</strong> Abrir · Copiar · Referenciar (insere a URL no composer, sem Enter — igual ao Re-attach das imagens; desabilitado sem PTY viva).</p>
-    <p><strong>Em aberto:</strong> o escopo "Folder" (todas as sessões da pasta) ainda não foi confirmado como necessário — pode cair.</p>
+    <p><strong>Problem:</strong> pasted images have the footer gallery; links (task, PR, Figma, docs) get lost in the middle of a long session and have nowhere to be looked up or referenced again.</p>
+    <p><strong>Decisions:</strong> no hook — Harnu already reads the <code>.jsonl</code> transcript, so it extracts the URLs from it (history included). A <code>🔗 N</code> pill next to the <code>🖼 N</code> one, same grammar (hide-when-zero, open = accent). Each row shows a label taken <em>from the URL only</em>, with no network (PR → <code>owner/repo #n</code>, ClickUp → <code>Task &lt;id&gt;</code>, Figma → file name + node, anything else → host + path in mono). Page titles are left for v2. The excerpt of the message only shows on hover, as context. The source is marked: <code>you</code> (pasted by you) or <code>agent</code> (produced by the agent, e.g. a PR it opened).</p>
+    <p><strong>Actions:</strong> Open · Copy · Reference (inserts the URL into the composer, without Enter — same as the images' Re-attach; disabled without a live PTY).</p>
+    <p><strong>Open:</strong> the "Folder" scope (every session in the folder) has not been confirmed as necessary yet — it may be dropped.</p>
   </div>
 </section>
 
 <section id="telas">
-  <h2>Telas</h2>
+  <h2>Screens</h2>
   <article class="screen" data-screen="footer--links" data-states="fechado aberto hover pasta sem-pty copiado referenciado">
     <div class="bar">
-      <h3>Footer: pill + popover de links <code>footer--links</code></h3>
+      <h3>Footer: links pill + popover <code>footer--links</code></h3>
       <div class="chips" data-role="viewports"></div>
       <div class="chips" data-role="states"></div>
-      <a class="open" href="screens/footer--links.html" target="_blank">abrir sozinha ↗</a>
+      <a class="open" href="screens/footer--links.html" target="_blank">open on its own ↗</a>
     </div>
-    <p class="notes">Passe o mouse nas linhas (hover real). Estados: fechado · aberto · hover (ações + trecho) · pasta (escopo Folder) · sem-pty (Referenciar desabilitado) · copiado (toast) · referenciado (URL no composer).</p>
+    <p class="notes">Hover over the rows (real hover). States: fechado (closed) · aberto (open) · hover (actions + excerpt) · pasta (Folder scope) · sem-pty (Reference disabled) · copiado (toast) · referenciado (URL in the composer).</p>
     <div class="viewport"><iframe loading="lazy" title="footer--links"></iframe></div>
-    <p class="approval">Aprovação: <strong>approved</strong> · 2026-11-03 (re-aprovado com rótulos derivados da URL, sem títulos)</p>
+    <p class="approval">Approval: <strong>approved</strong> · 2026-11-03 (re-approved with URL-derived labels, no titles)</p>
   </article>
 </section>
 
 <section id="fluxos">
-  <h2>Fluxos</h2>
+  <h2>Flows</h2>
   <article class="flow" data-flow="achar-e-referenciar">
-    <h3>Achar um link e referenciar na sessão — <a href="screens/footer--links.html?state=fechado" target="_blank">percorrer ↗</a></h3>
+    <h3>Find a link and reference it in the session — <a href="screens/footer--links.html?state=fechado" target="_blank">walk through ↗</a></h3>
     <ol>
-      <li><a href="screens/footer--links.html?state=fechado" target="_blank">fechado</a> <small>via clicar no pill 🔗 7</small></li>
-      <li><a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a> <small>via passar o mouse na 1ª linha</small></li>
-      <li><a href="screens/footer--links.html?state=hover" target="_blank">hover</a> <small>via Referenciar</small></li>
+      <li><a href="screens/footer--links.html?state=fechado" target="_blank">fechado</a> <small>via clicking the 🔗 7 pill</small></li>
+      <li><a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a> <small>via hovering the 1st row</small></li>
+      <li><a href="screens/footer--links.html?state=hover" target="_blank">hover</a> <small>via Reference</small></li>
       <li><a href="screens/footer--links.html?state=referenciado" target="_blank">referenciado</a></li>
     </ol>
   </article>
   <article class="flow" data-flow="copiar">
-    <h3>Copiar um link — <a href="screens/footer--links.html?state=aberto" target="_blank">percorrer ↗</a></h3>
+    <h3>Copy a link — <a href="screens/footer--links.html?state=aberto" target="_blank">walk through ↗</a></h3>
     <ol>
-      <li><a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a> <small>via passar o mouse na 1ª linha</small></li>
-      <li><a href="screens/footer--links.html?state=hover" target="_blank">hover</a> <small>via Copiar</small></li>
+      <li><a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a> <small>via hovering the 1st row</small></li>
+      <li><a href="screens/footer--links.html?state=hover" target="_blank">hover</a> <small>via Copy</small></li>
       <li><a href="screens/footer--links.html?state=copiado" target="_blank">copiado</a></li>
     </ol>
   </article>
   <article class="flow" data-flow="escopo-pasta">
-    <h3>Ampliar para a pasta — <a href="screens/footer--links.html?state=aberto" target="_blank">percorrer ↗</a></h3>
+    <h3>Widen to the folder — <a href="screens/footer--links.html?state=aberto" target="_blank">walk through ↗</a></h3>
     <ol>
-      <li><a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a> <small>via Folder no toggle</small></li>
+      <li><a href="screens/footer--links.html?state=aberto" target="_blank">aberto</a> <small>via Folder on the toggle</small></li>
       <li><a href="screens/footer--links.html?state=pasta" target="_blank">pasta</a></li>
     </ol>
   </article>
