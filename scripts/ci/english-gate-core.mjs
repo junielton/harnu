@@ -47,10 +47,7 @@ export const ALLOWED_PATHS = [
   /^scripts\/ci\/english-gate(-core)?\.mjs$/,
   /^tests\/ci-english-gate\.test\.ts$/,
   // Historical record: entries quote the pt-BR language picker by its own name.
-  /^CHANGELOG\.md$/,
-  // The approved Links shelf mockup, landed unchanged (spec AC-11): its index page keeps the
-  // original pt-BR review notes, so translating them would alter the approved artifact.
-  /^docs\/design\/links-shelf\/index\.html$/
+  /^CHANGELOG\.md$/
 ]
 
 /** File extensions the gate reads. Binary and generated files are never scanned. */
