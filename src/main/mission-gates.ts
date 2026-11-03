@@ -7,7 +7,7 @@
  * GitHub or the step's proof, `running` is "waiting on something", `off` is "no
  * signal yet" and `na` is "does not apply to this step".
  */
-import type { MissionStep } from './mission-core'
+import type { MissionStep, StepLink } from './mission-core'
 
 export type GateState = 'green' | 'red' | 'running' | 'off' | 'na'
 
@@ -33,11 +33,19 @@ export interface GatePrFacts {
 }
 
 export interface GateInput {
-  step: Pick<MissionStep, 'verification' | 'proof' | 'verifiedBy' | 'checks'>
+  /** The mission the step belongs to — names its evidence bundle directory. */
+  missionId?: string
+  step: Pick<MissionStep, 'verification' | 'proof' | 'verifiedBy' | 'checks'> &
+    Partial<Pick<MissionStep, 'id' | 'links'>>
   /** `null` = the step has no PR link that resolved. */
   pr: GatePrFacts | null
   /** CI of the merge commit on the default branch; `null` = not known (yet). */
   mainCi: GateCi | null
+  /**
+   * Whether the evidence bundle a `worktree` link names exists on disk. Omitted = not
+   * checked (the link alone counts); `false` = the link points at a directory that is gone.
+   */
+  bundleOnDisk?: boolean
   /** Any of the facts above came from the sticky last-known cache. */
   stale?: boolean
 }
@@ -82,13 +90,55 @@ function fromCi(ci: GateCi | null | undefined): GateState {
   return 'off'
 }
 
-function verifierGate(step: GateInput['step']): GateState {
+/**
+ * Campaign ch.6 (T610) — where the verifier stores a step's evidence bundle (test output,
+ * screenshots, console), relative to the repo root: `.harnu/evidence/<missionId>/<stepId>`.
+ */
+export function evidenceBundleDir(missionId: string, stepId: string): string {
+  return `.harnu/evidence/${missionId}/${stepId}`
+}
+
+/**
+ * Whether one of the step's `worktree` links names its evidence bundle directory — a
+ * repo-relative or absolute ref, with or without a trailing slash. Only a whole-segment
+ * match counts, so `stp-16` never matches `stp-160`.
+ */
+export function hasEvidenceBundle(
+  links: readonly StepLink[] | undefined,
+  missionId: string,
+  stepId: string
+): boolean {
+  const dir = evidenceBundleDir(missionId, stepId)
+  return (links ?? []).some((l) => {
+    if (l.kind !== 'worktree') return false
+    const ref = l.ref.replace(/\/+$/, '')
+    return ref === dir || ref.endsWith(`/${dir}`)
+  })
+}
+
+function verifierGate(
+  step: GateInput['step'],
+  missionId: string | undefined,
+  bundleOnDisk: boolean | undefined
+): GateState {
   if (step.verification === 'existence') return 'na'
   const verdict = step.verifiedBy?.verdict
   if (verdict === 'unmet' || verdict === 'blocked') return 'red'
   // Independently verified is green, whatever the verdict: a `needs-human` verdict
   // leaves a human part, but that part is carried by the checks gate, not this one.
-  if (step.proof === 'verified') return 'green'
+  // A verifier-level verification recorded with the `evidenceRequired` marker (T610) also has
+  // to leave its evidence: without a linked bundle that is still on disk, the verdict is a
+  // claim nobody can re-read, so the gate keeps waiting. One recorded before the marker
+  // existed is grandfathered: it reads green on its other gates, as it always did.
+  if (step.proof === 'verified') {
+    if (step.verification !== 'verifier' || !step.verifiedBy?.evidenceRequired) return 'green'
+    return missionId !== undefined &&
+      step.id !== undefined &&
+      hasEvidenceBundle(step.links, missionId, step.id) &&
+      bundleOnDisk !== false
+      ? 'green'
+      : 'running'
+  }
   if (step.verification === 'human') return 'off'
   // A claim, a self-verification or a `needs-human` verdict nobody independent has
   // verified: waiting on a verifier.
@@ -102,7 +152,14 @@ function checksGate(step: GateInput['step']): GateState {
   return checks.every((c) => c.ticked) ? 'green' : 'running'
 }
 
-export function computeStepGates({ step, pr, mainCi, stale }: GateInput): StepGates {
+export function computeStepGates({
+  missionId,
+  step,
+  pr,
+  mainCi,
+  bundleOnDisk,
+  stale
+}: GateInput): StepGates {
   const gates: StepGates = {
     pr:
       pr === null
@@ -121,7 +178,7 @@ export function computeStepGates({ step, pr, mainCi, stale }: GateInput): StepGa
           : pr.state === 'OPEN'
             ? 'off'
             : 'na',
-    verifier: verifierGate(step),
+    verifier: verifierGate(step, missionId, bundleOnDisk),
     checks: checksGate(step)
   }
   if (stale) gates.stale = true

@@ -4531,6 +4531,13 @@
       "reasonPlaceholder": "Vai para o Log da missão",
       "cancel": "Cancelar",
       "dismiss": "Cancelar e manter a missão aberta",
+      "record": {
+        "title": "Registrar também",
+        "hint": "Marque o que o Harnu deve gravar na memória do projeto. Nada é gravado sem marcar.",
+        "nothing": "Nada notável para registrar.",
+        "kind": { "decision": "Decisão", "lesson": "Lição", "hot": "Hot" },
+        "replaces": "Substitui {id}"
+      },
       "warnings": {
         "title": "Antes de encerrar",
         "endUnverified": "O fim não está verificado",
@@ -4673,6 +4680,8 @@
         "merge-failed": "O GitHub recusou o merge de #{pr}: {detail}"
       }
     },
+    "recordFailedTitle": "Parte da memória não foi registrada",
+    "recordFailed": "A missão foi encerrada, mas a memória recusou: {drafts}",
     "sidebarChip": "Missão: {headline}",
     "sidebarChipNeedsYou": "Missão: {headline} — precisa de você",
     "cue": {

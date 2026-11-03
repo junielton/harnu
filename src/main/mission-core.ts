@@ -86,6 +86,12 @@ export interface MissionStep {
     sessionId: string
     at: string
     verdict?: 'met' | 'unmet' | 'blocked' | 'needs-human'
+    /**
+     * Campaign ch.6 (T610): stamped by `mission_verify_step` on every verification it records.
+     * The verifier gate asks for an evidence bundle ONLY when this is present, so a
+     * verification recorded before the bundle existed keeps reading as it did.
+     */
+    evidenceRequired?: true
   }
   links: StepLink[]
   blockers: Blocker[]
@@ -310,7 +316,8 @@ const MissionStepSchema: z.ZodType<MissionStep> = z
       .object({
         sessionId: z.string(),
         at: z.string(),
-        verdict: z.enum(['met', 'unmet', 'blocked', 'needs-human']).optional()
+        verdict: z.enum(['met', 'unmet', 'blocked', 'needs-human']).optional(),
+        evidenceRequired: z.literal(true).optional()
       })
       .optional(),
     links: z.array(StepLinkSchema),

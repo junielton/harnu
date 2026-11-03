@@ -388,6 +388,16 @@ export const useMissionsStore = defineStore('missions', () => {
       writeSeq++
       applyDoorResult(door, res.view)
       void refreshAfterWrite()
+      // Campaign ch.6: the mission closed, but the memory write refused some ticked drafts.
+      if (res.recorded?.failed.length) {
+        useUiStore().pushToast({
+          kind: 'warning',
+          title: i18n.global.t('mission.recordFailedTitle'),
+          description: i18n.global.t('mission.recordFailed', {
+            drafts: res.recorded.failed.map((f) => `${f.id} (${f.error})`).join(', ')
+          })
+        })
+      }
     } else if (door.door === 'end' && res.error.startsWith('MISSION_CLOSED')) {
       // Ending a mission that is already closed (a double Close, or another
       // window got there first) is what the operator asked for: drop it if it

@@ -143,11 +143,16 @@ function openEnd(choice: EndChoice): void {
  * the door's `view: null` at once, which unmounts this popover and the dialog;
  * on a refusal or an IPC failure the store toasts and the dialog closes here.
  */
-async function confirmClose(closedAs: EndChoice, reason?: string): Promise<void> {
+async function confirmClose(
+  closedAs: EndChoice,
+  reason?: string,
+  record?: string[]
+): Promise<void> {
   await door({
     door: 'end',
     closedAs,
-    ...(reason ? { reason } : {})
+    ...(reason ? { reason } : {}),
+    ...(record?.length ? { record } : {})
   } as Omit<MissionDoor, 'root' | 'missionId'>)
   confirmingClose.value = false
 }
@@ -600,6 +605,8 @@ useNativeOverlay('mission-popover', rootEl)
       :busy="missions.doorInFlight"
       :warnings="endWarnings(view)"
       :initial="endChoice"
+      :drafts="view.mission.memoryDrafts ?? []"
+      :nothing-notable="view.mission.outcome?.nothingNotable === true"
       @cancel="confirmingClose = false"
       @confirm="confirmClose"
     />

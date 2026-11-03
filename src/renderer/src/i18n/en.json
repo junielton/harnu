@@ -4531,6 +4531,13 @@
       "reasonPlaceholder": "Goes to the mission’s Log",
       "cancel": "Cancel",
       "dismiss": "Cancel and keep the mission open",
+      "record": {
+        "title": "Also record",
+        "hint": "Tick what Harnu should write to project memory. Nothing is written without a tick.",
+        "nothing": "Nothing notable to record.",
+        "kind": { "decision": "Decision", "lesson": "Lesson", "hot": "Hot" },
+        "replaces": "Replaces {id}"
+      },
       "warnings": {
         "title": "Before you end it",
         "endUnverified": "The end is not verified",
@@ -4673,6 +4680,8 @@
         "merge-failed": "GitHub refused the merge of #{pr}: {detail}"
       }
     },
+    "recordFailedTitle": "Some memory wasn’t recorded",
+    "recordFailed": "The mission is closed, but memory refused: {drafts}",
     "sidebarChip": "Mission: {headline}",
     "sidebarChipNeedsYou": "Mission: {headline} — needs you",
     "cue": {

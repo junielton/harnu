@@ -58,7 +58,13 @@ import {
   getObservedLedger,
   rememberResolved
 } from '../mission-link-cache'
-import { computeStepGates, type GateCi, type GatePrFacts, type StepGates } from '../mission-gates'
+import {
+  computeStepGates,
+  hasEvidenceBundle,
+  type GateCi,
+  type GatePrFacts,
+  type StepGates
+} from '../mission-gates'
 import {
   appendLedgerRow,
   hasLedgerRow,
@@ -4326,6 +4332,20 @@ function stepPrFacts(
   return found.length > 0 ? { facts: found[0].facts, stale: found[0].stale } : null
 }
 
+/**
+ * Campaign ch.6 (T610) — whether the evidence bundle a step links is on disk. `undefined`
+ * when the step links no bundle at all (the gate then says why it is waiting).
+ */
+function bundleOnDisk(
+  root: string,
+  missionId: string,
+  step: Pick<MissionStep, 'id' | 'links'>,
+  exists: ReadonlyMap<string, boolean>
+): boolean | undefined {
+  const link = step.links.find((l) => hasEvidenceBundle([l], missionId, step.id))
+  return link ? (exists.get(linkPath(root, link.ref)) ?? false) : undefined
+}
+
 export interface MissionStepSignals {
   stepId: string
   /** Live state of this step's `session` links, from the scoped fleet projection. */
@@ -4912,9 +4932,12 @@ export async function deriveMissionSignals(
       ...st,
       prNumber: found?.facts.number ?? null,
       gates: computeStepGates({
+        missionId: mission.id,
         step,
         pr: found?.facts ?? null,
         mainCi: main?.ci ?? null,
+        // Campaign ch.6 (T610): the verifier gate reads the evidence bundle the step links.
+        bundleOnDisk: bundleOnDisk(root, mission.id, step, exists),
         stale: found?.stale === true || main?.stale === true
       })
     }
@@ -5924,7 +5947,7 @@ const missionVerifyStepHandler: Handler = async (args, ctx) => {
     // Mission v3 §3.6: `needs-human` means the machine part is met — the proof
     // keeps its label — and the human part becomes a check on the step.
     step.proof = verdict === 'met' || verdict === 'needs-human' ? label : 'unproven'
-    step.verifiedBy = { sessionId: callerId, at, verdict }
+    step.verifiedBy = { sessionId: callerId, at, verdict, evidenceRequired: true }
     // Campaign spec §3.2: the verdict is a ledger event, written here — not by an argument.
     const withVerdict = (mm: Mission): Mission =>
       appendLedgerRow(
