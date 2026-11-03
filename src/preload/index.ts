@@ -102,6 +102,7 @@ import type { UsageBiSnapshot, UsageBiRange } from '../main/usage-bi'
 import type { HeapSample, MonitorSample } from '../main/monitor/types'
 import type { Policy } from '../main/fleet-policy'
 import type { ImageEntry } from '../main/image-cache'
+import type { FolderLinkGroup, SessionLink } from '../main/session-links'
 import type {
   SubfolderEntry,
   SubfolderScan,
@@ -463,6 +464,7 @@ export type { Policy } from '../main/fleet-policy'
 export type { SessionAnatomy, EnrichedWindow, EnrichedWindowSession } from '../main/usage-bi-core'
 // Pasted-images gallery: `image-cache.ts` keeps its type next to the pure core.
 export type { ImageEntry } from '../main/image-cache'
+export type { FolderLinkGroup, LinkKind, SessionLink } from '../main/session-links'
 
 // Hook-derived task-state (session-state real-state spec). `hook-state.ts` is a
 // pure module, so the renderer imports the type directly.
@@ -1368,6 +1370,15 @@ const api = {
     ipcRenderer.invoke('imageCache:read', { uuid, name }),
   imageCacheCopy: (uuid: string, name: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('imageCache:copy', { uuid, name }),
+
+  // ---- Links shelf (T617) ----------------------------------------------------
+  // Read-only window over the http(s) links a session's transcript holds (user + assistant text
+  // only). `uuid` / `folder` are lookup keys into the sessions main already knows — never a path.
+  // Open / Copy reuse `shellOpenExternal` / the clipboard; Reference writes to the live PTY.
+  sessionLinksList: (uuid: string): Promise<SessionLink[]> =>
+    ipcRenderer.invoke('sessionLinks:session', uuid),
+  sessionLinksFolder: (folder: string): Promise<FolderLinkGroup[]> =>
+    ipcRenderer.invoke('sessionLinks:folder', folder),
 
   // ---- Claude model + watcher ----------------------------------------------
   /**

@@ -218,6 +218,7 @@ import { registerReviewHandlers } from './review-ipc'
 import { resolveCliFolderArg } from './cli-folder-arg'
 import { registerMcpServer, closeMcpServer } from './mcp/server'
 import { registerImageCache } from './image-cache'
+import { registerSessionLinks } from './session-links'
 import { setDataDirAppVersion } from './data-dir'
 import { migrateUserData } from './migrate-userdata'
 import {
@@ -566,6 +567,8 @@ app.whenReady().then(async () => {
   // Pasted-images gallery: read-only list/read/copy over ~/.claude/image-cache.
   // Stateless (no watcher, no teardown); every handler validates uuid + name.
   registerImageCache()
+  // T617: Links shelf — read-only links of a session/folder, derived from the transcript. Stateless.
+  registerSessionLinks()
   registerSessionOpHandlers()
   // T74: confined markdown reader for the viewer pane. Reads `.md`/`.markdown`/
   // `.txt` UTF-8 (size-capped) only from the known Harnu folders (pinned +
