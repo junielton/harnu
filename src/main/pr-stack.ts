@@ -15,6 +15,17 @@ import * as path from 'node:path'
 import { promisify } from 'node:util'
 import { ipcMain } from 'electron'
 import { spawnEnvOnce } from './appimage-env'
+import {
+  UNSURE,
+  readHead,
+  readRef,
+  readSymbolicRef,
+  resolveGitDirs,
+  type GitDirs
+} from './git/refs'
+import { runGh } from './gh-runner'
+import type { GhConsumer } from './github-budget-core'
+import { missionCacheTtlMs, prStackBackgroundPaused } from './github-budget-tracker'
 import { isOpenPrViewJson, matchPrLinkToRemote } from './github-remote'
 import { ciOfRuns, type CiRun, type GateCi } from './mission-gates'
 import { readPrefs, writePrefs, type PrStackPrefs } from './pr-stack-prefs'
@@ -46,8 +57,8 @@ export type { PrStackSnapshot }
 const execFileAsync = promisify(execFile)
 
 /**
- * Every subprocess on this path goes through here so it is spawned with the
- * user's login-shell PATH (BUG-34). A Dock-launched macOS build inherits
+ * Every `git` subprocess on this path goes through here so it is spawned with the
+ * user's login-shell PATH (BUG-34). `gh` goes through the shared runner (`gh-runner.ts`, T611). A Dock-launched macOS build inherits
  * launchd's minimal PATH, which has no `/opt/homebrew/bin` — bare `gh` is then
  * ENOENT and the canvas reports "GitHub CLI is unavailable here" to a user
  * whose `gh` is installed and authenticated.
@@ -105,8 +116,82 @@ const GH_FIELDS = [
   'autoMergeRequest'
 ].join(',')
 
-/** Resolves the repo's default branch, falling back to `main`. */
-async function defaultBranchOf(repoPath: string): Promise<string> {
+/** BUG-240: every cache below holds at most this many entries; the oldest insertion goes first. */
+const CACHE_MAX = 512
+
+/** A `Map` that evicts its oldest insertion once it holds {@link CACHE_MAX} entries. */
+class BoundedCache<V> {
+  private readonly map = new Map<string, V>()
+  get(key: string): V | undefined {
+    return this.map.get(key)
+  }
+  set(key: string, value: V): void {
+    this.map.delete(key)
+    if (this.map.size >= CACHE_MAX) {
+      const oldest = this.map.keys().next().value
+      if (oldest !== undefined) this.map.delete(oldest)
+    }
+    this.map.set(key, value)
+  }
+  delete(key: string): void {
+    this.map.delete(key)
+  }
+  clear(): void {
+    this.map.clear()
+  }
+}
+
+/**
+ * Single-flight memo: concurrent callers of one `key` await ONE promise. A rejection is
+ * never kept, and neither is a value `keep` refuses (a "could not tell" answer), so the
+ * next caller asks again.
+ */
+function singleFlight<V>(
+  cache: BoundedCache<Promise<V>>,
+  key: string,
+  compute: () => Promise<V>,
+  keep: (value: V) => boolean = () => true
+): Promise<V> {
+  const hit = cache.get(key)
+  if (hit) return hit
+  const flight = compute()
+  cache.set(key, flight)
+  flight.then(
+    (value) => {
+      if (!keep(value) && cache.get(key) === flight) cache.delete(key)
+    },
+    () => {
+      if (cache.get(key) === flight) cache.delete(key)
+    }
+  )
+  return flight
+}
+
+const headCache = new BoundedCache<Promise<Omit<WorktreePrJoin, 'prs'>>>()
+const aheadCache = new BoundedCache<Promise<number | undefined>>()
+const mergeOidCache = new BoundedCache<Promise<string | null>>()
+const verdictCache = new BoundedCache<{
+  settledAt: number | null
+  ttlMs: number
+  result: Promise<GateCi>
+}>()
+const defaultBranchCache = new BoundedCache<{ at: number; name: Promise<string> }>()
+
+/** Test seam: forget everything the git/gh join caches hold. */
+export function resetGitJoinCachesForTest(): void {
+  headCache.clear()
+  aheadCache.clear()
+  mergeOidCache.clear()
+  verdictCache.clear()
+  defaultBranchCache.clear()
+  prCache.clear()
+}
+
+/** How long a repo with no `origin/HEAD` keeps its `main` fallback before asking git again. */
+const NO_ORIGIN_HEAD_TTL_MS = 10 * 60_000
+
+/** Today's answer: ask git for the repo's default branch, falling back to `main`. */
+async function defaultBranchFromGit(repoPath: string): Promise<string> {
   try {
     const { stdout } = await runFile(
       'git',
@@ -121,6 +206,31 @@ async function defaultBranchOf(repoPath: string): Promise<string> {
   }
 }
 
+/**
+ * Resolves the repo's default branch, falling back to `main`.
+ *
+ * BUG-240: `origin/HEAD` is read from the repo's own file, so the answer follows it the
+ * moment it moves and costs no spawn. A repo without one (or one this reader cannot
+ * judge) asks git, and the former keeps its `main` fallback for 10 minutes.
+ */
+async function defaultBranchOf(repoPath: string): Promise<string> {
+  const dirs = await resolveGitDirs(repoPath)
+  if (dirs === null || dirs === UNSURE) return defaultBranchFromGit(repoPath)
+  const target = await readSymbolicRef(dirs, 'refs/remotes/origin/HEAD')
+  if (target === UNSURE) return defaultBranchFromGit(repoPath)
+  if (target !== null) {
+    const name = target.startsWith('refs/remotes/origin/')
+      ? target.slice('refs/remotes/origin/'.length)
+      : ''
+    return name || defaultBranchFromGit(repoPath)
+  }
+  const hit = defaultBranchCache.get(dirs.commonDir)
+  if (hit && Date.now() - hit.at < NO_ORIGIN_HEAD_TTL_MS) return hit.name
+  const entry = { at: Date.now(), name: defaultBranchFromGit(repoPath) }
+  defaultBranchCache.set(dirs.commonDir, entry)
+  return entry.name
+}
+
 /** One `gh pr list` answer: the PRs, whether `gh` is usable, and why a usable one failed. */
 type PrFetch = { prs: PrEntry[]; ghAvailable: boolean; ghFailure: GhFailure | null }
 
@@ -131,12 +241,11 @@ type PrFetch = { prs: PrEntry[]; ghAvailable: boolean; ghFailure: GhFailure | nu
  * not "no PRs" (BUG-148). Sized with the Reaper's bulk-list budget, which the
  * old 15s / 4 MiB one could not survive.
  */
-async function fetchPrs(repoPath: string): Promise<PrFetch> {
+async function fetchPrs(repoPath: string, consumer: GhConsumer = 'pr-stack'): Promise<PrFetch> {
   try {
-    const { stdout } = await runFile(
-      'gh',
+    const { stdout } = await runGh(
       ['pr', 'list', '--state', 'all', '--limit', String(PR_LIST_LIMIT), '--json', GH_FIELDS],
-      { ...GH_PR_LIST_OPTS, cwd: repoPath }
+      { ...GH_PR_LIST_OPTS, cwd: repoPath, consumer, resource: 'graphql' }
     )
     return { prs: parsePrList(stdout), ghAvailable: true, ghFailure: null }
   } catch (err) {
@@ -147,15 +256,19 @@ async function fetchPrs(repoPath: string): Promise<PrFetch> {
   }
 }
 
-/** How long one `gh pr list` serves the mission reads of a repo (Mission v3 §3.8). */
-const PR_CACHE_TTL_MS = 60_000
+/**
+ * How long one `gh pr list` serves the mission reads of a repo (Mission v3 §3.8): 60 s, stretched to
+ * 5 min while the GitHub budget is `low`, and kept as the last known value while it is `exhausted`
+ * (T611). Read per call, so a state change applies to the next read.
+ */
+const prCacheTtlMs = missionCacheTtlMs
 
 /** Per repo root: the fetch in flight, or the last good one and when it landed. */
 const prCache = new Map<string, { settledAt: number | null; result: Promise<PrFetch> }>()
 
 /**
  * Mission v3 §3.8 — {@link fetchPrs} for the mission reads: a single-flight
- * promise per repo root, kept {@link PR_CACHE_TTL_MS} after it lands. Every
+ * promise per repo root, kept {@link prCacheTtlMs} after it lands. Every
  * `mission_get`, every `mission:list` derive and every door re-derive (MCP and
  * IPC run in this one main process) share it, so a list pass over a repo's
  * missions costs one `gh` round trip, not one per mission. A failure is not
@@ -164,10 +277,10 @@ const prCache = new Map<string, { settledAt: number | null; result: Promise<PrFe
 function fetchPrsCached(repoPath: string): Promise<PrFetch> {
   const key = path.resolve(repoPath)
   const hit = prCache.get(key)
-  if (hit && (hit.settledAt === null || Date.now() - hit.settledAt < PR_CACHE_TTL_MS)) {
+  if (hit && (hit.settledAt === null || Date.now() - hit.settledAt < prCacheTtlMs())) {
     return hit.result
   }
-  const entry = { settledAt: null as number | null, result: fetchPrs(key) }
+  const entry = { settledAt: null as number | null, result: fetchPrs(key, 'missions') }
   prCache.set(key, entry)
   void entry.result.then((r) => {
     if (prCache.get(key) !== entry) return
@@ -204,8 +317,7 @@ async function withinBudget(pending: Promise<PrFetch>, ms: number | undefined): 
  */
 async function fetchReviewThreads(repoPath: string): Promise<Map<number, PrThreadCounts> | null> {
   try {
-    const { stdout } = await runFile(
-      'gh',
+    const { stdout } = await runGh(
       [
         'api',
         'graphql',
@@ -216,7 +328,7 @@ async function fetchReviewThreads(repoPath: string): Promise<Map<number, PrThrea
         '-f',
         `query=${REVIEW_THREADS_QUERY}`
       ],
-      { ...GH_OPTS, cwd: repoPath }
+      { ...GH_OPTS, cwd: repoPath, consumer: 'pr-stack', resource: 'graphql' }
     )
     return parseReviewThreads(stdout)
   } catch {
@@ -323,20 +435,11 @@ export interface MissionPrJoin {
   numbers: Record<number, PrEntry | null>
 }
 
-/**
- * Commits HEAD holds beyond `base` — the branch the step's open PR merges into,
- * else the repo's default branch — or `undefined` when no base ref resolves here
- * (a fresh clone with neither `origin/<base>` nor the local branch). A stacked
- * unit therefore counts only its own commits, not its parents'.
- * `origin/<base>` wins over the local branch: the local one may have moved.
- */
-async function commitsAhead(
+/** Today's count: the first base ref that resolves wins; `undefined` when none does. */
+async function commitsAheadFromGit(
   worktreePath: string,
-  prBase: string | undefined
+  bases: readonly string[]
 ): Promise<number | undefined> {
-  const bases = [prBase, await defaultBranchOf(worktreePath)].filter(
-    (b, i, all): b is string => !!b && all.indexOf(b) === i
-  )
   for (const base of bases) {
     for (const ref of [`origin/${base}`, base]) {
       try {
@@ -355,8 +458,58 @@ async function commitsAhead(
   return undefined
 }
 
-/** Branch + head commit of one worktree path; `exists: false` when git cannot read it. */
-async function worktreeHead(worktreePath: string): Promise<Omit<WorktreePrJoin, 'prs'>> {
+/** The sha `HEAD` points at, read from the git dir; `UNSURE` / `null` when it cannot be. */
+async function headShaOf(
+  dirs: GitDirs
+): Promise<{ sha: string; symbolic: string } | typeof UNSURE | null> {
+  const head = await readHead(dirs)
+  if (head === UNSURE) return UNSURE
+  if (head.kind === 'detached') return { sha: head.sha, symbolic: 'detached' }
+  const sha = await readRef(dirs, head.ref)
+  if (sha === UNSURE) return UNSURE
+  return sha === null ? null : { sha, symbolic: head.ref }
+}
+
+/**
+ * Commits HEAD holds beyond `base` — the branch the step's open PR merges into,
+ * else the repo's default branch — or `undefined` when no base ref resolves here
+ * (a fresh clone with neither `origin/<base>` nor the local branch). A stacked
+ * unit therefore counts only its own commits, not its parents'.
+ * `origin/<base>` wins over the local branch: the local one may have moved.
+ *
+ * BUG-240: the answer is a pure function of HEAD's sha and of every ref a candidate
+ * name can resolve to, so it is cached under exactly those. Anything the ref reader
+ * cannot judge runs the spawn loop and stores nothing.
+ */
+async function commitsAhead(
+  worktreePath: string,
+  prBase: string | undefined
+): Promise<number | undefined> {
+  const defaultBranch = await defaultBranchOf(worktreePath)
+  const bases = [prBase, defaultBranch].filter(
+    (b, i, all): b is string => !!b && all.indexOf(b) === i
+  )
+  const dirs = await resolveGitDirs(worktreePath)
+  if (dirs === null || dirs === UNSURE) return commitsAheadFromGit(worktreePath, bases)
+  const head = await headShaOf(dirs)
+  if (head === null || head === UNSURE) return commitsAheadFromGit(worktreePath, bases)
+
+  // Every ref `git rev-list <name>..HEAD` could resolve `<name>` through.
+  const names = bases.flatMap((b) => [`origin/${b}`, b])
+  const shas: string[] = []
+  for (const name of names) {
+    for (const ref of [`refs/heads/${name}`, `refs/remotes/${name}`, `refs/tags/${name}`]) {
+      const sha = await readRef(dirs, ref)
+      if (sha === UNSURE) return commitsAheadFromGit(worktreePath, bases)
+      shas.push(sha ?? 'missing')
+    }
+  }
+  const key = [dirs.commonDir, head.sha, prBase ?? '', defaultBranch, shas.join(',')].join('\0')
+  return singleFlight(aheadCache, key, () => commitsAheadFromGit(worktreePath, bases))
+}
+
+/** Branch + head commit of one worktree path, asked of git (two spawns). */
+async function worktreeHeadFromGit(worktreePath: string): Promise<Omit<WorktreePrJoin, 'prs'>> {
   try {
     const { stdout } = await runFile(
       'git',
@@ -383,6 +536,30 @@ async function worktreeHead(worktreePath: string): Promise<Omit<WorktreePrJoin, 
 }
 
 /**
+ * Branch + head commit of one worktree path; `exists: false` when git cannot read it.
+ *
+ * BUG-240: a path that is not a working tree is answered without a spawn (git's
+ * failure is the only answer it could give). A working tree is cached under
+ * `(git dir, head sha, symbolic ref)`: the subject and date are fixed by the sha, so
+ * a hit is exact and a commit or checkout changes the key.
+ */
+async function worktreeHead(worktreePath: string): Promise<Omit<WorktreePrJoin, 'prs'>> {
+  const dirs = await resolveGitDirs(worktreePath)
+  if (dirs === null) return { exists: false, branch: null, head: null }
+  if (dirs === UNSURE) return worktreeHeadFromGit(worktreePath)
+  const head = await headShaOf(dirs)
+  if (head === null || head === UNSURE) return worktreeHeadFromGit(worktreePath)
+  const found = await singleFlight(
+    headCache,
+    [dirs.gitDir, head.sha, head.symbolic].join('\0'),
+    () => worktreeHeadFromGit(worktreePath),
+    (v) => v.exists
+  )
+  // A copy per caller: the cached object must not be shared into a mutable result.
+  return { ...found, head: found.head ? { ...found.head } : null }
+}
+
+/**
  * T358 S6 — the one join `mission_get` reads commits and PRs through (design
  * §7): each linked worktree → its branch, head commit and the PRs whose head is
  * that branch; plus bare branches (a card's `executedIn`) and PR numbers (a
@@ -401,11 +578,12 @@ async function worktreeHead(worktreePath: string): Promise<Omit<WorktreePrJoin, 
 export async function findPrsForWorktrees(
   repoPath: string,
   refs: { worktrees: readonly string[]; branches: readonly string[]; numbers: readonly number[] },
-  opts: { waitMs?: number } = {}
+  opts: { waitMs?: number; skipGh?: boolean } = {}
 ): Promise<MissionPrJoin> {
   const heads = await Promise.all(refs.worktrees.map(worktreeHead))
   const wanted = new Set([...refs.branches, ...heads.flatMap((h) => (h.branch ? [h.branch] : []))])
-  const needsGh = wanted.size > 0 || refs.numbers.length > 0
+  // `skipGh` (T611 D-5, a delivered mission): local git facts only, GitHub is not asked.
+  const needsGh = opts.skipGh !== true && (wanted.size > 0 || refs.numbers.length > 0)
   const fetched = needsGh ? await withinBudget(fetchPrsCached(repoPath), opts.waitMs) : null
   const prs = fetched?.prs ?? []
   // A transient failure is "absent or failed" here too: this join has no
@@ -436,24 +614,69 @@ export async function findPrsForWorktrees(
   return { ghAvailable, worktrees, branches, numbers }
 }
 
-/** Per `repo#number`: the main-CI lookup in flight or last landed (60 s, failures not kept). */
-const mainCiCache = new Map<string, { settledAt: number | null; result: Promise<GateCi | null> }>()
+/** How long a `pending` main-CI verdict is trusted before `gh` is asked again. */
+const CI_PENDING_TTL_MS = 60_000
+/** How long a finished (or empty) main-CI verdict is trusted — a CI re-run shows within this. */
+const CI_FINISHED_TTL_MS = 10 * 60_000
 
-/** CI of PR `number`'s merge commit on the default branch; `null` when it cannot be read. */
-async function mainCiOf(repoPath: string, number: number): Promise<GateCi | null> {
-  const view = await runFile('gh', ['pr', 'view', String(number), '--json', 'mergeCommit'], {
+/** A merged PR's merge-commit oid, or `null` when `gh` reports none. */
+async function mergeOidOf(repoPath: string, number: number): Promise<string | null> {
+  const view = await runGh(['pr', 'view', String(number), '--json', 'mergeCommit'], {
     ...GH_OPTS,
-    cwd: repoPath
+    cwd: repoPath,
+    consumer: 'missions',
+    resource: 'graphql'
   })
   const oid = (JSON.parse(view.stdout) as { mergeCommit?: { oid?: unknown } | null }).mergeCommit
     ?.oid
-  if (typeof oid !== 'string' || oid.length === 0) return null
-  const runs = await runFile(
-    'gh',
-    ['run', 'list', '--commit', oid, '--limit', '30', '--json', 'status,conclusion'],
-    { ...GH_OPTS, cwd: repoPath }
+  return typeof oid === 'string' && oid.length > 0 ? oid : null
+}
+
+/** The verdict of commit `oid`'s workflow runs, held per its own freshness window. */
+function verdictOf(repoPath: string, oid: string): Promise<GateCi> {
+  const key = `${repoPath}#${oid}`
+  const hit = verdictCache.get(key)
+  // T611: a `low` budget stretches the window, an `exhausted` one keeps the last verdict.
+  if (
+    hit &&
+    (hit.settledAt === null || Date.now() - hit.settledAt < Math.max(hit.ttlMs, prCacheTtlMs()))
+  ) {
+    return hit.result
+  }
+  const fresh = {
+    settledAt: null as number | null,
+    ttlMs: CI_FINISHED_TTL_MS,
+    result: runGh(
+      ['run', 'list', '--commit', oid, '--limit', '30', '--json', 'status,conclusion'],
+      { ...GH_OPTS, cwd: repoPath, consumer: 'missions', resource: 'rest' }
+    ).then(({ stdout }) => ciOfRuns(JSON.parse(stdout) as CiRun[]))
+  }
+  verdictCache.set(key, fresh)
+  fresh.result.then(
+    (verdict) => {
+      fresh.settledAt = Date.now()
+      fresh.ttlMs = verdict === 'pending' ? CI_PENDING_TTL_MS : CI_FINISHED_TTL_MS
+    },
+    () => {
+      if (verdictCache.get(key) === fresh) verdictCache.delete(key)
+    }
   )
-  return ciOfRuns(JSON.parse(runs.stdout) as CiRun[])
+  return fresh.result
+}
+
+/**
+ * CI of PR `number`'s merge commit on the default branch; `null` when it cannot be read.
+ * BUG-240: the merge commit of a merged PR never changes, so it is asked once per
+ * process; the runs are asked again only when their cached verdict has aged out.
+ */
+async function mainCiOf(repoPath: string, number: number): Promise<GateCi | null> {
+  const oid = await singleFlight(
+    mergeOidCache,
+    `${repoPath}#${number}`,
+    () => mergeOidOf(repoPath, number),
+    (v) => v !== null
+  )
+  return oid === null ? null : verdictOf(repoPath, oid)
 }
 
 /**
@@ -462,7 +685,7 @@ async function mainCiOf(repoPath: string, number: number): Promise<GateCi | null
  * that commit). Degrades like {@link findPrsForWorktrees}: `gh` absent or failing is
  * `ghAvailable: false` with no answers, never a throw, so the caller reads its sticky
  * last-known value. `waitMs` bounds how long THIS call waits; the lookup keeps running
- * and lands in the 60 s cache.
+ * and lands in the caches above.
  */
 export async function findMainCi(
   repoPath: string,
@@ -474,24 +697,8 @@ export async function findMainCi(
   const byNumber: Record<number, GateCi | null> = {}
   let failed = false
   const one = async (n: number): Promise<void> => {
-    const key = `${repo}#${n}`
-    const hit = mainCiCache.get(key)
-    let entry = hit
-    if (!hit || (hit.settledAt !== null && Date.now() - hit.settledAt >= PR_CACHE_TTL_MS)) {
-      const fresh = { settledAt: null as number | null, result: mainCiOf(repo, n) }
-      mainCiCache.set(key, fresh)
-      void fresh.result.then(
-        () => {
-          fresh.settledAt = Date.now()
-        },
-        () => {
-          if (mainCiCache.get(key) === fresh) mainCiCache.delete(key)
-        }
-      )
-      entry = fresh
-    }
     try {
-      byNumber[n] = await entry!.result
+      byNumber[n] = await mainCiOf(repo, n)
     } catch {
       failed = true
     }
@@ -510,6 +717,32 @@ export async function findMainCi(
     }
   }
   return { ghAvailable: !failed, byNumber: failed ? {} : byNumber }
+}
+
+/** The last snapshot served per repo: what a skipped background refresh hands back (T611). */
+const lastSnapshots = new Map<string, PrStackSnapshot>()
+
+/**
+ * `pr-stack:load` behind the GitHub budget (T611, AC-5/AC-6). A load on open — and the manual
+ * refresh — always runs. A BACKGROUND refresh (the canvas' interval timer passes
+ * `{ background: true }`) is skipped while the budget is `low` (when the operator keeps "pause PR
+ * Stack when low" on) or `exhausted`: the last snapshot comes back, with the worktrees the caller
+ * just sent, and no `gh` call is spent. With nothing to serve yet, the load runs.
+ */
+export async function loadPrStackThrottled(
+  repoPath: string,
+  worktrees: WorktreeNode[] = [],
+  opts: { background?: boolean } = {}
+): Promise<PrStackSnapshot> {
+  const key = path.resolve(repoPath)
+  const last = lastSnapshots.get(key)
+  if (opts.background === true && last && prStackBackgroundPaused()) {
+    return { ...last, worktrees, edges: graphEdges(last.graph, worktrees) }
+  }
+  const snap = await loadPrStack(repoPath, worktrees)
+  // A failed read is "unknown", not a snapshot worth serving later.
+  if (snap.ghAvailable && snap.ghFailure === null) lastSnapshots.set(key, snap)
+  return snap
 }
 
 /** A `gh`/`git` round-trip for a link click must not stall the click for long. */
@@ -534,9 +767,11 @@ async function resolvePrLink(
     )
     const prNumber = matchPrLinkToRemote(remote, url)
     if (prNumber === null) return null
-    const { stdout } = await runFile('gh', ['pr', 'view', String(prNumber), '--json', 'state'], {
+    const { stdout } = await runGh(['pr', 'view', String(prNumber), '--json', 'state'], {
       ...LINK_OPTS,
-      cwd: folderPath
+      cwd: folderPath,
+      consumer: 'pr-stack',
+      resource: 'graphql'
     })
     return isOpenPrViewJson(stdout) ? { prNumber } : null
   } catch {
@@ -548,8 +783,13 @@ async function resolvePrLink(
 export function registerPrStack(): void {
   ipcMain.handle(
     'pr-stack:load',
-    async (_e, repoPath: string, worktrees?: WorktreeNode[]): Promise<PrStackSnapshot> =>
-      loadPrStack(repoPath, Array.isArray(worktrees) ? worktrees : [])
+    async (
+      _e,
+      repoPath: string,
+      worktrees?: WorktreeNode[],
+      opts?: { background?: boolean }
+    ): Promise<PrStackSnapshot> =>
+      loadPrStackThrottled(repoPath, Array.isArray(worktrees) ? worktrees : [], opts)
   )
   ipcMain.handle('pr-stack:resolveLink', (_e, folderPath: unknown, url: unknown) =>
     resolvePrLink(folderPath, url)

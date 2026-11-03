@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: d--settings-pane</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa='d--settings-pane'] {
+        padding: 28px;
+        background: var(--color-bg);
+      }
+      [data-dsqa='d--settings-pane'] .dlg {
+        display: flex;
+        max-width: 980px; /* no token: settings dialog width */
+        margin: 0 auto;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-pop);
+        overflow: hidden;
+      }
+      [data-dsqa='d--settings-pane'] nav {
+        width: 190px; /* no token: settings nav width */
+        flex: none;
+        background: var(--color-sidebar);
+        border-right: 1px solid var(--color-border);
+        padding: 12px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      [data-dsqa='d--settings-pane'] nav a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: var(--radius-sm);
+        color: var(--color-text-3);
+        font-size: 12px;
+        text-decoration: none;
+      }
+      [data-dsqa='d--settings-pane'] nav a.on {
+        background: var(--color-accent-soft);
+        color: var(--color-text);
+      }
+      [data-dsqa='d--settings-pane'] .body {
+        flex: 1;
+        min-width: 0;
+        padding: 18px 22px 22px;
+      }
+      [data-dsqa='d--settings-pane'] h1 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      [data-dsqa='d--settings-pane'] .intro {
+        font-size: 11.5px;
+        color: var(--color-text-3);
+        margin: 4px 0 14px;
+        max-width: 560px; /* no token: prose measure */
+        line-height: 1.5;
+      }
+      [data-dsqa='d--settings-pane'] .tiles {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.2fr;
+        gap: 10px;
+      }
+      [data-dsqa='d--settings-pane'] .tile {
+        background: var(--color-sidebar);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      [data-dsqa='d--settings-pane'] .tile .kv {
+        font-family: var(--mk-mono);
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+      [data-dsqa='d--settings-pane'] .tile .kv small {
+        font-family: var(--mk-sans);
+        font-size: 11px;
+        font-weight: 400;
+        color: var(--color-text-3);
+        letter-spacing: 0;
+      }
+      [data-dsqa='d--settings-pane'] .tile .meter .trk {
+        background: var(--color-surface-2);
+      }
+      [data-dsqa='d--settings-pane'] h2 {
+        margin: 18px 0 8px;
+        font-size: 10.5px;
+        font-weight: 500;
+        color: var(--color-text-4);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      [data-dsqa='d--settings-pane'] h2 .legend {
+        margin: 0 0 0 auto;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      [data-dsqa='d--settings-pane'] .chart {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 6px;
+        height: 120px; /* no token: chart height */
+        align-items: end;
+        padding: 0 2px;
+        border-bottom: 1px solid var(--color-border);
+        position: relative;
+      }
+      [data-dsqa='d--settings-pane'] .chart .col {
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 1px;
+        height: 100%;
+      }
+      [data-dsqa='d--settings-pane'] .chart .col i {
+        display: block;
+        border-radius: 2px;
+      }
+      [data-dsqa='d--settings-pane'] .xax {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 6px;
+        font-size: 10.5px;
+        color: var(--color-text-4);
+        margin-top: 4px;
+        font-variant-numeric: tabular-nums;
+      }
+      [data-dsqa='d--settings-pane'] table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11.5px;
+      }
+      [data-dsqa='d--settings-pane'] th {
+        text-align: left;
+        font-weight: 500;
+        color: var(--color-text-4);
+        font-size: 10.5px;
+        padding: 0 8px 6px 0;
+      }
+      [data-dsqa='d--settings-pane'] td {
+        padding: 6px 8px 6px 0;
+        border-top: 1px solid var(--color-border);
+        color: var(--color-text-2);
+        font-variant-numeric: tabular-nums;
+      }
+      [data-dsqa='d--settings-pane'] td.r,
+      [data-dsqa='d--settings-pane'] th.r {
+        text-align: right;
+      }
+      [data-dsqa='d--settings-pane'] tr.out td {
+        color: var(--color-text-3);
+      }
+      [data-dsqa='d--settings-pane'] .cad s {
+        color: var(--color-text-4);
+        margin-right: 4px;
+      }
+      [data-dsqa='d--settings-pane'] .banner {
+        margin-bottom: 12px;
+      }
+      [data-dsqa='d--settings-pane'] .fine {
+        font-size: 11px;
+        color: var(--color-text-4);
+        margin-top: 16px;
+      }
+    </style>
+  </head>
+  <body data-states="default throttled">
+    <div data-dsqa="d--settings-pane">
+      <div class="dlg">
+        <nav>
+          <a>General</a><a>Integrations</a><a>Skills</a><a>Control server</a><a>Usage history</a>
+          <a class="on" data-dsqa-part="nav-github">GitHub API</a>
+          <a>Cleanup</a><a>Containers</a><a>Changelog</a>
+        </nav>
+        <div class="body">
+          <h1>GitHub API</h1>
+          <p class="intro">
+            Every session, script and Harnu itself spends from the same budget: the gh token of
+            <span class="mono t2">@junielton</span>. Harnu reads it every 60 s with
+            <span class="mono t2">gh api rate_limit</span>, which costs nothing.
+          </p>
+
+          <div
+            class="note tone-accent banner"
+            data-show="throttled"
+            data-dsqa-part="throttle-banner"
+          >
+            <span
+              ><b>Harnu has been slowing down since 13:39.</b> REST budget dropped below 15%. Normal
+              polling resumes at the reset, 14:00.</span
+            >
+          </div>
+
+          <div class="tiles">
+            <div class="tile">
+              <span class="lbl">REST · per hour</span>
+              <span class="kv" data-show="default">4,112 <small>left of 5,000</small></span>
+              <span class="kv is-accent" data-show="throttled"
+                >640 <small>left of 5,000</small></span
+              >
+              <div class="meter">
+                <div class="trk" data-show="default">
+                  <i class="f-green" style="width: 18%"></i>
+                </div>
+                <div class="trk" data-show="throttled">
+                  <i class="f-accent" style="width: 87%"></i>
+                </div>
+                <span class="bot" data-show="default">resets at 14:00 · in 38m</span>
+                <span class="bot" data-show="throttled">resets at 14:00 · in 21m</span>
+              </div>
+            </div>
+            <div class="tile">
+              <span class="lbl">GraphQL · points per hour</span>
+              <span class="kv" data-show="default">4,690 <small>left of 5,000</small></span>
+              <span class="kv" data-show="throttled">3,980 <small>left of 5,000</small></span>
+              <div class="meter">
+                <div class="trk" data-show="default"><i class="f-green" style="width: 6%"></i></div>
+                <div class="trk" data-show="throttled">
+                  <i class="f-green" style="width: 20%"></i>
+                </div>
+                <span class="bot">resets at 14:00</span>
+              </div>
+            </div>
+            <div class="tile">
+              <span class="lbl">Pace · last 10 min</span>
+              <span class="kv" data-show="default"
+                >31 <small>calls/min · lasts past the reset</small></span
+              >
+              <span class="kv is-accent" data-show="throttled"
+                >104 <small>calls/min · empty in 6m</small></span
+              >
+              <span class="bot t4" data-show="default">Harnu 18/min · outside 13/min</span>
+              <span class="bot t4" data-show="throttled"
+                >Harnu 22/min (was 61) · outside 82/min</span
+              >
+            </div>
+          </div>
+
+          <h2>
+            Last 60 minutes · REST calls per 5 min
+            <span class="legend"
+              ><span><span class="sw f-accent"></span>Harnu</span
+              ><span data-show="throttled"><span class="sw f-warn"></span>Harnu, slowed</span
+              ><span><span class="sw f-muted"></span>Outside Harnu</span></span
+            >
+          </h2>
+          <div data-show="default">
+            <div class="chart">
+              <div class="col">
+                <i class="f-accent" style="height: 14%"></i
+                ><i class="f-muted" style="height: 6%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 16%"></i
+                ><i class="f-muted" style="height: 8%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 13%"></i
+                ><i class="f-muted" style="height: 9%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 15%"></i
+                ><i class="f-muted" style="height: 7%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 14%"></i
+                ><i class="f-muted" style="height: 11%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 17%"></i
+                ><i class="f-muted" style="height: 10%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 12%"></i
+                ><i class="f-muted" style="height: 8%"></i>
+              </div>
+              <div class="col"><i class="f-accent" style="height: 0%"></i></div>
+              <div class="col"><i class="f-accent" style="height: 0%"></i></div>
+              <div class="col"><i class="f-accent" style="height: 0%"></i></div>
+              <div class="col"><i class="f-accent" style="height: 0%"></i></div>
+              <div class="col"><i class="f-accent" style="height: 0%"></i></div>
+            </div>
+            <div class="xax">
+              <span>13:00</span><span></span><span>13:10</span><span></span><span>13:20</span
+              ><span></span><span>13:30</span><span></span><span>13:40</span><span></span
+              ><span>13:50</span><span></span>
+            </div>
+          </div>
+          <div data-show="throttled">
+            <div class="chart">
+              <div class="col">
+                <i class="f-accent" style="height: 22%"></i
+                ><i class="f-muted" style="height: 10%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 40%"></i
+                ><i class="f-muted" style="height: 18%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 44%"></i
+                ><i class="f-muted" style="height: 26%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 46%"></i
+                ><i class="f-muted" style="height: 30%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 42%"></i
+                ><i class="f-muted" style="height: 38%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 45%"></i
+                ><i class="f-muted" style="height: 44%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 41%"></i
+                ><i class="f-muted" style="height: 48%"></i>
+              </div>
+              <div class="col">
+                <i class="f-accent" style="height: 43%"></i
+                ><i class="f-muted" style="height: 50%"></i>
+              </div>
+              <div class="col">
+                <i class="f-warn" style="height: 14%"></i
+                ><i class="f-muted" style="height: 52%"></i>
+              </div>
+              <div class="col">
+                <i class="f-warn" style="height: 12%"></i
+                ><i class="f-muted" style="height: 48%"></i>
+              </div>
+              <div class="col"><i class="f-accent" style="height: 0%"></i></div>
+              <div class="col"><i class="f-accent" style="height: 0%"></i></div>
+            </div>
+            <div class="xax">
+              <span>13:00</span><span></span><span>13:10</span><span></span><span>13:20</span
+              ><span></span><span>13:30</span><span></span><span>13:40</span><span></span
+              ><span>13:50</span><span></span>
+            </div>
+          </div>
+
+          <h2>Who spends it · this hour</h2>
+          <table data-dsqa-part="consumers">
+            <thead>
+              <tr>
+                <th>Consumer</th>
+                <th class="r">Calls</th>
+                <th class="r">Share</th>
+                <th class="r">Checks every</th>
+              </tr>
+            </thead>
+            <tbody data-show="default">
+              <tr>
+                <td>Missions · PR and CI gates</td>
+                <td class="r">412</td>
+                <td class="r">46%</td>
+                <td class="r cad">1 min</td>
+              </tr>
+              <tr>
+                <td class="t3">&nbsp;&nbsp;3 delivered missions</td>
+                <td class="r">0</td>
+                <td class="r">0%</td>
+                <td class="r cad">not checked</td>
+              </tr>
+              <tr>
+                <td>PR Stack</td>
+                <td class="r">96</td>
+                <td class="r">11%</td>
+                <td class="r cad">2 min</td>
+              </tr>
+              <tr>
+                <td>Review</td>
+                <td class="r">38</td>
+                <td class="r">4%</td>
+                <td class="r cad">on open</td>
+              </tr>
+              <tr>
+                <td>Cleanup · merge checks</td>
+                <td class="r">22</td>
+                <td class="r">2%</td>
+                <td class="r cad">15 min</td>
+              </tr>
+              <tr>
+                <td>Steward</td>
+                <td class="r">14</td>
+                <td class="r">2%</td>
+                <td class="r cad">on event</td>
+              </tr>
+              <tr class="out">
+                <td>Outside Harnu · sessions, scripts, monitors</td>
+                <td class="r">306</td>
+                <td class="r">34%</td>
+                <td class="r">—</td>
+              </tr>
+            </tbody>
+            <tbody data-show="throttled">
+              <tr>
+                <td>Missions · PR and CI gates</td>
+                <td class="r">1,840</td>
+                <td class="r">42%</td>
+                <td class="r cad is-accent"><s>1 min</s>5 min</td>
+              </tr>
+              <tr>
+                <td class="t3">&nbsp;&nbsp;3 delivered missions</td>
+                <td class="r">0</td>
+                <td class="r">0%</td>
+                <td class="r cad">not checked</td>
+              </tr>
+              <tr>
+                <td>PR Stack</td>
+                <td class="r">310</td>
+                <td class="r">7%</td>
+                <td class="r cad is-accent"><s>2 min</s>on open</td>
+              </tr>
+              <tr>
+                <td>Review</td>
+                <td class="r">84</td>
+                <td class="r">2%</td>
+                <td class="r cad">on open</td>
+              </tr>
+              <tr>
+                <td>Cleanup · merge checks</td>
+                <td class="r">46</td>
+                <td class="r">1%</td>
+                <td class="r cad">15 min</td>
+              </tr>
+              <tr>
+                <td>Steward</td>
+                <td class="r">30</td>
+                <td class="r">1%</td>
+                <td class="r cad">on event</td>
+              </tr>
+              <tr class="out">
+                <td>Outside Harnu · sessions, scripts, monitors</td>
+                <td class="r">2,050</td>
+                <td class="r">47%</td>
+                <td class="r">—</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h2>Missions</h2>
+          <div class="sw-row" style="margin-top: 4px" data-dsqa-part="delivered-switch">
+            <div>
+              <div class="sl">Check delivered missions</div>
+              <div class="sh">
+                Off: a delivered mission keeps its last known PR and CI state and costs nothing, at
+                any budget.
+              </div>
+            </div>
+            <span class="toggle"></span>
+          </div>
+
+          <h2>When the budget runs low</h2>
+          <div class="sw-row" style="margin-top: 4px">
+            <div>
+              <div class="sl">Slow down below</div>
+              <div class="sh">
+                Harnu stretches its own checks once this much of the REST budget is left, and goes
+                back to normal at the reset.
+              </div>
+            </div>
+            <div class="segctl"><span>10%</span><span class="on">15%</span><span>25%</span></div>
+          </div>
+          <div class="sw-row">
+            <div>
+              <div class="sl">Pause PR Stack auto-refresh</div>
+              <div class="sh">The canvas refreshes when you open it, not in the background.</div>
+            </div>
+            <span class="toggle on"></span>
+          </div>
+          <div class="sw-row">
+            <div>
+              <div class="sl">Tell me when it happens</div>
+              <div class="sh">
+                A toast when Harnu starts slowing down, and a notification when the limit is
+                reached.
+              </div>
+            </div>
+            <span class="toggle on"></span>
+          </div>
+          <p class="fine">
+            Harnu counts only its own calls. "Outside Harnu" is the total GitHub reports minus
+            Harnu's share.
+          </p>
+        </div>
+      </div>
+    </div>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

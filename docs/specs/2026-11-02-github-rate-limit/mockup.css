@@ -1,0 +1,562 @@
+/* Shared anatomy for the GitHub API rate-limit mockups (T611). var(--token) only. */
+* {
+  box-sizing: border-box;
+}
+:root {
+  --mk-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; /* no token: --font-sans lives in main.css @theme */
+  --mk-mono:
+    'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; /* no token: --font-mono lives in main.css @theme */
+}
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: 12px/1.35 var(--mk-sans);
+}
+.ic {
+  display: block;
+  flex: none;
+}
+.sp {
+  flex: 1;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+.mono {
+  font-family: var(--mk-mono);
+}
+.t2 {
+  color: var(--color-text-2);
+}
+.t3 {
+  color: var(--color-text-3);
+}
+.t4 {
+  color: var(--color-text-4);
+}
+.is-green {
+  color: var(--color-green);
+}
+.is-accent {
+  color: var(--color-accent);
+}
+.is-red {
+  color: var(--color-red);
+}
+.is-warn {
+  color: var(--color-warning);
+}
+.lbl {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--color-text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ---- state switching: [data-show~="<state>"] is visible only in the listed states; visible elements keep their own display ---- */
+[data-state='closed'] [data-show]:not([data-show~='closed']),
+[data-state='healthy'] [data-show]:not([data-show~='healthy']),
+[data-state='low'] [data-show]:not([data-show~='low']),
+[data-state='low-open'] [data-show]:not([data-show~='low-open']),
+[data-state='exhausted'] [data-show]:not([data-show~='exhausted']),
+[data-state='default'] [data-show]:not([data-show~='default']),
+[data-state='throttled'] [data-show]:not([data-show~='throttled']) {
+  display: none !important;
+}
+
+/* ---- app frame: the bottom of the shell, terminal placeholder above the footer ---- */
+.frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 560px; /* no token: fixed mockup canvas */
+  background: var(--color-bg);
+}
+.frame .term {
+  flex: 1;
+  padding: 14px 18px;
+  font-family: var(--mk-mono);
+  font-size: 12px;
+  color: var(--color-text-4);
+  line-height: 1.6;
+}
+.frame .term b {
+  color: var(--color-text-2);
+  font-weight: 400;
+}
+
+/* ---- footer (StatusFooter.vue: h-6, bg-surface, border-t, 11px) ---- */
+.footer {
+  height: 24px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  font-size: 11px;
+  color: var(--color-text-2);
+  white-space: nowrap;
+}
+.footer .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.footer .right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.footer .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.footer .dot7 {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.footer .bg-green {
+  background: var(--color-green);
+}
+.fpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fpill:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.fpill.is-quiet {
+  color: var(--color-text-4);
+}
+.fpill.is-open {
+  color: var(--color-accent);
+}
+.fpill.tone-warn {
+  color: var(--color-warning);
+}
+.fpill.tone-red {
+  color: var(--color-red);
+}
+.heap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mk-mono);
+  font-size: 11.5px;
+  color: var(--color-text-2);
+}
+.heap .track {
+  width: 54px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  overflow: hidden;
+}
+.heap .track i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-green);
+}
+.fleet {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  color: var(--color-text-2);
+  cursor: pointer;
+  padding: 0;
+}
+.fleet .seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.fleet .sep {
+  width: 1px;
+  height: 12px;
+  background: var(--color-border-2);
+}
+
+/* ---- popover (footer popover frame: z-50, bg-surface-2, border-border-2, shadow-pop) ---- */
+.pop {
+  position: absolute;
+  bottom: 30px;
+  right: 10px;
+  z-index: 50;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  padding: 8px;
+}
+.pop.w-280 {
+  width: 280px; /* no token: fleet popover width (design.md) */
+}
+.pop.w-320 {
+  width: 320px; /* no token: wider GitHub popover */
+}
+.pop .sect {
+  padding: 8px 12px;
+}
+.pop .sect + .sect {
+  border-top: 1px solid var(--color-border);
+}
+.pop .link {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+.pop .link:hover {
+  background: var(--color-surface);
+}
+
+/* ---- UsageMeter anatomy (design.md "Plan usage") ---- */
+.meters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.meter .top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+.meter .top .l {
+  color: var(--color-text-3);
+}
+.meter .top .v {
+  color: var(--color-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.meter .trk {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.meter .trk i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+.meter .bot {
+  font-size: 11px;
+  color: var(--color-text-4);
+  font-variant-numeric: tabular-nums;
+}
+.f-green {
+  background: var(--color-green);
+}
+.f-accent {
+  background: var(--color-accent);
+}
+.f-red {
+  background: var(--color-red);
+}
+.f-muted {
+  background: var(--color-text-4);
+}
+.f-warn {
+  background: var(--color-warning);
+}
+.foot-line {
+  margin-top: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--color-text-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- throttle note: what Harnu changed while the budget is low ---- */
+.note {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  font-size: 11px;
+  line-height: 1.45;
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+}
+.note.tone-accent {
+  background: var(--color-accent-soft);
+  color: var(--color-text-2);
+  border: 1px solid var(--color-accent-line);
+}
+.note.tone-warn {
+  background: var(--color-warning-soft);
+  color: var(--color-text-2);
+  border: 1px solid var(--color-warning-line);
+}
+.note.tone-red {
+  background: var(--color-red-soft);
+  color: var(--color-text-2);
+  border: 1px solid var(--color-red-line);
+}
+.note b {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/* ---- attribution: Harnu vs outside split + per-consumer list ---- */
+.split {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  gap: 2px;
+  background: var(--color-surface);
+}
+.split i {
+  display: block;
+  height: 100%;
+}
+.legend {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--color-text-3);
+  margin-top: 5px;
+}
+.legend .sw {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.consumers {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+}
+.cons {
+  display: grid;
+  grid-template-columns: 1fr 52px 64px; /* no token: name · count · bar */
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.cons .n {
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--color-text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cons .n .tag {
+  font-size: 10px;
+  color: var(--color-text-4);
+}
+.cons .c {
+  text-align: right;
+  color: var(--color-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.cons .b {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.cons .b i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-accent);
+}
+.cons.is-outside .n,
+.cons.is-outside .c {
+  color: var(--color-text-3);
+}
+.cons.is-outside .b i {
+  background: var(--color-text-4);
+}
+.cons.is-paused .n {
+  color: var(--color-text-4);
+}
+
+/* ---- toast (design.md "Toast"), bottom-right above the footer ---- */
+.toast {
+  position: absolute;
+  right: 14px;
+  bottom: 36px;
+  width: 340px; /* no token: toast width */
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  padding: 10px 12px;
+  display: flex;
+  gap: 10px;
+}
+.toast .tt {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.toast .tb {
+  font-size: 11.5px;
+  color: var(--color-text-3);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+.toast .ta {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* ---- buttons ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-2);
+  background: var(--color-surface);
+  color: var(--color-text-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.btn:hover {
+  color: var(--color-text);
+}
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+}
+.btn.primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+.iconbtn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-3);
+  cursor: pointer;
+  flex: none;
+}
+.iconbtn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+/* ---- switch (ToggleSwitch) ---- */
+.sw-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+}
+.sw-row .sl {
+  font-size: 12px;
+  color: var(--color-text-2);
+}
+.sw-row .sh {
+  font-size: 11px;
+  color: var(--color-text-4);
+  margin-top: 3px;
+  line-height: 1.45;
+  max-width: 460px; /* no token: hint measure */
+}
+.toggle {
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--color-border-2);
+  position: relative;
+  flex: none;
+  margin-top: 1px;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-text-3);
+}
+.toggle.on {
+  background: var(--color-accent);
+}
+.toggle.on::after {
+  left: 14px;
+  background: var(--color-accent-ink);
+}
+.segctl {
+  display: inline-flex;
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.segctl span {
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: var(--color-text-3);
+}
+.segctl span + span {
+  border-left: 1px solid var(--color-border-2);
+}
+.segctl span.on {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}

@@ -8,6 +8,7 @@
  */
 
 import * as path from 'node:path'
+import { withGhConsumer } from './gh-runner'
 import { addTaskEventObserver, setStewardRouteHandler } from './hook-bridge'
 import {
   deriveMissionSignals,
@@ -38,13 +39,16 @@ export function stewardRouteDeps(): StewardRouteDeps {
       const root = missionRoot(mission.folder)
       const loaded = await loadMission(root, mission.id)
       if (!loaded.ok) return undefined
-      const derive = deriveMissionSignals(
-        root,
-        loaded.mission,
-        loaded.log,
-        { folder: root, folders: [], denyFolders: [], bridge: undefined },
-        Date.now(),
-        { prWaitMs: 1500, mainCiWaitMs: 1500 }
+      // The steward woke this derive; it is the steward that spends the budget (T611).
+      const derive = withGhConsumer('steward', () =>
+        deriveMissionSignals(
+          root,
+          loaded.mission,
+          loaded.log,
+          { folder: root, folders: [], denyFolders: [], bridge: undefined },
+          Date.now(),
+          { prWaitMs: 1500, mainCiWaitMs: 1500 }
+        )
       )
       // A SessionStart hook must come back fast: the brief prints without gates if the derive is slow.
       const { derived } = await Promise.race([

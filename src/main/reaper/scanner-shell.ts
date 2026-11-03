@@ -13,6 +13,8 @@ import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { app } from 'electron'
+import { runGh } from '../gh-runner'
+import { githubReadsPaused } from '../github-budget-tracker'
 import {
   buildRepoItems,
   ghCacheFresh,
@@ -78,7 +80,8 @@ const execFileAsync = promisify(execFile)
  * user's login-shell PATH (BUG-34). A Dock-launched macOS build inherits
  * launchd's minimal PATH — no `/opt/homebrew/bin` — so bare `gh` is ENOENT and
  * the scan reports `ghAvailable: false` on a machine where `gh` is installed
- * and authenticated. `git` and `du` ride the same seam for the same reason.
+ * and authenticated. `git` and `du` ride the same seam for the same reason. (`gh` itself goes
+ * through the shared runner, `gh-runner.ts`, so it is counted against the GitHub budget — T611.)
  */
 async function runFile(
   file: string,
@@ -310,8 +313,7 @@ interface PrScanFacts {
 /** One `gh pr list --head <branch>` lookup; returns the raw array, or null when gh failed. */
 async function lookupPrForBranch(repoPath: string, branch: string): Promise<unknown[] | null> {
   try {
-    const { stdout } = await runFile(
-      'gh',
+    const { stdout } = await runGh(
       [
         'pr',
         'list',
@@ -324,7 +326,7 @@ async function lookupPrForBranch(repoPath: string, branch: string): Promise<unkn
         '--json',
         'headRefName,headRefOid,number,state,mergedAt,reviewDecision,statusCheckRollup'
       ],
-      { ...GH_OPTS, cwd: repoPath }
+      { ...GH_OPTS, cwd: repoPath, consumer: 'cleanup', resource: 'graphql' }
     )
     const parsed: unknown = JSON.parse(stdout)
     return Array.isArray(parsed) ? parsed : null
@@ -362,7 +364,8 @@ async function fetchPrFacts(
   let bulkFetchedAt: number
   let dirty = false
 
-  if (cached && ghCacheFresh(cached.fetchedAt, now)) {
+  // T611: while the GitHub budget is spent the last known list is served however old it is.
+  if (cached && (ghCacheFresh(cached.fetchedAt, now) || githubReadsPaused())) {
     prByBranch = cached.prByBranch
     complete = cached.complete
     probed = cached.probed
@@ -372,8 +375,7 @@ async function fetchPrFacts(
   } else {
     let stdout: string
     try {
-      const res = await runFile(
-        'gh',
+      const res = await runGh(
         [
           'pr',
           'list',
@@ -384,7 +386,7 @@ async function fetchPrFacts(
           '--json',
           'headRefName,baseRefName,headRefOid,number,state,mergedAt,reviewDecision,statusCheckRollup'
         ],
-        { ...GH_PR_LIST_OPTS, cwd: repoPath }
+        { ...GH_PR_LIST_OPTS, cwd: repoPath, consumer: 'cleanup', resource: 'graphql' }
       )
       stdout = res.stdout
     } catch {

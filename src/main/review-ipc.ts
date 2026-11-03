@@ -32,6 +32,8 @@ import * as path from 'node:path'
 import { promisify } from 'node:util'
 import { spawnEnvOnce } from './appimage-env'
 import { folderKey } from './claude-config'
+import { isGhThrottled, runGh } from './gh-runner'
+import { githubReadsPaused } from './github-budget-tracker'
 import { ghCacheFresh } from './reaper/scan-core'
 import { parsePrList } from './pr-stack-core'
 import {
@@ -162,24 +164,23 @@ async function runGhStdin(
   args: readonly string[],
   stdin: string
 ): Promise<{ ok: boolean; output: string }> {
-  const env = await spawnEnvOnce()
-  return new Promise((resolve) => {
-    const child = execFile(
-      'gh',
-      [...args],
-      { cwd, timeout: GH_TIMEOUT_MS, windowsHide: true, maxBuffer: GH_MAX_BUFFER, env },
-      (err, stdout, stderr) => {
-        const output = `${stderr ?? ''}${stdout ?? ''}`.trim()
-        resolve(err ? { ok: false, output: output || err.message } : { ok: true, output })
-      }
-    )
-    // `gh` can exit before the body is written (bad auth, no such PR), which
-    // lands as EPIPE on this stream. The callback above already carries the
-    // real reason; an unhandled 'error' here would crash the main process with
-    // the uninteresting half of the story.
-    child.stdin?.on('error', () => {})
-    child.stdin?.end(stdin)
-  })
+  try {
+    // A review is an operator gesture: `write: true` keeps it out of the throttle (T611, D-6).
+    const { stdout, stderr } = await runGh(args, {
+      cwd,
+      timeout: GH_TIMEOUT_MS,
+      maxBuffer: GH_MAX_BUFFER,
+      stdin,
+      write: true,
+      consumer: 'review',
+      resource: 'graphql'
+    })
+    return { ok: true, output: `${stderr}${stdout}`.trim() }
+  } catch (err) {
+    const e = err as { stderr?: string; stdout?: string; message?: string }
+    const output = `${e.stderr ?? ''}${e.stdout ?? ''}`.trim()
+    return { ok: false, output: output || (e.message ?? 'gh failed') }
+  }
 }
 
 // ── gh cache (TTL reused from the Reaper) ──────────────────────────────────
@@ -201,16 +202,28 @@ const ghCache = new Map<string, GhCacheEntry>()
 async function fetchPrJson(repoPath: string, force: boolean): Promise<string | null> {
   const key = folderKey(repoPath)
   const cached = ghCache.get(key)
-  if (!force && cached && ghCacheFresh(cached.fetchedAt, Date.now())) return cached.json
+  // T611: while the GitHub budget is spent the last known list is served however old it is.
+  if (!force && cached && (ghCacheFresh(cached.fetchedAt, Date.now()) || githubReadsPaused())) {
+    return cached.json
+  }
   let json: string | null = null
   try {
-    const { stdout } = await runFile(
-      'gh',
+    const { stdout } = await runGh(
       ['pr', 'list', '--state', 'all', '--limit', '100', '--json', GH_FIELDS],
-      { cwd: repoPath, timeout: GH_TIMEOUT_MS, windowsHide: true, maxBuffer: GH_MAX_BUFFER }
+      {
+        cwd: repoPath,
+        timeout: GH_TIMEOUT_MS,
+        windowsHide: true,
+        maxBuffer: GH_MAX_BUFFER,
+        consumer: 'review',
+        resource: 'graphql'
+      }
     )
     json = stdout
-  } catch {
+  } catch (err) {
+    // T611: a throttled read is "not asked", not "gh is absent" — never cache it as that fact,
+    // and serve the last known list while the budget is spent.
+    if (isGhThrottled(err)) return cached?.json ?? null
     // `gh` absent, not on PATH, or unauthenticated. Not an error here (AC4).
     json = null
   }

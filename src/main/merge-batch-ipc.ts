@@ -11,10 +11,8 @@
  * every other door — and takes the lock only to append its Log entry.
  */
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { ipcMain } from 'electron'
-import { spawnEnvOnce } from './appimage-env'
+import { inferGhResource, inferGhWrite, runGh, withGhConsumer } from './gh-runner'
 import { atomicWriteFile } from './mcp/atomic-write'
 import { buildMissionFileContent, withMissionIdMintLock } from './mission-core'
 import {
@@ -30,8 +28,6 @@ import {
 } from './merge-batch-core'
 import { deriveMissionSignals, loadMission, missionRoot } from './mcp/tool-handlers'
 import { runStewardTurn } from './scheduler-shell'
-
-const execFileAsync = promisify(execFile)
 
 /** How long the batch waits for the steward's tick between merges, and for gates to settle after it. */
 const STEWARD_TURN_TIMEOUT_MS = 5 * 60_000
@@ -63,13 +59,15 @@ export interface MergeBatchEnv {
 
 async function realGh(args: readonly string[], cwd: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync('gh', [...args], {
+    // `pr merge` is the operator's own gesture and never throttled; the polling reads are.
+    const { stdout } = await runGh(args, {
       cwd,
-      encoding: 'utf8',
-      env: await spawnEnvOnce(),
       timeout: 60_000,
       windowsHide: true,
-      maxBuffer: 1 << 22
+      maxBuffer: 1 << 22,
+      consumer: 'merge-batch',
+      resource: inferGhResource(args),
+      write: inferGhWrite(args)
     })
     return stdout
   } catch (err) {
@@ -87,13 +85,16 @@ async function realMissionPrs(
   if (loaded.mission.status === 'closed') {
     return { ok: false, error: `MISSION_CLOSED: mission ${missionId} was closed by the operator.` }
   }
-  const { derived } = await deriveMissionSignals(
-    root,
-    loaded.mission,
-    loaded.log,
-    { folder: root, folders: [], denyFolders: [], bridge: undefined },
-    Date.now(),
-    { prWaitMs: 4000 }
+  // The batch asked, so the batch spent the budget (T611 attribution).
+  const { derived } = await withGhConsumer('merge-batch', () =>
+    deriveMissionSignals(
+      root,
+      loaded.mission,
+      loaded.log,
+      { folder: root, folders: [], denyFolders: [], bridge: undefined },
+      Date.now(),
+      { prWaitMs: 4000 }
+    )
   )
   const prs = new Set<number>()
   for (const st of derived.steps) if (st.prNumber !== null) prs.add(st.prNumber)

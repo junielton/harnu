@@ -1142,6 +1142,7 @@
       "cleanup": "Cleanup",
       "containers": "Containers",
       "prStack": "PR Stack",
+      "githubApi": "GitHub API",
       "voice": "Voice"
     },
     "search": {
@@ -1434,6 +1435,7 @@
       "view_settings_cleanup": "Open Settings: Cleanup",
       "view_settings_containers": "Open Settings: Containers",
       "view_settings_prStack": "Open Settings: PR Stack",
+      "view_settings_githubApi": "Open Settings: GitHub API",
       "nav_back": "Back to the previous session",
       "nav_forward": "Forward to the next session",
       "pane_focusNext": "Focus the next pane",
@@ -3855,7 +3857,11 @@
       },
       "network": {
         "title": "Could not reach GitHub",
-        "body": "The request failed or was rate limited. Showing the last read ({age}). Click to retry."
+        "body": "The request failed. Showing the last read ({age}). Click to retry."
+      },
+      "rateLimit": {
+        "title": "GitHub API limit reached",
+        "body": "GitHub API limit reached, resets at {time}. Showing the last read ({age})."
       },
       "other": {
         "title": "Refresh failed",
@@ -5051,5 +5057,146 @@
     "label": "More split options",
     "terminal": "Terminal",
     "browser": "Browser"
+  },
+  "githubBudget": {
+    "pill": {
+      "left": "{n} left",
+      "exhausted": "{n} left · {countdown}",
+      "a11y": "GitHub API budget: {n} calls left",
+      "a11yLow": "GitHub API budget low: {n} calls left, Harnu is slowing down",
+      "a11yExhausted": "GitHub API limit reached, resets in {countdown}"
+    },
+    "meter": {
+      "rest": "REST · {limit}/h",
+      "graphql": "GraphQL · {limit} pts/h",
+      "left": "{n} left"
+    },
+    "popover": {
+      "title": "GitHub API",
+      "updatedSeconds": "updated {n}s ago",
+      "updatedMinutes": "updated {n}m ago",
+      "resetsIn": "resets in {countdown}",
+      "resetsAt": "resets at {clock} (in {countdown})",
+      "emptyIn": "at this pace, empty in {countdown}",
+      "whoSpent": "Who spent it · this hour",
+      "harnu": "Harnu {n}",
+      "outside": "Outside Harnu {n}",
+      "details": "Details ↗",
+      "lowNote": {
+        "title": "Harnu is polling slower.",
+        "body": "Mission checks every 5 min, until the reset at {time}.",
+        "bodyPrStack": "Mission checks every 5 min and PR Stack refreshes on open, until the reset at {time}."
+      },
+      "secondaryNote": {
+        "title": "GitHub is slowing requests.",
+        "body": "Harnu resumes at {time}."
+      },
+      "exhaustedNote": {
+        "title": "Limit reached.",
+        "body": "Harnu paused its GitHub checks until {time} and shows the last known state."
+      }
+    },
+    "consumer": {
+      "missions": "Missions · PR and CI",
+      "prStack": "PR Stack",
+      "review": "Review",
+      "cleanup": "Cleanup",
+      "steward": "Steward",
+      "mergeBatch": "Merge batch",
+      "outside": "Outside Harnu"
+    },
+    "tag": {
+      "slowed": "slowed",
+      "paused": "paused"
+    },
+    "table": {
+      "consumer": "Consumer",
+      "calls": "Calls",
+      "share": "Share",
+      "every": "Checks every",
+      "missions": "Missions · PR and CI gates",
+      "prStack": "PR Stack",
+      "review": "Review",
+      "cleanup": "Cleanup · merge checks",
+      "steward": "Steward",
+      "mergeBatch": "Merge batch",
+      "delivered": "{n} delivered mission | {n} delivered missions",
+      "outside": "Outside Harnu · sessions, scripts, monitors"
+    },
+    "cadence": {
+      "every": {
+        "s": "{n} s",
+        "min": "{n} min",
+        "h": "{n} h"
+      },
+      "onOpen": "on open",
+      "onEvent": "on event",
+      "notChecked": "not checked",
+      "paused": "paused"
+    },
+    "pane": {
+      "title": "GitHub API",
+      "intro": {
+        "budgetOf": "Every session, script and Harnu itself spends from the same budget: the gh token of ",
+        "budgetLocal": "Every session, script and Harnu itself spends from the same budget: the gh token on this machine",
+        "reads": ". Harnu reads it every 60 s with ",
+        "after": ", which costs nothing."
+      },
+      "restLabel": "REST · per hour",
+      "graphqlLabel": "GraphQL · points per hour",
+      "leftOf": "left of {limit}",
+      "resetsAtIn": "resets at {clock} · in {countdown}",
+      "resetsAt": "resets at {clock}",
+      "paceLabel": "Pace · last 10 min",
+      "paceWaiting": "measuring the pace…",
+      "paceLasts": "calls/min · lasts past the reset",
+      "paceEmptyIn": "calls/min · empty in {countdown}",
+      "paceSplit": "Harnu {harnu}/min · outside {outside}/min",
+      "paceSplitWas": "Harnu {harnu}/min (was {was}) · outside {outside}/min",
+      "chartTitle": "Last 60 minutes · {resource} calls per 5 min",
+      "legendHarnu": "Harnu",
+      "legendSlowed": "Harnu, slowed",
+      "legendOutside": "Outside Harnu",
+      "tableTitle": "Who spends it · this hour",
+      "missionsTitle": "Missions",
+      "delivered": {
+        "label": "Check delivered missions",
+        "hint": "Off: a delivered mission keeps its last known PR and CI state and costs nothing, at any budget."
+      },
+      "lowTitle": "When the budget runs low",
+      "threshold": {
+        "label": "Slow down below",
+        "hint": "Harnu stretches its own checks once this much of the tighter budget (REST or GraphQL) is left, and goes back to normal at the reset."
+      },
+      "pausePrStack": {
+        "label": "Pause PR Stack auto-refresh",
+        "hint": "The canvas refreshes when you open it, not in the background."
+      },
+      "notify": {
+        "label": "Tell me when it happens",
+        "hint": "A toast when Harnu starts slowing down, and a notification when the limit is reached."
+      },
+      "fine": "Harnu counts only its own calls. \"Outside Harnu\" is the total GitHub reports minus Harnu's share.",
+      "unavailable": "The GitHub budget is unavailable: gh is missing, not signed in, or GitHub has not answered yet. Run gh auth login and Harnu picks it up within ten minutes.",
+      "lowBanner": {
+        "title": "Harnu has been slowing down since {since}.",
+        "body": "{resource} budget dropped below {threshold}%. Normal polling resumes at the reset, {time}."
+      },
+      "exhaustedBanner": {
+        "title": "{resource} limit reached.",
+        "body": "Harnu paused its GitHub checks until {time} and shows the last known state."
+      }
+    },
+    "notice": {
+      "details": "Details",
+      "low": {
+        "title": "GitHub budget low",
+        "body": "{left} {resource} calls left. Harnu is slowing down until {time}."
+      },
+      "exhausted": {
+        "title": "GitHub limit reached",
+        "body": "Harnu paused its GitHub checks until {time} (in {minutes} min)."
+      }
+    }
   }
 }

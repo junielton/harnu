@@ -1869,6 +1869,8 @@ function dropUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
  */
 const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   get_fleet: parseGetFleet,
+  // T614: no args, like get_fleet.
+  github_budget: parseGetFleet,
   get_approval: parseGetApproval,
   get_session: parseGetSession,
   list_worktrees: parseListWorktrees,

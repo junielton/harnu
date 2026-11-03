@@ -362,6 +362,9 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Diagram pane (canvas viewer, non-PTY, T218)        | `src/renderer/src/components/DiagramPane.vue` + `components/canvas/*`            |
 | Canvas toolbar (§6 — T536)                         | `src/renderer/src/components/CanvasToolbar.vue` + `canvas/canvas-tools.ts`       |
 | Canvas properties panel (§6 — T536 U3)             | `CanvasPropertiesPanel.vue` + `canvas/canvas-{style,layers}.ts`                  |
+| GitHub budget footer pill + popover (§6 — T611)    | `src/renderer/src/components/GithubBudgetPill.vue` + `GithubBudgetPopover.vue`   |
+| GitHub API settings pane (§6 — T611)               | `src/renderer/src/components/GithubBudgetPane.vue` + `lib/github-budget-view.ts` |
+| GitHub budget store + notices (§6 — T611)          | `stores/github-budget.ts` + `lib/github-budget-notice.ts`                        |
 | Scheduler (takeover, T291)                         | `src/renderer/src/components/SchedulerView.vue`                                  |
 | Scheduler worker row                               | `src/renderer/src/components/SchedulerWorkerRow.vue`                             |
 | Scheduler prompt field (skill mentions, T305)      | `src/renderer/src/components/SchedulerPromptField.vue` + `scheduler-mentions.ts` |

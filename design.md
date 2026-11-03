@@ -12888,6 +12888,94 @@ active-state contract every other takeover entry point follows (see
 
 ---
 
+### GitHub budget pill (StatusFooter.vue → GithubBudgetPill.vue)
+
+Spec: `docs/specs/2026-11-02-github-rate-limit/` (mockup `b--own-pill`). **No new tokens.** Its own
+pill in the footer's right cluster, in the same slot family as the Cleanup and Scheduler pills
+(`h-5`, `px-1.5`, 11px, `rounded-sm`, borderless), placed **between the heap gauge and the Cleanup
+pill**. It shows the GitHub glyph (`Github`, 12px, stroke 1.6) and how many calls are left in the
+**tighter** bucket (REST or GraphQL, whichever has the lower remaining fraction):
+
+| State               | Text                                | Tone                                           |
+| ------------------- | ----------------------------------- | ---------------------------------------------- |
+| Healthy (and click) | `4,112 left`                        | `--text-2`, `--text` + `bg-surface-2` on hover |
+| Low                 | `640 left`                          | `--warning`                                    |
+| Exhausted           | `0 left · 12m` (countdown to reset) | `--red`                                        |
+
+The pill **hides** while the budget is `unavailable` (no `gh`, not signed in, or no answer yet) and
+its tone does not change while the popover is open — the open popover is the signal. Click toggles
+the popover (`ui.popovers.githubBudget`, one of the footer popovers: it closes the Plan-usage and
+Pasted-images popovers when it opens, closes on Esc and outside click, and joins the native-overlay
+freeze).
+
+**Popover** (`GithubBudgetPopover.vue`): the footer-popover frame (`w-[320px]`, `bg-surface-2`,
+`border-border-2`, `rounded-lg`, `shadow-pop`, `p-2`), three blocks, `border-t border-border` between
+them:
+
+1. **Header** — `Github` glyph, "GitHub API" (12px / 600), and on the right `@login · updated 20s ago`
+   (11px, `--text-4`; the `@login ·` part is dropped when the gh user is unknown).
+2. **Two meters** (REST · 5,000/h, GraphQL · 5,000 pts/h) in the Plan-usage anatomy (§ "Plan usage"):
+   label + `N left`, a 3px track (`bg-surface`) and the same **80 / 95 ramp** (green below 80% used,
+   accent 80–95, red from 95; the `N left` figure takes the same colour above 80), and a reset line —
+   `resets in 38m`, with `· at this pace, empty in 6m` when the pace empties it first, or
+   `resets at 14:00 (in 12m)` when spent.
+3. **Who spent it · this hour** for the tighter bucket: a 6px split bar (Harnu in `--accent`, outside
+   in `--text-4`, widths a share of the limit), a legend (`Harnu 582` / `Outside Harnu 306`), one
+   row per consumer (name · count · 3px bar relative to the busiest consumer; Missions, PR Stack,
+   Review, Cleanup, Steward, plus Merge batch once it has spent a call), the outside row in `--text-3`.
+   While low, Missions carries a `slowed` tag; while exhausted every Harnu row reads `--text-4` with a
+   `paused` tag. A **note** closes the block in the Throttle-note anatomy: `accent-soft` / `accent-line`
+   ("Harnu is polling slower. …") while low, `red-soft` / `red-line` ("Limit reached. …") while spent;
+   none while healthy. While GitHub's **secondary limit** holds Harnu's reads (the snapshot's
+   `secondaryPauseUntil`, a short pause with calls still left in both buckets) the note is the accent
+   one — "GitHub is slowing requests. Harnu resumes at 14:00." — **in place of** the low / spent note,
+   and the pill keeps showing the real calls left.
+
+A `Details ↗` link (right-aligned, `--accent`, 11px) closes the popover and opens **Settings → GitHub
+API**.
+
+**Toast and OS notification** (pref `Tell me when it happens`): one `warning` toast on entering `low`
+("GitHub budget low", with a _Details_ action) and one OS notification on reaching `exhausted`, each
+**once per GitHub window**, never on the first snapshot after launch.
+
+---
+
+### GitHub API pane (Settings → GitHub API, GithubBudgetPane.vue)
+
+Spec: `docs/specs/2026-11-02-github-rate-limit/` (mockup `d--settings-pane`). **No new tokens.** A
+Settings tab (`githubApi`) between Usage history and Changelog. Top to bottom:
+
+- **Title and intro** — "GitHub API" (14px / 600) and an 11.5px `--text-3` paragraph naming the gh
+  user (`@login`, mono; "the gh token on this machine" when unknown) and the free `gh api rate_limit`
+  read.
+- **Throttle banner** (only while low or spent) — the Throttle-note anatomy, accent while low
+  ("Harnu has been slowing down since 13:39. REST budget dropped below 15%. …"), red while spent.
+- **Three tiles** (`grid 1fr 1fr 1.2fr`, `gap-2.5`, `bg-sidebar`, `border-border`, `rounded-lg`,
+  `px-3 py-2.5`): REST and GraphQL (a mono 20px / 600 figure with `left of 5,000` in 11px sans, a 3px
+  track on `bg-surface-2` with the 80 / 95 ramp, the reset time) and **Pace · last 10 min** (calls per
+  minute, `lasts past the reset` or `empty in 6m`, and the Harnu / outside split per minute, with
+  `(was N)` once Harnu has slowed down).
+- **Last 60 minutes** — twelve 5-minute columns stacked from the bottom: Harnu (`--accent`), Harnu
+  while slowed (`--warning`) and outside (`--text-4`); a `border-b` baseline and a clock label on
+  every other column; the legend sits at the right of the heading. It follows the tighter bucket and
+  the heading names it.
+- **Who spends it · this hour** — a table (Consumer · Calls · Share · Checks every) in 11.5px with
+  `border-t border-border` rows. While throttled the _Checks every_ cell shows the old cadence struck
+  through and the new one in `--accent` (`--red` and `paused` while spent). Delivered missions sit
+  under Missions as `N delivered missions · 0 · 0% · not checked`.
+- **Missions** — one `ToggleSwitch`: _Check delivered missions_ (off by default).
+- **When the budget runs low** — a `SegmentedControl` _Slow down below_ 10 / 15 / 25 %, a
+  `ToggleSwitch` _Pause PR Stack auto-refresh_ and a `ToggleSwitch` _Tell me when it happens_, each
+  with a `SettingHint`.
+- **Fine print** — 11px `--text-4`: Harnu counts only its own calls; "Outside Harnu" is GitHub's total
+  minus Harnu's share.
+
+All of it reads one snapshot (`stores/github-budget.ts`, fed by `window.api.githubBudgetSnapshot` and
+the `github-budget:changed` push) and writes the four prefs through `githubBudgetSetPrefs`.
+Everything is an estimate of Harnu's own share; only GitHub knows the real total.
+
+---
+
 ### Folder View (FolderView.vue)
 
 Spec: `docs/specs/T212-folder-view.md` (the original view). The main-pane view a **folder click**

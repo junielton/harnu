@@ -326,9 +326,9 @@ describe('chips (AC-7)', () => {
     const unbound = list().filter((b) => b.keys === null).length
     const conflicts = list().filter((b) => b.conflictsWith.length > 0).length
     const customized = list().filter((b) => b.source !== 'default').length
-    expect([unbound, conflicts, customized]).toEqual([79, 2, 3])
+    expect([unbound, conflicts, customized]).toEqual([80, 2, 3])
     await searchFor(w, 'zzz')
-    expect(chip(w, 'unbound').text()).toBe('Unbound 79')
+    expect(chip(w, 'unbound').text()).toBe('Unbound 80')
     expect(chip(w, 'conflicts').text()).toBe('Conflicts 2')
     expect(chip(w, 'customized').text()).toBe('Customized 3')
   })

@@ -128,6 +128,7 @@ export type ShortcutActionId =
   | 'view.settings.cleanup'
   | 'view.settings.containers'
   | 'view.settings.prStack'
+  | 'view.settings.githubApi'
   | 'sidebar.cursor.down'
   | 'sidebar.cursor.up'
   | 'sidebar.cursor.right'
@@ -429,6 +430,7 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.settings.cleanup', 'views', null),
   def('view.settings.containers', 'views', null),
   def('view.settings.prStack', 'views', null),
+  def('view.settings.githubApi', 'views', null),
   // T486 §10 — session navigation history, the browser convention per platform:
   // ⌘[ / ⌘] on macOS (⌥← is word-jump in every macOS text field), Alt+← / Alt+→
   // elsewhere. Menu-backed (`&Session`) and shielded: xterm turns Alt+← into a
