@@ -73,6 +73,21 @@ export interface UseSessionLinksOptions {
   folderPath?: Ref<string | null>
   /** True while the popover shows the Folder scope — only then does the poll also re-read the folder. */
   folderWanted?: Ref<boolean>
+  /**
+   * Sessions the sidebar hides (archived) — their groups are left out of the Folder scope, like in every
+   * other session view. The active session's own group is never hidden.
+   */
+  isHidden?: (sessionId: string) => boolean
+}
+
+/** The Folder scope's groups minus the hidden sessions; `activeId` is always kept. */
+export function visibleLinkGroups(
+  groups: FolderLinkGroup[],
+  isHidden: ((sessionId: string) => boolean) | undefined,
+  activeId: string | null
+): FolderLinkGroup[] {
+  if (!isHidden) return groups
+  return groups.filter((g) => g.sessionId === activeId || !isHidden(g.sessionId))
 }
 
 /**
@@ -136,7 +151,9 @@ export function useSessionLinks(
       return
     }
     if (options.folderPath?.value !== path) return
-    folderGroups.value = Array.isArray(next) ? next : []
+    folderGroups.value = Array.isArray(next)
+      ? visibleLinkGroups(next, options.isHidden, uuid.value)
+      : []
   }
 
   let debounce: ReturnType<typeof setTimeout> | null = null

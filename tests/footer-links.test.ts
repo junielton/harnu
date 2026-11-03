@@ -11,7 +11,8 @@ import {
   formatLinkTime,
   isRawLabel,
   linkHost,
-  referenceLink
+  referenceLink,
+  visibleLinkGroups
 } from '../src/renderer/src/composables/useSessionLinks'
 import FooterLinksPopover from '../src/renderer/src/components/FooterLinksPopover.vue'
 import StatusFooter from '../src/renderer/src/components/StatusFooter.vue'
@@ -107,6 +108,32 @@ describe('referenceLink — AC-8 gating', () => {
     expect(
       referenceLink({ sessionId: 's1', isLive: () => true, write }, 'https://example.com')
     ).toBe(false)
+  })
+})
+
+describe('visibleLinkGroups — archived sessions stay out of the Folder scope', () => {
+  const group = (sessionId: string): FolderLinkGroup => ({
+    sessionId,
+    title: sessionId,
+    count: 1,
+    latestAt: '2026-11-03T12:00:00.000Z',
+    links: []
+  })
+  const groups = [group('live-1'), group('archived-1'), group('active-archived')]
+  const archived = new Set(['archived-1', 'active-archived'])
+
+  it('drops the groups of hidden sessions', () => {
+    const out = visibleLinkGroups(groups, (id) => archived.has(id), null)
+    expect(out.map((g) => g.sessionId)).toEqual(['live-1'])
+  })
+
+  it('never hides the active session, even if it is archived', () => {
+    const out = visibleLinkGroups(groups, (id) => archived.has(id), 'active-archived')
+    expect(out.map((g) => g.sessionId)).toEqual(['live-1', 'active-archived'])
+  })
+
+  it('keeps everything when nothing is hidden', () => {
+    expect(visibleLinkGroups(groups, undefined, null)).toEqual(groups)
   })
 })
 

@@ -399,7 +399,8 @@ const {
 } = useSessionLinks(imagesUuid, {
   active: canReattach,
   folderPath: linksFolderPath,
-  folderWanted: computed(() => linksPopoverOpen.value && linksScope.value === 'folder')
+  folderWanted: computed(() => linksPopoverOpen.value && linksScope.value === 'folder'),
+  isHidden: (id) => sessions.isArchived(id)
 })
 const linksPopoverEl = ref<HTMLElement | null>(null)
 useNativeOverlay('footer-links-popover', linksPopoverEl)
