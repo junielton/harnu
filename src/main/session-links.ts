@@ -465,8 +465,12 @@ function sessionTitle(session: FolderEntry['sessions'][number]): string {
 
 /** Past this, only the tail of a transcript is scanned (the CLI's own transcript read ceiling). */
 const MAX_SCAN_BYTES = 50 * 1024 * 1024
-/** How many transcripts keep a warm fold. */
-const CACHE_MAX = 24
+/**
+ * How many transcripts keep a warm fold. The Folder scope reads every session of a folder on each pass,
+ * so a cap below the folder's size would evict what the next pass needs and re-parse everything every
+ * time (an LRU cycles). A fold holds only the links, so a generous cap is cheap.
+ */
+const CACHE_MAX = 512
 /** Parallel transcript reads for a folder listing. */
 const FOLDER_CONCURRENCY = 4
 
