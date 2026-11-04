@@ -94,7 +94,9 @@ describe('parseGhPrList', () => {
       reviewDecision: 'APPROVED',
       ci: 'passing',
       mergedAt: '2026-07-01T00:00:00Z',
-      headRefOid: null
+      headRefOid: null,
+      baseRefName: null,
+      mergeCommitOid: null
     })
     expect(map.get('feat/open')).toEqual<PrFacts>({
       number: 118,
@@ -102,7 +104,9 @@ describe('parseGhPrList', () => {
       reviewDecision: null,
       ci: 'failing',
       mergedAt: null,
-      headRefOid: null
+      headRefOid: null,
+      baseRefName: null,
+      mergeCommitOid: null
     })
   })
 

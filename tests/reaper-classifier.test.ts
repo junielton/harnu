@@ -29,6 +29,8 @@ function facts(over: Partial<BranchFacts> = {}): BranchFacts {
     remoteExists: false,
     ancestorOfDefault: null,
     patchIdContained: null,
+    tipInPrHead: null,
+    prLandedInDefault: null,
     lastCommitAt: NOW - 12 * DAY,
     pr: mergedPr(),
     ghAvailable: true,
@@ -45,6 +47,8 @@ function mergedPr(over: Partial<PrFacts> = {}): PrFacts {
     ci: 'passing',
     mergedAt: '2026-07-01T00:00:00Z',
     headRefOid: 'tipsha',
+    baseRefName: null,
+    mergeCommitOid: null,
     ...over
   }
 }
@@ -512,6 +516,8 @@ describe('classify — upstream-resolved PRs (BUG-93)', () => {
         pr: mergedPr({ state: 'CLOSED', mergedAt: null }),
         ancestorOfDefault: null,
         patchIdContained: null,
+        tipInPrHead: null,
+        prLandedInDefault: null,
         remoteExists: false,
         unpushed: true
       }),

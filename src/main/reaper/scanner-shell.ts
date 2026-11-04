@@ -324,7 +324,7 @@ async function lookupPrForBranch(repoPath: string, branch: string): Promise<unkn
         '--limit',
         '10',
         '--json',
-        'headRefName,headRefOid,number,state,mergedAt,reviewDecision,statusCheckRollup'
+        'headRefName,baseRefName,headRefOid,mergeCommit,number,state,mergedAt,reviewDecision,statusCheckRollup'
       ],
       { ...GH_OPTS, cwd: repoPath, consumer: 'cleanup', resource: 'graphql' }
     )
@@ -384,7 +384,7 @@ async function fetchPrFacts(
           '--limit',
           String(PR_LIST_LIMIT),
           '--json',
-          'headRefName,baseRefName,headRefOid,number,state,mergedAt,reviewDecision,statusCheckRollup'
+          'headRefName,baseRefName,headRefOid,mergeCommit,number,state,mergedAt,reviewDecision,statusCheckRollup'
         ],
         { ...GH_PR_LIST_OPTS, cwd: repoPath, consumer: 'cleanup', resource: 'graphql' }
       )
