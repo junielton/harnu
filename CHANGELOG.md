@@ -16,6 +16,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **Memory benchmark.** `npm run memory:bench -- --repo <folder>` scores how well a repo's project memory works, from the files on disk. It reports how many sessions left a digest, how many decisions are recorded per working day, whether a search finds the right note, how big the default `memory_read` answer is, how fresh `hot.md` is, and how many transcripts of deleted worktrees were never summarized. It works on plain folders as well as git repos. It only reads, and two runs on the same files print the same output. The first baseline for this repo is in `docs/reports/2026-11-04-memory-bench-baseline.md`.
 
+### Fixed
+
+- **Cleanup now recognizes a worktree as merged when its pull request was squash-merged after more commits were pushed from elsewhere.** A worktree whose latest commit is already inside the merged pull request, and whose changes reached the default branch (straight in, or through a merged base pull request), used to wait in Needs review as "merged, but the local tip differs from the PR head". It is now Ready to clean, and the automatic cleanup can take it. Nothing changes when the pull request's last commit is not in your clone (Harnu never downloads it for this), when the worktree has commits the pull request lacks, or when it has uncommitted changes: those still wait in Needs review.
+
 ## 2026-11-03
 
 ### Added

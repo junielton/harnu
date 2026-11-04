@@ -600,6 +600,14 @@ export interface RepoScanInput {
    */
   patchIdContainedByBranch: Map<string, boolean | null>
   /**
+   * Whether each branch's tip is an ancestor of its MERGED PR's head (U1). Optional:
+   * a missing map or key reads as `null` — "not probed" — which leaves every fate
+   * exactly as it was, so a caller that forgets it loses the new proof, never safety.
+   */
+  tipInPrHeadByBranch?: Map<string, boolean | null>
+  /** Whether each branch's merged PR provably reached the default branch (U1); same rules. */
+  prLandedByBranch?: Map<string, boolean | null>
+  /**
    * Commit date (ms since epoch) keyed by commit sha — the only way to age a
    * detached HEAD, which has no branch ref for `for-each-ref` to date. Optional:
    * absent means "not probed", and the detached item reports a null age.
@@ -666,6 +674,8 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
     unpushedByPath,
     ancestorByBranch,
     patchIdContainedByBranch,
+    tipInPrHeadByBranch,
+    prLandedByBranch,
     commitDateBySha,
     diskBytesByPath,
     collectFateInput,
@@ -739,8 +749,8 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
       remoteSha: remoteShaFor(remoteHeads, branch),
       ancestorOfDefault: ancestorByBranch.get(branch) ?? null,
       patchIdContained: patchIdContainedByBranch.get(branch) ?? null,
-      tipInPrHead: null,
-      prLandedInDefault: null,
+      tipInPrHead: tipInPrHeadByBranch?.get(branch) ?? null,
+      prLandedInDefault: prLandedByBranch?.get(branch) ?? null,
       lastCommitAt: localRef?.committedAt ?? null,
       pr: resolved.pr,
       ghAvailable,
@@ -770,8 +780,8 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
       remoteSha: remoteShaFor(remoteHeads, ref.branch),
       ancestorOfDefault: ancestorByBranch.get(ref.branch) ?? null,
       patchIdContained: patchIdContainedByBranch.get(ref.branch) ?? null,
-      tipInPrHead: null,
-      prLandedInDefault: null,
+      tipInPrHead: tipInPrHeadByBranch?.get(ref.branch) ?? null,
+      prLandedInDefault: prLandedByBranch?.get(ref.branch) ?? null,
       lastCommitAt: ref.committedAt,
       pr: resolved.pr,
       ghAvailable,
@@ -803,8 +813,8 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
         remoteSha,
         ancestorOfDefault: ancestorByBranch.get(branch) ?? null,
         patchIdContained: patchIdContainedByBranch.get(branch) ?? null,
-        tipInPrHead: null,
-        prLandedInDefault: null,
+        tipInPrHead: tipInPrHeadByBranch?.get(branch) ?? null,
+        prLandedInDefault: prLandedByBranch?.get(branch) ?? null,
         lastCommitAt: null,
         pr,
         ghAvailable,

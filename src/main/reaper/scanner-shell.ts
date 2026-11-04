@@ -25,6 +25,7 @@ import {
   parseGhPrListResult,
   parseLsRemoteHeads,
   parsePatchIdSet,
+  prLandedInDefault,
   readGhCacheEntry,
   squashBranchArgv,
   squashHistoryArgv,
@@ -626,6 +627,104 @@ async function probeSquashEquivalence(
   return out
 }
 
+/** A full object id as gh reports it. Anything else never reaches a git argv. */
+const OID_RE = /^[0-9a-f]{40,64}$/
+
+/** Remembered `(repo, ancestor, descendant)` answers — definite booleans only, never a null. */
+const containmentCache = new Map<string, boolean>()
+const CONTAINMENT_CACHE_MAX = 4000
+
+/** Whether the object store already holds this commit. Never fetches. */
+async function commitIsLocal(repoPath: string, oid: string): Promise<boolean> {
+  try {
+    await runFile('git', ['-C', repoPath, 'cat-file', '-e', `${oid}^{commit}`], GIT_OPTS)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * `git merge-base --is-ancestor <ancestor> <descendant>`: exit 0 → true, exit 1 → false, a
+ * commit this clone does not hold (or any other failure) → null. A missing commit must read
+ * `null`: git would also fail with exit 128 there, and "absent" is not "not contained".
+ * Memoized per `(repo, ancestor, descendant)` — the two ids fully determine the answer.
+ */
+async function ancestorOf(
+  repoPath: string,
+  ancestor: string,
+  descendant: string
+): Promise<boolean | null> {
+  if (!OID_RE.test(ancestor) || !OID_RE.test(descendant)) return null
+  const key = `${repoPath}\u0000${ancestor}\u0000${descendant}`
+  const cached = containmentCache.get(key)
+  if (cached !== undefined) return cached
+  if (!(await commitIsLocal(repoPath, ancestor)) || !(await commitIsLocal(repoPath, descendant)))
+    return null
+  let answer: boolean | null
+  try {
+    await runFile(
+      'git',
+      ['-C', repoPath, 'merge-base', '--is-ancestor', ancestor, descendant],
+      GIT_OPTS
+    )
+    answer = true
+  } catch (err) {
+    answer = (err as { code?: unknown }).code === 1 ? false : null
+  }
+  if (answer !== null) {
+    if (containmentCache.size >= CONTAINMENT_CACHE_MAX) containmentCache.clear()
+    containmentCache.set(key, answer)
+  }
+  return answer
+}
+
+/**
+ * U1 — the two facts that let a MERGED PR be strong proof when its head is not exactly the
+ * local tip: is the tip contained in the PR head, and did the PR's content reach the default
+ * branch (directly, or through a merged stacked base — see `prLandedInDefault`).
+ *
+ * Candidates only: a branch whose PR is MERGED with a known head that differs from the tip
+ * (the equal case is already strong; open, closed and PR-less branches are not this proof's
+ * business). Read-only by construction: `cat-file`/`merge-base` over the local object store,
+ * no `fetch`, no ref created. A PR head or merge commit this clone never fetched yields
+ * `null`, never `false`, so the branch simply stays in "Needs review". The landing fact is
+ * only worth a git call once containment is `true`; otherwise it is `null`.
+ */
+export async function probeMergedPrContainment(
+  repoPath: string,
+  defaultBranch: string,
+  refs: LocalBranchRef[],
+  prByBranch: Map<string, PrFacts>
+): Promise<{ tipInPrHead: Map<string, boolean | null>; landed: Map<string, boolean | null> }> {
+  const tipInPrHead = new Map<string, boolean | null>()
+  const landed = new Map<string, boolean | null>()
+  for (const ref of refs) {
+    const pr = prByBranch.get(ref.branch)
+    if (!pr || pr.state !== 'MERGED' || pr.headRefOid === null || pr.headRefOid === ref.sha)
+      continue
+    const contained = await ancestorOf(repoPath, ref.sha, pr.headRefOid)
+    tipInPrHead.set(ref.branch, contained)
+    if (contained !== true) {
+      landed.set(ref.branch, null)
+      continue
+    }
+    const basePr = pr.baseRefName !== null ? (prByBranch.get(pr.baseRefName) ?? null) : null
+    let mergeCommitInBaseHead: boolean | null = null
+    if (
+      pr.baseRefName !== null &&
+      pr.baseRefName !== defaultBranch &&
+      basePr?.state === 'MERGED' &&
+      basePr.baseRefName === defaultBranch &&
+      pr.mergeCommitOid !== null &&
+      basePr.headRefOid !== null
+    )
+      mergeCommitInBaseHead = await ancestorOf(repoPath, pr.mergeCommitOid, basePr.headRefOid)
+    landed.set(ref.branch, prLandedInDefault(pr, basePr, defaultBranch, mergeCommitInBaseHead))
+  }
+  return { tipInPrHead, landed }
+}
+
 /**
  * Commit date (ms since epoch) keyed by sha, for detached worktrees only — a
  * detached HEAD has no branch ref, so `for-each-ref` (which dates every other
@@ -772,6 +871,18 @@ async function scanOneRepo(
     squashCandidates
   )
 
+  // U1: a MERGED PR whose head merely CONTAINS the local tip. An ancestor is already
+  // strong, so only the other branches are probed; protected branches never produce an item.
+  const { tipInPrHead: tipInPrHeadByBranch, landed: prLandedByBranch } =
+    await probeMergedPrContainment(
+      repoPath,
+      defaultBranch,
+      localBranches.filter(
+        (ref) => !protectedSet.has(ref.branch) && ancestorByBranch.get(ref.branch) !== true
+      ),
+      prByBranch ?? new Map()
+    )
+
   const commitDateBySha = await probeCommitDates(
     repoPath,
     worktrees.filter((w) => !w.bare && (w.detached || !w.branch)).map((w) => w.head)
@@ -795,6 +906,8 @@ async function scanOneRepo(
     unpushedByPath,
     ancestorByBranch,
     patchIdContainedByBranch,
+    tipInPrHeadByBranch,
+    prLandedByBranch,
     commitDateBySha,
     collectFateInput: (id, input) => opts.fateSink.set(id, input),
     now

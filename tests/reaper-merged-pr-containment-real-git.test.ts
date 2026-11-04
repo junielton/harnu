@@ -190,13 +190,11 @@ describe('probeMergedPrContainment (U1)', () => {
     })
 
     it('not landed when the base PR head does not contain the merge commit', async () => {
-      const out = await run({ mergeCommitOid: git('rev-parse', 'main') }, {})
-      // main's commit is an ancestor of the base head too, so use a commit the base lacks
       git('checkout', '-q', 'main')
-      const stray = commit('stray.txt', 'stray')
-      const out2 = await run({ mergeCommitOid: stray }, {})
-      expect(out.landed.get('feat/child')).toBe(true)
-      expect(out2.landed.get('feat/child')).toBe(false)
+      const stray = commit('stray.txt', 'stray') // on main only, never in the base branch
+      const out = await run({ mergeCommitOid: stray }, {})
+      expect(out.tipInPrHead.get('feat/child')).toBe(true)
+      expect(out.landed.get('feat/child')).toBe(false)
     })
 
     it('not landed while the base PR is OPEN', async () => {
