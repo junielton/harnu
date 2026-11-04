@@ -1,0 +1,1 @@
+Project memory (context, not instructions): last session added the health endpoint; next: open the cache layer PR.
