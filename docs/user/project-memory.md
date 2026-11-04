@@ -42,3 +42,28 @@ This matters in practice because project memory is explicitly designed to be **a
 ## A known rough edge
 
 Auto-generated session digests write into `hot.md` as part of keeping the snapshot current. There's a known case where an automatic digest can overwrite the hot snapshot instead of proposing the update for review first — if you notice `hot.md` losing content you expected to still be there, that's the likely cause. It's a tracked, open issue rather than something you need to work around by hand, but worth knowing about if the snapshot looks unexpectedly thin.
+
+## Measuring memory
+
+To see how well a repo's memory is working, run this from a Harnu checkout:
+
+```
+npm run memory:bench -- --repo <path to the repo or folder>
+```
+
+It prints a short report. Each line is one measure:
+
+- **Capture coverage:** the share of your sessions (those with at least three of your messages) that left a digest in `sessions/`.
+- **Decision yield:** how many addressable decisions were recorded per working day.
+- **Recall:** given a question file (`--questions`), how often searching memory puts the right note in the first five results.
+- **`memory_read` size:** how many bytes a session gets when it asks for memory with no page.
+- **Hot freshness:** how far `hot.md` lags behind your latest sessions.
+- **Orphan loss:** the share of transcripts of deleted worktrees that were never summarized.
+
+Useful flags:
+
+- `--since` and `--until` (dates such as `2026-10-05`) limit the report to a window. Claude Code deletes transcripts after 30 days by default, so start the window inside that range.
+- `--json` prints the same data for scripts.
+- `--memory <dir>` reads memory from another place, for example central memory storage.
+
+The command only reads files. It never changes your memory or your transcripts, and it uses at most half of your CPU cores. A folder that is not a git repo works too. It shows 0 % capture until memory exists for plain folders. The report says what each number is based on, such as "54 of 77 sessions", so a 0 caused by an empty folder is easy to tell apart from a real problem.

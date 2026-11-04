@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-04
+
+### Added
+
+- **Memory benchmark.** `npm run memory:bench -- --repo <folder>` scores how well a repo's project memory works, from the files on disk. It reports how many sessions left a digest, how many decisions are recorded per working day, whether a search finds the right note, how big the default `memory_read` answer is, how fresh `hot.md` is, and how many transcripts of deleted worktrees were never summarized. It works on plain folders as well as git repos. It only reads, and two runs on the same files print the same output. The first baseline for this repo is in `docs/reports/2026-11-04-memory-bench-baseline.md`.
+
 ## 2026-11-03
 
 ### Added
