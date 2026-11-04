@@ -121,12 +121,31 @@ Verdict: buildable with guesses, 3 items.
 | "Every line has a timestamp except line 1" read per file would leave the subagent's git call untimed                | **Fixed.** Only the main file's summary line lacks one.                                                                                                |
 | Other files might reference the symbols S-2 deletes                                                                 | **Not an issue, stated.** `git grep` on 2026-11-04: only `digest-core.ts`, `memory-digest.ts` and `tests/mcp-digest-core.test.ts`, all in S-2's files. |
 
+## Round 6 (S-1 and S-2, on the final text)
+
+Run after the owner marked AC-4 unmet because no fresh reader had checked the final text. A fresh
+agent read only the final `spec.md` (the text pushed as `249762b2`, which round 5's fixes produced)
+and was asked for every guess for S-1 and S-2, each marked observable (two engineers could get
+different AC or later-slice results) or cosmetic (nothing observes it).
+
+Verdict: buildable with guesses, 2 observable and 17 cosmetic items. The agent confirmed that AC-1,
+AC-3, AC-4, AC-6, AC-35 and AC-36 come out the same for any reasonable build, that AC-3's expected
+bytes agree with the scan, cut, question and quoting rules, and that the fixture's S-2 column
+follows from today's commit selection. As the owner instructed, the remaining guesses are mapped to
+D-n rows instead of another rewrite of the spec:
+
+| #    | Kind       | Raised                                                                                                                                                                                                                                                                                                                                                                                                                                   | Mapped to                                                                                                                                                                                                                                                   |
+| ---- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | observable | AC-34 bans `Approval Inbox` in the whole file, while S-1 says only comments change; a runtime string would force a choice                                                                                                                                                                                                                                                                                                                | **D-11.** Checked with `git grep` on 2026-11-04: every occurrence is a comment (lines 20-21, wrapped across a line, and 389). Default: remove them all; a new runtime occurrence is a Deviation.                                                            |
+| 2    | observable | `gatherGitEvidence(..., rev)` leaves `head`, `dirtyCount` and `fileStats` open for a non-`HEAD` rev; S-5 could claim the owner's dirty files                                                                                                                                                                                                                                                                                             | **D-10.** Default: `head` from `rev-parse --verify <rev>`, `dirtyCount` 0, `fileStats` over the selected commits.                                                                                                                                           |
+| 3-19 | cosmetic   | `otherCommits` line shape and singular; Evidence blank lines; unused `date`; planner-impossible render inputs; "fenced" vs blockquote wording; quoting trims and line splits; fence test; cut-before-compare on Last message; fixture loader and line shapes; replay tie order and `.harnu/` dirtiness; `since` rounding; moved-symbol importers; reader edge cases; engine `close()` and timers; caps' cut unit; which symbols S-1 adds | **D-12.** Default: the executor chooses, states each choice in its PR, and keeps every AC passing. D-12 also settles two of them outright: "fenced" means the blockquote, and `git grep` finds no importer of the moved symbols outside `memory-digest.ts`. |
+
 ## Where it stands
 
-The guess count went 52, 18, 14, 3, 3, and every raised item was fixed in the spec; none had to
-become a D-n or a non-goal. A sixth run on the final text was not made, so there is no recorded
-"none" verdict: the last three fixes are small and local (a newline, a timestamp scope, a stated
-`git grep` result), but they are unconfirmed by a fresh reader.
+The guess count went 52, 18, 14, 3, 3, then 2 observable and 17 cosmetic on the final text. Rounds 1
+to 5 were fixed in the spec; round 6, run on the final text, maps every remaining guess to a D-n
+row (D-10, D-11, D-12), and the slices those rows affect name them in `gated-by`. No round returned
+"none": the spec reaches "every guess resolved or owned by a D-n", not "no guesses".
 
 ## Other findings
 
