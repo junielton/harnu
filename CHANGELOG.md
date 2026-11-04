@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-04
+
+### Fixed
+
+- **The footer's effort level and other live figures come back after a test or verify Harnu instance crashed.** When a second Harnu (a dev or verify copy with its own data folder) took over the `statusLine` setting and then died without cleaning up, the real Harnu left the setting pointing at a script that no longer existed, so the effort chip and the other statusLine-only figures stayed blank until you restarted it. Harnu now notices that the script is gone, takes the setting back within a minute, and posts the usual Activity notice that sessions started before the repair need a restart. A second Harnu that is still running, and any statusLine of your own, are left alone.
+
 ## 2026-11-03
 
 ### Added

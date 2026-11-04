@@ -1,6 +1,6 @@
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import { readFile, writeFile, mkdir, chmod, rm, unlink, stat } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, chmod, rm, unlink, stat, access } from 'node:fs/promises'
 import { copyFileSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { updateClaudeSettings, claudeSettingsPath } from './claude-settings'
@@ -59,8 +59,9 @@ export interface StatusLineOptions {
  * historically another Harnu instance (dev / verify, different userData) quitting
  * stripped it via the loose exit cleanup, silently killing telemetry fleet-wide
  * until the next app restart. A cheap periodic read re-installs when the key is
- * MISSING (never fights a foreign statusLine, never reclaims another live Harnu
- * instance's writer).
+ * MISSING, or when it points at a Harnu writer script that no longer exists on disk (a
+ * dev/verify instance that died without exit cleanup, BUG-243). Never fights a foreign
+ * statusLine, never reclaims another live Harnu instance's writer.
  */
 const SELF_HEAL_MS = 60_000
 
@@ -132,9 +133,9 @@ async function ensureWriterScript(): Promise<void> {
   }
 }
 
-async function installStatusLine(): Promise<void> {
+async function installStatusLine(reclaim?: string): Promise<void> {
   await updateClaudeSettings(claudeSettingsPath(), (settings) => {
-    const { next, foreignPreserved } = mergeStatusLine(settings, ourCommand())
+    const { next, foreignPreserved } = mergeStatusLine(settings, ourCommand(), reclaim)
     lastForeignPreserved = foreignPreserved
     if (!foreignPreserved) installedByUs = true
     return next
@@ -196,9 +197,10 @@ function removeOwnStatusLineSync(): void {
 
 /**
  * Re-install the statusLine when the key has VANISHED (another instance's exit
- * cleanup, a manual edit, a tool rewriting settings.json). Deliberately narrow:
- * a present-but-different statusLine is either a foreign one (preserved, never
- * fought) or another live Harnu instance's (last-boot-wins, same as install).
+ * cleanup, a manual edit, a tool rewriting settings.json) or points at a Harnu writer
+ * whose file is gone. Deliberately narrow: a present-but-different statusLine is either
+ * a foreign one (preserved, never fought) or another live Harnu instance's
+ * (last-boot-wins, same as install) — unless that instance's writer file no longer exists.
  */
 async function selfHealTick(): Promise<void> {
   try {
@@ -225,11 +227,20 @@ async function selfHealTick(): Promise<void> {
           return { kind: 'ok', statusLine: undefined, mtimeMs: null }
         }
       },
-      reinstall: async () => {
+      reinstall: async (reclaim) => {
         await ensureWriterScript()
-        await installStatusLine()
-        console.error('[statusline] self-heal: statusLine key was missing — re-installed')
+        await installStatusLine(reclaim)
+        console.error(
+          reclaim
+            ? '[statusline] self-heal: statusLine pointed at a vanished writer — reclaimed'
+            : '[statusline] self-heal: statusLine key was missing — re-installed'
+        )
       },
+      writerExists: (path) =>
+        access(path).then(
+          () => true,
+          (err: NodeJS.ErrnoException) => err.code !== 'ENOENT' // anything but "gone" → assume alive
+        ),
       appendLog: appendHealLog,
       liveProcs: () => {
         try {
