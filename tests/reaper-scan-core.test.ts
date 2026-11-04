@@ -26,6 +26,7 @@ import {
 import type { WorktreeListEntry } from '../src/main/worktree-core'
 import {
   classifyDetachedWorktree,
+  type BranchFacts,
   type PrFacts,
   type ReapItem
 } from '../src/main/reaper/reaper-core'
@@ -1198,5 +1199,71 @@ describe('parseGhPrList base and merge commit (U1)', () => {
     )
     expect(out.get('a')).toMatchObject({ baseRefName: null, mergeCommitOid: null })
     expect(out.get('b')).toMatchObject({ mergeCommitOid: null })
+  })
+})
+
+describe('buildRepoItems merged-PR containment facts (U1)', () => {
+  const merged = (): PrFacts => ({
+    number: 84,
+    state: 'MERGED',
+    reviewDecision: null,
+    ci: 'unknown',
+    mergedAt: '2026-07-01T00:00:00Z',
+    headRefOid: 'prhead',
+    baseRefName: 'main',
+    mergeCommitOid: 'merge84'
+  })
+
+  const factsFor = (over: Partial<RepoScanInput>): Map<string, BranchFacts> => {
+    const captured = new Map<string, BranchFacts>()
+    buildRepoItems(
+      baseInput({
+        worktrees: [
+          wt({ path: '/repo', branch: 'main' }),
+          wt({ path: '/repo/wt-a', branch: 'feat/a', head: 'tipa' })
+        ],
+        localBranches: [
+          { branch: 'feat/a', sha: 'tipa', committedAt: 1, upstream: null },
+          { branch: 'feat/loose', sha: 'tipl', committedAt: 1, upstream: null }
+        ],
+        prByBranch: new Map([
+          ['feat/a', merged()],
+          ['feat/loose', merged()]
+        ]),
+        collectFateInput: (_id, fi) => captured.set(fi.facts.branch ?? '', fi.facts),
+        ...over
+      })
+    )
+    return captured
+  }
+
+  it('delivers the probed containment and landing facts to the worktree branch', () => {
+    const f = factsFor({
+      tipInPrHeadByBranch: new Map([['feat/a', true]]),
+      prLandedByBranch: new Map([['feat/a', true]])
+    }).get('feat/a')!
+    expect(f.tipInPrHead).toBe(true)
+    expect(f.prLandedInDefault).toBe(true)
+  })
+
+  it('keeps a probed false as false, never promoting it', () => {
+    const f = factsFor({
+      tipInPrHeadByBranch: new Map([['feat/a', false]]),
+      prLandedByBranch: new Map([['feat/a', null]])
+    }).get('feat/a')!
+    expect(f.tipInPrHead).toBe(false)
+    expect(f.prLandedInDefault).toBeNull()
+  })
+
+  it('gives null for both facts when the branch is absent from the maps or the maps are absent', () => {
+    const absent = factsFor({
+      tipInPrHeadByBranch: new Map(),
+      prLandedByBranch: new Map()
+    }).get('feat/a')!
+    expect(absent.tipInPrHead).toBeNull()
+    expect(absent.prLandedInDefault).toBeNull()
+    const noMaps = factsFor({}).get('feat/a')!
+    expect(noMaps.tipInPrHead).toBeNull()
+    expect(noMaps.prLandedInDefault).toBeNull()
   })
 })
