@@ -1,0 +1,28 @@
+[
+  {
+    "question": "What does the health endpoint return?",
+    "query": "health endpoint",
+    "expect": ["e-0a1b2c3d"]
+  },
+  { "question": "Why is the app header sticky?", "query": "sticky", "expect": ["e-4e5f6a7b"] },
+  {
+    "question": "Which cache layer was kept after the spike?",
+    "query": "cache layer",
+    "expect": ["sessions/2026-10-04-eeee5555"]
+  },
+  {
+    "question": "Why does the demo server use no framework?",
+    "query": "framework",
+    "expect": ["decisions"]
+  },
+  {
+    "question": "When was the first route sketched?",
+    "query": "first route",
+    "expect": ["archive/2026-09-weekly"]
+  },
+  {
+    "question": "Which database migration tool was chosen?",
+    "query": "migration tool",
+    "expect": ["decisions"]
+  }
+]
