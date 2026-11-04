@@ -37,7 +37,10 @@ OUT="$HERE/results/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$OUT"
 
 # The gate the hook runs is the product rule, bundled fresh, so the eval can never test a stale copy.
-"$REPO/node_modules/.bin/esbuild" "$HERE/hooks/gate-entry.ts" --bundle --platform=node \
+# esbuild comes in through electron-vite, not as a direct dependency, so check for it by name.
+ESBUILD="$REPO/node_modules/.bin/esbuild"
+[[ -x "$ESBUILD" ]] || { echo "esbuild not found at $ESBUILD; run npm install" >&2; exit 2; }
+"$ESBUILD" "$HERE/hooks/gate-entry.ts" --bundle --platform=node \
   --format=esm --target=node20 --log-level=warning --outfile="$HERE/hooks/gate.mjs"
 
 # Hooks run under /bin/sh with a minimal PATH, where a version-manager node (nvm, fnm, asdf) is

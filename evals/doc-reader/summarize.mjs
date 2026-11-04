@@ -6,9 +6,11 @@
 // doc-reader) only exists in each run's trace, on the final `result` line's `modelUsage`. This
 // reads every trace, writes usage.json, and writes summary.md: per case and per arm, the mean
 // score, cost, main-model tokens and Haiku tokens, with the deltas next to the quality change.
+// It also counts, per run, the main model's Agent calls and the reads the gate refused, so the
+// routing behind the numbers can be reproduced from the traces.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 const [evalPath, outDir, model, runs, minLines] = process.argv.slice(2)
 const variantFile = join(outDir, 'variant.txt')
@@ -21,19 +23,37 @@ const withArm =
     : 'loads the read gate and the Haiku doc-reader'
 const result = JSON.parse(readFileSync(evalPath, 'utf8'))
 
-/** Last `result` line's modelUsage in a trace, or null. */
-function traceUsage(tracePath) {
+/** The gate's refusal, as the main model sees it in a tool_result (see gate-core.ts `deny`). */
+const GATE_DENIAL = /^PreToolUse:\w+ hook error: .* lines of documentation \(threshold \d+\)/s
+
+/**
+ * One trace's last `result` modelUsage, plus the main model's Agent calls and gate refusals.
+ * Only events with `parent_tool_use_id: null` are the main model's; the rest are a subagent's.
+ * `null` when the trace is missing.
+ */
+function readTrace(tracePath) {
   if (!tracePath || !existsSync(tracePath)) return null
-  const lines = readFileSync(tracePath, 'utf8').split('\n').filter(Boolean)
-  for (let i = lines.length - 1; i >= 0; i--) {
+  let modelUsage = null
+  let agentCalls = 0
+  let gateBlocks = 0
+  for (const line of readFileSync(tracePath, 'utf8').split('\n')) {
+    let ev
     try {
-      const ev = JSON.parse(lines[i])
-      if (ev.type === 'result' && ev.modelUsage) return ev.modelUsage
+      ev = JSON.parse(line)
     } catch {
-      /* not JSON */
+      continue // blank or not JSON
+    }
+    if (ev.type === 'result' && ev.modelUsage) modelUsage = ev.modelUsage
+    if (ev.parent_tool_use_id != null || !Array.isArray(ev.message?.content)) continue
+    for (const part of ev.message.content) {
+      if (ev.type === 'assistant' && part.type === 'tool_use' && part.name === 'Agent') agentCalls++
+      if (ev.type === 'user' && part.type === 'tool_result' && part.is_error) {
+        const text = typeof part.content === 'string' ? part.content : JSON.stringify(part.content)
+        if (GATE_DENIAL.test(text)) gateBlocks++
+      }
     }
   }
-  return null
+  return { modelUsage, agentCalls, gateBlocks }
 }
 
 const isHaiku = (id) => /haiku/i.test(id)
@@ -45,7 +65,11 @@ const usage = []
 for (const c of result.cases ?? []) {
   for (const [arm, armRuns] of Object.entries(c.arms ?? {})) {
     armRuns.forEach((run, i) => {
-      const mu = traceUsage(run.tracePath)
+      // run.sh copies each trace to <outDir>/traces/ and deletes the sandbox, so a re-run of this
+      // script on a saved result reads the copy.
+      const kept = join(outDir, 'traces', `${c.name}-${arm}-${i}.jsonl`)
+      const trace = readTrace(existsSync(run.tracePath ?? '') ? run.tracePath : kept)
+      const mu = trace?.modelUsage ?? null
       const split = { main: { in: 0, out: 0, usd: 0 }, haiku: { in: 0, out: 0, usd: 0 } }
       for (const [id, u] of Object.entries(mu ?? {})) {
         // With a non-Haiku main model, every Haiku token is the doc-reader's (or a judge's; judges
@@ -65,6 +89,8 @@ for (const c of result.cases ?? []) {
         durationSeconds: run.durationSeconds ?? null,
         error: run.error ?? null,
         traced: mu !== null,
+        agentCalls: trace?.agentCalls ?? null,
+        gateBlocks: trace?.gateBlocks ?? null,
         ...split
       })
     })
@@ -78,10 +104,16 @@ const sd = (xs) => {
   const m = mean(xs)
   return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / (xs.length - 1))
 }
+/** Total over the runs that were traced, or NaN when none was. */
+const sumOf = (rows, f) => {
+  const xs = pick(rows, f)
+  return xs.length ? xs.reduce((a, b) => a + b, 0) : NaN
+}
 const pick = (rows, f) => rows.map(f).filter((x) => typeof x === 'number' && Number.isFinite(x))
 const fmtK = (n) => (Number.isFinite(n) ? `${(n / 1000).toFixed(1)}k` : '–')
 const fmt$ = (n) => (Number.isFinite(n) ? `$${n.toFixed(3)}` : '–')
 const fmtP = (n) => (Number.isFinite(n) ? `${n >= 0 ? '+' : ''}${(n * 100).toFixed(0)}%` : '–')
+const fmtN = (n) => (Number.isFinite(n) ? String(n) : '–')
 const fmtS = (n) => (Number.isFinite(n) ? n.toFixed(2) : '–')
 
 function armStats(rows) {
@@ -93,13 +125,18 @@ function armStats(rows) {
     mainIn: mean(pick(rows, (r) => r.main.in)),
     haikuIn: mean(pick(rows, (r) => r.haiku.in)),
     secs: mean(pick(rows, (r) => r.durationSeconds)),
-    turns: mean(pick(rows, (r) => r.turns))
+    turns: mean(pick(rows, (r) => r.turns)),
+    agentCalls: sumOf(rows, (r) => r.agentCalls),
+    gateBlocks: sumOf(rows, (r) => r.gateBlocks)
   }
 }
 
 const caseNames = [...new Set(usage.map((u) => u.case))]
 const lines = []
-lines.push(`# doc-reader A/B (${variant}): ${new Date().toISOString().slice(0, 10)}`)
+// The run's date, from run.sh's timestamped output dir, so a re-summary keeps it.
+const runDate =
+  /^\d{4}-\d{2}-\d{2}/.exec(basename(outDir))?.[0] ?? new Date().toISOString().slice(0, 10)
+lines.push(`# doc-reader A/B (${variant}): ${runDate}`)
 lines.push('')
 lines.push(
   `Main model \`${model}\`, ${runs} run(s) per case per arm, gate threshold ${minLines} lines. ` +
@@ -108,9 +145,9 @@ lines.push(
 )
 lines.push('')
 lines.push(
-  '| case | score without → with | cost without → with (Δ) | main-in without → with (Δ) | haiku-in (with) | secs without → with |'
+  '| case | score without → with | cost without → with (Δ) | main-in without → with (Δ) | haiku-in (with) | gate blocks / agent calls (with, all runs) | secs without → with |'
 )
-lines.push('|---|---|---|---|---|---|')
+lines.push('|---|---|---|---|---|---|---|')
 const totals = { without: [], with: [] }
 for (const name of caseNames) {
   const w0 = armStats(usage.filter((u) => u.case === name && u.arm === 'without'))
@@ -119,7 +156,7 @@ for (const name of caseNames) {
   totals.with.push(w1)
   lines.push(
     `| ${name} | ${fmtS(w0.score)} → ${fmtS(w1.score)} | ${fmt$(w0.cost)} → ${fmt$(w1.cost)} (${fmtP(w1.cost / w0.cost - 1)}) | ` +
-      `${fmtK(w0.mainIn)} → ${fmtK(w1.mainIn)} (${fmtP(w1.mainIn / w0.mainIn - 1)}) | ${fmtK(w1.haikuIn)} | ${w0.secs.toFixed(0)} → ${w1.secs.toFixed(0)} |`
+      `${fmtK(w0.mainIn)} → ${fmtK(w1.mainIn)} (${fmtP(w1.mainIn / w0.mainIn - 1)}) | ${fmtK(w1.haikuIn)} | ${fmtN(w1.gateBlocks)} / ${fmtN(w1.agentCalls)} | ${w0.secs.toFixed(0)} → ${w1.secs.toFixed(0)} |`
   )
 }
 const sum = (arr, k) => arr.reduce((a, s) => a + (Number.isFinite(s[k]) ? s[k] : 0), 0)
@@ -129,11 +166,15 @@ const m0 = sum(totals.without, 'mainIn')
 const m1 = sum(totals.with, 'mainIn')
 lines.push(
   `| **all cases (sum of means)** | ${fmtS(mean(totals.without.map((s) => s.score)))} → ${fmtS(mean(totals.with.map((s) => s.score)))} | ` +
-    `${fmt$(c0)} → ${fmt$(c1)} (${fmtP(c1 / c0 - 1)}) | ${fmtK(m0)} → ${fmtK(m1)} (${fmtP(m1 / m0 - 1)}) | ${fmtK(sum(totals.with, 'haikuIn'))} | |`
+    `${fmt$(c0)} → ${fmt$(c1)} (${fmtP(c1 / c0 - 1)}) | ${fmtK(m0)} → ${fmtK(m1)} (${fmtP(m1 / m0 - 1)}) | ${fmtK(sum(totals.with, 'haikuIn'))} | ${sum(totals.with, 'gateBlocks')} / ${sum(totals.with, 'agentCalls')} | |`
 )
 lines.push('')
 const untraced = usage.filter((u) => !u.traced).length
 const errored = usage.filter((u) => u.error).length
+lines.push(
+  'Score counts only the answer graders. A `tool_used` grader marked `arm: with-only` is reported in eval.json with `scored: false` and never lowers the score; routing shows in the gate blocks / agent calls column.'
+)
+lines.push('')
 lines.push(
   `Runs: ${usage.length}. Without a trace (no per-model split): ${untraced}. Errored: ${errored}.`
 )
