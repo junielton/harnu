@@ -32,7 +32,10 @@ import {
 
 const USAGE = `usage: memory-bench [--repo <path>] [--home <dir>] [--memory <dir>] [--kind git|non-git]
                     [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--questions <file>]
-                    [--boot <dir>] [--path-map <from>=<to>]... [--json]`
+                    [--boot <dir>] [--path-map <from>=<to>]... [--json]
+
+Without --questions the recall metrics print 0 with recall_questions: 0.
+Without --boot the boot metrics print 0 with boot_handoff_measured: 0.`
 
 class ArgError extends Error {}
 

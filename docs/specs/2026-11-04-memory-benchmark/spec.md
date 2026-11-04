@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 tier: large
 ---
 
@@ -299,12 +299,19 @@ A chapter **passes** when at least one metric in this table improves and none re
 
 ## Open decisions
 
-| id  | question                                                                                                                     | options                                                                                                               | default                                                      | status |
-| --- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------ |
-| D-1 | `memory_query` is one substring, so a natural-language question never matches. Which form is the headline `recall_hit_at_5`? | (a) the `query` form (a span of the question), with strict and verbatim reported beside it; (b) the verbatim question | (a), because it is what an agent actually passes             | open   |
-| D-2 | Probe model of the live eval                                                                                                 | (a) `haiku`; (b) `sonnet`                                                                                             | (a): cheapest, and the weakest reader shows memory gaps best | open   |
-| D-3 | Length of the A/B flow windows                                                                                               | (a) 14 days, readable early at 3 days with ≥ 20 sessions; (b) 7 days                                                  | (a)                                                          | open   |
-| D-4 | `hot_freshness_hours` when sessions exist but `hot.md` does not                                                              | (a) the sentinel −1; (b) the lag from the first session                                                               | (a): visibly not a measurement                               | open   |
+| id  | question                                                                                                                     | options                                                                                                               | default                                                      | status  |
+| --- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------- |
+| D-1 | `memory_query` is one substring, so a natural-language question never matches. Which form is the headline `recall_hit_at_5`? | (a) the `query` form (a span of the question), with strict and verbatim reported beside it; (b) the verbatim question | (a), because it is what an agent actually passes             | decided |
+| D-2 | Probe model of the live eval                                                                                                 | (a) `haiku`; (b) `sonnet`                                                                                             | (a): cheapest, and the weakest reader shows memory gaps best | decided |
+| D-3 | Length of the A/B flow windows                                                                                               | (a) 14 days, readable early at 3 days with ≥ 20 sessions; (b) 7 days                                                  | (a)                                                          | decided |
+| D-4 | `hot_freshness_hours` when sessions exist but `hot.md` does not                                                              | (a) the sentinel −1; (b) the lag from the first session                                                               | (a): visibly not a measurement                               | decided |
+
+Decided by the operator on 2026-11-04 (every default accepted):
+
+- D-1 · Which form is the headline `recall_hit_at_5`? · chosen: (a) the `query` form (a span of the question), with strict and verbatim reported beside it · 2026-11-04
+- D-2 · Probe model of the live eval · chosen: (a) `haiku` · 2026-11-04
+- D-3 · Length of the A/B flow windows · chosen: (a) 14 days, readable early at 3 days with ≥ 20 sessions · 2026-11-04
+- D-4 · `hot_freshness_hours` when sessions exist but `hot.md` does not · chosen: (a) the sentinel −1 · 2026-11-04
 
 ## Amendments · Deviations
 

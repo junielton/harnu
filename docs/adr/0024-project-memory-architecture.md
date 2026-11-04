@@ -1,6 +1,6 @@
 # ADR-0024: Project memory architecture: markdown is the truth, capture is involuntary, consolidation is a worker
 
-**Status:** Proposed (the open decisions D-1 to D-4 in the PRD are the operator's; this ADR records the shape the campaign builds to, with their defaults)
+**Status:** Accepted (2026-11-04, operator; PRD decisions D-1 to D-4 decided with their defaults)
 **Date:** 2026-11-04
 **Author:** agent (T618 campaign, chapter 1)
 **Technical context:** [`docs/prds/T618-project-memory-upgrade.md`](../prds/T618-project-memory-upgrade.md), [`docs/studies/2026-11-04-memory-audit.md`](../studies/2026-11-04-memory-audit.md), ADR-0008 (the handoff is derived boot state), `src/main/memory-digest.ts`, `src/main/mcp/digest-core.ts`, `src/main/mcp/memory-store.ts`, `src/main/hook-installer.ts`, `src/main/hook-bridge.ts`
@@ -27,13 +27,13 @@ Pages are files a person can read, diff, commit and open in Obsidian. A wiki-lin
 The seam is the one that exists: `hook-installer.ts` installs handlers that POST `http://127.0.0.1:<port>/hook/<token>/<event>/<tag>`, and `hook-bridge.ts` folds them. The campaign widens what that seam captures (add `PreCompact`; stop gating the digest on a commit) and changes nothing about its shape. The digest is made by Harnu from `{session_id, transcript_path, event}`. Consequence for other CLIs: a Codex or Copilot adapter (T545) only adds a hook installer that posts the same payload; it never gets its own memory pipeline.
 
 **(c) Consolidation is a Harnu-owned Scheduler worker that proposes writes, with supersede-never-delete and an audit trail. It is never a step on the hook's latency path.**
-The worker runs per repo on a cadence, one session per tick, idle-aware and cancellable. It reads digests and transcript segments past a watermark and proposes typed pages (`decision`, `gotcha`, `rule`, `concept`) that supersede older entries by id; nothing is hard-deleted. Every proposal is recorded in an audit trail. Whether proposals apply at once or wait in the Approval Inbox is open decision D-2, default **auto-apply with a shadow log and a per-repo switch for approval**, which is the choice BUG-26 already made for `hot.md`. Model and effort come from the repo's routing table; default Haiku (D-1). The hook path stays a fast POST and a cheap deterministic digest; model calls happen only in the worker.
+The worker runs per repo on a cadence, one session per tick, idle-aware and cancellable. It reads digests and transcript segments past a watermark and proposes typed pages (`decision`, `gotcha`, `rule`, `concept`) that supersede older entries by id; nothing is hard-deleted. Every proposal is recorded in an audit trail. Decided by the operator (D-2): proposals **auto-apply with a shadow log, and a per-repo switch turns on approval**, which is the choice BUG-26 already made for `hot.md`. Model and effort come from the repo's routing table; default Haiku (D-1, decided). **The worker ships disabled: it is off until the operator turns it on per repo**, and turning it on discloses that transcript excerpts are sent to the model provider. The hook path stays a fast POST and a cheap deterministic digest; model calls happen only in the worker.
 
-**(d) Two layers: repo memory, and a global `~/.harnu/memory/` layer that holds only promoted cross-cutting pages.**
-Repo memory is the record of one project and stays in the repo. The global layer holds typed `rule` and `gotcha` pages that a worker proposed to promote and the operator accepted; it never holds project facts, cards, digests or decisions (D-3, default `rule`/`gotcha` only). Every repo's boot handoff may read the global layer; no repo can write to another repo's memory.
+**(d) Two layers: repo memory, and a global `~/.harnu/global/` layer that holds only promoted cross-cutting pages.**
+Repo memory is the record of one project and stays in the repo. The global layer holds typed `rule` and `gotcha` pages that a worker proposed to promote and the operator accepted; it never holds project facts, cards, digests or decisions (D-3, decided: `rule`/`gotcha` only). The root is `~/.harnu/global/`, not `~/.harnu/memory/`, because `~/.harnu/memory/` is already the repo memory of the home folder itself when the home folder is a Harnu folder. Every repo's boot handoff may read the global layer; no repo can write to another repo's memory.
 
 **(e) The benchmark is the acceptance instrument for every later chapter.**
-PRD §4 defines seven metrics with formulas and data sources. The next unit implements them and records a baseline on this repo before any behaviour changes. A chapter is accepted when it moves the metric it targets and regresses none, measured through the real transports (the MCP verb, the hook bridge), not by calling internals. A chapter spec that cannot name the metric it moves is not ready.
+PRD §4 defines seven metrics with formulas and data sources. The next unit implements them and records a baseline on this repo before any behaviour changes. A chapter is accepted when it moves the metric it targets and regresses none, measured through the real transports (the MCP verb, the hook bridge), not by calling internals. A chapter spec that cannot name the metric it moves is not ready. The operator accepted one exception, for chapter 2 only: `memory_read` and index bytes may grow temporarily, and chapter 3 caps them (spec U1, D-7).
 
 ## 3. Consequences
 
@@ -51,6 +51,7 @@ PRD §4 defines seven metrics with formulas and data sources. The next unit impl
 - Auto-apply means a wrong page can be read before anyone reviews it. Mitigation: supersede chain, shadow log, the per-repo approval switch, and authority tiers that rank maintained pages above episodic ones without hiding either.
 - Involuntary capture records more, including sessions the operator considers throwaway. The three-user-turn threshold and the weekly rollup bound it; a per-folder opt-out is a likely follow-up and not in this campaign.
 - The global layer is a new place a lesson can be wrong for a repo it was not learned in. Promotion is explicit and limited to typed `rule`/`gotcha` pages for this reason.
+- The worker ships disabled, so until an operator turns it on in a repo that repo gets capture and the handoff but no consolidated pages; the weekly rollup and the global-layer proposals wait on it too.
 - A derived index must be kept in step with the files; a stale index returns a worse answer, not a wrong fact, and the benchmark (M3) is the guard.
 
 ## 4. Alternatives considered
