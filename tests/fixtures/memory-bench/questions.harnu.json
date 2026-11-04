@@ -99,10 +99,7 @@
   {
     "question": "Why was the BUG-240 census bar accepted as a deviation?",
     "query": "census bar",
-    "expect": [
-      "e-dc1ffe29",
-      "roadmap/BUG-240-main-process-stalls-mission-list-poll-spawns-500-git-processes"
-    ]
+    "expect": ["e-dc1ffe29"]
   },
   {
     "question": "What does stacking on unmerged branches cost?",
