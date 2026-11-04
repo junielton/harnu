@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { appendFileSync, promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   __testables,
@@ -273,6 +273,17 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     }
   }
 
+  // `fs.writeFile` creates the file and writes it in separate steps, and the watcher shares this process's
+  // threadpool, so under load its first read can land between the two and see an EMPTY file. An empty first
+  // read cannot be classified, and by design the `add` handler then announces the transcript (see "A read
+  // that can't classify yet" in claude-watcher.ts). Tests whose premise is "the stamped first line is in the
+  // first read" therefore publish the file whole: write a dotfile (ignored by the watcher), then rename it in.
+  async function writeWhole(file: string, text: string): Promise<void> {
+    const tmp = join(dirname(file), `.${basename(file)}.tmp`)
+    await fs.writeFile(tmp, text, 'utf8')
+    await fs.rename(tmp, file)
+  }
+
   // chokidar learns about a directory created after `ready` in two steps: it emits `addDir` and scans the
   // directory, and only AFTER that scan does it attach the directory's own watcher. A file created in that
   // gap is never reported and nothing triggers a rescan, so a test that writes into a fresh slug dir and then
@@ -432,14 +443,13 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     await waitFor(() => ready)
 
     // A `/usage` poll, written the way Claude Code writes one.
-    await fs.writeFile(
+    await writeWhole(
       join(slugDir, 'probe-1.jsonl'),
       [
         JSON.stringify({ type: 'queue-operation', sessionId: 'probe-1' }),
         JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli', cwd: '/home/u' }),
         JSON.stringify({ type: 'user', message: { role: 'user', content: '/usage' } })
-      ].join('\n') + '\n',
-      'utf8'
+      ].join('\n') + '\n'
     )
     // A real interactive session in the same slug, written right after.
     await fs.writeFile(
@@ -491,11 +501,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     await waitFor(() => ready)
 
     const probe = join(slugDir, 'probe-2.jsonl')
-    await fs.writeFile(
-      probe,
-      JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli' }) + '\n',
-      'utf8'
-    )
+    await writeWhole(probe, JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli' }) + '\n')
     await new Promise((r) => setTimeout(r, 250))
     await fs.appendFile(
       probe,
@@ -623,8 +629,12 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     // append below is guaranteed to queue a `change` behind it on the path chain.
     let release: () => void = () => {}
     let gated = false
+    // Bytes the `add`'s first read consumed. `undefined` means that read saw an EMPTY file (the writer had
+    // created it but not yet written), so the transcript could not be classified and was announced.
+    let firstReadBytes: number | undefined
     __testables.setClassifyGateForTests(async (gatePath) => {
       if (gatePath !== p) return
+      firstReadBytes = __testables.lastTailBytesForTests(p)
       gated = true
       await new Promise<void>((r) => {
         release = r
@@ -642,7 +652,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
         onSlugChanged: (s) => slugs.push(s)
       })
       await waitFor(() => ready)
-      await fs.writeFile(p, JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli' }) + '\n')
+      await writeWhole(p, JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli' }) + '\n')
       await waitFor(() => gated)
       await fs.appendFile(
         p,
@@ -651,13 +661,15 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
       await new Promise((r) => setTimeout(r, 300)) // chokidar emits the change meanwhile
       release()
       await new Promise((r) => setTimeout(r, 800))
+      // Compare the offending events themselves, so a red run says what was announced and not just "true".
       expect(
-        events.some(
+        events.filter(
           (e) =>
             (e.channel === 'claude:session:added' || e.channel === 'claude:session:updated') &&
             (e.payload as { sessionId?: string }).sessionId === 'probe-race'
-        )
-      ).toBe(false)
+        ),
+        `the first read of the add consumed ${firstReadBytes} bytes`
+      ).toEqual([])
       expect(slugs).not.toContain('race-slug')
     } finally {
       release()
