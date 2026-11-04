@@ -118,12 +118,26 @@ describe('decideDocRead — Bash', () => {
       expect(decideDocRead(bash(c), opts).action).toBe('allow')
   })
 
-  it('allows pipes, redirects, chains and substitutions', () => {
+  it('denies a whole-file read that starts a chain, since the doc still reaches the output', () => {
     for (const c of [
-      'cat docs/big.md | grep foo',
-      'cat docs/big.md > /tmp/x',
       'cat docs/big.md && echo done',
+      'cat docs/big.md; echo done',
+      'cat docs/big.md || true',
+      'cat docs/big.md & wait',
+      'cat docs/big.md\necho done'
+    ])
+      expect(decideDocRead(bash(c), opts).action).toBe('deny')
+  })
+
+  it('allows pipes, redirects, substitutions and several operands', () => {
+    for (const c of [
+      'cat docs/big.md | grep foo', // filtered: only the matches reach the output
+      'cat docs/big.md > /tmp/x', // written to a file, nothing reaches the output
+      'cat docs/big.md &> /tmp/x',
+      'cat docs/big.md 2>/dev/null', // the stray `2` operand fails open
+      'cat < docs/big.md',
       'cat $(ls docs/big.md)',
+      'echo start && cat docs/big.md', // only the first segment is judged
       'cat docs/big.md docs/small.md'
     ])
       expect(decideDocRead(bash(c), opts).action).toBe('allow')
@@ -141,6 +155,8 @@ describe('wholeFileReadTarget', () => {
     expect(wholeFileReadTarget('  bat -p "a b.md"  ')).toBeNull() // a space inside quotes is not parsed
     expect(wholeFileReadTarget('echo a.md')).toBeNull()
     expect(wholeFileReadTarget('')).toBeNull()
+    expect(wholeFileReadTarget('cat a.md && echo ok')).toBe('a.md')
+    expect(wholeFileReadTarget('cat a.md | wc -l')).toBeNull()
   })
 })
 

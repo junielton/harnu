@@ -18,8 +18,14 @@
  *   before an edit.
  * - **A file that is not documentation, or that is small.** Below the threshold the cost of
  *   delegating is higher than the saving.
+ * - **A Bash read whose output is filtered or redirected.** `cat big.md | grep x` and
+ *   `cat big.md > out` do not put the doc in the model's context.
  * - **Anything it cannot judge.** It fails open: a missing file, an unreadable file, a command it
  *   does not parse.
+ *
+ * The gate is cooperative, not a sandbox: a `Read` with any `offset`/`limit` passes whatever the
+ * span. The study (`docs/studies/T1-doc-reader-spike.md`, Limits) proposes a span cap for the
+ * shipped version.
  */
 
 import * as path from 'node:path'
@@ -77,15 +83,26 @@ export function isDocPath(p: string): boolean {
 const WHOLE_FILE_COMMANDS = new Set(['cat', 'less', 'more', 'bat'])
 
 /**
+ * The first shell operator in a command: a chain (`&&`, `||`, `;`, `&`, newline), a pipe, or a
+ * redirect (`&>`, `>`, `<`). Two-character operators come first so `&&` is not read as `&`.
+ */
+const FIRST_OPERATOR = /&&|\|\||&>|[|;&<>\n]/
+
+/**
  * The single file a Bash command reads whole, or `null` when the command is anything else.
- * Deliberately narrow: one command, no pipe, redirect, chain or substitution, and one file
- * operand. Anything more complex fails open.
+ *
+ * Only the first segment, before any operator, is judged. A chain (`cat big.md && echo ok`)
+ * still prints the whole file, so it counts. A pipe filters what reaches the output and a
+ * redirect sends it to a file, so neither counts. Substitutions and several file operands
+ * fail open.
  */
 export function wholeFileReadTarget(command: string): string | null {
   const cmd = command.trim()
-  if (cmd === '' || /[|;&<>`$(){}\n]/.test(cmd)) return null
-  const words = cmd.split(/\s+/)
-  const [name, ...args] = words
+  const op = FIRST_OPERATOR.exec(cmd)
+  if (op !== null && ['|', '&>', '>', '<'].includes(op[0])) return null
+  const head = (op === null ? cmd : cmd.slice(0, op.index)).trim()
+  if (head === '' || /[`$(){}]/.test(head)) return null
+  const [name, ...args] = head.split(/\s+/)
   if (!WHOLE_FILE_COMMANDS.has(name)) return null
   const operands = args.filter((a) => !a.startsWith('-'))
   if (operands.length !== 1) return null
