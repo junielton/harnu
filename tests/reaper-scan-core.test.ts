@@ -3,6 +3,7 @@ import {
   parseForEachRef,
   parseGhPrList,
   parseLsRemoteHeads,
+  prLandedInDefault,
   buildRepoItems,
   isPatchIdContained,
   parsePatchId,
@@ -1117,5 +1118,81 @@ describe('buildRepoItems — BUG-93 wiring', () => {
     })
     const item = findItem(buildRepoItems(input), 'feat/squashed')!
     expect(item.justifiedBy).toBe('squash-equivalent')
+  })
+})
+
+describe('prLandedInDefault (U1)', () => {
+  const base = (o: Partial<PrFacts> = {}): PrFacts => ({
+    number: 97,
+    state: 'MERGED',
+    reviewDecision: null,
+    ci: 'unknown',
+    mergedAt: 'x',
+    headRefOid: 'basehead',
+    baseRefName: 'main',
+    mergeCommitOid: 'm97',
+    ...o
+  })
+  const child = (o: Partial<PrFacts> = {}): PrFacts =>
+    base({
+      number: 84,
+      headRefOid: 'h84',
+      baseRefName: 'feat/agent-terminals',
+      mergeCommitOid: 'm84',
+      ...o
+    })
+
+  it('true when the PR merged straight into the default branch', () =>
+    expect(prLandedInDefault(child({ baseRefName: 'main' }), null, 'main', null)).toBe(true))
+
+  it('true when merged into a stacked base whose PR merged into default and contains the merge commit', () =>
+    expect(prLandedInDefault(child(), base(), 'main', true)).toBe(true))
+
+  it('false when the base PR is OPEN or CLOSED', () => {
+    expect(prLandedInDefault(child(), base({ state: 'OPEN' }), 'main', true)).toBe(false)
+    expect(prLandedInDefault(child(), base({ state: 'CLOSED' }), 'main', true)).toBe(false)
+  })
+
+  it('false when the base head does not contain the merge commit', () =>
+    expect(prLandedInDefault(child(), base(), 'main', false)).toBe(false))
+
+  it('null for an unknown base PR, a two-hop base, unknown containment, or a non-MERGED PR', () => {
+    expect(prLandedInDefault(child(), null, 'main', true)).toBeNull()
+    expect(prLandedInDefault(child(), base({ baseRefName: 'feat/other' }), 'main', true)).toBeNull()
+    expect(prLandedInDefault(child(), base(), 'main', null)).toBeNull()
+    expect(prLandedInDefault(child({ state: 'OPEN' }), base(), 'main', true)).toBeNull()
+  })
+
+  it('null when the PR carries no base ref (an entry cached before U1)', () =>
+    expect(prLandedInDefault(child({ baseRefName: null }), base(), 'main', true)).toBeNull())
+})
+
+describe('parseGhPrList base and merge commit (U1)', () => {
+  it('parses baseRefName and mergeCommit.oid, null when absent (old cache entries)', () => {
+    const out = parseGhPrList(
+      JSON.stringify([
+        {
+          headRefName: 'feat/new',
+          number: 1,
+          state: 'MERGED',
+          baseRefName: 'main',
+          mergeCommit: { oid: 'abc' }
+        },
+        { headRefName: 'feat/old', number: 2, state: 'MERGED' }
+      ])
+    )
+    expect(out.get('feat/new')).toMatchObject({ baseRefName: 'main', mergeCommitOid: 'abc' })
+    expect(out.get('feat/old')).toMatchObject({ baseRefName: null, mergeCommitOid: null })
+  })
+
+  it('treats a null or empty mergeCommit as absent', () => {
+    const out = parseGhPrList(
+      JSON.stringify([
+        { headRefName: 'a', number: 1, state: 'OPEN', mergeCommit: null, baseRefName: '' },
+        { headRefName: 'b', number: 2, state: 'OPEN', mergeCommit: { oid: '' } }
+      ])
+    )
+    expect(out.get('a')).toMatchObject({ baseRefName: null, mergeCommitOid: null })
+    expect(out.get('b')).toMatchObject({ mergeCommitOid: null })
   })
 })
