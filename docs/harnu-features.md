@@ -1,4 +1,4 @@
-<!-- harnu-features v130 (2026-11-07) -->
+<!-- harnu-features v131 (2026-11-08) -->
 
 # You are running inside Harnu
 
@@ -1229,6 +1229,16 @@ works in any repo: one finding per line, and you fix the spec, never flip `statu
 a finding stands. It never dispatches, creates cards or merges: `harnu:orchestrate-delivery` adopts the
 spec-born mission (no second `mission_create`), derives the cards with the planner staged beside
 the checker, and turns each open `D-n` into a decision node that locks only the slices it gates.
+
+**`doc-reader` — a bundled feature, not a skill.** When the operator switches it on in
+Settings → Skills, a whole `Read` or `cat` of a doc (`.md`, `.mdx`, `.txt`, `.rst`, `.adoc`,
+`.markdown`) longer than the folder's threshold (350 lines by default) is DENIED, and the reason
+tells you what to do: ask the `harnu:doc-reader` agent (Haiku) your question with the file path —
+only its answer enters your context. To quote or edit exact text, `Read` that section with a
+`limit` of at most the threshold; `offset` alone or a bigger `limit` counts as a whole read. Your
+subagents' reads always pass, and so do pipes and redirects (`cat big.md | grep x`). The gate runs
+in Harnu's Hook Bridge, so with Harnu down every read goes ahead. Never staged into an `observe`
+tick or a steward. If the user keeps pasting large specs into context, offer it.
 
 **Nothing is on by default**; an off skill is never staged. If the user wants what one does
 ("orchestrate this delivery", "verify the ACs", "run a coordination tick") and you see no
