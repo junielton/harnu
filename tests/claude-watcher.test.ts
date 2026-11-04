@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { promises as fs } from 'node:fs'
+import { appendFileSync, promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -670,8 +670,17 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     await fs.writeFile(p, JSON.stringify({ n: 1 }) + '\n', 'utf8')
     await waitFor(() => events.some((e) => e.channel === 'claude:session:added'))
     expect(calls).toContainEqual(['cadence-slug', 'membership'])
-    await fs.appendFile(p, JSON.stringify({ n: 2 }) + '\n', 'utf8')
-    await waitFor(() => calls.some(([, cls]) => cls === 'append'))
+    // Root cause of the AC-17 flake: chokidar DROPS (does not coalesce) any `change` that lands within
+    // 50ms of the previous `change` it emitted for the same path (`_emit` throttle). The first write's own
+    // `change` is delivered right behind the `add` — under load, within a millisecond or two of the line
+    // we append here — so a single append can vanish with no later event to carry it. A real session never
+    // depends on one append: it keeps writing. Model that: append once per poll until the watcher reports
+    // one, instead of betting the whole test on a single write surviving the drop window.
+    let n = 1
+    await waitFor(() => {
+      appendFileSync(p, JSON.stringify({ n: ++n }) + '\n', 'utf8')
+      return calls.some(([, cls]) => cls === 'append')
+    })
     expect(calls.filter(([, cls]) => cls === 'append').every(([s]) => s === 'cadence-slug')).toBe(
       true
     )
