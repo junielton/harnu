@@ -4,7 +4,11 @@
     "query": "health endpoint",
     "expect": ["e-0a1b2c3d"]
   },
-  { "question": "Why is the app header sticky?", "query": "sticky", "expect": ["e-4e5f6a7b"] },
+  {
+    "question": "Why is the app header sticky?",
+    "query": "sticky",
+    "expect": ["e-4e5f6a7b"]
+  },
   {
     "question": "Which cache layer was kept after the spike?",
     "query": "cache layer",
@@ -13,7 +17,7 @@
   {
     "question": "Why does the demo server use no framework?",
     "query": "framework",
-    "expect": ["decisions"]
+    "expect": ["decisions#plain HTTP handlers"]
   },
   {
     "question": "When was the first route sketched?",
@@ -24,5 +28,10 @@
     "question": "Which database migration tool was chosen?",
     "query": "migration tool",
     "expect": ["decisions"]
+  },
+  {
+    "question": "Which screens of the demo get the sticky header?",
+    "query": "demo",
+    "expect": ["decisions#sticky on every screen"]
   }
 ]

@@ -3,23 +3,23 @@
     "question": "Why does the WIP ceiling count only live work?",
     "query": "WIP ceiling",
     "expect": [
-      "decisions",
+      "decisions#BUG-197: the WIP ceiling counts live work only",
       "roadmap/BUG-197-wip-ceiling-counts-dead-in-progress-cards-stale-cards-silently"
     ]
   },
   {
     "question": "Why do Scheduler observe ticks get no shell?",
-    "query": "no shell",
+    "query": "observe ticks",
     "expect": [
-      "decisions",
+      "decisions#ticks get no shell",
       "roadmap/BUG-164-scheduler-observe-allowlist-lets-git-output-write-files-rce-via"
     ]
   },
   {
     "question": "Can an observe worker use WebFetch?",
-    "query": "allowNetwork",
+    "query": "WebFetch",
     "expect": [
-      "decisions",
+      "decisions#is opt-in per worker",
       "roadmap/BUG-166-scheduler-observe-webfetch-off-by-default-opt-in-per-worker"
     ]
   },
@@ -27,38 +27,38 @@
     "question": "Why do observe ticks refuse skills that declare hooks?",
     "query": "declare hooks",
     "expect": [
-      "decisions",
+      "decisions#refuse skills that declare hooks",
       "roadmap/BUG-169-scheduler-observe-skill-frontmatter-hooks-run-shell-commands"
     ]
   },
   {
     "question": "What is the public product name and what did it replace?",
-    "query": "Public name",
-    "expect": ["decisions"]
+    "query": "product name",
+    "expect": ["decisions#Public name: Harnu (replaces Pagurid)"]
   },
   {
     "question": "Why was the Pagurid name put on hold?",
     "query": "Pagurid",
-    "expect": ["decisions"]
+    "expect": ["decisions#Pagurid naming decision put on hold"]
   },
   {
     "question": "Why are orphan Docker volumes never removed automatically?",
-    "query": "orphan volumes",
-    "expect": ["decisions"]
+    "query": "orphan Docker volumes",
+    "expect": ["decisions#orphan volumes are never auto-removed"]
   },
   {
     "question": "What is the operator's product principle for Cleanup?",
-    "query": "no dead ends",
-    "expect": ["decisions"]
+    "query": "product principle",
+    "expect": ["decisions#Cleanup: no dead ends"]
   },
   {
     "question": "Which kind does the Workspace GC opinion run as?",
-    "query": "Ask for an opinion",
-    "expect": ["decisions"]
+    "query": "Workspace GC opinion",
+    "expect": ["decisions#Ask for an opinion"]
   },
   {
     "question": "How were the canvas test flakes fixed?",
-    "query": "canvas flakes",
+    "query": "canvas test flakes",
     "expect": [
       "e-e71cd654",
       "roadmap/BUG-242-ci-flakes-part-b-canvas-timing-flakes-canvas-two-panes-canvas"
@@ -74,7 +74,7 @@
   },
   {
     "question": "Where is the project memory architecture decision recorded?",
-    "query": "ADR-0024",
+    "query": "project memory architecture",
     "expect": [
       "e-104935ba",
       "roadmap/T619-memory-ch-1-stp-1-prd-adr-audit-study-for-the-project-memory"
@@ -90,7 +90,7 @@
   },
   {
     "question": "Are delivered missions polled on GitHub?",
-    "query": "never polled",
+    "query": "delivered missions",
     "expect": [
       "e-25d4e7b2",
       "roadmap/T611-github-api-rate-limit-footer-meter-self-throttle-and-per"
@@ -98,7 +98,7 @@
   },
   {
     "question": "Why was the BUG-240 census bar accepted as a deviation?",
-    "query": "Census bar",
+    "query": "census bar",
     "expect": [
       "e-dc1ffe29",
       "roadmap/BUG-240-main-process-stalls-mission-list-poll-spawns-500-git-processes"
@@ -106,53 +106,56 @@
   },
   {
     "question": "What does stacking on unmerged branches cost?",
-    "query": "reparent",
+    "query": "unmerged branches",
     "expect": ["e-e98ca61e"]
   },
   {
     "question": "In which language must a mockup promoted into the repo be authored?",
-    "query": "authored in English",
+    "query": "mockup promoted",
     "expect": ["e-0d58e757"]
   },
   {
     "question": "Why is the close-out consolidator deterministic?",
     "query": "consolidator",
     "expect": [
-      "decisions",
+      "decisions#the close-out consolidator is deterministic",
       "roadmap/T598-campaign-ch-6-close-out-writes-memory-recall-at-create-evidence"
     ]
   },
   {
     "question": "What does a verified step need since the end-dialog chapter?",
-    "query": "evidence bundle",
+    "query": "verified step",
     "expect": [
-      "decisions",
+      "decisions#a verified step needs its evidence bundle",
       "roadmap/T610-campaign-ch-6-part-2-end-dialog-also-record-panel-delivery"
     ]
   },
   {
     "question": "Why is a Campaign a separate record above a Mission?",
-    "query": "separate record above Mission",
-    "expect": ["decisions"]
+    "query": "separate record",
+    "expect": ["decisions#Campaign is a separate record above Mission"]
   },
   {
     "question": "Are mission gates derived from facts or reported by agents?",
-    "query": "ledger rows",
-    "expect": ["decisions", "roadmap/T593-campaign-ch-1-gates-from-facts-harnu-written-ledger"]
+    "query": "mission gates",
+    "expect": [
+      "decisions#gates are derived and informative",
+      "roadmap/T593-campaign-ch-1-gates-from-facts-harnu-written-ledger"
+    ]
   },
   {
     "question": "What do orchestration skills hand their workers?",
-    "query": "role templates",
+    "query": "orchestration skills",
     "expect": [
-      "decisions",
+      "decisions#orchestration skills hand workers fixed role templates",
       "roadmap/T603-orchestrate-delivery-per-role-boot-templates-that-invoke-skills"
     ]
   },
   {
     "question": "Which mockup did the System Monitor redesign approve?",
-    "query": "System Monitor",
+    "query": "System Monitor redesign",
     "expect": [
-      "decisions",
+      "decisions#T591 System Monitor redesign (mockup f--combinada): decisions",
       "roadmap/T591-system-monitor-redesign-approved-mockup-f-harnu-sidebar-kpi"
     ]
   },
@@ -160,153 +163,166 @@
     "question": "Why does measureCells reserve the xterm scrollbar width?",
     "query": "measureCells",
     "expect": [
-      "decisions",
+      "decisions#BUG-233: reserve the xterm scrollbar width",
       "roadmap/BUG-233-terminal-grid-hides-its-last-columns-under-the-xterm-scrollbar"
     ]
   },
   {
     "question": "What clips the terminal's last column?",
-    "query": "letter-spacing",
+    "query": "last column",
     "expect": [
-      "decisions",
+      "decisions#terminal last column clipped is xterm letter-spacing",
       "roadmap/BUG-234-terminal-last-column-renders-half-clipped-cell-width-under"
     ]
   },
   {
     "question": "Why is there one report-back format everywhere?",
     "query": "report-back format",
-    "expect": ["decisions"]
+    "expect": ["decisions#One report-back format everywhere"]
   },
   {
     "question": "Which icon does the Topbar pull requests button use?",
-    "query": "lucide",
+    "query": "pull requests button",
     "expect": [
-      "decisions",
+      "decisions#T580: Topbar GitHub pulls button uses lucide",
       "roadmap/T580-topbar-use-lucide-s-github-icon-on-the-pull-requests-on-github"
     ]
   },
   {
     "question": "When does the quit guard ask for confirmation?",
     "query": "quit guard",
-    "expect": ["decisions", "roadmap/T579-confirm-before-quitting-while-agents-are-still-working"]
+    "expect": [
+      "decisions#T579: quit guard design",
+      "roadmap/T579-confirm-before-quitting-while-agents-are-still-working"
+    ]
   },
   {
     "question": "How is the Open in editor button configured?",
     "query": "Open in editor",
     "expect": [
-      "decisions",
+      "decisions#T581 configurable \"Open in editor\"",
       "roadmap/T581-configurable-open-in-editor-button-any-ide-or-terminal-editor"
     ]
   },
   {
     "question": "Which scrollbar do browser-pane pages get?",
-    "query": "always-visible",
+    "query": "browser-pane pages",
     "expect": [
-      "decisions",
+      "decisions#browser-pane pages get the Harnu scrollbar",
       "roadmap/BUG-231-browser-panes-render-the-native-chromium-scrollbar-instead-of"
     ]
   },
   {
     "question": "Why are telemetry and planUsage graduated families?",
-    "query": "graduated families",
+    "query": "planUsage",
     "expect": [
-      "decisions",
+      "decisions#telemetry and planUsage are graduated families",
       "roadmap/T577-promote-companion-telemetry-to-active-so-the-footer-never-needs"
     ]
   },
   {
     "question": "What must a quitting Harnu instance restore?",
-    "query": "restores the statusLine",
+    "query": "quitting Harnu instance",
     "expect": [
-      "decisions",
+      "decisions#a quitting instance restores the statusLine",
       "roadmap/BUG-217-quitting-a-harnu-instance-removes-the-user-s-statusline-from"
     ]
   },
   {
     "question": "What must a delegation packet say about the git-grep gates?",
     "query": "git-grep gates",
-    "expect": ["decisions"]
+    "expect": ["decisions#run the git-grep gates after the commit"]
   },
   {
     "question": "How was the vitest suite split up in CI?",
-    "query": "CI sharding",
+    "query": "vitest suite",
     "expect": [
-      "decisions",
+      "decisions#CI sharding (T576, PR #145)",
       "roadmap/T576-ci-shard-the-vitest-suite-and-run-the-verify-gates-in-parallel"
     ]
   },
   {
     "question": "How was the usage poller test isolated from the spawn token?",
-    "query": "HARNU_SPAWN_TOKEN",
+    "query": "usage poller test",
     "expect": [
-      "decisions",
+      "decisions#isolate the usage poller test",
       "roadmap/BUG-200-tests-usage-poller-test-ts-fails-whenever-harnu-spawn-token-is"
     ]
   },
   {
     "question": "How are canvas Save echoes told apart between panes?",
-    "query": "per-pane identity",
+    "query": "Save echoes",
     "expect": [
-      "decisions",
+      "decisions#BUG-209: per-pane identity for canvas Save echoes",
       "roadmap/BUG-209-two-canvas-panes-on-the-same-file-one-pane-s-save-is-swallowed"
     ]
   },
   {
     "question": "Why was BUG-202 fixed inside T536 instead of dropping arrow styling?",
-    "query": "data-loss bug",
+    "query": "BUG-202",
     "expect": [
-      "decisions",
+      "decisions#BUG-202 is a data-loss bug",
       "roadmap/T536-canvas-tool-modes-excalidraw-style-toolbar-select-as-default"
     ]
   },
   {
     "question": "In which canvas tools does double-click rename?",
-    "query": "double-click",
+    "query": "double-click rename",
     "expect": [
-      "decisions",
+      "decisions#double-click renames only in Select",
       "roadmap/T536-canvas-tool-modes-excalidraw-style-toolbar-select-as-default"
     ]
   },
   {
     "question": "Why can neither scheduler:save nor update_worker move a pin?",
-    "query": "pin is its own IPC",
+    "query": "scheduler:save",
     "expect": [
-      "decisions",
+      "decisions#T483: pin is its own IPC",
       "roadmap/T483-scheduler-pin-workers-pinned-group-on-top-collapsible-off-group"
     ]
   },
   {
     "question": "Which folder setting makes new sessions boot as Orchestrator?",
-    "query": "start as Orchestrator",
-    "expect": ["decisions", "roadmap/T344-folder-default-role-new-sessions-in-a-folder-boot-as"]
+    "query": "boot as Orchestrator",
+    "expect": [
+      "decisions#new sessions start as Orchestrator",
+      "roadmap/T344-folder-default-role-new-sessions-in-a-folder-boot-as"
+    ]
   },
   {
     "question": "Which variant was added to the canonical Button component?",
-    "query": "ui/Button.vue",
-    "expect": ["decisions", "roadmap/T345-standardize-header-toolbar-action-buttons-across-all"]
+    "query": "Button component",
+    "expect": [
+      "decisions#canonical `ui/Button.vue`",
+      "roadmap/T345-standardize-header-toolbar-action-buttons-across-all"
+    ]
   },
   {
     "question": "What does the step pulse show inside the mission popover?",
     "query": "step pulse",
     "expect": [
-      "decisions",
+      "decisions#T547: step pulse inside the mission popover",
       "roadmap/T547-mission-pill-shows-progress-inside-a-long-step-not-only-step-n"
     ]
   },
   {
     "question": "Why must the idempotency registry not dedupe on failed?",
     "query": "idempotency registry",
-    "expect": ["decisions"]
+    "expect": ["decisions#idempotency registry must not dedupe"]
   },
   {
     "question": "How does the footer avoid going silently blank?",
     "query": "silently blank",
     "expect": [
-      "decisions",
+      "decisions#BUG-196: the footer never goes silently blank",
       "roadmap/BUG-196-harnu-s-statusline-blanks-the-user-s-visible-status-line-chain"
     ]
   },
-  { "question": "Where did the last session leave off?", "query": "Next:", "expect": ["hot"] },
+  {
+    "question": "Where did the last session leave off?",
+    "query": "last session",
+    "expect": ["hot"]
+  },
   {
     "question": "What is the project memory upgrade campaign about?",
     "query": "project memory upgrade",
