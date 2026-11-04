@@ -273,6 +273,19 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     }
   }
 
+  // chokidar learns about a directory created after `ready` in two steps: it emits `addDir` and scans the
+  // directory, and only AFTER that scan does it attach the directory's own watcher. A file created in that
+  // gap is never reported and nothing triggers a rescan, so a test that writes into a fresh slug dir and then
+  // waits can hang forever under load. Any later event in the directory re-lists all of it, so keep touching
+  // an ignored dotfile while waiting — a live session's directory keeps changing the same way.
+  async function waitForNudged(dir: string, pred: () => boolean, timeoutMs = 4000): Promise<void> {
+    await waitFor(() => {
+      if (pred()) return true
+      appendFileSync(join(dir, '.nudge'), '.')
+      return false
+    }, timeoutMs)
+  }
+
   beforeEach(async () => {
     root = await fs.mkdtemp(join(tmpdir(), 'harnu-watch-root-'))
     events = []
@@ -303,7 +316,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     })
 
     await fs.writeFile(join(slugDir, 'sess-1.jsonl'), JSON.stringify({ n: 1 }) + '\n', 'utf8')
-    await waitFor(() => events.some((e) => e.channel === 'claude:session:added'))
+    await waitForNudged(slugDir, () => events.some((e) => e.channel === 'claude:session:added'))
     expect(events.find((e) => e.channel === 'claude:session:added')).toMatchObject({
       payload: { slug: 'new-worktree-slug', sessionId: 'sess-1' }
     })
@@ -345,7 +358,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     const newSlugDir = join(root, 'new-slug')
     await fs.mkdir(newSlugDir)
     await fs.copyFile(oldPath, join(newSlugDir, 'sess-move.jsonl'))
-    await waitFor(() =>
+    await waitForNudged(newSlugDir, () =>
       events.some(
         (e) =>
           e.channel === 'claude:session:added' &&
@@ -386,7 +399,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
       'utf8'
     )
 
-    await waitFor(() =>
+    await waitForNudged(newSlugDir, () =>
       events.some(
         (e) =>
           e.channel === 'claude:session:added' &&
