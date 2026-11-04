@@ -40,8 +40,8 @@ loads `hooks/` and `agents/` fine, so this is a stager change, not a Claude Code
 
 - It runs a with-plugin arm and a no-plugin baseline arm and reports `score`, `costUsd`, `turns` and `durationSeconds` for each run.
 - Fixtures go in through `context.scaffold_script`, which needs `--scaffold`. A top-level `scaffold_script` key is silently ignored.
-- `regex`, `tool_used` and `llm` graders cover answer keys.
-- The gap: there is no split by model. `--keep-temp` keeps each run's trace, whose final `result` line has `modelUsage` by model. `summarize.mjs` reads it.
+- `regex`, `tool_used` and `llm` graders cover answer keys. A grader marked `arm: with-only` (every case's `routed-to-doc-reader`) is reported with `scored: false` and never moves the score, so a score of 1.00 means the answer was right, not that the run routed to Haiku.
+- The gap: there is no split by model. `--keep-temp` keeps each run's trace, whose final `result` line has `modelUsage` by model. `summarize.mjs` reads it, and counts the main model's `Agent` calls and the reads the gate refused in each trace, so the routing columns below come from `summary.md`.
 
 ## Results
 
@@ -95,6 +95,7 @@ The same cases with the hook removed, to separate what the gate does from what t
 - **n = 3 per cell, and the noise is high.** The same baseline case ranged from 24.9k to 40.1k main-in tokens across runs. Per-case percentages are noisy; the totals and the direction are the result.
 - **One threshold, one doc size.** Every gated doc had 1,112–1,549 lines. Nothing here supports 350 over, say, 800. That needs docs of 400–800 lines.
 - **Single-question tasks.** In a long session a doc read whole stays in context and is re-read from cache on every later turn. The gate avoids that, which this suite does not measure, so the real saving may be larger. Follow-up questions re-send the doc to Haiku, which this suite does not measure either.
+- **The gate is cooperative, not enforcing.** A `Read` with any `offset` or `limit` passes whatever the span, so `offset: 1, limit: 5000` reads the whole doc. On Bash it judges only the first command before a chain, and lets pipes and redirects through. No run tried to get around it, but nothing stops one.
 - **API prices.** For subscription users the saving is plan quota and fewer compactions, not dollars.
 
 ## Recommendation
@@ -103,7 +104,8 @@ Ship it as an **opt-in bundled feature, docs only**, default threshold 350, with
 
 1. **Stager change.** `stageSkillsForFolder` stages `agents/doc-reader.md` and the gate hook when the feature is enabled for the folder. It must never stage them into a Scheduler `observe` tick: no `Agent` tool there, so a blocked read would strand the worker.
 2. **Transport: the Hook Bridge, not a PATH `node`.** Use a `type: "http"` `PreToolUse` hook to the loopback Hook Bridge, which calls `decideDocRead` in the main process. It fails open when Harnu is not running. Keep the matcher at `Read|Bash`, and answer `{}` fast for everything that is not a doc read.
-3. **Before calling it done:**
+3. **A span cap on `Read`.** A `Read` of a large doc passes only when `limit` is set and is at most the threshold. `offset` alone reads to the end of the file, so it counts as a full read. Re-run the edit case, because that path is where a cap could hurt.
+4. **Before calling it done:**
    - add a harder quality suite (detail-dropping questions);
    - sweep the threshold over 400–800-line docs;
    - run one long multi-turn task to measure the compounding effect.
