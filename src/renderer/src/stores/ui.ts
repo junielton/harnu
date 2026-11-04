@@ -215,7 +215,7 @@ export interface SidebarJumpPaletteState {
 
 /**
  * The anchored popovers whose open flag lives here (T486 U4a, spec §3.5 / §6.1):
- * the Topbar's Activity bell and Mission pill, the footer's pasted images,
+ * the Topbar's Activity bell and Mission pill, the footer's pasted images, links shelf,
  * Claude service status and plan usage, and the Fleet rail's state filter. Each
  * component keeps its own Esc and click-outside handlers; the flag moved here so
  * a keybinding can open the popover and so `anyPopoverOpen` can tell the App's
@@ -229,6 +229,7 @@ export const POPOVER_IDS = [
   'activity',
   'missionProgress',
   'pastedImages',
+  'links',
   'claudeStatus',
   'usagePanel',
   'githubBudget',
@@ -240,11 +241,15 @@ function popoverFlags(): Record<PopoverId, boolean> {
   return Object.fromEntries(POPOVER_IDS.map((id) => [id, false])) as Record<PopoverId, boolean>
 }
 
-/** The footer popovers that close each other when one opens (T611: the GitHub budget joins them). */
+/**
+ * The footer popovers that close each other when one opens (T611: the GitHub budget joins them;
+ * T617: so does the Links shelf).
+ */
 const POPOVER_MUTEX: Partial<Record<PopoverId, PopoverId[]>> = {
-  pastedImages: ['usagePanel', 'githubBudget'],
-  usagePanel: ['pastedImages', 'githubBudget'],
-  githubBudget: ['pastedImages', 'usagePanel']
+  pastedImages: ['usagePanel', 'githubBudget', 'links'],
+  usagePanel: ['pastedImages', 'githubBudget', 'links'],
+  githubBudget: ['pastedImages', 'usagePanel', 'links'],
+  links: ['pastedImages', 'usagePanel', 'githubBudget']
 }
 
 /**

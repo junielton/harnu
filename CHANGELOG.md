@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-03
+
+### Added
+
+- **A Links shelf in the footer collects the links of a session.** A new `🔗 N` pill, right of the pasted-images pill, appears when the session you're looking at has links, and its count follows the conversation — paste a URL (or let the agent mention one) and it shows up within a few seconds. Click it for a list, newest first, of every link the operator or the agent wrote in the conversation: the task, the pull request the agent opened, the Figma frame, the doc. Each row is named from the URL alone — `owner/repo #183` for a GitHub PR or issue, `Task <id>` for ClickUp, the file name and node for Figma, `host/path` for anything else — with who said it (**you** or **agent**) and when; hover a row to see the sentence it came from. **Open** sends the link to your browser, **Copy** puts it on the clipboard, and **Reference** types it into the session's prompt without submitting it (greyed out, with the reason, when the session isn't running). The **Folder** toggle widens the list to every session in the folder, grouped by session. Nothing is saved and no page is ever fetched: the list is read from the transcript each time, and links that only appear in tool output (fetched pages, logs) are left out.
+
 ## 2026-11-02
 
 ### Added

@@ -452,6 +452,13 @@ _another_ folder.
 | `inbox`                                  | Inbox rail ("Needs you" queue — minimized strip of the 4th column + "Open approvals" palette action)                                                                                                                                   |
 | `image`                                  | Pasted-images pill/popover (footer — gallery of screenshots pasted into the session)                                                                                                                                                   |
 | `reply`                                  | Re-attach an image (re-injects the screenshot into the running session's prompt)                                                                                                                                                       |
+| `link`                                   | Links pill/popover (footer — the links of a session, newest first)                                                                                                                                                                     |
+| `git-pull-request`                       | Link row, kind `pr` (Links popover — GitHub pull request)                                                                                                                                                                              |
+| `circle-dot`                             | Link row, kind `issue` (Links popover — GitHub issue)                                                                                                                                                                                  |
+| `square-check`                           | Link row, kind `task` (Links popover — ClickUp task)                                                                                                                                                                                   |
+| `figma`                                  | Link row, kind `figma` (Links popover — Figma file or frame)                                                                                                                                                                           |
+| `file-text`                              | Link row, kind `doc` (Links popover — Google Docs, Notion)                                                                                                                                                                             |
+| `globe`                                  | Link row, kind `web` (Links popover — any other page)                                                                                                                                                                                  |
 | `volume-2`                               | Preview a voice (Settings → Voice → VOICES row — speaks the phrase in the voice already in use)                                                                                                                                        |
 | `volume-x`                               | Nothing was spoken (Settings → Voice — the `dropped` / `stopped` outcome of a Test or a per-voice preview)                                                                                                                             |
 | `list-checks`                            | Mission progress — the Topbar "Step N of M" pill's leading glyph (T370, Mission v3, §6 "Mission progress"); swaps to `check` once the headline is done or the mission delivered                                                        |
@@ -9008,6 +9015,73 @@ disappeared, the lightbox closes.
 **Zoom/pan is deliberately out** — these are pasted screenshots, not a photo library;
 `object-contain` at viewport size is the whole feature. Keyboard surface stops at
 `←` / `→` / `Esc`.
+
+---
+
+### Links pill + popover (links shelf)
+
+**Files:** `StatusFooter.vue` (pill + popover scaffold) + `FooterLinksPopover.vue` (header, scope
+toggle, rows) + `composables/useSessionLinks.ts` (reads + pure row helpers). Mockup:
+`docs/design/links-shelf/` (screen `footer--links`); spec: `docs/specs/2026-11-03-links-shelf/spec.md`.
+Surfaces the links a session's transcript holds — the task link, the PR the agent opened, the Figma
+frame, the doc the operator pasted — as a **read-only window** next to the pasted-images gallery.
+**Read-only and derived:** Harnu lists what the transcript says at the moment it reads, persists
+nothing and never touches the network — every label comes from the URL alone.
+
+**What counts as a link:** an `http(s)` URL in a **user** or **assistant text** block, never in
+`tool_use` input, `tool_result` content, thinking blocks or subagent lines (fetched pages, logs and
+`npm` output would drown the list). Deduplicated by URL keeping the latest occurrence, newest first;
+a row carries `source` (`you` / `agent`), the time of that occurrence and the surrounding sentence.
+
+**Pill (footer):** `🔗 N` (`link` icon 12px + `tabular-nums` counter), **immediately right of** the
+pasted-images pill. Same grammar as it — closed `bg-surface-2 text-text-2` (hover `border-border-2`),
+open `bg-accent-soft text-accent border-accent-line`; **hide-when-zero** (it doesn't render at 0
+links, for a synthetic / UUID-less session, or with nothing selected). **Live:** the count follows the
+transcript (a ~2s visibility-gated poll while the session is running, main re-reading only the
+appended bytes), so a URL pasted into the current session shows up within a few seconds without
+switching away. No bump animation — a link is not a transient event the way a screenshot is. Click →
+toggles the popover; it joins the footer popover mutex (`ui.popovers.links` closes pasted images,
+plan usage and the GitHub budget, and each closes it); `Esc` and an outside click close it.
+`aria-label` via `links.pillAria`.
+
+**Popover:** the images popover's frame (z-50, `anim-fade-in-scale`, `shadow-pop`, `bg-surface-2`,
+`border-border-2`, `bottom-full`) at **400px** wide — a row needs more room than a thumbnail.
+Anatomy:
+
+- **Header:** `links.title` + `<folder alias> · N` (`text-text-3`) on the left; a two-option
+  `Session · Folder` segmented toggle on the right (`border-border`, active option
+  `bg-accent-soft text-accent`, `aria-pressed`). Opening always starts on **Session**.
+- **Row** (`grid 16px · 1fr · auto`, `rounded-sm p-1.5`, hover `bg-surface`): a kind icon (13px,
+  `text-text-3`) · the **label** (`text-[12px] text-text`; **mono `text-[11px] text-text-2` for kinds
+  `web` / `doc`**, whose label is a raw `host/path`) · the **time** (`text-[11px] tabular-nums
+text-text-4` — `HH:MM` today, a short date otherwise). The second line is the detail: the kind name
+  (`GitHub PR`, `ClickUp`, `Figma`, `Google Docs`, `Web`), a mono secondary (the host for PR / issue /
+  task, `node <id>` for a Figma frame) and a **source chip** (`you` neutral, `agent`
+  `border-accent-line text-accent`).
+- **On hover or keyboard focus** the time gives way to **Open · Copy · Reference** (`external-link`,
+  `copy`, `reply` at 13px, `rounded-sm p-1`) and the surrounding sentence appears under the row
+  (`text-[11px] text-text-3`, `border-l-2 border-border-2`, one line, ellipsised). The sentence drops
+  the URL when it sits at the start or end of it (the row already shows it) and keeps it mid-sentence.
+- **Folder scope:** the same rows grouped under a header per session (`text-[11px] text-text-3` title
+  - mono count), newest session first; the active session's group reads `links.thisSession`. A
+    session's group title is its sidebar name (`sessionTitle`). While the first read is in flight the
+    list shows `anim-shimmer-dot`; a folder with no links says so.
+- **Note (popover footer):** `links.noteSession` / `links.noteFolder` (`text-text-4`, full sentence)
+  — says where the list is read from, so it never reads as a file Harnu keeps.
+- The list is `max-h-[300px]` and scrolls (`scrollable`).
+
+**Actions.** **Open** hands the URL to the OS browser (`shellOpenExternal`; main re-checks the
+scheme). **Copy** writes it to the clipboard and shows the `links.copied` success toast
+(`persist: false`, like the images copy). **Reference** writes the URL **as is** — a path would be
+shell-escaped, which corrupts a `?` or `&` — into the selected session's composer through the writer
+bus Re-attach uses, **without a newline** (one trailing space separates back-to-back references), and
+closes the popover so the operator sees the line. It is **disabled** (`:disabled`, tooltip
+`links.referenceDisabled`) when the session has no live PTY, and a hovered row prints that reason as
+an inline `text-warning` line; Open and Copy stay active. Labels, hosts, `node <id>` and the kind
+names `GitHub` / `ClickUp` / `Figma` / `Notion` are technical and **untranslated** (§8).
+
+**Tokens:** none new — `bg-surface`, `bg-surface-2`, `bg-accent-soft`, `text-accent`,
+`border-accent-line`, `text-warning`, `rounded-xs` and the standard text scale.
 
 ---
 
