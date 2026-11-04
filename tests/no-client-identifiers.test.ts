@@ -106,6 +106,8 @@ const ALLOWED_LOWER_PREFIXES = [
   'agents',
   'argv',
   'bug',
+  // `by`: English prose in a cited article's URL slug (`…-usage-by-90`), not a tracker key.
+  'by',
   'capy', // pre-rename product name — kept while historical docs still carry it
   // T595: a Campaign chapter id (`chp-<n>`, campaign spec §3.1) — Harnu's own vocabulary, like `stp`.
   'chp',

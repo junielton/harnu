@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Bash",
+        "hooks": [{ "type": "command", "command": "\"@NODE@\" \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.mjs\"", "timeout": 5 }]
+      }
+    ]
+  }
+}

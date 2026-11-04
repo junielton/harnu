@@ -1,0 +1,26 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: browser-partitions
+tags: [single-doc]
+execution:
+  prompt: In the browser pane spec (docs/specs/2026-10-21-T564-browser-pane.md), what are the two cookie partitions called and which panes use each one?
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Agent]
+graders:
+  - type: regex
+    name: operator-partition
+    pattern: 'persist:harnu-browser(?!-agent)'
+    match: contains
+  - type: regex
+    name: agent-partition
+    pattern: 'persist:harnu-browser-agent'
+    match: contains
+  - type: llm
+    name: maps-correctly
+    criteria: The answer says persist:harnu-browser is used by panes the operator opened and persist:harnu-browser-agent by panes an agent verb (browser_open) opened. Fail if the mapping is reversed or missing.
+  - type: tool_used
+    name: routed-to-doc-reader
+    tool: Agent
+    min: 1
+    arm: with-only

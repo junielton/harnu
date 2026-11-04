@@ -1,0 +1,23 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: budget-constraints
+tags: [single-doc]
+execution:
+  prompt: Read the Global Constraints of docs/specs/2026-08-22-daily-budget-plan.md. What alert thresholds does the daily budget row use, and which doc must the plan NOT touch?
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Agent]
+graders:
+  - type: regex
+    name: thresholds
+    pattern: '80\s*(/|and)\s*100'
+    match: contains
+  - type: regex
+    name: untouched-doc
+    pattern: 'capy-features\.md'
+    match: contains
+  - type: tool_used
+    name: routed-to-doc-reader
+    tool: Agent
+    min: 1
+    arm: with-only

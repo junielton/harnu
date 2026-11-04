@@ -1,0 +1,21 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: small-doc-control
+tags: [control]
+execution:
+  prompt: In docs/user/approval-inbox.md, which keyboard shortcut toggles the rail between expanded and minimized?
+  max_turns: 8
+  allowed_tools: [Read, Glob, Grep, Agent]
+graders:
+  - type: regex
+    name: shortcut
+    pattern: 'Shift\s*\+\s*A'
+    flags: i
+    match: contains
+  - type: tool_used
+    name: not-routed
+    tool: Agent
+    min: 0
+    max: 0
+    arm: with-only

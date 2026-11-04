@@ -1,0 +1,25 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: edit-threshold
+tags: [read-then-edit]
+execution:
+  prompt: In docs/specs/2026-08-22-daily-budget-plan.md, the Global Constraints say the row thresholds are 80 / 100. Change that line so they are 75 / 100. Change nothing else in the file.
+  max_turns: 15
+  allowed_tools: [Read, Glob, Grep, Agent, Edit]
+graders:
+  - type: regex
+    name: edited
+    target: { source: file, path: docs/specs/2026-08-22-daily-budget-plan.md }
+    pattern: 'Thresholds for this row are \*\*75 / 100\*\* \(not the 80/95 of `barClass`\)\.'
+    match: contains
+  - type: regex
+    name: old-value-gone
+    target: { source: file, path: docs/specs/2026-08-22-daily-budget-plan.md }
+    pattern: '\*\*80 / 100\*\*'
+    match: not_contains
+  - type: regex
+    name: rest-untouched
+    target: { source: file, path: docs/specs/2026-08-22-daily-budget-plan.md }
+    pattern: 'Run `npm run typecheck` and `npm run lint` before any commit'
+    match: contains
