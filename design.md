@@ -7698,6 +7698,15 @@ A refusal (the folder exists and Harnu did not create it) surfaces as a `danger`
 **Restart notice** — a `SettingHint` under the list: _"Changes apply to sessions
 started from now on."_ No toast: this is a standing property of the pane, not an event.
 
+**Feature rows (T2)** — a catalog entry that is a feature rather than a skill (the
+`doc-reader`: a Haiku agent plus a read gate hook) uses the same row and the same switch.
+Under a folder scope the row adds a **Threshold** line under the purpose: `--text-2` 12px
+label, the Cleanup pane's number input (72px, mono 12px, 1px `--border`, `radius 5px`,
+`padding 5px 8px`, 400ms debounced, placeholder = the default `350`), a `lines` suffix
+(`--text-3` 11.5px), then a `SettingHint` saying an empty field uses the default. Under
+Global the row shows only that hint with the default. A feature never appears in
+**Advanced**: there is no `SKILL.md` to install outside Harnu.
+
 ### Mods (Settings → Mods, T389)
 
 Dedicated **Mods** tab of the Settings dialog (`ModsAuditPane.vue`), entering the `tabs`

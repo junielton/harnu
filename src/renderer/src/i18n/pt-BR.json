@@ -2054,6 +2054,12 @@
       "label": "Também fora do Harnu",
       "occupied": "Já existe uma pasta de skill para {name} e ela não foi criada pelo Harnu. Nada foi alterado.",
       "failed": "Não foi possível instalar {name} fora do Harnu."
+    },
+    "feature": {
+      "threshold": "Limite",
+      "linesSuffix": "linhas",
+      "thresholdHint": "Docs maiores que isso são lidos pelo agente doc-reader. Vazio usa o padrão ({n} linhas).",
+      "globalThresholdHint": "Limite: {n} linhas por padrão. Defina o de um projeto no escopo dele."
     }
   },
   "modsAudit": {

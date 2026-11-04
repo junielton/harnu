@@ -59,7 +59,14 @@ import {
   type BundledSkillsPrefs,
   type SkillFlags
 } from './bundled-skills-core'
-import { getUserProjectSkills, setUserProjectSkill } from './user-projects'
+import {
+  getUserProjectDocReaderMinLines,
+  getUserProjectSkills,
+  setUserProjectDocReaderMinLines,
+  setUserProjectSkill
+} from './user-projects'
+import { DOC_READER_FEATURE, docReaderHooksJson, docReaderStampPart } from './doc-reader/hook'
+import { DOC_READER_DEFAULT_MIN_LINES } from './doc-reader/gate-core'
 
 /**
  * The catalog version, parsed from `resources/skills/CATALOG.md`'s marker at build
@@ -208,8 +215,83 @@ export async function readBundledCatalog(): Promise<BundledSkill[]> {
       console.warn(`[bundled-skills] skipping ${dir}`, err)
     }
   }
+  // T2: features (`features/<name>/FEATURE.md`) — switched like a skill, staged differently.
+  const featureRoot = path.join(skillsResourceDir(), 'features')
+  const featureDirs = await fs
+    .readdir(featureRoot, { withFileTypes: true })
+    .then((e) =>
+      e
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name)
+        .sort()
+    )
+    .catch(() => [] as string[])
+  for (const dir of featureDirs) {
+    try {
+      const raw = await fs.readFile(path.join(featureRoot, dir, 'FEATURE.md'), 'utf8')
+      const parsed = parseSkillFrontmatter(raw, dir)
+      if (parsed && !out.some((s) => s.name === parsed.name))
+        out.push({ ...parsed, kind: 'feature' })
+      else console.warn(`[bundled-skills] skipping feature ${dir}: bad or duplicate FEATURE.md`)
+    } catch (err) {
+      console.warn(`[bundled-skills] skipping feature ${dir}`, err)
+    }
+  }
   catalogCache = out
   return out
+}
+
+// ---- Features (T2) ---------------------------------------------------------------
+
+/** Where the staged doc-reader hook POSTs: the live Hook Bridge, or `null` while it is down. */
+type BridgeEndpoint = { port: number; token: string } | null
+let docReaderEndpoint: () => BridgeEndpoint = () => null
+
+/**
+ * Set from `index.ts` (the Hook Bridge's port and per-boot token), so this module imports no
+ * bridge code. With no endpoint the doc-reader is not staged at all: a hook with nowhere to POST
+ * would only fail open on every read.
+ */
+export function setDocReaderEndpointProvider(fn: () => BridgeEndpoint): void {
+  docReaderEndpoint = fn
+}
+
+/** The files one enabled feature adds to the staged plugin, plus its share of the stamp. */
+interface FeatureStage {
+  stamp: string
+  /** Relative path inside the plugin dir → source file to copy, or literal content to write. */
+  files: Map<string, { copyFrom: string } | { content: string }>
+}
+
+/**
+ * What the enabled feature `name` stages for `folder`, or `null` when it stages nothing here. An
+ * `observe` tick and a steward get nothing: they have no `Agent` tool, so a read the gate refused
+ * would leave them with no way to read the doc at all.
+ */
+async function stageFeature(
+  name: string,
+  folder: string,
+  observe: boolean
+): Promise<FeatureStage | null> {
+  if (observe || name !== DOC_READER_FEATURE) return null
+  const endpoint = docReaderEndpoint()
+  if (!endpoint) return null
+  const minLines =
+    (folder ? await getUserProjectDocReaderMinLines(folder).catch(() => null) : null) ??
+    DOC_READER_DEFAULT_MIN_LINES
+  const src = path.join(skillsResourceDir(), 'features', name)
+  return {
+    stamp: docReaderStampPart(endpoint.port, endpoint.token, minLines),
+    files: new Map([
+      ['agents/doc-reader.md', { copyFrom: path.join(src, 'agents', 'doc-reader.md') }],
+      ['hooks/hooks.json', { content: docReaderHooksJson(endpoint.port, endpoint.token, minLines) }]
+    ])
+  }
+}
+
+/** The catalog without its features: what can be a `/mention` or a `skills/<name>/` copy. */
+function skillsOnly(catalog: readonly BundledSkill[]): BundledSkill[] {
+  return catalog.filter((c) => c.kind !== 'feature')
 }
 
 // ---- Skill discovery outside the catalog (T305) ---------------------------------
@@ -281,7 +363,7 @@ async function readSkillsAt(root: string, origin: SkillOrigin): Promise<Availabl
 export async function listAvailableSkills(folder: string): Promise<AvailableSkill[]> {
   const [bundled, personal, project] = await Promise.all([
     readBundledCatalog().then((c) =>
-      c.map((s): AvailableSkill => ({
+      skillsOnly(c).map((s): AvailableSkill => ({
         name: s.name,
         description: s.description,
         origin: 'bundled'
@@ -594,8 +676,18 @@ async function stageInternal(
     const catalog = await readBundledCatalog()
     const prefs = await readBundledSkillsPrefs()
     const folderFlags = folder ? await getUserProjectSkills(folder) : {}
-    const bundledEnabled = enabledSkillNames(catalog, prefs.enabled, folderFlags)
-    const catalogNames = new Set(catalog.map((c) => c.name))
+    const skills = skillsOnly(catalog)
+    const bundledEnabled = enabledSkillNames(skills, prefs.enabled, folderFlags)
+    const catalogNames = new Set(skills.map((c) => c.name))
+    const features: Array<{ name: string; stage: FeatureStage }> = []
+    for (const name of enabledSkillNames(
+      catalog.filter((c) => c.kind === 'feature'),
+      prefs.enabled,
+      folderFlags
+    )) {
+      const stage = await stageFeature(name, folder, observe)
+      if (stage) features.push({ name, stage })
+    }
     const dir = stagedPluginDir(folder, mentions, observe)
 
     // src by staged directory name. Bundled first so a mention that resolves to a
@@ -633,7 +725,7 @@ async function stageInternal(
       mentionStamps.push(await mentionStamp(hit.name, hit.src, hit.origin, files))
     }
 
-    const enabled = [...sources.keys()]
+    const enabled = [...sources.keys(), ...features.map((f) => f.name)]
     if (enabled.length === 0) {
       // Nothing enabled: remove any tree staged by a previous, wider enabled set so
       // a stale copy can never be picked up, then tell the caller to pass no flag.
@@ -641,7 +733,11 @@ async function stageInternal(
       return null
     }
 
-    const wanted = stageStamp(BUNDLED_SKILLS_VERSION, [...enabled, ...mentionStamps])
+    const wanted = stageStamp(BUNDLED_SKILLS_VERSION, [
+      ...sources.keys(),
+      ...mentionStamps,
+      ...features.map((f) => f.stage.stamp)
+    ])
     const stampFile = path.join(dir, '.stamp')
     const current = await fs.readFile(stampFile, 'utf8').catch(() => null)
     if (current?.trim() === wanted) return { dir, enabled, mentioned, rejected }
@@ -670,6 +766,14 @@ async function stageInternal(
           }
         } else {
           await fs.cp(from.src, path.join(tmp, 'skills', name), { recursive: true })
+        }
+      }
+      for (const { stage } of features) {
+        for (const [rel, file] of stage.files) {
+          const out = path.join(tmp, rel)
+          await fs.mkdir(path.dirname(out), { recursive: true })
+          if ('copyFrom' in file) await fs.copyFile(file.copyFrom, out)
+          else await fs.writeFile(out, file.content, 'utf8')
         }
       }
       await fs.writeFile(path.join(tmp, '.stamp'), wanted + '\n', 'utf8')
@@ -721,7 +825,7 @@ export async function scanSkillCollisions(): Promise<string[]> {
       .then((e) => e.filter((d) => d.isFile()).map((d) => d.name))
       .catch(() => [] as string[])
   ])
-  return detectSkillCollisions(catalog, skillDirs, commandFiles)
+  return detectSkillCollisions(skillsOnly(catalog), skillDirs, commandFiles)
 }
 
 // ---- "Also outside Harnu" (spec §4.3) -------------------------------------------
@@ -761,7 +865,7 @@ export async function setUserLevelInstall(
   name: string,
   install: boolean
 ): Promise<UserLevelInstallResult> {
-  const catalog = await readBundledCatalog()
+  const catalog = skillsOnly(await readBundledCatalog())
   if (!catalog.some((s) => s.name === name)) return { ok: false, reason: 'unknown-skill' }
   const dir = userLevelSkillDir(name)
   try {
@@ -856,6 +960,22 @@ export function registerBundledSkillsHandlers(): void {
       if (!folder) return {}
       await setUserProjectSkill(folder, name, enabled === null ? undefined : enabled === true)
       return getUserProjectSkills(folder)
+    }
+  )
+
+  // T2: the doc-reader threshold for one folder. `null` = the default (350).
+  ipcMain.handle('bundledSkills:getDocReaderMinLines', async (_e, folder: string) =>
+    typeof folder === 'string' && folder ? getUserProjectDocReaderMinLines(folder) : null
+  )
+  ipcMain.handle(
+    'bundledSkills:setDocReaderMinLines',
+    async (_e, folder: string, minLines: number | null) => {
+      if (typeof folder !== 'string' || !folder) return null
+      await setUserProjectDocReaderMinLines(
+        folder,
+        typeof minLines === 'number' && Number.isFinite(minLines) ? minLines : null
+      )
+      return getUserProjectDocReaderMinLines(folder)
     }
   )
 

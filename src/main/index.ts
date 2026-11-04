@@ -76,7 +76,8 @@ import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
 import {
   registerBundledSkillsHandlers,
   injectBundledSkillArgs,
-  cleanStaleLegacyStaging
+  cleanStaleLegacyStaging,
+  setDocReaderEndpointProvider
 } from './bundled-skills'
 import { registerModsAuditHandlers } from './mods-audit'
 import { registerAppLocaleHandlers } from './app-locale'
@@ -145,6 +146,7 @@ import {
   registerHookBridge,
   closeHookBridge,
   hookSettingsBlobJson,
+  getStewardHookEndpoint,
   getTaskStates
 } from './hook-bridge'
 import { registerCompanionHost, closeCompanionHost } from './companion/host'
@@ -699,6 +701,9 @@ app.whenReady().then(async () => {
   // appends `--plugin-dir <staged>`. Nothing is enabled on a fresh install, so the
   // provider is a pass-through until the operator turns a skill on in the panel.
   registerBundledSkillsHandlers()
+  // T2: the doc-reader feature stages an http hook to the live Hook Bridge (same port and
+  // per-boot token as the steward hooks); with the bridge down it stages nothing.
+  setDocReaderEndpointProvider(() => getStewardHookEndpoint())
   // T389 P4W1: Settings → Mods. Read-only; spawns nothing until the tab is opened.
   registerModsAuditHandlers()
   // Drop the dead pre-rename `<hash>/capy/` staging dirs the userData migration carried over.

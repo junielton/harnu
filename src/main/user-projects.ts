@@ -13,6 +13,7 @@ import { migrateFolderDataDirLazily } from './migrations/data-dir-boot'
 import { terminalLeases } from './terminal-lease'
 import { browserLeases } from './browser/lease-singleton'
 import { sanitizeTrustedHosts, MAX_TRUSTED_HOSTS } from '../shared/browser-trusted-hosts'
+import { clampMinLines } from './doc-reader/gate-core'
 
 /**
  * One worktree entry in a persisted project record. Vestigial under the
@@ -162,6 +163,13 @@ export interface UserProject {
    * (`resolveSkillEnabled` in `bundled-skills-core.ts`).
    */
   skills?: Record<string, boolean>
+  /**
+   * T2: the doc-reader gate's line threshold for this folder (Settings → Skills, folder scope).
+   * Absent means the default (350, `DOC_READER_DEFAULT_MIN_LINES`). Keyed by the record's own
+   * path like {@link skills}: a worktree does not inherit its repo's value. Always read through
+   * `clampMinLines`, so a hand-edited file cannot disable the gate with a huge or tiny number.
+   */
+  docReaderMinLines?: number
   /**
    * T344: "new sessions start as Orchestrator" — every plain `claude-new`
    * session an OPERATOR starts in this folder ("+ New session", the New
@@ -1137,6 +1145,59 @@ export async function getUserProjectSkills(targetPath: string): Promise<Record<s
   const normalizedPath = await normalizePath(targetPath)
   const own = file.projects.find((p) => p.path === normalizedPath)
   return own?.skills ?? {}
+}
+
+/** T2: the doc-reader threshold for `targetPath`, or `null` when the folder uses the default. */
+export async function getUserProjectDocReaderMinLines(targetPath: string): Promise<number | null> {
+  const file = await readUserProjects()
+  const normalizedPath = await normalizePath(targetPath)
+  const own = file.projects.find((p) => p.path === normalizedPath)
+  return own?.docReaderMinLines === undefined ? null : clampMinLines(own.docReaderMinLines)
+}
+
+/**
+ * T2: set (a number, clamped) or clear (`null`) the doc-reader threshold for one folder. Creates
+ * the record when there is none, like {@link setUserProjectSkill}. Idempotent.
+ */
+export async function setUserProjectDocReaderMinLines(
+  targetPath: string,
+  minLines: number | null
+): Promise<UserProjectsFile> {
+  const value = minLines === null ? undefined : clampMinLines(minLines)
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const normalizedPath = await normalizePath(targetPath)
+    const idx = file.projects.findIndex((p) => p.path === normalizedPath)
+    if (idx === -1) {
+      if (value === undefined) return file
+      const created: UserProject = {
+        path: normalizedPath,
+        alias: path.basename(normalizedPath),
+        addedAt: new Date().toISOString(),
+        worktrees: [],
+        docReaderMinLines: value
+      }
+      const next: UserProjectsFile = {
+        version: 1,
+        projects: [...file.projects, created],
+        hiddenPaths: (file.hiddenPaths ?? []).filter((p) => p !== normalizedPath)
+      }
+      await writeUserProjects(next)
+      return next
+    }
+    if (file.projects[idx].docReaderMinLines === value) return file
+    const next: UserProjectsFile = {
+      version: 1,
+      projects: file.projects.map((p, i) => {
+        if (i !== idx) return p
+        const { docReaderMinLines: _drop, ...rest } = p
+        return value === undefined ? rest : { ...rest, docReaderMinLines: value }
+      }),
+      hiddenPaths: file.hiddenPaths ?? []
+    }
+    await writeUserProjects(next)
+    return next
+  })
 }
 
 /**
