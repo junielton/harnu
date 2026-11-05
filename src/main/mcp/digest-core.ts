@@ -1,35 +1,32 @@
 /**
- * Pure core for the automatic session digest (T79 S2): the deterministic
- * relevance threshold, git-evidence parsing, the evidence-linked digest markdown
- * formatter, and the proposed-`hot.md` snapshot builder.
+ * Pure core for the automatic session digest (T79 S2; memory U1, spec
+ * `docs/specs/2026-11-04-memory-u1-capture/spec.md`): git-evidence parsing, the
+ * hook-edge trigger ({@link digestTriggerFor}), the commit-or-turns planner
+ * ({@link planDigest}), the digest body ({@link renderDigest}) and the `hot.md`
+ * snapshot builder.
  *
  * Framework-free + side-effect-free per ADR-0001 (pure-core / thin-shell): NO
- * `fs`, `child_process`, `electron`, or clock. The shell (`../memory-digest.ts`)
- * probes git + reads the transcript and feeds the bytes + an injected `now` in
- * here, so every gate/format decision is deterministic and lands in the coverage
- * surface (`tests/mcp-digest-core.test.ts`).
+ * `fs`, `child_process`, `electron`, or clock. The engine (`./digest-engine.ts`)
+ * reads the transcript and probes git through injected deps and feeds the bytes +
+ * an injected `now` in here, so every gate/format decision is deterministic and
+ * lands in the coverage surface (`tests/mcp-digest-core.test.ts`).
  *
  * Design contract (PRD §3.4 + §5):
- *  - The digest is EVIDENCE-linked — commits, file stats, the CLI's own recap —
- *    NOT a narrative self-report. The `## Evidence` block is hard git truth; the
- *    `## Recap` block is clearly framed as the session's OWN words (self-report
- *    lies in 22.6% of episodes — PRD §5), never presented as fact.
- *  - The relevance gate LEADS with commit-count — the strongest done-by-evidence
- *    signal (PRD §5). It is a single tunable config so the threshold is pinned by
- *    a unit test and documented, not scattered as a magic number.
+ *  - The digest is EVIDENCE-linked — commits, file stats, what was asked and
+ *    answered, the CLI's own recap — NOT a narrative self-report. The
+ *    `## Evidence` block is hard git truth; the session's own words are quoted
+ *    verbatim and the recap is framed as self-report, never presented as fact.
+ *  - The gate is a commit, or enough user turns ({@link DIGEST_GATE}), a single
+ *    pinned config rather than a magic number.
  *  - The `hot` snapshot is written straight to `hot.md` by the shell, with a
  *    provenance stamp and a shadow-log entry (BUG-26 removed the review gate).
- *
- * Memory U1 (S-1, `docs/specs/2026-11-04-memory-u1-capture/spec.md`) adds the
- * hook-edge trigger ({@link digestTriggerFor}), the commit-or-turns planner
- * ({@link planDigest}) and the new digest body ({@link renderDigest}) beside the
- * older gate and formatter, which S-2 deletes once the engine switches over.
  *
  * Content is written in English by default (T85 rule — project-memory language
  * follows the app locale; `en` is the default). The shell does not translate;
  * the labels here are the persisted vocabulary.
  */
 
+import * as path from 'node:path'
 import { cutText, type TranscriptFacts } from './digest-transcript'
 
 // ---- Constants (all tunable knobs live here, pinned by tests) ----------------
@@ -51,56 +48,6 @@ const RECAP_MAX_CHARS = 1500
 
 /** Cap for the single "left off" / "next" line (chars). */
 const LINE_MAX_CHARS = 500
-
-// ---- Relevance gate (§3.4 — "trabalho relevante"; §5 — done-by-evidence) ----
-
-/** The measurable work a session produced, as probed by the shell from git. */
-export interface SessionWorkSignals {
-  /** Commits attributable to THIS session on its branch (the primary signal). */
-  commitCount: number
-  /** Distinct files changed across those commits (context, not a gate). */
-  filesChanged: number
-  /** Uncommitted working-tree files (supplementary evidence, never a gate). */
-  dirtyCount: number
-}
-
-/**
- * The relevance threshold (PRD open-question §8.2). Commit-count is the only gate
- * by default: uncommitted churn and idle duration are narrative, not evidence, so
- * a session that ran long but produced nothing never spams a digest. Kept as a
- * config object (not a literal) so the threshold is a single documented,
- * unit-pinned knob the shell can override.
- */
-export interface DigestRelevanceConfig {
-  /** Minimum session commits for a digest to be worth writing. */
-  minCommits: number
-}
-
-/** The default: ≥1 commit — the strongest done-by-evidence signal (PRD §5). */
-export const DEFAULT_DIGEST_RELEVANCE: DigestRelevanceConfig = { minCommits: 1 }
-
-/** Why a session was (or wasn't) judged worth a digest. */
-export type RelevanceReason = 'commits' | 'insufficient'
-
-/** Outcome of {@link isRelevantWork}. */
-export interface RelevanceVerdict {
-  relevant: boolean
-  reason: RelevanceReason
-}
-
-/**
- * Decide whether a session did enough to warrant a digest. Pure: the shell
- * supplies the git-probed signals. Commit-count leads (§5): ≥`minCommits`
- * commits ⇒ relevant. Everything else ⇒ not relevant (so the digest never fires
- * on time-in-seat alone, and a later commit can still trigger it).
- */
-export function isRelevantWork(
-  signals: SessionWorkSignals,
-  config: DigestRelevanceConfig = DEFAULT_DIGEST_RELEVANCE
-): RelevanceVerdict {
-  if (signals.commitCount >= config.minCommits) return { relevant: true, reason: 'commits' }
-  return { relevant: false, reason: 'insufficient' }
-}
 
 // ---- Git evidence parsing (pure — shell runs git, this reads the bytes) ------
 
@@ -249,36 +196,7 @@ export function digestSlug(date: string, sessionId: string): string {
   return `${date}-${shortSessionId(sessionId)}`
 }
 
-// ---- Digest formatter (the evidence-linked body) ----------------------------
-
-/** Whether the digest was triggered by the session ending or going long-idle. */
-export type DigestEndReason = 'ended' | 'idle'
-
-/** Everything the formatter needs — assembled by the shell from git + transcript. */
-export interface DigestInput {
-  /** `YYYY-MM-DD` (server clock). */
-  date: string
-  /** Session label (custom/ai title, else a fallback) — the `# ` heading. */
-  title: string
-  /** Git branch the work landed on (omitted when detached / not a repo). */
-  branch?: string
-  /** 8-char session-id prefix. */
-  sessionShort: string
-  /** Trigger — renders "ended" vs "went idle". */
-  endReason: DigestEndReason
-  /** The CLI's own "Goal:… Next:…" recap (verbatim), when present (T91 §4). */
-  awaySummary?: string
-  /** The `task-summary` entry text, when present (T91 §3). */
-  taskSummary?: string
-  /** The freshest `last-prompt`, when present (T91 §3). */
-  lastPrompt?: string
-  /** Session commits (newest-first) — the primary evidence. */
-  commits: readonly DigestCommit[]
-  /** Aggregate file churn across those commits. */
-  fileStats: readonly DigestFileStat[]
-  /** Uncommitted working-tree file count (supplementary). */
-  dirtyCount: number
-}
+// ---- Digest body helpers ----------------------------------------------------
 
 /** Collapse whitespace + hard-cap a free-text field so the body stays bounded. */
 function elide(text: string, max: number): string {
@@ -294,8 +212,8 @@ function dirtyLine(dirtyCount: number): string {
 
 /**
  * The Evidence lines for a commit-backed digest: the capped commit list, the
- * files line and the uncommitted line. Shared by {@link formatDigest} and
- * {@link renderDigest} so the two stay byte-identical (spec Formats §3).
+ * files line and the uncommitted line, as the pre-U1 digest wrote them (spec
+ * Formats §3).
  */
 function commitEvidenceLines(
   commits: readonly DigestCommit[],
@@ -328,60 +246,6 @@ function commitEvidenceLines(
     lines.push(dirtyLine(dirtyCount))
   }
   return lines
-}
-
-/** The best available session recap, framed as the session's OWN words. */
-function recapText(input: DigestInput): string {
-  const src = input.awaySummary || input.taskSummary || input.lastPrompt || ''
-  return src ? elide(src, RECAP_MAX_CHARS) : ''
-}
-
-/**
- * Build the evidence-linked digest markdown for `sessions/<slug>.md`. The body
- * has three parts, in trust order: a one-line header, the git `## Evidence`
- * (hard truth), then the session's own `## Recap` (clearly framed as self-report,
- * never as fact). Starts with a `# ` heading so `memory-core.parseDigestMeta`
- * reads it as the timeline title. Provenance is NOT added here — the memory
- * writer (`appendMemoryEntry`) stamps it server-side.
- *
- * Caps the commit + file lists ({@link DIGEST_COMMIT_CAP} / {@link DIGEST_FILE_CAP})
- * and LOGS the elision inline ("+N more") — never a silent truncation.
- */
-export function formatDigest(input: DigestInput): string {
-  const lines: string[] = []
-  const title = input.title.trim() || `Session ${input.sessionShort}`
-  lines.push(`# ${title}`)
-  lines.push('')
-
-  // One-line header: what/where/why-now, all facts.
-  const verb = input.endReason === 'ended' ? 'ended' : 'went idle'
-  const branchPart = input.branch ? ` · branch \`${input.branch}\`` : ''
-  lines.push(`_Session \`${input.sessionShort}\`${branchPart} · ${verb} · auto-digest_`)
-  lines.push('')
-
-  // Evidence — the hard git truth (never self-report).
-  lines.push('## Evidence')
-  lines.push(...commitEvidenceLines(input.commits, input.fileStats, input.dirtyCount))
-
-  // Recap — the session's OWN words (self-report; framed, never trusted as fact).
-  const recap = recapText(input)
-  if (recap) {
-    lines.push('')
-    lines.push('## Recap')
-    lines.push("_The session's own summary — context, not verified fact:_")
-    lines.push('')
-    lines.push(recap)
-  }
-
-  // Left off — the freshest open thread (the retomada cue).
-  const leftOff = input.lastPrompt ? elide(input.lastPrompt, LINE_MAX_CHARS) : ''
-  if (leftOff && leftOff !== recap) {
-    lines.push('')
-    lines.push('## Left off')
-    lines.push(leftOff)
-  }
-
-  return lines.join('\n') + '\n'
 }
 
 // ---- Hot proposal builder (the ≤500-word retomada snapshot) ------------------
@@ -680,4 +544,26 @@ export function renderDigest(input: DigestRenderInput): string {
     out = assemble()
   }
   return out
+}
+
+// ---- The memory-root guard (S-3) --------------------------------------------
+
+/**
+ * Whether the digest engine may write into the memory of `checkout` (the folder whose
+ * `.harnu/memory/` would hold the digest). False for the home directory itself, the
+ * filesystem root, and anything inside `<home>/.claude` (Claude Code's data) or
+ * `<home>/.harnu` (the global memory layer, ADR-0024), so a session started in one of
+ * those never gets a digest written there. Pure path math: no fs.
+ */
+export function digestTargetAllowed(checkout: string, home: string): boolean {
+  const target = path.resolve(checkout)
+  const homeDir = path.resolve(home)
+  if (target === path.parse(target).root || target === homeDir) return false
+  return !['.claude', '.harnu'].some((name) => isWithin(target, path.join(homeDir, name)))
+}
+
+/** Whether `target` is `dir` or a path below it (both already resolved). */
+function isWithin(target: string, dir: string): boolean {
+  const rel = path.relative(dir, target)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
 }

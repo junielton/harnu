@@ -1,19 +1,19 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import * as os from 'node:os'
+import { join, parse } from 'node:path'
 import {
   buildHotProposal,
   commitsAfter,
   commitsSince,
-  DEFAULT_DIGEST_RELEVANCE,
   DIGEST_COMMIT_CAP,
   DIGEST_FILE_CAP,
   DIGEST_GATE,
   DIGEST_MAX_CHARS,
   digestSlug,
+  digestTargetAllowed,
   digestTriggerFor,
-  formatDigest,
   GIT_LOG_FORMAT,
   GIT_LOG_SEP,
-  isRelevantWork,
   parseGitLog,
   parseNumstat,
   planDigest,
@@ -26,7 +26,9 @@ import {
   type DigestRenderInput,
   type GitEvidence
 } from '../src/main/mcp/digest-core'
+import { createDigestEngine } from '../src/main/mcp/digest-engine'
 import { MEMORY_ENTRY_MAX_CHARS } from '../src/main/mcp/memory-core'
+import { deriveTranscriptTruth } from '../src/main/transcript-truth'
 import {
   emptyFacts,
   scanTranscriptLines,
@@ -35,45 +37,12 @@ import {
 import { fixtureSession, transcriptLines } from './helpers/memory-u1-fixture'
 
 /**
- * T79 S2 — the pure auto-digest core: the relevance gate, git-evidence parsing,
- * the evidence-linked digest formatter, and the proposed-`hot.md` builder.
+ * T79 S2 / memory U1 — the pure auto-digest core: git-evidence parsing, the
+ * hook-edge trigger, the planner, the digest body, and the `hot.md` builder.
  * Framework-free + side-effect-free (no fs/git/clock) so every gate/format
  * decision is pinned here; the env shell (`memory-digest.ts`) only marshals git +
  * transcript reads.
  */
-
-// ---- Relevance gate (§3.4 / §5 — done-by-evidence) --------------------------
-
-describe('isRelevantWork', () => {
-  const base = { commitCount: 0, filesChanged: 0, dirtyCount: 0 }
-
-  it('is relevant with ≥1 commit (the primary done-by-evidence signal)', () => {
-    expect(isRelevantWork({ ...base, commitCount: 1 })).toEqual({
-      relevant: true,
-      reason: 'commits'
-    })
-  })
-
-  it('is NOT relevant with zero commits, however dirty the tree', () => {
-    expect(isRelevantWork({ ...base, dirtyCount: 50, filesChanged: 50 })).toEqual({
-      relevant: false,
-      reason: 'insufficient'
-    })
-  })
-
-  it('never fires on time-in-seat alone (no commit → not relevant)', () => {
-    expect(isRelevantWork(base).relevant).toBe(false)
-  })
-
-  it('honours a tunable minCommits threshold', () => {
-    expect(isRelevantWork({ ...base, commitCount: 2 }, { minCommits: 3 }).relevant).toBe(false)
-    expect(isRelevantWork({ ...base, commitCount: 3 }, { minCommits: 3 }).relevant).toBe(true)
-  })
-
-  it('defaults to minCommits: 1', () => {
-    expect(DEFAULT_DIGEST_RELEVANCE).toEqual({ minCommits: 1 })
-  })
-})
 
 // ---- Git log parsing --------------------------------------------------------
 
@@ -209,129 +178,6 @@ describe('digestSlug / shortSessionId', () => {
     // memory-core DIGEST_NAME = /^(\d{4}-\d{2}-\d{2})-([A-Za-z0-9]+)\.md$/
     const slug = digestSlug('2026-07-07', 'deadbeefcafef00d')
     expect(`${slug}.md`).toMatch(/^(\d{4}-\d{2}-\d{2})-([A-Za-z0-9]+)\.md$/)
-  })
-})
-
-// ---- formatDigest -----------------------------------------------------------
-
-describe('formatDigest', () => {
-  const commits = [
-    mkCommit('a'.repeat(40), 300, 'feat: ship it'),
-    mkCommit('b'.repeat(40), 200, 'test: cover it')
-  ]
-  const fileStats: DigestFileStat[] = [
-    { added: 10, deleted: 1, file: 'src/a.ts' },
-    { added: 4, deleted: 0, file: 'src/b.ts' }
-  ]
-
-  it('starts with a `# ` heading (so the timeline reads it as the title)', () => {
-    const md = formatDigest({
-      date: '2026-07-07',
-      title: 'Auto-digest engine',
-      branch: 'feat/t79-s2-digest',
-      sessionShort: 'a1b2c3d4',
-      endReason: 'ended',
-      commits,
-      fileStats,
-      dirtyCount: 0
-    })
-    expect(md.startsWith('# Auto-digest engine\n')).toBe(true)
-  })
-
-  it('links commit evidence (hash + subject), never a narrative claim', () => {
-    const md = formatDigest({
-      date: '2026-07-07',
-      title: 'x',
-      sessionShort: 'a1b2c3d4',
-      endReason: 'idle',
-      commits,
-      fileStats,
-      dirtyCount: 0
-    })
-    expect(md).toContain('## Evidence')
-    expect(md).toContain('**Commits (2)**')
-    expect(md).toContain('- `aaaaaaaa` feat: ship it')
-    expect(md).toContain('**Files (2, +14/−1)**')
-    expect(md).toContain('`src/a.ts`')
-    expect(md).toContain('went idle')
-  })
-
-  it("frames the recap as the session's own words, not fact", () => {
-    const md = formatDigest({
-      date: '2026-07-07',
-      title: 'x',
-      sessionShort: 'a1b2c3d4',
-      endReason: 'ended',
-      awaySummary: 'Goal: build the engine. Next: wire the inbox.',
-      commits,
-      fileStats: [],
-      dirtyCount: 0
-    })
-    expect(md).toContain('## Recap')
-    expect(md).toContain('context, not verified fact')
-    expect(md).toContain('Goal: build the engine.')
-  })
-
-  it('reports uncommitted churn as supplementary, not as a commit', () => {
-    const md = formatDigest({
-      date: '2026-07-07',
-      title: 'x',
-      sessionShort: 'a1b2c3d4',
-      endReason: 'ended',
-      commits,
-      fileStats,
-      dirtyCount: 3
-    })
-    expect(md).toContain('3 uncommitted changes in the working tree')
-  })
-
-  it('elides an over-long commit list with an explicit "+N more" (never silent)', () => {
-    const many = Array.from({ length: DIGEST_COMMIT_CAP + 5 }, (_, i) =>
-      mkCommit(String(i).padStart(40, '0'), 100 + i, `c${i}`)
-    )
-    const md = formatDigest({
-      date: '2026-07-07',
-      title: 'x',
-      sessionShort: 'a1b2c3d4',
-      endReason: 'ended',
-      commits: many,
-      fileStats: [],
-      dirtyCount: 0
-    })
-    expect(md).toContain('_…and 5 more_')
-    expect(md).toContain(`**Commits (${DIGEST_COMMIT_CAP + 5})**`)
-  })
-
-  it('elides an over-long file list with "+N more"', () => {
-    const many: DigestFileStat[] = Array.from({ length: DIGEST_FILE_CAP + 3 }, (_, i) => ({
-      added: 1,
-      deleted: 0,
-      file: `f${i}.ts`
-    }))
-    const md = formatDigest({
-      date: '2026-07-07',
-      title: 'x',
-      sessionShort: 'a1b2c3d4',
-      endReason: 'ended',
-      commits,
-      fileStats: many,
-      dirtyCount: 0
-    })
-    expect(md).toContain('_(+3 more)_')
-  })
-
-  it('falls back to a session-id title when none is given', () => {
-    const md = formatDigest({
-      date: '2026-07-07',
-      title: '   ',
-      sessionShort: 'a1b2c3d4',
-      endReason: 'ended',
-      commits: [],
-      fileStats: [],
-      dirtyCount: 0
-    })
-    expect(md.startsWith('# Session a1b2c3d4\n')).toBe(true)
-    expect(md).toContain('- _(none)_')
   })
 })
 
@@ -700,16 +546,16 @@ describe('renderDigest', () => {
   it('keeps the commit evidence lines of today and counts other commits as context', () => {
     const commits = [mkCommit('a'.repeat(40), 300, 'feat: ship it')]
     const fileStats: DigestFileStat[] = [{ added: 10, deleted: 1, file: 'src/a.ts' }]
-    const today = formatDigest({
-      date: '2026-11-03',
-      title: 'x',
-      sessionShort: 'a1000003',
-      endReason: 'ended',
-      commits,
-      fileStats,
-      dirtyCount: 3
-    })
-    const todayEvidence = today.split('## Evidence\n')[1].replace(/\n$/, '')
+    // The Evidence lines the pre-U1 digest (formatDigest, deleted in S-2) wrote for this input.
+    const todayEvidence = [
+      '**Commits (1)**',
+      '- `aaaaaaaa` feat: ship it',
+      '',
+      '**Files (1, +10/−1)**',
+      '`src/a.ts`',
+      '',
+      '_3 uncommitted changes in the working tree (not in the commits above)._'
+    ].join('\n')
     const md = renderDigest(
       base({
         plan: writePlan('commits', 'commits'),
@@ -727,5 +573,81 @@ describe('renderDigest', () => {
     expect(section(renderDigest(base({ otherCommits: 0 })), 'Evidence')).toBe(
       '**Commits (0)** — none in this session'
     )
+  })
+
+  it('elides over-long commit and file lists with an explicit count', () => {
+    const many = Array.from({ length: DIGEST_COMMIT_CAP + 5 }, (_, i) =>
+      mkCommit(String(i).padStart(40, '0'), 100 + i, `c${i}`)
+    )
+    const files: DigestFileStat[] = Array.from({ length: DIGEST_FILE_CAP + 3 }, (_, i) => ({
+      added: 1,
+      deleted: 0,
+      file: `f${i}.ts`
+    }))
+    const evidence = section(
+      renderDigest(
+        base({
+          plan: writePlan('commits', 'commits'),
+          git: {
+            kind: 'repo',
+            head: 'a'.repeat(40),
+            commits: many,
+            fileStats: files,
+            dirtyCount: 0
+          }
+        })
+      ),
+      'Evidence'
+    )!
+    expect(evidence).toContain(`**Commits (${DIGEST_COMMIT_CAP + 5})**`)
+    expect(evidence).toContain('- _…and 5 more_')
+    expect(evidence).toContain(`**Files (${DIGEST_FILE_CAP + 3}, +${DIGEST_FILE_CAP + 3}/−0)**`)
+    expect(evidence).toContain('_(+3 more)_')
+  })
+})
+
+describe('digestTargetAllowed', () => {
+  it('digestTargetAllowed refuses unsafe roots', async () => {
+    const home = join(parse(process.cwd()).root, 'home', 'op')
+    expect(digestTargetAllowed(home, home)).toBe(false)
+    expect(digestTargetAllowed(`${home}/`, home)).toBe(false)
+    expect(digestTargetAllowed(parse(home).root, home)).toBe(false)
+    expect(digestTargetAllowed(join(home, '.claude'), home)).toBe(false)
+    expect(digestTargetAllowed(join(home, '.claude', 'projects', 'x'), home)).toBe(false)
+    expect(digestTargetAllowed(join(home, '.harnu'), home)).toBe(false)
+    expect(digestTargetAllowed(join(home, '.harnu', 'memory'), home)).toBe(false)
+    expect(digestTargetAllowed(join(home, 'notes', '..', '.claude'), home)).toBe(false)
+    // An ordinary folder under the home directory, and look-alike names, are fine.
+    expect(digestTargetAllowed(join(home, 'notes'), home)).toBe(true)
+    expect(digestTargetAllowed(join(home, '.claude-backup'), home)).toBe(true)
+    expect(digestTargetAllowed(join(home, '..claude'), home)).toBe(true)
+    expect(digestTargetAllowed(join(home, 'work', '.claude'), home)).toBe(true)
+
+    // The engine writes nothing, digest or hot, for a refused memory root.
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      for (const root of [os.homedir(), join(os.homedir(), '.claude', 'scratch')]) {
+        const writeDigest = vi.fn(async () => ({ ok: true }))
+        const writeHot = vi.fn(async () => undefined)
+        const engine = createDigestEngine({
+          resolveSession: async () => ({ transcriptPath: '/t/x.jsonl', folder: root }),
+          readFacts: async () => ({ facts: { ...emptyFacts(), userTurns: 3 }, offset: 1 }),
+          readTruth: async () => deriveTranscriptTruth([]),
+          gatherGit: async () => ({ kind: 'not-a-repo' }),
+          writeDigest,
+          writeHot,
+          memoryCheckout: async (folder) => folder,
+          now: () => Date.parse('2026-11-03T12:00:00.000Z'),
+          setTimer: () => 0,
+          clearTimer: () => undefined
+        })
+        await engine.digestNow('s-unsafe', 'ended')
+        expect(writeDigest).not.toHaveBeenCalled()
+        expect(writeHot).not.toHaveBeenCalled()
+        expect(log).toHaveBeenCalledWith(`[memory-digest] skipped: unsafe memory root ${root}`)
+      }
+    } finally {
+      log.mockRestore()
+    }
   })
 })

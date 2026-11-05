@@ -10,6 +10,7 @@ import {
   Folder,
   FolderTree,
   Loader2,
+  Expand,
   Maximize2,
   Minimize2,
   Plus,
@@ -494,6 +495,12 @@ function onToggleMaximize(): void {
   helpers.toggleMaximizePane(props.worktreePath, props.pane.id)
 }
 
+/** T628: whether THIS pane is expanded to the window; its header button toggles that. */
+const isExpanded = computed(() => helpers.expandedPaneId(props.worktreePath) === props.pane.id)
+function onToggleExpand(): void {
+  helpers.toggleExpandPane(props.worktreePath, props.pane.id)
+}
+
 // T486 U5b — a region of the pane focus ring: F6 focuses its scroll body (focusing
 // the overflow-hidden root would leave PageDown / arrows with no scroller to drive),
 // `pane.close` runs the header X's close. The root draws the design.md §6
@@ -542,6 +549,24 @@ useFocusRegion(props.pane.id, rootEl, {
         @click="reload"
       >
         <RotateCcw :size="12" :stroke-width="1.5" />
+      </button>
+      <button
+        class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
+        :class="isExpanded ? 'text-accent' : 'text-text-3'"
+        style="width: 18px; height: 18px"
+        data-test="pane-expand"
+        :title="
+          keybindings.withChord(
+            isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand'),
+            'pane.expandToWindow'
+          )
+        "
+        :aria-label="isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand')"
+        :aria-pressed="isExpanded"
+        @mousedown.stop
+        @click="onToggleExpand"
+      >
+        <Expand :size="12" :stroke-width="1.5" />
       </button>
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"

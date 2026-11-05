@@ -19,6 +19,17 @@ On disk, it's just files:
 
 Because it's plain markdown in your repo, you can read or edit any of it by hand in your normal editor — nothing about the format requires going through Harnu, and hand-editing or deleting a file never corrupts anything else.
 
+## When a digest is written
+
+Harnu writes the session digests in `sessions/` on its own, from the hooks it already installs; no session has to ask for one.
+
+- **A digest is written when a session ends, compacts, or sits idle for 5 minutes.** A later digest of the same session on the same day is added to the same file.
+- **A session needs a commit or at least three messages from you.** A shorter session with no commit leaves no digest, and a digest is not written again when nothing changed since the last one.
+- **A digest without commits says so.** Its header line ends with `evidence: no-commits` and its Evidence section reads "none in this session", so a session that researched, planned or reviewed is still recorded without claiming work it didn't commit.
+- **What it records:** the git evidence (commits, files changed, uncommitted changes), what the session asked you and what you answered, the questions its last message left open, and that last message, all quoted word for word rather than paraphrased.
+- **A folder that isn't a git repository gets digests too.** They go to that folder's own `.harnu/memory/` (or to your central memory folder, if the folder's memory settings say so), their header line ends with `evidence: no-git`, and the Evidence section says there is no git evidence; everything else is recorded the same way. Harnu never writes a digest into your home folder itself, the root of the disk, or anything inside `~/.claude` or `~/.harnu`: a session started there is skipped.
+- **A digest lists only the session's own commits, and nothing is missed or repeated across a restart.** A commit counts as the session's when it was made during one of the session's own `git` commands (its subagents' included); commits that other sessions or you made on the same checkout while it ran are left out, and one line at the end of Evidence says how many there were. Harnu remembers what each session's last digest saw in `memory-digest-state.json` in its data folder, so restarting Harnu never writes the same digest twice. A minute after Harnu starts, and every 30 minutes after that, it also digests the sessions of the last 7 days that no hook reached (they ran while Harnu was closed, Harnu crashed, or the hook bridge was off): at least three of your messages, quiet for 5 minutes, no digest yet, at most 10 at a time, oldest first.
+
 ## The memory pane
 
 Right-click a folder and choose **Project memory** to open a read-only pane (as a [split](sessions.md#splits), so it sits alongside whatever you're working on) with three tabs:

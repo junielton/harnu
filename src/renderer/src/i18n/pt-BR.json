@@ -132,6 +132,7 @@
     "terminal": "Terminal",
     "split": "Dividir horizontal",
     "browser": "Navegador",
+    "moreActions": "Mais ações",
     "splitLayout": "Divisão: {mode}",
     "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Abrir pasta",
@@ -176,6 +177,8 @@
     "close": "Fechar painel",
     "maximize": "Maximizar",
     "restore": "Restaurar",
+    "expand": "Expandir para a janela",
+    "exitExpand": "Sair da visão expandida",
     "shellTitle": "Shell",
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
@@ -1187,6 +1190,16 @@
         "auto": "Automático",
         "sideBySide": "Lado a lado",
         "stacked": "Empilhado"
+      },
+      "floatingPanels": {
+        "label": "Painéis flutuantes",
+        "hint": "Mostra cada painel como uma ilha arredondada própria sobre um fundo mais escuro, com um espaço uniforme entre eles. Desligado mantém o layout clássico, de ponta a ponta."
+      },
+      "expandHides": {
+        "label": "Expandir esconde",
+        "hint": "O que sai da frente quando um painel auxiliar é expandido para a janela. Tudo também esconde a barra lateral e o Fleet rail; Só a sessão esconde apenas a sessão.",
+        "everything": "Tudo",
+        "sessionOnly": "Só a sessão"
       }
     },
     "interface": {
@@ -1466,6 +1479,7 @@
       "pane_focusNext": "Focar o próximo painel",
       "pane_focusPrev": "Focar o painel anterior",
       "pane_toggleMaximize": "Maximizar ou restaurar o painel focado",
+      "pane_expandToWindow": "Expandir o painel focado para a janela",
       "pane_close": "Fechar o painel focado",
       "terminal_toggle": "Alternar o painel do terminal",
       "layout_cycleSplitOrientation": "Alternar a divisão da tela (automático, lado a lado, empilhado)",

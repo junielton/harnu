@@ -109,6 +109,137 @@ export function helperPanelVisible(hasHelpers: boolean, collapsed: boolean): boo
   return hasHelpers && !collapsed
 }
 
+/* ---------------------------------------------------------------------------------------------- */
+/* Layout motion (T628, design.md §7 "Layout motion")                                              */
+/* ---------------------------------------------------------------------------------------------- */
+
+/** Time the flag outlives the transition, so the last frame and the browser pane's final rect land. */
+export const LAYOUT_MOTION_SLACK_MS = 80
+/** Trailing delay of the xterm refit during a motion: longer than a frame, shorter than a blink. */
+export const REFLOW_DELAY_MS = 120
+const SLOW_DURATION_FALLBACK_MS = 220
+
+type TimerHandle = unknown
+
+export interface LayoutMotionDeps {
+  /** `--dur-slow` in ms. */
+  durationMs: () => number
+  /** `prefers-reduced-motion: reduce`. */
+  reduced: () => boolean
+  /** The `data-layout-motion` flag on the shell. */
+  onChange: (active: boolean) => void
+  /** Swap browser panes for their JPEG stand-in (true) or bring them back live (false). */
+  freeze: (on: boolean) => void
+  setTimer: (cb: () => void, ms: number) => TimerHandle
+  clearTimer: (handle: TimerHandle) => void
+  /** True while a layout transition is still running; the flag then waits (bounded) instead of ending. */
+  busy?: () => boolean
+}
+
+/** How many times a running transition can postpone the end of a motion (each wait is 50ms). */
+const MOTION_BUSY_RETRIES = 12
+
+/**
+ * The transient motion flag. `begin()` is called right BEFORE a layout state change that is not a
+ * drag; it raises the flag (which enables the transitions in `main.css`) and freezes browser panes,
+ * then drops both once `--dur-slow` plus a little slack have passed. A second `begin()` while one
+ * is running extends it and never freezes twice. Under reduced motion it does nothing and returns
+ * false: the layout snaps. Pure over its deps so it is unit-testable without a DOM.
+ */
+export function createLayoutMotion(deps: LayoutMotionDeps): {
+  begin: () => boolean
+  readonly active: boolean
+} {
+  let active = false
+  let timer: TimerHandle = null
+  let waited = 0
+  const finish = (): void => {
+    timer = null
+    if (deps.busy?.() && waited < MOTION_BUSY_RETRIES) {
+      waited++
+      timer = deps.setTimer(finish, 50)
+      return
+    }
+    waited = 0
+    active = false
+    deps.onChange(false)
+    deps.freeze(false)
+  }
+  return {
+    begin(): boolean {
+      if (deps.reduced()) return false
+      if (timer !== null) deps.clearTimer(timer)
+      waited = 0
+      if (!active) {
+        active = true
+        deps.onChange(true)
+        deps.freeze(true)
+      }
+      timer = deps.setTimer(finish, deps.durationMs() + LAYOUT_MOTION_SLACK_MS)
+      return true
+    },
+    get active() {
+      return active
+    }
+  }
+}
+
+export interface ReflowGateDeps {
+  isMotion: () => boolean
+  fit: () => void
+  delayMs: number
+  setTimer: (cb: () => void, ms: number) => TimerHandle
+  clearTimer: (handle: TimerHandle) => void
+}
+
+/**
+ * Gate for an xterm's resize observer. Outside a motion every observation refits at once (a drag
+ * stays live); during one, each observation only re-arms a single trailing refit, so the grid
+ * changes once after the last frame instead of on every frame.
+ */
+export function createReflowGate(deps: ReflowGateDeps): {
+  observe: () => void
+  cancel: () => void
+} {
+  let timer: TimerHandle = null
+  const cancel = (): void => {
+    if (timer !== null) deps.clearTimer(timer)
+    timer = null
+  }
+  return {
+    observe(): void {
+      if (!deps.isMotion()) {
+        cancel()
+        deps.fit()
+        return
+      }
+      cancel()
+      timer = deps.setTimer(() => {
+        timer = null
+        deps.fit()
+      }, deps.delayMs)
+    },
+    cancel
+  }
+}
+
+/** `--dur-slow` in ms (the token may compute to `220ms` or `0.22s`); a fallback outside a browser. */
+export function slowDurationMs(): number {
+  if (typeof document === 'undefined') return SLOW_DURATION_FALLBACK_MS
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--dur-slow').trim()
+  const n = parseFloat(raw)
+  if (!Number.isFinite(n) || n <= 0) return SLOW_DURATION_FALLBACK_MS
+  return raw.endsWith('ms') ? n : raw.endsWith('s') ? n * 1000 : n
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
 /**
  * Global layout state persisted to `localStorage` — mirrors the theme store's
  * anatomy. The sidebar is single across the app, so its width is a global
@@ -253,6 +384,52 @@ export const useLayoutStore = defineStore('layout', () => {
     inboxRailOrder.value = inboxRailOrder.value === 'newest-first' ? 'oldest-first' : 'newest-first'
   }
 
+  // T628: the transient layout-motion flag. Raised around a layout state change that is not a drag.
+  const layoutMotion = ref(false)
+  let transitionsRunning = 0
+  const motion = createLayoutMotion({
+    busy: () => transitionsRunning > 0,
+    durationMs: slowDurationMs,
+    reduced: prefersReducedMotion,
+    onChange: (on) => {
+      layoutMotion.value = on
+    },
+    // The same stand-in a splitter or sidebar drag uses (browser store, spec §2.4).
+    freeze: (on) => window.api?.browserDrag?.(on),
+    setTimer: (cb, ms) => setTimeout(cb, ms),
+    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
+  })
+
+  /** Call right before a layout change that should animate; false when reduced motion snaps it. */
+  function beginLayoutMotion(): boolean {
+    return motion.begin()
+  }
+
+  // The style recalc that starts a transition can land late (a busy frame, a browser pane being
+  // frozen). Each transition that really starts inside a layout container re-arms the timer from
+  // that moment, so the flag outlives the last transition instead of cutting it short.
+  if (typeof document !== 'undefined') {
+    document.addEventListener(
+      'transitionstart',
+      (ev) => {
+        if (!motion.active) return
+        const el = ev.target
+        if (el instanceof Element && el.hasAttribute('data-lm')) motion.begin()
+      },
+      true
+    )
+    // Count the layout transitions in flight, so the flag never ends in the middle of one.
+    const track = (delta: number) => (ev: Event) => {
+      const el = ev.target
+      if (el instanceof Element && el.hasAttribute('data-lm')) {
+        transitionsRunning = Math.max(0, transitionsRunning + delta)
+      }
+    }
+    document.addEventListener('transitionrun', track(1), true)
+    document.addEventListener('transitionend', track(-1), true)
+    document.addEventListener('transitioncancel', track(-1), true)
+  }
+
   function toggleInboxRailStateVisibility(state: BoardState): void {
     inboxRailHiddenStates.toggle(state)
   }
@@ -263,6 +440,8 @@ export const useLayoutStore = defineStore('layout', () => {
 
   return {
     sidebarWidth,
+    layoutMotion,
+    beginLayoutMotion,
     splitOrientation,
     mainAreaSize,
     setMainAreaSize,

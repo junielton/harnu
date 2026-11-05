@@ -5,8 +5,13 @@
  * `transcriptLines`; S-2 adds `buildMemoryU1Home`, which writes those lines to disk next to a real
  * git repo.
  */
-import { readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promises as fs, readFileSync } from 'node:fs'
 import * as path from 'node:path'
+import { promisify } from 'node:util'
+import { slugOfPath } from '../../src/main/gc/gc-transcripts'
+
+const runFile = promisify(execFile)
 
 export interface FixtureSession {
   id: string // full session id
@@ -227,4 +232,124 @@ export function transcriptLines(
   }
 
   return { main: finish(main, ''), subagent: finish(sub, 's') }
+}
+
+/** What {@link buildMemoryU1Home} built. */
+export interface MemoryU1Home {
+  /** `<tmp>/home`; the transcripts live under `<home>/.claude/projects/`. */
+  home: string
+  /** `<tmp>/repo`, a git repo on `main` with the fixture's commits. */
+  repo: string
+  /** `<tmp>/plain`, a folder that is not a git work tree. */
+  plain: string
+  /** `<tmp>/repo/.claude/worktrees/feature-x`, never created. */
+  gone: string
+  sessions: FixtureSession[]
+  /** Absolute path of a session's main transcript. */
+  transcriptOf(id: string): string
+  /** Absolute paths of a session's subagent transcripts (empty when it has none). */
+  subagentsOf(id: string): string[]
+}
+
+/**
+ * Every git call the helper makes is isolated from the machine's configuration: no global or
+ * system config, no signing, no hooks.
+ */
+async function fixtureGit(cwd: string, args: string[], dateMs?: number): Promise<string> {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_AUTHOR_NAME: 'fixture',
+    GIT_AUTHOR_EMAIL: 'fixture@example.com',
+    GIT_COMMITTER_NAME: 'fixture',
+    GIT_COMMITTER_EMAIL: 'fixture@example.com'
+  }
+  if (dateMs !== undefined) {
+    const date = new Date(dateMs).toISOString()
+    env.GIT_AUTHOR_DATE = date
+    env.GIT_COMMITTER_DATE = date
+  }
+  const { stdout } = await runFile(
+    'git',
+    ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args],
+    { env }
+  )
+  return stdout
+}
+
+/**
+ * Builds a temp home for the replay (spec "The shared fixture"): the git repo with one commit per
+ * fixture git call, the plain folder, and every transcript under `<home>/.claude/projects/`, each
+ * file's mtime set to its session's end. `.harnu/` is excluded in the repo's `.git/info/exclude`
+ * so the digests a replay writes there never count as uncommitted changes.
+ */
+export async function buildMemoryU1Home(tmp: string): Promise<MemoryU1Home> {
+  const { sessions } = loadMemoryU1Fixture()
+  const home = path.join(tmp, 'home')
+  const repo = path.join(tmp, 'repo')
+  const plain = path.join(tmp, 'plain')
+  const gone = path.join(repo, '.claude', 'worktrees', 'feature-x')
+  const paths: FixturePaths = { repo, plain, gone }
+
+  await fs.mkdir(home, { recursive: true })
+  await fs.mkdir(repo, { recursive: true })
+  await fs.mkdir(plain, { recursive: true })
+  const plainIsTree = await fixtureGit(plain, ['rev-parse', '--is-inside-work-tree']).then(
+    () => true,
+    () => false
+  )
+  if (plainIsTree) throw new Error(`${plain} is inside a git work tree; pick another tmp dir`)
+
+  await fixtureGit(repo, ['init', '--template=', '-b', 'main'])
+  await fs.mkdir(path.join(repo, '.git', 'info'), { recursive: true })
+  await fs.writeFile(path.join(repo, '.git', 'info', 'exclude'), '.harnu/\n')
+  const T = fixtureT()
+  await fixtureGit(repo, ['commit', '--allow-empty', '-m', 'chore: init'], T - 86_400_000)
+  const calls = sessions
+    .filter((s) => s.folder === 'repo')
+    .flatMap((s) => s.gitCalls)
+    .sort((a, b) => a.atMin - b.atMin)
+  for (const call of calls) {
+    await fs.writeFile(path.join(repo, `${call.subject}.txt`), `${call.subject}\n`)
+    await fixtureGit(repo, ['add', `${call.subject}.txt`])
+    await fixtureGit(repo, ['commit', '-m', call.subject], atMinute(call.atMin, 1))
+  }
+
+  const projects = path.join(home, '.claude', 'projects')
+  const mains = new Map<string, string>()
+  const subs = new Map<string, string[]>()
+  for (const s of sessions) {
+    const dir = path.join(projects, slugOfPath(paths[s.folder]))
+    const lines = transcriptLines(s, paths)
+    const end = new Date(atMinute(s.endMin))
+    const file = path.join(dir, `${s.id}.jsonl`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(file, lines.main.join('\n') + '\n')
+    await fs.utimes(file, end, end)
+    mains.set(s.id, file)
+    if (lines.subagent.length > 0) {
+      const subFile = path.join(dir, s.id, 'subagents', 'agent-1.jsonl')
+      await fs.mkdir(path.dirname(subFile), { recursive: true })
+      await fs.writeFile(subFile, lines.subagent.join('\n') + '\n')
+      await fs.utimes(subFile, end, end)
+      subs.set(s.id, [subFile])
+    }
+  }
+
+  return {
+    home,
+    repo,
+    plain,
+    gone,
+    sessions,
+    transcriptOf(id: string): string {
+      const file = mains.get(id)
+      if (!file) throw new Error(`no fixture transcript for ${id}`)
+      return file
+    },
+    subagentsOf(id: string): string[] {
+      return subs.get(id) ?? []
+    }
+  }
 }

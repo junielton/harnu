@@ -152,7 +152,8 @@ function operatorText(raw) {
 /**
  * True when a parsed transcript line is an operator turn (spec S-1 "Operator turn"): a
  * main-thread `user` line that is not meta, not a compaction summary, not a tool result, and
- * whose text is real once the injected wrappers are removed (a slash command counts).
+ * whose text is real once the injected wrappers are removed (a slash command counts). An
+ * image-only line has no text, so it is not a turn.
  */
 export function isOperatorTurn(obj) {
   if (!obj || typeof obj !== 'object' || obj.type !== 'user') return false
@@ -166,7 +167,6 @@ export function isOperatorTurn(obj) {
       .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
       .map((b) => b.text)
       .join('\n')
-    if (!raw && content.some((b) => b && b.type === 'image')) return true
   } else return false
   if (raw.trimStart().startsWith('[Request interrupted')) return false
   if (/<command-name>\s*\S[\s\S]*?<\/command-name>/.test(raw)) return true
