@@ -34,6 +34,7 @@ import { effectiveEditorSetting, sanitizeEditorSetting, type EditorSetting } fro
  *   (T581). Absent means the default (VS Code); main reads it at launch time
  *   via {@link readEditorSetting}, so the renderer never names the command.
  * - `splitLayout` — session area / helper stack orientation (T627). Absent = `auto`.
+ * - `floatingPanels` — the opt-in floating-islands layout (T626). Absent = off.
  */
 export interface SettingsData {
   terminalFontSize: number
@@ -44,6 +45,8 @@ export interface SettingsData {
    * (follow the window's shape), `side-by-side` or `stacked`. Absent means `auto`.
    */
   splitLayout?: 'auto' | 'side-by-side' | 'stacked'
+  /** T626: the opt-in "Floating panels" layout. Absent means off. */
+  floatingPanels?: boolean
 }
 
 const DEFAULT_SETTINGS: SettingsData = {
@@ -99,6 +102,11 @@ export function sanitizePatch(patch: Record<string, unknown>): Partial<SettingsD
     if (typeof v === 'string' && SPLIT_LAYOUTS.includes(v)) {
       out.splitLayout = v as NonNullable<SettingsData['splitLayout']>
     }
+  }
+  if (patch && typeof patch === 'object' && 'floatingPanels' in patch) {
+    // Only a real boolean is stored; anything else is dropped, so the stored value (or off) applies.
+    const v = patch.floatingPanels
+    if (typeof v === 'boolean') out.floatingPanels = v
   }
   return out
 }

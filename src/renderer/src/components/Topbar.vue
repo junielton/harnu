@@ -288,6 +288,8 @@ function onKeydown(e: KeyboardEvent): void {
        that corner and no inset is needed. -->
   <header
     class="flex shrink-0 select-none items-center gap-3 border-b border-border bg-bg"
+    data-island="topbar"
+    data-island-band
     style="height: 42px; padding: 0 16px; -webkit-app-region: drag"
     :style="
       layout.sidebarCollapsed && macWindowControlsInset

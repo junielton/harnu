@@ -1723,8 +1723,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-screen w-screen bg-bg text-text">
-    <div class="flex min-h-0 flex-1">
+  <div class="flex flex-col h-screen w-screen bg-bg text-text" data-app-shell>
+    <div class="flex min-h-0 flex-1" data-columns>
       <!--
         Left sidebar collapse (design.md §6 — Colapsar sidebars). `v-show` (not
         `v-if`) keeps the sidebar mounted so its scroll position / filter / zone
@@ -1744,7 +1744,7 @@ onUnmounted(() => {
       >
         <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
       </div>
-      <main class="flex min-w-0 flex-1 flex-col">
+      <main class="flex min-w-0 flex-1 flex-col" data-main>
         <Topbar />
         <div ref="mainRowEl" class="flex min-h-0 flex-1" :class="{ 'flex-col': stackedLayout }">
           <!--
@@ -1756,6 +1756,7 @@ onUnmounted(() => {
           -->
           <div
             class="relative flex min-w-0 min-h-0 flex-col"
+            data-island="session"
             :style="showHelperStack ? { flex: `${activeSplitRatio} 1 0` } : { flex: '1 1 0' }"
           >
             <!--
@@ -1877,7 +1878,12 @@ onUnmounted(() => {
         >
           <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
         </div>
-        <div class="flex min-h-0 shrink-0 flex-col" :style="{ width: `${inboxRailPx}px` }">
+        <div
+          class="flex min-h-0 shrink-0 flex-col"
+          data-rail-column
+          :data-rail-state="layout.inboxRailState"
+          :style="{ width: `${inboxRailPx}px` }"
+        >
           <InboxRail />
         </div>
       </template>

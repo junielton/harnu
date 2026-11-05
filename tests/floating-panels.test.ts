@@ -55,6 +55,7 @@ function stubApi(persisted: Record<string, unknown> = {}): void {
         lastReadVersion: '',
         lastFetchedAt: 0
       })),
+      mcpGrantsList: vi.fn(async () => []),
       foldersLoad: vi.fn(async () => []),
       userProjectsList: vi.fn(async () => ({ projects: [], hiddenPaths: [] })),
       helpersGet: vi.fn(async () => null)
@@ -221,7 +222,7 @@ describe('grid alignment', () => {
     expect(band['box-sizing']).toBe('border-box')
     // The two side columns stack their islands with the gap; the Topbar island is followed by it.
     expect(declsFor(rules, 'aside[data-column]').gap).toBe('var(--float-gap)')
-    expect(declsFor(rules, '[data-island="topbar"]')['margin-bottom']).toBe('var(--float-gap)')
+    expect(declsFor(rules, "[data-island='topbar']")['margin-bottom']).toBe('var(--float-gap)')
     // The row of columns carries the same gap to the window edge on every side.
     expect(declsFor(rules, '[data-columns]').padding).toBe('var(--float-gap)')
   })

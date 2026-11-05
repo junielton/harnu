@@ -1173,6 +1173,10 @@
         "auto": "Auto",
         "sideBySide": "Side by side",
         "stacked": "Stacked"
+      },
+      "floatingPanels": {
+        "label": "Floating panels",
+        "hint": "Shows each pane as its own rounded island on a darker background, with an even gap between them. Off keeps the classic edge-to-edge layout."
       }
     },
     "interface": {

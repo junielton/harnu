@@ -90,6 +90,14 @@
   --diff-add-word: rgba(122, 148, 85, 0.34);
   --diff-del-word: rgba(209, 113, 124, 0.26);
 
+  /* Floating panels (design.md §6 "Floating panels layout", §9). Read only under
+   * :root[data-floating]. The canvas is derived from the theme's own --color-bg, which is right
+   * for every dark theme and for extension themes (they never define it); the four light
+   * themes override it below with a hand-picked value. */
+  --color-canvas: color-mix(in oklab, var(--color-bg) 62%, black);
+  --float-gap: 6px;
+  --float-band: 42px;
+
   --term-ansi-black: #302a25;
   --term-ansi-red: #c6675a;
   --term-ansi-green: #7a9455;
@@ -120,6 +128,7 @@
   --color-surface-2: #ececef;
   --color-border: #e4e4e7;
   --color-border-2: #d4d4d8;
+  --color-canvas: #ececef; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
 
   --color-text: #18181b;
   --color-text-2: #3f3f46;
@@ -336,6 +345,7 @@
   --color-surface-2: #dce0e8;
   --color-border: #ccd0da;
   --color-border-2: #bcc0cc;
+  --color-canvas: #d8dce5; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
 
   --color-text: #4c4f69;
   --color-text-2: #5c5f77;
@@ -498,6 +508,7 @@
   --color-surface-2: #eaeef2;
   --color-border: #d0d7de;
   --color-border-2: #afb8c1;
+  --color-canvas: #eaeef2; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
 
   --color-text: #1f2328;
   --color-text-2: #424a53;
@@ -606,6 +617,7 @@
   --color-surface-2: #ebdbb2;
   --color-border: #d5c4a1;
   --color-border-2: #bdae93;
+  --color-canvas: #ebdbb2; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
 
   --color-text: #3c3836;
   --color-text-2: #504945;

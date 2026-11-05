@@ -174,7 +174,11 @@ function paneFlex(pane: { id: string; ratio: number }): string {
       >
         <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
       </div>
-      <div class="min-h-0 min-w-0 overflow-hidden" :style="{ flex: paneFlex(pane) }">
+      <div
+        class="min-h-0 min-w-0 overflow-hidden"
+        data-island="helper-pane"
+        :style="{ flex: paneFlex(pane) }"
+      >
         <!-- T121 — one registration point per pane type (`pane-components.ts`).
            Non-PTY types (markdown = T74, memory = T79, explorer = Cluster D) route
            to their own viewer; every PTY-backed type shares the xterm-backed
