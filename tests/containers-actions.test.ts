@@ -249,7 +249,7 @@ describe('runContainersAction', () => {
             freed: { ramBytes: 600, ports: [5182, 8082], volumes: [], volumeBytes: 0 }
           }
         ],
-        restoreHint: `docker start ${run.id.slice(0, 12)}`
+        restoreHint: `docker compose -p proj-82 --project-directory ${WT} up -d`
       }
     ])
     expect(res.tombstone).toEqual(tombstones[0])
@@ -286,8 +286,56 @@ describe('runContainersAction', () => {
     expect(calls.map(([op]) => op)).toEqual(['stop', 'stop'])
     expect(deps.appendTombstone).toHaveBeenCalledTimes(1)
     expect(tombstones[0]!.stacks.map((s) => s.stack)).toEqual(['z-run', 'o-run'])
-    const ids = [stacks[0]!, stacks[1]!].map((s) => s.containers[0]!.id.slice(0, 12))
-    expect(tombstones[0]!.restoreHint).toBe(`docker start ${ids.join(' ')}`)
+    // o-run's worktree is gone, so no command can restore the batch: null, never `docker start`.
+    expect(tombstones[0]!.restoreHint).toBeNull()
+  })
+
+  it('a stop of two compose stacks chains one compose command per stack (U3.4 AC-3)', async () => {
+    const stacks = [
+      stackRow({ id: 'z-a', verdict: 'zombie' }),
+      stackRow({ id: 'z-b', verdict: 'zombie' })
+    ]
+    const { deps, tombstones } = fakeDeps(available(stacks))
+    await runContainersAction({ verb: 'stop', stacks: ['z-a', 'z-b'] }, 'operator', deps)
+    expect(tombstones[0]!.restoreHint).toBe(
+      `docker compose -p z-a --project-directory ${WT} up -d && ` +
+        `docker compose -p z-b --project-directory ${WT} up -d`
+    )
+    expect(tombstones[0]!.restoreHint).not.toContain('docker start')
+  })
+
+  it('a stopped standalone container keeps a docker start hint', async () => {
+    const c = containerRow()
+    const s = stackRow({ id: 'scratch', kind: 'container', project: null, containers: [c] })
+    const { deps, tombstones } = fakeDeps(available([s]))
+    await runContainersAction({ verb: 'stop', stacks: ['scratch'], force: true }, 'operator', deps)
+    expect(tombstones[0]!.restoreHint).toBe(`docker start ${c.id.slice(0, 12)}`)
+  })
+
+  it('compose files and env file from the labels, and profiles/--build from restoreFacts', async () => {
+    const z = stackRow({
+      id: 'z',
+      verdict: 'zombie',
+      compose: { configFiles: [`${WT}/compose.yml`], envFile: null }
+    })
+    const plain = fakeDeps(available([z]))
+    await runContainersAction({ verb: 'stop', stacks: ['z'] }, 'operator', plain.deps)
+    expect(plain.tombstones[0]!.restoreHint).toBe(
+      `docker compose -p z --project-directory ${WT} -f ${WT}/compose.yml up -d`
+    )
+
+    const rich = fakeDeps(available([z]))
+    rich.deps.restoreFacts = async () => ({
+      configFiles: [`${WT}/compose.yml`],
+      profiles: ['web'],
+      envFile: `${WT}/.env`,
+      hasBuild: true
+    })
+    await runContainersAction({ verb: 'stop', stacks: ['z'] }, 'operator', rich.deps)
+    expect(rich.tombstones[0]!.restoreHint).toBe(
+      `docker compose -p z --project-directory ${WT} -f ${WT}/compose.yml --profile web ` +
+        `--env-file ${WT}/.env up -d --build`
+    )
   })
 
   it('bulk stop with nothing to stop writes no tombstone', async () => {
@@ -485,7 +533,7 @@ describe('runContainersAction', () => {
     })
     const res = await runContainersAction({ verb: 'stop', stacks: ['z'] }, 'operator', deps)
     expect(res.results[0]).toMatchObject({ ok: false, error: 'DOCKER_FAILED' })
-    expect(tombstones[0]!.restoreHint).toBe(`docker start ${a.id.slice(0, 12)}`)
+    expect(tombstones[0]!.restoreHint).toBe(`docker compose -p z --project-directory ${WT} up -d`)
   })
 
   it('a docker call that throws fails that stack, not the whole request', async () => {

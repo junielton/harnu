@@ -4,6 +4,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import {
   appendTombstone,
+  composeUpCommand,
   isTombstone,
   journalFile,
   parseJournal,
@@ -88,11 +89,42 @@ describe('tombstone (de)serialization', () => {
 })
 
 describe('restore hints (PRD §3.5)', () => {
-  it('after a stop: docker start with every stopped container', () => {
-    expect(restoreHintForStop(['a'.repeat(64), 'b'.repeat(12)])).toBe(
+  it('after a stop of a standalone container: docker start with every stopped container', () => {
+    const standalone = {
+      kind: 'container',
+      project: null,
+      worktreePath: null,
+      worktreeExists: false
+    }
+    expect(restoreHintForStop(standalone, ['a'.repeat(64), 'b'.repeat(12)])).toBe(
       `docker start ${'a'.repeat(12)} ${'b'.repeat(12)}`
     )
-    expect(restoreHintForStop([])).toBeNull()
+    expect(restoreHintForStop(standalone, [])).toBeNull()
+  })
+
+  it('after a stop of a compose stack: the compose up command, never docker start (U3.4 AC-3)', () => {
+    const hint = restoreHintForStop(
+      {
+        kind: 'compose',
+        project: 'proj-82',
+        worktreePath: '/w',
+        worktreeExists: true,
+        facts: { configFiles: ['/w/compose.yml'], envFile: null }
+      },
+      ['a'.repeat(64)]
+    )
+    expect(hint).toBe('docker compose -p proj-82 --project-directory /w -f /w/compose.yml up -d')
+    expect(hint).not.toContain('docker start')
+  })
+
+  it('a compose stack whose directory is unknown or gone has no honest hint — null, not docker start', () => {
+    const base = { kind: 'compose' as const, project: 'p', worktreeExists: true }
+    expect(restoreHintForStop({ ...base, worktreePath: null }, ['a'.repeat(64)])).toBeNull()
+    expect(
+      restoreHintForStop({ ...base, worktreePath: '/gone', worktreeExists: false }, [
+        'a'.repeat(64)
+      ])
+    ).toBeNull()
   })
 
   it('after a removal whose worktree still exists: the compose recreate command', () => {
@@ -123,6 +155,20 @@ describe('restore hints (PRD §3.5)', () => {
         worktreeExists: true
       })
     ).toBe('docker compose --project-directory /w up -d')
+  })
+
+  it('after a removal: the facts add compose files, profiles, env file and --build', () => {
+    expect(
+      restoreHintForRemove({
+        kind: 'compose',
+        project: 'p',
+        worktreePath: '/w',
+        worktreeExists: true,
+        facts: { configFiles: ['/w/a.yml'], profiles: ['web'], envFile: '/w/.env', hasBuild: true }
+      })
+    ).toBe(
+      'docker compose -p p --project-directory /w -f /w/a.yml --profile web --env-file /w/.env up -d --build'
+    )
   })
 
   it('after a removal whose worktree is gone, or of a standalone container: nothing', () => {
@@ -163,6 +209,65 @@ describe('restore hints (PRD §3.5)', () => {
         worktreeExists: true
       })
     ).toBe(`docker compose -p 'x;id' --project-directory '/tmp/$(id)' up -d`)
+  })
+})
+
+describe('composeUpCommand (U3.4 AC-2)', () => {
+  const base = {
+    project: 'proj-231',
+    workingDir: '/home/dev/org/proj/www',
+    configFiles: [] as string[],
+    profiles: [] as string[],
+    envFile: null as string | null,
+    hasBuild: false
+  }
+
+  it('image-only stack: plain up -d', () => {
+    expect(composeUpCommand(base)).toBe(
+      'docker compose -p proj-231 --project-directory /home/dev/org/proj/www up -d'
+    )
+  })
+
+  it('a stack that builds gets --build', () => {
+    expect(composeUpCommand({ ...base, hasBuild: true })).toBe(
+      'docker compose -p proj-231 --project-directory /home/dev/org/proj/www up -d --build'
+    )
+  })
+
+  it('names every compose file in order, then profiles, then the env file', () => {
+    expect(
+      composeUpCommand({
+        ...base,
+        configFiles: ['/w/compose.yml', '/w/compose.dev.yml'],
+        profiles: ['web', 'jobs'],
+        envFile: '/w/.env.dev',
+        hasBuild: true
+      })
+    ).toBe(
+      'docker compose -p proj-231 --project-directory /home/dev/org/proj/www ' +
+        '-f /w/compose.yml -f /w/compose.dev.yml --profile web --profile jobs ' +
+        '--env-file /w/.env.dev up -d --build'
+    )
+  })
+
+  it('quotes paths with spaces or quotes so the pasted command stays literal', () => {
+    expect(
+      composeUpCommand({
+        ...base,
+        workingDir: '/tmp/my proj',
+        configFiles: ["/tmp/my proj/it's.yml"],
+        envFile: '/tmp/$(id)/.env'
+      })
+    ).toBe(
+      `docker compose -p proj-231 --project-directory '/tmp/my proj' ` +
+        `-f '/tmp/my proj/it'\\''s.yml' --env-file '/tmp/$(id)/.env' up -d`
+    )
+  })
+
+  it('a null project omits -p', () => {
+    expect(composeUpCommand({ ...base, project: null })).toBe(
+      'docker compose --project-directory /home/dev/org/proj/www up -d'
+    )
   })
 })
 

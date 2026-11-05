@@ -784,6 +784,33 @@ describe('buildSnapshot', () => {
   })
 })
 
+describe('compose facts on a stack row (U3.4)', () => {
+  it('reads the config files and env file from the compose labels', () => {
+    const s = onlyStack({
+      containers: [
+        composeContainer('p', WT, {
+          labels: {
+            'com.docker.compose.project.config_files': `${WT}/compose.yml,${WT}/compose.dev.yml`,
+            'com.docker.compose.project.environment_file': `${WT}/.env.dev`
+          }
+        })
+      ]
+    })
+    expect(s.compose).toEqual({
+      configFiles: [`${WT}/compose.yml`, `${WT}/compose.dev.yml`],
+      envFile: `${WT}/.env.dev`
+    })
+  })
+
+  it('a stack without those labels has empty facts; a standalone container has none', () => {
+    expect(onlyStack({ containers: [composeContainer('p', WT)] }).compose).toEqual({
+      configFiles: [],
+      envFile: null
+    })
+    expect(onlyStack({ containers: [container({ name: 'scratch' })] }).compose).toBeNull()
+  })
+})
+
 describe('docker unavailable (PRD §5)', () => {
   it('says so instead of reporting an empty machine', () => {
     const snap = unavailableSnapshot('Cannot connect to the Docker daemon', NOW, 2, [])
