@@ -68,7 +68,7 @@ case "$cmd" in
     cat "$FAKE_DOCKER_DIR/stats.txt" ;;
   system) cat "$FAKE_DOCKER_DIR/df.json" ;;
   volume) shift; echo_args "$@" ;;
-  network) shift; shift
+  network) shift
     case "$1" in
       active*) echo "Error response from daemon: error while removing network: network $1 has active endpoints" >&2; exit 1 ;;
       *) echo "$1" ;;
