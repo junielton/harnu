@@ -3047,6 +3047,22 @@
           "min": "{n} min",
           "h": "{n} h",
           "d": "{n} d"
+        },
+        "pool": {
+          "offer": "Docker is on its default address pools and network slots ran low.",
+          "offerOpen": "See how to add more",
+          "eyebrow": "Docker address pools",
+          "title": "Add more room for Docker networks",
+          "intro": "Docker is using its default address pools, which hold {total} networks. Free slots fell to {free} on this machine. A wider pool gives every compose project room to start.",
+          "step1": "Add this to {file}",
+          "step1Hint": "If the file already exists, add the key to it instead of replacing the file. Pick a range your VPN and LAN don't use.",
+          "copy": "Copy",
+          "copied": "Copied",
+          "size": "256 networks of /24, from 10.200.0.0/16.",
+          "step2": "Restart the Docker daemon",
+          "step2Hint": "For example {command}. Containers without live-restore stop while it restarts.",
+          "note": "Harnu never edits this file. You'll only see this once.",
+          "dismiss": "Dismiss"
         }
       },
       "split": {

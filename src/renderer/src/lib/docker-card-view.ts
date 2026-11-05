@@ -3,6 +3,7 @@
 // components word the result, so every sentence stays translatable.
 
 import type {
+  DockerCapacityView,
   DockerReportItem,
   DockerReportKind,
   DockerWatchRecord
@@ -169,4 +170,39 @@ export function pausedRows(
     more: Math.max(0, sorted.length - PAUSED_ROWS_MAX),
     total: sorted.length
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Address-pool advice
+
+/** Shown in the advice dialog and copied verbatim; a 256-network pool of /24s. Harnu never writes it. */
+export const POOL_ADVICE_SNIPPET = `{
+  "default-address-pools": [
+    { "base": "10.200.0.0/16", "size": 24 }
+  ]
+}`
+
+/** What the operator was shown: a squeeze seen, and the advice dismissed, each for a set of pools. */
+export interface PoolAdviceState {
+  squeezeSeenFor: string | null
+  dismissedFor: string | null
+}
+
+/** The engine's pools as one key: advice is per pools, so it returns when they change. */
+export function poolsKey(c: { total: number; source: 'daemon.json' | 'default' }): string {
+  return `${c.source}:${c.total}`
+}
+
+/**
+ * Whether the one-time callout shows: the engine uses Docker's default pools, a squeeze was seen on
+ * THESE pools, and the advice was not dismissed for them.
+ */
+export function adviceOffer(args: {
+  capacity: DockerCapacityView | null
+  state: PoolAdviceState
+}): boolean {
+  const c = args.capacity
+  if (!c || !c.known || c.source !== 'default') return false
+  const key = poolsKey(c)
+  return args.state.squeezeSeenFor === key && args.state.dismissedFor !== key
 }

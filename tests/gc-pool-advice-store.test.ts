@@ -2,6 +2,7 @@
 // U3.7 AC-3: the store remembers that a squeeze was seen on default pools and that the advice was
 // dismissed, across restarts (renderer-persisted), keyed by the engine's pools.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import type { DockerCapacityView, DockerWatchRecord, GcSnapshot } from '../src/main/gc/gc-wire'
@@ -137,6 +138,7 @@ describe('pool advice flags', () => {
     push!(watch(cap(3)))
     gc.dismissPoolAdvice()
     expect(gc.poolAdviceOffer).toBe(false)
+    await nextTick() // persistedRef writes on the next flush
 
     setActivePinia(createPinia())
     install(watch(cap(2)))

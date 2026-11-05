@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useNow } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import { Container, EyeOff, Recycle, Trash2 } from 'lucide-vue-next'
+import { Container, EyeOff, Info, Recycle, Trash2 } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import CleanupDockerActions from './CleanupDockerActions.vue'
@@ -44,6 +44,8 @@ const props = defineProps<{
   recent?: readonly Tombstone[]
   /** What "Acknowledge first report" will do (U3.6); null once acknowledged or when nothing is planned. */
   report?: { items: DockerReportItem[]; found: number } | null
+  /** The one-time address-pool advice is on offer (default pools, a squeeze seen, not dismissed). */
+  poolAdvice?: boolean
 }>()
 const emit = defineEmits<{
   toggle: [category: 'dockerCache', value: boolean]
@@ -56,6 +58,8 @@ const emit = defineEmits<{
   openSettings: []
   /** "Show all in Activity". */
   showAll: []
+  /** "See how to add more": opens the address-pool advice dialog. */
+  openAdvice: []
 }>()
 const { t } = useI18n()
 
@@ -241,6 +245,24 @@ const splitSegments = computed(() =>
         :style="{ flex: String(seg.bytes) }"
         :data-seg="seg.key"
       />
+    </div>
+    <!-- One-time offer of the address-pool advice; it never opens the dialog by itself. -->
+    <div v-if="poolAdvice" class="px-3 pb-2">
+      <div
+        class="flex items-center gap-2 rounded-xs border border-accent-line bg-accent-soft px-3 py-2"
+        data-testid="docker-pool-offer"
+      >
+        <Info :size="14" :stroke-width="1.7" class="shrink-0 text-accent" aria-hidden="true" />
+        <span class="text-ui text-text">{{ t('cleanup.gc.docker.pool.offer') }}</span>
+        <Button
+          class="ml-auto"
+          variant="soft"
+          data-testid="docker-pool-offer-open"
+          @click="emit('openAdvice')"
+        >
+          {{ t('cleanup.gc.docker.pool.offerOpen') }}
+        </Button>
+      </div>
     </div>
     <!-- Auto-fit columns, each block as tall as its own content: no stretching to the tallest sibling. -->
     <div class="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] items-start gap-2 px-3 pb-3">

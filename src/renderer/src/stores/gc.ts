@@ -60,6 +60,8 @@ import {
   safeIds,
   type OpinionMap
 } from '../lib/gc-opinion'
+import { adviceOffer, poolsKey, type PoolAdviceState } from '../lib/docker-card-view'
+import { persistedRef } from './persisted'
 import { useNotificationsStore } from './notifications'
 import { useUiStore } from './ui'
 
@@ -108,8 +110,36 @@ export const useGcStore = defineStore('gc', () => {
   /** The Docker capacity watcher's last pass (U3.6): from the snapshot at load, then from its push. */
   const dockerWatch = ref<DockerWatchRecord | null>(null)
 
+  /**
+   * Address-pool advice (U3.7): a squeeze seen on default pools, and the dismissal, each keyed by the
+   * engine's pools so the callout returns only when they change. A renderer-persisted convenience:
+   * losing it would only offer the advice once more.
+   */
+  const poolAdvice = persistedRef<PoolAdviceState>('om2tab.gc.poolAdvice', {
+    squeezeSeenFor: null,
+    dismissedFor: null
+  })
+  const poolAdviceOffer = computed(() =>
+    adviceOffer({ capacity: dockerWatch.value?.capacity ?? null, state: poolAdvice.value })
+  )
+  function dismissPoolAdvice(): void {
+    const c = dockerWatch.value?.capacity
+    if (!c || !c.known) return
+    poolAdvice.value = { ...poolAdvice.value, dismissedFor: poolsKey(c) }
+  }
+  /** A pass that read default pools at or below the mark is a squeeze worth advising on. */
+  function noteSqueeze(rec: DockerWatchRecord): void {
+    const c = rec.capacity
+    if (!c || !c.known || c.source !== 'default' || c.free > rec.mark) return
+    const key = poolsKey(c)
+    if (poolAdvice.value.squeezeSeenFor !== key) {
+      poolAdvice.value = { ...poolAdvice.value, squeezeSeenFor: key }
+    }
+  }
+
   /** Keeps the newest record; a snapshot refresh never rewinds a pass that was pushed meanwhile. */
   function adoptWatch(rec: DockerWatchRecord | null | undefined): void {
+    if (rec) noteSqueeze(rec)
     if (rec && (!dockerWatch.value || rec.at >= dockerWatch.value.at)) dockerWatch.value = rec
   }
 
@@ -1035,6 +1065,8 @@ export const useGcStore = defineStore('gc', () => {
     blockState,
     failureOf,
     dockerWatch,
+    poolAdviceOffer,
+    dismissPoolAdvice,
     dockerReport,
     init,
     dispose,

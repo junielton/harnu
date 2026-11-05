@@ -64,6 +64,7 @@ import CleanupSelectionBar from './CleanupSelectionBar.vue'
 import CleanupFirstCycleBanner from './CleanupFirstCycleBanner.vue'
 import CleanupRecoveryNotices from './CleanupRecoveryNotices.vue'
 import CleanupDockerCard from './CleanupDockerCard.vue'
+import CleanupPoolAdviceDialog from './CleanupPoolAdviceDialog.vue'
 import CleanupArchivesCard from './CleanupArchivesCard.vue'
 import CleanupTrashCard from './CleanupTrashCard.vue'
 import CleanupShelvedCard from './CleanupShelvedCard.vue'
@@ -143,6 +144,17 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown, true))
 
 const model = computed(() => gc.model)
 const prefs = computed(() => gc.prefs)
+
+/** The address-pool advice dialog (U3.7), opened only from the Docker card's one-time callout. */
+const adviceOpen = ref(false)
+const adviceCapacity = computed(() => {
+  const c = gc.dockerWatch?.capacity
+  return c && c.known ? c : null
+})
+function dismissAdvice(): void {
+  adviceOpen.value = false
+  gc.dismissPoolAdvice()
+}
 
 // ---- view state ---------------------------------------------------------------------------------
 
@@ -1225,6 +1237,8 @@ async function confirmExhaust(): Promise<void> {
             :paused="containers.paused"
             :recent="containers.recent"
             :report="gc.dockerReport"
+            :pool-advice="gc.poolAdviceOffer"
+            @open-advice="adviceOpen = true"
             @open-settings="ui.openSettings('cleanup')"
             @show-all="ui.openPopover('activity')"
             @clean-leftovers="openDockerConfirm('stack', $event)"
@@ -1388,6 +1402,12 @@ async function confirmExhaust(): Promise<void> {
     :items="dockerConfirm.items"
     @confirm="confirmDocker()"
     @cancel="dockerConfirm = null"
+  />
+  <CleanupPoolAdviceDialog
+    v-if="adviceOpen && adviceCapacity"
+    :free="adviceCapacity.free"
+    :total="adviceCapacity.total"
+    @dismiss="dismissAdvice()"
   />
   <CleanupTranscriptsConfirmDialog
     v-if="transcriptItems"

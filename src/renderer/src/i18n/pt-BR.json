@@ -3047,6 +3047,22 @@
           "min": "{n} min",
           "h": "{n} h",
           "d": "{n} d"
+        },
+        "pool": {
+          "offer": "O Docker está nos pools de endereço padrão e os slots de rede ficaram escassos.",
+          "offerOpen": "Ver como adicionar mais",
+          "eyebrow": "Pools de endereço do Docker",
+          "title": "Dê mais espaço às redes do Docker",
+          "intro": "O Docker está usando os pools de endereço padrão, que comportam {total} redes. Os slots livres caíram para {free} nesta máquina. Um pool maior dá espaço para todo projeto compose iniciar.",
+          "step1": "Adicione isto em {file}",
+          "step1Hint": "Se o arquivo já existir, adicione a chave nele em vez de substituí-lo. Escolha uma faixa que sua VPN e sua LAN não usem.",
+          "copy": "Copiar",
+          "copied": "Copiado",
+          "size": "256 redes /24, a partir de 10.200.0.0/16.",
+          "step2": "Reinicie o daemon do Docker",
+          "step2Hint": "Por exemplo {command}. Containers sem live-restore param enquanto ele reinicia.",
+          "note": "O Harnu nunca edita este arquivo. Você só verá isto uma vez.",
+          "dismiss": "Dispensar"
         }
       },
       "split": {
