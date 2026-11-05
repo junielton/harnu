@@ -29,6 +29,8 @@ function pr(over: Partial<PrFacts> = {}): PrFacts {
     ci: 'passing',
     mergedAt: '2026-07-01T00:00:00Z',
     headRefOid: 'ownersha',
+    baseRefName: null,
+    mergeCommitOid: null,
     ...over
   }
 }
@@ -47,6 +49,8 @@ function facts(over: Partial<BranchFacts> = {}): BranchFacts {
     remoteExists: false,
     ancestorOfDefault: null,
     patchIdContained: null,
+    tipInPrHead: null,
+    prLandedInDefault: null,
     lastCommitAt: NOW,
     pr: pr(),
     ghAvailable: true,

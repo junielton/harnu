@@ -108,6 +108,44 @@ function headRepoId(raw: Record<string, unknown>): string | null {
   return null
 }
 
+/** Reads `mergeCommit.oid` of a raw gh PR entry, or null when absent (open PRs, old cache entries). */
+function mergeCommitOidOf(raw: Record<string, unknown>): string | null {
+  const mc = raw.mergeCommit
+  if (mc && typeof mc === 'object' && 'oid' in mc) {
+    const oid = (mc as Record<string, unknown>).oid
+    if (typeof oid === 'string' && oid) return oid
+  }
+  return null
+}
+
+/**
+ * Whether a MERGED PR's content provably reached `defaultBranch` (U1). Pure: the
+ * one git fact it needs — is the PR's merge commit contained in the base PR's head
+ * — is probed by the scanner and passed in as `mergeCommitInBaseHead`.
+ *
+ *  - not MERGED                                → null (nothing to say)
+ *  - merged straight into the default branch   → true
+ *  - stacked, base PR unknown                  → null
+ *  - stacked, base PR OPEN/CLOSED              → false (the base never landed)
+ *  - stacked, base itself stacked (two hops)   → null (not proven here)
+ *  - stacked, base merged into default         → the containment fact
+ *
+ * Positive-only evidence: callers read only `=== true`.
+ */
+export function prLandedInDefault(
+  pr: PrFacts,
+  basePr: PrFacts | null,
+  defaultBranch: string,
+  mergeCommitInBaseHead: boolean | null
+): boolean | null {
+  if (pr.state !== 'MERGED') return null
+  if (pr.baseRefName === defaultBranch) return true
+  if (pr.baseRefName === null || basePr === null) return null
+  if (basePr.state !== 'MERGED') return false
+  if (basePr.baseRefName !== defaultBranch) return null
+  return mergeCommitInBaseHead
+}
+
 /** Parses `gh pr list --json headRefName,number,state,mergedAt,reviewDecision,statusCheckRollup,headRepository,isCrossRepository`. */
 export function parseGhPrList(stdout: string): Map<string, PrFacts> {
   const map = new Map<string, PrFacts>()
@@ -142,7 +180,11 @@ export function parseGhPrList(stdout: string): Map<string, PrFacts> {
       // `upstream-unverified`, i.e. to the pre-BUG-93 behaviour — safe, so the
       // cache version is deliberately NOT bumped for it (a bump would force
       // `complete: false` and re-open BUG-74's gap-fill storm for one field).
-      headRefOid: typeof raw.headRefOid === 'string' && raw.headRefOid ? raw.headRefOid : null
+      headRefOid: typeof raw.headRefOid === 'string' && raw.headRefOid ? raw.headRefOid : null,
+      // Same reasoning for U1: both are absent on entries cached before it, parse
+      // to null, and fall back to today's verdicts — so no cache version bump.
+      baseRefName: typeof raw.baseRefName === 'string' && raw.baseRefName ? raw.baseRefName : null,
+      mergeCommitOid: mergeCommitOidOf(raw)
     }
     // Branch names cannot contain ':' (git ref rule), so '::' is a safe key sep.
     byRepoBranch.set(`${headRepoId(raw) ?? ''}::${branch}`, {
@@ -558,6 +600,14 @@ export interface RepoScanInput {
    */
   patchIdContainedByBranch: Map<string, boolean | null>
   /**
+   * Whether each branch's tip is an ancestor of its MERGED PR's head (U1). Optional:
+   * a missing map or key reads as `null` — "not probed" — which leaves every fate
+   * exactly as it was, so a caller that forgets it loses the new proof, never safety.
+   */
+  tipInPrHeadByBranch?: Map<string, boolean | null>
+  /** Whether each branch's merged PR provably reached the default branch (U1); same rules. */
+  prLandedByBranch?: Map<string, boolean | null>
+  /**
    * Commit date (ms since epoch) keyed by commit sha — the only way to age a
    * detached HEAD, which has no branch ref for `for-each-ref` to date. Optional:
    * absent means "not probed", and the detached item reports a null age.
@@ -624,6 +674,8 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
     unpushedByPath,
     ancestorByBranch,
     patchIdContainedByBranch,
+    tipInPrHeadByBranch,
+    prLandedByBranch,
     commitDateBySha,
     diskBytesByPath,
     collectFateInput,
@@ -697,6 +749,8 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
       remoteSha: remoteShaFor(remoteHeads, branch),
       ancestorOfDefault: ancestorByBranch.get(branch) ?? null,
       patchIdContained: patchIdContainedByBranch.get(branch) ?? null,
+      tipInPrHead: tipInPrHeadByBranch?.get(branch) ?? null,
+      prLandedInDefault: prLandedByBranch?.get(branch) ?? null,
       lastCommitAt: localRef?.committedAt ?? null,
       pr: resolved.pr,
       ghAvailable,
@@ -726,6 +780,8 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
       remoteSha: remoteShaFor(remoteHeads, ref.branch),
       ancestorOfDefault: ancestorByBranch.get(ref.branch) ?? null,
       patchIdContained: patchIdContainedByBranch.get(ref.branch) ?? null,
+      tipInPrHead: tipInPrHeadByBranch?.get(ref.branch) ?? null,
+      prLandedInDefault: prLandedByBranch?.get(ref.branch) ?? null,
       lastCommitAt: ref.committedAt,
       pr: resolved.pr,
       ghAvailable,
@@ -757,6 +813,8 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
         remoteSha,
         ancestorOfDefault: ancestorByBranch.get(branch) ?? null,
         patchIdContained: patchIdContainedByBranch.get(branch) ?? null,
+        tipInPrHead: tipInPrHeadByBranch?.get(branch) ?? null,
+        prLandedInDefault: prLandedByBranch?.get(branch) ?? null,
         lastCommitAt: null,
         pr,
         ghAvailable,
