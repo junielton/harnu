@@ -517,8 +517,8 @@ unit's session exists, subscribe to it:
 with **no message** — a pure subscription costs that session nothing. Exactly one
 `[Cross-session idle notice]` arrives when it next goes idle or exits, which wakes
 you at the moment the unit actually finishes rather than whenever your timer
-happens to land. That notice is your cue to run the resume steps: read the
-evidence, dispatch the shipper, verify.
+happens to land. That notice is your cue to spawn a tick subagent (below) — not to
+read state, evidence or reports yourself.
 
 This is the layer that collapses the expensive gap. An executor that finishes and
 stands down is otherwise invisible until something asks git about it, and "how
@@ -532,8 +532,9 @@ subscription expires, the session ended abruptly, you were not around to receive
 it). It never lies about a unit being finished; it can only fail to tell you. That
 is what the next two layers are for.
 
-**Layer 2 — the loop.** It does the work: dispatches shippers, sends deltas back,
-verifies, closes out. Only a session holds the verbs, so only this layer can act.
+**Layer 2 — the loop.** It fires the work: each firing spawns a tick subagent that
+dispatches shippers, sends deltas back, verifies and closes out. The loop and the
+subscriptions are the only things that stay in your context; the work does not.
 With layer 1 in place its cadence is a backstop rather than a discovery mechanism
 — slow ticks are correct, because arrival is pushed to you.
 
@@ -560,7 +561,96 @@ rest: a mission with no new evidence for over an hour while no linked session is
 working reads `derived.stale` on `mission_get` — to the watchdog and to you on
 resume, with no heartbeat claim to trust.
 
-Each tick (the `mission` skill's tick, from one `mission_get`):
+### Every tick runs in a fresh subagent — your context stays flat
+
+Your context grows per tick, not per task: each `mission_get`, `campaign_get` or
+`get_fleet` dump you read lands in this transcript and is re-read on every later
+turn. One delivery reached ~941k tokens that way. So you never read those dumps.
+**Every tick, every verification read and every child report is handled by a fresh
+subagent** that calls the Harnu verbs, acts, and returns a short structured summary.
+You keep only the loop, the subscriptions and that summary.
+
+**The rule: an unattended run never depends on a human pasting a prompt.** There is
+no token threshold at which you stand down, and no hand-written prompt for the
+operator to carry into a new session. The context stays small by construction, so
+the delivery runs overnight.
+
+How to spawn it, on every firing of the loop and on every `[Cross-session idle
+notice]`:
+
+- Use the `Agent` tool with a **fresh general-purpose subagent** (omit
+  `subagent_type`, or pass `general-purpose`). **Never `subagent_type: "fork"`**: a
+  fork inherits your whole context, so it saves nothing and pays for the transcript
+  again.
+- Pass your **real session id** (the UUID that ends your scratchpad path) in the
+  prompt. A session id is self-declared, so this is what attributes the subagent's
+  `mission_*` calls to you, the owner. A subagent's own id reads `agent-<…>`; it
+  must never be used as `sessionId` or `ownerSessionId`.
+- Pass your **current native name** (first line of `ListAgents`) so the subagent can
+  put both halves of your address into any dispatch packet and notice when it
+  changed (`mission`'s owner rules). Reading that one line is the only state you
+  read yourself.
+- Run it in the foreground when you are waiting on the result to re-arm, in the
+  background when a notice arrives mid-turn. Spawn at most one tick subagent at a
+  time per mission: two ticks writing the same mission race each other.
+
+**Tick subagent prompt template** — fill the slots, change nothing else:
+
+```
+You are running ONE coordination tick for the Harnu mission <missionId> on behalf
+of its owner session <ownerSessionId> (native name: <ownerName>). You are a
+subagent, not the owner: pass sessionId/ownerSessionId = <ownerSessionId> on every
+verb that takes one, never your own id, never link your own session anywhere.
+Folder: <folder>. Campaign: <campaignId or none>. Trigger: <loop firing | idle
+notice from session <childId>>.
+
+Read: mission_get({ folder, missionId }) and, when a campaignId is set,
+campaign_get. Nothing else for state — no get_fleet, no gh pr view for facts the
+mission already carries.
+
+Run the tick the `mission` skill defines (its "mission — one tick", steps 1–5),
+with the owner's rules from `orchestrate-delivery` Phase 3. You may: link
+children (mission_link_child), log (mission_log), raise and clear blockers,
+add side steps for red gates, dispatch a shipper or a role:'verifier' session
+per the existing rules, nudge a stalled child with message_session, and record
+a verification only for a step you did not author. Put <ownerSessionId> and
+<ownerName> in every dispatch packet you write. You may not: end or close a
+mission, merge, tick a check, choose a decision, write product code, move a
+card to done, or re-dispatch a child that is not proven dead. On MISSION_CLOSED
+stop and say so.
+
+Return ONLY this report, at most 15 lines, no raw tool output:
+tick · <missionId> · <time>
+progress: <Step N of M · V verified | Ch. N/M · Step a/b>
+you: <the `you` line verbatim>
+stale: <yes|no> · red gates: <step: gate #PR, or none>
+did: <one clause per action taken, or "nothing">
+children: <step: session8 state — only those that changed>
+subscribe: <child session id · native name, per child you dispatched, or none>
+verify: <unit awaiting a verification subagent, or none>
+owner-must: <what only the owner can do — re-arm, ask the operator — or none>
+next: <suggested interval in seconds and why>
+```
+
+What you do with the summary, and only that:
+
+- `subscribe:` → take `SendMessage { to: <name>, notify_when_idle: true }` with no
+  message for each child listed (look the name up in `ListAgents` if it came back
+  unknown). A subagent cannot take your subscriptions: its notices would go to
+  it, not to you.
+- `verify:` → dispatch the verification subagent (Phase 4), do not read the
+  diff yourself.
+- `owner-must:` → do exactly that, then re-arm the loop at `next:`.
+- Report the `tick —` line to the operator from `progress:` and `you:`. The
+  summary is not evidence of a verdict: a verdict is whatever `mission_get` says
+  on the next tick's read, in the subagent's context, not yours.
+
+A summary that is missing, malformed or longer than 15 lines is a failed tick, not
+a reason to read the mission yourself: spawn the tick again with the defect named
+in one line.
+
+What a tick covers (the tick subagent runs these; the `mission` skill defines the
+tick, from one `mission_get`):
 
 - Linked executors' state from `derived.steps[].children` — `get_session` only to
   prove a spawn still in flight. `hibernated: true` is NOT death and NOT a stall —
@@ -620,43 +710,33 @@ what would unblock it + whose move it is), record the finding in its card body
 (`update_card`), move the card back to `backlog` (`move_card`), and report the
 blockage instead of insisting. Do not keep a tick counter of your own.
 
-### Wave boundary — one orchestrator session per delivery wave
+### Wave boundary — a human pause is a blocker, not a stand-down
 
-An orchestrator session is cheap while its context is small and expensive once it
-is not: every tick re-reads the whole transcript. One delivery drove an owner
-session to ~941k tokens of context (about $566); the next waves paid for every
-wave before them. So the owner session is scoped to **one wave**, and the next
-wave starts in a fresh session. Start it when either holds:
+A wave that ends at a **human pause** — a merge and a build the operator must do
+before the next wave can branch from the result — does not end your session. Leave
+the world carrying the state (mission steps, links and ledger current, the wave's
+Delivery Report written, `memory_append` of anything the next wave must know), raise
+`mission_set_blocker { owner: 'operator', reason, unblocks }` naming the exact
+action and the observable event that clears it, and keep the loop and the
+subscriptions armed at a slow cadence. When the event happens, the next tick sees
+it and the next wave starts in this same session. The state lives in the mission and
+the board, never in this transcript — and your transcript stays small anyway,
+because ticks and verification run in subagents.
 
-- the owner session's context passes **~400k tokens**; or
-- the wave ends at a **human pause** — a merge and a build the operator must do
-  before the next wave can branch from the result.
+**There is no context threshold and no resume prompt.** Do not stand down because
+the session "feels long", and never hand the operator text to paste into a new
+session: a new session is not the mission's owner (the pill and the `you` line are
+keyed on the owner session id), the operator is not told there is anything to
+paste, and the sidebar fills with orphan sessions. An unattended run never depends
+on a human pasting a prompt.
 
-Before you stand down, leave the world carrying the state: mission steps, links
-and ledger current, blockers raised for whatever the operator owes, the wave's
-Delivery Report written, `memory_append` of anything the next wave must know. The
-state lives in the mission and the board — never in this transcript.
-
-Then hand the operator the resume prompt to paste into a fresh session, verbatim
-with the slots filled:
-
-```
-/harnu:status
-Resume the delivery on mission <missionId> as its new owner. Start with
-`mission_get <missionId>`, then `/harnu:orchestrate-delivery` from Phase 3.
-Cards in flight: <card slugs>.
-Previous owner session: <ownerSessionId> (do not message it; read the mission).
-Watchdog worker: <worker id, or none>.
-Re-announce your session id to every live child and re-arm the tick loop and
-the watchdog's target before doing anything else.
-```
-
-The new owner re-derives everything from `mission_get`, the board and git (see
-"Resume — every turn re-arms"); the template names the mission and the slugs so it
-knows where to look, and nothing in it is a claim to trust. A mission has one
-owner, so the previous owner's loop ends with its session; log the handover
-(`mission_log`) and re-announce the new address to each live child as the
-`mission` skill's owner rules say.
+**Recovery, not routine — the owner session is lost for good.** If this session is
+gone and cannot be resumed, the mission, board, ledger and git hold every fact; the
+`delivery-watchdog` worker notifies the operator that the mission went quiet.
+Replacing an owner is the job of Harnu's owner transfer (the Phase 0 delivery map
+and the owner-transfer verb are tracked separately), never of a prompt this skill
+writes. Until that exists, say plainly that ownership could not be moved, and do
+not improvise a substitute.
 
 ## Closing phase — when the declared end is "on main"
 
@@ -693,13 +773,15 @@ delivery, and the next thing that finds the stall is them asking again.
 
 So on any turn where you are not certain the loop is still armed:
 
-1. **Re-derive state from the world, not from this transcript.** `mission_get`
-   (children, links, proofs, `derived.stale`, the `you` line), the board cards,
+1. **Re-derive state from the world, not from this transcript** — by spawning a
+   tick subagent, not by reading it yourself. It reads `mission_get` (children,
+   links, proofs, `derived.stale`, the `you` line), the board cards and
    `git rev-list` / `git status` per worktree. Your own context may be hours stale
    and is the only source that cannot be checked against anything.
-2. **Do the missed work before reporting it.** A unit pushed-and-clean with no PR
-   needs its shipper dispatched on this turn, not described. Whatever the loop
-   would have done in the ticks it missed, do now.
+2. **Do the missed work before reporting it.** The tick subagent dispatches the
+   shipper for a unit that is pushed-and-clean with no PR, on this turn, rather
+   than describing it. Whatever the loop would have done in the ticks it missed,
+   that tick does now.
 3. **Re-arm, and say the cadence in one clause.** The re-armed prompt starts with
    the same fixed first line (`mission`'s "The tick prompt's first line"). If it
    is genuinely over — every
@@ -731,18 +813,30 @@ The moment a unit's PR is open, verify it — do not wait for the whole wave. Us
 reads the executor's report, and each AC is graded on its own call into
 `met | unmet | blocked | needs-human`.
 
-Your part as orchestrator:
+Your part as orchestrator is to dispatch, not to read. Verification never runs in
+your context: for each unit whose PR is open, spawn a **fresh general-purpose
+subagent** (never `subagent_type: "fork"`), or a `create_session` with
+`role: 'verifier'` when the unit needs a browser or a long run. Give it the unit's
+card slug, mission id, step id, the PR, the spec path, and your session id and name.
+It follows the `delivery-verifier` skill end to end, reads only the blind packet
+(never the executor's report), and returns at most 15 lines: one verdict per AC with
+its evidence pointer, what it recorded on the card and the mission step, and the
+open items. A verifier session is not linked to the step as a builder; a subagent's
+`mission_verify_step` passes your session id, which is not one of the step's linked
+(authoring) sessions. What that verifier does, in the `delivery-verifier` skill's
+terms:
 
 - run the deterministic checks first (`git rev-list` > 0, clean worktree, PR base is
   the intended branch, gates green, tests ran AFTER the last commit, diff inside the
   scope boundary, acceptance tests not edited) — cheap, and they catch most of it;
 - assemble the blind packet (AC list + diff + test output + CI + screenshots) and
-  dispatch one verifier subagent per AC;
+  grade one AC per call — through its own per-AC graders when its tools allow
+  nested agents, otherwise one AC at a time itself;
 - write the per-AC verdict table onto the card (`update_card` with `appendBody`),
   each row carrying its evidence and `by: verifier`, and record the unit's verdict
   on its mission step with `mission_verify_step` — from a session that is not one
-  of the step's linked (authoring) sessions, which is you when an executor built
-  it;
+  of the step's linked (authoring) sessions, which is your id, passed by the
+  verifier subagent, when an executor built it;
 - `unmet` → delta back to the SAME executor, re-verify only that AC; twice unmet
   becomes an operator decision, not a third attempt;
 - `blocked` → surface the question to the operator, next to the AC it blocks;
@@ -751,7 +845,8 @@ Your part as orchestrator:
   check, which lands on the operator's `you` list until they tick it;
 - move the finished card to `review` with the PR URL — never to `done`.
 
-When every unit is verified and the end's evidence exists, verify the fixed end
+When every unit is verified and the end's evidence exists, have one more
+verification subagent gather the end's evidence bundle, then verify the fixed end
 (`Delivered and verified`) yourself with `mission_verify_step` (you built none of
 the steps, so it lands `verified`), read `closeReadiness` on `mission_get`, and
 call `mission_request_close`. The operator closes. `closeReadiness` is `null`

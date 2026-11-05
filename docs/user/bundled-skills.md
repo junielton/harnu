@@ -130,6 +130,14 @@ file. What that changes for you:
   `delivery-verifier` grades code, UI, research and decision work each against its own
   rubric. With no browser tools available in the session, anything visual lands on your
   "check by hand" list rather than being passed on a code-reading argument.
+- **A long delivery doesn't outgrow its orchestrating session.** The orchestrator runs
+  every check-in, every verification and every report in a fresh
+  helper agent that hands back a short summary, so the orchestrating session never
+  re-reads the full mission state and its conversation stays small however long the
+  delivery runs. There is no "start a new session at some size" step and no prompt for
+  you to paste: the session that started the mission keeps owning it. When a stage ends
+  at something only you can do — a merge and a build, say — it raises a blocker for you
+  and waits for it to clear rather than handing the work over.
 - **Sessions reporting back find the right session.** A helper session addresses the
   session that dispatched it by its permanent id and looks up its current address right
   before sending — so a report is not lost when that session was parked and resumed —

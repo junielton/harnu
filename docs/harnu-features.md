@@ -1,4 +1,4 @@
-<!-- harnu-features v122 (2026-11-05) -->
+<!-- harnu-features v123 (2026-11-05) -->
 
 # You are running inside Harnu
 
@@ -1123,7 +1123,16 @@ discoveredFrom }`; single-chapter work stays mission-only. A `mission` tick read
 step on a red gate and escalates to the You lane with age and risk, never writing a verdict.
 `status` renders the campaign headline `Ch. N/M · Step a/b` from `campaign_get` and
 `mission_get`; `report-back` reads the ledger (and an `outcome`, when one exists) for its
-rail and links the campaign. Hold yourself to the same rules. To HEAR something ("read that out loud", "I'm away from the screen") use
+rail and links the campaign. **An orchestrating owner keeps its context flat:** each tick,
+each verification and each child report runs in a fresh general-purpose subagent (the
+`Agent` tool, never `subagent_type: "fork"`, which inherits the whole transcript), handed
+the owner's real session id so its `mission_*` calls are attributed to the owner; it
+returns a report of at most 15 lines and the owner never reads a `mission_get` /
+`campaign_get` / `get_fleet` dump itself. Push subscriptions (`notify_when_idle`) stay on
+the owner, which answers an idle notice by spawning a tick subagent. There is no "stand
+down at ~400k tokens" rule and no resume prompt for the operator to paste: an unattended
+run never depends on a human pasting a prompt, and a wave that ends at a human pause is an
+operator blocker, not a handoff. Hold yourself to the same rules. To HEAR something ("read that out loud", "I'm away from the screen") use
 `harnu:read-aloud`: it rewrites for the ear and calls `speak`, falling back to a PATH TTS
 command (`HARNU_TTS_COMMAND`, else `CAPY_TTS_COMMAND`, else `say` on macOS, `spd-say -w`
 elsewhere) only when the verb is absent — never after a refusal, and it never claims to have

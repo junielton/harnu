@@ -29,6 +29,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **Orchestrating sessions no longer outgrow their context or ask you to paste a resume prompt.** The `orchestrate-delivery` and `mission` skills now run every coordination tick, every verification and every child report in a fresh helper subagent that returns a short summary, so the owning session never reads the big mission dumps itself and its context stays flat for the whole delivery. The old "stand down around 400k tokens and hand the operator a prompt to paste into a new session" rule is gone: a new session was never the mission's owner, and an overnight run stalled at the first handoff. A wave that ends at a pause only you can resolve, like a merge, now raises a blocker for you instead of ending the session.
+
 - **Shelving is on by default, and still only reports first.** A settings file that never mentioned shelving now reads as on; one that explicitly turned it off stays off. Until you acknowledge the first report in Settings → Cleanup it removes nothing: it lists what it would shelve in Activity.
 
 - **The Archives card no longer lets you delete the archive of a shelved worktree.** That archive is what restores it. The row's Delete is disabled with "Shelved worktree — restore it first" and a **Restore first** button next to it; a stale screen that still sends the delete is refused by Harnu as well.
