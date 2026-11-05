@@ -258,6 +258,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Sidebar folder row                                 | `src/renderer/src/components/SidebarFolder.vue`                                  |
 | Sidebar jump palette (§6 — T288)                   | `src/renderer/src/components/SidebarJumpPalette.vue`                             |
 | Repo group header (multi-worktree repos)           | `src/renderer/src/components/RepoGroupHeader.vue`                                |
+| Shelved section of a repo group (§6 — U2.3b)       | `SidebarShelvedSection.vue` + `lib/shelved-sidebar.ts`                           |
 | Topbar / breadcrumb / status pill                  | `src/renderer/src/components/Topbar.vue`                                         |
 | Activity bell (Topbar notification popover, T152)  | `src/renderer/src/components/ActivityBell.vue`                                   |
 | Empty state ("Ready to start")                     | `src/renderer/src/components/EmptyState.vue`                                     |
