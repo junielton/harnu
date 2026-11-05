@@ -12,6 +12,7 @@ import {
   ACTORS as WIRE_ACTORS,
   type Actor,
   type ActVerb,
+  type PausedStack,
   type Tombstone,
   type TombstoneStack
 } from './containers-wire'
@@ -197,6 +198,31 @@ export function restoreHintForStop(
  */
 export function restoreHintForRemove(stack: HintStack): string | null {
   return composeHint(stack)
+}
+
+/**
+ * The paused registry (U3.4): stacks whose newest journal entry is a pause and that have no
+ * containers right now. There is no second file to drift: the journal already survives a restart,
+ * so the registry is a view of it. A later entry for the same stack (a start, a removal, another
+ * stop) ends the pause, and so does the project coming back with containers (`liveStacks`).
+ * `journal` is newest first, as {@link parseJournal} returns it.
+ */
+export function derivePaused(
+  journal: readonly Tombstone[],
+  liveStacks: ReadonlySet<string>
+): PausedStack[] {
+  const decided = new Set<string>()
+  const out: PausedStack[] = []
+  for (const t of journal) {
+    for (const s of t.stacks) {
+      if (decided.has(s.stack)) continue
+      decided.add(s.stack)
+      if (s.paused && !liveStacks.has(s.stack)) {
+        out.push({ ...s.paused, stack: s.stack, name: s.name, actor: t.actor })
+      }
+    }
+  }
+  return out
 }
 
 export async function appendTombstone(file: string, t: Tombstone): Promise<void> {

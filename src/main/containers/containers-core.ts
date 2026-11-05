@@ -24,6 +24,7 @@ import {
   type Verdict,
   type VolumeRow
 } from './containers-wire'
+import { derivePaused } from './containers-journal'
 
 export const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project'
 export const COMPOSE_WORKING_DIR_LABEL = 'com.docker.compose.project.working_dir'
@@ -589,6 +590,8 @@ export interface ScanInput {
   now: number
   zombieAfterDays: number
   recent: Tombstone[]
+  /** The whole journal, newest first: the paused registry is derived from it (U3.4). */
+  journal?: readonly Tombstone[]
   platform: string
   /**
    * The workspace-GC bucket of a worktree path (the last GC snapshot), when it has judged
@@ -751,6 +754,7 @@ export function buildSnapshot(input: ScanInput): ContainersSnapshotAvailable {
     zombieAfterDays: input.zombieAfterDays,
     totals: computeTotals(stacks),
     stacks,
+    paused: derivePaused(input.journal ?? [], new Set(stacks.map((s) => s.id))),
     recent: input.recent
   }
 }

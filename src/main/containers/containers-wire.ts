@@ -365,10 +365,24 @@ interface SnapshotBase {
   recent: Tombstone[]
 }
 
+/**
+ * A stack Cleanup brought down with `compose down` and that has not come back (U3.4, shown as
+ * "Paused"). It has no containers, so it is not a {@link StackRow} and no verdict applies to it.
+ */
+export interface PausedStack extends PausedRecord {
+  /** The stack id the pause was journaled under (the compose project). */
+  stack: string
+  name: string
+  /** Who paused it: the autopilot on its own, or an operator or agent. */
+  actor: Actor
+}
+
 export interface ContainersSnapshotAvailable extends SnapshotBase {
   dockerAvailable: true
   totals: ContainersTotals
   stacks: StackRow[]
+  /** Paused stacks, newest first; derived from the journal, never from a second file. */
+  paused: PausedStack[]
 }
 
 /** Docker is missing or its daemon is down. Deliberately carries no `stacks` (PRD §5). */

@@ -289,6 +289,7 @@ export async function scanContainers(req: ScanRequest): Promise<ContainersSnapsh
     now: req.now,
     zombieAfterDays: req.zombieAfterDays,
     recent,
+    journal: req.journal,
     platform: process.platform,
     // The last GC snapshot's bucket: a worktree stack reads zombie as soon as its branch is dead.
     inheritedBucketOf: bucketLookup(realOf)

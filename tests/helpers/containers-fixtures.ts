@@ -107,6 +107,7 @@ export function snapshotOf(
     zombieAfterDays: 2,
     totals: totalsFor(stacks),
     stacks,
+    paused: [],
     recent
   }
 }

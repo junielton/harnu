@@ -167,6 +167,7 @@ export function available(stacks: StackRow[]): ContainersSnapshotAvailable {
       stoppable: 0
     },
     stacks,
+    paused: [],
     recent: []
   }
 }
