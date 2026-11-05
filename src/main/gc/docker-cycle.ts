@@ -90,11 +90,22 @@ const REPORT_KIND: Record<DockerAction['kind'], DockerReportKind> = {
   park: 'pause'
 }
 
+/**
+ * What the operator reads as the target. A stack's id is its compose project name; a network's id is
+ * `net:<64 hex characters>`, so it is shown by the name in its reason (``…network `app_default` …``)
+ * or, failing that, the short id `docker network ls` would show.
+ */
+function targetOf(a: DockerAction): string {
+  if (a.kind !== 'prune-network') return a.id
+  const named = /`([^`]+)`/.exec(a.reason)?.[1]
+  return named ?? a.id.replace(/^net:/, '').slice(0, 12)
+}
+
 /** The list a report-only pass records: kind, target and reason per action, capped. */
 export function reportItemsOf(actions: readonly DockerAction[]): DockerReportItem[] {
   return actions.slice(0, DOCKER_REPORT_ITEMS_MAX).map((a) => ({
     kind: REPORT_KIND[a.kind],
-    target: a.id,
+    target: targetOf(a),
     reason: a.reason
   }))
 }
