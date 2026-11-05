@@ -20,6 +20,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **A narrow Topbar no longer draws the title over its buttons.** The title now shortens with an ellipsis (down to a minimum width), and when the buttons still do not fit they leave the bar one at a time, the least important first, into a new **More actions** (`…`) menu at the end of the bar. They come back as the bar gets wider. Nothing was removed: each action in the menu keeps its icon, name, keyboard shortcut and highlight, and the menu works from the keyboard (arrows, Enter, Esc). With enough room the Topbar looks exactly as before, with Floating panels on or off.
+
 - **The pane dividers read as one edge again.** Between the sidebar and the session, and between the session and the Fleet rail, the resize handle drew its thin line in the middle of a 6px gap, which left a sliver of background on each side and made the boundary look like a double bar. The line now sits flush against the panel it belongs to. The grab area is just as wide as before. Double-clicking the divider between the session and the helper stack now resets the split, like the other two dividers already did.
 
 - **The drill-in "Back" row stays put while the list scrolls.** In the sidebar's drill-in mode the Back row used to scroll away with the list, so in a long worktree group you had to scroll all the way up to go back. It is now pinned above the list: it spans the full sidebar width, the scrollbar starts below it, and rows sliding under its edge fade out instead of showing half-cut.

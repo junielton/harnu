@@ -5345,11 +5345,10 @@ what it does: the menu runs the same handler as the button.
 [split-layout] [panel-right] […]`, whatever the priority order is. The `…` button is last; it is
   drawn only while at least one action is hidden.
 - **Minimum title width: 96px.** The title (the session name, or the folder name in the folder
-  view) is a truncating span with `min-width: 96px`: it ends in an ellipsis as the bar narrows, and
+  view) is a truncating span with `min-width: 96px` (its border box, padding and border included, so the room it takes in the bar is 10px less and the budget errs on the safe side): it ends in an ellipsis as the bar narrows, and
   actions start to leave **only once the title is at 96px**. The breadcrumb folder label before it
   truncates too, to its icon and separator at the very end, so no part of the left side can push
-  into the cluster. The badges that follow the title (provider, Orchestrator, mission pill, folder
-  branch) keep their width and are counted in the reserve. Below the width where even `[…]` plus the
+  into the cluster. The badges that follow the title (provider, Orchestrator, folder branch; marked `data-topbar-extra`) keep their width and are counted in the reserve. The mission pill already shrinks with its own ellipsis and reserves nothing. Below the width where even `[…]` plus the
   96px title do not fit (about 240px of Topbar, far under the 800px window minimum) the bar is
   simply full; nothing is hidden beyond the last action.
 - **The fit rule.** Every action button is 26px wide with a 2px gap, so the number that fit is a pure
@@ -5358,9 +5357,7 @@ what it does: the menu runs the same handler as the button.
   the badges and the 96px title. If an action has to leave, the `…` button takes a slot of the same
   size, so one more action leaves with it. The math lives in `planTopbarOverflow`
   (`lib/topbar-overflow.ts`) and is unit-tested; the component only measures and renders.
-- **Measuring.** A `ResizeObserver` on the header (plus the badges) feeds the plan. It is never
-  polled and never read per frame; the plan is recomputed only when the observed width or the list of
-  present actions changes, and it commits only when the hidden set changes. **Hysteresis:** an action
+- **Measuring.** A `ResizeObserver` on the header feeds the plan, and a post-render watch re-plans when the list of present actions, the badges, the breadcrumb or the sidebar state (the macOS inset changes the padding) change. It is never polled and never read per frame, and it commits only when the hidden set changes. A header with no width yet (not laid out) is left alone: nothing is hidden. **Hysteresis:** an action
   that is hidden comes back only when it fits with **8px** to spare, so a width sitting on the
   boundary does not flip an action in and out. Hiding and returning are instant (no animation): a
   moving control under the pointer is worse than a jump.
@@ -5375,8 +5372,7 @@ what it does: the menu runs the same handler as the button.
   overlay so a browser pane under it freezes. Each row is one hidden action: the **same icon**, the
   **same label** (the button's `aria-label`), the **same chord hint**, the **same handler**. An
   **active** action (Roadmap, PR Stack and Review while their view is open; split-layout while the
-  setting is an explicit override) keeps its `--accent` ink and `--accent-soft` row, and is exposed as
-  a checked `menuitemcheckbox`; a disabled one is dimmed to `--text-disabled` and skipped by the
+  setting is an explicit override) keeps its look in the row: the three view toggles (Roadmap, PR Stack, Review) keep `--accent-soft` + `--accent` and are exposed as a checked `menuitemcheckbox` (`aria-checked`), split-layout keeps `--accent` ink only; a disabled one is dimmed to `--text-disabled` and skipped by the
   arrows. Rows are in the bar's order, with no separators and no header.
 - **Keyboard.** `Enter`, `Space` or `ArrowDown` on the `…` button opens the menu with the first row
   focused (`ArrowUp` opens it on the last). Inside: `ArrowDown` / `ArrowUp` move (wrapping),

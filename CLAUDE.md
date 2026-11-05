@@ -259,6 +259,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Sidebar jump palette (§6 — T288)                   | `src/renderer/src/components/SidebarJumpPalette.vue`                             |
 | Repo group header (multi-worktree repos)           | `src/renderer/src/components/RepoGroupHeader.vue`                                |
 | Topbar / breadcrumb / status pill                  | `src/renderer/src/components/Topbar.vue`                                         |
+| Topbar overflow menu (`…` More actions, BUG-252)   | `src/renderer/src/components/TopbarOverflowMenu.vue` + `lib/topbar-overflow.ts`  |
 | Activity bell (Topbar notification popover, T152)  | `src/renderer/src/components/ActivityBell.vue`                                   |
 | Empty state ("Ready to start")                     | `src/renderer/src/components/EmptyState.vue`                                     |
 | Folder View (main pane, T212)                      | `src/renderer/src/components/FolderView.vue` + `folder-view-format.ts`           |
