@@ -17,6 +17,7 @@
 // refs, so the Archives category lists them and `git gc` keeps their objects.
 
 import { SHELVE_REF_DIR } from '../reaper/archive-core'
+import { normalizeEphemeralEntry } from '../reaper/dehydrate-core'
 
 /**
  * The most bytes of gitignored files one worktree's snapshot may hold. Above it preservation is
@@ -156,15 +157,53 @@ export function parseShelveRecord(json: string): ShelveRecord | null {
 
 // ---- what the snapshot leaves out ---------------------------------------------
 
+/** Prefix of a dependency-dir entry that matches a directory of that name at ANY depth. */
+export const ANY_DEPTH = '**/'
+
+/**
+ * One dependency-dir entry in its stored form: a plain worktree-relative path (the manifest's
+ * `ephemeral:` rules, see `normalizeEphemeralEntry`), or `**\/<name>` for a single directory name
+ * that is regenerable wherever it sits (`packages/a/node_modules`). Null when unsafe or malformed.
+ */
+export function normalizeDependencyDir(raw: string): string | null {
+  if (raw.startsWith(ANY_DEPTH)) {
+    const name = normalizeEphemeralEntry(raw.slice(ANY_DEPTH.length))
+    return name !== null && !name.includes('/') ? `${ANY_DEPTH}${name}` : null
+  }
+  return normalizeEphemeralEntry(raw)
+}
+
+/**
+ * The dependency dirs a repo's manifest `ephemeral:` list means for shelving: each entry as the
+ * manifest wrote it, and every single-segment one also at any depth, because a monorepo keeps its
+ * regenerable dirs next to each package. Entries that do not normalise are dropped; an empty list
+ * stays empty (nothing is excluded, so the snapshot cap decides).
+ */
+export function dependencyDirsFor(ephemeral: readonly string[]): string[] {
+  const out: string[] = []
+  for (const raw of ephemeral) {
+    const entry = normalizeEphemeralEntry(raw)
+    if (entry === null || out.includes(entry)) continue
+    out.push(entry)
+    if (!entry.includes('/')) out.push(`${ANY_DEPTH}${entry}`)
+  }
+  return out
+}
+
 /**
  * Whether `rel` is one of the dependency dirs or lies under one. Compared by whole path
- * segments (`node_modules_x` is not `node_modules`) and only from the worktree root, exactly the
- * set dehydrate removes: a nested `packages/a/node_modules` is NOT regenerable by that rule, so it
- * counts toward the snapshot.
+ * segments (`node_modules_x` is not `node_modules`). A plain entry is anchored at the worktree
+ * root, exactly the set dehydrate removes; an any-depth entry (`**\/node_modules`) matches a
+ * segment of that name wherever it is.
  */
 export function isDependencyPath(rel: string, dependencyDirs: readonly string[]): boolean {
   const p = rel.replace(/\/+$/, '')
-  return dependencyDirs.some((d) => p === d || p.startsWith(`${d}/`))
+  const segments = p.split('/')
+  return dependencyDirs.some((d) =>
+    d.startsWith(ANY_DEPTH)
+      ? segments.includes(d.slice(ANY_DEPTH.length))
+      : p === d || p.startsWith(`${d}/`)
+  )
 }
 
 // ---- stashes --------------------------------------------------------------------

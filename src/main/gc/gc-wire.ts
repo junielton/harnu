@@ -14,6 +14,7 @@ import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
 import type { StackLeftoverItem } from './gc-stack-leftovers'
 import type { ArchiveEntry, ArchiveRepoGroup, GcArchivesCard } from './archives-core'
 import type { GcTrashCard, TrashListEntry } from './trash-core'
+import type { ShelvedEntry } from './shelve-store'
 import type {
   GcOpinionAck,
   GcOpinionDone,
@@ -24,6 +25,7 @@ import type {
 } from './opinion-core'
 
 export type {
+  ShelvedEntry,
   ArchiveEntry,
   ArchiveRepoGroup,
   GcArchivesCard,
@@ -45,6 +47,42 @@ export type {
   OrphanTranscriptItem,
   StackLeftoverItem,
   GcItemResult
+}
+
+/** One worktree a shelving cycle shelved; the Activity line is rendered from it. */
+export interface ShelvedSummary {
+  id: string
+  /** Null for a detached worktree. */
+  branch: string | null
+  /** Basename of the folder that was freed. */
+  folderAlias: string
+  folderPath: string
+  /** Whole days it had been idle. */
+  idleDays: number
+  freedBytes: number | null
+}
+
+/** What the shelving half of one cycle did (autonomous cleanup U2.2). */
+export interface ShelveCycleRecord {
+  /** `off`: the switch is off. `report`: first cycle, nothing shelved. `shelve`: acted. */
+  mode: 'off' | 'report' | 'shelve'
+  /** Eligible worktrees seen this cycle. */
+  found: number
+  /** Disk they occupy. */
+  foundBytes: number
+  shelved: ShelvedSummary[]
+  /** Refused at the executor because the world had moved (changed since decided, in use, locked). */
+  refused: number
+  /** Real failures; they count toward the kill switch. */
+  failed: number
+  /** Eligible worktrees the per-cycle cap left for a later cycle. */
+  deferred: number
+  /** Shelving switched itself off this cycle after a streak of failures. */
+  paused: boolean
+  /** Skipped because another Harnu holds the repo's lock. */
+  locked: number
+  /** Shelves whose journal line could not be written (the shelve itself stands). */
+  journalFailed: number
 }
 
 /** What one pass of the autopilot did. Pushed on `gc:cycle` and kept as `lastCycle`. */
@@ -70,6 +108,8 @@ export interface CycleRecord {
   notified: boolean
   /** The job the cycle ran through, when it ran one. */
   jobId: string | null
+  /** The shelving half of the cycle; absent when shelving is not wired. */
+  shelve?: ShelveCycleRecord
 }
 
 /** `gc:snapshot`: everything the Cleanup surface shows, from the last gather. */
@@ -114,6 +154,12 @@ export interface GcSnapshot {
   archives: GcArchivesCard
   /** What Harnu moved to the OS trash that is still there (see `trash-core.ts`). */
   trash: GcTrashCard
+  /**
+   * Worktrees Harnu shelved (autonomous cleanup): the folder is gone on purpose, the branch and the
+   * archive stay, and the sessions stay listed. They are not removed worktrees, and none of the
+   * buckets above holds them. The sidebar's Archived section that shows them is U2.3.
+   */
+  shelved: ShelvedEntry[]
 }
 
 /**

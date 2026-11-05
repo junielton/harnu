@@ -17,6 +17,8 @@ export interface OrphanSourceContext {
   known: readonly string[]
   /** Repo checkouts, to group a gone folder under its repo. */
   repoPaths: readonly string[]
+  /** Worktrees Harnu shelved: missing on purpose, so their transcripts are never orphans. */
+  shelvedFolders?: readonly string[]
 }
 
 export type OrphanSource = (ctx: OrphanSourceContext) => Promise<OrphanTranscriptItem[]>
@@ -68,6 +70,7 @@ export const realOrphanSource: OrphanSource = async (ctx) => {
       protectedSessionIds: protectedIds,
       protectedFolders: alive,
       repoPaths: ctx.repoPaths,
+      shelvedFolders: ctx.shelvedFolders,
       proof: (folder) => proveGone(folder, evidence, fsPathExistence)
     })
   } catch (err) {

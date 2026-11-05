@@ -3047,6 +3047,10 @@
           "confirm": "Move to trash"
         }
       },
+      "shelved": {
+        "activity": "Shelved `{branch}` — idle {days} d, branch kept",
+        "activityDetached": "Shelved detached HEAD — idle {days} d, archive kept"
+      },
       "toast": {
         "success": "{freed} · {count} ready item cleaned | {freed} · {count} ready items cleaned",
         "partial": "{cleaned} cleaned · {failed} needs review | {cleaned} cleaned · {failed} need review",

@@ -27,7 +27,14 @@ describe('defaultGcPrefs', () => {
       neverClean: [],
       keep: {},
       released: {},
-      releasedFrom: {}
+      releasedFrom: {},
+      shelve: {
+        enabled: false,
+        firstReportAcknowledged: false,
+        thresholdDays: 3,
+        maxPerCycle: 3,
+        failureLimit: 3
+      }
     })
   })
 

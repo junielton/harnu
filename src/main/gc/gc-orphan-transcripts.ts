@@ -86,6 +86,11 @@ export interface OrphanInput {
    * nothing: every missing folder is then only "not found".
    */
   proof?: (folder: string) => boolean | Promise<boolean>
+  /**
+   * Worktrees Harnu shelved: their folder is missing on purpose, so their transcripts (and those
+   * of any folder inside them) are never orphans, whatever else says "gone" (design C3).
+   */
+  shelvedFolders?: readonly string[]
   /** The clock (epoch ms); defaults to now. */
   now?: number
   /**
@@ -148,6 +153,13 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
   const now = input.now ?? Date.now()
   const quietMs = input.quietMs ?? ORPHAN_QUIET_MS
   const aliveSlugs = new Set(input.protectedFolders.map(slugOfPath))
+  // Slugs are lossy and a subfolder's slug continues its parent's, so a slug that continues a
+  // shelved worktree's is kept too: the safe side.
+  const shelved = (input.shelvedFolders ?? []).map((f) => ({ folder: f, slug: slugOfPath(f) }))
+  const slugShelved = (slug: string): boolean =>
+    shelved.some((s) => slug === s.slug || slug.startsWith(`${s.slug}-`))
+  const folderShelved = (folder: string): boolean =>
+    shelved.some((s) => isUnder(folder.replace(/\\/g, '/'), s.folder.replace(/\\/g, '/')))
   const existence = new Map<string, Promise<Existence>>()
   const existsOnce = (folder: string): Promise<Existence> => {
     let known = existence.get(folder)
@@ -159,7 +171,7 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
   }
   const items: OrphanTranscriptItem[] = []
   for (const slug of slugs) {
-    if (aliveSlugs.has(slug)) continue
+    if (aliveSlugs.has(slug) || slugShelved(slug)) continue
     let facts: SlugFacts
     try {
       facts = await input.probe.readSlug(slug)
@@ -174,6 +186,7 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
     const cwds = facts.files.map((f) => f.cwd)
     if (cwds.some((c) => c === null)) continue
     const folders = [...new Set(cwds as string[])]
+    if (folders.some(folderShelved)) continue
     const states = await Promise.all(folders.map(existsOnce))
     // Missing is the only state that can be an orphan; a folder Harnu could not even look at is not.
     if (states.some((s) => s !== 'missing')) continue
