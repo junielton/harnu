@@ -546,7 +546,7 @@ export interface DigestRenderInput {
 
 /**
  * The whole digest's cap. Mirrors `memory-core.MEMORY_ENTRY_MAX_CHARS` (the cap
- * `appendMemoryEntry` checks on the entry alone, in UTF-16 units) without importing that
+ * `appendMemoryEntry` checks on the entry alone, as JavaScript string length) without importing that
  * fs-bound module; a test pins the two equal.
  */
 export const DIGEST_MAX_CHARS = 8_000
