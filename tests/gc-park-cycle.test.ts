@@ -222,7 +222,10 @@ describe('execute', () => {
     const [action] = await p.plan()
     expect(await p.execute(action!)).toEqual({ ok: true })
     expect(r.paused).toEqual([
-      { d: { stack: 'shop', containerIds: ['shop-c1'], verdict: 'zombie' }, actor: 'autopilot' }
+      {
+        d: { stack: 'shop', containerIds: ['shop-c1'], verdict: 'zombie', idle: 'idle 3 h' },
+        actor: 'autopilot'
+      }
     ])
   })
 
