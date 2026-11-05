@@ -191,6 +191,7 @@ import type {
 import type {
   ContainersSnapshot,
   ContainersTotals,
+  PausedStack as ContainersPausedStack,
   StackRow,
   ContainerRow,
   VolumeRow as ContainersVolumeRow,
@@ -372,6 +373,7 @@ export type {
 export type {
   ContainersSnapshot,
   ContainersTotals,
+  ContainersPausedStack,
   StackRow,
   ContainerRow,
   ContainersVolumeRow,
