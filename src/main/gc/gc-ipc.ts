@@ -73,7 +73,12 @@ import {
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
-import { runDockerCycle } from './docker-cycle'
+import { composeDockerPlanners, runDockerCycle } from './docker-cycle'
+import { createParkPlanner } from './park-cycle'
+import { listOpenPaneUrls } from '../browser/browser-service'
+import { getContainersService } from '../containers/containers-ipc'
+import { readStackActivity } from '../containers/docker-facts-shell'
+import { execRun, readEstablishedPorts } from '../containers/docker-listeners-shell'
 import { runShelveCycle } from './shelve-cycle'
 import { defaultShelveExecDeps, shelveWorktree } from './shelve-exec-shell'
 import { probeShelve } from './shelve-probe-shell'
@@ -369,6 +374,52 @@ export async function registerGcHandlers(
   // executor is the only code that deletes a folder for it; every dependency is the real one.
   const shelveExec = defaultShelveExecDeps(path.join(userData, SHELVED_FILE))
 
+  // Pausing idle stacks (autonomous cleanup U3.5). Every read is the real one; the containers
+  // service is the only code that brings a stack down.
+  const pausedStackIds = (): string[] => {
+    const snap = getContainersService()?.snapshot() ?? null
+    return snap && snap.dockerAvailable ? snap.paused.map((p) => p.stack) : []
+  }
+  const parkPlanner = createParkPlanner({
+    prefs: () => prefs,
+    bundles: () => gatherer.cached()?.bundles ?? [],
+    snapshot: async () => {
+      try {
+        return (await getContainersService()?.scan()) ?? null
+      } catch {
+        return null
+      }
+    },
+    journal: async () => {
+      try {
+        return (await getContainersService()?.journal()) ?? null
+      } catch {
+        return null
+      }
+    },
+    activity: async () => {
+      const r = await readStackActivity({ run: runDocker })
+      return r.ok ? r.value : null
+    },
+    paneUrls: listOpenPaneUrls,
+    established: () => readEstablishedPorts({ run: execRun, platform: process.platform }),
+    pause: (decision, actor) => {
+      const svc = getContainersService()
+      // No service yet (the window is still starting): nothing ran, which is a refusal, not a failure.
+      if (!svc) {
+        return Promise.resolve({
+          ok: false,
+          outcome: 'refused',
+          code: 'DOCKER_UNAVAILABLE',
+          message: 'the containers service is not running yet'
+        })
+      }
+      return svc.pause(decision, actor)
+    },
+    activityLine: notify,
+    now: () => Date.now()
+  })
+
   const cycleDeps: GcCycleDeps = {
     prefs: () => prefs,
     gather: async (): Promise<GcGather> => gather(),
@@ -386,6 +437,8 @@ export async function registerGcHandlers(
         {
           prefs: () => prefs,
           driftedCwds: () => gatherer.cached()?.driftedCwds ?? [],
+          // A stack Cleanup Paused is down and holds no bind mount: it no longer blocks shelving.
+          pausedStackIds: () => pausedStackIds(),
           probe: (b) => probeShelve(b),
           shelve: (d) => shelveWorktree(d, shelveExec),
           lock: withRepoLock,
@@ -401,15 +454,13 @@ export async function registerGcHandlers(
         bundles,
         state
       ),
-    // Docker autonomy (U3.1): its own switch and report-only first cycle. The planner is empty and
-    // the executor refuses until U3.3 to U3.5 fill them, so nothing here changes Docker state yet.
+    // Docker autonomy (U3.1): its own switch and report-only first cycle. The slot's plan is a
+    // composition point: garbage (U3.3) first, then pauses (U3.5).
     docker: () =>
       runDockerCycle(
         {
           prefs: () => prefs,
-          plan: async () => [],
-          // A refusal, not a failure: it must never trip the kill switch.
-          execute: async () => ({ ok: false, reason: 'not implemented yet', refusal: true }),
+          ...composeDockerPlanners([parkPlanner]),
           // Docker is one daemon per machine: one lock across Harnu instances (`--user-data-dir`).
           lock: (work) => withLockFile(dockerLockPath(), work),
           // The failure-streak kill switch: persisted, so a restart does not start acting again.

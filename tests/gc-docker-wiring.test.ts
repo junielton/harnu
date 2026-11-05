@@ -45,8 +45,10 @@ describe('the service wires the Docker slot behind its own switch', () => {
     expect(read('preload/index.ts')).toMatch(/gcAckDockerReport/)
     expect(read('renderer/src/stores/gc.ts')).toMatch(/ackDockerReport/)
   })
-  it('plans nothing and changes no Docker state in this unit', () => {
-    expect(ipc).toMatch(/plan:\s*async\s*\(\)\s*=>\s*\[\]/)
+  it('fills the slot through the planner composition point and never spawns docker itself', () => {
+    // U3.5: the empty planner of U3.1 is gone; the slot's plan and execute come from its planners.
+    expect(ipc).toMatch(/\.\.\.composeDockerPlanners\(\[/)
+    expect(ipc).not.toMatch(/plan:\s*async\s*\(\)\s*=>\s*\[\]/)
     const cycle = read('main/gc/docker-cycle.ts')
     expect(cycle).not.toMatch(/execFile|spawn|child_process|docker (down|rm|network)/)
   })
