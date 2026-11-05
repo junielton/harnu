@@ -245,6 +245,15 @@ describe('readEmptyComposeNetworks', () => {
     expect(r.ok && r.value.held).toHaveLength(2)
   })
 
+  it('snapshots networks before containers, so a container created in between is never missed', async () => {
+    const { run, calls } = fakeRun(world())
+    await readEmptyComposeNetworks(deps(run))
+    const networksAt = calls.findIndex((c) => is(c, 'network', 'ls'))
+    const containersAt = calls.findIndex((c) => is(c, 'ps'))
+    expect(networksAt).toBeGreaterThanOrEqual(0)
+    expect(networksAt).toBeLessThan(containersAt)
+  })
+
   it('skips compose config entirely when no network is empty', async () => {
     const handler = world()
     const { run, calls } = fakeRun((argv) =>
