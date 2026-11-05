@@ -71,7 +71,13 @@ export interface DigestEngineDeps {
     from?: { offset: number; facts: TranscriptFacts }
   ): Promise<{ facts: TranscriptFacts; offset: number }>
   readTruth(path: string): Promise<ReturnType<typeof deriveTranscriptTruth>>
-  gatherGit(folder: string, sinceUnixSec: number, baselineHead: string | null): Promise<GitEvidence>
+  gatherGit(
+    folder: string,
+    sinceUnixSec: number,
+    baselineHead: string | null,
+    /** A rev other than `HEAD` (S-5's orphan branch, read in the owning repo). */
+    rev?: string
+  ): Promise<GitEvidence>
   writeDigest(
     folder: string,
     page: string,
@@ -127,7 +133,22 @@ export interface DigestEngine {
    * session is tried once per engine: one that cannot be written is not re-read every pass.
    */
   catchUp(sessions: readonly CatchUpSession[]): Promise<string[]>
+  /**
+   * Digests the transcript of a session whose folder is gone (S-5, reason `orphan`) into the
+   * memory of `memoryFolder`, its owning repo. Never touches the gone folder, writes no `hot.md`
+   * and keeps no state: the transcript is frozen, so "has a digest" is the dedup.
+   */
+  digestTranscriptInto(args: OrphanDigestArgs): Promise<void>
   close(): void
+}
+
+export interface OrphanDigestArgs {
+  sessionId: string
+  transcriptPath: string
+  /** The owning repo: its memory receives the digest. */
+  memoryFolder: string
+  /** The transcript's `gitBranch`; read as a rev in the owning repo when it resolves. */
+  branch: string | null
 }
 
 /**
@@ -364,5 +385,9 @@ export function createDigestEngine(
     return done
   }
 
-  return { onTaskEdge, digestNow, catchUp, close }
+  async function digestTranscriptInto(_args: OrphanDigestArgs): Promise<void> {
+    throw new Error('not implemented')
+  }
+
+  return { onTaskEdge, digestNow, catchUp, digestTranscriptInto, close }
 }

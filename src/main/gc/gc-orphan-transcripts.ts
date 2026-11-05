@@ -40,6 +40,13 @@ export interface OrphanTranscriptItem {
   newestAt: number | null
   /** The project folder also holds Claude's auto-memory notes for that folder. */
   hasMemory: boolean
+  /**
+   * What the memory digest of these sessions looks like (memory U1 S-5): `total` counts the
+   * sessions with at least `minUserTurns` user turns, `done` those with a digest in the owning
+   * repo's memory, `home` that repo (`null`: none). Set by `digestOrphans`; absent when the
+   * item was listed without that step.
+   */
+  digest?: { done: number; total: number; home: string | null }
 }
 
 export const ORPHAN_TRANSCRIPT_PREFIX = 'transcripts:'

@@ -5,10 +5,18 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import {
+  digestOrphans,
+  fsOrphanSessions,
+  inspectOrphanTranscript
+} from '../src/main/gc/gc-orphan-digest'
+import { orphanTranscriptId, type OrphanTranscriptItem } from '../src/main/gc/gc-orphan-transcripts'
+import { slugOfPath } from '../src/main/gc/gc-transcripts'
 import { createDigestEngine } from '../src/main/mcp/digest-engine'
 import {
   commitFileStats,
   gatherGitEvidence,
+  hasSessionDigest,
   listSubagentTranscripts,
   readTranscriptFacts,
   readTranscriptTruth
@@ -125,6 +133,31 @@ beforeAll(async () => {
     .filter((s) => s.folder !== 'gone')
     .sort((a, b) => a.endMin - b.endMin)
   for (const s of replayed) await engine.digestNow(s.id, 'ended')
+
+  // One Cleanup gather digests the orphans (S-5): the gone worktree's sessions, by the engine.
+  const goneSlug = slugOfPath(fx.gone)
+  const goneItem: OrphanTranscriptItem = {
+    id: orphanTranscriptId(goneSlug),
+    slug: goneSlug,
+    folder: fx.gone,
+    repoLabel: 'repo',
+    bytes: 1,
+    sessionCount: 2,
+    proof: 'proven',
+    newestAt: null,
+    hasMemory: false
+  }
+  await digestOrphans([goneItem], {
+    repoPaths: [fx.repo],
+    probe: {
+      exists: async (p) => (await fs.stat(p).catch(() => null)) !== null,
+      isCheckout: async (p) => (await fs.stat(join(p, '.git')).catch(() => null)) !== null
+    },
+    sessionsOf: fsOrphanSessions(join(fx.home, '.claude', 'projects')),
+    inspect: inspectOrphanTranscript,
+    hasDigest: (home, sid) => hasSessionDigest(memoryDirFor(home), sid),
+    digest: (args) => engine.digestTranscriptInto(args)
+  })
   engine.close()
 
   git = await score(fx.repo)
@@ -146,6 +179,11 @@ describe('memory U1 capture, scored by the benchmark', () => {
   it('non-git capture_coverage is at least 0.95', () => {
     expect(nonGit.metrics.capture_sessions).toBeGreaterThan(0)
     expect(nonGit.metrics.capture_coverage_nongit).toBeGreaterThanOrEqual(0.95)
+  })
+
+  it('orphan_loss is zero', () => {
+    expect(git.metrics.orphan_transcripts).toBeGreaterThan(0)
+    expect(git.metrics.orphan_loss).toBe(0)
   })
 
   it('user-turn and digest rules agree with the benchmark', async () => {
