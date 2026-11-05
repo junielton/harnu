@@ -676,6 +676,13 @@ export const useGcStore = defineStore('gc', () => {
     return saved
   }
 
+  /** Acknowledges the first Docker autonomy report (its own switch, its own channel); the answer is the prefs as saved. */
+  async function ackDockerReport(): Promise<GcPrefs> {
+    const saved = await window.api.gcAckDockerReport()
+    if (snapshot.value) snapshot.value = { ...snapshot.value, prefs: saved }
+    return saved
+  }
+
   // ---- shelved worktrees: bringing one back (autonomous cleanup U2.3a) ---------------------------
 
   /** Shelved ids whose Restore is running, so a second click cannot start a second restore. */
@@ -934,6 +941,7 @@ export const useGcStore = defineStore('gc', () => {
     savePrefs,
     deleteArchives,
     ackShelveReport,
+    ackDockerReport,
     restoreShelved,
     shelvedBusy,
     shelvedFailures,

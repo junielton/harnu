@@ -65,16 +65,19 @@ import {
   prefsFile,
   readGcPrefs,
   withAcknowledged,
+  withDockerAcknowledged,
+  withDockerDisabled,
   withoutKeep,
   withShelveAcknowledged,
   withShelveDisabled,
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
+import { runDockerCycle } from './docker-cycle'
 import { runShelveCycle } from './shelve-cycle'
 import { defaultShelveExecDeps, shelveWorktree } from './shelve-exec-shell'
 import { probeShelve } from './shelve-probe-shell'
-import { withRepoLock } from './repo-lock-shell'
+import { dockerLockPath, withLockFile, withRepoLock } from './repo-lock-shell'
 import { SHELVED_FILE, readShelvedForUpdate } from './shelve-store'
 import { onShelvedChanged, restoreShelvedById, toRestoreAck } from './shelve-restore-shell'
 import { parseOptions } from './gc-options'
@@ -131,6 +134,8 @@ export interface GcService {
   ackFirstReport(): Promise<GcPrefs>
   /** Acknowledges the first shelving report (its own switch, independent of the autopilot's). */
   ackShelveReport(): Promise<GcPrefs>
+  /** Acknowledges the first Docker autonomy report (its own switch, independent of shelving's and the autopilot's). */
+  ackDockerReport(): Promise<GcPrefs>
   /** Restore button: brings one shelved worktree back by its id (the restore service, same as a resume). */
   restoreShelved(rawId: unknown): Promise<ShelveRestoreAck>
   jobs(): GcJobInfo[]
@@ -396,6 +401,26 @@ export async function registerGcHandlers(
         bundles,
         state
       ),
+    // Docker autonomy (U3.1): its own switch and report-only first cycle. The planner is empty and
+    // the executor refuses until U3.3 to U3.5 fill them, so nothing here changes Docker state yet.
+    docker: () =>
+      runDockerCycle(
+        {
+          prefs: () => prefs,
+          plan: async () => [],
+          // A refusal, not a failure: it must never trip the kill switch.
+          execute: async () => ({ ok: false, reason: 'not implemented yet', refusal: true }),
+          // Docker is one daemon per machine: one lock across Harnu instances (`--user-data-dir`).
+          lock: (work) => withLockFile(dockerLockPath(), work),
+          // The failure-streak kill switch: persisted, so a restart does not start acting again.
+          disableDocker: async () => {
+            await persist(withDockerDisabled(prefs))
+          },
+          notify,
+          now: () => Date.now()
+        },
+        state
+      ),
     state,
     now: () => Date.now()
   }
@@ -582,6 +607,7 @@ export async function registerGcHandlers(
     },
     ackFirstReport: () => persist(withAcknowledged(prefs)),
     ackShelveReport: () => persist(withShelveAcknowledged(prefs)),
+    ackDockerReport: () => persist(withDockerAcknowledged(prefs)),
     restoreShelved: async (rawId) => {
       if (typeof rawId !== 'string' || !rawId) {
         throw new Error('gc:shelve:restore expects the id of a shelved worktree')
@@ -676,6 +702,7 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())
   ipcMain.handle('gc:shelve:ack', () => service.ackShelveReport())
+  ipcMain.handle('gc:docker:ack', () => service.ackDockerReport())
   ipcMain.handle('gc:shelve:restore', (_e, id: unknown) => service.restoreShelved(id))
   // A worktree came back (a resume, a terminal or the button): the snapshot and every open
   // Cleanup screen follow.

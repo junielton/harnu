@@ -3014,6 +3014,8 @@ const api = {
   gcAckFirstReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:ackFirstReport'),
   /** Acknowledges the first shelving report: until then a shelving cycle only lists what it would shelve. */
   gcAckShelveReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:shelve:ack'),
+  /** Acknowledges the first Docker autonomy report: until then a Docker cycle only records what it would do. */
+  gcAckDockerReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:docker:ack'),
   /** Cleanup's Restore button: brings one shelved worktree back by its id (same function a resume uses). */
   gcRestoreShelved: (id: string): Promise<ShelveRestoreAck> =>
     ipcRenderer.invoke('gc:shelve:restore', id),
