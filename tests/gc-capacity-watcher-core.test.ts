@@ -500,6 +500,36 @@ describe('runCapacityPass: back-off while nothing is left to free (30 s passes s
     expect(r.planned).toBe(2)
   })
 
+  it('clearing a Keep mark or a never-clean path plans again at once (the planner reads both)', async () => {
+    const withMarks = {
+      ...acked(),
+      keep: { 'repo::wt::/a': 'merged' },
+      neverClean: ['/protected']
+    } as GcPrefs
+    const r = rig(withMarks, {
+      free: [2],
+      plan: [net(1)],
+      execute: () => ({ ok: false, reason: 'busy', refusal: true })
+    })
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(1)
+    // same marks, different object identity, key order and fate: nothing changed for the planner
+    r.deps.prefs = () => ({ ...withMarks, keep: { 'repo::wt::/a': 'unmerged' } }) as GcPrefs
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(1)
+    // the Keep mark is cleared
+    r.deps.prefs = () => ({ ...withMarks, keep: {} }) as GcPrefs
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(2)
+    // a never-clean path is removed
+    r.deps.prefs = () => ({ ...withMarks, keep: {}, neverClean: [] }) as GcPrefs
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(3)
+  })
+
   it('a pass that was cut short by the cap or found something to do never starts a back-off', async () => {
     const r = rig(acked({ maxPerCycle: 1 }), { free: [0], plan: [net(1), net(2)] })
     await runCapacityPass(r.deps, r.state, 'timer')

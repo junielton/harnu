@@ -34,7 +34,10 @@ const watch = (over: Partial<DockerWatchRecord> = {}): DockerWatchRecord => ({
   ...over
 })
 
-function install(snapshot: Partial<GcSnapshot> = {}): {
+function install(
+  snapshot: Partial<GcSnapshot> = {},
+  gate: Promise<void> = Promise.resolve()
+): {
   push: Record<string, (p: unknown) => void>
   pushSend: ReturnType<typeof vi.fn>
   ack: ReturnType<typeof vi.fn>
@@ -66,7 +69,10 @@ function install(snapshot: Partial<GcSnapshot> = {}): {
   } as unknown as GcSnapshot
   ;(globalThis as unknown as { window: unknown }).window = {
     api: {
-      gcSnapshot: vi.fn(async () => snap),
+      gcSnapshot: vi.fn(async () => {
+        await gate
+        return snap
+      }),
       gcJobs: vi.fn(async () => []),
       gcRecoveryList: vi.fn(async () => []),
       gcRecoveryAck: vi.fn(async () => undefined),
@@ -290,5 +296,78 @@ describe('a notice raised before the window existed (the boot pass) is delivered
     await useGcStore().init()
     expect(ack).not.toHaveBeenCalled()
     expect(useNotificationsStore().list).toHaveLength(0)
+  })
+})
+
+describe('the startup race: a newer notice pushed while the snapshot is still loading', () => {
+  const low = watch({ at: NOW - 5, notice: { level: 'low', free: 3, total: 31, mark: 3 } })
+  const zero = watch({ at: NOW - 1, notice: { level: 'zero', free: 0, total: 31, mark: 3 } })
+
+  it('a zero pushed while the older low is pending records both, once each, in order', async () => {
+    let open!: () => void
+    const gate = new Promise<void>((r) => (open = r))
+    const { push, pushSend, ack } = install(
+      { dockerNoticesPending: [low, zero], dockerWatch: zero },
+      gate
+    )
+    const store = useGcStore()
+    const init = store.init()
+    await Promise.resolve()
+    await Promise.resolve()
+    push.dockerWatch!(zero) // arrives during the await, before the snapshot
+    open()
+    await init
+    const rows = useNotificationsStore().list
+    expect(rows.map((r) => r.title)).toEqual([
+      t('cleanup.gc.capacity.zero.title'),
+      t('cleanup.gc.capacity.low.title')
+    ])
+    expect(pushSend).toHaveBeenCalledTimes(2)
+    // each acknowledged, and only what was recorded
+    const acked = ack.mock.calls.flatMap((c) => c[0] as number[])
+    expect(new Set(acked)).toEqual(new Set([low.at, zero.at]))
+  })
+
+  it('an older notice arriving after a newer one is still recorded', async () => {
+    const { push, pushSend } = install()
+    await useGcStore().init()
+    push.dockerWatch!(zero)
+    push.dockerWatch!(low)
+    expect(useNotificationsStore().list).toHaveLength(2)
+    expect(pushSend).toHaveBeenCalledTimes(2)
+  })
+
+  it('the same notice twice, in any order, is still recorded once', async () => {
+    const { push, pushSend } = install()
+    await useGcStore().init()
+    push.dockerWatch!(zero)
+    push.dockerWatch!(low)
+    push.dockerWatch!(zero)
+    push.dockerWatch!(low)
+    expect(useNotificationsStore().list).toHaveLength(2)
+    expect(pushSend).toHaveBeenCalledTimes(2)
+  })
+
+  it('a pending record without a notice is neither recorded nor acknowledged', async () => {
+    const { ack } = install({ dockerNoticesPending: [watch({ at: NOW - 3 }), low] })
+    await useGcStore().init()
+    expect(useNotificationsStore().list).toHaveLength(1)
+    expect(ack).toHaveBeenCalledWith([low.at])
+  })
+
+  it('remembers a bounded number of notices, so a long session cannot grow the set', async () => {
+    const { push, pushSend } = install()
+    await useGcStore().init()
+    for (let i = 0; i < 120; i++) {
+      push.dockerWatch!(
+        watch({ at: NOW + i, notice: { level: 'low', free: 3, total: 31, mark: 3 } })
+      )
+    }
+    expect(pushSend).toHaveBeenCalledTimes(120)
+    // the most recent ones are still deduped
+    push.dockerWatch!(
+      watch({ at: NOW + 119, notice: { level: 'low', free: 3, total: 31, mark: 3 } })
+    )
+    expect(pushSend).toHaveBeenCalledTimes(120)
   })
 })
