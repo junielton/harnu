@@ -118,6 +118,7 @@
     "terminal": "Terminal",
     "split": "Split horizontal",
     "browser": "Browser",
+    "moreActions": "More actions",
     "splitLayout": "Split layout: {mode}",
     "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Open folder",

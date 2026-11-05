@@ -5355,6 +5355,84 @@ already looking at that repo's session.
 - **Labels (i18n):** `topbar.roadmapBoard` / `topbar.prStack` (`title` + `aria-label`).
   Short labels → no trailing period (§8).
 
+#### Topbar overflow (BUG-252)
+
+The Topbar never lets its title and its controls collide. When the right cluster does not fit, the
+actions leave the bar **one at a time, lowest priority first**, into a `…` **More** menu at the end of
+the bar. They come back, one at a time, as space returns. Nothing is removed and no action changes
+what it does: the menu runs the same handler as the button.
+
+- **What can overflow.** Every action button of the right cluster: `new-session` (folder view only),
+  `roadmap`, `pr-stack`, `review`, `open-folder`, `editor`, `github-pulls`, `explorer`, `terminal`,
+  `browser`, `split-layout`, `panel-right`. These never overflow: the left sidebar toggle (the
+  collapsed sidebar must always be reopenable) and the Activity bell (a badge and a popover of its
+  own, and it is reachable with nothing selected).
+- **Priority, declared once.** The order is one list in code (`TOPBAR_OVERFLOW_ORDER` in
+  `lib/topbar-overflow.ts`), written **hide first → hide last**. Nothing else decides who leaves.
+
+  | # (leaves…) | Action         | Why it sits there                                                      |
+  | ----------- | -------------- | ---------------------------------------------------------------------- |
+  | 1st         | `github-pulls` | Leaves Harnu for the browser; also hidden when `origin` is not GitHub  |
+  | 2nd         | `open-folder`  | Leaves Harnu for the file manager                                      |
+  | 3rd         | `editor`       | Leaves Harnu for an editor (or a shell pane)                           |
+  | 4th         | `explorer`     | Opens a pane; the file tree is also reachable with its shortcut        |
+  | 5th         | `split-layout` | A rare preference toggle; also reachable from Settings and its command |
+  | 6th         | `browser`      | Opens a pane, right next to Terminal                                   |
+  | 7th         | `terminal`     | Opens a pane; reachable with its shortcut                              |
+  | 8th         | `review`       | A per-repo takeover that acts inside Harnu                             |
+  | 9th         | `pr-stack`     | A per-repo takeover that acts inside Harnu                             |
+  | 10th        | `roadmap`      | The per-repo board: the view operators open most                       |
+  | 11th        | `panel-right`  | The only way to reopen a collapsed helper panel without the keyboard   |
+  | 12th (last) | `new-session`  | The primary action of a folder with no session                         |
+
+  An action that is not present right now (no `origin`, no helper panes, a session instead of a
+  folder) is not in the list that frame, so it neither takes room nor leaves a gap.
+
+- **Order in the bar and in the menu.** Both keep the cluster order `[new-session] [roadmap]
+[pr-stack] [review] [open-folder] [editor] [github-pulls] [explorer] [terminal] [browser]
+[split-layout] [panel-right] […]`, whatever the priority order is. The `…` button is last; it is
+  drawn only while at least one action is hidden.
+- **Minimum title width: 96px.** The title (the session name, or the folder name in the folder
+  view) is a truncating span with `min-width: 96px` (its border box, padding and border included, so the room it takes in the bar is 10px less and the budget errs on the safe side): it ends in an ellipsis as the bar narrows, and
+  actions start to leave **only once the title is at 96px**. The breadcrumb folder label before it
+  truncates too, to its icon and separator at the very end, so no part of the left side can push
+  into the cluster. The provider and Orchestrator badges that follow the title (marked `data-topbar-extra`) keep their width and are counted in the reserve. The folder view's branch badge shrinks, with an ellipsis, after the title is at its floor, down to its 11px icon, and reserves only that icon, so a long branch name never takes the actions' room. The mission pill already shrinks with its own ellipsis and reserves nothing. Below the width where even `[…]` plus the
+  96px title do not fit (about 240px of Topbar, far under the 800px window minimum) the bar is
+  simply full; nothing is hidden beyond the last action.
+- **The fit rule.** Every action button is 26px wide with a 2px gap, so the number that fit is a pure
+  function of one number, the width left for the cluster: the bar width, minus the 16px padding on
+  both sides, the sidebar toggle, the bell, the 12px gaps between regions, the breadcrumb's minimum,
+  the badges and the 96px title. If an action has to leave, the `…` button takes a slot of the same
+  size, so one more action leaves with it. The math lives in `planTopbarOverflow`
+  (`lib/topbar-overflow.ts`) and is unit-tested; the component only measures and renders.
+- **Measuring.** A `ResizeObserver` on the header feeds the plan, and a post-render watch re-plans when the list of present actions, the badges, the breadcrumb or the sidebar state (the macOS inset changes the padding) change. It is never polled and never read per frame, and it commits only when the hidden set changes. A header with no width yet (not laid out) is left alone: nothing is hidden. **Hysteresis:** an action
+  that is hidden comes back only when it fits with **8px** to spare, so a width sitting on the
+  boundary does not flip an action in and out. Hiding and returning are instant (no animation): a
+  moving control under the pointer is worse than a jump.
+- **The `…` button.** Same anatomy as every right-cluster button: 26×26, `--text-3` → `--text` with a
+  `--surface` hover, 14px `ellipsis` glyph at stroke 1.5; `--accent-soft` + `--accent` while its menu
+  is open. `aria-haspopup="menu"`, `aria-expanded`, `title` and `aria-label` =
+  `topbar.moreActions` ("More actions"), `data-test="topbar-more"`.
+- **The menu** is the Context menu of §6 (`--surface`, 1px `--border-2`, 6px radius, 4px padding,
+  `--shadow-pop`, 12px items, `6px 8px` padding, 9px icon-to-text gap, the shortcut hint on the right
+  edge in `--text-4` mono 10.5px, `.anim-fade-in-scale`), anchored under the `…` button with its right
+  edge on the button's (the Activity bell convention), 200px minimum width, and registered as a native
+  overlay so a browser pane under it freezes. Each row is one hidden action: the **same icon**, the
+  **same label** (the button's `aria-label`), the **same chord hint**, the **same handler**. An
+  **active** action (Roadmap, PR Stack and Review while their view is open; split-layout while the
+  setting is an explicit override) keeps its look in the row: the three view toggles (Roadmap, PR Stack, Review) keep `--accent-soft` + `--accent` and are exposed as a checked `menuitemcheckbox` (`aria-checked`), split-layout keeps `--accent` ink only; a disabled one is dimmed to `--text-disabled` and skipped by the
+  arrows. Rows are in the bar's order, with no separators and no header.
+- **Keyboard.** `Enter`, `Space` or `ArrowDown` on the `…` button opens the menu with the first row
+  focused (`ArrowUp` opens it on the last). Inside: `ArrowDown` / `ArrowUp` move (wrapping),
+  `Home` / `End` jump, `Enter` or `Space` runs the action, closes the menu and leaves focus on the `…`
+  button, `Esc` closes it and returns focus to the `…` button, and `Tab` closes it. Roving
+  `tabindex`: only the focused row is tabbable. Click outside closes it without moving focus.
+- **Floating panels.** Unchanged. The Topbar is the same 42px band island with or without them; only
+  the width the cluster gets differs, because the island borders and gaps take theirs. The menu is a
+  popover above the islands and is not clipped by them.
+- **Copy (i18n).** `topbar.moreActions` = "More actions" (no trailing period). Every action row reuses
+  its button's existing key; the menu adds no other string.
+
 #### Memory pane (project memory viewer, non-PTY)
 
 A helper-stack pane that **renders a repo's project memory** (§4.2) — the T79 S3
