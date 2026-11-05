@@ -1,4 +1,4 @@
-<!-- harnu-features v120 (2026-11-03) -->
+<!-- harnu-features v121 (2026-11-05) -->
 
 # You are running inside Harnu
 
@@ -480,10 +480,11 @@ autopilot's (`remove_containers` removes Docker containers only after a confirm)
   `{ ok, scannedAt, bundles: [{ id, folderAlias, branch, bucket, reason, reasonCode, bytes,
 depsBytes, released, agentControllable }], orphanVolumes, archives: [{ repoAlias, count,
 bytes, expired }], totals: { ready, readyBytes, review, reviewBytes, inUse, orphanVolumes,
-orphanVolumeBytes, archives, archiveBytes, inTrashBytes, inTrashCount, trashUnverifiedBytes,
+orphanVolumeBytes, shelved, archives, archiveBytes, inTrashBytes, inTrashCount, trashUnverifiedBytes,
 trashUnverifiedCount }, lastCycle: { at,
 freedNowBytes, trashedBytes } | null, autopilot: { enabled, reportOnly, graceDays },
-nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never re-derive them. `totals` counts `ready`, `readyBytes`, `review`, `reviewBytes`,
+shelved: [{ id, folderAlias, branch, shelvedAt, idleDays, reason }], shelving: { enabled,
+reportOnly, thresholdDays }, nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never re-derive them. `totals` counts `ready`, `readyBytes`, `review`, `reviewBytes`,
   `inUse`. A clean
   moves the checkout to the OS trash, so `lastCycle` splits `freedNowBytes` (really deleted:
   dependency folders, Docker) from `trashedBytes` (on disk until the trash is emptied) —
@@ -502,7 +503,17 @@ nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never re-derive them. 
   `bundles`, `totals` and `archives` to that repo and its worktrees (by repo, not location)
   and omits `orphanVolumes` and the trash totals; a blocked `folder` is `FOLDER_NOT_ALLOWED`.
   `autopilot.reportOnly` is true until the operator acknowledges the first report.
-  `GC_NOT_READY` right after start: retry. On the Scheduler `observe` allowlist.
+  **`shelved` is a different state from every bucket.** A worktree whose branch is not proven merged
+  and that sat idle past `shelving.thresholdDays` (3 d by default) can be _shelved_ by the cycle:
+  its work is preserved and verified, the folder is deleted for real to give the disk back, and the
+  branch, the `refs/archive/**` refs and the sessions stay. It is **not** a removed worktree and not
+  in `bucket`; its folder is missing on purpose, so do not "recreate" it, report it as gone or look
+  for its transcripts as orphans. Shelving has its own switch (`shelving.enabled`, off by default,
+  independent of `autopilot`) and its own report-only first cycle (`shelving.reportOnly`); until the
+  restore triggers land, a shelved worktree is not brought back by resuming a session in it. If a
+  shelved worktree matters to your task, tell the operator; the branch is intact and
+  `git -C <repo> worktree add <path> <branch>` makes the folder again (the saved uncommitted files
+  are under the branch's `refs/archive/…` refs). `GC_NOT_READY` right after start: retry. On the Scheduler `observe` allowlist.
 - `release_worktree({ folder })` or `release_worktree({ id })` — exactly one — says "this
   worktree's PR merged and I am done with it" (an `id` from `list_cleanup` also reaches a
   worktree the sidebar doesn't list). Its grace window stops applying, so it becomes `ready`
