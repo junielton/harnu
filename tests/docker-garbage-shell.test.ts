@@ -387,10 +387,7 @@ describe('no code path removes a volume (AC-4)', () => {
   it('the garbage sources name no volume removal, prune or force at all', () => {
     for (const f of ['docker-garbage-core.ts', 'docker-garbage-shell.ts']) {
       const src = readFileSync(path.join(__dirname, '..', 'src/main/gc', f), 'utf8')
-      const code = src
-        .split('\n')
-        .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
-        .join('\n')
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
       expect(code, f).not.toMatch(
         /volume rm|'volume'|prune\(|'prune'|--volumes|--force|removeVolumes: true/
       )
