@@ -39,7 +39,7 @@ import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
 import { formatWindowTitle } from './stores/attention'
 import { useUiStore, SETTINGS_TAB_IDS } from './stores/ui'
-import { useHelpersStore, isAgentTerminalPane } from './stores/helpers'
+import { useHelpersStore, isAgentTerminalPane, HELPER_SPLIT_RATIO_DEFAULT } from './stores/helpers'
 import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
@@ -237,6 +237,14 @@ function onMainDividerMouseMove(ev: MouseEvent): void {
   const deltaX = ev.clientX - mainDragging.startX
   const deltaRatio = deltaX / totalW
   helpers.setSplitRatio(wt, mainDragging.startRatio + deltaRatio)
+}
+
+// Double-click resets the helper-stack split to its default, like the sidebar
+// and Fleet-rail dividers reset their widths.
+function onMainDividerDblClick(): void {
+  const wt = helpers.currentWorktreePath
+  if (!wt) return
+  helpers.setSplitRatio(wt, HELPER_SPLIT_RATIO_DEFAULT)
 }
 
 function onMainDividerMouseUp(): void {
@@ -1677,7 +1685,7 @@ onUnmounted(() => {
       <Sidebar v-show="!layout.sidebarCollapsed" />
       <div
         v-if="!layout.sidebarCollapsed"
-        class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+        class="group flex w-1.5 shrink-0 cursor-col-resize justify-start"
         role="separator"
         aria-orientation="vertical"
         :aria-label="$t('sidebar.resize')"
@@ -1771,10 +1779,11 @@ onUnmounted(() => {
           -->
           <div
             v-if="showHelperStack"
-            class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+            class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
             role="separator"
             aria-orientation="vertical"
             @mousedown="onMainDividerMouseDown"
+            @dblclick="onMainDividerDblClick"
           >
             <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
           </div>
@@ -1801,7 +1810,7 @@ onUnmounted(() => {
       <template v-if="showInboxRail">
         <div
           v-if="layout.inboxRailState === 'expanded'"
-          class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+          class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
           role="separator"
           aria-orientation="vertical"
           :aria-label="$t('approvalInbox.rail.resize')"

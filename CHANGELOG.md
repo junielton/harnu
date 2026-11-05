@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-05
+
+### Fixed
+
+- **The pane dividers read as one edge again.** Between the sidebar and the session, and between the session and the Fleet rail, the resize handle drew its thin line in the middle of a 6px gap, which left a sliver of background on each side and made the boundary look like a double bar. The line now sits flush against the panel it belongs to. The grab area is just as wide as before. Double-clicking the divider between the session and the helper stack now resets the split, like the other two dividers already did.
+
 ## 2026-11-04
 
 ### Added
