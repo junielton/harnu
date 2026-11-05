@@ -42,7 +42,8 @@ const sub = computed(() => {
 const nameOf = (e: ShelvedEntry): string =>
   e.worktreePath.split(/[\\/]/).filter(Boolean).pop() ?? e.worktreePath
 const dateOf = (e: ShelvedEntry): string => relativeTime(new Date(e.shelvedAt).toISOString())
-const failureOf = (e: ShelvedEntry) => props.failures?.get(e.id)
+const failureOf = (e: ShelvedEntry): { reason?: string; message?: string } | undefined =>
+  props.failures?.get(e.id)
 
 async function copy(e: ShelvedEntry): Promise<void> {
   await navigator.clipboard.writeText(freshWorktreeCommand(e))
