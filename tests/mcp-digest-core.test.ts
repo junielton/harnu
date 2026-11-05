@@ -347,7 +347,7 @@ describe('mergeHot', () => {
     expect(MEMORY_LABELS.lastPrompt).toBe('Last prompt (verbatim):')
 
     const input = hotInput({
-      title: 'Migração do cache\nsegunda linha',
+      title: 'Cacheの移行\n二行目',
       lastPrompt: 'Falta o teste?\n\nSegunda parte',
       commits: [mkCommit('c'.repeat(40), 100, 'feat: cache')]
     })
@@ -389,10 +389,10 @@ describe('mergeHot', () => {
           )
         expect(label, `unlabelled line: ${line}`).not.toBeNull()
         expect(labels.has((label![1] ?? label![2]).replace(/:$/, ''))).toBe(true)
-        expect(line).not.toMatch(/Migra|Falta|Devemos|segunda/)
+        expect(line).not.toMatch(/移行|二行目|Falta|Devemos/)
       }
     }
-    expect(withPrompt).toContain('> Migração do cache\n> segunda linha')
+    expect(withPrompt).toContain('> Cacheの移行\n> 二行目')
     expect(withPrompt).toContain(
       '**Last (2026-11-03):** 1 commit on `main` — latest `cccccccc` feat: cache'
     )
