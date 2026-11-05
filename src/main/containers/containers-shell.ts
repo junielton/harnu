@@ -308,8 +308,34 @@ async function batch(args: readonly string[], targets: string[]): Promise<Docker
   }
 }
 
+/** A network id (or name) as one plain word: it can never be read as a flag or split in two. */
+const SAFE_NETWORK_REF = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
+const NETWORK_IN_USE = /has active endpoints|active endpoints|is in use/i
+
+export type RemoveNetworkResult =
+  | { ok: true }
+  /** `active`: docker refused because something is attached, i.e. the world moved, not a fault. */
+  | { ok: false; error: string; active: boolean }
+
+/**
+ * `docker network rm <id>`, one network, never anything else (U3.3). Docker itself refuses a
+ * network with an attached endpoint, which makes the last check race-proof.
+ */
+async function removeNetwork(id: string): Promise<RemoveNetworkResult> {
+  if (!SAFE_NETWORK_REF.test(id)) return { ok: false, error: 'not a network id', active: false }
+  try {
+    await runDocker(['network', 'rm', id], ACT_OPTS)
+    return { ok: true }
+  } catch (err) {
+    const e = err as { stderr?: unknown; message?: unknown }
+    const haystack = `${typeof e?.stderr === 'string' ? e.stderr : ''} ${typeof e?.message === 'string' ? e.message : ''}`
+    return { ok: false, error: summarizeDockerError(err), active: NETWORK_IN_USE.test(haystack) }
+  }
+}
+
 /** The docker half of the action function's deps. None of them ever passes `--force`. */
 export const dockerActions = {
+  removeNetwork,
   stop: (ids: string[]): Promise<DockerBatchResult> => batch(['stop'], ids),
   start: (ids: string[]): Promise<DockerBatchResult> => batch(['start'], ids),
   removeContainers: (ids: string[]): Promise<DockerBatchResult> => batch(['rm'], ids),

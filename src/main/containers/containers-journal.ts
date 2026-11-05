@@ -72,7 +72,19 @@ function isTombstoneStack(v: unknown): v is TombstoneStack {
     typeof freed.volumeBytes === 'number' &&
     (s.keptVolumes === undefined || isStringArray(s.keptVolumes)) &&
     (s.keptVolumeBytes === undefined || typeof s.keptVolumeBytes === 'number') &&
-    (s.paused === undefined || isPausedRecord(s.paused))
+    (s.paused === undefined || isPausedRecord(s.paused)) &&
+    isKeptVolumeOwner(s.keptVolumeOwner)
+  )
+}
+
+function isKeptVolumeOwner(v: unknown): boolean {
+  if (v === undefined) return true
+  if (!v || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  return (
+    o.reason === 'worktree-removed' &&
+    (typeof o.project === 'string' || o.project === null) &&
+    (typeof o.worktreePath === 'string' || o.worktreePath === null)
   )
 }
 

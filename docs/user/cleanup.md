@@ -255,7 +255,14 @@ Docker can run out of room long before the disk does: it hands out a limited num
 
 **What it is for.** A stack that has sat idle for a couple of hours is **Paused**: brought down so it stops holding a network, never deleted, with its volumes kept; you bring it back with the `compose up -d` command Harnu records. Empty compose networks, and the stacks of worktrees that no longer exist, are cleared because they can only be regenerated. A volume is never removed this way.
 
-**What it does today.** Cleanup pauses idle stacks on its own. Removing empty compose networks and the stacks of worktrees that no longer exist is not built yet, so nothing is removed this way. A pause is `docker compose down`, never with a volume removed, and Harnu records the ports the stack held and the `docker compose … up -d` command that brings it back (see [Paused stacks](containers.md#paused-stacks)). Before it acts it checks the stack again and refuses, saying **changed since decided**, if anything moved. It never pauses on its own a stack with an anonymous volume, or a database with no volume on its data path, because bringing those down would lose data.
+**Garbage.** Cleanup pauses idle stacks and clears Docker garbage, both only after you have acknowledged the first report. Two kinds of leftover are removed:
+
+- **Empty compose networks**: a network that belongs to a compose project, has no container attached (running or stopped), and that no stack on the machine declares `external`. `compose up` recreates it the next time it is needed. If Harnu cannot read one stack's compose file, it keeps every empty network, because it cannot rule out that this stack needs one.
+- **Orphan stacks**: the containers of a stack whose folder no longer exists. A running one is stopped first (a normal stop, never a kill), then its containers are removed. A stack whose worktree was **shelved** is not an orphan: its folder is gone on purpose, and Harnu leaves it alone. If the list of shelved worktrees cannot be read, no stack is removed.
+
+**Volumes are always kept.** Nothing here ever removes a volume, and it never runs `docker volume rm`, `prune` or a forced removal. The volumes of a removed orphan stack stay in Docker, and the journal line names them and says they belonged to a worktree that is gone, so you can find them later.
+
+**Pausing.** Cleanup pauses idle stacks on its own. A pause is `docker compose down`, never with a volume removed, and Harnu records the ports the stack held and the `docker compose … up -d` command that brings it back (see [Paused stacks](containers.md#paused-stacks)). Before it acts it checks the stack again and refuses, saying **changed since decided**, if anything moved. It never pauses on its own a stack with an anonymous volume, or a database with no volume on its data path, because bringing those down would lose data.
 
 **When Cleanup pauses a stack.** All of these must hold:
 
@@ -282,7 +289,7 @@ Docker can run out of room long before the disk does: it hands out a limited num
 
 **Pause all autonomous cleanup.** The last row of the section is a master switch. While it is on, Harnu shelves nothing, does nothing in Docker and the autopilot cleans nothing. You can still clean by hand from the Cleanup screen. Turn it off and everything goes back to what each switch says; no acknowledgement is lost.
 
-Anything Cleanup does to Docker on its own will be written to the Containers journal with the actor `autopilot`, so it is easy to tell from what you or an agent did.
+Everything Cleanup does to Docker on its own is written to the Containers journal with the actor `autopilot`, so it is easy to tell from what you or an agent did. Each line says why: "Removed empty network `app_default` — no containers", or "Removed orphan stack `app` — worktree gone, volumes kept: app_data". Before each removal Harnu checks again that nothing changed since it decided (a container attached, a verdict that moved, a worktree that was shelved in the meantime); if something did, it skips the item and says "changed since decided" instead of removing it.
 
 ### Before the first scan
 
