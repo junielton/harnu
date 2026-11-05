@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: docker-card</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      body {
+        padding: 16px;
+      } /* no token: stage padding around the card */
+      /* state switchboard: wrappers use display:contents so the child keeps its own layout */
+      [data-dsqa='docker-card'] .only {
+        display: none;
+      }
+      [data-dsqa='docker-card'][data-state='default'] .only[data-only~='default'],
+      [data-dsqa='docker-card'][data-state='capacity-low'] .only[data-only~='capacity-low'],
+      [data-dsqa='docker-card'][data-state='capacity-zero'] .only[data-only~='capacity-zero'],
+      [data-dsqa='docker-card'][data-state='unknown-desktop'] .only[data-only~='unknown-desktop'],
+      [data-dsqa='docker-card'][data-state='unknown-rootless'] .only[data-only~='unknown-rootless'],
+      [data-dsqa='docker-card'][data-state='unknown-remote'] .only[data-only~='unknown-remote'],
+      [data-dsqa='docker-card'][data-state='no-actions'] .only[data-only~='no-actions'],
+      [data-dsqa='docker-card'][data-state='report-only'] .only[data-only~='report-only'],
+      [data-dsqa='docker-card'][data-state='advice-offer'] .only[data-only~='advice-offer'] {
+        display: contents;
+      }
+      [data-dsqa='docker-card'][data-state='advice-offer'] .only.block[data-only~='advice-offer'] {
+        display: block;
+      }
+    </style>
+  </head>
+  <body
+    data-states="default capacity-low capacity-zero unknown-desktop unknown-rootless unknown-remote no-actions report-only advice-offer"
+  >
+    <section class="dk" data-dsqa="docker-card" data-testid="docker-card">
+      <header class="dk-head">
+        <mk-icon name="container" size="14"></mk-icon>
+        <span class="t-ui fw-500 c-text">Docker</span>
+        <span class="t-caption c-4">runs each cycle · 1.6 GB</span>
+        <span class="only" data-only="report-only"
+          ><span class="badge badge--accent" data-dsqa-part="report-only-badge"
+            >Report only · first cycle</span
+          ><button type="button" class="link-btn" data-dsqa-part="ack-link">
+            Review in Settings
+          </button></span
+        >
+        <button type="button" class="link-btn">Inspect stacks</button>
+      </header>
+      <p class="dk-scope t-caption c-4" style="margin: 0">
+        Counts only build cache older than 7 days and dangling images. Images in use and the volumes
+        of live stacks are never counted.
+      </p>
+
+      <!-- NEW: offer to open the address-pool advice (shown once, only when a squeeze was observed on default pools) -->
+      <div class="only block" data-only="advice-offer" style="padding: 0 12px 8px">
+        <div class="blk blk--accent offer" data-dsqa-part="pool-offer">
+          <mk-icon name="info" size="14"></mk-icon>
+          <span class="t-ui c-text"
+            >Docker is on its default address pools and network slots ran low.</span
+          >
+          <button type="button" class="btn btn--soft btn--sm push" data-goto="docker-pool-advice">
+            See how to add more
+          </button>
+        </div>
+      </div>
+
+      <div class="dk-grid">
+        <!-- NEW: network slots block -->
+        <div class="blk" data-dsqa-part="slots-block">
+          <div class="blk-row">
+            <span class="t-ui fw-500 c-text">Docker networks</span>
+            <span class="only" data-only="capacity-low advice-offer"
+              ><span class="badge badge--warning push">Low</span></span
+            >
+            <span class="only" data-only="capacity-zero"
+              ><span class="badge badge--danger push">None left</span></span
+            >
+            <span class="only" data-only="unknown-desktop unknown-rootless unknown-remote"
+              ><span class="badge push">Unknown</span></span
+            >
+          </div>
+
+          <div class="only" data-only="default report-only no-actions">
+            <div class="t-ui c-green tnum">16 of 31 network slots free</div>
+            <div class="gauge" role="img" aria-label="16 of 31 network slots free">
+              <span class="free" style="flex: 16"></span><span class="used" style="flex: 15"></span>
+            </div>
+            <div class="t-caption c-3">
+              Default address pools. Cleanup acts when 3 or fewer are free.
+            </div>
+          </div>
+          <div class="only" data-only="capacity-low advice-offer">
+            <div class="t-ui c-warning tnum">3 of 31 network slots free</div>
+            <div class="gauge gauge--low" role="img" aria-label="3 of 31 network slots free">
+              <span class="free" style="flex: 3"></span><span class="used" style="flex: 28"></span>
+            </div>
+            <div class="t-caption c-3">
+              At the low-water mark of 3. Cleanup is clearing garbage and pausing the longest-idle
+              stacks.
+            </div>
+          </div>
+          <div class="only" data-only="capacity-zero">
+            <div class="t-ui c-red tnum">0 of 31 network slots free</div>
+            <div class="gauge gauge--zero" role="img" aria-label="0 of 31 network slots free">
+              <span class="free" style="flex: 0"></span><span class="used" style="flex: 31"></span>
+            </div>
+            <div class="t-caption c-3">
+              Nothing left to free. A new <span class="mono">compose up</span> will fail until a
+              slot opens. Activity was notified.
+            </div>
+          </div>
+          <div class="only" data-only="unknown-desktop">
+            <div class="t-ui c-3">
+              <mk-icon name="info" size="12"></mk-icon> Network slots unknown
+            </div>
+            <div class="t-caption c-3">
+              Docker Desktop runs its engine in a VM, so Harnu can't read its address pools.
+            </div>
+          </div>
+          <div class="only" data-only="unknown-rootless">
+            <div class="t-ui c-3">
+              <mk-icon name="info" size="12"></mk-icon> Network slots unknown
+            </div>
+            <div class="t-caption c-3">
+              Rootless Docker keeps its address pools out of Harnu's reach.
+            </div>
+          </div>
+          <div class="only" data-only="unknown-remote">
+            <div class="t-ui c-3">
+              <mk-icon name="info" size="12"></mk-icon> Network slots unknown
+            </div>
+            <div class="t-caption c-3">
+              This Docker context points at a remote engine, so Harnu can't read its address pools.
+            </div>
+          </div>
+          <div class="only" data-only="unknown-desktop unknown-rootless unknown-remote">
+            <div class="t-caption c-4">Cleanup still removes garbage and pauses idle stacks.</div>
+          </div>
+        </div>
+
+        <!-- NEW: paused stacks block -->
+        <div class="blk" data-dsqa-part="paused-block">
+          <div class="blk-row"><span class="t-ui fw-500 c-text">Paused stacks</span></div>
+          <div
+            class="only"
+            data-only="default capacity-zero unknown-desktop unknown-rootless unknown-remote"
+          >
+            <div class="t-ui c-text tnum">3 paused</div>
+          </div>
+          <div class="only" data-only="capacity-low advice-offer">
+            <div class="t-ui c-text tnum">5 paused</div>
+          </div>
+          <div class="only" data-only="no-actions"><div class="t-ui c-3">None paused</div></div>
+          <div class="only" data-only="report-only">
+            <div class="t-ui c-3 tnum">Would pause 3</div>
+          </div>
+
+          <div
+            class="only"
+            data-only="default capacity-zero unknown-desktop unknown-rootless unknown-remote capacity-low advice-offer report-only"
+          >
+            <ul class="plist">
+              <li>
+                <span class="name mono t-caption c-text">proj-34</span
+                ><span class="t-caption c-4 tnum">idle 3 d</span
+                ><button
+                  type="button"
+                  class="icon-btn"
+                  title="Copy restore command"
+                  aria-label="Copy restore command for proj-34"
+                >
+                  <mk-icon name="copy" size="12"></mk-icon>
+                </button>
+              </li>
+              <li>
+                <span class="name mono t-caption c-text">ext-12</span
+                ><span class="t-caption c-4 tnum">idle 5 d</span
+                ><button
+                  type="button"
+                  class="icon-btn"
+                  title="Copy restore command"
+                  aria-label="Copy restore command for ext-12"
+                >
+                  <mk-icon name="copy" size="12"></mk-icon>
+                </button>
+              </li>
+              <li>
+                <span class="name mono t-caption c-text">ext-15</span
+                ><span class="t-caption c-4 tnum">idle 2 d</span
+                ><button
+                  type="button"
+                  class="icon-btn"
+                  title="Copy restore command"
+                  aria-label="Copy restore command for ext-15"
+                >
+                  <mk-icon name="copy" size="12"></mk-icon>
+                </button>
+              </li>
+            </ul>
+          </div>
+          <div class="only" data-only="capacity-low advice-offer">
+            <div class="t-caption c-4">+ 2 more in Inspect stacks</div>
+          </div>
+          <div class="t-caption c-3">
+            Stopped when idle; volumes kept. Start one again with its
+            <span class="mono">compose up -d</span> command.
+          </div>
+        </div>
+
+        <!-- EXISTING blocks, unchanged (shown for context) -->
+        <div class="blk blk--ready" data-dsqa-part="existing-cache">
+          <div class="blk-row">
+            <span class="t-ui fw-500 c-text">Build cache</span><span class="sw sw--on push"></span>
+          </div>
+          <div class="t-ui c-green">1.2 GB reclaimable</div>
+          <div class="t-caption c-3">Last cycle reclaimed 640 MB</div>
+          <div class="t-caption c-3">Older than 7 days is removed</div>
+        </div>
+        <div class="blk blk--ready" data-dsqa-part="existing-images">
+          <div class="blk-row">
+            <span class="t-ui fw-500 c-text">Dangling images</span
+            ><span class="sw sw--on push"></span>
+          </div>
+          <div class="t-ui c-green">4 images · 380 MB</div>
+          <div class="t-caption c-3">Last cycle reclaimed 120 MB</div>
+          <div class="t-caption c-3">Images with no tag and no container</div>
+        </div>
+        <div class="blk blk--review" data-dsqa-part="existing-volumes">
+          <div class="blk-row"><span class="t-ui fw-500 c-text">Orphan volumes</span></div>
+          <div class="t-ui c-warning">9 volumes · 2.1 GB</div>
+          <div
+            class="t-caption c-3"
+            style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"
+          >
+            Projects: ext-03, ext-07, ext-09 +3 more
+          </div>
+          <span class="badge badge--warning">can't be restored</span>
+          <div class="t-caption c-3">
+            Never removed automatically. Remove each one yourself in Needs review.
+          </div>
+        </div>
+
+        <!-- NEW: last automatic Docker actions -->
+        <div class="blk span-all" data-dsqa-part="actions-block">
+          <div class="blk-row">
+            <span class="t-ui fw-500 c-text">Automatic actions</span>
+            <span
+              class="only"
+              data-only="default capacity-low capacity-zero unknown-desktop unknown-rootless unknown-remote advice-offer"
+              ><span class="t-caption c-4">last cycle</span></span
+            >
+            <span class="only" data-only="report-only"
+              ><span class="t-caption c-4">nothing was changed</span></span
+            >
+          </div>
+
+          <div class="only" data-only="no-actions">
+            <div class="t-caption c-3 empty-line" style="padding: 6px 0">
+              Nothing automatic yet. Empty networks, orphan stacks and idle stacks are handled each
+              cycle.
+            </div>
+          </div>
+
+          <div
+            class="only"
+            data-only="default capacity-low capacity-zero unknown-desktop unknown-rootless unknown-remote advice-offer report-only"
+          >
+            <ul class="alist">
+              <li>
+                <span class="ico"><mk-icon name="network" size="14"></mk-icon></span>
+                <span>
+                  <span class="t-ui c-text"
+                    ><span class="only" data-only="report-only"
+                      ><span class="badge badge--accent would">Would have</span></span
+                    >4 empty networks removed</span
+                  ><br />
+                  <span class="t-caption c-3"
+                    >No containers were attached; <span class="mono">compose up</span> recreates
+                    them.</span
+                  >
+                </span>
+                <span class="when t-caption c-4 tnum">12 min ago</span>
+              </li>
+              <li>
+                <span class="ico"><mk-icon name="trash" size="14"></mk-icon></span>
+                <span>
+                  <span class="t-ui c-text"
+                    ><span class="only" data-only="report-only"
+                      ><span class="badge badge--accent would">Would have</span></span
+                    >6 orphan stacks removed · 9 volumes kept</span
+                  ><br />
+                  <span class="mono t-caption c-4">ext-03, ext-07, ext-09 +3 more</span><br />
+                  <span class="t-caption c-3"
+                    >Their worktrees were removed. The volumes stay under Orphan volumes.</span
+                  >
+                </span>
+                <span class="when t-caption c-4 tnum">12 min ago</span>
+              </li>
+              <li>
+                <span class="ico"><mk-icon name="pause" size="14"></mk-icon></span>
+                <span>
+                  <span class="t-ui c-text"
+                    ><span class="only" data-only="report-only"
+                      ><span class="badge badge--accent would">Would have</span></span
+                    ><span class="only" data-only="capacity-low advice-offer">2 stacks paused</span
+                    ><span
+                      class="only"
+                      data-only="default capacity-zero unknown-desktop unknown-rootless unknown-remote report-only"
+                      >3 stacks paused</span
+                    ></span
+                  ><br />
+                  <span class="mono t-caption c-4"
+                    ><span class="only" data-only="capacity-low advice-offer">ext-12, ext-15</span
+                    ><span
+                      class="only"
+                      data-only="default capacity-zero unknown-desktop unknown-rootless unknown-remote report-only"
+                      >proj-34, ext-12, ext-15</span
+                    ></span
+                  ><br />
+                  <span class="t-caption c-3"
+                    ><span class="only" data-only="capacity-low advice-offer"
+                      >Idle for days and only 3 network slots were free.</span
+                    ><span
+                      class="only"
+                      data-only="default capacity-zero unknown-desktop unknown-rootless unknown-remote report-only"
+                      >Idle for more than 2 days.</span
+                    ></span
+                  >
+                </span>
+                <span class="when t-caption c-4 tnum">1 h ago</span>
+              </li>
+            </ul>
+            <button type="button" class="link-btn" data-dsqa-part="show-all">
+              Show all in Activity
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <script src="../parts/icon.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

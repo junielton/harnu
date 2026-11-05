@@ -1,0 +1,85 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-11-05",
+  "project": "harnu",
+  "card": "T-U3.7",
+  "tokensFrom": "src/renderer/src/styles/themes.css",
+  "viewports": [1280, 800],
+  "targets": [
+    "src/renderer/src/components/CleanupDockerCard.vue",
+    "src/renderer/src/components/CleanupPoolAdviceDialog.vue",
+    "src/renderer/src/components/ActivityBell.vue"
+  ],
+  "screens": [
+    {
+      "id": "docker-card",
+      "title": "Cleanup \u2192 Docker card (capacity, paused stacks, automatic actions)",
+      "status": "approved",
+      "approvedAt": "2026-11-05",
+      "states": [
+        "default",
+        "capacity-low",
+        "capacity-zero",
+        "unknown-desktop",
+        "unknown-rootless",
+        "unknown-remote",
+        "no-actions",
+        "report-only",
+        "advice-offer"
+      ],
+      "targets": ["src/renderer/src/components/CleanupDockerCard.vue"],
+      "notes": "Two new blocks (Docker networks, Paused stacks) lead the grid, one full-width Automatic actions list closes it; the three existing blocks are unchanged."
+    },
+    {
+      "id": "docker-pool-advice",
+      "title": "Address-pool advice dialog (shown once)",
+      "status": "approved",
+      "approvedAt": "2026-11-05",
+      "states": ["default", "copied"],
+      "targets": ["src/renderer/src/components/CleanupPoolAdviceDialog.vue"],
+      "notes": "Guided dialog with a copyable daemon.json default-address-pools snippet, the restart note, and Dismiss."
+    },
+    {
+      "id": "activity-stale-volume",
+      "title": "Activity \u2192 stale-volume warning",
+      "status": "approved",
+      "approvedAt": "2026-11-05",
+      "states": ["default", "several"],
+      "targets": ["src/renderer/src/components/ActivityBell.vue"],
+      "notes": "A warning row with an Open Containers action; several affected projects fold into one grouped entry."
+    }
+  ],
+  "parts": [
+    {
+      "id": "icon",
+      "variants": ["container", "network", "pause", "trash", "volume", "copy", "check", "bell"]
+    }
+  ],
+  "flows": [
+    {
+      "id": "capacity-squeeze",
+      "title": "Slots run low, operator follows the advice",
+      "steps": [
+        {
+          "screen": "docker-card",
+          "state": "advice-offer",
+          "via": "See how to add more"
+        },
+        {
+          "screen": "docker-pool-advice",
+          "state": "default",
+          "via": "Copy"
+        },
+        {
+          "screen": "docker-pool-advice",
+          "state": "copied",
+          "via": "Dismiss"
+        },
+        {
+          "screen": "docker-card",
+          "state": "capacity-low"
+        }
+      ]
+    }
+  ]
+}
