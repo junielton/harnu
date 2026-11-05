@@ -3885,7 +3885,7 @@ helper-stack** (split), and between the **content and the Fleet rail** (expanded
 A split pane is born from three paths, all using the same visual anatomy
 (`HelperPane`) and differing only in the `kind` of PTY they spawn:
 
-- **New shell** (Split menu) → `kind: shell` in the worktree's cwd.
+- **New shell** (Topbar Terminal button) → `kind: shell` in the worktree's cwd.
 - **Fork session** (Split menu / context menu) → `kind: claude-fork`
   (`claude --resume <src> --fork-session`), via a pending synthetic session.
 - **Open in new tab** (session context menu, `external-link` icon) →
