@@ -52,7 +52,7 @@ describe('pause executor contracts', () => {
 
   it('docs/harnu-features.md documents the paused list and the restore command', () => {
     const doc = read('docs/harnu-features.md')
-    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v124 /)
+    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v125 /)
     expect(doc).toMatch(/\*\*`paused`\*\*/)
     expect(doc).toMatch(/\*\*`restoreCommand`\*\*/)
     expect(doc).toMatch(/never `docker start`/)

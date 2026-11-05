@@ -1,4 +1,4 @@
-<!-- harnu-features v124 (2026-11-05) -->
+<!-- harnu-features v125 (2026-11-05) -->
 
 # You are running inside Harnu
 
@@ -426,7 +426,9 @@ its attributed folder and Harnu's verdict — `unknown`, `orphan`, `active`, `pr
 `pending` or `zombie` — plus RAM, host ports, volumes, `unusedForMs` (and `zombieInMs` on a
 `pending` stack), `totals`, `paused` and `recent` (the stop/start/remove journal; each entry's
 `actor` is `operator`, `agent` or `autopilot` — `autopilot` is Harnu acting on its own
-(Cleanup's automatic Docker actions), never you or the operator). Read the verdict; never re-derive it.
+(Cleanup's automatic Docker actions), never you or the operator); an `autopilot` entry also has a
+`reason`, one English sentence ("Paused `x` — idle 3 h · bring back: `…`", paths shown as `<alias>`),
+absent on operator and agent entries. Read the verdict; never re-derive it.
 **`paused`** lists stacks Cleanup brought down with `compose down` (volumes kept) that have not
 come back — the operator sees them as "Paused". A paused stack has no containers, so it is NOT in
 `stacks` and has no verdict. Each entry: `id`, `name`, `project`, `actor`, `pausedAt`, `ports`
