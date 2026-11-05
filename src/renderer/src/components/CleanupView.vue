@@ -136,7 +136,10 @@ onMounted(async () => {
   // Cleanup (they register later, and stop Esc) keeps its Esc (T486 §6.1).
   document.addEventListener('keydown', onKeydown, true)
   // The Docker card reads Paused stacks and the journal from the Containers snapshot (U3.7).
-  void containers.init().catch(() => undefined)
+  void containers
+    .init()
+    .then(() => containers.ensureScanned())
+    .catch(() => undefined)
   await Promise.all([gc.init(), reaper.init()])
   if (!reaper.snapshot) await scanFirst()
 })
