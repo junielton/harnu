@@ -15,6 +15,8 @@ import {
 import { orphanExpectedOf, type OrphanTranscriptItem } from '../src/main/gc/gc-orphan-transcripts'
 import { formatBytes } from '../src/renderer/src/components/system-monitor-format'
 import { parseOptions } from '../src/main/gc/gc-options'
+import { refusalOf, REFUSAL_CODES, type RefusalCode } from '../src/renderer/src/lib/gc-jobs'
+import { refusalKey } from '../src/renderer/src/components/cleanup-gc-copy'
 
 /**
  * AC-D1, the screen: orphaned transcripts sit under "Other leftovers" with their size, grouped by
@@ -490,5 +492,31 @@ describe('memory digests on orphaned transcripts (S-6)', () => {
       const many = Array.from({ length: 600 }, (_, i) => `transcripts:s${i}`)
       expect(parseOptions({ confirmedUndigested: many }).confirmedUndigested).toHaveLength(500)
     })
+  })
+})
+
+/**
+ * Memory U1 S-6 delta: a refusal main gives a transcripts clean is never a generic failure. Both
+ * confirmation refusals are known codes with their own sentence, and each says what to do next.
+ */
+describe('refusals of an orphaned-transcripts clean (S-6 delta)', () => {
+  const CODES = ['needs-undigested-confirmation', 'needs-not-found-confirmation']
+
+  it.each(CODES)('%s is a recognised refusal', (code) => {
+    expect(REFUSAL_CODES).toContain(code)
+    expect(refusalOf({ ok: false, error: code })).toBe(code)
+  })
+
+  it.each(CODES)('%s has its own sentence, not the raw key or code', (code) => {
+    const key = refusalKey(code as RefusalCode)
+    const sentence = t(key)
+    expect(sentence).not.toBe(key)
+    expect(sentence).not.toBe(code)
+    expect(sentence.length).toBeGreaterThan(20)
+  })
+
+  it('the undigested sentence names the choice that unblocks it', () => {
+    const sentence = t(refusalKey('needs-undigested-confirmation' as RefusalCode))
+    expect(sentence).toContain(t('cleanup.gc.orphans.confirm.undigested.ack'))
   })
 })
