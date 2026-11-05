@@ -28,6 +28,7 @@ const REQUESTS = [
   'gc:recovery:act',
   'gc:recovery:list',
   'gc:remoteFacts',
+  'gc:shelve:ack',
   'gc:snapshot',
   'gc:trash:empty',
   'gc:unkeep'

@@ -111,8 +111,18 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
     // The shape of the contract (S3 delta 2): GcPrefs minus version / keep / firstReportAcknowledged
     // and the release marks (released / releasedFrom, written by release_worktree, never edited here).
     // `removeVolumes` and `categories.volumes` are gone from the engine as well as from the pane.
+    // `shelve` (autonomous cleanup U2.2) is internal for now: shelving ships switched off and its
+    // Settings control arrives with the change that turns it on (U2.3), so the pane has none yet.
     const editable = Object.keys(GC).filter(
-      (k) => !['version', 'keep', 'firstReportAcknowledged', 'released', 'releasedFrom'].includes(k)
+      (k) =>
+        ![
+          'version',
+          'keep',
+          'firstReportAcknowledged',
+          'released',
+          'releasedFrom',
+          'shelve'
+        ].includes(k)
     )
     expect(editable.sort()).toEqual(
       [
