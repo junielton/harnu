@@ -473,6 +473,7 @@ _another_ folder.
 | `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
 | `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
 | `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane") · the Topbar's Browser button (T630, §6 "Topbar per-repo view buttons")                                                                                                 |
+| `columns-2` / `rows-2`                   | The Topbar's split-layout toggle (T627, §6 "Split orientation"): side by side / stacked                                                                                                                                                |
 | `arrow-left` / `arrow-right`             | Browser pane → back / forward (address bar)                                                                                                                                                                                            |
 | `rotate-cw`                              | Browser pane → reload (swaps to `x` — stop — while a load is in flight)                                                                                                                                                                |
 | `play`                                   | Browser pane → Resume the agent after "Pause agent for 10 min" (chip)                                                                                                                                                                  |
@@ -3879,6 +3880,64 @@ helper-stack** (split), and between the **content and the Fleet rail** (expanded
   tracks the pointer 1:1 during the drag, **no** easing animation (an animated drag
   feels laggy). Respects `prefers-reduced-motion` via §7's global reset.
 - **A11y:** `role="separator"`, `aria-orientation="vertical"`.
+- **Horizontal variant (T627).** When the helper stack sits below the session area (see "Split
+  orientation" below) the helper-stack divider turns 90°: the hit area is `h-1.5 w-full
+shrink-0 cursor-row-resize`, the visible line is `h-px w-full`, flush against the helper
+  stack's top edge (`items-end`, the same "one edge at rest" rule as `justify-end` above), and
+  it carries `aria-orientation="horizontal"`. Drag computes the ratio on Y, double-click resets
+  the **stacked** ratio. Colors, hover and motion are unchanged.
+
+#### Split orientation (T627)
+
+The session area and the helper stack sit **side by side** (today's layout) or **stacked**
+(session area on top, helper stack below). One setting, one Topbar control, one shortcut.
+
+- **Setting.** Settings → Appearance → **Split layout**, a three-way segmented control:
+  `auto` (default), `side-by-side`, `stacked`. Persisted in `settings.json` as `splitLayout`
+  (absent = `auto`), like the other settings-store values; an unknown value reads as `auto`.
+- **`auto` rule.** Measured on the **main area** (the box that holds the session area and the
+  helper stack, i.e. the window minus the sidebar and the Fleet rail), as the ratio
+  `height / width`. It resolves to **stacked** once the area is **taller than wide by 5%**
+  (`height / width > 1.05`) and back to **side by side** once it is **wider than tall by 5%**
+  (`height / width < 0.95`). Between the two (0.95 … 1.05) the previous result holds, so a
+  near-square window never flickers while it is resized across the diagonal; before any
+  measurement the result is side by side. The resolver is a pure function in
+  `lib/split-orientation.ts`; `layout.splitOrientation` is the resolved value every consumer
+  reads. An explicit `side-by-side` or `stacked` ignores the measurement.
+- **Stacked anatomy.** The row becomes a column: session area on top (`flex: ratio 1 0`),
+  horizontal divider, helper stack below (`flex: (1 - ratio) 1 0`). The helper stack lays its
+  panes out **left to right** (`flex-row`); each pane keeps its 24px header, now on top of its own
+  column. Between two panes sits a **width splitter**: `role="separator"
+aria-orientation="vertical"`, a 6px `cursor-col-resize` hit area with a 1px `--border-2` line
+  (→ `--accent-line` on hover), the same anatomy as the vertical divider above. A pane header
+  is still the resize handle: dragging pane[idx]'s header moves the boundary on its **left**, the
+  header shows `cursor: col-resize`, and the first pane's header is inert. The pane ratios are the
+  same `ratio` values, now read as widths.
+- **Maximize and close** work as before. A maximized pane fills the stack; every other pane
+  collapses to a **24px-wide** strip (the counterpart of the 24px header-only strip in the
+  vertical stack) — still mounted, still alive. Drag handles are disabled while a pane is
+  maximized.
+- **One ratio per orientation.** The session-area share is stored **per worktree and per
+  orientation**: side by side keeps `splitRatio` in `helpers.json` (default 0.65, clamped to
+  [0.4, 0.8]); stacked keeps its own (default 0.65, same clamp) in `localStorage`
+  (`om2tab.stackedSplitRatios`, keyed by worktree path). Dragging or resetting in one
+  orientation never touches the other's value. Pane ratios inside the stack are shared by both
+  orientations.
+- **Topbar control.** A 26×26 toggle button in the right cluster, right after **Browser** and
+  before the panel toggle: `[terminal] [browser] [split-layout] [panel-right]`. Glyph =
+  the **resolved** orientation: `columns-2` for side by side, `rows-2` for stacked. Standard
+  anatomy (`--text-3` → `--text`, `--surface` hover); while the setting is an explicit
+  `side-by-side` / `stacked` the ink is `--accent` (an override is on), under `auto` it is the
+  idle `--text-3`. One click **cycles the setting** `auto → side-by-side → stacked → auto`
+  (the same action as the shortcut). `title` = `topbar.splitLayout` + the current mode, with
+  the chord when bound; `aria-label` the same text; `data-test="topbar-split-layout"`. Shown
+  only when the worktree has helper panes (nothing to orient otherwise), like the panel
+  toggle.
+- **Shortcut.** `layout.cycleSplitOrientation` (group Views, **unbound** by default, in the
+  command palette) cycles the setting exactly as the Topbar button does. Label key
+  `keybindings.actions.layout_cycleSplitOrientation`.
+- **Motion.** Switching orientation re-lays the panes out instantly in this slice; the animated
+  switch belongs to the motion work (floating-layout S-7). Divider drags never animate.
 
 #### Origins of a helper-stack pane
 
@@ -5089,7 +5148,8 @@ already looking at that repo's session.
   `aria-pressed` — the button is a toggle (see "Takeover dismissal" above), and a
   pressed-looking button is what makes the second click discoverable.
 - **Order:** `[bell] [board] [pr-stack] │ [folder] [editor] [github-pulls] [explorer]
-[terminal] [browser] [panel-right]`. The two view buttons sit **before** the external-tool openers:
+[terminal] [browser] [split-layout] [panel-right]` (the split-layout toggle is T627, §6 "Split
+  orientation"). The two view buttons sit **before** the external-tool openers:
   they act _inside_ Harnu, the ones after them leave for the OS or another app.
 - **GitHub pull requests** (`github` — lucide's brand glyph, so it reads as "leaves for GitHub" and not as the PR Stack Canvas button; deprecated upstream as a brand icon, so a future lucide major may drop it and break the import at build time; `topbar.githubPulls`): opens
 - **Terminal and Browser** (T630): the two panes you split off the session sit side by side, Terminal
