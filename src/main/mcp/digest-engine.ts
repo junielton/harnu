@@ -28,6 +28,7 @@ import {
   planDigest,
   renderDigest,
   shortSessionId,
+  shouldNotifyDigestFailure,
   type DigestFileStat,
   type DigestReason,
   type GitEvidence
@@ -116,6 +117,11 @@ export interface DigestEngineDeps {
    * skipped, so the memory write can never recreate a removed worktree (S-5). Absent: no check.
    */
   folderExists?(folder: string): Promise<boolean>
+  /**
+   * Called when a digest could not be written (the memory write refused, or threw), at most once
+   * per folder per hour (S-8). A skipped plan is not a failure and never calls it. Absent: silent.
+   */
+  notify?(folder: string, reason: string): void
   /** Called with the whole state after every successful digest (S-4). */
   saveState?(state: DigestState): void
   /** Whether the session already has a digest in the folder's memory dir (the catch-up sweep). */
@@ -190,6 +196,8 @@ export function createDigestEngine(
     states.set(id, { scan: e.scan, last: e.last, lastDigestAt: e.lastDigestAt })
   }
   const inFlight = new Set<string>()
+  /** When each folder last raised a failure notice (S-8). */
+  const lastNoticeAt = new Map<string, number>()
   /** Sessions a catch-up pass already handed to the digest. */
   const caughtUp = new Set<string>()
   let closed = false
@@ -203,6 +211,38 @@ export function createDigestEngine(
       }
     }
     return pruneDigestState(out, deps.now())
+  }
+
+  /** Raises the failure notice for `folder`, unless one went out in the last hour. */
+  const notifyFailure = (folder: string, reason: string): void => {
+    const nowMs = deps.now()
+    if (!shouldNotifyDigestFailure(lastNoticeAt.get(folder), nowMs)) return
+    lastNoticeAt.set(folder, nowMs)
+    try {
+      deps.notify?.(folder, reason)
+    } catch (err) {
+      console.error('[memory-digest] failure notice failed', err)
+    }
+  }
+
+  /** `writeDigest`, with a refusal or a throw turned into a notice. A throw still propagates. */
+  async function writeDigestNoticing(
+    folder: string,
+    page: string,
+    entry: string,
+    id: string
+  ): Promise<boolean> {
+    let res: Awaited<ReturnType<DigestEngineDeps['writeDigest']>>
+    try {
+      res = await deps.writeDigest(folder, page, entry, id)
+    } catch (err) {
+      notifyFailure(folder, err instanceof Error ? err.message : String(err))
+      throw err
+    }
+    if (res.ok) return true
+    console.warn(`[memory-digest] digest write refused (${res.error}): ${res.detail}`)
+    notifyFailure(folder, [res.error, res.detail].filter(Boolean).join(': ') || 'write refused')
+    return false
   }
 
   const stateFor = (id: string): SessionState => {
@@ -310,11 +350,7 @@ export function createDigestEngine(
     })
 
     const digestPage = `sessions/${digestSlug(date, id)}`
-    const res = await deps.writeDigest(session.folder, digestPage, entry, id)
-    if (!res.ok) {
-      console.warn(`[memory-digest] digest write refused (${res.error}): ${res.detail}`)
-      return
-    }
+    if (!(await writeDigestNoticing(session.folder, digestPage, entry, id))) return
 
     const head = git.kind === 'repo' ? git.head : null
     st.last = { head, userTurns: facts.userTurns }
@@ -429,15 +465,7 @@ export function createDigestEngine(
       ...(otherCommits > 0 ? { otherCommits } : {})
     })
     // No `hot.md`: a removed folder's last prompt is not where the project stands now.
-    const res = await deps.writeDigest(
-      a.memoryFolder,
-      `sessions/${digestSlug(date, id)}`,
-      entry,
-      id
-    )
-    if (!res.ok) {
-      console.warn(`[memory-digest] digest write refused (${res.error}): ${res.detail}`)
-    }
+    await writeDigestNoticing(a.memoryFolder, `sessions/${digestSlug(date, id)}`, entry, id)
   }
 
   async function digestTranscriptInto(a: OrphanDigestArgs): Promise<void> {
@@ -487,6 +515,7 @@ export function createDigestEngine(
     states.clear()
     inFlight.clear()
     caughtUp.clear()
+    lastNoticeAt.clear()
   }
 
   async function catchUp(sessions: readonly CatchUpSession[]): Promise<string[]> {

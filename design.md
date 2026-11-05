@@ -5588,7 +5588,15 @@ translated in pt-BR).
   on top** (`buildTimeline`, pure). Each row: **date** (`YYYY-MM-DD`, mono
   `tabular-nums` 10.5px `--text-4`) + **title** (digest's first `# `, 12px, truncated) +
   — when the digest references a session — the `arrow-up-right` icon (`--text-4`) on
-  the right; below, the **visible provenance** (raw `author` `human`/`agent` + `branch`
+  the right; between the title and the icon, an **evidence badge** when the digest's
+  header names one (memory U1 S-8, `data-testid="memory-evidence-badge"`): the chip
+  shape of the Cleanup memory chip (`rounded-xs`, `1px` border, `px-1.5 py-px`, 10.5px
+  `text-eyebrow`), **"No commits"** and **"No git"** in the Badge _Default_ triple
+  (`--surface` / `--text-3` / `--border`), **"Recovered"** (a removed folder's
+  transcript) in the Badge _Accent_ triple (`--accent-soft` / `--accent` /
+  `--accent-line`), each with a one-sentence `title`
+  (`memoryPane.evidence.*Hint`). A commit-backed digest and any digest written before the
+  token existed show **no badge**; below, the **visible provenance** (raw `author` `human`/`agent` + `branch`
   with the `git-branch` icon, 10.5px `--text-4`) — visible per §7 (cross-session
   prompt-injection mitigation). A row with a session reference is a `<button>`
   (`cursor-pointer`, hover `--surface-2`, `title` `memoryPane.openSession`); **clicking

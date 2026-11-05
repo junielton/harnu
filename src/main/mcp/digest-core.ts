@@ -699,3 +699,18 @@ function isWithin(target: string, dir: string): boolean {
   const rel = path.relative(dir, target)
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
 }
+
+/** How often one folder may raise a "Memory digest failed" notice (spec S-8): once an hour. */
+export const DIGEST_FAILURE_NOTICE_MS = 3_600_000
+
+/**
+ * Whether a digest failure in a folder may raise a notice now: true when none was raised before
+ * (`lastNoticeAt` undefined) or the last one is at least {@link DIGEST_FAILURE_NOTICE_MS} old.
+ * The engine keeps the times per folder; a skipped plan is not a failure and never asks.
+ */
+export function shouldNotifyDigestFailure(
+  lastNoticeAt: number | undefined,
+  nowMs: number
+): boolean {
+  return lastNoticeAt === undefined || nowMs - lastNoticeAt >= DIGEST_FAILURE_NOTICE_MS
+}

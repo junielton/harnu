@@ -376,7 +376,15 @@
     "decisionsEmpty": "Nenhuma decisão registrada ainda.",
     "timelineEmpty": "Ainda sem digests de sessão — eles aparecem aqui conforme as sessões se encerram.",
     "openSession": "Abrir sessão",
-    "sessionNotFound": "Essa sessão não está carregada."
+    "sessionNotFound": "Essa sessão não está carregada.",
+    "evidence": {
+      "noCommits": "Sem commits",
+      "noGit": "Sem git",
+      "orphan": "Recuperado",
+      "noCommitsHint": "Escrito só a partir da conversa: a sessão não fez commits.",
+      "noGitHint": "Esta pasta não é um repositório git, então o digest não tem evidência de git.",
+      "orphanHint": "Recuperado do transcript de uma pasta removida antes de o Cleanup poder mandá-lo para a lixeira."
+    }
   },
   "explorerPane": {
     "label": "Arquivos do projeto",

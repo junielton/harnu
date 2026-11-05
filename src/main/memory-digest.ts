@@ -14,6 +14,9 @@
  *    shadow log (`responder-registry.ts`), so it stays auditable after the fact,
  *  - the persisted state (`<userData>/memory-digest-state.json`, S-4): read once at
  *    registration, rewritten atomically after every successful digest,
+ *  - the failure notice (S-8): a digest the memory write refused or threw on posts one
+ *    "Memory digest failed" notice per folder per hour through `notify.push`, over the
+ *    command bridge `index.ts` hands in once it exists ({@link setDigestNoticeBridge}),
  *  - the catch-up sweep (S-4): 60 s after registration and every 30 minutes, the fleet model's
  *    sessions go to `engine.catchUp`, which digests the quiet ones no hook reached.
  *
@@ -232,6 +235,38 @@ function saveState(state: DigestState): void {
   })
 }
 
+// ---- Failure notice (S-8) ----------------------------------------------------
+
+/** The slice of the command bridge the notice needs: the `notify.push` dispatch. */
+export interface DigestNoticeBridge {
+  dispatch(command: string, payload: unknown): Promise<unknown>
+}
+
+let noticeBridge: DigestNoticeBridge | null = null
+
+/**
+ * Hands the digest engine the command bridge (it is created after {@link registerDigestEngine}
+ * runs, so `index.ts` calls this right after `registerCommandBridge`). Until then a failure only
+ * logs. `null` detaches it.
+ */
+export function setDigestNoticeBridge(bridge: DigestNoticeBridge | null): void {
+  noticeBridge = bridge
+}
+
+/** Posts the "Memory digest failed" notice. Best-effort: a notice can never break a digest. */
+function notifyDigestFailure(folder: string, reason: string): void {
+  const bridge = noticeBridge
+  if (!bridge) return
+  void Promise.resolve(
+    bridge.dispatch('notify.push', {
+      folderPath: folder,
+      title: 'Memory digest failed',
+      description: reason,
+      kind: 'warning'
+    })
+  ).catch(() => undefined)
+}
+
 const liveDeps: DigestEngineDeps = {
   resolveSession,
   readFacts: readTranscriptFacts,
@@ -247,6 +282,7 @@ const liveDeps: DigestEngineDeps = {
   commitFileStats,
   saveState,
   hasDigest,
+  notify: notifyDigestFailure,
   now: () => Date.now(),
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)

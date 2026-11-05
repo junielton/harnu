@@ -130,6 +130,25 @@ function hasSessionRef(d: DigestMeta): boolean {
 }
 
 /**
+ * The evidence badge of a timeline row (memory U1 S-8): the digest's header token as a chip.
+ * A commit-backed digest, and one written before the token existed, has none.
+ */
+function evidenceBadge(
+  d: DigestMeta
+): { key: 'noCommits' | 'noGit' | 'orphan'; tone: string } | null {
+  switch (d.evidence) {
+    case 'no-commits':
+      return { key: 'noCommits', tone: 'border-border bg-surface text-text-3' }
+    case 'no-git':
+      return { key: 'noGit', tone: 'border-border bg-surface text-text-3' }
+    case 'orphan':
+      return { key: 'orphan', tone: 'border-accent-line bg-accent-soft text-accent' }
+    default:
+      return null
+  }
+}
+
+/**
  * Click a timeline digest → reveal + select its originating session in the
  * sidebar. Degrades gracefully: a digest whose session isn't loaded (deleted,
  * or from another machine) steers with a toast instead of navigating nowhere.
@@ -340,6 +359,15 @@ useFocusRegion(props.pane.id, rootEl, {
                   >{{ d.date || '—' }}</span
                 >
                 <span class="min-w-0 flex-1 truncate" style="font-size: 12px">{{ d.title }}</span>
+                <span
+                  v-if="evidenceBadge(d)"
+                  class="shrink-0 rounded-xs border px-1.5 py-px text-eyebrow"
+                  :class="evidenceBadge(d)!.tone"
+                  :title="$t(`memoryPane.evidence.${evidenceBadge(d)!.key}Hint`)"
+                  :data-evidence="d.evidence"
+                  data-testid="memory-evidence-badge"
+                  >{{ $t(`memoryPane.evidence.${evidenceBadge(d)!.key}`) }}</span
+                >
                 <ArrowUpRight
                   v-if="hasSessionRef(d)"
                   :size="12"
