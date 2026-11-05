@@ -12,6 +12,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-05
 
+### Added
+
+- **The helper panes can sit under the session instead of beside it.** Settings → Appearance has a new **Split layout** choice: **Auto** (the default), **Side by side** and **Stacked**. Stacked puts the session on top and the helper panes underneath, laid out left to right, which suits a tall window. Auto stacks them by itself once the window is clearly taller than wide, and goes back to side by side when it is clearly wider than tall; in between it keeps whatever it was doing, so a nearly square window does not flip back and forth. The new button next to Browser in the Topbar (only shown while the folder has helper panes) switches layouts with one click, cycling Auto, Side by side, Stacked, and its icon always shows the layout in use. There is also a **Cycle the split layout** shortcut you can bind in Settings → Keyboard Shortcuts. The two layouts remember their own split size for each folder, so changing layout never resizes the other one, and double-clicking the divider resets only the layout you are in.
+
 ### Fixed
 
 - **The pane dividers read as one edge again.** Between the sidebar and the session, and between the session and the Fleet rail, the resize handle drew its thin line in the middle of a 6px gap, which left a sliver of background on each side and made the boundary look like a double bar. The line now sits flush against the panel it belongs to. The grab area is just as wide as before. Double-clicking the divider between the session and the helper stack now resets the split, like the other two dividers already did.
