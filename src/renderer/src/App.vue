@@ -45,7 +45,12 @@ import {
   applyExpandToRing,
   HELPER_SPLIT_RATIO_DEFAULT
 } from './stores/helpers'
-import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
+import {
+  useLayoutStore,
+  helperPanelVisible,
+  inboxRailWidthFor,
+  slowDurationMs
+} from './stores/layout'
 import { useSettingsStore } from './stores/settings'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
@@ -589,8 +594,9 @@ watch(
     void nextTick(() => {
       if (typeof document === 'undefined') return
       const css = getComputedStyle(document.documentElement)
-      const duration = parseFloat(css.getPropertyValue('--dur-slow')) || 220
+      const duration = slowDurationMs()
       const easing = css.getPropertyValue('--ease').trim() || 'ease-out'
+      layout.beginLayoutMotion() // the animations below start now: keep the flag (and the freeze) for them
       els.forEach((el, i) => {
         if (typeof el.animate !== 'function') return
         const from = before[i]

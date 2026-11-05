@@ -132,7 +132,12 @@ export interface LayoutMotionDeps {
   freeze: (on: boolean) => void
   setTimer: (cb: () => void, ms: number) => TimerHandle
   clearTimer: (handle: TimerHandle) => void
+  /** True while a layout transition is still running; the flag then waits (bounded) instead of ending. */
+  busy?: () => boolean
 }
+
+/** How many times a running transition can postpone the end of a motion (each wait is 50ms). */
+const MOTION_BUSY_RETRIES = 12
 
 /**
  * The transient motion flag. `begin()` is called right BEFORE a layout state change that is not a
@@ -147,8 +152,15 @@ export function createLayoutMotion(deps: LayoutMotionDeps): {
 } {
   let active = false
   let timer: TimerHandle = null
+  let waited = 0
   const finish = (): void => {
     timer = null
+    if (deps.busy?.() && waited < MOTION_BUSY_RETRIES) {
+      waited++
+      timer = deps.setTimer(finish, 50)
+      return
+    }
+    waited = 0
     active = false
     deps.onChange(false)
     deps.freeze(false)
@@ -157,6 +169,7 @@ export function createLayoutMotion(deps: LayoutMotionDeps): {
     begin(): boolean {
       if (deps.reduced()) return false
       if (timer !== null) deps.clearTimer(timer)
+      waited = 0
       if (!active) {
         active = true
         deps.onChange(true)
@@ -210,7 +223,8 @@ export function createReflowGate(deps: ReflowGateDeps): {
   }
 }
 
-function slowDurationMs(): number {
+/** `--dur-slow` in ms (the token may compute to `220ms` or `0.22s`); a fallback outside a browser. */
+export function slowDurationMs(): number {
   if (typeof document === 'undefined') return SLOW_DURATION_FALLBACK_MS
   const raw = getComputedStyle(document.documentElement).getPropertyValue('--dur-slow').trim()
   const n = parseFloat(raw)
@@ -372,7 +386,9 @@ export const useLayoutStore = defineStore('layout', () => {
 
   // T628: the transient layout-motion flag. Raised around a layout state change that is not a drag.
   const layoutMotion = ref(false)
+  let transitionsRunning = 0
   const motion = createLayoutMotion({
+    busy: () => transitionsRunning > 0,
     durationMs: slowDurationMs,
     reduced: prefersReducedMotion,
     onChange: (on) => {
@@ -387,6 +403,31 @@ export const useLayoutStore = defineStore('layout', () => {
   /** Call right before a layout change that should animate; false when reduced motion snaps it. */
   function beginLayoutMotion(): boolean {
     return motion.begin()
+  }
+
+  // The style recalc that starts a transition can land late (a busy frame, a browser pane being
+  // frozen). Each transition that really starts inside a layout container re-arms the timer from
+  // that moment, so the flag outlives the last transition instead of cutting it short.
+  if (typeof document !== 'undefined') {
+    document.addEventListener(
+      'transitionstart',
+      (ev) => {
+        if (!motion.active) return
+        const el = ev.target
+        if (el instanceof Element && el.hasAttribute('data-lm')) motion.begin()
+      },
+      true
+    )
+    // Count the layout transitions in flight, so the flag never ends in the middle of one.
+    const track = (delta: number) => (ev: Event) => {
+      const el = ev.target
+      if (el instanceof Element && el.hasAttribute('data-lm')) {
+        transitionsRunning = Math.max(0, transitionsRunning + delta)
+      }
+    }
+    document.addEventListener('transitionrun', track(1), true)
+    document.addEventListener('transitionend', track(-1), true)
+    document.addEventListener('transitioncancel', track(-1), true)
   }
 
   function toggleInboxRailStateVisibility(state: BoardState): void {

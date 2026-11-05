@@ -807,6 +807,17 @@ describe('motion controller', () => {
     expect(log).toEqual(['flag-on', 'freeze', 'flag-off', 'thaw'])
   })
 
+  it('reads --dur-slow in either unit (220ms or 0.22s), and falls back when it is missing', () => {
+    expect(typeof layoutModule.slowDurationMs, 'slowDurationMs exists').toBe('function')
+    const root = document.documentElement
+    root.style.setProperty('--dur-slow', '220ms')
+    expect(layoutModule.slowDurationMs()).toBe(220)
+    root.style.setProperty('--dur-slow', '0.22s')
+    expect(layoutModule.slowDurationMs()).toBe(220)
+    root.style.removeProperty('--dur-slow')
+    expect(layoutModule.slowDurationMs()).toBe(220)
+  })
+
   it('a second change during a motion extends it without freezing twice', () => {
     expect(typeof layoutModule.createLayoutMotion).toBe('function')
     const { motion, log } = controller()
@@ -816,6 +827,27 @@ describe('motion controller', () => {
     vi.advanceTimersByTime(150)
     expect(log).toEqual(['flag-on', 'freeze'])
     vi.advanceTimersByTime(400)
+    expect(log).toEqual(['flag-on', 'freeze', 'flag-off', 'thaw'])
+  })
+
+  it('does not end while a layout transition is still running, then ends once it is done', () => {
+    expect(typeof layoutModule.createLayoutMotion).toBe('function')
+    let running = true
+    const log: string[] = []
+    const motion = layoutModule.createLayoutMotion({
+      durationMs: () => 220,
+      reduced: () => false,
+      onChange: (on: boolean) => log.push(on ? 'flag-on' : 'flag-off'),
+      freeze: (on: boolean) => log.push(on ? 'freeze' : 'thaw'),
+      setTimer: (cb: () => void, ms: number) => setTimeout(cb, ms),
+      clearTimer: (h: unknown) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      busy: () => running
+    })
+    motion.begin()
+    vi.advanceTimersByTime(220 + layoutModule.LAYOUT_MOTION_SLACK_MS + 200)
+    expect(log, 'still frozen while a transition runs').toEqual(['flag-on', 'freeze'])
+    running = false
+    vi.advanceTimersByTime(120)
     expect(log).toEqual(['flag-on', 'freeze', 'flag-off', 'thaw'])
   })
 
