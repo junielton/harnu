@@ -113,7 +113,8 @@ Any session can be promoted to **Orchestrator** from this menu. Promoting arms a
 
 The area to the right of your main terminal can hold a vertical stack of extra panes — a "split" — so you can keep a file, a shell, or another session visible alongside the one you're focused on. Panes you can open:
 
-- A plain **shell** (Topbar's Split button)
+- A plain **shell** (Topbar's Terminal button)
+- A **browser** (Topbar's Browser button, next to the Terminal button) — see [Browser pane](browser-pane.md)
 - A **file browser** (Topbar's browse-files button), and clicking a file in it opens that file in a **Markdown viewer** pane. Every code block in that viewer has a hover-revealed copy button, and the pane's toolbar has a "Copy file" button that copies the whole raw file — no more hand-selecting text out of the pane
 - A folder's **Project memory** pane (from the folder's right-click menu)
 - Another session, resumed as its own pane (a session's **Open in new tab** action)

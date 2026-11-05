@@ -18,6 +18,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **The drill-in "Back" row stays put while the list scrolls.** In the sidebar's drill-in mode the Back row used to scroll away with the list, so in a long worktree group you had to scroll all the way up to go back. It is now pinned above the list: it spans the full sidebar width, the scrollbar starts below it, and rows sliding under its edge fade out instead of showing half-cut.
 
+### Changed
+
+- **Browser has its own button in the Topbar.** The globe button sits right next to Terminal and opens a browser pane in one click, where before it was hidden one step deeper in the small arrow beside the Split button. That arrow is gone, since Terminal was the only other thing in it.
+
 ## 2026-11-04
 
 ### Added

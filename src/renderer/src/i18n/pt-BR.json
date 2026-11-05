@@ -117,6 +117,7 @@
     "newSessionHere": "Nova sessão nesta pasta",
     "terminal": "Terminal",
     "split": "Dividir horizontal",
+    "browser": "Navegador",
     "openFolder": "Abrir pasta",
     "openInEditor": "Abrir no {editor}",
     "editorGeneric": "editor",
@@ -5077,11 +5078,6 @@
       "hintExit": "para sair",
       "disconnectedHint": "Comentários desligados aqui: você desconectou o agente deste painel."
     }
-  },
-  "splitMenu": {
-    "label": "Mais opções de divisão",
-    "terminal": "Terminal",
-    "browser": "Navegador"
   },
   "githubBudget": {
     "pill": {
