@@ -131,6 +131,56 @@ export interface DockerCycleRecord {
   items: DockerReportItem[]
 }
 
+/** Free bridge-network slots as the UI shows them: counted, or unknown with the reason (design C11). */
+export type DockerCapacityView =
+  | { known: true; total: number; used: number; free: number; source: 'daemon.json' | 'default' }
+  | { known: false; reason: string }
+
+/** The out-of-capacity notice a pass raised (U3.6): `low` at the low-water mark, `zero` at no free slot. */
+export interface DockerCapacityNotice {
+  level: 'low' | 'zero'
+  free: number
+  total: number
+  mark: number
+}
+
+/** Where the out-of-capacity notice stands; it only re-arms once capacity is above the mark again. */
+export type CapacityNoticeState = 'none' | 'low' | 'zero'
+
+/**
+ * What one pass of the capacity watcher did (U3.6), pushed on `gc:docker:watch` and kept in
+ * `GcSnapshot.dockerWatch`. Counts mean what they mean in {@link DockerCycleRecord}; when capacity
+ * recovers mid-pass the rest of the plan is simply not run and is not counted as deferred.
+ */
+export interface DockerWatchRecord {
+  at: number
+  trigger: 'boot' | 'event' | 'timer'
+  /** `off`: the Docker switch. `paused`: the global pause. Both read nothing. `report`: first pass, acted on nothing. */
+  mode: 'off' | 'paused' | 'report' | 'act'
+  /** The low-water mark in force: acts at or below it. */
+  mark: number
+  /** Null when the pass read nothing (`off`, `paused`). */
+  capacity: DockerCapacityView | null
+  /** Known free slots were at or below the mark when the pass started. */
+  pressure: boolean
+  found: number
+  acted: number
+  refused: number
+  failed: number
+  deferred: number
+  /** Another pass or Harnu holds the Docker lock: nothing was done. */
+  locked: boolean
+  /** Docker autonomy switched itself off during this pass. */
+  paused: boolean
+  pausedReason: string | null
+  /** Capacity is still at or below the mark and nothing is left that Cleanup may free. */
+  nothingLeft: boolean
+  /** Report-only pass: what it would do, capped at {@link DOCKER_REPORT_ITEMS_MAX}. Empty otherwise. */
+  items: DockerReportItem[]
+  /** Set on the pass that raised the out-of-capacity notice; the renderer records it once. */
+  notice: DockerCapacityNotice | null
+}
+
 /** What one pass of the autopilot did. Pushed on `gc:cycle` and kept as `lastCycle`. */
 export interface CycleRecord {
   at: number
@@ -190,6 +240,8 @@ export interface GcSnapshot {
   docker: GcDockerCard
   prefs: GcPrefs
   lastCycle: CycleRecord | null
+  /** The capacity watcher's last pass (U3.6); null before its first one. */
+  dockerWatch: DockerWatchRecord | null
   /** When the next timer tick fires, or null when the Reaper background scan is off. */
   nextCycleAt: number | null
   /**
