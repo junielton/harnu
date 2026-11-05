@@ -132,6 +132,7 @@
     "terminal": "Terminal",
     "split": "Split horizontal",
     "browser": "Browser",
+    "moreActions": "More actions",
     "splitLayout": "Split layout: {mode}",
     "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Open folder",
@@ -176,6 +177,8 @@
     "close": "Close helper",
     "maximize": "Maximize",
     "restore": "Restore",
+    "expand": "Expand to window",
+    "exitExpand": "Exit expanded view",
     "shellTitle": "Shell",
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
@@ -1187,6 +1190,16 @@
         "auto": "Auto",
         "sideBySide": "Side by side",
         "stacked": "Stacked"
+      },
+      "floatingPanels": {
+        "label": "Floating panels",
+        "hint": "Shows each pane as its own rounded island on a darker background, with an even gap between them. Off keeps the classic edge-to-edge layout."
+      },
+      "expandHides": {
+        "label": "Expand hides",
+        "hint": "What gets out of the way when a helper pane is expanded to the window. Everything also hides the sidebar and the Fleet rail; Session only hides just the session.",
+        "everything": "Everything",
+        "sessionOnly": "Session only"
       }
     },
     "interface": {
@@ -1466,6 +1479,7 @@
       "pane_focusNext": "Focus the next pane",
       "pane_focusPrev": "Focus the previous pane",
       "pane_toggleMaximize": "Maximize or restore the focused pane",
+      "pane_expandToWindow": "Expand the focused pane to the window",
       "pane_close": "Close the focused pane",
       "terminal_toggle": "Toggle the terminal pane",
       "layout_cycleSplitOrientation": "Cycle the split layout (auto, side by side, stacked)",

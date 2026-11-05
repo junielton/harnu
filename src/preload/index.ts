@@ -1042,6 +1042,10 @@ export interface SettingsData {
   editor?: EditorSetting
   /** T627: session area / helper stack orientation — `auto` (default), `side-by-side` or `stacked`. */
   splitLayout?: 'auto' | 'side-by-side' | 'stacked'
+  /** T626: the opt-in "Floating panels" layout. Absent means off. */
+  floatingPanels?: boolean
+  /** T628: what expanding a helper pane to the window hides — `everything` (default) or `session-only`. */
+  expandHides?: 'everything' | 'session-only'
 }
 
 // ---- Harnu MCP control server wire types (2026-06-25 design) ---------------

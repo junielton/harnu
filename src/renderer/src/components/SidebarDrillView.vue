@@ -299,7 +299,7 @@ function onPeekClick(kind: 'older' | 'archived'): void {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+  <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-island="sidebar-list">
     <!-- Back row — replaces the drilled screen's own title. Shown whenever
          the stack is non-empty (repo screen or folder screen). The whole row
          is the back button (not just the chevron) — same "full row is
