@@ -26,6 +26,8 @@ import { unavailableSnapshot } from './containers-core'
 import { appendTombstone, journalFile, readJournal } from './containers-journal'
 import { normalizePrefs, prefsFile, readPrefs, writePrefs } from './containers-prefs'
 import { dockerActions, scanContainers, type ScanRequest } from './containers-shell'
+import { pauseRun, readRestoreFacts } from './park-shell'
+import { pauseStack, type PauseDecision, type PauseOutcome } from './park-core'
 import type {
   ActResult,
   Actor,
@@ -88,7 +90,9 @@ function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
 
 export interface ContainersServiceDeps {
   scan(req: ScanRequest): Promise<ContainersSnapshot>
-  docker: Pick<ActionDeps, 'stop' | 'start' | 'removeContainers' | 'removeVolumes'>
+  docker: Pick<ActionDeps, 'stop' | 'start' | 'removeContainers' | 'removeVolumes' | 'restoreFacts'>
+  /** Runs `docker <args>` for the pause executor; absent, a pause fails closed. */
+  run?(args: readonly string[]): Promise<{ stdout: string }>
   userDataDir: string
   push(snap: ContainersSnapshot): void
   /** The new-zombie alert; called only while `notifyOnNewZombies` is on. */
@@ -103,6 +107,11 @@ export interface ContainersService {
   scan(): Promise<ContainersSnapshot>
   /** THE action entry point, serialized: one action at a time. */
   act(raw: unknown, actor: Actor): Promise<ActResult>
+  /**
+   * Pauses one compose stack the planner decided on (U3.4): `compose down`, volumes kept, and a
+   * journal line with the restore command. Serialized with {@link act}; re-probes on a fresh scan.
+   */
+  pause(decision: PauseDecision, actor: Actor): Promise<PauseOutcome>
   journal(limit?: number): Promise<Tombstone[]>
   prefs(): Promise<ContainersPrefs>
   setPrefs(raw: unknown): Promise<ContainersPrefs>
@@ -221,6 +230,27 @@ export function createContainersService(deps: ContainersServiceDeps): Containers
   return {
     snapshot: () => last,
     scan: scanAndPush,
+    pause: (decision, actor) => {
+      const run = actChain.then(async () => {
+        const outcome = await pauseStack(decision, actor, {
+          scan: freshScan,
+          run:
+            deps.run ??
+            (async () => {
+              throw new Error('docker is not wired for pausing')
+            }),
+          appendTombstone: (t) => appendTombstone(journalPath, t),
+          now: deps.now
+        })
+        // The stack is down whatever the journal said: refresh the view either way.
+        if (outcome.ok || outcome.code === 'JOURNAL_FAILED' || outcome.code === 'DOWN_FAILED') {
+          await scanAndPush().catch(() => undefined)
+        }
+        return outcome
+      })
+      actChain = run.catch(() => undefined)
+      return run
+    },
     act: (raw, actor) => {
       const run = actChain.then(async () => {
         const result = await runContainersAction(raw, actor, actionDeps)
@@ -268,7 +298,8 @@ export function registerContainersHandlers(
 ): ContainersService {
   const svc = createContainersService({
     scan: scanContainers,
-    docker: dockerActions,
+    docker: { ...dockerActions, restoreFacts: readRestoreFacts },
+    run: pauseRun,
     userDataDir: app.getPath('userData'),
     push: (snap) => {
       const win = getWindow()

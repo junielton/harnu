@@ -93,6 +93,31 @@ export function composeFactsFor(args: {
 }
 
 /**
+ * `docker compose … config --format json` for a stack, with every profile switched on so the
+ * services of inactive profiles are listed too. Global flags come before the subcommand.
+ */
+export function composeConfigArgs(f: {
+  project: string | null
+  workingDir: string
+  configFiles: readonly string[]
+  envFile: string | null
+}): string[] {
+  return [
+    'compose',
+    ...(f.project ? ['-p', f.project] : []),
+    '--project-directory',
+    f.workingDir,
+    ...f.configFiles.flatMap((file) => ['-f', file]),
+    ...(f.envFile ? ['--env-file', f.envFile] : []),
+    '--profile',
+    '*',
+    'config',
+    '--format',
+    'json'
+  ]
+}
+
+/**
  * `docker compose -p P --project-directory WD [-f F]… down` (spec §4 U3 "Park"). Never `-v`,
  * `--volumes` or `--rmi`: a pause removes containers and the network, nothing else. Profiles need
  * no flag here — `down` removes a project's containers of every profile.
@@ -288,19 +313,7 @@ export async function pauseStack(
   }
   let services: ComposeServices | null
   try {
-    const { stdout } = await deps.run([
-      'compose',
-      ...(base.project ? ['-p', base.project] : []),
-      '--project-directory',
-      base.workingDir,
-      ...base.configFiles.flatMap((file) => ['-f', file]),
-      ...(base.envFile ? ['--env-file', base.envFile] : []),
-      '--profile',
-      '*',
-      'config',
-      '--format',
-      'json'
-    ])
+    const { stdout } = await deps.run(composeConfigArgs(base))
     services = parseComposeConfig(stdout)
   } catch (err) {
     return refuse(
