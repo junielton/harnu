@@ -10,7 +10,7 @@
  */
 
 import type { DigestCommit, GitEvidence } from './digest-core'
-import type { TranscriptFacts } from './digest-transcript'
+import { gitWindows, type TranscriptFacts } from './digest-transcript'
 
 /** A git-call window, epoch milliseconds, both ends included. */
 export interface CommitWindow {
@@ -31,9 +31,14 @@ export function attributeCommits(
   candidates: DigestCommit[],
   windows: CommitWindow[]
 ): { mine: DigestCommit[]; others: number } {
-  void candidates
-  void windows
-  throw new Error('not implemented')
+  const mine: DigestCommit[] = []
+  let others = 0
+  for (const c of candidates) {
+    const ms = c.committedAt * 1000
+    if (windows.some((w) => ms >= w.startMs && ms <= w.endMs)) mine.push(c)
+    else others++
+  }
+  return { mine, others }
 }
 
 /**
@@ -41,9 +46,12 @@ export function attributeCommits(
  * in `[firstAt − 2 s, lastAt + 5 s]`. A session with no timestamped line has none.
  */
 export function commitCandidates(commits: DigestCommit[], facts: TranscriptFacts): DigestCommit[] {
-  void commits
-  void facts
-  throw new Error('not implemented')
+  const first = facts.firstAt ? Date.parse(facts.firstAt) : NaN
+  const last = facts.lastAt ? Date.parse(facts.lastAt) : NaN
+  if (!Number.isFinite(first) || !Number.isFinite(last)) return []
+  const from = first - CANDIDATE_BEFORE_MS
+  const to = last + CANDIDATE_AFTER_MS
+  return commits.filter((c) => c.committedAt * 1000 >= from && c.committedAt * 1000 <= to)
 }
 
 /**
@@ -55,10 +63,9 @@ export function sessionWindows(
   subagents: readonly TranscriptFacts[],
   nowMs: number
 ): CommitWindow[] {
-  void own
-  void subagents
-  void nowMs
-  throw new Error('not implemented')
+  return [own, ...subagents]
+    .flatMap((f) => gitWindows(f, nowMs))
+    .sort((a, b) => a.startMs - b.startMs)
 }
 
 /**
@@ -72,8 +79,9 @@ export function attributeEvidence(
   facts: TranscriptFacts,
   windows: CommitWindow[]
 ): { git: GitEvidence; others: number; narrowed: boolean } {
-  void git
-  void facts
-  void windows
-  throw new Error('not implemented')
+  if (git.kind !== 'repo') return { git, others: 0, narrowed: false }
+  const { mine, others } = attributeCommits(commitCandidates(git.commits, facts), windows)
+  const narrowed = mine.length !== git.commits.length || mine.some((c, i) => c !== git.commits[i])
+  if (!narrowed) return { git, others, narrowed }
+  return { git: { ...git, commits: mine, fileStats: [] }, others, narrowed }
 }

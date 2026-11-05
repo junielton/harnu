@@ -11,11 +11,18 @@
  *  - `writeDigest` / `writeHot` through the serialized memory write path
  *    (`appendMemoryEntry` — server-stamped provenance, multi-writer safe). The `hot.md`
  *    snapshot is applied immediately (BUG-26 removed the review gate) and recorded in the
- *    shadow log (`responder-registry.ts`), so it stays auditable after the fact.
+ *    shadow log (`responder-registry.ts`), so it stays auditable after the fact,
+ *  - the persisted state (`<userData>/memory-digest-state.json`, S-4): read once at
+ *    registration, rewritten atomically after every successful digest,
+ *  - the catch-up sweep (S-4): 60 s after registration and every 30 minutes, the fleet model's
+ *    sessions go to `engine.catchUp`, which digests the quiet ones no hook reached.
  *
  * Fully main-side so it survives renderer reloads like the hook bridge itself.
  */
 
+import { readFileSync, promises as fs } from 'node:fs'
+import { join } from 'node:path'
+import { app } from 'electron'
 import { scanFolders } from './claude-reader'
 import { addTaskEventObserver } from './hook-bridge'
 import { appendMemoryEntry, resolveMemoryLocation } from './mcp/memory-store'
@@ -25,11 +32,26 @@ import { pushShadowEntry } from './responder-registry'
 import { shortSessionId } from './mcp/digest-core'
 import {
   createDigestEngine,
+  type CatchUpSession,
   type DigestEngine,
   type DigestEngineDeps,
   type EngineSession
 } from './mcp/digest-engine'
-import { gatherGitEvidence, readTranscriptFacts, readTranscriptTruth } from './mcp/digest-io'
+import {
+  commitFileStats,
+  gatherGitEvidence,
+  hasSessionDigest,
+  listSubagentTranscripts,
+  readTranscriptFacts,
+  readTranscriptTruth
+} from './mcp/digest-io'
+import {
+  DIGEST_STATE_FILE,
+  emptyDigestState,
+  parseDigestState,
+  serializeDigestState,
+  type DigestState
+} from './mcp/digest-state'
 
 export { LONG_IDLE_MS } from './mcp/digest-engine'
 
@@ -133,6 +155,54 @@ async function memoryCheckout(folder: string): Promise<string> {
   return resolveMemoryCheckout(folder, meta.repoId)
 }
 
+/** The session's subagent transcripts, next to its main transcript. */
+async function subagentTranscripts(sessionId: string): Promise<string[]> {
+  const session = await resolveSession(sessionId)
+  return session ? listSubagentTranscripts(session.transcriptPath, sessionId) : []
+}
+
+/** Whether the folder's memory dir already holds a digest of the session (the catch-up sweep). */
+async function hasDigest(folder: string, sessionId: string): Promise<boolean> {
+  const loc = await resolveMemoryLocation(folder)
+  return hasSessionDigest(loc.memoryDir, sessionId)
+}
+
+// ---- Persisted state (S-4) ---------------------------------------------------
+
+const statePath = (): string => join(app.getPath('userData'), DIGEST_STATE_FILE)
+
+/** Read the state file once. A missing file is the empty state; a bad one is logged once. */
+function loadState(): DigestState {
+  let raw: string
+  try {
+    raw = readFileSync(statePath(), 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[memory-digest] state file unreadable; starting empty', err)
+    }
+    return emptyDigestState()
+  }
+  const { state, problem } = parseDigestState(raw, Date.now())
+  if (problem) console.warn(`[memory-digest] state file ignored (${problem}); starting empty`)
+  return state
+}
+
+/** Writes are chained, so the last snapshot always lands last; each is tmp-then-rename. */
+let stateWrite: Promise<void> = Promise.resolve()
+function saveState(state: DigestState): void {
+  const text = serializeDigestState(state)
+  stateWrite = stateWrite.then(async () => {
+    const file = statePath()
+    try {
+      await fs.mkdir(app.getPath('userData'), { recursive: true })
+      await fs.writeFile(`${file}.tmp`, text, 'utf8')
+      await fs.rename(`${file}.tmp`, file)
+    } catch (err) {
+      console.error('[memory-digest] state write failed', err)
+    }
+  })
+}
+
 const liveDeps: DigestEngineDeps = {
   resolveSession,
   readFacts: readTranscriptFacts,
@@ -141,29 +211,85 @@ const liveDeps: DigestEngineDeps = {
   writeDigest,
   writeHot,
   memoryCheckout,
+  subagentTranscripts,
+  commitFileStats,
+  saveState,
+  hasDigest,
   now: () => Date.now(),
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+}
+
+// ---- Catch-up sweep (S-4) ----------------------------------------------------
+
+/** The first pass runs this long after registration (the fleet model is warm by then). */
+const CATCH_UP_FIRST_MS = 60_000
+/** Later passes run this often. */
+const CATCH_UP_EVERY_MS = 30 * 60_000
+
+let catchUpFirst: ReturnType<typeof setTimeout> | null = null
+let catchUpEvery: ReturnType<typeof setInterval> | null = null
+let sweeping = false
+
+/** The fleet model's sessions, as the engine's catch-up candidates. */
+async function catchUpCandidates(): Promise<CatchUpSession[]> {
+  const out: CatchUpSession[] = []
+  for (const f of await scanFolders()) {
+    for (const s of f.sessions) {
+      if (!s.fullPath || !s.projectPath || !Number.isFinite(s.fileMtime)) continue
+      out.push({
+        sessionId: s.sessionId,
+        folder: s.projectPath,
+        transcriptPath: s.fullPath,
+        mtimeMs: s.fileMtime
+      })
+    }
+  }
+  return out
+}
+
+/** One sweep; a pass still running when the next is due is not doubled. */
+async function sweep(e: DigestEngine): Promise<void> {
+  if (sweeping) return
+  sweeping = true
+  try {
+    const done = await e.catchUp(await catchUpCandidates())
+    if (done.length > 0) console.log(`[memory-digest] caught up ${done.length} session(s)`)
+  } catch (err) {
+    console.error('[memory-digest] catch-up sweep failed', err)
+  } finally {
+    sweeping = false
+  }
 }
 
 let engine: DigestEngine | null = null
 let unsubscribe: (() => void) | null = null
 
 /**
- * Register the auto-digest engine (T79 S2). Subscribes to the in-main hook
- * task-state edge. `closeDigestEngine` is called on `before-quit`.
+ * Register the auto-digest engine (T79 S2). Reads the persisted state, subscribes to the
+ * in-main hook task-state edge and schedules the catch-up sweep. `closeDigestEngine` is called
+ * on `before-quit`.
  */
 export function registerDigestEngine(): DigestEngineHandle {
-  const e = createDigestEngine(liveDeps)
+  const e = createDigestEngine(liveDeps, { state: loadState() })
   engine = e
   unsubscribe = addTaskEventObserver((ev) => {
     void e.onTaskEdge(ev)
   })
-  return { close: () => e.close() }
+  catchUpFirst = setTimeout(() => {
+    catchUpFirst = null
+    void sweep(e)
+    catchUpEvery = setInterval(() => void sweep(e), CATCH_UP_EVERY_MS)
+  }, CATCH_UP_FIRST_MS)
+  return { close: () => closeDigestEngine() }
 }
 
 /** Teardown for `before-quit` — unsubscribe + clear timers. */
 export function closeDigestEngine(): void {
+  if (catchUpFirst) clearTimeout(catchUpFirst)
+  if (catchUpEvery) clearInterval(catchUpEvery)
+  catchUpFirst = null
+  catchUpEvery = null
   if (unsubscribe) {
     unsubscribe()
     unsubscribe = null

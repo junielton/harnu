@@ -10,6 +10,7 @@
  * selection's two probes are injected.
  */
 
+import { shortSessionId } from './digest-core'
 import type { TranscriptFacts } from './digest-transcript'
 
 /** The file's version; any other version reads as empty. */
@@ -53,22 +54,103 @@ export function parseDigestState(
   raw: string,
   nowMs: number
 ): { state: DigestState; problem: string | null } {
-  void raw
-  void nowMs
-  throw new Error('not implemented')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return { state: emptyDigestState(), problem: 'the file is not valid JSON' }
+  }
+  if (!isRecord(parsed)) return { state: emptyDigestState(), problem: 'the file is not an object' }
+  if (parsed.version !== DIGEST_STATE_VERSION) {
+    return {
+      state: emptyDigestState(),
+      problem: `unsupported version ${JSON.stringify(parsed.version ?? null)}`
+    }
+  }
+  if (!isRecord(parsed.sessions)) {
+    return { state: emptyDigestState(), problem: 'the file has no sessions object' }
+  }
+  const state = emptyDigestState()
+  for (const [id, entry] of Object.entries(parsed.sessions)) {
+    if (isEntry(entry)) state.sessions[id] = entry
+  }
+  return { state: pruneDigestState(state, nowMs), problem: null }
 }
 
 /** The file's text. */
 export function serializeDigestState(state: DigestState): string {
-  void state
-  throw new Error('not implemented')
+  return JSON.stringify(state)
 }
 
 /** A copy without the entries whose last digest is older than {@link DIGEST_STATE_TTL_MS}. */
 export function pruneDigestState(state: DigestState, nowMs: number): DigestState {
-  void state
-  void nowMs
-  throw new Error('not implemented')
+  const out = emptyDigestState()
+  for (const [id, entry] of Object.entries(state.sessions)) {
+    if (nowMs - entry.lastDigestAt <= DIGEST_STATE_TTL_MS) out.sessions[id] = entry
+  }
+  return out
+}
+
+// ---- Shape checks (a malformed entry is dropped, never trusted) -------------
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+const isCount = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const isStringOrNull = (v: unknown): boolean => v === null || typeof v === 'string'
+const isStringList = (v: unknown): boolean =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string')
+
+function isWindow(v: unknown): boolean {
+  return isRecord(v) && isFiniteNumber(v.startMs) && isFiniteNumber(v.endMs)
+}
+
+function isPair(v: unknown): boolean {
+  return isRecord(v) && typeof v.question === 'string' && typeof v.answer === 'string'
+}
+
+function isPending(v: unknown): boolean {
+  return (
+    isRecord(v) &&
+    typeof v.id === 'string' &&
+    (v.kind === 'git' || v.kind === 'ask') &&
+    (v.startMs === null || isFiniteNumber(v.startMs))
+  )
+}
+
+/** Every {@link TranscriptFacts} field, with its type, so a resumed scan cannot trip on it. */
+function isFacts(v: unknown): v is TranscriptFacts {
+  return (
+    isRecord(v) &&
+    isCount(v.userTurns) &&
+    isStringOrNull(v.firstAt) &&
+    isStringOrNull(v.lastAt) &&
+    Array.isArray(v.gitCalls) &&
+    v.gitCalls.every(isWindow) &&
+    Array.isArray(v.asked) &&
+    v.asked.every(isPair) &&
+    isStringList(v.openQuestions) &&
+    typeof v.lastAssistantText === 'string' &&
+    isStringOrNull(v.lastAssistantId) &&
+    typeof v.lastAssistantTail === 'string' &&
+    Array.isArray(v.pending) &&
+    v.pending.every(isPending)
+  )
+}
+
+function isEntry(v: unknown): v is DigestStateEntry {
+  if (!isRecord(v) || !isFiniteNumber(v.lastDigestAt)) return false
+  const { last, scan } = v
+  return (
+    isRecord(last) &&
+    isStringOrNull(last.head) &&
+    isCount(last.userTurns) &&
+    isRecord(scan) &&
+    isCount(scan.offset) &&
+    isFacts(scan.facts)
+  )
 }
 
 /**
@@ -76,9 +158,9 @@ export function pruneDigestState(state: DigestState, nowMs: number): DigestState
  * a name matching `^\d{4}-\d{2}-\d{2}-<id8>\.md$`).
  */
 export function hasDigestFile(names: readonly string[], sessionId: string): boolean {
-  void names
-  void sessionId
-  throw new Error('not implemented')
+  const id8 = shortSessionId(sessionId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const name = new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${id8}\\.md$`)
+  return names.some((n) => name.test(n))
 }
 
 /** A session the sweep may catch up. */
@@ -117,10 +199,20 @@ export async function selectCatchUp<C extends CatchUpCandidate>(
   probe: CatchUpProbe<C>,
   opts: CatchUpOptions
 ): Promise<C[]> {
-  void candidates
-  void state
-  void nowMs
-  void probe
-  void opts
-  throw new Error('not implemented')
+  const maxAge = opts.maxAgeMs ?? CATCH_UP_MAX_AGE_MS
+  const limit = opts.limit ?? CATCH_UP_LIMIT
+  const quiet = candidates
+    .filter((c) => {
+      const age = nowMs - c.mtimeMs
+      return age >= opts.minQuietMs && age <= maxAge && !Object.hasOwn(state.sessions, c.sessionId)
+    })
+    .sort((a, b) => a.mtimeMs - b.mtimeMs || (a.sessionId < b.sessionId ? -1 : 1))
+  const picked: C[] = []
+  for (const c of quiet) {
+    if (picked.length >= limit) break
+    if (await probe.hasDigest(c)) continue
+    if ((await probe.userTurns(c)) < opts.minUserTurns) continue
+    picked.push(c)
+  }
+  return picked
 }
