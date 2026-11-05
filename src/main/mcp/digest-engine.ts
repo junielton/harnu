@@ -242,6 +242,12 @@ export function createDigestEngine(
   async function runDigest(id: string, reason: DigestReason): Promise<void> {
     const session = await deps.resolveSession(id)
     if (!session) return
+    // A removed worktree: writing its memory would recreate the folder. Only the orphan path
+    // (`digestTranscriptInto`) digests such a session, and only into the owning repo.
+    if (deps.folderExists && !(await deps.folderExists(session.folder))) {
+      console.log(`[memory-digest] skipped: folder gone ${session.folder}`)
+      return
+    }
     const st = stateFor(id)
 
     const scan = await deps.readFacts(session.transcriptPath, st.scan)
@@ -454,6 +460,8 @@ export function createDigestEngine(
           hasDigest: async (s) => {
             // An unsafe memory root is never caught up: the digest would refuse it anyway, and
             // asking for its memory dir must not touch it (S-3).
+            // A folder that is gone is never caught up either (the orphan gather covers it).
+            if (deps.folderExists && !(await deps.folderExists(s.folder))) return true
             const checkout = await deps.memoryCheckout(s.folder)
             if (!digestTargetAllowed(checkout, homedir())) return true
             return deps.hasDigest ? deps.hasDigest(s.folder, s.sessionId) : false

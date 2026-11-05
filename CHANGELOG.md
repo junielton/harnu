@@ -51,6 +51,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **The drill-in "Back" row stays put while the list scrolls.** In the sidebar's drill-in mode the Back row used to scroll away with the list, so in a long worktree group you had to scroll all the way up to go back. It is now pinned above the list: it spans the full sidebar width, the scrollbar starts below it, and rows sliding under its edge fade out instead of showing half-cut.
 
+- **A session digest never recreates a removed worktree's folder.** A digest for a session whose folder no longer exists (a worktree removed after the session ended, say) used to write into `<folder>/.harnu/memory/` and bring the folder back. Harnu now skips it; the digest of a removed worktree's sessions is written into its repo's memory instead, when Cleanup lists their transcripts.
+- **The memory benchmark's orphan loss ignores very short sessions.** `npm run memory:bench` counted a removed folder's one-message session as a lost orphan even though no digest is meant to exist for it. `orphan_loss` and `orphan_transcripts` now count only sessions with at least three of your messages, the same rule as capture coverage.
+
 - **The memory benchmark no longer counts a pasted image on its own as one of your messages.** `npm run memory:bench` counted an image-only message as an operator turn, which put sessions with two typed messages and one screenshot into the capture-coverage count.
 
 ## 2026-11-04
@@ -2564,11 +2567,10 @@ retarget` to apply it as a filter; click it again to clear. A count of zero is p
 ### Fixed
 
 - **The bundled-skills catalog no longer ships a committed merge conflict.**
-  `resources/skills/CATALOG.md` had carried `<<<<<<< Updated upstream` / `=======`
-  since v0.3.29, left by a bad stash-pop resolution. Prettier rendered the closing
-  marker as a blockquote, so the formatter passed and nothing flagged it. The
-  version marker is resolved to a single line and bumped to `v6`, which is the
-  honest value: four `SKILL.md` files changed after `v5` was written without the
+  `resources/skills/CATALOG.md` had carried ` since v0.3.29, left by a bad stash-pop resolution. Prettier rendered the closing
+marker as a blockquote, so the formatter passed and nothing flagged it. The
+version marker is resolved to a single line and bumped to`v6`, which is the
+honest value: four `SKILL.md`files changed after`v5` was written without the
   catalog moving with them, so staged copies were never told to refresh.
 - **A goal file's frontmatter is now stated as mandatory, not just shown.**
   `mission` displayed the `session:` block in its template but never said it was

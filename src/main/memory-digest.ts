@@ -155,6 +155,16 @@ async function memoryCheckout(folder: string): Promise<string> {
   return resolveMemoryCheckout(folder, meta.repoId)
 }
 
+/** Whether the folder is still there; any answer but "it is missing" counts as there. */
+async function folderExists(folder: string): Promise<boolean> {
+  try {
+    await fs.stat(folder)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'ENOENT'
+  }
+}
+
 /** The session's subagent transcripts, next to its main transcript. */
 async function subagentTranscripts(sessionId: string): Promise<string[]> {
   const session = await resolveSession(sessionId)
@@ -211,6 +221,7 @@ const liveDeps: DigestEngineDeps = {
   writeDigest,
   writeHot,
   memoryCheckout,
+  folderExists,
   subagentTranscripts,
   commitFileStats,
   saveState,
