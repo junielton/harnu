@@ -359,15 +359,6 @@ useFocusRegion(props.pane.id, rootEl, {
                   >{{ d.date || '—' }}</span
                 >
                 <span class="min-w-0 flex-1 truncate" style="font-size: 12px">{{ d.title }}</span>
-                <span
-                  v-if="evidenceBadge(d)"
-                  class="shrink-0 rounded-xs border px-1.5 py-px text-eyebrow"
-                  :class="evidenceBadge(d)!.tone"
-                  :title="$t(`memoryPane.evidence.${evidenceBadge(d)!.key}Hint`)"
-                  :data-evidence="d.evidence"
-                  data-testid="memory-evidence-badge"
-                  >{{ $t(`memoryPane.evidence.${evidenceBadge(d)!.key}`) }}</span
-                >
                 <ArrowUpRight
                   v-if="hasSessionRef(d)"
                   :size="12"
@@ -377,7 +368,7 @@ useFocusRegion(props.pane.id, rootEl, {
               </div>
               <!-- Provenance (author / branch) — visible per §7 (injection mitigation) -->
               <div
-                v-if="d.author || d.branch"
+                v-if="d.author || d.branch || evidenceBadge(d)"
                 class="flex items-center text-text-4"
                 style="gap: 8px; margin-top: 3px; font-size: 10.5px"
               >
@@ -386,6 +377,15 @@ useFocusRegion(props.pane.id, rootEl, {
                   <GitBranch :size="10" :stroke-width="1.6" class="shrink-0" />
                   <span class="truncate font-mono">{{ d.branch }}</span>
                 </span>
+                <span
+                  v-if="evidenceBadge(d)"
+                  class="shrink-0 rounded-xs border px-1.5 py-px text-eyebrow"
+                  :class="evidenceBadge(d)!.tone"
+                  :title="$t(`memoryPane.evidence.${evidenceBadge(d)!.key}Hint`)"
+                  :data-evidence="d.evidence"
+                  data-testid="memory-evidence-badge"
+                  >{{ $t(`memoryPane.evidence.${evidenceBadge(d)!.key}`) }}</span
+                >
               </div>
             </component>
           </li>
