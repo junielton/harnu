@@ -207,6 +207,7 @@ describe('list_cleanup handler (T445)', () => {
       inUse: 1,
       orphanVolumes: 2,
       orphanVolumeBytes: 123,
+      shelved: 0,
       archives: 0,
       archiveBytes: 0,
       inTrashBytes: 0,

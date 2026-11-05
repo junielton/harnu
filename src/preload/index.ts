@@ -3011,6 +3011,8 @@ const api = {
   gcSetPrefs: (prefs: GcPrefs): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:set', prefs),
   /** Turns the first, report-only autopilot cycle into real cleaning from the next tick on. */
   gcAckFirstReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:ackFirstReport'),
+  /** Acknowledges the first shelving report: until then a shelving cycle only lists what it would shelve. */
+  gcAckShelveReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:shelve:ack'),
   /** Running, queued and recent jobs, so a reloaded renderer can re-attach. */
   gcJobs: (): Promise<GcJobInfo[]> => ipcRenderer.invoke('gc:jobs'),
   onGcProgress: (cb: (p: GcJobProgress) => void): (() => void) => subscribe('gc:progress', cb),

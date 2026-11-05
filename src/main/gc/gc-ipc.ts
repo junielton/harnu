@@ -66,9 +66,16 @@ import {
   readGcPrefs,
   withAcknowledged,
   withoutKeep,
+  withShelveAcknowledged,
+  withShelveDisabled,
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
+import { runShelveCycle } from './shelve-cycle'
+import { defaultShelveExecDeps, shelveWorktree } from './shelve-exec-shell'
+import { probeShelve } from './shelve-probe-shell'
+import { withRepoLock } from './repo-lock-shell'
+import { SHELVED_FILE } from './shelve-store'
 import { parseOptions } from './gc-options'
 import type {
   GcCleanAck,
@@ -120,6 +127,8 @@ export interface GcService {
   prefs(): GcPrefs
   setPrefs(raw: unknown): Promise<GcPrefs>
   ackFirstReport(): Promise<GcPrefs>
+  /** Acknowledges the first shelving report (its own switch, independent of the autopilot's). */
+  ackShelveReport(): Promise<GcPrefs>
   jobs(): GcJobInfo[]
   /** What main sees about a refused item right now (lock reason, sessions, shared stacks, …). Read-only. */
   guide(id: unknown): Promise<GcGuidance>
@@ -347,6 +356,10 @@ export async function registerGcHandlers(
     })
     .catch((err) => console.error('[gc] prep journal recovery failed', messageOf(err)))
 
+  // Shelving (autonomous cleanup U2.2): its own switch and its own report-only first cycle. The
+  // executor is the only code that deletes a folder for it; every dependency is the real one.
+  const shelveExec = defaultShelveExecDeps(path.join(userData, SHELVED_FILE))
+
   const cycleDeps: GcCycleDeps = {
     prefs: () => prefs,
     gather: async (): Promise<GcGather> => gather(),
@@ -359,6 +372,26 @@ export async function registerGcHandlers(
     // The one place the autopilot deletes refs: the cycle calls it only when the operator turned
     // "Expire archives automatically" on.
     expireArchives: (keepDays, now, neverClean) => expireArchivesNow(keepDays, now, neverClean),
+    shelve: (bundles) =>
+      runShelveCycle(
+        {
+          prefs: () => prefs,
+          driftedCwds: () => gatherer.cached()?.driftedCwds ?? [],
+          probe: (b) => probeShelve(b),
+          shelve: (d) => shelveWorktree(d, shelveExec),
+          lock: withRepoLock,
+          queue,
+          journal: appendTombstone,
+          // The failure-streak kill switch: persisted, so a restart does not start shelving again.
+          disableShelving: async () => {
+            await persist(withShelveDisabled(prefs))
+          },
+          notify,
+          now: () => Date.now()
+        },
+        bundles,
+        state
+      ),
     state,
     now: () => Date.now()
   }
@@ -384,7 +417,8 @@ export async function registerGcHandlers(
     nextClean: planNextClean(g.bundles, livePrefs()),
     backgroundScan: reaper.autoScan(),
     archives: g.archives ?? NO_ARCHIVES,
-    trash: g.trash ?? NO_TRASH
+    trash: g.trash ?? NO_TRASH,
+    shelved: g.shelved ?? []
   })
 
   // The advisor is reachable from the `gc:opinion` handler below and from nowhere else: the
@@ -543,6 +577,7 @@ export async function registerGcHandlers(
       return next
     },
     ackFirstReport: () => persist(withAcknowledged(prefs)),
+    ackShelveReport: () => persist(withShelveAcknowledged(prefs)),
     jobs: () => queue.jobs(),
     opinion: (ids) => opinions.start(ids),
     opinionCached: (ids) => opinions.cached(ids),
@@ -615,6 +650,7 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:prefs:get', () => service.prefs())
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())
+  ipcMain.handle('gc:shelve:ack', () => service.ackShelveReport())
   ipcMain.handle('gc:jobs', () => service.jobs())
   ipcMain.handle('gc:opinion', (_e, ids: unknown) => service.opinion(ids))
   ipcMain.handle('gc:opinion:cached', (_e, ids: unknown) => service.opinionCached(ids))

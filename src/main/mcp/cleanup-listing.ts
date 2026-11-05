@@ -19,6 +19,7 @@ import * as path from 'node:path'
 import { bucketOf, type Bucket, type WorktreeBundle } from '../gc/bundle-core'
 import type { OrphanVolumeItem } from '../gc/gc-housekeeping-input'
 import type { GcSnapshot } from '../gc/gc-wire'
+import type { ShelvedEntry } from '../gc/shelve-store'
 import { NO_ARCHIVES, expiredArchives } from '../gc/archives-core'
 import { NO_TRASH } from '../gc/trash-core'
 import type { NextAction } from './deny-hint'
@@ -48,6 +49,21 @@ export interface ListedBundle {
   agentControllable: boolean
 }
 
+/** One worktree Harnu shelved: its folder is gone on purpose, its branch and archive are kept. */
+export interface ListedShelved {
+  /** A readable label, `<repo>::<kind>::<branch>::<hash>`. Opaque: never a path. */
+  id: string
+  /** Basename of the folder that was freed. */
+  folderAlias: string
+  /** Null for a detached worktree. */
+  branch: string | null
+  shelvedAt: number
+  /** Whole days it had been idle when it was shelved. */
+  idleDays: number
+  /** One path-free sentence: "Shelved `feat/x` — idle 9 d, branch kept". */
+  reason: string
+}
+
 export interface ListedOrphanVolume {
   id: string
   name: string
@@ -75,6 +91,8 @@ export interface CleanupTotals {
   inUse: number
   orphanVolumes: number
   orphanVolumeBytes: number
+  /** Worktrees Harnu shelved (not counted in any bucket above: their folder is gone on purpose). */
+  shelved: number
   /** Archives across the listed repos (a tip and its working state count once). */
   archives: number
   /** Estimated bytes only they keep alive (repos git could not size count as 0). */
@@ -92,6 +110,8 @@ export interface CleanupListing {
   scannedAt: number
   bundles: ListedBundle[]
   orphanVolumes: ListedOrphanVolume[]
+  /** Worktrees Harnu shelved: folder freed, branch and archive kept. Restore arrives with U2.3. */
+  shelved: ListedShelved[]
   archives: ListedArchiveRepo[]
   totals: CleanupTotals
   /**
@@ -105,6 +125,11 @@ export interface CleanupListing {
     reportOnly: boolean
     graceDays: number
   }
+  /**
+   * Shelving (autonomous cleanup) has its own switch, independent of `autopilot`. Off by default;
+   * while `reportOnly` it only lists what it would shelve.
+   */
+  shelving: { enabled: boolean; reportOnly: boolean; thresholdDays: number }
   /** When the next timer tick fires, or null when the background scan is off. */
   nextCycleAt: number | null
 }
@@ -318,9 +343,32 @@ function listVolume(v: OrphanVolumeItem, home: string): ListedOrphanVolume {
   }
 }
 
+function listShelved(e: ShelvedEntry, home: string): ListedShelved {
+  return {
+    id: safe(
+      listedId({
+        item: {
+          id: e.id,
+          repoPath: e.repoPath,
+          kind: 'worktree',
+          branch: e.branch ?? undefined,
+          path: e.worktreePath
+        }
+      } as Pick<WorktreeBundle, 'item'>),
+      home
+    ),
+    folderAlias: safe(alias(e.worktreePath), home),
+    branch: e.branch ? safe(e.branch, home, { glued: false }) : null,
+    shelvedAt: e.shelvedAt,
+    idleDays: e.idleDays,
+    reason: safe(e.reason, home, { glued: false })
+  }
+}
+
 function totalsOf(
   bundles: readonly ListedBundle[],
   volumes: readonly ListedOrphanVolume[],
+  shelved: readonly ListedShelved[],
   archives: readonly ListedArchiveRepo[],
   trash: {
     inTrashBytes: number
@@ -340,6 +388,7 @@ function totalsOf(
     inUse: count('in-use'),
     orphanVolumes: volumes.length,
     orphanVolumeBytes: volumes.reduce((n, v) => n + (v.sizeBytes ?? 0), 0),
+    shelved: shelved.length,
     archives: archives.reduce((n, a) => n + a.count, 0),
     archiveBytes: archives.reduce((n, a) => n + (a.bytes ?? 0), 0),
     inTrashBytes: trash.inTrashBytes,
@@ -361,6 +410,14 @@ export function cleanupListing(snap: GcSnapshot, opts: CleanupListingOptions): C
     .filter((b) => (scoped ? inScope(b, repos, roots, opts.home) : true))
     .map((b) => listBundle(b, snap, opts))
   const orphanVolumes = scoped ? [] : snap.orphanVolumes.map((v) => listVolume(v, opts.home))
+  // A shelved worktree belongs to its repo, like a bundle: a scoped listing keeps that repo's.
+  const shelved = (snap.shelved ?? [])
+    .filter((e) => {
+      if (!scoped) return true
+      const repo = normalizePath(e.repoPath, opts.home)
+      return repos.has(repo) || roots.some((root) => isWithinRoot(repo, root))
+    })
+    .map((e) => listShelved(e, opts.home))
   // An archive belongs to its repo, so a scoped listing keeps the repos it covers. The trash
   // belongs to no folder, like an orphan volume: a scoped listing leaves it out.
   const archives = (snap.archives ?? NO_ARCHIVES).repos
@@ -381,8 +438,9 @@ export function cleanupListing(snap: GcSnapshot, opts: CleanupListingOptions): C
     scannedAt: snap.scannedAt,
     bundles,
     orphanVolumes,
+    shelved,
     archives,
-    totals: totalsOf(bundles, orphanVolumes, archives, trash),
+    totals: totalsOf(bundles, orphanVolumes, shelved, archives, trash),
     lastCycle: snap.lastCycle
       ? {
           at: snap.lastCycle.at,
@@ -394,6 +452,11 @@ export function cleanupListing(snap: GcSnapshot, opts: CleanupListingOptions): C
       enabled: snap.prefs.autopilot,
       reportOnly: !snap.prefs.firstReportAcknowledged,
       graceDays: snap.prefs.graceDays
+    },
+    shelving: {
+      enabled: snap.prefs.shelve?.enabled ?? false,
+      reportOnly: !(snap.prefs.shelve?.firstReportAcknowledged ?? false),
+      thresholdDays: snap.prefs.shelve?.thresholdDays ?? 3
     },
     nextCycleAt: snap.nextCycleAt
   }

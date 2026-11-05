@@ -14,6 +14,7 @@ import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
 import type { StackLeftoverItem } from './gc-stack-leftovers'
 import type { ArchiveEntry, ArchiveRepoGroup, GcArchivesCard } from './archives-core'
 import type { GcTrashCard, TrashListEntry } from './trash-core'
+import type { ShelvedEntry } from './shelve-store'
 import type {
   GcOpinionAck,
   GcOpinionDone,
@@ -24,6 +25,7 @@ import type {
 } from './opinion-core'
 
 export type {
+  ShelvedEntry,
   ArchiveEntry,
   ArchiveRepoGroup,
   GcArchivesCard,
@@ -152,6 +154,12 @@ export interface GcSnapshot {
   archives: GcArchivesCard
   /** What Harnu moved to the OS trash that is still there (see `trash-core.ts`). */
   trash: GcTrashCard
+  /**
+   * Worktrees Harnu shelved (autonomous cleanup): the folder is gone on purpose, the branch and the
+   * archive stay, and the sessions stay listed. They are not removed worktrees, and none of the
+   * buckets above holds them. The sidebar's Archived section that shows them is U2.3.
+   */
+  shelved: ShelvedEntry[]
 }
 
 /**

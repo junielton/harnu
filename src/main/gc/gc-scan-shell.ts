@@ -85,6 +85,7 @@ import {
 } from './gc-stack-leftovers'
 import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
 import { judgeKeeps, type StaleKeep } from './gc-keep'
+import { SHELVED_FILE, readShelved, shelvedFolders, type ShelvedEntry } from './shelve-store'
 import type { GcPrefs } from './gc-prefs'
 
 /** A gather plus what only the snapshot needs. */
@@ -117,6 +118,10 @@ export interface GcGathered extends GcGather {
   archives: GcArchivesCard
   /** What Harnu moved to the OS trash that is still there. */
   trash: GcTrashCard
+  /** Worktrees Harnu shelved: folder gone on purpose, branch and archive kept. */
+  shelved: ShelvedEntry[]
+  /** Folders a session drifted into (C4): a worktree any of them lies in is never shelved. */
+  driftedCwds: string[]
 }
 
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
@@ -281,6 +286,8 @@ export async function gatherGc(
   // Scheduler worker, a legacy index gone stale), so grace counts any terminal under the
   // worktree, outside Harnu included, and a session parked a while ago.
   const transcripts = await scanTranscripts(fsTranscriptProbe(), Date.now())
+  // The worktrees Harnu shelved: missing on purpose, so nothing below may read them as removed.
+  const shelved = (await readShelved(path.join(app.getPath('userData'), SHELVED_FILE))).entries
   // A transcript whose folder cannot be told still tells something: its project slug. It counts
   // for every worktree that slug could belong to, as either spelling of the path.
   const slugCandidates =
@@ -496,12 +503,18 @@ export async function gatherGc(
     orphanVolumes: orphanVolumeList,
     stackLeftovers,
     leftoverProjectsAlive,
-    orphanTranscripts: await orphanSource({ known, repoPaths }),
+    orphanTranscripts: await orphanSource({
+      known,
+      repoPaths,
+      shelvedFolders: shelvedFolders({ version: 1, entries: shelved })
+    }),
     staleKeeps,
     staleReleases: staleReleaseIds,
     goneItemIds,
     // Their own try/catch inside: a git or trash hiccup never fails the gather.
     archives: await gatherArchives(prefs, now),
-    trash: await gatherTrash(undefined, { persist: persisting })
+    trash: await gatherTrash(undefined, { persist: persisting }),
+    shelved,
+    driftedCwds: transcripts.drifted
   }
 }

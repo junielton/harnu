@@ -11,7 +11,8 @@ import type {
   GcOpinionResult,
   GcRecoveryAction,
   GcRecoveryItem,
-  GcSnapshot
+  GcSnapshot,
+  CycleRecord
 } from '../../../main/gc/gc-wire'
 import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import { i18n } from '../i18n'
@@ -302,6 +303,34 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
+  /** The cycle whose shelves were last announced, so a replayed record adds no second row. */
+  let lastShelveAnnouncedAt = 0
+
+  /**
+   * Each shelve leaves one Activity line with its reason (autonomous cleanup U2.2): the structured
+   * facts come from main, the words from the app's language. Main raises the native notification.
+   */
+  function announceShelved(c: CycleRecord): void {
+    const shelved = c.shelve?.shelved ?? []
+    if (shelved.length === 0 || c.at <= lastShelveAnnouncedAt) return
+    lastShelveAnnouncedAt = c.at
+    const { t } = i18n.global
+    const notifications = useNotificationsStore()
+    for (const s of shelved) {
+      notifications.notify({
+        ts: c.at,
+        source: 'app',
+        kind: 'info',
+        title: s.branch
+          ? t('cleanup.gc.shelved.activity', { branch: s.branch, days: s.idleDays })
+          : t('cleanup.gc.shelved.activityDetached', { days: s.idleDays }),
+        description: s.folderAlias,
+        folderPath: s.folderPath,
+        target: { view: 'cleanup' }
+      })
+    }
+  }
+
   function onOpinionResult(r: GcOpinionResult): void {
     // Every id the request named gets exactly one result (a verdict, a refusal, or a stale
     // marker), so this is also what ends its pending state.
@@ -432,7 +461,10 @@ export const useGcStore = defineStore('gc', () => {
         window.api.onGcProgress(onProgress),
         window.api.onGcDone((d) => void onDone(d)),
         // A cycle finished (autopilot tick or manual): the world changed.
-        window.api.onGcCycle(() => void refresh()),
+        window.api.onGcCycle((c) => {
+          announceShelved(c)
+          void refresh()
+        }),
         // The prep journal changed (boot recovery finished, a notice was answered).
         window.api.onGcRecoveryChanged(() => void loadRecovery()),
         window.api.onGcOpinionResult(onOpinionResult),

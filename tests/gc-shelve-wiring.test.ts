@@ -103,7 +103,7 @@ describe('the service wires the cycle behind its own switch', () => {
 describe('the tool catalog describes the new fields', () => {
   it('list_cleanup says it lists shelved worktrees and the shelving switch', () => {
     const catalog = read('main/mcp/tool-catalog.ts')
-    const at = catalog.indexOf("'list_cleanup'")
+    const at = catalog.indexOf("name: 'list_cleanup'")
     const window = catalog.slice(at, at + 2500)
     expect(window).toMatch(/shelved/i)
   })
