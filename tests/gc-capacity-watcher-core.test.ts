@@ -279,19 +279,83 @@ describe('runCapacityPass: switches and the report-only first cycle (AC-1)', () 
     expect((await runCapacityPass(r.deps, r.state, 'timer')).notice).toMatchObject({ level: 'low' })
   })
 
-  it('the global pause acts on nothing and reads nothing', async () => {
-    const r = rig({ ...acked(), pauseAutonomous: true }, { free: [0], plan: [net(1)] })
+  it('the global pause still reads capacity but plans and runs nothing', async () => {
+    const r = rig({ ...acked(), pauseAutonomous: true }, { free: [5], plan: [net(1)] })
     const rec = await runCapacityPass(r.deps, r.state, 'timer')
-    expect(rec).toMatchObject({ mode: 'paused', capacity: null, notice: null })
-    expect(r.reads).toBe(0)
+    expect(rec).toMatchObject({ mode: 'paused', pressure: false, acted: 0, notice: null })
+    expect(rec.capacity).toMatchObject({ known: true, free: 5 })
+    expect(r.reads).toBe(1)
+    expect(r.planned).toBe(0)
+    expect(r.locks).toBe(0)
+    expect(r.executed).toEqual([])
     expect(r.notices).toEqual([])
   })
 
-  it('the Docker switch off acts on nothing and reads nothing', async () => {
-    const r = rig(acked({ enabled: false }), { free: [0], plan: [net(1)] })
+  it('the Docker switch off still reads capacity but plans and runs nothing', async () => {
+    const r = rig(acked({ enabled: false }), { free: [5], plan: [net(1)] })
     const rec = await runCapacityPass(r.deps, r.state, 'timer')
-    expect(rec).toMatchObject({ mode: 'off', capacity: null })
-    expect(r.reads).toBe(0)
+    expect(rec).toMatchObject({ mode: 'off', pressure: false })
+    expect(rec.capacity).toMatchObject({ known: true, free: 5 })
+    expect(r.planned).toBe(0)
+  })
+})
+
+describe('runCapacityPass: the heads-up still fires while Cleanup is not acting', () => {
+  for (const [label, prefs, mode, off] of [
+    ['global pause', { ...acked(), pauseAutonomous: true }, 'paused', 'paused'],
+    ['Docker switch off', acked({ enabled: false }), 'off', 'off']
+  ] as const) {
+    it(`${label}: low at the mark, no action, mode stays ${mode}, and the notice says why`, async () => {
+      const r = rig(prefs, { free: [3], plan: [net(1), park(1)] })
+      const rec = await runCapacityPass(r.deps, r.state, 'timer')
+      expect(rec.mode).toBe(mode)
+      expect(rec.capacity).toMatchObject({ known: true, free: 3 })
+      expect(rec).toMatchObject({ pressure: true, nothingLeft: true, acted: 0, found: 0 })
+      expect(rec.notice).toEqual({ level: 'low', free: 3, total: TOTAL, mark: 3, autonomyOff: off })
+      expect(r.planned).toBe(0)
+      expect(r.locks).toBe(0)
+      expect(r.executed).toEqual([])
+      expect(r.notices).toHaveLength(1)
+      expect(r.notices[0]!.body).toMatch(/automatic cleanup is (off|paused)/i)
+    })
+
+    it(`${label}: zero fires one more, and neither repeats`, async () => {
+      const r = rig(prefs, { free: [3], plan: [] })
+      await runCapacityPass(r.deps, r.state, 'timer')
+      const again = await runCapacityPass(r.deps, r.state, 'timer')
+      expect(again.notice).toBeNull()
+      const z = rig(prefs, { free: [0], plan: [] })
+      z.state.dockerCapacityNotice = r.state.dockerCapacityNotice
+      const rec = await runCapacityPass(z.deps, z.state, 'event')
+      expect(rec.notice).toMatchObject({ level: 'zero', free: 0, autonomyOff: off })
+      expect((await runCapacityPass(z.deps, z.state, 'event')).notice).toBeNull()
+    })
+
+    it(`${label}: recovering above the mark re-arms it`, async () => {
+      const r = rig(prefs, { free: [3] })
+      await runCapacityPass(r.deps, r.state, 'timer')
+      const up = rig(prefs, { free: [9] })
+      up.state.dockerCapacityNotice = r.state.dockerCapacityNotice
+      await runCapacityPass(up.deps, up.state, 'timer')
+      expect(up.state.dockerCapacityNotice).toBe('none')
+    })
+
+    it(`${label}: unknown capacity stays silent`, async () => {
+      const r = rig(prefs, {
+        capacity: async () => ({ ok: true, value: { known: false, reason: 'Docker Desktop' } })
+      })
+      const rec = await runCapacityPass(r.deps, r.state, 'timer')
+      expect(rec).toMatchObject({ mode, notice: null })
+      expect(rec.capacity).toEqual({ known: false, reason: 'Docker Desktop' })
+      expect(r.notices).toEqual([])
+    })
+  }
+
+  it('an acting pass carries no autonomyOff on its notice', async () => {
+    const r = rig(acked(), { free: [3], plan: [] })
+    expect((await runCapacityPass(r.deps, r.state, 'timer')).notice).not.toHaveProperty(
+      'autonomyOff'
+    )
   })
 })
 

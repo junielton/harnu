@@ -115,6 +115,32 @@ describe('the out-of-capacity notice reaches Activity once (AC-2)', () => {
     })
   })
 
+  it('says why nothing was freed when Cleanup is not acting (switch off, global pause)', async () => {
+    const { push } = install()
+    await useGcStore().init()
+    push.dockerWatch!(
+      watch({
+        at: NOW,
+        mode: 'off',
+        notice: { level: 'low', free: 3, total: 31, mark: 3, autonomyOff: 'off' }
+      })
+    )
+    push.dockerWatch!(
+      watch({
+        at: NOW + 1,
+        mode: 'paused',
+        notice: { level: 'zero', free: 0, total: 31, mark: 3, autonomyOff: 'paused' }
+      })
+    )
+    const rows = useNotificationsStore().list
+    expect(rows.map((r) => r.description)).toEqual([
+      t('cleanup.gc.capacity.zero.bodyPaused'),
+      t('cleanup.gc.capacity.low.bodyOff', { free: 3, total: 31 })
+    ])
+    expect(rows[0]!.description).toMatch(/paused/i)
+    expect(rows[1]!.description).toMatch(/off/i)
+  })
+
   it('a zero notice has its own wording', async () => {
     const { push } = install()
     await useGcStore().init()
