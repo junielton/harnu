@@ -41,6 +41,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **Folders outside git get session digests.** A session in a folder that isn't a git repository is now digested like any other, into that folder's `.harnu/memory/` (or your central memory folder when its settings say so), marked `evidence: no-git`. Harnu never writes a digest into your home folder, the root of the disk, or `~/.claude` and `~/.harnu`; a session started in one of those is skipped.
 - **A session digest lists only the commits that session made.** Two sessions on one checkout used to each claim the other's commits. A commit now counts as a session's only when it was made during one of that session's own `git` commands, its subagents' included; the other commits that landed on the checkout while it ran are counted on one line at the end of Evidence, and the files line covers the session's own commits only.
 - **Digests survive a restart, and sessions Harnu missed are caught up.** What each session's last digest saw is kept in `memory-digest-state.json` in Harnu's data folder, so restarting Harnu no longer writes the same digest again or rereads a transcript from its first line. A minute after Harnu starts, and every 30 minutes after that, it digests sessions from the last 7 days that no hook reached (they ran while Harnu was closed, after a crash, or with the hook bridge off), at most 10 at a time, marked `caught up`.
+- **Sessions of a removed worktree are digested before Cleanup can trash their transcripts.** When Cleanup lists the transcripts of folders that are gone, Harnu now writes a digest of each session with at least three of your messages into the memory of the repo the worktree belonged to (`sessions/`, marked `evidence: orphan`, at most 20 per scan, oldest first), unless it already has one. A project that still has sessions without a digest (no repo could be found, or a write failed) is not trashed by the ordinary confirm: it needs an explicit "Trash without a digest" choice, so nothing is lost without you choosing it.
 
 ### Fixed
 
@@ -49,6 +50,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **The pane dividers read as one edge again.** Between the sidebar and the session, and between the session and the Fleet rail, the resize handle drew its thin line in the middle of a 6px gap, which left a sliver of background on each side and made the boundary look like a double bar. The line now sits flush against the panel it belongs to. The grab area is just as wide as before. Double-clicking the divider between the session and the helper stack now resets the split, like the other two dividers already did.
 
 - **The drill-in "Back" row stays put while the list scrolls.** In the sidebar's drill-in mode the Back row used to scroll away with the list, so in a long worktree group you had to scroll all the way up to go back. It is now pinned above the list: it spans the full sidebar width, the scrollbar starts below it, and rows sliding under its edge fade out instead of showing half-cut.
+
+- **A session digest never recreates a removed worktree's folder.** A digest for a session whose folder no longer exists (a worktree removed after the session ended, say) used to write into `<folder>/.harnu/memory/` and bring the folder back. Harnu now skips it; the digest of a removed worktree's sessions is written into its repo's memory instead, when Cleanup lists their transcripts.
+- **The memory benchmark's orphan loss ignores very short sessions.** `npm run memory:bench` counted a removed folder's one-message session as a lost orphan even though no digest is meant to exist for it. `orphan_loss` and `orphan_transcripts` now count only sessions with at least three of your messages, the same rule as capture coverage.
 
 - **The memory benchmark no longer counts a pasted image on its own as one of your messages.** `npm run memory:bench` counted an image-only message as an operator turn, which put sessions with two typed messages and one screenshot into the capture-coverage count.
 
@@ -2563,11 +2567,10 @@ retarget` to apply it as a filter; click it again to clear. A count of zero is p
 ### Fixed
 
 - **The bundled-skills catalog no longer ships a committed merge conflict.**
-  `resources/skills/CATALOG.md` had carried `<<<<<<< Updated upstream` / `=======`
-  since v0.3.29, left by a bad stash-pop resolution. Prettier rendered the closing
-  marker as a blockquote, so the formatter passed and nothing flagged it. The
-  version marker is resolved to a single line and bumped to `v6`, which is the
-  honest value: four `SKILL.md` files changed after `v5` was written without the
+  `resources/skills/CATALOG.md` had carried ` since v0.3.29, left by a bad stash-pop resolution. Prettier rendered the closing
+marker as a blockquote, so the formatter passed and nothing flagged it. The
+version marker is resolved to a single line and bumped to`v6`, which is the
+honest value: four `SKILL.md`files changed after`v5` was written without the
   catalog moving with them, so staged copies were never told to refresh.
 - **A goal file's frontmatter is now stated as mandatory, not just shown.**
   `mission` displayed the `session:` block in its template but never said it was

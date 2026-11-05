@@ -155,6 +155,16 @@ async function memoryCheckout(folder: string): Promise<string> {
   return resolveMemoryCheckout(folder, meta.repoId)
 }
 
+/** Whether the folder is still there; any answer but "it is missing" counts as there. */
+async function folderExists(folder: string): Promise<boolean> {
+  try {
+    await fs.stat(folder)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'ENOENT'
+  }
+}
+
 /** The session's subagent transcripts, next to its main transcript. */
 async function subagentTranscripts(sessionId: string): Promise<string[]> {
   const session = await resolveSession(sessionId)
@@ -211,6 +221,7 @@ const liveDeps: DigestEngineDeps = {
   writeDigest,
   writeHot,
   memoryCheckout,
+  folderExists,
   subagentTranscripts,
   commitFileStats,
   saveState,
@@ -282,6 +293,21 @@ export function registerDigestEngine(): DigestEngineHandle {
     catchUpEvery = setInterval(() => void sweep(e), CATCH_UP_EVERY_MS)
   }, CATCH_UP_FIRST_MS)
   return { close: () => closeDigestEngine() }
+}
+
+/**
+ * Digests an orphaned transcript (a removed worktree's session) into its owning repo's memory
+ * (S-5), for Cleanup's gather. A no-op while the engine is not registered.
+ */
+export async function digestOrphanTranscript(
+  args: Parameters<DigestEngine['digestTranscriptInto']>[0]
+): Promise<void> {
+  await engine?.digestTranscriptInto(args)
+}
+
+/** Whether `home`'s memory already holds a digest of the session (S-5's orphan gather). */
+export function orphanHasDigest(home: string, sessionId: string): Promise<boolean> {
+  return hasDigest(home, sessionId)
 }
 
 /** Teardown for `before-quit` — unsubscribe + clear timers. */

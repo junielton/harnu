@@ -8,6 +8,12 @@ import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import { GcStepError, type GcOps } from '../src/main/gc/pipeline-core'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { OrphanVolumeItem } from '../src/main/gc/gc-housekeeping-input'
+import {
+  orphanExpectedOf as transcriptsExpectedOf,
+  orphanTranscriptId,
+  type OrphanTranscriptItem
+} from '../src/main/gc/gc-orphan-transcripts'
+import { parseOptions } from '../src/main/gc/gc-options'
 import { bundle, NOW, reapItem } from './gc-fixtures'
 
 const prefs = (over: Partial<GcPrefs> = {}): GcPrefs => ({ ...defaultGcPrefs(), ...over })
@@ -738,5 +744,148 @@ describe('a worktree whose work the scan could not read is refused with a way fo
       error: 'work-unreadable'
     })
     expect(r.forced).toEqual([])
+  })
+})
+
+describe('an orphaned project whose sessions have no digest (memory U1 S-5, D-6)', () => {
+  const transcriptsItem = (digest: OrphanTranscriptItem['digest']): OrphanTranscriptItem => ({
+    id: orphanTranscriptId('slug-a'),
+    slug: 'slug-a',
+    folder: '/nonexistent/s5/proj/worktrees/PROJ-1-gone',
+    repoLabel: 'proj',
+    bytes: 4_096,
+    sessionCount: 2,
+    newestAt: NOW - 86_400_000,
+    hasMemory: false,
+    proof: 'proven',
+    ...(digest ? { digest } : {})
+  })
+
+  /** A rig whose gather and fresh look return `now()`'s item; a digest may land meanwhile. */
+  function transcriptsRig(now: () => OrphanTranscriptItem) {
+    const trashed: string[] = []
+    const done: GcJobDone[] = []
+    let n = 0
+    const deps: ManualCleanDeps = {
+      prefs: () => prefs(),
+      gather: async () => ({
+        bundles: [],
+        orphanVolumes: [],
+        orphanTranscripts: [structuredClone(now())]
+      }),
+      opsFor: () => {
+        throw new Error('no worktree ops expected')
+      },
+      freshOrphans: async () => [],
+      freshOrphanTranscripts: async () => [structuredClone(now())],
+      trashTranscripts: async (slug) => void trashed.push(slug),
+      reconcileFolder: async () => undefined,
+      workStampOf: async () => null,
+      removeOrphanVolumes: async () => ({
+        buildCacheBytes: 0,
+        imageBytes: 0,
+        volumeBytes: 0,
+        errors: []
+      }),
+      queue: createJobQueue({
+        newId: () => `job-${++n}`,
+        emitProgress: () => undefined,
+        emitDone: (d) => done.push(d)
+      }),
+      state: createCycleState(),
+      now: () => NOW
+    }
+    return { deps, trashed, done }
+  }
+
+  const sentFor = (it: OrphanTranscriptItem, over: Record<string, unknown> = {}): GcCleanOptions =>
+    parseOptions(
+      structuredClone({
+        confirmed: [it.id],
+        expected: { [it.id]: transcriptsExpectedOf(it) },
+        ...over
+      })
+    )
+
+  async function clean(
+    r: ReturnType<typeof transcriptsRig>,
+    it: OrphanTranscriptItem,
+    opts: GcCleanOptions
+  ) {
+    submitManualClean(r.deps, [it.id], opts)
+    await r.deps.queue.idle()
+    return r.done[0]!.results[0]
+  }
+
+  it('refuses an undigested project unless confirmed', async () => {
+    const it1 = transcriptsItem({ done: 1, total: 2, home: '/nonexistent/s5/proj/www' })
+
+    const refused = transcriptsRig(() => it1)
+    expect(await clean(refused, it1, sentFor(it1))).toMatchObject({
+      ok: false,
+      error: 'needs-undigested-confirmation'
+    })
+    expect(refused.trashed).toEqual([])
+
+    // The ordinary confirm and the not-found confirm do not cover it; only its own entry does.
+    const other = transcriptsRig(() => it1)
+    expect(
+      await clean(
+        other,
+        it1,
+        sentFor(it1, { confirmedNotFound: [it1.id], confirmedUndigested: ['x'] })
+      )
+    ).toMatchObject({ ok: false, error: 'needs-undigested-confirmation' })
+
+    const ok = transcriptsRig(() => it1)
+    expect(await clean(ok, it1, sentFor(it1, { confirmedUndigested: [it1.id] }))).toMatchObject({
+      ok: true
+    })
+    expect(ok.trashed).toEqual(['slug-a'])
+
+    // No owning repo: nothing could be digested, the same explicit choice applies.
+    const homeless = transcriptsItem({ done: 0, total: 2, home: null })
+    const h = transcriptsRig(() => homeless)
+    expect(await clean(h, homeless, sentFor(homeless))).toMatchObject({
+      ok: false,
+      error: 'needs-undigested-confirmation'
+    })
+  })
+
+  it('trashes a fully digested project, one with nothing to digest, and an unmarked one, on the ordinary confirm', async () => {
+    for (const digest of [
+      { done: 2, total: 2, home: '/nonexistent/s5/proj/www' },
+      { done: 0, total: 0, home: null },
+      undefined
+    ]) {
+      const it1 = transcriptsItem(digest)
+      const r = transcriptsRig(() => it1)
+      expect(await clean(r, it1, sentFor(it1))).toMatchObject({ ok: true })
+      expect(r.trashed).toEqual(['slug-a'])
+    }
+  })
+
+  it('reads the fresh gather: a digest that landed meanwhile lifts the refusal', async () => {
+    const shownItem = transcriptsItem({ done: 1, total: 2, home: '/nonexistent/s5/proj/www' })
+    const landed = transcriptsItem({ done: 2, total: 2, home: '/nonexistent/s5/proj/www' })
+    let current = shownItem
+    const r = transcriptsRig(() => current)
+    // The first look (the job's gather) sees the undigested row; by the time of the fresh look the
+    // digest has landed. The refusal is decided on the fresh look.
+    const firstGather = r.deps.gather
+    r.deps.gather = async () => {
+      const g = await firstGather()
+      current = landed
+      return g
+    }
+    expect(await clean(r, shownItem, sentFor(shownItem))).toMatchObject({ ok: true })
+    expect(r.trashed).toEqual(['slug-a'])
+  })
+
+  it('parseOptions carries confirmedUndigested, strings only', () => {
+    expect(
+      parseOptions(structuredClone({ confirmedUndigested: ['a', 3, 'b'] })).confirmedUndigested
+    ).toEqual(['a', 'b'])
+    expect(parseOptions({}).confirmedUndigested).toBeUndefined()
   })
 })

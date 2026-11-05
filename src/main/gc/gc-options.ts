@@ -112,6 +112,9 @@ export function parseOptions(raw: unknown): GcCleanOptions {
   const confirmedNotFound = Array.isArray(r.confirmedNotFound)
     ? r.confirmedNotFound.filter((x): x is string => typeof x === 'string').slice(0, 500)
     : undefined
+  const confirmedUndigested = Array.isArray(r.confirmedUndigested)
+    ? r.confirmedUndigested.filter((x): x is string => typeof x === 'string').slice(0, 500)
+    : undefined
   const prepare: Record<string, GcPrep | GcPrep[]> = {}
   if (r.prepare && typeof r.prepare === 'object' && !Array.isArray(r.prepare)) {
     for (const [id, value] of Object.entries(r.prepare as Record<string, unknown>)) {
@@ -124,6 +127,7 @@ export function parseOptions(raw: unknown): GcCleanOptions {
     expected,
     ...(deleteRemote ? { deleteRemote } : {}),
     ...(confirmedNotFound ? { confirmedNotFound } : {}),
+    ...(confirmedUndigested ? { confirmedUndigested } : {}),
     ...(Object.keys(prepare).length > 0 ? { prepare } : {})
   }
 }
