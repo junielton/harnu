@@ -48,9 +48,20 @@ describe('NETWORK_EVENTS_ARGS', () => {
       '--format',
       '{{json .}}'
     ])
-    expect(NETWORK_EVENTS_ARGS.join(' ')).not.toMatch(
-      /\b(rm|down|stop|kill|prune|up|start|create)\b(?!\s*$)/
-    )
+    expect(NETWORK_EVENTS_ARGS[0]).toBe('events')
+    for (const verb of [
+      'rm',
+      'down',
+      'stop',
+      'kill',
+      'prune',
+      'up',
+      'start',
+      'connect',
+      'disconnect'
+    ]) {
+      expect(NETWORK_EVENTS_ARGS).not.toContain(verb)
+    }
   })
 })
 
