@@ -17,6 +17,7 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { promisify } from 'node:util'
 
@@ -89,17 +90,38 @@ export async function withRepoLock<T>(
   work: () => Promise<T>,
   opts: RepoLockOpts = {}
 ): Promise<RepoLockResult<T>> {
-  const now = opts.now ?? Date.now
-  const staleMs = opts.staleMs ?? LOCK_STALE_MS
-  const alive = opts.alive ?? processAlive
-  const pid = opts.pid ?? process.pid
-  const token = randomUUID()
   let file: string
   try {
     file = await lockPathOf(repoPath)
   } catch (err) {
     return { ok: false, reason: 'unavailable', message: messageOf(err) }
   }
+  return withLockFile(file, work, opts)
+}
+
+/**
+ * Where the Docker slot's lock lives (autonomous cleanup U3.1). Docker is one daemon per machine,
+ * not per repository, so the lock is a file in the temp dir shared by every Harnu instance
+ * (`--user-data-dir`) of the same user; the user id keeps two users from sharing one file.
+ */
+export function dockerLockPath(
+  tmpDir: string = os.tmpdir(),
+  uid: number | null = process.getuid?.() ?? null
+): string {
+  return path.join(tmpDir, `harnu-docker-autonomy-${uid ?? 'u'}.lock`)
+}
+
+/** The lock itself, on any file: `withRepoLock` is this with the repository's own lock path. */
+export async function withLockFile<T>(
+  file: string,
+  work: () => Promise<T>,
+  opts: RepoLockOpts = {}
+): Promise<RepoLockResult<T>> {
+  const now = opts.now ?? Date.now
+  const staleMs = opts.staleMs ?? LOCK_STALE_MS
+  const alive = opts.alive ?? processAlive
+  const pid = opts.pid ?? process.pid
+  const token = randomUUID()
   const guardFile = `${file}.reclaim`
 
   /** One atomic exclusive create. False when the lock exists. */

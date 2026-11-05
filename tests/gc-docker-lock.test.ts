@@ -50,8 +50,6 @@ describe('withLockFile', () => {
 describe('dockerLockPath', () => {
   it('lives in the given temp dir and carries the user id, so users never share a file', () => {
     expect(dockerLockPath('/tmp', 1000)).toBe(path.join('/tmp', 'harnu-docker-autonomy-1000.lock'))
-    expect(dockerLockPath('/tmp', undefined)).toBe(
-      path.join('/tmp', 'harnu-docker-autonomy-u.lock')
-    )
+    expect(dockerLockPath('/tmp', null)).toBe(path.join('/tmp', 'harnu-docker-autonomy-u.lock'))
   })
 })
