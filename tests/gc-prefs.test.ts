@@ -29,7 +29,7 @@ describe('defaultGcPrefs', () => {
       released: {},
       releasedFrom: {},
       shelve: {
-        enabled: false,
+        enabled: true, // design C1: on by default, report-only until acknowledged
         firstReportAcknowledged: false,
         thresholdDays: 3,
         maxPerCycle: 3,

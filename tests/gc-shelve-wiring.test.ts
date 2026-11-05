@@ -73,6 +73,13 @@ describe('the gather reads the store and protects shelved transcripts', () => {
 
 describe('the service wires the cycle behind its own switch', () => {
   const ipc = read('main/gc/gc-ipc.ts')
+  it('registers the Restore channel on the shared restore service and pushes a change event', () => {
+    expect(ipc).toMatch(/ipcMain\.handle\('gc:shelve:restore'/)
+    expect(ipc).toMatch(/restoreShelvedById\(/)
+    expect(ipc).toMatch(/onShelvedChanged\(/)
+    expect(ipc).toMatch(/send\('gc:shelved:changed'/)
+  })
+
   it('builds the snapshot with the shelved list', () => {
     expect(ipc).toMatch(/shelved:\s*g\.shelved/)
   })
@@ -106,5 +113,14 @@ describe('the tool catalog describes the new fields', () => {
     const at = catalog.indexOf("name: 'list_cleanup'")
     const window = catalog.slice(at, at + 2500)
     expect(window).toMatch(/shelved/i)
+  })
+})
+
+describe('the archive-delete guard fails closed', () => {
+  it('reads the shelved store with the refusing read, never the lossy one', () => {
+    const ipc = read('main/gc/gc-ipc.ts')
+    const handler = ipc.slice(ipc.indexOf('deleteArchives: async'))
+    expect(handler.slice(0, 1200)).toContain('readShelvedForUpdate(')
+    expect(handler.slice(0, 1200)).not.toMatch(/\breadShelved\(/)
   })
 })

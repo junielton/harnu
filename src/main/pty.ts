@@ -55,6 +55,7 @@ import { RingBuffer } from './pty-ring-buffer'
 import { foregroundProcessName } from './detect/foreground-process'
 import { sanitizeSpawnEnv, mergeLoginPath, loginPathOnce } from './appimage-env'
 import { arm, isArmed, shouldArmAtSpawn } from './orchestrator-guard'
+import { ensureShelvedRestored, type ShelvedRestoreFailure } from './gc/shelve-restore-shell'
 import { HARNU_ORCHESTRATOR_DOC } from './harnu-orchestrator'
 import { resolveModeContract } from './extensions/extensions-loader'
 import {
@@ -198,6 +199,82 @@ function buildMissingDirNotice(cwd: string): { command: string; args: string[] }
     return { command: 'powershell.exe', args: ['-NoProfile', '-Command', body] }
   }
   return buildPosixMissingDirNotice(cwd)
+}
+
+/**
+ * A session or terminal was about to start in a shelved worktree and the restore failed (U2.3a,
+ * design C3). Thrown for a plain terminal, which must never fall back to an ancestor or home: that
+ * is the BUG-144 shape. A Claude session shows {@link buildRestoreFailedNotice} instead.
+ */
+export class ShelvedRestoreError extends Error {
+  constructor(
+    readonly reason: ShelvedRestoreFailure,
+    message: string,
+    readonly folder: string
+  ) {
+    super(`Could not restore the shelved worktree ${folder}: ${message}`)
+    this.name = 'ShelvedRestoreError'
+  }
+}
+
+/**
+ * The POSIX notice for a shelved worktree that could not be restored. Same injection guard as
+ * {@link buildPosixMissingDirNotice}: the (untrusted) cwd and the failure message reach printf
+ * only as the positional arguments `$1` and `$2`, never inside the `-c` script.
+ *
+ * Exported for unit testing of the injection guard.
+ */
+export function buildPosixRestoreFailedNotice(
+  cwd: string,
+  message: string
+): { command: string; args: string[] } {
+  const format = [
+    '\\033[33mThis session\\047s worktree was shelved and could not be restored:\\033[0m',
+    '  \\033[2m%s\\033[0m',
+    '',
+    '%s',
+    '',
+    'Nothing was lost: the work is archived. Open Cleanup (Shelved), press Restore and try again,',
+    'or run `git worktree add` on the same path by hand. The session log is preserved at',
+    '\\033[2m~/.claude/projects/\\033[0m.',
+    ''
+  ].join('\\n')
+  return { command: '/bin/sh', args: ['-c', `printf '${format}' "$1" "$2"`, 'sh', cwd, message] }
+}
+
+/**
+ * The PowerShell notice for a shelved worktree that could not be restored. PowerShell ends a
+ * single-quoted string at U+2018, U+2019, U+201A and U+201B as well as at an ASCII apostrophe, and
+ * the cwd and the failure message are untrusted, so all four are doubled.
+ *
+ * Exported for unit testing of the quoting.
+ */
+export function buildPowerShellRestoreFailedNotice(
+  cwd: string,
+  message: string
+): { command: string; args: string[] } {
+  const lines = [
+    "This session's worktree was shelved and could not be restored:",
+    `  ${cwd}`,
+    '',
+    message,
+    '',
+    'Nothing was lost: the work is archived. Open Cleanup (Shelved), press Restore and try again,',
+    'or run `git worktree add` on the same path by hand.',
+    ''
+  ]
+  const body = lines
+    .map((l) => `Write-Host '${l.replace(/['\u2018\u2019\u201A\u201B]/g, (q) => q + q)}'`)
+    .join('; ')
+  return { command: 'powershell.exe', args: ['-NoProfile', '-Command', body] }
+}
+
+function buildRestoreFailedNotice(
+  cwd: string,
+  message: string
+): { command: string; args: string[] } {
+  if (process.platform === 'win32') return buildPowerShellRestoreFailedNotice(cwd, message)
+  return buildPosixRestoreFailedNotice(cwd, message)
 }
 
 /**
@@ -1415,6 +1492,20 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     const existing = sessionIndex.getPtyId(opts.sessionKey)
     if (existing && ptys.has(existing)) return existing
   }
+  // U2.3a (design C3): a session or terminal starting in a shelved worktree brings it back first.
+  // Every spawn funnels through here (resume, new session, terminal, MCP `spawn_terminal`), so this
+  // is the one place. A failed restore must never start anything in another folder (BUG-144 shape):
+  // a plain terminal rejects, a Claude session shows a notice below instead of `claude`.
+  let restoreFailure: { reason: ShelvedRestoreFailure; message: string } | null = null
+  if (opts.cwd) {
+    const restored = await ensureShelvedRestored(opts.cwd)
+    if (restored.status === 'failed') {
+      if ((opts.kind ?? 'shell') === 'shell') {
+        throw new ShelvedRestoreError(restored.reason, restored.message, opts.cwd)
+      }
+      restoreFailure = { reason: restored.reason, message: restored.message }
+    }
+  }
   // T119 cap: the fleet is about to grow, so park the coldest eligible session(s) to stay
   // at/under maxLive. Runs AFTER the dedup guard (a reused PTY isn't growth). Yields —
   // parks nobody and lets the spawn through — when nothing is eligible (spec §3.5).
@@ -1656,8 +1747,11 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     (kind === 'claude-resume' || kind === 'claude-new' || kind === 'claude-fork') &&
     !!opts.cwd &&
     !existsSync(opts.cwd)
-  if (wantedDirMissing) {
-    const notice = buildMissingDirNotice(opts.cwd ?? '')
+  const noClaude = wantedDirMissing || restoreFailure !== null
+  if (noClaude) {
+    const notice = restoreFailure
+      ? buildRestoreFailedNotice(opts.cwd ?? '', restoreFailure.message)
+      : buildMissingDirNotice(opts.cwd ?? '')
     runCommand = notice.command
     runArgs = notice.args
     runCwd = os.homedir()
@@ -1669,11 +1763,11 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
   applyCompanionEnv(env, {
     plan: companionPlan,
     owner: companionOwner,
-    dirMissing: wantedDirMissing
+    dirMissing: noClaude
   })
   // The retry below only ever applies to a spawn that carried the COMPANION's plugin dir.
   const companionInjected =
-    !!companionPlan && !wantedDirMissing && injectedDirs.includes(companionPlan.pluginDir)
+    !!companionPlan && !noClaude && injectedDirs.includes(companionPlan.pluginDir)
   const spawnOpts = {
     name: 'xterm-256color',
     cwd: runCwd,

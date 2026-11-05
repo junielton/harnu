@@ -148,3 +148,26 @@ export async function writeShelved(file: string, data: ShelvedFile): Promise<voi
   await fs.writeFile(tmp, JSON.stringify(normalizeShelved(data), null, 2) + '\n', 'utf8')
   await fs.rename(tmp, file)
 }
+
+/** One chain per file, process-wide: the shelve executor and the restore service share it. */
+const chains = new Map<string, Promise<unknown>>()
+
+/**
+ * Read, change and write the store as one step, after every earlier update of the same file. A
+ * shelve in one repository and a restore in another otherwise read the same bytes and the second
+ * write drops the first one's change.
+ */
+export function updateShelved(
+  file: string,
+  change: (current: ShelvedFile) => ShelvedFile
+): Promise<void> {
+  const work = async (): Promise<void> =>
+    writeShelved(file, change(await readShelvedForUpdate(file)))
+  const prev = chains.get(file) ?? Promise.resolve()
+  const next = prev.then(work, work)
+  chains.set(
+    file,
+    next.catch(() => undefined)
+  )
+  return next
+}

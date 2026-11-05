@@ -30,13 +30,7 @@ import {
   type PreserveResult,
   type VerifyResult
 } from './shelve-shell'
-import {
-  readShelvedForUpdate,
-  withShelved,
-  withoutShelved,
-  writeShelved,
-  type ShelvedEntry
-} from './shelve-store'
+import { updateShelved, withShelved, withoutShelved, type ShelvedEntry } from './shelve-store'
 
 const run = promisify(execFile)
 
@@ -236,12 +230,6 @@ export function defaultShelveExecDeps(
   file: string,
   over: Partial<ShelveExecDeps> = {}
 ): ShelveExecDeps {
-  let chain: Promise<unknown> = Promise.resolve()
-  const serial = <T>(work: () => Promise<T>): Promise<T> => {
-    const next = chain.then(work, work)
-    chain = next.catch(() => undefined)
-    return next
-  }
   return {
     probe: (d) => probeShelve({ item: { repoPath: d.repoPath, path: d.worktreePath } }),
     inUse: async (p) => (await import('../reaper/scanner-shell')).isFolderInUse(p),
@@ -249,12 +237,8 @@ export function defaultShelveExecDeps(
     manifest: (repo) => readShelveManifest(repo),
     preserve: preserveWorktree,
     verify: (record) => verifyPreservation(record),
-    remember: (entry) =>
-      serial(async () => writeShelved(file, withShelved(await readShelvedForUpdate(file), entry))),
-    forget: (id) =>
-      serial(async () =>
-        writeShelved(file, withoutShelved(await readShelvedForUpdate(file), [id]))
-      ),
+    remember: (entry) => updateShelved(file, (current) => withShelved(current, entry)),
+    forget: (id) => updateShelved(file, (current) => withoutShelved(current, [id])),
     removeFolder: (p) => rawRm(p, { recursive: true, force: true }),
     unregister: (repo, p) => removeWorktreeAdmin(repo, p, gitOut),
     now: () => Date.now(),

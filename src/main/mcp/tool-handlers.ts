@@ -79,6 +79,7 @@ import type { PrEntry } from '../pr-stack-core'
 import { getScreenStates, getShellSessions } from '../detect/screen-detect'
 import {
   createTerminalPty,
+  ShelvedRestoreError,
   discardTerminalPty,
   ensureTerminalScreenModel,
   liveSessionKeys,
@@ -87,6 +88,7 @@ import {
   waitForSessionReady,
   writeTerminalPty
 } from '../pty'
+import { ensureShelvedRestored } from '../gc/shelve-restore-shell'
 import {
   AGENT_TERMINAL_SIZE,
   MAX_AGENT_TERMINALS_PER_FOLDER,
@@ -1006,6 +1008,13 @@ const createSessionHandler: Handler = async (args, ctx) => {
   if (!ctx.bridge) return errorResult('NO_BRIDGE')
   const bridge = ctx.bridge
   const folder = ctx.folder
+  // U2.3a (design C3): a session opened in a shelved worktree brings it back first, here as well as
+  // in `createPty`, so a failure is this call's error and not an `ok:true` with a session that never
+  // materializes.
+  const restored = await ensureShelvedRestored(folder)
+  if (restored.status === 'failed') {
+    return steerError(`SHELVED_RESTORE_FAILED: ${restored.reason}: ${restored.message}`, ctx.folder)
+  }
   const payload: Record<string, unknown> = { folder }
   const prePrompt = strField(args, 'prePrompt')
   if (prePrompt) payload.prePrompt = prePrompt
@@ -1131,6 +1140,13 @@ const spawnTerminalHandler: Handler = async (args, ctx) => {
   let ptyId: string
   try {
     ptyId = await createTerminalPty({ terminalId, folder: targetFolder, ownerSessionId })
+  } catch (err) {
+    // U2.3a: `createPty` restores a shelved worktree before the shell starts; a failed restore is
+    // the agent's steering error, not a thrown tool failure.
+    if (err instanceof ShelvedRestoreError) {
+      return steerError(`SHELVED_RESTORE_FAILED: ${err.reason}: ${err.message}`, ctx.folder)
+    }
+    throw err
   } finally {
     // Registered by now (or the spawn failed): the record, not the reservation, holds the slot.
     terminalRegistry.releaseSlot(targetFolder)

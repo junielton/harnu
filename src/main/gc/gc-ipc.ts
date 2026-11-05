@@ -75,14 +75,16 @@ import { runShelveCycle } from './shelve-cycle'
 import { defaultShelveExecDeps, shelveWorktree } from './shelve-exec-shell'
 import { probeShelve } from './shelve-probe-shell'
 import { withRepoLock } from './repo-lock-shell'
-import { SHELVED_FILE } from './shelve-store'
+import { SHELVED_FILE, readShelvedForUpdate } from './shelve-store'
+import { onShelvedChanged, restoreShelvedById, toRestoreAck } from './shelve-restore-shell'
 import { parseOptions } from './gc-options'
 import type {
   GcCleanAck,
   GcGuidance,
   GcRecheckResult,
   GcSnapshot,
-  OrphanVolumeItem
+  OrphanVolumeItem,
+  ShelveRestoreAck
 } from './gc-wire'
 import { createGcOps, defaultGcShellDeps, resolveRealPaths, type GcShellDeps } from './gc-shell'
 import { withCurrentNeverClean } from './autopilot-core'
@@ -129,6 +131,8 @@ export interface GcService {
   ackFirstReport(): Promise<GcPrefs>
   /** Acknowledges the first shelving report (its own switch, independent of the autopilot's). */
   ackShelveReport(): Promise<GcPrefs>
+  /** Restore button: brings one shelved worktree back by its id (the restore service, same as a resume). */
+  restoreShelved(rawId: unknown): Promise<ShelveRestoreAck>
   jobs(): GcJobInfo[]
   /** What main sees about a refused item right now (lock reason, sessions, shared stacks, …). Read-only. */
   guide(id: unknown): Promise<GcGuidance>
@@ -578,11 +582,32 @@ export async function registerGcHandlers(
     },
     ackFirstReport: () => persist(withAcknowledged(prefs)),
     ackShelveReport: () => persist(withShelveAcknowledged(prefs)),
+    restoreShelved: async (rawId) => {
+      if (typeof rawId !== 'string' || !rawId) {
+        throw new Error('gc:shelve:restore expects the id of a shelved worktree')
+      }
+      return toRestoreAck(await restoreShelvedById(rawId))
+    },
     jobs: () => queue.jobs(),
     opinion: (ids) => opinions.start(ids),
     opinionCached: (ids) => opinions.cached(ids),
     deleteArchives: async (raw) => {
-      const ack = await deleteConfirmedArchives(parseArchiveRequest(raw), prefs.neverClean)
+      // A shelved worktree's archive is what restores it: those are refused here, whatever the screen sent.
+      // An unreadable shelved store is refused, never read as empty: that would delete the only copy.
+      const shelvedStore = await readShelvedForUpdate(path.join(userData, SHELVED_FILE)).catch(
+        (err: unknown) => {
+          throw new Error(
+            `Archives were left alone: the list of shelved worktrees cannot be read (${err instanceof Error ? err.message : String(err)}).`
+          )
+        }
+      )
+      const shelved = new Map(shelvedStore.entries.map((e) => [e.namespace, e]))
+      const ack = await deleteConfirmedArchives(
+        parseArchiveRequest(raw),
+        prefs.neverClean,
+        undefined,
+        shelved
+      )
       void gatherer.fresh().catch((err) => console.error('[gc] refresh after archives failed', err))
       return ack
     },
@@ -651,6 +676,13 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())
   ipcMain.handle('gc:shelve:ack', () => service.ackShelveReport())
+  ipcMain.handle('gc:shelve:restore', (_e, id: unknown) => service.restoreShelved(id))
+  // A worktree came back (a resume, a terminal or the button): the snapshot and every open
+  // Cleanup screen follow.
+  onShelvedChanged(() => {
+    void gatherer.fresh().catch((err) => console.error('[gc] refresh after a restore failed', err))
+    send('gc:shelved:changed', undefined)
+  })
   ipcMain.handle('gc:jobs', () => service.jobs())
   ipcMain.handle('gc:opinion', (_e, ids: unknown) => service.opinion(ids))
   ipcMain.handle('gc:opinion:cached', (_e, ids: unknown) => service.opinionCached(ids))

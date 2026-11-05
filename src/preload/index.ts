@@ -183,7 +183,8 @@ import type {
   GcOpinionAck,
   GcOpinionDone,
   GcOpinionResult,
-  GcSnapshot
+  GcSnapshot,
+  ShelveRestoreAck
 } from '../main/gc/gc-wire'
 // Containers wire types (T320, ADR-0014 §1): the ONLY containers module the
 // preload and the renderer may import — plain JSON-safe types, no main internals.
@@ -3013,6 +3014,11 @@ const api = {
   gcAckFirstReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:ackFirstReport'),
   /** Acknowledges the first shelving report: until then a shelving cycle only lists what it would shelve. */
   gcAckShelveReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:shelve:ack'),
+  /** Cleanup's Restore button: brings one shelved worktree back by its id (same function a resume uses). */
+  gcRestoreShelved: (id: string): Promise<ShelveRestoreAck> =>
+    ipcRenderer.invoke('gc:shelve:restore', id),
+  /** A shelved worktree came back (a resume, a terminal or the button): the Shelved card should refresh. */
+  onGcShelvedChanged: (cb: () => void): (() => void) => subscribe('gc:shelved:changed', () => cb()),
   /** Running, queued and recent jobs, so a reloaded renderer can re-attach. */
   gcJobs: (): Promise<GcJobInfo[]> => ipcRenderer.invoke('gc:jobs'),
   onGcProgress: (cb: (p: GcJobProgress) => void): (() => void) => subscribe('gc:progress', cb),
@@ -3050,6 +3056,7 @@ const api = {
     unknownRepo?: boolean
     neverClean?: boolean
     protectedArchives?: number
+    shelvedArchives?: Array<{ namespace: string; id: string; branch: string | null }>
   }> => ipcRenderer.invoke('gc:archives:delete', req),
   /** "Run git gc now" in one repo, after its own confirm. */
   gcRunArchiveGc: (repoPath: string): Promise<{ ok: boolean; error?: string }> =>

@@ -58,7 +58,11 @@ export interface GcPrefs {
 }
 
 export interface ShelvePrefs {
-  /** Off until the operator turns it on (U2.3 flips it on once restore lands); even then the first cycle only reports. */
+  /**
+   * ON by default (design C1; U2.3a, once every restore trigger exists). A prefs file that never set
+   * it reads ON; one that explicitly set it keeps its value. Even when on, the first cycle only
+   * reports until `firstReportAcknowledged`.
+   */
   enabled: boolean
   /** Set by `gc:shelve:ack`; until then a shelving cycle is report-only. Turning `enabled` on resets it. */
   firstReportAcknowledged: boolean
@@ -79,7 +83,7 @@ export const MAX_SHELVE_FAILURE_LIMIT = 10
 
 export function defaultShelvePrefs(): ShelvePrefs {
   return {
-    enabled: false,
+    enabled: true,
     firstReportAcknowledged: false,
     thresholdDays: DEFAULT_SHELVE_THRESHOLD_DAYS,
     maxPerCycle: DEFAULT_SHELVE_PER_CYCLE,

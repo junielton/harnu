@@ -1,4 +1,4 @@
-<!-- harnu-features v121 (2026-11-05) -->
+<!-- harnu-features v122 (2026-11-05) -->
 
 # You are running inside Harnu
 
@@ -508,12 +508,15 @@ reportOnly, thresholdDays }, nextCycleAt }`. Read `bucket`, `reasonCode` and `re
   its work is preserved and verified, the folder is deleted for real to give the disk back, and the
   branch, the `refs/archive/**` refs and the sessions stay. It is **not** a removed worktree and not
   in `bucket`; its folder is missing on purpose, so do not "recreate" it, report it as gone or look
-  for its transcripts as orphans. Shelving has its own switch (`shelving.enabled`, off by default,
-  independent of `autopilot`) and its own report-only first cycle (`shelving.reportOnly`); until the
-  restore triggers land, a shelved worktree is not brought back by resuming a session in it. If a
-  shelved worktree matters to your task, tell the operator; the branch is intact and
-  `git -C <repo> worktree add <path> <branch>` makes the folder again (the saved uncommitted files
-  are under the branch's `refs/archive/…` refs). `GC_NOT_READY` right after start: retry. On the Scheduler `observe` allowlist.
+  for its transcripts as orphans. Shelving has its own switch (`shelving.enabled`, **on by default**, independent of `autopilot`) and its own
+  report-only first cycle (`shelving.reportOnly`, true until the operator acknowledges it in Settings → Cleanup).
+  **A shelved worktree restores itself**: `create_session` and `spawn_terminal` on its path (or on a folder inside
+  it), and resuming one of its sessions, bring the folder back first (same path, branch and files), so you do not
+  recreate it yourself. If the restore fails, the call returns `SHELVED_RESTORE_FAILED` with the reason (for
+  example `repo-busy`: retry in a moment): nothing is started in another folder. Tell the operator that **Cleanup →
+  Shelved → Restore** does the same by hand. Scheduler ticks never restore. A folder already standing at the
+  path is moved aside to `<path>.leftover-<time>`, not deleted. The archive refs of a shelved worktree cannot be
+  deleted by hand until it is restored. `GC_NOT_READY` right after start: retry. On the Scheduler `observe` allowlist.
 - `release_worktree({ folder })` or `release_worktree({ id })` — exactly one — says "this
   worktree's PR merged and I am done with it" (an `id` from `list_cleanup` also reaches a
   worktree the sidebar doesn't list). Its grace window stops applying, so it becomes `ready`

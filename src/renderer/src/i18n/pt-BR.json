@@ -3049,7 +3049,34 @@
       },
       "shelved": {
         "activity": "Worktree `{branch}` guardada — ociosa há {days} d, branch mantida",
-        "activityDetached": "Worktree com HEAD solto guardada — ociosa há {days} d, arquivo mantido"
+        "activityDetached": "Worktree com HEAD solto guardada — ociosa há {days} d, arquivo mantido",
+        "title": "Guardadas",
+        "sub": "{n} worktree · {size} liberados | {n} worktrees · {size} liberados",
+        "subNoSize": "{n} worktree | {n} worktrees",
+        "note": "Pastas que o Harnu removeu por ficarem ociosas. A branch e todas as alterações são mantidas. Abrir uma sessão ou um terminal em uma delas a traz de volta sozinho.",
+        "listLabel": "Worktrees guardadas",
+        "detached": "HEAD solto",
+        "idle": "ociosa há {n} d",
+        "restore": "Restaurar",
+        "restoring": "Restaurando…",
+        "copyCommand": "Copiar comando",
+        "copied": "Copiado",
+        "failure": {
+          "repoBusy": "Outra tarefa do Harnu está trabalhando neste repositório. Tente de novo em instantes.",
+          "inUse": "Uma sessão está trabalhando na pasta desse caminho. Feche-a e tente de novo.",
+          "recordMissing": "O registro do arquivo sumiu, então o Harnu não consegue reconstruir esta pasta. A branch continua lá: copie o comando para obter uma worktree nova nela.",
+          "archiveUnverified": "O arquivo não confere mais, então o Harnu não restaura a partir dele. Nada foi alterado; copie o comando para obter uma worktree nova na branch.",
+          "moveAsideFailed": "Há uma pasta no caminho e ela não pôde ser movida. Mova ou renomeie você mesmo e tente de novo.",
+          "pathExists": "Já existe uma pasta nesse caminho. Mova-a e tente de novo.",
+          "other": "A restauração falhou: {message}. Nada foi perdido e o arquivo está intacto. Tente de novo ou copie o comando para começar uma worktree nova na branch."
+        },
+        "toast": {
+          "restored": "{name} restaurada",
+          "restoredDetached": "{name} restaurada — com HEAD solto no commit arquivado, porque a branch está em uso em outro lugar",
+          "present": "{name} já tinha voltado",
+          "movedAside": "Uma pasta que estava no caminho foi mantida em {path}. Apague quando quiser.",
+          "failed": "Não foi possível restaurar {name}"
+        }
       },
       "toast": {
         "success": "{freed} · {count} item pronto limpo | {freed} · {count} itens prontos limpos",
@@ -3072,6 +3099,15 @@
           "intro": "Limpa worktrees prontas comprovadas (worktrees mergeadas, limpas e ociosas) no timer em segundo plano. O primeiro ciclo depois de ligar só reporta o que encontrou; a limpeza automática começa quando você confirma esse relatório na Limpeza.",
           "label": "Limpar worktrees prontas automaticamente",
           "hint": "Precisa do escaneamento em segundo plano abaixo ligado: a limpeza roda no mesmo timer."
+        },
+        "shelve": {
+          "eyebrow": "Guardar worktrees ociosas",
+          "intro": "Uma worktree cuja branch não tem prova de merge, sem nenhuma sessão nela e sem mexida há {days} dias é guardada: a pasta é removida para liberar disco, enquanto a branch e todas as alterações ficam arquivadas. Ela volta sozinha assim que você abre uma sessão ou um terminal nela, ou aperta Restaurar na Limpeza.",
+          "label": "Guardar worktrees ociosas automaticamente",
+          "hint": "Roda no mesmo timer em segundo plano do Autopilot. Branches nunca são apagadas.",
+          "reportOnly": "A primeira passada só relata o que guardaria; nada é removido até você confirmar.",
+          "ack": "Confirmar o primeiro relatório",
+          "active": "Guardar está ativo. Até {n} worktrees por ciclo."
         },
         "interval": {
           "label": "Rodar a cada",
@@ -3312,11 +3348,14 @@
           "gcDone": "git gc terminou em {repo}",
           "gcFailed": "git gc falhou em {repo}",
           "neverClean": "Este repo está na lista de nunca limpar, então os arquivos dele foram deixados quietos.",
-          "protected": "{n} arquivo foi deixado quieto: a pasta dele está na lista de nunca limpar | {n} arquivos foram deixados quietos: as pastas deles estão na lista de nunca limpar"
+          "protected": "{n} arquivo foi deixado quieto: a pasta dele está na lista de nunca limpar | {n} arquivos foram deixados quietos: as pastas deles estão na lista de nunca limpar",
+          "shelved": "{n} arquivo foi mantido: a worktree dele está guardada e este arquivo é o que a restaura. Restaure-a primeiro (Limpeza → Guardadas). | {n} arquivos foram mantidos: as worktrees deles estão guardadas e estes arquivos são o que as restaura. Restaure-as primeiro (Limpeza → Guardadas)."
         },
         "ageUnknown": "idade desconhecida",
         "deleteOne": "Apagar…",
-        "protected": "Está na lista de nunca limpar"
+        "protected": "Está na lista de nunca limpar",
+        "shelvedTitle": "Worktree guardada — restaure-a primeiro",
+        "restoreFirst": "Restaurar primeiro"
       },
       "trash": {
         "title": "Na lixeira",

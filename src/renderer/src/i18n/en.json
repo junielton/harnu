@@ -3049,7 +3049,34 @@
       },
       "shelved": {
         "activity": "Shelved `{branch}` — idle {days} d, branch kept",
-        "activityDetached": "Shelved detached HEAD — idle {days} d, archive kept"
+        "activityDetached": "Shelved detached HEAD — idle {days} d, archive kept",
+        "title": "Shelved",
+        "sub": "{n} worktree · {size} freed | {n} worktrees · {size} freed",
+        "subNoSize": "{n} worktree | {n} worktrees",
+        "note": "Folders Harnu removed because they sat idle. The branch and every change are kept. Opening a session or terminal in one brings it back by itself.",
+        "listLabel": "Shelved worktrees",
+        "detached": "detached",
+        "idle": "idle {n} d",
+        "restore": "Restore",
+        "restoring": "Restoring…",
+        "copyCommand": "Copy command",
+        "copied": "Copied",
+        "failure": {
+          "repoBusy": "Another Harnu job is working in this repository. Try again in a moment.",
+          "inUse": "A session is working in the folder at that path. Close it, then try again.",
+          "recordMissing": "The archive record is gone, so Harnu cannot rebuild this folder. The branch is still there: copy the command to get a fresh worktree on it.",
+          "archiveUnverified": "The archive no longer checks out, so Harnu will not restore from it. Nothing was changed; copy the command to get a fresh worktree on the branch.",
+          "moveAsideFailed": "A folder is in the way at that path and could not be moved aside. Move or rename it yourself, then try again.",
+          "pathExists": "A folder already exists at that path. Move it aside, then try again.",
+          "other": "Restoring failed: {message}. Nothing was lost and the archive is untouched. Try again, or copy the command to start a fresh worktree on the branch."
+        },
+        "toast": {
+          "restored": "Restored {name}",
+          "restoredDetached": "Restored {name} — detached at the archived commit, because its branch is checked out elsewhere",
+          "present": "{name} was already back",
+          "movedAside": "A folder that was in the way was kept at {path}. Delete it when you like.",
+          "failed": "Could not restore {name}"
+        }
       },
       "toast": {
         "success": "{freed} · {count} ready item cleaned | {freed} · {count} ready items cleaned",
@@ -3072,6 +3099,15 @@
           "intro": "Cleans proven ready worktrees (merged, clean, idle worktrees) on the background timer. The first cycle after you turn it on only reports what it found; automatic cleaning starts once you acknowledge that report in Cleanup.",
           "label": "Clean ready worktrees automatically",
           "hint": "Needs the background scan below to stay on: the cleanup runs on the same timer."
+        },
+        "shelve": {
+          "eyebrow": "Shelving idle worktrees",
+          "intro": "A worktree whose branch is not proven merged, with no session in it, untouched for {days} days is shelved: its folder is removed to free disk while the branch and every change stay archived. It comes back by itself the moment you open a session or a terminal in it, or press Restore in Cleanup.",
+          "label": "Shelve idle worktrees automatically",
+          "hint": "Runs on the same background timer as the autopilot. Branches are never deleted.",
+          "reportOnly": "The first pass only reports what it would shelve; nothing is removed until you acknowledge it.",
+          "ack": "Acknowledge first report",
+          "active": "Shelving is active. Up to {n} worktrees per cycle."
         },
         "interval": {
           "label": "Run every",
@@ -3312,11 +3348,14 @@
           "gcDone": "git gc finished in {repo}",
           "gcFailed": "git gc failed in {repo}",
           "neverClean": "This repo is on the never-clean list, so its archives were left alone.",
-          "protected": "{n} archive was left alone: its folder is on the never-clean list | {n} archives were left alone: their folders are on the never-clean list"
+          "protected": "{n} archive was left alone: its folder is on the never-clean list | {n} archives were left alone: their folders are on the never-clean list",
+          "shelved": "{n} archive was kept: its worktree is shelved and this archive restores it. Restore it first (Cleanup → Shelved). | {n} archives were kept: their worktrees are shelved and these archives restore them. Restore them first (Cleanup → Shelved)."
         },
         "ageUnknown": "age unknown",
         "deleteOne": "Delete…",
-        "protected": "On the never-clean list"
+        "protected": "On the never-clean list",
+        "shelvedTitle": "Shelved worktree — restore it first",
+        "restoreFirst": "Restore first"
       },
       "trash": {
         "title": "In the trash",

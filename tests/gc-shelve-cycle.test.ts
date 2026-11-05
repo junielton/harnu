@@ -1,4 +1,4 @@
-// The shelve cycle (U2.2 AC-1, AC-6, AC-7): off by default, report-only until acknowledged, capped,
+// The shelve cycle (U2.2 AC-1, AC-6, AC-7; U2.3a AC-6): on by default, report-only until acknowledged, capped,
 // locked per repo, self-disabling after a streak of failures, one journal entry per shelve.
 
 import { describe, expect, it } from 'vitest'
@@ -144,9 +144,14 @@ function rig(
   return r
 }
 
-describe('off by default (AC-1)', () => {
+const switchedOff = (over: Partial<GcPrefs> = {}): GcPrefs => {
+  const p = { ...defaultGcPrefs(), ...over }
+  return { ...p, shelve: { ...p.shelve, enabled: false } }
+}
+
+describe('with the switch off (AC-1)', () => {
   it('with the switch off it probes nothing and shelves nothing', async () => {
-    const r = rig(defaultGcPrefs())
+    const r = rig(switchedOff())
     const rec = await runShelveCycle(r.deps, [idle('a'), idle('b')], r.state)
     expect(rec.mode).toBe('off')
     expect(r.probed).toEqual([])
@@ -155,9 +160,25 @@ describe('off by default (AC-1)', () => {
   })
 
   it('the autopilot being on and acknowledged does not switch shelving on', async () => {
-    const p = { ...defaultGcPrefs(), autopilot: true, firstReportAcknowledged: true }
-    const r = rig(p)
+    const r = rig(switchedOff({ autopilot: true, firstReportAcknowledged: true }))
     expect((await runShelveCycle(r.deps, [idle('a')], r.state)).mode).toBe('off')
+  })
+})
+
+describe('on by default, still report-only first (U2.3a AC-6, design C1)', () => {
+  it('a fresh install runs the cycle but only reports: nothing is probed for shelving or removed', async () => {
+    const r = rig(defaultGcPrefs())
+    const rec = await runShelveCycle(r.deps, [idle('a'), idle('b')], r.state)
+    expect(rec.mode).toBe('report')
+    expect(rec.found).toBe(2)
+    expect(r.decisions).toEqual([])
+    expect(r.locks).toEqual([])
+  })
+
+  it('the autopilot being acknowledged does not acknowledge shelving', async () => {
+    const r = rig({ ...defaultGcPrefs(), autopilot: true, firstReportAcknowledged: true })
+    expect((await runShelveCycle(r.deps, [idle('a')], r.state)).mode).toBe('report')
+    expect(r.decisions).toEqual([])
   })
 })
 

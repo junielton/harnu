@@ -15,6 +15,7 @@ import type { StackLeftoverItem } from './gc-stack-leftovers'
 import type { ArchiveEntry, ArchiveRepoGroup, GcArchivesCard } from './archives-core'
 import type { GcTrashCard, TrashListEntry } from './trash-core'
 import type { ShelvedEntry } from './shelve-store'
+import type { ShelvedRestoreFailure } from './shelve-restore-shell'
 import type {
   GcOpinionAck,
   GcOpinionDone,
@@ -330,4 +331,18 @@ export interface GcRecheckResult {
   id: string
   outcome: 'cleared' | 'still-refused' | 'unchecked' | 'unknown-item'
   code?: string
+}
+
+/**
+ * What Cleanup's Restore button gets back (autonomous cleanup U2.3a). `status` is the restore
+ * service's outcome; `reason` and `message` are set only for `failed`, `attached` and `movedAside`
+ * only for `restored` (`movedAside` is where a folder that stood in the way went).
+ */
+export interface ShelveRestoreAck {
+  ok: boolean
+  status: 'not-shelved' | 'present' | 'restored' | 'failed'
+  attached?: boolean
+  movedAside?: string | null
+  reason?: ShelvedRestoreFailure
+  message?: string
 }

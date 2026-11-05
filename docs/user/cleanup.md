@@ -220,13 +220,15 @@ Every removal Harnu makes leaves two things behind: **archive refs** in git (`re
 - **What Harnu can't check is said apart**, never counted as space in the trash: **"5 MB moved to the trash by Harnu (can't check what's still there)"**. That covers cleans made before this record existed, a disk that is not mounted right now (it stays listed until the disk is back), and systems whose trash Harnu cannot read. Where Harnu can't empty it, the strip says where the trash is and asks you to empty it there.
 - An entry you already emptied or restored yourself (and did not trash again) stops counting. If nothing could be emptied, the toast says so and why: the folders are gone, or their disk is not mounted, or they are no longer what Harnu moved, or Harnu has no exact record of that move. It never says "Emptied 0 B". The first trash onto a disk you had never trashed to is recorded too.
 
-### Shelving idle worktrees (off until restore lands)
+### Shelving idle worktrees
 
 A worktree whose branch is **not** proven merged used to wait in Needs review for ever, holding its disk, because Harnu will not delete a branch it cannot prove is safe. Shelving gives the **disk** back without touching the **work**: the folder goes, the branch stays, and everything that was only in the folder is saved first.
 
-**This is not switched on yet.** Shelving has its own switch, off by default, and nothing turns it on for you. The reason is that the ways to bring a shelved worktree back automatically (resuming one of its sessions, opening a new session in it, a **Restore** button) are not built yet, so a session that resumed into a shelved folder would find it missing. They arrive with the change that turns shelving on. There is no control for it in Settings yet either, and no button to acknowledge its first report: the settings are the `shelve` block of `gc-prefs.json` in Harnu's data folder (`enabled`, `thresholdDays`, `maxPerCycle`, `failureLimit`).
+**It is on by default, and it starts by only reporting.** Shelving has its own switch (Settings → Cleanup → _Shelving idle worktrees_), independent of the autopilot. The first pass after you turn it on, or after a fresh install, **only reports** what it would shelve; nothing is removed until you press **Acknowledge first report** in the same section. A settings file that explicitly turned it off stays off.
 
-When it is on, a worktree is shelved only if **all** of these hold:
+**A shelved worktree comes back by itself.** Resume a session that ran in it, open a new session or a terminal in it, or have an agent do the same (`create_session`, `spawn_terminal`), and Harnu restores the folder first: same path, same branch, your uncommitted, untracked and gitignored files back as they were, and the session opens there with its history. Dependency folders such as `node_modules` are not saved, so the session's own setup installs them again. Scheduled workers never restore one. You can also press **Restore** on the **Shelved** card in Cleanup (below the Archives card). If a folder is already standing at that path (a shelve that stopped halfway, or one you made yourself), Harnu **moves it aside** to `<path>.leftover-<time>` and says where, and never deletes it. If the restore cannot work, nothing is started in any other folder: a Claude session shows why, a terminal reports it, and the Shelved row says what to do next (try again in a moment, close the session that is using the folder, or copy the command that makes a fresh worktree on the kept branch).
+
+A worktree is shelved only if **all** of these hold:
 
 - its branch is **not** strongly merged (a merged one is removed the usual way, see above, and leaves no trace);
 - nothing has touched it for **3 days** (configurable): no transcript, commit, session activity or edited file;
@@ -245,7 +247,7 @@ Shelving also stops itself: a cycle shelves at most 3 worktrees, a repository is
 
 Each shelve leaves a line in the journal at the bottom of Cleanup (with the command to recreate the folder) and one entry in the Activity bell: **Shelved `feat/x` — idle 9 d, branch kept**. A shelved worktree is not a removed one: its Claude transcripts are never listed as orphans.
 
-To get a folder back by hand: `git -C <repo> worktree add <path> <branch>`. The files that were only in the folder are in the branch's `refs/archive/…/wip` and `…/shelve/ignored` refs. The Archives card lists those refs like any other archive, so **do not delete them while the worktree is shelved**: they are the only copy of what was in the folder. Agents see shelved worktrees in `list_cleanup` as `shelved`.
+To get a folder back by hand (if you prefer): `git -C <repo> worktree add <path> <branch>`. The files that were only in the folder are in the branch's `refs/archive/…/wip` and `…/shelve/ignored` refs. **The Archives card will not let you delete the archive of a shelved worktree**: it is the only copy of what was in the folder. The row's _Delete_ is disabled with "restore it first", and a **Restore first** button sits next to it. Agents see shelved worktrees in `list_cleanup` as `shelved`.
 
 ### Before the first scan
 

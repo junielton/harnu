@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import SettingHint from './ui/SettingHint.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import Button from './ui/Button.vue'
 import { useGcStore } from '../stores/gc'
 import { toIpc } from '../lib/to-ipc'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
@@ -55,6 +56,11 @@ const BOUNDS: Record<Exclude<NumField, 'minAgeDays'>, { min: number; max: number
 }
 
 const DEBOUNCE_MS = 400
+
+/** Acknowledging the first shelving report has its own channel; the answer is the prefs as saved. */
+async function acknowledgeShelve(): Promise<void> {
+  applyGc(await gc.ackShelveReport())
+}
 
 function intervalOptions(): Array<{ value: number; label: string }> {
   return [
@@ -296,6 +302,57 @@ const EYEBROW_STYLE =
             t('cleanup.gc.settings.cap.suffix')
           }}</span>
         </div>
+      </div>
+    </section>
+
+    <!-- Shelving idle worktrees (autonomous cleanup U2.3a) -->
+    <section style="margin-bottom: 16px" data-testid="cleanup-settings-shelve">
+      <div class="text-text-3" :style="EYEBROW_STYLE">
+        {{ t('cleanup.gc.settings.shelve.eyebrow') }}
+      </div>
+      <p class="text-text-3" style="font-size: 11.5px; line-height: 1.5; margin-bottom: 14px">
+        {{ t('cleanup.gc.settings.shelve.intro', { days: prefs.shelve.thresholdDays }) }}
+      </p>
+
+      <div class="flex items-start justify-between" style="gap: 12px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('cleanup.gc.settings.shelve.label') }}
+          </div>
+          <SettingHint>{{ t('cleanup.gc.settings.shelve.hint') }}</SettingHint>
+        </div>
+        <ToggleSwitch
+          data-testid="gc-shelve"
+          :model-value="prefs.shelve.enabled"
+          :aria-label="t('cleanup.gc.settings.shelve.label')"
+          @update:model-value="(v: boolean) => saveGc({ shelve: { ...prefs!.shelve, enabled: v } })"
+        />
+      </div>
+
+      <div
+        v-if="prefs.shelve.enabled"
+        class="flex items-center justify-between"
+        style="gap: 12px; margin-top: 10px"
+        data-testid="gc-shelve-status"
+      >
+        <p
+          v-if="!prefs.shelve.firstReportAcknowledged"
+          class="text-text-3"
+          style="font-size: 11.5px; line-height: 1.5; flex: 1; min-width: 0"
+        >
+          {{ t('cleanup.gc.settings.shelve.reportOnly') }}
+        </p>
+        <p v-else class="text-text-3" style="font-size: 11.5px; line-height: 1.5; flex: 1">
+          {{ t('cleanup.gc.settings.shelve.active', { n: prefs.shelve.maxPerCycle }) }}
+        </p>
+        <Button
+          v-if="!prefs.shelve.firstReportAcknowledged"
+          variant="soft"
+          data-testid="gc-shelve-ack"
+          @click="acknowledgeShelve"
+        >
+          {{ t('cleanup.gc.settings.shelve.ack') }}
+        </Button>
       </div>
     </section>
 

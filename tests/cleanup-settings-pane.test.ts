@@ -37,6 +37,7 @@ const REAPER = {
 }
 
 let setGc: ReturnType<typeof vi.fn>
+let ackShelve: ReturnType<typeof vi.fn>
 let setReaper: ReturnType<typeof vi.fn>
 
 function stubApi(initial: GcPrefs): void {
@@ -57,9 +58,14 @@ function stubApi(initial: GcPrefs): void {
     cacheMaxAgeDays: Math.min(365, Math.max(1, p.cacheMaxAgeDays))
   }))
   setReaper = ipcFn(async (p: unknown) => p)
+  ackShelve = vi.fn(async () => ({
+    ...initial,
+    shelve: { ...initial.shelve, firstReportAcknowledged: true }
+  }))
   ;(window as unknown as { api: unknown }).api = cloneGuardedApi({
     gcPrefs: vi.fn(async () => initial),
     gcSetPrefs: setGc,
+    gcAckShelveReport: ackShelve,
     gcSnapshot: vi.fn(async () => snapshot),
     gcJobs: vi.fn(async () => []),
     onGcProgress: () => () => {},
@@ -111,8 +117,8 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
     // The shape of the contract (S3 delta 2): GcPrefs minus version / keep / firstReportAcknowledged
     // and the release marks (released / releasedFrom, written by release_worktree, never edited here).
     // `removeVolumes` and `categories.volumes` are gone from the engine as well as from the pane.
-    // `shelve` (autonomous cleanup U2.2) is internal for now: shelving ships switched off and its
-    // Settings control arrives with the change that turns it on (U2.3), so the pane has none yet.
+    // `shelve` is a nested block with its own section (switch and acknowledge), pinned below; it is
+    // not one of the flat fields counted here.
     const editable = Object.keys(GC).filter(
       (k) =>
         ![
@@ -423,5 +429,69 @@ describe('CleanupSettingsPane — copy', () => {
         expect(typeof value, `${locale}:${key}`).toBe('string')
       }
     }
+  })
+})
+
+describe('CleanupSettingsPane — shelving (U2.3a AC-6)', () => {
+  const withShelve = (over: Partial<GcPrefs['shelve']>): GcPrefs => ({
+    ...GC,
+    shelve: { ...GC.shelve, ...over }
+  })
+
+  it('has a switch that shows the stored value', async () => {
+    const on = await mountPane(withShelve({ enabled: true }))
+    expect(tid(on, 'gc-shelve').attributes('aria-checked')).toBe('true')
+    on.unmount()
+    const off = await mountPane(withShelve({ enabled: false }))
+    expect(tid(off, 'gc-shelve').attributes('aria-checked')).toBe('false')
+    off.unmount()
+  })
+
+  it('the switch writes the whole prefs object with only shelve.enabled changed', async () => {
+    const w = await mountPane(withShelve({ enabled: true }))
+    await tid(w, 'gc-shelve').trigger('click')
+    await flushPromises()
+    expect(setGc).toHaveBeenCalledTimes(1)
+    const sent = setGc.mock.calls[0][0]
+    expect(sent).toEqual({
+      ...withShelve({ enabled: true }),
+      shelve: { ...GC.shelve, enabled: false }
+    })
+    expect(Object.keys(sent).sort()).toEqual(Object.keys(defaultGcPrefs()).sort())
+    w.unmount()
+  })
+
+  it('on and not yet acknowledged: says the first pass only reports, and offers the acknowledge action', async () => {
+    const w = await mountPane(withShelve({ enabled: true, firstReportAcknowledged: false }))
+    const status = tid(w, 'gc-shelve-status').text().toLowerCase()
+    expect(status).toContain('only reports')
+    expect(w.find('[data-testid="gc-shelve-ack"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('acknowledging calls the dedicated channel (never a settings write) and the action goes away', async () => {
+    const w = await mountPane(withShelve({ enabled: true, firstReportAcknowledged: false }))
+    await tid(w, 'gc-shelve-ack').trigger('click')
+    await flushPromises()
+    expect(ackShelve).toHaveBeenCalledTimes(1)
+    expect(setGc).not.toHaveBeenCalled()
+    expect(w.find('[data-testid="gc-shelve-ack"]').exists()).toBe(false)
+    expect(tid(w, 'gc-shelve-status').text().toLowerCase()).toContain('active')
+    w.unmount()
+  })
+
+  it('on and acknowledged: says it is active, with no action', async () => {
+    const w = await mountPane(withShelve({ enabled: true, firstReportAcknowledged: true }))
+    expect(tid(w, 'gc-shelve-status').text().toLowerCase()).toContain('active')
+    expect(w.find('[data-testid="gc-shelve-ack"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('off: no status line and no acknowledge action, just what the switch would do', async () => {
+    const w = await mountPane(withShelve({ enabled: false }))
+    expect(w.find('[data-testid="gc-shelve-status"]').exists()).toBe(false)
+    expect(w.find('[data-testid="gc-shelve-ack"]').exists()).toBe(false)
+    expect(tid(w, 'cleanup-settings-shelve').text().toLowerCase()).toContain('comes back by itself')
+    w.unmount()
   })
 })
