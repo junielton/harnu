@@ -3,19 +3,22 @@
  * "The engine"). Hook edges drive it: a session that ends, compacts, or sits idle for
  * {@link LONG_IDLE_MS} is read from its whole transcript, probed for git evidence, planned with
  * {@link planDigest} (a commit, or three user turns), and written as a
- * `sessions/<date>-<id8>` digest followed by a `hot.md` snapshot.
+ * `sessions/<date>-<id8>` digest followed by a `hot.md` snapshot. A folder outside git gets a
+ * digest too (evidence `no-git`), unless its memory root is unsafe ({@link digestTargetAllowed}).
  *
  * Every I/O is injected ({@link DigestEngineDeps}), so the control flow is unit-tested with
  * fakes and the replay runs it with the real reader and git probe; `../memory-digest.ts`
  * supplies the live deps and subscribes it to the hook bridge.
  */
 
+import { homedir } from 'node:os'
 import type { HookTaskEvent } from '../detect/task-state-hub'
 import { pickTitle, type deriveTranscriptTruth } from '../transcript-truth'
 import { formatMemoryDate } from './memory-core'
 import {
   buildHotProposal,
   digestSlug,
+  digestTargetAllowed,
   digestTriggerFor,
   planDigest,
   renderDigest,
@@ -69,6 +72,8 @@ export interface DigestEngineDeps {
     title: string,
     hot: string
   ): Promise<void>
+  /** The checkout whose memory serves `folder` (S-3's unsafe-root guard checks it). */
+  memoryCheckout(folder: string): Promise<string>
   now(): number
   setTimer(fn: () => void, ms: number): unknown
   clearTimer(handle: unknown): void
@@ -131,9 +136,11 @@ export function createDigestEngine(deps: DigestEngineDeps): DigestEngine {
 
     const plan = planDigest({ facts, git, last: st.last ?? null })
     if (plan.action === 'skip') return
-    // Until S-3, a folder that is not a git repository gets no digest.
-    if (plan.evidence === 'no-git') {
-      console.log('[memory-digest] skipped: not a git repository')
+    // Never write a digest into the home directory, the filesystem root, or Claude Code's or
+    // the global memory layer's data (S-3); a git checkout is checked as well as a plain folder.
+    const checkout = await deps.memoryCheckout(session.folder)
+    if (!digestTargetAllowed(checkout, homedir())) {
+      console.log(`[memory-digest] skipped: unsafe memory root ${checkout}`)
       return
     }
 

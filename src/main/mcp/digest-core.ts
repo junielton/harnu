@@ -26,6 +26,7 @@
  * the labels here are the persisted vocabulary.
  */
 
+import * as path from 'node:path'
 import { cutText, type TranscriptFacts } from './digest-transcript'
 
 // ---- Constants (all tunable knobs live here, pinned by tests) ----------------
@@ -543,4 +544,26 @@ export function renderDigest(input: DigestRenderInput): string {
     out = assemble()
   }
   return out
+}
+
+// ---- The memory-root guard (S-3) --------------------------------------------
+
+/**
+ * Whether the digest engine may write into the memory of `checkout` (the folder whose
+ * `.harnu/memory/` would hold the digest). False for the home directory itself, the
+ * filesystem root, and anything inside `<home>/.claude` (Claude Code's data) or
+ * `<home>/.harnu` (the global memory layer, ADR-0024), so a session started in one of
+ * those never gets a digest written there. Pure path math: no fs.
+ */
+export function digestTargetAllowed(checkout: string, home: string): boolean {
+  const target = path.resolve(checkout)
+  const homeDir = path.resolve(home)
+  if (target === path.parse(target).root || target === homeDir) return false
+  return !['.claude', '.harnu'].some((name) => isWithin(target, path.join(homeDir, name)))
+}
+
+/** Whether `target` is `dir` or a path below it (both already resolved). */
+function isWithin(target: string, dir: string): boolean {
+  const rel = path.relative(dir, target)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
 }

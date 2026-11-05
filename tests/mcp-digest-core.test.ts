@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import * as os from 'node:os'
+import { join, parse } from 'node:path'
 import {
   buildHotProposal,
   commitsAfter,
@@ -8,6 +10,7 @@ import {
   DIGEST_GATE,
   DIGEST_MAX_CHARS,
   digestSlug,
+  digestTargetAllowed,
   digestTriggerFor,
   GIT_LOG_FORMAT,
   GIT_LOG_SEP,
@@ -23,7 +26,9 @@ import {
   type DigestRenderInput,
   type GitEvidence
 } from '../src/main/mcp/digest-core'
+import { createDigestEngine } from '../src/main/mcp/digest-engine'
 import { MEMORY_ENTRY_MAX_CHARS } from '../src/main/mcp/memory-core'
+import { deriveTranscriptTruth } from '../src/main/transcript-truth'
 import {
   emptyFacts,
   scanTranscriptLines,
@@ -598,5 +603,51 @@ describe('renderDigest', () => {
     expect(evidence).toContain('- _…and 5 more_')
     expect(evidence).toContain(`**Files (${DIGEST_FILE_CAP + 3}, +${DIGEST_FILE_CAP + 3}/−0)**`)
     expect(evidence).toContain('_(+3 more)_')
+  })
+})
+
+describe('digestTargetAllowed', () => {
+  it('digestTargetAllowed refuses unsafe roots', async () => {
+    const home = join(parse(process.cwd()).root, 'home', 'op')
+    expect(digestTargetAllowed(home, home)).toBe(false)
+    expect(digestTargetAllowed(`${home}/`, home)).toBe(false)
+    expect(digestTargetAllowed(parse(home).root, home)).toBe(false)
+    expect(digestTargetAllowed(join(home, '.claude'), home)).toBe(false)
+    expect(digestTargetAllowed(join(home, '.claude', 'projects', 'x'), home)).toBe(false)
+    expect(digestTargetAllowed(join(home, '.harnu'), home)).toBe(false)
+    expect(digestTargetAllowed(join(home, '.harnu', 'memory'), home)).toBe(false)
+    expect(digestTargetAllowed(join(home, 'notes', '..', '.claude'), home)).toBe(false)
+    // An ordinary folder under the home directory, and look-alike names, are fine.
+    expect(digestTargetAllowed(join(home, 'notes'), home)).toBe(true)
+    expect(digestTargetAllowed(join(home, '.claude-backup'), home)).toBe(true)
+    expect(digestTargetAllowed(join(home, '..claude'), home)).toBe(true)
+    expect(digestTargetAllowed(join(home, 'work', '.claude'), home)).toBe(true)
+
+    // The engine writes nothing, digest or hot, for a refused memory root.
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      for (const root of [os.homedir(), join(os.homedir(), '.claude', 'scratch')]) {
+        const writeDigest = vi.fn(async () => ({ ok: true }))
+        const writeHot = vi.fn(async () => undefined)
+        const engine = createDigestEngine({
+          resolveSession: async () => ({ transcriptPath: '/t/x.jsonl', folder: root }),
+          readFacts: async () => ({ facts: { ...emptyFacts(), userTurns: 3 }, offset: 1 }),
+          readTruth: async () => deriveTranscriptTruth([]),
+          gatherGit: async () => ({ kind: 'not-a-repo' }),
+          writeDigest,
+          writeHot,
+          memoryCheckout: async (folder) => folder,
+          now: () => Date.parse('2026-11-03T12:00:00.000Z'),
+          setTimer: () => 0,
+          clearTimer: () => undefined
+        })
+        await engine.digestNow('s-unsafe', 'ended')
+        expect(writeDigest).not.toHaveBeenCalled()
+        expect(writeHot).not.toHaveBeenCalled()
+        expect(log).toHaveBeenCalledWith(`[memory-digest] skipped: unsafe memory root ${root}`)
+      }
+    } finally {
+      log.mockRestore()
+    }
   })
 })

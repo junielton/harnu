@@ -35,6 +35,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **Session digests no longer need a commit.** A session with at least three of your messages now leaves a digest in project memory even when it committed nothing, marked "none in this session" under Evidence. Each digest also quotes what the session asked you and what you answered, the questions its last message left open, and the last message itself. Your messages are counted over the whole transcript, so a long session's early turns count too.
 
 - **A session is digested when it compacts.** Harnu now listens for Claude Code's compaction hook, so a session that compacts leaves a digest before its context is summarized, alongside the existing digests on end and after 5 idle minutes. The hook is added to your Claude Code settings at the next launch.
+- **Folders outside git get session digests.** A session in a folder that isn't a git repository is now digested like any other, into that folder's `.harnu/memory/` (or your central memory folder when its settings say so), marked `evidence: no-git`. Harnu never writes a digest into your home folder, the root of the disk, or `~/.claude` and `~/.harnu`; a session started in one of those is skipped.
 
 ### Fixed
 
