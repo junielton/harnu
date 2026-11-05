@@ -933,7 +933,8 @@ describe('gc store', () => {
       'opinion',
       'opinionDone',
       'progress',
-      'recovery'
+      'recovery',
+      'shelvedChanged'
     ])
   })
 })
