@@ -486,6 +486,78 @@ describe('createDigestEngine', () => {
     }
   })
 
+  it('keys a git folder by its branch when the transcript names none', async () => {
+    const noBranch = (folder: string) => async (id: string) => ({
+      transcriptPath: `/t/${id}.jsonl`,
+      folder
+    })
+    const hotOf = (branch: string | null, extra = ''): string =>
+      `**Now:**\n> Earlier work\n\nFull digest: [[sessions/2026-11-01-oooooooo]]\n${extra}\n> provenance: author=agent · at=2026-11-01${branch ? ` · branch=${branch}` : ''} · session=o1\n`
+
+    // The folder's own branch is the key: the same one replaces, whatever the transcript said.
+    {
+      const f = fakes({
+        resolveSession: vi.fn(noBranch('/repo')),
+        folderBranch: vi.fn(async () => 'feat/x'),
+        readHot: vi.fn(async () =>
+          hotOf('feat/x', '\n**Parallel:**\n- `feat/y` · 2026-11-01 · Y → [[sessions/y]]')
+        )
+      })
+      await createDigestEngine(f.deps).digestNow('s40', 'ended')
+      expect(f.deps.folderBranch).toHaveBeenCalledWith('/repo')
+      const [, , stampBranch, , hot] = f.deps.writeHot.mock.calls[0] as string[]
+      expect(stampBranch).toBe('feat/x')
+      expect(hot).not.toContain('Earlier work')
+      expect(hot).toContain('no new commits on `feat/x`')
+      // The other branch's parallel line survives a same-branch replace.
+      expect(hot).toContain('**Parallel:**\n- `feat/y` · 2026-11-01 · Y → [[sessions/y]]')
+    }
+
+    // Another branch's hot is kept, and the folder's branch (not its path) is the line's key.
+    {
+      const f = fakes({
+        resolveSession: vi.fn(noBranch('/repo')),
+        folderBranch: vi.fn(async () => 'feat/x'),
+        readHot: vi.fn(async () => hotOf('feat/other'))
+      })
+      await createDigestEngine(f.deps).digestNow('s41', 'ended')
+      const [, , stampBranch, , hot] = f.deps.writeHot.mock.calls[0] as string[]
+      expect(stampBranch).toBe('feat/other')
+      expect(hot).toContain('- `feat/x` · 2026-11-03 ·')
+      expect(hot).not.toContain('`/repo`')
+    }
+
+    // A transcript's own branch wins and the git probe is not asked; a folder outside git is
+    // keyed by its path and the probe is not asked either.
+    {
+      const named = fakes({ folderBranch: vi.fn(async () => 'never') })
+      await createDigestEngine(named.deps).digestNow('s42', 'ended')
+      expect(named.deps.folderBranch).not.toHaveBeenCalled()
+      expect((named.deps.writeHot.mock.calls[0] as string[])[2]).toBe('main')
+
+      const plain = fakes({
+        resolveSession: vi.fn(noBranch('/plain')),
+        gatherGit: vi.fn(async () => ({ kind: 'not-a-repo' as const })),
+        folderBranch: vi.fn(async () => 'never')
+      })
+      await createDigestEngine(plain.deps).digestNow('s43', 'ended')
+      expect(plain.deps.folderBranch).not.toHaveBeenCalled()
+      expect((plain.deps.writeHot.mock.calls[0] as unknown[])[2]).toBeUndefined()
+    }
+
+    // A probe that fails or finds no branch (detached HEAD) leaves the key a path: no stamp.
+    for (const folderBranch of [
+      vi.fn(async () => undefined),
+      vi.fn(async () => {
+        throw new Error('boom')
+      })
+    ]) {
+      const f = fakes({ resolveSession: vi.fn(noBranch('/repo')), folderBranch })
+      await createDigestEngine(f.deps).digestNow('s44', 'ended')
+      expect((f.deps.writeHot.mock.calls[0] as unknown[])[2]).toBeUndefined()
+    }
+  })
+
   it('catches up quiet undigested sessions one after another', async () => {
     const turns: Record<string, number> = { a: 5, b: 3, c: 1, d: 4, home: 6, done: 4 }
     let running = 0

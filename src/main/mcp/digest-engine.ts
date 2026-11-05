@@ -94,6 +94,11 @@ export interface DigestEngineDeps {
   ): Promise<void>
   /** The folder's `hot.md` as it is on disk, or null when it has none (S-7). Absent: none. */
   readHot?(folder: string): Promise<string | null>
+  /**
+   * The branch the folder is on now, from git (omitted when detached or not a repo). The key of
+   * the folder's hot snapshot when the transcript names no branch (S-7). Absent: none.
+   */
+  folderBranch?(folder: string): Promise<string | undefined>
   /** The checkout whose memory serves `folder` (S-3's unsafe-root guard checks it). */
   memoryCheckout(folder: string): Promise<string>
   /**

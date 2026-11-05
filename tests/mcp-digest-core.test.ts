@@ -337,6 +337,81 @@ describe('mergeHot', () => {
     expect(words(big)).toBeLessThanOrEqual(HOT_MAX_WORDS)
   })
 
+  it('mergeHot carries the other branches’ parallel lines over a same-key replace', () => {
+    const input = (key: string, date: string, title: string): HotProposalInput =>
+      hotInput({ title, branch: key, date, digestPage: `sessions/${date}-${key}` })
+    // Branch A digests, then B (A kept, B parallel), then A again: B's line survives.
+    const a1 = mergeHot({
+      current: null,
+      currentKey: null,
+      next: input('a', '2026-11-01', 'A one'),
+      nextKey: 'a'
+    })
+    const b1 = mergeHot({
+      current: stamped(a1, 'a'),
+      currentKey: 'a',
+      next: input('b', '2026-11-02', 'B one'),
+      nextKey: 'b'
+    })
+    const a2 = mergeHot({
+      current: stamped(b1, 'a'),
+      currentKey: 'a',
+      next: input('a', '2026-11-03', 'A two'),
+      nextKey: 'a'
+    })
+    expect(a2).toContain('> A two')
+    expect(a2).not.toContain('A one')
+    expect(parallelLines(a2)).toEqual(['- `b` · 2026-11-02 · B one → [[sessions/2026-11-02-b]]'])
+    // The body is a fresh snapshot with the list after it.
+    expect(a2.indexOf('Full digest: [[sessions/2026-11-03-a]]')).toBeLessThan(
+      a2.indexOf('**Parallel:**')
+    )
+    expect(a2.trimEnd().endsWith('[[sessions/2026-11-02-b]]')).toBe(true)
+
+    // A B digest replaces nothing of A's body: the new A snapshot stays, B's line is upserted.
+    const b2 = mergeHot({
+      current: stamped(a2, 'a'),
+      currentKey: 'a',
+      next: input('b', '2026-11-04', 'B two'),
+      nextKey: 'b'
+    })
+    expect(b2.startsWith(a2.slice(0, a2.indexOf('**Parallel:**')))).toBe(true)
+    expect(parallelLines(b2)).toEqual(['- `b` · 2026-11-04 · B two → [[sessions/2026-11-04-b]]'])
+
+    // A line under the body's own key is dropped, the rest keep their order, at most five stay.
+    const lines = ['c', 'b', 'a', 'd', 'e', 'f', 'g'].map(
+      (k, i) => `- \`${k}\` · 2026-11-0${i + 1} · T ${k} → [[sessions/x-${k}]]`
+    )
+    const crowded = `${a1.trim()}\n\n**Parallel:**\n${lines.join('\n')}`
+    const carried = parallelLines(
+      mergeHot({
+        current: stamped(crowded, 'a'),
+        currentKey: 'a',
+        next: input('a', '2026-11-05', 'A three'),
+        nextKey: 'a'
+      })
+    )
+    expect(carried.map((l) => l.slice(3, 4))).toEqual(['c', 'b', 'd', 'e', 'f'])
+
+    // The cap still holds: a body near it carries as many lines as fit, or none.
+    const fat = mergeHot({
+      current: stamped(`${a1.trim()}\n\n**Parallel:**\n${lines.join('\n')}`, 'a'),
+      currentKey: 'a',
+      next: hotInput({ openQuestions: Array.from({ length: 5 }, () => 'a '.repeat(140).trim()) }),
+      nextKey: 'a'
+    })
+    expect(words(fat)).toBeLessThanOrEqual(HOT_MAX_WORDS)
+    // A null current key or no hot replaces without a list, as before.
+    expect(
+      mergeHot({
+        current: stamped(crowded, null),
+        currentKey: null,
+        next: input('a', '2026-11-05', 'x'),
+        nextKey: 'a'
+      })
+    ).not.toContain('**Parallel:**')
+  })
+
   it('hot fences verbatim text and uses the label table', () => {
     // The table is English and complete.
     expect(Object.keys(MEMORY_LABELS).sort()).toEqual(
