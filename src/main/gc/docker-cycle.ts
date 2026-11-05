@@ -106,8 +106,11 @@ async function runLocked(
     deferred: Math.max(0, actions.length - cfg.maxPerCycle)
   }
   let lastFailure = ''
-  for (const a of actions.slice(0, cfg.maxPerCycle)) {
+  const allowed = actions.slice(0, cfg.maxPerCycle)
+  let attempted = 0
+  for (const a of allowed) {
     if (state.dockerStreak >= cfg.failureLimit) break
+    attempted++
     const outcome = await deps.execute(a)
     if (outcome.ok) {
       state.dockerStreak = 0
@@ -121,6 +124,10 @@ async function runLocked(
       console.warn('[gc] docker action failed', a.kind, a.id, outcome.reason)
     }
   }
+
+  // Allowed by the cap but kept from running by the kill switch: they wait for the next cycle,
+  // exactly like the ones over the cap, so found = acted + refused + failed + deferred.
+  record.deferred += allowed.length - attempted
 
   if (state.dockerStreak >= cfg.failureLimit) {
     record.paused = true
