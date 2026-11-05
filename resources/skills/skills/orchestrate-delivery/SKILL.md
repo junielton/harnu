@@ -27,7 +27,9 @@ optional.
 
 ## Phase 0 — Hydrate
 
-Call `memory_read` (hot + index) for this repo first. Check the board for existing
+Call `memory_read` (hot + index) for this repo first, then `memory_query` for
+"delivery map": an earlier multi-campaign delivery leaves a line there naming its
+next campaign and its map. Check the board for existing
 cards that overlap the objective — extend or re-scope them instead of duplicating.
 Confirm a `WORKTREE.md` manifest exists at the repo root (worktrees are born usable
 through it); if it is missing, flag it as a blocker before dispatching anything to
@@ -216,11 +218,14 @@ objective's slug, the same one the spec and cards use) and show it with
 order:
 
 - **Header** — the objective, the proposed declared end (kind, target, evidence),
-  and the totals: campaigns, chapters, cards, and the estimated number of executor
-  sessions (one per card, plus one shipper per card; verifiers run as subagents).
-- **Per campaign, per chapter, in delivery order** — the cards of the chapter with
-  their dependencies (parallel, or stacked on which card), and the `produces` /
-  `consumes` tokens the order rests on.
+  and the totals: campaigns, chapters, the cards detailed so far, and the estimated
+  number of executor sessions (one per card, plus one shipper per card; verifiers run
+  as subagents; a coarse chapter counts as a stated guess, marked as one).
+- **Per campaign, per chapter, in delivery order** — the `produces` / `consumes`
+  tokens the order rests on and, for the chapter that starts now, its cards with
+  their dependencies (parallel, or stacked on which card). Every later chapter stays
+  coarse, as in the rolling wave (Phase 1): title, tokens and the line "cards:
+  detailed when the chapter starts"; its operator points still go in the table below.
 - **Where the operator must act** — a table of every merge, build, credential or
   decision the delivery needs from them: when it falls (after which card or
   chapter), what exactly they do, and the observable event that clears it. A
@@ -247,9 +252,9 @@ Campaign tokens are checked per campaign (`PREREQ_MISSING`), so a chapter of cam
 N+1 does not list as `consumes` what campaign N produced: name it in that campaign's
 `declaredEnd` and in the map's "Starts from" line instead, and let the first chapter
 verify it on arrival. The boundary and the map's path go to memory in the same turn
-as the go (`memory_append`, `decisions`, one line: `delivery map · <slug> ·
-<n> campaigns · next: <campaign 2 title> · <path>`), so the next start finds them
-through Phase 0.
+as the go (`memory_append`, `decisions`, `watches: [<slug>]`, one line: `delivery
+map · <slug> · <n> campaigns · next: <campaign 2 title> · <path>`). Phase 0 looks it
+up with `memory_query` on "delivery map", so the next start finds the boundary.
 
 **3. Ask for the go — once.** `notify` the operator that the map is ready, then ask
 ONE `AskUserQuestion`: go as mapped (recommended), or change the map. The declared
@@ -264,7 +269,8 @@ answer, nothing is dispatched: the map stays open and the question stays asked.
 bundle (Commit 0) if the delivery needs them (Phase 1), call `campaign_create` for
 the campaign that starts now (when the map has several, each later campaign gets
 its own `campaign_create` at the moment the operator starts it), `mission_create`
-with the whole chapter plan, and go on to Phase 2.
+for the chapter that starts now with its whole step plan (later chapters get theirs
+when they start), and go on to Phase 2.
 
 ### Map template
 
@@ -276,24 +282,22 @@ Keep this shape; the example is a two-campaign objective.
 Objective: serve the Acme catalog from the new storefront stack.
 Declared end (proposed): kind `code` · target "catalog pages render from the new
 stack on main" · evidence "catalog e2e green on main".
-Totals: 2 campaigns · 4 chapters · 8 cards · ~8 executor sessions + 8 shippers.
+Totals: 2 campaigns · 4 chapters · 3 cards detailed (Ch. 1) · ~3 executor sessions +
+3 shippers for Ch. 1, ~6 more estimated for Ch. 2–4 (a guess).
 
 ## Campaign 1 — Foundations (starts now)
 
 ### Ch. 1 — Images on the CDN · produces `images-on-cdn`
 
-| Card              | Depends on | Parallel/stacked |
-| ----------------- | ---------- | ---------------- |
-| cdn-upload-script | —          | parallel         |
-| image-url-helper  | —          | parallel         |
+| Card              | Depends on       | Parallel/stacked |
+| ----------------- | ---------------- | ---------------- |
+| cdn-upload-script | —                | parallel         |
+| image-url-helper  | —                | parallel         |
+| image-tests       | image-url-helper | stacked          |
 
 ### Ch. 2 — Page templates · consumes `images-on-cdn` · produces `page-templates`
 
-| Card              | Depends on        | Parallel/stacked |
-| ----------------- | ----------------- | ---------------- |
-| product-template  | image-url-helper  | stacked          |
-| category-template | product-template  | stacked          |
-| template-tests    | category-template | stacked          |
+Cards: detailed when the chapter starts.
 
 ## Campaign 2 — Cutover (starts when you start it)
 
@@ -301,16 +305,11 @@ Starts from: `page-templates` on main (verified by Ch. 3's first card).
 
 ### Ch. 3 — Content migration
 
-| Card            | Depends on | Parallel/stacked |
-| --------------- | ---------- | ---------------- |
-| migrate-catalog | —          | parallel         |
-| redirect-map    | —          | parallel         |
+Cards: detailed when the chapter starts.
 
 ### Ch. 4 — Switch traffic
 
-| Card         | Depends on                    | Parallel/stacked |
-| ------------ | ----------------------------- | ---------------- |
-| traffic-flip | migrate-catalog, redirect-map | stacked          |
+Cards: detailed when the chapter starts.
 
 ## Where you act
 
@@ -865,8 +864,9 @@ successor needs only a pointer:
 
 1. `create_session { folder, prePrompt }` into this folder, the prePrompt naming the
    mission id, your session id as the owner, and "run `orchestrate-delivery`
-   Resume"; the successor passes your session id as `sessionId` / `ownerSessionId`
-   on every verb, exactly as a tick subagent does.
+   Resume". Should the successor hold `mcp__harnu__*` verbs (see the caveat below), it
+   passes your session id as `sessionId` / `ownerSessionId` on every one, as a tick
+   subagent does.
 2. `orchestrator_arm { sessionId: <the successor's id from the ACK> }`.
 3. `mission_log` the handover (old and new session id, why) and take the
    `notify_when_idle` subscription on the successor.

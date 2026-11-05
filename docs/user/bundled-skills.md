@@ -140,7 +140,7 @@ file. What that changes for you:
   and waits for it to clear rather than handing the work over.
 - **You see the whole plan before anything starts, and say go.** Before the
   orchestrator dispatches a single session, it writes a delivery map and opens it
-  beside the session: the chapters in order, the cards in each with what they depend
+  beside the session: the chapters in order, the cards of the chapter that starts now with what they depend
   on, the points where you have to act (a merge, a build, a decision), roughly how
   many sessions it will use, and which campaign each chapter belongs to. Nothing is
   dispatched until you answer with a clear go; "sounds good" is not one, and the

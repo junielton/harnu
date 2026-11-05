@@ -1118,7 +1118,7 @@ too: `orchestrate-delivery` declares ONE campaign (`campaign_create`, with
 `consumes`/`produces` tokens) for an objective of more than one chapter — on `PREREQ_MISSING`
 it re-orders, never `force` — details only the next chapter to steps (`mission_create
 { campaignId, chapterId }`), and files a detour as `mission_add_step { required: false,
-discoveredFrom }`; single-chapter work stays mission-only. Before dispatching anything, `orchestrate-delivery` renders a delivery map (`.harnu/out/<slug>/delivery-map.md`, opened with `open_file`: chapters, cards, the points where the operator must act, session estimate, campaign boundaries) and waits for the operator's go; an objective too big for one campaign is split into sequential campaigns, each started by the operator, never by a handoff prompt. A `mission` tick reads each step's
+discoveredFrom }`; single-chapter work stays mission-only. Before dispatching anything, `orchestrate-delivery` renders a delivery map (`.harnu/out/<slug>/delivery-map.md`, opened with `open_file`: chapters, the cards of the chapter that starts now, the points where the operator must act, session estimate, campaign boundaries) and waits for the operator's go; an objective too big for one campaign is split into sequential campaigns, each started by the operator, never by a handoff prompt. A `mission` tick reads each step's
 `gates` and the `ledger` from `mission_get` (zero `gh pr view`, no `get_fleet`), opens a side
 step on a red gate and escalates to the You lane with age and risk, never writing a verdict.
 `status` renders the campaign headline `Ch. N/M · Step a/b` from `campaign_get` and
