@@ -37,6 +37,7 @@ const REQUESTS = [
 ]
 const EVENTS = [
   'gc:cycle',
+  'gc:docker:watch',
   'gc:done',
   'gc:opinion:done',
   'gc:opinion:result',

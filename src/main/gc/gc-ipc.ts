@@ -21,21 +21,22 @@ import { trashTranscriptsRecorded } from './gc-orphan-trash'
 import { appendTombstone } from '../reaper/journal'
 import { defaultTrashEnv } from './trash-shell'
 import { runStackLeftoverCleanup, type StackLeftoverItem } from './gc-stack-leftovers'
-import { dockerActions, runDocker, scanContainers } from '../containers/containers-shell'
+import {
+  dockerActions,
+  runDocker,
+  scanContainers,
+  spawnDockerStream
+} from '../containers/containers-shell'
 import {
   appendTombstone as appendContainersTombstone,
   journalFile as containersJournalFile,
   readJournal as readContainersJournal
 } from '../containers/containers-journal'
 import { defaultPrefs as defaultContainersPrefs } from '../containers/containers-prefs'
-import { spawn } from 'node:child_process'
-import { createInterface } from 'node:readline'
-import { spawnEnvOnce } from '../appimage-env'
 import {
   readBridgeCapacity,
   readEmptyComposeNetworks,
-  watchNetworkEvents,
-  type EventsSpawn
+  watchNetworkEvents
 } from '../containers/docker-facts-shell'
 import { createDockerGarbage } from './docker-garbage-shell'
 import { buildNotificationOptions } from '../notifications'
@@ -539,30 +540,6 @@ export async function registerGcHandlers(
 
   // Capacity watcher (U3.6): free bridge slots on a short trigger, not only on the hourly cycle. It
   // runs the SAME composed Docker planners, lock and kill switch as the cycle's Docker slot.
-  const dockerEnv = await spawnEnvOnce()
-  const spawnEvents: EventsSpawn = (args) => {
-    const child = spawn('docker', [...args], {
-      env: dockerEnv,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'ignore']
-    })
-    let exited = false
-    return {
-      onLine: (cb) => createInterface({ input: child.stdout! }).on('line', cb),
-      onExit: (cb) => {
-        const once = (): void => {
-          if (exited) return
-          exited = true
-          cb()
-        }
-        child.on('exit', once)
-        child.on('error', once)
-      },
-      kill: () => {
-        child.kill()
-      }
-    }
-  }
   let lastWatchKey = ''
   const capacityPassDeps = {
     prefs: () => prefs,
@@ -584,7 +561,7 @@ export async function registerGcHandlers(
       lastWatchKey = key
       send('gc:docker:watch', rec)
     },
-    subscribe: (onEvent) => watchNetworkEvents({ spawn: spawnEvents }, () => onEvent()),
+    subscribe: (onEvent) => watchNetworkEvents({ spawn: spawnDockerStream }, () => onEvent()),
     intervalMs: CAPACITY_INTERVAL_MS,
     debounceMs: CAPACITY_DEBOUNCE_MS
   })

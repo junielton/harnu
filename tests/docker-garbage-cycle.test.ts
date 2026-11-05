@@ -102,7 +102,7 @@ describe('Docker garbage in the cycle slot (AC-3)', () => {
     expect(rec).toMatchObject({ mode: 'report', found: 3, acted: 0 })
     expect(r.calls).toEqual([])
     expect(r.tombstones).toEqual([])
-    expect(r.notices.join(' ')).toMatch(/3 Docker items would be cleaned/)
+    expect(r.notices.join(' ')).toMatch(/3 Docker items would be handled/)
   })
 
   it('after acknowledgement it clears the 2 networks and the orphan, journaled as the autopilot', async () => {

@@ -930,6 +930,7 @@ describe('gc store', () => {
     await gc.init()
     expect(Object.keys(api.push).sort()).toEqual([
       'cycle',
+      'dockerWatch',
       'done',
       'opinion',
       'opinionDone',

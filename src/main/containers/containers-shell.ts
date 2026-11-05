@@ -9,7 +9,8 @@
  * ADR-0001; every parser it relies on is unit-tested in the core.
  */
 
-import { execFile, type ExecFileOptions } from 'node:child_process'
+import { execFile, spawn, type ChildProcess, type ExecFileOptions } from 'node:child_process'
+import { createInterface } from 'node:readline'
 import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import { spawnEnvOnce } from '../appimage-env'
@@ -35,6 +36,7 @@ import {
   type KnownFolder
 } from './containers-core'
 import { bucketLookup } from '../gc/gc-buckets'
+import type { EventsProcess } from './docker-facts-shell'
 import type { DockerBatchResult } from './containers-actions'
 import type { ContainersSnapshot, Tombstone } from './containers-wire'
 
@@ -75,6 +77,46 @@ export function runDocker(
   opts: Omit<ExecFileOptions, 'env'>
 ): Promise<{ stdout: string }> {
   return runTool('docker', args, opts)
+}
+
+/**
+ * A long-lived read-only docker stream (`docker events …`) for the capacity watcher (U3.6), spawned
+ * here because this file is the only one that names the docker binary (ADR-0014 §2). Same login-shell
+ * PATH as every other call. The process starts as soon as the environment is known; `onLine` and
+ * `onExit` are registered synchronously by the caller, so nothing is missed. A failed start is an exit.
+ */
+export function spawnDockerStream(args: readonly string[]): EventsProcess {
+  const lineCbs: Array<(line: string) => void> = []
+  const exitCbs: Array<() => void> = []
+  let child: ChildProcess | null = null
+  let killed = false
+  let exited = false
+  const exit = (): void => {
+    if (exited) return
+    exited = true
+    for (const cb of exitCbs) cb()
+  }
+  void spawnEnvOnce()
+    .then((env) => {
+      if (killed) return
+      child = spawn('docker', [...args], {
+        env,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore']
+      })
+      createInterface({ input: child.stdout! }).on('line', (l) => lineCbs.forEach((cb) => cb(l)))
+      child.on('exit', exit)
+      child.on('error', exit)
+    })
+    .catch(exit)
+  return {
+    onLine: (cb) => void lineCbs.push(cb),
+    onExit: (cb) => void exitCbs.push(cb),
+    kill: () => {
+      killed = true
+      child?.kill()
+    }
+  }
 }
 
 /**
