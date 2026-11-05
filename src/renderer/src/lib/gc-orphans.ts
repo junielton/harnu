@@ -67,18 +67,30 @@ export function transcriptExpectedFor(item: OrphanTranscriptItem): GcExpected {
  */
 export function transcriptCleanRequest(
   items: readonly OrphanTranscriptItem[],
-  notFoundAck = false
+  notFoundAck = false,
+  undigestedAck = false
 ): CleanRequest {
   const expected: Record<string, GcExpected> = {}
   for (const i of items) expected[i.id] = transcriptExpectedFor(i)
   const ids = items.map((i) => i.id)
   const notFoundIds = items.filter((i) => i.proof === 'not-found').map((i) => i.id)
+  void undigestedAck // red-commit stub: not wired yet
   const options: GcCleanOptions & { expected: Record<string, GcExpected> } = {
     expected,
     confirmed: [...ids],
     ...(notFoundAck && notFoundIds.length > 0 ? { confirmedNotFound: notFoundIds } : {})
   }
   return { ids, options }
+}
+
+export interface OrphanDigestState {
+  kind: 'none' | 'digested' | 'partial'
+  missing: number
+}
+
+/** Stub (red commit): replaced by the real reading in the green commit. */
+export function orphanDigestState(item: OrphanTranscriptItem): OrphanDigestState {
+  throw new Error(`not implemented: ${item.id}`)
 }
 
 const sorted = (xs: readonly string[]): string[] => [...xs].sort()
