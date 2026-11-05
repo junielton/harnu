@@ -27,8 +27,7 @@ Harnu writes the session digests in `sessions/` on its own, from the hooks it al
 - **A session needs a commit or at least three messages from you.** A shorter session with no commit leaves no digest, and a digest is not written again when nothing changed since the last one.
 - **A digest without commits says so.** Its header line ends with `evidence: no-commits` and its Evidence section reads "none in this session", so a session that researched, planned or reviewed is still recorded without claiming work it didn't commit.
 - **What it records:** the git evidence (commits, files changed, uncommitted changes), what the session asked you and what you answered, the questions its last message left open, and that last message, all quoted word for word rather than paraphrased.
-
-For now only sessions in a git repository get a digest; a folder that isn't one is skipped.
+- **A folder that isn't a git repository gets digests too.** They go to that folder's own `.harnu/memory/` (or to your central memory folder, if the folder's memory settings say so), their header line ends with `evidence: no-git`, and the Evidence section says there is no git evidence; everything else is recorded the same way. Harnu never writes a digest into your home folder itself, the root of the disk, or anything inside `~/.claude` or `~/.harnu`: a session started there is skipped.
 
 ## The memory pane
 

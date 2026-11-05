@@ -556,8 +556,14 @@ export function renderDigest(input: DigestRenderInput): string {
  * those never gets a digest written there. Pure path math: no fs.
  */
 export function digestTargetAllowed(checkout: string, home: string): boolean {
-  void checkout
-  void home
-  void path
-  throw new Error('not implemented')
+  const target = path.resolve(checkout)
+  const homeDir = path.resolve(home)
+  if (target === path.parse(target).root || target === homeDir) return false
+  return !['.claude', '.harnu'].some((name) => isWithin(target, path.join(homeDir, name)))
+}
+
+/** Whether `target` is `dir` or a path below it (both already resolved). */
+function isWithin(target: string, dir: string): boolean {
+  const rel = path.relative(dir, target)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
 }
