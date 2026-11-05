@@ -11138,7 +11138,12 @@ now is not), and no existing folder spells the same slug.
   `MessagesSquare` icon (`--text-4`, 14px); the folder's name in 12px mono `--text` (`orphan-folder`, full
   path as the tooltip) over a one-line meta in 11px `--text-4`: "{n} sessions · last {ago}"; when the project
   folder also holds Claude's auto-memory notes, a `Warning`-ink chip **"includes memory notes"**
-  (`orphan-memory`, 10.5px, `--warning-soft` / `--warning-line`). The size right (13px, tabular), then an
+  (`orphan-memory`, 10.5px, `--warning-soft` / `--warning-line`). Right after it, a **digest chip**
+  (`orphan-digest`, same shape and size as the memory chip, `data-state` says which): **"Digested"** in the
+  Badge _Success_ triple (`--green-soft` / `--green` / `--green-line`) when every session worth a digest
+  (at least three of your messages) has one in the owning repo's memory, **"{n} not digested"** in the
+  memory chip's Warning triple when `n` of them have none, and no chip when none is worth a digest or
+  the gather did not say. The size right (13px, tabular), then an
   icon-only **Delete** button (`Trash2`, red on hover, `aria-label` "Delete the transcripts of {name}",
   `orphan-delete`), disabled while that row's delete is running.
 - **Confirm dialog** (`CleanupTranscriptsConfirmDialog.vue`, `data-testid="orphan-dialog"`, the bulk
@@ -11149,6 +11154,16 @@ now is not), and no existing folder spells the same slug.
   has memory notes a second line "{n} of them also hold Claude memory notes for that folder."
   (`orphan-dialog-memory`); footer "{n} folders · {size}" (`orphan-dialog-total`), **Cancel**
   (focused first) and **Move to trash** (`Trash2`, Danger). Esc closes the dialog only.
+- **Undigested sessions (memory U1 S-6).** When any listed row has sessions with no digest, each such row
+  gets a third line in 11px `--text-4` (`orphan-dialog-digest`): "{n} not digested · digests are kept in
+  {home}" (the repo folder, full path as the tooltip), or "No repository was found for this folder, so no
+  digest can be written." when there is none. Below the recoverable callout a second Warning callout
+  (`orphan-dialog-undigested`, `TriangleAlert`) says "{n} sessions in this selection have no digest yet.
+  Trashing them loses what they did." and, when a repository exists for at least one of them, "Cancel to
+  keep them: Harnu tries the digest again on the next scan." Under it a checkbox **"Trash without a
+  digest"** (`orphan-dialog-undigested-ack`); **Move to trash stays disabled until it is ticked**, together
+  with the not-found box when that applies. Cancel is always the way out, so a project with undigested
+  sessions is never a dead end. Ticking sends the undigested ids in `confirmedUndigested`.
 - **Proven gone, or only "Folder not found".** A folder counts as gone only when that is **positively
   proven**: Harnu removed it itself (its own ledger), git lists it as prunable in a repo that still exists,
   or it sits under a known worktrees parent (`<repo>/.claude/worktrees`, `<repo>-worktrees`) that exists
@@ -11162,7 +11177,7 @@ now is not), and no existing folder spells the same slug.
   ticked**. The recency rule (nothing written in the last 24 hours) applies to both groups, and both go to
   the trash.
 - Confirming sends `gc:clean(ids, { confirmed, expected })` (plus `confirmedNotFound` for the ticked
-  not-found ids), each id `transcripts:<slug>` confirmed by its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
+  not-found ids and `confirmedUndigested` for the ticked undigested ids), each id `transcripts:<slug>` confirmed by its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
   or is no longer an orphan. A refusal is shown by the usual toast.
 
 **Left by removed worktrees (unit D, AC-D3).** A fourth block on the Docker card, drawn only when the

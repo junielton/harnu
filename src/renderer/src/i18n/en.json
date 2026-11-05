@@ -3065,6 +3065,10 @@
           "ack": "I checked: this folder is really gone, not on a drive that's unplugged."
         },
         "memory": "includes memory notes",
+        "digest": {
+          "done": "Digested",
+          "partial": "{n} not digested"
+        },
         "confirm": {
           "title": "Move {n} transcript folder to the trash? | Move {n} transcript folders to the trash?",
           "subtitle": "The folders these sessions ran in are gone, so Claude can no longer resume them here.",
@@ -3072,6 +3076,13 @@
           "recoverable": "They go to the OS trash, so you can bring them back.",
           "memory": "{n} of them also holds Claude memory notes for that folder. | {n} of them also hold Claude memory notes for that folder.",
           "total": "{n} folder · {size} | {n} folders · {size}",
+          "undigested": {
+            "summary": "{n} session in this selection has no digest yet. Trashing it loses what it did. | {n} sessions in this selection have no digest yet. Trashing them loses what they did.",
+            "retry": "Cancel to keep them: Harnu tries the digest again on the next scan.",
+            "row": "{n} not digested · digests are kept in {home}",
+            "noHome": "No repository was found for this folder, so no digest can be written.",
+            "ack": "Trash without a digest"
+          },
           "confirm": "Move to trash"
         }
       },

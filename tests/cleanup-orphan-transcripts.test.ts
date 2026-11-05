@@ -275,7 +275,7 @@ describe('"Folder not found": missing, but nothing proves it gone (delta-2 item 
       const w = await open([item('a')])
       expect(q('[data-testid="orphan-dialog-ack"]')).toBeNull()
       q('[data-testid="orphan-dialog-confirm"]')!.click()
-      expect(w.emitted('confirm')![0]).toEqual([{ notFoundAck: false }])
+      expect(w.emitted('confirm')![0]).toEqual([{ notFoundAck: false, undigestedAck: false }])
     })
 
     it('a not-found dialog shows the full paths and will not confirm until the box is ticked', async () => {
@@ -292,7 +292,7 @@ describe('"Folder not found": missing, but nothing proves it gone (delta-2 item 
       await flushPromises()
       expect((q('[data-testid="orphan-dialog-confirm"]') as HTMLButtonElement).disabled).toBe(false)
       q('[data-testid="orphan-dialog-confirm"]')!.click()
-      expect(w.emitted('confirm')![0]).toEqual([{ notFoundAck: true }])
+      expect(w.emitted('confirm')![0]).toEqual([{ notFoundAck: true, undigestedAck: false }])
     })
   })
 })
@@ -372,7 +372,10 @@ describe('memory digests on orphaned transcripts (S-6)', () => {
       ])
       const rows = w.findAll('[data-testid="orphan-row"]')
       expect(
-        rows.map((r) => r.find('[data-testid="orphan-digest"]').attributes('data-state'))
+        rows.map((r) => {
+          const chip = r.find('[data-testid="orphan-digest"]')
+          return chip.exists() ? chip.attributes('data-state') : undefined
+        })
       ).toEqual(['digested', 'partial', undefined, 'partial'])
     })
   })

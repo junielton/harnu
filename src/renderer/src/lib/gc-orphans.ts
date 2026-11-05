@@ -64,6 +64,8 @@ export function transcriptExpectedFor(item: OrphanTranscriptItem): GcExpected {
 /**
  * The `gc:clean` payload for these items: every id confirmed on its own, each with the facts shown.
  * A not-found folder also carries the stronger confirm, but only when the operator ticked "I checked".
+ * Undigested items (sessions with no digest in the owning repo's memory) go in `confirmedUndigested`
+ * only when the operator ticked "Trash without a digest"; main refuses them otherwise.
  */
 export function transcriptCleanRequest(
   items: readonly OrphanTranscriptItem[],
@@ -74,11 +76,12 @@ export function transcriptCleanRequest(
   for (const i of items) expected[i.id] = transcriptExpectedFor(i)
   const ids = items.map((i) => i.id)
   const notFoundIds = items.filter((i) => i.proof === 'not-found').map((i) => i.id)
-  void undigestedAck // red-commit stub: not wired yet
+  const undigestedIds = undigestedItems(items).map((i) => i.id)
   const options: GcCleanOptions & { expected: Record<string, GcExpected> } = {
     expected,
     confirmed: [...ids],
-    ...(notFoundAck && notFoundIds.length > 0 ? { confirmedNotFound: notFoundIds } : {})
+    ...(notFoundAck && notFoundIds.length > 0 ? { confirmedNotFound: notFoundIds } : {}),
+    ...(undigestedAck && undigestedIds.length > 0 ? { confirmedUndigested: undigestedIds } : {})
   }
   return { ids, options }
 }
@@ -88,9 +91,21 @@ export interface OrphanDigestState {
   missing: number
 }
 
-/** Stub (red commit): replaced by the real reading in the green commit. */
+/**
+ * What the row's digest chip says. `digested`: every session worth a digest has one; `partial`:
+ * `missing` of them have none; `none`: nothing is worth a digest, or the gather did not say (an older
+ * item carries no `digest`), so the row makes no claim either way.
+ */
 export function orphanDigestState(item: OrphanTranscriptItem): OrphanDigestState {
-  throw new Error(`not implemented: ${item.id}`)
+  const d = item.digest
+  if (!d || d.total <= 0) return { kind: 'none', missing: 0 }
+  if (d.done >= d.total) return { kind: 'digested', missing: 0 }
+  return { kind: 'partial', missing: d.total - d.done }
+}
+
+/** The items the operator must explicitly choose to trash without a digest. */
+export function undigestedItems(items: readonly OrphanTranscriptItem[]): OrphanTranscriptItem[] {
+  return items.filter((i) => orphanDigestState(i).kind === 'partial')
 }
 
 const sorted = (xs: readonly string[]): string[] => [...xs].sort()

@@ -35,6 +35,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **Browser has its own button in the Topbar.** The globe button sits right next to Terminal and opens a browser pane in one click, where before it was hidden one step deeper in the small arrow beside the Split button. That arrow is gone, since Terminal was the only other thing in it.
 
+- **Cleanup shows which transcripts were digested.** A row in "Other leftovers" for the transcripts of a folder that is gone now has a green **Digested** chip when every session that counts has a digest in project memory, and an amber **N not digested** chip when some do not. The confirm lists how many sessions have no digest and where digests are kept, and **Move to trash** stays off until you tick **Trash without a digest**; Cancel keeps the folder. This is the way forward for the projects that Cleanup would otherwise refuse.
+
 - **Session digests no longer need a commit.** A session with at least three of your messages now leaves a digest in project memory even when it committed nothing, marked "none in this session" under Evidence. Each digest also quotes what the session asked you and what you answered, the questions its last message left open, and the last message itself. Your messages are counted over the whole transcript, so a long session's early turns count too.
 
 - **A session is digested when it compacts.** Harnu now listens for Claude Code's compaction hook, so a session that compacts leaves a digest before its context is summarized, alongside the existing digests on end and after 5 idle minutes. The hook is added to your Claude Code settings at the next launch.
