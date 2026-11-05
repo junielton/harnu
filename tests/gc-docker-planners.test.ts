@@ -135,7 +135,9 @@ describe('the Docker slot with the pause planner', () => {
     }))
     const r = deps(acked({ failureLimit: 2 }), [pause])
     const record = await runDockerCycle(r.d, createCycleState())
-    expect(record).toMatchObject({ failed: 2, paused: true })
+    expect(record).toMatchObject({ failed: 2, paused: true, deferred: 1 })
+    // found = acted + refused + failed + deferred, so nothing is lost from the digest.
+    expect(record.found).toBe(record.acted + record.refused + record.failed + record.deferred)
     expect(pause.executed).toEqual(['a', 'b'])
     expect(r.disabled()).toBe(1)
   })
