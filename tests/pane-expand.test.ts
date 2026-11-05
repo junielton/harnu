@@ -105,7 +105,9 @@ vi.mock('../src/renderer/src/lib/terminalMetrics', () => ({
 // except when a test asks for the real xterm-backed HelperPane.
 vi.mock('../src/renderer/src/lib/pane-components', async () => {
   const { defineComponent, h } = await import('vue')
-  const Real = (await import('../src/renderer/src/components/HelperPane.vue')).default
+  const actual = await vi.importActual<typeof import('../src/renderer/src/lib/pane-components')>(
+    '../src/renderer/src/lib/pane-components'
+  )
   const probe = { mounted: 0, unmounted: 0 }
   ;(globalThis as unknown as { __probe: typeof probe }).__probe = probe
   const Probe = defineComponent({
@@ -123,7 +125,13 @@ vi.mock('../src/renderer/src/lib/pane-components', async () => {
     }
   })
   return {
-    paneComponents: new Proxy({}, { get: () => (hoisted.mode.real ? Real : Probe) })
+    paneComponents: new Proxy(
+      {},
+      {
+        get: (_t, type: string) =>
+          hoisted.mode.real ? (actual.paneComponents as Record<string, unknown>)[type] : Probe
+      }
+    )
   }
 })
 
@@ -157,6 +165,8 @@ import { i18n } from '@renderer/i18n'
 import App from '../src/renderer/src/App.vue'
 import HelperStack from '../src/renderer/src/components/HelperStack.vue'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
+import SettingsDialog from '../src/renderer/src/components/SettingsDialog.vue'
+import { useUiStore } from '../src/renderer/src/stores/ui'
 import { useSettingsStore } from '../src/renderer/src/stores/settings'
 import * as layoutModule from '../src/renderer/src/stores/layout'
 import { useLayoutStore } from '../src/renderer/src/stores/layout'
@@ -202,7 +212,12 @@ function stubApi(persisted: Record<string, unknown> = {}): void {
       ptyDestroy: vi.fn(),
       ptyWrite: vi.fn(),
       ptyResize,
-      browserDrag
+      browserDrag,
+      // The file-backed panes read through these; a refusal renders their own error state.
+      markdownRead: vi.fn(async () => ({ ok: false, code: 'not-found' })),
+      canvasRead: vi.fn(async () => ({ ok: false, code: 'not-found' })),
+      explorerListDir: vi.fn(async () => ({ entries: [], error: 'read-failed' })),
+      explorerSearch: vi.fn(async () => ({ results: [], truncated: false }))
     } as Record<string, unknown>,
     {
       get: (target, key: string) => {
@@ -433,6 +448,56 @@ describe('enter and exit', () => {
     expect(helpers.expandedPaneIdForCurrentWorktree).toBeNull()
   })
 
+  it('every helper pane kind has the Expand to window button, in the same place, and it toggles', async () => {
+    hoisted.mode.real = true
+    seedFolder(FOLDER, 's1')
+    useSessionsStore().select('s1')
+    const helpers = useHelpersStore()
+    expect(typeof helpers.toggleExpandPane).toBe('function')
+    const ids: Record<string, string> = {
+      shell: helpers.addShellHelper(FOLDER, FOLDER),
+      markdown: helpers.addMarkdownHelper(FOLDER, `${FOLDER}/README.md`, FOLDER),
+      memory: helpers.addMemoryHelper(FOLDER, FOLDER),
+      explorer: helpers.addExplorerHelper(FOLDER, FOLDER),
+      canvas: helpers.addCanvasHelper(FOLDER, `${FOLDER}/board.harnucanvas.json`, FOLDER),
+      browser: helpers.addBrowserHelper(FOLDER, {
+        paneId: 'bp-test',
+        name: '',
+        url: 'about:blank',
+        openedBy: 'operator',
+        partition: 'operator',
+        ownerSessionId: null
+      })
+    }
+    wrapper = mount(HelperStack, { attachTo: document.body, global: { plugins: [i18n] } })
+    for (let i = 0; i < 8; i++) {
+      await flushPromises()
+      await nextTick()
+    }
+    const wrappers = wrapper.findAll('[data-island="helper-pane"]')
+    expect(wrappers).toHaveLength(Object.keys(ids).length)
+    for (const [index, [kind, id]] of Object.entries(ids).entries()) {
+      const wrap = wrappers[index]
+      expect(wrap, `${kind}: pane is rendered`).toBeDefined()
+      const header = wrap!.get('header')
+      const buttons = header.findAll('button')
+      const labels = buttons.map((b) => b.attributes('aria-label'))
+      const at = labels.indexOf('Expand to window')
+      const maximizeAt = labels.findIndex((l) => l === 'Maximize')
+      expect(at, `${kind}: has an Expand to window button`).toBeGreaterThanOrEqual(0)
+      expect(at, `${kind}: right before Maximize`).toBe(maximizeAt - 1)
+      const button = buttons[at]
+      expect(button.attributes('aria-pressed')).toBe('false')
+      await button.trigger('click')
+      expect(helpers.expandedPaneIdForCurrentWorktree, `${kind}: click expands it`).toBe(id)
+      const pressed = wrap!.get('header [aria-pressed="true"]')
+      expect(pressed.attributes('aria-label')).toBe('Exit expanded view')
+      expect(pressed.classes(), `${kind}: accent ink while expanded`).toContain('text-accent')
+      await pressed.trigger('click')
+      expect(helpers.expandedPaneIdForCurrentWorktree, `${kind}: click exits it`).toBeNull()
+    }
+  })
+
   it('Esc exits the expanded view', async () => {
     const { ids } = await mountApp()
     const helpers = useHelpersStore()
@@ -529,6 +594,51 @@ describe('variants', () => {
     expect(sanitizePatch({ expandHides: 'session-only' })).toEqual({ expandHides: 'session-only' })
     expect(sanitizePatch({ expandHides: 'sidebar' })).toEqual({})
     expect(sanitizePatch({ expandHides: 1 })).toEqual({})
+  })
+
+  it('Settings → Appearance has an Expand hides control that sets and persists the choice', async () => {
+    const settings = useSettingsStore()
+    await settings.init()
+    wrapper = mount(SettingsDialog, { global: { plugins: [i18n], stubs: { teleport: true } } })
+    useUiStore().openSettings('appearance')
+    await flushPromises()
+    const row = wrapper.get('#set-expandHides')
+    expect(row.text()).toContain('Expand hides')
+    const group = row.get('[aria-label="Expand hides"]')
+    const options = group.findAll('button')
+    expect(options.map((b) => b.text())).toEqual(['Everything', 'Session only'])
+    // The default is Everything.
+    expect(options[0].attributes('aria-checked') ?? options[0].attributes('aria-pressed')).toBe(
+      'true'
+    )
+    await options[1].trigger('click')
+    expect(settings.expandHides).toBe('session-only')
+    await vi.advanceTimersByTimeAsync(400)
+    expect(saved).toContainEqual({ expandHides: 'session-only' })
+    await wrapper
+      .get('#set-expandHides [aria-label="Expand hides"]')
+      .findAll('button')[0]
+      .trigger('click')
+    await flushPromises()
+    expect(settings.expandHides).toBe('everything')
+    settings.dispose()
+  })
+
+  it('the Expand hides strings exist in both locales', async () => {
+    const en = JSON.parse(read('src/renderer/src/i18n/en.json'))
+    const pt = JSON.parse(read('src/renderer/src/i18n/pt-BR.json'))
+    for (const [name, msgs] of [
+      ['en', en],
+      ['pt-BR', pt]
+    ] as const) {
+      const block = msgs.settings.appearance.expandHides
+      for (const key of ['label', 'hint', 'everything', 'sessionOnly']) {
+        expect(block?.[key], `${name} settings.appearance.expandHides.${key}`).toBeTruthy()
+      }
+      expect(msgs.keybindings.actions.pane_expandToWindow, `${name} action label`).toBeTruthy()
+      expect(msgs.helperPane.expand, `${name} helperPane.expand`).toBeTruthy()
+      expect(msgs.helperPane.exitExpand, `${name} helperPane.exitExpand`).toBeTruthy()
+    }
   })
 
   it('everything: the sidebar, the session area and the Fleet rail collapse', async () => {

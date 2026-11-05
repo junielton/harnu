@@ -4105,7 +4105,8 @@ which was too dim over the terminal content.
   `--accent` and it carries `aria-pressed="true"`. `aria-label`/`title` =
   `helperPane.expand` / `helperPane.exitExpand`, the title with the `pane.expandToWindow`
   chord when bound. A separate button, not a third state of maximize. See "Expanding a pane
-  to the window".
+  to the window". Every pane type carries it in the same place: shell / Claude (`HelperPane`),
+  `BrowserPane`, `MarkdownPane`, `MemoryPane`, `ExplorerPane` and `DiagramPane`.
 - **Maximize button (right, before close):** `maximize-2` icon 12px, 18×18px target,
   same hover treatment as the close button. Swaps to `minimize-2` while this pane IS
   the maximized one. `aria-label`/`title` = `helperPane.maximize` /
@@ -4157,8 +4158,8 @@ hides is the **Expand hides** setting.
   or a text field already took, and a press made inside a terminal: there Esc belongs to the
   program (Claude Code cancels with it), so a terminal exits with the button or `⌘⇧M`. Only one
   pane is expanded at a time; expanding another pane re-targets directly.
-- **Expand hides (`settings.json` key `expandHides`; the Settings → Appearance control is still to come,
-  `SettingsDialog.vue` was outside the T628 file list).** `everything`
+- **Expand hides (Settings → Appearance → Layout, a two-option segmented control after Floating panels;
+  `settings.json` key `expandHides`).** `everything`
   (default): the sidebar, the session area and the Fleet rail collapse, and only the Topbar, the
   pane and the footer remain. `session-only`: only the session area collapses; the sidebar and
   the Fleet rail stay. Both variants also collapse the other helper panes to nothing (no 24px

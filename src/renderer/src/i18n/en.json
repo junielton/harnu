@@ -1179,6 +1179,12 @@
       "floatingPanels": {
         "label": "Floating panels",
         "hint": "Shows each pane as its own rounded island on a darker background, with an even gap between them. Off keeps the classic edge-to-edge layout."
+      },
+      "expandHides": {
+        "label": "Expand hides",
+        "hint": "What gets out of the way when a helper pane is expanded to the window. Everything also hides the sidebar and the Fleet rail; Session only hides just the session.",
+        "everything": "Everything",
+        "sessionOnly": "Session only"
       }
     },
     "interface": {

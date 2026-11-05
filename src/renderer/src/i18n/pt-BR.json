@@ -1179,6 +1179,12 @@
       "floatingPanels": {
         "label": "Painéis flutuantes",
         "hint": "Mostra cada painel como uma ilha arredondada própria sobre um fundo mais escuro, com um espaço uniforme entre eles. Desligado mantém o layout clássico, de ponta a ponta."
+      },
+      "expandHides": {
+        "label": "Expandir esconde",
+        "hint": "O que sai da frente quando um painel auxiliar é expandido para a janela. Tudo também esconde a barra lateral e o Fleet rail; Só a sessão esconde apenas a sessão.",
+        "everything": "Tudo",
+        "sessionOnly": "Só a sessão"
       }
     },
     "interface": {
