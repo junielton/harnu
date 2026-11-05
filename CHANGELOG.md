@@ -10,6 +10,22 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-05
+
+### Added
+
+- **The helper panes can sit under the session instead of beside it.** Settings → Appearance has a new **Split layout** choice: **Auto** (the default), **Side by side** and **Stacked**. Stacked puts the session on top and the helper panes underneath, laid out left to right, which suits a tall window. Auto stacks them by itself once the window is clearly taller than wide, and goes back to side by side when it is clearly wider than tall; in between it keeps whatever it was doing, so a nearly square window does not flip back and forth. The new button next to Browser in the Topbar (only shown while the folder has helper panes) switches layouts with one click, cycling Auto, Side by side, Stacked, and its icon always shows the layout in use. There is also a **Cycle the split layout** shortcut you can bind in Settings → Keyboard Shortcuts. The two layouts remember their own split size for each folder, so changing layout never resizes the other one, and double-clicking the divider resets only the layout you are in.
+
+### Fixed
+
+- **The pane dividers read as one edge again.** Between the sidebar and the session, and between the session and the Fleet rail, the resize handle drew its thin line in the middle of a 6px gap, which left a sliver of background on each side and made the boundary look like a double bar. The line now sits flush against the panel it belongs to. The grab area is just as wide as before. Double-clicking the divider between the session and the helper stack now resets the split, like the other two dividers already did.
+
+- **The drill-in "Back" row stays put while the list scrolls.** In the sidebar's drill-in mode the Back row used to scroll away with the list, so in a long worktree group you had to scroll all the way up to go back. It is now pinned above the list: it spans the full sidebar width, the scrollbar starts below it, and rows sliding under its edge fade out instead of showing half-cut.
+
+### Changed
+
+- **Browser has its own button in the Topbar.** The globe button sits right next to Terminal and opens a browser pane in one click, where before it was hidden one step deeper in the small arrow beside the Split button. That arrow is gone, since Terminal was the only other thing in it.
+
 ## 2026-11-04
 
 ### Added

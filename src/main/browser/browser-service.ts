@@ -199,7 +199,7 @@ export function bindBrowserWindow(getWindow: () => BrowserWindow | null): void {
 }
 
 /**
- * Create a pane the OPERATOR opened (the Split menu, a popup the operator clicked). Operator panes use the
+ * Create a pane the OPERATOR opened (the Topbar Browser button, a popup the operator clicked). Operator panes use the
  * operator partition (a popup inherits its opener's) and are never capped (spec §10.1).
  */
 export function openOperatorPane(opts: {

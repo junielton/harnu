@@ -344,7 +344,7 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 | Progress popover — standard / wide     | 400px / 520px                                                  | The Mission progress popover is 400px; the Campaign popover (`.pop--wide`, §6 "Campaign progress") is the one 520px variant — two panes need the room                                                                                                                                                                                                                              |
 | Campaign map — board                   | tile `164×96px` · gutter `36px` · row gap `40px` · lane `20px` | The one fixed canvas of the Campaign map (§6 "Campaign map"): 4 columns × 164 + 3 × 36 + the 20px return lane = 784px wide; a dock chip is 164×20px. Mockup `v6--map`; scrolls inside its wrapper, never reflows                                                                                                                                                                   |
 | Resizable divider — hit area           | 6px                                                            | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
-| Resizable divider — visible stripe     | 1px                                                            | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                                                                                                                                                                                                             |
+| Resizable divider — visible stripe     | 1px                                                            | Colored stripe (`w-px`) flush to the side panel's edge inside the 6px hit area                                                                                                                                                                                                                                                                                                     |
 | Footer / status bar — height           | 24px (`h-6`)                                                   | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
 | Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)`           | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
 | Settings pane — bounded list           | max-height `280px`                                             | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                                                                                                                                                                                              |
@@ -472,7 +472,8 @@ _another_ folder.
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
 | `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
 | `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
-| `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane")                                                                                                                                                                         |
+| `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane") · the Topbar's Browser button (T630, §6 "Topbar per-repo view buttons")                                                                                                 |
+| `columns-2` / `rows-2`                   | The Topbar's split-layout toggle (T627, §6 "Split orientation"): side by side / stacked                                                                                                                                                |
 | `arrow-left` / `arrow-right`             | Browser pane → back / forward (address bar)                                                                                                                                                                                            |
 | `rotate-cw`                              | Browser pane → reload (swaps to `x` — stop — while a load is in flight)                                                                                                                                                                |
 | `play`                                   | Browser pane → Resume the agent after "Pause agent for 10 min" (chip)                                                                                                                                                                  |
@@ -3772,6 +3773,19 @@ the new-session flow for the drilled-into folder
 **`⋯` (folder actions)**, below. The repo screen has no peek or `+` actions,
 only a folder screen hosts sessions directly.
 
+**The back row is pinned, outside the scroller (BUG-248).** The back row is a
+sibling ABOVE the drill list's scroller, like the sidebar's own header — not a
+row inside the scroll area, and not `position: sticky` (a sticky row stops short
+of the scrollbar gutter and lets half-cut rows show at its edge). The drill view
+renders directly in the sidebar column (it is not wrapped by the classic tree's
+scroller), so the back row spans the full column width, its bottom `border`
+reaches both edges over the gutter, and the scrollbar track starts below it. The
+row is opaque (`bg-sidebar`). Rows sliding under its edge fade out through a
+14px strip at the top of the scroller (`--color-sidebar` → transparent,
+`pointer-events: none`), inset from the right by the 8px scrollbar so the thumb
+is never veiled; the borders stay solid. The scroller keeps its `6px 0`
+padding. Non-drill mode is unchanged.
+
 **Row actions — every drill-in row has the menu its classic-tree twin has.**
 Drill-in used to be a dead end for actions: right-clicking a back row or a
 chooser row did nothing, and reaching Rename / Hide / New worktree meant
@@ -3838,31 +3852,99 @@ folder's own screen.
 
 ### Resizable divider (handle)
 
-A vertical, draggable bar that separates two panels. Used in two places with the same
-anatomy: between the **sidebar and the content**, and between the **terminal and the
-helper-stack** (split).
+A vertical, draggable bar that separates two panels. Used in three places with the same
+anatomy: between the **sidebar and the content**, between the **terminal and the
+helper-stack** (split), and between the **content and the Fleet rail** (expanded only).
 
-- **Width:** two layers. The **hit-area** (drag target) is the outer 6px `<div>`
-  (`w-1.5`, `cursor-col-resize`), transparent. The **visible stripe** is a centered 1px
-  child (`w-px`, `h-full`) — thin enough not to compete with the content, while the 6px
-  hit-area stays comfortable to drag.
+- **Anatomy — hit area vs. visible line.** Two layers. The **hit area** (drag target) is the
+  outer 6px `<div>` (`w-1.5`, `cursor-col-resize`, `shrink-0`), transparent — it sits on the
+  window's `--bg`. The **visible line** is a 1px child (`w-px`, `h-full`) — thin enough not
+  to compete with the content, while the 6px hit area stays comfortable to drag.
+- **One edge at rest.** The line is **flush against the side panel's edge**, never centered
+  in the hit column: a centered line leaves a strip of `--bg` on each side of it, and next to
+  a `--sidebar` panel that strip reads as a second bar (BUG-247). So the hit column aligns
+  its line toward the panel it belongs to — `justify-start` for the sidebar (panel on the
+  left), `justify-end` for the helper stack and the Fleet rail (panel on the right). The
+  remaining 5px of `--bg` sit on the content side, where the content's own `--bg` continues
+  them, so they are not an edge. The hit area keeps its full 6px width; only the line moves.
+- **Collapsed / minimized.** A collapsed sidebar and a minimized Fleet rail render **no
+  divider** (`v-if`): the minimized rail's own `border-l` is then the only edge.
 - **Background:** only the 1px stripe is colored — `--border-2` (default) →
   `--accent-line` on hover (via `group-hover`, since the hover is on the outer hit-area).
 - **Cursor:** `col-resize` when hovering over it.
 - **Drag:** adjusts the width in real time. In the sidebar, the `clientX` delta is
   added to the initial width and clamped to `[200, 480]` (see §4 — Layout dimensions).
-- **Double-click:** resets to the default width (268px in the sidebar).
+- **Double-click:** resets to the default — 268px for the sidebar, 300px for the Fleet rail,
+  the 0.65 content/helper split for the helper stack.
 - **Motion:** only the background color transition (`--dur` / `--ease`); the width
   tracks the pointer 1:1 during the drag, **no** easing animation (an animated drag
   feels laggy). Respects `prefers-reduced-motion` via §7's global reset.
 - **A11y:** `role="separator"`, `aria-orientation="vertical"`.
+- **Horizontal variant (T627).** When the helper stack sits below the session area (see "Split
+  orientation" below) the helper-stack divider turns 90°: the hit area is `h-1.5 w-full
+shrink-0 cursor-row-resize`, the visible line is `h-px w-full`, flush against the helper
+  stack's top edge (`items-end`, the same "one edge at rest" rule as `justify-end` above), and
+  it carries `aria-orientation="horizontal"`. Drag computes the ratio on Y, double-click resets
+  the **stacked** ratio. Colors, hover and motion are unchanged.
+
+#### Split orientation (T627)
+
+The session area and the helper stack sit **side by side** (today's layout) or **stacked**
+(session area on top, helper stack below). One setting, one Topbar control, one shortcut.
+
+- **Setting.** Settings → Appearance → **Split layout**, a three-way segmented control:
+  `auto` (default), `side-by-side`, `stacked`. Persisted in `settings.json` as `splitLayout`
+  (absent = `auto`), like the other settings-store values; an unknown value reads as `auto`.
+- **`auto` rule.** Measured on the **main area** (the box that holds the session area and the
+  helper stack, i.e. the window minus the sidebar and the Fleet rail), as the ratio
+  `height / width`. It resolves to **stacked** once the area is **taller than wide by 5%**
+  (`height / width > 1.05`) and back to **side by side** once it is **wider than tall by 5%**
+  (`height / width < 0.95`). Between the two (0.95 … 1.05) the previous result holds, so a
+  near-square window never flickers while it is resized across the diagonal; before any
+  measurement the result is side by side. The resolver is a pure function in
+  `lib/split-orientation.ts`; `layout.splitOrientation` is the resolved value every consumer
+  reads. An explicit `side-by-side` or `stacked` ignores the measurement.
+- **Stacked anatomy.** The row becomes a column: session area on top (`flex: ratio 1 0`),
+  horizontal divider, helper stack below (`flex: (1 - ratio) 1 0`). The helper stack lays its
+  panes out **left to right** (`flex-row`); each pane keeps its 24px header, now on top of its own
+  column. Between two panes sits a **width splitter**: `role="separator"
+aria-orientation="vertical"`, a 6px `cursor-col-resize` hit area with a 1px `--border-2` line
+  (→ `--accent-line` on hover), the same anatomy as the vertical divider above. A pane header
+  is still the resize handle: dragging pane[idx]'s header moves the boundary on its **left**, the
+  header shows `cursor: col-resize`, and the first pane's header is inert. The pane ratios are the
+  same `ratio` values, now read as widths.
+- **Maximize and close** work as before. A maximized pane fills the stack; every other pane
+  collapses to a **24px-wide** strip (the counterpart of the 24px header-only strip in the
+  vertical stack) — still mounted, still alive. Drag handles are disabled while a pane is
+  maximized.
+- **One ratio per orientation.** The session-area share is stored **per worktree and per
+  orientation**: side by side keeps `splitRatio` in `helpers.json` (default 0.65, clamped to
+  [0.4, 0.8]); stacked keeps its own (default 0.65, same clamp) in `localStorage`
+  (`om2tab.stackedSplitRatios`, keyed by worktree path). Dragging or resetting in one
+  orientation never touches the other's value. Pane ratios inside the stack are shared by both
+  orientations.
+- **Topbar control.** A 26×26 toggle button in the right cluster, right after **Browser** and
+  before the panel toggle: `[terminal] [browser] [split-layout] [panel-right]`. Glyph =
+  the **resolved** orientation: `columns-2` for side by side, `rows-2` for stacked. Standard
+  anatomy (`--text-3` → `--text`, `--surface` hover); while the setting is an explicit
+  `side-by-side` / `stacked` the ink is `--accent` (an override is on), under `auto` it is the
+  idle `--text-3`. One click **cycles the setting** `auto → side-by-side → stacked → auto`
+  (the same action as the shortcut). `title` = `topbar.splitLayout` + the current mode, with
+  the chord when bound; `aria-label` the same text; `data-test="topbar-split-layout"`. Shown
+  only when the worktree has helper panes (nothing to orient otherwise), like the panel
+  toggle.
+- **Shortcut.** `layout.cycleSplitOrientation` (group Views, **unbound** by default, in the
+  command palette) cycles the setting exactly as the Topbar button does. Label key
+  `keybindings.actions.layout_cycleSplitOrientation`.
+- **Motion.** Switching orientation re-lays the panes out instantly in this slice; the animated
+  switch belongs to the motion work (floating-layout S-7). Divider drags never animate.
 
 #### Origins of a helper-stack pane
 
 A split pane is born from three paths, all using the same visual anatomy
 (`HelperPane`) and differing only in the `kind` of PTY they spawn:
 
-- **New shell** (Split menu) → `kind: shell` in the worktree's cwd.
+- **New shell** (Topbar Terminal button) → `kind: shell` in the worktree's cwd.
 - **Fork session** (Split menu / context menu) → `kind: claude-fork`
   (`claude --resume <src> --fork-session`), via a pending synthetic session.
 - **Open in new tab** (session context menu, `external-link` icon) →
@@ -4227,11 +4309,11 @@ page), and main hides the view. When the last overlay closes the view returns an
 next frame. While frozen the page keeps running and agent verbs keep working; the operator sees a still image.
 No new colour or motion: the swap is instant (no fade, so a menu opening never flashes). Every app layer that can
 overlap a pane registers with the native-overlay composable: context menus, dialogs, popovers, palettes, toasts,
-the Split dropdown, and the pane's own ⋯ menu. A **parked** view (spec §2.3, a 1×1 view in the window's
+and the pane's own ⋯ menu. A **parked** view (spec §2.3, a 1×1 view in the window's
 bottom-right corner) registers the same way and is hidden while an overlay intersects that corner.
 
-**Open from the Split menu.** The Split dropdown gains a **Browser** item (`globe`) that opens an operator pane at
-`about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
+**Open from the Topbar.** The Topbar's **Browser** button (`globe`, next to the Terminal button) opens an operator
+pane at `about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
 agent partition (spec §3.4). Operator panes are unlimited; agent panes are capped at 4 per folder.
 
 **Page pane** (T569 U2, spec §4 and §5). A pane showing one of **our own files** served from `harnu-page://`
@@ -5066,9 +5148,17 @@ already looking at that repo's session.
   `aria-pressed` — the button is a toggle (see "Takeover dismissal" above), and a
   pressed-looking button is what makes the second click discoverable.
 - **Order:** `[bell] [board] [pr-stack] │ [folder] [editor] [github-pulls] [explorer]
-[split] [panel-right]`. The two view buttons sit **before** the external-tool openers:
+[terminal] [browser] [split-layout] [panel-right]` (the split-layout toggle is T627, §6 "Split
+  orientation"). The two view buttons sit **before** the external-tool openers:
   they act _inside_ Harnu, the ones after them leave for the OS or another app.
 - **GitHub pull requests** (`github` — lucide's brand glyph, so it reads as "leaves for GitHub" and not as the PR Stack Canvas button; deprecated upstream as a brand icon, so a future lucide major may drop it and break the import at build time; `topbar.githubPulls`): opens
+- **Terminal and Browser** (T630): the two panes you split off the session sit side by side, Terminal
+  first. **Terminal** (`terminal`, `topbar.split`, `data-test="topbar-split"`) opens a shell in one click; **Browser**
+  (`globe`, `topbar.browser`, `data-test="topbar-browser"`) opens an operator browser pane at `about:blank` and
+  focuses its address field, exactly as the old dropdown item did. Both are plain 26×26 buttons with the standard
+  anatomy above and no active state (they open a pane, they do not toggle a view); the `title` carries the
+  keyboard chord where one exists, the `aria-label` is the plain i18n label. The former "More split options"
+  chevron dropdown is gone: with Browser out, Terminal was its only item and duplicated the button.
 - **Open in editor** (`topbar.openInEditor`, T581): launches the editor chosen in Settings → General →
   **Editor** (default VS Code) on the active folder. The glyph is that editor's mark (§5 "Editor marks");
   the `title` and `aria-label` read "Open in {editor}" with the editor's display name, so the button
@@ -8307,7 +8397,6 @@ the surface:
 | Hover preview        | `SessionPreview.vue`       | 40        | `pointer-events: auto` — interactive/scrollable card (T86 §3.9); row+card hover zone with grace delay                                                                                                                                                                                                                                                                                                                                      |
 | Hover preview        | `FolderPreview.vue`        | 40        | Folder card. Peer of `SessionPreview` — they share the `ui.preview` slot (a `sessionId` **or** a `folderPath`); `pointer-events: auto` (T86 §3.9)                                                                                                                                                                                                                                                                                          |
 | Context menu         | `SessionMenu.vue`          | 50        | Suppresses preview on open                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Split menu           | `SplitMenu.vue`            | 50        | Mutex via `useUiStore.splitMenu`. Dropdown anchored to the Topbar's Split button. Peer of `SessionMenu` — never open simultaneously                                                                                                                                                                                                                                                                                                        |
 | Footer fleet popover | `StatusFooter.vue`         | 50        | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal. Open flag in the `ui` store (`ui.popovers.usagePanel`, see "Anchored popovers" below)                                                                                                                                                                                                                                                  |
 | Sidebar jump palette | `SidebarJumpPalette.vue`   | 50        | T288. Peer of the menus in the `ui` mutex (`ui.sidebarJumpPalette`), but the ONLY surface here NOT `<Teleport>`ed to `<body>`: it is `position: absolute` inside the sidebar `<aside>` so it tracks the sidebar's width and clipping. Not modal — closes on Esc / click-outside / the Search button                                                                                                                                        |
 | Dialog (modal)       | `AddFolderDialog.vue`      | 60        | Suppresses menu + preview                                                                                                                                                                                                                                                                                                                                                                                                                  |

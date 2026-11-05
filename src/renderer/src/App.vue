@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Sidebar from './components/Sidebar.vue'
 import TerminalPane from './components/TerminalPane.vue'
@@ -39,8 +39,9 @@ import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
 import { formatWindowTitle } from './stores/attention'
 import { useUiStore, SETTINGS_TAB_IDS } from './stores/ui'
-import { useHelpersStore, isAgentTerminalPane } from './stores/helpers'
+import { useHelpersStore, isAgentTerminalPane, HELPER_SPLIT_RATIO_DEFAULT } from './stores/helpers'
 import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
+import { useSettingsStore } from './stores/settings'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
 import {
@@ -97,6 +98,7 @@ const sessions = useSessionsStore()
 const ui = useUiStore()
 const helpers = useHelpersStore()
 const layout = useLayoutStore()
+const settings = useSettingsStore()
 const claudeChangelog = useClaudeChangelogStore()
 const companion = useCompanionStore()
 // T1 P2: resolved keybindings (defaults ← keybindings.json). Seeded with
@@ -188,7 +190,32 @@ watch(
  * gesture, not an automatic yank.
  */
 
-let mainDragging: { startX: number; startRatio: number } | null = null
+// Which axis the session-area / helper-stack divider drags on (T627): X when the two sit side by
+// side, Y when they are stacked. `startRatio` is the active orientation's ratio at mousedown.
+let mainDragging: { start: number; startRatio: number; stacked: boolean } | null = null
+
+// T627 — the box that holds the session area and the helper stack. `auto` resolves the split
+// orientation from its shape, so it is measured here (ResizeObserver) and fed to the layout store.
+const mainRowEl = ref<HTMLElement | null>(null)
+const stackedLayout = computed(() => layout.splitOrientation === 'stacked')
+/** The session area's share in the layout in force; each orientation keeps its own. */
+const activeSplitRatio = computed(() =>
+  stackedLayout.value
+    ? helpers.stackedSplitRatioForCurrentWorktree
+    : helpers.splitRatioForCurrentWorktree
+)
+let mainRowObserver: ResizeObserver | null = null
+watch(mainRowEl, (el) => {
+  mainRowObserver?.disconnect()
+  mainRowObserver = null
+  if (!el || typeof ResizeObserver === 'undefined') return
+  mainRowObserver = new ResizeObserver((entries) => {
+    const box = entries[0]?.contentRect
+    if (box) layout.setMainAreaSize(box.width, box.height)
+  })
+  mainRowObserver.observe(el)
+})
+onUnmounted(() => mainRowObserver?.disconnect())
 
 // Inbox-rail drag-resize. The rail is the RIGHTMOST column, so dragging its
 // divider left must GROW it — hence `startX - clientX` (the sidebar's handler is
@@ -217,9 +244,11 @@ function onMainDividerMouseDown(ev: MouseEvent): void {
   const wt = helpers.currentWorktreePath
   if (!wt) return
   ev.preventDefault()
+  const stacked = stackedLayout.value
   mainDragging = {
-    startX: ev.clientX,
-    startRatio: helpers.splitRatioForCurrentWorktree
+    start: stacked ? ev.clientY : ev.clientX,
+    startRatio: activeSplitRatio.value,
+    stacked
   }
   document.addEventListener('mousemove', onMainDividerMouseMove)
   document.addEventListener('mouseup', onMainDividerMouseUp)
@@ -229,14 +258,36 @@ function onMainDividerMouseMove(ev: MouseEvent): void {
   if (!mainDragging) return
   const wt = helpers.currentWorktreePath
   if (!wt) return
-  // Approximate available width: window minus a typical sidebar (250px).
-  // The setSplitRatio store clamps to [0.4, 0.8] so exact precision isn't
-  // required here.
-  const totalW = window.innerWidth - 250
-  if (totalW < 1) return
-  const deltaX = ev.clientX - mainDragging.startX
-  const deltaRatio = deltaX / totalW
-  helpers.setSplitRatio(wt, mainDragging.startRatio + deltaRatio)
+  // The row's own size when it has one; otherwise approximate the available width as the
+  // window minus a typical sidebar (250px) and the height as the window minus the Topbar and
+  // footer. The store clamps to [0.4, 0.8] so exact precision isn't required here.
+  const row = mainRowEl.value
+  const measured = row ? (mainDragging.stacked ? row.offsetHeight : row.offsetWidth) : 0
+  const total =
+    measured > 0
+      ? measured
+      : mainDragging.stacked
+        ? window.innerHeight - 100
+        : window.innerWidth - 250
+  if (total < 1) return
+  const delta = (mainDragging.stacked ? ev.clientY : ev.clientX) - mainDragging.start
+  helpers.setSplitRatio(
+    wt,
+    mainDragging.startRatio + delta / total,
+    mainDragging.stacked ? 'stacked' : 'side-by-side'
+  )
+}
+
+// Double-click resets the helper-stack split to its default, like the sidebar
+// and Fleet-rail dividers reset their widths. Only the orientation in force is reset.
+function onMainDividerDblClick(): void {
+  const wt = helpers.currentWorktreePath
+  if (!wt) return
+  helpers.setSplitRatio(
+    wt,
+    HELPER_SPLIT_RATIO_DEFAULT,
+    stackedLayout.value ? 'stacked' : 'side-by-side'
+  )
 }
 
 function onMainDividerMouseUp(): void {
@@ -797,6 +848,13 @@ useShortcuts(
       scope: 'global',
       keys: kb('pane.close'),
       handler: () => closeFocusedPane(paneDeps)
+    },
+    {
+      // T627 — unbound. The Topbar split-layout button's twin: auto → side-by-side → stacked → auto.
+      id: 'layout.cycleSplitOrientation',
+      scope: 'global',
+      keys: kb('layout.cycleSplitOrientation'),
+      handler: () => settings.cycleSplitLayout()
     },
     {
       // Unbound. Add → reveal and focus → collapse the first shell pane (§8.2);
@@ -1677,7 +1735,7 @@ onUnmounted(() => {
       <Sidebar v-show="!layout.sidebarCollapsed" />
       <div
         v-if="!layout.sidebarCollapsed"
-        class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+        class="group flex w-1.5 shrink-0 cursor-col-resize justify-start"
         role="separator"
         aria-orientation="vertical"
         :aria-label="$t('sidebar.resize')"
@@ -1688,7 +1746,7 @@ onUnmounted(() => {
       </div>
       <main class="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <div class="flex min-h-0 flex-1">
+        <div ref="mainRowEl" class="flex min-h-0 flex-1" :class="{ 'flex-col': stackedLayout }">
           <!--
             Main-content view. Wrapped in a sizing div (rather than each view
             owning its own flex-basis) so the SAME split-ratio math applies
@@ -1698,11 +1756,7 @@ onUnmounted(() => {
           -->
           <div
             class="relative flex min-w-0 min-h-0 flex-col"
-            :style="
-              showHelperStack
-                ? { flex: `${helpers.splitRatioForCurrentWorktree} 1 0` }
-                : { flex: '1 1 0' }
-            "
+            :style="showHelperStack ? { flex: `${activeSplitRatio} 1 0` } : { flex: '1 1 0' }"
           >
             <!--
               BUG-103: TerminalPane renders UNCONDITIONALLY here (never `v-if`),
@@ -1769,19 +1823,32 @@ onUnmounted(() => {
             design.md §6). Collapsed hides the divider + stack even with panes;
             the Topbar panel-toggle button (⌘⌥B / Ctrl+Alt+B) brings it back.
           -->
+          <!-- T627: the divider turns 90° when the helper stack sits below the session area. The line
+               stays flush against the helper stack's edge (right when side by side, top when stacked). -->
           <div
-            v-if="showHelperStack"
-            class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+            v-if="showHelperStack && !stackedLayout"
+            class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
             role="separator"
             aria-orientation="vertical"
             @mousedown="onMainDividerMouseDown"
+            @dblclick="onMainDividerDblClick"
           >
             <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
           </div>
           <div
+            v-else-if="showHelperStack"
+            class="group flex h-1.5 shrink-0 cursor-row-resize items-end"
+            role="separator"
+            aria-orientation="horizontal"
+            @mousedown="onMainDividerMouseDown"
+            @dblclick="onMainDividerDblClick"
+          >
+            <div class="h-px w-full bg-border-2 transition-colors group-hover:bg-accent-line" />
+          </div>
+          <div
             v-if="showHelperStack"
             class="flex min-w-0 min-h-0 flex-col"
-            :style="{ flex: `${1 - helpers.splitRatioForCurrentWorktree} 1 0` }"
+            :style="{ flex: `${1 - activeSplitRatio} 1 0` }"
           >
             <HelperStack />
           </div>
@@ -1801,7 +1868,7 @@ onUnmounted(() => {
       <template v-if="showInboxRail">
         <div
           v-if="layout.inboxRailState === 'expanded'"
-          class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+          class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
           role="separator"
           aria-orientation="vertical"
           :aria-label="$t('approvalInbox.rail.resize')"

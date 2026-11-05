@@ -113,10 +113,21 @@ Any session can be promoted to **Orchestrator** from this menu. Promoting arms a
 
 The area to the right of your main terminal can hold a vertical stack of extra panes — a "split" — so you can keep a file, a shell, or another session visible alongside the one you're focused on. Panes you can open:
 
-- A plain **shell** (Topbar's Split button)
+- A plain **shell** (Topbar's Terminal button)
+- A **browser** (Topbar's Browser button, next to the Terminal button) — see [Browser pane](browser-pane.md)
 - A **file browser** (Topbar's browse-files button), and clicking a file in it opens that file in a **Markdown viewer** pane. Every code block in that viewer has a hover-revealed copy button, and the pane's toolbar has a "Copy file" button that copies the whole raw file — no more hand-selecting text out of the pane
 - A folder's **Project memory** pane (from the folder's right-click menu)
 - Another session, resumed as its own pane (a session's **Open in new tab** action)
+
+### Side by side or stacked
+
+By default the split sits to the right of your main terminal (**side by side**). In a tall window you can put it **under** the terminal instead (**stacked**): the session is on top, the divider between them is horizontal, and the panes in the split sit left to right with a thin splitter between each pair.
+
+- **Choose it** in Settings → Appearance → **Split layout**: **Auto** (the default), **Side by side** or **Stacked**.
+- **Auto** stacks the split once the area is clearly taller than wide (about 5% taller) and goes back to side by side once it is clearly wider than tall. In between it keeps whatever it was doing, so a nearly square window does not flicker.
+- **Switch quickly** with the layout button in the Topbar, right after the Browser button (it only shows while the folder has panes in the split). Each click cycles **Auto → Side by side → Stacked**. The icon shows the layout in use; it turns accent-coloured when you have pinned one instead of Auto. You can also bind **Cycle the split layout** to a shortcut in Settings → Keyboard Shortcuts (it has no default key).
+- **Each layout keeps its own size** for each folder. Drag the divider in one layout and the other one is untouched; double-click the divider to reset the layout you are in.
+- Maximize, close and dragging a pane's header work in both layouts. Stacked, a maximized pane takes the whole width and the others shrink to a thin strip.
 
 Drag a pane's header to resize it. Split panes follow the same rule as the main terminal — a shell running in a split (say, `npm run dev`) keeps running in the background even if you switch to a different worktree or session. Every pane's header also has a maximize button: click it to grow that pane to fill the split while the others collapse to a thin header strip (still running in the background); click it again, or a different pane's maximize button, to restore or switch.
 
@@ -191,6 +202,7 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `F2`               | Rename the cursor folder row, or the active folder (`Fn+F2` on a Mac)           |
 | `F6` / `Shift+F6`  | Focus the next / previous pane, even from a terminal (`Fn+F6` on a Mac)         |
 | `Cmd/Ctrl+Shift+M` | Maximize or restore the focused split pane                                      |
+| _(unbound)_        | Cycle the split layout (bind **Cycle the split layout** in Keyboard Shortcuts)  |
 | `Alt+←` / `Cmd+[`  | Back to the previous session you viewed                                         |
 | `Alt+→` / `Cmd+]`  | Forward again after going back                                                  |
 | Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar                            |

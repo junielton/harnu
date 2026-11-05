@@ -33,11 +33,17 @@ import { effectiveEditorSetting, sanitizeEditorSetting, type EditorSetting } fro
  * - `editor` — which editor the Topbar "Open in {editor}" button launches
  *   (T581). Absent means the default (VS Code); main reads it at launch time
  *   via {@link readEditorSetting}, so the renderer never names the command.
+ * - `splitLayout` — session area / helper stack orientation (T627). Absent = `auto`.
  */
 export interface SettingsData {
   terminalFontSize: number
   uiZoom: number
   editor?: EditorSetting
+  /**
+   * T627: how the session area and the helper stack are laid out — `auto`
+   * (follow the window's shape), `side-by-side` or `stacked`. Absent means `auto`.
+   */
+  splitLayout?: 'auto' | 'side-by-side' | 'stacked'
 }
 
 const DEFAULT_SETTINGS: SettingsData = {
@@ -56,6 +62,8 @@ const MIN_FONT_SIZE = 8
 const MAX_FONT_SIZE = 32
 const MIN_UI_ZOOM = 0.5
 const MAX_UI_ZOOM = 2
+/** Mirrors `SPLIT_LAYOUTS` in `renderer/src/lib/split-orientation.ts` (main never imports the renderer). */
+const SPLIT_LAYOUTS: readonly string[] = ['auto', 'side-by-side', 'stacked']
 
 /**
  * Build a clean, known-shape patch from arbitrary renderer input: clamp/round the
@@ -84,6 +92,13 @@ export function sanitizePatch(patch: Record<string, unknown>): Partial<SettingsD
     // previously stored value — or the default — keeps applying.
     const editor = sanitizeEditorSetting(patch.editor)
     if (editor) out.editor = editor
+  }
+  if (patch && typeof patch === 'object' && 'splitLayout' in patch) {
+    // An unknown value is dropped, so the stored one (or `auto`) keeps applying.
+    const v = patch.splitLayout
+    if (typeof v === 'string' && SPLIT_LAYOUTS.includes(v)) {
+      out.splitLayout = v as NonNullable<SettingsData['splitLayout']>
+    }
   }
   return out
 }

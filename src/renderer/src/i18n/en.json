@@ -117,6 +117,9 @@
     "newSessionHere": "New session in this folder",
     "terminal": "Terminal",
     "split": "Split horizontal",
+    "browser": "Browser",
+    "splitLayout": "Split layout: {mode}",
+    "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Open folder",
     "openInEditor": "Open in {editor}",
     "editorGeneric": "editor",
@@ -1162,7 +1165,15 @@
     },
     "appearance": {
       "eyebrow": "Appearance",
-      "extensionBadge": "Installed by {name}"
+      "extensionBadge": "Installed by {name}",
+      "layoutEyebrow": "Layout",
+      "splitLayout": {
+        "label": "Split layout",
+        "hint": "How the session area and the helper panes share the window. Auto stacks them when the window is taller than wide.",
+        "auto": "Auto",
+        "sideBySide": "Side by side",
+        "stacked": "Stacked"
+      }
     },
     "interface": {
       "eyebrow": "Interface",
@@ -1443,6 +1454,7 @@
       "pane_toggleMaximize": "Maximize or restore the focused pane",
       "pane_close": "Close the focused pane",
       "terminal_toggle": "Toggle the terminal pane",
+      "layout_cycleSplitOrientation": "Cycle the split layout (auto, side by side, stacked)",
       "app_reload": "Reload the window",
       "app_devtools": "Toggle DevTools",
       "app_quit": "Quit Harnu",
@@ -5077,11 +5089,6 @@
       "hintExit": "to exit",
       "disconnectedHint": "Comments are off here: you disconnected the agent from this pane."
     }
-  },
-  "splitMenu": {
-    "label": "More split options",
-    "terminal": "Terminal",
-    "browser": "Browser"
   },
   "githubBudget": {
     "pill": {

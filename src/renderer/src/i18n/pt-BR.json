@@ -117,6 +117,9 @@
     "newSessionHere": "Nova sessão nesta pasta",
     "terminal": "Terminal",
     "split": "Dividir horizontal",
+    "browser": "Navegador",
+    "splitLayout": "Divisão: {mode}",
+    "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Abrir pasta",
     "openInEditor": "Abrir no {editor}",
     "editorGeneric": "editor",
@@ -1162,7 +1165,15 @@
     },
     "appearance": {
       "eyebrow": "Aparência",
-      "extensionBadge": "Instalado por {name}"
+      "extensionBadge": "Instalado por {name}",
+      "layoutEyebrow": "Layout",
+      "splitLayout": {
+        "label": "Divisão da tela",
+        "hint": "Como a área da sessão e os painéis auxiliares dividem a janela. No modo automático, eles empilham quando a janela é mais alta que larga.",
+        "auto": "Automático",
+        "sideBySide": "Lado a lado",
+        "stacked": "Empilhado"
+      }
     },
     "interface": {
       "eyebrow": "Interface",
@@ -1443,6 +1454,7 @@
       "pane_toggleMaximize": "Maximizar ou restaurar o painel focado",
       "pane_close": "Fechar o painel focado",
       "terminal_toggle": "Alternar o painel do terminal",
+      "layout_cycleSplitOrientation": "Alternar a divisão da tela (automático, lado a lado, empilhado)",
       "app_reload": "Recarregar a janela",
       "app_devtools": "Alternar o DevTools",
       "app_quit": "Sair do Harnu",
@@ -5077,11 +5089,6 @@
       "hintExit": "para sair",
       "disconnectedHint": "Comentários desligados aqui: você desconectou o agente deste painel."
     }
-  },
-  "splitMenu": {
-    "label": "Mais opções de divisão",
-    "terminal": "Terminal",
-    "browser": "Navegador"
   },
   "githubBudget": {
     "pill": {

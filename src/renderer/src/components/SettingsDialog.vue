@@ -39,6 +39,7 @@ import PrStackSettingsPane from './PrStackSettingsPane.vue'
 import GithubBudgetPane from './GithubBudgetPane.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import type { SplitLayoutSetting } from '../lib/split-orientation'
 import SettingHint from './ui/SettingHint.vue'
 import {
   CUSTOM_EDITOR_ID,
@@ -442,6 +443,24 @@ const settingsIndex: Array<{
     labelKey: 'settings.terminal.fontSize',
     keywords: ['font', 'fonte', 'size', 'tamanho', 'terminal', 'text'],
     anchor: 'set-fontSize'
+  },
+  {
+    tabId: 'appearance',
+    labelKey: 'settings.appearance.splitLayout.label',
+    keywords: [
+      'split',
+      'layout',
+      'stacked',
+      'side by side',
+      'orientation',
+      'helper',
+      'divisão',
+      'divisao',
+      'empilhado',
+      'lado a lado',
+      'orientação'
+    ],
+    anchor: 'set-splitLayout'
   },
   {
     tabId: 'general',
@@ -1307,6 +1326,49 @@ onBeforeUnmount(() => {
                       />
                     </div>
                   </button>
+                </div>
+              </section>
+
+              <!-- Layout — split orientation of the session area and the helper stack (T627) -->
+              <section style="margin-bottom: 16px">
+                <div
+                  class="text-text-3"
+                  style="
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    margin-bottom: 8px;
+                  "
+                >
+                  {{ $t('settings.appearance.layoutEyebrow') }}
+                </div>
+                <div
+                  id="set-splitLayout"
+                  class="flex items-start justify-between"
+                  :class="highlightedAnchor === 'set-splitLayout' ? 'anim-setting-flash' : ''"
+                  style="gap: 12px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.appearance.splitLayout.label') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.appearance.splitLayout.hint') }}</SettingHint>
+                  </div>
+                  <SegmentedControl
+                    :model-value="settings.splitLayout"
+                    :options="[
+                      { value: 'auto', label: $t('settings.appearance.splitLayout.auto') },
+                      {
+                        value: 'side-by-side',
+                        label: $t('settings.appearance.splitLayout.sideBySide')
+                      },
+                      { value: 'stacked', label: $t('settings.appearance.splitLayout.stacked') }
+                    ]"
+                    size="sm"
+                    :aria-label="$t('settings.appearance.splitLayout.label')"
+                    @update:model-value="settings.setSplitLayout($event as SplitLayoutSetting)"
+                  />
                 </div>
               </section>
             </template>

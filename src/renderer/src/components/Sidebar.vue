@@ -73,6 +73,17 @@ function toggleLineage(motherPath: string): void {
   lineageCollapsed.toggle(motherPath)
 }
 
+/**
+ * Whether the folder list has a status message (loading / nothing yet / filter
+ * matched nothing) to show instead of rows. The drill view mounts outside the
+ * tree scroller (BUG-248), so this decides which of the two hosts renders.
+ */
+const treeStatus = computed(
+  () =>
+    sessions.folders.length === 0 ||
+    (sessions.visibleFolders.length === 0 && !!sessions.filterQuery.trim())
+)
+
 const filterInputRef = ref<HTMLInputElement | null>(null)
 const asideRef = ref<HTMLElement | null>(null)
 
@@ -342,8 +353,14 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
          folder list so a blocked-and-abandoned session stays at the top. -->
     <SidebarReturnZone />
 
-    <!-- Tree (folder view) -->
-    <div class="scrollable flex-1 overflow-y-auto" style="padding: 6px 0">
+    <!-- Tree (folder view). In drill mode the drill view owns its own scroller so
+         its Back row can sit ABOVE it (BUG-248); this wrapper then only mounts to
+         host the loading / empty states while the root screen has nothing to show. -->
+    <div
+      v-if="!sessions.drillModeEnabled || (treeStatus && sessions.drillStack.length === 0)"
+      class="scrollable flex-1 overflow-y-auto"
+      style="padding: 6px 0"
+    >
       <template v-if="sessions.folders.length === 0 && sessions.foldersLoading">
         <div data-sidebar-loading class="flex h-full flex-col items-center justify-center gap-3">
           <RefreshCw :size="20" :stroke-width="1.5" class="text-accent anim-spin" />
@@ -413,8 +430,10 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
           <SidebarFolder v-else :folder="node" />
         </template>
       </template>
-      <SidebarDrillView v-else />
     </div>
+    <SidebarDrillView
+      v-if="sessions.drillModeEnabled && !(treeStatus && sessions.drillStack.length === 0)"
+    />
 
     <!-- Footer -->
     <footer

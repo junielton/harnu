@@ -1039,6 +1039,8 @@ export interface SettingsData {
   uiZoom: number
   /** T581: which editor the Topbar "Open in {editor}" button launches. Absent = VS Code. */
   editor?: EditorSetting
+  /** T627: session area / helper stack orientation — `auto` (default), `side-by-side` or `stacked`. */
+  splitLayout?: 'auto' | 'side-by-side' | 'stacked'
 }
 
 // ---- Harnu MCP control server wire types (2026-06-25 design) ---------------
@@ -2437,7 +2439,7 @@ const api = {
     ipcRenderer.invoke('mcp:agentBrowserWrites:set', enabled),
 
   // ---- T564 U1: the browser pane. The renderer owns geometry and chrome, main owns the native view. ----
-  /** The operator opened a pane (Split menu): main creates the guest view and returns its pane id. */
+  /** The operator opened a pane (Topbar Browser button): main creates the guest view and returns its pane id. */
   browserOpen: (payload: {
     folder: string
     url?: string

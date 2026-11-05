@@ -7,6 +7,7 @@ import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useHelpersStore } from '../stores/helpers'
 import { useLayoutStore } from '../stores/layout'
+import { useSettingsStore } from '../stores/settings'
 import { useClaudeBootStore } from '../stores/claudeBoot'
 import { useFolderActions } from '../composables/useFolderActions'
 import { useEditorButton } from '../composables/useEditorButton'
@@ -14,9 +15,9 @@ import EditorIcon from './EditorIcon.vue'
 import { macWindowControlsInset } from '../lib/platform'
 import ActivityBell from './ActivityBell.vue'
 import MissionPill from './MissionPill.vue'
-import SplitMenu from './SplitMenu.vue'
 import {
   Terminal,
+  Globe,
   Folder as FolderIcon,
   FolderOpen,
   FolderTree,
@@ -28,6 +29,8 @@ import {
   GitPullRequest,
   Github,
   Plus,
+  Columns2,
+  Rows2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -39,8 +42,24 @@ const ui = useUiStore()
 const keybindings = useKeybindingsStore()
 const helpers = useHelpersStore()
 const layout = useLayoutStore()
+const settings = useSettingsStore()
 const boot = useClaudeBootStore()
 const { t } = useI18n()
+
+/** T627: "Split layout: Auto (stacked)" / "Split layout: Side by side" — the title and aria-label of the toggle. */
+const splitLayoutLabel = computed(() => {
+  const name = (o: 'side-by-side' | 'stacked'): string =>
+    t(
+      o === 'stacked'
+        ? 'settings.appearance.splitLayout.stacked'
+        : 'settings.appearance.splitLayout.sideBySide'
+    )
+  const mode =
+    settings.splitLayout === 'auto'
+      ? t('topbar.splitLayoutAuto', { layout: name(layout.splitOrientation).toLowerCase() })
+      : name(settings.splitLayout)
+  return t('topbar.splitLayout', { mode })
+})
 const titleEl = ref<HTMLSpanElement | null>(null)
 
 /**
@@ -520,8 +539,37 @@ function onKeydown(e: KeyboardEvent): void {
         >
           <Terminal :size="14" :stroke-width="1.5" />
         </button>
-        <!-- T564 U1: the Split dropdown — Terminal (the button above) or a Browser pane. -->
-        <SplitMenu @terminal="folderActions.newTerminal()" @browser="folderActions.newBrowser()" />
+        <!-- T630: Browser sits right next to Terminal — one click, the same operator pane the old Split
+             dropdown item opened. -->
+        <button
+          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
+          style="width: 26px; height: 26px"
+          :title="$t('topbar.browser')"
+          :aria-label="$t('topbar.browser')"
+          data-test="topbar-browser"
+          @click="folderActions.newBrowser()"
+        >
+          <Globe :size="14" :stroke-width="1.5" />
+        </button>
+        <!-- T627: split-layout toggle (design.md §6 "Split orientation"). The glyph is the layout in
+             force; one click cycles the setting auto → side-by-side → stacked. Accent ink = an
+             explicit choice overrides `auto`. Only when there are helper panes to orient. -->
+        <button
+          v-if="helpers.hasHelpersForCurrentWorktree"
+          class="flex items-center justify-center rounded transition hover:bg-surface"
+          :class="settings.splitLayout === 'auto' ? 'text-text-3 hover:text-text' : 'text-accent'"
+          style="width: 26px; height: 26px"
+          :title="keybindings.withChord(splitLayoutLabel, 'layout.cycleSplitOrientation')"
+          :aria-label="splitLayoutLabel"
+          data-test="topbar-split-layout"
+          @click="settings.cycleSplitLayout()"
+        >
+          <component
+            :is="layout.splitOrientation === 'stacked' ? Rows2 : Columns2"
+            :size="14"
+            :stroke-width="1.5"
+          />
+        </button>
         <!-- Right helper-panel toggle (design.md §6 — Colapsar sidebars). Only
              shown when the worktree HAS panes (nothing to toggle otherwise); it
              stays visible while collapsed so the panel is always reopenable. -->

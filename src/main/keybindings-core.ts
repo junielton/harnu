@@ -146,6 +146,8 @@ export type ShortcutActionId =
   | 'pane.toggleMaximize'
   | 'pane.close'
   | 'terminal.toggle'
+  // T627: cycle the session area / helper stack orientation (auto → side-by-side → stacked).
+  | 'layout.cycleSplitOrientation'
   // T564 U1 (spec §2.5): the browser pane's own actions, scoped to a focused browser pane.
   | 'browser.overlay.toggle'
   | 'browser.zoom.in'
@@ -450,6 +452,9 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('pane.toggleMaximize', 'panes', 'Cmd+Shift+M', { palette: false }),
   def('pane.close', 'panes', null, { palette: false }),
   def('terminal.toggle', 'panes', null, { shield: true }),
+  // T627 — the Topbar split-layout button's twin: auto → side-by-side → stacked → auto. Unbound,
+  // renderer-only (no menu item), and listed in the palette like the other layout toggles.
+  def('layout.cycleSplitOrientation', 'views', null),
   // Reserved — un-rebindable. Handled entirely in the main process, so none of
   // them has a renderer handler the palette could run.
   def('app.reload', 'app', 'F5', { ...MENU, reserved: true, palette: false }),
