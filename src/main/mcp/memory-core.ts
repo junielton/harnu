@@ -741,14 +741,19 @@ export type DigestEvidence = 'commits' | 'no-commits' | 'no-git' | 'orphan'
 /** The header line `renderDigest` writes: an italic line ending `· evidence: <kind>_`. */
 const EVIDENCE_TOKEN = /^_.*·\s*evidence:\s*(commits|no-commits|no-git|orphan)_\s*$/
 
-/** The evidence kind of the first digest header in the body, or undefined without one. */
+/**
+ * The evidence kind of the latest digest header in the body, or undefined without one. A session
+ * page is appended to by each later digest of the session that day, so the last header is the
+ * session's current state (first no commits, later commits reads "commits").
+ */
 function digestEvidence(content: string): DigestEvidence | undefined {
   const { body } = splitFrontmatter(content)
+  let kind: DigestEvidence | undefined
   for (const rawLine of body.split(/\r?\n/)) {
     const m = EVIDENCE_TOKEN.exec(rawLine.trim())
-    if (m) return m[1] as DigestEvidence
+    if (m) kind = m[1] as DigestEvidence
   }
-  return undefined
+  return kind
 }
 
 /** A raw digest file fed to {@link buildTimeline}: its filename and full content. */

@@ -48,7 +48,7 @@ The header line of every digest ends with an `evidence:` word that says what the
 | `no-git`     | **No git**     | The folder is not a git repository. Evidence says there is no git evidence; everything else is recorded the same way.                                                                                              |
 | `orphan`     | **Recovered**  | The digest was written from a removed worktree's transcript.                                                                                                                                                       |
 
-A digest written before these badges existed has no `evidence:` word and shows no badge.
+A digest written before these badges existed has no `evidence:` word and shows no badge. When a session is digested more than once on the same day, the badge shows the latest digest's evidence, so a session that first had no commits and then committed no longer reads "No commits".
 
 ## Removed worktrees
 
