@@ -415,3 +415,63 @@ export function buildHotProposal(input: HotProposalInput): string {
   lines.push(`Full digest: [[${input.digestPage}]]`)
   return lines.join('\n') + '\n'
 }
+
+// ---- Memory U1 (S-1) — stubs, implemented in the next commit ----------------
+
+import type { TranscriptFacts } from './digest-transcript'
+
+export type GitEvidence =
+  | {
+      kind: 'repo'
+      head: string | null
+      commits: DigestCommit[]
+      fileStats: DigestFileStat[]
+      dirtyCount: number
+    }
+  | { kind: 'not-a-repo' }
+  | { kind: 'unavailable' }
+export type DigestReason = 'ended' | 'idle' | 'compact' | 'catch-up' | 'orphan'
+export interface DigestGate {
+  minCommits: number
+  minUserTurns: number
+}
+export const DIGEST_GATE: DigestGate = { minCommits: 1, minUserTurns: 3 }
+export type DigestTrigger = 'digest-ended' | 'digest-compact' | 'arm-idle' | 'cancel-idle' | 'none'
+export function digestTriggerFor(_edge: { event: string; taskState: string }): DigestTrigger {
+  throw new Error('not implemented')
+}
+export interface DigestPlanInput {
+  facts: TranscriptFacts
+  git: GitEvidence
+  last: { head: string | null; userTurns: number } | null
+  orphan?: boolean
+  gate?: DigestGate
+}
+export type DigestPlan =
+  | { action: 'skip'; reason: 'insufficient' | 'unchanged' }
+  | {
+      action: 'write'
+      evidence: 'commits' | 'no-commits' | 'no-git' | 'orphan'
+      relevance: 'commits' | 'turns'
+    }
+export function planDigest(_input: DigestPlanInput): DigestPlan {
+  throw new Error('not implemented')
+}
+export interface DigestRenderInput {
+  date: string
+  title: string
+  branch?: string
+  sessionShort: string
+  reason: DigestReason
+  plan: Extract<DigestPlan, { action: 'write' }>
+  git: GitEvidence
+  facts: TranscriptFacts
+  awaySummary?: string
+  taskSummary?: string
+  lastPrompt?: string
+  otherCommits?: number
+}
+export const DIGEST_MAX_CHARS = 8_000
+export function renderDigest(_input: DigestRenderInput): string {
+  throw new Error('not implemented')
+}
