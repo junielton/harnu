@@ -149,8 +149,8 @@ reason }`. It never moves the headline ("Step N of M") and keeps its origin
   chapter reads done, `campaign_request_close` asks the operator to close; only
   they end a campaign, and `CAMPAIGN_CLOSED` means stop and report.
 
-**Declare the mission now — after the topology line, before any dispatch.** Call
-`mission_create` in this phase, not after the first unit is out: the mission is
+**Declare the mission now — after the topology line and the Phase 1b go, before any
+dispatch.** Call `mission_create` right after that go, not after the first unit is out: the mission is
 how the operator sees the delivery, and an end they never agreed to is a finish
 line they will dispute at the close. Propose the declared end from the spec
 (kind, target, evidence) and confirm it with the operator in ONE AskUserQuestion —
@@ -173,13 +173,14 @@ these rules:
 
 **The answer comes before the first dispatch.** Ask, then stop: write no packet,
 create no session and link no child until the operator has answered the end
-question (for a campaign, one question: the end of the whole objective). The end question in chat is the agreement: the mission is born
+question (for a campaign, one question: the end of the whole objective). The
+question is asked inside the Phase 1b delivery map, and the go is the answer. The end question in chat is the agreement: the mission is born
 `active`, and nothing else waits on the operator. If they correct the end, stage
 the correction with `mission_set_end`. Once they have answered, dispatch at
 once.
 
 **Integration branch — whenever the delivery needs more than one PR.** Cut
-`feat/<epic>` from the default branch before dispatching anything, and make it the
+`feat/<epic>` from the default branch after the Phase 1b go and before dispatching anything, and make it the
 base of every unit's branch (parallel units fork from it; stacked units fork from
 their predecessor). It exists so the feature can be tested as ONE thing before it
 touches the default branch: all unit PRs merge into `feat/<epic>`, that branch goes
@@ -199,6 +200,133 @@ Rules that keep the cost bounded:
   delivery, not an incident.
 
 Commit the spec bundle on `feat/<epic>` so every child worktree inherits it.
+
+## Phase 1b — Delivery map
+
+The operator sees the whole plan before any session exists. Once the topology and
+the chapter count are settled (Phase 1) and before anything is dispatched, render
+the map and wait for a go. Until the go, you may only write planning artifacts —
+the map itself, the spec bundle drafts, cards in `backlog`, `memory_append` — and
+you call none of `submit_manifest`, `create_session`, `create_worktree`,
+`campaign_create` or `mission_create`.
+
+**1. Write the map** to `.harnu/out/<slug>/delivery-map.md` (`<slug>` is the
+objective's slug, the same one the spec and cards use) and show it with
+`open_file`. Say one line in chat pointing at it; never paste it. It holds, in this
+order:
+
+- **Header** — the objective, the proposed declared end (kind, target, evidence),
+  and the totals: campaigns, chapters, cards, and the estimated number of executor
+  sessions (one per card, plus one shipper per card; verifiers run as subagents).
+- **Per campaign, per chapter, in delivery order** — the cards of the chapter with
+  their dependencies (parallel, or stacked on which card), and the `produces` /
+  `consumes` tokens the order rests on.
+- **Where the operator must act** — a table of every merge, build, credential or
+  decision the delivery needs from them: when it falls (after which card or
+  chapter), what exactly they do, and the observable event that clears it. A
+  delivery with no such point says so in one line.
+- **Campaign boundaries** — which chapters belong to which campaign, and where one
+  campaign ends and the next begins (below).
+
+**2. Fit check — one campaign, or several sequential ones?** Run it on the map,
+not on instinct. The objective does not fit one campaign when any of these holds
+(the numbers are defaults; the operator may override them in the go):
+
+- the map has more than 8 chapters or more than 25 executor sessions;
+- a stage needs something only the operator can produce — a merge and a build, a
+  credential, a decision — before the next stage can even be planned;
+- chapters beyond the next one are still guesses (rolling wave, Phase 1).
+
+Split at the boundary that does the most work: prefer a human pause, otherwise the
+point where a `produces` token is consumed by everything after it. Each campaign
+gets its own `declaredEnd`, verifiable on its own evidence. The campaigns run
+**sequentially, and the next one starts only when the operator starts it** — a new
+invocation of this skill, after the previous campaign is closed — never as a
+continuation you carry on by yourself.
+Campaign tokens are checked per campaign (`PREREQ_MISSING`), so a chapter of campaign
+N+1 does not list as `consumes` what campaign N produced: name it in that campaign's
+`declaredEnd` and in the map's "Starts from" line instead, and let the first chapter
+verify it on arrival. The boundary and the map's path go to memory in the same turn
+as the go (`memory_append`, `decisions`, one line: `delivery map · <slug> ·
+<n> campaigns · next: <campaign 2 title> · <path>`), so the next start finds them
+through Phase 0.
+
+**3. Ask for the go — once.** `notify` the operator that the map is ready, then ask
+ONE `AskUserQuestion`: go as mapped (recommended), or change the map. The declared
+end in the header is the end question of Phase 1, so this is the same question, not
+a second one. The go authorizes this map only — campaign 1 when the map has
+several. Ambiguous energy — "let's start", "sounds good", "go for it" — authorizes
+planning artifacts only, never execution; when unsure, ask ONE binary question. A
+correction is a new map (rewrite the file, ask again), not a verbal patch. With no
+answer, nothing is dispatched: the map stays open and the question stays asked.
+
+**4. After the go**, in this order: cut the integration branch and land the spec
+bundle (Commit 0) if the delivery needs them (Phase 1), call `campaign_create` for
+the campaign that starts now (when the map has several, each later campaign gets
+its own `campaign_create` at the moment the operator starts it), `mission_create`
+with the whole chapter plan, and go on to Phase 2.
+
+### Map template
+
+Keep this shape; the example is a two-campaign objective.
+
+```markdown
+# Delivery map — Acme catalog on the new storefront
+
+Objective: serve the Acme catalog from the new storefront stack.
+Declared end (proposed): kind `code` · target "catalog pages render from the new
+stack on main" · evidence "catalog e2e green on main".
+Totals: 2 campaigns · 4 chapters · 8 cards · ~8 executor sessions + 8 shippers.
+
+## Campaign 1 — Foundations (starts now)
+
+### Ch. 1 — Images on the CDN · produces `images-on-cdn`
+
+| Card              | Depends on | Parallel/stacked |
+| ----------------- | ---------- | ---------------- |
+| cdn-upload-script | —          | parallel         |
+| image-url-helper  | —          | parallel         |
+
+### Ch. 2 — Page templates · consumes `images-on-cdn` · produces `page-templates`
+
+| Card              | Depends on        | Parallel/stacked |
+| ----------------- | ----------------- | ---------------- |
+| product-template  | image-url-helper  | stacked          |
+| category-template | product-template  | stacked          |
+| template-tests    | category-template | stacked          |
+
+## Campaign 2 — Cutover (starts when you start it)
+
+Starts from: `page-templates` on main (verified by Ch. 3's first card).
+
+### Ch. 3 — Content migration
+
+| Card            | Depends on | Parallel/stacked |
+| --------------- | ---------- | ---------------- |
+| migrate-catalog | —          | parallel         |
+| redirect-map    | —          | parallel         |
+
+### Ch. 4 — Switch traffic
+
+| Card         | Depends on                    | Parallel/stacked |
+| ------------ | ----------------------------- | ---------------- |
+| traffic-flip | migrate-catalog, redirect-map | stacked          |
+
+## Where you act
+
+| When                 | What you do                             | Clears when               |
+| -------------------- | --------------------------------------- | ------------------------- |
+| After Ch. 1 verified | Merge the feat branch, run the CDN sync | images resolve on the CDN |
+| Campaign boundary    | Start campaign 2 (new orchestrate run)  | campaign 2 mission exists |
+| After Ch. 4 verified | Approve the traffic switch              | the flip PR merges        |
+
+## Boundary
+
+Campaign 1 = Ch. 1–2, ends when page templates are on main. Campaign 2 = Ch. 3–4.
+Campaign 2 is not started by this run.
+
+Go: reply "go" to dispatch campaign 1 as mapped, or tell me what to change.
+```
 
 ## Phase 2 — Cards and dispatch
 
@@ -727,16 +855,28 @@ because ticks and verification run in subagents.
 the session "feels long", and never hand the operator text to paste into a new
 session: a new session is not the mission's owner (the pill and the `you` line are
 keyed on the owner session id), the operator is not told there is anything to
-paste, and the sidebar fills with orphan sessions. An unattended run never depends
-on a human pasting a prompt.
+paste, and the sidebar fills with orphan sessions.
 
-**Recovery, not routine — the owner session is lost for good.** If this session is
-gone and cannot be resumed, the mission, board, ledger and git hold every fact; the
-`delivery-watchdog` worker notifies the operator that the mission went quiet.
-Replacing an owner is the job of Harnu's owner transfer (the Phase 0 delivery map
-and the owner-transfer verb are tracked separately), never of a prompt this skill
-writes. Until that exists, say plainly that ownership could not be moved, and do
-not improvise a substitute.
+**Recovery, not routine — replacing the owner.** Only when this session cannot go on
+(it died and was resumed with its context unusable, or the app closed under it) and
+it can still call verbs, the owner replaces itself — never the operator, never by a
+prompt for them to paste. The mission, board, ledger and git hold every fact, so the
+successor needs only a pointer:
+
+1. `create_session { folder, prePrompt }` into this folder, the prePrompt naming the
+   mission id, your session id as the owner, and "run `orchestrate-delivery`
+   Resume"; the successor passes your session id as `sessionId` / `ownerSessionId`
+   on every verb, exactly as a tick subagent does.
+2. `orchestrator_arm { sessionId: <the successor's id from the ACK> }`.
+3. `mission_log` the handover (old and new session id, why) and take the
+   `notify_when_idle` subscription on the successor.
+
+An agent-spawned session holds no `mcp__harnu__*` verbs (Phase 2). If the successor
+turns out to be unable to write the mission, log that and raise
+`mission_set_blocker { owner: 'operator' }`; do not hand over text to paste. If
+nothing is left that can call `create_session`, the `delivery-watchdog` worker
+notifies the operator that the mission went quiet, and that is the end of the
+recovery.
 
 ## Closing phase — when the declared end is "on main"
 
@@ -927,6 +1067,7 @@ The rail's rows are this orchestration's own steps, in this order, each with a
 concrete outcome:
 
 - `Topology` — single | parallel xN | stacked xN, plus the integration branch (or why none)
+- `Delivery map` — the path, campaigns n, and the go (when and what it covered)
 - `Heartbeat` — loop @<cadence> + watchdog worker (or why none)
 - one row per unit — `<card-slug> (branch)`: one-line summary, `PR #n`, and
   `ACs n/m met, k need a human`
