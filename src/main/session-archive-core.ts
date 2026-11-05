@@ -85,14 +85,21 @@ export async function openSessionArchive(filePath: string): Promise<SessionArchi
   // concurrent callers can never interleave a read-modify-write and drop an id.
   let queue: Promise<unknown> = Promise.resolve()
 
-  async function persist(): Promise<void> {
+  /**
+   * Write `nextIds` / `nextImported` to disk, and only then make them the in-memory state:
+   * a failed write (disk full, EACCES) throws with the set, the import flag and the
+   * listeners exactly as they were, so memory never runs ahead of the file.
+   */
+  async function commit(nextIds: Set<string>, nextImported: boolean): Promise<void> {
     const body: ArchiveFile = {
       version: ARCHIVE_FILE_VERSION,
-      ids: [...set],
-      legacyImported: imported
+      ids: [...nextIds],
+      legacyImported: nextImported
     }
     await fs.mkdir(path.dirname(filePath), { recursive: true })
     await atomicWriteFile(filePath, JSON.stringify(body, null, 2) + '\n', 0o600)
+    set = nextIds
+    imported = nextImported
   }
 
   function emit(changed: string[]): void {
@@ -119,8 +126,7 @@ export async function openSessionArchive(filePath: string): Promise<SessionArchi
       enqueue(async () => {
         const added = cleanIds(sessionIds).filter((id) => !set.has(id))
         if (added.length === 0) return []
-        set = new Set([...set, ...added])
-        await persist()
+        await commit(new Set([...set, ...added]), imported)
         emit(added)
         return added
       }),
@@ -128,8 +134,7 @@ export async function openSessionArchive(filePath: string): Promise<SessionArchi
       enqueue(async () => {
         const removed = cleanIds(sessionIds).filter((id) => set.has(id))
         if (removed.length === 0) return []
-        set = new Set([...set].filter((id) => !removed.includes(id)))
-        await persist()
+        await commit(new Set([...set].filter((id) => !removed.includes(id))), imported)
         emit(removed)
         return removed
       }),
@@ -137,9 +142,7 @@ export async function openSessionArchive(filePath: string): Promise<SessionArchi
       enqueue(async () => {
         if (imported) return { imported: false, added: [] }
         const added = cleanIds(sessionIds).filter((id) => !set.has(id))
-        set = new Set([...set, ...added])
-        imported = true
-        await persist()
+        await commit(new Set([...set, ...added]), true)
         emit(added)
         return { imported: true, added }
       }),

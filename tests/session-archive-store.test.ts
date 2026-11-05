@@ -125,4 +125,21 @@ describe('legacy import (localStorage -> main store)', () => {
     await store.importLegacy(['legacy'])
     expect([...store.ids()].sort()).toEqual(['legacy', 'verb-archived'])
   })
+
+  it('a failed write leaves the in-memory set, the import flag and the listeners untouched', async () => {
+    // The parent of the store path is a regular file, so every write fails with ENOTDIR.
+    const blocker = path.join(dir, 'blocker')
+    writeFileSync(blocker, 'not a directory')
+    const store = await openSessionArchive(path.join(blocker, 'archived-sessions.json'))
+    const heard: string[][] = []
+    store.onChange((ids) => heard.push(ids))
+
+    await expect(store.archive(['s-1'])).rejects.toThrow()
+    expect(store.has('s-1')).toBe(false)
+    await expect(store.unarchive(['s-1'])).resolves.toEqual([])
+    await expect(store.importLegacy(['legacy'])).rejects.toThrow()
+    expect(store.legacyImported()).toBe(false)
+    expect([...store.ids()]).toEqual([])
+    expect(heard).toEqual([])
+  })
 })
