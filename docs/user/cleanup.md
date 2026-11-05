@@ -249,6 +249,22 @@ Each shelve leaves a line in the journal at the bottom of Cleanup (with the comm
 
 To get a folder back by hand (if you prefer): `git -C <repo> worktree add <path> <branch>`. The files that were only in the folder are in the branch's `refs/archive/…/wip` and `…/shelve/ignored` refs. **The Archives card will not let you delete the archive of a shelved worktree**: it is the only copy of what was in the folder. The row's _Delete_ is disabled with "restore it first", and a **Restore first** button sits next to it. Agents see shelved worktrees in `list_cleanup` as `shelved`.
 
+### Docker: pausing and garbage
+
+Docker can run out of room long before the disk does: it hands out a limited number of private networks, and a pile of leftover stacks and empty networks uses them up, so the next `compose up` fails. Cleanup is getting its own part in keeping that from happening, with its own switch (Settings → Cleanup → _Docker: pausing and garbage_), separate from the autopilot's and from shelving's.
+
+**What it is for.** A stack that has sat idle for a couple of hours is **Paused**: brought down so it stops holding a network, never deleted, with its volumes kept; you bring it back with the `compose up -d` command Harnu records. Empty compose networks, and the stacks of worktrees that no longer exist, are cleared because they can only be regenerated. A volume is never removed this way.
+
+**What this release does: nothing yet in Docker.** This is the groundwork. The switch, the first report, the global pause and the safety limits are all in place, but the part that decides what to pause or clear is empty, so no stack is paused and nothing is removed. Later releases fill it in, and because the switch already starts report-only, you will see what it would do before anything acts.
+
+**It starts by only reporting, like shelving.** The switch is on by default, but its first pass only records what it would do. Nothing changes in Docker until you press **Acknowledge first report** in the same section. Turning the switch off and on again starts a new report-only pass. Its acknowledgement is its own: the one you gave the autopilot or shelving does not carry over.
+
+**It stops itself.** One Docker pass handles at most 5 actions, only one Harnu at a time works on Docker (even if you run two copies), and after 3 failures in a row the switch turns itself off and tells you why, so you can fix the cause and turn it back on.
+
+**Pause all autonomous cleanup.** The last row of the section is a master switch. While it is on, Harnu shelves nothing, does nothing in Docker and the autopilot cleans nothing. You can still clean by hand from the Cleanup screen. Turn it off and everything goes back to what each switch says; no acknowledgement is lost.
+
+Anything Cleanup does to Docker on its own will be written to the Containers journal with the actor `autopilot`, so it is easy to tell from what you or an agent did.
+
 ### Before the first scan
 
 Right after Harnu starts there is nothing to show until the first scan has run. Until then the screen says **Scanning your worktrees…**, the clean button reads **Scanning…** and is disabled, and nothing claims the workspace is clean. If that first scan fails, the screen says so with the error, and **Scan now** tries again.
