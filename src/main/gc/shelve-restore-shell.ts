@@ -34,6 +34,8 @@ import {
   type ShelvedFile
 } from './shelve-store'
 import { withRepoLock, type RepoLockResult } from './repo-lock-shell'
+import { sleep } from '../sleep'
+import type { ShelveRestoreAck } from './gc-wire'
 
 export type ShelvedRestoreFailure =
   RestoreFailure | 'record-missing' | 'repo-busy' | 'in-use' | 'move-aside-failed'
@@ -181,6 +183,30 @@ export function createShelveRestorer(deps: ShelveRestoreDeps): ShelveRestorer {
   }
 }
 
+/** What Cleanup's Restore button is told: the outcome without the entry (it knows which row it clicked). */
+export function toRestoreAck(outcome: ShelvedRestoreOutcome): ShelveRestoreAck {
+  switch (outcome.status) {
+    case 'not-shelved':
+      return { ok: false, status: 'not-shelved' }
+    case 'present':
+      return { ok: true, status: 'present' }
+    case 'restored':
+      return {
+        ok: true,
+        status: 'restored',
+        attached: outcome.attached,
+        movedAside: outcome.movedAside
+      }
+    case 'failed':
+      return {
+        ok: false,
+        status: 'failed',
+        reason: outcome.reason,
+        message: outcome.message
+      }
+  }
+}
+
 // ---- the real dependencies --------------------------------------------------------------------
 
 const listeners = new Set<() => void>()
@@ -208,7 +234,7 @@ export function defaultShelveRestoreDeps(over: Partial<ShelveRestoreDeps> = {}):
     inUse: async (p) => (await import('../reaper/scanner-shell')).isFolderInUse(p),
     moveAside: (from, to) => fs.rename(from, to),
     lock: (repoPath, work) => withRepoLock(repoPath, work),
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    sleep,
     now: () => Date.now(),
     changed: () => {
       for (const cb of [...listeners]) {
