@@ -811,6 +811,54 @@ describe('compose facts on a stack row (U3.4)', () => {
   })
 })
 
+describe('paused stacks in the snapshot (U3.4 AC-5)', () => {
+  const pause: Tombstone = {
+    at: NOW - HOUR,
+    actor: 'autopilot',
+    verb: 'stop',
+    stacks: [
+      {
+        stack: 'p',
+        name: 'p',
+        path: WT,
+        containerIds: ['a'.repeat(64)],
+        freed: { ramBytes: 1, ports: [8082], volumes: [], volumeBytes: 0 },
+        paused: {
+          project: 'p',
+          workingDir: WT,
+          configFiles: [],
+          profiles: [],
+          envFile: null,
+          hasBuild: false,
+          ports: [8082],
+          restoreCommand: `docker compose -p p --project-directory ${WT} up -d`,
+          pausedAt: NOW - HOUR
+        }
+      }
+    ],
+    restoreHint: `docker compose -p p --project-directory ${WT} up -d`
+  }
+
+  it('lists a stack with no containers as paused, and never as a zombie or orphan row', () => {
+    const snap = buildSnapshot(scanInput({ containers: [], journal: [pause] }))
+    expect(snap.paused.map((p) => p.stack)).toEqual(['p'])
+    expect(snap.stacks).toEqual([])
+    expect(snap.totals.needsYou).toBe(0)
+  })
+
+  it('is empty once the project has containers again', () => {
+    const snap = buildSnapshot(
+      scanInput({ containers: [composeContainer('p', WT)], journal: [pause] })
+    )
+    expect(snap.paused).toEqual([])
+    expect(snap.stacks.map((s) => s.id)).toEqual(['p'])
+  })
+
+  it('is empty without a journal', () => {
+    expect(buildSnapshot(scanInput()).paused).toEqual([])
+  })
+})
+
 describe('docker unavailable (PRD §5)', () => {
   it('says so instead of reporting an empty machine', () => {
     const snap = unavailableSnapshot('Cannot connect to the Docker daemon', NOW, 2, [])

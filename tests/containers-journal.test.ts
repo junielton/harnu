@@ -5,6 +5,7 @@ import * as path from 'node:path'
 import {
   appendTombstone,
   composeUpCommand,
+  derivePaused,
   isTombstone,
   journalFile,
   parseJournal,
@@ -321,5 +322,78 @@ describe('journal file', () => {
 
   it('reads a missing journal as empty', async () => {
     expect(await readJournal('/nonexistent/containers-log.jsonl')).toEqual([])
+  })
+})
+
+describe('derivePaused — the paused registry is the journal (U3.4 AC-5)', () => {
+  const record = (project: string, at: number) => ({
+    project,
+    workingDir: `/w/${project}`,
+    configFiles: [],
+    profiles: [],
+    envFile: null,
+    hasBuild: false,
+    ports: [8082],
+    restoreCommand: `docker compose -p ${project} --project-directory /w/${project} up -d`,
+    pausedAt: at
+  })
+  const pauseTomb = (
+    project: string,
+    at: number,
+    actor: 'autopilot' | 'operator' = 'autopilot'
+  ) => {
+    const t = tomb(at, { actor })
+    return {
+      ...t,
+      stacks: [{ ...t.stacks[0]!, stack: project, name: project, paused: record(project, at) }]
+    }
+  }
+  const plain = (project: string, at: number, verb: Tombstone['verb']): Tombstone => {
+    const t = tomb(at, { verb })
+    return { ...t, stacks: [{ ...t.stacks[0]!, stack: project, name: project }] }
+  }
+
+  it('lists a paused stack with its actor and name, newest first', () => {
+    const out = derivePaused([pauseTomb('b', 20), pauseTomb('a', 10, 'operator')], new Set())
+    expect(out.map((p) => [p.stack, p.name, p.actor, p.pausedAt])).toEqual([
+      ['b', 'b', 'autopilot', 20],
+      ['a', 'a', 'operator', 10]
+    ])
+    expect(out[0]!.restoreCommand).toContain('docker compose -p b')
+  })
+
+  it('survives a restart: the same answer from a journal read cold', () => {
+    const journal = parseJournal(
+      [pauseTomb('a', 10), plain('other', 12, 'stop')].map(serializeTombstone).join('')
+    )
+    expect(derivePaused(journal, new Set()).map((p) => p.stack)).toEqual(['a'])
+  })
+
+  it('a later tombstone for the stack ends the pause', () => {
+    for (const verb of ['start', 'remove', 'stop', 'sweep'] as const) {
+      expect(derivePaused([plain('a', 20, verb), pauseTomb('a', 10)], new Set())).toEqual([])
+    }
+  })
+
+  it('a stack with containers again is no longer paused', () => {
+    expect(derivePaused([pauseTomb('a', 10)], new Set(['a']))).toEqual([])
+    expect(derivePaused([pauseTomb('a', 10)], new Set(['b'])).map((p) => p.stack)).toEqual(['a'])
+  })
+
+  it('two pauses of the same stack are one entry — the newest', () => {
+    const out = derivePaused([pauseTomb('a', 30), pauseTomb('a', 10)], new Set())
+    expect(out.map((p) => p.pausedAt)).toEqual([30])
+  })
+
+  it('a pause that was undone and repeated counts once, at the second pause', () => {
+    const out = derivePaused(
+      [pauseTomb('a', 30), plain('a', 20, 'start'), pauseTomb('a', 10)],
+      new Set()
+    )
+    expect(out.map((p) => p.pausedAt)).toEqual([30])
+  })
+
+  it('an empty journal has nothing paused', () => {
+    expect(derivePaused([], new Set())).toEqual([])
   })
 })
