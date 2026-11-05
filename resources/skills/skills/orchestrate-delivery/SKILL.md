@@ -856,25 +856,23 @@ session: a new session is not the mission's owner (the pill and the `you` line a
 keyed on the owner session id), the operator is not told there is anything to
 paste, and the sidebar fills with orphan sessions.
 
-**Recovery, not routine — replacing the owner.** Only when this session cannot go on
-(it died and was resumed with its context unusable, or the app closed under it) and
-it can still call verbs, the owner replaces itself — never the operator, never by a
-prompt for them to paste. The mission, board, ledger and git hold every fact, so the
-successor needs only a pointer:
+**Recovery, not routine — a lost owner is moved by Harnu, not by you.** This
+session promises no successor: an agent-spawned session holds no `mcp__harnu__*`
+verbs (Phase 2), so one spawned from here could not own the mission, and this skill
+spawns none. When this session
+cannot go on (it died and was resumed with its context unusable, or the app closed
+under it), the mission, board, ledger and git already hold every fact, so what the
+owner does is leave them true and ask for the move:
 
-1. `create_session { folder, prePrompt }` into this folder, the prePrompt naming the
-   mission id, your session id as the owner, and "run `orchestrate-delivery`
-   Resume". Should the successor hold `mcp__harnu__*` verbs (see the caveat below), it
-   passes your session id as `sessionId` / `ownerSessionId` on every one, as a tick
-   subagent does.
-2. `orchestrator_arm { sessionId: <the successor's id from the ACK> }`.
-3. `mission_log` the handover (old and new session id, why) and take the
-   `notify_when_idle` subscription on the successor.
+1. Keep steps, links and the ledger current before the turn ends (`mission_link_child`,
+   `mission_log`), and `memory_append` anything the next owner must know.
+2. Raise `mission_set_blocker { owner: 'operator', reason, unblocks }` naming the
+   mission id and "ownership must move".
+3. State plainly that ownership moves only through Harnu's `mission_transfer_owner` /
+   `campaign_transfer_owner`, called from a session the operator opens (or, once
+   BUG-253 lands, from a Harnu-spawned successor role).
 
-An agent-spawned session holds no `mcp__harnu__*` verbs (Phase 2). If the successor
-turns out to be unable to write the mission, log that and raise
-`mission_set_blocker { owner: 'operator' }`; do not hand over text to paste. If
-nothing is left that can call `create_session`, the `delivery-watchdog` worker
+If nothing is left that can raise the blocker, the `delivery-watchdog` worker
 notifies the operator that the mission went quiet, and that is the end of the
 recovery.
 
