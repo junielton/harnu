@@ -228,3 +228,22 @@ describe('buildPosixRestoreFailedNotice — injection guard', () => {
     expect(out).not.toMatch(/\bPWNED\n/)
   })
 })
+
+describe('buildPowerShellRestoreFailedNotice — quoting', () => {
+  // PowerShell ends a single-quoted string at any of these, not only at an ASCII apostrophe.
+  const QUOTES = ["'", '\u2018', '\u2019', '\u201A', '\u201B']
+
+  it('uses only ASCII quotes in its own static text', () => {
+    const { args } = pty.buildPowerShellRestoreFailedNotice('C:\\w', 'boom')
+    for (const q of QUOTES.slice(1)) expect(args[2]).not.toContain(q)
+  })
+
+  it('doubles every single-quote character in the cwd and the message', () => {
+    for (const q of QUOTES) {
+      const { args } = pty.buildPowerShellRestoreFailedNotice(`C:\\a${q}b`, `x${q}; calc${q}`)
+      const body = args[2]
+      expect(body).toContain(`C:\\a${q}${q}b`)
+      expect(body).toContain(`x${q}${q}; calc${q}${q}`)
+    }
+  })
+})

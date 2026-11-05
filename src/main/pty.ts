@@ -242,24 +242,38 @@ export function buildPosixRestoreFailedNotice(
   return { command: '/bin/sh', args: ['-c', `printf '${format}' "$1" "$2"`, 'sh', cwd, message] }
 }
 
+/**
+ * The PowerShell notice for a shelved worktree that could not be restored. PowerShell ends a
+ * single-quoted string at U+2018, U+2019, U+201A and U+201B as well as at an ASCII apostrophe, and
+ * the cwd and the failure message are untrusted, so all four are doubled.
+ *
+ * Exported for unit testing of the quoting.
+ */
+export function buildPowerShellRestoreFailedNotice(
+  cwd: string,
+  message: string
+): { command: string; args: string[] } {
+  const lines = [
+    "This session's worktree was shelved and could not be restored:",
+    `  ${cwd}`,
+    '',
+    message,
+    '',
+    'Nothing was lost: the work is archived. Open Cleanup (Shelved), press Restore and try again,',
+    'or run `git worktree add` on the same path by hand.',
+    ''
+  ]
+  const body = lines
+    .map((l) => `Write-Host '${l.replace(/['\u2018\u2019\u201A\u201B]/g, (q) => q + q)}'`)
+    .join('; ')
+  return { command: 'powershell.exe', args: ['-NoProfile', '-Command', body] }
+}
+
 function buildRestoreFailedNotice(
   cwd: string,
   message: string
 ): { command: string; args: string[] } {
-  if (process.platform === 'win32') {
-    const lines = [
-      'This session’s worktree was shelved and could not be restored:',
-      `  ${cwd}`,
-      '',
-      message,
-      '',
-      'Nothing was lost: the work is archived. Open Cleanup (Shelved), press Restore and try again,',
-      'or run `git worktree add` on the same path by hand.',
-      ''
-    ]
-    const body = lines.map((l) => `Write-Host '${l.replace(/'/g, "''")}'`).join('; ')
-    return { command: 'powershell.exe', args: ['-NoProfile', '-Command', body] }
-  }
+  if (process.platform === 'win32') return buildPowerShellRestoreFailedNotice(cwd, message)
   return buildPosixRestoreFailedNotice(cwd, message)
 }
 
