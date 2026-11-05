@@ -257,6 +257,8 @@ Docker can run out of room long before the disk does: it hands out a limited num
 
 **What this release does: nothing yet in Docker.** This is the groundwork. The switch, the first report, the global pause and the safety limits are all in place, but the part that decides what to pause or clear is empty, so no stack is paused and nothing is removed. Later releases fill it in, and because the switch already starts report-only, you will see what it would do before anything acts.
 
+**The pause itself is built.** A paused stack is brought down with `docker compose down`, never with a volume removed, and Harnu records the ports it held and the `docker compose … up -d` command that brings it back (see [Paused stacks](containers.md#paused-stacks)). Before it acts it checks the stack again and refuses, saying **changed since decided**, if anything moved. It never pauses on its own a stack with an anonymous volume, or a database with no volume on its data path, because bringing those down would lose data. Only the part that chooses which stacks to pause is still missing.
+
 **It starts by only reporting, like shelving.** The switch is on by default, but its first pass only records what it would do. Nothing changes in Docker until you press **Acknowledge first report** in the same section. Turning the switch off and on again starts a new report-only pass. Its acknowledgement is its own: the one you gave the autopilot or shelving does not carry over.
 
 **It stops itself.** One Docker pass handles at most 5 actions, only one Harnu at a time works on Docker (even if you run two copies), and after 3 failures in a row the switch turns itself off and tells you why, so you can fix the cause and turn it back on.

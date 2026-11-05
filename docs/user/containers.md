@@ -57,11 +57,30 @@ The detail pane only offers what the verdict allows:
 
 While an action runs its button shows a spinner ("Stopping… 2 of 4"), and each container reads "stopping…" until docker reports it down. If docker refuses, the pane shows docker's own error and a **Try again** button.
 
+## Paused stacks
+
+When Cleanup decides a stack is only idle, it does not delete it: it **pauses** it. A **Paused** stack has been brought down with `docker compose down` — its containers and its network are gone, so it holds no RAM, no host ports and no network slot — and its volumes are kept, so its data is exactly where it was. Cleanup never removes a volume when it pauses a stack.
+
+A paused stack has no containers, so it is not a zombie or an orphan and has no verdict. It gets its own **Paused** section in the list, between **Leave alone** and **Recent**, with a **Paused** chip ("Pausada" in Portuguese) and how long ago. Selecting it shows:
+
+- **Paused by** — Cleanup, you, or an agent — and **when**.
+- **Folder** — the folder it ran from.
+- **Ports held** — the host ports it used. They must be free again when you bring it back.
+- **Rebuilds on restore** — shown only when a service has a `build:` section.
+- **To bring it back** — one command, with a copy button, for example `docker compose -p proj-82 --project-directory ~/org/proj/www -f ~/org/proj/www/compose.yml up -d`. It carries every compose file, profile and env file the stack ran with and `--build` when a service builds. Paste it in a terminal (or have a session run it) and the stack comes back on the same ports with its data. There is no Start button: with no containers there is nothing to start, and the command is the way back.
+
+Harnu remembers paused stacks across restarts, because they are read from the [journal](#recent-and-undo). A stack stops being paused as soon as it has containers again — when you bring it back, or when something else recreates it — or when a later action on it is journaled.
+
+Harnu never pauses, on its own, a stack with an **anonymous volume** (docker names it with a bare id, and nothing else refers to it), or one that runs a **database** (Postgres, MySQL, MariaDB, MongoDB, Redis, Elasticsearch, OpenSearch, RabbitMQ) with no volume or bind mount on the folder the database writes its data to: `compose down` would delete that data. It also never pauses a stack of a main checkout, one in use by a session, an orphan or an unknown stack, and it refuses with **changed since decided** when the stack is not exactly what it decided on a moment earlier.
+
+**Nothing pauses a stack by itself yet.** The pause exists, and is tested, but choosing which idle stacks to pause is not built, so you will not see a Paused stack until it is.
+
 ## Recent and undo
 
 Every action writes one entry to a journal, and **Recent** lists them — one entry per action, so "Stop N running" shows up once as "3 stacks stopped", and a cleaning in Cleanup that removes twelve stacks as one "12 stacks removed". Selecting an entry shows what it did and how to undo it:
 
-- **After a stop:** the `docker start …` command (with a copy button) and a **Start stack** / **Start all N** button that runs it.
+- **After a stop:** the command that brings it back (with a copy button) and a **Start stack** / **Start all N** button. For a standalone container that was only stopped, the command is `docker start …`; for a compose stack it is the full `docker compose … up -d` command, with its compose files, profiles and env file — never `docker start`, which fails once a stack has been brought down. A stack whose folder is gone has no command.
+- **After a pause:** the entry reads "paused" and shows the same compose command under **To bring it back**; there is no Start button, because [the stack has no containers](#paused-stacks).
 - **After a removal:** removed containers can't be restarted. If the worktree still exists, the entry shows the `docker compose … up -d` command that recreates them from it, and reattaches a volume you kept. If the worktree is gone, there is nothing to recreate them from.
 
 ## When docker isn't there
