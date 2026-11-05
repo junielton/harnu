@@ -25,7 +25,6 @@ import {
   type TopbarActionId,
   type TopbarActionView
 } from '../lib/topbar-overflow'
-import type { ShortcutActionId } from '../../../main/keybindings-core'
 import {
   Terminal,
   Globe,
@@ -283,18 +282,55 @@ function onGithubPullsClick(): void {
  * fit) by the `…` menu, so the icon, label, chord, state and handler can never differ between the two.
  * Which ones leave, and in what order, is `TOPBAR_OVERFLOW_ORDER` (design.md §6 "Topbar overflow").
  */
-const CHORD_OF: Partial<Record<TopbarActionId, ShortcutActionId>> = {
-  'new-session': 'session.newInFolder',
-  roadmap: 'view.roadmap',
-  'pr-stack': 'view.prStack',
-  review: 'view.review',
-  'open-folder': 'folder.openInFileManager',
-  editor: 'folder.openInEditor',
-  'github-pulls': 'folder.openGithubPulls',
-  explorer: 'folder.browseFiles',
-  terminal: 'folder.newTerminal',
-  'split-layout': 'layout.cycleSplitOrientation',
-  'panel-right': 'view.toggleHelper'
+const CHORDS: Partial<
+  Record<TopbarActionId, { title: (label: string) => string; hint: () => string }>
+> = {
+  // Literal `withChord(…, '<action id>')` calls, one per button: `keybindings-tooltips.test.ts` (AC-43)
+  // greps this file for them.
+  'new-session': {
+    title: (l) => keybindings.withChord(l, 'session.newInFolder'),
+    hint: () => keybindings.chordLabel('session.newInFolder')
+  },
+  roadmap: {
+    title: (l) => keybindings.withChord(l, 'view.roadmap'),
+    hint: () => keybindings.chordLabel('view.roadmap')
+  },
+  'pr-stack': {
+    title: (l) => keybindings.withChord(l, 'view.prStack'),
+    hint: () => keybindings.chordLabel('view.prStack')
+  },
+  review: {
+    title: (l) => keybindings.withChord(l, 'view.review'),
+    hint: () => keybindings.chordLabel('view.review')
+  },
+  'open-folder': {
+    title: (l) => keybindings.withChord(l, 'folder.openInFileManager'),
+    hint: () => keybindings.chordLabel('folder.openInFileManager')
+  },
+  editor: {
+    title: (l) => keybindings.withChord(l, 'folder.openInEditor'),
+    hint: () => keybindings.chordLabel('folder.openInEditor')
+  },
+  'github-pulls': {
+    title: (l) => keybindings.withChord(l, 'folder.openGithubPulls'),
+    hint: () => keybindings.chordLabel('folder.openGithubPulls')
+  },
+  explorer: {
+    title: (l) => keybindings.withChord(l, 'folder.browseFiles'),
+    hint: () => keybindings.chordLabel('folder.browseFiles')
+  },
+  terminal: {
+    title: (l) => keybindings.withChord(l, 'folder.newTerminal'),
+    hint: () => keybindings.chordLabel('folder.newTerminal')
+  },
+  'split-layout': {
+    title: (l) => keybindings.withChord(l, 'layout.cycleSplitOrientation'),
+    hint: () => keybindings.chordLabel('layout.cycleSplitOrientation')
+  },
+  'panel-right': {
+    title: (l) => keybindings.withChord(l, 'view.toggleHelper'),
+    hint: () => keybindings.chordLabel('view.toggleHelper')
+  }
 }
 
 /** `data-test` of each bar button (kept as they were; `panel-right` gained one). */
@@ -324,12 +360,12 @@ const allActions = computed<TopbarActionView[]>(() => {
     rest: Pick<TopbarActionView, 'icon' | 'run'> &
       Partial<Pick<TopbarActionView, 'iconProps' | 'state' | 'toggle'>>
   ): TopbarActionView => {
-    const chord = CHORD_OF[id]
+    const chord = CHORDS[id]
     return {
       id,
       label,
-      title: chord ? keybindings.withChord(label, chord) : label,
-      hint: chord ? keybindings.chordLabel(chord) : '',
+      title: chord ? chord.title(label) : label,
+      hint: chord ? chord.hint() : '',
       iconProps: LUCIDE,
       state: 'idle',
       toggle: false,
