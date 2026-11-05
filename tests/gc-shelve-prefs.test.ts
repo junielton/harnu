@@ -15,9 +15,9 @@ const on = (over: Partial<GcPrefs['shelve']> = {}): GcPrefs => {
 }
 
 describe('shelve prefs (AC-1)', () => {
-  it('ships off, unacknowledged, with the spec defaults', () => {
+  it('ships ON (design C1), unacknowledged, with the spec defaults', () => {
     expect(defaultGcPrefs().shelve).toEqual({
-      enabled: false,
+      enabled: true,
       firstReportAcknowledged: false,
       thresholdDays: 3,
       maxPerCycle: 3,
@@ -30,12 +30,39 @@ describe('shelve prefs (AC-1)', () => {
     expect(normalizeGcPrefs(old).shelve).toEqual(defaultGcPrefs().shelve)
   })
 
+  it('a prefs file that never set the switch reads ON, and still cannot shelve before the acknowledgement', () => {
+    const old = {
+      version: 1,
+      autopilot: true,
+      firstReportAcknowledged: true,
+      shelve: { thresholdDays: 5 }
+    }
+    const read = normalizeGcPrefs(old).shelve
+    expect(read.enabled).toBe(true)
+    expect(read.firstReportAcknowledged).toBe(false)
+    expect(read.thresholdDays).toBe(5)
+  })
+
+  it('a prefs file that explicitly turned it off keeps it off', () => {
+    expect(normalizeGcPrefs({ shelve: { enabled: false } }).shelve.enabled).toBe(false)
+    const written = JSON.parse(JSON.stringify(withShelveDisabled(defaultGcPrefs())))
+    expect(normalizeGcPrefs(written).shelve.enabled).toBe(false)
+  })
+
+  it('a missing or corrupt file reads the defaults: ON, report-only', () => {
+    for (const junk of [null, undefined, 'junk', 42, []]) {
+      const p = normalizeGcPrefs(junk)
+      expect(p.shelve.enabled).toBe(true)
+      expect(p.shelve.firstReportAcknowledged).toBe(false)
+    }
+  })
+
   it('clamps junk and out-of-range values', () => {
     const p = normalizeGcPrefs({
       shelve: { enabled: 'yes', thresholdDays: 0, maxPerCycle: 999, failureLimit: -4 }
     })
     expect(p.shelve).toEqual({
-      enabled: false,
+      enabled: true, // 'yes' is not a boolean: the default (ON) stands
       firstReportAcknowledged: false,
       thresholdDays: 1,
       maxPerCycle: 20,
