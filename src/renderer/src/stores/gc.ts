@@ -112,17 +112,25 @@ export const useGcStore = defineStore('gc', () => {
     if (rec && (!dockerWatch.value || rec.at >= dockerWatch.value.at)) dockerWatch.value = rec
   }
 
-  /** The pass whose notice was last recorded, so a replayed push adds no second row. */
-  let lastCapacityNoticeAt = 0
+  /**
+   * The passes whose notice was recorded (most recent {@link RECORDED_NOTICES_MAX}), so a notice that
+   * arrives twice, by push and by snapshot, adds no second row. A set, not a high-water mark: a newer
+   * notice pushed while the snapshot loads must not make an older pending one look already seen.
+   */
+  const recordedNoticeAts: number[] = []
+  const RECORDED_NOTICES_MAX = 64
 
   /**
    * The out-of-capacity notice (U3.6): one quiet Activity row and one remote push. Main decided WHEN
    * (once per level until capacity recovers); this only words it, in the app's language.
    */
-  function recordCapacityNotice(rec: DockerWatchRecord): void {
+  function recordCapacityNotice(rec: DockerWatchRecord): boolean {
     const n = rec.notice
-    if (!n || rec.at <= lastCapacityNoticeAt) return
-    lastCapacityNoticeAt = rec.at
+    if (!n) return false
+    // Already recorded: nothing to add, but it counts as recorded (it may still need acknowledging).
+    if (recordedNoticeAts.includes(rec.at)) return true
+    recordedNoticeAts.push(rec.at)
+    if (recordedNoticeAts.length > RECORDED_NOTICES_MAX) recordedNoticeAts.shift()
     const { t } = i18n.global
     const title = t(`cleanup.gc.capacity.${n.level}.title`)
     // Cleanup not acting (switch off, global pause): the same warning, saying why nothing is freed.
@@ -145,6 +153,7 @@ export const useGcStore = defineStore('gc', () => {
     } catch {
       /* transient IPC teardown: the Activity row is already recorded */
     }
+    return true
   }
 
   /** Tells main these notices are recorded, so it stops holding them (and a reload never replays them). */
@@ -159,8 +168,7 @@ export const useGcStore = defineStore('gc', () => {
 
   function onDockerWatch(rec: DockerWatchRecord): void {
     adoptWatch(rec)
-    recordCapacityNotice(rec)
-    if (rec.notice) ackNotices([rec])
+    if (recordCapacityNotice(rec)) ackNotices([rec])
   }
 
   /**
@@ -170,8 +178,8 @@ export const useGcStore = defineStore('gc', () => {
    */
   function adoptPendingNotices(snap: GcSnapshot): void {
     const pending = [...(snap.dockerNoticesPending ?? [])].sort((a, b) => a.at - b.at)
-    for (const rec of pending) recordCapacityNotice(rec)
-    ackNotices(pending)
+    // Acknowledge only what is recorded: a record without a notice stays with main.
+    ackNotices(pending.filter((rec) => recordCapacityNotice(rec)))
   }
 
   /**

@@ -40,7 +40,10 @@ const NOTICE_TITLE = 'Workspace cleanup'
 export const WATCH_BACKOFF_MS = 10 * 60_000
 
 /** What the planner would see: the free slots and every setting that changes its answer. */
-function planKeyOf(free: number, cfg: DockerAutonomyPrefs, mark: number): string {
+function planKeyOf(free: number, cfg: DockerAutonomyPrefs, mark: number, prefs: GcPrefs): string {
+  // The pause planner protects a worktree by its Keep mark or a never-clean path (`isProtectedNow`):
+  // clearing either changes its answer, so both are part of the key (presence and path, not fate).
+  const marks = [Object.keys(prefs.keep).sort().join('\n'), [...prefs.neverClean].sort().join('\n')]
   return [
     free,
     cfg.firstReportAcknowledged,
@@ -49,7 +52,8 @@ function planKeyOf(free: number, cfg: DockerAutonomyPrefs, mark: number): string
     cfg.idleHours,
     cfg.minAgeMinutes,
     cfg.maxParksPerHour,
-    cfg.failureLimit
+    cfg.failureLimit,
+    ...marks
   ].join('|')
 }
 
@@ -189,7 +193,7 @@ export async function runCapacityPass(
     !autonomyOff &&
     trigger === 'timer' &&
     idle !== null &&
-    idle.key === planKeyOf(now.free, cfg, mark) &&
+    idle.key === planKeyOf(now.free, cfg, mark, prefs) &&
     deps.now() - idle.at < WATCH_BACKOFF_MS
   if (backedOff && idle) {
     record.found = idle.found
@@ -297,7 +301,7 @@ export async function runCapacityPass(
     state.dockerWatchIdle =
       !autonomyOff && now.free !== null && record.nothingLeft && !record.paused
         ? {
-            key: planKeyOf(now.free, cfg, mark),
+            key: planKeyOf(now.free, cfg, mark, prefs),
             at: deps.now(),
             found: record.found,
             refused: record.refused,
