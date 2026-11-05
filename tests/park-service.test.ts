@@ -40,6 +40,10 @@ const decision = {
 
 function dockerFake(order: string[]) {
   return vi.fn(async (args: readonly string[]) => {
+    if (args[0] === 'ps') {
+      order.push('ps')
+      return { stdout: STACK.containers.map((c) => c.id).join('\n') }
+    }
     if (args[0] === 'inspect') {
       order.push('inspect')
       return {
@@ -85,7 +89,7 @@ describe('service.pause', () => {
     })
     const out = await svc.pause(decision, 'autopilot')
     expect(out).toMatchObject({ ok: true, outcome: 'paused' })
-    expect(order).toEqual(['inspect', 'config', 'down'])
+    expect(order).toEqual(['ps', 'inspect', 'config', 'down'])
     const journal = await readJournal(journalFile(h.userDataDir))
     expect(journal).toHaveLength(1)
     expect(journal[0]).toMatchObject({ actor: 'autopilot', verb: 'stop' })
@@ -121,7 +125,7 @@ describe('service.pause', () => {
     releaseStop()
     await acting
     await pausing
-    expect(order).toEqual(['stop-started', 'inspect', 'config', 'down'])
+    expect(order).toEqual(['stop-started', 'ps', 'inspect', 'config', 'down'])
   })
 
   it('a refused pause writes no journal line and still reports why', async () => {

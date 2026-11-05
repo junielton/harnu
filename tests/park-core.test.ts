@@ -203,6 +203,24 @@ describe('confirmOnlyReason (U3.4 AC-4)', () => {
     expect(confirmOnlyReason([bound])).toBeNull()
   })
 
+  it('a tmpfs on the data path is not persistent: compose down loses it, so the stack is confirm-only', () => {
+    const c = composeContainer('p', WT, {
+      image: 'postgres:16',
+      mounts: [mount('/var/lib/postgresql/data', null, 'tmpfs')]
+    })
+    expect(confirmOnlyReason([c])).toMatch(/database/)
+  })
+
+  it('a mount at / is not "a volume on the data path"', () => {
+    for (const type of ['bind', 'volume']) {
+      const c = composeContainer('p', WT, {
+        image: 'postgres:16',
+        mounts: [mount('/', type === 'volume' ? 'root' : null, type)]
+      })
+      expect(confirmOnlyReason([c])).toMatch(/database/)
+    }
+  })
+
   it('a mount on a parent of the data path covers it', () => {
     const c = composeContainer('p', WT, {
       image: 'postgres:16',
@@ -259,6 +277,9 @@ interface World {
   stack: StackRow
   /** What `docker inspect` answers, per container id. */
   inspected?: Record<string, { image: string; mounts?: unknown[]; service?: string }>
+  /** Containers of the project `docker ps -a` lists that the scan's snapshot does not know. */
+  psExtra?: string[]
+  psFails?: boolean
   config?: unknown
   configFails?: boolean
   downFails?: boolean
@@ -278,6 +299,10 @@ function setup(w: World): {
     scan: vi.fn(async () => available([stack])),
     run: vi.fn(async (args: readonly string[]) => {
       calls.push([...args])
+      if (args[0] === 'ps') {
+        if (w.psFails) throw new Error('cannot list containers')
+        return { stdout: [...stack.containers.map((c) => c.id), ...(w.psExtra ?? [])].join('\n') }
+      }
       if (args[0] === 'inspect') {
         const ids = args.slice(1)
         return {
@@ -285,7 +310,7 @@ function setup(w: World): {
             ids.map((id) => ({
               Id: id,
               Name: `/${id.slice(0, 6)}`,
-              State: { Status: 'running' },
+              State: { Status: w.psExtra?.includes(id) ? 'exited' : 'running' },
               Config: { Image: w.inspected?.[id]?.image ?? 'busybox', Labels: {} },
               Mounts: w.inspected?.[id]?.mounts ?? []
             }))
@@ -428,7 +453,7 @@ describe('pauseStack — the happy path (U3.4 AC-1, AC-2)', () => {
     const order = w.calls.map((a) =>
       a.includes('down') ? 'down' : a.includes('config') ? 'config' : a[0]
     )
-    expect(order).toEqual(['inspect', 'config', 'down'])
+    expect(order).toEqual(['ps', 'inspect', 'config', 'down'])
     expect(w.calls.find((a) => a.includes('config'))).toEqual([
       'compose',
       '-p',
@@ -562,6 +587,79 @@ describe('pauseStack — confirm-only stacks (U3.4 AC-4)', () => {
       }
     })
     expect(await pauseStack(w.decision, 'autopilot', w.deps)).toMatchObject({ ok: true })
+  })
+})
+
+describe('pauseStack — every container of the project, running or stopped (U3.4 AC-4)', () => {
+  const STOPPED = 'd'.repeat(64)
+
+  it('lists the whole project with docker ps -a, not just the decided containers', async () => {
+    const w = setup({ stack: composeStack() })
+    await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(w.calls[0]).toEqual([
+      'ps',
+      '-aq',
+      '--no-trunc',
+      '--filter',
+      'label=com.docker.compose.project=proj-82'
+    ])
+  })
+
+  it('a stopped database the scan missed makes the stack confirm-only — compose down would remove it', async () => {
+    const w = setup({
+      stack: composeStack(),
+      psExtra: [STOPPED],
+      inspected: { [STOPPED]: { image: 'postgres:16', mounts: [] } }
+    })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'confirm-required', code: 'CONFIRM_ONLY' })
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it('a stopped container with an anonymous volume makes the stack confirm-only', async () => {
+    const w = setup({
+      stack: composeStack(),
+      psExtra: [STOPPED],
+      inspected: {
+        [STOPPED]: {
+          image: 'nginx',
+          mounts: [{ Type: 'volume', Name: 'e'.repeat(64), Source: '/v', Destination: '/x' }]
+        }
+      }
+    })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'confirm-required' })
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it('a stopped container in the decision itself is checked too', async () => {
+    const stopped = containerRow({ service: 'db', running: false, volumes: [] })
+    const stack = composeStack({
+      containers: [containerRow({ service: 'app' }), stopped]
+    })
+    const w = setup({
+      stack,
+      inspected: { [stopped.id]: { image: 'mysql:8', mounts: [] } }
+    })
+    expect(await pauseStack(w.decision, 'autopilot', w.deps)).toMatchObject({
+      ok: false,
+      outcome: 'confirm-required'
+    })
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it('any other container down would remove that the decision did not name is "changed since decided"', async () => {
+    const w = setup({ stack: composeStack(), psExtra: [STOPPED] })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'refused', code: 'CHANGED_SINCE_DECIDED' })
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it('an unreadable project listing refuses before anything else runs', async () => {
+    const w = setup({ stack: composeStack(), psFails: true })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'refused', code: 'DOCKER_UNAVAILABLE' })
+    expect(w.calls.map((a) => a[0])).toEqual(['ps'])
   })
 })
 
