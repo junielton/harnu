@@ -285,6 +285,9 @@ function tombstoneOf(
     restoreHint: `git -C ${quote(d.repoPath)} worktree add ${quote(d.worktreePath)} ${quote(d.branch ?? record.tipRef)}`,
     archiveTipRef: record.tipRef,
     archiveWipRef: record.wipRef,
-    actor: 'autopilot'
+    actor: 'autopilot',
+    // The executor's own sentence, so the journal, the store and the Activity line never disagree.
+    reason: outcome.entry.reason,
+    idleDays: d.idleDays
   }
 }

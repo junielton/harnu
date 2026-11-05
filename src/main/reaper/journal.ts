@@ -46,6 +46,13 @@ export interface Tombstone {
    * is never emptied by Harnu.
    */
   trashEntry?: TrashEntryRecord | null
+  /**
+   * Why the action happened, in one English sentence. Written for a shelve ("Shelved `feat/x` —
+   * idle 9 d, branch kept"); absent on every other line, and on every line written before shelving.
+   */
+  reason?: string
+  /** Whole days a shelved worktree had been idle. Absent except on a shelve line. */
+  idleDays?: number
 }
 
 /** Serializes a tombstone to a single JSON line (with trailing newline). */
@@ -71,6 +78,8 @@ function isTombstone(v: unknown): v is Tombstone {
     isOptional(t.trashedPath, 'string') &&
     isOptional(t.trashedBytes, 'number') &&
     isOptional(t.trashedAt, 'number') &&
+    (t.reason === undefined || typeof t.reason === 'string') &&
+    (t.idleDays === undefined || (typeof t.idleDays === 'number' && Number.isFinite(t.idleDays))) &&
     (t.trashEntry === undefined || t.trashEntry === null || isTrashEntry(t.trashEntry))
   )
 }
