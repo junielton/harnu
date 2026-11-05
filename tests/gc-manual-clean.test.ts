@@ -15,6 +15,7 @@ import {
 } from '../src/main/gc/gc-orphan-transcripts'
 import { parseOptions } from '../src/main/gc/gc-options'
 import { bundle, NOW, reapItem } from './gc-fixtures'
+import { transcriptCleanRequest } from '../src/renderer/src/lib/gc-orphans'
 
 const prefs = (over: Partial<GcPrefs> = {}): GcPrefs => ({ ...defaultGcPrefs(), ...over })
 
@@ -880,6 +881,23 @@ describe('an orphaned project whose sessions have no digest (memory U1 S-5, D-6)
     }
     expect(await clean(r, shownItem, sentFor(shownItem))).toMatchObject({ ok: true })
     expect(r.trashed).toEqual(['slug-a'])
+  })
+
+  it('the request the Cleanup dialog builds for "Trash without a digest" reaches the trash (S-6)', async () => {
+    const it1 = transcriptsItem({ done: 1, total: 2, home: '/nonexistent/s5/proj/www' })
+    // Unticked: the renderer sends no confirmedUndigested, so main refuses.
+    const unticked = transcriptsRig(() => it1)
+    const plain = parseOptions(structuredClone(transcriptCleanRequest([it1], false, false).options))
+    expect(await clean(unticked, it1, plain)).toMatchObject({
+      ok: false,
+      error: 'needs-undigested-confirmation'
+    })
+    // Ticked: the same request, as the dialog sends it, trashes the folder.
+    const ticked = transcriptsRig(() => it1)
+    const sent = parseOptions(structuredClone(transcriptCleanRequest([it1], false, true).options))
+    expect(sent.confirmedUndigested).toEqual([it1.id])
+    expect(await clean(ticked, it1, sent)).toMatchObject({ ok: true })
+    expect(ticked.trashed).toEqual(['slug-a'])
   })
 
   it('parseOptions carries confirmedUndigested, strings only', () => {
