@@ -126,7 +126,7 @@ export interface CleanupListing {
     graceDays: number
   }
   /**
-   * Shelving (autonomous cleanup) has its own switch, independent of `autopilot`. Off by default;
+   * Shelving (autonomous cleanup) has its own switch, independent of `autopilot`. On by default;
    * while `reportOnly` it only lists what it would shelve.
    */
   shelving: { enabled: boolean; reportOnly: boolean; thresholdDays: number }
