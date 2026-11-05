@@ -18,6 +18,7 @@ import {
   type ContainersSnapshotUnavailable,
   type ContainersTotals,
   type FolderKind,
+  type StackCompose,
   type StackRow,
   type Tombstone,
   type Verdict,
@@ -27,6 +28,8 @@ import {
 export const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project'
 export const COMPOSE_WORKING_DIR_LABEL = 'com.docker.compose.project.working_dir'
 export const COMPOSE_SERVICE_LABEL = 'com.docker.compose.service'
+export const COMPOSE_CONFIG_FILES_LABEL = 'com.docker.compose.project.config_files'
+export const COMPOSE_ENV_FILE_LABEL = 'com.docker.compose.project.environment_file'
 
 const DAY_MS = 86_400_000
 
@@ -550,6 +553,16 @@ export function groupStacks(containers: readonly InspectedContainer[]): StackGro
   return groups
 }
 
+/** How a compose stack was started, from its containers' labels; null for a standalone container. */
+function composeFactsOf(g: StackGroup): StackCompose | null {
+  if (g.kind !== 'compose') return null
+  const label = (name: string): string | undefined =>
+    g.containers.map((c) => c.labels[name]).find((v) => v)
+  const files = (label(COMPOSE_CONFIG_FILES_LABEL) ?? '').split(',').filter(Boolean)
+  const env = (label(COMPOSE_ENV_FILE_LABEL) ?? '').split(',').filter(Boolean)[0] ?? null
+  return { configFiles: files, envFile: env }
+}
+
 export function isHolding(state: string): boolean {
   return HOLDING_STATES.has(state)
 }
@@ -712,7 +725,8 @@ export function buildSnapshot(input: ScanInput): ContainersSnapshotAvailable {
       lastContainerEventAt,
       unusedForMs: usesClock ? clock : null,
       zombieInMs,
-      liveSessionId
+      liveSessionId,
+      compose: composeFactsOf(g)
     }
   })
 

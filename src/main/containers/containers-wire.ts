@@ -87,6 +87,30 @@ export interface VolumeRow {
   shared: boolean
 }
 
+/** What the compose labels say about how a stack was started (U3.4); the restore command reads it. */
+export interface StackCompose {
+  /** `com.docker.compose.project.config_files`, split on commas; `[]` when the label is missing. */
+  configFiles: string[]
+  /** `com.docker.compose.project.environment_file` (the first one), or null. */
+  envFile: string | null
+}
+
+/**
+ * Everything `docker compose up -d` needs to bring a stack back the way it ran (U3.4). `project`
+ * is null only for a hint built without a project name.
+ */
+export interface ComposeRestoreFacts {
+  project: string | null
+  /** The directory the stack was started from (`--project-directory`). */
+  workingDir: string
+  configFiles: string[]
+  /** Profiles of the services that were running; the restored set needs them to come back. */
+  profiles: string[]
+  envFile: string | null
+  /** True when a restored service has a `build:` section, so `up -d` needs `--build`. */
+  hasBuild: boolean
+}
+
 export interface StackRow {
   /** Stable key every action targets: the compose project name, or the container name. */
   id: string
@@ -117,6 +141,8 @@ export interface StackRow {
   zombieInMs: number | null
   /** A live Harnu session in the attributed folder ("Go to session"), or null. */
   liveSessionId: string | null
+  /** Compose start-up facts from the labels; null for a standalone container (U3.4). */
+  compose?: StackCompose | null
 }
 
 export interface ContainersTotals {
@@ -185,8 +211,9 @@ export interface Tombstone {
   verb: ActVerb
   stacks: TombstoneStack[]
   /**
-   * `docker start <ids>` after a stop; the compose recreate command after a
-   * removal; null otherwise. A sweep carries a hint only when ONE command
+   * After a stop or a removal of a compose stack: its `docker compose … up -d` command (never
+   * `docker start`, which fails once a stack is down); `docker start <ids>` only for a standalone
+   * container that was merely stopped; null otherwise. A sweep carries a hint only when ONE command
    * honestly restores the whole batch — a batch no single command describes
    * stores null rather than a hint for one arbitrary stack (T340).
    */

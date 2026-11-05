@@ -96,28 +96,89 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
-/** After a stop: `docker start <ids>` (12-char ids, which docker accepts as prefixes). */
-export function restoreHintForStop(containerIds: readonly string[]): string | null {
-  if (containerIds.length === 0) return null
-  return `docker start ${containerIds.map((id) => shellQuote(id.slice(0, 12))).join(' ')}`
+/** What the labels or `docker compose config` know about how a stack starts (all optional). */
+export interface HintFacts {
+  configFiles?: readonly string[]
+  profiles?: readonly string[]
+  envFile?: string | null
+  hasBuild?: boolean
 }
 
-/**
- * After a removal: the compose recreate command when the stack came from a
- * compose project whose worktree still exists; otherwise nothing can bring the
- * stack back, and the hint is null. It names the project with `-p`: a name
- * that came from `-p` or `COMPOSE_PROJECT_NAME` would otherwise come back under
- * the directory's default name, and miss the volumes the operator kept.
- */
-export function restoreHintForRemove(stack: {
+/** The stack facts a restore hint is built from. */
+export interface HintStack {
   kind: 'compose' | 'container'
   project: string | null
   worktreePath: string | null
   worktreeExists: boolean
-}): string | null {
+  facts?: HintFacts | null
+}
+
+/**
+ * The command that brings a compose stack back after `down` or a removal (U3.4, AC-U3d):
+ * `docker compose -p P --project-directory WD [-f F]… [--profile X]… [--env-file E] up -d [--build]`.
+ * It names the project with `-p`: a name that came from `-p` or `COMPOSE_PROJECT_NAME` would
+ * otherwise come back under the directory's default name, and miss the volumes the operator kept.
+ * Every path is shell-quoted, because a restore hint is a command a human pastes into a terminal.
+ */
+export function composeUpCommand(f: {
+  project: string | null
+  workingDir: string
+  configFiles: readonly string[]
+  profiles: readonly string[]
+  envFile: string | null
+  hasBuild: boolean
+}): string {
+  return [
+    'docker compose',
+    ...(f.project ? ['-p', shellQuote(f.project)] : []),
+    '--project-directory',
+    shellQuote(f.workingDir),
+    ...f.configFiles.flatMap((file) => ['-f', shellQuote(file)]),
+    ...f.profiles.flatMap((profile) => ['--profile', shellQuote(profile)]),
+    ...(f.envFile ? ['--env-file', shellQuote(f.envFile)] : []),
+    'up -d',
+    ...(f.hasBuild ? ['--build'] : [])
+  ].join(' ')
+}
+
+/**
+ * The compose command for a stack, or null when nothing can bring it back: not a compose stack,
+ * no known directory, or the directory is gone.
+ */
+function composeHint(stack: HintStack): string | null {
   if (stack.kind !== 'compose' || !stack.worktreePath || !stack.worktreeExists) return null
-  const project = stack.project ? ` -p ${shellQuote(stack.project)}` : ''
-  return `docker compose${project} --project-directory ${shellQuote(stack.worktreePath)} up -d`
+  return composeUpCommand({
+    project: stack.project,
+    workingDir: stack.worktreePath,
+    configFiles: stack.facts?.configFiles ?? [],
+    profiles: stack.facts?.profiles ?? [],
+    envFile: stack.facts?.envFile ?? null,
+    hasBuild: stack.facts?.hasBuild ?? false
+  })
+}
+
+/**
+ * After a stop. A compose stack gets its `compose up -d` command and NEVER `docker start <ids>`
+ * (U3.4, risk 9: it fails once the stack was brought down, and is the wrong tool for a stack that
+ * needs its network back); null when the stack's directory is unknown or gone. A standalone
+ * container that was merely stopped keeps `docker start` (12-char ids, which docker accepts as
+ * prefixes).
+ */
+export function restoreHintForStop(
+  stack: HintStack,
+  containerIds: readonly string[]
+): string | null {
+  if (containerIds.length === 0) return null
+  if (stack.kind === 'compose') return composeHint(stack)
+  return `docker start ${containerIds.map((id) => shellQuote(id.slice(0, 12))).join(' ')}`
+}
+
+/**
+ * After a removal: the compose recreate command when the stack came from a compose project whose
+ * worktree still exists; otherwise nothing can bring the stack back, and the hint is null.
+ */
+export function restoreHintForRemove(stack: HintStack): string | null {
+  return composeHint(stack)
 }
 
 export async function appendTombstone(file: string, t: Tombstone): Promise<void> {

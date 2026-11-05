@@ -24,7 +24,12 @@ import {
   type Tombstone,
   type TombstoneStack
 } from './containers-wire'
-import { restoreHintForRemove, restoreHintForStop } from './containers-journal'
+import {
+  restoreHintForRemove,
+  restoreHintForStop,
+  type HintFacts,
+  type HintStack
+} from './containers-journal'
 
 /** What a multi-argument docker command reported: the arguments it handled, and its error. */
 export interface DockerBatchResult {
@@ -43,6 +48,11 @@ export interface ActionDeps {
   removeContainers(ids: string[]): Promise<DockerBatchResult>
   /** `docker volume rm <names>` — never `--force`. */
   removeVolumes(names: string[]): Promise<DockerBatchResult>
+  /**
+   * What `docker compose config` knows about how a stack starts (profiles, `build:`), for the
+   * restore hint. Optional: without it the hint carries only what the labels say.
+   */
+  restoreFacts?(stack: StackRow): Promise<HintFacts | null>
   appendTombstone(t: Tombstone): Promise<void>
   now(): number
 }
@@ -479,20 +489,59 @@ function tombstoneStack(stack: StackRow, r: StackActResult): TombstoneStack {
   }
 }
 
-function restoreHint(verb: ActVerb, touched: readonly Touched[]): string | null {
-  if (verb === 'stop') return restoreHintForStop(touched.flatMap((t) => t.r.containerIds))
+/** The label facts a stack row carries, enriched by the optional `restoreFacts` probe. */
+async function hintStackOf(stack: StackRow, deps: ActionDeps): Promise<HintStack> {
+  let facts: HintFacts | null = null
+  try {
+    facts = (await deps.restoreFacts?.(stack)) ?? null
+  } catch {
+    facts = null // an unreadable compose config only costs the hint its profiles and --build
+  }
+  return {
+    kind: stack.kind,
+    project: stack.project,
+    worktreePath: stack.attribution.path,
+    worktreeExists: stack.attribution.folderKind !== 'gone',
+    facts: facts ?? {
+      configFiles: stack.compose?.configFiles ?? [],
+      envFile: stack.compose?.envFile ?? null
+    }
+  }
+}
+
+async function restoreHint(
+  verb: ActVerb,
+  touched: readonly Touched[],
+  deps: ActionDeps
+): Promise<string | null> {
+  if (verb === 'stop') {
+    // One command per compose stack, chained; the standalone containers share one `docker start`.
+    // A stack no command can restore makes the whole batch null: a partial hint would read as if
+    // it restored everything.
+    const parts: string[] = []
+    const standalone: string[] = []
+    for (const t of touched) {
+      const stack = await hintStackOf(t.stack, deps)
+      if (stack.kind === 'container') {
+        standalone.push(...t.r.containerIds)
+        continue
+      }
+      const hint = restoreHintForStop(stack, t.r.containerIds)
+      if (hint === null) return null
+      parts.push(hint)
+    }
+    const start = restoreHintForStop(
+      { kind: 'container', project: null, worktreePath: null, worktreeExists: false },
+      standalone
+    )
+    return [...parts, ...(start ? [start] : [])].join(' && ') || null
+  }
   // A removal is restored by recreating the one stack it took. A sweep that
   // cleared several is not describable by one command, and a hint naming one
   // arbitrary stack would read as if it restored the batch: null is the honest
   // answer (T340).
   if ((verb === 'remove' || verb === 'sweep') && touched.length === 1) {
-    const s = touched[0]!.stack
-    return restoreHintForRemove({
-      kind: s.kind,
-      project: s.project,
-      worktreePath: s.attribution.path,
-      worktreeExists: s.attribution.folderKind !== 'gone'
-    })
+    return restoreHintForRemove(await hintStackOf(touched[0]!.stack, deps))
   }
   return null
 }
@@ -699,7 +748,7 @@ export async function runContainersAction(
       actor,
       verb: req.verb,
       stacks: touched.map((t) => tombstoneStack(t.stack, t.r)),
-      restoreHint: restoreHint(req.verb, touched)
+      restoreHint: await restoreHint(req.verb, touched, deps)
     }
     try {
       await deps.appendTombstone(tombstone)
