@@ -785,6 +785,12 @@ export const useGcStore = defineStore('gc', () => {
       if (guarded > 0) {
         causes.push(t('cleanup.gc.archives.toast.protected', guarded, { named: { n: guarded } }))
       }
+      const shelvedKept = ack.shelvedArchives?.length ?? 0
+      if (shelvedKept > 0) {
+        causes.push(
+          t('cleanup.gc.archives.toast.shelved', shelvedKept, { named: { n: shelvedKept } })
+        )
+      }
       if (causes.length > 0) {
         ui.pushToast({ kind: 'warning', title: causes.join(' · '), timeoutMs: 8000 })
       }

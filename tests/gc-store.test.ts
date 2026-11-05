@@ -1467,6 +1467,28 @@ describe('gc store — restoring a shelved worktree (U2.3a)', () => {
     expect(gc.shelvedBusy.has(shelvedEntry.id)).toBe(false)
   })
 
+  it('deleting archives says when it kept those of shelved worktrees, and where to go', async () => {
+    const api = installApi()
+    api.gcDeleteArchives.mockResolvedValueOnce({
+      ok: false,
+      deleted: 0,
+      archives: 0,
+      failed: 0,
+      changed: [],
+      shelvedArchives: [
+        { namespace: 'refs/archive/feat/x/20261101T100000Z', id: 'e1', branch: 'feat/x' }
+      ]
+    })
+    const gc = useGcStore()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await gc.init()
+    await gc.deleteArchives('/ws/repo', [
+      { namespace: 'refs/archive/feat/x/20261101T100000Z', tipSha: null, wipSha: null }
+    ])
+    const warning = toast.mock.calls.map((c) => c[0]).find((c) => c.kind === 'warning')
+    expect(warning?.title).toContain('Restore it first')
+  })
+
   it('forgets an old failure when the next attempt works', async () => {
     const { restore } = withRestore({
       ok: false,

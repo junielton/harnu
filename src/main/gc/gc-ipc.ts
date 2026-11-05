@@ -75,7 +75,7 @@ import { runShelveCycle } from './shelve-cycle'
 import { defaultShelveExecDeps, shelveWorktree } from './shelve-exec-shell'
 import { probeShelve } from './shelve-probe-shell'
 import { withRepoLock } from './repo-lock-shell'
-import { SHELVED_FILE } from './shelve-store'
+import { SHELVED_FILE, readShelved } from './shelve-store'
 import { onShelvedChanged, restoreShelvedById, toRestoreAck } from './shelve-restore-shell'
 import { parseOptions } from './gc-options'
 import type {
@@ -592,7 +592,16 @@ export async function registerGcHandlers(
     opinion: (ids) => opinions.start(ids),
     opinionCached: (ids) => opinions.cached(ids),
     deleteArchives: async (raw) => {
-      const ack = await deleteConfirmedArchives(parseArchiveRequest(raw), prefs.neverClean)
+      // A shelved worktree's archive is what restores it: those are refused here, whatever the screen sent.
+      const shelved = new Map(
+        (await readShelved(path.join(userData, SHELVED_FILE))).entries.map((e) => [e.namespace, e])
+      )
+      const ack = await deleteConfirmedArchives(
+        parseArchiveRequest(raw),
+        prefs.neverClean,
+        undefined,
+        shelved
+      )
       void gatherer.fresh().catch((err) => console.error('[gc] refresh after archives failed', err))
       return ack
     },

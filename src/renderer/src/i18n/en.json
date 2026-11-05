@@ -3339,11 +3339,14 @@
           "gcDone": "git gc finished in {repo}",
           "gcFailed": "git gc failed in {repo}",
           "neverClean": "This repo is on the never-clean list, so its archives were left alone.",
-          "protected": "{n} archive was left alone: its folder is on the never-clean list | {n} archives were left alone: their folders are on the never-clean list"
+          "protected": "{n} archive was left alone: its folder is on the never-clean list | {n} archives were left alone: their folders are on the never-clean list",
+          "shelved": "{n} archive was kept: its worktree is shelved and this archive restores it. Restore it first (Cleanup → Shelved). | {n} archives were kept: their worktrees are shelved and these archives restore them. Restore them first (Cleanup → Shelved)."
         },
         "ageUnknown": "age unknown",
         "deleteOne": "Delete…",
-        "protected": "On the never-clean list"
+        "protected": "On the never-clean list",
+        "shelvedTitle": "Shelved worktree — restore it first",
+        "restoreFirst": "Restore first"
       },
       "trash": {
         "title": "In the trash",
