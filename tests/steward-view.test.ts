@@ -8,6 +8,8 @@ import {
   firstLine,
   splitWorkers,
   stewardForMission,
+  stewardStateOf,
+  stewardsSummaryParts,
   summarizeSteward
 } from '../src/renderer/src/lib/steward-view'
 import type { Run, Worker } from '../src/preload'
@@ -112,5 +114,53 @@ describe('stewardForMission', () => {
     const b = worker({ id: 'b', missionId: 'mnt-00000002' })
     expect(stewardForMission([a, b], 'mnt-00000002')?.id).toBe('b')
     expect(stewardForMission([a, b], 'mnt-00000003')).toBeUndefined()
+  })
+})
+
+describe('stewardStateOf (T651 — precedence Paused > Running > Awaiting close > nothing)', () => {
+  it('a paused steward reads Paused even when it is running or its mission is delivered', () => {
+    expect(stewardStateOf({ running: true, awaitingClose: true }, true)).toBe('paused')
+    expect(stewardStateOf({ running: false, awaitingClose: true }, true)).toBe('paused')
+  })
+
+  it('a running steward reads Running over Awaiting close', () => {
+    expect(stewardStateOf({ running: true, awaitingClose: true }, false)).toBe('running')
+  })
+
+  it('a steward whose mission is delivered reads Awaiting close', () => {
+    expect(stewardStateOf({ running: false, awaitingClose: true }, false)).toBe('awaitingClose')
+  })
+
+  it('an idle steward on an open mission reads nothing', () => {
+    expect(stewardStateOf({ running: false, awaitingClose: false }, false)).toBeNull()
+  })
+})
+
+describe('stewardsSummaryParts (T651 — "{n} · {r} running · {a} awaiting close")', () => {
+  it('omits a part whose count is 0: 13 stewards, none running or awaiting → just the total', () => {
+    expect(stewardsSummaryParts(Array(13).fill(null))).toEqual([{ kind: 'total', n: 13 }])
+  })
+
+  it('counts running and awaiting by each steward’s displayed state, in that order', () => {
+    const states = ['running', ...Array(10).fill('awaitingClose'), null, null] as const
+    expect(stewardsSummaryParts(states)).toEqual([
+      { kind: 'total', n: 13 },
+      { kind: 'running', n: 1 },
+      { kind: 'awaiting', n: 10 }
+    ])
+  })
+
+  it('a paused steward is in the total but in neither part', () => {
+    expect(stewardsSummaryParts(['paused', 'running'])).toEqual([
+      { kind: 'total', n: 2 },
+      { kind: 'running', n: 1 }
+    ])
+  })
+})
+
+describe('summarizeSteward — awaitingClose (T651)', () => {
+  it('carries the awaitingClose flag, false by default', () => {
+    expect(summarizeSteward(worker(), [], false).awaitingClose).toBe(false)
+    expect(summarizeSteward(worker(), [], false, true).awaitingClose).toBe(true)
   })
 })
