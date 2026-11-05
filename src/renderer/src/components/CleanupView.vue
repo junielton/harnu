@@ -138,7 +138,8 @@ onMounted(async () => {
   // The Docker card reads Paused stacks and the journal from the Containers snapshot (U3.7).
   void containers
     .init()
-    .then(() => containers.ensureScanned())
+    // Always scan: Cleanup's own Docker actions write the journal without going through the service.
+    .then(() => containers.scanNow())
     .catch(() => undefined)
   await Promise.all([gc.init(), reaper.init()])
   if (!reaper.snapshot) await scanFirst()
