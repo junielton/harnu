@@ -215,5 +215,6 @@ between two islands' outer borders.
 
 ## Amendments · Deviations
 
-| date | kind | what changed | by  |
-| ---- | ---- | ------------ | --- |
+| date       | kind      | what changed                                                                                 | by           |
+| ---------- | --------- | -------------------------------------------------------------------------------------------- | ------------ |
+| 2026-11-05 | amendment | AC-16: "the Topbar split menu" → "a Topbar control" (SplitMenu.vue was removed by S-4, AC-9) | orchestrator |
