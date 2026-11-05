@@ -3,7 +3,7 @@
  * `docs/specs/2026-11-04-memory-u1-capture/spec.md`): git-evidence parsing, the
  * hook-edge trigger ({@link digestTriggerFor}), the commit-or-turns planner
  * ({@link planDigest}), the digest body ({@link renderDigest}) and the `hot.md`
- * snapshot builder.
+ * merge ({@link mergeHot}).
  *
  * Framework-free + side-effect-free per ADR-0001 (pure-core / thin-shell): NO
  * `fs`, `child_process`, `electron`, or clock. The engine (`./digest-engine.ts`)
@@ -19,7 +19,8 @@
  *  - The gate is a commit, or enough user turns ({@link DIGEST_GATE}), a single
  *    pinned config rather than a magic number.
  *  - The `hot` snapshot is written straight to `hot.md` by the shell, with a
- *    provenance stamp and a shadow-log entry (BUG-26 removed the review gate).
+ *    provenance stamp and a shadow-log entry (BUG-26 removed the review gate). It is
+ *    merged into the snapshot on disk, never laid over another branch's.
  *
  * Content is written in English by default (T85 rule — project-memory language
  * follows the app locale; `en` is the default). The shell does not translate;
@@ -28,6 +29,7 @@
 
 import * as path from 'node:path'
 import { cutText, type TranscriptFacts } from './digest-transcript'
+import { HOT_MAX_WORDS, parseProvenanceLine, splitFrontmatter } from './memory-core'
 
 // ---- Constants (all tunable knobs live here, pinned by tests) ----------------
 
@@ -198,13 +200,6 @@ export function digestSlug(date: string, sessionId: string): string {
 
 // ---- Digest body helpers ----------------------------------------------------
 
-/** Collapse whitespace + hard-cap a free-text field so the body stays bounded. */
-function elide(text: string, max: number): string {
-  const t = text.trim()
-  if (t.length <= max) return t
-  return t.slice(0, max - 1).trimEnd() + '…'
-}
-
 /** The uncommitted-changes line of the Evidence block. */
 function dirtyLine(dirtyCount: number): string {
   return `_${dirtyCount} uncommitted change${dirtyCount === 1 ? '' : 's'} in the working tree (not in the commits above)._`
@@ -248,9 +243,9 @@ function commitEvidenceLines(
   return lines
 }
 
-// ---- Hot proposal builder (the ≤500-word retomada snapshot) ------------------
+// ---- hot.md: the ≤500-word "where we left off" snapshot (memory U1 · S-7) -----
 
-/** Everything the hot-proposal builder needs — assembled by the shell. */
+/** Everything the `hot.md` builder needs — assembled by the engine. */
 export interface HotProposalInput {
   /** `YYYY-MM-DD`. */
   date: string
@@ -262,67 +257,166 @@ export interface HotProposalInput {
   commits: readonly DigestCommit[]
   /** The freshest `last-prompt`, when present. */
   lastPrompt?: string
-  /** The CLI's own recap, when present (fallback for "next"). */
-  awaySummary?: string
   /** Page id of the full digest this snapshot summarizes (`sessions/<slug>`). */
   digestPage: string
-  /** The last assistant message's open questions (S-7). */
+  /** The last assistant message's open questions (`facts.openQuestions`). */
   openQuestions?: readonly string[]
 }
 
-/** Every label Harnu writes in `hot.md` (S-7, D-8). Red-commit stub: filled in by the green one. */
-export const MEMORY_LABELS: Record<
-  'now' | 'last' | 'next' | 'parallel' | 'lastPrompt' | 'fullDigest',
-  string
-> = { now: '', last: '', next: '', parallel: '', lastPrompt: '', fullDigest: '' }
+/**
+ * Every label Harnu writes in `hot.md`, in one table (D-8). English until a memory label set
+ * exists for another locale; text copied from the transcript is never translated, it is a
+ * verbatim block. A value is the label as the file shows it, without the markup around it.
+ */
+export const MEMORY_LABELS = {
+  now: 'Now:',
+  /** Followed by ` (<date>):` in the file. */
+  last: 'Last',
+  next: 'Next:',
+  parallel: 'Parallel:',
+  lastPrompt: 'Last prompt (verbatim):',
+  fullDigest: 'Full digest:'
+} as const
 
-/** The merge (S-7). Red-commit stub. */
-export function mergeHot(_args: {
+/** Max parallel lines kept in `hot.md`. */
+const HOT_PARALLEL_MAX = 5
+
+/** Code points of the title in the Now block and in a parallel line. */
+const HOT_TITLE_CHARS = 200
+const HOT_PARALLEL_TITLE_CHARS = 80
+
+/** How hard the Next block is cut, in order, until the whole fits the word cap. */
+const HOT_NEXT_LADDER = [
+  { question: 300, questions: 5, prompt: LINE_MAX_CHARS },
+  { question: 120, questions: 5, prompt: 120 },
+  { question: 40, questions: 2, prompt: 40 }
+] as const
+
+/** Whitespace-delimited words, as the `hot.md` cap counts them. */
+function wordCount(text: string): number {
+  const t = text.trim()
+  return t.length === 0 ? 0 : t.split(/\s+/).length
+}
+
+const bold = (label: string): string => `**${label}**`
+
+/** The Next block: the open questions, else the last prompt under its label, else a dash. */
+function hotNext(input: HotProposalInput, rung: (typeof HOT_NEXT_LADDER)[number] | null): string {
+  const dash = `${bold(MEMORY_LABELS.next)} —`
+  if (!rung) return dash
+  const questions = (input.openQuestions ?? [])
+    .map((q) => oneLine(q.trim()))
+    .filter((q) => q !== '')
+    .slice(-rung.questions)
+    .map((q) => `> - ${cutText(q, rung.question)}`)
+  if (questions.length > 0) return `${bold(MEMORY_LABELS.next)}\n${questions.join('\n')}`
+  const prompt = (input.lastPrompt ?? '').trim()
+  if (!prompt) return dash
+  return `${bold(MEMORY_LABELS.next)}\n${MEMORY_LABELS.lastPrompt}\n${quoteBlock(cutText(prompt, rung.prompt))}`
+}
+
+/** A fresh snapshot of one session. Never over the word cap: the Next block gives way first. */
+function hotSnapshot(input: HotProposalInput): string {
+  const title = cutText(input.title.trim() || 'Recent session', HOT_TITLE_CHARS)
+  const branchPart = input.branch ? ` on \`${input.branch}\`` : ''
+  const latest = input.commits[0]
+  const last = latest
+    ? `${input.commits.length} ${input.commits.length === 1 ? 'commit' : 'commits'}${branchPart} — latest \`${latest.shortHash}\` ${cutText(oneLine(latest.subject.trim()) || '(no subject)', HOT_TITLE_CHARS)}`
+    : `no new commits${branchPart}`
+  const build = (next: string): string =>
+    [
+      `${bold(MEMORY_LABELS.now)}\n${quoteBlock(title)}`,
+      `${bold(`${MEMORY_LABELS.last} (${input.date}):`)} ${last}`,
+      next,
+      `${MEMORY_LABELS.fullDigest} [[${input.digestPage}]]`
+    ].join('\n\n') + '\n'
+  for (const rung of HOT_NEXT_LADDER) {
+    const hot = build(hotNext(input, rung))
+    if (wordCount(hot) <= HOT_MAX_WORDS) return hot
+  }
+  return build(hotNext(input, null))
+}
+
+/** A body read back from `hot.md`: the text up to the Parallel list, and the list's lines. */
+function splitHot(current: string): { head: string; lines: string[] } {
+  const rows = splitFrontmatter(current).body.split(/\r?\n/)
+  // The write path ends the file with its stamp (and sometimes an entry line); both are
+  // regenerated by the next write, so they are not part of the body.
+  while (rows.length > 0) {
+    const row = rows[rows.length - 1].trim()
+    if (row === '' || row.startsWith('> provenance:') || row.startsWith('> entry:')) rows.pop()
+    else break
+  }
+  const label = rows.lastIndexOf(bold(MEMORY_LABELS.parallel))
+  const tail = label === -1 ? [] : rows.slice(label + 1)
+  const listed = label !== -1 && tail.every((r) => r.trim() === '' || r.startsWith('- '))
+  const head = (listed ? rows.slice(0, label) : rows).join('\n').trim()
+  return { head, lines: listed ? tail.filter((r) => r.startsWith('- ')) : [] }
+}
+
+/** The key a parallel line is filed under, or null when the line is not one of ours. */
+function parallelKey(line: string): string | null {
+  const m = /^- `([^`]*)` · /.exec(line)
+  return m ? m[1] : null
+}
+
+/**
+ * The merge of a new snapshot into `hot.md` (spec S-7), with which snapshot the body is.
+ * `kept: true` means the current body stands, so the next stamp must name `currentKey`.
+ */
+export function mergeHotPlan(args: {
+  current: string | null
+  currentKey: string | null
+  next: HotProposalInput
+  nextKey: string
+}): { hot: string; kept: boolean } {
+  const { current, currentKey, next, nextKey } = args
+  const replaced = { hot: hotSnapshot(next), kept: false }
+  if (current === null || currentKey === null || currentKey === nextKey) return replaced
+
+  const { head, lines } = splitHot(current)
+  // Nothing to keep, or a body that fills the cap on its own: a snapshot of one's own it is.
+  if (head === '' || wordCount(head) > HOT_MAX_WORDS) return replaced
+
+  const key = nextKey.replace(/`/g, "'")
+  const title = cutText(oneLine(next.title.trim() || 'Recent session'), HOT_PARALLEL_TITLE_CHARS)
+  const line = `- \`${key}\` · ${next.date} · ${title} → [[${next.digestPage}]]`
+  const list = [line, ...lines.filter((l) => parallelKey(l) !== key)].slice(0, HOT_PARALLEL_MAX)
+  const render = (): string =>
+    list.length === 0
+      ? `${head}\n`
+      : `${head}\n\n${bold(MEMORY_LABELS.parallel)}\n${list.join('\n')}\n`
+  while (list.length > 0 && wordCount(render()) > HOT_MAX_WORDS) list.pop()
+  return { hot: render(), kept: true }
+}
+
+/**
+ * Merge the new session's snapshot into the current `hot.md` (spec S-7, R-5). The key is the
+ * branch, or the folder path for a folder outside git. The same key, no current hot or a current
+ * hot with no key replaces it; a different key keeps the current body and files the new snapshot
+ * as one line of the Parallel list at its end (newest first, at most five, the oldest dropped
+ * while the whole is over the word cap). Chapter 3 replaces all of this with the derived handoff.
+ */
+export function mergeHot(args: {
   current: string | null
   currentKey: string | null
   next: HotProposalInput
   nextKey: string
 }): string {
-  throw new Error('mergeHot: not implemented')
-}
-
-/** The key of the snapshot a `hot.md` holds, from its stamp (S-7). Red-commit stub. */
-export function hotKeyOf(_content: string): string | null {
-  throw new Error('hotKeyOf: not implemented')
+  return mergeHotPlan(args).hot
 }
 
 /**
- * Build the `hot.md` snapshot — the "where we left off" retomada cue (PRD §5,
- * Parnin). Deliberately short (well under the 500-word `hot` cap in
- * `memory-core.HOT_MAX_WORDS`): NOW (what this was), LAST (commit evidence), NEXT
- * (the open thread), and a `[[link]]` to the full digest. The shell writes it to
- * `hot.md` directly after the digest, replacing the previous snapshot.
+ * The key of the snapshot a `hot.md` holds: the branch of the stamp the write path left at its
+ * end. The last stamp line counts, so a prompt quoted in the body cannot name the key.
  */
-export function buildHotProposal(input: HotProposalInput): string {
-  const lines: string[] = []
-  const title = input.title.trim() || 'Recent session'
-  lines.push(`**Now:** ${elide(title, LINE_MAX_CHARS)}`)
-  lines.push('')
-
-  const branchPart = input.branch ? ` on \`${input.branch}\`` : ''
-  const latest = input.commits[0]
-  if (latest) {
-    const n = input.commits.length
-    const plural = n === 1 ? 'commit' : 'commits'
-    lines.push(
-      `**Last (${input.date}):** ${n} ${plural}${branchPart} — latest \`${latest.shortHash}\` ${latest.subject || '(no subject)'}`
-    )
-  } else {
-    lines.push(`**Last (${input.date}):** no new commits${branchPart}`)
+export function hotKeyOf(content: string): string | null {
+  const rows = content.split(/\r?\n/)
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].trim().startsWith('> provenance:'))
+      return parseProvenanceLine(rows[i]).branch ?? null
   }
-  lines.push('')
-
-  const next = (input.lastPrompt || input.awaySummary || '').trim()
-  lines.push(`**Next:** ${next ? elide(next, LINE_MAX_CHARS) : '—'}`)
-  lines.push('')
-
-  lines.push(`Full digest: [[${input.digestPage}]]`)
-  return lines.join('\n') + '\n'
+  return null
 }
 
 // ---- Memory U1 (S-1): shared types, trigger, planner, digest body ------------

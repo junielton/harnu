@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest'
 import * as os from 'node:os'
 import { join, parse } from 'node:path'
 import {
-  buildHotProposal,
   commitsAfter,
   commitsSince,
   DIGEST_COMMIT_CAP,
@@ -182,51 +181,6 @@ describe('digestSlug / shortSessionId', () => {
     // memory-core DIGEST_NAME = /^(\d{4}-\d{2}-\d{2})-([A-Za-z0-9]+)\.md$/
     const slug = digestSlug('2026-07-07', 'deadbeefcafef00d')
     expect(`${slug}.md`).toMatch(/^(\d{4}-\d{2}-\d{2})-([A-Za-z0-9]+)\.md$/)
-  })
-})
-
-// ---- buildHotProposal -------------------------------------------------------
-
-describe('buildHotProposal', () => {
-  const commits = [
-    mkCommit('a'.repeat(40), 300, 'feat: ship it'),
-    mkCommit('b'.repeat(40), 200, 'test: cover it')
-  ]
-
-  it('produces a NOW / LAST / NEXT snapshot linking the full digest', () => {
-    const hot = buildHotProposal({
-      date: '2026-07-07',
-      title: 'Auto-digest engine',
-      branch: 'feat/t79-s2-digest',
-      commits,
-      lastPrompt: 'Wire the inbox proposal',
-      digestPage: 'sessions/2026-07-07-a1b2c3d4'
-    })
-    expect(hot).toContain('**Now:** Auto-digest engine')
-    expect(hot).toContain('2 commits on `feat/t79-s2-digest` — latest `aaaaaaaa` feat: ship it')
-    expect(hot).toContain('**Next:** Wire the inbox proposal')
-    expect(hot).toContain('[[sessions/2026-07-07-a1b2c3d4]]')
-  })
-
-  it('stays well under the 500-word hot cap', () => {
-    const hot = buildHotProposal({
-      date: '2026-07-07',
-      title: 'x'.repeat(40),
-      commits,
-      digestPage: 'sessions/2026-07-07-a1b2c3d4'
-    })
-    expect(hot.trim().split(/\s+/).length).toBeLessThan(500)
-  })
-
-  it('handles a single commit (singular) and a missing next', () => {
-    const hot = buildHotProposal({
-      date: '2026-07-07',
-      title: 'x',
-      commits: [commits[0]],
-      digestPage: 'sessions/p'
-    })
-    expect(hot).toContain('1 commit')
-    expect(hot).toContain('**Next:** —')
   })
 })
 

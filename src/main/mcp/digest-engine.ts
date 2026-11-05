@@ -19,11 +19,12 @@ import type { HookTaskEvent } from '../detect/task-state-hub'
 import { pickTitle, type deriveTranscriptTruth } from '../transcript-truth'
 import { formatMemoryDate } from './memory-core'
 import {
-  buildHotProposal,
   DIGEST_GATE,
   digestSlug,
   digestTargetAllowed,
   digestTriggerFor,
+  hotKeyOf,
+  mergeHotPlan,
   planDigest,
   renderDigest,
   shortSessionId,
@@ -315,16 +316,39 @@ export function createDigestEngine(
     st.lastDigestAt = deps.now()
     deps.saveState?.(snapshot())
 
-    const hot = buildHotProposal({
-      date,
-      title,
-      ...(branch ? { branch } : {}),
-      commits: git.kind === 'repo' ? git.commits : [],
-      ...(lastPrompt ? { lastPrompt } : {}),
-      ...(awaySummary ? { awaySummary } : {}),
-      digestPage
+    // The hot snapshot is merged into the one on disk: another branch's stays, this one becomes a
+    // line of its Parallel list. A hot.md that cannot be read is left alone rather than overwritten.
+    let current: string | null = null
+    try {
+      current = (await deps.readHot?.(session.folder)) ?? null
+    } catch (err) {
+      console.warn('[memory-digest] hot.md unreadable; left as it is', err)
+      return
+    }
+    const currentKey = current === null ? null : hotKeyOf(current)
+    const merged = mergeHotPlan({
+      current,
+      currentKey,
+      next: {
+        date,
+        title,
+        ...(branch ? { branch } : {}),
+        commits: git.kind === 'repo' ? git.commits : [],
+        ...(lastPrompt ? { lastPrompt } : {}),
+        openQuestions: facts.openQuestions,
+        digestPage
+      },
+      // A folder outside git has no branch: its path is its key, which no stamp can carry.
+      nextKey: branch ?? session.folder
     })
-    await deps.writeHot(session.folder, id, branch, title, hot)
+    // The write path stamps the file with a branch, so the stamp names the snapshot the body is.
+    await deps.writeHot(
+      session.folder,
+      id,
+      merged.kept ? (currentKey ?? undefined) : branch,
+      title,
+      merged.hot
+    )
   }
 
   async function digestNow(id: string, reason: DigestReason): Promise<void> {
