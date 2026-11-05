@@ -362,7 +362,12 @@ describe('memory-bench core', () => {
       })
     expect(isOperatorTurn(JSON.parse(turn('Hello')))).toBe(true)
     expect(isOperatorTurn(JSON.parse(turn('<command-name>/status</command-name>')))).toBe(true)
-    expect(isOperatorTurn(JSON.parse(turn([{ type: 'image' }])))).toBe(true)
+    // An image-only line has no operator text, so it is not a turn (benchmark spec "Operator
+    // turn"; memory U1 AC-2). A line with text beside the image is one.
+    expect(isOperatorTurn(JSON.parse(turn([{ type: 'image' }])))).toBe(false)
+    expect(
+      isOperatorTurn(JSON.parse(turn([{ type: 'text', text: 'look at this' }, { type: 'image' }])))
+    ).toBe(true)
     expect(isOperatorTurn(JSON.parse(turn([{ type: 'tool_result', content: 'x' }])))).toBe(false)
     expect(isOperatorTurn(JSON.parse(turn('Hello', { isMeta: true })))).toBe(false)
     expect(isOperatorTurn(JSON.parse(turn('Hello', { isSidechain: true })))).toBe(false)
