@@ -46,6 +46,8 @@ beforeAll(async () => {
 // Each test starts with the owning repo's memory empty.
 afterEach(async () => {
   await rm(join(fx.repo, '.harnu'), { recursive: true, force: true })
+  // A digest that wrongly recreated the gone worktree must not poison the next test.
+  await rm(join(fx.repo, '.claude'), { recursive: true, force: true })
 })
 
 afterAll(async () => {
@@ -228,6 +230,67 @@ describe('digestTranscriptInto', () => {
       transcriptPath: fx.transcriptOf(id('a100000a'))
     })
     expect(existsSync(join(memoryDirFor(fx.repo), 'sessions'))).toBe(false)
+    engine.close()
+  })
+})
+
+describe('a digest never recreates a removed folder', () => {
+  const sid = id('a1000009')
+  const hookOver = (writes: string[]) =>
+    createDigestEngine({
+      resolveSession: async (sessionId) =>
+        sessionId === sid
+          ? { transcriptPath: fx.transcriptOf(sid), folder: fx.gone, branch: 'feature-x' }
+          : {
+              transcriptPath: fx.transcriptOf(sessionId),
+              folder: fx.repo,
+              branch: 'main'
+            },
+      readFacts: readTranscriptFacts,
+      readTruth: readTranscriptTruth,
+      gatherGit: gatherGitEvidence,
+      writeDigest: (folder, page, entry, sessionId) => {
+        writes.push(folder)
+        return appendMemoryEntry({
+          memoryDir: memoryDirFor(folder),
+          page,
+          entry,
+          author: 'agent',
+          sessionId,
+          now: REPLAY
+        })
+      },
+      writeHot: async (folder) => void writes.push(folder),
+      memoryCheckout: async (folder) => folder,
+      folderExists: async (folder) => existsSync(folder),
+      hasDigest: async () => false,
+      now: () => REPLAY,
+      setTimer: () => undefined,
+      clearTimer: () => undefined
+    })
+
+  it('skips a hook or catch-up digest for a session whose folder is gone', async () => {
+    const writes: string[] = []
+    const engine = hookOver(writes)
+    await engine.digestNow(sid, 'ended')
+    const picked = await engine.catchUp([
+      {
+        sessionId: sid,
+        folder: fx.gone,
+        transcriptPath: fx.transcriptOf(sid),
+        mtimeMs: REPLAY - 3_600_000
+      }
+    ])
+    expect(picked).toEqual([])
+    expect(writes).toEqual([])
+    expect(existsSync(fx.gone)).toBe(false)
+    expect(existsSync(join(fx.repo, '.claude'))).toBe(false)
+
+    // A folder that exists is digested as before.
+    const other = id('a1000002')
+    await engine.digestNow(other, 'ended')
+    expect(writes.length).toBeGreaterThan(0)
+    expect(new Set(writes)).toEqual(new Set([fx.repo]))
     engine.close()
   })
 })

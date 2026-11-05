@@ -103,6 +103,11 @@ export interface DigestEngineDeps {
    * Absent: a narrowed digest shows no files line rather than another session's files.
    */
   commitFileStats?(folder: string, hashes: string[]): Promise<DigestFileStat[]>
+  /**
+   * Whether the session's folder still exists. A digest for a session whose folder is gone is
+   * skipped, so the memory write can never recreate a removed worktree (S-5). Absent: no check.
+   */
+  folderExists?(folder: string): Promise<boolean>
   /** Called with the whole state after every successful digest (S-4). */
   saveState?(state: DigestState): void
   /** Whether the session already has a digest in the folder's memory dir (the catch-up sweep). */
