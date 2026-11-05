@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest'
 import * as os from 'node:os'
 import { join, parse } from 'node:path'
 import {
-  buildHotProposal,
   commitsAfter,
   commitsSince,
   DIGEST_COMMIT_CAP,
@@ -14,6 +13,9 @@ import {
   digestTriggerFor,
   GIT_LOG_FORMAT,
   GIT_LOG_SEP,
+  hotKeyOf,
+  MEMORY_LABELS,
+  mergeHot,
   parseGitLog,
   parseNumstat,
   planDigest,
@@ -24,10 +26,11 @@ import {
   type DigestFileStat,
   type DigestPlan,
   type DigestRenderInput,
-  type GitEvidence
+  type GitEvidence,
+  type HotProposalInput
 } from '../src/main/mcp/digest-core'
 import { createDigestEngine } from '../src/main/mcp/digest-engine'
-import { MEMORY_ENTRY_MAX_CHARS } from '../src/main/mcp/memory-core'
+import { HOT_MAX_WORDS, MEMORY_ENTRY_MAX_CHARS } from '../src/main/mcp/memory-core'
 import { deriveTranscriptTruth } from '../src/main/transcript-truth'
 import {
   emptyFacts,
@@ -181,48 +184,308 @@ describe('digestSlug / shortSessionId', () => {
   })
 })
 
-// ---- buildHotProposal -------------------------------------------------------
+// ---- mergeHot (memory U1 · S-7) -----------------------------------------------
 
-describe('buildHotProposal', () => {
-  const commits = [
-    mkCommit('a'.repeat(40), 300, 'feat: ship it'),
-    mkCommit('b'.repeat(40), 200, 'test: cover it')
-  ]
+const words = (text: string): number => (text.trim() === '' ? 0 : text.trim().split(/\s+/).length)
 
-  it('produces a NOW / LAST / NEXT snapshot linking the full digest', () => {
-    const hot = buildHotProposal({
-      date: '2026-07-07',
-      title: 'Auto-digest engine',
-      branch: 'feat/t79-s2-digest',
-      commits,
-      lastPrompt: 'Wire the inbox proposal',
-      digestPage: 'sessions/2026-07-07-a1b2c3d4'
+/** What the memory write path leaves at the end of `hot.md`: the body, then the stamp. */
+const stamped = (body: string, branch: string | null): string =>
+  `${body.trim()}\n\n> provenance: author=agent · at=2026-11-03${branch ? ` · branch=${branch}` : ''} · session=s1\n`
+
+const hotInput = (over: Partial<HotProposalInput> = {}): HotProposalInput => ({
+  date: '2026-11-03',
+  title: 'Cache work',
+  branch: 'main',
+  commits: [],
+  digestPage: 'sessions/2026-11-03-aaaaaaaa',
+  ...over
+})
+
+/** The Parallel list of a merged hot: its `- ` lines after the label. */
+const parallelLines = (hot: string): string[] => {
+  const at = hot.indexOf('**Parallel:**')
+  return at === -1
+    ? []
+    : hot
+        .slice(at)
+        .split('\n')
+        .filter((l) => l.startsWith('- '))
+}
+
+describe('mergeHot', () => {
+  it("mergeHot keeps another branch's snapshot", () => {
+    const a = mergeHot({
+      current: null,
+      currentKey: null,
+      next: hotInput({
+        title: 'Title A',
+        branch: 'feat/a',
+        digestPage: 'sessions/2026-11-01-aaaaaaaa'
+      }),
+      nextKey: 'feat/a'
     })
-    expect(hot).toContain('**Now:** Auto-digest engine')
-    expect(hot).toContain('2 commits on `feat/t79-s2-digest` — latest `aaaaaaaa` feat: ship it')
-    expect(hot).toContain('**Next:** Wire the inbox proposal')
-    expect(hot).toContain('[[sessions/2026-07-07-a1b2c3d4]]')
+    const aOnDisk = stamped(a, 'feat/a')
+    const input = (key: string, date: string, title: string): HotProposalInput =>
+      hotInput({ title, branch: key, date, digestPage: `sessions/${date}-${key.replace('/', '')}` })
+
+    // The same key replaces the body; so does a null current key, or no current hot at all.
+    const b = input('feat/b', '2026-11-02', 'Title B')
+    const replaced = mergeHot({ current: null, currentKey: null, next: b, nextKey: 'feat/b' })
+    expect(mergeHot({ current: aOnDisk, currentKey: 'feat/b', next: b, nextKey: 'feat/b' })).toBe(
+      replaced
+    )
+    expect(mergeHot({ current: aOnDisk, currentKey: null, next: b, nextKey: 'feat/b' })).toBe(
+      replaced
+    )
+    expect(replaced).not.toContain('Title A')
+    expect(replaced).not.toContain('**Parallel:**')
+
+    // A different key keeps the whole body, drops the old stamp, and lists the new key last.
+    const kept = mergeHot({ current: aOnDisk, currentKey: 'feat/a', next: b, nextKey: 'feat/b' })
+    expect(kept.startsWith(a.trimEnd())).toBe(true)
+    expect(kept).not.toContain('> provenance:')
+    expect(kept.trimEnd().endsWith('[[sessions/2026-11-02-featb]]')).toBe(true)
+    expect(parallelLines(kept)).toEqual([
+      '- `feat/b` · 2026-11-02 · Title B → [[sessions/2026-11-02-featb]]'
+    ])
+    expect(kept.match(/\*\*Parallel:\*\*/g)).toHaveLength(1)
+
+    // Another branch's line is replaced by the same key, and the list is newest first.
+    const withC = mergeHot({
+      current: stamped(kept, 'feat/a'),
+      currentKey: 'feat/a',
+      next: input('feat/c', '2026-11-03', 'Title C'),
+      nextKey: 'feat/c'
+    })
+    const withB2 = mergeHot({
+      current: stamped(withC, 'feat/a'),
+      currentKey: 'feat/a',
+      next: input('feat/b', '2026-11-04', 'Title B again'),
+      nextKey: 'feat/b'
+    })
+    expect(parallelLines(withB2)).toEqual([
+      '- `feat/b` · 2026-11-04 · Title B again → [[sessions/2026-11-04-featb]]',
+      '- `feat/c` · 2026-11-03 · Title C → [[sessions/2026-11-03-featc]]'
+    ])
+    expect(withB2.startsWith(a.trimEnd())).toBe(true)
+
+    // At most five lines: the oldest is dropped.
+    let hot = a
+    for (let i = 1; i <= 7; i++) {
+      hot = mergeHot({
+        current: stamped(hot, 'feat/a'),
+        currentKey: 'feat/a',
+        next: input(`k/${i}`, `2026-11-0${i}`, `Title ${i}`),
+        nextKey: `k/${i}`
+      })
+    }
+    const lines = parallelLines(hot)
+    expect(lines).toHaveLength(5)
+    expect(lines[0]).toContain('`k/7`')
+    expect(lines[4]).toContain('`k/3`')
+    expect(hot).not.toContain('`k/2`')
+
+    // A title is one line, whatever it held.
+    const multi = mergeHot({
+      current: aOnDisk,
+      currentKey: 'feat/a',
+      next: input('feat/m', '2026-11-05', 'first line\nsecond line'),
+      nextKey: 'feat/m'
+    })
+    expect(parallelLines(multi)).toEqual([
+      '- `feat/m` · 2026-11-05 · first line second line → [[sessions/2026-11-05-featm]]'
+    ])
+
+    // The result is never over the word cap: the oldest lines go first, then the new one.
+    const roomy = (n: number): string =>
+      `**Now:**\n> ${'pad '.repeat(n)}\n\nFull digest: [[sessions/x]]`
+    const four = (n: number): string => {
+      let h = roomy(n)
+      for (const k of ['k/1', 'k/2', 'k/3', 'k/4']) {
+        h = mergeHot({
+          current: stamped(h, 'feat/a'),
+          currentKey: 'feat/a',
+          next: input(k, '2026-11-02', 'T'),
+          nextKey: k
+        })
+      }
+      return h
+    }
+    const pad = 503 - words(four(0))
+    expect(words(four(pad - 1))).toBeLessThanOrEqual(HOT_MAX_WORDS)
+    const tight = four(pad - 1)
+    expect(parallelLines(tight).map((l) => l.slice(3, 6))).toEqual(['k/4', 'k/3', 'k/2'])
+    expect(tight).not.toContain('`k/1`')
+    // Nothing fits: the body stands alone, with no empty Parallel label.
+    const full = mergeHot({
+      current: stamped(roomy(HOT_MAX_WORDS - 6), 'feat/a'),
+      currentKey: 'feat/a',
+      next: input('k/9', '2026-11-02', 'T'),
+      nextKey: 'k/9'
+    })
+    expect(words(full)).toBeLessThanOrEqual(HOT_MAX_WORDS)
+    expect(full).not.toContain('**Parallel:**')
+
+    // A snapshot of one's own is never over the cap either, however much the session said.
+    const q = Array.from({ length: 5 }, () => 'a '.repeat(150).trim())
+    const big = mergeHot({
+      current: null,
+      currentKey: null,
+      next: hotInput({ openQuestions: q, lastPrompt: 'a '.repeat(400) }),
+      nextKey: 'main'
+    })
+    expect(words(big)).toBeLessThanOrEqual(HOT_MAX_WORDS)
   })
 
-  it('stays well under the 500-word hot cap', () => {
-    const hot = buildHotProposal({
-      date: '2026-07-07',
-      title: 'x'.repeat(40),
-      commits,
-      digestPage: 'sessions/2026-07-07-a1b2c3d4'
+  it('mergeHot carries the other branches’ parallel lines over a same-key replace', () => {
+    const input = (key: string, date: string, title: string): HotProposalInput =>
+      hotInput({ title, branch: key, date, digestPage: `sessions/${date}-${key}` })
+    // Branch A digests, then B (A kept, B parallel), then A again: B's line survives.
+    const a1 = mergeHot({
+      current: null,
+      currentKey: null,
+      next: input('a', '2026-11-01', 'A one'),
+      nextKey: 'a'
     })
-    expect(hot.trim().split(/\s+/).length).toBeLessThan(500)
+    const b1 = mergeHot({
+      current: stamped(a1, 'a'),
+      currentKey: 'a',
+      next: input('b', '2026-11-02', 'B one'),
+      nextKey: 'b'
+    })
+    const a2 = mergeHot({
+      current: stamped(b1, 'a'),
+      currentKey: 'a',
+      next: input('a', '2026-11-03', 'A two'),
+      nextKey: 'a'
+    })
+    expect(a2).toContain('> A two')
+    expect(a2).not.toContain('A one')
+    expect(parallelLines(a2)).toEqual(['- `b` · 2026-11-02 · B one → [[sessions/2026-11-02-b]]'])
+    // The body is a fresh snapshot with the list after it.
+    expect(a2.indexOf('Full digest: [[sessions/2026-11-03-a]]')).toBeLessThan(
+      a2.indexOf('**Parallel:**')
+    )
+    expect(a2.trimEnd().endsWith('[[sessions/2026-11-02-b]]')).toBe(true)
+
+    // A B digest replaces nothing of A's body: the new A snapshot stays, B's line is upserted.
+    const b2 = mergeHot({
+      current: stamped(a2, 'a'),
+      currentKey: 'a',
+      next: input('b', '2026-11-04', 'B two'),
+      nextKey: 'b'
+    })
+    expect(b2.startsWith(a2.slice(0, a2.indexOf('**Parallel:**')))).toBe(true)
+    expect(parallelLines(b2)).toEqual(['- `b` · 2026-11-04 · B two → [[sessions/2026-11-04-b]]'])
+
+    // A line under the body's own key is dropped, the rest keep their order, at most five stay.
+    const lines = ['c', 'b', 'a', 'd', 'e', 'f', 'g'].map(
+      (k, i) => `- \`${k}\` · 2026-11-0${i + 1} · T ${k} → [[sessions/x-${k}]]`
+    )
+    const crowded = `${a1.trim()}\n\n**Parallel:**\n${lines.join('\n')}`
+    const carried = parallelLines(
+      mergeHot({
+        current: stamped(crowded, 'a'),
+        currentKey: 'a',
+        next: input('a', '2026-11-05', 'A three'),
+        nextKey: 'a'
+      })
+    )
+    expect(carried.map((l) => l.slice(3, 4))).toEqual(['c', 'b', 'd', 'e', 'f'])
+
+    // The cap still holds: a body near it carries as many lines as fit, or none.
+    const fat = mergeHot({
+      current: stamped(`${a1.trim()}\n\n**Parallel:**\n${lines.join('\n')}`, 'a'),
+      currentKey: 'a',
+      next: hotInput({ openQuestions: Array.from({ length: 5 }, () => 'a '.repeat(140).trim()) }),
+      nextKey: 'a'
+    })
+    expect(words(fat)).toBeLessThanOrEqual(HOT_MAX_WORDS)
+    // A null current key or no hot replaces without a list, as before.
+    expect(
+      mergeHot({
+        current: stamped(crowded, null),
+        currentKey: null,
+        next: input('a', '2026-11-05', 'x'),
+        nextKey: 'a'
+      })
+    ).not.toContain('**Parallel:**')
   })
 
-  it('handles a single commit (singular) and a missing next', () => {
-    const hot = buildHotProposal({
-      date: '2026-07-07',
-      title: 'x',
-      commits: [commits[0]],
-      digestPage: 'sessions/p'
+  it('hot fences verbatim text and uses the label table', () => {
+    // The table is English and complete.
+    expect(Object.keys(MEMORY_LABELS).sort()).toEqual(
+      ['fullDigest', 'last', 'lastPrompt', 'next', 'now', 'parallel'].sort()
+    )
+    for (const v of Object.values(MEMORY_LABELS)) expect(v).toMatch(/^[A-Za-z][A-Za-z ()-]*:?$/)
+    const labels = new Set(Object.values(MEMORY_LABELS).map((v) => v.replace(/:$/, '')))
+    expect(MEMORY_LABELS.lastPrompt).toBe('Last prompt (verbatim):')
+
+    const input = hotInput({
+      title: 'Cacheの移行\n二行目',
+      lastPrompt: 'Falta o teste?\n\nSegunda parte',
+      commits: [mkCommit('c'.repeat(40), 100, 'feat: cache')]
     })
-    expect(hot).toContain('1 commit')
-    expect(hot).toContain('**Next:** —')
+    const withQuestions = mergeHot({
+      current: null,
+      currentKey: null,
+      next: { ...input, openQuestions: ['Devemos migrar tudo?', 'Outra\nlinha?'] },
+      nextKey: 'main'
+    })
+    const withPrompt = mergeHot({ current: null, currentKey: null, next: input, nextKey: 'main' })
+    const withNothing = mergeHot({
+      current: null,
+      currentKey: null,
+      next: hotInput({ title: 'Cache work' }),
+      nextKey: 'main'
+    })
+
+    // Open questions: one verbatim bullet each, and the prompt is not Next.
+    expect(withQuestions).toContain('**Next:**\n> - Devemos migrar tudo?\n> - Outra linha?')
+    expect(withQuestions).not.toContain('Falta o teste')
+    expect(withQuestions).not.toContain(MEMORY_LABELS.lastPrompt)
+    // No questions: the label, then the prompt as a block.
+    expect(withPrompt).toContain(
+      `**Next:**\n${MEMORY_LABELS.lastPrompt}\n> Falta o teste?\n>\n> Segunda parte`
+    )
+    expect(withPrompt).not.toMatch(/\*\*Next:\*\*\s*Falta/)
+    // Neither: a dash.
+    expect(withNothing).toContain('**Next:** —')
+
+    for (const hot of [withQuestions, withPrompt, withNothing]) {
+      // The title is a block, every line quoted.
+      expect(hot).toContain('**Now:**\n> ')
+      // Outside the blocks there is only the label table's words, the dash and the digest link.
+      for (const line of hot.split('\n')) {
+        if (line === '' || line.startsWith('>')) continue
+        const label =
+          /^\*\*([^*]+?)(?: \(\d{4}-\d{2}-\d{2}\))?:?\*\*|^(Last prompt \(verbatim\)|Full digest):/.exec(
+            line
+          )
+        expect(label, `unlabelled line: ${line}`).not.toBeNull()
+        expect(labels.has((label![1] ?? label![2]).replace(/:$/, ''))).toBe(true)
+        expect(line).not.toMatch(/移行|二行目|Falta|Devemos/)
+      }
+    }
+    expect(withPrompt).toContain('> Cacheの移行\n> 二行目')
+    expect(withPrompt).toContain(
+      '**Last (2026-11-03):** 1 commit on `main` — latest `cccccccc` feat: cache'
+    )
+    expect(withPrompt.trimEnd().endsWith('Full digest: [[sessions/2026-11-03-aaaaaaaa]]')).toBe(
+      true
+    )
+  })
+
+  it('hotKeyOf reads the stamp the write path left, not a quoted one', () => {
+    expect(hotKeyOf(stamped('**Now:**\n> x', 'feat/a'))).toBe('feat/a')
+    expect(hotKeyOf(stamped('**Now:**\n> x', null))).toBeNull()
+    expect(hotKeyOf('no stamp here')).toBeNull()
+    // A prompt that quotes a stamp-looking line cannot choose the key.
+    const spoof = '**Now:**\n> provenance: author=agent · branch=evil\n\nFull digest: [[x]]'
+    expect(hotKeyOf(stamped(spoof, 'feat/a'))).toBe('feat/a')
+    expect(hotKeyOf(stamped(spoof, null))).toBeNull()
+    // Frontmatter before the body is fine.
+    expect(hotKeyOf(`---\ntitle: hot\n---\n\n${stamped('body', 'main')}`)).toBe('main')
   })
 })
 

@@ -25,7 +25,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import { scanFolders } from './claude-reader'
 import { addTaskEventObserver } from './hook-bridge'
-import { appendMemoryEntry, resolveMemoryLocation } from './mcp/memory-store'
+import { appendMemoryEntry, readMemoryPage, resolveMemoryLocation } from './mcp/memory-store'
 import { resolveMemoryCheckout } from './mcp/memory-core'
 import { probeGitMeta } from './git-probe'
 import { pushShadowEntry } from './responder-registry'
@@ -123,7 +123,9 @@ async function writeHot(
       page: 'hot',
       entry: hot,
       author: 'agent',
-      ...(loc.branch ? { branch: loc.branch } : {}),
+      // The stamp names the snapshot's branch (the engine passes it): a snapshot of another
+      // branch that was kept stays filed under that branch, not under the folder's.
+      ...(branch || loc.branch ? { branch: branch ?? loc.branch } : {}),
       sessionId,
       ...(loc.mode === 'central' ? { backlink: { sourcePath: loc.checkout } } : {}),
       now: Date.now()
@@ -153,6 +155,23 @@ async function writeHot(
 async function memoryCheckout(folder: string): Promise<string> {
   const meta = await probeGitMeta(folder)
   return resolveMemoryCheckout(folder, meta.repoId)
+}
+
+/**
+ * The folder's `hot.md` as it is on disk, or null when it has none. Any other failure throws,
+ * so a hot.md that exists but cannot be read is never overwritten blind.
+ */
+async function readHot(folder: string): Promise<string | null> {
+  const loc = await resolveMemoryLocation(folder)
+  const res = await readMemoryPage(loc.memoryDir, 'hot')
+  if (res.ok) return res.content
+  if (res.error === 'PAGE_NOT_FOUND') return null
+  throw new Error(res.detail)
+}
+
+/** The branch the folder is on now; undefined when detached or not a repo. */
+async function folderBranch(folder: string): Promise<string | undefined> {
+  return (await probeGitMeta(folder)).gitBranch
 }
 
 /** Whether the folder is still there; any answer but "it is missing" counts as there. */
@@ -220,6 +239,8 @@ const liveDeps: DigestEngineDeps = {
   gatherGit: gatherGitEvidence,
   writeDigest,
   writeHot,
+  readHot,
+  folderBranch,
   memoryCheckout,
   folderExists,
   subagentTranscripts,
