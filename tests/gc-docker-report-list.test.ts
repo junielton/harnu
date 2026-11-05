@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { createCycleState } from '../src/main/gc/gc-cycle'
 import {
+  heldDockerReport,
   reportItemsOf,
   runDockerCycle,
   type DockerAction,
@@ -109,5 +110,64 @@ describe('the report notice is truthful (U3.6 AC-6)', () => {
     const body = r.notices[0]!.body
     expect(body).toMatch(/pause idle stacks/i)
     expect(body).not.toMatch(/remove empty networks/i)
+  })
+})
+
+describe('the held report: only a pass that planned replaces it (U3.6 AC-5)', () => {
+  const lockedRig = (prefs: GcPrefs, actions: DockerAction[]) => {
+    const r = rig(prefs, actions)
+    r.deps.lock = async () => ({ ok: false, reason: 'locked', holder: null })
+    return r
+  }
+
+  it('a planning report cycle holds the list, with its source and the true count', async () => {
+    const state = createCycleState()
+    await runDockerCycle(rig(defaultGcPrefs(), plan3).deps, state)
+    expect(state.dockerReport).toEqual({
+      at: 0,
+      source: 'cycle',
+      found: 3,
+      items: reportItemsOf(plan3)
+    })
+  })
+
+  it('a locked cycle record never replaces a list that has items', async () => {
+    const state = createCycleState()
+    await runDockerCycle(rig(defaultGcPrefs(), plan3).deps, state)
+    const held = state.dockerReport
+    const rec = await runDockerCycle(lockedRig(defaultGcPrefs(), plan3).deps, state)
+    expect(rec).toMatchObject({ mode: 'report', locked: true, items: [] })
+    expect(state.dockerReport).toBe(held)
+  })
+
+  it('off and the global pause never replace it', async () => {
+    const state = createCycleState()
+    await runDockerCycle(rig(defaultGcPrefs(), plan3).deps, state)
+    const held = state.dockerReport
+    const off = { ...defaultGcPrefs(), docker: { ...defaultGcPrefs().docker, enabled: false } }
+    await runDockerCycle(rig(off, []).deps, state)
+    await runDockerCycle(rig({ ...defaultGcPrefs(), pauseAutonomous: true }, []).deps, state)
+    expect(state.dockerReport).toBe(held)
+  })
+
+  it('a newer planning report replaces an older one, even with fewer items', async () => {
+    const state = createCycleState()
+    await runDockerCycle(rig(defaultGcPrefs(), plan3).deps, state)
+    await runDockerCycle(rig(defaultGcPrefs(), [plan3[0]!]).deps, state)
+    expect(state.dockerReport?.items).toEqual(reportItemsOf([plan3[0]!]))
+  })
+
+  it('an acknowledged (acting) cycle clears it', async () => {
+    const state = createCycleState()
+    await runDockerCycle(rig(defaultGcPrefs(), plan3).deps, state)
+    await runDockerCycle(rig(withDockerAcknowledged(defaultGcPrefs()), []).deps, state)
+    expect(state.dockerReport).toBeNull()
+  })
+
+  it('heldDockerReport shows it only while unacknowledged', () => {
+    const state = createCycleState()
+    state.dockerReport = { at: 1, source: 'watcher', found: 1, items: [] }
+    expect(heldDockerReport(state, defaultGcPrefs())).toBe(state.dockerReport)
+    expect(heldDockerReport(state, withDockerAcknowledged(defaultGcPrefs()))).toBeNull()
   })
 })

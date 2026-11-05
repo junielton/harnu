@@ -38,6 +38,11 @@ describe('gc-ipc wires the capacity watcher', () => {
     expect(ipc).toMatch(/ackWatchNotices\(/)
   })
 
+  it('puts the held report in the snapshot, derived in main, and drops it on the acknowledgement', () => {
+    expect(ipc).toMatch(/dockerReport:\s*heldDockerReport\(state,\s*prefs\)/)
+    expect(ipc).toMatch(/state\.dockerReport\s*=\s*null/)
+  })
+
   it('pushes the pass on gc:docker:watch (only when it changed) and puts it in the snapshot', () => {
     expect(ipc).toMatch(/send\('gc:docker:watch'/)
     expect(ipc).toMatch(/dockerWatch:\s*state\.dockerWatch/)

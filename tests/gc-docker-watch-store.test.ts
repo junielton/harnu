@@ -4,7 +4,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { defaultGcPrefs, withDockerAcknowledged } from '../src/main/gc/gc-prefs'
-import type { CycleRecord, DockerWatchRecord, GcSnapshot } from '../src/main/gc/gc-wire'
+import type {
+  CycleRecord,
+  DockerReportItem,
+  DockerWatchRecord,
+  GcSnapshot
+} from '../src/main/gc/gc-wire'
 import { useGcStore } from '../src/renderer/src/stores/gc'
 import { useNotificationsStore } from '../src/renderer/src/stores/notifications'
 import { i18n } from '../src/renderer/src/i18n'
@@ -31,6 +36,7 @@ const watch = (over: Partial<DockerWatchRecord> = {}): DockerWatchRecord => ({
   nothingLeft: true,
   items: [],
   notice: null,
+  report: null,
   ...over
 })
 
@@ -63,6 +69,7 @@ function install(
     lastCycle: null,
     dockerWatch: null,
     dockerNoticesPending: [],
+    dockerReport: null,
     nextCycleAt: null,
     shelved: [],
     ...snapshot
@@ -190,52 +197,89 @@ describe('the out-of-capacity notice reaches Activity once (AC-2)', () => {
 })
 
 describe('the report-only list for the acknowledgement (AC-5)', () => {
-  const item = (target: string): DockerWatchRecord['items'][number] => ({
+  const item = (target: string): DockerReportItem => ({
     kind: 'network',
     target,
     reason: `empty ${target}`
   })
-  const cycleWith = (at: number, items: DockerWatchRecord['items']): CycleRecord =>
+  const list = (at: number, items: DockerReportItem[], source: 'cycle' | 'watcher' = 'cycle') => ({
+    at,
+    source,
+    found: items.length,
+    items
+  })
+  const lockedCycle = (at: number): CycleRecord =>
     ({
       at,
       trigger: 'timer',
       mode: 'off',
       docker: {
         mode: 'report',
-        found: items.length,
+        found: 0,
         acted: 0,
         refused: 0,
         failed: 0,
         deferred: 0,
-        locked: false,
+        locked: true,
         paused: false,
         pausedReason: null,
-        items
+        items: []
       }
     }) as unknown as CycleRecord
 
-  it('is the items of the cycle report while unacknowledged', async () => {
-    install({ lastCycle: cycleWith(NOW, [item('a'), item('b')]) })
+  it('is the list main holds in the snapshot while unacknowledged', async () => {
+    install({ dockerReport: list(NOW, [item('a'), item('b')]) })
     const store = useGcStore()
     await store.init()
     expect(store.dockerReport?.items.map((i) => i.target)).toEqual(['a', 'b'])
     expect(store.dockerReport?.found).toBe(2)
   })
 
-  it('prefers a newer watcher report over an older cycle report', async () => {
+  it('a locked cycle record with no items never takes the list away (the live defect)', async () => {
     install({
-      lastCycle: cycleWith(NOW, [item('old')]),
-      dockerWatch: watch({ at: NOW + 5, mode: 'report', found: 1, items: [item('new')] })
+      dockerReport: list(NOW, [item('kept')], 'watcher'),
+      lastCycle: lockedCycle(NOW + 92)
     })
     const store = useGcStore()
     await store.init()
+    expect(store.dockerReport?.items.map((i) => i.target)).toEqual(['kept'])
+  })
+
+  it('a newer planning report pushed by the watcher replaces an older one', async () => {
+    const { push } = install({ dockerReport: list(NOW, [item('old')]) })
+    const store = useGcStore()
+    await store.init()
+    push.dockerWatch!(
+      watch({ at: NOW + 5, mode: 'report', report: list(NOW + 5, [item('new')], 'watcher') })
+    )
     expect(store.dockerReport?.items.map((i) => i.target)).toEqual(['new'])
+  })
+
+  it('a watcher push that carries no report, or an older one, never clears or rewinds it', async () => {
+    const { push } = install({ dockerReport: list(NOW + 10, [item('current')]) })
+    const store = useGcStore()
+    await store.init()
+    push.dockerWatch!(watch({ at: NOW + 20, mode: 'report', report: null }))
+    push.dockerWatch!(watch({ at: NOW + 21, mode: 'report', report: list(NOW, [item('older')]) }))
+    expect(store.dockerReport?.items.map((i) => i.target)).toEqual(['current'])
+  })
+
+  it('a refreshed snapshot is authoritative: it replaces the list, and an empty one clears it', async () => {
+    const { snap } = install({ dockerReport: list(NOW, [item('a')]) })
+    const store = useGcStore()
+    await store.init()
+    ;(snap as unknown as { dockerReport: unknown }).dockerReport = list(NOW + 50, [item('b')])
+    await store.refresh()
+    expect(store.dockerReport?.items.map((i) => i.target)).toEqual(['b'])
+    ;(snap as unknown as { dockerReport: unknown }).dockerReport = null
+    await store.refresh()
+    expect(store.dockerReport).toBeNull()
   })
 
   it('is null once acknowledged', async () => {
     install({
       prefs: withDockerAcknowledged(defaultGcPrefs()),
-      lastCycle: cycleWith(NOW, [item('a')])
+      dockerReport: list(NOW, [item('a')])
     })
     const store = useGcStore()
     await store.init()
@@ -243,7 +287,7 @@ describe('the report-only list for the acknowledgement (AC-5)', () => {
   })
 
   it('is null when nothing would be done', async () => {
-    install({ lastCycle: cycleWith(NOW, []) })
+    install({ dockerReport: list(NOW, []) })
     const store = useGcStore()
     await store.init()
     expect(store.dockerReport).toBeNull()

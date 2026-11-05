@@ -589,3 +589,49 @@ describe('notices waiting for a renderer (the boot pass runs before the window e
     expect(r.state.dockerNoticesPending).toEqual([])
   })
 })
+
+describe('the held report across watcher passes (U3.6 AC-5)', () => {
+  it('a planning report pass holds the list and mirrors it on its record', async () => {
+    const r = rig(defaultGcPrefs(), { free: [1], plan: [net(1), park(1)] })
+    const rec = await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.state.dockerReport).toMatchObject({ at: 1_000, source: 'watcher', found: 2 })
+    expect(r.state.dockerReport?.items).toHaveLength(2)
+    expect(rec.report).toBe(r.state.dockerReport)
+  })
+
+  it('passes that did not plan never replace it: above the mark, locked, backed off, off, paused', async () => {
+    const r = rig(defaultGcPrefs(), { free: [1], plan: [net(1)] })
+    await runCapacityPass(r.deps, r.state, 'timer')
+    const held = r.state.dockerReport
+    const step = async (over: () => void): Promise<void> => {
+      over()
+      r.clock += 30_000
+      const rec = await runCapacityPass(r.deps, r.state, 'timer')
+      expect(r.state.dockerReport).toBe(held)
+      expect(rec.report).toBe(held)
+    }
+    await step(() => (r.deps.readCapacity = async () => known(9)))
+    await step(() => {
+      r.deps.readCapacity = async () => known(1)
+      r.deps.lock = async () => ({ ok: false, reason: 'locked', holder: null })
+    })
+    await step(() => (r.deps.prefs = () => ({ ...defaultGcPrefs(), pauseAutonomous: true })))
+    await step(() => {
+      const p = defaultGcPrefs()
+      r.deps.prefs = () => ({ ...p, docker: { ...p.docker, enabled: false } })
+    })
+  })
+
+  it('a newer planning pass replaces it; an acknowledged pass clears it', async () => {
+    const r = rig(defaultGcPrefs(), { free: [1], plan: [net(1)] })
+    await runCapacityPass(r.deps, r.state, 'timer')
+    r.clock += 2_000
+    await runCapacityPass(r.deps, r.state, 'event')
+    expect(r.state.dockerReport?.at).toBe(3_000)
+    r.deps.prefs = () => acked()
+    r.clock += 2_000
+    const rec = await runCapacityPass(r.deps, r.state, 'event')
+    expect(r.state.dockerReport).toBeNull()
+    expect(rec.report).toBeNull()
+  })
+})

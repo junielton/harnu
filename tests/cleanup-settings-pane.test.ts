@@ -633,21 +633,7 @@ describe('CleanupSettingsPane — the Docker first-report list (U3.6 AC-5)', () 
     ;(store as unknown as { snapshot: unknown }).snapshot = {
       ...(store.snapshot as object),
       prefs,
-      lastCycle: {
-        at: NOW,
-        docker: {
-          mode: 'report',
-          found: items.length,
-          acted: 0,
-          refused: 0,
-          failed: 0,
-          deferred: 0,
-          locked: false,
-          paused: false,
-          pausedReason: null,
-          items
-        }
-      }
+      dockerReport: { at: NOW, source: 'cycle', found: items.length, items }
     }
     await flushPromises()
     return w
