@@ -7,6 +7,7 @@ import SegmentedControl from './ui/SegmentedControl.vue'
 import Button from './ui/Button.vue'
 import { useGcStore } from '../stores/gc'
 import { toIpc } from '../lib/to-ipc'
+import { wouldSentence } from '../lib/docker-card-copy'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
 import type { ReaperPrefs } from '../../../preload'
 
@@ -435,7 +436,7 @@ const EYEBROW_STYLE =
                 item.target
               }}</span>
             </span>
-            <span class="text-caption text-text-3">{{ item.reason }}</span>
+            <span class="text-caption text-text-3">{{ wouldSentence(item, t) }}</span>
           </li>
         </ul>
         <p

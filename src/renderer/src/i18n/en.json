@@ -3037,6 +3037,12 @@
             "orphan": "Its worktree was removed. Volumes kept: {volumes}.",
             "orphanNone": "Its worktree was removed. Its volumes stay under Orphan volumes.",
             "pause": "Idle for {idle}."
+          },
+          "sentence": {
+            "network": "Would remove empty network {target} — no containers",
+            "orphan": "Would remove orphan stack {target} — worktree gone, volumes kept: {volumes}",
+            "orphanNone": "Would remove orphan stack {target} — worktree gone, volumes kept",
+            "pause": "Would pause {target} — idle {idle}"
           }
         },
         "report": {
@@ -3955,7 +3961,8 @@
         "when": "Paused",
         "folder": "Folder",
         "ports": "Ports held",
-        "build": "Rebuilds on restore"
+        "build": "Rebuilds on restore",
+        "buildYes": "Yes"
       },
       "actor": {
         "autopilot": "Cleanup",

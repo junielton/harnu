@@ -3037,6 +3037,12 @@
             "orphan": "A worktree dela foi removida. Volumes mantidos: {volumes}.",
             "orphanNone": "A worktree dela foi removida. Os volumes ficam em Volumes órfãos.",
             "pause": "Ociosa há {idle}."
+          },
+          "sentence": {
+            "network": "Removeria a rede vazia {target} — nenhum container",
+            "orphan": "Removeria a stack órfã {target} — worktree removida, volumes mantidos: {volumes}",
+            "orphanNone": "Removeria a stack órfã {target} — worktree removida, volumes mantidos",
+            "pause": "Pausaria {target} — ociosa há {idle}"
           }
         },
         "report": {
@@ -3955,7 +3961,8 @@
         "when": "Pausada",
         "folder": "Pasta",
         "ports": "Portas usadas",
-        "build": "Recompila ao restaurar"
+        "build": "Recompila ao restaurar",
+        "buildYes": "Sim"
       },
       "actor": {
         "autopilot": "Cleanup",

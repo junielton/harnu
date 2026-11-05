@@ -70,6 +70,16 @@ const ORPHAN_RE = /^Removed orphan stack `([^`]+)` — worktree gone, volumes ke
 const PAUSE_RE = /^Paused `([^`]+)` — idle ([^·]+?)(?: · bring back: .*)?$/
 const IDLE_RE = /^idle (.+)$/
 
+/** Whether `reason` is one of the sentences the journal and the first-report list are known to carry. */
+export function reasonIsKnown(reason: string): boolean {
+  return (
+    NETWORK_RE.test(reason) ||
+    ORPHAN_RE.test(reason) ||
+    PAUSE_RE.test(reason) ||
+    IDLE_RE.test(reason)
+  )
+}
+
 /**
  * Reads one of the English sentences the journal and the first-report list carry. A report item
  * names its own kind and target, so a sentence it does not recognise still gets a row; a bare
