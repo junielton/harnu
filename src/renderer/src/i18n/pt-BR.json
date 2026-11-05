@@ -3629,6 +3629,15 @@
       "body": "{names} — abra Containers para revisar",
       "more": "+{n} a mais"
     },
+    "staleVolume": {
+      "title": "Os dados deste volume podem estar desatualizados",
+      "titleMany": "Os dados destes volumes podem estar desatualizados",
+      "body": "O projeto {project} monta o volume {volume}, que pertencia a uma worktree removida ({worktree}). Os dados dele podem estar desatualizados.",
+      "bodyMany": "O projeto {project} monta os volumes {volumes}, que pertenciam a uma worktree removida ({worktree}). Os dados deles podem estar desatualizados.",
+      "groupTitle": "{n} projetos montam volumes que podem estar desatualizados",
+      "itemDescription": "Usado por {project} · da worktree removida {worktree}",
+      "open": "Abrir Containers"
+    },
     "scannedAgo": "verificado {ago}",
     "readingDocker": "lendo o docker…",
     "scanNow": "Verificar agora",

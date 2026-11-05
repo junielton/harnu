@@ -3629,6 +3629,15 @@
       "body": "{names} — open Containers to review",
       "more": "+{n} more"
     },
+    "staleVolume": {
+      "title": "Data in this volume may be stale",
+      "titleMany": "Data in these volumes may be stale",
+      "body": "Project {project} mounts volume {volume} that belonged to a removed worktree ({worktree}). Its data may be stale.",
+      "bodyMany": "Project {project} mounts volumes {volumes} that belonged to a removed worktree ({worktree}). Their data may be stale.",
+      "groupTitle": "{n} projects mount volumes that may be stale",
+      "itemDescription": "Used by {project} · from removed {worktree}",
+      "open": "Open Containers"
+    },
     "scannedAgo": "scanned {ago}",
     "readingDocker": "reading docker…",
     "scanNow": "Scan now",
