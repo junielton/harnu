@@ -859,7 +859,60 @@ textarea,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  /* T628: the layout motion is off outright, not merely 0.01ms long (see the layout-motion block). */
+  [data-layout-motion] [data-lm] {
+    transition: none !important;
+  }
 }
+
+/* layout-motion:start */
+/* T628 — layout motion (design.md §7 "Layout motion").
+   Transitions exist ONLY while the layout store has raised `data-layout-motion` on the app shell
+   (around a maximize, an expand, a sidebar or Fleet rail change, an orientation switch). A divider
+   drag never raises it, so a drag follows the pointer with no easing. Containers opt in with
+   `data-lm`. An orientation switch also sets `data-lm-flip`: that one is animated by a transform
+   (FLIP, App.vue), because a flex row turning into a column cannot be interpolated. Both `--dur-slow` and `--ease` are the existing motion tokens. */
+[data-layout-motion]:not([data-lm-flip]) [data-lm] {
+  transition:
+    flex var(--dur-slow) var(--ease),
+    width var(--dur-slow) var(--ease),
+    height var(--dur-slow) var(--ease),
+    opacity var(--dur-slow) var(--ease),
+    margin var(--dur-slow) var(--ease),
+    border-width var(--dur-slow) var(--ease),
+    padding var(--dur-slow) var(--ease);
+}
+
+/* Collapse classes: a hidden column or pane that can still animate (display:none cannot).
+   Unlayered and !important on purpose, to beat the layered utilities and the floating rules that
+   give the same elements sizes, margins and borders.
+   .lm-collapse    a flex item sized by `flex` (session area, helper stack, a pane)
+   .lm-collapse-w  an item sized by `width` (sidebar, Fleet rail column, a vertical divider)
+   .lm-collapse-h  an item sized by `height` (a horizontal divider) */
+.lm-collapse,
+.lm-collapse-w,
+.lm-collapse-h {
+  margin: 0 !important;
+  padding: 0 !important;
+  border-width: 0 !important;
+  overflow: hidden !important;
+  opacity: 0;
+  pointer-events: none;
+}
+.lm-collapse {
+  flex: 0 0 0px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+.lm-collapse-w {
+  width: 0 !important;
+  min-width: 0 !important;
+}
+.lm-collapse-h {
+  height: 0 !important;
+  min-height: 0 !important;
+}
+/* layout-motion:end */
 
 /* floating-panels:start */
 /* T626 — the opt-in "Floating panels" layout (design.md §6 "Floating panels layout").

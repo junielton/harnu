@@ -35,6 +35,7 @@ import { effectiveEditorSetting, sanitizeEditorSetting, type EditorSetting } fro
  *   via {@link readEditorSetting}, so the renderer never names the command.
  * - `splitLayout` — session area / helper stack orientation (T627). Absent = `auto`.
  * - `floatingPanels` — the opt-in floating-islands layout (T626). Absent = off.
+ * - `expandHides` — what expanding a helper pane to the window hides (T628). Absent = `everything`.
  */
 export interface SettingsData {
   terminalFontSize: number
@@ -47,6 +48,8 @@ export interface SettingsData {
   splitLayout?: 'auto' | 'side-by-side' | 'stacked'
   /** T626: the opt-in "Floating panels" layout. Absent means off. */
   floatingPanels?: boolean
+  /** T628: what expanding a helper pane to the window hides. Absent means `everything`. */
+  expandHides?: 'everything' | 'session-only'
 }
 
 const DEFAULT_SETTINGS: SettingsData = {
@@ -67,6 +70,8 @@ const MIN_UI_ZOOM = 0.5
 const MAX_UI_ZOOM = 2
 /** Mirrors `SPLIT_LAYOUTS` in `renderer/src/lib/split-orientation.ts` (main never imports the renderer). */
 const SPLIT_LAYOUTS: readonly string[] = ['auto', 'side-by-side', 'stacked']
+/** Mirrors `EXPAND_HIDES` in `renderer/src/stores/settings.ts`. */
+const EXPAND_HIDES: readonly string[] = ['everything', 'session-only']
 
 /**
  * Build a clean, known-shape patch from arbitrary renderer input: clamp/round the
@@ -107,6 +112,13 @@ export function sanitizePatch(patch: Record<string, unknown>): Partial<SettingsD
     // Only a real boolean is stored; anything else is dropped, so the stored value (or off) applies.
     const v = patch.floatingPanels
     if (typeof v === 'boolean') out.floatingPanels = v
+  }
+  if (patch && typeof patch === 'object' && 'expandHides' in patch) {
+    // An unknown value is dropped, so the stored one (or `everything`) keeps applying.
+    const v = patch.expandHides
+    if (typeof v === 'string' && EXPAND_HIDES.includes(v)) {
+      out.expandHides = v as NonNullable<SettingsData['expandHides']>
+    }
   }
   return out
 }
