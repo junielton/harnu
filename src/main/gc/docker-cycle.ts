@@ -93,7 +93,7 @@ const REPORT_KIND: Record<DockerAction['kind'], DockerReportKind> = {
 /**
  * What the operator reads as the target. A stack's id is its compose project name; a network's id is
  * `net:<64 hex characters>`, so it is shown by the name in its reason (``…network `app_default` …``)
- * or, failing that, the short id `docker network ls` would show.
+ * or, failing that, the short id Docker's own listing shows.
  */
 function targetOf(a: DockerAction): string {
   if (a.kind !== 'prune-network') return a.id
