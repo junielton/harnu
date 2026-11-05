@@ -170,10 +170,20 @@ function imageName(image: string): string {
 
 const ANONYMOUS_VOLUME = /^[0-9a-f]{64}$/
 
-/** True when `dest` is `dataPath`, a parent of it, or a path inside it. */
+/**
+ * True when a mount at `dest` holds `dataPath`: it is `dataPath`, a parent of it, or a path inside
+ * it. A mount at `/` is never one (it would "cover" every path without saying anything about the
+ * data directory).
+ */
 function covers(dest: string, dataPath: string): boolean {
   const d = dest.replace(/\/+$/, '')
+  if (d === '') return false
   return d === dataPath || dataPath.startsWith(`${d}/`) || d.startsWith(`${dataPath}/`)
+}
+
+/** Only a volume or a bind mount outlives `compose down`; a tmpfs is gone with the container. */
+function persists(m: { type: string }): boolean {
+  return m.type === 'volume' || m.type === 'bind'
 }
 
 /**
@@ -189,8 +199,8 @@ export function confirmOnlyReason(containers: readonly InspectedContainer[]): st
     }
     const dataPaths = DATABASE_IMAGES[imageName(c.image)]
     if (!dataPaths) continue
-    const kept = c.mounts.some((m) =>
-      dataPaths.some((p) => m.destination && covers(m.destination, p))
+    const kept = c.mounts.some(
+      (m) => persists(m) && dataPaths.some((p) => m.destination && covers(m.destination, p))
     )
     if (!kept) return `${c.name} runs ${c.image}, a database, with no volume on its data path`
   }
@@ -291,19 +301,36 @@ export async function pauseStack(
     return refuse('NOT_PAUSABLE', `a ${stack.verdict} stack is never paused`)
   }
 
+  // `compose down` removes EVERY container of the project, stopped ones included, and the scan
+  // that produced the decision may have dropped some (a failed `docker inspect` chunk is
+  // tolerated there). So the project is listed again, independently, and the confirm-only rules
+  // run over all of it, not only the containers the decision names.
+  let projectIds: string[]
   let inspected: InspectedContainer[]
   try {
-    inspected = parseInspect((await deps.run(['inspect', ...decision.containerIds])).stdout)
+    const project = stack.project ?? stack.id
+    const listed = await deps.run([
+      'ps',
+      '-aq',
+      '--no-trunc',
+      '--filter',
+      `label=com.docker.compose.project=${project}`
+    ])
+    projectIds = listed.stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+    const everyId = [...new Set([...decision.containerIds, ...projectIds])]
+    inspected = parseInspect((await deps.run(['inspect', ...everyId])).stdout)
+    if (inspected.length !== everyId.length) return refuse('CHANGED_SINCE_DECIDED', CHANGED)
   } catch (err) {
     return refuse('DOCKER_UNAVAILABLE', summarizeDockerError(err))
-  }
-  if (inspected.length !== decision.containerIds.length) {
-    return refuse('CHANGED_SINCE_DECIDED', CHANGED)
   }
   const confirm = confirmOnlyReason(inspected)
   if (confirm) {
     return { ok: false, outcome: 'confirm-required', code: 'CONFIRM_ONLY', message: confirm }
   }
+  if (!sameIds(decision.containerIds, projectIds)) return refuse('CHANGED_SINCE_DECIDED', CHANGED)
 
   const base = {
     project: stack.project,
