@@ -652,6 +652,31 @@ describe('CleanupSettingsPane — the Docker first-report list (U3.6 AC-5)', () 
     expect(list.text()).toContain(i18n.global.t('cleanup.gc.settings.docker.report.more', { n: 2 }))
   })
 
+  it('words a report item as a would-do sentence instead of the past-tense journal line', async () => {
+    const real = [
+      {
+        kind: 'network' as const,
+        target: 'ext-12_default',
+        reason: 'Removed empty network `ext-12_default` — no containers'
+      },
+      { kind: 'pause' as const, target: 'ext-12', reason: 'idle 120 h' }
+    ]
+    const prefs = docker({ enabled: true, firstReportAcknowledged: false })
+    const w = await mountPane(prefs)
+    const { useGcStore } = await import('../src/renderer/src/stores/gc')
+    const store = useGcStore()
+    ;(store as unknown as { snapshot: unknown }).snapshot = {
+      ...(store.snapshot as object),
+      prefs,
+      dockerReport: { at: NOW, source: 'cycle', found: 2, items: real }
+    }
+    await flushPromises()
+    const rows = w.findAll('[data-testid="gc-docker-report-item"]')
+    expect(rows[0]!.text()).toContain('Would remove empty network ext-12_default — no containers')
+    expect(rows[0]!.text()).not.toContain('Removed empty network')
+    expect(rows[1]!.text()).toContain('Would pause ext-12 — idle 120 h')
+  })
+
   it('shows no list once the first report is acknowledged, or when the switch is off', async () => {
     const acked = await withReport(docker({ enabled: true, firstReportAcknowledged: true }))
     expect(acked.find('[data-testid="gc-docker-report-list"]').exists()).toBe(false)
