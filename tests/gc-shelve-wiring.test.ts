@@ -115,3 +115,12 @@ describe('the tool catalog describes the new fields', () => {
     expect(window).toMatch(/shelved/i)
   })
 })
+
+describe('the archive-delete guard fails closed', () => {
+  it('reads the shelved store with the refusing read, never the lossy one', () => {
+    const ipc = read('main/gc/gc-ipc.ts')
+    const handler = ipc.slice(ipc.indexOf('deleteArchives: async'))
+    expect(handler.slice(0, 1200)).toContain('readShelvedForUpdate(')
+    expect(handler.slice(0, 1200)).not.toMatch(/\breadShelved\(/)
+  })
+})

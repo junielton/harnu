@@ -75,7 +75,7 @@ import { runShelveCycle } from './shelve-cycle'
 import { defaultShelveExecDeps, shelveWorktree } from './shelve-exec-shell'
 import { probeShelve } from './shelve-probe-shell'
 import { withRepoLock } from './repo-lock-shell'
-import { SHELVED_FILE, readShelved } from './shelve-store'
+import { SHELVED_FILE, readShelvedForUpdate } from './shelve-store'
 import { onShelvedChanged, restoreShelvedById, toRestoreAck } from './shelve-restore-shell'
 import { parseOptions } from './gc-options'
 import type {
@@ -593,9 +593,15 @@ export async function registerGcHandlers(
     opinionCached: (ids) => opinions.cached(ids),
     deleteArchives: async (raw) => {
       // A shelved worktree's archive is what restores it: those are refused here, whatever the screen sent.
-      const shelved = new Map(
-        (await readShelved(path.join(userData, SHELVED_FILE))).entries.map((e) => [e.namespace, e])
+      // An unreadable shelved store is refused, never read as empty: that would delete the only copy.
+      const shelvedStore = await readShelvedForUpdate(path.join(userData, SHELVED_FILE)).catch(
+        (err: unknown) => {
+          throw new Error(
+            `Archives were left alone: the list of shelved worktrees cannot be read (${err instanceof Error ? err.message : String(err)}).`
+          )
+        }
       )
+      const shelved = new Map(shelvedStore.entries.map((e) => [e.namespace, e]))
       const ack = await deleteConfirmedArchives(
         parseArchiveRequest(raw),
         prefs.neverClean,
