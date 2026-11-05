@@ -21,6 +21,9 @@ import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-
 /** An exit sooner than this after spawn means the helper never really started (stale session). */
 export const STALE_EXIT_WINDOW_MS = 2000
 
+/** Content/helper-stack split a worktree starts with, and the one the divider's double-click resets to. */
+export const HELPER_SPLIT_RATIO_DEFAULT = 0.65
+
 /** Passed by the agent-dispatch shim (`command-dispatch.ts`) only — never by a
  * human call site. Drives the unseen-panes badge + coalesced OS alert
  * (2026-07-13 agent-pane-routing design §Origin/§Badge/§Alert); never
@@ -409,7 +412,7 @@ export const useHelpersStore = defineStore('helpers', () => {
   })
 
   const splitRatioForCurrentWorktree = computed<number>(() => {
-    return stateForCurrentWorktree.value?.splitRatio ?? 0.65
+    return stateForCurrentWorktree.value?.splitRatio ?? HELPER_SPLIT_RATIO_DEFAULT
   })
 
   /** Maximized pane id (if any) for the currently selected worktree. */
@@ -797,7 +800,7 @@ export const useHelpersStore = defineStore('helpers', () => {
   ): void {
     const current = byWorktree.value.get(worktreePath) ?? {
       splitVisible: false,
-      splitRatio: 0.65,
+      splitRatio: HELPER_SPLIT_RATIO_DEFAULT,
       panes: [] as AnyHelperPane[]
     }
     const next = mutator(current)

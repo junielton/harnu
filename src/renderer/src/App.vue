@@ -39,7 +39,7 @@ import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
 import { formatWindowTitle } from './stores/attention'
 import { useUiStore, SETTINGS_TAB_IDS } from './stores/ui'
-import { useHelpersStore, isAgentTerminalPane } from './stores/helpers'
+import { useHelpersStore, isAgentTerminalPane, HELPER_SPLIT_RATIO_DEFAULT } from './stores/helpers'
 import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
@@ -240,9 +240,7 @@ function onMainDividerMouseMove(ev: MouseEvent): void {
 }
 
 // Double-click resets the helper-stack split to its default, like the sidebar
-// and Fleet-rail dividers reset their widths. 0.65 mirrors the store's fallback
-// ratio for a worktree with no saved split (stores/helpers.ts).
-const HELPER_SPLIT_RATIO_DEFAULT = 0.65
+// and Fleet-rail dividers reset their widths.
 function onMainDividerDblClick(): void {
   const wt = helpers.currentWorktreePath
   if (!wt) return
