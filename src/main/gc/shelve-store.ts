@@ -121,6 +121,26 @@ export async function readShelved(file: string): Promise<ShelvedFile> {
   }
 }
 
+/**
+ * The read a write is built on. Only an absent file is empty (a first run); a file that is there
+ * but cannot be read, parsed or understood (a newer version) throws, so a write never replaces the
+ * record of the other shelved worktrees with a single entry.
+ */
+export async function readShelvedForUpdate(file: string): Promise<ShelvedFile> {
+  let text: string
+  try {
+    text = await fs.readFile(file, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return NO_SHELVED
+    throw err
+  }
+  const parsed: unknown = JSON.parse(text)
+  if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+    throw new Error(`${path.basename(file)} is not a version 1 shelved store`)
+  }
+  return normalizeShelved(parsed)
+}
+
 /** Atomic: write `<file>.tmp`, then rename over the target. */
 export async function writeShelved(file: string, data: ShelvedFile): Promise<void> {
   const tmp = `${file}.tmp`

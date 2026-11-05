@@ -31,7 +31,7 @@ import {
   type VerifyResult
 } from './shelve-shell'
 import {
-  readShelved,
+  readShelvedForUpdate,
   withShelved,
   withoutShelved,
   writeShelved,
@@ -250,9 +250,11 @@ export function defaultShelveExecDeps(
     preserve: preserveWorktree,
     verify: (record) => verifyPreservation(record),
     remember: (entry) =>
-      serial(async () => writeShelved(file, withShelved(await readShelved(file), entry))),
+      serial(async () => writeShelved(file, withShelved(await readShelvedForUpdate(file), entry))),
     forget: (id) =>
-      serial(async () => writeShelved(file, withoutShelved(await readShelved(file), [id]))),
+      serial(async () =>
+        writeShelved(file, withoutShelved(await readShelvedForUpdate(file), [id]))
+      ),
     removeFolder: (p) => rawRm(p, { recursive: true, force: true }),
     unregister: (repo, p) => removeWorktreeAdmin(repo, p, gitOut),
     now: () => Date.now(),

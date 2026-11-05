@@ -85,7 +85,12 @@ import {
 } from './gc-stack-leftovers'
 import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
 import { judgeKeeps, type StaleKeep } from './gc-keep'
-import { SHELVED_FILE, readShelved, shelvedFolders, type ShelvedEntry } from './shelve-store'
+import {
+  SHELVED_FILE,
+  readShelvedForUpdate,
+  shelvedFolders,
+  type ShelvedEntry
+} from './shelve-store'
 import type { GcPrefs } from './gc-prefs'
 
 /** A gather plus what only the snapshot needs. */
@@ -287,7 +292,16 @@ export async function gatherGc(
   // worktree, outside Harnu included, and a session parked a while ago.
   const transcripts = await scanTranscripts(fsTranscriptProbe(), Date.now())
   // The worktrees Harnu shelved: missing on purpose, so nothing below may read them as removed.
-  const shelved = (await readShelved(path.join(app.getPath('userData'), SHELVED_FILE))).entries
+  // A store that is there but unreadable is not an empty one: without it nothing can say which
+  // missing folders are shelved on purpose, so no transcript is offered as an orphan this time.
+  let shelved: ShelvedEntry[] = []
+  let shelvedKnown = true
+  try {
+    shelved = (await readShelvedForUpdate(path.join(app.getPath('userData'), SHELVED_FILE))).entries
+  } catch (err) {
+    shelvedKnown = false
+    console.warn('[gc] could not read the shelved store', err instanceof Error ? err.message : err)
+  }
   // A transcript whose folder cannot be told still tells something: its project slug. It counts
   // for every worktree that slug could belong to, as either spelling of the path.
   const slugCandidates =
@@ -503,11 +517,13 @@ export async function gatherGc(
     orphanVolumes: orphanVolumeList,
     stackLeftovers,
     leftoverProjectsAlive,
-    orphanTranscripts: await orphanSource({
-      known,
-      repoPaths,
-      shelvedFolders: shelvedFolders({ version: 1, entries: shelved })
-    }),
+    orphanTranscripts: shelvedKnown
+      ? await orphanSource({
+          known,
+          repoPaths,
+          shelvedFolders: shelvedFolders({ version: 1, entries: shelved })
+        })
+      : [],
     staleKeeps,
     staleReleases: staleReleaseIds,
     goneItemIds,
