@@ -46,7 +46,7 @@ function collidingSnapshot(record: ShelveRecord): ShelveRecord {
     ],
     { encoding: 'utf8' }
   ).trim()
-  const ref = `${record.namespace}/shelve/ignored`
+  const ref = `${record.namespace}/colliding-snapshot`
   git(fx.repo, 'update-ref', ref, commit)
   return { ...record, ignored: { ref, commit, tree, fileCount: 1, bytes: 1 } }
 }
@@ -79,9 +79,12 @@ describe('restoreWorktree — the round trip (AC-5)', () => {
     await restoreWorktree(record)
     expect(git(fx.wt, 'symbolic-ref', '--short', 'HEAD')).toBe('feat/x')
     expect(git(fx.wt, 'rev-parse', 'HEAD')).toBe(record.headSha)
-    const status = git(fx.wt, 'status', '--porcelain').split('\n')
-    expect(status).toContain('M tracked.txt'.padStart(' M tracked.txt'.length))
-    expect(status).toContain(' D deleted.txt')
+    // `git()` trims its output, so compare the entries without their (significant) leading column.
+    const status = git(fx.wt, 'status', '--porcelain')
+      .split('\n')
+      .map((l) => l.trim())
+    expect(status).toContain('M tracked.txt')
+    expect(status).toContain('D deleted.txt')
     expect(status).toContain('?? notes/')
     expect(status).toContain('?? staged.txt')
   })
