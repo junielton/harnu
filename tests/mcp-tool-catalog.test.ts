@@ -94,6 +94,9 @@ const MUTATE_TOOLS = [
   'campaign_create',
   'campaign_add_chapter',
   'campaign_request_close',
+  // T654: the owner-transfer recovery verbs.
+  'mission_transfer_owner',
+  'campaign_transfer_owner',
   // Campaign ch.5a (T597): a local write, free like the mission writes.
   'rebase_stack'
 ] as const
@@ -344,6 +347,9 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'campaign_create',
     'campaign_add_chapter',
     'campaign_request_close',
+    // T654: the owner-transfer recovery verbs run free like the other mission writes.
+    'mission_transfer_owner',
+    'campaign_transfer_owner',
     // Campaign ch.5a (T597): a local write, free like the mission writes.
     'rebase_stack'
   ]

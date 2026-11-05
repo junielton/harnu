@@ -7278,6 +7278,132 @@ const campaignRequestCloseHandler: Handler = async (args, ctx) => {
   })
 }
 
+// ---- T654: owner transfer (the recovery path) ----------------------------------------------
+
+/** The validated new owner and reason of a transfer call, or the refusal. */
+function parseOwnerTransfer(
+  args: Record<string, unknown>
+): { ok: true; to: string; reason: string } | { ok: false; error: string } {
+  const to = strField(args, 'toSessionId') ?? ''
+  if (!SESSION_UUID_RE.test(to)) return { ok: false, error: badSessionIdMessage('toSessionId', to) }
+  // One line: it is written into a Log heading.
+  const reason = (strField(args, 'reason') ?? '').replace(/\s+/g, ' ').trim()
+  if (!reason) {
+    return {
+      ok: false,
+      error: 'BAD_ARGS: reason is required — say why the owner changes (one line).'
+    }
+  }
+  return { ok: true, to, reason }
+}
+
+const sameOwnerMessage = (kind: 'mission' | 'campaign', id: string, to: string): string =>
+  `SAME_OWNER: session ${to} already owns ${kind} ${id} — nothing to transfer.`
+
+/** The Log entry both verbs append: `### <time> · owner transfer: <from> → <to> (<reason>)`. */
+const ownerTransferLog = (at: string, from: string, to: string, reason: string): string =>
+  `\n### ${at} · owner transfer: ${from} → ${to} (${reason})\n\nOwner moved from ${from} to ${to}. Reason: ${reason}\n`
+
+/**
+ * Move a mission's owner (a private copy) and record the ledger row. Only `owner.sessionId`
+ * changes: `owner.folder` stays, as it names where the mission was started.
+ */
+function withOwnerTransferred(m: Mission, to: string, at: string): Mission {
+  const from = m.owner.sessionId
+  const moved = structuredClone(m)
+  moved.owner = { ...moved.owner, sessionId: to }
+  return appendLedgerRow(
+    moved,
+    { kind: 'owner-transfer', ref: to, sessionId: to, detail: `from ${from}` },
+    at
+  )
+}
+
+const missionTransferOwnerHandler: Handler = async (args, ctx) => {
+  const parsed = parseOwnerTransfer(args)
+  if (!parsed.ok) return errorResult(parsed.error)
+  const { to, reason } = parsed
+  return editMission(args, ctx, (m) => {
+    const from = m.owner.sessionId
+    if (from === to) return { ok: false, error: sameOwnerMessage('mission', m.id, to) }
+    const at = new Date().toISOString()
+    return {
+      ok: true,
+      mission: withOwnerTransferred(m, to, at),
+      ack: { ok: true, op: 'mission_transfer_owner', missionId: m.id, from, to },
+      logAppend: ownerTransferLog(at, from, to, reason)
+    }
+  })
+}
+
+const campaignTransferOwnerHandler: Handler = async (args, ctx) => {
+  const parsed = parseOwnerTransfer(args)
+  if (!parsed.ok) return errorResult(parsed.error)
+  const { to, reason } = parsed
+  const includeChapters = args.includeChapters === true
+  let from = ''
+  let campaignId = ''
+  const candidates: string[] = []
+  const res = await editCampaign(args, ctx, async (c, root) => {
+    from = c.owner.sessionId
+    campaignId = c.id
+    if (from === to) return { ok: false, error: sameOwnerMessage('campaign', c.id, to) }
+    if (includeChapters) {
+      // Only chapter missions that are not closed: a closed mission is a record.
+      for (const ch of c.chapters) {
+        if (!ch.missionId) continue
+        const loaded = await loadMission(root, ch.missionId)
+        if (loaded.ok && loaded.mission.status !== 'closed') candidates.push(ch.missionId)
+      }
+    }
+    c.owner = { ...c.owner, sessionId: to }
+    return {
+      ok: true,
+      campaign: c,
+      // The final ACK (with what moved) is built below; this one is only used on a plain move.
+      ack: {},
+      logAppend: ownerTransferLog(new Date().toISOString(), from, to, reason)
+    }
+  })
+  if (res.isError) {
+    // A refusal that came from the edit: nothing moved, nothing to roll forward.
+    return res
+  }
+  // The campaign moved. Its chapter missions follow only when asked, each under its own lock;
+  // a mission that cannot move is reported, never silently dropped (the owner can retry it alone).
+  const missions: string[] = []
+  const skipped: Array<{ missionId: string; error: string }> = []
+  for (const missionId of candidates) {
+    let moved = false
+    const r = await editMission({ missionId }, ctx, (m) => {
+      if (m.owner.sessionId === to) return { ok: true, mission: m, unchanged: true, ack: {} }
+      moved = true
+      const at = new Date().toISOString()
+      return {
+        ok: true,
+        mission: withOwnerTransferred(m, to, at),
+        ack: { ok: true },
+        logAppend: ownerTransferLog(at, m.owner.sessionId, to, reason)
+      }
+    })
+    if (r.isError) {
+      const first = r.content[0]
+      skipped.push({ missionId, error: first && first.type === 'text' ? first.text : 'unknown' })
+    } else if (moved) {
+      missions.push(missionId)
+    }
+  }
+  return textResult({
+    ok: true,
+    op: 'campaign_transfer_owner',
+    campaignId,
+    from,
+    to,
+    moved: { campaign: true, missions },
+    ...(skipped.length > 0 ? { skipped } : {})
+  })
+}
+
 /**
  * Create a chapter's mission and bind it to the chapter, under the campaign's lock: validate
  * the campaign and chapter first (nothing is written on a refusal), write the mission via
@@ -7406,7 +7532,9 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   campaign_get: campaignGetHandler,
   rebase_stack: rebaseStackHandler,
   campaign_list: campaignListHandler,
-  campaign_request_close: campaignRequestCloseHandler
+  campaign_request_close: campaignRequestCloseHandler,
+  mission_transfer_owner: missionTransferOwnerHandler,
+  campaign_transfer_owner: campaignTransferOwnerHandler
 }
 
 /**

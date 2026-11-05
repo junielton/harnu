@@ -1950,6 +1950,9 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   campaign_get: parseMissionVerb('campaign_get'),
   campaign_list: parseMissionVerb('campaign_list'),
   campaign_request_close: parseMissionVerb('campaign_request_close'),
+  // T654: validated against their own catalog schema, like the other mission/campaign verbs.
+  mission_transfer_owner: parseMissionVerb('mission_transfer_owner'),
+  campaign_transfer_owner: parseMissionVerb('campaign_transfer_owner'),
   // Campaign ch.5a: validated against its own catalog schema, like the mission verbs.
   rebase_stack: parseMissionVerb('rebase_stack')
 }

@@ -225,7 +225,7 @@ afterAll(async () => {
 })
 
 describe('AC-3a.2 — the verbs exist on the wire, with the shapes of spec §3.3', () => {
-  it('lists exactly the five campaign verbs, and mission_create carries campaignId + chapterId', async () => {
+  it('lists exactly the six campaign verbs, and mission_create carries campaignId + chapterId', async () => {
     const { tools } = await client.listTools()
     const names = tools.map((t) => t.name)
     for (const op of [
@@ -242,7 +242,8 @@ describe('AC-3a.2 — the verbs exist on the wire, with the shapes of spec §3.3
       'campaign_create',
       'campaign_get',
       'campaign_list',
-      'campaign_request_close'
+      'campaign_request_close',
+      'campaign_transfer_owner' // T654: the owner recovery path
     ])
     const mc = tools.find((t) => t.name === 'mission_create')!
     expect(Object.keys((mc.inputSchema as { properties: object }).properties)).toEqual(
@@ -267,7 +268,8 @@ describe('AC-3a.2 — the verbs exist on the wire, with the shapes of spec §3.3
       'campaign_create',
       'campaign_get',
       'campaign_list',
-      'campaign_request_close'
+      'campaign_request_close',
+      'campaign_transfer_owner'
     ])
     const FORBIDDEN_FIELDS = [
       'closedAs',
