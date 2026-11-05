@@ -286,6 +286,8 @@ describe('execute(): an orphan stack (AC-2, AC-4, AC-5)', () => {
       ['autopilot', 'remove']
     ])
     expect(r.tombstones[0]!.reason).toBe('Stopped orphan stack `run` before removing it')
+    // The container is removed right after: `docker start <id>` would be a hint that cannot work.
+    expect(r.tombstones[0]!.restoreHint).toBeNull()
   })
 
   it('fails and removes nothing when the stop does not finish', async () => {
