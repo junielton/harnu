@@ -3250,6 +3250,8 @@
         "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
         "missingExpected": "Cleanup could not check it against what you were shown. Review it and try again.",
         "noLongerOrphan": "This volume is in use again, so it was left alone.",
+        "needsUndigestedConfirmation": "Some sessions in this project have no digest yet, so it was left alone. Open it again and choose Trash without a digest, or wait for the next scan.",
+        "needsNotFoundConfirmation": "Harnu can't confirm this folder is really gone, so it was left alone. Check it is not on a drive that's unplugged, then open it again and tick the confirmation.",
         "kept": "You marked it Keep, so it was left alone.",
         "neverClean": "It is on your never-clean list, so it was left alone.",
         "mainCheckout": "This is a main checkout, which is never cleaned.",

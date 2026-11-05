@@ -11163,7 +11163,8 @@ now is not), and no existing folder spells the same slug.
   keep them: Harnu tries the digest again on the next scan." Under it a checkbox **"Trash without a
   digest"** (`orphan-dialog-undigested-ack`); **Move to trash stays disabled until it is ticked**, together
   with the not-found box when that applies. Cancel is always the way out, so a project with undigested
-  sessions is never a dead end. Ticking sends the undigested ids in `confirmedUndigested`.
+  sessions is never a dead end. Ticking sends the undigested ids in `confirmedUndigested`. A refusal that still comes back (`needs-undigested-confirmation`, `needs-not-found-confirmation`) is a known
+  refusal code with its own sentence in the toast and the block panel, saying what to do next.
 - **Proven gone, or only "Folder not found".** A folder counts as gone only when that is **positively
   proven**: Harnu removed it itself (its own ledger), git lists it as prunable in a repo that still exists,
   or it sits under a known worktrees parent (`<repo>/.claude/worktrees`, `<repo>-worktrees`) that exists
