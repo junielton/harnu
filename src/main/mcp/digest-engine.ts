@@ -331,26 +331,36 @@ export function createDigestEngine(
       return
     }
     const currentKey = current === null ? null : hotKeyOf(current)
+    // The snapshot's branch: the transcript's, else the one the folder is on now. Only a folder
+    // outside git (or one on a detached HEAD) is keyed by its path.
+    let hotBranch = branch
+    if (!hotBranch && git.kind === 'repo') {
+      try {
+        hotBranch = (await deps.folderBranch?.(session.folder)) || undefined
+      } catch {
+        hotBranch = undefined
+      }
+    }
     const merged = mergeHotPlan({
       current,
       currentKey,
       next: {
         date,
         title,
-        ...(branch ? { branch } : {}),
+        ...(hotBranch ? { branch: hotBranch } : {}),
         commits: git.kind === 'repo' ? git.commits : [],
         ...(lastPrompt ? { lastPrompt } : {}),
         openQuestions: facts.openQuestions,
         digestPage
       },
       // A folder outside git has no branch: its path is its key, which no stamp can carry.
-      nextKey: branch ?? session.folder
+      nextKey: hotBranch ?? session.folder
     })
     // The write path stamps the file with a branch, so the stamp names the snapshot the body is.
     await deps.writeHot(
       session.folder,
       id,
-      merged.kept ? (currentKey ?? undefined) : branch,
+      merged.kept ? (currentKey ?? undefined) : hotBranch,
       title,
       merged.hot
     )

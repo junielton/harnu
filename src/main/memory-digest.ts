@@ -169,6 +169,11 @@ async function readHot(folder: string): Promise<string | null> {
   throw new Error(res.detail)
 }
 
+/** The branch the folder is on now; undefined when detached or not a repo. */
+async function folderBranch(folder: string): Promise<string | undefined> {
+  return (await probeGitMeta(folder)).gitBranch
+}
+
 /** Whether the folder is still there; any answer but "it is missing" counts as there. */
 async function folderExists(folder: string): Promise<boolean> {
   try {
@@ -235,6 +240,7 @@ const liveDeps: DigestEngineDeps = {
   writeDigest,
   writeHot,
   readHot,
+  folderBranch,
   memoryCheckout,
   folderExists,
   subagentTranscripts,

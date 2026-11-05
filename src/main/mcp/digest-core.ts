@@ -360,6 +360,17 @@ function parallelKey(line: string): string | null {
   return m ? m[1] : null
 }
 
+/** A body followed by its Parallel list; the oldest lines go while the whole is over the cap. */
+function withParallel(head: string, lines: readonly string[]): string {
+  const list = [...lines]
+  const render = (): string =>
+    list.length === 0
+      ? `${head}\n`
+      : `${head}\n\n${bold(MEMORY_LABELS.parallel)}\n${list.join('\n')}\n`
+  while (list.length > 0 && wordCount(render()) > HOT_MAX_WORDS) list.pop()
+  return render()
+}
+
 /**
  * The merge of a new snapshot into `hot.md` (spec S-7), with which snapshot the body is.
  * `kept: true` means the current body stands, so the next stamp must name `currentKey`.
@@ -371,31 +382,35 @@ export function mergeHotPlan(args: {
   nextKey: string
 }): { hot: string; kept: boolean } {
   const { current, currentKey, next, nextKey } = args
-  const replaced = { hot: hotSnapshot(next), kept: false }
-  if (current === null || currentKey === null || currentKey === nextKey) return replaced
+  if (current === null || currentKey === null) return { hot: hotSnapshot(next), kept: false }
+  const key = nextKey.replace(/`/g, "'")
+
+  // The same branch replaces its own body, but the other branches' lines stay (R-5).
+  if (currentKey === nextKey) {
+    const others = splitHot(current).lines.filter((l) => parallelKey(l) !== key)
+    return {
+      hot: withParallel(hotSnapshot(next).trimEnd(), others.slice(0, HOT_PARALLEL_MAX)),
+      kept: false
+    }
+  }
 
   const { head, lines } = splitHot(current)
   // Nothing to keep, or a body that fills the cap on its own: a snapshot of one's own it is.
-  if (head === '' || wordCount(head) > HOT_MAX_WORDS) return replaced
+  if (head === '' || wordCount(head) > HOT_MAX_WORDS) return { hot: hotSnapshot(next), kept: false }
 
-  const key = nextKey.replace(/`/g, "'")
   const title = cutText(oneLine(next.title.trim() || 'Recent session'), HOT_PARALLEL_TITLE_CHARS)
   const line = `- \`${key}\` · ${next.date} · ${title} → [[${next.digestPage}]]`
   const list = [line, ...lines.filter((l) => parallelKey(l) !== key)].slice(0, HOT_PARALLEL_MAX)
-  const render = (): string =>
-    list.length === 0
-      ? `${head}\n`
-      : `${head}\n\n${bold(MEMORY_LABELS.parallel)}\n${list.join('\n')}\n`
-  while (list.length > 0 && wordCount(render()) > HOT_MAX_WORDS) list.pop()
-  return { hot: render(), kept: true }
+  return { hot: withParallel(head, list), kept: true }
 }
 
 /**
  * Merge the new session's snapshot into the current `hot.md` (spec S-7, R-5). The key is the
- * branch, or the folder path for a folder outside git. The same key, no current hot or a current
- * hot with no key replaces it; a different key keeps the current body and files the new snapshot
- * as one line of the Parallel list at its end (newest first, at most five, the oldest dropped
- * while the whole is over the word cap). Chapter 3 replaces all of this with the derived handoff.
+ * branch, or the folder path for a folder outside git. No current hot or a current hot with no
+ * key replaces it; the same key replaces the body but keeps the other branches' Parallel lines;
+ * a different key keeps the current body and files the new snapshot as one line of the Parallel
+ * list at its end (newest first, at most five, the oldest dropped while the whole is over the
+ * word cap). Chapter 3 replaces all of this with the derived handoff.
  */
 export function mergeHot(args: {
   current: string | null
