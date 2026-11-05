@@ -145,6 +145,22 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown, true))
 
+/**
+ * Cleanup's own Docker actions (the capacity watcher, the hourly cycle) write the Containers journal
+ * without going through the Containers service, so its snapshot does not know about them. When a pass
+ * reports that it acted, scan once so the card's Paused stacks and Automatic actions are current.
+ */
+watch(
+  () => {
+    const w = gc.dockerWatch
+    const c = gc.snapshot?.lastCycle
+    return `${w && w.acted > 0 ? w.at : 0}:${c?.docker && c.docker.acted > 0 ? c.at : 0}`
+  },
+  (key) => {
+    if (key !== '0:0') void containers.scanNow().catch(() => undefined)
+  }
+)
+
 const model = computed(() => gc.model)
 const prefs = computed(() => gc.prefs)
 
