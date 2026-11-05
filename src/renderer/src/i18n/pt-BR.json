@@ -3047,6 +3047,10 @@
           "confirm": "Mover para a lixeira"
         }
       },
+      "shelved": {
+        "activity": "Worktree `{branch}` guardada — ociosa há {days} d, branch mantida",
+        "activityDetached": "Worktree com HEAD solto guardada — ociosa há {days} d, arquivo mantido"
+      },
       "toast": {
         "success": "{freed} · {count} item pronto limpo | {freed} · {count} itens prontos limpos",
         "partial": "{cleaned} limpos · {failed} precisa de revisão | {cleaned} limpos · {failed} precisam de revisão",
