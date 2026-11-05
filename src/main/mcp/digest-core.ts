@@ -17,13 +17,20 @@
  *  - The relevance gate LEADS with commit-count — the strongest done-by-evidence
  *    signal (PRD §5). It is a single tunable config so the threshold is pinned by
  *    a unit test and documented, not scattered as a magic number.
- *  - The `hot` snapshot is a PROPOSAL only: the human accepts it in the Approval
- *    Inbox; it is never written silently (PRD §3.4 — "suggested, not silent").
+ *  - The `hot` snapshot is written straight to `hot.md` by the shell, with a
+ *    provenance stamp and a shadow-log entry (BUG-26 removed the review gate).
+ *
+ * Memory U1 (S-1, `docs/specs/2026-11-04-memory-u1-capture/spec.md`) adds the
+ * hook-edge trigger ({@link digestTriggerFor}), the commit-or-turns planner
+ * ({@link planDigest}) and the new digest body ({@link renderDigest}) beside the
+ * older gate and formatter, which S-2 deletes once the engine switches over.
  *
  * Content is written in English by default (T85 rule — project-memory language
  * follows the app locale; `en` is the default). The shell does not translate;
  * the labels here are the persisted vocabulary.
  */
+
+import { cutText, type TranscriptFacts } from './digest-transcript'
 
 // ---- Constants (all tunable knobs live here, pinned by tests) ----------------
 
@@ -280,6 +287,49 @@ function elide(text: string, max: number): string {
   return t.slice(0, max - 1).trimEnd() + '…'
 }
 
+/** The uncommitted-changes line of the Evidence block. */
+function dirtyLine(dirtyCount: number): string {
+  return `_${dirtyCount} uncommitted change${dirtyCount === 1 ? '' : 's'} in the working tree (not in the commits above)._`
+}
+
+/**
+ * The Evidence lines for a commit-backed digest: the capped commit list, the
+ * files line and the uncommitted line. Shared by {@link formatDigest} and
+ * {@link renderDigest} so the two stay byte-identical (spec Formats §3).
+ */
+function commitEvidenceLines(
+  commits: readonly DigestCommit[],
+  fileStats: readonly DigestFileStat[],
+  dirtyCount: number
+): string[] {
+  const lines: string[] = [`**Commits (${commits.length})**`]
+  if (commits.length === 0) {
+    lines.push('- _(none)_')
+  } else {
+    for (const c of commits.slice(0, DIGEST_COMMIT_CAP)) {
+      lines.push(`- \`${c.shortHash}\` ${c.subject || '(no subject)'}`)
+    }
+    const hiddenCommits = commits.length - DIGEST_COMMIT_CAP
+    if (hiddenCommits > 0) lines.push(`- _…and ${hiddenCommits} more_`)
+  }
+
+  if (fileStats.length > 0) {
+    const sum = summarizeStats(fileStats)
+    lines.push('')
+    lines.push(`**Files (${sum.files}, +${sum.added}/−${sum.deleted})**`)
+    const shown = fileStats.slice(0, DIGEST_FILE_CAP).map((s) => `\`${s.file}\``)
+    const hiddenFiles = fileStats.length - DIGEST_FILE_CAP
+    const suffix = hiddenFiles > 0 ? ` _(+${hiddenFiles} more)_` : ''
+    lines.push(shown.join(', ') + suffix)
+  }
+
+  if (dirtyCount > 0) {
+    lines.push('')
+    lines.push(dirtyLine(dirtyCount))
+  }
+  return lines
+}
+
 /** The best available session recap, framed as the session's OWN words. */
 function recapText(input: DigestInput): string {
   const src = input.awaySummary || input.taskSummary || input.lastPrompt || ''
@@ -311,34 +361,7 @@ export function formatDigest(input: DigestInput): string {
 
   // Evidence — the hard git truth (never self-report).
   lines.push('## Evidence')
-  const commits = input.commits
-  lines.push(`**Commits (${commits.length})**`)
-  if (commits.length === 0) {
-    lines.push('- _(none)_')
-  } else {
-    for (const c of commits.slice(0, DIGEST_COMMIT_CAP)) {
-      lines.push(`- \`${c.shortHash}\` ${c.subject || '(no subject)'}`)
-    }
-    const hiddenCommits = commits.length - DIGEST_COMMIT_CAP
-    if (hiddenCommits > 0) lines.push(`- _…and ${hiddenCommits} more_`)
-  }
-
-  if (input.fileStats.length > 0) {
-    const sum = summarizeStats(input.fileStats)
-    lines.push('')
-    lines.push(`**Files (${sum.files}, +${sum.added}/−${sum.deleted})**`)
-    const shown = input.fileStats.slice(0, DIGEST_FILE_CAP).map((s) => `\`${s.file}\``)
-    const hiddenFiles = input.fileStats.length - DIGEST_FILE_CAP
-    const suffix = hiddenFiles > 0 ? ` _(+${hiddenFiles} more)_` : ''
-    lines.push(shown.join(', ') + suffix)
-  }
-
-  if (input.dirtyCount > 0) {
-    lines.push('')
-    lines.push(
-      `_${input.dirtyCount} uncommitted change${input.dirtyCount === 1 ? '' : 's'} in the working tree (not in the commits above)._`
-    )
-  }
+  lines.push(...commitEvidenceLines(input.commits, input.fileStats, input.dirtyCount))
 
   // Recap — the session's OWN words (self-report; framed, never trusted as fact).
   const recap = recapText(input)
@@ -382,12 +405,11 @@ export interface HotProposalInput {
 }
 
 /**
- * Build the PROPOSED `hot.md` snapshot — the "where we left off" retomada cue
- * (PRD §5, Parnin). Deliberately short (well under the 500-word `hot` cap in
+ * Build the `hot.md` snapshot — the "where we left off" retomada cue (PRD §5,
+ * Parnin). Deliberately short (well under the 500-word `hot` cap in
  * `memory-core.HOT_MAX_WORDS`): NOW (what this was), LAST (commit evidence), NEXT
- * (the open thread), and a `[[link]]` to the full digest. This is a PROPOSAL —
- * the shell surfaces it in the Approval Inbox and only writes it to `hot.md` on
- * the human's Accept (PRD §3.4).
+ * (the open thread), and a `[[link]]` to the full digest. The shell writes it to
+ * `hot.md` directly after the digest, replacing the previous snapshot.
  */
 export function buildHotProposal(input: HotProposalInput): string {
   const lines: string[] = []
@@ -416,10 +438,9 @@ export function buildHotProposal(input: HotProposalInput): string {
   return lines.join('\n') + '\n'
 }
 
-// ---- Memory U1 (S-1) — stubs, implemented in the next commit ----------------
+// ---- Memory U1 (S-1): shared types, trigger, planner, digest body ------------
 
-import type { TranscriptFacts } from './digest-transcript'
-
+/** What the shell learned from git for one session's folder. */
 export type GitEvidence =
   | {
       kind: 'repo'
@@ -429,24 +450,47 @@ export type GitEvidence =
       dirtyCount: number
     }
   | { kind: 'not-a-repo' }
-  | { kind: 'unavailable' }
+  | { kind: 'unavailable' } // the folder is gone (orphan); S-5
+
+/** Why a digest is being written; picks the header verb. */
 export type DigestReason = 'ended' | 'idle' | 'compact' | 'catch-up' | 'orphan'
+
+/** The relevance gate: a commit, or enough operator turns (D-1). */
 export interface DigestGate {
   minCommits: number
   minUserTurns: number
 }
+
+/** The default gate: one commit, or three user turns (D-1, PRD §3.1). */
 export const DIGEST_GATE: DigestGate = { minCommits: 1, minUserTurns: 3 }
+
+/** What a hook edge asks the digest engine to do. */
 export type DigestTrigger = 'digest-ended' | 'digest-compact' | 'arm-idle' | 'cancel-idle' | 'none'
-export function digestTriggerFor(_edge: { event: string; taskState: string }): DigestTrigger {
-  throw new Error('not implemented')
+
+/**
+ * Maps one hook edge to the engine's action, in a fixed order: `PreCompact` digests whatever the
+ * task state; `SessionEnd` and a completed turn digest as ended; a working or waiting session
+ * cancels the idle timer; an idle one arms it; anything else does nothing.
+ */
+export function digestTriggerFor(edge: { event: string; taskState: string }): DigestTrigger {
+  if (edge.event === 'PreCompact') return 'digest-compact'
+  if (edge.event === 'SessionEnd') return 'digest-ended'
+  if (edge.taskState === 'completed') return 'digest-ended'
+  if (edge.taskState === 'working' || edge.taskState === 'needs-input') return 'cancel-idle'
+  if (edge.taskState === 'idle') return 'arm-idle'
+  return 'none'
 }
+
 export interface DigestPlanInput {
   facts: TranscriptFacts
   git: GitEvidence
+  /** What this session's previous digest saw. */
   last: { head: string | null; userTurns: number } | null
+  /** True for a transcript whose folder is gone (S-5). */
   orphan?: boolean
   gate?: DigestGate
 }
+
 export type DigestPlan =
   | { action: 'skip'; reason: 'insufficient' | 'unchanged' }
   | {
@@ -454,12 +498,39 @@ export type DigestPlan =
       evidence: 'commits' | 'no-commits' | 'no-git' | 'orphan'
       relevance: 'commits' | 'turns'
     }
-export function planDigest(_input: DigestPlanInput): DigestPlan {
-  throw new Error('not implemented')
+
+/**
+ * Decides whether a session gets a digest, in the spec's fixed order: the gate (commits, else
+ * user turns), then dedup against the previous digest (same head and same turn count), then the
+ * evidence kind. Sees no MCP verb, no memory module and no file path.
+ */
+export function planDigest(input: DigestPlanInput): DigestPlan {
+  const gate = input.gate ?? DIGEST_GATE
+  const { git, facts, last } = input
+  const n = git.kind === 'repo' ? git.commits.length : 0
+  let relevance: 'commits' | 'turns'
+  if (n >= gate.minCommits) relevance = 'commits'
+  else if (facts.userTurns >= gate.minUserTurns) relevance = 'turns'
+  else return { action: 'skip', reason: 'insufficient' }
+
+  const head = git.kind === 'repo' ? git.head : null
+  if (last !== null && head === last.head && facts.userTurns === last.userTurns) {
+    return { action: 'skip', reason: 'unchanged' }
+  }
+
+  let evidence: Extract<DigestPlan, { action: 'write' }>['evidence']
+  if (input.orphan === true || git.kind === 'unavailable') evidence = 'orphan'
+  else if (git.kind === 'not-a-repo') evidence = 'no-git'
+  else evidence = n >= 1 ? 'commits' : 'no-commits'
+  return { action: 'write', evidence, relevance }
 }
+
 export interface DigestRenderInput {
+  /** YYYY-MM-DD, passed in. */
   date: string
+  /** Cut to {@link DIGEST_TITLE_MAX} code points by renderDigest. */
   title: string
+  /** Ignored when git.kind is 'not-a-repo'. */
   branch?: string
   sessionShort: string
   reason: DigestReason
@@ -469,9 +540,144 @@ export interface DigestRenderInput {
   awaySummary?: string
   taskSummary?: string
   lastPrompt?: string
+  /** Commits on the checkout not attributed to this session (S-4). */
   otherCommits?: number
 }
+
+/**
+ * The whole digest's cap. Mirrors `memory-core.MEMORY_ENTRY_MAX_CHARS` (the cap
+ * `appendMemoryEntry` checks on the entry alone, in UTF-16 units) without importing that
+ * fs-bound module; a test pins the two equal.
+ */
 export const DIGEST_MAX_CHARS = 8_000
-export function renderDigest(_input: DigestRenderInput): string {
-  throw new Error('not implemented')
+
+/** The digest title's cap (code points). */
+export const DIGEST_TITLE_MAX = 200
+
+/** The content a section is replaced with when the digest is over {@link DIGEST_MAX_CHARS}. */
+export const CUT_TO_FIT = '_…cut to fit_'
+
+const REASON_VERB: Record<DigestReason, string> = {
+  ended: 'ended',
+  idle: 'went idle',
+  compact: 'compacted',
+  'catch-up': 'caught up',
+  orphan: 'recovered from a removed folder'
+}
+
+const NEWLINES = /\s*\r?\n\s*/g
+
+/** A verbatim block: every line prefixed `> `, an empty line rendered as `>`. */
+function quoteBlock(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((l) => (l === '' ? '>' : `> ${l}`))
+    .join('\n')
+}
+
+/** A one-line verbatim item: newlines collapsed to one space. */
+function oneLine(text: string): string {
+  return text.replace(NEWLINES, ' ')
+}
+
+/** The Evidence content for the plan's evidence kind. */
+function evidenceContent(input: DigestRenderInput): string {
+  const { git, plan } = input
+  const lines: string[] = []
+  const repo = git.kind === 'repo' ? git : null
+  if (plan.evidence === 'no-git') {
+    lines.push('_Not a git repository: no git evidence._')
+  } else if (plan.evidence === 'orphan' && !repo) {
+    lines.push('_The folder was removed; git evidence is not available._')
+  } else if (plan.evidence === 'no-commits') {
+    lines.push('**Commits (0)** — none in this session')
+    if (repo && repo.dirtyCount > 0) lines.push('', dirtyLine(repo.dirtyCount))
+  } else {
+    // 'commits', or 'orphan' with the orphan branch's repo evidence (S-5).
+    lines.push(
+      ...commitEvidenceLines(repo?.commits ?? [], repo?.fileStats ?? [], repo?.dirtyCount ?? 0)
+    )
+  }
+  const others = input.otherCommits ?? 0
+  if (others > 0) {
+    const noun = others === 1 ? 'commit' : 'commits'
+    lines.push(
+      '',
+      `_${others} other ${noun} landed on this checkout during the session (not attributed to it)._`
+    )
+  }
+  return lines.join('\n')
+}
+
+/**
+ * Renders the digest body for `sessions/<date>-<id8>.md` (spec Formats, "The digest body"): the
+ * title, the header line with its evidence token, Evidence, then the session's own words — the
+ * asked-and-answered pairs, the open questions, the recap, where it left off and its last
+ * message — each copied verbatim as a blockquote, never translated. Over
+ * {@link DIGEST_MAX_CHARS} the sections are cut from the last one up to the pairs; the title,
+ * header and Evidence never are. Pure: the same input gives the same bytes. Provenance is added
+ * by the memory writer, not here.
+ */
+export function renderDigest(input: DigestRenderInput): string {
+  const title = cutText(input.title.trim() || `Session ${input.sessionShort}`, DIGEST_TITLE_MAX)
+  const branchPart =
+    input.branch && input.git.kind !== 'not-a-repo' ? ` · branch \`${input.branch}\`` : ''
+  const header = `_Session \`${input.sessionShort}\`${branchPart} · ${REASON_VERB[input.reason]} · auto-digest · evidence: ${input.plan.evidence}_`
+
+  // Sections 4 to 8 (index 0 to 4), each null when it has nothing to show.
+  const { facts } = input
+  const recapSource = [input.awaySummary, input.taskSummary, input.lastPrompt].find(
+    (t): t is string => typeof t === 'string' && t.trim() !== ''
+  )
+  const recapKey = recapSource?.trim()
+  const lastPrompt = input.lastPrompt?.trim() ?? ''
+  const lastText = facts.lastAssistantText.trim()
+  const sections: { heading: string; content: string | null }[] = [
+    {
+      heading: 'Asked and answered',
+      content: facts.asked.length
+        ? facts.asked
+            .map((p) => `> - **Q:** ${oneLine(p.question)} — **A:** ${oneLine(p.answer)}`)
+            .join('\n')
+        : null
+    },
+    {
+      heading: 'Open questions',
+      content: facts.openQuestions.length
+        ? facts.openQuestions.map((q) => `> - ${oneLine(q)}`).join('\n')
+        : null
+    },
+    {
+      heading: 'Recap',
+      content: recapKey
+        ? "_The session's own summary — context, not verified fact:_\n\n" +
+          quoteBlock(cutText(recapKey, RECAP_MAX_CHARS))
+        : null
+    },
+    {
+      heading: 'Left off',
+      content:
+        lastPrompt && lastPrompt !== recapKey
+          ? quoteBlock(cutText(lastPrompt, LINE_MAX_CHARS))
+          : null
+    },
+    {
+      heading: 'Last message',
+      content: lastText && lastText !== recapKey ? quoteBlock(lastText) : null
+    }
+  ]
+
+  const assemble = (): string => {
+    const parts = [`# ${title}`, header, `## Evidence\n\n${evidenceContent(input)}`]
+    for (const s of sections) if (s.content !== null) parts.push(`## ${s.heading}\n\n${s.content}`)
+    return parts.join('\n\n') + '\n'
+  }
+
+  let out = assemble()
+  for (let i = sections.length - 1; i >= 0 && out.length > DIGEST_MAX_CHARS; i--) {
+    if (sections[i].content === null) continue
+    sections[i].content = CUT_TO_FIT
+    out = assemble()
+  }
+  return out
 }

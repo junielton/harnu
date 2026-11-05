@@ -3,6 +3,8 @@ import {
   emptyFacts,
   gitWindows,
   isUserTurn,
+  QUESTION,
+  questionMatches,
   scanTranscriptLines,
   type TranscriptFacts
 } from '../src/main/mcp/digest-transcript'
@@ -328,5 +330,36 @@ describe('scanTranscriptLines', () => {
     const a: TranscriptFacts = emptyFacts()
     a.pending.push({ id: 'x', kind: 'ask', startMs: null })
     expect(emptyFacts().pending).toEqual([])
+  })
+
+  it('finds the same questions as the spec pattern, in linear time', () => {
+    const samples = [
+      '',
+      '?',
+      'a? b?',
+      'a?b?',
+      'x ? ?',
+      'Why.\nHow?\tNow? ok',
+      'end?\r\nnext?',
+      'one!two?three.four?',
+      'https://example.com/?q=1. Really?',
+      'Unicode? ünïcode?\u00a0space?'
+    ]
+    let seed = 7
+    const alphabet = 'ab .!?\n\t'
+    for (let n = 0; n < 200; n++) {
+      let s = ''
+      for (let i = 0; i < 30; i++) {
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        s += alphabet[seed % alphabet.length]
+      }
+      samples.push(s)
+    }
+    for (const text of samples) {
+      expect(questionMatches(text)).toEqual([...text.matchAll(QUESTION)].map((m) => m[0]))
+    }
+    const started = Date.now()
+    questionMatches('z'.repeat(65_536))
+    expect(Date.now() - started).toBeLessThan(500)
   })
 })
