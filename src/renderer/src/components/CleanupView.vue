@@ -65,6 +65,7 @@ import CleanupRecoveryNotices from './CleanupRecoveryNotices.vue'
 import CleanupDockerCard from './CleanupDockerCard.vue'
 import CleanupArchivesCard from './CleanupArchivesCard.vue'
 import CleanupTrashCard from './CleanupTrashCard.vue'
+import CleanupShelvedCard from './CleanupShelvedCard.vue'
 import CleanupExhaustDialog from './CleanupExhaustDialog.vue'
 import CleanupSplitBar from './CleanupSplitBar.vue'
 import CleanupLegend from './CleanupLegend.vue'
@@ -1227,6 +1228,12 @@ async function confirmExhaust(): Promise<void> {
             :never-clean="prefs?.neverClean ?? []"
             @delete="(group, entries) => (exhaustDialog = { mode: 'delete', group, entries })"
             @gc="(group) => (exhaustDialog = { mode: 'gc', group })"
+          />
+          <CleanupShelvedCard
+            :shelved="gc.snapshot?.shelved ?? []"
+            :busy-ids="gc.shelvedBusy"
+            :failures="gc.shelvedFailures"
+            @restore="(id) => gc.restoreShelved(id)"
           />
           <CleanupTrashCard
             v-if="trash && (trash.inTrashCount > 0 || trash.unverifiedCount > 0)"

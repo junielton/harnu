@@ -3049,7 +3049,34 @@
       },
       "shelved": {
         "activity": "Worktree `{branch}` guardada — ociosa há {days} d, branch mantida",
-        "activityDetached": "Worktree com HEAD solto guardada — ociosa há {days} d, arquivo mantido"
+        "activityDetached": "Worktree com HEAD solto guardada — ociosa há {days} d, arquivo mantido",
+        "title": "Guardadas",
+        "sub": "{n} worktree · {size} liberados | {n} worktrees · {size} liberados",
+        "subNoSize": "{n} worktree | {n} worktrees",
+        "note": "Pastas que o Harnu removeu por ficarem ociosas. A branch e todas as alterações são mantidas. Abrir uma sessão ou um terminal em uma delas a traz de volta sozinho.",
+        "listLabel": "Worktrees guardadas",
+        "detached": "HEAD solto",
+        "idle": "ociosa há {n} d",
+        "restore": "Restaurar",
+        "restoring": "Restaurando…",
+        "copyCommand": "Copiar comando",
+        "copied": "Copiado",
+        "failure": {
+          "repoBusy": "Outra tarefa do Harnu está trabalhando neste repositório. Tente de novo em instantes.",
+          "inUse": "Uma sessão está trabalhando na pasta desse caminho. Feche-a e tente de novo.",
+          "recordMissing": "O registro do arquivo sumiu, então o Harnu não consegue reconstruir esta pasta. A branch continua lá: copie o comando para obter uma worktree nova nela.",
+          "archiveUnverified": "O arquivo não confere mais, então o Harnu não restaura a partir dele. Nada foi alterado; copie o comando para obter uma worktree nova na branch.",
+          "moveAsideFailed": "Há uma pasta no caminho e ela não pôde ser movida. Mova ou renomeie você mesmo e tente de novo.",
+          "pathExists": "Já existe uma pasta nesse caminho. Mova-a e tente de novo.",
+          "other": "A restauração falhou: {message}. Nada foi perdido e o arquivo está intacto. Tente de novo ou copie o comando para começar uma worktree nova na branch."
+        },
+        "toast": {
+          "restored": "{name} restaurada",
+          "restoredDetached": "{name} restaurada — com HEAD solto no commit arquivado, porque a branch está em uso em outro lugar",
+          "present": "{name} já tinha voltado",
+          "movedAside": "Uma pasta que estava no caminho foi mantida em {path}. Apague quando quiser.",
+          "failed": "Não foi possível restaurar {name}"
+        }
       },
       "toast": {
         "success": "{freed} · {count} item pronto limpo | {freed} · {count} itens prontos limpos",

@@ -3049,7 +3049,34 @@
       },
       "shelved": {
         "activity": "Shelved `{branch}` — idle {days} d, branch kept",
-        "activityDetached": "Shelved detached HEAD — idle {days} d, archive kept"
+        "activityDetached": "Shelved detached HEAD — idle {days} d, archive kept",
+        "title": "Shelved",
+        "sub": "{n} worktree · {size} freed | {n} worktrees · {size} freed",
+        "subNoSize": "{n} worktree | {n} worktrees",
+        "note": "Folders Harnu removed because they sat idle. The branch and every change are kept. Opening a session or terminal in one brings it back by itself.",
+        "listLabel": "Shelved worktrees",
+        "detached": "detached",
+        "idle": "idle {n} d",
+        "restore": "Restore",
+        "restoring": "Restoring…",
+        "copyCommand": "Copy command",
+        "copied": "Copied",
+        "failure": {
+          "repoBusy": "Another Harnu job is working in this repository. Try again in a moment.",
+          "inUse": "A session is working in the folder at that path. Close it, then try again.",
+          "recordMissing": "The archive record is gone, so Harnu cannot rebuild this folder. The branch is still there: copy the command to get a fresh worktree on it.",
+          "archiveUnverified": "The archive no longer checks out, so Harnu will not restore from it. Nothing was changed; copy the command to get a fresh worktree on the branch.",
+          "moveAsideFailed": "A folder is in the way at that path and could not be moved aside. Move or rename it yourself, then try again.",
+          "pathExists": "A folder already exists at that path. Move it aside, then try again.",
+          "other": "Restoring failed: {message}. Nothing was lost and the archive is untouched. Try again, or copy the command to start a fresh worktree on the branch."
+        },
+        "toast": {
+          "restored": "Restored {name}",
+          "restoredDetached": "Restored {name} — detached at the archived commit, because its branch is checked out elsewhere",
+          "present": "{name} was already back",
+          "movedAside": "A folder that was in the way was kept at {path}. Delete it when you like.",
+          "failed": "Could not restore {name}"
+        }
       },
       "toast": {
         "success": "{freed} · {count} ready item cleaned | {freed} · {count} ready items cleaned",
