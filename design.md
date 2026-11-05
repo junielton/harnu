@@ -344,7 +344,7 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 | Progress popover — standard / wide     | 400px / 520px                                                  | The Mission progress popover is 400px; the Campaign popover (`.pop--wide`, §6 "Campaign progress") is the one 520px variant — two panes need the room                                                                                                                                                                                                                              |
 | Campaign map — board                   | tile `164×96px` · gutter `36px` · row gap `40px` · lane `20px` | The one fixed canvas of the Campaign map (§6 "Campaign map"): 4 columns × 164 + 3 × 36 + the 20px return lane = 784px wide; a dock chip is 164×20px. Mockup `v6--map`; scrolls inside its wrapper, never reflows                                                                                                                                                                   |
 | Resizable divider — hit area           | 6px                                                            | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
-| Resizable divider — visible stripe     | 1px                                                            | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                                                                                                                                                                                                             |
+| Resizable divider — visible stripe     | 1px                                                            | Colored stripe (`w-px`) flush to the side panel's edge inside the 6px hit area                                                                                                                                                                                                                                                                                                     |
 | Footer / status bar — height           | 24px (`h-6`)                                                   | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
 | Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)`           | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
 | Settings pane — bounded list           | max-height `280px`                                             | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                                                                                                                                                                                              |
@@ -3838,20 +3838,30 @@ folder's own screen.
 
 ### Resizable divider (handle)
 
-A vertical, draggable bar that separates two panels. Used in two places with the same
-anatomy: between the **sidebar and the content**, and between the **terminal and the
-helper-stack** (split).
+A vertical, draggable bar that separates two panels. Used in three places with the same
+anatomy: between the **sidebar and the content**, between the **terminal and the
+helper-stack** (split), and between the **content and the Fleet rail** (expanded only).
 
-- **Width:** two layers. The **hit-area** (drag target) is the outer 6px `<div>`
-  (`w-1.5`, `cursor-col-resize`), transparent. The **visible stripe** is a centered 1px
-  child (`w-px`, `h-full`) — thin enough not to compete with the content, while the 6px
-  hit-area stays comfortable to drag.
+- **Anatomy — hit area vs. visible line.** Two layers. The **hit area** (drag target) is the
+  outer 6px `<div>` (`w-1.5`, `cursor-col-resize`, `shrink-0`), transparent — it sits on the
+  window's `--bg`. The **visible line** is a 1px child (`w-px`, `h-full`) — thin enough not
+  to compete with the content, while the 6px hit area stays comfortable to drag.
+- **One edge at rest.** The line is **flush against the side panel's edge**, never centered
+  in the hit column: a centered line leaves a strip of `--bg` on each side of it, and next to
+  a `--sidebar` panel that strip reads as a second bar (BUG-247). So the hit column aligns
+  its line toward the panel it belongs to — `justify-start` for the sidebar (panel on the
+  left), `justify-end` for the helper stack and the Fleet rail (panel on the right). The
+  remaining 5px of `--bg` sit on the content side, where the content's own `--bg` continues
+  them, so they are not an edge. The hit area keeps its full 6px width; only the line moves.
+- **Collapsed / minimized.** A collapsed sidebar and a minimized Fleet rail render **no
+  divider** (`v-if`): the minimized rail's own `border-l` is then the only edge.
 - **Background:** only the 1px stripe is colored — `--border-2` (default) →
   `--accent-line` on hover (via `group-hover`, since the hover is on the outer hit-area).
 - **Cursor:** `col-resize` when hovering over it.
 - **Drag:** adjusts the width in real time. In the sidebar, the `clientX` delta is
   added to the initial width and clamped to `[200, 480]` (see §4 — Layout dimensions).
-- **Double-click:** resets to the default width (268px in the sidebar).
+- **Double-click:** resets to the default — 268px for the sidebar, 300px for the Fleet rail,
+  the 0.65 content/helper split for the helper stack.
 - **Motion:** only the background color transition (`--dur` / `--ease`); the width
   tracks the pointer 1:1 during the drag, **no** easing animation (an animated drag
   feels laggy). Respects `prefers-reduced-motion` via §7's global reset.

@@ -239,6 +239,16 @@ function onMainDividerMouseMove(ev: MouseEvent): void {
   helpers.setSplitRatio(wt, mainDragging.startRatio + deltaRatio)
 }
 
+// Double-click resets the helper-stack split to its default, like the sidebar
+// and Fleet-rail dividers reset their widths. 0.65 mirrors the store's fallback
+// ratio for a worktree with no saved split (stores/helpers.ts).
+const HELPER_SPLIT_RATIO_DEFAULT = 0.65
+function onMainDividerDblClick(): void {
+  const wt = helpers.currentWorktreePath
+  if (!wt) return
+  helpers.setSplitRatio(wt, HELPER_SPLIT_RATIO_DEFAULT)
+}
+
 function onMainDividerMouseUp(): void {
   mainDragging = null
   document.removeEventListener('mousemove', onMainDividerMouseMove)
@@ -1677,7 +1687,7 @@ onUnmounted(() => {
       <Sidebar v-show="!layout.sidebarCollapsed" />
       <div
         v-if="!layout.sidebarCollapsed"
-        class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+        class="group flex w-1.5 shrink-0 cursor-col-resize justify-start"
         role="separator"
         aria-orientation="vertical"
         :aria-label="$t('sidebar.resize')"
@@ -1771,10 +1781,11 @@ onUnmounted(() => {
           -->
           <div
             v-if="showHelperStack"
-            class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+            class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
             role="separator"
             aria-orientation="vertical"
             @mousedown="onMainDividerMouseDown"
+            @dblclick="onMainDividerDblClick"
           >
             <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
           </div>
@@ -1801,7 +1812,7 @@ onUnmounted(() => {
       <template v-if="showInboxRail">
         <div
           v-if="layout.inboxRailState === 'expanded'"
-          class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+          class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
           role="separator"
           aria-orientation="vertical"
           :aria-label="$t('approvalInbox.rail.resize')"
