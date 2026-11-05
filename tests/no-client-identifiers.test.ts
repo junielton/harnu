@@ -102,6 +102,11 @@ const ALLOWED_LOWER_PREFIXES = [
   // `from`: a Tailwind gradient-stop utility (`from-50%`, the mission gate dots' half-filled ring), not a
   // tracker key.
   'from',
+  // U3.7: neutral sample project names in the Docker capacity mockup, fixtures and docs (`ext-12`,
+  // `ext-15`), alongside `proj`.
+  'ext',
+  // `fw`: the font-weight utility of the U3.7 mockup's stylesheet (`fw-500`), not a tracker key.
+  'fw',
   'agent',
   'agents',
   'argv',
