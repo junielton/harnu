@@ -24,6 +24,7 @@ import {
   DEFAULT_SNAPSHOT_CAP_BYTES,
   decideRestoreBase,
   isDependencyPath,
+  normalizeDependencyDir,
   parseShelveRecord,
   parseWorktreeList,
   type RestoreBaseReason,
@@ -33,7 +34,6 @@ import {
   type ShelveRecord
 } from './shelve-core'
 import { DEFAULT_EPHEMERAL } from '../worktree-manifest'
-import { normalizeEphemeralEntry } from '../reaper/dehydrate-core'
 
 // ---- git ---------------------------------------------------------------------------
 
@@ -288,7 +288,7 @@ async function preserve(input: PreserveInput, created: string[]): Promise<Preser
   const { repoPath, worktreePath, branch, now } = input
   const capBytes = input.capBytes ?? DEFAULT_SNAPSHOT_CAP_BYTES
   const dependencyDirs = (input.dependencyDirs ?? DEFAULT_EPHEMERAL)
-    .map(normalizeEphemeralEntry)
+    .map(normalizeDependencyDir)
     .filter((d): d is string => d !== null)
 
   if (

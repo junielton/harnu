@@ -16,7 +16,7 @@ describe('dependencyDirsFor — the repo manifest list at any depth (AC-3)', () 
   })
 
   it('drops entries that do not normalise (absolute, escaping, globs, .git, empty)', () => {
-    expect(dependencyDirsFor(['/abs', '../up', 'a/*', '.git', '', 'ok/'])).toEqual(['ok'])
+    expect(dependencyDirsFor(['/abs', '../up', 'a/*', '.git', '', 'ok/'])).toEqual(['ok', '**/ok'])
   })
 
   it('keeps an empty list empty: nothing is excluded', () => {
