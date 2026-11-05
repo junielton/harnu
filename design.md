@@ -148,6 +148,7 @@ Three consequences of the owner-approved Brand v0 values (2026-10-03):
 | `--surface-2` | `#29231f` | Surface hover, `<kbd>`, quiet badges                   |
 | `--border`    | `#302a25` | Default borders (1px)                                  |
 | `--border-2`  | `#38312c` | Elevated borders (dialogs, menus)                      |
+| `--canvas`    | `#070503` | Backdrop behind floating islands (§6)                  |
 
 ### Text
 
@@ -3869,6 +3870,8 @@ helper-stack** (split), and between the **content and the Fleet rail** (expanded
   them, so they are not an edge. The hit area keeps its full 6px width; only the line moves.
 - **Collapsed / minimized.** A collapsed sidebar and a minimized Fleet rail render **no
   divider** (`v-if`): the minimized rail's own `border-l` is then the only edge.
+  With Floating panels on the dividers change look and the gap is kept in these states; see
+  "Floating panels layout (T626)" below.
 - **Background:** only the 1px stripe is colored — `--border-2` (default) →
   `--accent-line` on hover (via `group-hover`, since the hover is on the outer hit-area).
 - **Cursor:** `col-resize` when hovering over it.
@@ -3938,6 +3941,133 @@ aria-orientation="vertical"`, a 6px `cursor-col-resize` hit area with a 1px `--b
   `keybindings.actions.layout_cycleSplitOrientation`.
 - **Motion.** Switching orientation re-lays the panes out instantly in this slice; the animated
   switch belongs to the motion work (floating-layout S-7). Divider drags never animate.
+
+#### Floating panels layout (T626)
+
+An **opt-in** layout in the style of VS Code's floating panels: every pane is an **island** (its
+own border and rounded corners) sitting on a darker **canvas**, with an even gap between islands
+and no visible divider line at rest. **Off by default.** With it off, the app renders exactly as
+it does without this section: the setting adds no pixel to the default layout.
+
+- **Setting and attribute.** Settings → Appearance → **Floating panels** (a switch). Persisted in
+  `settings.json` as `floatingPanels` (boolean, absent = `false`), like `splitLayout`, and applied as
+  the attribute `data-floating="on"` on `<html>`, the same mechanism as `data-theme`. When off the
+  attribute is **absent** (not `"off"`). **Every** floating rule is scoped to
+  `:root[data-floating]`; nothing outside that scope changes.
+- **Canvas.** The window background behind the islands is the `--canvas` token (§2 Surfaces, §9),
+  not `--bg`: `color-mix(in oklab, var(--bg) 62%, black)` on every dark theme, a **hand-picked**
+  value on each light theme (the mix would read as a heavy grey slab there). See the per-theme
+  table in §9. An extension theme inherits the dark-theme mix.
+- **Gap = 6px, everywhere.** `--float-gap` is the empty space between two islands' outer borders
+  AND between an island and the window edge (top, left, right, and the bottom edge above the
+  footer). The row of columns carries `padding: var(--float-gap)`.
+- **Radius.** Every island is fully rounded with `--radius` (7px). `--radius-sm` (5px) is used
+  only for surfaces **inside** an island (rows, minicards, buttons), unchanged.
+- **Border.** Each island has its **own** 1px `--border` on all four sides and never shares an edge
+  with another island. A flat inner divider that used to separate two regions of one box
+  (`border-b` under the sidebar toolbar, `border-t` over the Fleet rail sections, the Return here
+  zone's bottom rule) is replaced by the island gap and is not drawn.
+- **Island background.** Sidebar-family islands (sidebar toolbar, Return here, folder list, dock,
+  Fleet rail header/list/sections) paint `--sidebar`; content-family islands (Topbar, the session
+  area, every helper pane) paint `--bg`.
+
+##### Islands and the grid
+
+One grid, three columns. The sidebar column and the Fleet rail column are stacks of islands; the
+middle column is the Topbar over a row holding the session area and the helper stack.
+
+| Column     | Island, top to bottom (`data-island`)                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| Sidebar    | `sidebar-toolbar` · [`sidebar-return`] · `sidebar-list` · `sidebar-dock`                               |
+| Middle     | `topbar` · then `session` and each helper pane (`helper-pane`), side by side or stacked                |
+| Fleet rail | `rail-header` · `rail-list` · [`rail-needs-you`] · `rail-would-have` (minimized: one `rail-minimized`) |
+
+- **Top band.** `sidebar-toolbar`, `topbar` and `rail-header` are the **band**: three islands of
+  `--float-band` (42px) on one line, sharing top and bottom (y = gap … gap + 42). They are marked
+  `data-island-band`.
+- **Below the band.** The first island under each column starts at the same y: band + gap
+  (`6 + 42 + 6 = 54px` from the window top). That island is `sidebar-return` when it shows, else
+  `sidebar-list`; the session area and the first helper pane in the middle column; `rail-list`
+  in the Fleet rail.
+- **Columns are separated by the dividers.** The three vertical dividers are exactly
+  `--float-gap` wide (6px, the same `w-1.5` hit column as today), so the divider **is** the gap
+  and the drag handle at once. Between two helper panes the gap is `--float-gap` as well
+  (a flex gap in side-by-side; the width splitter itself, 6px, when stacked).
+- **Main is not one box.** The Topbar, the session area and each helper pane float on their own.
+  The Topbar is separated from the row below by `--float-gap`.
+- **Bottom edge.** The lowest island of every column ends `--float-gap` above the footer.
+
+##### Dividers in the floating layout
+
+- **At rest** no line is drawn. The 6px hit column stays (`cursor-col-resize` / `row-resize`,
+  drag, double-click reset all unchanged); it sits **in the gap**.
+- **On hover** a short **grip** appears centered in the gap: **2px × 36px**, fully rounded
+  (`999px`), `--accent-line`, with the `--dur-fast` / `--ease` color transition. The stacked
+  (horizontal) divider shows the same grip rotated: **36px × 2px**.
+- A helper pane's header keeps acting as the resize handle between panes (unchanged); its
+  top-edge hover line is not drawn between floating islands (the gap and the grip carry it).
+
+##### Footer exception
+
+The app footer is **not** an island. It stays **flush and full width**: no margin, no radius, no
+side border. It keeps `--surface` and a 1px `--border` **top rule**. The islands keep
+`--float-gap` above it.
+
+##### Sidebar column: Return here and drill Back row
+
+- `sidebar-return` (the Return here zone) is its **own island** between the toolbar and the list,
+  `--float-gap` from both. When the zone is empty it is not rendered and the toolbar and the list
+  are 6px apart as usual. Its internal bottom divider (the `aria-hidden` `border-t`) is hidden;
+  the island gap separates it from the list.
+- In **drill mode** `sidebar-list` is the drill view and **starts with the pinned Back row**
+  (`data-drill-back`, BUG-248): the Back row carries the island's **top corners** and its top
+  border, and the scroller below it carries the bottom corners and no top border. The pinned Back
+  row and its fade strip are scoped to the floating attribute here so the default layout is
+  untouched.
+
+##### Sidebar dock (slot)
+
+The sidebar's lower island is a **slot**, not a footer row. It holds Add folder, the watcher pill
+and Settings today, and it must accept more sections later without a layout change.
+
+- **Contract.** The island is the `<footer data-island="sidebar-dock">` element; each **section** is
+  a direct child marked `data-dock-section`. Sections stack top to bottom; the island's height is
+  the sum of its sections (the folder list above takes the remaining height); every section after
+  the first is separated from the one above by a 1px `--border` top rule
+  (`[data-dock-section] + [data-dock-section]`), so a new section is a drop-in child, never a new
+  hard-coded row or border. A section owns its own padding (today `6px 8px`).
+- **Position.** The dock is the last island of the sidebar column, `--float-gap` below the list
+  and `--float-gap` above the footer.
+- Off, the dock is the same footer it always was: one section, a 1px `--border` top rule.
+
+##### Fleet rail sections (slots)
+
+The expanded Fleet rail is the same idea for its lower part: after the `rail-list` island,
+each section is a direct child of the rail with a `data-island` of its own and a
+`data-rail-section` marker, `--float-gap` apart:
+
+1. `rail-needs-you`, present **only while something is pending** (as today);
+2. `rail-would-have`.
+
+The lowest one sits `--float-gap` above the footer. A future section is another
+`data-rail-section` child, not a layout change. The **minimized** rail is a **single**
+`rail-minimized` island (44px wide, its own border on all sides, no separate `border-l`).
+
+##### Collapsed and hidden states keep the gap
+
+A divider that disappears must never take the gap with it. With the switch on:
+
+| State                | What supplies the 6px                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| Fleet rail minimized | The rail column carries `margin-left: var(--float-gap)` (its divider is not rendered).       |
+| Fleet rail hidden    | The row's own padding is the gap to the window edge.                                         |
+| Sidebar collapsed    | The row's own padding is the gap to the window edge (the divider is not rendered).           |
+| Helper stack closed  | The session area simply spans the middle column; the divider next to the rail is unaffected. |
+
+##### Motion
+
+None added here: the grip fades in with `--dur-fast`; layout changes are instant in this slice
+(the layout motion belongs to floating-layout S-7). Respects `prefers-reduced-motion` via §7.
 
 #### Origins of a helper-stack pane
 
@@ -14029,6 +14159,11 @@ codebase is a bug to fix.
   --shadow-pop:
     0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 12px 32px rgba(0, 0, 0, 0.45),
     0 2px 8px rgba(0, 0, 0, 0.3);
+
+  /* floating panels (§6 "Floating panels layout"), used only under :root[data-floating] */
+  --canvas: color-mix(in oklab, var(--bg) 62%, black); /* dark themes; light themes override it */
+  --float-gap: 6px; /* between islands, and from an island to the window edge */
+  --float-band: 42px; /* height of the three top-band islands */
 }
 
 body {
@@ -14100,6 +14235,30 @@ since `data-theme` only applies the active theme).
 | `gruvbox-light`    | Gruvbox Light    | light | orange       |
 | `nord`             | Nord             | dark  | frost        |
 | `monospace`        | Monospace        | dark  | grayscale    |
+
+**Canvas per theme (Floating panels).** `--canvas` is the window backdrop behind the islands
+(§6 "Floating panels layout"). It is **not** part of the 20-token contract a theme must define:
+the base `:root` derives it from the theme's own `--bg` (`color-mix(in oklab, var(--bg) 62%, black)`),
+which is right for every dark theme and is also what an extension theme gets. The four light
+themes **override it with a hand-picked value**, because that mix would read as a heavy grey slab
+on a light surface; each pick is one step below the theme's `--sidebar` and above its `--border`,
+so the 1px island border stays visible on it.
+
+| `data-theme`       | `--bg`    | `--canvas`                                                            |
+| ------------------ | --------- | --------------------------------------------------------------------- |
+| `default-dark`     | `#17120e` | mix (`#070503`)                                                       |
+| `tokyo-night`      | `#1a1b26` | mix (`#08090f`)                                                       |
+| `dracula`          | `#282a36` | mix (`#101117`)                                                       |
+| `catppuccin-mocha` | `#1e1e2e` | mix (`#0a0a13`)                                                       |
+| `one-dark`         | `#282c34` | mix (`#101216`)                                                       |
+| `github-dark`      | `#0d1117` | mix (`#030407`)                                                       |
+| `gruvbox-dark`     | `#282828` | mix (`#101010`)                                                       |
+| `nord`             | `#2e3440` | mix (`#13161d`)                                                       |
+| `monospace`        | `#0c0c0c` | mix (`#030303`)                                                       |
+| `light`            | `#fafafa` | **`#ececef`** (hand-picked, = its `--surface-2`)                      |
+| `github-light`     | `#ffffff` | **`#eaeef2`** (hand-picked, = its `--surface-2`)                      |
+| `catppuccin-latte` | `#eff1f5` | **`#d8dce5`** (hand-picked, between its `--surface-2` and `--border`) |
+| `gruvbox-light`    | `#fbf1c7` | **`#ebdbb2`** (hand-picked, = its `--surface-2`)                      |
 
 Adding a theme = (1) a complete `:root[data-theme='<id>']` block in
 `themes.css`, (2) an entry in `THEMES` + `THEME_META` in `theme.ts`, (3) a label in
