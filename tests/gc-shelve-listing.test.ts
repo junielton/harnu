@@ -82,9 +82,9 @@ describe('list_cleanup — shelved worktrees', () => {
     expect(listing.totals.shelved).toBe(1)
   })
 
-  it('discloses the shelving switch: off and report-only by default', () => {
+  it('discloses the shelving switch: on and report-only by default', () => {
     expect(cleanupListing(snapshot([]), opts).shelving).toEqual({
-      enabled: false,
+      enabled: true,
       reportOnly: true,
       thresholdDays: 3
     })
