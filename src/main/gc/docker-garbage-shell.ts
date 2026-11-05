@@ -218,7 +218,9 @@ export function createDockerGarbage(deps: GarbageDeps): DockerGarbage {
         'autopilot',
         actionDeps((tb) => ({
           ...tb,
-          reason: `Stopped orphan stack \`${label}\` before removing it`
+          reason: `Stopped orphan stack \`${label}\` before removing it`,
+          // The containers are removed right after, so `docker start <id>` could never work.
+          restoreHint: null
         }))
       )
       if (!stopped.ok)
