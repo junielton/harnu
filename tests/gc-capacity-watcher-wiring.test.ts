@@ -32,6 +32,12 @@ describe('gc-ipc wires the capacity watcher', () => {
     expect(ipc).toMatch(/[cC]apacityWatcher\.stop\(\)/)
   })
 
+  it('keeps notices for a window that does not exist yet and lets the renderer acknowledge them', () => {
+    expect(ipc).toMatch(/dockerNoticesPending:\s*state\.dockerNoticesPending/)
+    expect(ipc).toMatch(/ipcMain\.handle\('gc:docker:watch:ack'/)
+    expect(ipc).toMatch(/ackWatchNotices\(/)
+  })
+
   it('pushes the pass on gc:docker:watch (only when it changed) and puts it in the snapshot', () => {
     expect(ipc).toMatch(/send\('gc:docker:watch'/)
     expect(ipc).toMatch(/dockerWatch:\s*state\.dockerWatch/)
@@ -42,6 +48,8 @@ describe('the renderer side is reachable', () => {
   it('the preload exposes the push', () => {
     expect(read('preload/index.ts')).toMatch(/onGcDockerWatch/)
     expect(read('preload/index.ts')).toMatch(/'gc:docker:watch'/)
+    expect(read('preload/index.ts')).toMatch(/gcAckDockerWatchNotices/)
+    expect(read('preload/index.ts')).toMatch(/'gc:docker:watch:ack'/)
   })
   it('the gc store subscribes to it', () => {
     expect(read('renderer/src/stores/gc.ts')).toMatch(/onGcDockerWatch/)

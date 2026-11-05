@@ -17,6 +17,7 @@ const REQUESTS = [
   'gc:archives:gc',
   'gc:clean',
   'gc:docker:ack',
+  'gc:docker:watch:ack',
   'gc:guide',
   'gc:jobs',
   'gc:keep',

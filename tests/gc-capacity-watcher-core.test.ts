@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { createCycleState } from '../src/main/gc/gc-cycle'
 import {
+  ackWatchNotices,
   nextCapacityNotice,
   runCapacityPass,
   type CapacityPassDeps
@@ -31,6 +32,8 @@ const acked = (over: Partial<GcPrefs['docker']> = {}): GcPrefs => {
 }
 
 interface Rig {
+  /** The injected clock, in ms; tests move it. */
+  clock: number
   deps: CapacityPassDeps
   state: ReturnType<typeof createCycleState>
   executed: string[]
@@ -56,6 +59,7 @@ function rig(
   } = {}
 ): Rig {
   const r: Rig = {
+    clock: 1_000,
     state: createCycleState(),
     executed: [],
     notices: [],
@@ -90,7 +94,7 @@ function rig(
       r.disabled++
     },
     notify: (n) => r.notices.push(n),
-    now: () => 1_000
+    now: () => r.clock
   }
   return r
 }
@@ -419,5 +423,139 @@ describe('runCapacityPass: capacity that cannot be known (AC-3)', () => {
     u.state.dockerCapacityNotice = r.state.dockerCapacityNotice
     await runCapacityPass(u.deps, u.state, 'timer')
     expect(u.state.dockerCapacityNotice).toBe('zero')
+  })
+})
+
+describe('runCapacityPass: back-off while nothing is left to free (30 s passes stay cheap)', () => {
+  const MIN = 60_000
+
+  /** A first pass at the mark with a plan that frees nothing, then a second pass on the same rig state. */
+  async function settled(): Promise<Rig> {
+    const r = rig(acked(), {
+      free: [2],
+      plan: [net(1)],
+      execute: () => ({ ok: false, reason: 'busy', refusal: true })
+    })
+    const first = await runCapacityPass(r.deps, r.state, 'timer')
+    expect(first.nothingLeft).toBe(true)
+    expect(r.planned).toBe(1)
+    return r
+  }
+
+  it('a timer pass with the same capacity and settings does not plan, lock or run again', async () => {
+    const r = await settled()
+    r.clock += 30_000
+    const again = await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(1)
+    expect(r.locks).toBe(1)
+    expect(r.executed).toEqual(['net-1'])
+    expect(again).toMatchObject({
+      pressure: true,
+      nothingLeft: true,
+      found: 1,
+      refused: 1,
+      acted: 0,
+      notice: null
+    })
+    expect(again.capacity).toMatchObject({ known: true, free: 2 })
+  })
+
+  it('still reads capacity on every pass, so a real change is seen at once', async () => {
+    const r = await settled()
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.reads).toBeGreaterThanOrEqual(3)
+  })
+
+  it('a network event plans again even when capacity looks the same', async () => {
+    const r = await settled()
+    r.clock += 2_000
+    await runCapacityPass(r.deps, r.state, 'event')
+    expect(r.planned).toBe(2)
+  })
+
+  it('a change in free slots plans again', async () => {
+    const r = await settled()
+    r.deps.readCapacity = async () => known(1)
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(2)
+  })
+
+  it('a change in the settings (here the acknowledgement or the mark) plans again', async () => {
+    const r = await settled()
+    r.deps.prefs = () => acked({ lowWaterSlots: 4 })
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(2)
+  })
+
+  it('plans again after 10 minutes, because idle time moves without any event', async () => {
+    const r = await settled()
+    r.clock += 10 * MIN - 1
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(1)
+    r.clock += 1
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(2)
+  })
+
+  it('a pass that was cut short by the cap or found something to do never starts a back-off', async () => {
+    const r = rig(acked({ maxPerCycle: 1 }), { free: [0], plan: [net(1), net(2)] })
+    await runCapacityPass(r.deps, r.state, 'timer')
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(2)
+  })
+
+  it('recovering above the mark clears the back-off', async () => {
+    const r = await settled()
+    r.deps.readCapacity = async () => known(9)
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    r.deps.readCapacity = async () => known(2)
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(2)
+  })
+
+  it('a report-only pass backs off too, and the list it recorded stays', async () => {
+    const r = rig(defaultGcPrefs(), { free: [1], plan: [] })
+    await runCapacityPass(r.deps, r.state, 'timer')
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.planned).toBe(1)
+  })
+})
+
+describe('notices waiting for a renderer (the boot pass runs before the window exists)', () => {
+  it('a raised notice is kept as pending until it is acknowledged', async () => {
+    const r = rig(acked(), { free: [3], plan: [] })
+    const rec = await runCapacityPass(r.deps, r.state, 'boot')
+    expect(r.state.dockerNoticesPending).toEqual([rec])
+  })
+
+  it('a pass without a notice adds nothing; a later notice queues behind the first', async () => {
+    const r = rig(acked(), { free: [3], plan: [] })
+    const low = await runCapacityPass(r.deps, r.state, 'boot')
+    r.clock += 30_000
+    await runCapacityPass(r.deps, r.state, 'timer')
+    expect(r.state.dockerNoticesPending).toHaveLength(1)
+    r.deps.readCapacity = async () => known(0)
+    r.clock += 1_000
+    const zero = await runCapacityPass(r.deps, r.state, 'event')
+    expect(r.state.dockerNoticesPending).toEqual([low, zero])
+  })
+
+  it('ackWatchNotices drops exactly the acknowledged ones', async () => {
+    const r = rig(acked(), { free: [3], plan: [] })
+    const low = await runCapacityPass(r.deps, r.state, 'boot')
+    r.deps.readCapacity = async () => known(0)
+    r.clock += 1_000
+    const zero = await runCapacityPass(r.deps, r.state, 'event')
+    ackWatchNotices(r.state, [low.at])
+    expect(r.state.dockerNoticesPending).toEqual([zero])
+    ackWatchNotices(r.state, [zero.at, 999])
+    expect(r.state.dockerNoticesPending).toEqual([])
   })
 })

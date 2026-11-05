@@ -37,6 +37,7 @@ const watch = (over: Partial<DockerWatchRecord> = {}): DockerWatchRecord => ({
 function install(snapshot: Partial<GcSnapshot> = {}): {
   push: Record<string, (p: unknown) => void>
   pushSend: ReturnType<typeof vi.fn>
+  ack: ReturnType<typeof vi.fn>
   snap: GcSnapshot
 } {
   const push: Record<string, (p: unknown) => void> = {}
@@ -47,6 +48,7 @@ function install(snapshot: Partial<GcSnapshot> = {}): {
       return () => delete push[name]
     }
   const pushSend = vi.fn()
+  const ack = vi.fn(async () => undefined)
   const snap = {
     scannedAt: NOW,
     bundles: [],
@@ -57,6 +59,7 @@ function install(snapshot: Partial<GcSnapshot> = {}): {
     prefs: defaultGcPrefs(),
     lastCycle: null,
     dockerWatch: null,
+    dockerNoticesPending: [],
     nextCycleAt: null,
     shelved: [],
     ...snapshot
@@ -68,6 +71,7 @@ function install(snapshot: Partial<GcSnapshot> = {}): {
       gcRecoveryList: vi.fn(async () => []),
       gcRecoveryAck: vi.fn(async () => undefined),
       pushSend,
+      gcAckDockerWatchNotices: ack,
       onGcRecoveryChanged: sub('recovery'),
       onGcShelvedChanged: sub('shelvedChanged'),
       onGcProgress: sub('progress'),
@@ -79,7 +83,7 @@ function install(snapshot: Partial<GcSnapshot> = {}): {
     }
   }
   ;(globalThis as unknown as { document: unknown }).document = { hasFocus: () => true }
-  return { push, pushSend, snap }
+  return { push, pushSend, ack, snap }
 }
 
 beforeEach(() => {
@@ -237,5 +241,54 @@ describe('the report-only list for the acknowledgement (AC-5)', () => {
     const store = useGcStore()
     await store.init()
     expect(store.dockerReport).toBeNull()
+  })
+})
+
+describe('a notice raised before the window existed (the boot pass) is delivered on attach', () => {
+  const low = watch({ at: NOW - 5, notice: { level: 'low', free: 3, total: 31, mark: 3 } })
+  const zero = watch({ at: NOW - 1, notice: { level: 'zero', free: 0, total: 31, mark: 3 } })
+
+  it('the snapshot carries it: one Activity row and one push each, then it is acknowledged', async () => {
+    const { pushSend, ack } = install({ dockerNoticesPending: [low, zero], dockerWatch: zero })
+    await useGcStore().init()
+    const rows = useNotificationsStore().list
+    expect(rows.map((r) => r.title)).toEqual([
+      t('cleanup.gc.capacity.zero.title'),
+      t('cleanup.gc.capacity.low.title')
+    ])
+    expect(pushSend).toHaveBeenCalledTimes(2)
+    expect(ack).toHaveBeenCalledTimes(1)
+    expect(ack).toHaveBeenCalledWith([low.at, zero.at])
+  })
+
+  it('a refresh that still carries it (the ack not applied yet) records nothing twice', async () => {
+    const { pushSend } = install({ dockerNoticesPending: [low] })
+    const store = useGcStore()
+    await store.init()
+    await store.refresh()
+    expect(useNotificationsStore().list).toHaveLength(1)
+    expect(pushSend).toHaveBeenCalledTimes(1)
+  })
+
+  it('the same notice arriving later by push is not recorded again', async () => {
+    const { push, pushSend } = install({ dockerNoticesPending: [low] })
+    await useGcStore().init()
+    push.dockerWatch!(low)
+    expect(useNotificationsStore().list).toHaveLength(1)
+    expect(pushSend).toHaveBeenCalledTimes(1)
+  })
+
+  it('a pushed notice is acknowledged too, so a reload never replays it', async () => {
+    const { push, ack } = install()
+    await useGcStore().init()
+    push.dockerWatch!(low)
+    expect(ack).toHaveBeenCalledWith([low.at])
+  })
+
+  it('nothing pending: no ack, no rows', async () => {
+    const { ack } = install()
+    await useGcStore().init()
+    expect(ack).not.toHaveBeenCalled()
+    expect(useNotificationsStore().list).toHaveLength(0)
   })
 })
