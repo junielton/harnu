@@ -11288,7 +11288,7 @@ and below 600px the split scrolls sideways (`overflow-x-auto`, the Cleanup prece
 rather than crushing the detail.
 
 - **Eyebrows** — "Needs you" (zombie, orphan), "Leave alone" (active, protected, pending,
-  unknown), "Recent": 10.5px/500 uppercase, `tracking-[0.07em]`, `--text-4`,
+  unknown), "Paused" (U3.4, stacks Cleanup brought down), "Recent": 10.5px/500 uppercase, `tracking-[0.07em]`, `--text-4`,
   `padding: 10px 8px 6px`. An empty section drops its eyebrow. The "Needs you" eyebrow is
   the one exception: it is a `flex items-center gap-2.5` row with `padding-left: 10px`, so
   its **select-all control** (below) sits in the same 14px column as its rows' checkboxes.
@@ -11332,6 +11332,15 @@ ring-offset-1 ring-offset-bg`, and takes an `aria-label` naming its stack
   stacks" for a bulk action) + verb text, and a 10.5px tabular "ago". One row per journal
   tombstone (one per action, however many stacks it touched), newest first, capped at 10.
   Selectable like a stack row.
+- **Paused row (U3.4)** — a stack Cleanup brought down with `compose down` (volumes kept)
+  and that has not come back. It has no containers, so it is not a stack row and carries no
+  verdict: it is listed from `snapshot.paused`, under its own **"Paused"** eyebrow between
+  "Leave alone" and "Recent", and the eyebrow is dropped while the list is empty. Grid
+  `1fr auto auto`, same `gap`, padding, hover and selected rules as a stack row: the mono 12px
+  name (truncating), a **Paused** chip (10.5px/600, `padding: 3px 9px`, `rounded-full`,
+  `bg-surface-2 text-text-3` — a resting state, not a verdict, so it takes the muted tone), and a
+  10.5px tabular `--text-4` "ago". Selectable. The word is **"Paused"** (pt-BR **"Pausada"**) in
+  every string; "parked" already means a hibernated session and never appears in the UI.
 - **Verdict chip** — Cleanup's chip anatomy (10.5px/600, `padding: 3px 9px`,
   `rounded-full`): zombie `bg-green-soft text-green`, orphan
   `bg-warning-soft text-warning`, active `bg-accent-soft text-accent`, protected / unknown /
@@ -11398,6 +11407,20 @@ action tiers pinned below it.
   …", docker's message below it); the primary button reads **Try again**.
 - **After a stop** a zombie stays under "Needs you" (its RAM reads "stopped") until it is
   removed; one Recent entry is written per action.
+
+**Paused detail (U3.4, `ContainersPausedDetail.vue`)** — the detail pane for a Paused row, same
+padding and `gap` as the stack detail. Title row: a `Pause` icon (15px, stroke 1.6, `--text-3`),
+the mono 13px name and the Paused chip, with an "Open worktree" ghost `sm` button pushed right
+when Harnu knows the folder. Evidence grid (`grid-cols-[150px_1fr]`, 11.5px): **Paused by**
+(Cleanup / You / An agent), **Paused** (the stamp), **Folder** (mono path), **Ports held** (the
+port tags of the container list, mono 10.5px; they must be free again to restore), and
+**Rebuilds on restore** (Yes, only when the stack has a `build:` section). Then a `quiet` note:
+"Brought down with compose down. Its containers and network are gone; its volumes were kept.
+Nothing runs until you bring it back." Last, the **Restore box** under the "To bring it back"
+eyebrow: the full `docker compose … up -d` command and the 22px copy icon button. There are no
+tiers: the command is the restore, run by a session or by the operator (spec C5) — the pane has
+no Start button, because there is nothing to start. A Recent entry for a pause reads "paused" and
+shows the same box.
 
 **Remove dialog** (`ContainersRemoveDialog.vue`, §6 Dialog anatomy): Teleport → overlay →
 a 460px card (`bg-surface border-border-2 rounded-lg shadow-pop`, `padding: 22px 24px
