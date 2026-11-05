@@ -90,7 +90,7 @@ import {
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
-import { runCapacityPass } from './capacity-watcher-core'
+import { ackWatchNotices, runCapacityPass } from './capacity-watcher-core'
 import {
   CAPACITY_DEBOUNCE_MS,
   CAPACITY_INTERVAL_MS,
@@ -582,6 +582,7 @@ export async function registerGcHandlers(
     prefs: livePrefs(),
     lastCycle: state.last,
     dockerWatch: state.dockerWatch,
+    dockerNoticesPending: state.dockerNoticesPending,
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null,
     nextClean: planNextClean(g.bundles, livePrefs()),
     backgroundScan: reaper.autoScan(),
@@ -843,6 +844,10 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())
   ipcMain.handle('gc:shelve:ack', () => service.ackShelveReport())
   ipcMain.handle('gc:docker:ack', () => service.ackDockerReport())
+  // The renderer has recorded these out-of-capacity notices (Activity + push): stop holding them.
+  ipcMain.handle('gc:docker:watch:ack', (_e, ats: unknown) => {
+    if (Array.isArray(ats) && ats.every((a) => typeof a === 'number')) ackWatchNotices(state, ats)
+  })
   ipcMain.handle('gc:shelve:restore', (_e, id: unknown) => service.restoreShelved(id))
   // A worktree came back (a resume, a terminal or the button): the snapshot and every open
   // Cleanup screen follow.

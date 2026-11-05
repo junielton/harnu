@@ -247,6 +247,12 @@ export interface GcSnapshot {
   lastCycle: CycleRecord | null
   /** The capacity watcher's last pass (U3.6); null before its first one. */
   dockerWatch: DockerWatchRecord | null
+  /**
+   * Out-of-capacity notices raised while no renderer was listening (the boot pass runs before the
+   * window exists), oldest first. The renderer records each once and acknowledges them with
+   * `gc:docker:watch:ack`; the pushes on `gc:docker:watch` carry the same records live.
+   */
+  dockerNoticesPending: DockerWatchRecord[]
   /** When the next timer tick fires, or null when the Reaper background scan is off. */
   nextCycleAt: number | null
   /**

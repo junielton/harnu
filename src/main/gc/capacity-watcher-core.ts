@@ -20,7 +20,7 @@ import type { BridgeCapacity } from '../containers/docker-capacity-core'
 import type { DockerFactsResult } from '../containers/docker-facts-shell'
 import { reportItemsOf, type DockerAction, type DockerOutcome } from './docker-cycle'
 import type { CycleState } from './gc-cycle'
-import type { GcPrefs } from './gc-prefs'
+import type { DockerAutonomyPrefs, GcPrefs } from './gc-prefs'
 import type {
   CapacityNoticeState,
   DockerCapacityNotice,
@@ -30,6 +30,34 @@ import type {
 import type { RepoLockResult } from './repo-lock-shell'
 
 const NOTICE_TITLE = 'Workspace cleanup'
+
+/**
+ * While capacity sits at or below the mark and a full plan found nothing to free, the 30 s timer
+ * does not plan again for this long: the planner's inputs (how long a stack has been idle) move with
+ * the clock, so it is re-checked now and then, but a network event, a change in the free slots or in
+ * the settings plans at once.
+ */
+export const WATCH_BACKOFF_MS = 10 * 60_000
+
+/** What the planner would see: the free slots and every setting that changes its answer. */
+function planKeyOf(free: number, cfg: DockerAutonomyPrefs, mark: number): string {
+  return [
+    free,
+    cfg.firstReportAcknowledged,
+    mark,
+    cfg.maxPerCycle,
+    cfg.idleHours,
+    cfg.minAgeMinutes,
+    cfg.maxParksPerHour,
+    cfg.failureLimit
+  ].join('|')
+}
+
+/** Drops the notices the renderer has recorded; the rest keep waiting for it. */
+export function ackWatchNotices(state: CycleState, ats: readonly number[]): void {
+  const gone = new Set(ats)
+  state.dockerNoticesPending = state.dockerNoticesPending.filter((r) => !gone.has(r.at))
+}
 const plural = (n: number, one: string, many = `${one}s`): string => (n === 1 ? one : many)
 
 /**
@@ -147,94 +175,112 @@ export async function runCapacityPass(
   if (now.free === null) return done()
   if (now.free > mark) {
     state.dockerCapacityNotice = 'none'
+    state.dockerWatchIdle = null
     return done()
   }
   record.pressure = true
 
   // Not acting: nothing is planned, locked or run, so nothing is left that Cleanup will free.
   if (autonomyOff) record.nothingLeft = true
-  const locked: RepoLockResult<void> = autonomyOff
-    ? { ok: true, value: undefined }
-    : await deps.lock(async () => {
-        const actions = await deps.plan()
-        record.found = actions.length
+  // Back-off: a timer pass that would plan the very same thing as the last pass that found nothing
+  // to free repeats that pass's answer without planning, locking or running anything.
+  const idle = state.dockerWatchIdle
+  const backedOff =
+    !autonomyOff &&
+    trigger === 'timer' &&
+    idle !== null &&
+    idle.key === planKeyOf(now.free, cfg, mark) &&
+    deps.now() - idle.at < WATCH_BACKOFF_MS
+  if (backedOff && idle) {
+    record.found = idle.found
+    record.refused = idle.refused
+    record.failed = idle.failed
+    record.items = idle.items
+    record.nothingLeft = true
+  }
+  const locked: RepoLockResult<void> =
+    autonomyOff || backedOff
+      ? { ok: true, value: undefined }
+      : await deps.lock(async () => {
+          const actions = await deps.plan()
+          record.found = actions.length
 
-        if (!cfg.firstReportAcknowledged) {
-          record.items = reportItemsOf(actions)
-          record.nothingLeft = actions.length === 0
-          return
-        }
+          if (!cfg.firstReportAcknowledged) {
+            record.items = reportItemsOf(actions)
+            record.nothingLeft = actions.length === 0
+            return
+          }
 
-        const allowed = actions.slice(0, cfg.maxPerCycle)
-        record.deferred = actions.length - allowed.length
-        let lastFailure = ''
-        let attempted = 0
-        let recovered = false
-        let unreadable = false
-        for (const a of allowed) {
-          if (state.dockerStreak >= cfg.failureLimit) break
-          attempted++
-          const outcome = await deps.execute(a)
-          if (outcome.ok) {
+          const allowed = actions.slice(0, cfg.maxPerCycle)
+          record.deferred = actions.length - allowed.length
+          let lastFailure = ''
+          let attempted = 0
+          let recovered = false
+          let unreadable = false
+          for (const a of allowed) {
+            if (state.dockerStreak >= cfg.failureLimit) break
+            attempted++
+            const outcome = await deps.execute(a)
+            if (outcome.ok) {
+              state.dockerStreak = 0
+              record.acted++
+            } else if (outcome.refusal) {
+              record.refused++
+            } else {
+              record.failed++
+              state.dockerStreak++
+              lastFailure = outcome.reason
+              console.warn(
+                '[gc] capacity watcher: docker action failed',
+                a.kind,
+                a.id,
+                outcome.reason
+              )
+            }
+            now = reading(await deps.readCapacity())
+            record.capacity = now.view
+            if (now.free === null) {
+              unreadable = true
+              break
+            }
+            if (now.free > mark) {
+              recovered = true
+              break
+            }
+          }
+
+          const killed = state.dockerStreak >= cfg.failureLimit
+          if (!recovered && !unreadable) record.deferred += allowed.length - attempted
+          if (killed) {
+            record.paused = true
+            record.pausedReason = `${cfg.failureLimit} ${plural(cfg.failureLimit, 'failure')} in a row (last: ${lastFailure})`
             state.dockerStreak = 0
-            record.acted++
-          } else if (outcome.refusal) {
-            record.refused++
-          } else {
-            record.failed++
-            state.dockerStreak++
-            lastFailure = outcome.reason
-            console.warn(
-              '[gc] capacity watcher: docker action failed',
-              a.kind,
-              a.id,
-              outcome.reason
-            )
+            try {
+              await deps.disableDocker()
+            } catch (err) {
+              console.warn(
+                '[gc] could not switch Docker autonomy off',
+                err instanceof Error ? err.message : err
+              )
+            }
+            deps.notify({
+              title: NOTICE_TITLE,
+              body: `Docker cleanup paused itself after ${record.pausedReason}. Nothing was lost: volumes are never removed. Turn it back on in Settings → Cleanup once the cause is fixed.`
+            })
           }
-          now = reading(await deps.readCapacity())
-          record.capacity = now.view
-          if (now.free === null) {
-            unreadable = true
-            break
+          // Nothing left that Cleanup may free: the whole plan was tried (or the kill switch stopped
+          // the pass) and capacity is still at or below the mark. A pass the cap cut short is not that.
+          record.nothingLeft =
+            !recovered &&
+            !unreadable &&
+            (killed || (attempted === allowed.length && record.deferred === 0))
+          if (record.acted > 0) {
+            deps.notify({
+              title: NOTICE_TITLE,
+              body: `Docker was low on network slots: Cleanup handled ${record.acted} ${plural(record.acted, 'item')} right away. Volumes were kept.`
+            })
           }
-          if (now.free > mark) {
-            recovered = true
-            break
-          }
-        }
-
-        const killed = state.dockerStreak >= cfg.failureLimit
-        if (!recovered && !unreadable) record.deferred += allowed.length - attempted
-        if (killed) {
-          record.paused = true
-          record.pausedReason = `${cfg.failureLimit} ${plural(cfg.failureLimit, 'failure')} in a row (last: ${lastFailure})`
-          state.dockerStreak = 0
-          try {
-            await deps.disableDocker()
-          } catch (err) {
-            console.warn(
-              '[gc] could not switch Docker autonomy off',
-              err instanceof Error ? err.message : err
-            )
-          }
-          deps.notify({
-            title: NOTICE_TITLE,
-            body: `Docker cleanup paused itself after ${record.pausedReason}. Nothing was lost: volumes are never removed. Turn it back on in Settings → Cleanup once the cause is fixed.`
-          })
-        }
-        // Nothing left that Cleanup may free: the whole plan was tried (or the kill switch stopped
-        // the pass) and capacity is still at or below the mark. A pass the cap cut short is not that.
-        record.nothingLeft =
-          !recovered &&
-          !unreadable &&
-          (killed || (attempted === allowed.length && record.deferred === 0))
-        if (record.acted > 0) {
-          deps.notify({
-            title: NOTICE_TITLE,
-            body: `Docker was low on network slots: Cleanup handled ${record.acted} ${plural(record.acted, 'item')} right away. Volumes were kept.`
-          })
-        }
-      })
+        })
 
   if (!locked.ok) {
     record.locked = true
@@ -243,7 +289,22 @@ export async function runCapacityPass(
 
   if (now.free !== null && now.free > mark) {
     state.dockerCapacityNotice = 'none'
+    state.dockerWatchIdle = null
     return done()
+  }
+  if (!backedOff) {
+    // A pass that planned and found nothing left starts the back-off; anything else ends it.
+    state.dockerWatchIdle =
+      !autonomyOff && now.free !== null && record.nothingLeft && !record.paused
+        ? {
+            key: planKeyOf(now.free, cfg, mark),
+            at: deps.now(),
+            found: record.found,
+            refused: record.refused,
+            failed: record.failed,
+            items: record.items
+          }
+        : null
   }
   if (now.free !== null && record.nothingLeft) {
     const { next, level } = nextCapacityNotice(state.dockerCapacityNotice, now.free, mark, true)
@@ -257,6 +318,8 @@ export async function runCapacityPass(
         ...(autonomyOff ? { autonomyOff } : {})
       }
       record.notice = notice
+      // The window may not exist yet (the boot pass): the notice waits until a renderer says it has it.
+      state.dockerNoticesPending = [...state.dockerNoticesPending, record].slice(-10)
       deps.notify({
         title: NOTICE_TITLE,
         body: noticeBody(level, now.free, now.total, autonomyOff)

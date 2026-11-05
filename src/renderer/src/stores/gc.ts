@@ -147,9 +147,31 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
+  /** Tells main these notices are recorded, so it stops holding them (and a reload never replays them). */
+  function ackNotices(recs: DockerWatchRecord[]): void {
+    if (recs.length === 0) return
+    try {
+      void window.api.gcAckDockerWatchNotices(recs.map((r) => r.at))?.catch(() => {})
+    } catch {
+      /* transient IPC teardown: main keeps them and offers them again */
+    }
+  }
+
   function onDockerWatch(rec: DockerWatchRecord): void {
     adoptWatch(rec)
     recordCapacityNotice(rec)
+    if (rec.notice) ackNotices([rec])
+  }
+
+  /**
+   * Notices raised while no window was listening (the boot pass runs first): main holds them and
+   * offers them in the snapshot. Each is recorded once (`recordCapacityNotice` dedupes by pass time)
+   * and then acknowledged.
+   */
+  function adoptPendingNotices(snap: GcSnapshot): void {
+    const pending = [...(snap.dockerNoticesPending ?? [])].sort((a, b) => a.at - b.at)
+    for (const rec of pending) recordCapacityNotice(rec)
+    ackNotices(pending)
   }
 
   /**
@@ -301,6 +323,7 @@ export const useGcStore = defineStore('gc', () => {
     try {
       snapshot.value = await window.api.gcSnapshot({ refresh: true })
       adoptWatch(snapshot.value.dockerWatch)
+      adoptPendingNotices(snapshot.value)
       loadError.value = null
     } catch (e) {
       loadError.value = e instanceof Error ? e.message : String(e)
@@ -548,6 +571,7 @@ export const useGcStore = defineStore('gc', () => {
       ])
       snapshot.value = snap
       adoptWatch(snap.dockerWatch)
+      adoptPendingNotices(snap)
       jobs.value = attachJobs(jobs.value, live)
       void loadRecovery()
     } catch (e) {

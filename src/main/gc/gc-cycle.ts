@@ -22,6 +22,7 @@ import type {
   CapacityNoticeState,
   CycleRecord,
   DockerCycleRecord,
+  DockerReportItem,
   DockerWatchRecord,
   ShelveCycleRecord
 } from './gc-wire'
@@ -75,6 +76,20 @@ export interface CycleState {
   dockerCapacityNotice: CapacityNoticeState
   /** Capacity watcher (U3.6): the last pass. */
   dockerWatch: DockerWatchRecord | null
+  /**
+   * Capacity watcher: passes that raised a notice no renderer has acknowledged yet (the boot pass
+   * runs before the window exists). Delivered in the snapshot; the renderer acknowledges them.
+   */
+  dockerNoticesPending: DockerWatchRecord[]
+  /** Capacity watcher: the last full pass that found nothing to free, so the timer can back off. */
+  dockerWatchIdle: {
+    key: string
+    at: number
+    found: number
+    refused: number
+    failed: number
+    items: DockerReportItem[]
+  } | null
 }
 
 export function createCycleState(): CycleState {
@@ -88,7 +103,9 @@ export function createCycleState(): CycleState {
     dockerStreak: 0,
     dockerReportKey: null,
     dockerCapacityNotice: 'none',
-    dockerWatch: null
+    dockerWatch: null,
+    dockerNoticesPending: [],
+    dockerWatchIdle: null
   }
 }
 

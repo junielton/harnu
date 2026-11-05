@@ -3090,6 +3090,9 @@ const api = {
     subscribe('gc:opinion:done', cb),
   /** Fires after every autopilot cycle, whatever it did. */
   onGcCycle: (cb: (r: GcCycleRecord) => void): (() => void) => subscribe('gc:cycle', cb),
+  /** Tells main the renderer has recorded these out-of-capacity notices (by pass time), so it stops holding them. */
+  gcAckDockerWatchNotices: (ats: number[]): Promise<void> =>
+    ipcRenderer.invoke('gc:docker:watch:ack', ats),
   /** Fires when the Docker capacity watcher's pass changed something (U3.6); a quiet machine sends nothing. */
   onGcDockerWatch: (cb: (r: GcDockerWatchRecord) => void): (() => void) =>
     subscribe('gc:docker:watch', cb),
