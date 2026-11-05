@@ -18,6 +18,7 @@ import MissionPill from './MissionPill.vue'
 import TopbarOverflowMenu from './TopbarOverflowMenu.vue'
 import {
   TOPBAR_BAR_ORDER,
+  TOPBAR_BRANCH_MIN_PX,
   TOPBAR_MIN_TITLE_PX,
   clusterBudget,
   planTopbarOverflow,
@@ -430,7 +431,10 @@ function planOverflow(): void {
   const style = getComputedStyle(header)
   let extrasWidth = 0
   header.querySelectorAll<HTMLElement>('[data-topbar-extra]').forEach((el) => {
-    extrasWidth += el.offsetWidth + 8 // the badge and the `gap-2` before it
+    // A badge that can shrink reserves only its minimum; a fixed one reserves its width. Both with the
+    // `gap-2` before them.
+    const min = Number(el.dataset.topbarExtraMin)
+    extrasWidth += (min > 0 ? min : el.offsetWidth) + 8
   })
   const available = clusterBudget({
     headerWidth: header.clientWidth,
@@ -551,13 +555,18 @@ function onKeydown(e: KeyboardEvent): void {
           data-test="topbar-title"
           >{{ activeFolderLabel }}</span
         >
+        <!-- BUG-252: the branch gives way after the title is at its floor, down to its icon, so a long
+             branch name never takes the actions' room (the plan reserves the icon and the gap only). -->
         <span
           v-if="activeFolderBranch"
           data-topbar-extra
-          class="flex shrink-0 items-center font-mono text-text-4"
+          :data-topbar-extra-min="TOPBAR_BRANCH_MIN_PX"
+          class="flex min-w-0 shrink items-center font-mono text-text-4"
           style="gap: 4px; font-size: 11px"
         >
-          <GitBranch :size="11" :stroke-width="1.6" />{{ activeFolderBranch }}
+          <GitBranch :size="11" :stroke-width="1.6" class="shrink-0" /><span class="truncate">{{
+            activeFolderBranch
+          }}</span>
         </span>
       </div>
     </template>

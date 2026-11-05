@@ -63,6 +63,8 @@ export const TOPBAR_MIN_TITLE_PX = 96
 export const TOPBAR_HYSTERESIS_PX = 8
 /** What is left of the breadcrumb at the very end: its icon, the gap and the `›`. */
 export const TOPBAR_CRUMB_MIN_PX = 32
+/** What is left of the folder view's branch badge at the very end: its 11px icon. */
+export const TOPBAR_BRANCH_MIN_PX = 11
 /** The sidebar toggle: 26px wide with a -4px left margin. */
 export const TOPBAR_TOGGLE_PX = 22
 /** The Activity bell, which never overflows. */

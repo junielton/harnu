@@ -94,6 +94,7 @@ describe('topbar overflow menu', () => {
 
   beforeEach(() => {
     document.body.innerHTML = ''
+    folder.gitBranch = ''
     observers.length = 0
     headerWidth = 1400
     vi.stubGlobal('ResizeObserver', FakeResizeObserver)
@@ -276,6 +277,16 @@ describe('topbar overflow menu', () => {
     expect(title.attributes('style')).toContain(`min-width: ${TOPBAR_MIN_TITLE_PX}px`)
     // The region around it may not shrink below its content, or the floor would poke out over the cluster.
     expect(title.element.parentElement!.classList.contains('min-w-0')).toBe(false)
+  })
+
+  it("AC-1: a long branch badge reserves only its icon (it shrinks), never the actions' room", async () => {
+    folder.gitBranch = 'fix/BUG-252-topbar-overflow-with-a-very-long-name'
+    const wrapper = await mountFull()
+    // 200 = padding, toggle, bell, gaps and the 96px title; +11 the branch icon, +8 its gap.
+    await resizeTo(widthFor(12) + 19)
+    expect(barIds(wrapper)).toEqual([...TOPBAR_BAR_ORDER])
+    await resizeTo(widthFor(12) + 18)
+    expect(barIds(wrapper)).toHaveLength(10)
   })
 
   it('keeps the 42px band and the island markers with Floating panels off and on', async () => {

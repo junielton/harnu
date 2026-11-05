@@ -5348,7 +5348,7 @@ what it does: the menu runs the same handler as the button.
   view) is a truncating span with `min-width: 96px` (its border box, padding and border included, so the room it takes in the bar is 10px less and the budget errs on the safe side): it ends in an ellipsis as the bar narrows, and
   actions start to leave **only once the title is at 96px**. The breadcrumb folder label before it
   truncates too, to its icon and separator at the very end, so no part of the left side can push
-  into the cluster. The badges that follow the title (provider, Orchestrator, folder branch; marked `data-topbar-extra`) keep their width and are counted in the reserve. The mission pill already shrinks with its own ellipsis and reserves nothing. Below the width where even `[…]` plus the
+  into the cluster. The provider and Orchestrator badges that follow the title (marked `data-topbar-extra`) keep their width and are counted in the reserve. The folder view's branch badge shrinks, with an ellipsis, after the title is at its floor, down to its 11px icon, and reserves only that icon, so a long branch name never takes the actions' room. The mission pill already shrinks with its own ellipsis and reserves nothing. Below the width where even `[…]` plus the
   96px title do not fit (about 240px of Topbar, far under the 800px window minimum) the bar is
   simply full; nothing is hidden beyond the last action.
 - **The fit rule.** Every action button is 26px wide with a 2px gap, so the number that fit is a pure
