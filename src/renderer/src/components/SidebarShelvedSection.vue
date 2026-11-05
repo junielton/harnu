@@ -134,6 +134,7 @@ onBeforeUnmount(() => {
         height: `${metrics.folderRowHeight}px`,
         padding: '0 12px 0 28px',
         gap: '4px',
+        fontSize: '12.5px',
         marginTop: '2px'
       }"
       :aria-expanded="open"
@@ -169,7 +170,8 @@ onBeforeUnmount(() => {
           :style="{
             height: `${metrics.childRowHeight}px`,
             padding: '0 12px 0 28px',
-            gap: '4px'
+            gap: '4px',
+            fontSize: '12.5px'
           }"
           role="button"
           tabindex="0"
