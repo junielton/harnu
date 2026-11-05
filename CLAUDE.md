@@ -343,6 +343,11 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Cleanup Docker confirm — leftovers (unit D)        | `src/renderer/src/components/CleanupDockerConfirmDialog.vue`                     |
 | Cleanup transcripts confirm (unit D)               | `src/renderer/src/components/CleanupTranscriptsConfirmDialog.vue`                |
 | Cleanup leftovers view helpers (unit D)            | `src/renderer/src/lib/gc-orphans.ts`                                             |
+| Docker card — network slots block (§6 — U3.7)      | `src/renderer/src/components/CleanupDockerSlots.vue`                             |
+| Docker card — Paused stacks block (§6 — U3.7)      | `src/renderer/src/components/CleanupDockerPaused.vue`                            |
+| Docker card — Automatic actions (§6 — U3.7)        | `src/renderer/src/components/CleanupDockerActions.vue`                           |
+| Docker card view model (§6 — U3.7)                 | `lib/docker-card-view.ts` + `lib/docker-card-copy.ts`                            |
+| Address-pool advice dialog (§6 — U3.7)             | `src/renderer/src/components/CleanupPoolAdviceDialog.vue`                        |
 | Cleanup split bar (T443)                           | `src/renderer/src/components/CleanupSplitBar.vue`                                |
 | Cleanup Archives card (unit C)                     | `src/renderer/src/components/CleanupArchivesCard.vue`                            |
 | Cleanup in-the-trash strip (unit C)                | `src/renderer/src/components/CleanupTrashCard.vue`                               |
