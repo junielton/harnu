@@ -1268,6 +1268,56 @@ describe('Cleanup screen — the Docker card reads the Containers snapshot (U3.7
     expect(containersScan).toHaveBeenCalledTimes(1)
   })
 
+  it('rescans Containers when the capacity watcher acted, so the new journal line shows', async () => {
+    const api = install(snap())
+    const base = (window as unknown as { api: Record<string, unknown> }).api
+    const containersScan = vi.fn(async () => null)
+    const available = {
+      dockerAvailable: true,
+      scannedAt: 1,
+      zombieAfterDays: 2,
+      stacks: [],
+      paused: [],
+      recent: [],
+      totals: {}
+    }
+    ;(window as unknown as { api: unknown }).api = new Proxy(base, {
+      get: (t2, k: string) =>
+        k === 'containersSnapshot'
+          ? async () => available
+          : k === 'containersScan'
+            ? containersScan
+            : t2[k]
+    })
+    await mountView()
+    const record = (acted: number, at: number): Record<string, unknown> => ({
+      at,
+      trigger: 'timer',
+      mode: 'act',
+      mark: 3,
+      capacity: { known: true, total: 31, used: 27, free: 4, source: 'default' },
+      pressure: true,
+      found: acted,
+      acted,
+      refused: 0,
+      failed: 0,
+      deferred: 0,
+      locked: false,
+      paused: false,
+      pausedReason: null,
+      nothingLeft: false,
+      items: [],
+      notice: null,
+      report: null
+    })
+    api.push.dockerWatch!(record(0, 1000))
+    await flushPromises()
+    expect(containersScan).not.toHaveBeenCalled()
+    api.push.dockerWatch!(record(2, 2000))
+    await flushPromises()
+    expect(containersScan).toHaveBeenCalledTimes(1)
+  })
+
   it('does not scan again when a background scan already produced a snapshot', async () => {
     install(snap())
     const base = (window as unknown as { api: Record<string, unknown> }).api
