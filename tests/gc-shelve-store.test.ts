@@ -7,6 +7,7 @@ import {
   isShelvedFolder,
   normalizeShelved,
   readShelved,
+  readShelvedForUpdate,
   shelvedFolders,
   withShelved,
   withoutShelved,
@@ -96,6 +97,21 @@ describe('the shelved store on disk', () => {
     expect(await readShelved(file)).toEqual(empty)
     writeFileSync(file, '{ not json')
     expect(await readShelved(file)).toEqual(empty)
+  })
+
+  it('an update read never mistakes an unreadable store for an empty one', async () => {
+    const file = path.join(dir, SHELVED_FILE)
+    // Absent is a first run: empty.
+    expect(await readShelvedForUpdate(file)).toEqual(empty)
+    // Present but corrupt, or a version this build does not know: refuse, so a write cannot
+    // replace the other shelved worktrees with a single entry.
+    writeFileSync(file, '{ not json')
+    await expect(readShelvedForUpdate(file)).rejects.toThrow()
+    writeFileSync(file, JSON.stringify({ version: 2, entries: [entry()] }))
+    await expect(readShelvedForUpdate(file)).rejects.toThrow()
+    // A readable store is returned as it is.
+    await writeShelved(file, withShelved(empty, entry()))
+    expect((await readShelvedForUpdate(file)).entries).toHaveLength(1)
   })
 
   it('the file lives under the name the docs promise', () => {

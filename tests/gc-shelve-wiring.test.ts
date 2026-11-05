@@ -60,7 +60,7 @@ describe('wire types are plain data', () => {
 describe('the gather reads the store and protects shelved transcripts', () => {
   const scan = read('main/gc/gc-scan-shell.ts')
   it('reads gc-shelved.json, exposes it on the gather, and hands its folders to the orphan source', () => {
-    expect(scan).toMatch(/readShelved\(/)
+    expect(scan).toMatch(/readShelvedForUpdate\(/)
     expect(scan).toMatch(/SHELVED_FILE/)
     expect(scan).toMatch(/shelvedFolders/)
     expect(scan).toMatch(/shelved,?\n/)
