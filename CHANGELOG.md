@@ -29,6 +29,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **The Scheduler's Stewards block now folds away.** With a dozen missions the block used to fill the whole worker list column and squeeze the workers down to two rows. It now has Up next's header: click **Stewards** to open or close it, and it starts closed and remembers your choice. The closed header shows a one-line summary such as `13 · 1 running · 10 awaiting close` (a part with nothing in it is left out). Open, the steward rows scroll inside a capped area so the worker list keeps the rest of the column. A steward whose mission is delivered now says **Awaiting close**, with a hint to close the mission to retire the steward.
+
 - **Shelving is on by default, and still only reports first.** A settings file that never mentioned shelving now reads as on; one that explicitly turned it off stays off. Until you acknowledge the first report in Settings → Cleanup it removes nothing: it lists what it would shelve in Activity.
 
 - **The Archives card no longer lets you delete the archive of a shelved worktree.** That archive is what restores it. The row's Delete is disabled with "Shelved worktree — restore it first" and a **Restore first** button next to it; a stale screen that still sends the delete is refused by Harnu as well.

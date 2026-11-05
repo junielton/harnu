@@ -13068,22 +13068,43 @@ inside the first. The **Collapse all** button next to it keeps the global keyboa
 prompts.` and a `Clear filter` ghost button (`22px`, `0 8px`, `border border-border-2`, `rounded-sm`,
 11px `--text-2`) that clears both the search and the chip. (The no-workers-at-all empty state is unchanged.)
 
-**Stewards section (T609, campaign ch.5b — `SchedulerStewards.vue`).** A mission's steward is a **system
-worker**, not a user worker (campaign spec §3.4), so it never appears among the folder groups, the chips,
-Up next or the worker counter. It has its own block at the **bottom of the list column**, under the scrolling
-folder groups: `border-t border-border`, `padding: 8px 10px 8px 12px`, an eyebrow "STEWARDS" (`10.5px / 500`,
-uppercase, `0.07em`, `text-text-4`) with the count at the right, then one row per steward. A row is
-**read-only**: no enable switch, no pin, no Run now, no delete, no prompt edit, and it is not selectable (no
-detail pane). Two lines, `gap: 2px`: the mission's title (`12px`, `text-text-2`, truncated) with a `bot` glyph
-(11px, `text-text-3`) before it and, at the right, a state word — "Running" (`text-accent`), "Paused"
-(`text-warning`) or nothing; then `11px text-text-4`: "Last wake {age} ago · {last action}" (the last tick's
-first result line, truncated; "No tick yet" before the first). A **paused** row (the operator paused it from the
-mission popover) shows its reason instead of the last action, in `text-warning`. The block is hidden when no
-mission has a steward. When the Scheduler holds stewards but no user worker, the list column draws no
-empty block above the Stewards section (its "No worker matches this filter" copy is about filtering) and the
-section ends with one hint line (`10.5px`, `text-text-4`, `margin-top: 8px`): "A steward belongs to its
-mission. Pause it from the mission's popover." (Inside the 340px column, never in the detail pane: at 900px
-that pane can be squeezed to a sliver.) The footer caption below the view is unchanged.
+**Stewards section (T609, campaign ch.5b; collapsible since T651 — `SchedulerStewards.vue`).** A mission's
+steward is a **system worker**, not a user worker (campaign spec §3.4), so it never appears among the folder
+groups, the chips, Up next or the worker counter. It has its own block at the **bottom of the list column**,
+under the scrolling folder groups: `border-t border-border`, `padding: 8px 10px 8px 12px`. Approved mockup
+`docs/design/scheduler-stewards/` (screen `scheduler--list`, states `recolhido` / `aberto`).
+
+_Header — Up next's anatomy._ A `<button aria-expanded>` (`gap: 5px`, `padding: 0`): a leading `ChevronDown`
+(11px, `text-text-4`, rotated -90° when collapsed, `--dur-fast` / `--ease`), the title "Stewards" (`10px / 600`,
+uppercase, `0.04em`, `text-text-3`, `text-text-2` on hover of the button) and a right-aligned `10px text-text-4`
+summary, truncated. The summary reads `{n} · {r} running · {a} awaiting close`: the total always, the other two
+only when their count is above 0 (13 stewards, none running or awaiting → `13`). The running part is
+`text-accent`, the awaiting part `text-text-2`. Counts follow each row's displayed state word, so the header
+never disagrees with the rows (`stewardsSummaryParts`, `lib/steward-view.ts`). The block is **collapsed by
+default** and the choice persists per viewer in `localStorage` under `om2tab.scheduler.stewardsCollapsed`
+(`'0'` = open; read and written inside the same try/catch as Up next's key).
+
+_Open._ The rows (and the hints) sit in a container with `margin-top: 6px`, `overflow-y: auto` and
+`max-height: var(--sched-stewards-max-h)` (`232px`, ≈ 6 rows, theme-invariant, §9), with a `-6px` right margin
+and `6px` right padding so the scrollbar sits on the column's edge. The folder-group list above keeps the rest
+of the column.
+
+_Rows._ A row is **read-only**: no enable switch, no pin, no Run now, no delete, no prompt edit, and it is not
+selectable (no detail pane). Two lines, `gap: 2px`, `7px` between rows: the mission's title (`12px`,
+`text-text-2`, truncated) with a `bot` glyph (11px, `text-text-3`) before it and, at the right, a state word
+(`11px`) — **Paused** (`text-warning`), **Running** (`text-accent`), **Awaiting close** (`text-text-3`; the
+steward's mission is `delivered` and waits for the operator to close it) or nothing. Precedence: Paused >
+Running > Awaiting close > nothing (`stewardStateOf`). Then `11px text-text-4`: "Last wake {age} ago · {last
+action}" (the last tick's first result line, truncated; "No tick yet" before the first). A **paused** row (the
+operator paused it from the mission popover) shows its reason instead of the last action, in `text-warning`.
+The block is hidden when no mission has a steward.
+
+_Hints_ (end of the open rows, `10.5px`, `text-text-4`, `margin-top: 8px`, `line-height: 1.5`): with at least
+one steward awaiting close, "Close a delivered mission to retire its steward."; when the Scheduler holds
+stewards but no user worker, "A steward belongs to its mission. Pause it from the mission's popover." The list
+column draws no empty block above the Stewards section in that case (its "No worker matches this filter" copy is
+about filtering). Hints live inside the 340px column, never in the detail pane: at 900px that pane can be
+squeezed to a sliver. The footer caption below the view is unchanged.
 
 #### Worker detail (`SchedulerWorkerDetail.vue`, remaining width)
 
@@ -14450,6 +14471,9 @@ codebase is a bug to fix.
   /* Folder View scroll caps (§6 "Folder View → Height caps") */
   --fv-fanout-max-h: 380px;
   --fv-rail-list-max-h: 280px;
+
+  /* Scheduler list: the open Stewards block's scroll cap (§6 "Scheduler → Stewards section") */
+  --sched-stewards-max-h: 232px;
 
   /* Cleanup layout dimensions (§4, §6 "Workspace GC — unified Cleanup") */
   --gc-panel-w: 320px;
