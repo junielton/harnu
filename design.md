@@ -10889,12 +10889,18 @@ false`, or no pass has read it yet): neutral badge **Unknown**, an `Info` 12px g
   more in Inspect stacks". Footer caption: "Stopped when idle; volumes kept. Start one again with its `compose up -d` command."
   The word is **Paused**, never "parked".
 - **Automatic actions** (`data-testid="docker-actions"`, `col-span-full`, last in the grid). Heading "Automatic actions" with
-  the caption "last cycle"; a list of the **newest 5** automatic journal lines (actor `autopilot`, Docker-owned: empty
-  network removed, orphan stack removed with its volumes kept, stack paused), each: a 14px kind glyph (`Network`, `Trash2`,
-  `Pause`), the line's title (13px `--text`: "{n} empty networks removed", "Removed orphan stack `x`", "{n} stacks
-  paused"), the reason as an 11px `--text-3` line (the journal `reason`), and the age right-aligned (11px `--text-4`). Below
-  the list a text link **Show all in Activity** opens the Activity bell. Empty: "Nothing automatic yet. Empty networks,
-  orphan stacks and idle stacks are handled each cycle." in `--text-3`.
+  the caption "last cycle". **One row per pass and kind**, as the approved mockup draws it: a pass is a run of automatic
+  journal lines with no gap over 3 minutes between neighbours (the journal has no pass id), and a pass with three kinds is
+  three rows. Each row: a 14px kind glyph (`Network`, `Trash2`, `Pause`), the folded title with plural forms (13px `--text`:
+  "{n} empty networks removed", "{n} orphan stacks removed · {v} volumes kept", "{n} stacks paused"), a mono 11px `--text-4`
+  line with the first three names and "+{n} more", a one-line reason in 11px `--text-3` ("No containers were attached;
+  compose up recreates them.", "Their worktrees were removed. The volumes stay under Orphan volumes.", "Idle for {age} or
+  more."), and at the right the age and the source ("12 min ago · by Cleanup"; the journal does not record whether the
+  hourly cycle or the watcher acted, so the source is Cleanup). A row of more than one action has a 22px chevron button
+  (`aria-expanded`) that reveals the per-item journal lines, each with its own wording ("Removed empty network `x`"), reason
+  and age, indented under a 1px `--border` rule. **"Newest 5" counts folded rows.** Below the list a text link **Show all in
+  Activity** opens the Activity bell. Empty: "Nothing automatic yet. Empty networks, orphan stacks and idle stacks are
+  handled each cycle." in `--text-3`.
 - **Report-only first cycle.** The header gains the Accent badge **Report only · first cycle** followed by the text link
   **Review in Settings** (opens Settings → Cleanup, where **Acknowledge first report** stays the only control that arms the
   cycle). The Automatic actions block then lists the held first-report list instead of the journal, each row prefixed by the
