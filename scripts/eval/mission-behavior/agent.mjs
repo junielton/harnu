@@ -60,7 +60,8 @@ export const MISSION_VERBS = [
   'mission_verify_step',
   'mission_request_close',
   'mission_import_legacy',
-  'mission_add_check'
+  'mission_add_check',
+  'mission_transfer_owner'
 ]
 
 /**
@@ -80,7 +81,8 @@ export const CAMPAIGN_VERBS = [
   'campaign_add_chapter',
   'campaign_get',
   'campaign_list',
-  'campaign_request_close'
+  'campaign_request_close',
+  'campaign_transfer_owner'
 ]
 
 /**

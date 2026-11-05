@@ -444,7 +444,7 @@ describe('reading the ledger', () => {
     expect(ofKind(await ledgerOf(), 'pr-merged').filter((r) => r.ref === '#99')).toEqual([])
   })
 
-  it('uses only the eight kinds', () => {
-    expect(LEDGER_KINDS).toHaveLength(8)
+  it('uses only the nine kinds', () => {
+    expect(LEDGER_KINDS).toHaveLength(9)
   })
 })

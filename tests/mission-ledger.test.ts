@@ -55,7 +55,7 @@ function mission(over: Partial<Mission> = {}): Mission {
 }
 
 describe('ledger kinds', () => {
-  it('are the eight events of spec §3.2', () => {
+  it('are the events of spec §3.2 plus the T654 owner-transfer row', () => {
     expect([...LEDGER_KINDS]).toEqual([
       'dispatched',
       'worktree',
@@ -64,7 +64,8 @@ describe('ledger kinds', () => {
       'ci',
       'verified',
       'session-died',
-      'compaction'
+      'compaction',
+      'owner-transfer'
     ])
   })
 })
@@ -91,7 +92,7 @@ describe('appendLedgerRow', () => {
     expect(buildMissionFileContent(mission())).not.toContain('ledger')
   })
 
-  it('rejects a row whose kind is not one of the eight', () => {
+  it('rejects a row whose kind is not a ledger kind', () => {
     const bad = { ...mission(), ledger: [{ at, kind: 'merged-by-agent', ref: 'x' }] }
     expect(() => buildMissionFileContent(bad as unknown as Mission)).toThrow(/ledger/)
   })
