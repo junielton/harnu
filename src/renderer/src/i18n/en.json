@@ -3633,7 +3633,8 @@
     "section": {
       "needsYou": "Needs you",
       "leaveAlone": "Leave alone",
-      "recent": "Recent"
+      "recent": "Recent",
+      "paused": "Paused"
     },
     "verdict": {
       "zombie": "zombie",
@@ -3683,7 +3684,9 @@
       "bulkWho": "{n} stacks",
       "whenStopped": "stopped {ago}",
       "whenStarted": "started {ago}",
-      "whenRemoved": "removed {ago}"
+      "whenRemoved": "removed {ago}",
+      "paused": "paused",
+      "whenPaused": "paused {ago}"
     },
     "nav": {
       "openWorktree": "Open worktree",
@@ -3737,7 +3740,8 @@
       "actionRemoved": "removed {n} container | removed {n} containers",
       "actionRemovedKept": "removed {n} container · volume kept | removed {n} containers · volume kept",
       "actionRemovedVolume": "removed {n} container · volume removed | removed {n} containers · volume removed",
-      "freed": "{ram} RAM · {n} port | {ram} RAM · {n} ports"
+      "freed": "{ram} RAM · {n} port | {ram} RAM · {n} ports",
+      "actionPaused": "paused · {n} container removed, volumes kept | paused · {n} containers removed, volumes kept"
     },
     "note": {
       "orphan": "Nothing in Harnu can use this stack again — the code it ran from is gone. Its volume may still hold data you want, so it is never removed without asking.",
@@ -3833,7 +3837,23 @@
       "removing": "Removing…"
     },
     "openCleanup": "Open Cleanup · {n} stack | Open Cleanup · {n} stacks",
-    "openCleanupTitle": "Cleaning up stacks now happens in Cleanup"
+    "openCleanupTitle": "Cleaning up stacks now happens in Cleanup",
+    "paused": {
+      "chip": "Paused",
+      "note": "Brought down with compose down. Its containers and network are gone; its volumes were kept. Nothing runs until you bring it back.",
+      "evidence": {
+        "by": "Paused by",
+        "when": "Paused",
+        "folder": "Folder",
+        "ports": "Ports held",
+        "build": "Rebuilds on restore"
+      },
+      "actor": {
+        "autopilot": "Cleanup",
+        "operator": "You",
+        "agent": "An agent"
+      }
+    }
   },
   "prStack": {
     "title": "PR Stack",
@@ -4643,7 +4663,11 @@
         "title": "Also record",
         "hint": "Tick what Harnu should write to project memory. Nothing is written without a tick.",
         "nothing": "Nothing notable to record.",
-        "kind": { "decision": "Decision", "lesson": "Lesson", "hot": "Hot" },
+        "kind": {
+          "decision": "Decision",
+          "lesson": "Lesson",
+          "hot": "Hot"
+        },
         "replaces": "Replaces {id}"
       },
       "warnings": {
@@ -5016,8 +5040,10 @@
   },
   "browserPane": {
     "network": {
-      "label": "Network",
-      "hint": "Network capture is on. It stops by itself and records no bodies unless the agent asked for them."
+      "off": "Offline",
+      "on": "Network on",
+      "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
+      "onHint": "Network on: the page can reach the network. Click to turn it off."
     },
     "label": "Browser pane",
     "newTab": "New tab",
@@ -5103,12 +5129,6 @@
     "noticeDownloaded": "Saved {name}",
     "noticeDownloadCancelled": "Download cancelled",
     "noticeDownloadFailed": "The download failed",
-    "network": {
-      "off": "Offline",
-      "on": "Network on",
-      "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
-      "onHint": "Network on: the page can reach the network. Click to turn it off."
-    },
     "discarded": {
       "titleIdle": "Paused to save memory",
       "titleRestored": "Not loaded yet",

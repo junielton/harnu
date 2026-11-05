@@ -61,7 +61,7 @@ describe('the Paused section (U3.4 AC-5)', () => {
     expect(row.text()).toContain('Paused')
     expect(row.text()).toContain('3h ago')
     expect(wrapper.find('[data-stack="proj-77"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toMatch(/zombie in|zombie\b.*proj-77/)
+    expect(row.text().toLowerCase()).not.toMatch(/zombie|orphan/)
     // no quick-stop, no clean-up checkbox: nothing runs, nothing can be swept
     expect(row.find('[data-testid="containers-quick-stop"]').exists()).toBe(false)
     expect(row.find('input[type="checkbox"]').exists()).toBe(false)
