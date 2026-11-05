@@ -11159,6 +11159,37 @@ keyframes and no new easing. The "busy" dot is static — a 6px `--accent` dot w
 halo — because `.anim-pulse-dot` carries a green ring today; an accent variant of that class is a
 follow-up, not part of this slice. `prefers-reduced-motion` already zeroes durations.
 
+#### Out-of-capacity Activity notification (autonomous cleanup U3.6)
+
+When Docker is nearly out of bridge-network address slots and Cleanup has nothing left it may free, the
+capacity watcher raises **one Activity entry per level**, immediately (not on the hourly cycle). It is a plain
+`NotificationRecord` in the Activity bell (`ActivityBell.vue`; no new component): `source: 'app'`,
+`kind: 'warning'` (the `--warning` left border and glyph the bell already uses), recorded **quietly** — no
+toast, no sound, no `requestAttention` (the OS notification and the remote push carry the urgency). Main decides
+WHEN (once per level until capacity has recovered above the low-water mark; see `capacity-watcher-core`); the
+renderer only words it, from the structured `notice` on the `gc:docker:watch` push.
+
+- **Two levels, two entries.** _Low_ — title "Docker is nearly out of network slots", description "{free} of
+  {total} free. Cleanup has nothing left to free on its own." _Zero_ — title "Docker has no free network
+  slots", description "The next compose up will fail. Stop a stack you do not need." Titles are complete short
+  sentences without a trailing period (§8), the descriptions end with one.
+- **Click** opens the Cleanup takeover (`target: { view: 'cleanup' }`), where the Docker card shows the same
+  numbers. The row has no action button of its own.
+- **Push.** The same title and description go out through `pushSend` as kind `needs-input` (an
+  attention-demanding event: the operator is probably away and a compose is about to fail); the remote master
+  switch and pause still apply.
+- **No repeat.** Neither entry is raised again until the free slots have been above the mark; oscillating
+  around the mark adds nothing. A snapshot refresh or a replayed push never records a second row.
+
+**Docker first-report list (Settings → Cleanup → Docker: pausing and garbage).** While the switch is on and the
+first report is not acknowledged, the status line is followed by a **list of what the first pass would do**
+(`data-testid="gc-docker-report-list"`), so the operator does not acknowledge blind. A compact `<ul>`, 11.5px,
+`--border` hairline above, rows 4px apart: per row a small kind label — **Network**, **Orphan stack** or
+**Pause** — in `--text-3` uppercase 10px, then the target in the monospace face (`font-mono`, `--text`), then
+the reason as a muted second line (`--text-3`). At most 8 rows; beyond that a muted "+{n} more" line. Empty list:
+the existing report-only sentence stands alone. After the acknowledgement the list is gone. No new color, size
+or radius: the rows reuse the Shelved card's label/target/reason anatomy.
+
 #### Settings → Cleanup (supersedes the Cleanup and Containers panes' overlapping controls)
 
 One pane, the `CleanupSettingsPane.vue` anatomy (11px uppercase eyebrow, muted 11.5px intro, label-left /
