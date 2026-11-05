@@ -116,7 +116,7 @@ describe('docker output parsing', () => {
       createdAt: Date.parse('2026-09-01T10:00:00.123Z'),
       ports: [5182, 8082],
       mounts: [
-        { type: 'bind', source: WT, name: null },
+        { type: 'bind', source: WT, name: null, destination: '/var/www/html' },
         { type: 'volume', source: '/var/lib/docker/volumes/x/_data', name: 'proj-82_mysql' }
       ]
     })

@@ -44,6 +44,8 @@ export interface MountFact {
   source: string
   /** Volume name, or null for a bind mount. */
   name: string | null
+  /** Where the mount lands inside the container; absent when docker did not say. */
+  destination?: string
 }
 
 /** One container as `docker inspect` reports it, reduced to what the core reads. */
@@ -137,7 +139,13 @@ function parseMounts(mounts: unknown): MountFact[] {
     if (!m) continue
     const type = asString(m.Type)
     const name = asString(m.Name)
-    out.push({ type, source: asString(m.Source), name: type === 'volume' && name ? name : null })
+    const destination = asString(m.Destination)
+    out.push({
+      type,
+      source: asString(m.Source),
+      name: type === 'volume' && name ? name : null,
+      ...(destination ? { destination } : {})
+    })
   }
   return out
 }
