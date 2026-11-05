@@ -53,7 +53,19 @@ function isTombstoneStack(v: unknown): v is TombstoneStack {
     isStringArray(freed.volumes) &&
     typeof freed.volumeBytes === 'number' &&
     (s.keptVolumes === undefined || isStringArray(s.keptVolumes)) &&
-    (s.keptVolumeBytes === undefined || typeof s.keptVolumeBytes === 'number')
+    (s.keptVolumeBytes === undefined || typeof s.keptVolumeBytes === 'number') &&
+    isKeptVolumeOwner(s.keptVolumeOwner)
+  )
+}
+
+function isKeptVolumeOwner(v: unknown): boolean {
+  if (v === undefined) return true
+  if (!v || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  return (
+    o.reason === 'worktree-removed' &&
+    (typeof o.project === 'string' || o.project === null) &&
+    (typeof o.worktreePath === 'string' || o.worktreePath === null)
   )
 }
 
@@ -66,7 +78,8 @@ export function isTombstone(v: unknown): v is Tombstone {
     VERBS.includes(t.verb as ActVerb) &&
     Array.isArray(t.stacks) &&
     t.stacks.every(isTombstoneStack) &&
-    (typeof t.restoreHint === 'string' || t.restoreHint === null)
+    (typeof t.restoreHint === 'string' || t.restoreHint === null) &&
+    (t.reason === undefined || typeof t.reason === 'string')
   )
 }
 
