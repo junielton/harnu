@@ -159,7 +159,7 @@ import {
   registerSessionRegistryWatcher,
   type SessionRegistryWatcherHandle
 } from './session-registry-watch'
-import { registerDigestEngine, closeDigestEngine } from './memory-digest'
+import { registerDigestEngine, closeDigestEngine, setDigestNoticeBridge } from './memory-digest'
 import { bypassQuitConfirm, guardQuit, registerQuitConfirm } from './quit-confirm'
 import {
   registerOrchestratorGuard,
@@ -751,6 +751,8 @@ app.whenReady().then(async () => {
   // it overrides pty's `--mcp-config` provider, so it must run AFTER
   // `registerPtyHandlers` set the default (order satisfied above).
   const cmdBridge = registerCommandBridge(() => mainWindow)
+  // The digest engine (registered above) posts its "Memory digest failed" notice over this bridge.
+  setDigestNoticeBridge(cmdBridge.bridge)
   // T474: terminal lifecycle IPC. After the bridge, so its `renderer:ready` listener runs once
   // the bridge's own has opened the dispatch gate.
   registerTerminalIpc(cmdBridge.bridge, isRendererUrl)

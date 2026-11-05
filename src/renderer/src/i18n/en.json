@@ -376,7 +376,15 @@
     "decisionsEmpty": "No decisions recorded yet.",
     "timelineEmpty": "No session digests yet — they appear here as sessions wrap up.",
     "openSession": "Open session",
-    "sessionNotFound": "That session isn't loaded."
+    "sessionNotFound": "That session isn't loaded.",
+    "evidence": {
+      "noCommits": "No commits",
+      "noGit": "No git",
+      "orphan": "Recovered",
+      "noCommitsHint": "Written from the conversation alone: the session made no commits.",
+      "noGitHint": "This folder is not a git repository, so the digest has no git evidence.",
+      "orphanHint": "Recovered from a removed folder's transcript before Cleanup could trash it."
+    }
   },
   "explorerPane": {
     "label": "Project files",
