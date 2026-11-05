@@ -3,6 +3,7 @@ import {
   parseForEachRef,
   parseGhPrList,
   parseLsRemoteHeads,
+  prLandedInDefault,
   buildRepoItems,
   isPatchIdContained,
   parsePatchId,
@@ -25,6 +26,7 @@ import {
 import type { WorktreeListEntry } from '../src/main/worktree-core'
 import {
   classifyDetachedWorktree,
+  type BranchFacts,
   type PrFacts,
   type ReapItem
 } from '../src/main/reaper/reaper-core'
@@ -93,7 +95,9 @@ describe('parseGhPrList', () => {
       reviewDecision: 'APPROVED',
       ci: 'passing',
       mergedAt: '2026-07-01T00:00:00Z',
-      headRefOid: null
+      headRefOid: null,
+      baseRefName: null,
+      mergeCommitOid: null
     })
     expect(map.get('feat/open')).toEqual<PrFacts>({
       number: 118,
@@ -101,7 +105,9 @@ describe('parseGhPrList', () => {
       reviewDecision: null,
       ci: 'failing',
       mergedAt: null,
-      headRefOid: null
+      headRefOid: null,
+      baseRefName: null,
+      mergeCommitOid: null
     })
   })
 
@@ -1117,5 +1123,147 @@ describe('buildRepoItems — BUG-93 wiring', () => {
     })
     const item = findItem(buildRepoItems(input), 'feat/squashed')!
     expect(item.justifiedBy).toBe('squash-equivalent')
+  })
+})
+
+describe('prLandedInDefault (U1)', () => {
+  const base = (o: Partial<PrFacts> = {}): PrFacts => ({
+    number: 97,
+    state: 'MERGED',
+    reviewDecision: null,
+    ci: 'unknown',
+    mergedAt: 'x',
+    headRefOid: 'basehead',
+    baseRefName: 'main',
+    mergeCommitOid: 'm97',
+    ...o
+  })
+  const child = (o: Partial<PrFacts> = {}): PrFacts =>
+    base({
+      number: 84,
+      headRefOid: 'h84',
+      baseRefName: 'feat/agent-terminals',
+      mergeCommitOid: 'm84',
+      ...o
+    })
+
+  it('true when the PR merged straight into the default branch', () =>
+    expect(prLandedInDefault(child({ baseRefName: 'main' }), null, 'main', null)).toBe(true))
+
+  it('true when merged into a stacked base whose PR merged into default and contains the merge commit', () =>
+    expect(prLandedInDefault(child(), base(), 'main', true)).toBe(true))
+
+  it('false when the base PR is OPEN or CLOSED', () => {
+    expect(prLandedInDefault(child(), base({ state: 'OPEN' }), 'main', true)).toBe(false)
+    expect(prLandedInDefault(child(), base({ state: 'CLOSED' }), 'main', true)).toBe(false)
+  })
+
+  it('false when the base head does not contain the merge commit', () =>
+    expect(prLandedInDefault(child(), base(), 'main', false)).toBe(false))
+
+  it('null for an unknown base PR, a two-hop base, unknown containment, or a non-MERGED PR', () => {
+    expect(prLandedInDefault(child(), null, 'main', true)).toBeNull()
+    expect(prLandedInDefault(child(), base({ baseRefName: 'feat/other' }), 'main', true)).toBeNull()
+    expect(prLandedInDefault(child(), base(), 'main', null)).toBeNull()
+    expect(prLandedInDefault(child({ state: 'OPEN' }), base(), 'main', true)).toBeNull()
+  })
+
+  it('null when the PR carries no base ref (an entry cached before U1)', () =>
+    expect(prLandedInDefault(child({ baseRefName: null }), base(), 'main', true)).toBeNull())
+})
+
+describe('parseGhPrList base and merge commit (U1)', () => {
+  it('parses baseRefName and mergeCommit.oid, null when absent (old cache entries)', () => {
+    const out = parseGhPrList(
+      JSON.stringify([
+        {
+          headRefName: 'feat/new',
+          number: 1,
+          state: 'MERGED',
+          baseRefName: 'main',
+          mergeCommit: { oid: 'abc' }
+        },
+        { headRefName: 'feat/old', number: 2, state: 'MERGED' }
+      ])
+    )
+    expect(out.get('feat/new')).toMatchObject({ baseRefName: 'main', mergeCommitOid: 'abc' })
+    expect(out.get('feat/old')).toMatchObject({ baseRefName: null, mergeCommitOid: null })
+  })
+
+  it('treats a null or empty mergeCommit as absent', () => {
+    const out = parseGhPrList(
+      JSON.stringify([
+        { headRefName: 'a', number: 1, state: 'OPEN', mergeCommit: null, baseRefName: '' },
+        { headRefName: 'b', number: 2, state: 'OPEN', mergeCommit: { oid: '' } }
+      ])
+    )
+    expect(out.get('a')).toMatchObject({ baseRefName: null, mergeCommitOid: null })
+    expect(out.get('b')).toMatchObject({ mergeCommitOid: null })
+  })
+})
+
+describe('buildRepoItems merged-PR containment facts (U1)', () => {
+  const merged = (): PrFacts => ({
+    number: 84,
+    state: 'MERGED',
+    reviewDecision: null,
+    ci: 'unknown',
+    mergedAt: '2026-07-01T00:00:00Z',
+    headRefOid: 'prhead',
+    baseRefName: 'main',
+    mergeCommitOid: 'merge84'
+  })
+
+  const factsFor = (over: Partial<RepoScanInput>): Map<string, BranchFacts> => {
+    const captured = new Map<string, BranchFacts>()
+    buildRepoItems(
+      baseInput({
+        worktrees: [
+          wt({ path: '/repo', branch: 'main' }),
+          wt({ path: '/repo/wt-a', branch: 'feat/a', head: 'tipa' })
+        ],
+        localBranches: [
+          { branch: 'feat/a', sha: 'tipa', committedAt: 1, upstream: null },
+          { branch: 'feat/loose', sha: 'tipl', committedAt: 1, upstream: null }
+        ],
+        prByBranch: new Map([
+          ['feat/a', merged()],
+          ['feat/loose', merged()]
+        ]),
+        collectFateInput: (_id, fi) => captured.set(fi.facts.branch ?? '', fi.facts),
+        ...over
+      })
+    )
+    return captured
+  }
+
+  it('delivers the probed containment and landing facts to the worktree branch', () => {
+    const f = factsFor({
+      tipInPrHeadByBranch: new Map([['feat/a', true]]),
+      prLandedByBranch: new Map([['feat/a', true]])
+    }).get('feat/a')!
+    expect(f.tipInPrHead).toBe(true)
+    expect(f.prLandedInDefault).toBe(true)
+  })
+
+  it('keeps a probed false as false, never promoting it', () => {
+    const f = factsFor({
+      tipInPrHeadByBranch: new Map([['feat/a', false]]),
+      prLandedByBranch: new Map([['feat/a', null]])
+    }).get('feat/a')!
+    expect(f.tipInPrHead).toBe(false)
+    expect(f.prLandedInDefault).toBeNull()
+  })
+
+  it('gives null for both facts when the branch is absent from the maps or the maps are absent', () => {
+    const absent = factsFor({
+      tipInPrHeadByBranch: new Map(),
+      prLandedByBranch: new Map()
+    }).get('feat/a')!
+    expect(absent.tipInPrHead).toBeNull()
+    expect(absent.prLandedInDefault).toBeNull()
+    const noMaps = factsFor({}).get('feat/a')!
+    expect(noMaps.tipInPrHead).toBeNull()
+    expect(noMaps.prLandedInDefault).toBeNull()
   })
 })

@@ -19,7 +19,9 @@ export const pr = (headRefOid: string | null): PrFacts => ({
   reviewDecision: 'APPROVED',
   ci: 'passing',
   mergedAt: MERGED_AT,
-  headRefOid
+  headRefOid,
+  baseRefName: null,
+  mergeCommitOid: null
 })
 
 export function scanInput(over: Partial<RepoScanInput> = {}): RepoScanInput {

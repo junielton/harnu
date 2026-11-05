@@ -80,6 +80,8 @@ function prFacts(over: Partial<PrFacts> = {}): PrFacts {
     ci: 'passing',
     mergedAt: OLD_MERGE,
     headRefOid: TIP_A,
+    baseRefName: null,
+    mergeCommitOid: null,
     ...over
   }
 }
@@ -98,6 +100,8 @@ function facts(over: Partial<BranchFacts> = {}): BranchFacts {
     remoteExists: false,
     ancestorOfDefault: null,
     patchIdContained: null,
+    tipInPrHead: null,
+    prLandedInDefault: null,
     lastCommitAt: null,
     pr: null,
     ghAvailable: true,
@@ -801,6 +805,55 @@ describe('buildBundles — fate, including AC-6', () => {
     expect(b.fate.strong).toBe(true)
     expect(b.bucket).toBe('ready')
     expect(b.reason).toBeNull()
+  })
+
+  it('U1: a merged PR whose head contains the local tip, with the content landed, is strong and ready', () => {
+    const b = only(
+      build({
+        fateInputs: new Map([
+          [
+            item().id,
+            {
+              facts: facts({
+                pr: prFacts({ headRefOid: TIP_A }),
+                tipInPrHead: true,
+                prLandedInDefault: true
+              }),
+              localTip: TIP_B
+            }
+          ]
+        ])
+      })
+    )
+    expect(b.fate.strong).toBe(true)
+    expect(b.bucket).toBe('ready')
+    expect(b.reason).toBeNull()
+  })
+
+  it('U1: strength through containment never bypasses the tracked-dirty gate', () => {
+    const b = only(
+      build({
+        items: [item({ blockers: ['dirty'] })],
+        fateInputs: new Map([
+          [
+            item().id,
+            {
+              facts: facts({
+                pr: prFacts({ headRefOid: TIP_A }),
+                tipInPrHead: true,
+                prLandedInDefault: true,
+                trackedDirty: true
+              }),
+              localTip: TIP_B
+            }
+          ]
+        ])
+      })
+    )
+    expect(b.fate.strong).toBe(true)
+    expect(b.bucket).toBe('review')
+    expect(b.reason?.code).toBe('dirty')
+    expect(b.bucket).not.toBe('ready')
   })
 
   it('a missing fateInputs entry fails closed to fate unknown', () => {
