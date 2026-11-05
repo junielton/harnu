@@ -13084,10 +13084,11 @@ never disagrees with the rows (`stewardsSummaryParts`, `lib/steward-view.ts`). T
 default** and the choice persists per viewer in `localStorage` under `om2tab.scheduler.stewardsCollapsed`
 (`'0'` = open; read and written inside the same try/catch as Up next's key).
 
-_Open._ The rows (and the hints) sit in a container with `margin-top: 6px`, `overflow-y: auto` and
+_Open._ The rows (and the hints) sit in a container with `overflow-y: auto` and
 `max-height: var(--sched-stewards-max-h)` (`232px`, ≈ 6 rows, theme-invariant, §9), with a `-6px` right margin
-and `6px` right padding so the scrollbar sits on the column's edge. The folder-group list above keeps the rest
-of the column.
+and `6px` right padding so the scrollbar sits on the column's edge; the row list inside it starts `6px` under
+the header (`margin-top` on the list, so the 6px scrolls with the content and counts inside the cap). The
+folder-group list above keeps the rest of the column.
 
 _Rows._ A row is **read-only**: no enable switch, no pin, no Run now, no delete, no prompt edit, and it is not
 selectable (no detail pane). Two lines, `gap: 2px`, `7px` between rows: the mission's title (`12px`,

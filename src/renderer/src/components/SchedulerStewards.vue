@@ -104,10 +104,10 @@ const anyAwaiting = computed(() => props.stewards.some((s) => stateOf(s) === 'aw
     <div
       v-if="!collapsed"
       class="scrollable -mr-1.5 overflow-y-auto pr-1.5"
-      style="max-height: var(--sched-stewards-max-h); margin-top: 6px"
+      style="max-height: var(--sched-stewards-max-h)"
       data-test="scheduler-stewards-rows"
     >
-      <ul class="m-0 flex list-none flex-col p-0" style="gap: 7px">
+      <ul class="m-0 flex list-none flex-col p-0" style="gap: 7px; margin-top: 6px">
         <li
           v-for="s in stewards"
           :key="s.workerId"
