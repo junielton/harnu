@@ -11173,6 +11173,11 @@ renderer only words it, from the structured `notice` on the `gc:docker:watch` pu
   {total} free. Cleanup has nothing left to free on its own." _Zero_ — title "Docker has no free network
   slots", description "The next compose up will fail. Stop a stack you do not need." Titles are complete short
   sentences without a trailing period (§8), the descriptions end with one.
+- **When Cleanup is not acting.** The heads-up is a warning, not an action, so it also fires while the Docker
+  switch is **off** or **Pause all autonomous cleanup** is on (only on engines where the slots can be counted;
+  unknown capacity stays silent). The description then says why nothing was freed: "{free} of {total} free.
+  Automatic Docker cleanup is off, so nothing will be freed on its own." (zero: "The next compose up will fail.
+  Automatic Docker cleanup is paused, so nothing will be freed on its own."). Same title, same no-repeat rule.
 - **Click** opens the Cleanup takeover (`target: { view: 'cleanup' }`), where the Docker card shows the same
   numbers. The row has no action button of its own.
 - **Push.** The same title and description go out through `pushSend` as kind `needs-input` (an
