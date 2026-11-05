@@ -3061,6 +3061,16 @@
           "confirm": "Move to trash"
         }
       },
+      "capacity": {
+        "low": {
+          "title": "Docker is nearly out of network slots",
+          "body": "{free} of {total} free. Cleanup has nothing left to free on its own."
+        },
+        "zero": {
+          "title": "Docker has no free network slots",
+          "body": "The next compose up will fail. Stop a stack you do not need."
+        }
+      },
       "shelved": {
         "activity": "Shelved `{branch}` — idle {days} d, branch kept",
         "activityDetached": "Shelved detached HEAD — idle {days} d, archive kept",
@@ -3131,6 +3141,14 @@
           "reportOnly": "The first pass only records what it would pause or remove; nothing changes in Docker until you acknowledge it.",
           "ack": "Acknowledge first report",
           "active": "Docker cleanup is active. Up to {n} actions per cycle.",
+          "report": {
+            "kind": {
+              "network": "Network",
+              "orphan": "Orphan stack",
+              "pause": "Pause"
+            },
+            "more": "+{n} more"
+          },
           "pauseAll": {
             "label": "Pause all autonomous cleanup",
             "hint": "Stops shelving, Docker cleanup and the autopilot's cleaning at once. Cleaning by hand keeps working.",

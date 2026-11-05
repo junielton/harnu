@@ -84,8 +84,12 @@ function install(snapshot: Partial<GcSnapshot> = {}): {
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  // The notification store prunes rows older than a week against the real clock.
+  vi.useFakeTimers()
+  vi.setSystemTime(NOW)
 })
 afterEach(() => {
+  vi.useRealTimers()
   delete (globalThis as { window?: unknown }).window
 })
 

@@ -13,6 +13,7 @@ import type {
   GcRecoveryItem,
   GcSnapshot,
   CycleRecord,
+  DockerReportItem,
   DockerWatchRecord,
   ShelveRestoreAck
 } from '../../../main/gc/gc-wire'
@@ -111,9 +112,58 @@ export const useGcStore = defineStore('gc', () => {
     if (rec && (!dockerWatch.value || rec.at >= dockerWatch.value.at)) dockerWatch.value = rec
   }
 
+  /** The pass whose notice was last recorded, so a replayed push adds no second row. */
+  let lastCapacityNoticeAt = 0
+
+  /**
+   * The out-of-capacity notice (U3.6): one quiet Activity row and one remote push. Main decided WHEN
+   * (once per level until capacity recovers); this only words it, in the app's language.
+   */
+  function recordCapacityNotice(rec: DockerWatchRecord): void {
+    const n = rec.notice
+    if (!n || rec.at <= lastCapacityNoticeAt) return
+    lastCapacityNoticeAt = rec.at
+    const { t } = i18n.global
+    const title = t(`cleanup.gc.capacity.${n.level}.title`)
+    const description = t(`cleanup.gc.capacity.${n.level}.body`, { free: n.free, total: n.total })
+    useNotificationsStore().notify({
+      ts: rec.at,
+      source: 'app',
+      kind: 'warning',
+      title,
+      description,
+      target: { view: 'cleanup' }
+    })
+    try {
+      // Away from the machine is exactly when a compose is about to fail: rides `needs-input`.
+      window.api.pushSend({ kind: 'needs-input', title, body: description })
+    } catch {
+      /* transient IPC teardown: the Activity row is already recorded */
+    }
+  }
+
   function onDockerWatch(rec: DockerWatchRecord): void {
     adoptWatch(rec)
+    recordCapacityNotice(rec)
   }
+
+  /**
+   * What "Acknowledge first report" will do (U3.6): the items of the newest report-only pass, from the
+   * hourly cycle or the capacity watcher. Null once acknowledged, or when nothing would be done.
+   */
+  const dockerReport = computed<{ items: DockerReportItem[]; found: number } | null>(() => {
+    const snap = snapshot.value
+    if (!snap || snap.prefs.docker.firstReportAcknowledged) return null
+    const cycle = snap.lastCycle?.docker
+    const w = dockerWatch.value
+    const candidates: Array<{ at: number; items: DockerReportItem[]; found: number }> = []
+    if (cycle && cycle.mode === 'report' && snap.lastCycle) {
+      candidates.push({ at: snap.lastCycle.at, items: cycle.items ?? [], found: cycle.found })
+    }
+    if (w && w.mode === 'report') candidates.push({ at: w.at, items: w.items, found: w.found })
+    const newest = candidates.sort((a, b) => b.at - a.at)[0]
+    return newest && newest.items.length > 0 ? { items: newest.items, found: newest.found } : null
+  })
   const jobs = ref<JobsState>(emptyJobs())
   const loading = ref(false)
   const loadError = ref<string | null>(null)
@@ -939,6 +989,7 @@ export const useGcStore = defineStore('gc', () => {
     blockState,
     failureOf,
     dockerWatch,
+    dockerReport,
     init,
     dispose,
     refresh,
