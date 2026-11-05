@@ -3036,13 +3036,32 @@
             "network": "Nenhum container estava conectado; o compose up recria as redes.",
             "orphan": "A worktree dela foi removida. Volumes mantidos: {volumes}.",
             "orphanNone": "A worktree dela foi removida. Os volumes ficam em Volumes órfãos.",
-            "pause": "Ociosa há {idle}."
+            "pause": "Ociosa há {idle}.",
+            "orphanGroup": "As worktrees delas foram removidas. Os volumes ficam em Volumes órfãos.",
+            "pauseOne": "Ociosa há {age}.",
+            "pauseMany": "Ociosas há {age} ou mais."
           },
           "sentence": {
             "network": "Removeria a rede vazia {target} — nenhum container",
             "orphan": "Removeria a stack órfã {target} — worktree removida, volumes mantidos: {volumes}",
             "orphanNone": "Removeria a stack órfã {target} — worktree removida, volumes mantidos",
             "pause": "Pausaria {target} — ociosa há {idle}"
+          },
+          "groups": {
+            "done": {
+              "network": "{n} rede vazia removida | {n} redes vazias removidas",
+              "orphan": "{n} stack órfã removida | {n} stacks órfãs removidas",
+              "pause": "{n} stack pausada | {n} stacks pausadas"
+            },
+            "would": {
+              "network": "Removeria {n} rede vazia | Removeria {n} redes vazias",
+              "orphan": "Removeria {n} stack órfã | Removeria {n} stacks órfãs",
+              "pause": "Pausaria {n} stack | Pausaria {n} stacks"
+            },
+            "volumesKept": "{v} volume mantido | {v} volumes mantidos",
+            "source": "pela Limpeza",
+            "expand": "Mostrar as {n} ações",
+            "collapse": "Ocultar as ações"
           }
         },
         "report": {

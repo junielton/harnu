@@ -2,10 +2,12 @@
 // The journal carries past-tense English sentences ("Removed empty network `x` — no containers"); a
 // report-only item has not happened yet, so it is worded in the future, in the app's language.
 
-import { describeAction, reasonIsKnown } from './docker-card-view'
+import { ageParts } from './docker-card-format'
+import { describeAction, reasonIsKnown, type ActionGroup } from './docker-card-view'
 import type { DockerReportKind } from '../../../main/gc/gc-wire'
 
-type Translate = (key: string, named?: Record<string, unknown>) => string
+/** vue-i18n's `t(key, named, plural)`: the third argument picks the plural form. */
+type Translate = (key: string, named?: Record<string, unknown>, plural?: number) => string
 
 /**
  * "Would remove empty network x — no containers". A reason the card does not recognise is returned
@@ -30,4 +32,31 @@ export function wouldSentence(
     default:
       return item.reason
   }
+}
+
+const GROUPS = 'cleanup.gc.docker.actions.groups'
+
+/** "4 empty networks removed", "6 orphan stacks removed · 9 volumes kept", "Would pause 2 stacks". */
+export function groupTitle(g: ActionGroup, t: Translate): string {
+  if (g.kind === null) {
+    const first = g.items[0]
+    return first && first.kind === null ? first.raw : ''
+  }
+  const head = t(`${GROUPS}.${g.would ? 'would' : 'done'}.${g.kind}`, { n: g.count }, g.count)
+  return g.kind === 'orphan' && g.volumes > 0
+    ? `${head} · ${t(`${GROUPS}.volumesKept`, { v: g.volumes }, g.volumes)}`
+    : head
+}
+
+/** Why the pass did it, in one line; null when there is nothing worth saying. */
+export function groupDetail(g: ActionGroup, t: Translate): string | null {
+  const base = 'cleanup.gc.docker.actions.detail'
+  if (g.kind === 'network') return t(`${base}.network`)
+  if (g.kind === 'orphan') return t(`${base}.orphanGroup`)
+  if (g.kind === 'pause' && g.idleMinutes !== null) {
+    const a = ageParts(g.idleMinutes * 60_000)
+    const age = t(`cleanup.gc.docker.age.${a.unit}`, { n: a.n })
+    return t(`${base}.${g.count === 1 ? 'pauseOne' : 'pauseMany'}`, { age })
+  }
+  return null
 }

@@ -9,7 +9,7 @@ import CleanupDockerActions from './CleanupDockerActions.vue'
 import CleanupDockerPaused from './CleanupDockerPaused.vue'
 import CleanupDockerSlots from './CleanupDockerSlots.vue'
 import { formatBytes } from './system-monitor-format'
-import { automaticActions, slotsState, wouldHaveRows } from '../lib/docker-card-view'
+import { automaticActionGroups, slotsState, wouldHaveGroups } from '../lib/docker-card-view'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
 import type {
   CycleRecord,
@@ -73,15 +73,16 @@ const reporting = computed(
 const slots = computed(() =>
   slotsState(props.dockerWatch ?? null, props.prefs.docker.lowWaterSlots)
 )
-const reportRows = computed(() => (reporting.value ? wouldHaveRows(props.report ?? null) : []))
 /** Pauses the first pass WOULD make; null (show the real count) when it has none to announce. */
 const wouldPause = computed(() => {
   if (!reporting.value || !props.report) return null
   const n = props.report.items.filter((i) => i.kind === 'pause').length
   return n > 0 ? n : null
 })
-const actionRows = computed(() =>
-  reporting.value && props.report ? reportRows.value : automaticActions(props.recent ?? [])
+const actionGroups = computed(() =>
+  reporting.value && props.report
+    ? wouldHaveGroups(props.report)
+    : automaticActionGroups(props.recent ?? [])
 )
 
 const housekeeping = computed(() => props.lastCycle?.housekeeping ?? null)
@@ -486,7 +487,7 @@ const splitSegments = computed(() =>
       </div>
 
       <CleanupDockerActions
-        :rows="actionRows"
+        :groups="actionGroups"
         :reporting="reporting && !!report"
         :now="nowMs"
         @show-all="emit('showAll')"

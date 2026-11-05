@@ -3036,13 +3036,32 @@
             "network": "No containers were attached; compose up recreates them.",
             "orphan": "Its worktree was removed. Volumes kept: {volumes}.",
             "orphanNone": "Its worktree was removed. Its volumes stay under Orphan volumes.",
-            "pause": "Idle for {idle}."
+            "pause": "Idle for {idle}.",
+            "orphanGroup": "Their worktrees were removed. The volumes stay under Orphan volumes.",
+            "pauseOne": "Idle for {age}.",
+            "pauseMany": "Idle for {age} or more."
           },
           "sentence": {
             "network": "Would remove empty network {target} — no containers",
             "orphan": "Would remove orphan stack {target} — worktree gone, volumes kept: {volumes}",
             "orphanNone": "Would remove orphan stack {target} — worktree gone, volumes kept",
             "pause": "Would pause {target} — idle {idle}"
+          },
+          "groups": {
+            "done": {
+              "network": "{n} empty network removed | {n} empty networks removed",
+              "orphan": "{n} orphan stack removed | {n} orphan stacks removed",
+              "pause": "{n} stack paused | {n} stacks paused"
+            },
+            "would": {
+              "network": "Would remove {n} empty network | Would remove {n} empty networks",
+              "orphan": "Would remove {n} orphan stack | Would remove {n} orphan stacks",
+              "pause": "Would pause {n} stack | Would pause {n} stacks"
+            },
+            "volumesKept": "{v} volume kept | {v} volumes kept",
+            "source": "by Cleanup",
+            "expand": "Show the {n} actions",
+            "collapse": "Hide the actions"
           }
         },
         "report": {

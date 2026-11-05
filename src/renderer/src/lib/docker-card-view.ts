@@ -156,6 +156,109 @@ export function wouldHaveRows(
 }
 
 // ---------------------------------------------------------------------------------------------
+// Folded rows: one per pass and kind (the approved mockup's list)
+
+/**
+ * The journal has no pass id, so a pass is a run of actions with no gap longer than this between
+ * neighbours: a cycle or a watcher pass does its work back to back, minutes apart at the very most.
+ */
+export const PASS_GAP_MS = 3 * 60_000
+
+/** One row of "Automatic actions": the actions of one pass that share a kind. */
+export interface ActionGroup {
+  id: string
+  /** Null only for a line the card cannot classify; such a line is its own row. */
+  kind: DockerReportKind | null
+  count: number
+  /** Volumes the removed orphan stacks kept (orphan rows only, else 0). */
+  volumes: number
+  /** The networks or stacks touched, newest first. */
+  names: string[]
+  /** Epoch ms of the newest action; null for a would-have row (nothing happened yet). */
+  at: number | null
+  would: boolean
+  /** Shortest idle time among the paused stacks, in minutes (pause rows only). */
+  idleMinutes: number | null
+  /** The per-item lines, with their reasons, newest first. */
+  items: ActionRow[]
+}
+
+const IDLE_UNIT_MINUTES = { min: 1, h: 60, d: 1440 } as const
+
+/** `3 h` → 180, `40 min` → 40; null for anything else. */
+function idleToMinutes(idle: string | null | undefined): number | null {
+  const m = /^(\d+)\s*(min|h|d)$/.exec((idle ?? '').trim())
+  return m ? Number(m[1]) * IDLE_UNIT_MINUTES[m[2] as keyof typeof IDLE_UNIT_MINUTES] : null
+}
+
+function foldRows(rows: readonly ActionRow[], idPrefix: string): ActionGroup[] {
+  const groups: ActionGroup[] = []
+  const byKind = new Map<string, ActionGroup>()
+  const flushPass = (): void => byKind.clear()
+  let prev: ActionRow | null = null
+  for (const row of rows) {
+    if (prev && prev.at !== null && row.at !== null && prev.at - row.at > PASS_GAP_MS) flushPass()
+    prev = row
+    const existing = row.kind === null ? undefined : byKind.get(row.kind)
+    const g: ActionGroup =
+      existing ??
+      ({
+        id: `${idPrefix}:${row.at ?? 'plan'}:${row.kind ?? row.id}`,
+        kind: row.kind,
+        count: 0,
+        volumes: 0,
+        names: [],
+        at: row.at,
+        would: row.would,
+        idleMinutes: null,
+        items: []
+      } satisfies ActionGroup)
+    if (!existing) {
+      groups.push(g)
+      if (row.kind !== null) byKind.set(row.kind, g)
+    }
+    g.count += 1
+    g.items.push(row)
+    if (row.kind === null) continue
+    g.names.push(row.target)
+    if (row.kind === 'orphan') g.volumes += row.volumes.length
+    if (row.kind === 'pause') {
+      const m = idleToMinutes(row.idle)
+      if (m !== null) g.idleMinutes = g.idleMinutes === null ? m : Math.min(g.idleMinutes, m)
+    }
+  }
+  return groups
+}
+
+/** The newest automatic actions folded one row per pass and kind; "newest N" counts folded rows. */
+export function automaticActionGroups(
+  recent: readonly Tombstone[],
+  limit = ACTION_ROWS_MAX
+): ActionGroup[] {
+  return foldRows(automaticActions(recent, Number.POSITIVE_INFINITY), 'done').slice(0, limit)
+}
+
+/** The first-report plan folded by kind (a plan is one pass, so time plays no part). */
+export function wouldHaveGroups(
+  report: { items: readonly DockerReportItem[]; found: number } | null,
+  limit = ACTION_ROWS_MAX
+): ActionGroup[] {
+  if (!report) return []
+  const rows = wouldHaveRows(report, Number.POSITIVE_INFINITY)
+  const byKind = new Map<string, ActionRow[]>()
+  const order: string[] = []
+  for (const r of rows) {
+    const k = r.kind ?? `raw:${r.id}`
+    if (!byKind.has(k)) {
+      byKind.set(k, [])
+      order.push(k)
+    }
+    byKind.get(k)!.push(r)
+  }
+  return order.flatMap((k) => foldRows(byKind.get(k)!, 'would')).slice(0, limit)
+}
+
+// ---------------------------------------------------------------------------------------------
 // Paused stacks
 
 export interface PausedRow {
