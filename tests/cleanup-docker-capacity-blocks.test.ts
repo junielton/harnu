@@ -254,6 +254,30 @@ describe('the report-only first cycle', () => {
     expect(w.get('[data-testid="docker-paused-count"]').text()).toBe('Would pause 1')
   })
 
+  it('a plan with nothing to pause still shows the stacks that are already paused', () => {
+    const prefs = defaultGcPrefs()
+    prefs.docker.firstReportAcknowledged = false
+    const w = mountCard({
+      prefs,
+      report: { items: [items[0]!], found: 1 },
+      paused: [paused('ext-15', 48), paused('ext-16', 30)]
+    })
+    expect(w.get('[data-testid="docker-paused-count"]').text()).toBe('2 paused')
+    expect(w.findAll('[data-testid="docker-paused-row"]')).toHaveLength(2)
+  })
+
+  it('a plan that would pause some says so and still lists the stacks paused already', () => {
+    const prefs = defaultGcPrefs()
+    prefs.docker.firstReportAcknowledged = false
+    const w = mountCard({
+      prefs,
+      report: { items, found: 2 },
+      paused: [paused('ext-15', 48)]
+    })
+    expect(w.get('[data-testid="docker-paused-count"]').text()).toBe('Would pause 1')
+    expect(w.findAll('[data-testid="docker-paused-row"]')).toHaveLength(1)
+  })
+
   it('no badge once the report is acknowledged', () => {
     const prefs = defaultGcPrefs()
     prefs.docker.firstReportAcknowledged = true
