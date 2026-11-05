@@ -3,10 +3,12 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  automaticActionGroups,
   automaticActions,
   describeAction,
   pausedRows,
   slotsState,
+  wouldHaveGroups,
   wouldHaveRows
 } from '../src/renderer/src/lib/docker-card-view'
 import type { DockerReportItem, DockerWatchRecord } from '../src/main/gc/gc-wire'
@@ -283,5 +285,151 @@ describe('pausedRows', () => {
 
   it('none paused is an empty list', () => {
     expect(pausedRows([], 1000)).toEqual({ rows: [], more: 0, total: 0 })
+  })
+})
+
+// ---- U3.7 (owner decision): the approved mockup folds the list one row per pass and kind ----------
+
+const SEC = 1000
+const MIN = 60 * SEC
+
+/** An orphan removal naming its own stack and volumes (the shared builder fixes `ext-03`). */
+const orphanOf = (at: number, name: string, volumes: string[]): Tombstone => {
+  const t = orphan(at)
+  const stack = t.stacks[0]!
+  stack.stack = name
+  stack.name = name
+  stack.keptVolumes = volumes
+  return {
+    ...t,
+    reason: `Removed orphan stack \`${name}\` — worktree gone, volumes kept: ${volumes.join(', ')}`
+  }
+}
+/** A pause naming its own stack and idle time. */
+const pauseOf = (at: number, name: string, idle: string): Tombstone => {
+  const t = pause(at)
+  const stack = t.stacks[0]!
+  stack.stack = name
+  stack.name = name
+  return { ...t, reason: `Paused \`${name}\` — ${idle}` }
+}
+
+describe('automaticActionGroups', () => {
+  const T = 100 * MIN
+
+  it('folds the removals of one pass into one row: "4 empty networks"', () => {
+    const recent = ['d', 'c', 'b', 'a'].map((n, i) => network(T - i * 10 * SEC, `ext-${n}_default`))
+    const groups = automaticActionGroups(recent)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({
+      kind: 'network',
+      count: 4,
+      at: T,
+      would: false,
+      names: ['ext-d_default', 'ext-c_default', 'ext-b_default', 'ext-a_default']
+    })
+    expect(groups[0]!.items).toHaveLength(4)
+    expect(groups[0]!.items[0]).toMatchObject({ kind: 'network', target: 'ext-d_default' })
+  })
+
+  it('the same kind in another pass is another row', () => {
+    const groups = automaticActionGroups([network(T), network(T - 10 * MIN)])
+    expect(groups.map((g) => g.count)).toEqual([1, 1])
+    expect(groups.map((g) => g.at)).toEqual([T, T - 10 * MIN])
+  })
+
+  it('one pass with three kinds is three rows, the newest kind first', () => {
+    const recent = [
+      pauseOf(T, 'ext-12', 'idle 3 h'),
+      orphanOf(T - 5 * SEC, 'ext-03', ['ext-03_data']),
+      network(T - 8 * SEC, 'a_default'),
+      network(T - 9 * SEC, 'b_default')
+    ]
+    const groups = automaticActionGroups(recent)
+    expect(groups.map((g) => [g.kind, g.count])).toEqual([
+      ['pause', 1],
+      ['orphan', 1],
+      ['network', 2]
+    ])
+  })
+
+  it('an orphan row counts the volumes its stacks kept', () => {
+    const recent = [
+      orphanOf(T, 'ext-03', ['ext-03_data', 'ext-03_redis']),
+      orphanOf(T - 20 * SEC, 'ext-07', ['ext-07_data'])
+    ]
+    expect(automaticActionGroups(recent)[0]).toMatchObject({ kind: 'orphan', count: 2, volumes: 3 })
+  })
+
+  it('a pause row carries the shortest idle time of its stacks, in minutes', () => {
+    const recent = [pauseOf(T, 'a', 'idle 3 h'), pauseOf(T - 5 * SEC, 'b', 'idle 40 min')]
+    expect(automaticActionGroups(recent)[0]).toMatchObject({ kind: 'pause', idleMinutes: 40 })
+    expect(automaticActionGroups([pauseOf(T, 'a', 'idle 120 h')])[0]!.idleMinutes).toBe(7200)
+  })
+
+  it('"newest 5" counts folded rows, not journal lines', () => {
+    // Seven passes 10 minutes apart, each with three networks: 21 lines, 7 rows, 5 shown.
+    const recent: Tombstone[] = []
+    for (let p = 0; p < 7; p++) {
+      for (let k = 0; k < 3; k++) recent.push(network(T - p * 10 * MIN - k * SEC, `p${p}k${k}`))
+    }
+    const groups = automaticActionGroups(recent)
+    expect(groups).toHaveLength(5)
+    expect(groups.every((g) => g.count === 3)).toBe(true)
+    expect(groups.map((g) => g.at)).toEqual([0, 1, 2, 3, 4].map((p) => T - p * 10 * MIN))
+  })
+
+  it('still skips operator lines and the stop before an orphan removal', () => {
+    const groups = automaticActionGroups([
+      stopBeforeRemoval(T),
+      operatorStop(T - SEC),
+      network(T - 2 * SEC)
+    ])
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({ kind: 'network', count: 1 })
+  })
+
+  it('nothing automatic is no rows', () => {
+    expect(automaticActionGroups([])).toEqual([])
+  })
+})
+
+describe('wouldHaveGroups', () => {
+  const items: DockerReportItem[] = [
+    {
+      kind: 'network',
+      target: 'a_default',
+      reason: 'Removed empty network `a_default` — no containers'
+    },
+    {
+      kind: 'network',
+      target: 'b_default',
+      reason: 'Removed empty network `b_default` — no containers'
+    },
+    {
+      kind: 'orphan',
+      target: 'ext-03',
+      reason: 'Removed orphan stack `ext-03` — worktree gone, volumes kept: v1, v2'
+    },
+    { kind: 'pause', target: 'ext-12', reason: 'idle 120 h' },
+    { kind: 'pause', target: 'ext-15', reason: 'idle 5 h' }
+  ]
+
+  it('folds the plan by kind into one row each, with no time', () => {
+    const groups = wouldHaveGroups({ items, found: 5 })
+    expect(groups.map((g) => [g.kind, g.count])).toEqual([
+      ['network', 2],
+      ['orphan', 1],
+      ['pause', 2]
+    ])
+    expect(groups.every((g) => g.would && g.at === null)).toBe(true)
+    expect(groups[1]).toMatchObject({ volumes: 2 })
+    expect(groups[2]).toMatchObject({ idleMinutes: 300 })
+    expect(groups[0]!.items.map((i) => i.target)).toEqual(['a_default', 'b_default'])
+  })
+
+  it('nothing planned is no rows', () => {
+    expect(wouldHaveGroups(null)).toEqual([])
+    expect(wouldHaveGroups({ items: [], found: 0 })).toEqual([])
   })
 })

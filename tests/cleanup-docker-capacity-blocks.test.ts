@@ -188,19 +188,108 @@ describe('Paused stacks block', () => {
 })
 
 describe('Automatic actions block', () => {
-  it('lists the newest five with their reasons and offers Show all in Activity', async () => {
-    const recent = Array.from({ length: 7 }, (_, i) => networkLine(i + 1, `ext-${i}_default`))
+  const orphanLine = (secAgo: number, name: string, volumes: string[]): Tombstone => ({
+    at: NOW - secAgo * 1000,
+    actor: 'autopilot',
+    verb: 'remove',
+    restoreHint: null,
+    reason: `Removed orphan stack \`${name}\` — worktree gone, volumes kept: ${volumes.join(', ')}`,
+    stacks: [
+      {
+        stack: name,
+        name,
+        path: null,
+        containerIds: [],
+        freed: { ramBytes: 0, ports: [], volumes: [], volumeBytes: 0 },
+        keptVolumes: volumes,
+        keptVolumeOwner: { reason: 'worktree-removed', project: name, worktreePath: null }
+      }
+    ]
+  })
+  const pauseLine = (secAgo: number, name: string, idle: string): Tombstone => ({
+    at: NOW - secAgo * 1000,
+    actor: 'autopilot',
+    verb: 'stop',
+    restoreHint: null,
+    reason: `Paused \`${name}\` — ${idle}`,
+    stacks: [
+      {
+        stack: name,
+        name,
+        path: null,
+        containerIds: [],
+        freed: { ramBytes: 0, ports: [], volumes: [], volumeBytes: 0 },
+        paused: { ...paused(name, 1), pausedAt: NOW - secAgo * 1000 }
+      }
+    ]
+  })
+
+  it('lists the newest five FOLDED rows with their reasons, time and source, and offers Show all in Activity', async () => {
+    // Seven passes ten minutes apart: seven rows, five shown.
+    const recent = Array.from({ length: 7 }, (_, i) => networkLine(i * 10 + 1, `ext-${i}_default`))
     const w = mountCard({ recent })
     const rows = w.findAll('[data-testid="docker-action-row"]')
     expect(rows).toHaveLength(5)
     expect(rows[0]!.get('[data-testid="docker-action-title"]').text()).toBe(
-      'Removed empty network ext-0_default'
+      '1 empty network removed'
     )
+    expect(rows[0]!.get('[data-testid="docker-action-names"]').text()).toBe('ext-0_default')
     expect(rows[0]!.text()).toContain('No containers were attached')
-    expect(rows[0]!.text()).toContain('1 min ago')
+    expect(rows[0]!.get('[data-testid="docker-action-when"]').text()).toBe('1 min ago · by Cleanup')
+    // One action has nothing more to reveal.
+    expect(rows[0]!.find('[data-testid="docker-action-toggle"]').exists()).toBe(false)
     expect(w.find('[data-testid="docker-action-would"]').exists()).toBe(false)
     await w.get('[data-testid="docker-actions-show-all"]').trigger('click')
     expect(w.emitted('showAll')).toHaveLength(1)
+  })
+
+  it('folds one pass into one row per kind: "4 empty networks removed", names and an expander', async () => {
+    const recent = [
+      ...['d', 'c', 'b', 'a'].map((n, i) => ({
+        ...networkLine(60 + i, `ext-${n}_default`)
+      })),
+      networkLine(3600, 'old_default')
+    ]
+    const w = mountCard({ recent })
+    const rows = w.findAll('[data-testid="docker-action-row"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.get('[data-testid="docker-action-title"]').text()).toBe(
+      '4 empty networks removed'
+    )
+    expect(rows[0]!.get('[data-testid="docker-action-names"]').text()).toBe(
+      'ext-d_default, ext-c_default, ext-b_default +1 more'
+    )
+    expect(rows[0]!.findAll('[data-testid="docker-action-item"]')).toHaveLength(0)
+
+    const toggle = rows[0]!.get('[data-testid="docker-action-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    const items = rows[0]!.findAll('[data-testid="docker-action-item"]')
+    expect(items).toHaveLength(4)
+    expect(items[0]!.text()).toContain('Removed empty network ext-d_default')
+    expect(items[3]!.text()).toContain('Removed empty network ext-a_default')
+    expect(items[0]!.text()).toContain('No containers were attached')
+    await toggle.trigger('click')
+    expect(rows[0]!.findAll('[data-testid="docker-action-item"]')).toHaveLength(0)
+  })
+
+  it('an orphan row counts its volumes; a pause row says how long they were idle', () => {
+    const recent = [
+      ...Array.from({ length: 6 }, (_, i) =>
+        orphanLine(120 + i, `ext-0${i}`, i < 3 ? [`ext-0${i}_a`, `ext-0${i}_b`] : [`ext-0${i}_a`])
+      ),
+      pauseLine(30, 'ext-12', 'idle 3 h'),
+      pauseLine(31, 'ext-15', 'idle 40 min')
+    ]
+    const w = mountCard({ recent })
+    const titles = w.findAll('[data-testid="docker-action-title"]').map((n) => n.text())
+    expect(titles).toEqual(['2 stacks paused', '6 orphan stacks removed · 9 volumes kept'])
+    const rows = w.findAll('[data-testid="docker-action-row"]')
+    expect(rows[0]!.text()).toContain('Idle for 40 min or more.')
+    expect(rows[1]!.text()).toContain(
+      'Their worktrees were removed. The volumes stay under Orphan volumes.'
+    )
   })
 
   it('empty: the sentence about what is handled each cycle', () => {
@@ -238,10 +327,13 @@ describe('the report-only first cycle', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]!.get('[data-testid="docker-action-would"]').text()).toBe('Would have')
     expect(rows[0]!.get('[data-testid="docker-action-title"]').text()).toBe(
-      'Would remove empty network ext-12_default'
+      'Would remove 1 empty network'
     )
-    expect(rows[1]!.get('[data-testid="docker-action-title"]').text()).toBe('Would pause ext-12')
-    expect(rows[1]!.text()).toContain('Idle for 120 h')
+    expect(rows[0]!.get('[data-testid="docker-action-names"]').text()).toBe('ext-12_default')
+    expect(rows[1]!.get('[data-testid="docker-action-title"]').text()).toBe('Would pause 1 stack')
+    expect(rows[1]!.text()).toContain('Idle for 5 d.')
+    // Nothing happened yet, so there is no time and no source.
+    expect(rows[0]!.find('[data-testid="docker-action-when"]').exists()).toBe(false)
     expect(w.get('[data-testid="docker-actions"]').text()).toContain('nothing was changed')
     // The journal line is NOT mixed into a report-only list.
     expect(w.text()).not.toContain('old_default')
