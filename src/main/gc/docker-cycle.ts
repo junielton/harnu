@@ -38,9 +38,61 @@ export interface DockerAction {
  */
 export type DockerOutcome = { ok: true } | { ok: false; reason: string; refusal?: boolean }
 
+/**
+ * One producer of Docker actions (garbage, pause, ...). The slot has a single `plan` and `execute`;
+ * {@link composeDockerPlanners} builds them from the planners in order, so U3.3 and U3.5 each fill
+ * their own without sharing a file.
+ */
+export interface DockerPlanner {
+  /** True for the action kinds this planner plans and executes. */
+  owns(kind: DockerAction['kind']): boolean
+  plan(): Promise<DockerAction[]>
+  /** Runs one action this planner planned. Never throws. */
+  execute(a: DockerAction): Promise<DockerOutcome>
+}
+
+/**
+ * The slot's `plan` and `execute` from its planners. Plans are concatenated in array order (garbage
+ * before pauses); a planner that throws contributes nothing and is logged, so one broken planner
+ * never hides the others. An action nobody owns is a refusal, never a failure.
+ */
+export function composeDockerPlanners(
+  planners: readonly DockerPlanner[]
+): Pick<DockerCycleDeps, 'plan' | 'execute'> {
+  return {
+    plan: async () => {
+      const out: DockerAction[] = []
+      for (const p of planners) {
+        try {
+          out.push(...(await p.plan()))
+        } catch (err) {
+          console.warn('[gc] docker planner failed', err instanceof Error ? err.message : err)
+        }
+      }
+      return out
+    },
+    execute: async (a) => {
+      const owner = planners.find((p) => p.owns(a.kind))
+      if (!owner) return { ok: false, reason: `no planner owns ${a.kind}`, refusal: true }
+      return owner.execute(a)
+    }
+  }
+}
+
+/** How many would-pause stacks the report-only notice names; the rest are in Settings → Cleanup. */
+const REPORT_LIST_MAX = 5
+
+function wouldPauseText(actions: readonly DockerAction[]): string {
+  const parks = actions.filter((a) => a.kind === 'park')
+  if (parks.length === 0) return ''
+  const shown = parks.slice(0, REPORT_LIST_MAX).map((a) => `${a.id} (${a.reason})`)
+  const more = parks.length > shown.length ? `, +${parks.length - shown.length} more` : ''
+  return ` Would pause: ${shown.join(', ')}${more}.`
+}
+
 export interface DockerCycleDeps {
   prefs(): GcPrefs
-  /** What Docker could do right now. Empty in U3.1. */
+  /** What Docker could do right now: {@link composeDockerPlanners} over the garbage and pause planners. */
   plan(): Promise<DockerAction[]>
   /** Runs one decided action, bound to the facts it was decided on. Never throws. */
   execute(a: DockerAction): Promise<DockerOutcome>
@@ -92,7 +144,7 @@ async function runLocked(
     if (actions.length > 0 && key !== state.dockerReportKey) {
       deps.notify({
         title: NOTICE_TITLE,
-        body: `${actions.length} Docker ${plural(actions.length, 'item')} would be cleaned (stacks paused, never removed with their volumes). Open Settings → Cleanup to review and acknowledge.`
+        body: `${actions.length} Docker ${plural(actions.length, 'item')} would be cleaned (stacks paused, never removed with their volumes). Open Settings → Cleanup to review and acknowledge.${wouldPauseText(actions)}`
       })
     }
     state.dockerReportKey = key
