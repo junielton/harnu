@@ -5,6 +5,12 @@ import { useUiStore } from './ui'
 import { useAgentTerminalsStore } from './agent-terminals'
 import { i18n } from '../i18n'
 import { paneRegistry } from '../lib/pane-registry'
+import { persistedRef } from './persisted'
+import {
+  SPLIT_RATIO_DEFAULT,
+  clampSplitRatio,
+  type SplitOrientation
+} from '../lib/split-orientation'
 import { displayAlias } from '../components/folder-alias'
 import {
   createPaneAlertQueue,
@@ -22,7 +28,14 @@ import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-
 export const STALE_EXIT_WINDOW_MS = 2000
 
 /** Content/helper-stack split a worktree starts with, and the one the divider's double-click resets to. */
-export const HELPER_SPLIT_RATIO_DEFAULT = 0.65
+export const HELPER_SPLIT_RATIO_DEFAULT = SPLIT_RATIO_DEFAULT
+
+/**
+ * T627: the stacked layout's own session-area share, per worktree. The side-by-side
+ * ratio lives in each worktree's `helpers.json` state (`splitRatio`); the stacked one
+ * is kept here, in `localStorage`, so switching orientation never overwrites the other.
+ */
+const STACKED_RATIOS_KEY = 'om2tab.stackedSplitRatios'
 
 /** Passed by the agent-dispatch shim (`command-dispatch.ts`) only — never by a
  * human call site. Drives the unseen-panes badge + coalesced OS alert
@@ -413,6 +426,29 @@ export const useHelpersStore = defineStore('helpers', () => {
 
   const splitRatioForCurrentWorktree = computed<number>(() => {
     return stateForCurrentWorktree.value?.splitRatio ?? HELPER_SPLIT_RATIO_DEFAULT
+  })
+
+  // T627: stacked ratios by worktree path. An absent or junk entry falls back to the default.
+  const stackedRatios = persistedRef<Record<string, number>>(
+    STACKED_RATIOS_KEY,
+    {},
+    {
+      validate: (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+    }
+  )
+
+  /** The session area's share for one worktree in one orientation (each has its own). */
+  function splitRatioFor(worktreePath: string, orientation: SplitOrientation): number {
+    if (orientation === 'stacked') {
+      const v = stackedRatios.value[worktreePath]
+      return typeof v === 'number' ? clampSplitRatio(v) : HELPER_SPLIT_RATIO_DEFAULT
+    }
+    return byWorktree.value.get(worktreePath)?.splitRatio ?? HELPER_SPLIT_RATIO_DEFAULT
+  }
+
+  const stackedSplitRatioForCurrentWorktree = computed<number>(() => {
+    const p = currentWorktreePath.value
+    return p ? splitRatioFor(p, 'stacked') : HELPER_SPLIT_RATIO_DEFAULT
   })
 
   /** Maximized pane id (if any) for the currently selected worktree. */
@@ -1327,12 +1363,21 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
-   * Set the main-pane / helper-stack horizontal split ratio. Clamped to
-   * the [0.4, 0.8] user contract — the helper side stays at least 20%
-   * wide and never grows past 60% (so the main pane is always visible).
+   * Set the session area's share of the split for ONE orientation (default
+   * side-by-side, the original contract). Clamped to the [0.4, 0.8] user contract —
+   * the helper side stays at least 20% and never grows past 60%, so the session
+   * area is always visible. The other orientation's ratio is never touched (T627).
    */
-  function setSplitRatio(worktreePath: string, ratio: number): void {
-    const clamped = Math.max(0.4, Math.min(0.8, ratio))
+  function setSplitRatio(
+    worktreePath: string,
+    ratio: number,
+    orientation: SplitOrientation = 'side-by-side'
+  ): void {
+    const clamped = clampSplitRatio(ratio)
+    if (orientation === 'stacked') {
+      stackedRatios.value = { ...stackedRatios.value, [worktreePath]: clamped }
+      return
+    }
     mutateWorktree(worktreePath, (s) => ({ ...s, splitRatio: clamped }))
   }
 
@@ -1628,6 +1673,8 @@ export const useHelpersStore = defineStore('helpers', () => {
     hasHelpersForCurrentWorktree,
     panesForCurrentWorktree,
     splitRatioForCurrentWorktree,
+    stackedSplitRatioForCurrentWorktree,
+    splitRatioFor,
     maximizedByWorktree,
     maximizedPaneId,
     maximizedPaneIdForCurrentWorktree,

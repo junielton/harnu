@@ -1039,6 +1039,8 @@ export interface SettingsData {
   uiZoom: number
   /** T581: which editor the Topbar "Open in {editor}" button launches. Absent = VS Code. */
   editor?: EditorSetting
+  /** T627: session area / helper stack orientation — `auto` (default), `side-by-side` or `stacked`. */
+  splitLayout?: 'auto' | 'side-by-side' | 'stacked'
 }
 
 // ---- Harnu MCP control server wire types (2026-06-25 design) ---------------

@@ -1,5 +1,8 @@
 import { defineStore } from 'pinia'
+import { computed, ref } from 'vue'
 import { persistedRef, persistedSet } from './persisted'
+import { useSettingsStore } from './settings'
+import { resolveSplitOrientation, type SplitOrientation } from '../lib/split-orientation'
 import { DEFAULT_BOARD_ORDER, type BoardOrder, type BoardState } from '../components/fleet-board'
 
 const STORAGE_KEY = 'om2tab.sidebarWidth'
@@ -160,6 +163,28 @@ export const useLayoutStore = defineStore('layout', () => {
     validate: (v) => v === 'newest-first' || v === 'oldest-first'
   })
 
+  // Split orientation (T627). The operator's choice lives in the settings store;
+  // `auto` needs the main area's size (the box holding the session area and the
+  // helper stack, measured by App.vue) and remembers its last result so the
+  // hysteresis band holds it. Until something measures, the layout is side by side.
+  const autoOrientation = ref<SplitOrientation>('side-by-side')
+  const mainAreaSize = ref<{ width: number; height: number }>({ width: 0, height: 0 })
+
+  function setMainAreaSize(width: number, height: number): void {
+    mainAreaSize.value = { width, height }
+    autoOrientation.value = resolveSplitOrientation(
+      'auto',
+      mainAreaSize.value,
+      autoOrientation.value
+    )
+  }
+
+  /** The layout actually in force: the pinned choice, or the `auto` result. */
+  const splitOrientation = computed<SplitOrientation>(() => {
+    const setting = useSettingsStore().splitLayout
+    return setting === 'auto' ? autoOrientation.value : setting
+  })
+
   function setSidebarWidth(w: number): void {
     sidebarWidth.value = clampWidth(w)
   }
@@ -238,6 +263,9 @@ export const useLayoutStore = defineStore('layout', () => {
 
   return {
     sidebarWidth,
+    splitOrientation,
+    mainAreaSize,
+    setMainAreaSize,
     setSidebarWidth,
     resetSidebarWidth,
     sidebarCollapsed,

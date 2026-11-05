@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import * as os from 'node:os'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -118,6 +118,31 @@ function seedSession(): void {
   } as any)
   sessions.select('s1')
 }
+
+// jsdom's CSS parser drops a unitless-zero flex basis (`1 1 0`), which is exactly what the panes
+// carry; remember the raw string Vue assigns so the tests can read back what the layout asked for.
+const rawFlex = new WeakMap<object, string>()
+let flexDescriptor: PropertyDescriptor | undefined
+beforeAll(() => {
+  const proto = Object.getPrototypeOf(document.createElement('div').style) as object
+  flexDescriptor = Object.getOwnPropertyDescriptor(proto, 'flex')
+  if (!flexDescriptor?.get || !flexDescriptor.set) return
+  const { get, set } = flexDescriptor
+  Object.defineProperty(proto, 'flex', {
+    configurable: true,
+    get() {
+      return rawFlex.get(this) ?? get.call(this)
+    },
+    set(v: string) {
+      rawFlex.set(this, String(v))
+      set.call(this, v)
+    }
+  })
+})
+afterAll(() => {
+  const proto = Object.getPrototypeOf(document.createElement('div').style) as object
+  if (flexDescriptor) Object.defineProperty(proto, 'flex', flexDescriptor)
+})
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
@@ -289,9 +314,10 @@ describe('ratio per orientation', () => {
     expect(helpers.splitRatioFor('/repo/beta', 'stacked')).toBe(HELPER_SPLIT_RATIO_DEFAULT)
   })
 
-  it('the stacked ratio survives a store rebuild (persisted per worktree)', () => {
+  it('the stacked ratio survives a store rebuild (persisted per worktree)', async () => {
     const helpers = useHelpersStore()
     helpers.setSplitRatio(FOLDER, 0.55, 'stacked')
+    await flushPromises()
     setActivePinia(createPinia())
     expect(useHelpersStore().splitRatioFor(FOLDER, 'stacked')).toBe(0.55)
   })
@@ -403,6 +429,7 @@ describe('ratio per orientation', () => {
       const helpers = useHelpersStore()
       helpers.setSplitRatio(FOLDER, 0.7, 'side-by-side')
       helpers.setSplitRatio(FOLDER, 0.45, 'stacked')
+      await flushPromises()
       const host = () =>
         w.get('[data-test="terminal-pane-host"]').element.parentElement as HTMLElement
       expect(host().style.flex).toContain('0.7')
