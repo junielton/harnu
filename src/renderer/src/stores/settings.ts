@@ -5,6 +5,12 @@ import { useUiStore } from './ui'
 import { useKeybindingsStore } from './keybindings'
 import type { EditorSetting, SettingsData } from '../../../preload'
 import { DEFAULT_EDITOR_SETTING, effectiveEditorSetting } from '../../../main/editor-launch'
+import {
+  DEFAULT_SPLIT_LAYOUT,
+  nextSplitLayout,
+  sanitizeSplitLayout,
+  type SplitLayoutSetting
+} from '../lib/split-orientation'
 
 /**
  * Terminal-font-size settings store (terminal-font-settings spec §6).
@@ -54,6 +60,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // the user is mid-word); it is sanitized on the way to disk and compared
   // sanitized against external edits.
   const editor = ref<EditorSetting>({ ...DEFAULT_EDITOR_SETTING })
+  // T627: how the session area and the helper stack are laid out. `auto` follows
+  // the window's shape (`layout.splitOrientation` resolves it); the other two pin it.
+  const splitLayout = ref<SplitLayoutSetting>(DEFAULT_SPLIT_LAYOUT)
   const path = ref<string>('')
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -66,6 +75,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // after the user typed further) never rewinds the field.
   let editorSaveTimer: ReturnType<typeof setTimeout> | null = null
   let lastSavedEditor = ''
+  let splitLayoutSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   // Guard against a double `init()` (e.g. an HMR re-run) so we never stack two
   // `onSettingsChanged` subscriptions. The unsubscribe is retained rather than
@@ -93,6 +103,7 @@ export const useSettingsStore = defineStore('settings', () => {
     uiZoom.value = clampZoom(data.uiZoom)
     window.api.uiZoomApply(uiZoom.value)
     editor.value = effectiveEditorSetting(data.editor)
+    splitLayout.value = sanitizeSplitLayout(data.splitLayout)
 
     unsubscribe = window.api.onSettingsChanged(({ data: incoming, error }) => {
       if (error) {
@@ -114,6 +125,11 @@ export const useSettingsStore = defineStore('settings', () => {
       if (nextZoom !== uiZoom.value) {
         uiZoom.value = nextZoom
         window.api.uiZoomApply(nextZoom)
+      }
+      // A split-layout change from outside; our own save echoes the in-memory value, so it is ignored.
+      if (!splitLayoutSaveTimer) {
+        const nextLayout = sanitizeSplitLayout(incoming.splitLayout)
+        if (nextLayout !== splitLayout.value) splitLayout.value = nextLayout
       }
       // An editor change from outside (a hand edit of settings.json). Skip our own echo
       // and anything that lands while a local edit is still waiting to be saved.
@@ -174,12 +190,32 @@ export const useSettingsStore = defineStore('settings', () => {
     }, SAVE_DEBOUNCE_MS)
   }
 
+  /**
+   * Choose the split layout (T627). Applies immediately (the layout store reads
+   * it) and debounced-persists to `settings.json` like the other settings.
+   */
+  function setSplitLayout(next: SplitLayoutSetting): void {
+    splitLayout.value = sanitizeSplitLayout(next)
+    if (splitLayoutSaveTimer) clearTimeout(splitLayoutSaveTimer)
+    splitLayoutSaveTimer = setTimeout(() => {
+      splitLayoutSaveTimer = null
+      if (!path.value) return
+      void window.api.settingsSave(path.value, { splitLayout: splitLayout.value })
+    }, SAVE_DEBOUNCE_MS)
+  }
+
+  /** The Topbar button and `layout.cycleSplitOrientation`: auto → side-by-side → stacked → auto. */
+  function cycleSplitLayout(): void {
+    setSplitLayout(nextSplitLayout(splitLayout.value))
+  }
+
   /** Relocate settings.json via the native folder picker. */
   async function changeLocation(): Promise<void> {
     const data: SettingsData = {
       terminalFontSize: terminalFontSize.value,
       uiZoom: uiZoom.value,
-      editor: effectiveEditorSetting(editor.value)
+      editor: effectiveEditorSetting(editor.value),
+      splitLayout: splitLayout.value
     }
     const res = await window.api.settingsChangeLocation(data)
     if (!res) return
@@ -221,6 +257,10 @@ export const useSettingsStore = defineStore('settings', () => {
       clearTimeout(editorSaveTimer)
       editorSaveTimer = null
     }
+    if (splitLayoutSaveTimer) {
+      clearTimeout(splitLayoutSaveTimer)
+      splitLayoutSaveTimer = null
+    }
     unsubscribe?.()
     unsubscribe = null
     started = false
@@ -230,11 +270,14 @@ export const useSettingsStore = defineStore('settings', () => {
     terminalFontSize,
     uiZoom,
     editor,
+    splitLayout,
     path,
     init,
     setFontSize,
     setUiZoom,
     setEditor,
+    setSplitLayout,
+    cycleSplitLayout,
     changeLocation,
     reveal,
     openInEditor,
