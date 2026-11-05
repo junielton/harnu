@@ -380,6 +380,14 @@ This toggle belongs to that **one exact folder**, never its worktrees — turnin
 
 Turning the toggle on or off never reaches back into sessions that already exist — it only decides what a _future_ "+ New session" click does. And a session the default did arm keeps its role through being parked and resumed later; only an explicit demote (turning the role off from that session's own menu) ever takes it away for good.
 
+## Putting finished sessions away
+
+A session can archive other sessions for you, the same as choosing **Archive** from a session's right-click menu, instead of you doing it row by row after a clean-up. It names between 1 and 100 sessions, and each one moves out of the normal list into its folder's **Show N archived** row, with its terminal closed. Nothing is deleted: the conversation and the worktree stay exactly where they were, and the session can restore them (or you can choose **Unarchive** yourself) whenever it likes. It runs without asking, and calling it twice changes nothing the second time.
+
+Harnu keeps the archived list itself now, not the window, so a session can archive while Harnu's window is closed and the same sessions show as archived the next time you open it. When it happens while the window is open, the sidebar updates on the spot. The first time you start a version with this change, the sessions you had already archived are carried over automatically; nothing is lost, and the old copy is left in place so going back to an older version still finds it.
+
+Each session is judged on its own, and the answer lists one result per session: archived, already archived, restored, already active, not found, or refused. A session is refused when its folder is one you blocked for agents, when it is working right now, or when it is waiting on an approval from you; those stay as they are until you or the agent come back to them. The call is recorded in the audit log like the other actions that run without asking.
+
 ## Parked and hibernated sessions
 
 If a session goes idle for a while, Harnu may kill its underlying process to free up memory — but this doesn't lose anything, and it isn't the same as a session getting stuck. Clicking the session resumes it exactly where it left off. If you're watching your fleet through the tools above (or a session is), a quiet or "parked" session should be read as dormant, not failed.

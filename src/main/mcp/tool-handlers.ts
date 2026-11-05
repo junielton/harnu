@@ -363,6 +363,8 @@ import {
 import { getGcService } from '../gc/gc-service-registry'
 import { cleanupListing, planRelease } from './cleanup-listing'
 import { realPathLookup } from './real-paths'
+import { getSessionArchive } from '../session-archive-core'
+import { planArchiveSession, summarizeArchive } from './archive-session-core'
 
 /** Everything a handler may need beyond its own validated `input`. */
 export interface ToolHandlerCtx {
@@ -3139,6 +3141,69 @@ const releaseWorktreeHandler: Handler = async (args, ctx) => {
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
   if (!plan.ack.alreadyReleased) await svc.release(plan.bundleId, now, plan.from)
   return textResult(plan.ack)
+}
+
+// ---- T655 `archive_session` ---------------------------------------------------
+
+/**
+ * Archive or restore sessions through the main-process archive store, the same set the
+ * sidebar's Archive action writes. Each id is judged on its own (see
+ * {@link planArchiveSession}); the store is written once for the archives and once for the
+ * restores, and the renderer hears about it through the store's change event, so a window
+ * that is open updates live and one that is closed simply reads the file at boot. This
+ * handler never touches a transcript or a worktree: the only file it can write is the store.
+ */
+const archiveSessionHandler: Handler = async (args, ctx) => {
+  const store = getSessionArchive()
+  if (!store) {
+    return errorResult(
+      'ARCHIVE_NOT_READY: the session archive has not started yet. Retry in a moment.'
+    )
+  }
+  const sessionIds = Array.isArray(args.sessionIds)
+    ? args.sessionIds.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : []
+  if (sessionIds.length === 0) return errorResult('BAD_ARGS: pass 1..100 session ids')
+  const unarchive = args.unarchive === true
+
+  const home = os.homedir()
+  const folderBySession = new Map<string, string>()
+  for (const f of ctx.folders) {
+    for (const s of f.sessions) folderBySession.set(s.sessionId, s.projectPath ?? f.path)
+  }
+  const states = taskStateRecord()
+  const withApproval = new Set(listPendingApprovals().map((a) => a.sessionId))
+
+  const plan = planArchiveSession(sessionIds, unarchive, {
+    archived: store.ids(),
+    folderOf: (id) => folderBySession.get(id),
+    isDenied: (folder) => isFolderDenied(folder, ctx.denyFolders, home),
+    taskStateOf: (id) => states[id],
+    hasPendingApproval: (id) => withApproval.has(id)
+  })
+
+  // The single commit point: past the 120s deadline the caller already got TOOL_TIMEOUT.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  if (plan.toArchive.length > 0) await store.archive(plan.toArchive)
+  if (plan.toRestore.length > 0) await store.unarchive(plan.toRestore)
+
+  const counts: Record<string, number> = {}
+  for (const r of plan.rows) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1
+  appendAudit({
+    ts: Date.now(),
+    tool: 'archive_session',
+    folder: '',
+    verdict: 'allow',
+    disclosedPayloadSummary: summarizeArchive(unarchive, plan.rows),
+    result: 'ok'
+  })
+  return textResult({
+    ok: !plan.rows.some((r) => r.outcome === 'refused' || r.outcome === 'notFound'),
+    op: 'archive_session',
+    unarchive,
+    results: plan.rows,
+    counts
+  })
 }
 
 // ---- mission_* verbs (T358 S3 — design.md §4) -------------------------------
@@ -7380,6 +7445,7 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   list_cleanup: listCleanupHandler,
   github_budget: githubBudgetHandler,
   release_worktree: releaseWorktreeHandler,
+  archive_session: archiveSessionHandler,
   stop_containers: stopContainersHandler,
   start_containers: startContainersHandler,
   remove_containers: removeContainersHandler,

@@ -104,6 +104,8 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   update_card: { folder: ALLOWED, slug: 'investigate-flaky-test', set: { priority: 'alta' } },
   move_card: { folder: ALLOWED, slug: 'investigate-flaky-test', to: 'ready' },
   archive_card: { folder: ALLOWED, slug: 'investigate-flaky-test' },
+  // T655: addressed by session id, never a folder (a blocked one is refused per id).
+  archive_session: { sessionIds: ['sess-1', 'sess-2'], unarchive: true },
   delete_card: { folder: ALLOWED, slug: 'investigate-flaky-test' },
   submit_manifest: {
     folder: ALLOWED,

@@ -136,6 +136,7 @@ import { registerMemoryReadHandlers } from './memory-ipc'
 import { registerMemoryLocationHandlers } from './memory-location-ipc'
 import { registerRoadmapHandlers, closeRoadmapWatcher } from './roadmap-ipc'
 import { registerHelpersHandlers } from './helpers-ipc'
+import { registerSessionArchive } from './session-archive-ipc'
 import { registerSettingsHandlers, closeSettingsWatcher } from './settings'
 import { registerClaudeConfigHandlers } from './claude-config'
 import { registerPushHandlers } from './push'
@@ -630,6 +631,8 @@ app.whenReady().then(async () => {
   // "agent never moves a card" invariant (T80 §0) mechanically true.
   registerRoadmapHandlers(() => mainWindow)
   registerHelpersHandlers()
+  // T655: the main-owned session archive (sidebar Archive + the `archive_session` verb).
+  registerSessionArchive(() => mainWindow)
   registerSettingsHandlers(() => mainWindow)
   // T579: confirm before quitting while agents are working (prefs IPC + OS-shutdown bypass).
   registerQuitConfirm()
