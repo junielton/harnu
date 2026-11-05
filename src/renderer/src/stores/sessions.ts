@@ -857,6 +857,12 @@ export const useSessionsStore = defineStore('sessions', () => {
    * (`null` for a plain "Restore worktree"). Drives the "restoring…" state of the row and the session.
    */
   const shelvedRestoring = ref<ReadonlyMap<string, string | null>>(new Map())
+  /**
+   * The branch of the worktree a CLICKED SESSION is waiting on, while its restore runs: the main pane
+   * shows "Restoring worktree …" instead of leaving the previous session in view. Null otherwise
+   * (a plain "Restore worktree" resumes nothing, so the pane has nothing to wait for).
+   */
+  const shelvedRestoringLabel = ref<string | null>(null)
 
   /** Legacy boolean drill-in preference, read once for migration (see DRILL_DEPTH_KEY). */
   const DRILL_MODE_KEY = 'om2tab.sidebarDrillMode'
@@ -3725,6 +3731,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       return false
     }
     mark(true)
+    if (resumeSessionId) shelvedRestoringLabel.value = member.label
     try {
       const ack = await window.api.gcRestoreShelved(member.id)
       if (!ack.ok) return failed(ack.message)
@@ -3747,6 +3754,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       return failed(e instanceof Error ? e.message : String(e))
     } finally {
       mark(false)
+      shelvedRestoringLabel.value = null
     }
   }
 
@@ -6150,6 +6158,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     expandAll,
     collapseAll,
     shelvedRestoring,
+    shelvedRestoringLabel,
     shelvedSectionOpen,
     toggleShelvedSection,
     restoreShelvedWorktree,

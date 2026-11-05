@@ -214,6 +214,8 @@ describe('sessions store — shelved worktrees in the sidebar (U2.3b)', () => {
       await settle(0)
       // Restoring: the row and the clicked session read it; nothing was selected yet, nothing started.
       expect(store.shelvedRestoring.get(shelvedEntry().id)).toBe('a2')
+      // The main pane says what it waits for (a plain Restore resumes nothing, so it says nothing).
+      expect(store.shelvedRestoringLabel).toBe('PROJ-231-auth-refresh')
       expect(store.selectedId).toBe(before)
 
       release({ ok: true, status: 'restored', attached: true })
@@ -221,6 +223,7 @@ describe('sessions store — shelved worktrees in the sidebar (U2.3b)', () => {
 
       expect(gcRestoreShelved).toHaveBeenCalledWith(shelvedEntry().id)
       expect(store.shelvedRestoring.size).toBe(0)
+      expect(store.shelvedRestoringLabel).toBeNull()
       expect(store.selectedId).toBe('a2')
       // The worktree is a normal folder row again, expanded, and no longer in the Shelved list.
       expect(listedPaths(store)).toContain(WT)
