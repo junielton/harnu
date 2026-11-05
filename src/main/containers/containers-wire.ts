@@ -376,6 +376,14 @@ export interface NewZombiesAlert {
   names: string[]
 }
 
+/**
+ * The `containers:staleVolumes` push (U3.7): live compose projects that just began mounting a volume
+ * Harnu kept for a removed worktree, so their data may be stale. Names only, already deduped by main.
+ */
+export interface StaleVolumesAlert {
+  warnings: Array<{ volume: string; project: string; worktree: string }>
+}
+
 interface SnapshotBase {
   scannedAt: number
   /** The zombie threshold the verdicts were computed with. */
