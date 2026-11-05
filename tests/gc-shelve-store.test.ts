@@ -8,6 +8,7 @@ import {
   normalizeShelved,
   readShelved,
   readShelvedForUpdate,
+  updateShelved,
   shelvedFolders,
   withShelved,
   withoutShelved,
@@ -112,6 +113,21 @@ describe('the shelved store on disk', () => {
     // A readable store is returned as it is.
     await writeShelved(file, withShelved(empty, entry()))
     expect((await readShelvedForUpdate(file)).entries).toHaveLength(1)
+  })
+
+  it('serialises read-modify-write updates so concurrent ones never lose each other', async () => {
+    const file = path.join(dir, SHELVED_FILE)
+    const ids = ['a', 'b', 'c', 'd', 'e']
+    await Promise.all(
+      ids.map((id) =>
+        updateShelved(file, (f) => withShelved(f, entry({ id, worktreePath: `/t/${id}` })))
+      )
+    )
+    expect((await readShelved(file)).entries.map((e) => e.id).sort()).toEqual(ids)
+    await Promise.all(
+      ids.slice(0, 3).map((id) => updateShelved(file, (f) => withoutShelved(f, [id])))
+    )
+    expect((await readShelved(file)).entries.map((e) => e.id).sort()).toEqual(['d', 'e'])
   })
 
   it('the file lives under the name the docs promise', () => {
