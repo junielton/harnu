@@ -28,7 +28,15 @@ import {
   readJournal as readContainersJournal
 } from '../containers/containers-journal'
 import { defaultPrefs as defaultContainersPrefs } from '../containers/containers-prefs'
-import { readEmptyComposeNetworks } from '../containers/docker-facts-shell'
+import { spawn } from 'node:child_process'
+import { createInterface } from 'node:readline'
+import { spawnEnvOnce } from '../appimage-env'
+import {
+  readBridgeCapacity,
+  readEmptyComposeNetworks,
+  watchNetworkEvents,
+  type EventsSpawn
+} from '../containers/docker-facts-shell'
 import { createDockerGarbage } from './docker-garbage-shell'
 import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
@@ -81,6 +89,12 @@ import {
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
+import { runCapacityPass } from './capacity-watcher-core'
+import {
+  CAPACITY_DEBOUNCE_MS,
+  CAPACITY_INTERVAL_MS,
+  createCapacityWatcher
+} from './capacity-watcher'
 import { composeDockerPlanners, runDockerCycle } from './docker-cycle'
 import { createParkPlanner } from './park-cycle'
 import { listOpenPaneUrls } from '../browser/browser-service'
@@ -522,6 +536,60 @@ export async function registerGcHandlers(
   reaper.setAfterScan(async () => {
     await runGcCycle(cycleDeps, 'timer')
   })
+
+  // Capacity watcher (U3.6): free bridge slots on a short trigger, not only on the hourly cycle. It
+  // runs the SAME composed Docker planners, lock and kill switch as the cycle's Docker slot.
+  const dockerEnv = await spawnEnvOnce()
+  const spawnEvents: EventsSpawn = (args) => {
+    const child = spawn('docker', [...args], {
+      env: dockerEnv,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+    let exited = false
+    return {
+      onLine: (cb) => createInterface({ input: child.stdout! }).on('line', cb),
+      onExit: (cb) => {
+        const once = (): void => {
+          if (exited) return
+          exited = true
+          cb()
+        }
+        child.on('exit', once)
+        child.on('error', once)
+      },
+      kill: () => {
+        child.kill()
+      }
+    }
+  }
+  let lastWatchKey = ''
+  const capacityPassDeps = {
+    prefs: () => prefs,
+    readCapacity: () => readBridgeCapacity({ run: runDocker }),
+    ...dockerPlanners,
+    lock: <T>(work: () => Promise<T>) => withLockFile(dockerLockPath(), work),
+    disableDocker: async () => {
+      await persist(withDockerDisabled(prefs))
+    },
+    notify,
+    now: () => Date.now()
+  }
+  const capacityWatcher = createCapacityWatcher({
+    pass: async (trigger) => {
+      const rec = await runCapacityPass(capacityPassDeps, state, trigger)
+      // Pushed only when something besides the clock changed: a quiet machine sends nothing.
+      const key = JSON.stringify({ ...rec, at: 0, trigger: 'timer' })
+      if (key === lastWatchKey) return
+      lastWatchKey = key
+      send('gc:docker:watch', rec)
+    },
+    subscribe: (onEvent) => watchNetworkEvents({ spawn: spawnEvents }, () => onEvent()),
+    intervalMs: CAPACITY_INTERVAL_MS,
+    debounceMs: CAPACITY_DEBOUNCE_MS
+  })
+  app.on('before-quit', () => capacityWatcher.stop())
+  capacityWatcher.start()
   reaper.setBusy(() => queue.busy())
 
   /** The Reaper timer owns the interval, so its live value is the one shown. */
@@ -536,6 +604,7 @@ export async function registerGcHandlers(
     docker: g.docker,
     prefs: livePrefs(),
     lastCycle: state.last,
+    dockerWatch: state.dockerWatch,
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null,
     nextClean: planNextClean(g.bundles, livePrefs()),
     backgroundScan: reaper.autoScan(),

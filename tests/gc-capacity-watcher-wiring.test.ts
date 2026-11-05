@@ -29,7 +29,7 @@ describe('gc-ipc wires the capacity watcher', () => {
     expect(ipc).toMatch(/createCapacityWatcher\(/)
     expect(ipc).toMatch(/intervalMs:\s*CAPACITY_INTERVAL_MS/)
     expect(ipc).toMatch(/before-quit/)
-    expect(ipc).toMatch(/watcher\.stop\(\)/)
+    expect(ipc).toMatch(/[cC]apacityWatcher\.stop\(\)/)
   })
 
   it('pushes the pass on gc:docker:watch (only when it changed) and puts it in the snapshot', () => {

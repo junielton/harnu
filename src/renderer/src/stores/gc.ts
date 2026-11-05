@@ -13,6 +13,7 @@ import type {
   GcRecoveryItem,
   GcSnapshot,
   CycleRecord,
+  DockerWatchRecord,
   ShelveRestoreAck
 } from '../../../main/gc/gc-wire'
 import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
@@ -102,6 +103,17 @@ function refusalDescription(s: DoneSummary): string | undefined {
 
 export const useGcStore = defineStore('gc', () => {
   const snapshot = ref<GcSnapshot | null>(null)
+  /** The Docker capacity watcher's last pass (U3.6): from the snapshot at load, then from its push. */
+  const dockerWatch = ref<DockerWatchRecord | null>(null)
+
+  /** Keeps the newest record; a snapshot refresh never rewinds a pass that was pushed meanwhile. */
+  function adoptWatch(rec: DockerWatchRecord | null | undefined): void {
+    if (rec && (!dockerWatch.value || rec.at >= dockerWatch.value.at)) dockerWatch.value = rec
+  }
+
+  function onDockerWatch(rec: DockerWatchRecord): void {
+    adoptWatch(rec)
+  }
   const jobs = ref<JobsState>(emptyJobs())
   const loading = ref(false)
   const loadError = ref<string | null>(null)
@@ -233,6 +245,7 @@ export const useGcStore = defineStore('gc', () => {
   async function refresh(): Promise<void> {
     try {
       snapshot.value = await window.api.gcSnapshot({ refresh: true })
+      adoptWatch(snapshot.value.dockerWatch)
       loadError.value = null
     } catch (e) {
       loadError.value = e instanceof Error ? e.message : String(e)
@@ -470,6 +483,7 @@ export const useGcStore = defineStore('gc', () => {
         window.api.onGcRecoveryChanged(() => void loadRecovery()),
         // A shelved worktree came back by itself (a resume, a terminal): the Shelved card follows.
         window.api.onGcShelvedChanged(() => void refresh()),
+        window.api.onGcDockerWatch(onDockerWatch),
         window.api.onGcOpinionResult(onOpinionResult),
         window.api.onGcOpinionDone(onOpinionDone)
       ]
@@ -478,6 +492,7 @@ export const useGcStore = defineStore('gc', () => {
         window.api.gcJobs().catch(() => [])
       ])
       snapshot.value = snap
+      adoptWatch(snap.dockerWatch)
       jobs.value = attachJobs(jobs.value, live)
       void loadRecovery()
     } catch (e) {
@@ -923,6 +938,7 @@ export const useGcStore = defineStore('gc', () => {
     reclaimableBytes,
     blockState,
     failureOf,
+    dockerWatch,
     init,
     dispose,
     refresh,
