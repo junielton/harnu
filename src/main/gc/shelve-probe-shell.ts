@@ -12,7 +12,7 @@ import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { promisify } from 'node:util'
 import type { ExecFn } from '../reaper/dehydrate-shell'
-import type { WorktreeBundle } from './bundle-core'
+import type { ReapItem } from '../reaper/reaper-core'
 import { workStampOf } from './gc-work-stamp'
 import { readShelveManifest } from './shelve-manifest-shell'
 import type { ShelveProbe } from './shelve-eligibility-core'
@@ -70,7 +70,7 @@ async function newestEditedAt(exec: ExecFn, wt: string): Promise<number | null> 
 }
 
 export async function probeShelve(
-  b: Pick<WorktreeBundle, 'item'>,
+  b: { item: Pick<ReapItem, 'repoPath' | 'path'> },
   deps: ShelveProbeDeps = {}
 ): Promise<ShelveProbe> {
   const exec = deps.exec ?? nodeExec

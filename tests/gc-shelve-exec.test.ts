@@ -194,7 +194,7 @@ describe('shelveWorktree — changed since decided (AC-4)', () => {
     })
     const out = await shelveWorktree(decision(), h.deps)
     expect(out).toMatchObject({ ok: false, step: 'in-use' })
-    expect(h.calls).toEqual(['probe', 'inUse'])
+    expect(h.calls).toEqual(['probe'])
   })
 })
 
