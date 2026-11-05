@@ -210,7 +210,7 @@ describe('digest state', () => {
       c('future', -MIN)
     ]
     for (let i = 0; i < 12; i++)
-      candidates.push(c(`ok-${String(i).padStart(2, '0')}`, ((i + 1) * DAY) / 4))
+      candidates.push(c(`ok_${String(i).padStart(2, '0')}`, ((i + 1) * DAY) / 4))
     const state: DigestState = {
       version: 1,
       sessions: {
@@ -239,15 +239,15 @@ describe('digest state', () => {
     // Oldest mtime first.
     expect(ids).toEqual([
       'oldest-ok',
-      'ok-11',
-      'ok-10',
-      'ok-09',
-      'ok-08',
-      'ok-07',
-      'ok-06',
-      'ok-05',
-      'ok-04',
-      'ok-03'
+      'ok_11',
+      'ok_10',
+      'ok_09',
+      'ok_08',
+      'ok_07',
+      'ok_06',
+      'ok_05',
+      'ok_04',
+      'ok_03'
     ])
     for (const out of ['too-old', 'too-fresh', 'two-turns', 'has-digest', 'has-state', 'future']) {
       expect(ids).not.toContain(out)
@@ -261,7 +261,7 @@ describe('digest state', () => {
 
     // Without the limit pressure, the 5-minute boundary session is selected, last.
     const few = await selectCatchUp(
-      candidates.filter((x) => !x.sessionId.startsWith('ok-')),
+      candidates.filter((x) => !x.sessionId.startsWith('ok_')),
       state,
       NOW,
       probe,
