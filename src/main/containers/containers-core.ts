@@ -49,6 +49,17 @@ export interface MountFact {
   destination?: string
 }
 
+/**
+ * One entry of a container's `NetworkSettings.Networks`. Docker keeps the entry (name key and
+ * `NetworkID`) after the container stops — only the endpoint is dropped — so a stopped container
+ * still counts as attached to its networks.
+ */
+export interface NetworkAttachment {
+  name: string
+  /** The attached network's id, or null when docker left it empty. */
+  id: string | null
+}
+
 /** One container as `docker inspect` reports it, reduced to what the core reads. */
 export interface InspectedContainer {
   id: string
@@ -61,6 +72,8 @@ export interface InspectedContainer {
   createdAt: number | null
   ports: number[]
   mounts: MountFact[]
+  /** Networks the container is attached to, sorted by name. */
+  networks: NetworkAttachment[]
 }
 
 /** Facts about a volume from `docker system df -v`. */
@@ -132,6 +145,17 @@ function parsePorts(networkSettings: unknown): number[] {
   return [...out].sort((a, b) => a - b)
 }
 
+function parseNetworks(networkSettings: unknown): NetworkAttachment[] {
+  const networks = asRecord(asRecord(networkSettings)?.Networks)
+  if (!networks) return []
+  const out: NetworkAttachment[] = []
+  for (const [name, raw] of Object.entries(networks)) {
+    if (!name) continue
+    out.push({ name, id: asString(asRecord(raw)?.NetworkID) || null })
+  }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+}
+
 function parseMounts(mounts: unknown): MountFact[] {
   if (!Array.isArray(mounts)) return []
   const out: MountFact[] = []
@@ -185,7 +209,8 @@ export function parseInspect(stdout: string): InspectedContainer[] {
       finishedAt: parseDockerTime(state?.FinishedAt),
       createdAt: parseDockerTime(c.Created),
       ports: parsePorts(c.NetworkSettings),
-      mounts: parseMounts(c.Mounts)
+      mounts: parseMounts(c.Mounts),
+      networks: parseNetworks(c.NetworkSettings)
     })
   }
   return out

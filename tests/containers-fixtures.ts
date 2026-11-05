@@ -47,6 +47,7 @@ export function container(over: Partial<InspectedContainer> = {}): InspectedCont
     createdAt: NOW - 10 * DAY,
     ports: [],
     mounts: [],
+    networks: [],
     ...over,
     id
   }
