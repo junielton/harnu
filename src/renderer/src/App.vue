@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ArchiveRestore } from 'lucide-vue-next'
 import Sidebar from './components/Sidebar.vue'
 import TerminalPane from './components/TerminalPane.vue'
 import Topbar from './components/Topbar.vue'
@@ -1814,6 +1815,29 @@ onUnmounted(() => {
               class="absolute inset-0 bg-bg"
             >
               <CloudSessionPanel :session="sessions.selectedSession" />
+            </div>
+            <!-- U2.3b: a session of a shelved worktree was clicked; its folder is being restored.
+                 Nothing starts in the missing folder, so the pane says what it waits for
+                 (design.md § "Shelved section", States). -->
+            <div
+              v-if="sessions.shelvedRestoringLabel"
+              class="absolute inset-0 flex items-center justify-center bg-bg"
+              data-test="shelved-restoring-pane"
+              role="status"
+            >
+              <div class="flex items-center text-text-3" style="gap: 9px; font-size: 12.5px">
+                <ArchiveRestore
+                  :size="14"
+                  :stroke-width="1.6"
+                  class="anim-shimmer-dot shrink-0"
+                  aria-hidden="true"
+                />
+                <i18n-t keypath="sidebar.shelved.restoringPane" tag="span">
+                  <template #branch>
+                    <code class="font-mono text-text-2">{{ sessions.shelvedRestoringLabel }}</code>
+                  </template>
+                </i18n-t>
+              </div>
             </div>
           </div>
           <!--

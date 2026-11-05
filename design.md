@@ -429,8 +429,8 @@ _another_ folder.
 | `pencil`                                 | Markdown pane → enter edit mode (view→edit toggle)                                                                                                                                                                                     |
 | `save`                                   | Markdown pane → explicit save (edit mode; ⌘/Ctrl-S)                                                                                                                                                                                    |
 | `rotate-ccw`                             | Restart session (context menu — kills and respawns the `claude` process)                                                                                                                                                               |
-| `archive`                                | Archive                                                                                                                                                                                                                                |
-| `archive-restore`                        | Unarchive (restore an archived session)                                                                                                                                                                                                |
+| `archive`                                | Archive · **shelved worktree row + the "Shelved" disclosure row of a repo group (U2)**                                                                                                                                                 |
+| `archive-restore`                        | Unarchive (restore an archived session) · **Restore worktree (menu + hover action) and the "restoring…" glyph of a shelved worktree (U2)**                                                                                             |
 | `trash-2`                                | Delete                                                                                                                                                                                                                                 |
 | `clock`                                  | History, recents                                                                                                                                                                                                                       |
 | `cloud`                                  | Cloud/bridge session (conversation lives on claude.ai, no resumable local transcript)                                                                                                                                                  |
@@ -2403,6 +2403,122 @@ the only clue to how many worktrees are hidden), and under the keyboard cursor
   **renderer-only**, persisted in `localStorage` (`om2tab.repoAliases`), same as
   `collapsedRepoGroups` (also per-repoId) — no round-trip through
   `projects.json`. **No new tokens.**
+
+### Shelved section (repo group)
+
+**What it is.** A worktree Harnu **shelved** (autonomous cleanup U2: idle, branch not merged, folder removed
+after its uncommitted, untracked and ignored files were preserved in git refs) leaves the repo group's main
+list and moves into a collapsed **Shelved** section (pt-BR **Guardadas**), the last block of its
+`RepoGroupHeader` group. The branch and its sessions stay; the folder comes back when one of its sessions is
+resumed (spec C3). Merged worktrees never land here (D-A: they are removed as before).
+
+Files: `Sidebar.vue` renders the section through `SidebarShelvedSection.vue`, after the group's live members;
+the grouping lives in `folder-zones.ts` (`groupByRepo`) and `lib/shelved-sidebar.ts`.
+
+**Position and grouping.**
+
+- The section is the **last** child of the repo group, after every live member folder (and after any lineage
+  children). It never appears outside a repo group and never in a `source: 'path'` group.
+- **Shelved members count toward the 2+ that makes a repo group.** A repo with one live worktree and one or
+  more shelved ones still renders its `RepoGroupHeader`, so the section always has a home.
+- The repo-group header's member count stays **live members only**; the shelved count lives on the
+  disclosure row.
+- A shelved worktree **never renders as a normal or ghost folder row**, in the group or outside it: its
+  folder is gone on purpose, so the only place it shows is this section.
+- Shelved rows sit at the **same folder indent** as live members (`28px`, nested). No extra indent step:
+  the hard one-level rule ("anti-VS-Code") holds. The disclosure row's eyebrow type and the dimmed content are
+  what separate them.
+
+**Disclosure row** — `Shelved · {n}`
+
+- Geometry: the folder row (`26px` Comfortable / `23px` Compact), `padding: 0 12px 0 28px`, `gap 4px`.
+- Anatomy: chevron `12px` in the `16×16` slot (`--text-4`, rotates 90° when open, `--dur` `--ease`),
+  `archive` `12px` stroke 1.6, `margin-right 2px`, label in **Eyebrow** typography (`.eyebrow`, 10.5/14,
+  500, uppercase, +0.07em) `--text-4`, then `·` (decorative, `aria-hidden`) and the count, `10.5px`
+  `tabular-nums` `--text-4`.
+- The count is **always visible** (collapsed it is the only clue to what is hidden, same rule as a collapsed
+  repo-group header; expanded it stays for stability — the row is short).
+- Hover: `bg-surface`, text `--text-3`. Keyboard cursor: the shared `data-focused` outline
+  (`--accent-line` 2px). `role="button"`, `aria-expanded`, Enter / Space toggle.
+- Native tooltip (`title`): `sidebar.shelved.tooltip` — "{n} shelved worktrees — branches and sessions kept".
+- **Collapsed by default.** Open state persists per repo in `localStorage`
+  (`om2tab.shelvedSectionsOpen`, the same `persistedSet` mechanism as `om2tab.repoGroupsCollapsed`, keyed by
+  the group key). An active text filter forces the section open when a match is inside it (same rule as
+  collapsed groups). Collapse All / Expand All in the folder-list toolbar include it.
+- Renders only when the group has ≥ 1 shelved worktree. When the last one is restored, the row disappears.
+
+**Shelved worktree row** — compact single line (variant B, the operator's pick).
+
+- `24px` / `22px` Compact (the agent/teammate row height — an existing value).
+- Anatomy: chevron `11px` · `archive` `11px` · **branch** as the label, JetBrains Mono **Code-sm**
+  (`11px`/14) `--text-3`, truncate (the folder is gone; the branch is what survives, so it is the identity) ·
+  **meta** `{days} d`, `10.5px` `tabular-nums` `--text-4`. A detached worktree shows its folder name instead of
+  a branch. The folder name moves to the tooltip.
+- Content (chevron, glyph, label, meta) at **opacity 0.62** — the value hibernated, cloud and idle-old rows
+  already use: at rest, not broken. **Never `--red`, never `--warning`.** The opacity is on the content
+  wrapper, not the row, so hover and the context-menu target paint a crisp `--surface`.
+- Glyph: `archive` (`--text-4`) in place of `folder`.
+- Hover / keyboard cursor / open menu: `bg-surface`; reveals a hover-only `archive-restore` `11px`
+  `role="button"` at the right edge (`--text-4` → `--accent` on hover, `@click.stop`), label
+  `sidebar.shelved.restore`. Space reserved (`opacity 0`), no layout shift (Stats on demand, T118).
+- Native tooltip: `sidebar.shelved.rowTooltip` — "Shelved {days} days ago · branch {branch} kept".
+- Clicking the row toggles its session list (like a folder row). It does **not** restore: looking is free,
+  restoring writes a worktree to disk.
+- The folder hover preview (`FolderPreview.vue`) is not shown for a shelved row (no folder to describe).
+
+**Sessions of a shelved worktree**
+
+- Ordinary session rows (nested indent `44px` / `32px` Compact, slots 12 + 14, `gap 9px`), content at
+  opacity 0.62, status slot keeps its normal idle / idle-old glyph.
+- Tooltip: `sidebar.shelved.sessionTooltip` — "Resume — restores the worktree first".
+- **Clicking a session restores, then resumes** (spec C3, AC-U2b): the session never starts in a missing
+  folder.
+
+**States**
+
+| State     | Worktree row                                                                                                                                                                                  | Clicked session row                                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Rest      | content 0.62, `archive`, meta `9 d`                                                                                                                                                           | content 0.62, idle dot / idle-old ring                                                                                    |
+| Hover     | `bg-surface`, hover-only `archive-restore` action                                                                                                                                             | session hover tint (`rgba(255,255,255,0.025)`, as today)                                                                  |
+| Restoring | content back to 1 (`--dur`), glyph → `archive-restore` `--text-3` + `.anim-shimmer-dot`, meta → `restoring…` `--text-3` + `.anim-shimmer-dot`; the hover action hides; the row ignores clicks | selected at once (accent bar + `--accent-soft`, the click landed), status slot = 6px `--text-3` dot + `.anim-shimmer-dot` |
+| Restored  | the row leaves the section and lands in the live list (normal folder row, expanded if a session triggered it) with `.anim-jump-flash`; the count drops by one                                 | resumes in its own folder; normal status from here                                                                        |
+| Failed    | row returns to Rest; a `danger` toast (`sidebar.shelved.restoreFailed`) with the action "Open in Cleanup"                                                                                     | selection reverts to the previous session                                                                                 |
+
+The terminal pane, while restoring, shows the existing pane placeholder with `sidebar.shelved.restoringPane`
+("Restoring worktree `{branch}`…").
+
+**Context menu** (right-click on a shelved worktree row)
+
+Same card as every context menu (§6 "Context menu": `--surface`, 1px `--border-2`, `--radius`,
+`--shadow-pop`, `.anim-fade-in-scale`, items `6px 8px` / 12px / `--text-2` → `--surface-2` + `--text`,
+icon gap 9px). Dismiss on Esc / click outside / wheel. Two items only — a shelved worktree has no folder, so
+New terminal, Explorer, Rename… and the rest of `FolderMenu` do not apply:
+
+1. **Restore worktree** (`archive-restore`) → restores without resuming anything; the row goes through the
+   Restoring state and lands collapsed in the live list.
+2. **Open in Cleanup** (`recycle`, the Cleanup glyph per §5) → opens the Cleanup takeover focused on this
+   worktree's block.
+
+Shelved session rows keep the normal `SessionMenu`.
+
+**Motion** — nothing new.
+
+| Action                    | Spec                                                             |
+| ------------------------- | ---------------------------------------------------------------- |
+| Section expand / collapse | "Expand project": chevron rotate + max-height reveal, 220ms      |
+| Restoring                 | `.anim-shimmer-dot` (1.2s loop, opacity only)                    |
+| Restored row lands        | `.anim-jump-flash` (`--dur-slow`, `--accent-soft` → transparent) |
+| Menu                      | `.anim-fade-in-scale`                                            |
+
+Reduced motion: the global reset applies; the word `restoring…` carries the state without the shimmer.
+
+**Copy** (§8): short labels, no trailing period; `worktree` and `branch` untranslated; `d` for days, as in
+the Cleanup Activity line ("Shelved `{branch}` — idle {days} d, branch kept"). Never "deleted", "lost" or
+"failed" for a shelved worktree: nothing was lost. Internally the state is `shelved`, matching
+`cleanup.gc.shelved.*` and `list_cleanup`; Cleanup's **Archives** card and the folder row's archived-sessions
+peek are different things and keep their own names.
+
+**No new tokens.**
 
 ### Session name
 

@@ -14,7 +14,7 @@ The sidebar is one flat list — every folder you've explicitly pinned, plus eve
 
 Folders that belong together collapse under one **group header** instead of each taking a flat row. Two things can make folders belong together, and both render the same way:
 
-- **Same repo.** A repo with **two or more visible worktrees** (your main checkout plus one or more linked worktrees) groups under a header carrying a branch icon, the repo's name (or your custom alias), and the worktree count.
+- **Same repo.** A repo with **two or more visible worktrees** (your main checkout plus one or more linked worktrees; a [shelved](#shelved-worktrees) worktree counts too) groups under a header carrying a branch icon, the repo's name (or your custom alias), and the worktree count.
 - **Same parent directory.** Two or more folders sitting **directly inside the same directory** group under a header carrying a folder icon and that directory's name — even when the directory itself isn't a folder you pinned. Pin `~/work/api` and `~/work/web` and they gather under a `work` header.
 
 Click a header to expand or collapse the group. If two groups resolve to the same display name, Harnu adds a small disambiguating hint next to each (e.g. distinguishing two groups both named `www`).
@@ -22,6 +22,16 @@ Click a header to expand or collapse the group. If two groups resolve to the sam
 Right-click any group header for **Rename group** (set a custom label) and **Reset name** (clear back to the default, only shown once you've set one). Repo groups additionally offer **Cleanup…**, which a parent-directory group doesn't — there's no shared git history to sweep.
 
 Grouping only ever uses the **direct** parent, and a group never contains another group, so the list stays exactly one level deep. That's deliberate: pinning something broad like your home directory groups only its immediate children, instead of swallowing everything beneath it into one giant pile. A folder with no sibling under its parent just sits as a normal row.
+
+## Shelved worktrees
+
+When Cleanup [shelves](cleanup.md#shelving-idle-worktrees) an idle worktree, its folder is gone on purpose but the branch and the sessions are kept. Such a worktree never shows as a normal row, and never as a "ghost" folder either. It waits in a **Shelved** section (pt-BR: **Guardadas**) at the **end of its repo group**, after the live worktrees:
+
+- **Collapsed by default.** The row reads **Shelved · 3** (the number is always visible, even collapsed) and only appears when the repo has at least one shelved worktree. Click it to open it. Whether it is open is remembered per repo. Typing in the sidebar filter opens it when a shelved branch or session matches; **Collapse all** closes it and **Expand all** opens it. The group header's own count stays the live worktrees only.
+- **A repo with one live worktree and one shelved worktree still gets its group header**, so the section always has a place to live.
+- **One compact, dimmed line per worktree:** the branch (a detached worktree shows its folder name), a small archive icon and how long ago it was shelved (**9 d**). Hover for the full wording ("Shelved 9 days ago · branch `feat/x` kept"). Clicking the line only opens its list of sessions; it never restores anything.
+- **Click a session to resume it.** Harnu restores the worktree first (the row reads **restoring…** and the session is highlighted at once), then opens the session in its own folder, so nothing ever starts in a missing directory. The worktree then moves back into the group as a normal row. If the restore cannot work, nothing is started anywhere else, the selection stays where it was, and a message names the branch and offers **Open in Cleanup**, where the Shelved card says what to do next. Nothing was lost.
+- **Right-click a shelved worktree** for **Restore worktree** (brings the folder back without resuming anything) and **Open in Cleanup**. A shelved worktree has no folder, so the usual folder actions (new terminal, rename, hide...) do not apply. The hover action at the right edge of the line does the same as **Restore worktree**.
 
 ## Worktree lineage
 
