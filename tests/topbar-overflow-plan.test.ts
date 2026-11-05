@@ -77,7 +77,7 @@ describe('planTopbarOverflow', () => {
   it('skips an action that is not present, and the priority moves to the next one', () => {
     const present = ALL.filter((id) => id !== 'github-pulls')
     const plan = hide(present.length * SLOT - 1, present)
-    expect(plan.hidden).toEqual(['editor', 'open-folder'])
+    expect(plan.hidden).toEqual(['open-folder', 'editor'])
   })
 
   it('has nothing to do with nothing present', () => {

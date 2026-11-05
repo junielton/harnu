@@ -118,6 +118,7 @@
     "terminal": "Terminal",
     "split": "Dividir horizontal",
     "browser": "Navegador",
+    "moreActions": "Mais ações",
     "splitLayout": "Divisão: {mode}",
     "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Abrir pasta",

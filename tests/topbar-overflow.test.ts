@@ -33,9 +33,10 @@ class FakeResizeObserver {
   constructor(cb: ResizeObserverCallback) {
     observers.push(() => cb([], this as unknown as ResizeObserver))
   }
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
+  // The fake delivers sizes by hand (`resizeTo`); it never observes anything itself.
+  observe = vi.fn()
+  unobserve = vi.fn()
+  disconnect = vi.fn()
 }
 
 async function resizeTo(width: number): Promise<void> {
@@ -190,15 +191,24 @@ describe('topbar overflow menu', () => {
     await wrapper.get('[data-test="topbar-more"]').trigger('click')
     expect(menuIds(wrapper)).toEqual(hidden)
 
-    const keybindings = useKeybindingsStore()
     for (const id of hidden) {
       const item = wrapper.get(`[data-test="topbar-overflow-item-${id}"]`)
       expect(item.text()).toContain(labels.get(id)!)
       expect(item.find('svg').exists()).toBe(true)
     }
-    const chord = keybindings.chordLabel('folder.openInFileManager')
-    expect(chord).not.toBe('')
-    expect(wrapper.get('[data-test="topbar-overflow-item-open-folder"]').text()).toContain(chord)
+    // Unbound actions show no hint.
+    expect(
+      wrapper.get('[data-test="topbar-overflow-item-open-folder"]').find('.font-mono').exists()
+    ).toBe(false)
+  })
+
+  it('AC-3: a bound shortcut shows at the right edge of the row', async () => {
+    const wrapper = await mountFull()
+    await resizeTo(widthFor(3)) // only panel-right and new-session stay in the bar
+    await wrapper.get('[data-test="topbar-more"]').trigger('click')
+    const chord = useKeybindingsStore().chordLabel('view.review')
+    expect(chord).not.toBe('') // review is bound by default
+    expect(wrapper.get('[data-test="topbar-overflow-item-review"]').text()).toContain(chord)
   })
 
   it('AC-3: an action in the menu runs the same handler as its button, then the menu closes', async () => {
