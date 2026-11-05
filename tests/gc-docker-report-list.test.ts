@@ -49,6 +49,19 @@ describe('the report-only list (U3.6 AC-5)', () => {
     ])
   })
 
+  it('names a network by its name, not its 64-character id', () => {
+    const id = `net:${'ab12'.repeat(16)}`
+    expect(
+      reportItemsOf([
+        { kind: 'prune-network', id, reason: 'Removed empty network `app_default` — no containers' }
+      ])[0]!.target
+    ).toBe('app_default')
+    // no name in the reason: the id without its prefix, shortened like `docker network ls`
+    expect(reportItemsOf([{ kind: 'prune-network', id, reason: 'empty' }])[0]!.target).toBe(
+      'ab12'.repeat(3)
+    )
+  })
+
   it('a report-only cycle records the list and still acts on nothing', async () => {
     const r = rig(defaultGcPrefs(), plan3)
     const rec = await runDockerCycle(r.deps, createCycleState())
