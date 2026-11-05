@@ -213,7 +213,7 @@ const parallelLines = (hot: string): string[] => {
 }
 
 describe('mergeHot', () => {
-  it('mergeHot keeps another branch’s snapshot', () => {
+  it("mergeHot keeps another branch's snapshot", () => {
     const a = mergeHot({
       current: null,
       currentKey: null,
