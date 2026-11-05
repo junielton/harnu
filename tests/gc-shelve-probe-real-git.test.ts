@@ -42,20 +42,9 @@ describe('probeShelve (AC-4)', () => {
 
   it('uncommitted work gives a stamp and the newest mtime of the files git lists', async () => {
     const m = path.join(fx.wt, 'notes', 'u.txt')
-    const when = new Date('2026-11-01T08:00:00Z')
-    utimesSync(m, when, when)
-    // every other dirty file is older
-    for (const f of ['tracked.txt', 'staged.txt', 'run.sh', 'link']) {
-      try {
-        utimesSync(
-          path.join(fx.wt, f),
-          new Date('2026-10-20T00:00:00Z'),
-          new Date('2026-10-20T00:00:00Z')
-        )
-      } catch {
-        // the symlink: utimes follows it, fine
-      }
-    }
+    // Newer than every other dirty file, whatever the clock says now.
+    const future = new Date('2031-01-01T00:00:00Z')
+    utimesSync(m, future, future)
     const p = await probeShelve(itemOf(fx.wt), { readManifest: async () => ({ delegates: false }) })
     expect(p.workStamp).toMatch(/^[0-9a-f]{64}$/)
     expect(p.newestMtime).toBe(statSync(m).mtimeMs)
