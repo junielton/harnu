@@ -21,7 +21,15 @@ import { trashTranscriptsRecorded } from './gc-orphan-trash'
 import { appendTombstone } from '../reaper/journal'
 import { defaultTrashEnv } from './trash-shell'
 import { runStackLeftoverCleanup, type StackLeftoverItem } from './gc-stack-leftovers'
-import { runDocker } from '../containers/containers-shell'
+import { dockerActions, runDocker, scanContainers } from '../containers/containers-shell'
+import {
+  appendTombstone as appendContainersTombstone,
+  journalFile as containersJournalFile,
+  readJournal as readContainersJournal
+} from '../containers/containers-journal'
+import { defaultPrefs as defaultContainersPrefs } from '../containers/containers-prefs'
+import { readEmptyComposeNetworks } from '../containers/docker-facts-shell'
+import { createDockerGarbage } from './docker-garbage-shell'
 import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
@@ -369,6 +377,32 @@ export async function registerGcHandlers(
   // executor is the only code that deletes a folder for it; every dependency is the real one.
   const shelveExec = defaultShelveExecDeps(path.join(userData, SHELVED_FILE))
 
+  // Docker garbage removal (U3.3): empty compose networks and orphan stacks, volumes always kept.
+  // Every docker mutation is one of three plain calls (stop, rm, network rm); the journal is the
+  // Containers one, written as the `autopilot`.
+  const containersJournal = containersJournalFile(userData)
+  const dockerGarbage = createDockerGarbage({
+    emptyNetworks: () => readEmptyComposeNetworks({ run: runDocker }),
+    scan: async () =>
+      scanContainers({
+        zombieAfterDays: defaultContainersPrefs().zombieAfterDays,
+        journal: await readContainersJournal(containersJournal),
+        now: Date.now()
+      }),
+    // A corrupt store throws (never reads as empty), which excludes every orphan stack.
+    shelvedPaths: async () =>
+      (await readShelvedForUpdate(path.join(userData, SHELVED_FILE))).entries.map(
+        (e) => e.worktreePath
+      ),
+    mutators: {
+      stop: dockerActions.stop,
+      removeContainers: dockerActions.removeContainers,
+      removeNetwork: dockerActions.removeNetwork
+    },
+    appendTombstone: (t) => appendContainersTombstone(containersJournal, t),
+    now: () => Date.now()
+  })
+
   const cycleDeps: GcCycleDeps = {
     prefs: () => prefs,
     gather: async (): Promise<GcGather> => gather(),
@@ -401,15 +435,14 @@ export async function registerGcHandlers(
         bundles,
         state
       ),
-    // Docker autonomy (U3.1): its own switch and report-only first cycle. The planner is empty and
-    // the executor refuses until U3.3 to U3.5 fill them, so nothing here changes Docker state yet.
+    // Docker autonomy (U3.1): its own switch and report-only first cycle. U3.3 fills the garbage
+    // part (empty networks, orphan stacks); pausing idle stacks arrives with U3.4 and U3.5.
     docker: () =>
       runDockerCycle(
         {
           prefs: () => prefs,
-          plan: async () => [],
-          // A refusal, not a failure: it must never trip the kill switch.
-          execute: async () => ({ ok: false, reason: 'not implemented yet', refusal: true }),
+          plan: dockerGarbage.plan,
+          execute: dockerGarbage.execute,
           // Docker is one daemon per machine: one lock across Harnu instances (`--user-data-dir`).
           lock: (work) => withLockFile(dockerLockPath(), work),
           // The failure-streak kill switch: persisted, so a restart does not start acting again.
