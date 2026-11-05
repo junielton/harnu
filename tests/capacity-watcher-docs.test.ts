@@ -49,6 +49,15 @@ describe('user docs, changelog (AC-8)', () => {
     expect(text).toMatch(/Docker Desktop/)
   })
 
+  it('cleanup.md says the heads-up still fires when automatic cleanup is off or paused', () => {
+    const page = read('docs/user/cleanup.md')
+    const at = page.indexOf('**When there is nothing left to free.**')
+    const text = page.slice(at, page.indexOf('\n\n', at))
+    expect(text).toMatch(/switch is off|Docker switch/i)
+    expect(text).toMatch(/Pause all autonomous cleanup|paused/i)
+    expect(text).toMatch(/nothing will be freed|not acting|does not free/i)
+  })
+
   it('containers.md points at the notification', () => {
     expect(read('docs/user/containers.md')).toMatch(/out of network slots|network slots/i)
   })

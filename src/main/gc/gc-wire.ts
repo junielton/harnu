@@ -142,6 +142,11 @@ export interface DockerCapacityNotice {
   free: number
   total: number
   mark: number
+  /**
+   * Set when Docker cleanup was not acting on this pass: the Docker switch is `off` or the global
+   * pause is on (`paused`). The heads-up still fires, and says why nothing was freed. Absent otherwise.
+   */
+  autonomyOff?: 'off' | 'paused'
 }
 
 /** Where the out-of-capacity notice stands; it only re-arms once capacity is above the mark again. */
@@ -155,11 +160,11 @@ export type CapacityNoticeState = 'none' | 'low' | 'zero'
 export interface DockerWatchRecord {
   at: number
   trigger: 'boot' | 'event' | 'timer'
-  /** `off`: the Docker switch. `paused`: the global pause. Both read nothing. `report`: first pass, acted on nothing. */
+  /** `off`: the Docker switch. `paused`: the global pause. Both still read capacity (for the heads-up) but plan and run nothing. `report`: first pass, acted on nothing. */
   mode: 'off' | 'paused' | 'report' | 'act'
   /** The low-water mark in force: acts at or below it. */
   mark: number
-  /** Null when the pass read nothing (`off`, `paused`). */
+  /** Null only when the pass could not read anything at all (never in `off`/`paused` on a readable engine). */
   capacity: DockerCapacityView | null
   /** Known free slots were at or below the mark when the pass started. */
   pressure: boolean

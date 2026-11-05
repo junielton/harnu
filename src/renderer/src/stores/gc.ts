@@ -125,7 +125,12 @@ export const useGcStore = defineStore('gc', () => {
     lastCapacityNoticeAt = rec.at
     const { t } = i18n.global
     const title = t(`cleanup.gc.capacity.${n.level}.title`)
-    const description = t(`cleanup.gc.capacity.${n.level}.body`, { free: n.free, total: n.total })
+    // Cleanup not acting (switch off, global pause): the same warning, saying why nothing is freed.
+    const suffix = n.autonomyOff === 'off' ? 'Off' : n.autonomyOff === 'paused' ? 'Paused' : ''
+    const description = t(`cleanup.gc.capacity.${n.level}.body${suffix}`, {
+      free: n.free,
+      total: n.total
+    })
     useNotificationsStore().notify({
       ts: rec.at,
       source: 'app',

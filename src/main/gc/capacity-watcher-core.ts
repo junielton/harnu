@@ -10,8 +10,10 @@
  * to free" and the operator is told, once per level, until capacity has recovered.
  *
  * Capacity that cannot be known (Docker Desktop, rootless, remote, an unreachable daemon) takes no
- * action and raises no notice. The Docker switch and the global pause make the pass do nothing at
- * all. It shares the machine-wide lock and the failure-streak kill switch with the hourly cycle.
+ * action and raises no notice. The Docker switch and the global pause stop every ACTION (nothing is
+ * planned or run), but the out-of-capacity heads-up is a warning, not an action: it still reads
+ * capacity and raises the same notices with the same no-repeat rule, saying that Cleanup is not
+ * acting. It shares the machine-wide lock and the failure-streak kill switch with the hourly cycle.
  */
 
 import type { BridgeCapacity } from '../containers/docker-capacity-core'
@@ -83,11 +85,19 @@ function reading(r: DockerFactsResult<BridgeCapacity>): Reading {
   }
 }
 
-function noticeBody(level: 'low' | 'zero', free: number, total: number): string {
+function noticeBody(
+  level: 'low' | 'zero',
+  free: number,
+  total: number,
+  autonomyOff: 'off' | 'paused' | undefined
+): string {
+  const why = autonomyOff
+    ? ` Automatic cleanup is ${autonomyOff}, so nothing will be freed on its own.`
+    : ' Nothing is left for Cleanup to free on its own.'
   if (level === 'zero') {
-    return `Docker has no free network slot left (0 of ${total}) and nothing is left for Cleanup to free on its own. The next compose up will fail with "could not find an available, non-overlapping IPv4 address pool". Stop a stack you do not need.`
+    return `Docker has no free network slot left (0 of ${total}).${why} The next compose up will fail with "could not find an available, non-overlapping IPv4 address pool". Stop a stack you do not need.`
   }
-  return `Docker is nearly out of network slots: ${free} of ${total} free, and nothing is left for Cleanup to free on its own. Stop a stack you do not need before starting another.`
+  return `Docker is nearly out of network slots: ${free} of ${total} free.${why} Stop a stack you do not need before starting another.`
 }
 
 export async function runCapacityPass(
@@ -122,15 +132,14 @@ export async function runCapacityPass(
     return record
   }
 
-  // The global pause beats the switch, like the cycle: both act on, and read, nothing.
-  if (prefs.pauseAutonomous) {
-    record.mode = 'paused'
-    return done()
-  }
-  if (!cfg.enabled) {
-    record.mode = 'off'
-    return done()
-  }
+  // The global pause beats the switch, like the cycle. Either one stops every action, but not the
+  // heads-up: the mode stays `paused`/`off` while capacity and the notice are still filled.
+  const autonomyOff: 'off' | 'paused' | undefined = prefs.pauseAutonomous
+    ? 'paused'
+    : !cfg.enabled
+      ? 'off'
+      : undefined
+  if (autonomyOff) record.mode = autonomyOff
 
   let now = reading(await deps.readCapacity())
   record.capacity = now.view
@@ -142,81 +151,90 @@ export async function runCapacityPass(
   }
   record.pressure = true
 
-  const locked = await deps.lock(async () => {
-    const actions = await deps.plan()
-    record.found = actions.length
+  // Not acting: nothing is planned, locked or run, so nothing is left that Cleanup will free.
+  if (autonomyOff) record.nothingLeft = true
+  const locked: RepoLockResult<void> = autonomyOff
+    ? { ok: true, value: undefined }
+    : await deps.lock(async () => {
+        const actions = await deps.plan()
+        record.found = actions.length
 
-    if (!cfg.firstReportAcknowledged) {
-      record.items = reportItemsOf(actions)
-      record.nothingLeft = actions.length === 0
-      return
-    }
+        if (!cfg.firstReportAcknowledged) {
+          record.items = reportItemsOf(actions)
+          record.nothingLeft = actions.length === 0
+          return
+        }
 
-    const allowed = actions.slice(0, cfg.maxPerCycle)
-    record.deferred = actions.length - allowed.length
-    let lastFailure = ''
-    let attempted = 0
-    let recovered = false
-    let unreadable = false
-    for (const a of allowed) {
-      if (state.dockerStreak >= cfg.failureLimit) break
-      attempted++
-      const outcome = await deps.execute(a)
-      if (outcome.ok) {
-        state.dockerStreak = 0
-        record.acted++
-      } else if (outcome.refusal) {
-        record.refused++
-      } else {
-        record.failed++
-        state.dockerStreak++
-        lastFailure = outcome.reason
-        console.warn('[gc] capacity watcher: docker action failed', a.kind, a.id, outcome.reason)
-      }
-      now = reading(await deps.readCapacity())
-      record.capacity = now.view
-      if (now.free === null) {
-        unreadable = true
-        break
-      }
-      if (now.free > mark) {
-        recovered = true
-        break
-      }
-    }
+        const allowed = actions.slice(0, cfg.maxPerCycle)
+        record.deferred = actions.length - allowed.length
+        let lastFailure = ''
+        let attempted = 0
+        let recovered = false
+        let unreadable = false
+        for (const a of allowed) {
+          if (state.dockerStreak >= cfg.failureLimit) break
+          attempted++
+          const outcome = await deps.execute(a)
+          if (outcome.ok) {
+            state.dockerStreak = 0
+            record.acted++
+          } else if (outcome.refusal) {
+            record.refused++
+          } else {
+            record.failed++
+            state.dockerStreak++
+            lastFailure = outcome.reason
+            console.warn(
+              '[gc] capacity watcher: docker action failed',
+              a.kind,
+              a.id,
+              outcome.reason
+            )
+          }
+          now = reading(await deps.readCapacity())
+          record.capacity = now.view
+          if (now.free === null) {
+            unreadable = true
+            break
+          }
+          if (now.free > mark) {
+            recovered = true
+            break
+          }
+        }
 
-    const killed = state.dockerStreak >= cfg.failureLimit
-    if (!recovered && !unreadable) record.deferred += allowed.length - attempted
-    if (killed) {
-      record.paused = true
-      record.pausedReason = `${cfg.failureLimit} ${plural(cfg.failureLimit, 'failure')} in a row (last: ${lastFailure})`
-      state.dockerStreak = 0
-      try {
-        await deps.disableDocker()
-      } catch (err) {
-        console.warn(
-          '[gc] could not switch Docker autonomy off',
-          err instanceof Error ? err.message : err
-        )
-      }
-      deps.notify({
-        title: NOTICE_TITLE,
-        body: `Docker cleanup paused itself after ${record.pausedReason}. Nothing was lost: volumes are never removed. Turn it back on in Settings → Cleanup once the cause is fixed.`
+        const killed = state.dockerStreak >= cfg.failureLimit
+        if (!recovered && !unreadable) record.deferred += allowed.length - attempted
+        if (killed) {
+          record.paused = true
+          record.pausedReason = `${cfg.failureLimit} ${plural(cfg.failureLimit, 'failure')} in a row (last: ${lastFailure})`
+          state.dockerStreak = 0
+          try {
+            await deps.disableDocker()
+          } catch (err) {
+            console.warn(
+              '[gc] could not switch Docker autonomy off',
+              err instanceof Error ? err.message : err
+            )
+          }
+          deps.notify({
+            title: NOTICE_TITLE,
+            body: `Docker cleanup paused itself after ${record.pausedReason}. Nothing was lost: volumes are never removed. Turn it back on in Settings → Cleanup once the cause is fixed.`
+          })
+        }
+        // Nothing left that Cleanup may free: the whole plan was tried (or the kill switch stopped
+        // the pass) and capacity is still at or below the mark. A pass the cap cut short is not that.
+        record.nothingLeft =
+          !recovered &&
+          !unreadable &&
+          (killed || (attempted === allowed.length && record.deferred === 0))
+        if (record.acted > 0) {
+          deps.notify({
+            title: NOTICE_TITLE,
+            body: `Docker was low on network slots: Cleanup handled ${record.acted} ${plural(record.acted, 'item')} right away. Volumes were kept.`
+          })
+        }
       })
-    }
-    // Nothing left that Cleanup may free: the whole plan was tried (or the kill switch stopped
-    // the pass) and capacity is still at or below the mark. A pass the cap cut short is not that.
-    record.nothingLeft =
-      !recovered &&
-      !unreadable &&
-      (killed || (attempted === allowed.length && record.deferred === 0))
-    if (record.acted > 0) {
-      deps.notify({
-        title: NOTICE_TITLE,
-        body: `Docker was low on network slots: Cleanup handled ${record.acted} ${plural(record.acted, 'item')} right away. Volumes were kept.`
-      })
-    }
-  })
 
   if (!locked.ok) {
     record.locked = true
@@ -231,9 +249,18 @@ export async function runCapacityPass(
     const { next, level } = nextCapacityNotice(state.dockerCapacityNotice, now.free, mark, true)
     state.dockerCapacityNotice = next
     if (level) {
-      const notice: DockerCapacityNotice = { level, free: now.free, total: now.total, mark }
+      const notice: DockerCapacityNotice = {
+        level,
+        free: now.free,
+        total: now.total,
+        mark,
+        ...(autonomyOff ? { autonomyOff } : {})
+      }
       record.notice = notice
-      deps.notify({ title: NOTICE_TITLE, body: noticeBody(level, now.free, now.total) })
+      deps.notify({
+        title: NOTICE_TITLE,
+        body: noticeBody(level, now.free, now.total, autonomyOff)
+      })
     }
   }
   return done()

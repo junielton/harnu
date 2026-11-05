@@ -3064,11 +3064,15 @@
       "capacity": {
         "low": {
           "title": "O Docker está quase sem slots de rede",
-          "body": "{free} de {total} livres. A limpeza não tem mais nada para liberar sozinha."
+          "body": "{free} de {total} livres. A limpeza não tem mais nada para liberar sozinha.",
+          "bodyOff": "{free} de {total} livres. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "bodyPaused": "{free} de {total} livres. A limpeza automática do Docker está pausada, então nada será liberado sozinho."
         },
         "zero": {
           "title": "O Docker ficou sem slots de rede livres",
-          "body": "O próximo compose up vai falhar. Pare uma stack que você não precisa."
+          "body": "O próximo compose up vai falhar. Pare uma stack que você não precisa.",
+          "bodyOff": "O próximo compose up vai falhar. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "bodyPaused": "O próximo compose up vai falhar. A limpeza automática do Docker está pausada, então nada será liberado sozinho."
         }
       },
       "shelved": {

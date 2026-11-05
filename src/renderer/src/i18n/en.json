@@ -3064,11 +3064,15 @@
       "capacity": {
         "low": {
           "title": "Docker is nearly out of network slots",
-          "body": "{free} of {total} free. Cleanup has nothing left to free on its own."
+          "body": "{free} of {total} free. Cleanup has nothing left to free on its own.",
+          "bodyOff": "{free} of {total} free. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "bodyPaused": "{free} of {total} free. Automatic Docker cleanup is paused, so nothing will be freed on its own."
         },
         "zero": {
           "title": "Docker has no free network slots",
-          "body": "The next compose up will fail. Stop a stack you do not need."
+          "body": "The next compose up will fail. Stop a stack you do not need.",
+          "bodyOff": "The next compose up will fail. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "bodyPaused": "The next compose up will fail. Automatic Docker cleanup is paused, so nothing will be freed on its own."
         }
       },
       "shelved": {
