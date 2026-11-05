@@ -27,6 +27,8 @@ import {
   type GitEvidence
 } from './digest-core'
 import type { TranscriptFacts } from './digest-transcript'
+import type { DigestFileStat } from './digest-core'
+import type { CatchUpCandidate, DigestState } from './digest-state'
 
 /**
  * How long a session must stay idle after its last turn before an idle-triggered
@@ -74,15 +76,45 @@ export interface DigestEngineDeps {
   ): Promise<void>
   /** The checkout whose memory serves `folder` (S-3's unsafe-root guard checks it). */
   memoryCheckout(folder: string): Promise<string>
+  /**
+   * The session's subagent transcripts (`<slug>/<sessionId>/subagents/*.jsonl`), whose git calls
+   * attribute commits too (S-4). Absent: the main transcript's windows only.
+   */
+  subagentTranscripts?(sessionId: string): Promise<string[]>
+  /**
+   * The file churn of exactly these commits, for evidence that attribution narrowed (S-4).
+   * Absent: a narrowed digest shows no files line rather than another session's files.
+   */
+  commitFileStats?(folder: string, hashes: string[]): Promise<DigestFileStat[]>
+  /** Called with the whole state after every successful digest (S-4). */
+  saveState?(state: DigestState): void
+  /** Whether the session already has a digest in the folder's memory dir (the catch-up sweep). */
+  hasDigest?(folder: string, sessionId: string): Promise<boolean>
   now(): number
   setTimer(fn: () => void, ms: number): unknown
   clearTimer(handle: unknown): void
+}
+
+/** A session the catch-up sweep may digest, from the fleet model. */
+export interface CatchUpSession extends CatchUpCandidate {
+  folder: string
+  transcriptPath: string
+}
+
+export interface DigestEngineOptions {
+  /** The persisted state read at registration (S-4); its `scan` and `last` seed the engine. */
+  state?: DigestState
 }
 
 export interface DigestEngine {
   /** Returns the digest's promise for a digest trigger (callers may ignore it), else undefined. */
   onTaskEdge(ev: HookTaskEvent): Promise<void> | undefined
   digestNow(sessionId: string, reason: DigestReason): Promise<void>
+  /**
+   * One catch-up pass (S-4): selects the quiet, undigested sessions among `sessions` and digests
+   * each with reason `catch-up`, one after another. Returns the ids it digested.
+   */
+  catchUp(sessions: readonly CatchUpSession[]): Promise<string[]>
   close(): void
 }
 
@@ -99,7 +131,11 @@ function unixSec(iso: string | null | undefined): number | null {
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : null
 }
 
-export function createDigestEngine(deps: DigestEngineDeps): DigestEngine {
+export function createDigestEngine(
+  deps: DigestEngineDeps,
+  opts: DigestEngineOptions = {}
+): DigestEngine {
+  void opts
   const states = new Map<string, SessionState>()
   const inFlight = new Set<string>()
   let closed = false
@@ -241,5 +277,10 @@ export function createDigestEngine(deps: DigestEngineDeps): DigestEngine {
     inFlight.clear()
   }
 
-  return { onTaskEdge, digestNow, close }
+  async function catchUp(sessions: readonly CatchUpSession[]): Promise<string[]> {
+    void sessions
+    throw new Error('not implemented')
+  }
+
+  return { onTaskEdge, digestNow, catchUp, close }
 }

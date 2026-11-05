@@ -212,3 +212,33 @@ export async function gatherGitEvidence(
 
   return { kind: 'repo', head, commits, fileStats, dirtyCount: await dirty() }
 }
+
+/**
+ * The subagent transcripts of a session (memory U1 S-4): `<sessionId>/subagents/*.jsonl` next to
+ * its main transcript, sorted by name. `[]` when there are none or the folder is unreadable.
+ */
+export async function listSubagentTranscripts(
+  transcriptPath: string,
+  sessionId: string
+): Promise<string[]> {
+  void transcriptPath
+  void sessionId
+  throw new Error('not implemented')
+}
+
+/**
+ * The file churn of exactly `hashes` (memory U1 S-4): each commit's `--numstat` against its
+ * parent, summed per file in order of first appearance. `[]` on any git failure.
+ */
+export async function commitFileStats(folder: string, hashes: string[]): Promise<DigestFileStat[]> {
+  void folder
+  void hashes
+  throw new Error('not implemented')
+}
+
+/** Whether `<memoryDir>/sessions/` holds a digest of `sessionId` (spec "Has a digest"). */
+export async function hasSessionDigest(memoryDir: string, sessionId: string): Promise<boolean> {
+  void memoryDir
+  void sessionId
+  throw new Error('not implemented')
+}
