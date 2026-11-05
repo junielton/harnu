@@ -19,6 +19,8 @@
 import { scanFolders } from './claude-reader'
 import { addTaskEventObserver } from './hook-bridge'
 import { appendMemoryEntry, resolveMemoryLocation } from './mcp/memory-store'
+import { resolveMemoryCheckout } from './mcp/memory-core'
+import { probeGitMeta } from './git-probe'
 import { pushShadowEntry } from './responder-registry'
 import { shortSessionId } from './mcp/digest-core'
 import {
@@ -120,6 +122,17 @@ async function writeHot(
   }
 }
 
+/**
+ * The checkout whose memory serves `folder`: the same value as
+ * `resolveMemoryLocation(folder).checkout`, computed without that call's side effect (it
+ * copies a legacy `.capy/` into `.harnu/` for the checkout), so asking about an unsafe root
+ * such as the home directory never writes there.
+ */
+async function memoryCheckout(folder: string): Promise<string> {
+  const meta = await probeGitMeta(folder)
+  return resolveMemoryCheckout(folder, meta.repoId)
+}
+
 const liveDeps: DigestEngineDeps = {
   resolveSession,
   readFacts: readTranscriptFacts,
@@ -127,6 +140,7 @@ const liveDeps: DigestEngineDeps = {
   gatherGit: gatherGitEvidence,
   writeDigest,
   writeHot,
+  memoryCheckout,
   now: () => Date.now(),
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)

@@ -69,6 +69,8 @@ export interface DigestEngineDeps {
     title: string,
     hot: string
   ): Promise<void>
+  /** The checkout whose memory serves `folder` (S-3's unsafe-root guard checks it). */
+  memoryCheckout(folder: string): Promise<string>
   now(): number
   setTimer(fn: () => void, ms: number): unknown
   clearTimer(handle: unknown): void

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import * as os from 'node:os'
+import { join } from 'node:path'
 import {
   addTaskEventObserver,
   configureHub,
@@ -13,7 +16,28 @@ import {
 } from '../src/main/mcp/digest-engine'
 import { emptyFacts, type TranscriptFacts } from '../src/main/mcp/digest-transcript'
 import type { GitEvidence } from '../src/main/mcp/digest-core'
+import { gatherGitEvidence } from '../src/main/mcp/digest-io'
 import { deriveTranscriptTruth } from '../src/main/transcript-truth'
+
+/**
+ * Every `git` command `digest-io.ts` spawns, recorded by wrapping `execFile`'s promisified
+ * form (the one `promisify(execFile)` picks up) around the real one.
+ */
+const gitCalls = vi.hoisted(() => [] as string[][])
+vi.mock('node:child_process', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:child_process')>()
+  const { promisify } = await import('node:util')
+  const realAsync = promisify(real.execFile)
+  const execFile = ((...args: Parameters<typeof real.execFile>) =>
+    real.execFile(...args)) as typeof real.execFile
+  Object.defineProperty(execFile, promisify.custom, {
+    value: (file: string, args: string[], opts: object) => {
+      if (file === 'git') gitCalls.push(args)
+      return realAsync(file, args, opts)
+    }
+  })
+  return { ...real, execFile }
+})
 
 /**
  * Memory U1 S-2: the digest engine's control flow with every I/O dep faked
@@ -56,6 +80,7 @@ function fakes(over: Partial<DigestEngineDeps> = {}): {
     gatherGit: vi.fn(async () => git),
     writeDigest: vi.fn(async () => ({ ok: true })),
     writeHot: vi.fn(async () => undefined),
+    memoryCheckout: vi.fn(async (folder: string) => folder),
     now: vi.fn(() => NOW),
     setTimer: vi.fn((fn: () => void, ms: number) => {
       const h = next++
@@ -162,28 +187,55 @@ describe('createDigestEngine', () => {
     }
   })
 
-  it('skips a session too short to digest and a folder that is not a git repository', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-    try {
-      const short = fakes({
-        readFacts: vi.fn(async () => ({ facts: { ...emptyFacts(), userTurns: 2 }, offset: 1 }))
-      })
-      const a = createDigestEngine(short.deps)
-      await a.digestNow('s6', 'ended')
-      expect(short.deps.readTruth).not.toHaveBeenCalled()
-      expect(short.deps.writeDigest).not.toHaveBeenCalled()
+  it('skips a session too short to digest', async () => {
+    const short = fakes({
+      readFacts: vi.fn(async () => ({ facts: { ...emptyFacts(), userTurns: 2 }, offset: 1 }))
+    })
+    const a = createDigestEngine(short.deps)
+    await a.digestNow('s6', 'ended')
+    expect(short.deps.readTruth).not.toHaveBeenCalled()
+    expect(short.deps.writeDigest).not.toHaveBeenCalled()
+  })
 
-      // Until S-3, a no-git plan is skipped: no digest, no hot, and no `last` recorded.
-      const plain = fakes({ gatherGit: vi.fn(async () => ({ kind: 'not-a-repo' }) as const) })
-      const b = createDigestEngine(plain.deps)
-      await b.digestNow('s7', 'ended')
-      await b.digestNow('s7', 'ended')
-      expect(plain.deps.writeDigest).not.toHaveBeenCalled()
-      expect(plain.deps.writeHot).not.toHaveBeenCalled()
-      expect(plain.deps.gatherGit.mock.calls[1][2]).toBeNull()
-      expect(log).toHaveBeenCalledWith('[memory-digest] skipped: not a git repository')
+  it('writes a non-git digest', async () => {
+    // A real folder outside any git work tree, probed by the real git probe.
+    const plain = await mkdtemp(join(os.tmpdir(), 'memory-u1-plain-'))
+    try {
+      const f = fakes({
+        resolveSession: vi.fn(async (id: string) => ({
+          transcriptPath: `/t/${id}.jsonl`,
+          folder: plain,
+          branch: 'main'
+        })),
+        gatherGit: vi.fn(gatherGitEvidence)
+      })
+      const engine = createDigestEngine(f.deps)
+      gitCalls.length = 0
+      await engine.digestNow('s7', 'ended')
+
+      // One probe, and no other git command after it.
+      expect(gitCalls).toEqual([['-C', plain, 'rev-parse', '--is-inside-work-tree']])
+      expect(f.deps.gatherGit).toHaveBeenCalledTimes(1)
+      await expect(f.deps.gatherGit.mock.results[0].value).resolves.toEqual({
+        kind: 'not-a-repo'
+      })
+
+      expect(f.deps.writeDigest).toHaveBeenCalledTimes(1)
+      const [folder, page, entry] = f.deps.writeDigest.mock.calls[0]
+      expect(folder).toBe(plain)
+      expect(page).toBe('sessions/2026-11-03-s7')
+      const header = (entry as string).split('\n')[2]
+      expect(header).toBe('_Session `s7` · ended · auto-digest · evidence: no-git_')
+      expect(header).not.toContain('branch')
+      expect(entry).toContain('_Not a git repository: no git evidence._')
+      expect(f.deps.writeHot).toHaveBeenCalledTimes(1)
+
+      // The digest is remembered: a second end with nothing new plans `unchanged`.
+      await engine.digestNow('s7', 'ended')
+      expect(f.deps.writeDigest).toHaveBeenCalledTimes(1)
+      engine.close()
     } finally {
-      log.mockRestore()
+      await rm(plain, { recursive: true, force: true })
     }
   })
 

@@ -12,7 +12,8 @@ import {
   readTranscriptTruth
 } from '../src/main/mcp/digest-io'
 import { isUserTurn } from '../src/main/mcp/digest-transcript'
-import { memoryDirFor } from '../src/main/mcp/memory-core'
+import { memoryDirFor, resolveMemoryCheckout } from '../src/main/mcp/memory-core'
+import { probeGitMeta } from '../src/main/git-probe'
 import { appendMemoryEntry } from '../src/main/mcp/memory-store'
 import {
   atMinute,
@@ -23,7 +24,7 @@ import {
 } from './helpers/memory-u1-fixture'
 
 /**
- * Memory U1 S-2: the replay. The real engine, with the real reader and git probe, digests every
+ * Memory U1 S-2 and S-3: the replay. The real engine, with the real reader and git probe, digests every
  * `repo` and `plain` fixture session as it ends; the merged benchmark then scores the temp home.
  * Key paths: the spec's Amendments row of 2026-11-05 (the CLI is the only way to the gather,
  * git coverage is the repo folder's `detail.capture_by_folder` row).
@@ -107,6 +108,8 @@ beforeAll(async () => {
         now: REPLAY
       }),
     writeHot: async () => undefined,
+    memoryCheckout: async (folder) =>
+      resolveMemoryCheckout(folder, (await probeGitMeta(folder)).repoId),
     now: () => REPLAY,
     setTimer: () => {
       throw new Error('the replay uses no timer')
@@ -134,6 +137,11 @@ describe('memory U1 capture, scored by the benchmark', () => {
     expect(row).toBeDefined()
     expect(row!.sessions).toBeGreaterThan(0)
     expect(row!.captured / row!.sessions).toBeGreaterThanOrEqual(0.95)
+  })
+
+  it('non-git capture_coverage is at least 0.95', () => {
+    expect(nonGit.metrics.capture_sessions).toBeGreaterThan(0)
+    expect(nonGit.metrics.capture_coverage_nongit).toBeGreaterThanOrEqual(0.95)
   })
 
   it('user-turn and digest rules agree with the benchmark', async () => {
