@@ -77,6 +77,7 @@ function stubApi(initial: GcPrefs): void {
     onGcProgress: () => () => {},
     onGcDone: () => () => {},
     onGcCycle: () => () => {},
+    onGcDockerWatch: () => () => {},
     reaperPrefs: vi.fn(async () => REAPER),
     reaperSetPrefs: setReaper
   })
@@ -612,5 +613,63 @@ describe('CleanupSettingsPane — Docker autonomy and the global pause (U3.1 AC-
     )
     expect(pt).toContain('Pausada')
     expect(pt.toLowerCase()).not.toContain('estacionad')
+  })
+})
+
+describe('CleanupSettingsPane — the Docker first-report list (U3.6 AC-5)', () => {
+  const items = Array.from({ length: 10 }, (_, i) => ({
+    kind: (['network', 'orphan', 'pause'] as const)[i % 3]!,
+    target: `target-${i}`,
+    reason: `reason ${i}`
+  }))
+  const docker = (over: Partial<GcPrefs['docker']>): GcPrefs => ({
+    ...GC,
+    docker: { ...GC.docker, ...over }
+  })
+  const withReport = async (prefs: GcPrefs): Promise<VueWrapper> => {
+    const w = await mountPane(prefs)
+    const { useGcStore } = await import('../src/renderer/src/stores/gc')
+    const store = useGcStore()
+    ;(store as unknown as { snapshot: unknown }).snapshot = {
+      ...(store.snapshot as object),
+      prefs,
+      lastCycle: {
+        at: NOW,
+        docker: {
+          mode: 'report',
+          found: items.length,
+          acted: 0,
+          refused: 0,
+          failed: 0,
+          deferred: 0,
+          locked: false,
+          paused: false,
+          pausedReason: null,
+          items
+        }
+      }
+    }
+    await flushPromises()
+    return w
+  }
+
+  it('shows what the first pass would do, with the names, before the acknowledgement', async () => {
+    const w = await withReport(docker({ enabled: true, firstReportAcknowledged: false }))
+    const list = w.get('[data-testid="gc-docker-report-list"]')
+    const rows = list.findAll('[data-testid="gc-docker-report-item"]')
+    expect(rows).toHaveLength(8)
+    expect(rows[0]!.text()).toContain('target-0')
+    expect(rows[0]!.text()).toContain('reason 0')
+    expect(rows[0]!.text()).toContain(t('cleanup.gc.settings.docker.report.kind.network'))
+    expect(rows[1]!.text()).toContain(t('cleanup.gc.settings.docker.report.kind.orphan'))
+    expect(rows[2]!.text()).toContain(t('cleanup.gc.settings.docker.report.kind.pause'))
+    expect(list.text()).toContain(i18n.global.t('cleanup.gc.settings.docker.report.more', { n: 2 }))
+  })
+
+  it('shows no list once the first report is acknowledged, or when the switch is off', async () => {
+    const acked = await withReport(docker({ enabled: true, firstReportAcknowledged: true }))
+    expect(acked.find('[data-testid="gc-docker-report-list"]').exists()).toBe(false)
+    const off = await withReport(docker({ enabled: false, firstReportAcknowledged: false }))
+    expect(off.find('[data-testid="gc-docker-report-list"]').exists()).toBe(false)
   })
 })
