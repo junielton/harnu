@@ -284,6 +284,21 @@ export function registerDigestEngine(): DigestEngineHandle {
   return { close: () => closeDigestEngine() }
 }
 
+/**
+ * Digests an orphaned transcript (a removed worktree's session) into its owning repo's memory
+ * (S-5), for Cleanup's gather. A no-op while the engine is not registered.
+ */
+export async function digestOrphanTranscript(
+  args: Parameters<DigestEngine['digestTranscriptInto']>[0]
+): Promise<void> {
+  await engine?.digestTranscriptInto(args)
+}
+
+/** Whether `home`'s memory already holds a digest of the session (S-5's orphan gather). */
+export function orphanHasDigest(home: string, sessionId: string): Promise<boolean> {
+  return hasDigest(home, sessionId)
+}
+
 /** Teardown for `before-quit` — unsubscribe + clear timers. */
 export function closeDigestEngine(): void {
   if (catchUpFirst) clearTimeout(catchUpFirst)

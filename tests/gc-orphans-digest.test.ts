@@ -53,6 +53,8 @@ afterAll(async () => {
 })
 
 /** The real engine over the fixture, writing through the real memory store. */
+const hotCalls: string[] = []
+
 function engineOver(): DigestEngine {
   return createDigestEngine({
     resolveSession: async () => null,
@@ -68,9 +70,7 @@ function engineOver(): DigestEngine {
         sessionId,
         now: REPLAY
       }),
-    writeHot: async () => {
-      throw new Error('an orphan digest writes no hot.md')
-    },
+    writeHot: async (folder) => void hotCalls.push(folder),
     memoryCheckout: async (folder) =>
       resolveMemoryCheckout(folder, (await probeGitMeta(folder)).repoId),
     subagentTranscripts: async (sid) => listSubagentTranscripts(fx.transcriptOf(sid), sid),
@@ -168,6 +168,70 @@ describe('ownerRepoFor', () => {
   })
 })
 
+describe('digestTranscriptInto', () => {
+  const args = (branch: string | null) => ({
+    sessionId: id('a1000009'),
+    transcriptPath: fx.transcriptOf(id('a1000009')),
+    memoryFolder: fx.repo,
+    branch
+  })
+  const digestText = async (): Promise<string> => {
+    const dir = join(memoryDirFor(fx.repo), 'sessions')
+    const [name] = (await fs.readdir(dir)).filter((n) => /-a1000009\.md$/.test(n))
+    return fs.readFile(join(dir, name!), 'utf8')
+  }
+
+  it('reads a branch that resolves in the owning repo, claims no other session commits, and writes no hot.md', async () => {
+    hotCalls.length = 0
+    const engine = engineOver()
+    await engine.digestTranscriptInto(args('main'))
+    const text = await digestText()
+    // The token stays `orphan` whatever the git evidence; main's commits belong to other sessions.
+    expect(text).toMatch(
+      /branch `main` · recovered from a removed folder · auto-digest · evidence: orphan_/
+    )
+    expect(text).not.toContain('git evidence is not available')
+    expect(text).not.toMatch(/c[1-4]\b/)
+    expect(hotCalls).toEqual([])
+    engine.close()
+  })
+
+  it('never hands an option-shaped branch to git', async () => {
+    const seen: Array<string | undefined> = []
+    const engine = createDigestEngine({
+      resolveSession: async () => null,
+      readFacts: readTranscriptFacts,
+      readTruth: readTranscriptTruth,
+      gatherGit: async (_f, _s, _b, rev) => {
+        seen.push(rev)
+        return { kind: 'unavailable' }
+      },
+      writeDigest: async () => ({ ok: true }),
+      writeHot: async () => undefined,
+      memoryCheckout: async () => fx.repo,
+      now: () => REPLAY,
+      setTimer: () => undefined,
+      clearTimer: () => undefined
+    })
+    for (const b of ['--output=/tmp/x', '-x', 'a b', 'a..b ', '']) {
+      await engine.digestTranscriptInto(args(b))
+    }
+    expect(seen).toEqual([])
+    engine.close()
+  })
+
+  it('writes nothing for a transcript below the gate', async () => {
+    const engine = engineOver()
+    await engine.digestTranscriptInto({
+      ...args('feature-x'),
+      sessionId: id('a100000a'),
+      transcriptPath: fx.transcriptOf(id('a100000a'))
+    })
+    expect(existsSync(join(memoryDirFor(fx.repo), 'sessions'))).toBe(false)
+    engine.close()
+  })
+})
+
 describe('digestOrphans', () => {
   it('digests orphan sessions at gather time', async () => {
     const engine = engineOver()
@@ -201,7 +265,7 @@ describe('digestOrphans', () => {
   it('digests at most 20 sessions per gather across all items, oldest first', async () => {
     const mk = (n: number, base: number): OrphanSessionFile[] =>
       Array.from({ length: n }, (_, i) => ({
-        sessionId: `s${base + i}`.padEnd(36, '0'),
+        sessionId: `x${String(base + i).padStart(3, '0')}`.padEnd(36, '0'),
         transcriptPath: `/t/s${base + i}.jsonl`,
         mtimeMs: 1_000_000 - (base + i) * 1000 // higher index = older
       }))
