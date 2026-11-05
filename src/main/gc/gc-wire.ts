@@ -65,8 +65,11 @@ export interface ShelvedSummary {
 
 /** What the shelving half of one cycle did (autonomous cleanup U2.2). */
 export interface ShelveCycleRecord {
-  /** `off`: the switch is off. `report`: first cycle, nothing shelved. `shelve`: acted. */
-  mode: 'off' | 'report' | 'shelve'
+  /**
+   * `off`: the switch is off. `paused`: the global pause is on. `report`: first cycle, nothing
+   * shelved. `shelve`: acted.
+   */
+  mode: 'off' | 'paused' | 'report' | 'shelve'
   /** Eligible worktrees seen this cycle. */
   found: number
   /** Disk they occupy. */
@@ -84,6 +87,28 @@ export interface ShelveCycleRecord {
   locked: number
   /** Shelves whose journal line could not be written (the shelve itself stands). */
   journalFailed: number
+}
+
+/** What the Docker slot of one cycle did (autonomous cleanup U3.1). */
+export interface DockerCycleRecord {
+  /** `off`: the switch is off. `paused`: the global pause. `report`: first cycle, acted on nothing. `act`: acted. */
+  mode: 'off' | 'paused' | 'report' | 'act'
+  /** Actions the planner found this cycle (always 0 in U3.1: the planner is empty). */
+  found: number
+  /** Actions that ran and succeeded. */
+  acted: number
+  /** Refused at the executor because the world had moved. */
+  refused: number
+  /** Real failures; they count toward the kill switch. */
+  failed: number
+  /** Found actions the per-cycle cap left for a later cycle. */
+  deferred: number
+  /** Another Harnu holds the Docker lock: the slot did nothing this cycle. */
+  locked: boolean
+  /** Docker autonomy switched itself off this cycle after a streak of failures. */
+  paused: boolean
+  /** Why it switched itself off, in words; null otherwise. */
+  pausedReason: string | null
 }
 
 /** What one pass of the autopilot did. Pushed on `gc:cycle` and kept as `lastCycle`. */
@@ -111,6 +136,10 @@ export interface CycleRecord {
   jobId: string | null
   /** The shelving half of the cycle; absent when shelving is not wired. */
   shelve?: ShelveCycleRecord
+  /** The Docker half of the cycle; absent when it is not wired or the cycle was paused. */
+  docker?: DockerCycleRecord
+  /** The global "pause autonomous cleanup" was on: the cycle gathered and acted on nothing. */
+  paused?: true
 }
 
 /** `gc:snapshot`: everything the Cleanup surface shows, from the last gather. */

@@ -106,6 +106,8 @@ export async function runShelveCycle(
   state: CycleState
 ): Promise<ShelveCycleRecord> {
   const prefs = deps.prefs()
+  // The global pause (design §5) beats the switch: nothing is probed, locked or shelved.
+  if (prefs.pauseAutonomous) return empty('paused')
   if (!prefs.shelve.enabled) return empty('off')
   const now = deps.now()
   const ctx = { prefs, driftedCwds: deps.driftedCwds() }

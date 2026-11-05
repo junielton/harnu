@@ -18,7 +18,7 @@ import {
 import type { WorktreeBundle } from './bundle-core'
 import type { JobQueue } from './gc-jobs-core'
 import type { GcPrefs } from './gc-prefs'
-import type { CycleRecord, ShelveCycleRecord } from './gc-wire'
+import type { CycleRecord, DockerCycleRecord, ShelveCycleRecord } from './gc-wire'
 import {
   planHousekeeping,
   type HousekeepingPlan,
@@ -61,6 +61,10 @@ export interface CycleState {
   shelveStreak: number
   /** The count behind the last shelve report notice, so an unchanged report is not repeated. */
   shelveReportKey: string | null
+  /** Docker autonomy: failed actions in a row, across cycles; the kill switch counts it. */
+  dockerStreak: number
+  /** The count behind the last Docker report notice, so an unchanged report is not repeated. */
+  dockerReportKey: string | null
 }
 
 export function createCycleState(): CycleState {
@@ -70,7 +74,9 @@ export function createCycleState(): CycleState {
     last: null,
     shelveFailures: new Map(),
     shelveStreak: 0,
-    shelveReportKey: null
+    shelveReportKey: null,
+    dockerStreak: 0,
+    dockerReportKey: null
   }
 }
 
@@ -100,6 +106,12 @@ export interface GcCycleDeps {
    * its own switch and its own report-only first cycle. A throw is logged and never fails the cycle.
    */
   shelve?(bundles: WorktreeBundle[]): Promise<ShelveCycleRecord>
+  /**
+   * The Docker half (autonomous cleanup U3.1): runs after the scan and the shelve slot, behind its
+   * own switch, its own report-only first cycle and a machine-wide lock. A throw is logged and never
+   * fails the cycle.
+   */
+  docker?(): Promise<DockerCycleRecord>
   /** Called with every gather, whether or not the cycle cleans: the Containers feed reads it. */
   onGathered?(g: GcGather): void
   state: CycleState
@@ -168,6 +180,30 @@ export async function runGcCycle(
   const gathered = withFailures(await deps.gather(), deps.state, now)
   const { bundles } = gathered
   deps.onGathered?.(gathered)
+
+  // "Pause autonomous cleanup" (design §5): the cycle still gathers, so the screens stay current,
+  // but it cleans, expires, shelves and touches Docker not at all, and says nothing.
+  if (prefs.pauseAutonomous) {
+    const paused: CycleRecord = {
+      at: now,
+      trigger,
+      mode: 'off',
+      found: 0,
+      foundBytes: 0,
+      cleaned: [],
+      freedBytes: 0,
+      trashedBytes: 0,
+      archivesExpired: 0,
+      deferred: 0,
+      housekeeping: null,
+      notified: false,
+      jobId: null,
+      paused: true
+    }
+    deps.state.last = paused
+    deps.emitCycle(paused)
+    return paused
+  }
 
   const plan: CyclePlan = planCycle(bundles, prefs)
   // Defense in depth: whatever the planner returned, only a ready item is ever handed on.
@@ -273,6 +309,16 @@ export async function runGcCycle(
     }
   }
 
+  // Docker autonomy rides the same tick too, last: it never reads `autopilot` or `shelve`.
+  let docker: DockerCycleRecord | undefined
+  if (deps.docker) {
+    try {
+      docker = await deps.docker()
+    } catch (err) {
+      console.warn('[gc] docker autonomy failed', messageOf(err))
+    }
+  }
+
   const doneCount = cleaned.filter((r) => r.ok).length
   const freedBytes = cleaned.reduce((sum, r) => sum + r.freedBytes, 0) + reclaimed(housekeeping)
   const trashedBytes = cleaned.reduce((sum, r) => sum + (r.trashedBytes ?? 0), 0)
@@ -315,7 +361,8 @@ export async function runGcCycle(
     housekeeping,
     notified: notice !== null,
     jobId,
-    ...(shelve ? { shelve } : {})
+    ...(shelve ? { shelve } : {}),
+    ...(docker ? { docker } : {})
   }
   deps.state.last = record
   deps.emitCycle(record)
