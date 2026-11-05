@@ -16,6 +16,7 @@ const REQUESTS = [
   'gc:archives:delete',
   'gc:archives:gc',
   'gc:clean',
+  'gc:docker:ack',
   'gc:guide',
   'gc:jobs',
   'gc:keep',
