@@ -34,8 +34,29 @@ function bigGroup(n: number): FolderEntry[] {
     gitBranch: `wt-${i}`,
     repoId: 'repo-x',
     isMainWorktree: i === 0,
-    sessions: []
+    sessions: [session(`s${i}`, `/repos/alpha/wt-${i}`)]
   })) as FolderEntry[]
+}
+
+function session(id: string, projectPath: string): FolderEntry['sessions'][number] {
+  const now = new Date().toISOString()
+  return {
+    sessionId: id,
+    fullPath: `${projectPath}/${id}.jsonl`,
+    fileMtime: 1,
+    firstPrompt: '',
+    summary: id,
+    messageCount: 1,
+    created: now,
+    modified: now,
+    gitBranch: '',
+    projectPath,
+    isSidechain: false,
+    status: 'idle',
+    agents: [],
+    resumable: true,
+    bridged: false
+  } as FolderEntry['sessions'][number]
 }
 
 function isScroller(el: Element): boolean {
