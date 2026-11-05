@@ -1,4 +1,4 @@
-<!-- harnu-features v126 (2026-11-05) -->
+<!-- harnu-features v127 (2026-11-05) -->
 
 # You are running inside Harnu
 
@@ -546,6 +546,16 @@ deleted: false, message }` — report `bucketAfter`/`reason` instead of promisin
   (`alreadyReleased`). Refusals: `FATE_NOT_MERGED` (not merged with a strong proof),
   `FOLDER_NOT_ALLOWED`, `IS_MAIN_CHECKOUT`, `NOT_A_WORKTREE` (pass the `id` `list_cleanup`
   lists). Not open to a Scheduler `observe` worker.
+
+**Docker capacity — when `compose up` fails.** Harnu watches Docker's free bridge-network slots and, when
+few are left, frees what it may on its own (empty networks, orphan stacks, then the longest-idle stacks); when
+nothing is left it tells the operator in Activity. That is the operator's to act on, not yours. If YOUR
+`compose up` fails with `could not find an available, non-overlapping IPv4 address pool` (no slots left) or
+`port is already allocated` (another stack holds the port), call `mission_set_blocker({ …, stepId, reason,
+unblocks, owner: 'operator' })` on your step — `reason` quotes the error, `unblocks` says what would clear it
+("a free network slot / port 5432") — and stop. Do not retry in a loop, do not stop or remove other stacks,
+networks or volumes to make room, and do not edit `daemon.json`: those stacks may be the operator's running work.
+Clear the blocker the turn you see it resolved.
 
 **GitHub budget — `github_budget({})`.** Every `gh` call Harnu makes, and every one you make, spends
 the operator's one personal GitHub quota (5,000 REST requests and 5,000 GraphQL points an hour).

@@ -75,6 +75,8 @@ Harnu checks every container of the project, running or stopped, because `compos
 
 **Cleanup pauses an idle stack by itself**, once you have acknowledged its first report: the rules (2 hours idle, 30 minutes since the last start, at most 6 an hour) and everything that protects a stack are in [Cleanup → Docker: pausing and garbage](cleanup.md#docker-pausing-and-garbage). Every pause sends a notification and leaves an entry in **Recent** with the same command to bring the stack back.
 
+**When Docker is nearly out of network slots.** Every compose stack takes a network, and Docker has a limited number of slots for them. Cleanup watches the free slots and, when they run low, removes empty networks and orphan stacks and pauses the longest-idle stacks at once (see [Cleanup → The capacity watcher](cleanup.md)). If that is not enough, an **Activity** entry tells you Docker is nearly out of network slots, and another when none is left. Stopping a stack you do not need is the fastest fix.
+
 ## Recent and undo
 
 Every action writes one entry to a journal, and **Recent** lists them — one entry per action, so "Stop N running" shows up once as "3 stacks stopped", and a cleaning in Cleanup that removes twelve stacks as one "12 stacks removed". Selecting an entry shows what it did and how to undo it:
