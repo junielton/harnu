@@ -102,7 +102,7 @@
 **Interfaces:**
 
 - `poolsKey(c: { total: number; source: 'daemon.json'|'default' }): string` → `` `${source}:${total}` ``.
-- `adviceOffer(args: { capacity: DockerCapacityView | null; mark: number; state: { squeezeSeenFor: string | null; dismissedFor: string | null } }): boolean` — true only for known capacity with `source === 'default'`, `squeezeSeenFor === poolsKey`, `dismissedFor !== poolsKey`.
+- `adviceOffer(args: { capacity: DockerCapacityView | null; state: { squeezeSeenFor: string | null; dismissedFor: string | null } }): boolean` — true only for known capacity with `source === 'default'`, `squeezeSeenFor === poolsKey`, `dismissedFor !== poolsKey`.
 - Store: `gc.poolAdvice` (readonly `{ squeezeSeenFor, dismissedFor }`, `persistedRef('om2tab.gc.poolAdvice', …)`), `gc.dismissPoolAdvice()`; every adopted watch record with known capacity, `source: 'default'` and `free <= mark` sets `squeezeSeenFor`.
 - Dialog props: `{ free: number; total: number }`; emits `dismiss`.
 
@@ -132,3 +132,9 @@
 - [ ] **Step 1:** Isolated instance per `docs/dev/live-verify-second-instance.md` (`--user-data-dir=/tmp/harnu-verify-u37`, empty HOME, throwaway `u37fixture-dind` engine as U3.6 did). Capture known / low / zero / unknown / report-only with Would-have rows / Paused rows, the advice dialog (default and copied), and the stale-volume row into the main checkout's `.harnu/out/u37/built/`.
 - [ ] **Step 2:** Run `/dtk:mockup-qa` against the committed mockup, fix what it finds (red→green where it is code), re-capture changed screens.
 - [ ] **Step 3:** Tear down by PID, remove fixtures, write `.harnu/REPORT.md`, push, send the report to the owner.
+
+## Addendum — what the live run changed (U3.7)
+
+- **Opening Cleanup always scans Containers once, and again whenever the watcher or the hourly cycle reports it acted.** Cleanup's own Docker actions write the journal without going through the Containers service, so its snapshot never saw them (found live: the real autopilot removal was missing from Automatic actions). Tests in `tests/cleanup-view-gc.test.ts`.
+- **A report-only plan with no pause in it keeps showing the stacks that are already paused;** "Would pause n" only replaces the count when n is above zero (found live).
+- **The pool-advice dialog is a hand-rolled shell** registered in the T460 dialog nets (`dialog-shell-ratchet`, `dialog-surfaces.characterization`), as `MergeBatchDialog` and `TrustedHostsDialog` were, because `ui/Dialog.vue` does not exist yet.
