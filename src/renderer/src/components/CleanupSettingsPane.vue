@@ -62,6 +62,11 @@ async function acknowledgeShelve(): Promise<void> {
   applyGc(await gc.ackShelveReport())
 }
 
+/** Acknowledging the first Docker report has its own channel too; the answer is the prefs as saved. */
+async function acknowledgeDocker(): Promise<void> {
+  applyGc(await gc.ackDockerReport())
+}
+
 function intervalOptions(): Array<{ value: number; label: string }> {
   return [
     { value: 1_800_000, label: t('cleanup.settings.interval30m') },
@@ -353,6 +358,83 @@ const EYEBROW_STYLE =
         >
           {{ t('cleanup.gc.settings.shelve.ack') }}
         </Button>
+      </div>
+    </section>
+
+    <!-- Docker: pausing and garbage (autonomous cleanup U3.1) -->
+    <section style="margin-bottom: 16px" data-testid="cleanup-settings-docker">
+      <div class="text-text-3" :style="EYEBROW_STYLE">
+        {{ t('cleanup.gc.settings.docker.eyebrow') }}
+      </div>
+      <p class="text-text-3" style="font-size: 11.5px; line-height: 1.5; margin-bottom: 14px">
+        {{ t('cleanup.gc.settings.docker.intro', { hours: prefs.docker.idleHours }) }}
+      </p>
+
+      <div class="flex items-start justify-between" style="gap: 12px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('cleanup.gc.settings.docker.label') }}
+          </div>
+          <SettingHint>{{ t('cleanup.gc.settings.docker.hint') }}</SettingHint>
+        </div>
+        <ToggleSwitch
+          data-testid="gc-docker"
+          :model-value="prefs.docker.enabled"
+          :aria-label="t('cleanup.gc.settings.docker.label')"
+          @update:model-value="(v: boolean) => saveGc({ docker: { ...prefs!.docker, enabled: v } })"
+        />
+      </div>
+
+      <div
+        v-if="prefs.docker.enabled"
+        class="flex items-center justify-between"
+        style="gap: 12px; margin-top: 10px"
+        data-testid="gc-docker-status"
+      >
+        <p
+          v-if="!prefs.docker.firstReportAcknowledged"
+          class="text-text-3"
+          style="font-size: 11.5px; line-height: 1.5; flex: 1; min-width: 0"
+        >
+          {{ t('cleanup.gc.settings.docker.reportOnly') }}
+        </p>
+        <p v-else class="text-text-3" style="font-size: 11.5px; line-height: 1.5; flex: 1">
+          {{ t('cleanup.gc.settings.docker.active', { n: prefs.docker.maxPerCycle }) }}
+        </p>
+        <Button
+          v-if="!prefs.docker.firstReportAcknowledged"
+          variant="soft"
+          data-testid="gc-docker-ack"
+          @click="acknowledgeDocker"
+        >
+          {{ t('cleanup.gc.settings.docker.ack') }}
+        </Button>
+      </div>
+
+      <!-- The global pause: stops every autonomous action, shelving and Docker alike. -->
+      <div class="border-t border-border" style="margin-top: 14px; padding-top: 14px">
+        <div class="flex items-start justify-between" style="gap: 12px">
+          <div style="flex: 1; min-width: 0">
+            <div class="text-text-2" style="font-size: 12px">
+              {{ t('cleanup.gc.settings.docker.pauseAll.label') }}
+            </div>
+            <SettingHint>{{ t('cleanup.gc.settings.docker.pauseAll.hint') }}</SettingHint>
+          </div>
+          <ToggleSwitch
+            data-testid="gc-pause-all"
+            :model-value="prefs.pauseAutonomous"
+            :aria-label="t('cleanup.gc.settings.docker.pauseAll.label')"
+            @update:model-value="(v: boolean) => saveGc({ pauseAutonomous: v })"
+          />
+        </div>
+        <p
+          v-if="prefs.pauseAutonomous"
+          class="text-warning"
+          style="font-size: 11.5px; line-height: 1.5; margin-top: 8px"
+          data-testid="gc-pause-all-note"
+        >
+          {{ t('cleanup.gc.settings.docker.pauseAll.note') }}
+        </p>
       </div>
     </section>
 

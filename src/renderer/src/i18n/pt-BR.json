@@ -3123,6 +3123,20 @@
           "ack": "Confirmar o primeiro relatório",
           "active": "Guardar está ativo. Até {n} worktrees por ciclo."
         },
+        "docker": {
+          "eyebrow": "Docker: pausar e limpar lixo",
+          "intro": "A Limpeza evita sozinha que o Docker fique sem espaço. Uma stack ociosa há {hours} horas fica Pausada (derrubada, nunca apagada, com os volumes sempre preservados), e redes compose vazias e stacks deixadas por worktrees removidas são limpas. Traga uma stack Pausada de volta com o comando compose up dela.",
+          "label": "Pausar stacks ociosas e limpar lixo do Docker automaticamente",
+          "hint": "Roda no mesmo timer em segundo plano do Autopilot. Volumes nunca são removidos.",
+          "reportOnly": "A primeira passada só registra o que pausaria ou removeria; nada muda no Docker até você confirmar.",
+          "ack": "Confirmar o primeiro relatório",
+          "active": "A limpeza do Docker está ativa. Até {n} ações por ciclo.",
+          "pauseAll": {
+            "label": "Pausar toda a limpeza automática",
+            "hint": "Para de uma vez o guardar worktrees, a limpeza do Docker e a limpeza do Autopilot. Limpar na mão continua funcionando.",
+            "note": "A limpeza automática está pausada. Nada é guardado, pausado ou removido sozinho até você desligar isto."
+          }
+        },
         "interval": {
           "label": "Rodar a cada",
           "hint": "Um único timer comanda o escaneamento e a limpeza."

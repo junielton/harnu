@@ -3123,6 +3123,20 @@
           "ack": "Acknowledge first report",
           "active": "Shelving is active. Up to {n} worktrees per cycle."
         },
+        "docker": {
+          "eyebrow": "Docker: pausing and garbage",
+          "intro": "Cleanup keeps Docker from running out of room by itself. A stack that has sat idle for {hours} hours is Paused (brought down, never deleted, its volumes always kept), and empty compose networks and stacks left behind by removed worktrees are cleared. Bring a Paused stack back with its compose up command.",
+          "label": "Pause idle stacks and clear Docker garbage automatically",
+          "hint": "Runs on the same background timer as the autopilot. Volumes are never removed.",
+          "reportOnly": "The first pass only records what it would pause or remove; nothing changes in Docker until you acknowledge it.",
+          "ack": "Acknowledge first report",
+          "active": "Docker cleanup is active. Up to {n} actions per cycle.",
+          "pauseAll": {
+            "label": "Pause all autonomous cleanup",
+            "hint": "Stops shelving, Docker cleanup and the autopilot's cleaning at once. Cleaning by hand keeps working.",
+            "note": "Autonomous cleanup is paused. Nothing is shelved, paused or removed on its own until you turn this off."
+          }
+        },
         "interval": {
           "label": "Run every",
           "hint": "One timer drives both the scan and the cleanup."
