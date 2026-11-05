@@ -22,6 +22,21 @@ import {
  * pointer must live somewhere other than the file itself.
  */
 
+/**
+ * T628: what expanding a helper pane to the window hides. `everything` collapses the sidebar, the
+ * session area and the Fleet rail; `session-only` collapses the session area alone.
+ */
+export const EXPAND_HIDES = ['everything', 'session-only'] as const
+export type ExpandHides = (typeof EXPAND_HIDES)[number]
+export const DEFAULT_EXPAND_HIDES: ExpandHides = 'everything'
+
+/** Narrow arbitrary input (a hand-edited settings.json) to a known value, else the default. */
+export function sanitizeExpandHides(v: unknown): ExpandHides {
+  return (EXPAND_HIDES as readonly unknown[]).includes(v)
+    ? (v as ExpandHides)
+    : DEFAULT_EXPAND_HIDES
+}
+
 export const DEFAULT_TERMINAL_FONT_SIZE = 13
 export const MIN_TERMINAL_FONT_SIZE = 8
 export const MAX_TERMINAL_FONT_SIZE = 32
@@ -66,6 +81,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // T626: the opt-in "Floating panels" layout. Mirrored onto <html> as `data-floating="on"` (absent
   // when off), the same mechanism as `data-theme`; every floating style is scoped to it.
   const floatingPanels = ref<boolean>(false)
+  // T628: what expanding a helper pane to the window hides (Settings → Appearance).
+  const expandHides = ref<ExpandHides>(DEFAULT_EXPAND_HIDES)
   const path = ref<string>('')
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -80,6 +97,7 @@ export const useSettingsStore = defineStore('settings', () => {
   let lastSavedEditor = ''
   let splitLayoutSaveTimer: ReturnType<typeof setTimeout> | null = null
   let floatingSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let expandHidesSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   /** Reflect the switch on <html>. Off removes the attribute, so the default layout is untouched. */
   function applyFloatingAttribute(on: boolean): void {
@@ -117,6 +135,7 @@ export const useSettingsStore = defineStore('settings', () => {
     splitLayout.value = sanitizeSplitLayout(data.splitLayout)
     floatingPanels.value = data.floatingPanels === true
     applyFloatingAttribute(floatingPanels.value)
+    expandHides.value = sanitizeExpandHides(data.expandHides)
 
     unsubscribe = window.api.onSettingsChanged(({ data: incoming, error }) => {
       if (error) {
@@ -151,6 +170,11 @@ export const useSettingsStore = defineStore('settings', () => {
           floatingPanels.value = nextFloating
           applyFloatingAttribute(nextFloating)
         }
+      }
+      // An Expand hides change from outside; skip our own echo and anything still waiting to save.
+      if (!expandHidesSaveTimer) {
+        const nextExpand = sanitizeExpandHides(incoming.expandHides)
+        if (nextExpand !== expandHides.value) expandHides.value = nextExpand
       }
       // An editor change from outside (a hand edit of settings.json). Skip our own echo
       // and anything that lands while a local edit is still waiting to be saved.
@@ -240,6 +264,20 @@ export const useSettingsStore = defineStore('settings', () => {
     }, SAVE_DEBOUNCE_MS)
   }
 
+  /**
+   * Choose what expanding a helper pane to the window hides (T628). Applies at once (the shell
+   * reads it) and debounced-persists to `settings.json` like the other settings.
+   */
+  function setExpandHides(next: ExpandHides): void {
+    expandHides.value = sanitizeExpandHides(next)
+    if (expandHidesSaveTimer) clearTimeout(expandHidesSaveTimer)
+    expandHidesSaveTimer = setTimeout(() => {
+      expandHidesSaveTimer = null
+      if (!path.value) return
+      void window.api.settingsSave(path.value, { expandHides: expandHides.value })
+    }, SAVE_DEBOUNCE_MS)
+  }
+
   /** The Topbar button and `layout.cycleSplitOrientation`: auto → side-by-side → stacked → auto. */
   function cycleSplitLayout(): void {
     setSplitLayout(nextSplitLayout(splitLayout.value))
@@ -252,7 +290,8 @@ export const useSettingsStore = defineStore('settings', () => {
       uiZoom: uiZoom.value,
       editor: effectiveEditorSetting(editor.value),
       splitLayout: splitLayout.value,
-      floatingPanels: floatingPanels.value
+      floatingPanels: floatingPanels.value,
+      expandHides: expandHides.value
     }
     const res = await window.api.settingsChangeLocation(data)
     if (!res) return
@@ -302,6 +341,10 @@ export const useSettingsStore = defineStore('settings', () => {
       clearTimeout(floatingSaveTimer)
       floatingSaveTimer = null
     }
+    if (expandHidesSaveTimer) {
+      clearTimeout(expandHidesSaveTimer)
+      expandHidesSaveTimer = null
+    }
     unsubscribe?.()
     unsubscribe = null
     started = false
@@ -313,6 +356,7 @@ export const useSettingsStore = defineStore('settings', () => {
     editor,
     splitLayout,
     floatingPanels,
+    expandHides,
     path,
     init,
     setFontSize,
@@ -321,6 +365,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setSplitLayout,
     cycleSplitLayout,
     setFloatingPanels,
+    setExpandHides,
     changeLocation,
     reveal,
     openInEditor,

@@ -127,6 +127,32 @@ vi.mock('../src/renderer/src/lib/pane-components', async () => {
   }
 })
 
+// useShortcuts matches chords through useMagicKeys, which jsdom cannot drive faithfully; capture the
+// binding list App registers and call a binding's handler as the chord would.
+interface CapturedBinding {
+  id: string
+  handler: () => void
+}
+vi.mock('../src/renderer/src/composables/useShortcuts', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../src/renderer/src/composables/useShortcuts')>()
+  return {
+    ...actual,
+    useShortcuts: (bindings: CapturedBinding[], ...rest: unknown[]) => {
+      ;(globalThis as unknown as { __bindings: CapturedBinding[] }).__bindings = bindings
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actual.useShortcuts as any)(bindings, ...rest)
+    }
+  }
+})
+const binding = (id: string): CapturedBinding => {
+  const found = (globalThis as unknown as { __bindings: CapturedBinding[] }).__bindings.find(
+    (b) => b.id === id
+  )
+  expect(found, `${id} is registered`).toBeDefined()
+  return found as CapturedBinding
+}
+
 import { i18n } from '@renderer/i18n'
 import App from '../src/renderer/src/App.vue'
 import HelperStack from '../src/renderer/src/components/HelperStack.vue'
@@ -445,15 +471,7 @@ describe('enter and exit', () => {
     expect(typeof helpers.toggleExpandPane).toBe('function')
     helpers.toggleExpandPane(FOLDER, ids[0])
     await flushPromises()
-    window.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'M',
-        code: 'KeyM',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true
-      })
-    )
+    binding('pane.toggleMaximize').handler()
     await flushPromises()
     expect(helpers.expandedPaneIdForCurrentWorktree).toBeNull()
     expect(helpers.maximizedPaneIdForCurrentWorktree, 'maximize was not toggled').toBeNull()
@@ -523,9 +541,7 @@ describe('variants', () => {
     await flushPromises()
     expect(w.get('[data-app-shell]').attributes('data-expand')).toBe('everything')
     expect(session().classes()).toContain('lm-collapse')
-    expect(w.get('[data-column="sidebar"], [data-sidebar], aside').classes()).toContain(
-      'lm-collapse-w'
-    )
+    expect(w.get('sidebar-stub').classes()).toContain('lm-collapse-w')
     expect(w.get('[data-rail-column]').classes()).toContain('lm-collapse-w')
     // The dividers that touched a collapsed column collapse with it.
     const dividers = w.findAll('[role="separator"]')
@@ -551,7 +567,7 @@ describe('variants', () => {
     expect(w.get('[data-app-shell]').attributes('data-expand')).toBe('session-only')
     expect(w.get('[data-island="session"]').classes()).toContain('lm-collapse')
     expect(w.get('[data-rail-column]').classes()).not.toContain('lm-collapse-w')
-    expect(w.get('aside').classes()).not.toContain('lm-collapse-w')
+    expect(w.get('sidebar-stub').classes()).not.toContain('lm-collapse-w')
   })
 
   it('the helper stack: the expanded pane takes the room and the others collapse to nothing', async () => {
