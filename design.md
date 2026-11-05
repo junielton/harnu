@@ -3772,6 +3772,19 @@ the new-session flow for the drilled-into folder
 **`⋯` (folder actions)**, below. The repo screen has no peek or `+` actions,
 only a folder screen hosts sessions directly.
 
+**The back row is pinned, outside the scroller (BUG-248).** The back row is a
+sibling ABOVE the drill list's scroller, like the sidebar's own header — not a
+row inside the scroll area, and not `position: sticky` (a sticky row stops short
+of the scrollbar gutter and lets half-cut rows show at its edge). The drill view
+renders directly in the sidebar column (it is not wrapped by the classic tree's
+scroller), so the back row spans the full column width, its bottom `border`
+reaches both edges over the gutter, and the scrollbar track starts below it. The
+row is opaque (`bg-sidebar`). Rows sliding under its edge fade out through a
+14px strip at the top of the scroller (`--color-sidebar` → transparent,
+`pointer-events: none`), inset from the right by the 8px scrollbar so the thumb
+is never veiled; the borders stay solid. The scroller keeps its `6px 0`
+padding. Non-drill mode is unchanged.
+
 **Row actions — every drill-in row has the menu its classic-tree twin has.**
 Drill-in used to be a dead end for actions: right-clicking a back row or a
 chooser row did nothing, and reaching Rename / Hide / New worktree meant
