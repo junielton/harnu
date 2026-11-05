@@ -860,3 +860,113 @@ textarea,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* floating-panels:start */
+/* T626 — the opt-in "Floating panels" layout (design.md §6 "Floating panels layout").
+   EVERY selector below starts with `:root[data-floating='on']`, the attribute the settings store
+   puts on <html>; with it absent none of this applies and the default layout is untouched.
+   These rules are UNLAYERED on purpose: they must beat the layered Tailwind utilities
+   (`border-b`, `bg-sidebar`, `border-l`…) the same elements carry in the default layout.
+   Islands are addressed by `data-island`, never by DOM shape. */
+
+/* canvas, and the 6px frame around the columns */
+:root[data-floating='on'] [data-app-shell] {
+  background: var(--color-canvas);
+}
+:root[data-floating='on'] [data-columns] {
+  padding: var(--float-gap);
+}
+
+/* every island: its own border and corners, never sharing an edge with another */
+:root[data-floating='on'] [data-island] {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-sizing: border-box;
+}
+:root[data-floating='on'] [data-island='sidebar-toolbar'],
+:root[data-floating='on'] [data-island='sidebar-return'],
+:root[data-floating='on'] [data-island='sidebar-list'],
+:root[data-floating='on'] [data-island='sidebar-dock'],
+:root[data-floating='on'] [data-island='rail-header'],
+:root[data-floating='on'] [data-island='rail-list'],
+:root[data-floating='on'] [data-island='rail-needs-you'],
+:root[data-floating='on'] [data-island='rail-would-have'],
+:root[data-floating='on'] [data-island='rail-minimized'] {
+  background: var(--color-sidebar);
+}
+:root[data-floating='on'] [data-island='topbar'],
+:root[data-floating='on'] [data-island='session'],
+:root[data-floating='on'] [data-island='helper-pane'] {
+  background: var(--color-bg);
+}
+/* islands whose content must not poke past the rounded corners (scrollers already clip) */
+:root[data-floating='on'] [data-island='session'],
+:root[data-floating='on'] [data-island='sidebar-return'],
+:root[data-floating='on'] [data-island='rail-needs-you'],
+:root[data-floating='on'] [data-island='rail-would-have'] {
+  overflow: hidden;
+}
+
+/* the top band: three islands of the band height on one line */
+:root[data-floating='on'] [data-island-band] {
+  box-sizing: border-box;
+  height: var(--float-band);
+}
+
+/* the sidebar column and the expanded Fleet rail are transparent stacks of islands */
+:root[data-floating='on'] aside[data-column]:not([data-rail-state='minimized']) {
+  background: transparent;
+  gap: var(--float-gap);
+}
+:root[data-floating='on'] [data-island='topbar'] {
+  margin-bottom: var(--float-gap);
+}
+:root[data-floating='on'] [data-island='sidebar-return'] {
+  padding-bottom: 4px;
+}
+/* the Return here zone's own bottom rule: the island gap separates it from the list now */
+:root[data-floating='on'] [data-return-divider] {
+  display: none;
+}
+/* dock and rail sections are drop-in slots: each extra section is divided from the one above */
+:root[data-floating='on'] [data-dock-section] + [data-dock-section] {
+  border-top: 1px solid var(--color-border);
+}
+
+/* helper panes: a gap between stacked panes (stacked orientation gets its gap from the splitters) */
+:root[data-floating='on'] #helper-stack-host[data-orientation='side-by-side'] {
+  gap: var(--float-gap);
+}
+/* the header-as-handle hover line between panes is not drawn between islands */
+:root[data-floating='on'] [data-island='helper-pane'] header.cursor-row-resize {
+  border-top-width: 0;
+}
+
+/* dividers: the gap is the handle; no line at rest, a short grip on hover */
+:root[data-floating='on'] [role='separator'] {
+  align-items: center;
+  justify-content: center;
+}
+:root[data-floating='on'] [role='separator'][aria-orientation='vertical'] > div {
+  background: transparent;
+  height: 36px;
+  width: 2px;
+  border-radius: 999px;
+  transition: background var(--dur-fast) var(--ease);
+}
+:root[data-floating='on'] [role='separator'][aria-orientation='horizontal'] > div {
+  background: transparent;
+  height: 2px;
+  width: 36px;
+  border-radius: 999px;
+  transition: background var(--dur-fast) var(--ease);
+}
+:root[data-floating='on'] [role='separator']:hover > div {
+  background: var(--color-accent-line);
+}
+
+/* a divider that is not rendered must not take the gap with it: the minimized Fleet rail */
+:root[data-floating='on'] [data-rail-column][data-rail-state='minimized'] {
+  margin-left: var(--float-gap);
+}
+/* floating-panels:end */

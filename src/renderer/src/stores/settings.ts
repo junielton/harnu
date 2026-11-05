@@ -63,6 +63,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // T627: how the session area and the helper stack are laid out. `auto` follows
   // the window's shape (`layout.splitOrientation` resolves it); the other two pin it.
   const splitLayout = ref<SplitLayoutSetting>(DEFAULT_SPLIT_LAYOUT)
+  // T626: the opt-in "Floating panels" layout. Mirrored onto <html> as `data-floating="on"` (absent
+  // when off), the same mechanism as `data-theme`; every floating style is scoped to it.
+  const floatingPanels = ref<boolean>(false)
   const path = ref<string>('')
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -76,6 +79,14 @@ export const useSettingsStore = defineStore('settings', () => {
   let editorSaveTimer: ReturnType<typeof setTimeout> | null = null
   let lastSavedEditor = ''
   let splitLayoutSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let floatingSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** Reflect the switch on <html>. Off removes the attribute, so the default layout is untouched. */
+  function applyFloatingAttribute(on: boolean): void {
+    if (typeof document === 'undefined') return
+    if (on) document.documentElement.setAttribute('data-floating', 'on')
+    else document.documentElement.removeAttribute('data-floating')
+  }
 
   // Guard against a double `init()` (e.g. an HMR re-run) so we never stack two
   // `onSettingsChanged` subscriptions. The unsubscribe is retained rather than
@@ -104,6 +115,8 @@ export const useSettingsStore = defineStore('settings', () => {
     window.api.uiZoomApply(uiZoom.value)
     editor.value = effectiveEditorSetting(data.editor)
     splitLayout.value = sanitizeSplitLayout(data.splitLayout)
+    floatingPanels.value = data.floatingPanels === true
+    applyFloatingAttribute(floatingPanels.value)
 
     unsubscribe = window.api.onSettingsChanged(({ data: incoming, error }) => {
       if (error) {
@@ -130,6 +143,14 @@ export const useSettingsStore = defineStore('settings', () => {
       if (!splitLayoutSaveTimer) {
         const nextLayout = sanitizeSplitLayout(incoming.splitLayout)
         if (nextLayout !== splitLayout.value) splitLayout.value = nextLayout
+      }
+      // A Floating panels change from outside; skip our own echo and anything still waiting to save.
+      if (!floatingSaveTimer) {
+        const nextFloating = incoming.floatingPanels === true
+        if (nextFloating !== floatingPanels.value) {
+          floatingPanels.value = nextFloating
+          applyFloatingAttribute(nextFloating)
+        }
       }
       // An editor change from outside (a hand edit of settings.json). Skip our own echo
       // and anything that lands while a local edit is still waiting to be saved.
@@ -204,6 +225,21 @@ export const useSettingsStore = defineStore('settings', () => {
     }, SAVE_DEBOUNCE_MS)
   }
 
+  /**
+   * Turn the Floating panels layout on or off (T626). Applies at once (the attribute on <html>)
+   * and debounced-persists to `settings.json` like the other settings.
+   */
+  function setFloatingPanels(next: boolean): void {
+    floatingPanels.value = next === true
+    applyFloatingAttribute(floatingPanels.value)
+    if (floatingSaveTimer) clearTimeout(floatingSaveTimer)
+    floatingSaveTimer = setTimeout(() => {
+      floatingSaveTimer = null
+      if (!path.value) return
+      void window.api.settingsSave(path.value, { floatingPanels: floatingPanels.value })
+    }, SAVE_DEBOUNCE_MS)
+  }
+
   /** The Topbar button and `layout.cycleSplitOrientation`: auto → side-by-side → stacked → auto. */
   function cycleSplitLayout(): void {
     setSplitLayout(nextSplitLayout(splitLayout.value))
@@ -215,7 +251,8 @@ export const useSettingsStore = defineStore('settings', () => {
       terminalFontSize: terminalFontSize.value,
       uiZoom: uiZoom.value,
       editor: effectiveEditorSetting(editor.value),
-      splitLayout: splitLayout.value
+      splitLayout: splitLayout.value,
+      floatingPanels: floatingPanels.value
     }
     const res = await window.api.settingsChangeLocation(data)
     if (!res) return
@@ -261,6 +298,10 @@ export const useSettingsStore = defineStore('settings', () => {
       clearTimeout(splitLayoutSaveTimer)
       splitLayoutSaveTimer = null
     }
+    if (floatingSaveTimer) {
+      clearTimeout(floatingSaveTimer)
+      floatingSaveTimer = null
+    }
     unsubscribe?.()
     unsubscribe = null
     started = false
@@ -271,6 +312,7 @@ export const useSettingsStore = defineStore('settings', () => {
     uiZoom,
     editor,
     splitLayout,
+    floatingPanels,
     path,
     init,
     setFontSize,
@@ -278,6 +320,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setEditor,
     setSplitLayout,
     cycleSplitLayout,
+    setFloatingPanels,
     changeLocation,
     reveal,
     openInEditor,

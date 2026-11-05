@@ -32,7 +32,7 @@ function labelFor(s: Session): string {
 </script>
 
 <template>
-  <div v-if="sessions.forgottenSessions.length > 0">
+  <div v-if="sessions.forgottenSessions.length > 0" data-island="sidebar-return">
     <!-- Section-label eyebrow (design.md §6) — uppercase 10.5px / 500 / 0.06em /
          --text-4, mirroring the FOLDERS / ACTIVE ELSEWHERE eyebrows. Not
          collapsible: the zone is a transient nudge, gone the moment it's empty. -->
@@ -93,6 +93,11 @@ function labelFor(s: Session): string {
     </button>
 
     <!-- 1px zone divider (--border) separating RETURN HERE from FOLDERS -->
-    <div class="border-t border-border" style="margin: 6px 0" aria-hidden="true" />
+    <div
+      data-return-divider
+      class="border-t border-border"
+      style="margin: 6px 0"
+      aria-hidden="true"
+    />
   </div>
 </template>

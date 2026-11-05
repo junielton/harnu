@@ -463,6 +463,23 @@ const settingsIndex: Array<{
     anchor: 'set-splitLayout'
   },
   {
+    tabId: 'appearance',
+    labelKey: 'settings.appearance.floatingPanels.label',
+    keywords: [
+      'floating',
+      'panels',
+      'islands',
+      'layout',
+      'gap',
+      'canvas',
+      'flutuante',
+      'painéis',
+      'paineis',
+      'ilhas'
+    ],
+    anchor: 'set-floatingPanels'
+  },
+  {
     tabId: 'general',
     labelKey: 'settings.uiScale.label',
     keywords: [
@@ -1368,6 +1385,25 @@ onBeforeUnmount(() => {
                     size="sm"
                     :aria-label="$t('settings.appearance.splitLayout.label')"
                     @update:model-value="settings.setSplitLayout($event as SplitLayoutSetting)"
+                  />
+                </div>
+                <!-- T626: opt-in floating islands layout (design.md §6 "Floating panels layout"). -->
+                <div
+                  id="set-floatingPanels"
+                  class="flex items-start justify-between"
+                  :class="highlightedAnchor === 'set-floatingPanels' ? 'anim-setting-flash' : ''"
+                  style="gap: 12px; margin-top: 14px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.appearance.floatingPanels.label') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.appearance.floatingPanels.hint') }}</SettingHint>
+                  </div>
+                  <ToggleSwitch
+                    :model-value="settings.floatingPanels"
+                    :aria-label="$t('settings.appearance.floatingPanels.label')"
+                    @update:model-value="settings.setFloatingPanels($event)"
                   />
                 </div>
               </section>

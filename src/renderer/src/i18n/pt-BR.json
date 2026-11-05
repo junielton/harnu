@@ -1173,6 +1173,10 @@
         "auto": "Automático",
         "sideBySide": "Lado a lado",
         "stacked": "Empilhado"
+      },
+      "floatingPanels": {
+        "label": "Painéis flutuantes",
+        "hint": "Mostra cada painel como uma ilha arredondada própria sobre um fundo mais escuro, com um espaço uniforme entre eles. Desligado mantém o layout clássico, de ponta a ponta."
       }
     },
     "interface": {
