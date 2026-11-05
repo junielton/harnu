@@ -233,6 +233,14 @@ export interface Tombstone {
    * stores null rather than a hint for one arbitrary stack (T340).
    */
   restoreHint: string | null
+  /**
+   * Why an automatic action happened, in one English sentence (autonomous cleanup U3.3, and the
+   * pauses of U3.5): "Removed empty network `x` — no containers", "Paused `x` — idle 3 h · bring
+   * back: `docker compose … up -d`". The digest reads it. Absent on operator and agent lines
+   * and on every line written before this field existed. A network removal has no stack, so its
+   * `stacks` is empty and this sentence is the whole line.
+   */
+  reason?: string
 }
 
 /**

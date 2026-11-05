@@ -120,7 +120,7 @@ export function createParkPlanner(deps: ParkPlannerDeps): DockerPlanner {
     return result.pauses.map((p) => {
       const stack = stacks.find((s) => s.id === p.decision.stack)
       decided.set(p.decision.stack, {
-        decision: p.decision,
+        decision: { ...p.decision, idle: p.reason },
         name: stack?.name ?? p.decision.stack,
         idleMs: p.idleMs
       })

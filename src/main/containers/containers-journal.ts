@@ -85,7 +85,8 @@ export function isTombstone(v: unknown): v is Tombstone {
     VERBS.includes(t.verb as ActVerb) &&
     Array.isArray(t.stacks) &&
     t.stacks.every(isTombstoneStack) &&
-    (typeof t.restoreHint === 'string' || t.restoreHint === null)
+    (typeof t.restoreHint === 'string' || t.restoreHint === null) &&
+    (t.reason === undefined || typeof t.reason === 'string')
   )
 }
 

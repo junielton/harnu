@@ -204,6 +204,11 @@ export interface PauseDecision {
   stack: string
   containerIds: string[]
   verdict: Verdict
+  /**
+   * How long the planner saw the stack idle ("idle 3 h"), for the journal's one-sentence reason. Not
+   * a fact the pause is bound to: the re-probe never compares it.
+   */
+  idle?: string
 }
 
 export interface PauseDeps {
@@ -247,6 +252,11 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
   const left = [...a].sort()
   const right = [...b].sort()
   return left.every((id, i) => id === right[i])
+}
+
+/** "Paused `x` — idle 3 h · bring back: `cmd`": the line the digest and the Activity feed read. */
+function pauseReason(name: string, idle: string | undefined, restoreCommand: string): string {
+  return `Paused \`${name}\`${idle ? ` — ${idle}` : ''} · bring back: \`${restoreCommand}\``
 }
 
 const CHANGED = 'the stack changed since decided; nothing was paused'
@@ -365,7 +375,11 @@ export async function pauseStack(
         paused: record
       }
     ],
-    restoreHint: record.restoreCommand
+    restoreHint: record.restoreCommand,
+    // Only Cleanup's own pauses carry a reason; the operator and agent lines stay as they were.
+    ...(actor === 'autopilot'
+      ? { reason: pauseReason(stack.name, decision.idle, record.restoreCommand) }
+      : {})
   }
   try {
     await deps.appendTombstone(tombstone)
