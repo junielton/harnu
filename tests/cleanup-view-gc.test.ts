@@ -1290,6 +1290,7 @@ describe('Cleanup screen — the Docker card reads the Containers snapshot (U3.7
             : t2[k]
     })
     await mountView()
+    const opened = containersScan.mock.calls.length // the open-time scan
     const record = (acted: number, at: number): Record<string, unknown> => ({
       at,
       trigger: 'timer',
@@ -1312,10 +1313,10 @@ describe('Cleanup screen — the Docker card reads the Containers snapshot (U3.7
     })
     api.push.dockerWatch!(record(0, 1000))
     await flushPromises()
-    expect(containersScan).not.toHaveBeenCalled()
+    expect(containersScan).toHaveBeenCalledTimes(opened)
     api.push.dockerWatch!(record(2, 2000))
     await flushPromises()
-    expect(containersScan).toHaveBeenCalledTimes(1)
+    expect(containersScan).toHaveBeenCalledTimes(opened + 1)
   })
 
   it("refreshes a snapshot that already exists, because Cleanup's own actions are not in it", async () => {
