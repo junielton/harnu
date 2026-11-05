@@ -17,7 +17,12 @@
 
 import type { CycleState } from './gc-cycle'
 import type { GcPrefs } from './gc-prefs'
-import type { DockerCycleRecord } from './gc-wire'
+import {
+  DOCKER_REPORT_ITEMS_MAX,
+  type DockerCycleRecord,
+  type DockerReportItem,
+  type DockerReportKind
+} from './gc-wire'
 import type { RepoLockResult } from './repo-lock-shell'
 
 const NOTICE_TITLE = 'Workspace cleanup'
@@ -79,6 +84,31 @@ export function composeDockerPlanners(
   }
 }
 
+const REPORT_KIND: Record<DockerAction['kind'], DockerReportKind> = {
+  'prune-network': 'network',
+  'remove-orphan': 'orphan',
+  park: 'pause'
+}
+
+/** The list a report-only pass records: kind, target and reason per action, capped. */
+export function reportItemsOf(actions: readonly DockerAction[]): DockerReportItem[] {
+  return actions.slice(0, DOCKER_REPORT_ITEMS_MAX).map((a) => ({
+    kind: REPORT_KIND[a.kind],
+    target: a.id,
+    reason: a.reason
+  }))
+}
+
+/** What the report-only notice says the pass would do, from the kinds the plan holds. */
+export function wouldDoText(actions: readonly DockerAction[]): string {
+  const removes = actions.some((a) => a.kind !== 'park')
+  const pauses = actions.some((a) => a.kind === 'park')
+  const parts: string[] = []
+  if (removes) parts.push('remove empty networks and orphan stacks')
+  if (pauses) parts.push('pause idle stacks')
+  return parts.join(' and ')
+}
+
 /** How many would-pause stacks the report-only notice names; the rest are in Settings → Cleanup. */
 const REPORT_LIST_MAX = 5
 
@@ -113,7 +143,8 @@ const empty = (mode: DockerCycleRecord['mode']): DockerCycleRecord => ({
   deferred: 0,
   locked: false,
   paused: false,
-  pausedReason: null
+  pausedReason: null,
+  items: []
 })
 
 export async function runDockerCycle(
@@ -144,11 +175,11 @@ async function runLocked(
     if (actions.length > 0 && key !== state.dockerReportKey) {
       deps.notify({
         title: NOTICE_TITLE,
-        body: `${actions.length} Docker ${plural(actions.length, 'item')} would be cleaned (stacks paused, never removed with their volumes). Open Settings → Cleanup to review and acknowledge.${wouldPauseText(actions)}`
+        body: `${actions.length} Docker ${plural(actions.length, 'item')} would be handled: Harnu would ${wouldDoText(actions)}. No volume is ever removed. Open Settings → Cleanup to review and acknowledge.${wouldPauseText(actions)}`
       })
     }
     state.dockerReportKey = key
-    return { ...empty('report'), found: actions.length }
+    return { ...empty('report'), found: actions.length, items: reportItemsOf(actions) }
   }
   state.dockerReportKey = null
 

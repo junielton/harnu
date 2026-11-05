@@ -89,11 +89,26 @@ export interface ShelveCycleRecord {
   journalFailed: number
 }
 
+/** What a Docker action is, in the words the UI uses: a network removed, an orphan stack removed, a stack paused. */
+export type DockerReportKind = 'network' | 'orphan' | 'pause'
+
+/** One thing a report-only Docker pass would do (U3.6): kind, the network or stack, and why. */
+export interface DockerReportItem {
+  kind: DockerReportKind
+  /** The network or stack id the action would touch. */
+  target: string
+  /** One English sentence, the same the journal would carry. */
+  reason: string
+}
+
+/** The most items a record carries; `found` stays the true count. */
+export const DOCKER_REPORT_ITEMS_MAX = 100
+
 /** What the Docker slot of one cycle did (autonomous cleanup U3.1). */
 export interface DockerCycleRecord {
   /** `off`: the switch is off. `paused`: the global pause. `report`: first cycle, acted on nothing. `act`: acted. */
   mode: 'off' | 'paused' | 'report' | 'act'
-  /** Actions the planner found this cycle (always 0 in U3.1: the planner is empty). */
+  /** Actions the planner found this cycle . */
   found: number
   /** Actions that ran and succeeded. */
   acted: number
@@ -109,6 +124,11 @@ export interface DockerCycleRecord {
   paused: boolean
   /** Why it switched itself off, in words; null otherwise. */
   pausedReason: string | null
+  /**
+   * Report-only pass (the first one, before the operator acknowledges): the LIST of what it would
+   * do, capped at {@link DOCKER_REPORT_ITEMS_MAX}. Empty in every other mode.
+   */
+  items: DockerReportItem[]
 }
 
 /** What one pass of the autopilot did. Pushed on `gc:cycle` and kept as `lastCycle`. */

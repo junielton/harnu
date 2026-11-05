@@ -120,7 +120,7 @@ describe('runDockerCycle: switch, pause, report-only (AC-3, AC-4)', () => {
     expect(rec).toMatchObject({ mode: 'report', found: 3, acted: 0, deferred: 0 })
     expect(r.executed).toEqual([])
     expect(r.notices).toHaveLength(1)
-    expect(r.notices[0]!.body).toMatch(/3 Docker items would be cleaned/)
+    expect(r.notices[0]!.body).toMatch(/3 Docker items would be handled/)
     // the same report is not announced twice
     await runDockerCycle(r.deps, r.state)
     expect(r.notices).toHaveLength(1)
@@ -350,6 +350,7 @@ const dockerRecord = (over: Partial<DockerCycleRecord> = {}): DockerCycleRecord 
   locked: false,
   paused: false,
   pausedReason: null,
+  items: [],
   ...over
 })
 
