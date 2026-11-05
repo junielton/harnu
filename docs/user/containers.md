@@ -62,6 +62,7 @@ While an action runs its button shows a spinner ("Stopping… 2 of 4"), and each
 Every action writes one entry to a journal, and **Recent** lists them — one entry per action, so "Stop N running" shows up once as "3 stacks stopped", and a cleaning in Cleanup that removes twelve stacks as one "12 stacks removed". Selecting an entry shows what it did and how to undo it:
 
 - **After a stop:** the `docker start …` command (with a copy button) and a **Start stack** / **Start all N** button that runs it.
+- **After a removal Cleanup made on its own** (actor `autopilot`): an empty compose network, or a stack whose folder no longer exists. The entry carries the reason ("Removed empty network `app_default` — no containers"; "Removed orphan stack `app` — worktree gone, volumes kept: app_data"). A network needs no undo: `compose up` recreates it. An orphan's volumes are never removed; the entry lists them as kept and says they belonged to a worktree that is gone.
 - **After a removal:** removed containers can't be restarted. If the worktree still exists, the entry shows the `docker compose … up -d` command that recreates them from it, and reattaches a volume you kept. If the worktree is gone, there is nothing to recreate them from.
 
 ## When docker isn't there
@@ -81,7 +82,7 @@ Each stack is announced **once**. It is not announced again on later scans, afte
 
 ## Safety
 
-- Harnu never stops or removes anything in this view on its own; every action is a click.
+- Nothing in this view stops or removes anything on its own; every action here is a click. The one automatic exception is [Cleanup's Docker garbage removal](cleanup.md#docker-pausing-and-garbage) (empty compose networks and the stacks of folders that no longer exist), which has its own switch, starts report-only, and never removes a volume.
 - Nothing is removed while it is running, and `--force` is never used.
 - A volume is removed only when you tick it, and the box is always unticked when the **Remove…** dialog opens. That dialog takes one stack and never removes a volume docker reports as shared with another stack.
 - Cleaning many stacks at once is [Cleanup](cleanup.md#the-hero-button-clean-everything-that-is-ready)'s job, and it is as strict: one confirm dialog that lists everything it will take, a re-check of the machine at the moment you confirm (anything that changed is skipped and shown again), and a plain warning that volumes cannot be restored.

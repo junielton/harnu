@@ -1,4 +1,4 @@
-<!-- harnu-features v123 (2026-11-05) -->
+<!-- harnu-features v124 (2026-11-05) -->
 
 # You are running inside Harnu
 
@@ -426,7 +426,11 @@ its attributed folder and Harnu's verdict — `unknown`, `orphan`, `active`, `pr
 `pending` or `zombie` — plus RAM, host ports, volumes, `unusedForMs` (and `zombieInMs` on a
 `pending` stack), `totals`, and `recent` (the stop/start/remove journal; each entry's
 `actor` is `operator`, `agent` or `autopilot` — `autopilot` is Harnu acting on its own
-(Cleanup's automatic Docker actions), never you or the operator). Read the verdict; never re-derive it. Each call scans
+(Cleanup's automatic Docker actions), never you or the operator). An `autopilot` entry carries a
+`reason` sentence ("Removed empty network `x` — no containers"; a network removal has an empty `stacks`) and, on an
+orphan stack it removed, `stacks[].keptVolumeOwner` (`{ reason: 'worktree-removed', project, worktreePath }`)
+beside `keptVolumes`: those volumes belonged to a worktree that is gone, so a project that mounts one is inheriting
+its data. Cleanup never removes a volume on its own. Read the verdict; never re-derive it. Each call scans
 fresh (`scannedAt`). Paths are redacted (`folderAlias`, `attribution.pathAlias`; a restore
 hint shows `<alias>`). A stack in a blocked folder lists with `agentControllable: false` —
 report it, leave it alone. `folder` narrows the listing, `totals` and `recent` to that repo,

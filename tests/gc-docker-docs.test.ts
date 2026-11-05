@@ -29,7 +29,9 @@ describe('Docker autonomy contracts', () => {
     expect(section).toMatch(/own/)
     expect(section).toMatch(/Pause all autonomous cleanup/)
     expect(section).toMatch(/volumes? (is|are) never removed|volumes kept/i)
-    expect(section).toMatch(/nothing yet in Docker/i)
+    expect(section).toMatch(/does not pause stacks yet/i)
+    expect(section).toMatch(/Empty compose networks/i)
+    expect(section).toMatch(/Orphan stacks/i)
   })
 
   it('the design spec records the 2026-11-05 decisions in an Amendments section', () => {

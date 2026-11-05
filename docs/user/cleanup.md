@@ -255,7 +255,12 @@ Docker can run out of room long before the disk does: it hands out a limited num
 
 **What it is for.** A stack that has sat idle for a couple of hours is **Paused**: brought down so it stops holding a network, never deleted, with its volumes kept; you bring it back with the `compose up -d` command Harnu records. Empty compose networks, and the stacks of worktrees that no longer exist, are cleared because they can only be regenerated. A volume is never removed this way.
 
-**What this release does: nothing yet in Docker.** This is the groundwork. The switch, the first report, the global pause and the safety limits are all in place, but the part that decides what to pause or clear is empty, so no stack is paused and nothing is removed. Later releases fill it in, and because the switch already starts report-only, you will see what it would do before anything acts.
+**What this release does: it clears Docker garbage; it does not pause stacks yet.** Two kinds of leftover are removed on their own, once you have acknowledged the first report:
+
+- **Empty compose networks**: a network that belongs to a compose project, has no container attached (running or stopped), and that no stack on the machine declares `external`. `compose up` recreates it the next time it is needed. If Harnu cannot read one stack's compose file, it keeps every empty network, because it cannot rule out that this stack needs one.
+- **Orphan stacks**: the containers of a stack whose folder no longer exists. A running one is stopped first (a normal stop, never a kill), then its containers are removed. A stack whose worktree was **shelved** is not an orphan: its folder is gone on purpose, and Harnu leaves it alone. If the list of shelved worktrees cannot be read, no stack is removed.
+
+**Volumes are always kept.** Nothing here ever removes a volume, and it never runs `docker volume rm`, `prune` or a forced removal. The volumes of a removed orphan stack stay in Docker, and the journal line names them and says they belonged to a worktree that is gone, so you can find them later. Pausing idle stacks is still to come.
 
 **It starts by only reporting, like shelving.** The switch is on by default, but its first pass only records what it would do. Nothing changes in Docker until you press **Acknowledge first report** in the same section. Turning the switch off and on again starts a new report-only pass. Its acknowledgement is its own: the one you gave the autopilot or shelving does not carry over.
 
@@ -263,7 +268,7 @@ Docker can run out of room long before the disk does: it hands out a limited num
 
 **Pause all autonomous cleanup.** The last row of the section is a master switch. While it is on, Harnu shelves nothing, does nothing in Docker and the autopilot cleans nothing. You can still clean by hand from the Cleanup screen. Turn it off and everything goes back to what each switch says; no acknowledgement is lost.
 
-Anything Cleanup does to Docker on its own will be written to the Containers journal with the actor `autopilot`, so it is easy to tell from what you or an agent did.
+Everything Cleanup does to Docker on its own is written to the Containers journal with the actor `autopilot`, so it is easy to tell from what you or an agent did. Each line says why: "Removed empty network `app_default` — no containers", or "Removed orphan stack `app` — worktree gone, volumes kept: app_data". Before each removal Harnu checks again that nothing changed since it decided (a container attached, a verdict that moved, a worktree that was shelved in the meantime); if something did, it skips the item and says "changed since decided" instead of removing it.
 
 ### Before the first scan
 
