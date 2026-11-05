@@ -3,7 +3,8 @@
  * git does not hold, verifies it, and (restoreWorktree) brings it back. The decisions are in
  * shelve-core.ts; this file only asks and tells git.
  *
- * It removes NOTHING and writes only `refs/archive/**` refs and objects. It never pushes, fetches or
+ * It removes nothing that existed before it ran, and writes only `refs/archive/**` refs and objects
+ * (plus the new worktree a restore creates; a failed restore takes that one back out). It never pushes, fetches or
  * garbage-collects, and the repo-wide stash is only READ (`stash list`): `git stash push|pop|drop`
  * must not appear here, because the stash stack is shared with every worktree.
  *
@@ -17,6 +18,8 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { planArchive } from '../reaper/archive-core'
 import { ARCHIVE_IDENTITY, archiveTip, archiveWip } from '../reaper/archive-shell'
+import { removeWorktreeAdmin } from '../reaper/worktree-admin-shell'
+import { rawRm } from '../raw-fs'
 import {
   DEFAULT_SNAPSHOT_CAP_BYTES,
   decideRestoreBase,
@@ -58,12 +61,12 @@ function git(cwd: string, args: string[], opts: GitOpts = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('git', ['-C', cwd, ...args], {
       windowsHide: true,
+      timeout: GIT_TIMEOUT_MS,
       env: opts.env ? { ...process.env, ...opts.env } : process.env
     })
     const out: Buffer[] = []
     const err: Buffer[] = []
     let size = 0
-    const timer = setTimeout(() => child.kill(), GIT_TIMEOUT_MS)
     child.stdout.on('data', (d: Buffer) => {
       size += d.length
       if (size > GIT_MAX_BUFFER) child.kill()
@@ -71,11 +74,9 @@ function git(cwd: string, args: string[], opts: GitOpts = {}): Promise<string> {
     })
     child.stderr.on('data', (d: Buffer) => err.push(d))
     child.on('error', (e) => {
-      clearTimeout(timer)
       reject(new GitError(`git ${args[0]}: ${e.message}`, null))
     })
     child.on('close', (code) => {
-      clearTimeout(timer)
       if (code === 0 && size <= GIT_MAX_BUFFER) resolve(Buffer.concat(out).toString('utf8'))
       else {
         const text = Buffer.concat(err).toString('utf8').trim()
@@ -739,11 +740,14 @@ export async function restoreWorktree(record: ShelveRecord): Promise<RestoreResu
   }
 }
 
-/** Takes the worktree this restore just added back out: it holds nothing that is not in the archive. */
+/**
+ * Takes the worktree this restore just added back out: it holds nothing that is not in the archive.
+ * Only this worktree's own registration is dropped (never a repo-wide `worktree prune`), and git is
+ * never asked to remove a worktree (it would delete the folder behind the repo's guards).
+ */
 async function removeCreated(repo: string, target: string): Promise<void> {
-  await git(repo, ['worktree', 'remove', '--force', target]).catch(() => undefined)
-  await fs.rm(target, { recursive: true, force: true }).catch(() => undefined)
-  await git(repo, ['worktree', 'prune']).catch(() => undefined)
+  await rawRm(target, { recursive: true, force: true }).catch(() => undefined)
+  await removeWorktreeAdmin(repo, target, (r, args) => git(r, args)).catch(() => undefined)
 }
 
 /** The live half of {@link verifyPreservation}: the worktree on disk hashes to the archived trees. */
