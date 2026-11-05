@@ -19,8 +19,11 @@ import { planArchive } from '../reaper/archive-core'
 import { ARCHIVE_IDENTITY, archiveTip, archiveWip } from '../reaper/archive-shell'
 import {
   DEFAULT_SNAPSHOT_CAP_BYTES,
+  decideRestoreBase,
   isDependencyPath,
   parseShelveRecord,
+  parseWorktreeList,
+  type RestoreBaseReason,
   serializeShelveRecord,
   shelveRefs,
   stashesForBranch,
@@ -601,6 +604,146 @@ export async function verifyPreservation(
   } catch (err) {
     return bad('probe-failed', messageOf(err))
   }
+}
+
+// ---- restore ---------------------------------------------------------------------------
+
+export type RestoreFailure =
+  | 'archive-unverified'
+  | 'path-exists'
+  | 'worktree-add-failed'
+  | 'apply-failed'
+  | 'snapshot-failed'
+  | 'verification-failed'
+
+export type RestoreResult =
+  | {
+      ok: true
+      path: string
+      /** True when the worktree is back on its branch; false when it stands detached at the archived HEAD. */
+      attached: boolean
+      /** Why it could not be re-attached; null when it was. */
+      reason: RestoreBaseReason
+      /** Stash copies the record keeps; restore does not re-create stash entries (`git stash apply <sha>` does). */
+      stashes: ShelveRecord['stashes']
+    }
+  | { ok: false; reason: RestoreFailure; message: string }
+
+const failRestore = (reason: RestoreFailure, message: string): RestoreResult => ({
+  ok: false,
+  reason,
+  message
+})
+
+/** `p` with its parent directory resolved through symlinks, as git prints worktree paths. */
+async function canonicalPath(p: string): Promise<string> {
+  const parent = await fs.realpath(path.dirname(p)).catch(() => path.dirname(p))
+  return path.join(parent, path.basename(p))
+}
+
+/**
+ * Recreates the worktree at `record.worktreePath`: a new worktree on the branch (or detached at the
+ * archived HEAD when the branch cannot be re-attached, see `decideRestoreBase`), the archived working
+ * state applied over it, the gitignored snapshot unpacked, and the result verified against the record.
+ *
+ * Never overwrites: an existing path is refused. Dependencies and Docker stacks are not restored (the
+ * session's own setup does that). If anything fails after the worktree was added, the worktree THIS
+ * call created is removed again, so a retry starts clean and no half-restored folder is ever offered
+ * to a session; the archive is untouched either way.
+ */
+export async function restoreWorktree(record: ShelveRecord): Promise<RestoreResult> {
+  const repo = record.repoPath
+  const target = record.worktreePath
+  let added = false
+  try {
+    const archive = await verifyPreservation(record, { mode: 'archive' })
+    if (!archive.ok)
+      return failRestore('archive-unverified', `${archive.reason}: ${archive.message}`)
+
+    if (
+      await fs.lstat(target).then(
+        () => true,
+        () => false
+      )
+    ) {
+      return failRestore('path-exists', `${target} already exists; nothing was changed`)
+    }
+    await fs.mkdir(path.dirname(target), { recursive: true })
+
+    const canon = await canonicalPath(target)
+    const listed = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
+    const ownStale = listed.some((w) => w.path === canon)
+    const holder = record.branch ? listed.find((w) => w.branch === record.branch) : undefined
+    const branchTip = record.branch
+      ? await resolveCommit(repo, `refs/heads/${record.branch}`)
+      : null
+    const base = decideRestoreBase({
+      record,
+      branchTip,
+      checkedOutAt: holder?.path ?? null,
+      targetPath: canon
+    })
+
+    const addArgs = ['worktree', 'add', '-q']
+    // A registration left by the folder this record came from (it was removed without `worktree prune`)
+    // is replaced; any other registration is left alone.
+    if (ownStale) addArgs.push('--force')
+    if (base.mode === 'branch') addArgs.push(target, record.branch!)
+    else addArgs.push('--detach', target, record.headSha)
+    try {
+      await git(repo, addArgs)
+    } catch (err) {
+      return failRestore('worktree-add-failed', messageOf(err))
+    }
+    added = true
+
+    try {
+      // Two-tree merge from HEAD to the archived state: files appear, change and (for a tracked file
+      // deleted before the shelve) disappear, with modes and symlinks. The reset then puts the index
+      // back on HEAD, so the work is uncommitted again exactly as git sees uncommitted work.
+      await git(target, ['read-tree', '-m', '-u', 'HEAD', record.wipCommit])
+      await git(target, ['reset', '-q'])
+    } catch (err) {
+      await removeCreated(repo, target)
+      return failRestore('apply-failed', messageOf(err))
+    }
+
+    if (record.ignored) {
+      try {
+        const prefix = `${await fs.realpath(target)}${path.sep}`
+        await withTempIndex(async (env) => {
+          await git(target, ['read-tree', record.ignored!.commit], { env })
+          await git(target, ['checkout-index', '-a', `--prefix=${prefix}`], { env })
+        })
+      } catch (err) {
+        await removeCreated(repo, target)
+        return failRestore('snapshot-failed', messageOf(err))
+      }
+    }
+
+    const verdict = await verifyPreservation(record, { mode: 'live' })
+    if (!verdict.ok) {
+      await removeCreated(repo, target)
+      return failRestore('verification-failed', `${verdict.reason}: ${verdict.message}`)
+    }
+    return {
+      ok: true,
+      path: target,
+      attached: base.mode === 'branch',
+      reason: base.reason,
+      stashes: record.stashes
+    }
+  } catch (err) {
+    if (added) await removeCreated(repo, target)
+    return failRestore('worktree-add-failed', messageOf(err))
+  }
+}
+
+/** Takes the worktree this restore just added back out: it holds nothing that is not in the archive. */
+async function removeCreated(repo: string, target: string): Promise<void> {
+  await git(repo, ['worktree', 'remove', '--force', target]).catch(() => undefined)
+  await fs.rm(target, { recursive: true, force: true }).catch(() => undefined)
+  await git(repo, ['worktree', 'prune']).catch(() => undefined)
 }
 
 /** The live half of {@link verifyPreservation}: the worktree on disk hashes to the archived trees. */
