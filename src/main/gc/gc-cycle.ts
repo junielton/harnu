@@ -23,6 +23,7 @@ import type {
   CycleRecord,
   DockerCycleRecord,
   DockerReportItem,
+  DockerReportList,
   DockerWatchRecord,
   ShelveCycleRecord
 } from './gc-wire'
@@ -81,6 +82,8 @@ export interface CycleState {
    * runs before the window exists). Delivered in the snapshot; the renderer acknowledges them.
    */
   dockerNoticesPending: DockerWatchRecord[]
+  /** The newest report-mode pass that planned (cycle or watcher): what the operator acknowledges. */
+  dockerReport: DockerReportList | null
   /** Capacity watcher: the last full pass that found nothing to free, so the timer can back off. */
   dockerWatchIdle: {
     key: string
@@ -105,6 +108,7 @@ export function createCycleState(): CycleState {
     dockerCapacityNotice: 'none',
     dockerWatch: null,
     dockerNoticesPending: [],
+    dockerReport: null,
     dockerWatchIdle: null
   }
 }

@@ -268,10 +268,13 @@ describe('the report-only list for the acknowledgement (AC-5)', () => {
     const { snap } = install({ dockerReport: list(NOW, [item('a')]) })
     const store = useGcStore()
     await store.init()
-    ;(snap as unknown as { dockerReport: unknown }).dockerReport = list(NOW + 50, [item('b')])
+    const api = (
+      globalThis as unknown as { window: { api: { gcSnapshot: ReturnType<typeof vi.fn> } } }
+    ).window.api
+    api.gcSnapshot.mockResolvedValueOnce({ ...snap, dockerReport: list(NOW + 50, [item('b')]) })
     await store.refresh()
     expect(store.dockerReport?.items.map((i) => i.target)).toEqual(['b'])
-    ;(snap as unknown as { dockerReport: unknown }).dockerReport = null
+    api.gcSnapshot.mockResolvedValueOnce({ ...snap, dockerReport: null })
     await store.refresh()
     expect(store.dockerReport).toBeNull()
   })

@@ -18,7 +18,12 @@
 
 import type { BridgeCapacity } from '../containers/docker-capacity-core'
 import type { DockerFactsResult } from '../containers/docker-facts-shell'
-import { reportItemsOf, type DockerAction, type DockerOutcome } from './docker-cycle'
+import {
+  heldDockerReport,
+  reportItemsOf,
+  type DockerAction,
+  type DockerOutcome
+} from './docker-cycle'
 import type { CycleState } from './gc-cycle'
 import type { DockerAutonomyPrefs, GcPrefs } from './gc-prefs'
 import type {
@@ -157,9 +162,11 @@ export async function runCapacityPass(
     pausedReason: null,
     nothingLeft: false,
     items: [],
-    notice: null
+    notice: null,
+    report: null
   }
   const done = (): DockerWatchRecord => {
+    record.report = heldDockerReport(state, prefs)
     state.dockerWatch = record
     return record
   }
@@ -211,10 +218,18 @@ export async function runCapacityPass(
 
           if (!cfg.firstReportAcknowledged) {
             record.items = reportItemsOf(actions)
+            // This pass planned: it is the newest list the operator acknowledges.
+            state.dockerReport = {
+              at: deps.now(),
+              source: 'watcher',
+              found: actions.length,
+              items: record.items
+            }
             record.nothingLeft = actions.length === 0
             return
           }
 
+          state.dockerReport = null // acknowledged: the list it showed is spent
           const allowed = actions.slice(0, cfg.maxPerCycle)
           record.deferred = actions.length - allowed.length
           let lastFailure = ''

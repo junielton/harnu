@@ -14,6 +14,7 @@ import type {
   GcSnapshot,
   CycleRecord,
   DockerReportItem,
+  DockerReportList,
   DockerWatchRecord,
   ShelveRestoreAck
 } from '../../../main/gc/gc-wire'
@@ -168,6 +169,9 @@ export const useGcStore = defineStore('gc', () => {
 
   function onDockerWatch(rec: DockerWatchRecord): void {
     adoptWatch(rec)
+    if (rec.report && (!heldReport.value || rec.report.at >= heldReport.value.at)) {
+      heldReport.value = rec.report
+    }
     if (recordCapacityNotice(rec)) ackNotices([rec])
   }
 
@@ -183,21 +187,26 @@ export const useGcStore = defineStore('gc', () => {
   }
 
   /**
-   * What "Acknowledge first report" will do (U3.6): the items of the newest report-only pass, from the
-   * hourly cycle or the capacity watcher. Null once acknowledged, or when nothing would be done.
+   * The list main holds for "Acknowledge first report" (U3.6): the newest report-mode pass that
+   * PLANNED, from the cycle or the watcher. Main derives it, so a locked or idle pass can never
+   * empty it here. A snapshot is authoritative (it replaces, including with null); a watcher push
+   * only replaces it with a newer list, never clears it.
    */
+  const heldReport = ref<DockerReportList | null>(null)
+  watch(
+    () => snapshot.value?.dockerReport ?? null,
+    (held) => {
+      heldReport.value = held
+    },
+    { immediate: true, flush: 'sync' }
+  )
+
+  /** What "Acknowledge first report" will do: null once acknowledged, or when nothing would be done. */
   const dockerReport = computed<{ items: DockerReportItem[]; found: number } | null>(() => {
     const snap = snapshot.value
+    const held = heldReport.value
     if (!snap || snap.prefs.docker.firstReportAcknowledged) return null
-    const cycle = snap.lastCycle?.docker
-    const w = dockerWatch.value
-    const candidates: Array<{ at: number; items: DockerReportItem[]; found: number }> = []
-    if (cycle && cycle.mode === 'report' && snap.lastCycle) {
-      candidates.push({ at: snap.lastCycle.at, items: cycle.items ?? [], found: cycle.found })
-    }
-    if (w && w.mode === 'report') candidates.push({ at: w.at, items: w.items, found: w.found })
-    const newest = candidates.sort((a, b) => b.at - a.at)[0]
-    return newest && newest.items.length > 0 ? { items: newest.items, found: newest.found } : null
+    return held && held.items.length > 0 ? { items: held.items, found: held.found } : null
   })
   const jobs = ref<JobsState>(emptyJobs())
   const loading = ref(false)

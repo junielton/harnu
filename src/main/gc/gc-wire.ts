@@ -101,6 +101,19 @@ export interface DockerReportItem {
   reason: string
 }
 
+/**
+ * The list the operator acknowledges (U3.6): what the newest pass that actually PLANNED in report
+ * mode would do, from the hourly cycle or the capacity watcher. A record that was locked, off,
+ * paused or did not plan never replaces it; it is cleared once the first report is acknowledged.
+ */
+export interface DockerReportList {
+  at: number
+  source: 'cycle' | 'watcher'
+  /** The true number of planned actions; `items` is capped at {@link DOCKER_REPORT_ITEMS_MAX}. */
+  found: number
+  items: DockerReportItem[]
+}
+
 /** The most items a record carries; `found` stays the true count. */
 export const DOCKER_REPORT_ITEMS_MAX = 100
 
@@ -184,6 +197,8 @@ export interface DockerWatchRecord {
   items: DockerReportItem[]
   /** Set on the pass that raised the out-of-capacity notice; the renderer records it once. */
   notice: DockerCapacityNotice | null
+  /** The held first-report list as of this pass (see {@link DockerReportList}); null once acknowledged or when none. */
+  report: DockerReportList | null
 }
 
 /** What one pass of the autopilot did. Pushed on `gc:cycle` and kept as `lastCycle`. */
@@ -253,6 +268,8 @@ export interface GcSnapshot {
    * `gc:docker:watch:ack`; the pushes on `gc:docker:watch` carry the same records live.
    */
   dockerNoticesPending: DockerWatchRecord[]
+  /** The list "Acknowledge first report" will act on, held in main; null once acknowledged or when none. */
+  dockerReport: DockerReportList | null
   /** When the next timer tick fires, or null when the Reaper background scan is off. */
   nextCycleAt: number | null
   /**

@@ -21,7 +21,8 @@ import {
   DOCKER_REPORT_ITEMS_MAX,
   type DockerCycleRecord,
   type DockerReportItem,
-  type DockerReportKind
+  type DockerReportKind,
+  type DockerReportList
 } from './gc-wire'
 import type { RepoLockResult } from './repo-lock-shell'
 
@@ -110,6 +111,11 @@ export function reportItemsOf(actions: readonly DockerAction[]): DockerReportIte
   }))
 }
 
+/** The held first-report list, hidden once the report is acknowledged (whatever pass wrote it). */
+export function heldDockerReport(state: CycleState, prefs: GcPrefs): DockerReportList | null {
+  return prefs.docker.firstReportAcknowledged ? null : state.dockerReport
+}
+
 /** What the report-only notice says the pass would do, from the kinds the plan holds. */
 export function wouldDoText(actions: readonly DockerAction[]): string {
   const removes = actions.some((a) => a.kind !== 'park')
@@ -190,9 +196,13 @@ async function runLocked(
       })
     }
     state.dockerReportKey = key
-    return { ...empty('report'), found: actions.length, items: reportItemsOf(actions) }
+    // This pass planned, so it is the newest list; a locked, off or paused pass never gets here.
+    const items = reportItemsOf(actions)
+    state.dockerReport = { at: deps.now(), source: 'cycle', found: actions.length, items }
+    return { ...empty('report'), found: actions.length, items }
   }
   state.dockerReportKey = null
+  state.dockerReport = null
 
   const record: DockerCycleRecord = {
     ...empty('act'),

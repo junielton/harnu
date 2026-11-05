@@ -96,7 +96,7 @@ import {
   CAPACITY_INTERVAL_MS,
   createCapacityWatcher
 } from './capacity-watcher'
-import { composeDockerPlanners, runDockerCycle } from './docker-cycle'
+import { composeDockerPlanners, heldDockerReport, runDockerCycle } from './docker-cycle'
 import { createParkPlanner } from './park-cycle'
 import { listOpenPaneUrls } from '../browser/browser-service'
 import { getContainersService } from '../containers/containers-ipc'
@@ -583,6 +583,7 @@ export async function registerGcHandlers(
     lastCycle: state.last,
     dockerWatch: state.dockerWatch,
     dockerNoticesPending: state.dockerNoticesPending,
+    dockerReport: heldDockerReport(state, prefs),
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null,
     nextClean: planNextClean(g.bundles, livePrefs()),
     backgroundScan: reaper.autoScan(),
@@ -748,7 +749,10 @@ export async function registerGcHandlers(
     },
     ackFirstReport: () => persist(withAcknowledged(prefs)),
     ackShelveReport: () => persist(withShelveAcknowledged(prefs)),
-    ackDockerReport: () => persist(withDockerAcknowledged(prefs)),
+    ackDockerReport: () => {
+      state.dockerReport = null
+      return persist(withDockerAcknowledged(prefs))
+    },
     restoreShelved: async (rawId) => {
       if (typeof rawId !== 'string' || !rawId) {
         throw new Error('gc:shelve:restore expects the id of a shelved worktree')
