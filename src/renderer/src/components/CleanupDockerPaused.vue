@@ -56,7 +56,7 @@ const age = (ms: number): string => {
       {{ t('cleanup.gc.docker.paused.count', view.total, { named: { n: view.total } }) }}
     </div>
 
-    <ul v-if="wouldPause === null && view.rows.length > 0" class="flex flex-col">
+    <ul v-if="view.rows.length > 0" class="flex flex-col">
       <li
         v-for="row in view.rows"
         :key="row.name"
@@ -81,11 +81,7 @@ const age = (ms: number): string => {
         </button>
       </li>
     </ul>
-    <div
-      v-if="wouldPause === null && view.more > 0"
-      class="text-caption text-text-4"
-      data-testid="docker-paused-more"
-    >
+    <div v-if="view.more > 0" class="text-caption text-text-4" data-testid="docker-paused-more">
       {{ t('cleanup.gc.docker.paused.more', { n: view.more }) }}
     </div>
     <div class="text-caption leading-4 text-text-3">{{ t('cleanup.gc.docker.paused.note') }}</div>

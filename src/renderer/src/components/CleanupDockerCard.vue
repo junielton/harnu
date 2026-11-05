@@ -74,11 +74,12 @@ const slots = computed(() =>
   slotsState(props.dockerWatch ?? null, props.prefs.docker.lowWaterSlots)
 )
 const reportRows = computed(() => (reporting.value ? wouldHaveRows(props.report ?? null) : []))
-const wouldPause = computed(() =>
-  reporting.value && props.report
-    ? props.report.items.filter((i) => i.kind === 'pause').length
-    : null
-)
+/** Pauses the first pass WOULD make; null (show the real count) when it has none to announce. */
+const wouldPause = computed(() => {
+  if (!reporting.value || !props.report) return null
+  const n = props.report.items.filter((i) => i.kind === 'pause').length
+  return n > 0 ? n : null
+})
 const actionRows = computed(() =>
   reporting.value && props.report ? reportRows.value : automaticActions(props.recent ?? [])
 )
