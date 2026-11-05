@@ -68,6 +68,11 @@ case "$cmd" in
     cat "$FAKE_DOCKER_DIR/stats.txt" ;;
   system) cat "$FAKE_DOCKER_DIR/df.json" ;;
   volume) shift; echo_args "$@" ;;
+  network) shift; shift
+    case "$1" in
+      active*) echo "Error response from daemon: error while removing network: network $1 has active endpoints" >&2; exit 1 ;;
+      *) echo "$1" ;;
+    esac ;;
   stop|start|rm) echo_args "$@" ;;
   *) echo "unexpected: $cmd" >&2; exit 2 ;;
 esac
@@ -386,4 +391,23 @@ describe.skipIf(process.platform === 'win32')('containers-shell (fake docker)', 
     expect(await dockerActions.stop([])).toEqual({ done: [], error: null })
     expect(await dockerLog()).toEqual(['stop a b', 'start a', 'rm a missing-b', 'volume rm v1'])
   })
+
+  // U3.3: the one new mutation Docker garbage removal adds. A network id only, nothing else.
+  it('removes one network by id with exactly `network rm <id>`', async () => {
+    expect(await dockerActions.removeNetwork('abc123def')).toEqual({ ok: true })
+    expect(await dockerLog()).toEqual(['network rm abc123def'])
+  })
+
+  it('reports a network that still has endpoints as active, not as a failure to retry', async () => {
+    const r = await dockerActions.removeNetwork('active1')
+    expect(r).toMatchObject({ ok: false, active: true })
+  })
+
+  it.each(['-f', '--force', 'a b', '', '../x', '$(rm)'])(
+    'refuses %j as a network id without running docker',
+    async (bad) => {
+      expect(await dockerActions.removeNetwork(bad)).toMatchObject({ ok: false, active: false })
+      expect(await dockerLog()).toEqual([])
+    }
+  )
 })
