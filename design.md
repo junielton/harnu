@@ -10882,6 +10882,32 @@ worktree add --detach ../restored-… <sha>`). A row past the retention has a Wa
 - **Autopilot:** the card says nothing about it; it is the setting **Expire archives automatically** (Settings →
   Cleanup, off by default). The autopilot never deletes a ref otherwise.
 
+#### Shelved card (autonomous cleanup U2.3a, AC-3 / AC-5)
+
+Under the Archives card, above the in-the-trash strip. Own region (`data-testid="shelved-card"`, the Archives card
+anatomy: `border-border`, radius 7, `bg-surface`; header `ArchiveRestore` icon 14px, title **Shelved**, an 11px
+`--text-4` subtitle `{n} worktrees · {size} freed`). Zero shelved worktrees: the card is **not drawn**. One 11px
+`--text-4` note under the header: "Folders Harnu removed because they sat idle. The branch and every change are
+kept. Opening a session or terminal in one brings it back by itself."
+
+- **Row** (`data-testid="shelved-row"`, the archive row chrome): the folder's name (mono), the branch (mono,
+  `--text-3`) or the word **detached**, **idle {n} d** (11px `--text-3`), the time it was shelved (relative, absolute
+  on hover) and the freed size. At the right a Soft button **Restore** (`data-testid="shelved-restore"`): one
+  click, no confirm (nothing is deleted, an existing folder is moved aside, never removed). While it runs the
+  button is disabled and reads **Restoring…**.
+- **Failure** stays under its row (`data-testid="shelved-failure"`, 11px, `--warning` text): one sentence that says
+  what to do next, in every case. A lost archive record also offers a ghost **Copy command** button
+  (`data-testid="shelved-copy-command"`, the Archives card's copy button) that puts
+  `git -C <repo> worktree add <path> <branch>` on the clipboard (every part shell-quoted), because the branch is
+  still there. The Restore button stays available for a retry.
+- **Success** is a toast ("Restored {name}"); when a folder was in the way the toast also says where it went
+  ("kept at {path}, delete it when you like"). The row leaves the card on the next refresh.
+
+**Archives card × shelved worktrees.** A row whose namespace belongs to a shelved worktree shows its Delete button
+**disabled** (`title`: "Shelved worktree — restore it first") and, next to it, a Soft **Restore first** button
+(`data-testid="archive-restore-first"`) that does the same thing as the Shelved card's Restore. Deleting by hand is
+refused in main as well, so a stale screen cannot get past it.
+
 #### In-the-trash card (unit C, AC-C5)
 
 A strip under the Archives card (`data-testid="trash-card"`, `Trash2` icon). Line one, drawn when Harnu has
