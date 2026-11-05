@@ -2985,6 +2985,68 @@
           "show": "Show folders",
           "hide": "Hide folders",
           "listLabel": "Folders where orphan volumes are hidden"
+        },
+        "slots": {
+          "title": "Docker networks",
+          "free": "{free} of {total} network slots free",
+          "badgeLow": "Low",
+          "badgeZero": "None left",
+          "badgeUnknown": "Unknown",
+          "captionDefault": "Default address pools. Cleanup acts when {mark} or fewer are free.",
+          "captionCustom": "Custom address pools. Cleanup acts when {mark} or fewer are free.",
+          "low": "At the low-water mark of {mark}. Cleanup is clearing garbage and pausing the longest-idle stacks.",
+          "lowOff": "At the low-water mark of {mark}. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "lowPaused": "At the low-water mark of {mark}. Automatic Docker cleanup is paused, so nothing will be freed on its own.",
+          "zero": "Nothing left to free. A new compose up will fail until a slot opens. Activity was notified.",
+          "zeroOff": "A new compose up will fail until a slot opens. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "zeroPaused": "A new compose up will fail until a slot opens. Automatic Docker cleanup is paused, so nothing will be freed on its own.",
+          "unknown": "Network slots unknown",
+          "unknownFallback": "Harnu has not read this engine's address pools yet.",
+          "stillCleans": "Cleanup still removes garbage and pauses idle stacks."
+        },
+        "paused": {
+          "title": "Paused stacks",
+          "count": "{n} paused",
+          "none": "None paused",
+          "would": "Would pause {n}",
+          "idle": "idle {age}",
+          "copy": "Copy restore command for {name}",
+          "more": "+ {n} more in Inspect stacks",
+          "note": "Stopped when idle; volumes kept. Start one again with its compose up -d command."
+        },
+        "actions": {
+          "title": "Automatic actions",
+          "lastCycle": "last cycle",
+          "nothingChanged": "nothing was changed",
+          "empty": "Nothing automatic yet. Empty networks, orphan stacks and idle stacks are handled each cycle.",
+          "showAll": "Show all in Activity",
+          "wouldHave": "Would have",
+          "ago": "{age} ago",
+          "done": {
+            "network": "Removed empty network {target}",
+            "orphan": "Removed orphan stack {target}",
+            "pause": "Paused {target}"
+          },
+          "would": {
+            "network": "Would remove empty network {target}",
+            "orphan": "Would remove orphan stack {target}",
+            "pause": "Would pause {target}"
+          },
+          "detail": {
+            "network": "No containers were attached; compose up recreates them.",
+            "orphan": "Its worktree was removed. Volumes kept: {volumes}.",
+            "orphanNone": "Its worktree was removed. Its volumes stay under Orphan volumes.",
+            "pause": "Idle for {idle}."
+          }
+        },
+        "report": {
+          "badge": "Report only · first cycle",
+          "review": "Review in Settings"
+        },
+        "age": {
+          "min": "{n} min",
+          "h": "{n} h",
+          "d": "{n} d"
         }
       },
       "split": {

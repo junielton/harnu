@@ -2985,6 +2985,68 @@
           "show": "Mostrar pastas",
           "hide": "Ocultar pastas",
           "listLabel": "Pastas em que os volumes órfãos estão ocultos"
+        },
+        "slots": {
+          "title": "Redes do Docker",
+          "free": "{free} de {total} slots de rede livres",
+          "badgeLow": "Baixo",
+          "badgeZero": "Nenhum livre",
+          "badgeUnknown": "Desconhecido",
+          "captionDefault": "Pools de endereço padrão. A Limpeza age quando {mark} ou menos estão livres.",
+          "captionCustom": "Pools de endereço personalizados. A Limpeza age quando {mark} ou menos estão livres.",
+          "low": "No limite mínimo de {mark}. A Limpeza está removendo lixo e pausando as stacks ociosas há mais tempo.",
+          "lowOff": "No limite mínimo de {mark}. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "lowPaused": "No limite mínimo de {mark}. A limpeza automática do Docker está pausada, então nada será liberado sozinho.",
+          "zero": "Nada mais a liberar. Um novo compose up vai falhar até um slot abrir. A Atividade foi avisada.",
+          "zeroOff": "Um novo compose up vai falhar até um slot abrir. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "zeroPaused": "Um novo compose up vai falhar até um slot abrir. A limpeza automática do Docker está pausada, então nada será liberado sozinho.",
+          "unknown": "Slots de rede desconhecidos",
+          "unknownFallback": "O Harnu ainda não leu os pools de endereço deste motor.",
+          "stillCleans": "A Limpeza ainda remove lixo e pausa stacks ociosas."
+        },
+        "paused": {
+          "title": "Stacks pausadas",
+          "count": "{n} pausada | {n} pausadas",
+          "none": "Nenhuma pausada",
+          "would": "Pausaria {n}",
+          "idle": "ociosa há {age}",
+          "copy": "Copiar o comando de restauração de {name}",
+          "more": "+ {n} em Inspecionar stacks",
+          "note": "Parada quando ociosa; volumes mantidos. Suba de novo com o comando compose up -d."
+        },
+        "actions": {
+          "title": "Ações automáticas",
+          "lastCycle": "último ciclo",
+          "nothingChanged": "nada foi alterado",
+          "empty": "Nada automático ainda. Redes vazias, stacks órfãs e stacks ociosas são tratadas a cada ciclo.",
+          "showAll": "Ver tudo em Atividade",
+          "wouldHave": "Teria",
+          "ago": "há {age}",
+          "done": {
+            "network": "Rede vazia {target} removida",
+            "orphan": "Stack órfã {target} removida",
+            "pause": "{target} pausada"
+          },
+          "would": {
+            "network": "Removeria a rede vazia {target}",
+            "orphan": "Removeria a stack órfã {target}",
+            "pause": "Pausaria {target}"
+          },
+          "detail": {
+            "network": "Nenhum container estava conectado; o compose up recria as redes.",
+            "orphan": "A worktree dela foi removida. Volumes mantidos: {volumes}.",
+            "orphanNone": "A worktree dela foi removida. Os volumes ficam em Volumes órfãos.",
+            "pause": "Ociosa há {idle}."
+          }
+        },
+        "report": {
+          "badge": "Só relatório · primeiro ciclo",
+          "review": "Revisar nas Configurações"
+        },
+        "age": {
+          "min": "{n} min",
+          "h": "{n} h",
+          "d": "{n} d"
         }
       },
       "split": {

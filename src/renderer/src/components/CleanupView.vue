@@ -21,6 +21,7 @@ import {
 import { useUiStore } from '../stores/ui'
 import { useReaperStore } from '../stores/reaper'
 import { useGcStore } from '../stores/gc'
+import { useContainersStore } from '../stores/containers'
 import { relativeTime } from '../composables/useRelativeTime'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate, canRehydrate } from './cleanup-row'
@@ -98,6 +99,7 @@ import type { ArchiveEntry, ArchiveRepoGroup, TrashListEntry } from '../../../ma
 const ui = useUiStore()
 const reaper = useReaperStore()
 const gc = useGcStore()
+const containers = useContainersStore()
 const { t } = useI18n()
 const now = useNow({ interval: 30_000 })
 
@@ -132,6 +134,8 @@ onMounted(async () => {
   // every window capture listener — so a dialog, palette or menu opened over
   // Cleanup (they register later, and stop Esc) keeps its Esc (T486 §6.1).
   document.addEventListener('keydown', onKeydown, true)
+  // The Docker card reads Paused stacks and the journal from the Containers snapshot (U3.7).
+  void containers.init().catch(() => undefined)
   await Promise.all([gc.init(), reaper.init()])
   if (!reaper.snapshot) await scanFirst()
 })
@@ -1217,6 +1221,12 @@ async function confirmExhaust(): Promise<void> {
             :last-cycle="gc.snapshot?.lastCycle ?? null"
             :prefs="prefs"
             :leftovers="stackLeftovers"
+            :docker-watch="gc.dockerWatch"
+            :paused="containers.paused"
+            :recent="containers.recent"
+            :report="gc.dockerReport"
+            @open-settings="ui.openSettings('cleanup')"
+            @show-all="ui.openPopover('activity')"
             @clean-leftovers="openDockerConfirm('stack', $event)"
             @remove-leftover-volumes="openDockerConfirm('volumes', $event)"
             @inspect="ui.openContainers()"
