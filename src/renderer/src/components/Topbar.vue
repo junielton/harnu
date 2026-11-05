@@ -413,6 +413,8 @@ const allActions = computed<TopbarActionView[]>(() => {
 const headerEl = ref<HTMLElement | null>(null)
 /** The ids the last plan moved into the `…` menu. Nothing is hidden before the first measure. */
 const hiddenIds = ref<TopbarActionId[]>([])
+/** The title region's `min-width`: the title's floor plus the badges after it (measured by `planOverflow`). */
+const regionMinPx = ref(TOPBAR_MIN_TITLE_PX)
 const barActions = computed(() => allActions.value.filter((a) => !hiddenIds.value.includes(a.id)))
 const menuActions = computed(() => allActions.value.filter((a) => hiddenIds.value.includes(a.id)))
 
@@ -436,6 +438,7 @@ function planOverflow(): void {
     const min = Number(el.dataset.topbarExtraMin)
     extrasWidth += (min > 0 ? min : el.offsetWidth) + 8
   })
+  regionMinPx.value = TOPBAR_MIN_TITLE_PX + extrasWidth
   const available = clusterBudget({
     headerWidth: header.clientWidth,
     paddingX: (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0),
@@ -545,9 +548,9 @@ function onKeydown(e: KeyboardEvent): void {
          folder's identity. No editable title, no provider/orchestrator pills —
          those describe a session, and there is none. -->
     <template v-else-if="folderOnly">
-      <!-- No `min-w-0` on this region (BUG-252): it may not shrink below the title's floor plus the
-           badges, or the title would poke out over the cluster. -->
-      <div class="flex flex-1 items-center gap-2">
+      <!-- BUG-252: the region's floor is explicit (the title's 96px plus the badges). Left to `auto`, its
+           minimum is the title's full text width, it never shrinks and the cluster is pushed out. -->
+      <div class="flex flex-1 items-center gap-2" :style="{ minWidth: `${regionMinPx}px` }">
         <FolderIcon :size="12" :stroke-width="1.6" class="shrink-0 text-text-4" />
         <span
           class="truncate text-text"
@@ -587,9 +590,9 @@ function onKeydown(e: KeyboardEvent): void {
            (most of its width is empty space, not interactive) — only the
            contenteditable span itself opts out, so a click still places the
            caret instead of starting a window drag. -->
-      <!-- No `min-w-0` here (BUG-252): this region may not shrink below the title's floor plus the
-           badges. The title's `min-width` is its border box (padding and border included). -->
-      <div class="flex flex-1 items-center gap-2">
+      <!-- BUG-252: the region's floor is explicit (the title's 96px plus the badges), see above. The
+           title's own `min-width` is its border box (padding and border included). -->
+      <div class="flex flex-1 items-center gap-2" :style="{ minWidth: `${regionMinPx}px` }">
         <span
           ref="titleEl"
           class="truncate rounded text-text outline-none transition"

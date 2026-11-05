@@ -270,13 +270,15 @@ describe('topbar overflow menu', () => {
     expect(document.activeElement).toBe(more.element)
   })
 
-  it('AC-1: the title is a truncating span with a 96px floor and never a shrinkable overlap', async () => {
+  it('AC-1: the title is a truncating span with a 96px floor, inside a region with an explicit floor', async () => {
     const wrapper = await mountFull()
     const title = wrapper.get('[data-test="topbar-title"]')
     expect(title.classes()).toContain('truncate')
     expect(title.attributes('style')).toContain(`min-width: ${TOPBAR_MIN_TITLE_PX}px`)
-    // The region around it may not shrink below its content, or the floor would poke out over the cluster.
-    expect(title.element.parentElement!.classList.contains('min-w-0')).toBe(false)
+    // The region around it has its own floor (the title's plus the badges). Left to `auto`, a flex item's
+    // floor is its content's full width, so the region never shrank and pushed the cluster out (seen live).
+    const region = title.element.parentElement as HTMLElement
+    expect(region.style.minWidth).toBe(`${TOPBAR_MIN_TITLE_PX}px`)
   })
 
   it("AC-1: a long branch badge reserves only its icon (it shrinks), never the actions' room", async () => {
