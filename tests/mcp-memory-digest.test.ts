@@ -133,6 +133,39 @@ describe('parseDigestMeta', () => {
     expect(meta.title).toBe('Notes')
   })
 
+  it('parses the digest evidence token', () => {
+    const digest = (kind: string): string =>
+      `# Session abcd1234\n\n_Session \`abcd1234\` · branch \`main\` · ended · auto-digest · evidence: ${kind}_\n\n` +
+      '## Evidence\n\n_Nothing to show._\n\n' +
+      '> provenance: author=agent · at=2026-11-03 · branch=main · session=abcd1234ef\n'
+    for (const kind of ['commits', 'no-commits', 'no-git', 'orphan'] as const) {
+      expect(parseDigestMeta('2026-11-03-abcd1234.md', digest(kind)).evidence).toBe(kind)
+    }
+    // A header without a branch part reads the same.
+    expect(
+      parseDigestMeta(
+        '2026-11-03-abcd1234.md',
+        '# T\n\n_Session `abcd1234` · ended · auto-digest · evidence: no-git_\n'
+      ).evidence
+    ).toBe('no-git')
+
+    // Undefined without the token: an older digest, an unknown kind, or a quoted look-alike.
+    expect(
+      parseDigestMeta(
+        '2026-11-03-abcd1234.md',
+        '# T\n\n_Session `abcd1234` · ended · auto-digest_\n'
+      ).evidence
+    ).toBeUndefined()
+    expect(parseDigestMeta('2026-11-03-abcd1234.md', digest('mystery')).evidence).toBeUndefined()
+    expect(
+      parseDigestMeta(
+        '2026-11-03-abcd1234.md',
+        '# T\n\n> _Session `x` · evidence: no-git_\n\nplain prose · evidence: orphan_\n'
+      ).evidence
+    ).toBeUndefined()
+    expect('evidence' in parseDigestMeta('2026-11-03-abcd1234.md', '# T\n')).toBe(false)
+  })
+
   it('omits provenance fields when the stamp is absent', () => {
     const meta = parseDigestMeta('2026-07-06-aaaa1111.md', '# T\n\nbody\n')
     expect(meta.author).toBeUndefined()

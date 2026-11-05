@@ -16,7 +16,11 @@ import {
   type DigestEngineDeps
 } from '../src/main/mcp/digest-engine'
 import { emptyFacts, type TranscriptFacts } from '../src/main/mcp/digest-transcript'
-import type { DigestCommit, GitEvidence } from '../src/main/mcp/digest-core'
+import {
+  shouldNotifyDigestFailure,
+  type DigestCommit,
+  type GitEvidence
+} from '../src/main/mcp/digest-core'
 import { gatherGitEvidence } from '../src/main/mcp/digest-io'
 import { deriveTranscriptTruth } from '../src/main/transcript-truth'
 
@@ -237,6 +241,104 @@ describe('createDigestEngine', () => {
       engine.close()
     } finally {
       await rm(plain, { recursive: true, force: true })
+    }
+  })
+
+  it('notifies a digest failure once per folder per hour', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      // The pure rule: undefined, or at least 3,600,000 ms ago.
+      expect(shouldNotifyDigestFailure(undefined, NOW)).toBe(true)
+      expect(shouldNotifyDigestFailure(NOW, NOW)).toBe(false)
+      expect(shouldNotifyDigestFailure(NOW - 3_599_999, NOW)).toBe(false)
+      expect(shouldNotifyDigestFailure(NOW - 3_600_000, NOW)).toBe(true)
+
+      // A refused write notifies once with the folder and the reason; a second failure for the
+      // same folder inside the hour does not, another folder does, and an hour later it does again.
+      let clock = NOW
+      const folders: Record<string, string> = { r1: '/repo', r2: '/repo', o1: '/other' }
+      const f = fakes({
+        resolveSession: vi.fn(async (id: string) => ({
+          transcriptPath: `/t/${id}.jsonl`,
+          folder: folders[id] ?? '/repo',
+          branch: 'main'
+        })),
+        writeDigest: vi.fn(async () => ({
+          ok: false,
+          error: 'PAGE_TOO_BIG',
+          detail: 'the page is full'
+        })),
+        notify: vi.fn(),
+        now: vi.fn(() => clock)
+      })
+      const engine = createDigestEngine(f.deps)
+      await engine.digestNow('r1', 'ended')
+      expect(f.deps.notify).toHaveBeenCalledTimes(1)
+      const [folder, reason] = f.deps.notify.mock.calls[0]
+      expect(folder).toBe('/repo')
+      expect(reason).toContain('PAGE_TOO_BIG')
+      expect(reason).toContain('the page is full')
+
+      await engine.digestNow('r2', 'ended')
+      expect(f.deps.writeDigest).toHaveBeenCalledTimes(2)
+      expect(f.deps.notify).toHaveBeenCalledTimes(1)
+
+      await engine.digestNow('o1', 'ended')
+      expect(f.deps.notify).toHaveBeenCalledTimes(2)
+      expect(f.deps.notify.mock.calls[1][0]).toBe('/other')
+
+      clock = NOW + 3_600_000
+      await engine.digestNow('r1', 'ended')
+      expect(f.deps.notify).toHaveBeenCalledTimes(3)
+      expect(f.deps.notify.mock.calls[2][0]).toBe('/repo')
+      engine.close()
+
+      // A thrown write notifies once, with the error's message.
+      const t = fakes({
+        writeDigest: vi.fn(async () => {
+          throw new Error('disk on fire')
+        }),
+        notify: vi.fn()
+      })
+      const thrown = createDigestEngine(t.deps)
+      await thrown.digestNow('t1', 'ended')
+      expect(t.deps.notify).toHaveBeenCalledTimes(1)
+      expect(t.deps.notify.mock.calls[0][0]).toBe('/repo')
+      expect(t.deps.notify.mock.calls[0][1]).toContain('disk on fire')
+      thrown.close()
+
+      // A skipped plan (too few turns) and an unsafe root are not failures: no notice.
+      const s = fakes({
+        readFacts: vi.fn(async () => ({ facts: { ...emptyFacts(), userTurns: 1 }, offset: 1 })),
+        notify: vi.fn()
+      })
+      const skipped = createDigestEngine(s.deps)
+      await skipped.digestNow('k1', 'ended')
+      expect(s.deps.writeDigest).not.toHaveBeenCalled()
+      expect(s.deps.notify).not.toHaveBeenCalled()
+      skipped.close()
+      const u = fakes({ memoryCheckout: vi.fn(async () => os.homedir()), notify: vi.fn() })
+      const unsafe = createDigestEngine(u.deps)
+      await unsafe.digestNow('u1', 'ended')
+      expect(u.deps.writeDigest).not.toHaveBeenCalled()
+      expect(u.deps.notify).not.toHaveBeenCalled()
+      unsafe.close()
+
+      // A successful write never notifies, and an engine without a notify dep still works.
+      const ok = fakes({ notify: vi.fn() })
+      const fine = createDigestEngine(ok.deps)
+      await fine.digestNow('g1', 'ended')
+      expect(ok.deps.writeDigest).toHaveBeenCalledTimes(1)
+      expect(ok.deps.notify).not.toHaveBeenCalled()
+      fine.close()
+      const bare = fakes({ writeDigest: vi.fn(async () => ({ ok: false, error: 'X' })) })
+      const quiet = createDigestEngine(bare.deps)
+      await expect(quiet.digestNow('b1', 'ended')).resolves.toBeUndefined()
+      quiet.close()
+    } finally {
+      warn.mockRestore()
+      error.mockRestore()
     }
   })
 
