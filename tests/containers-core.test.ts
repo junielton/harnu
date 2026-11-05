@@ -118,10 +118,56 @@ describe('docker output parsing', () => {
       mounts: [
         { type: 'bind', source: WT, name: null },
         { type: 'volume', source: '/var/lib/docker/volumes/x/_data', name: 'proj-82_mysql' }
-      ]
+      ],
+      networks: []
     })
     expect(parseInspect('not json')).toEqual([])
     expect(parseInspect('{}')).toEqual([])
+  })
+
+  describe('network attachments (U3.2)', () => {
+    const inspectWith = (networkSettings: unknown, state = 'running'): string =>
+      JSON.stringify([
+        {
+          Id: 'b'.repeat(64),
+          Name: '/proj-1-app-1',
+          State: { Status: state },
+          Config: { Image: 'busybox', Labels: {} },
+          NetworkSettings: networkSettings
+        }
+      ])
+
+    it('reads NetworkSettings.Networks into per-container attachments, sorted by name', () => {
+      const [c] = parseInspect(
+        inspectWith({
+          Networks: {
+            shared: { NetworkID: 'def', EndpointID: 'e2' },
+            proj_default: { NetworkID: 'abc', EndpointID: 'e1' }
+          }
+        })
+      )
+      expect(c?.networks).toEqual([
+        { name: 'proj_default', id: 'abc' },
+        { name: 'shared', id: 'def' }
+      ])
+    })
+
+    it('keeps the attachments of a stopped container (docker keeps the network id, drops the endpoint)', () => {
+      const [c] = parseInspect(
+        inspectWith({ Networks: { proj_default: { NetworkID: 'abc', EndpointID: '' } } }, 'exited')
+      )
+      expect(c?.networks).toEqual([{ name: 'proj_default', id: 'abc' }])
+    })
+
+    it('reports id null when docker leaves NetworkID empty', () => {
+      const [c] = parseInspect(inspectWith({ Networks: { proj_default: { NetworkID: '' } } }))
+      expect(c?.networks).toEqual([{ name: 'proj_default', id: null }])
+    })
+
+    it('reports no attachments when the map is absent or empty', () => {
+      expect(parseInspect(inspectWith({ Networks: {} }))[0]?.networks).toEqual([])
+      expect(parseInspect(inspectWith({}))[0]?.networks).toEqual([])
+    })
   })
 
   it('reads resident memory from docker stats lines', () => {
