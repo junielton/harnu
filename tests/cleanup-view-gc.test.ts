@@ -1250,3 +1250,46 @@ describe('Cleanup screen — Check again on a demoted item', () => {
     })
   })
 })
+
+describe('Cleanup screen — the Docker card reads the Containers snapshot (U3.7)', () => {
+  it('asks for a first Containers scan when none has run, so Paused stacks and the journal load', async () => {
+    install(snap())
+    const base = (window as unknown as { api: Record<string, unknown> }).api
+    const containersScan = vi.fn(async () => null)
+    ;(window as unknown as { api: unknown }).api = new Proxy(base, {
+      get: (t2, k: string) =>
+        k === 'containersSnapshot'
+          ? async () => null
+          : k === 'containersScan'
+            ? containersScan
+            : t2[k]
+    })
+    await mountView()
+    expect(containersScan).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not scan again when a background scan already produced a snapshot', async () => {
+    install(snap())
+    const base = (window as unknown as { api: Record<string, unknown> }).api
+    const containersScan = vi.fn(async () => null)
+    const available = {
+      dockerAvailable: true,
+      scannedAt: 1,
+      zombieAfterDays: 2,
+      stacks: [],
+      paused: [],
+      recent: [],
+      totals: {}
+    }
+    ;(window as unknown as { api: unknown }).api = new Proxy(base, {
+      get: (t2, k: string) =>
+        k === 'containersSnapshot'
+          ? async () => available
+          : k === 'containersScan'
+            ? containersScan
+            : t2[k]
+    })
+    await mountView()
+    expect(containersScan).not.toHaveBeenCalled()
+  })
+})
