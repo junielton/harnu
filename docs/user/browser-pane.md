@@ -6,7 +6,7 @@ A **browser pane** is a real Chromium page that lives in the split stack beside 
 
 ## Opening one
 
-Click the small arrow beside the **Split** button in the Topbar and choose **Browser**. A new pane opens in the folder you are looking at and puts the cursor in its address bar. (The Split button itself still opens a terminal in one click.) A session can also open one for you; it appears in the folder that session works in, in the background, without moving you away from what you are doing.
+Click the **Browser** button (the globe) in the Topbar, right next to the **Terminal** button. A new pane opens in the folder you are looking at and puts the cursor in its address bar. (The small arrow that used to sit beside the Split button is gone: Browser has its own button now, and the Terminal button still opens a terminal in one click.) A session can also open one for you; it appears in the folder that session works in, in the background, without moving you away from what you are doing.
 
 ## The pane
 

@@ -117,6 +117,7 @@
     "newSessionHere": "New session in this folder",
     "terminal": "Terminal",
     "split": "Split horizontal",
+    "browser": "Browser",
     "openFolder": "Open folder",
     "openInEditor": "Open in {editor}",
     "editorGeneric": "editor",
@@ -5077,11 +5078,6 @@
       "hintExit": "to exit",
       "disconnectedHint": "Comments are off here: you disconnected the agent from this pane."
     }
-  },
-  "splitMenu": {
-    "label": "More split options",
-    "terminal": "Terminal",
-    "browser": "Browser"
   },
   "githubBudget": {
     "pill": {

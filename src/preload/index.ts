@@ -2437,7 +2437,7 @@ const api = {
     ipcRenderer.invoke('mcp:agentBrowserWrites:set', enabled),
 
   // ---- T564 U1: the browser pane. The renderer owns geometry and chrome, main owns the native view. ----
-  /** The operator opened a pane (Split menu): main creates the guest view and returns its pane id. */
+  /** The operator opened a pane (Topbar Browser button): main creates the guest view and returns its pane id. */
   browserOpen: (payload: {
     folder: string
     url?: string

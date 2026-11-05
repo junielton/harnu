@@ -472,7 +472,7 @@ _another_ folder.
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
 | `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
 | `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
-| `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane")                                                                                                                                                                         |
+| `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane") · the Topbar's Browser button (T630, §6 "Topbar per-repo view buttons")                                                                                                 |
 | `arrow-left` / `arrow-right`             | Browser pane → back / forward (address bar)                                                                                                                                                                                            |
 | `rotate-cw`                              | Browser pane → reload (swaps to `x` — stop — while a load is in flight)                                                                                                                                                                |
 | `play`                                   | Browser pane → Resume the agent after "Pause agent for 10 min" (chip)                                                                                                                                                                  |
@@ -3885,7 +3885,7 @@ helper-stack** (split), and between the **content and the Fleet rail** (expanded
 A split pane is born from three paths, all using the same visual anatomy
 (`HelperPane`) and differing only in the `kind` of PTY they spawn:
 
-- **New shell** (Split menu) → `kind: shell` in the worktree's cwd.
+- **New shell** (Topbar Terminal button) → `kind: shell` in the worktree's cwd.
 - **Fork session** (Split menu / context menu) → `kind: claude-fork`
   (`claude --resume <src> --fork-session`), via a pending synthetic session.
 - **Open in new tab** (session context menu, `external-link` icon) →
@@ -4250,11 +4250,11 @@ page), and main hides the view. When the last overlay closes the view returns an
 next frame. While frozen the page keeps running and agent verbs keep working; the operator sees a still image.
 No new colour or motion: the swap is instant (no fade, so a menu opening never flashes). Every app layer that can
 overlap a pane registers with the native-overlay composable: context menus, dialogs, popovers, palettes, toasts,
-the Split dropdown, and the pane's own ⋯ menu. A **parked** view (spec §2.3, a 1×1 view in the window's
+and the pane's own ⋯ menu. A **parked** view (spec §2.3, a 1×1 view in the window's
 bottom-right corner) registers the same way and is hidden while an overlay intersects that corner.
 
-**Open from the Split menu.** The Split dropdown gains a **Browser** item (`globe`) that opens an operator pane at
-`about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
+**Open from the Topbar.** The Topbar's **Browser** button (`globe`, next to the Terminal button) opens an operator
+pane at `about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
 agent partition (spec §3.4). Operator panes are unlimited; agent panes are capped at 4 per folder.
 
 **Page pane** (T569 U2, spec §4 and §5). A pane showing one of **our own files** served from `harnu-page://`
@@ -5089,9 +5089,16 @@ already looking at that repo's session.
   `aria-pressed` — the button is a toggle (see "Takeover dismissal" above), and a
   pressed-looking button is what makes the second click discoverable.
 - **Order:** `[bell] [board] [pr-stack] │ [folder] [editor] [github-pulls] [explorer]
-[split] [panel-right]`. The two view buttons sit **before** the external-tool openers:
+[terminal] [browser] [panel-right]`. The two view buttons sit **before** the external-tool openers:
   they act _inside_ Harnu, the ones after them leave for the OS or another app.
 - **GitHub pull requests** (`github` — lucide's brand glyph, so it reads as "leaves for GitHub" and not as the PR Stack Canvas button; deprecated upstream as a brand icon, so a future lucide major may drop it and break the import at build time; `topbar.githubPulls`): opens
+- **Terminal and Browser** (T630): the two panes you split off the session sit side by side, Terminal
+  first. **Terminal** (`terminal`, `topbar.split`, `data-test="topbar-split"`) opens a shell in one click; **Browser**
+  (`globe`, `topbar.browser`, `data-test="topbar-browser"`) opens an operator browser pane at `about:blank` and
+  focuses its address field, exactly as the old dropdown item did. Both are plain 26×26 buttons with the standard
+  anatomy above and no active state (they open a pane, they do not toggle a view); the `title` carries the
+  keyboard chord where one exists, the `aria-label` is the plain i18n label. The former "More split options"
+  chevron dropdown is gone: with Browser out, Terminal was its only item and duplicated the button.
 - **Open in editor** (`topbar.openInEditor`, T581): launches the editor chosen in Settings → General →
   **Editor** (default VS Code) on the active folder. The glyph is that editor's mark (§5 "Editor marks");
   the `title` and `aria-label` read "Open in {editor}" with the editor's display name, so the button
@@ -8330,7 +8337,6 @@ the surface:
 | Hover preview        | `SessionPreview.vue`       | 40        | `pointer-events: auto` — interactive/scrollable card (T86 §3.9); row+card hover zone with grace delay                                                                                                                                                                                                                                                                                                                                      |
 | Hover preview        | `FolderPreview.vue`        | 40        | Folder card. Peer of `SessionPreview` — they share the `ui.preview` slot (a `sessionId` **or** a `folderPath`); `pointer-events: auto` (T86 §3.9)                                                                                                                                                                                                                                                                                          |
 | Context menu         | `SessionMenu.vue`          | 50        | Suppresses preview on open                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Split menu           | `SplitMenu.vue`            | 50        | Mutex via `useUiStore.splitMenu`. Dropdown anchored to the Topbar's Split button. Peer of `SessionMenu` — never open simultaneously                                                                                                                                                                                                                                                                                                        |
 | Footer fleet popover | `StatusFooter.vue`         | 50        | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal. Open flag in the `ui` store (`ui.popovers.usagePanel`, see "Anchored popovers" below)                                                                                                                                                                                                                                                  |
 | Sidebar jump palette | `SidebarJumpPalette.vue`   | 50        | T288. Peer of the menus in the `ui` mutex (`ui.sidebarJumpPalette`), but the ONLY surface here NOT `<Teleport>`ed to `<body>`: it is `position: absolute` inside the sidebar `<aside>` so it tracks the sidebar's width and clipping. Not modal — closes on Esc / click-outside / the Search button                                                                                                                                        |
 | Dialog (modal)       | `AddFolderDialog.vue`      | 60        | Suppresses menu + preview                                                                                                                                                                                                                                                                                                                                                                                                                  |
