@@ -8,13 +8,13 @@ import { resolve } from 'node:path'
 const read = (rel: string): string => readFileSync(resolve(__dirname, '..', rel), 'utf8')
 
 describe('Docker autonomy contracts', () => {
-  it('the CHANGELOG says what it is, that it only reports first, and that nothing acts yet', () => {
+  it('the CHANGELOG says what it is, that it only reports first, and that nothing is removed yet', () => {
     const log = read('CHANGELOG.md')
     const start = log.indexOf('## 2026-11-05')
     const entry = log.slice(start, log.indexOf('## 2026-11-04'))
     expect(entry).toMatch(/Docker switch of its own/)
     expect(entry).toMatch(/Acknowledge first report/)
-    expect(entry).toMatch(/nothing in Docker is paused or removed yet/)
+    expect(entry).toMatch(/nothing in Docker is removed yet/)
     expect(entry).toMatch(/Pause all autonomous cleanup/)
     expect(entry).toMatch(/actor `autopilot`/)
   })
@@ -29,7 +29,7 @@ describe('Docker autonomy contracts', () => {
     expect(section).toMatch(/own/)
     expect(section).toMatch(/Pause all autonomous cleanup/)
     expect(section).toMatch(/volumes? (is|are) never removed|volumes kept/i)
-    expect(section).toMatch(/nothing yet in Docker/i)
+    expect(section).toMatch(/is not built yet, so nothing is removed this way/i)
   })
 
   it('the design spec records the 2026-11-05 decisions in an Amendments section', () => {

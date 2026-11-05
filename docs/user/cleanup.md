@@ -255,9 +255,26 @@ Docker can run out of room long before the disk does: it hands out a limited num
 
 **What it is for.** A stack that has sat idle for a couple of hours is **Paused**: brought down so it stops holding a network, never deleted, with its volumes kept; you bring it back with the `compose up -d` command Harnu records. Empty compose networks, and the stacks of worktrees that no longer exist, are cleared because they can only be regenerated. A volume is never removed this way.
 
-**What this release does: nothing yet in Docker.** This is the groundwork. The switch, the first report, the global pause and the safety limits are all in place, but the part that decides what to pause or clear is empty, so no stack is paused and nothing is removed. Later releases fill it in, and because the switch already starts report-only, you will see what it would do before anything acts.
+**What it does today.** Cleanup pauses idle stacks on its own. Removing empty compose networks and the stacks of worktrees that no longer exist is not built yet, so nothing is removed this way. A pause is `docker compose down`, never with a volume removed, and Harnu records the ports the stack held and the `docker compose … up -d` command that brings it back (see [Paused stacks](containers.md#paused-stacks)). Before it acts it checks the stack again and refuses, saying **changed since decided**, if anything moved. It never pauses on its own a stack with an anonymous volume, or a database with no volume on its data path, because bringing those down would lose data.
 
-**The pause itself is built.** A paused stack is brought down with `docker compose down`, never with a volume removed, and Harnu records the ports it held and the `docker compose … up -d` command that brings it back (see [Paused stacks](containers.md#paused-stacks)). Before it acts it checks the stack again and refuses, saying **changed since decided**, if anything moved. It never pauses on its own a stack with an anonymous volume, or a database with no volume on its data path, because bringing those down would lose data. Only the part that chooses which stacks to pause is still missing.
+**When Cleanup pauses a stack.** All of these must hold:
+
+- the stack belongs to a worktree (never a main checkout, an unknown stack or an orphan) and has been idle for **2 hours**, counted from the newest of the last session activity in its folder and the last time its containers started or stopped;
+- it was started at least **30 minutes** ago, so a stack you just brought back by hand is left alone;
+- fewer than **6 stacks an hour** have been paused (counted from the journal, so a restart does not reset it), and at most 5 in one pass; the longest idle goes first.
+
+**What protects a stack.** Cleanup leaves it running when:
+
+- a working session: a session in its worktree is working or waiting for you;
+- the worktree has a **Keep** mark, or is on your never-clean list. This holds even when Docker is out of room. An open pull request does **not** protect a stack: waiting work is the normal case;
+- its containers are busy: CPU or disk and network traffic above the idle floor, or a container restarted while it was being watched;
+- one of your Harnu browser panes is open on one of its ports (`localhost:PORT`);
+- something on this machine has an open **connection** to one of its published ports;
+- Harnu could not read one of these facts (docker busy, no way to list connections on this system): when it cannot tell, it does nothing.
+
+**Pause, then shelve.** A worktree whose only stacks are Paused no longer counts as having a stack running, so the next shelving pass can shelve it when it has also been idle long enough. A worktree with a running stack still cannot be shelved.
+
+**Each pause is told.** One line in the Activity bell: "Paused `proj` — idle 3 h · bring back: `docker compose … up -d`".
 
 **It starts by only reporting, like shelving.** The switch is on by default, but its first pass only records what it would do. Nothing changes in Docker until you press **Acknowledge first report** in the same section. Turning the switch off and on again starts a new report-only pass. Its acknowledgement is its own: the one you gave the autopilot or shelving does not carry over.
 

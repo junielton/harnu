@@ -73,7 +73,7 @@ Harnu remembers paused stacks across restarts, because they are read from the [j
 
 Harnu never pauses, on its own, a stack with an **anonymous volume** (docker names it with a bare id, and nothing else refers to it), or one that runs a **database** (Postgres, MySQL, MariaDB, MongoDB, Redis, Elasticsearch, OpenSearch, RabbitMQ) with no volume or bind mount on the folder the database writes its data to: `compose down` would delete that data. It also never pauses a stack of a main checkout, one in use by a session, an orphan or an unknown stack, and it refuses with **changed since decided** when the stack is not exactly what it decided on a moment earlier.
 
-**Nothing pauses a stack by itself yet.** The pause exists, and is tested, but choosing which idle stacks to pause is not built, so you will not see a Paused stack until it is.
+**Cleanup pauses an idle stack by itself**, once you have acknowledged its first report: the rules (2 hours idle, 30 minutes since the last start, at most 6 an hour) and everything that protects a stack are in [Cleanup → Docker: pausing and garbage](cleanup.md#docker-pausing-and-garbage). Every pause leaves a line in the Activity bell and an entry in **Recent** with the same command to bring the stack back.
 
 ## Recent and undo
 
