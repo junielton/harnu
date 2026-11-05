@@ -363,9 +363,16 @@ describe('the journal and the Activity line (AC-7)', () => {
       justifiedBy: null,
       archiveTipRef: 'refs/archive/feat/a/20261105T100000Z/tip',
       archiveWipRef: 'refs/archive/feat/a/20261105T100000Z/wip',
-      actor: 'autopilot'
+      actor: 'autopilot',
+      // U4's digest reads these two straight from the journal line.
+      reason: 'Shelved `feat/a` — idle 9 d, branch kept',
+      idleDays: 9
     })
     expect(t.restoreHint).toBe(`git -C ${REPO} worktree add ${pathOf('a')} feat/a`)
+    expect(r.journal.find((x) => x.branch === 'feat/b')).toMatchObject({
+      reason: 'Shelved `feat/b` — idle 12 d, branch kept',
+      idleDays: 12
+    })
   })
 
   it('a detached worktree’s hint restores from its archived tip', async () => {
@@ -384,6 +391,10 @@ describe('the journal and the Activity line (AC-7)', () => {
         return o.ok
           ? {
               ...o,
+              entry: {
+                ...o.entry,
+                reason: 'Shelved detached HEAD aaaaaaa — idle 9 d, archive kept'
+              },
               record: {
                 ...o.record,
                 tipRef: 'refs/archive/detached/20261105T100000Z/abc/tip',
@@ -394,7 +405,9 @@ describe('the journal and the Activity line (AC-7)', () => {
       }
     })
     await runShelveCycle(r.deps, [det], r.state)
-    expect(r.journal[0]).toMatchObject({ branch: null })
+    expect(r.journal[0]).toMatchObject({ branch: null, idleDays: 9 })
+    // the reason is the executor's own sentence for the shelve, not a second wording
+    expect(r.journal[0]!.reason).toBe('Shelved detached HEAD aaaaaaa — idle 9 d, archive kept')
     expect(r.journal[0]!.restoreHint).toBe(
       `git -C ${REPO} worktree add ${pathOf('det')} refs/archive/detached/20261105T100000Z/abc/tip`
     )
