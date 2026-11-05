@@ -112,6 +112,19 @@ async function withTempIndex<T>(fn: (indexEnv: NodeJS.ProcessEnv) => Promise<T>)
   }
 }
 
+/**
+ * The tree git would write for the worktree's tracked + untracked working state: the same recipe as
+ * `archiveWip` (seed a throwaway index with HEAD, `add -A`, `write-tree`). Equal trees mean equal
+ * bytes and modes for every file git tracks or would track, and the same set of deleted files.
+ */
+async function workingTree(worktreePath: string): Promise<string> {
+  return withTempIndex(async (env) => {
+    await git(worktreePath, ['read-tree', 'HEAD'], { env })
+    await git(worktreePath, ['add', '-A'], { env })
+    return (await git(worktreePath, ['write-tree'], { env })).trim()
+  })
+}
+
 // ---- the gitignored-files snapshot -----------------------------------------------------
 
 type SnapshotListing =
@@ -419,7 +432,7 @@ async function preserve(input: PreserveInput, created: string[]): Promise<Preser
   }
   created.push(refs.record)
 
-  const verdict = await verifyPreservation(record, { mode: 'archive' })
+  const verdict = await verifyPreservation(record, { mode: 'live' })
   if (!verdict.ok) {
     await rollback(repoPath, created)
     return refuse('verification-failed', `${verdict.reason}: ${verdict.message}`)
@@ -537,6 +550,12 @@ async function checkRef(repo: string, ref: string, expected: string): Promise<Ve
  *
  * `archive` mode checks the archive itself: every recorded ref still points at the recorded commit,
  * the trees are the recorded ones, and every blob and tree under them exists.
+ *
+ * `live` mode (the default, what shelving asks before it removes a folder) adds the worktree: the
+ * folder exists, still stands on the recorded commit, and git hashes its tracked + untracked state and
+ * its gitignored files outside the dependency dirs to exactly the archived trees. A file edited,
+ * added or deleted since the preservation is `worktree-changed`. Staging, mtimes and the dependency
+ * dirs are not part of the comparison: git does not hold them, and the dependencies are regenerable.
  */
 export async function verifyPreservation(
   record: ShelveRecord,
@@ -578,8 +597,46 @@ export async function verifyPreservation(
       if (gone) return bad('object-missing', `object ${gone} is missing from the repository`)
     }
     if (mode === 'archive') return { ok: true, mode }
-    return bad('probe-failed', 'live verification is not available')
+    return await verifyLive(record)
   } catch (err) {
     return bad('probe-failed', messageOf(err))
   }
+}
+
+/** The live half of {@link verifyPreservation}: the worktree on disk hashes to the archived trees. */
+async function verifyLive(record: ShelveRecord): Promise<VerifyResult> {
+  const wt = record.worktreePath
+  if (
+    !(await fs.stat(wt).then(
+      (s) => s.isDirectory(),
+      () => false
+    ))
+  ) {
+    return bad('worktree-missing', `${wt} is not a folder on disk`)
+  }
+  const head = await resolveCommit(wt, 'HEAD')
+  if (head !== record.headSha) {
+    return bad(
+      'head-moved',
+      `the worktree is on ${head ?? 'no commit'}, not the recorded ${record.headSha}`
+    )
+  }
+  if ((await workingTree(wt)) !== record.wipTree) {
+    return bad(
+      'worktree-changed',
+      'tracked or untracked files differ from the archived working state'
+    )
+  }
+  const listing = await listIgnored(wt, record.dependencyDirs, record.snapshotCapBytes)
+  if (!listing.ok) {
+    return bad(
+      'worktree-changed',
+      'the gitignored files outside dependency dirs no longer fit the snapshot'
+    )
+  }
+  const tree = listing.paths.length > 0 ? await ignoredTree(wt, listing.paths) : null
+  if (tree !== (record.ignored?.tree ?? null)) {
+    return bad('worktree-changed', 'gitignored files differ from the archived snapshot')
+  }
+  return { ok: true, mode: 'live' }
 }
