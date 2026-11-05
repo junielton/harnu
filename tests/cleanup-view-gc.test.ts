@@ -1318,7 +1318,7 @@ describe('Cleanup screen — the Docker card reads the Containers snapshot (U3.7
     expect(containersScan).toHaveBeenCalledTimes(1)
   })
 
-  it('does not scan again when a background scan already produced a snapshot', async () => {
+  it("refreshes a snapshot that already exists, because Cleanup's own actions are not in it", async () => {
     install(snap())
     const base = (window as unknown as { api: Record<string, unknown> }).api
     const containersScan = vi.fn(async () => null)
@@ -1340,6 +1340,6 @@ describe('Cleanup screen — the Docker card reads the Containers snapshot (U3.7
             : t2[k]
     })
     await mountView()
-    expect(containersScan).not.toHaveBeenCalled()
+    expect(containersScan).toHaveBeenCalledTimes(1)
   })
 })
