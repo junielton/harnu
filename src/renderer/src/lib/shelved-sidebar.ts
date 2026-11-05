@@ -73,11 +73,10 @@ export interface ShelvedPartition<F, S> {
  * An entry whose repo has no folder at all has no group to live in, so it is not shown (its folder is still
  * removed from the live list: a shelved worktree never shows as a ghost).
  */
-export function partitionShelved<S extends { sessionId: string }, F extends PartitionFolder<S>>(
-  folders: readonly F[],
-  entries: readonly ShelvedSource[],
-  nowMs: number
-): ShelvedPartition<F, S> {
+export function partitionShelved<
+  S extends { sessionId: string; isShellTerminal?: boolean; isSidechain?: boolean },
+  F extends PartitionFolder<S>
+>(folders: readonly F[], entries: readonly ShelvedSource[], nowMs: number): ShelvedPartition<F, S> {
   const byRepo = new Map<string, ShelvedMember<S>[]>()
   if (entries.length === 0) return { live: [...folders], byRepo }
 
@@ -103,6 +102,8 @@ export function partitionShelved<S extends { sessionId: string }, F extends Part
     for (const f of folders) {
       if (!isInsidePath(f.path, e.worktreePath)) continue
       for (const s of f.sessions) {
+        // Same exclusions as a normal folder row: terminals and subagent chains are never session rows.
+        if (s.isShellTerminal || s.isSidechain) continue
         if (seen.has(s.sessionId)) continue
         seen.add(s.sessionId)
         sessions.push(s)

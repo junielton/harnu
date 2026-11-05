@@ -21,6 +21,8 @@ interface TSession {
   status: 'active' | 'idle' | 'archived'
   modified: string
   title?: string
+  isShellTerminal?: boolean
+  isSidechain?: boolean
 }
 interface TFolder {
   path: string
@@ -92,6 +94,19 @@ describe('partitionShelved', () => {
     const { live, byRepo } = partitionShelved([main(), inner], [shelved()], NOW)
     expect(live.map((f) => f.path)).toEqual([REPO])
     expect(byRepo.get(REPO_ID)?.[0].sessions.map((s) => s.sessionId)).toEqual(['x'])
+  })
+
+  it('leaves terminals and subagent chains out of a shelved row, like a normal folder row', () => {
+    const ghost = folder({
+      path: shelved().worktreePath,
+      sessions: [
+        session('a1'),
+        { ...session('term'), isShellTerminal: true },
+        { ...session('side'), isSidechain: true }
+      ]
+    })
+    const { byRepo } = partitionShelved([main(), ghost], [shelved()], NOW)
+    expect(byRepo.get(REPO_ID)?.[0].sessions.map((s) => s.sessionId)).toEqual(['a1'])
   })
 
   it('attaches the ghost folder sessions to the shelved member, keyed by the repo id', () => {

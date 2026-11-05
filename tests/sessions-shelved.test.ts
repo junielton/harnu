@@ -202,6 +202,44 @@ describe('sessions store — shelved worktrees in the sidebar (U2.3b)', () => {
   })
 
   describe('AC-3: restore, then resume', () => {
+    it('keeps naming a worktree that is still restoring when another one finishes first', async () => {
+      const WT2 = `${REPO}/.claude/worktrees/PROJ-232-billing`
+      disk.push(entry(WT2, [session('b1', WT2)], { diskExists: false }))
+      const store = await (async () => {
+        const st = useSessionsStore()
+        await st.init()
+        await settle()
+        useGcStore().snapshot = snapshotWith([
+          shelvedEntry(),
+          shelvedEntry({
+            id: `${REPO}::branch::PROJ-232-billing`,
+            worktreePath: WT2,
+            branch: 'PROJ-232-billing'
+          })
+        ])
+        return st
+      })()
+      const members = groups(store)[0].shelved as never[] as Array<{ id: string; label: string }>
+      const first = members.find((m) => m.label === 'PROJ-231-auth-refresh') as never
+      const second = members.find((m) => m.label === 'PROJ-232-billing') as never
+      const releases: Array<(v: unknown) => void> = []
+      gcRestoreShelved.mockImplementation(() => new Promise((resolve) => releases.push(resolve)))
+
+      const runFirst = store.restoreShelvedWorktree(first, 'a2')
+      const runSecond = store.restoreShelvedWorktree(second, 'b1')
+      await settle(0)
+      expect(store.shelvedRestoringLabel).toBe('PROJ-232-billing')
+
+      // The second finishes first: the pane must fall back to the first, not go blank.
+      releases[1]({ ok: true, status: 'restored', attached: true })
+      await runSecond
+      expect(store.shelvedRestoringLabel).toBe('PROJ-231-auth-refresh')
+
+      releases[0]({ ok: true, status: 'restored', attached: true })
+      await runFirst
+      expect(store.shelvedRestoringLabel).toBeNull()
+    })
+
     it('shows the restoring state, selects the session only AFTER the folder is back, and lands the row live', async () => {
       const store = await boot()
       const member = groups(store)[0].shelved![0] as never
