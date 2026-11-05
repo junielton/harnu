@@ -7,8 +7,17 @@
  * down without touching its volumes, and record everything needed to bring it back.
  */
 
-import type { InspectedContainer } from './containers-core'
-import type { ComposeRestoreFacts, Verdict } from './containers-wire'
+import { parseInspect, summarizeDockerError, type InspectedContainer } from './containers-core'
+import { composeUpCommand } from './containers-journal'
+import type {
+  Actor,
+  ComposeRestoreFacts,
+  ContainersSnapshot,
+  PausedRecord,
+  StackRow,
+  Tombstone,
+  Verdict
+} from './containers-wire'
 
 // ---- docker compose config ---------------------------------------------------------
 
@@ -161,4 +170,200 @@ export function confirmOnlyReason(containers: readonly InspectedContainer[]): st
     if (!kept) return `${c.name} runs ${c.image}, a database, with no volume on its data path`
   }
   return null
+}
+
+// ---- the executor -------------------------------------------------------------------
+
+/** What the planner decided on (U3.5): the stack, the exact containers and the verdict it saw. */
+export interface PauseDecision {
+  stack: string
+  containerIds: string[]
+  verdict: Verdict
+}
+
+export interface PauseDeps {
+  /** A scan started after the call arrived: the pause is judged on a fresh picture. */
+  scan(): Promise<ContainersSnapshot>
+  /** Runs `docker <args>` (no shell); rejects on a non-zero exit. */
+  run(args: readonly string[]): Promise<{ stdout: string }>
+  appendTombstone(t: Tombstone): Promise<void>
+  now(): number
+}
+
+export type PauseCode =
+  | 'DOCKER_UNAVAILABLE'
+  | 'STACK_NOT_FOUND'
+  | 'NOT_COMPOSE'
+  | 'CHANGED_SINCE_DECIDED'
+  | 'NOT_PAUSABLE'
+  | 'CONFIRM_ONLY'
+  | 'CONFIG_UNREADABLE'
+  | 'DOWN_FAILED'
+  | 'JOURNAL_FAILED'
+
+export type PauseOutcome =
+  | { ok: true; outcome: 'paused'; record: PausedRecord; tombstone: Tombstone }
+  | {
+      ok: false
+      /** `refused`: nothing ran. `confirm-required`: nothing ran, and only the operator may pause it. */
+      outcome: 'refused' | 'confirm-required' | 'failed'
+      code: PauseCode
+      message: string
+      /** Present when the stack is down but could not be journaled: the way back is still here. */
+      record?: PausedRecord
+    }
+
+function refuse(code: PauseCode, message: string): PauseOutcome {
+  return { ok: false, outcome: 'refused', code, message }
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const left = [...a].sort()
+  const right = [...b].sort()
+  return left.every((id, i) => id === right[i])
+}
+
+const CHANGED = 'the stack changed since decided; nothing was paused'
+
+/**
+ * Brings one compose stack down — containers and network, never its volumes — and journals how to
+ * bring it back. The decision is bound to the facts it was made on (spec §5): the stack is
+ * re-probed right before acting and any difference refuses with "changed since decided".
+ *
+ * Order: fresh scan → same stack, same containers, same verdict, a pausable verdict → `docker
+ * inspect` for the confirm-only rules → `docker compose config` for the restore facts → `down` →
+ * one `stop` tombstone carrying the {@link PausedRecord}. Nothing runs `down` until every earlier
+ * step has passed, so a refusal never leaves a half-paused stack.
+ *
+ * A stack that is down but unjournaled returns `JOURNAL_FAILED` with its record: the restore
+ * command is never lost silently.
+ */
+export async function pauseStack(
+  decision: PauseDecision,
+  actor: Actor,
+  deps: PauseDeps
+): Promise<PauseOutcome> {
+  const snap = await deps.scan()
+  if (!snap.dockerAvailable) return refuse('DOCKER_UNAVAILABLE', snap.dockerError)
+
+  const stack: StackRow | undefined = snap.stacks.find((s) => s.id === decision.stack)
+  if (!stack) return refuse('STACK_NOT_FOUND', 'no such stack in the current scan')
+  if (stack.kind !== 'compose') {
+    return refuse('NOT_COMPOSE', 'only a compose stack can be paused')
+  }
+  if (
+    !sameIds(
+      decision.containerIds,
+      stack.containers.map((c) => c.id)
+    ) ||
+    stack.verdict !== decision.verdict
+  ) {
+    return refuse('CHANGED_SINCE_DECIDED', CHANGED)
+  }
+  const workingDir = stack.attribution.path
+  if (!isPausableVerdict(stack.verdict) || !workingDir) {
+    return refuse('NOT_PAUSABLE', `a ${stack.verdict} stack is never paused`)
+  }
+
+  let inspected: InspectedContainer[]
+  try {
+    inspected = parseInspect((await deps.run(['inspect', ...decision.containerIds])).stdout)
+  } catch (err) {
+    return refuse('DOCKER_UNAVAILABLE', summarizeDockerError(err))
+  }
+  if (inspected.length !== decision.containerIds.length) {
+    return refuse('CHANGED_SINCE_DECIDED', CHANGED)
+  }
+  const confirm = confirmOnlyReason(inspected)
+  if (confirm) {
+    return { ok: false, outcome: 'confirm-required', code: 'CONFIRM_ONLY', message: confirm }
+  }
+
+  const base = {
+    project: stack.project,
+    workingDir,
+    configFiles: stack.compose?.configFiles ?? [],
+    envFile: stack.compose?.envFile ?? null
+  }
+  let services: ComposeServices | null
+  try {
+    const { stdout } = await deps.run([
+      'compose',
+      ...(base.project ? ['-p', base.project] : []),
+      '--project-directory',
+      base.workingDir,
+      ...base.configFiles.flatMap((file) => ['-f', file]),
+      ...(base.envFile ? ['--env-file', base.envFile] : []),
+      '--profile',
+      '*',
+      'config',
+      '--format',
+      'json'
+    ])
+    services = parseComposeConfig(stdout)
+  } catch (err) {
+    return refuse(
+      'CONFIG_UNREADABLE',
+      `docker compose config failed, so no restore command can be built: ${summarizeDockerError(err)}`
+    )
+  }
+  if (!services) {
+    return refuse(
+      'CONFIG_UNREADABLE',
+      'docker compose config listed no services; nothing was paused'
+    )
+  }
+
+  const facts = composeFactsFor({
+    ...base,
+    services,
+    runningServices: stack.containers.flatMap((c) => (c.service ? [c.service] : []))
+  })
+  const record: PausedRecord = {
+    ...facts,
+    ports: [...stack.ports].sort((a, b) => a - b),
+    restoreCommand: composeUpCommand(facts),
+    pausedAt: deps.now()
+  }
+
+  try {
+    await deps.run(pauseDownArgs(facts))
+  } catch (err) {
+    return {
+      ok: false,
+      outcome: 'failed',
+      code: 'DOWN_FAILED',
+      message: `docker compose down failed: ${summarizeDockerError(err)}`
+    }
+  }
+
+  const tombstone: Tombstone = {
+    at: record.pausedAt,
+    actor,
+    verb: 'stop',
+    stacks: [
+      {
+        stack: stack.id,
+        name: stack.name,
+        path: stack.attribution.path,
+        containerIds: [...decision.containerIds],
+        freed: { ramBytes: stack.ramBytes, ports: record.ports, volumes: [], volumeBytes: 0 },
+        paused: record
+      }
+    ],
+    restoreHint: record.restoreCommand
+  }
+  try {
+    await deps.appendTombstone(tombstone)
+  } catch (err) {
+    return {
+      ok: false,
+      outcome: 'failed',
+      code: 'JOURNAL_FAILED',
+      message: `the stack is paused but the journal write failed: ${err instanceof Error ? err.message : String(err)}`,
+      record
+    }
+  }
+  return { ok: true, outcome: 'paused', record, tombstone }
 }

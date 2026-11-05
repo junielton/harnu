@@ -36,6 +36,23 @@ function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === 'string')
 }
 
+function isPausedRecord(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false
+  const r = v as Record<string, unknown>
+  return (
+    (typeof r.project === 'string' || r.project === null) &&
+    typeof r.workingDir === 'string' &&
+    isStringArray(r.configFiles) &&
+    isStringArray(r.profiles) &&
+    (typeof r.envFile === 'string' || r.envFile === null) &&
+    typeof r.hasBuild === 'boolean' &&
+    Array.isArray(r.ports) &&
+    r.ports.every((p) => typeof p === 'number') &&
+    typeof r.restoreCommand === 'string' &&
+    typeof r.pausedAt === 'number'
+  )
+}
+
 function isTombstoneStack(v: unknown): v is TombstoneStack {
   if (!v || typeof v !== 'object') return false
   const s = v as Record<string, unknown>
@@ -53,7 +70,8 @@ function isTombstoneStack(v: unknown): v is TombstoneStack {
     isStringArray(freed.volumes) &&
     typeof freed.volumeBytes === 'number' &&
     (s.keptVolumes === undefined || isStringArray(s.keptVolumes)) &&
-    (s.keptVolumeBytes === undefined || typeof s.keptVolumeBytes === 'number')
+    (s.keptVolumeBytes === undefined || typeof s.keptVolumeBytes === 'number') &&
+    (s.paused === undefined || isPausedRecord(s.paused))
   )
 }
 

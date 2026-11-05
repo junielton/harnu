@@ -180,6 +180,19 @@ export const ACT_VERBS: readonly ActVerb[] = ['stop', 'start', 'remove', 'sweep'
  */
 export type AgentActVerb = Exclude<ActVerb, 'sweep'>
 
+/**
+ * What a pause recorded about the stack it brought down (autonomous cleanup U3.4): everything
+ * `docker compose up -d` needs, the host ports it freed, and the ready-to-paste command.
+ */
+export interface PausedRecord extends ComposeRestoreFacts {
+  /** Host ports the stack held while running; a restore needs them free again. */
+  ports: number[]
+  /** `docker compose -p P --project-directory WD [-f F]… [--profile X]… [--env-file E] up -d [--build]`. */
+  restoreCommand: string
+  /** Epoch ms of the pause. */
+  pausedAt: number
+}
+
 export interface TombstoneStack {
   stack: string
   name: string
@@ -202,6 +215,8 @@ export interface TombstoneStack {
   keptVolumes?: string[]
   /** Sum of the kept volumes' measured sizes; present exactly when `keptVolumes` is. */
   keptVolumeBytes?: number
+  /** A pause only (U3.4): the stack was brought down with `compose down`, volumes untouched. */
+  paused?: PausedRecord
 }
 
 /** One journal line (PRD §3.5): one per action, however many stacks it touched. */
