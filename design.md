@@ -11055,6 +11055,14 @@ control-right rows with `SettingHint`). Groups, 16px apart, every control writin
   age** (days); and, instead of a volumes switch, a `--warning-soft` note: **Docker volumes are always
   kept** — cleaning a worktree never removes its volumes; they show up in Needs review as orphan volumes
   and each one is removed by hand — with "a removed volume cannot be restored" in `--warning`.
+- **Shelving idle worktrees** (autonomous cleanup U2.3a; own section, `data-testid="cleanup-settings-shelve"`) —
+  the `shelve.enabled` toggle (`gc-shelve`; **on by default**). Writes through `gc:prefs:set` like every other
+  row (whole `GcPrefs`; `shelve.firstReportAcknowledged` is never writable there). Under the row, when the switch
+  is on, a **status line** (`data-testid="gc-shelve-status"`, 11.5px `--text-3`): _report only_ — "The first pass
+  only reports what it would shelve; nothing is removed until you acknowledge it" — with a Soft inline button
+  **Acknowledge first report** (`gc-shelve-ack`, the `gc:shelve:ack` channel), or _active_ — "Shelving is active.
+  Up to {n} worktrees per cycle." — with no button. Switched off: no status line, only the intro, which says what
+  shelving does and that a shelved worktree comes back by itself when a session or terminal opens in it.
 - **Archives** — **Keep archives for** (days, default 30; `archiveKeepDays`) and **Expire archives
   automatically** (toggle, off by default; `archiveAutoExpire`): when on, and only then, the autopilot deletes
   the archive refs older than the retention (never `git gc`). The hint says the refs go, the git objects go

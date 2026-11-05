@@ -3100,6 +3100,15 @@
           "label": "Clean ready worktrees automatically",
           "hint": "Needs the background scan below to stay on: the cleanup runs on the same timer."
         },
+        "shelve": {
+          "eyebrow": "Shelving idle worktrees",
+          "intro": "A worktree whose branch is not proven merged, with no session in it, untouched for {days} days is shelved: its folder is removed to free disk while the branch and every change stay archived. It comes back by itself the moment you open a session or a terminal in it, or press Restore in Cleanup.",
+          "label": "Shelve idle worktrees automatically",
+          "hint": "Runs on the same background timer as the autopilot. Branches are never deleted.",
+          "reportOnly": "The first pass only reports what it would shelve; nothing is removed until you acknowledge it.",
+          "ack": "Acknowledge first report",
+          "active": "Shelving is active. Up to {n} worktrees per cycle."
+        },
         "interval": {
           "label": "Run every",
           "hint": "One timer drives both the scan and the cleanup."

@@ -3100,6 +3100,15 @@
           "label": "Limpar worktrees prontas automaticamente",
           "hint": "Precisa do escaneamento em segundo plano abaixo ligado: a limpeza roda no mesmo timer."
         },
+        "shelve": {
+          "eyebrow": "Guardar worktrees ociosas",
+          "intro": "Uma worktree cuja branch não tem prova de merge, sem nenhuma sessão nela e sem mexida há {days} dias é guardada: a pasta é removida para liberar disco, enquanto a branch e todas as alterações ficam arquivadas. Ela volta sozinha assim que você abre uma sessão ou um terminal nela, ou aperta Restaurar na Limpeza.",
+          "label": "Guardar worktrees ociosas automaticamente",
+          "hint": "Roda no mesmo timer em segundo plano do Autopilot. Branches nunca são apagadas.",
+          "reportOnly": "A primeira passada só relata o que guardaria; nada é removido até você confirmar.",
+          "ack": "Confirmar o primeiro relatório",
+          "active": "Guardar está ativo. Até {n} worktrees por ciclo."
+        },
         "interval": {
           "label": "Rodar a cada",
           "hint": "Um único timer comanda o escaneamento e a limpeza."
@@ -3340,7 +3349,7 @@
           "gcFailed": "git gc falhou em {repo}",
           "neverClean": "Este repo está na lista de nunca limpar, então os arquivos dele foram deixados quietos.",
           "protected": "{n} arquivo foi deixado quieto: a pasta dele está na lista de nunca limpar | {n} arquivos foram deixados quietos: as pastas deles estão na lista de nunca limpar",
-          "shelved": "{n} arquivo foi mantido: a worktree dele está guardada e este arquivo é o que a restaura. Restaure-a primeiro (Cleanup → Guardadas). | {n} arquivos foram mantidos: as worktrees deles estão guardadas e estes arquivos são o que as restaura. Restaure-as primeiro (Cleanup → Guardadas)."
+          "shelved": "{n} arquivo foi mantido: a worktree dele está guardada e este arquivo é o que a restaura. Restaure-a primeiro (Limpeza → Guardadas). | {n} arquivos foram mantidos: as worktrees deles estão guardadas e estes arquivos são o que as restaura. Restaure-as primeiro (Limpeza → Guardadas)."
         },
         "ageUnknown": "idade desconhecida",
         "deleteOne": "Apagar…",

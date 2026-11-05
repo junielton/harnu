@@ -666,6 +666,16 @@ export const useGcStore = defineStore('gc', () => {
     return saved
   }
 
+  /**
+   * Settings → Cleanup: "Acknowledge first report" for shelving. Its own channel, never a settings
+   * write (main refuses an acknowledgement a stale form carries); the answer is the prefs as saved.
+   */
+  async function ackShelveReport(): Promise<GcPrefs> {
+    const saved = await window.api.gcAckShelveReport()
+    if (snapshot.value) snapshot.value = { ...snapshot.value, prefs: saved }
+    return saved
+  }
+
   // ---- shelved worktrees: bringing one back (autonomous cleanup U2.3a) ---------------------------
 
   /** Shelved ids whose Restore is running, so a second click cannot start a second restore. */
@@ -923,6 +933,7 @@ export const useGcStore = defineStore('gc', () => {
     answerRecovery,
     savePrefs,
     deleteArchives,
+    ackShelveReport,
     restoreShelved,
     shelvedBusy,
     shelvedFailures,
