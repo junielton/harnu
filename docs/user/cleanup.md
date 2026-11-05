@@ -274,7 +274,7 @@ Docker can run out of room long before the disk does: it hands out a limited num
 
 **Pause, then shelve.** A worktree whose only stacks are Paused no longer counts as having a stack running, so the next shelving pass can shelve it when it has also been idle long enough. A worktree with a running stack still cannot be shelved.
 
-**Each pause is told.** One line in the Activity bell: "Paused `proj` — idle 3 h · bring back: `docker compose … up -d`".
+**Each pause is told.** One notification: "Paused `proj` — idle 3 h · bring back: `docker compose … up -d`".
 
 **It starts by only reporting, like shelving.** The switch is on by default, but its first pass only records what it would do. Nothing changes in Docker until you press **Acknowledge first report** in the same section. Turning the switch off and on again starts a new report-only pass. Its acknowledgement is its own: the one you gave the autopilot or shelving does not carry over.
 
