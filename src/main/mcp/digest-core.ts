@@ -266,6 +266,29 @@ export interface HotProposalInput {
   awaySummary?: string
   /** Page id of the full digest this snapshot summarizes (`sessions/<slug>`). */
   digestPage: string
+  /** The last assistant message's open questions (S-7). */
+  openQuestions?: readonly string[]
+}
+
+/** Every label Harnu writes in `hot.md` (S-7, D-8). Red-commit stub: filled in by the green one. */
+export const MEMORY_LABELS: Record<
+  'now' | 'last' | 'next' | 'parallel' | 'lastPrompt' | 'fullDigest',
+  string
+> = { now: '', last: '', next: '', parallel: '', lastPrompt: '', fullDigest: '' }
+
+/** The merge (S-7). Red-commit stub. */
+export function mergeHot(_args: {
+  current: string | null
+  currentKey: string | null
+  next: HotProposalInput
+  nextKey: string
+}): string {
+  throw new Error('mergeHot: not implemented')
+}
+
+/** The key of the snapshot a `hot.md` holds, from its stamp (S-7). Red-commit stub. */
+export function hotKeyOf(_content: string): string | null {
+  throw new Error('hotKeyOf: not implemented')
 }
 
 /**

@@ -394,6 +394,98 @@ describe('createDigestEngine', () => {
     expect(bareEntry).not.toContain('**Files')
   })
 
+  it('merges hot.md with the snapshot on disk instead of overwriting it', async () => {
+    const onDisk = (branch: string | null): string =>
+      `**Now:**\n> Other branch work\n\nFull digest: [[sessions/2026-11-01-oooooooo]]\n\n> provenance: author=agent · at=2026-11-01${branch ? ` · branch=${branch}` : ''} · session=o1\n`
+    const withQuestions: TranscriptFacts = {
+      ...emptyFacts(),
+      userTurns: 3,
+      firstAt: '2026-11-03T10:00:00.000Z',
+      lastAt: '2026-11-03T11:00:00.000Z',
+      openQuestions: ['Should we migrate old entries?']
+    }
+    const truth = deriveTranscriptTruth([
+      { type: 'last-prompt', lastPrompt: 'a prompt the questions outrank' }
+    ])
+
+    // Another branch's snapshot is kept; the new one becomes a Parallel line, and the stamp
+    // written next names the branch the body belongs to.
+    {
+      const f = fakes({
+        readHot: vi.fn(async () => onDisk('feat/other')),
+        readFacts: vi.fn(async () => ({ facts: withQuestions, offset: 1 })),
+        readTruth: vi.fn(async () => truth)
+      })
+      await createDigestEngine(f.deps).digestNow('s30', 'ended')
+      expect(f.deps.readHot).toHaveBeenCalledWith('/repo')
+      expect(f.deps.writeHot).toHaveBeenCalledTimes(1)
+      const [folder, sessionId, stampBranch, , hot] = f.deps.writeHot.mock.calls[0] as string[]
+      expect([folder, sessionId, stampBranch]).toEqual(['/repo', 's30', 'feat/other'])
+      expect(hot).toContain('> Other branch work')
+      expect(hot).not.toContain('> provenance:')
+      expect(hot).toContain(
+        '**Parallel:**\n- `main` · 2026-11-03 · Session s30 → [[sessions/2026-11-03-s30]]'
+      )
+    }
+
+    // The same branch, no hot at all, a hot without a branch stamp and a deps without readHot all
+    // replace; the open questions are Next, and the stamp names the new snapshot's branch.
+    for (const readHot of [
+      vi.fn(async () => onDisk('main')),
+      vi.fn(async () => null),
+      vi.fn(async () => onDisk(null)),
+      undefined
+    ]) {
+      const f = fakes({
+        ...(readHot ? { readHot } : {}),
+        readFacts: vi.fn(async () => ({ facts: withQuestions, offset: 1 })),
+        readTruth: vi.fn(async () => truth)
+      })
+      await createDigestEngine(f.deps).digestNow('s31', 'ended')
+      const [, , stampBranch, , hot] = f.deps.writeHot.mock.calls[0] as string[]
+      expect(stampBranch).toBe('main')
+      expect(hot).not.toContain('Other branch work')
+      expect(hot).not.toContain('**Parallel:**')
+      expect(hot).toContain('**Next:**\n> - Should we migrate old entries?')
+      expect(hot).not.toContain('a prompt the questions outrank')
+    }
+
+    // A folder outside git is keyed by its path and its hot carries no branch stamp: it replaces,
+    // and the snapshot it writes gets no branch stamp of its own.
+    {
+      const f = fakes({
+        readHot: vi.fn(async () => onDisk(null)),
+        gatherGit: vi.fn(async () => ({ kind: 'not-a-repo' as const })),
+        resolveSession: vi.fn(async (id: string) => ({
+          transcriptPath: `/t/${id}.jsonl`,
+          folder: '/plain'
+        }))
+      })
+      await createDigestEngine(f.deps).digestNow('s32', 'ended')
+      const [, , stampBranch, , hot] = f.deps.writeHot.mock.calls[0] as unknown[]
+      expect(stampBranch).toBeUndefined()
+      expect(hot).not.toContain('Other branch work')
+      expect(hot).not.toContain('**Parallel:**')
+    }
+
+    // A hot.md that cannot be read is not overwritten blind: the digest stands, the hot waits.
+    {
+      const f = fakes({
+        readHot: vi.fn(async () => {
+          throw new Error('EIO')
+        })
+      })
+      const err = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      try {
+        await createDigestEngine(f.deps).digestNow('s33', 'ended')
+      } finally {
+        err.mockRestore()
+      }
+      expect(f.deps.writeDigest).toHaveBeenCalledTimes(1)
+      expect(f.deps.writeHot).not.toHaveBeenCalled()
+    }
+  })
+
   it('catches up quiet undigested sessions one after another', async () => {
     const turns: Record<string, number> = { a: 5, b: 3, c: 1, d: 4, home: 6, done: 4 }
     let running = 0

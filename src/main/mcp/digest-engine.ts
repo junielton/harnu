@@ -91,6 +91,8 @@ export interface DigestEngineDeps {
     title: string,
     hot: string
   ): Promise<void>
+  /** The folder's `hot.md` as it is on disk, or null when it has none (S-7). Absent: none. */
+  readHot?(folder: string): Promise<string | null>
   /** The checkout whose memory serves `folder` (S-3's unsafe-root guard checks it). */
   memoryCheckout(folder: string): Promise<string>
   /**
