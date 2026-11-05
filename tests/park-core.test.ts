@@ -239,3 +239,379 @@ describe('confirmOnlyReason (U3.4 AC-4)', () => {
     )
   })
 })
+
+// ---- pauseStack (U3.4 AC-1, AC-2, AC-4) ------------------------------------------
+
+import { vi } from 'vitest'
+import {
+  pauseStack,
+  type PauseDeps,
+  type PauseDecision,
+  type PauseOutcome
+} from '../src/main/containers/park-core'
+import { parseJournal, serializeTombstone } from '../src/main/containers/containers-journal'
+import type { StackRow, Tombstone } from '../src/main/containers/containers-wire'
+import { NOW, available, containerRow, stackRow } from './containers-fixtures'
+
+const UNPAUSED_LIFE = { stdout: '' }
+
+interface World {
+  stack: StackRow
+  /** What `docker inspect` answers, per container id. */
+  inspected?: Record<string, { image: string; mounts?: unknown[]; service?: string }>
+  config?: unknown
+  configFails?: boolean
+  downFails?: boolean
+  appendFails?: boolean
+}
+
+function setup(w: World): {
+  deps: PauseDeps
+  calls: string[][]
+  tombstones: Tombstone[]
+  decision: PauseDecision
+} {
+  const calls: string[][] = []
+  const tombstones: Tombstone[] = []
+  const stack = w.stack
+  const deps: PauseDeps = {
+    scan: vi.fn(async () => available([stack])),
+    run: vi.fn(async (args: readonly string[]) => {
+      calls.push([...args])
+      if (args[0] === 'inspect') {
+        const ids = args.slice(1)
+        return {
+          stdout: JSON.stringify(
+            ids.map((id) => ({
+              Id: id,
+              Name: `/${id.slice(0, 6)}`,
+              State: { Status: 'running' },
+              Config: { Image: w.inspected?.[id]?.image ?? 'busybox', Labels: {} },
+              Mounts: w.inspected?.[id]?.mounts ?? []
+            }))
+          )
+        }
+      }
+      if (args.includes('config')) {
+        if (w.configFails) throw new Error('required variable DB_PASS is missing')
+        return {
+          stdout: JSON.stringify(w.config ?? { services: { app: { image: 'busybox' } } })
+        }
+      }
+      if (args.includes('down')) {
+        if (w.downFails) throw new Error('network has active endpoints')
+        return UNPAUSED_LIFE
+      }
+      throw new Error(`unexpected docker call: ${args.join(' ')}`)
+    }),
+    appendTombstone: vi.fn(async (t: Tombstone) => {
+      if (w.appendFails) throw new Error('disk full')
+      tombstones.push(t)
+    }),
+    now: () => NOW
+  }
+  return {
+    deps,
+    calls,
+    tombstones,
+    decision: {
+      stack: stack.id,
+      containerIds: stack.containers.map((c) => c.id),
+      verdict: stack.verdict
+    }
+  }
+}
+
+function composeStack(over: Partial<StackRow> = {}): StackRow {
+  const c = containerRow({ service: 'app', ports: [8082, 5182] })
+  return stackRow({
+    id: 'proj-82',
+    verdict: 'zombie',
+    containers: [c],
+    compose: { configFiles: [`${WT}/compose.yml`], envFile: null },
+    ...over
+  })
+}
+
+const downCall = (calls: string[][]): string[] | undefined => calls.find((a) => a.includes('down'))
+
+describe('pauseStack — the happy path (U3.4 AC-1, AC-2)', () => {
+  it('runs compose down with the exact argv, never -v/--volumes/--rmi', async () => {
+    const w = setup({ stack: composeStack() })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out.ok).toBe(true)
+    expect(downCall(w.calls)).toEqual([
+      'compose',
+      '-p',
+      'proj-82',
+      '--project-directory',
+      WT,
+      '-f',
+      `${WT}/compose.yml`,
+      'down'
+    ])
+  })
+
+  it('records ports, files, profiles, env file, project dir and build; the hint brings it back', async () => {
+    const w = setup({
+      stack: composeStack({
+        containers: [
+          containerRow({ service: 'app', ports: [8082, 5182] }),
+          containerRow({ service: 'web', ports: [] })
+        ],
+        compose: { configFiles: [`${WT}/a.yml`, `${WT}/b.yml`], envFile: `${WT}/.env.x` }
+      }),
+      config: {
+        services: {
+          app: { image: 'x', build: { context: '.' } },
+          web: { image: 'y', profiles: ['web'] }
+        }
+      }
+    })
+    const out = (await pauseStack(w.decision, 'autopilot', w.deps)) as Extract<
+      PauseOutcome,
+      { ok: true }
+    >
+    expect(out.record).toMatchObject({
+      project: 'proj-82',
+      workingDir: WT,
+      configFiles: [`${WT}/a.yml`, `${WT}/b.yml`],
+      profiles: ['web'],
+      envFile: `${WT}/.env.x`,
+      hasBuild: true,
+      ports: [5182, 8082],
+      pausedAt: NOW
+    })
+    expect(out.record.restoreCommand).toBe(
+      `docker compose -p proj-82 --project-directory ${WT} -f ${WT}/a.yml -f ${WT}/b.yml ` +
+        `--profile web --env-file ${WT}/.env.x up -d --build`
+    )
+  })
+
+  it('image-only stack: no --build', async () => {
+    const w = setup({ stack: composeStack() })
+    const out = (await pauseStack(w.decision, 'autopilot', w.deps)) as Extract<
+      PauseOutcome,
+      { ok: true }
+    >
+    expect(out.record.hasBuild).toBe(false)
+    expect(out.record.restoreCommand).toBe(
+      `docker compose -p proj-82 --project-directory ${WT} -f ${WT}/compose.yml up -d`
+    )
+  })
+
+  it('journals one stop tombstone for the actor, carrying the record and the restore hint', async () => {
+    const w = setup({ stack: composeStack() })
+    const out = (await pauseStack(w.decision, 'autopilot', w.deps)) as Extract<
+      PauseOutcome,
+      { ok: true }
+    >
+    expect(w.tombstones).toHaveLength(1)
+    const t = w.tombstones[0]!
+    expect(t).toMatchObject({ at: NOW, actor: 'autopilot', verb: 'stop' })
+    expect(t.restoreHint).toBe(out.record.restoreCommand)
+    expect(t.stacks[0]).toMatchObject({
+      stack: 'proj-82',
+      path: WT,
+      containerIds: w.decision.containerIds,
+      freed: { ports: [5182, 8082] },
+      paused: out.record
+    })
+    expect(out.tombstone).toEqual(t)
+    // and it survives a restart: the journal line parses back
+    expect(parseJournal(serializeTombstone(t))).toEqual([t])
+  })
+
+  it('reads the compose config before it brings anything down', async () => {
+    const w = setup({ stack: composeStack() })
+    await pauseStack(w.decision, 'autopilot', w.deps)
+    const order = w.calls.map((a) =>
+      a.includes('down') ? 'down' : a.includes('config') ? 'config' : a[0]
+    )
+    expect(order).toEqual(['inspect', 'config', 'down'])
+    expect(w.calls.find((a) => a.includes('config'))).toEqual([
+      'compose',
+      '-p',
+      'proj-82',
+      '--project-directory',
+      WT,
+      '-f',
+      `${WT}/compose.yml`,
+      '--profile',
+      '*',
+      'config',
+      '--format',
+      'json'
+    ])
+  })
+})
+
+describe('pauseStack — re-probe: "changed since decided" (U3.4 AC-1)', () => {
+  it('refuses when a container was added since the decision', async () => {
+    const w = setup({ stack: composeStack() })
+    w.decision.containerIds = []
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'refused', code: 'CHANGED_SINCE_DECIDED' })
+    if (!out.ok) expect(out.message).toMatch(/changed since decided/)
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it('refuses when a container was removed since the decision', async () => {
+    const w = setup({ stack: composeStack() })
+    w.decision.containerIds = [...w.decision.containerIds, 'b'.repeat(64)]
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, code: 'CHANGED_SINCE_DECIDED' })
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it('refuses when the verdict moved since the decision', async () => {
+    const w = setup({ stack: composeStack() })
+    w.decision.verdict = 'pending'
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, code: 'CHANGED_SINCE_DECIDED' })
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it.each(['unknown', 'protected', 'active', 'orphan'] as const)(
+    'refuses a %s stack even when the decision says so too',
+    async (verdict) => {
+      const w = setup({ stack: composeStack({ verdict }) })
+      const out = await pauseStack(w.decision, 'autopilot', w.deps)
+      expect(out).toMatchObject({ ok: false, outcome: 'refused', code: 'NOT_PAUSABLE' })
+      expect(w.calls).toEqual([])
+    }
+  )
+
+  it('refuses a stack that is gone, and a standalone container', async () => {
+    const w = setup({ stack: composeStack() })
+    expect(await pauseStack({ ...w.decision, stack: 'nope' }, 'autopilot', w.deps)).toMatchObject({
+      ok: false,
+      code: 'STACK_NOT_FOUND'
+    })
+    const solo = setup({
+      stack: stackRow({ id: 'scratch', kind: 'container', project: null, verdict: 'zombie' })
+    })
+    expect(await pauseStack(solo.decision, 'autopilot', solo.deps)).toMatchObject({
+      ok: false,
+      code: 'NOT_COMPOSE'
+    })
+    expect(solo.calls).toEqual([])
+  })
+
+  it('refuses when docker is unavailable', async () => {
+    const w = setup({ stack: composeStack() })
+    w.deps.scan = async () => ({
+      scannedAt: NOW,
+      dockerAvailable: false,
+      dockerError: 'daemon down',
+      zombieAfterDays: 2,
+      recent: []
+    })
+    expect(await pauseStack(w.decision, 'autopilot', w.deps)).toMatchObject({
+      ok: false,
+      code: 'DOCKER_UNAVAILABLE'
+    })
+  })
+})
+
+describe('pauseStack — confirm-only stacks (U3.4 AC-4)', () => {
+  it('a database with no volume on its data path returns confirm-required and runs nothing', async () => {
+    const stack = composeStack()
+    const id = stack.containers[0]!.id
+    const w = setup({
+      stack,
+      inspected: { [id]: { image: 'postgres:16', mounts: [] } }
+    })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'confirm-required', code: 'CONFIRM_ONLY' })
+    if (!out.ok) expect(out.message).toMatch(/database/)
+    expect(downCall(w.calls)).toBeUndefined()
+    expect(w.tombstones).toEqual([])
+  })
+
+  it('an anonymous volume returns confirm-required', async () => {
+    const stack = composeStack()
+    const id = stack.containers[0]!.id
+    const w = setup({
+      stack,
+      inspected: {
+        [id]: {
+          image: 'nginx',
+          mounts: [{ Type: 'volume', Name: 'e'.repeat(64), Source: '/v', Destination: '/x' }]
+        }
+      }
+    })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'confirm-required' })
+    if (!out.ok) expect(out.message).toMatch(/anonymous volume/)
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it('a database whose data is on a named volume pauses', async () => {
+    const stack = composeStack()
+    const id = stack.containers[0]!.id
+    const w = setup({
+      stack,
+      inspected: {
+        [id]: {
+          image: 'postgres:16',
+          mounts: [
+            { Type: 'volume', Name: 'pg', Source: '/v', Destination: '/var/lib/postgresql/data' }
+          ]
+        }
+      }
+    })
+    expect(await pauseStack(w.decision, 'autopilot', w.deps)).toMatchObject({ ok: true })
+  })
+})
+
+describe('pauseStack — failures leave the stack alone or say so (U3.4 review focus)', () => {
+  it('an unreadable compose config refuses before down', async () => {
+    const w = setup({ stack: composeStack(), configFails: true })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'refused', code: 'CONFIG_UNREADABLE' })
+    if (!out.ok) expect(out.message).toMatch(/DB_PASS/)
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it('a config with no services refuses before down', async () => {
+    const w = setup({ stack: composeStack(), config: { name: 'x' } })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, code: 'CONFIG_UNREADABLE' })
+    expect(downCall(w.calls)).toBeUndefined()
+  })
+
+  it('a failed down is a failure with no tombstone', async () => {
+    const w = setup({ stack: composeStack(), downFails: true })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'failed', code: 'DOWN_FAILED' })
+    expect(w.tombstones).toEqual([])
+  })
+
+  it('a journal write that fails after down is a failure that still carries the restore command', async () => {
+    const w = setup({ stack: composeStack(), appendFails: true })
+    const out = await pauseStack(w.decision, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, outcome: 'failed', code: 'JOURNAL_FAILED' })
+    if (!out.ok) {
+      expect(out.record?.restoreCommand).toContain('docker compose -p proj-82')
+      expect(out.message).toMatch(/disk full/)
+    }
+  })
+
+  it('a path with a space and a quote stays pasteable in the recorded command', async () => {
+    const stack = composeStack({
+      compose: { configFiles: ["/tmp/my proj/it's.yml"], envFile: null }
+    })
+    stack.attribution = { ...stack.attribution, path: '/tmp/my proj' }
+    const w = setup({ stack })
+    const out = (await pauseStack(w.decision, 'autopilot', w.deps)) as Extract<
+      PauseOutcome,
+      { ok: true }
+    >
+    expect(out.record.restoreCommand).toBe(
+      `docker compose -p proj-82 --project-directory '/tmp/my proj' -f '/tmp/my proj/it'\\''s.yml' up -d`
+    )
+    // the argv is not shell-quoted: execFile passes it as is
+    expect(downCall(w.calls)).toContain("/tmp/my proj/it's.yml")
+  })
+})

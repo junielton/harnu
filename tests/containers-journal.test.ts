@@ -88,6 +88,40 @@ describe('tombstone (de)serialization', () => {
   })
 })
 
+describe('a pause tombstone (U3.4)', () => {
+  const paused = {
+    project: 'proj-82',
+    workingDir: '/w',
+    configFiles: ['/w/compose.yml'],
+    profiles: [],
+    envFile: null,
+    hasBuild: false,
+    ports: [8082],
+    restoreCommand: 'docker compose -p proj-82 --project-directory /w -f /w/compose.yml up -d',
+    pausedAt: 5
+  }
+  const withPaused = (value: unknown): Tombstone => {
+    const t = tomb(5, { actor: 'autopilot' })
+    return { ...t, stacks: [{ ...t.stacks[0]!, paused: value } as never] }
+  }
+
+  it('is accepted when its record is whole, and parsed back unchanged', () => {
+    const t = withPaused(paused)
+    expect(isTombstone(t)).toBe(true)
+    expect(parseJournal(serializeTombstone(t))).toEqual([t])
+  })
+
+  it.each([
+    ['a missing restore command', { ...paused, restoreCommand: undefined }],
+    ['ports that are not numbers', { ...paused, ports: ['x'] }],
+    ['a non-boolean build flag', { ...paused, hasBuild: 'yes' }],
+    ['files that are not strings', { ...paused, configFiles: [1] }],
+    ['not an object', 'paused']
+  ])('is rejected with %s', (_name, value) => {
+    expect(isTombstone(withPaused(value))).toBe(false)
+  })
+})
+
 describe('restore hints (PRD §3.5)', () => {
   it('after a stop of a standalone container: docker start with every stopped container', () => {
     const standalone = {
