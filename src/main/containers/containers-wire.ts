@@ -134,7 +134,12 @@ export interface ContainersTotals {
   stoppable: number
 }
 
-export type Actor = 'operator' | 'agent'
+/**
+ * Who did a journaled action: the operator in the UI, an agent over MCP, or the `autopilot` (Harnu
+ * acting on its own, autonomous cleanup U3). Automatic actions are told apart from the other two.
+ */
+export const ACTORS = ['operator', 'agent', 'autopilot'] as const
+export type Actor = (typeof ACTORS)[number]
 
 export type ActVerb = 'stop' | 'start' | 'remove' | 'sweep'
 

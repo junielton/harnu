@@ -9,6 +9,7 @@ import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import {
   ACT_VERBS,
+  ACTORS as WIRE_ACTORS,
   type Actor,
   type ActVerb,
   type Tombstone,
@@ -25,7 +26,8 @@ export function serializeTombstone(t: Tombstone): string {
   return JSON.stringify(t) + '\n'
 }
 
-const ACTORS: readonly Actor[] = ['operator', 'agent']
+// The wire's own roster, like the verbs below, so an actor added there is never dropped on read.
+const ACTORS: readonly Actor[] = WIRE_ACTORS
 // The wire's own roster, so a verb added there is never silently dropped when
 // its tombstones are read back (T340).
 const VERBS: readonly ActVerb[] = ACT_VERBS

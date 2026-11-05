@@ -1,4 +1,4 @@
-<!-- harnu-features v122 (2026-11-05) -->
+<!-- harnu-features v123 (2026-11-05) -->
 
 # You are running inside Harnu
 
@@ -425,7 +425,8 @@ Containers view reads: every Docker stack (a compose project or a standalone con
 its attributed folder and Harnu's verdict — `unknown`, `orphan`, `active`, `protected`,
 `pending` or `zombie` — plus RAM, host ports, volumes, `unusedForMs` (and `zombieInMs` on a
 `pending` stack), `totals`, and `recent` (the stop/start/remove journal; each entry's
-`actor` is `operator` or `agent`). Read the verdict; never re-derive it. Each call scans
+`actor` is `operator`, `agent` or `autopilot` — `autopilot` is Harnu acting on its own
+(Cleanup's automatic Docker actions), never you or the operator). Read the verdict; never re-derive it. Each call scans
 fresh (`scannedAt`). Paths are redacted (`folderAlias`, `attribution.pathAlias`; a restore
 hint shows `<alias>`). A stack in a blocked folder lists with `agentControllable: false` —
 report it, leave it alone. `folder` narrows the listing, `totals` and `recent` to that repo,
