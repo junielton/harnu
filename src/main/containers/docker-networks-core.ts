@@ -8,7 +8,13 @@
  * not be read at all, nothing is released: a missing fact never becomes a deletion.
  */
 
-import { COMPOSE_PROJECT_LABEL, type InspectedContainer } from './containers-core'
+import {
+  COMPOSE_PROJECT_LABEL,
+  COMPOSE_WORKING_DIR_LABEL,
+  type InspectedContainer
+} from './containers-core'
+
+export const COMPOSE_CONFIG_FILES_LABEL = 'com.docker.compose.project.config_files'
 
 /** A docker network as `docker network inspect` reports it, reduced to what the core reads. */
 export interface DockerNetworkFact {
@@ -112,6 +118,35 @@ export function externalNetworkNamesOf(configJson: string): string[] | null {
     names.push(name)
   }
   return names
+}
+
+/** A compose project as its containers' labels describe it: enough to re-read its config. */
+export interface ComposeProjectRef {
+  project: string
+  workingDir: string | null
+  /** Absolute paths, in `-f` order. Empty when the containers carry no `config_files` label. */
+  configFiles: string[]
+}
+
+/** One entry per compose project that has at least one container (running or stopped). */
+export function composeProjectsOf(containers: readonly InspectedContainer[]): ComposeProjectRef[] {
+  const byProject = new Map<string, ComposeProjectRef>()
+  for (const c of containers) {
+    const project = c.labels[COMPOSE_PROJECT_LABEL]
+    if (!project) continue
+    const prev = byProject.get(project)
+    const workingDir = c.labels[COMPOSE_WORKING_DIR_LABEL] || null
+    const configFiles = (c.labels[COMPOSE_CONFIG_FILES_LABEL] ?? '')
+      .split(',')
+      .map((f) => f.trim())
+      .filter(Boolean)
+    byProject.set(project, {
+      project,
+      workingDir: prev?.workingDir ?? workingDir,
+      configFiles: prev && prev.configFiles.length > 0 ? prev.configFiles : configFiles
+    })
+  }
+  return [...byProject.values()].sort((a, b) => (a.project < b.project ? -1 : 1))
 }
 
 function compareByName(a: DockerNetworkFact, b: DockerNetworkFact): number {
