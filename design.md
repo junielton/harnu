@@ -11179,6 +11179,24 @@ control-right rows with `SettingHint`). Groups, 16px apart, every control writin
   **Acknowledge first report** (`gc-shelve-ack`, the `gc:shelve:ack` channel), or _active_ — "Shelving is active.
   Up to {n} worktrees per cycle." — with no button. Switched off: no status line, only the intro, which says what
   shelving does and that a shelved worktree comes back by itself when a session or terminal opens in it.
+- **Docker: pausing and garbage** (autonomous cleanup U3.1; own section, `data-testid="cleanup-settings-docker"`,
+  right after Shelving) — the same anatomy as Shelving, three rows. (1) The `docker.enabled` toggle
+  (`gc-docker`; **on by default**), writing through `gc:prefs:set` like every other row
+  (`docker.firstReportAcknowledged` is never writable there). Under it, when on, a **status line**
+  (`data-testid="gc-docker-status"`, 11.5px `--text-3`): _report only_ — "The first pass only records what
+  it would pause or remove; nothing changes in Docker until you acknowledge it." — with a Soft inline button
+  **Acknowledge first report** (`gc-docker-ack`, the `gc:docker:ack` channel), or _active_ — "Docker cleanup is
+  active. Up to {n} actions per cycle." — with no button. Switched off: no status line, only the intro, which
+  says what the switch covers: stacks that sit idle for {hours} hours are **Paused** (never removed, volumes
+  always kept) and empty compose networks and stacks of removed worktrees are cleared. **Copy rule:** the UI
+  word for a stack Cleanup brought down is **Paused** (pt-BR **Pausada**), never "parked" ("parked" already
+  means a hibernated session). (2) A hairline (`--border`) then the **global pause** row,
+  `gc-pause-all` toggle, **off by default**, label "Pause all autonomous cleanup": it stops shelving, Docker
+  autonomy and the autopilot's cleaning alike while on, and cleaning by hand keeps working. When on, the row
+  gains a note in `--warning` (11.5px, `gc-pause-all-note`): "Autonomous cleanup is paused. Nothing is shelved,
+  paused or removed on its own until you turn this off." Nothing here is a new color or size: the toggle is
+  `ToggleSwitch`, the button `Button variant="soft"`, the hairline and notes use the same tokens as the
+  Shelving section.
 - **Archives** — **Keep archives for** (days, default 30; `archiveKeepDays`) and **Expire archives
   automatically** (toggle, off by default; `archiveAutoExpire`): when on, and only then, the autopilot deletes
   the archive refs older than the retention (never `git gc`). The hint says the refs go, the git objects go
