@@ -278,8 +278,10 @@ export function readEmptyComposeNetworks(
   deps: FactsDeps
 ): Promise<DockerFactsResult<EmptyNetworkPlan>> {
   return guard(async () => {
-    const containers = await listContainers(deps)
+    // Networks first: any container attaching to a network in this snapshot already exists by the
+    // time containers are read, so a network `compose up` creates mid-scan is never taken for empty.
     const networks = await listNetworks(deps)
+    const containers = await listContainers(deps)
 
     const first = planEmptyComposeNetworks({
       networks,
