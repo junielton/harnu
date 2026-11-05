@@ -7,7 +7,9 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { createDigestEngine } from '../src/main/mcp/digest-engine'
 import {
+  commitFileStats,
   gatherGitEvidence,
+  listSubagentTranscripts,
   readTranscriptFacts,
   readTranscriptTruth
 } from '../src/main/mcp/digest-io'
@@ -24,7 +26,7 @@ import {
 } from './helpers/memory-u1-fixture'
 
 /**
- * Memory U1 S-2 and S-3: the replay. The real engine, with the real reader and git probe, digests every
+ * Memory U1 S-2 to S-4: the replay. The real engine, with the real reader and git probe, digests every
  * `repo` and `plain` fixture session as it ends; the merged benchmark then scores the temp home.
  * Key paths: the spec's Amendments row of 2026-11-05 (the CLI is the only way to the gather,
  * git coverage is the repo folder's `detail.capture_by_folder` row).
@@ -110,6 +112,8 @@ beforeAll(async () => {
     writeHot: async () => undefined,
     memoryCheckout: async (folder) =>
       resolveMemoryCheckout(folder, (await probeGitMeta(folder)).repoId),
+    subagentTranscripts: async (id) => listSubagentTranscripts(fx.transcriptOf(id), id),
+    commitFileStats,
     now: () => REPLAY,
     setTimer: () => {
       throw new Error('the replay uses no timer')

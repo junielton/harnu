@@ -12,10 +12,11 @@ import {
 import {
   createDigestEngine,
   LONG_IDLE_MS,
+  type CatchUpSession,
   type DigestEngineDeps
 } from '../src/main/mcp/digest-engine'
 import { emptyFacts, type TranscriptFacts } from '../src/main/mcp/digest-transcript'
-import type { GitEvidence } from '../src/main/mcp/digest-core'
+import type { DigestCommit, GitEvidence } from '../src/main/mcp/digest-core'
 import { gatherGitEvidence } from '../src/main/mcp/digest-io'
 import { deriveTranscriptTruth } from '../src/main/transcript-truth'
 
@@ -302,6 +303,149 @@ describe('createDigestEngine', () => {
       warn.mockRestore()
       error.mockRestore()
     }
+  })
+
+  it('attributes commits through subagent windows and saves state after a write', async () => {
+    const at = (iso: string): number => Math.floor(Date.parse(iso) / 1000)
+    const c = (subject: string, iso: string): DigestCommit => ({
+      hash: subject.padEnd(40, '0'),
+      shortHash: subject.padEnd(8, '0'),
+      committedAt: at(iso),
+      subject
+    })
+    const own = c('own', '2026-11-03T10:10:01.000Z')
+    const sub = c('sub', '2026-11-03T10:20:01.000Z')
+    const other = c('other', '2026-11-03T10:30:01.000Z')
+    const win = (iso: string): { startMs: number; endMs: number } => ({
+      startMs: Date.parse(iso) - 2_000,
+      endMs: Date.parse(iso) + 7_000
+    })
+    const main: TranscriptFacts = {
+      ...emptyFacts(),
+      userTurns: 3,
+      firstAt: '2026-11-03T10:00:00.000Z',
+      lastAt: '2026-11-03T11:00:00.000Z',
+      gitCalls: [win('2026-11-03T10:10:00.000Z')]
+    }
+    const subFacts: TranscriptFacts = {
+      ...emptyFacts(),
+      gitCalls: [win('2026-11-03T10:20:00.000Z')]
+    }
+    const saved: unknown[] = []
+    const f = fakes({
+      readFacts: vi.fn(async (path: string) =>
+        path.includes('/subagents/') ? { facts: subFacts, offset: 9 } : { facts: main, offset: 100 }
+      ),
+      gatherGit: vi.fn(async () => ({
+        kind: 'repo' as const,
+        head: HEAD,
+        commits: [other, sub, own],
+        fileStats: [{ file: 'range-wide.ts', added: 9, deleted: 9 }],
+        dirtyCount: 0
+      })),
+      subagentTranscripts: vi.fn(async (id: string) => [`/t/${id}/subagents/agent-1.jsonl`]),
+      commitFileStats: vi.fn(async () => [{ file: 'mine.ts', added: 2, deleted: 1 }]),
+      saveState: vi.fn((s: unknown) => saved.push(s))
+    })
+    const engine = createDigestEngine(f.deps)
+    await engine.digestNow('s20', 'ended')
+    expect(f.deps.subagentTranscripts).toHaveBeenCalledWith('s20')
+    expect(f.deps.readFacts).toHaveBeenCalledWith('/t/s20/subagents/agent-1.jsonl')
+    expect(f.deps.commitFileStats).toHaveBeenCalledWith('/repo', [sub.hash, own.hash])
+    const entry = f.deps.writeDigest.mock.calls[0][2] as string
+    expect(entry).toContain('**Commits (2)**')
+    expect(entry).toContain('`sub00000` sub')
+    expect(entry).toContain('`own00000` own')
+    expect(entry).not.toContain('`other000`')
+    expect(entry).toContain('`mine.ts`')
+    expect(entry).not.toContain('range-wide.ts')
+    expect(entry).toContain(
+      '_1 other commit landed on this checkout during the session (not attributed to it)._'
+    )
+    // The hot snapshot lists the session's own commits only.
+    const hot = f.deps.writeHot.mock.calls[0][4] as string
+    expect(hot).not.toContain('other')
+    // State is saved once, after the write, with what the digest saw.
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toEqual({
+      version: 1,
+      sessions: {
+        s20: {
+          lastDigestAt: NOW,
+          last: { head: HEAD, userTurns: 3 },
+          scan: { offset: 100, facts: main }
+        }
+      }
+    })
+    // A skipped digest saves nothing.
+    await engine.digestNow('s20', 'ended')
+    expect(saved).toHaveLength(1)
+    engine.close()
+
+    // Without commitFileStats, a narrowed digest shows no files line rather than another's files.
+    const bare = fakes({
+      readFacts: f.deps.readFacts,
+      gatherGit: f.deps.gatherGit,
+      subagentTranscripts: f.deps.subagentTranscripts
+    })
+    await createDigestEngine(bare.deps).digestNow('s21', 'ended')
+    const bareEntry = bare.deps.writeDigest.mock.calls[0][2] as string
+    expect(bareEntry).toContain('**Commits (2)**')
+    expect(bareEntry).not.toContain('**Files')
+  })
+
+  it('catches up quiet undigested sessions one after another', async () => {
+    const turns: Record<string, number> = { a: 5, b: 3, c: 1, d: 4, home: 6, done: 4 }
+    let running = 0
+    let overlapped = false
+    const f = fakes({
+      resolveSession: vi.fn(async (id: string) => ({
+        transcriptPath: `/t/${id}.jsonl`,
+        folder: id === 'home' ? os.homedir() : `/f/${id}`
+      })),
+      readFacts: vi.fn(async (path: string) => {
+        const id = path.slice(3, -6)
+        return {
+          facts: {
+            ...emptyFacts(),
+            userTurns: turns[id] ?? 0,
+            firstAt: '2026-11-03T10:00:00.000Z',
+            lastAt: '2026-11-03T11:00:00.000Z'
+          },
+          offset: 1
+        }
+      }),
+      writeDigest: vi.fn(async () => {
+        running++
+        if (running > 1) overlapped = true
+        await Promise.resolve()
+        running--
+        return { ok: true }
+      }),
+      hasDigest: vi.fn(async (_folder: string, id: string) => id === 'done')
+    })
+    const engine = createDigestEngine(f.deps)
+    const s = (id: string, ageMin: number): CatchUpSession => ({
+      sessionId: id,
+      folder: id === 'home' ? os.homedir() : `/f/${id}`,
+      transcriptPath: `/t/${id}.jsonl`,
+      mtimeMs: NOW - ageMin * 60_000
+    })
+    const list = [s('a', 30), s('b', 600), s('c', 60), s('d', 2), s('home', 90), s('done', 45)]
+    const digested = await engine.catchUp(list)
+    // b is oldest, then a; c has one turn, d is still live, home is an unsafe root, done has one.
+    expect(digested).toEqual(['b', 'a'])
+    expect(f.deps.writeDigest.mock.calls.map((c) => c[3])).toEqual(['b', 'a'])
+    for (const call of f.deps.writeDigest.mock.calls) {
+      expect(call[2]).toContain(' · caught up · ')
+    }
+    expect(overlapped).toBe(false)
+    expect(f.deps.hasDigest).not.toHaveBeenCalledWith(os.homedir(), 'home')
+
+    // A second pass digests nothing again: the digested sessions have state now.
+    expect(await engine.catchUp(list)).toEqual([])
+    expect(f.deps.writeDigest).toHaveBeenCalledTimes(2)
+    engine.close()
   })
 })
 

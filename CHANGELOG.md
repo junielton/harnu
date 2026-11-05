@@ -39,6 +39,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **A session is digested when it compacts.** Harnu now listens for Claude Code's compaction hook, so a session that compacts leaves a digest before its context is summarized, alongside the existing digests on end and after 5 idle minutes. The hook is added to your Claude Code settings at the next launch.
 - **Folders outside git get session digests.** A session in a folder that isn't a git repository is now digested like any other, into that folder's `.harnu/memory/` (or your central memory folder when its settings say so), marked `evidence: no-git`. Harnu never writes a digest into your home folder, the root of the disk, or `~/.claude` and `~/.harnu`; a session started in one of those is skipped.
+- **A session digest lists only the commits that session made.** Two sessions on one checkout used to each claim the other's commits. A commit now counts as a session's only when it was made during one of that session's own `git` commands, its subagents' included; the other commits that landed on the checkout while it ran are counted on one line at the end of Evidence, and the files line covers the session's own commits only.
+- **Digests survive a restart, and sessions Harnu missed are caught up.** What each session's last digest saw is kept in `memory-digest-state.json` in Harnu's data folder, so restarting Harnu no longer writes the same digest again or rereads a transcript from its first line. A minute after Harnu starts, and every 30 minutes after that, it digests sessions from the last 7 days that no hook reached (they ran while Harnu was closed, after a crash, or with the hook bridge off), at most 10 at a time, marked `caught up`.
 
 ### Fixed
 
