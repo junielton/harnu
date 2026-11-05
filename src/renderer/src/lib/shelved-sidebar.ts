@@ -52,7 +52,7 @@ export function shelvedLabel(e: Pick<ShelvedSource, 'branch' | 'worktreePath'>):
 }
 
 /** True when `path` is the shelved worktree or lies inside it (a session started in `WT/api`). */
-function isInside(path: string, root: string): boolean {
+export function isInsidePath(path: string, root: string): boolean {
   const p = normalizePath(path)
   const r = normalizePath(root)
   return p === r || p.startsWith(r === '/' ? '/' : `${r}/`)
@@ -81,7 +81,7 @@ export function partitionShelved<S extends { sessionId: string }, F extends Part
   const byRepo = new Map<string, ShelvedMember<S>[]>()
   if (entries.length === 0) return { live: [...folders], byRepo }
 
-  const live = folders.filter((f) => !entries.some((e) => isInside(f.path, e.worktreePath)))
+  const live = folders.filter((f) => !entries.some((e) => isInsidePath(f.path, e.worktreePath)))
 
   const repoIdOf = (e: ShelvedSource): string | undefined => {
     const repo = normalizePath(e.repoPath)
@@ -101,7 +101,7 @@ export function partitionShelved<S extends { sessionId: string }, F extends Part
     const sessions: S[] = []
     const seen = new Set<string>()
     for (const f of folders) {
-      if (!isInside(f.path, e.worktreePath)) continue
+      if (!isInsidePath(f.path, e.worktreePath)) continue
       for (const s of f.sessions) {
         if (seen.has(s.sessionId)) continue
         seen.add(s.sessionId)

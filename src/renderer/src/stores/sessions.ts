@@ -22,8 +22,11 @@ import {
   isFolderGroup,
   groupKey,
   type ClassifyCtx,
-  type FolderGroup
+  type FolderGroup,
+  type ShelvedMember
 } from './folder-zones'
+import { isInsidePath, partitionShelved, shelvedMatchesQuery } from '../lib/shelved-sidebar'
+import { useGcStore } from './gc'
 import { persistedRef, persistedSet } from './persisted'
 import { useApprovalQueue } from './session-approvals'
 import { useMcpConfirmQueue } from './session-mcp-confirms'
@@ -628,6 +631,8 @@ const SESSION_WINDOW_KEY = 'om2tab.sessionWindowMs'
 
 /** localStorage key for the set of collapsed sidebar groups (by namespaced group key). */
 const REPO_GROUPS_COLLAPSED_KEY = 'om2tab.repoGroupsCollapsed'
+/** U2.3b: open Shelved sections per repo group (same namespaced keys as the collapsed set). */
+const SHELVED_SECTIONS_OPEN_KEY = 'om2tab.shelvedSectionsOpen'
 
 /** localStorage key for per-repo group aliases (T88), a `{ repoId: alias }` map. */
 const REPO_ALIASES_KEY = 'om2tab.repoAliases'
@@ -838,6 +843,20 @@ export const useSessionsStore = defineStore('sessions', () => {
     migrate: (x) => (x.startsWith('repo:') || x.startsWith('path:') ? x : groupKey('repo', x))
   })
   const collapsedGroups = collapsedGroupsSet.set
+
+  /**
+   * U2.3b: which repo groups have their Shelved section open, by the same namespaced group key as
+   * `collapsedGroups`. The default is CLOSED (empty set): a shelved worktree is at rest, not in the way.
+   * A text filter with a match inside the section forces it open (see `shelvedSectionOpen`).
+   */
+  const shelvedOpenSet = persistedSet<string>(SHELVED_SECTIONS_OPEN_KEY)
+  const shelvedOpen = shelvedOpenSet.set
+
+  /**
+   * U2.3b: shelved worktrees whose restore is running → the session the operator clicked to resume
+   * (`null` for a plain "Restore worktree"). Drives the "restoring…" state of the row and the session.
+   */
+  const shelvedRestoring = ref<ReadonlyMap<string, string | null>>(new Map())
 
   /** Legacy boolean drill-in preference, read once for migration (see DRILL_DEPTH_KEY). */
   const DRILL_MODE_KEY = 'om2tab.sidebarDrillMode'
@@ -2273,10 +2292,37 @@ export const useSessionsStore = defineStore('sessions', () => {
    * the palette's query straight to this filter — a query that found a folder
    * by its path must not come up empty the moment it is applied to the tree.
    */
+  /**
+   * U2.3b: the folders the sidebar may LIST. A shelved worktree's folder is gone on purpose, but its
+   * transcripts still make the scan report one — it must never render as a normal or ghost row, so it is
+   * pulled out here and re-presented as a member of its repo group's Shelved section (`shelvedByRepo`).
+   * The entries come from the GC snapshot, which the footer keeps live (`gc.init()`).
+   */
+  const shelvedPartition = computed(() => {
+    const entries = useGcStore().snapshot?.shelved ?? []
+    return partitionShelved<Session, Folder>(folders.value, entries, closureNow.value)
+  })
+  const listableFolders = computed<Folder[]>(() => shelvedPartition.value.live)
+
+  const shelvedTitle = (s: Session): string => sessionTitle(s, allSessions.value, i18n.global.t)
+
+  /** The shelved members per repo; under a text filter only the ones the query matches. */
+  const shelvedByRepo = computed<ReadonlyMap<string, ShelvedMember<Session>[]>>(() => {
+    const all = shelvedPartition.value.byRepo
+    const q = filterQuery.value.trim()
+    if (!q) return all
+    const out = new Map<string, ShelvedMember<Session>[]>()
+    for (const [repoId, list] of all) {
+      const hit = list.filter((m) => shelvedMatchesQuery(m, q, shelvedTitle))
+      if (hit.length > 0) out.set(repoId, hit)
+    }
+    return out
+  })
+
   const filteredFolders = computed<Folder[]>(() => {
     const q = filterQuery.value.trim()
     if (!q) return []
-    return folders.value.filter((f) => {
+    return listableFolders.value.filter((f) => {
       if (matchesFilter(f.alias, q)) return true
       if (f.gitBranch && matchesFilter(f.gitBranch, q)) return true
       if (matchesFilter(f.path, q)) return true
@@ -2314,7 +2360,8 @@ export const useSessionsStore = defineStore('sessions', () => {
         groupByRepo(
           sortFolders(filteredFolders.value, folderSort.value),
           undefined,
-          groupAliases.value
+          groupAliases.value,
+          shelvedByRepo.value
         ),
         undefined,
         groupAliases.value
@@ -2323,14 +2370,15 @@ export const useSessionsStore = defineStore('sessions', () => {
     return groupByParentDir(
       groupByRepo(
         sortFolders(
-          folders.value.filter((f) => {
+          listableFolders.value.filter((f) => {
             const status = classifyFolder(f, ctx)
             return status === 'pinned' || status === 'active'
           }),
           folderSort.value
         ),
         collapsedGroups.value,
-        groupAliases.value
+        groupAliases.value,
+        shelvedByRepo.value
       ),
       collapsedGroups.value,
       groupAliases.value
@@ -3580,16 +3628,115 @@ export const useSessionsStore = defineStore('sessions', () => {
     collapsedGroupsSet.toggle(key)
   }
 
-  /** Expand every folder's session list (spec §5 — expand all). */
+  /** Expand every folder's session list (spec §5 — expand all). Shelved sections open with them (U2.3b). */
   function expandAll(): void {
     for (const f of folders.value) f.expanded = true
+    for (const repoId of shelvedPartition.value.byRepo.keys()) {
+      shelvedOpenSet.add(groupKey('repo', repoId))
+    }
   }
 
-  /** Collapse every folder. Companion to `expandAll`. */
+  /** Collapse every folder. Companion to `expandAll`; shelved sections close too (U2.3b). */
   function collapseAll(): void {
     for (const f of folders.value) {
       f.expanded = false
       forgetPeeks(f.path)
+    }
+    shelvedOpenSet.clear()
+  }
+
+  // ---- Shelved worktrees in the sidebar (autonomous cleanup U2.3b) ------------------------------
+
+  /**
+   * Whether a repo group's Shelved section shows its rows. Closed by default; open when the operator
+   * opened it. A text filter lists only the matching rows, so it forces the section open — a closed
+   * section would hide the very matches the filter is looking for.
+   */
+  function shelvedSectionOpen(groupKeyValue: string): boolean {
+    return filterQuery.value.trim() !== '' || shelvedOpen.value.has(groupKeyValue)
+  }
+
+  function toggleShelvedSection(groupKeyValue: string): void {
+    shelvedOpenSet.toggle(groupKeyValue)
+  }
+
+  /**
+   * A shelved worktree's folder is back on disk: the scan that listed it as a ghost ran while it was
+   * gone, so tell the list the directory exists again — otherwise the folder would classify `stale` the
+   * moment its entry leaves the Shelved section, and the row would vanish instead of landing.
+   */
+  function markShelvedFolderPresent(worktreePath: string): void {
+    for (const f of folders.value) {
+      if (isInsidePath(f.path, worktreePath)) f.diskExists = true
+    }
+  }
+
+  // An entry leaving the GC snapshot means the worktree came back (a resume, a terminal, Cleanup's
+  // Restore, or the sidebar's own): whichever path restored it, its folder must list again.
+  watch(
+    () => (useGcStore().snapshot?.shelved ?? []).map((e) => e.worktreePath),
+    (now, before) => {
+      const still = new Set(now)
+      for (const p of before ?? []) if (!still.has(p)) markShelvedFolderPresent(p)
+    }
+  )
+
+  /**
+   * Restore a shelved worktree from the sidebar, then (when a session was clicked) resume that session in
+   * its own folder (spec C3, AC-U2b). The session is selected only AFTER the folder exists, so nothing ever
+   * starts in a missing directory; until then the sidebar shows the optimistic "restoring…" state. On a
+   * failure nothing changes selection and the toast offers the way out (Cleanup → Shelved).
+   */
+  async function restoreShelvedWorktree(
+    member: ShelvedMember<Session>,
+    resumeSessionId: string | null = null
+  ): Promise<boolean> {
+    if (shelvedRestoring.value.has(member.id)) return false
+    const mark = (on: boolean): void => {
+      const next = new Map(shelvedRestoring.value)
+      if (on) next.set(member.id, resumeSessionId)
+      else next.delete(member.id)
+      shelvedRestoring.value = next
+    }
+    const ui = useUiStore()
+    const gc = useGcStore()
+    const { t } = i18n.global
+    const failed = (detail?: string): false => {
+      ui.pushToast({
+        kind: 'danger',
+        title: t('sidebar.shelved.restoreFailed', { branch: member.label }),
+        ...(detail ? { description: detail } : {}),
+        action: {
+          label: t('sidebar.shelved.openInCleanup'),
+          handler: () => ui.openCleanup(member.repoPath)
+        },
+        timeoutMs: 10000
+      })
+      return false
+    }
+    mark(true)
+    try {
+      const ack = await window.api.gcRestoreShelved(member.id)
+      if (!ack.ok) return failed(ack.message)
+      markShelvedFolderPresent(member.worktreePath)
+      await gc.refresh()
+      if (resumeSessionId) {
+        for (const f of folders.value) {
+          if (
+            isInsidePath(f.path, member.worktreePath) &&
+            f.sessions.some((x) => x.sessionId === resumeSessionId)
+          ) {
+            f.expanded = true
+          }
+        }
+        select(resumeSessionId)
+      }
+      raiseJumpFlash(`folder:${member.worktreePath}`)
+      return true
+    } catch (e) {
+      return failed(e instanceof Error ? e.message : String(e))
+    } finally {
+      mark(false)
     }
   }
 
@@ -5992,6 +6139,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     setGroupAlias,
     expandAll,
     collapseAll,
+    shelvedRestoring,
+    shelvedSectionOpen,
+    toggleShelvedSection,
+    restoreShelvedWorktree,
     pinFolder,
     dismissFolder,
     unhideFolder,
