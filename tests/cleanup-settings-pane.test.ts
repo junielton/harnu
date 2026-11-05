@@ -38,6 +38,7 @@ const REAPER = {
 
 let setGc: ReturnType<typeof vi.fn>
 let ackShelve: ReturnType<typeof vi.fn>
+let ackDocker: ReturnType<typeof vi.fn>
 let setReaper: ReturnType<typeof vi.fn>
 
 function stubApi(initial: GcPrefs): void {
@@ -62,10 +63,15 @@ function stubApi(initial: GcPrefs): void {
     ...initial,
     shelve: { ...initial.shelve, firstReportAcknowledged: true }
   }))
+  ackDocker = vi.fn(async () => ({
+    ...initial,
+    docker: { ...initial.docker, firstReportAcknowledged: true }
+  }))
   ;(window as unknown as { api: unknown }).api = cloneGuardedApi({
     gcPrefs: vi.fn(async () => initial),
     gcSetPrefs: setGc,
     gcAckShelveReport: ackShelve,
+    gcAckDockerReport: ackDocker,
     gcSnapshot: vi.fn(async () => snapshot),
     gcJobs: vi.fn(async () => []),
     onGcProgress: () => () => {},
@@ -107,7 +113,8 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
       'gc-cache-age',
       'gc-archive-keep',
       'gc-archive-expire',
-      'gc-never-input'
+      'gc-never-input',
+      'gc-pause-all'
     ]) {
       expect(w.find(`[data-testid="${id}"]`).exists(), id).toBe(true)
     }
@@ -117,8 +124,8 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
     // The shape of the contract (S3 delta 2): GcPrefs minus version / keep / firstReportAcknowledged
     // and the release marks (released / releasedFrom, written by release_worktree, never edited here).
     // `removeVolumes` and `categories.volumes` are gone from the engine as well as from the pane.
-    // `shelve` is a nested block with its own section (switch and acknowledge), pinned below; it is
-    // not one of the flat fields counted here.
+    // `shelve` and `docker` are nested blocks with their own sections (switch and acknowledge), pinned
+    // below; they are not among the flat fields counted here. `pauseAutonomous` is a flat field.
     const editable = Object.keys(GC).filter(
       (k) =>
         ![
@@ -127,7 +134,8 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
           'firstReportAcknowledged',
           'released',
           'releasedFrom',
-          'shelve'
+          'shelve',
+          'docker'
         ].includes(k)
     )
     expect(editable.sort()).toEqual(
@@ -140,7 +148,8 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
         'cacheMaxAgeDays',
         'archiveKeepDays',
         'archiveAutoExpire',
-        'neverClean'
+        'neverClean',
+        'pauseAutonomous'
       ].sort()
     )
     w.unmount()
@@ -493,5 +502,115 @@ describe('CleanupSettingsPane — shelving (U2.3a AC-6)', () => {
     expect(w.find('[data-testid="gc-shelve-ack"]').exists()).toBe(false)
     expect(tid(w, 'cleanup-settings-shelve').text().toLowerCase()).toContain('comes back by itself')
     w.unmount()
+  })
+})
+
+describe('CleanupSettingsPane — Docker autonomy and the global pause (U3.1 AC-6)', () => {
+  const withDocker = (over: Partial<GcPrefs['docker']>): GcPrefs => ({
+    ...GC,
+    docker: { ...GC.docker, ...over }
+  })
+
+  it('has a Docker section whose switch shows the stored value', async () => {
+    const on = await mountPane(withDocker({ enabled: true }))
+    expect(on.find('[data-testid="cleanup-settings-docker"]').exists()).toBe(true)
+    expect(tid(on, 'gc-docker').attributes('aria-checked')).toBe('true')
+    on.unmount()
+    const off = await mountPane(withDocker({ enabled: false }))
+    expect(tid(off, 'gc-docker').attributes('aria-checked')).toBe('false')
+    off.unmount()
+  })
+
+  it('the switch writes the whole prefs object with only docker.enabled changed', async () => {
+    const w = await mountPane(withDocker({ enabled: true }))
+    await tid(w, 'gc-docker').trigger('click')
+    await flushPromises()
+    expect(setGc).toHaveBeenCalledTimes(1)
+    const sent = setGc.mock.calls[0][0]
+    expect(sent).toEqual({
+      ...withDocker({ enabled: true }),
+      docker: { ...GC.docker, enabled: false }
+    })
+    expect(Object.keys(sent).sort()).toEqual(Object.keys(defaultGcPrefs()).sort())
+    w.unmount()
+  })
+
+  it('on and not yet acknowledged: says the first pass only records, and offers the acknowledge action', async () => {
+    const w = await mountPane(withDocker({ enabled: true, firstReportAcknowledged: false }))
+    expect(tid(w, 'gc-docker-status').text().toLowerCase()).toContain('only records')
+    expect(w.find('[data-testid="gc-docker-ack"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('acknowledging calls the dedicated Docker channel, never a settings write or the shelve one', async () => {
+    const w = await mountPane(withDocker({ enabled: true, firstReportAcknowledged: false }))
+    await tid(w, 'gc-docker-ack').trigger('click')
+    await flushPromises()
+    expect(ackDocker).toHaveBeenCalledTimes(1)
+    expect(ackShelve).not.toHaveBeenCalled()
+    expect(setGc).not.toHaveBeenCalled()
+    expect(w.find('[data-testid="gc-docker-ack"]').exists()).toBe(false)
+    expect(tid(w, 'gc-docker-status').text().toLowerCase()).toContain('active')
+    w.unmount()
+  })
+
+  it('on and acknowledged: says it is active, with no action', async () => {
+    const w = await mountPane(withDocker({ enabled: true, firstReportAcknowledged: true }))
+    expect(tid(w, 'gc-docker-status').text().toLowerCase()).toContain('active')
+    expect(w.find('[data-testid="gc-docker-ack"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('off: no status line and no acknowledge action, just what the switch covers — in the word "Paused"', async () => {
+    const w = await mountPane(withDocker({ enabled: false }))
+    expect(w.find('[data-testid="gc-docker-status"]').exists()).toBe(false)
+    expect(w.find('[data-testid="gc-docker-ack"]').exists()).toBe(false)
+    const text = tid(w, 'cleanup-settings-docker').text()
+    expect(text).toContain('Paused')
+    expect(text.toLowerCase()).not.toContain('parked')
+    w.unmount()
+  })
+
+  it('the global pause shows its stored value and writes the whole object with only pauseAutonomous changed', async () => {
+    const w = await mountPane({ ...GC, pauseAutonomous: false })
+    expect(tid(w, 'gc-pause-all').attributes('aria-checked')).toBe('false')
+    expect(w.find('[data-testid="gc-pause-all-note"]').exists()).toBe(false)
+    await tid(w, 'gc-pause-all').trigger('click')
+    await flushPromises()
+    expect(setGc).toHaveBeenCalledTimes(1)
+    expect(setGc.mock.calls[0][0]).toEqual({ ...GC, pauseAutonomous: true })
+    w.unmount()
+    const paused = await mountPane({ ...GC, pauseAutonomous: true })
+    expect(tid(paused, 'gc-pause-all').attributes('aria-checked')).toBe('true')
+    expect(tid(paused, 'gc-pause-all-note').text().toLowerCase()).toContain('paused')
+    paused.unmount()
+  })
+
+  it('every Docker string exists in both locales, and pt-BR says Pausada', () => {
+    const keys = [
+      'eyebrow',
+      'intro',
+      'label',
+      'hint',
+      'reportOnly',
+      'ack',
+      'active',
+      'pauseAll.label',
+      'pauseAll.hint',
+      'pauseAll.note'
+    ]
+    for (const locale of ['en', 'pt-BR']) {
+      const root = JSON.parse(read(`src/renderer/src/i18n/${locale}.json`)).cleanup?.gc?.settings
+        ?.docker
+      for (const key of keys) {
+        const value = key.split('.').reduce<unknown>((o, k) => (o as never)?.[k], root)
+        expect(typeof value, `${locale}:${key}`).toBe('string')
+      }
+    }
+    const pt = JSON.stringify(
+      JSON.parse(read('src/renderer/src/i18n/pt-BR.json')).cleanup.gc.settings.docker
+    )
+    expect(pt).toContain('Pausada')
+    expect(pt.toLowerCase()).not.toContain('estacionad')
   })
 })
