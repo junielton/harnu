@@ -11,6 +11,7 @@ import SidebarDrillView from './SidebarDrillView.vue'
 import SidebarJumpPalette from './SidebarJumpPalette.vue'
 import SidebarReturnZone from './SidebarReturnZone.vue'
 import RepoGroupHeader from './RepoGroupHeader.vue'
+import SidebarShelvedSection from './SidebarShelvedSection.vue'
 import WatcherStatusPill from './WatcherStatusPill.vue'
 import {
   isFolderGroup,
@@ -425,6 +426,9 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
                 </template>
                 <SidebarFolder v-else :folder="ln" nested />
               </template>
+              <!-- U2.3b: the repo group's shelved worktrees — always the LAST block, after any
+                   lineage children (design.md § "Shelved section"). -->
+              <SidebarShelvedSection v-if="node.shelved?.length" :group="node" />
             </div>
           </template>
           <SidebarFolder v-else :folder="node" />

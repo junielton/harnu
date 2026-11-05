@@ -2322,7 +2322,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   const filteredFolders = computed<Folder[]>(() => {
     const q = filterQuery.value.trim()
     if (!q) return []
-    return listableFolders.value.filter((f) => {
+    const matched = listableFolders.value.filter((f) => {
       if (matchesFilter(f.alias, q)) return true
       if (f.gitBranch && matchesFilter(f.gitBranch, q)) return true
       if (matchesFilter(f.path, q)) return true
@@ -2334,6 +2334,16 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
       return false
     })
+    // A query that matches only a shelved worktree still needs its repo group to show it: borrow the
+    // repo's main worktree (else its first folder) as the host, so the match is not silently lost.
+    const hosted = new Set(matched.map((f) => f.repoId).filter((id): id is string => !!id))
+    for (const repoId of shelvedByRepo.value.keys()) {
+      if (hosted.has(repoId)) continue
+      const members = listableFolders.value.filter((f) => f.repoId === repoId)
+      const host = members.find((f) => f.isMainWorktree === true) ?? members[0]
+      if (host) matched.push(host)
+    }
+    return matched
   })
 
   /**
