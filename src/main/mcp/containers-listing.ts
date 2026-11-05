@@ -29,6 +29,8 @@ import type {
   ContainersSnapshotAvailable,
   ContainersSnapshotUnavailable,
   ContainersTotals,
+  PausedRecord,
+  PausedStack,
   StackActResult,
   StackRow,
   Tombstone,
@@ -47,7 +49,7 @@ export interface ListedAttribution {
   pathAlias: string | null
 }
 
-export type ListedStack = Omit<StackRow, 'attribution'> & {
+export type ListedStack = Omit<StackRow, 'attribution' | 'compose'> & {
   attribution: ListedAttribution
   /** Basename of the Harnu folder the stack is attributed to, or null. */
   folderAlias: string | null
@@ -55,7 +57,32 @@ export type ListedStack = Omit<StackRow, 'attribution'> & {
   agentControllable: boolean
 }
 
-export type ListedTombstoneStack = Omit<TombstoneStack, 'path'> & { pathAlias: string | null }
+/** A pause as an agent reads it: the facts a restore needs, with the command's paths aliased. */
+export interface ListedPausedRecord {
+  project: string | null
+  ports: number[]
+  profiles: string[]
+  hasBuild: boolean
+  pausedAt: number
+  /** The `docker compose … up -d` command; the folder and files show as `<alias>`. */
+  restoreCommand: string
+}
+
+export type ListedTombstoneStack = Omit<TombstoneStack, 'path' | 'paused'> & {
+  pathAlias: string | null
+  paused?: ListedPausedRecord
+}
+
+/** A stack Cleanup brought down and that has not come back (shown to operators as "Paused"). */
+export interface ListedPausedStack extends ListedPausedRecord {
+  id: string
+  name: string
+  actor: PausedStack['actor']
+  /** Basename of the folder the stack ran from. */
+  folderAlias: string | null
+  /** False when a folder the operator blocked for agents covers this stack. */
+  agentControllable: boolean
+}
 
 export type ListedTombstone = Omit<Tombstone, 'stacks'> & { stacks: ListedTombstoneStack[] }
 
@@ -66,6 +93,8 @@ export interface ContainersListing {
   zombieAfterDays: number
   totals: ContainersTotals
   stacks: ListedStack[]
+  /** Paused stacks (`compose down`, volumes kept), newest first; `[]` when none. */
+  paused: ListedPausedStack[]
   recent: ListedTombstone[]
 }
 
@@ -139,7 +168,7 @@ export function containersScopeRoots(
 }
 
 function listStack(s: StackRow, opts: ListingOptions): ListedStack {
-  const { attribution, ...rest } = s
+  const { attribution, compose: _compose, ...rest } = s
   return {
     ...rest,
     attribution: {
@@ -164,25 +193,74 @@ function hintSpellings(p: string): string[] {
   return [...new Set([quoted, inner, p])]
 }
 
-/** A tombstone's restore hint with every stack's absolute directory shown as `<alias>`. */
-export function redactRestoreHint(t: Tombstone): string | null {
-  let restoreHint = t.restoreHint
-  for (const s of t.stacks) {
-    // The remove hint names the stack's directory; keep the command's shape
-    // but never the absolute path, however the hint quoted it.
-    if (restoreHint === null || !s.path) continue
-    for (const spelling of hintSpellings(s.path)) {
-      restoreHint = restoreHint.split(spelling).join(`<${alias(s.path)}>`)
-    }
+/** Flags whose value in a restore command is a path on this machine. */
+const PATH_FLAG = /(?<![\w-])(--project-directory|--env-file|-f) ('(?:[^']|'\\'')*'|\S+)/g
+
+function unquote(word: string): string {
+  return word.startsWith("'") && word.endsWith("'") && word.length >= 2
+    ? word.slice(1, -1).replace(/'\\''/g, "'")
+    : word
+}
+
+/**
+ * A restore command with every absolute path shown as `<alias>`. The listed `paths` are replaced
+ * first (so a compose file inside the folder reads `<folder>/compose.yml`); any other absolute path
+ * a `-f`, `--env-file` or `--project-directory` still names — a compose file kept elsewhere — is
+ * replaced by its basename, however it was quoted.
+ */
+function redactCommand(hint: string, paths: readonly (string | null)[]): string {
+  let out = hint
+  for (const p of paths) {
+    if (!p) continue
+    // Keep the command's shape but never the absolute path, however the hint quoted it.
+    for (const spelling of hintSpellings(p)) out = out.split(spelling).join(`<${alias(p)}>`)
   }
-  return restoreHint
+  return out.replace(PATH_FLAG, (whole, flag: string, value: string) => {
+    const raw = unquote(value)
+    return /^(\/|~|[A-Za-z]:[\\/])/.test(raw) ? `${flag} <${alias(raw)}>` : whole
+  })
+}
+
+/** A tombstone's restore hint with every stack's absolute directory and compose file shown as `<alias>`. */
+export function redactRestoreHint(t: Tombstone): string | null {
+  if (t.restoreHint === null) return null
+  return redactCommand(
+    t.restoreHint,
+    t.stacks.flatMap((s) => [s.path, s.paused?.workingDir ?? null])
+  )
+}
+
+function listPaused(r: PausedRecord): ListedPausedRecord {
+  return {
+    project: r.project,
+    ports: r.ports,
+    profiles: r.profiles,
+    hasBuild: r.hasBuild,
+    pausedAt: r.pausedAt,
+    restoreCommand: redactCommand(r.restoreCommand, [r.workingDir])
+  }
 }
 
 function listTombstone(t: Tombstone): ListedTombstone {
   return {
     ...t,
-    stacks: t.stacks.map(({ path: p, ...rest }) => ({ ...rest, pathAlias: alias(p) })),
+    stacks: t.stacks.map(({ path: p, paused, ...rest }) => ({
+      ...rest,
+      pathAlias: alias(p),
+      ...(paused ? { paused: listPaused(paused) } : {})
+    })),
     restoreHint: redactRestoreHint(t)
+  }
+}
+
+function listPausedStack(p: PausedStack, opts: ListingOptions): ListedPausedStack {
+  return {
+    id: p.stack,
+    name: p.name,
+    actor: p.actor,
+    ...listPaused(p),
+    folderAlias: alias(p.workingDir),
+    agentControllable: !isFolderDenied(p.workingDir, opts.denyFolders, opts.home)
   }
 }
 
@@ -200,12 +278,16 @@ export function containersListing(
   const recent = roots
     ? snap.recent.filter((t) => t.stacks.some((s) => s.path && withinAny(s.path, roots, opts.home)))
     : snap.recent
+  const paused = roots
+    ? snap.paused.filter((p) => withinAny(p.workingDir, roots, opts.home))
+    : snap.paused
   return {
     scannedAt: snap.scannedAt,
     dockerAvailable: true,
     zombieAfterDays: snap.zombieAfterDays,
     totals: roots ? computeTotals(stacks) : snap.totals,
     stacks: stacks.map((s) => listStack(s, opts)),
+    paused: paused.map((p) => listPausedStack(p, opts)),
     recent: recent.map(listTombstone)
   }
 }
