@@ -414,6 +414,7 @@ _another_ folder.
 | `split-square-vertical`                  | Split the terminal                                                                                                                                                                                                                     |
 | `maximize-2`                             | Fullscreen / maximize a helper-stack pane (pane header, §6 Pane header)                                                                                                                                                                |
 | `minimize-2`                             | Restore a maximized helper-stack pane back to the normal split (pane header, §6 Pane header)                                                                                                                                           |
+| `expand`                                 | Expand a helper pane to the window (pane header, before maximize, T628 — §6 "Expanding a pane to the window"); accent ink while the pane is expanded                                                                                   |
 | `panel-left-close` / `panel-left-open`   | Collapse / show the left sidebar (Topbar button — §6 Collapse sidebars)                                                                                                                                                                |
 | `panel-right-close` / `panel-right-open` | Collapse / show the right auxiliary panel (Topbar button — §6 Collapse sidebars)                                                                                                                                                       |
 | `x`                                      | Close                                                                                                                                                                                                                                  |
@@ -642,7 +643,8 @@ Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P`
 | `⌘⇧B`              | Toggle the Fleet rail                                                                                                                                                                                                                                                     | global   | Renderer-only (no menu item), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                                    |
 | `⌘⇧D`              | Review the active folder's branch                                                                                                                                                                                                                                         | global   | Renderer-only; opens the Review pane (T164)                                                                                                                                                                                                                                                                                                                                                                      |
 | `F6` / `⇧F6`       | Focus the next / previous pane: the main terminal, then the helper panes in stack order, wrapping                                                                                                                                                                         | global   | **Shielded** (`pane.focusNext` / `pane.focusPrev`): works while a terminal holds focus, so the program there no longer gets F6. Inert while a dialog, palette or menu is open. On a Mac keyboard: Fn+F6 / Fn+⇧F6. See "Pane focus"                                                                                                                                                                               |
-| `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one                                                                                                                                                                                 | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
+| `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one. While a pane is **expanded to the window** it exits the expanded view instead (T628)                                                                                           | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
+| _unbound_          | Expand the focused helper pane to the window, or exit the expanded view (`pane.expandToWindow`, T628; command palette)                                                                                                                                                    | global   | Renderer-only, no default chord (⌘⇧M is `pane.toggleMaximize`; two actions never share one). Esc and the pane's own button exit too — see "Expanding a pane to the window"                                                                                                                                                                                                                                       |
 | `⌘C` / `⌃⇧C`       | Copy terminal selection                                                                                                                                                                                                                                                   | terminal | Only with a selection; reads `term.getSelection()` (xterm's selection isn't a native DOM selection). On Mac, `editMenu` may intercept `⌘C` before xterm — see `menu.ts`                                                                                                                                                                                                                                          |
 | `⌘V` / `⌃⇧V`       | Paste into the terminal                                                                                                                                                                                                                                                   | terminal | Via `term.paste()` — respects _bracketed paste_, so a multi-line paste doesn't auto-submit in the Claude TUI                                                                                                                                                                                                                                                                                                     |
 | `⇧↩`               | Line break (without sending)                                                                                                                                                                                                                                              | terminal | Sends `\u000a` (LF, = Ctrl+J) to the PTY — Claude treats it as a newline; `Enter` alone (`\r`) sends. xterm's default ignores `Shift` and would send                                                                                                                                                                                                                                                             |
@@ -673,7 +675,8 @@ access (block agents, let agents read terminals, Modes ▸, Set / Clear parent f
 the older / archived peeks and
 the repo-group menu (rename, reset name, Clean up), the Cleanup, Scheduler, System
 Monitor and Containers takeovers, and every Settings tab ("Open Settings: General", …)
-have a keybindings id and can be given a chord in Settings → Keyboard Shortcuts; none
+have a keybindings id and can be given a chord in Settings → Keyboard Shortcuts (so do
+`layout.cycleSplitOrientation` and `pane.expandToWindow`); none
 ships with one except Rename folder (`F2`), closing the open takeover (`Esc`) and the
 Keyboard Shortcuts tab (`⌘⌥S`). Session actions act on the **selected** session and are available only
 when the Session menu would show that item for it; folder actions act on the
@@ -3939,8 +3942,7 @@ aria-orientation="vertical"`, a 6px `cursor-col-resize` hit area with a 1px `--b
 - **Shortcut.** `layout.cycleSplitOrientation` (group Views, **unbound** by default, in the
   command palette) cycles the setting exactly as the Topbar button does. Label key
   `keybindings.actions.layout_cycleSplitOrientation`.
-- **Motion.** Switching orientation re-lays the panes out instantly in this slice; the animated
-  switch belongs to the motion work (floating-layout S-7). Divider drags never animate.
+- **Motion.** Switching orientation animates (§7 "Layout motion", T628). Divider drags never animate.
 
 #### Floating panels layout (T626)
 
@@ -4097,6 +4099,13 @@ which was too dim over the terminal content.
 - **Content (left):** pane-type icon (`terminal` for shell, `bot` for claude,
   `git-fork` for a pending fork, 12px `--text-3`) + pane name (`cwd` basename,
   truncated with `…` on overflow). The native `title` exposes the full path on hover.
+- **Expand button (right, before maximize; T628):** `expand` icon 12px, 18×18px target, the
+  same anatomy as the maximize button (`--text-3` → `--text`, `--surface-2` hover,
+  `mousedown.stop`). The glyph does not change while the pane is expanded; its ink turns
+  `--accent` and it carries `aria-pressed="true"`. `aria-label`/`title` =
+  `helperPane.expand` / `helperPane.exitExpand`, the title with the `pane.expandToWindow`
+  chord when bound. A separate button, not a third state of maximize. See "Expanding a pane
+  to the window".
 - **Maximize button (right, before close):** `maximize-2` icon 12px, 18×18px target,
   same hover treatment as the close button. Swaps to `minimize-2` while this pane IS
   the maximized one. `aria-label`/`title` = `helperPane.maximize` /
@@ -4134,6 +4143,42 @@ while one is maximized (ratios are meaningless in that state). The maximized
 pane id is **ephemeral, per-worktree state** — never persisted to `helpers.json`
 — so it resets to the normal split on a worktree switch or app restart.
 
+#### Expanding a pane to the window (T628)
+
+Maximize works inside the helper stack. **Expand to window** is the stage beyond it: one helper
+pane takes the whole working area of the window. The Topbar and the footer always stay; what else
+hides is the **Expand hides** setting.
+
+- **Enter and exit.** The pane header's `expand` button (before maximize) toggles it. Exits:
+  **Esc**, the same button, or `⌘⇧M` (`pane.toggleMaximize`: while a pane is expanded it exits the
+  expanded view instead of toggling maximize, so the chord stays one action's). `pane.expandToWindow`
+  is a separate bindable action with **no default chord**; it toggles the expanded view for the
+  focused helper pane. Esc is a window listener in the bubble phase that ignores a press an overlay
+  or a text field already took, and a press made inside a terminal: there Esc belongs to the
+  program (Claude Code cancels with it), so a terminal exits with the button or `⌘⇧M`. Only one
+  pane is expanded at a time; expanding another pane re-targets directly.
+- **Expand hides (Settings → Appearance, `settings.json` key `expandHides`).** `everything`
+  (default): the sidebar, the session area and the Fleet rail collapse, and only the Topbar, the
+  pane and the footer remain. `session-only`: only the session area collapses; the sidebar and
+  the Fleet rail stay. Both variants also collapse the other helper panes to nothing (no 24px
+  strips, unlike maximize), and the dividers that touched a collapsed column collapse with it.
+- **No remount, no move.** The pane is never re-parented. It grows because everything around it
+  collapses (`.lm-collapse`, below), so an xterm keeps the same `Terminal` and PTY, and a browser
+  pane keeps its native view. The main terminal inside the collapsed session area keeps the pixel
+  size it had (its host is pinned while the area is collapsed), so it never reflows to two columns;
+  it reflows at most once when the expanded view ends.
+- **State.** Ephemeral, per worktree, never written to `helpers.json`, and cleared when the
+  operator switches worktree or the expanded pane closes. It is independent of maximize: exiting
+  expand returns to whatever maximize or split ratio was there before.
+- **Focus.** The F6 ring holds only the expanded pane (the main terminal and the other panes are
+  not reachable while hidden). Entering expand focuses the pane; exiting returns focus to it.
+- **Both layouts, both orientations.** With Floating panels on, the Topbar island, the expanded
+  pane's island and the footer keep the 6px gap and the canvas frame; with it off, the pane meets
+  the footer as today. Side by side and stacked expand the same way (the collapsed session area
+  gives up its share along the split axis).
+- **Browser panes.** A native view cannot follow the animation, so it is swapped for the JPEG
+  stand-in below for the whole motion (see §7 "Layout motion").
+
 #### Pane focus (T486 U5b)
 
 The main terminal and every helper pane are **focus regions**. Each root carries
@@ -4145,7 +4190,8 @@ holding `document.activeElement` is the focused one.
   is the foreground layer (not covered by a takeover or the Folder View), then the
   current folder's helper panes in stack order when the panel is shown and not
   collapsed. While a pane is maximized, the ring holds only that pane (the others are
-  24px headers). Focus outside the ring goes to the first region (`F6`) or the last
+  24px headers); while a pane is expanded to the window it holds only that pane too, and not
+  the main terminal (T628). Focus outside the ring goes to the first region (`F6`) or the last
   (`⇧F6`); an empty ring does nothing.
 - **What takes focus.** An xterm pane focuses its terminal (its root, `tabindex="-1"`,
   while the terminal is not live yet). The Markdown, Memory and Explorer panes focus
@@ -13859,32 +13905,66 @@ appears in the folder branch only.
 Short movement, ease-out, rarely noticed. **If the user notices the animation,
 it ran too long.**
 
-| Action                  | Duration     | Easing      | Description                                                                                                                                                                                               |
-| ----------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hover row               | 100ms        | ease        | Background fade + scale 1.003                                                                                                                                                                             |
-| Select                  | 120ms        | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
-| Review selection bar    | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
-| Expand project          | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
-| Overlay (dialog/menu)   | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
-| Divider hover           | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
-| Pulse (active status)   | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
-| Agent activity pulse    | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
-| Terminal cursor         | 1s           | steps(1)    | Blinking accent block                                                                                                                                                                                     |
-| Chart bar (BI)          | `--dur`      | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
-| Copy button reveal      | `--dur-fast` | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
-| Copy → copied           | 1.5s         | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
-| Fleet card entrance     | 620ms        | custom¹     | Whole card fades + slides 22px from the right, as one unit (`.card-enter`)                                                                                                                                |
-| Fleet card ring fade    | 900ms        | custom¹     | Border ring eases in after the entrance settles (suppressed during the slide)                                                                                                                             |
-| Fleet rail section      | `--dur-slow` | `--ease`    | Needs-you / Would-have collapse via `grid-template-rows: 1fr↔0fr` (`.collapsible`)                                                                                                                        |
-| Rescan spin             | 0.7s loop    | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
-| Pasted-images pill bump | 300ms        | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
-| Lightbox image swap     | `--dur`      | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
-| Jump flash              | `--dur-slow` | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
-| PR focus ring           | `--dur-slow` | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
+| Action                       | Duration     | Easing      | Description                                                                                                                                                                                               |
+| ---------------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hover row                    | 100ms        | ease        | Background fade + scale 1.003                                                                                                                                                                             |
+| Select                       | 120ms        | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
+| Review selection bar         | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
+| Expand project               | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
+| Overlay (dialog/menu)        | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
+| Divider hover                | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
+| Pulse (active status)        | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
+| Agent activity pulse         | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
+| Terminal cursor              | 1s           | steps(1)    | Blinking accent block                                                                                                                                                                                     |
+| Chart bar (BI)               | `--dur`      | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
+| Copy button reveal           | `--dur-fast` | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
+| Copy → copied                | 1.5s         | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
+| Fleet card entrance          | 620ms        | custom¹     | Whole card fades + slides 22px from the right, as one unit (`.card-enter`)                                                                                                                                |
+| Fleet card ring fade         | 900ms        | custom¹     | Border ring eases in after the entrance settles (suppressed during the slide)                                                                                                                             |
+| Fleet rail section           | `--dur-slow` | `--ease`    | Needs-you / Would-have collapse via `grid-template-rows: 1fr↔0fr` (`.collapsible`)                                                                                                                        |
+| Rescan spin                  | 0.7s loop    | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
+| Pasted-images pill bump      | 300ms        | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
+| Lightbox image swap          | `--dur`      | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
+| Jump flash                   | `--dur-slow` | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
+| PR focus ring                | `--dur-slow` | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
+| Pane maximize / restore      | `--dur-slow` | `--ease`    | The maximized pane grows and the others shrink to their 24px strip by `flex`; one pass (T628). Reduced motion: snaps                                                                                      |
+| Expand to window / restore   | `--dur-slow` | `--ease`    | The collapsed columns and panes go to 0 (`.lm-collapse`: size, opacity, margin, border) while the expanded pane grows; no remount (T628). Reduced motion: snaps                                           |
+| Fleet rail minimize / expand | `--dur-slow` | `--ease`    | The rail column animates `width` between 300px (or the dragged width) and the 44px strip (T628). Reduced motion: snaps                                                                                    |
+| Sidebar collapse / expand    | `--dur-slow` | `--ease`    | The sidebar and its divider animate `width` to 0 and back, with `opacity` (T628). Reduced motion: snaps                                                                                                   |
+| Split orientation switch     | `--dur-slow` | `--ease`    | The session area and the helper stack slide and scale from their old box to the new one (FLIP, one pass) (T628). Reduced motion: snaps                                                                    |
 
 ¹ `cubic-bezier(0.22, 0.61, 0.36, 1)` — a touch snappier than the default
 `--ease`, since this is a list-insertion cue that must read as immediate, not
 a decorative overlay entrance.
+
+### Layout motion (T628)
+
+Size changes of the big layout containers animate briefly instead of snapping: pane maximize and
+restore, expand to window and back, Fleet rail minimize and expand, sidebar collapse and expand, and
+the split orientation switch. All use `--dur-slow` and `--ease` (never a new duration or curve).
+
+- **Transient, never ambient.** The transitions exist only while `[data-app-shell][data-layout-motion]`
+  is set. The layout store sets it for one `--dur-slow` (plus a short slack) around a state change that
+  is NOT a drag: a divider drag never sets it, so the size follows the pointer with no easing, exactly
+  as before. Elements opt in with `data-lm`; `transition` lists only the properties a collapse or a
+  resize changes (`flex`, `width`, `height`, `opacity`, `margin`, `border-width`, `padding`).
+- **Collapse classes.** `.lm-collapse` (a flex item sized by `flex`: the session area, the helper
+  stack, a pane), `.lm-collapse-w` (sized by `width`: the sidebar, the Fleet rail column, a vertical
+  divider) and `.lm-collapse-h` (a horizontal divider) bring an element to zero size with `overflow:
+hidden`, `opacity: 0`, no margin or border, and `pointer-events: none`. They replace `display: none` /
+  `v-show`, which cannot animate. The floating-panels rules are untouched; the collapse classes sit
+  after them and win by `!important`.
+- **xterm reflows once.** A terminal pane does not refit on each frame of a motion: while the motion
+  flag is set its resize observer only arms one trailing refit, so the grid changes once, after the
+  last frame. Outside a motion it refits per observation as before (drags stay live).
+- **Browser panes.** A browser pane is a native `WebContentsView` and cannot follow CSS. The motion
+  freezes it exactly as a splitter or sidebar drag does (`browserDrag(true)`; see "Frozen frame" in
+  the browser pane section): the JPEG stand-in fills the pane, stretched with the host while it
+  animates, and when the motion ends the pane reports its final rectangle, the view comes back live
+  and the stand-in is removed on the next frame.
+- **Reduced motion.** With `prefers-reduced-motion: reduce` the transitions are `none` (extending the
+  existing reduce block in `main.css`, not a second one), the layout store never sets the flag and the
+  browser pane is never frozen: the layout snaps as it did before.
 
 ### Fleet state ring (Fleet rail)
 
