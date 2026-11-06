@@ -319,6 +319,21 @@ describe('hide_folder handler', () => {
     expect(seen).toEqual([])
   })
 
+  it('never rewrites a corrupt projects.json from an empty picture: fails and leaves it untouched', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const seen: string[][] = []
+    const off = onHiddenPathsChanged((p) => seen.push(p.hiddenPaths))
+    const corrupt = '{ "version": 1, "projects": [ not json'
+    writeFileSync(userProjectsPath(), corrupt)
+    const res = await handler({ folders: [P.alpha] }, ctx())
+    off()
+    warn.mockRestore()
+    expect(res.isError).toBe(true)
+    expect(errorText(res)).toMatch(/^HIDE_WRITE_FAILED/)
+    expect(readFileSync(userProjectsPath(), 'utf8')).toBe(corrupt)
+    expect(seen).toEqual([])
+  })
+
   it('tells listeners the full list after a write that changed it, and only then', async () => {
     const seen: string[][] = []
     const off = onHiddenPathsChanged((p) => seen.push(p.hiddenPaths))

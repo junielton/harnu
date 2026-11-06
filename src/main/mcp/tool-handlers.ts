@@ -3306,7 +3306,7 @@ const hideFolderHandler: Handler = (args, ctx) => {
     },
     (err: unknown) =>
       errorResult(
-        `HIDE_WRITE_FAILED: could not save the hidden folders, nothing changed (${
+        `HIDE_WRITE_FAILED: could not read or save the hidden folders, nothing changed (${
           err instanceof Error ? err.message : String(err)
         })`
       )

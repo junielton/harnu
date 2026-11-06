@@ -954,7 +954,7 @@ that folder), `SESSION_WORKING` or `PENDING_APPROVAL` (hiding only: a session in
 working, or an approval is parked for one). `ok` is true only when no row is `refused` or `notFound`:
 read each row rather than retrying the batch. Rows are decided inside the file's write lock, so
 concurrent calls (and the menu action) read as one serial order and the ACK always matches what was
-saved; `HIDE_WRITE_FAILED` means the file could not be written and nothing changed.
+saved; `HIDE_WRITE_FAILED` means the file could not be read or written and nothing changed.
 
 **Parked sessions — `hibernated: true` is NOT death.** Harnu caps live `claude` processes
 and parks cold ones (`hibernated: true` in `get_fleet` / `get_session`). The conversation is
