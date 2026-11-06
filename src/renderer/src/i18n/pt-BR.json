@@ -1069,6 +1069,7 @@
     "cleanup": "Limpeza…"
   },
   "dialog": {
+    "close": "Fechar",
     "addFolder": {
       "title": "Adicionar pasta",
       "close": "Fechar dialog",
