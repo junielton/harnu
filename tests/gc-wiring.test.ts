@@ -57,6 +57,10 @@ describe('one timer', () => {
       // The advisor's runner owns the two bounded timers that end one hung process (SIGTERM, then
       // SIGKILL); it is not a cycle timer and starts nothing (tests/gc-opinion-wiring.test.ts).
       if (file === 'opinion-run.ts') continue
+      // The capacity watcher (U3.6) is the second, deliberate trigger: a debounce after a Docker
+      // network event and a fallback interval, because the spec wants capacity handled at once
+      // and not on the hourly tick. It never runs the cycle (that still rides the Reaper tick, below).
+      if (file === 'capacity-watcher.ts') continue
       expect(read(`src/main/gc/${file}`), file).not.toMatch(/\bsetInterval\s*\(|\bsetTimeout\s*\(/)
     }
   })

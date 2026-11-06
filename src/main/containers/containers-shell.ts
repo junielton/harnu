@@ -9,7 +9,8 @@
  * ADR-0001; every parser it relies on is unit-tested in the core.
  */
 
-import { execFile, type ExecFileOptions } from 'node:child_process'
+import { execFile, spawn, type ChildProcess, type ExecFileOptions } from 'node:child_process'
+import { createInterface } from 'node:readline'
 import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import { spawnEnvOnce } from '../appimage-env'
@@ -35,6 +36,7 @@ import {
   type KnownFolder
 } from './containers-core'
 import { bucketLookup } from '../gc/gc-buckets'
+import type { EventsProcess } from './docker-facts-shell'
 import type { DockerBatchResult } from './containers-actions'
 import type { ContainersSnapshot, Tombstone } from './containers-wire'
 
@@ -75,6 +77,46 @@ export function runDocker(
   opts: Omit<ExecFileOptions, 'env'>
 ): Promise<{ stdout: string }> {
   return runTool('docker', args, opts)
+}
+
+/**
+ * A long-lived read-only docker stream (`docker events …`) for the capacity watcher (U3.6), spawned
+ * here because this file is the only one that names the docker binary (ADR-0014 §2). Same login-shell
+ * PATH as every other call. The process starts as soon as the environment is known; `onLine` and
+ * `onExit` are registered synchronously by the caller, so nothing is missed. A failed start is an exit.
+ */
+export function spawnDockerStream(args: readonly string[]): EventsProcess {
+  const lineCbs: Array<(line: string) => void> = []
+  const exitCbs: Array<() => void> = []
+  let child: ChildProcess | null = null
+  let killed = false
+  let exited = false
+  const exit = (): void => {
+    if (exited) return
+    exited = true
+    for (const cb of exitCbs) cb()
+  }
+  void spawnEnvOnce()
+    .then((env) => {
+      if (killed) return
+      child = spawn('docker', [...args], {
+        env,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore']
+      })
+      createInterface({ input: child.stdout! }).on('line', (l) => lineCbs.forEach((cb) => cb(l)))
+      child.on('exit', exit)
+      child.on('error', exit)
+    })
+    .catch(exit)
+  return {
+    onLine: (cb) => void lineCbs.push(cb),
+    onExit: (cb) => void exitCbs.push(cb),
+    kill: () => {
+      killed = true
+      child?.kill()
+    }
+  }
 }
 
 /**
@@ -289,6 +331,7 @@ export async function scanContainers(req: ScanRequest): Promise<ContainersSnapsh
     now: req.now,
     zombieAfterDays: req.zombieAfterDays,
     recent,
+    journal: req.journal,
     platform: process.platform,
     // The last GC snapshot's bucket: a worktree stack reads zombie as soon as its branch is dead.
     inheritedBucketOf: bucketLookup(realOf)
@@ -307,8 +350,34 @@ async function batch(args: readonly string[], targets: string[]): Promise<Docker
   }
 }
 
+/** A network id (or name) as one plain word: it can never be read as a flag or split in two. */
+const SAFE_NETWORK_REF = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
+const NETWORK_IN_USE = /has active endpoints|active endpoints|is in use/i
+
+export type RemoveNetworkResult =
+  | { ok: true }
+  /** `active`: docker refused because something is attached, i.e. the world moved, not a fault. */
+  | { ok: false; error: string; active: boolean }
+
+/**
+ * `docker network rm <id>`, one network, never anything else (U3.3). Docker itself refuses a
+ * network with an attached endpoint, which makes the last check race-proof.
+ */
+async function removeNetwork(id: string): Promise<RemoveNetworkResult> {
+  if (!SAFE_NETWORK_REF.test(id)) return { ok: false, error: 'not a network id', active: false }
+  try {
+    await runDocker(['network', 'rm', id], ACT_OPTS)
+    return { ok: true }
+  } catch (err) {
+    const e = err as { stderr?: unknown; message?: unknown }
+    const haystack = `${typeof e?.stderr === 'string' ? e.stderr : ''} ${typeof e?.message === 'string' ? e.message : ''}`
+    return { ok: false, error: summarizeDockerError(err), active: NETWORK_IN_USE.test(haystack) }
+  }
+}
+
 /** The docker half of the action function's deps. None of them ever passes `--force`. */
 export const dockerActions = {
+  removeNetwork,
   stop: (ids: string[]): Promise<DockerBatchResult> => batch(['stop'], ids),
   start: (ids: string[]): Promise<DockerBatchResult> => batch(['start'], ids),
   removeContainers: (ids: string[]): Promise<DockerBatchResult> => batch(['rm'], ids),

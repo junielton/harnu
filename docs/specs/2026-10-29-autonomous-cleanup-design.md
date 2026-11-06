@@ -265,3 +265,20 @@ Tested the U1 proofs against the 13 worktrees before writing the plan:
 
 AC-U1 therefore reads: the 4 named main-based worktrees become strongly merged; the 9 `t474`
 worktrees stay unproven.
+
+## 10. Amendments (2026-11-05)
+
+Operator decisions taken while planning U3. They amend the text above; the body of §1–§9 is
+left as written.
+
+- **A-1 AC-U3a restated.** "The empty compose networks and orphan stacks present at verification
+  time are cleared without a click; no volume is removed." It is proven on an isolated instance plus
+  a seeded fixture with empty networks and an orphan. The 4 empty networks and 6 running orphans
+  measured on 2026-10-27 no longer exist on the machine, so §4 U3's AC-U3a numbers are historical.
+- **A-2 Naming.** A stack brought down by Cleanup is shown as **"Paused"** (pt-BR **"Pausada"**) in
+  every UI string. Code, journal and this spec keep the word "park". Reason: "parked" already means
+  a hibernated session in Harnu.
+- **A-3 Builder defaults (§6), designer's call.** ONE switch covers pausing plus Docker garbage
+  removal (separate from the shelve switch) and has its own acknowledgement. Pause a stack after
+  **2 h** idle; low-water mark **3** free bridge slots; **6** pauses per hour; a minimum of
+  **30 min** since a stack's last `up` before it can be paused.

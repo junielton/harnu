@@ -23,6 +23,9 @@ export const REFUSAL_CODES = [
   'needs-confirmation',
   'missing-expected',
   'no-longer-orphan',
+  // an orphaned-transcripts clean that needs one more explicit choice (gc-manual.ts)
+  'needs-not-found-confirmation',
+  'needs-undigested-confirmation',
   'kept',
   'never-clean',
   'main-checkout',

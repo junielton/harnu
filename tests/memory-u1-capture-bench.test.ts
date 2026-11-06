@@ -5,9 +5,19 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import {
+  digestOrphans,
+  fsOrphanSessions,
+  inspectOrphanTranscript
+} from '../src/main/gc/gc-orphan-digest'
+import { orphanTranscriptId, type OrphanTranscriptItem } from '../src/main/gc/gc-orphan-transcripts'
+import { slugOfPath } from '../src/main/gc/gc-transcripts'
 import { createDigestEngine } from '../src/main/mcp/digest-engine'
 import {
+  commitFileStats,
   gatherGitEvidence,
+  hasSessionDigest,
+  listSubagentTranscripts,
   readTranscriptFacts,
   readTranscriptTruth
 } from '../src/main/mcp/digest-io'
@@ -24,7 +34,7 @@ import {
 } from './helpers/memory-u1-fixture'
 
 /**
- * Memory U1 S-2 and S-3: the replay. The real engine, with the real reader and git probe, digests every
+ * Memory U1 S-2 to S-4: the replay. The real engine, with the real reader and git probe, digests every
  * `repo` and `plain` fixture session as it ends; the merged benchmark then scores the temp home.
  * Key paths: the spec's Amendments row of 2026-11-05 (the CLI is the only way to the gather,
  * git coverage is the repo folder's `detail.capture_by_folder` row).
@@ -110,6 +120,8 @@ beforeAll(async () => {
     writeHot: async () => undefined,
     memoryCheckout: async (folder) =>
       resolveMemoryCheckout(folder, (await probeGitMeta(folder)).repoId),
+    subagentTranscripts: async (id) => listSubagentTranscripts(fx.transcriptOf(id), id),
+    commitFileStats,
     now: () => REPLAY,
     setTimer: () => {
       throw new Error('the replay uses no timer')
@@ -121,6 +133,31 @@ beforeAll(async () => {
     .filter((s) => s.folder !== 'gone')
     .sort((a, b) => a.endMin - b.endMin)
   for (const s of replayed) await engine.digestNow(s.id, 'ended')
+
+  // One Cleanup gather digests the orphans (S-5): the gone worktree's sessions, by the engine.
+  const goneSlug = slugOfPath(fx.gone)
+  const goneItem: OrphanTranscriptItem = {
+    id: orphanTranscriptId(goneSlug),
+    slug: goneSlug,
+    folder: fx.gone,
+    repoLabel: 'repo',
+    bytes: 1,
+    sessionCount: 2,
+    proof: 'proven',
+    newestAt: null,
+    hasMemory: false
+  }
+  await digestOrphans([goneItem], {
+    repoPaths: [fx.repo],
+    probe: {
+      exists: async (p) => (await fs.stat(p).catch(() => null)) !== null,
+      isCheckout: async (p) => (await fs.stat(join(p, '.git')).catch(() => null)) !== null
+    },
+    sessionsOf: fsOrphanSessions(join(fx.home, '.claude', 'projects')),
+    inspect: inspectOrphanTranscript,
+    hasDigest: (home, sid) => hasSessionDigest(memoryDirFor(home), sid),
+    digest: (args) => engine.digestTranscriptInto(args)
+  })
   engine.close()
 
   git = await score(fx.repo)
@@ -142,6 +179,25 @@ describe('memory U1 capture, scored by the benchmark', () => {
   it('non-git capture_coverage is at least 0.95', () => {
     expect(nonGit.metrics.capture_sessions).toBeGreaterThan(0)
     expect(nonGit.metrics.capture_coverage_nongit).toBeGreaterThanOrEqual(0.95)
+  })
+
+  it('orphan_loss is zero', () => {
+    expect(git.metrics.orphan_transcripts).toBeGreaterThan(0)
+    expect(git.metrics.orphan_loss).toBe(0)
+  })
+
+  it('every orphan with at least three user turns has a digest; the one-turn orphan is not counted', async () => {
+    expect(git.metrics.orphan_transcripts).toBe(1)
+    const orphanSet = expectedSet('gone')
+    expect(orphanSet.map((id) => id.slice(0, 8))).toEqual(['a1000009'])
+    expect(await digested(memoryDirFor(fx.repo), orphanSet)).toEqual(orphanSet)
+    expect(
+      await digested(memoryDirFor(fx.repo), [
+        fx.sessions.find((s) => s.id.startsWith('a100000a'))!.id
+      ])
+    ).toEqual([])
+    // The benchmark ignores sub-threshold orphans, as it does for capture coverage.
+    expect(git.metrics.orphan_loss).toBe(0)
   })
 
   it('user-turn and digest rules agree with the benchmark', async () => {

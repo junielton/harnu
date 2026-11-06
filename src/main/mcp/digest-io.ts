@@ -7,6 +7,7 @@
 
 import { execFile } from 'node:child_process'
 import { createReadStream, promises as fs } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { deriveTranscriptTruth, isNoiseEntry, type TranscriptEntry } from '../transcript-truth'
 import {
@@ -19,6 +20,7 @@ import {
   type GitEvidence
 } from './digest-core'
 import { emptyFacts, scanTranscriptLines, type TranscriptFacts } from './digest-transcript'
+import { hasDigestFile } from './digest-state'
 
 const runFile = promisify(execFile)
 
@@ -211,4 +213,58 @@ export async function gatherGitEvidence(
   }
 
   return { kind: 'repo', head, commits, fileStats, dirtyCount: await dirty() }
+}
+
+/**
+ * The subagent transcripts of a session (memory U1 S-4): `<sessionId>/subagents/*.jsonl` next to
+ * its main transcript, sorted by name. `[]` when there are none or the folder is unreadable.
+ */
+export async function listSubagentTranscripts(
+  transcriptPath: string,
+  sessionId: string
+): Promise<string[]> {
+  const dir = join(dirname(transcriptPath), sessionId, 'subagents')
+  try {
+    const names = await fs.readdir(dir, { withFileTypes: true })
+    return names
+      .filter((d) => d.isFile() && d.name.endsWith('.jsonl'))
+      .map((d) => d.name)
+      .sort()
+      .map((n) => join(dir, n))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The file churn of exactly `hashes` (memory U1 S-4): each commit's `--numstat` against its
+ * parent, summed per file in order of first appearance. `[]` on any git failure.
+ */
+export async function commitFileStats(folder: string, hashes: string[]): Promise<DigestFileStat[]> {
+  // Only full or abbreviated object names reach git; with none left, `git show` would show HEAD.
+  const revs = hashes.filter((h) => /^[0-9a-f]{7,64}$/.test(h))
+  if (revs.length === 0) return []
+  const raw = await runGit(folder, ['show', '--numstat', '--format=', '--no-color', ...revs])
+  if (raw === null) return []
+  const byFile = new Map<string, DigestFileStat>()
+  for (const s of parseNumstat(raw)) {
+    const seen = byFile.get(s.file)
+    if (seen) {
+      seen.added += s.added
+      seen.deleted += s.deleted
+    } else {
+      byFile.set(s.file, { ...s })
+    }
+  }
+  // Path order, as `git diff --numstat` lists a range.
+  return [...byFile.values()].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0))
+}
+
+/** Whether `<memoryDir>/sessions/` holds a digest of `sessionId` (spec "Has a digest"). */
+export async function hasSessionDigest(memoryDir: string, sessionId: string): Promise<boolean> {
+  try {
+    return hasDigestFile(await fs.readdir(join(memoryDir, 'sessions')), sessionId)
+  } catch {
+    return false
+  }
 }

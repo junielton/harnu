@@ -47,6 +47,11 @@ export interface ShelveContext {
   prefs: GcPrefs
   /** Folders a session drifted into (`scanTranscripts().drifted`). */
   driftedCwds: readonly string[]
+  /**
+   * Stacks Cleanup has Paused (the containers journal's registry, U3.5). A stack that is down holds
+   * no bind mount, so it does not block shelving; a running one still does. Absent = none.
+   */
+  pausedStackIds?: readonly string[]
   canonical?: CanonicalPath
 }
 
@@ -64,8 +69,10 @@ export function shelveCandidate(b: WorktreeBundle, ctx: ShelveContext): ShelveRe
   if (isProtectedNow(b, ctx.prefs, ctx.canonical ?? AS_GIVEN)) return 'protected'
   // Working, waiting for input, or merely open: a live process would lose its cwd.
   if (b.session !== 'none') return 'session'
-  // A stack running from the folder would lose its bind mounts (parking it is U3's job).
-  if (b.stackIds.length > 0 || b.sharedStackIds.length > 0) return 'stack'
+  // A stack running from the folder would lose its bind mounts (pausing it is U3's job: once it is
+  // Paused it is down and no longer blocks).
+  const paused = new Set(ctx.pausedStackIds ?? [])
+  if ([...b.stackIds, ...b.sharedStackIds].some((id) => !paused.has(id))) return 'stack'
   if (b.dockerBlind === true) return 'blind'
   if (b.operation !== undefined) return 'operation'
   if (b.locked === true) return 'locked'

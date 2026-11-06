@@ -6,10 +6,13 @@
 
 import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
+import { homedir } from 'node:os'
+import * as path from 'node:path'
 import { promisify } from 'node:util'
 import { fsOrphanProbe, fsPathExistence, planOrphanTranscripts } from './gc-orphan-transcripts'
 import { evidenceFromGit, proveGone } from './gc-orphan-proof'
 import { readRemovedFolders } from './gc-removed-folders'
+import { digestOrphans, fsOrphanSessions, inspectOrphanTranscript } from './gc-orphan-digest'
 import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
 
 export interface OrphanSourceContext {
@@ -33,6 +36,48 @@ async function protectedSessionIds(): Promise<Set<string>> {
 }
 
 const runGit = promisify(execFile)
+
+/**
+ * Digests the sessions of the listed orphans into their owning repo's memory, at gather time
+ * (memory U1 S-5, D-4), and stamps each item with what was digested. The memory layer is loaded
+ * lazily; when it (or the engine) is unavailable the items are only counted. Any failure here
+ * leaves every item undigested, so the trash needs the explicit choice: it fails closed.
+ */
+async function withDigests(
+  items: OrphanTranscriptItem[],
+  ctx: OrphanSourceContext
+): Promise<OrphanTranscriptItem[]> {
+  if (items.length === 0) return items
+  try {
+    const [{ digestOrphanTranscript, orphanHasDigest }] = await Promise.all([
+      import('../memory-digest')
+    ])
+    return await digestOrphans(items, {
+      repoPaths: ctx.repoPaths,
+      probe: {
+        exists: async (p) => (await fsPathExistence(p)) === 'exists',
+        isCheckout: async (p) =>
+          runGit('git', ['-C', p, 'rev-parse', '--git-common-dir'], {
+            windowsHide: true,
+            timeout: 15_000
+          }).then(
+            () => true,
+            () => false
+          )
+      },
+      sessionsOf: fsOrphanSessions(path.join(homedir(), '.claude', 'projects')),
+      inspect: inspectOrphanTranscript,
+      hasDigest: orphanHasDigest,
+      digest: digestOrphanTranscript
+    })
+  } catch (err) {
+    console.warn('[gc] orphan transcripts not digested', err instanceof Error ? err.message : err)
+    return items.map((i) => ({
+      ...i,
+      digest: { done: 0, total: i.sessionCount, home: null }
+    }))
+  }
+}
 
 export const realOrphanSource: OrphanSource = async (ctx) => {
   try {
@@ -64,7 +109,7 @@ export const realOrphanSource: OrphanSource = async (ctx) => {
     )
     // Only a folder that still exists protects a slug; an unreadable one counts as existing.
     const alive = states.filter(([, s]) => s !== 'missing').map(([p]) => p)
-    return await planOrphanTranscripts({
+    const items = await planOrphanTranscripts({
       probe: fsOrphanProbe(),
       exists: fsPathExistence,
       protectedSessionIds: protectedIds,
@@ -73,6 +118,7 @@ export const realOrphanSource: OrphanSource = async (ctx) => {
       shelvedFolders: ctx.shelvedFolders,
       proof: (folder) => proveGone(folder, evidence, fsPathExistence)
     })
+    return await withDigests(items, ctx)
   } catch (err) {
     console.warn('[gc] orphan transcripts not listed', err instanceof Error ? err.message : err)
     return []

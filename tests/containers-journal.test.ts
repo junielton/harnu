@@ -4,6 +4,8 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import {
   appendTombstone,
+  composeUpCommand,
+  derivePaused,
   isTombstone,
   journalFile,
   parseJournal,
@@ -87,12 +89,77 @@ describe('tombstone (de)serialization', () => {
   })
 })
 
+describe('a pause tombstone (U3.4)', () => {
+  const paused = {
+    project: 'proj-82',
+    workingDir: '/w',
+    configFiles: ['/w/compose.yml'],
+    profiles: [],
+    envFile: null,
+    hasBuild: false,
+    ports: [8082],
+    restoreCommand: 'docker compose -p proj-82 --project-directory /w -f /w/compose.yml up -d',
+    pausedAt: 5
+  }
+  const withPaused = (value: unknown): Tombstone => {
+    const t = tomb(5, { actor: 'autopilot' })
+    return { ...t, stacks: [{ ...t.stacks[0]!, paused: value } as never] }
+  }
+
+  it('is accepted when its record is whole, and parsed back unchanged', () => {
+    const t = withPaused(paused)
+    expect(isTombstone(t)).toBe(true)
+    expect(parseJournal(serializeTombstone(t))).toEqual([t])
+  })
+
+  it.each([
+    ['a missing restore command', { ...paused, restoreCommand: undefined }],
+    ['ports that are not numbers', { ...paused, ports: ['x'] }],
+    ['a non-boolean build flag', { ...paused, hasBuild: 'yes' }],
+    ['files that are not strings', { ...paused, configFiles: [1] }],
+    ['not an object', 'paused']
+  ])('is rejected with %s', (_name, value) => {
+    expect(isTombstone(withPaused(value))).toBe(false)
+  })
+})
+
 describe('restore hints (PRD §3.5)', () => {
-  it('after a stop: docker start with every stopped container', () => {
-    expect(restoreHintForStop(['a'.repeat(64), 'b'.repeat(12)])).toBe(
+  it('after a stop of a standalone container: docker start with every stopped container', () => {
+    const standalone = {
+      kind: 'container',
+      project: null,
+      worktreePath: null,
+      worktreeExists: false
+    }
+    expect(restoreHintForStop(standalone, ['a'.repeat(64), 'b'.repeat(12)])).toBe(
       `docker start ${'a'.repeat(12)} ${'b'.repeat(12)}`
     )
-    expect(restoreHintForStop([])).toBeNull()
+    expect(restoreHintForStop(standalone, [])).toBeNull()
+  })
+
+  it('after a stop of a compose stack: the compose up command, never docker start (U3.4 AC-3)', () => {
+    const hint = restoreHintForStop(
+      {
+        kind: 'compose',
+        project: 'proj-82',
+        worktreePath: '/w',
+        worktreeExists: true,
+        facts: { configFiles: ['/w/compose.yml'], envFile: null }
+      },
+      ['a'.repeat(64)]
+    )
+    expect(hint).toBe('docker compose -p proj-82 --project-directory /w -f /w/compose.yml up -d')
+    expect(hint).not.toContain('docker start')
+  })
+
+  it('a compose stack whose directory is unknown or gone has no honest hint — null, not docker start', () => {
+    const base = { kind: 'compose' as const, project: 'p', worktreeExists: true }
+    expect(restoreHintForStop({ ...base, worktreePath: null }, ['a'.repeat(64)])).toBeNull()
+    expect(
+      restoreHintForStop({ ...base, worktreePath: '/gone', worktreeExists: false }, [
+        'a'.repeat(64)
+      ])
+    ).toBeNull()
   })
 
   it('after a removal whose worktree still exists: the compose recreate command', () => {
@@ -123,6 +190,20 @@ describe('restore hints (PRD §3.5)', () => {
         worktreeExists: true
       })
     ).toBe('docker compose --project-directory /w up -d')
+  })
+
+  it('after a removal: the facts add compose files, profiles, env file and --build', () => {
+    expect(
+      restoreHintForRemove({
+        kind: 'compose',
+        project: 'p',
+        worktreePath: '/w',
+        worktreeExists: true,
+        facts: { configFiles: ['/w/a.yml'], profiles: ['web'], envFile: '/w/.env', hasBuild: true }
+      })
+    ).toBe(
+      'docker compose -p p --project-directory /w -f /w/a.yml --profile web --env-file /w/.env up -d --build'
+    )
   })
 
   it('after a removal whose worktree is gone, or of a standalone container: nothing', () => {
@@ -166,6 +247,65 @@ describe('restore hints (PRD §3.5)', () => {
   })
 })
 
+describe('composeUpCommand (U3.4 AC-2)', () => {
+  const base = {
+    project: 'proj-231',
+    workingDir: '/home/dev/org/proj/www',
+    configFiles: [] as string[],
+    profiles: [] as string[],
+    envFile: null as string | null,
+    hasBuild: false
+  }
+
+  it('image-only stack: plain up -d', () => {
+    expect(composeUpCommand(base)).toBe(
+      'docker compose -p proj-231 --project-directory /home/dev/org/proj/www up -d'
+    )
+  })
+
+  it('a stack that builds gets --build', () => {
+    expect(composeUpCommand({ ...base, hasBuild: true })).toBe(
+      'docker compose -p proj-231 --project-directory /home/dev/org/proj/www up -d --build'
+    )
+  })
+
+  it('names every compose file in order, then profiles, then the env file', () => {
+    expect(
+      composeUpCommand({
+        ...base,
+        configFiles: ['/w/compose.yml', '/w/compose.dev.yml'],
+        profiles: ['web', 'jobs'],
+        envFile: '/w/.env.dev',
+        hasBuild: true
+      })
+    ).toBe(
+      'docker compose -p proj-231 --project-directory /home/dev/org/proj/www ' +
+        '-f /w/compose.yml -f /w/compose.dev.yml --profile web --profile jobs ' +
+        '--env-file /w/.env.dev up -d --build'
+    )
+  })
+
+  it('quotes paths with spaces or quotes so the pasted command stays literal', () => {
+    expect(
+      composeUpCommand({
+        ...base,
+        workingDir: '/tmp/my proj',
+        configFiles: ["/tmp/my proj/it's.yml"],
+        envFile: '/tmp/$(id)/.env'
+      })
+    ).toBe(
+      `docker compose -p proj-231 --project-directory '/tmp/my proj' ` +
+        `-f '/tmp/my proj/it'\\''s.yml' --env-file '/tmp/$(id)/.env' up -d`
+    )
+  })
+
+  it('a null project omits -p', () => {
+    expect(composeUpCommand({ ...base, project: null })).toBe(
+      'docker compose --project-directory /home/dev/org/proj/www up -d'
+    )
+  })
+})
+
 describe('journal file', () => {
   it('lives at <userData>/containers-log.jsonl and appends one line per tombstone', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-containers-journal-'))
@@ -182,5 +322,103 @@ describe('journal file', () => {
 
   it('reads a missing journal as empty', async () => {
     expect(await readJournal('/nonexistent/containers-log.jsonl')).toEqual([])
+  })
+})
+
+describe('derivePaused — the paused registry is the journal (U3.4 AC-5)', () => {
+  const record = (project: string, at: number) => ({
+    project,
+    workingDir: `/w/${project}`,
+    configFiles: [],
+    profiles: [],
+    envFile: null,
+    hasBuild: false,
+    ports: [8082],
+    restoreCommand: `docker compose -p ${project} --project-directory /w/${project} up -d`,
+    pausedAt: at
+  })
+  const pauseTomb = (
+    project: string,
+    at: number,
+    actor: 'autopilot' | 'operator' = 'autopilot'
+  ) => {
+    const t = tomb(at, { actor })
+    return {
+      ...t,
+      stacks: [{ ...t.stacks[0]!, stack: project, name: project, paused: record(project, at) }]
+    }
+  }
+  const plain = (project: string, at: number, verb: Tombstone['verb']): Tombstone => {
+    const t = tomb(at, { verb })
+    return { ...t, stacks: [{ ...t.stacks[0]!, stack: project, name: project }] }
+  }
+
+  it('lists a paused stack with its actor and name, newest first', () => {
+    const out = derivePaused([pauseTomb('b', 20), pauseTomb('a', 10, 'operator')], new Set())
+    expect(out.map((p) => [p.stack, p.name, p.actor, p.pausedAt])).toEqual([
+      ['b', 'b', 'autopilot', 20],
+      ['a', 'a', 'operator', 10]
+    ])
+    expect(out[0]!.restoreCommand).toContain('docker compose -p b')
+  })
+
+  it('survives a restart: the same answer from a journal read cold', () => {
+    const journal = parseJournal(
+      [pauseTomb('a', 10), plain('other', 12, 'stop')].map(serializeTombstone).join('')
+    )
+    expect(derivePaused(journal, new Set()).map((p) => p.stack)).toEqual(['a'])
+  })
+
+  it('a later tombstone for the stack ends the pause', () => {
+    for (const verb of ['start', 'remove', 'stop', 'sweep'] as const) {
+      expect(derivePaused([plain('a', 20, verb), pauseTomb('a', 10)], new Set())).toEqual([])
+    }
+  })
+
+  it('a stack with containers again is no longer paused', () => {
+    expect(derivePaused([pauseTomb('a', 10)], new Set(['a']))).toEqual([])
+    expect(derivePaused([pauseTomb('a', 10)], new Set(['b'])).map((p) => p.stack)).toEqual(['a'])
+  })
+
+  it('two pauses of the same stack are one entry — the newest', () => {
+    const out = derivePaused([pauseTomb('a', 30), pauseTomb('a', 10)], new Set())
+    expect(out.map((p) => p.pausedAt)).toEqual([30])
+  })
+
+  it('a pause that was undone and repeated counts once, at the second pause', () => {
+    const out = derivePaused(
+      [pauseTomb('a', 30), plain('a', 20, 'start'), pauseTomb('a', 10)],
+      new Set()
+    )
+    expect(out.map((p) => p.pausedAt)).toEqual([30])
+  })
+
+  it('an empty journal has nothing paused', () => {
+    expect(derivePaused([], new Set())).toEqual([])
+  })
+})
+
+describe('the optional reason of a journal line (U3.5 AC-5)', () => {
+  const line = {
+    at: 1,
+    actor: 'autopilot',
+    verb: 'stop',
+    stacks: [],
+    restoreHint: null
+  }
+
+  it('accepts a line with a string reason, and one without', () => {
+    expect(isTombstone({ ...line, reason: 'Paused `x` — idle 3 h · bring back: `y`' })).toBe(true)
+    expect(isTombstone(line)).toBe(true)
+  })
+
+  it('rejects a reason that is not a string', () => {
+    expect(isTombstone({ ...line, reason: 3 })).toBe(false)
+    expect(isTombstone({ ...line, reason: null })).toBe(false)
+  })
+
+  it('keeps the reason when the line is read back', () => {
+    const t = { ...line, reason: 'Paused `x` — idle 3 h · bring back: `y`' }
+    expect(parseJournal(JSON.stringify(t))[0]!.reason).toBe(t.reason)
   })
 })
