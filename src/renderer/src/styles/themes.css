@@ -59,6 +59,10 @@
   --gc-panel-w: 320px;
   --gc-dialog-w: min(720px, 90vw);
 
+  /* Scheduler list: the open Stewards block scrolls inside this height (design.md §6 Scheduler →
+   * Stewards, §9). Theme-invariant; ≈ 6 rows. */
+  --sched-stewards-max-h: 232px;
+
   /* Dialog viewport cap (design.md §4 "Dialog — viewport cap"): every dialog card is at most this tall;
    * its body scrolls, header and footer stay on screen. Theme-invariant. */
   --dialog-max-h: 84vh;

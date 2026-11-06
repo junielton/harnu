@@ -1,0 +1,400 @@
+/* Shared anatomy for the Scheduler list column (design.md §6 "Scheduler"). var(--token) only.
+ * Folder hues stand in with accent/warning/green: the real --fh comes from the terminal ANSI
+ * palette (main.css), which this token copy does not carry. */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color-scheme: dark;
+}
+.list,
+.stw-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-2) transparent;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.view {
+  display: flex;
+  height: 860px; /* no token: a 900px-tall window minus the topbar */
+}
+.col {
+  width: 340px; /* no token: design.md §6 Scheduler list column */
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-sidebar);
+}
+.detail {
+  flex: 1;
+  min-width: 0;
+  background: var(--color-bg);
+  padding: 14px;
+  color: var(--color-text-4);
+}
+
+/* toolbar + chips */
+.toolbar {
+  display: flex;
+  gap: 6px;
+  margin: 10px 10px 0 12px;
+}
+.search {
+  flex: 1;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-4);
+  font-size: 11px;
+}
+.sq {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-3);
+  display: grid;
+  place-items: center;
+}
+.chips {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.chip {
+  height: 20px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-3);
+}
+.chip b {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-3);
+}
+.dot.green {
+  background: var(--color-green);
+}
+.dot.red {
+  background: var(--color-red);
+}
+.dot.off {
+  background: var(--color-text-4);
+}
+
+/* collapsible section header — Up next and Stewards share it */
+.sect {
+  flex: none;
+  padding: 8px 10px 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.sect-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+}
+.sect-head:hover h4 {
+  color: var(--color-text-2);
+}
+.chev {
+  width: 11px;
+  height: 11px;
+  color: var(--color-text-4);
+  flex: none;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.is-collapsed .chev {
+  transform: rotate(-90deg);
+}
+.sect-head h4 {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-3);
+}
+.sect-sum {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--color-text-4);
+}
+.sect-sum .run {
+  color: var(--color-accent);
+}
+.sect-sum .owed {
+  color: var(--color-text-2);
+}
+
+.up-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 20px;
+  font-size: 11px;
+}
+.up-row .t {
+  width: 28px;
+  flex: none;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.up-row .t.now {
+  color: var(--color-green);
+  font-weight: 600;
+}
+.sqh {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--fh);
+  flex: none;
+}
+.up-row .n {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.up-row .f {
+  margin-left: auto;
+  color: var(--fh);
+  white-space: nowrap;
+}
+
+/* folder groups + worker rows */
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.fh-a {
+  --fh: var(--color-warning);
+}
+.fh-b {
+  --fh: var(--color-green);
+}
+.fh-c {
+  --fh: var(--color-accent);
+}
+.fh-d {
+  --fh: var(--color-red);
+}
+.group {
+  border-bottom: 1px solid var(--color-border);
+}
+.group:last-child {
+  border-bottom: 0;
+}
+.ghead {
+  position: relative;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 12px;
+  background: color-mix(in srgb, var(--fh) 7%, var(--color-surface));
+}
+.ghead::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--fh);
+}
+.avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fh);
+  background: color-mix(in srgb, var(--fh) 18%, var(--color-surface));
+}
+.gname {
+  font-size: 12px;
+  font-weight: 600;
+}
+.gcount {
+  font-size: 11px;
+  color: var(--color-text-4);
+}
+.gnext {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--color-text-4);
+}
+.group.is-collapsed .wrow {
+  display: none;
+}
+.group:not(.is-collapsed) .ghead {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.wrow {
+  height: 46px;
+  padding: 6px 10px 6px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+.wrow + .wrow {
+  border-top: 1px solid var(--color-border);
+}
+.wl1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+}
+.wl1 .pin {
+  color: var(--color-text-4);
+  font-size: 10px;
+}
+.wl1 .nm {
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl1 .st {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--color-text-3);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.wl2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--color-text-4);
+}
+.wl2 .act {
+  color: var(--color-warning);
+}
+.ticks {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+.ticks i {
+  width: 3px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--color-green);
+}
+
+/* stewards rows */
+.stw-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 6px;
+}
+.stw {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.stw-l1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.bot {
+  width: 11px;
+  height: 11px;
+  color: var(--color-text-3);
+  flex: none;
+}
+.stw-l1 .m {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stw-l1 .w {
+  flex: none;
+  font-size: 11px;
+}
+.w.running {
+  color: var(--color-accent);
+}
+.w.owed {
+  color: var(--color-text-3);
+}
+.stw-l2 {
+  padding-left: 17px;
+  font-size: 11px;
+  color: var(--color-text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stw-hint {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--color-text-4);
+}
+
+.caption {
+  padding: 6px 12px;
+  font-size: 10.5px;
+  color: var(--color-text-4);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}

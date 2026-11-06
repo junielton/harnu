@@ -47,13 +47,16 @@ export interface StewardSummary {
   /** The last tick's one-line result; `null` when it had none (no run, or it failed). */
   lastAction: string | null
   running: boolean
+  /** Its mission is `delivered`: the steward waits for the operator to close the mission (T651). */
+  awaitingClose: boolean
 }
 
 /** One steward as its row and its line draw it. `runs` arrive oldest-first, as the store keeps them. */
 export function summarizeSteward(
   worker: Worker,
   runs: readonly Run[],
-  running: boolean
+  running: boolean,
+  awaitingClose = false
 ): StewardSummary {
   const last = runs[runs.length - 1]
   return {
@@ -62,6 +65,45 @@ export function summarizeSteward(
     folder: worker.folder,
     lastWakeAt: last ? last.startedAt : null,
     lastAction: last && last.status === 'ok' ? firstLine(last.result) : null,
-    running
+    running,
+    awaitingClose
   }
+}
+
+/** The state word a steward row wears (T651). */
+export type StewardStateWord = 'paused' | 'running' | 'awaitingClose'
+
+/**
+ * The state word of one steward. Precedence: Paused > Running > Awaiting close > nothing — a paused
+ * steward does not tick whatever its mission says, and a running tick is the news over a delivered mission.
+ */
+export function stewardStateOf(
+  s: Pick<StewardSummary, 'running' | 'awaitingClose'>,
+  paused: boolean
+): StewardStateWord | null {
+  if (paused) return 'paused'
+  if (s.running) return 'running'
+  if (s.awaitingClose) return 'awaitingClose'
+  return null
+}
+
+export interface StewardSummaryPart {
+  kind: 'total' | 'running' | 'awaiting'
+  n: number
+}
+
+/**
+ * The parts of the collapsed/open header summary, "{n} · {r} running · {a} awaiting close": the total
+ * always, the others only when their count is above 0. Counted by each steward's displayed state, so the
+ * header never disagrees with the words in the rows.
+ */
+export function stewardsSummaryParts(
+  states: readonly (StewardStateWord | null)[]
+): StewardSummaryPart[] {
+  const parts: StewardSummaryPart[] = [{ kind: 'total', n: states.length }]
+  const running = states.filter((x) => x === 'running').length
+  const awaiting = states.filter((x) => x === 'awaitingClose').length
+  if (running > 0) parts.push({ kind: 'running', n: running })
+  if (awaiting > 0) parts.push({ kind: 'awaiting', n: awaiting })
+  return parts
 }
