@@ -69,5 +69,15 @@ a blocked folder.
 
 ## Amendments · Deviations
 
-| date | kind | what changed | by  |
-| ---- | ---- | ------------ | --- |
+| date       | kind      | what changed                                                                                                                                     | by       |
+| ---------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| 2026-11-06 | deviation | AC-1 met · idempotent archive/restore and the 1..100 id limit covered by the handler tests                                                       | verifier |
+| 2026-11-06 | deviation | AC-2 met · one ACK row per id with outcome and reason covered by the core and handler tests                                                      | verifier |
+| 2026-11-06 | deviation | AC-3 met · blocked folder, working session and parked approval refused with their codes                                                          | verifier |
+| 2026-11-06 | deviation | AC-4 met · only the verb's own store file is written (atomic write plus mkdir)                                                                   | verifier |
+| 2026-11-06 | deviation | AC-5 met · state survives a reload and persists with no window; renderer hydrates from main                                                      | verifier |
+| 2026-11-06 | deviation | AC-6 met · one-time legacy import of the old ids, old localStorage key left untouched                                                            | verifier |
+| 2026-11-06 | deviation | AC-7 met · sidebar updates live; archived sessions stay out of the needs-input count (1→0→1)                                                     | verifier |
+| 2026-11-06 | deviation | AC-8 needs-human · menu and "Show N archived" files untouched, store tests pass, no capture of the right-click flow; operator checks after merge | verifier |
+| 2026-11-06 | deviation | AC-9 met · calls go through the shared audit path; audited tests pass                                                                            | verifier |
+| 2026-11-06 | deviation | AC-C met · CHANGELOG, awareness doc v123, user docs and this spec match the code                                                                 | verifier |
