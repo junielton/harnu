@@ -4162,10 +4162,11 @@ side border. It keeps `--surface` and a 1px `--border` **top rule**. The islands
   the dock are `--float-gap` apart as usual. Its internal top divider (the `aria-hidden` `border-t`)
   is hidden; the island gap separates it from the list. Its height is capped (see `RETURN HERE`
   zone) and the rows scroll inside.
-- In **drill mode** `sidebar-list` is the drill view's own root, and it **starts with the pinned
-  Back row** (`data-drill-back`, BUG-248): the Back row is the first child of the island, so it
-  sits on the island's top edge and the island's rounded corners clip it. No extra rule is needed
-  (the Back row already lives outside the scroller); the default layout is untouched.
+- In **drill mode** the drill view (`data-drill-view`) renders inside the same `sidebar-list`
+  island, **under the joined toolbar head** (T659). Its pinned Back row (`data-drill-back`, BUG-248)
+  is the first row below the toolbar's inner rule, still outside the scroller; the toolbar, not the
+  Back row, sits on the island's top edge and is clipped by its rounded corners. The default layout is
+  untouched.
 
 ##### Sidebar dock (slot)
 
