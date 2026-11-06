@@ -143,3 +143,22 @@ describe('legacy import (localStorage -> main store)', () => {
     expect(heard).toEqual([])
   })
 })
+
+describe('ids() is a view nobody can write through (BUG-254)', () => {
+  it('AC-4: mutating the returned set changes neither has(), nor the next ids(), nor the file', async () => {
+    const store = await openSessionArchive(file)
+    await store.archive(['s-1'])
+
+    const leaked = store.ids() as Set<string>
+    leaked.add('intruder')
+    leaked.delete('s-1')
+
+    expect(store.has('intruder')).toBe(false)
+    expect(store.has('s-1')).toBe(true)
+    expect([...store.ids()]).toEqual(['s-1'])
+
+    // A no-op archive must not be fooled either: it still reports nothing new to write.
+    expect(await store.archive(['s-1'])).toEqual([])
+    expect(JSON.parse(readFileSync(file, 'utf8')).ids).toEqual(['s-1'])
+  })
+})

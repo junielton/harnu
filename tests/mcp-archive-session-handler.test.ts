@@ -49,7 +49,11 @@ import { parseToolInput } from '../src/main/mcp/validate'
 import { buildPlanInput } from '../src/main/mcp/plan-input'
 import { planToolCall } from '../src/main/mcp/plan-tool-call'
 import { clearAuditLog, getAuditLog } from '../src/main/mcp/audit-log'
-import { openSessionArchive, setSessionArchive } from '../src/main/session-archive-core'
+import {
+  getSessionArchive,
+  openSessionArchive,
+  setSessionArchive
+} from '../src/main/session-archive-core'
 import type { FolderEntry } from '../src/main/folder-model'
 
 const tool = WIRED_TOOLS.find((t) => t.op === 'archive_session')
@@ -238,5 +242,56 @@ describe('archive_session audit', () => {
     expect(rows[0]?.verdict).toBe('allow')
     expect(rows[0]?.disclosedPayloadSummary).toMatch(/archive 2 archived/)
     expect(rows[0]?.disclosedPayloadSummary).toMatch(/1 notFound/)
+  })
+})
+
+// ---- BUG-254: the ACK must tell the truth about the store, even under concurrency --------
+
+describe('archive_session ACK vs the store (BUG-254)', () => {
+  const file = (): string => path.join(dir, 'archived-sessions.json')
+  const onDisk = async (): Promise<string[]> => [...(await openSessionArchive(file())).ids()].sort()
+
+  async function ack(ids: string[], unarchive = false): Promise<string> {
+    const res = await handler({ sessionIds: ids, unarchive }, ctx())
+    return rowsOf(res)[0]!.outcome
+  }
+
+  it('AC-2: concurrent calls on one session read as one serial order (restore, restore, archive)', async () => {
+    await handler({ sessionIds: ['s-1'] }, ctx())
+
+    // Sent "at the same moment": all three are started before any of them is awaited.
+    const outcomes = await Promise.all([ack(['s-1'], true), ack(['s-1'], true), ack(['s-1'])])
+
+    // Serial order: restored, then alreadyActive, then archived again.
+    expect(outcomes).toEqual(['restored', 'alreadyActive', 'archived'])
+    expect(await onDisk()).toEqual(['s-1'])
+  })
+
+  it('AC-2: concurrent archives of one session: exactly one reads archived', async () => {
+    const outcomes = await Promise.all([ack(['s-1']), ack(['s-1']), ack(['s-1'])])
+    expect(outcomes).toEqual(['archived', 'alreadyArchived', 'alreadyArchived'])
+    expect(await onDisk()).toEqual(['s-1'])
+  })
+
+  it('AC-3: after every verb call and sidebar action, the ACK, the live set and the file agree', async () => {
+    const store = getSessionArchive()!
+    const steps: Array<[string, () => Promise<unknown>]> = [
+      ['verb archive', () => ack(['s-1', 's-2'])],
+      ['sidebar unarchive', () => store.unarchive(['s-1'])],
+      ['verb archive (was restored by sidebar)', () => ack(['s-1'])],
+      ['verb restore', () => ack(['s-2'], true)],
+      ['sidebar archive', () => store.archive(['s-2'])],
+      ['verb restore both', () => handler({ sessionIds: ['s-1', 's-2'], unarchive: true }, ctx())]
+    ]
+    for (const [label, run] of steps) {
+      await run()
+      expect([...store.ids()].sort(), label).toEqual(await onDisk())
+    }
+
+    // The next ACK reads the same state the file holds.
+    expect(await ack(['s-1'], true)).toBe('alreadyActive')
+    expect(await ack(['s-1'])).toBe('archived')
+    expect(await onDisk()).toEqual(['s-1'])
+    expect(await ack(['s-1'])).toBe('alreadyArchived')
   })
 })
