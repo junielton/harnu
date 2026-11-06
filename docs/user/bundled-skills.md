@@ -138,6 +138,15 @@ file. What that changes for you:
   you to paste: the session that started the mission keeps owning it. When a stage ends
   at something only you can do — a merge and a build, say — it raises a blocker for you
   and waits for it to clear rather than handing the work over.
+- **You see the whole plan before anything starts, and say go.** Before the
+  orchestrator dispatches a single session, it writes a delivery map and opens it
+  beside the session: the chapters in order, the cards of the chapter that starts now with what they depend
+  on, the points where you have to act (a merge, a build, a decision), roughly how
+  many sessions it will use, and which campaign each chapter belongs to. Nothing is
+  dispatched until you answer with a clear go; "sounds good" is not one, and the
+  orchestrator asks a single yes/no question if it is unsure. A plan too big for one
+  campaign is split into campaigns that run one after another, with the boundary
+  marked on the map, and you start each next one yourself when you are ready.
 - **Sessions reporting back find the right session.** A helper session addresses the
   session that dispatched it by its permanent id and looks up its current address right
   before sending — so a report is not lost when that session was parked and resumed —
