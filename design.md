@@ -148,6 +148,7 @@ Three consequences of the owner-approved Brand v0 values (2026-10-03):
 | `--surface-2` | `#29231f` | Surface hover, `<kbd>`, quiet badges                   |
 | `--border`    | `#302a25` | Default borders (1px)                                  |
 | `--border-2`  | `#38312c` | Elevated borders (dialogs, menus)                      |
+| `--canvas`    | `#070503` | Backdrop behind floating islands (§6)                  |
 
 ### Text
 
@@ -413,6 +414,7 @@ _another_ folder.
 | `split-square-vertical`                  | Split the terminal                                                                                                                                                                                                                     |
 | `maximize-2`                             | Fullscreen / maximize a helper-stack pane (pane header, §6 Pane header)                                                                                                                                                                |
 | `minimize-2`                             | Restore a maximized helper-stack pane back to the normal split (pane header, §6 Pane header)                                                                                                                                           |
+| `expand`                                 | Expand a helper pane to the window (pane header, before maximize, T628 — §6 "Expanding a pane to the window"); accent ink while the pane is expanded                                                                                   |
 | `panel-left-close` / `panel-left-open`   | Collapse / show the left sidebar (Topbar button — §6 Collapse sidebars)                                                                                                                                                                |
 | `panel-right-close` / `panel-right-open` | Collapse / show the right auxiliary panel (Topbar button — §6 Collapse sidebars)                                                                                                                                                       |
 | `x`                                      | Close                                                                                                                                                                                                                                  |
@@ -641,7 +643,8 @@ Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P`
 | `⌘⇧B`              | Toggle the Fleet rail                                                                                                                                                                                                                                                     | global   | Renderer-only (no menu item), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                                    |
 | `⌘⇧D`              | Review the active folder's branch                                                                                                                                                                                                                                         | global   | Renderer-only; opens the Review pane (T164)                                                                                                                                                                                                                                                                                                                                                                      |
 | `F6` / `⇧F6`       | Focus the next / previous pane: the main terminal, then the helper panes in stack order, wrapping                                                                                                                                                                         | global   | **Shielded** (`pane.focusNext` / `pane.focusPrev`): works while a terminal holds focus, so the program there no longer gets F6. Inert while a dialog, palette or menu is open. On a Mac keyboard: Fn+F6 / Fn+⇧F6. See "Pane focus"                                                                                                                                                                               |
-| `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one                                                                                                                                                                                 | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
+| `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one. While a pane is **expanded to the window** it exits the expanded view instead (T628)                                                                                           | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
+| _unbound_          | Expand the focused helper pane to the window, or exit the expanded view (`pane.expandToWindow`, T628; not in the palette, like the other focus-dependent pane actions)                                                                                                    | global   | Renderer-only, no default chord (⌘⇧M is `pane.toggleMaximize`; two actions never share one). Esc and the pane's own button exit too — see "Expanding a pane to the window"                                                                                                                                                                                                                                       |
 | `⌘C` / `⌃⇧C`       | Copy terminal selection                                                                                                                                                                                                                                                   | terminal | Only with a selection; reads `term.getSelection()` (xterm's selection isn't a native DOM selection). On Mac, `editMenu` may intercept `⌘C` before xterm — see `menu.ts`                                                                                                                                                                                                                                          |
 | `⌘V` / `⌃⇧V`       | Paste into the terminal                                                                                                                                                                                                                                                   | terminal | Via `term.paste()` — respects _bracketed paste_, so a multi-line paste doesn't auto-submit in the Claude TUI                                                                                                                                                                                                                                                                                                     |
 | `⇧↩`               | Line break (without sending)                                                                                                                                                                                                                                              | terminal | Sends `\u000a` (LF, = Ctrl+J) to the PTY — Claude treats it as a newline; `Enter` alone (`\r`) sends. xterm's default ignores `Shift` and would send                                                                                                                                                                                                                                                             |
@@ -672,7 +675,8 @@ access (block agents, let agents read terminals, Modes ▸, Set / Clear parent f
 the older / archived peeks and
 the repo-group menu (rename, reset name, Clean up), the Cleanup, Scheduler, System
 Monitor and Containers takeovers, and every Settings tab ("Open Settings: General", …)
-have a keybindings id and can be given a chord in Settings → Keyboard Shortcuts; none
+have a keybindings id and can be given a chord in Settings → Keyboard Shortcuts (so do
+`layout.cycleSplitOrientation` and `pane.expandToWindow`); none
 ships with one except Rename folder (`F2`), closing the open takeover (`Esc`) and the
 Keyboard Shortcuts tab (`⌘⌥S`). Session actions act on the **selected** session and are available only
 when the Session menu would show that item for it; folder actions act on the
@@ -3985,6 +3989,8 @@ helper-stack** (split), and between the **content and the Fleet rail** (expanded
   them, so they are not an edge. The hit area keeps its full 6px width; only the line moves.
 - **Collapsed / minimized.** A collapsed sidebar and a minimized Fleet rail render **no
   divider** (`v-if`): the minimized rail's own `border-l` is then the only edge.
+  With Floating panels on the dividers change look and the gap is kept in these states; see
+  "Floating panels layout (T626)" below.
 - **Background:** only the 1px stripe is colored — `--border-2` (default) →
   `--accent-line` on hover (via `group-hover`, since the hover is on the outer hit-area).
 - **Cursor:** `col-resize` when hovering over it.
@@ -4052,8 +4058,133 @@ aria-orientation="vertical"`, a 6px `cursor-col-resize` hit area with a 1px `--b
 - **Shortcut.** `layout.cycleSplitOrientation` (group Views, **unbound** by default, in the
   command palette) cycles the setting exactly as the Topbar button does. Label key
   `keybindings.actions.layout_cycleSplitOrientation`.
-- **Motion.** Switching orientation re-lays the panes out instantly in this slice; the animated
-  switch belongs to the motion work (floating-layout S-7). Divider drags never animate.
+- **Motion.** Switching orientation animates (§7 "Layout motion", T628). Divider drags never animate.
+
+#### Floating panels layout (T626)
+
+An **opt-in** layout in the style of VS Code's floating panels: every pane is an **island** (its
+own border and rounded corners) sitting on a darker **canvas**, with an even gap between islands
+and no visible divider line at rest. **Off by default.** With it off, the app renders exactly as
+it does without this section: the setting adds no pixel to the default layout.
+
+- **Setting and attribute.** Settings → Appearance → **Floating panels** (a switch). Persisted in
+  `settings.json` as `floatingPanels` (boolean, absent = `false`), like `splitLayout`, and applied as
+  the attribute `data-floating="on"` on `<html>`, the same mechanism as `data-theme`. When off the
+  attribute is **absent** (not `"off"`). **Every** floating rule is scoped to
+  `:root[data-floating]`; nothing outside that scope changes.
+- **Canvas.** The window background behind the islands is the `--canvas` token (§2 Surfaces, §9),
+  not `--bg`: `color-mix(in oklab, var(--bg) 62%, black)` on every dark theme, a **hand-picked**
+  value on each light theme (the mix would read as a heavy grey slab there). See the per-theme
+  table in §9. An extension theme inherits the dark-theme mix.
+- **Gap = 6px, everywhere.** `--float-gap` is the empty space between two islands' outer borders
+  AND between an island and the window edge (top, left, right, and the bottom edge above the
+  footer). The row of columns carries `padding: var(--float-gap)`.
+- **Radius.** Every island is fully rounded with `--radius` (7px). `--radius-sm` (5px) is used
+  only for surfaces **inside** an island (rows, minicards, buttons), unchanged.
+- **Border.** Each island has its **own** 1px `--border` on all four sides and never shares an edge
+  with another island. A flat inner divider that used to separate two regions of one box
+  (`border-b` under the sidebar toolbar, `border-t` over the Fleet rail sections, the Return here
+  zone's bottom rule) is replaced by the island gap and is not drawn.
+- **Island background.** Sidebar-family islands (sidebar toolbar, Return here, folder list, dock,
+  Fleet rail header/list/sections) paint `--sidebar`; content-family islands (Topbar, the session
+  area, every helper pane) paint `--bg`.
+
+##### Islands and the grid
+
+One grid, three columns. The sidebar column and the Fleet rail column are stacks of islands; the
+middle column is the Topbar over a row holding the session area and the helper stack.
+
+| Column     | Island, top to bottom (`data-island`)                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| Sidebar    | `sidebar-toolbar` · [`sidebar-return`] · `sidebar-list` · `sidebar-dock`                               |
+| Middle     | `topbar` · then `session` and each helper pane (`helper-pane`), side by side or stacked                |
+| Fleet rail | `rail-header` · `rail-list` · [`rail-needs-you`] · `rail-would-have` (minimized: one `rail-minimized`) |
+
+- **Top band.** `sidebar-toolbar`, `topbar` and `rail-header` are the **band**: three islands of
+  `--float-band` (42px) on one line, sharing top and bottom (y = gap … gap + 42). They are marked
+  `data-island-band`.
+- **Below the band.** The first island under each column starts at the same y: band + gap
+  (`6 + 42 + 6 = 54px` from the window top). That island is `sidebar-return` when it shows, else
+  `sidebar-list`; the session area and the first helper pane in the middle column; `rail-list`
+  in the Fleet rail.
+- **Columns are separated by the dividers.** The three vertical dividers are exactly
+  `--float-gap` wide (6px, the same `w-1.5` hit column as today), so the divider **is** the gap
+  and the drag handle at once. Between two helper panes the gap is `--float-gap` as well
+  (a flex gap in side-by-side; the width splitter itself, 6px, when stacked).
+- **Main is not one box.** The Topbar, the session area and each helper pane float on their own.
+  The Topbar is separated from the row below by `--float-gap`.
+- **Bottom edge.** The lowest island of every column ends `--float-gap` above the footer.
+
+##### Dividers in the floating layout
+
+- **At rest** no line is drawn. The 6px hit column stays (`cursor-col-resize` / `row-resize`,
+  drag, double-click reset all unchanged); it sits **in the gap**.
+- **On hover** a short **grip** appears centered in the gap: **2px × 36px**, fully rounded
+  (`999px`), `--accent-line`, with the `--dur-fast` / `--ease` color transition. The stacked
+  (horizontal) divider shows the same grip rotated: **36px × 2px**.
+- A helper pane's header keeps acting as the resize handle between panes (unchanged); its
+  top-edge hover line is not drawn between floating islands (the gap and the grip carry it).
+
+##### Footer exception
+
+The app footer is **not** an island. It stays **flush and full width**: no margin, no radius, no
+side border. It keeps `--surface` and a 1px `--border` **top rule**. The islands keep
+`--float-gap` above it.
+
+##### Sidebar column: Return here and drill Back row
+
+- `sidebar-return` (the Return here zone) is its **own island** between the toolbar and the list,
+  `--float-gap` from both. When the zone is empty it is not rendered and the toolbar and the list
+  are 6px apart as usual. Its internal bottom divider (the `aria-hidden` `border-t`) is hidden;
+  the island gap separates it from the list.
+- In **drill mode** `sidebar-list` is the drill view's own root, and it **starts with the pinned
+  Back row** (`data-drill-back`, BUG-248): the Back row is the first child of the island, so it
+  sits on the island's top edge and the island's rounded corners clip it. No extra rule is needed
+  (the Back row already lives outside the scroller); the default layout is untouched.
+
+##### Sidebar dock (slot)
+
+The sidebar's lower island is a **slot**, not a footer row. It holds Add folder, the watcher pill
+and Settings today, and it must accept more sections later without a layout change.
+
+- **Contract.** The island is the `<footer data-island="sidebar-dock">` element; each **section** is
+  a direct child marked `data-dock-section`. Sections stack top to bottom; the island's height is
+  the sum of its sections (the folder list above takes the remaining height); every section after
+  the first is separated from the one above by a 1px `--border` top rule
+  (`[data-dock-section] + [data-dock-section]`), so a new section is a drop-in child, never a new
+  hard-coded row or border. A section owns its own padding (today `6px 8px`).
+- **Position.** The dock is the last island of the sidebar column, `--float-gap` below the list
+  and `--float-gap` above the footer.
+- Off, the dock is the same footer it always was: one section, a 1px `--border` top rule.
+
+##### Fleet rail sections (slots)
+
+The expanded Fleet rail is the same idea for its lower part: after the `rail-list` island,
+each section is a direct child of the rail with a `data-island` of its own and a
+`data-rail-section` marker, `--float-gap` apart:
+
+1. `rail-needs-you`, present **only while something is pending** (as today);
+2. `rail-would-have`.
+
+The lowest one sits `--float-gap` above the footer. A future section is another
+`data-rail-section` child, not a layout change. The **minimized** rail is a **single**
+`rail-minimized` island (44px wide, its own border on all sides, no separate `border-l`).
+
+##### Collapsed and hidden states keep the gap
+
+A divider that disappears must never take the gap with it. With the switch on:
+
+| State                | What supplies the 6px                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| Fleet rail minimized | The rail column carries `margin-left: var(--float-gap)` (its divider is not rendered).       |
+| Fleet rail hidden    | The row's own padding is the gap to the window edge.                                         |
+| Sidebar collapsed    | The row's own padding is the gap to the window edge (the divider is not rendered).           |
+| Helper stack closed  | The session area simply spans the middle column; the divider next to the rail is unaffected. |
+
+##### Motion
+
+None added here: the grip fades in with `--dur-fast`; layout changes are instant in this slice
+(the layout motion belongs to floating-layout S-7). Respects `prefers-reduced-motion` via §7.
 
 #### Origins of a helper-stack pane
 
@@ -4084,6 +4215,14 @@ which was too dim over the terminal content.
 - **Content (left):** pane-type icon (`terminal` for shell, `bot` for claude,
   `git-fork` for a pending fork, 12px `--text-3`) + pane name (`cwd` basename,
   truncated with `…` on overflow). The native `title` exposes the full path on hover.
+- **Expand button (right, before maximize; T628):** `expand` icon 12px, 18×18px target, the
+  same anatomy as the maximize button (`--text-3` → `--text`, `--surface-2` hover,
+  `mousedown.stop`). The glyph does not change while the pane is expanded; its ink turns
+  `--accent` and it carries `aria-pressed="true"`. `aria-label`/`title` =
+  `helperPane.expand` / `helperPane.exitExpand`, the title with the `pane.expandToWindow`
+  chord when bound. A separate button, not a third state of maximize. See "Expanding a pane
+  to the window". Every pane type carries it in the same place: shell / Claude (`HelperPane`),
+  `BrowserPane`, `MarkdownPane`, `MemoryPane`, `ExplorerPane` and `DiagramPane`.
 - **Maximize button (right, before close):** `maximize-2` icon 12px, 18×18px target,
   same hover treatment as the close button. Swaps to `minimize-2` while this pane IS
   the maximized one. `aria-label`/`title` = `helperPane.maximize` /
@@ -4121,6 +4260,43 @@ while one is maximized (ratios are meaningless in that state). The maximized
 pane id is **ephemeral, per-worktree state** — never persisted to `helpers.json`
 — so it resets to the normal split on a worktree switch or app restart.
 
+#### Expanding a pane to the window (T628)
+
+Maximize works inside the helper stack. **Expand to window** is the stage beyond it: one helper
+pane takes the whole working area of the window. The Topbar and the footer always stay; what else
+hides is the **Expand hides** setting.
+
+- **Enter and exit.** The pane header's `expand` button (before maximize) toggles it. Exits:
+  **Esc**, the same button, or `⌘⇧M` (`pane.toggleMaximize`: while a pane is expanded it exits the
+  expanded view instead of toggling maximize, so the chord stays one action's). `pane.expandToWindow`
+  is a separate bindable action with **no default chord**; it toggles the expanded view for the
+  focused helper pane. Esc is a window listener in the bubble phase that ignores a press an overlay
+  or a text field already took, and a press made inside a terminal: there Esc belongs to the
+  program (Claude Code cancels with it), so a terminal exits with the button or `⌘⇧M`. Only one
+  pane is expanded at a time; expanding another pane re-targets directly.
+- **Expand hides (Settings → Appearance → Layout, a two-option segmented control after Floating panels;
+  `settings.json` key `expandHides`).** `everything`
+  (default): the sidebar, the session area and the Fleet rail collapse, and only the Topbar, the
+  pane and the footer remain. `session-only`: only the session area collapses; the sidebar and
+  the Fleet rail stay. Both variants also collapse the other helper panes to nothing (no 24px
+  strips, unlike maximize), and the dividers that touched a collapsed column collapse with it.
+- **No remount, no move.** The pane is never re-parented. It grows because everything around it
+  collapses (`.lm-collapse`, below), so an xterm keeps the same `Terminal` and PTY, and a browser
+  pane keeps its native view. The main terminal inside the collapsed session area keeps the pixel
+  size it had (its host is pinned while the area is collapsed), so it never reflows to two columns;
+  it reflows at most once when the expanded view ends.
+- **State.** Ephemeral, per worktree, never written to `helpers.json`, and cleared when the
+  operator switches worktree or the expanded pane closes. It is independent of maximize: exiting
+  expand returns to whatever maximize or split ratio was there before.
+- **Focus.** The F6 ring holds only the expanded pane (the main terminal and the other panes are
+  not reachable while hidden). Entering expand focuses the pane; exiting returns focus to it.
+- **Both layouts, both orientations.** With Floating panels on, the Topbar island, the expanded
+  pane's island and the footer keep the 6px gap and the canvas frame; with it off, the pane meets
+  the footer as today. Side by side and stacked expand the same way (the collapsed session area
+  gives up its share along the split axis).
+- **Browser panes.** A native view cannot follow the animation, so it is swapped for the JPEG
+  stand-in below for the whole motion (see §7 "Layout motion").
+
 #### Pane focus (T486 U5b)
 
 The main terminal and every helper pane are **focus regions**. Each root carries
@@ -4132,7 +4308,8 @@ holding `document.activeElement` is the focused one.
   is the foreground layer (not covered by a takeover or the Folder View), then the
   current folder's helper panes in stack order when the panel is shown and not
   collapsed. While a pane is maximized, the ring holds only that pane (the others are
-  24px headers). Focus outside the ring goes to the first region (`F6`) or the last
+  24px headers); while a pane is expanded to the window it holds only that pane too, and not
+  the main terminal (T628). Focus outside the ring goes to the first region (`F6`) or the last
   (`⇧F6`); an empty ring does nothing.
 - **What takes focus.** An xterm pane focuses its terminal (its root, `tabindex="-1"`,
   while the terminal is not live yet). The Markdown, Memory and Explorer panes focus
@@ -5294,6 +5471,84 @@ already looking at that repo's session.
 - **Labels (i18n):** `topbar.roadmapBoard` / `topbar.prStack` (`title` + `aria-label`).
   Short labels → no trailing period (§8).
 
+#### Topbar overflow (BUG-252)
+
+The Topbar never lets its title and its controls collide. When the right cluster does not fit, the
+actions leave the bar **one at a time, lowest priority first**, into a `…` **More** menu at the end of
+the bar. They come back, one at a time, as space returns. Nothing is removed and no action changes
+what it does: the menu runs the same handler as the button.
+
+- **What can overflow.** Every action button of the right cluster: `new-session` (folder view only),
+  `roadmap`, `pr-stack`, `review`, `open-folder`, `editor`, `github-pulls`, `explorer`, `terminal`,
+  `browser`, `split-layout`, `panel-right`. These never overflow: the left sidebar toggle (the
+  collapsed sidebar must always be reopenable) and the Activity bell (a badge and a popover of its
+  own, and it is reachable with nothing selected).
+- **Priority, declared once.** The order is one list in code (`TOPBAR_OVERFLOW_ORDER` in
+  `lib/topbar-overflow.ts`), written **hide first → hide last**. Nothing else decides who leaves.
+
+  | # (leaves…) | Action         | Why it sits there                                                      |
+  | ----------- | -------------- | ---------------------------------------------------------------------- |
+  | 1st         | `github-pulls` | Leaves Harnu for the browser; also hidden when `origin` is not GitHub  |
+  | 2nd         | `open-folder`  | Leaves Harnu for the file manager                                      |
+  | 3rd         | `editor`       | Leaves Harnu for an editor (or a shell pane)                           |
+  | 4th         | `explorer`     | Opens a pane; the file tree is also reachable with its shortcut        |
+  | 5th         | `split-layout` | A rare preference toggle; also reachable from Settings and its command |
+  | 6th         | `browser`      | Opens a pane, right next to Terminal                                   |
+  | 7th         | `terminal`     | Opens a pane; reachable with its shortcut                              |
+  | 8th         | `review`       | A per-repo takeover that acts inside Harnu                             |
+  | 9th         | `pr-stack`     | A per-repo takeover that acts inside Harnu                             |
+  | 10th        | `roadmap`      | The per-repo board: the view operators open most                       |
+  | 11th        | `panel-right`  | The only way to reopen a collapsed helper panel without the keyboard   |
+  | 12th (last) | `new-session`  | The primary action of a folder with no session                         |
+
+  An action that is not present right now (no `origin`, no helper panes, a session instead of a
+  folder) is not in the list that frame, so it neither takes room nor leaves a gap.
+
+- **Order in the bar and in the menu.** Both keep the cluster order `[new-session] [roadmap]
+[pr-stack] [review] [open-folder] [editor] [github-pulls] [explorer] [terminal] [browser]
+[split-layout] [panel-right] […]`, whatever the priority order is. The `…` button is last; it is
+  drawn only while at least one action is hidden.
+- **Minimum title width: 96px.** The title (the session name, or the folder name in the folder
+  view) is a truncating span with `min-width: 96px` (its border box, padding and border included, so the room it takes in the bar is 10px less and the budget errs on the safe side): it ends in an ellipsis as the bar narrows, and
+  actions start to leave **only once the title is at 96px**. The breadcrumb folder label before it
+  truncates too, to its icon and separator at the very end, so no part of the left side can push
+  into the cluster. The provider and Orchestrator badges that follow the title (marked `data-topbar-extra`) keep their width and are counted in the reserve. The folder view's branch badge shrinks, with an ellipsis, after the title is at its floor, down to its 11px icon, and reserves only that icon, so a long branch name never takes the actions' room. The mission pill already shrinks with its own ellipsis and reserves nothing. Below the width where even `[…]` plus the
+  96px title do not fit (about 240px of Topbar, far under the 800px window minimum) the bar is
+  simply full; nothing is hidden beyond the last action.
+- **The fit rule.** Every action button is 26px wide with a 2px gap, so the number that fit is a pure
+  function of one number, the width left for the cluster: the bar width, minus the 16px padding on
+  both sides, the sidebar toggle, the bell, the 12px gaps between regions, the breadcrumb's minimum,
+  the badges and the 96px title. If an action has to leave, the `…` button takes a slot of the same
+  size, so one more action leaves with it. The math lives in `planTopbarOverflow`
+  (`lib/topbar-overflow.ts`) and is unit-tested; the component only measures and renders.
+- **Measuring.** A `ResizeObserver` on the header feeds the plan, and a post-render watch re-plans when the list of present actions, the badges, the breadcrumb or the sidebar state (the macOS inset changes the padding) change. It is never polled and never read per frame, and it commits only when the hidden set changes. A header with no width yet (not laid out) is left alone: nothing is hidden. **Hysteresis:** an action
+  that is hidden comes back only when it fits with **8px** to spare, so a width sitting on the
+  boundary does not flip an action in and out. Hiding and returning are instant (no animation): a
+  moving control under the pointer is worse than a jump.
+- **The `…` button.** Same anatomy as every right-cluster button: 26×26, `--text-3` → `--text` with a
+  `--surface` hover, 14px `ellipsis` glyph at stroke 1.5; `--accent-soft` + `--accent` while its menu
+  is open. `aria-haspopup="menu"`, `aria-expanded`, `title` and `aria-label` =
+  `topbar.moreActions` ("More actions"), `data-test="topbar-more"`.
+- **The menu** is the Context menu of §6 (`--surface`, 1px `--border-2`, 6px radius, 4px padding,
+  `--shadow-pop`, 12px items, `6px 8px` padding, 9px icon-to-text gap, the shortcut hint on the right
+  edge in `--text-4` mono 10.5px, `.anim-fade-in-scale`), anchored under the `…` button with its right
+  edge on the button's (the Activity bell convention), 200px minimum width, and registered as a native
+  overlay so a browser pane under it freezes. Each row is one hidden action: the **same icon**, the
+  **same label** (the button's `aria-label`), the **same chord hint**, the **same handler**. An
+  **active** action (Roadmap, PR Stack and Review while their view is open; split-layout while the
+  setting is an explicit override) keeps its look in the row: the three view toggles (Roadmap, PR Stack, Review) keep `--accent-soft` + `--accent` and are exposed as a checked `menuitemcheckbox` (`aria-checked`), split-layout keeps `--accent` ink only; a disabled one is dimmed to `--text-disabled` and skipped by the
+  arrows. Rows are in the bar's order, with no separators and no header.
+- **Keyboard.** `Enter`, `Space` or `ArrowDown` on the `…` button opens the menu with the first row
+  focused (`ArrowUp` opens it on the last). Inside: `ArrowDown` / `ArrowUp` move (wrapping),
+  `Home` / `End` jump, `Enter` or `Space` runs the action, closes the menu and leaves focus on the `…`
+  button, `Esc` closes it and returns focus to the `…` button, and `Tab` closes it. Roving
+  `tabindex`: only the focused row is tabbable. Click outside closes it without moving focus.
+- **Floating panels.** Unchanged. The Topbar is the same 42px band island with or without them; only
+  the width the cluster gets differs, because the island borders and gaps take theirs. The menu is a
+  popover above the islands and is not clipped by them.
+- **Copy (i18n).** `topbar.moreActions` = "More actions" (no trailing period). Every action row reuses
+  its button's existing key; the menu adds no other string.
+
 #### Memory pane (project memory viewer, non-PTY)
 
 A helper-stack pane that **renders a repo's project memory** (§4.2) — the T79 S3
@@ -5333,7 +5588,15 @@ translated in pt-BR).
   on top** (`buildTimeline`, pure). Each row: **date** (`YYYY-MM-DD`, mono
   `tabular-nums` 10.5px `--text-4`) + **title** (digest's first `# `, 12px, truncated) +
   — when the digest references a session — the `arrow-up-right` icon (`--text-4`) on
-  the right; below, the **visible provenance** (raw `author` `human`/`agent` + `branch`
+  the right; below, on the provenance line after the branch (so the title keeps its width),
+  an **evidence badge** when the digest's header names one (memory U1 S-8, `data-testid="memory-evidence-badge"`): the chip
+  shape of the Cleanup memory chip (`rounded-xs`, `1px` border, `px-1.5 py-px`, 10.5px
+  `text-eyebrow`), **"No commits"** and **"No git"** in the Badge _Default_ triple
+  (`--surface` / `--text-3` / `--border`), **"Recovered"** (a removed folder's
+  transcript) in the Badge _Accent_ triple (`--accent-soft` / `--accent` /
+  `--accent-line`), each with a one-sentence `title`
+  (`memoryPane.evidence.*Hint`). A commit-backed digest and any digest written before the
+  token existed show **no badge**. That line is the **visible provenance** (raw `author` `human`/`agent` + `branch`
   with the `git-branch` icon, 10.5px `--text-4`) — visible per §7 (cross-session
   prompt-injection mitigation). A row with a session reference is a `<button>`
   (`cursor-pointer`, hover `--surface-2`, `title` `memoryPane.openSession`); **clicking
@@ -10883,7 +11146,12 @@ now is not), and no existing folder spells the same slug.
   `MessagesSquare` icon (`--text-4`, 14px); the folder's name in 12px mono `--text` (`orphan-folder`, full
   path as the tooltip) over a one-line meta in 11px `--text-4`: "{n} sessions · last {ago}"; when the project
   folder also holds Claude's auto-memory notes, a `Warning`-ink chip **"includes memory notes"**
-  (`orphan-memory`, 10.5px, `--warning-soft` / `--warning-line`). The size right (13px, tabular), then an
+  (`orphan-memory`, 10.5px, `--warning-soft` / `--warning-line`). Right after it, a **digest chip**
+  (`orphan-digest`, same shape and size as the memory chip, `data-state` says which): **"Digested"** in the
+  Badge _Success_ triple (`--green-soft` / `--green` / `--green-line`) when every session worth a digest
+  (at least three of your messages) has one in the owning repo's memory, **"{n} not digested"** in the
+  memory chip's Warning triple when `n` of them have none, and no chip when none is worth a digest or
+  the gather did not say. The size right (13px, tabular), then an
   icon-only **Delete** button (`Trash2`, red on hover, `aria-label` "Delete the transcripts of {name}",
   `orphan-delete`), disabled while that row's delete is running.
 - **Confirm dialog** (`CleanupTranscriptsConfirmDialog.vue`, `data-testid="orphan-dialog"`, the bulk
@@ -10894,6 +11162,17 @@ now is not), and no existing folder spells the same slug.
   has memory notes a second line "{n} of them also hold Claude memory notes for that folder."
   (`orphan-dialog-memory`); footer "{n} folders · {size}" (`orphan-dialog-total`), **Cancel**
   (focused first) and **Move to trash** (`Trash2`, Danger). Esc closes the dialog only.
+- **Undigested sessions (memory U1 S-6).** When any listed row has sessions with no digest, each such row
+  gets a third line in 11px `--text-4` (`orphan-dialog-digest`): "{n} not digested · digests are kept in
+  {home}" (the repo folder, full path as the tooltip), or "No repository was found for this folder, so no
+  digest can be written." when there is none. Below the recoverable callout a second Warning callout
+  (`orphan-dialog-undigested`, `TriangleAlert`) says "{n} sessions in this selection have no digest yet.
+  Trashing them loses what they did." and, when a repository exists for at least one of them, "Cancel to
+  keep them: Harnu tries the digest again on the next scan." Under it a checkbox **"Trash without a
+  digest"** (`orphan-dialog-undigested-ack`); **Move to trash stays disabled until it is ticked**, together
+  with the not-found box when that applies. Cancel is always the way out, so a project with undigested
+  sessions is never a dead end. Ticking sends the undigested ids in `confirmedUndigested`. A refusal that still comes back (`needs-undigested-confirmation`, `needs-not-found-confirmation`) is a known
+  refusal code with its own sentence in the toast and the block panel, saying what to do next.
 - **Proven gone, or only "Folder not found".** A folder counts as gone only when that is **positively
   proven**: Harnu removed it itself (its own ledger), git lists it as prunable in a repo that still exists,
   or it sits under a known worktrees parent (`<repo>/.claude/worktrees`, `<repo>-worktrees`) that exists
@@ -10907,7 +11186,7 @@ now is not), and no existing folder spells the same slug.
   ticked**. The recency rule (nothing written in the last 24 hours) applies to both groups, and both go to
   the trash.
 - Confirming sends `gc:clean(ids, { confirmed, expected })` (plus `confirmedNotFound` for the ticked
-  not-found ids), each id `transcripts:<slug>` confirmed by its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
+  not-found ids and `confirmedUndigested` for the ticked undigested ids), each id `transcripts:<slug>` confirmed by its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
   or is no longer an orphan. A refusal is shown by the usual toast.
 
 **Left by removed worktrees (unit D, AC-D3).** A fourth block on the Docker card, drawn only when the
@@ -13957,32 +14236,66 @@ appears in the folder branch only.
 Short movement, ease-out, rarely noticed. **If the user notices the animation,
 it ran too long.**
 
-| Action                  | Duration     | Easing      | Description                                                                                                                                                                                               |
-| ----------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hover row               | 100ms        | ease        | Background fade + scale 1.003                                                                                                                                                                             |
-| Select                  | 120ms        | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
-| Review selection bar    | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
-| Expand project          | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
-| Overlay (dialog/menu)   | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
-| Divider hover           | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
-| Pulse (active status)   | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
-| Agent activity pulse    | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
-| Terminal cursor         | 1s           | steps(1)    | Blinking accent block                                                                                                                                                                                     |
-| Chart bar (BI)          | `--dur`      | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
-| Copy button reveal      | `--dur-fast` | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
-| Copy → copied           | 1.5s         | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
-| Fleet card entrance     | 620ms        | custom¹     | Whole card fades + slides 22px from the right, as one unit (`.card-enter`)                                                                                                                                |
-| Fleet card ring fade    | 900ms        | custom¹     | Border ring eases in after the entrance settles (suppressed during the slide)                                                                                                                             |
-| Fleet rail section      | `--dur-slow` | `--ease`    | Needs-you / Would-have collapse via `grid-template-rows: 1fr↔0fr` (`.collapsible`)                                                                                                                        |
-| Rescan spin             | 0.7s loop    | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
-| Pasted-images pill bump | 300ms        | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
-| Lightbox image swap     | `--dur`      | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
-| Jump flash              | `--dur-slow` | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
-| PR focus ring           | `--dur-slow` | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
+| Action                       | Duration     | Easing      | Description                                                                                                                                                                                               |
+| ---------------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hover row                    | 100ms        | ease        | Background fade + scale 1.003                                                                                                                                                                             |
+| Select                       | 120ms        | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
+| Review selection bar         | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
+| Expand project               | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
+| Overlay (dialog/menu)        | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
+| Divider hover                | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
+| Pulse (active status)        | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
+| Agent activity pulse         | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
+| Terminal cursor              | 1s           | steps(1)    | Blinking accent block                                                                                                                                                                                     |
+| Chart bar (BI)               | `--dur`      | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
+| Copy button reveal           | `--dur-fast` | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
+| Copy → copied                | 1.5s         | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
+| Fleet card entrance          | 620ms        | custom¹     | Whole card fades + slides 22px from the right, as one unit (`.card-enter`)                                                                                                                                |
+| Fleet card ring fade         | 900ms        | custom¹     | Border ring eases in after the entrance settles (suppressed during the slide)                                                                                                                             |
+| Fleet rail section           | `--dur-slow` | `--ease`    | Needs-you / Would-have collapse via `grid-template-rows: 1fr↔0fr` (`.collapsible`)                                                                                                                        |
+| Rescan spin                  | 0.7s loop    | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
+| Pasted-images pill bump      | 300ms        | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
+| Lightbox image swap          | `--dur`      | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
+| Jump flash                   | `--dur-slow` | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
+| PR focus ring                | `--dur-slow` | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
+| Pane maximize / restore      | `--dur-slow` | `--ease`    | The maximized pane grows and the others shrink to their 24px strip by `flex`; one pass (T628). Reduced motion: snaps                                                                                      |
+| Expand to window / restore   | `--dur-slow` | `--ease`    | The collapsed columns and panes go to 0 (`.lm-collapse`: size, opacity, margin, border) while the expanded pane grows; no remount (T628). Reduced motion: snaps                                           |
+| Fleet rail minimize / expand | `--dur-slow` | `--ease`    | The rail column animates `width` between 300px (or the dragged width) and the 44px strip (T628). Reduced motion: snaps                                                                                    |
+| Sidebar collapse / expand    | `--dur-slow` | `--ease`    | The sidebar and its divider animate `width` to 0 and back, with `opacity` (T628). Reduced motion: snaps                                                                                                   |
+| Split orientation switch     | `--dur-slow` | `--ease`    | The session area and the helper stack slide and scale from their old box to the new one (FLIP, one pass) (T628). Reduced motion: snaps                                                                    |
 
 ¹ `cubic-bezier(0.22, 0.61, 0.36, 1)` — a touch snappier than the default
 `--ease`, since this is a list-insertion cue that must read as immediate, not
 a decorative overlay entrance.
+
+### Layout motion (T628)
+
+Size changes of the big layout containers animate briefly instead of snapping: pane maximize and
+restore, expand to window and back, Fleet rail minimize and expand, sidebar collapse and expand, and
+the split orientation switch. All use `--dur-slow` and `--ease` (never a new duration or curve).
+
+- **Transient, never ambient.** The transitions exist only while `[data-app-shell][data-layout-motion]`
+  is set. The layout store sets it for one `--dur-slow` (plus a short slack) around a state change that
+  is NOT a drag: a divider drag never sets it, so the size follows the pointer with no easing, exactly
+  as before. Elements opt in with `data-lm`; `transition` lists only the properties a collapse or a
+  resize changes (`flex`, `width`, `height`, `opacity`, `margin`, `border-width`, `padding`).
+- **Collapse classes.** `.lm-collapse` (a flex item sized by `flex`: the session area, the helper
+  stack, a pane), `.lm-collapse-w` (sized by `width`: the sidebar, the Fleet rail column, a vertical
+  divider) and `.lm-collapse-h` (a horizontal divider) bring an element to zero size with `overflow:
+hidden`, `opacity: 0`, no margin or border, and `pointer-events: none`. They replace `display: none` /
+  `v-show`, which cannot animate. The floating-panels rules are untouched; the collapse classes win over them
+  with `!important`.
+- **xterm reflows once.** A terminal pane does not refit on each frame of a motion: while the motion
+  flag is set its resize observer only arms one trailing refit, so the grid changes once, after the
+  last frame. Outside a motion it refits per observation as before (drags stay live).
+- **Browser panes.** A browser pane is a native `WebContentsView` and cannot follow CSS. The motion
+  freezes it exactly as a splitter or sidebar drag does (`browserDrag(true)`; see "Frozen frame" in
+  the browser pane section): the JPEG stand-in fills the pane, stretched with the host while it
+  animates, and when the motion ends the pane reports its final rectangle, the view comes back live
+  and the stand-in is removed on the next frame.
+- **Reduced motion.** With `prefers-reduced-motion: reduce` the transitions are `none` (extending the
+  existing reduce block in `main.css`, not a second one), the layout store never sets the flag and the
+  browser pane is never frozen: the layout snaps as it did before.
 
 ### Fleet state ring (Fleet rail)
 
@@ -14256,6 +14569,11 @@ codebase is a bug to fix.
   --shadow-pop:
     0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 12px 32px rgba(0, 0, 0, 0.45),
     0 2px 8px rgba(0, 0, 0, 0.3);
+
+  /* floating panels (§6 "Floating panels layout"), used only under :root[data-floating] */
+  --canvas: color-mix(in oklab, var(--bg) 62%, black); /* dark themes; light themes override it */
+  --float-gap: 6px; /* between islands, and from an island to the window edge */
+  --float-band: 42px; /* height of the three top-band islands */
 }
 
 body {
@@ -14327,6 +14645,30 @@ since `data-theme` only applies the active theme).
 | `gruvbox-light`    | Gruvbox Light    | light | orange       |
 | `nord`             | Nord             | dark  | frost        |
 | `monospace`        | Monospace        | dark  | grayscale    |
+
+**Canvas per theme (Floating panels).** `--canvas` is the window backdrop behind the islands
+(§6 "Floating panels layout"). It is **not** part of the 20-token contract a theme must define:
+the base `:root` derives it from the theme's own `--bg` (`color-mix(in oklab, var(--bg) 62%, black)`),
+which is right for every dark theme and is also what an extension theme gets. The four light
+themes **override it with a hand-picked value**, because that mix would read as a heavy grey slab
+on a light surface; each pick is one step below the theme's `--sidebar` and above its `--border`,
+so the 1px island border stays visible on it.
+
+| `data-theme`       | `--bg`    | `--canvas`                                                            |
+| ------------------ | --------- | --------------------------------------------------------------------- |
+| `default-dark`     | `#17120e` | mix (`#070503`)                                                       |
+| `tokyo-night`      | `#1a1b26` | mix (`#08090f`)                                                       |
+| `dracula`          | `#282a36` | mix (`#101117`)                                                       |
+| `catppuccin-mocha` | `#1e1e2e` | mix (`#0a0a13`)                                                       |
+| `one-dark`         | `#282c34` | mix (`#101216`)                                                       |
+| `github-dark`      | `#0d1117` | mix (`#030407`)                                                       |
+| `gruvbox-dark`     | `#282828` | mix (`#101010`)                                                       |
+| `nord`             | `#2e3440` | mix (`#13161d`)                                                       |
+| `monospace`        | `#0c0c0c` | mix (`#030303`)                                                       |
+| `light`            | `#fafafa` | **`#ececef`** (hand-picked, = its `--surface-2`)                      |
+| `github-light`     | `#ffffff` | **`#eaeef2`** (hand-picked, = its `--surface-2`)                      |
+| `catppuccin-latte` | `#eff1f5` | **`#d8dce5`** (hand-picked, between its `--surface-2` and `--border`) |
+| `gruvbox-light`    | `#fbf1c7` | **`#ebdbb2`** (hand-picked, = its `--surface-2`)                      |
 
 Adding a theme = (1) a complete `:root[data-theme='<id>']` block in
 `themes.css`, (2) an entry in `THEMES` + `THEME_META` in `theme.ts`, (3) a label in

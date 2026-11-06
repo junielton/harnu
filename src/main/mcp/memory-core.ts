@@ -728,6 +728,32 @@ export interface DigestMeta {
   branch?: string
   /** FULL session id from the provenance stamp, when present (may exceed the 8-char stem). */
   sessionId?: string
+  /**
+   * What the digest was written from, read off its header line (`· evidence: <kind>_`): commits,
+   * no commits, a folder outside git, or a removed folder. Absent for a digest without the token.
+   */
+  evidence?: DigestEvidence
+}
+
+/** The evidence kinds a digest header can carry (memory U1, "Evidence token"). */
+export type DigestEvidence = 'commits' | 'no-commits' | 'no-git' | 'orphan'
+
+/** The header line `renderDigest` writes: an italic line ending `· evidence: <kind>_`. */
+const EVIDENCE_TOKEN = /^_.*·\s*evidence:\s*(commits|no-commits|no-git|orphan)_\s*$/
+
+/**
+ * The evidence kind of the latest digest header in the body, or undefined without one. A session
+ * page is appended to by each later digest of the session that day, so the last header is the
+ * session's current state (first no commits, later commits reads "commits").
+ */
+function digestEvidence(content: string): DigestEvidence | undefined {
+  const { body } = splitFrontmatter(content)
+  let kind: DigestEvidence | undefined
+  for (const rawLine of body.split(/\r?\n/)) {
+    const m = EVIDENCE_TOKEN.exec(rawLine.trim())
+    if (m) kind = m[1] as DigestEvidence
+  }
+  return kind
 }
 
 /** A raw digest file fed to {@link buildTimeline}: its filename and full content. */
@@ -801,6 +827,8 @@ export function parseDigestMeta(name: string, content: string): DigestMeta {
   if (prov.author) meta.author = prov.author
   if (prov.branch) meta.branch = prov.branch
   if (prov.sessionId) meta.sessionId = prov.sessionId
+  const evidence = digestEvidence(content)
+  if (evidence) meta.evidence = evidence
   return meta
 }
 

@@ -6,7 +6,7 @@ import { useReaperStore } from '../stores/reaper'
 import { formatBytes } from './system-monitor-format'
 import { identText, identTitle } from './cleanup-ident'
 import { reasonLine } from './cleanup-row'
-import { groupOrphanTranscripts, splitByProof } from '../lib/gc-orphans'
+import { groupOrphanTranscripts, orphanDigestState, splitByProof } from '../lib/gc-orphans'
 import { relativeTime } from '../composables/useRelativeTime'
 import CleanupTimeline from './CleanupTimeline.vue'
 import SweepConfirmDialog from './SweepConfirmDialog.vue'
@@ -242,6 +242,26 @@ function repoLabel(item: ReapItem): string {
               data-testid="orphan-memory"
               >{{ t('cleanup.gc.orphans.memory') }}</span
             >
+            <span
+              v-if="orphanDigestState(i).kind !== 'none'"
+              class="shrink-0 rounded-xs border px-1.5 py-px text-eyebrow"
+              :class="
+                orphanDigestState(i).kind === 'digested'
+                  ? 'border-green-line bg-green-soft text-green'
+                  : 'border-warning-line bg-warning-soft text-warning'
+              "
+              :data-state="orphanDigestState(i).kind"
+              data-testid="orphan-digest"
+              >{{
+                orphanDigestState(i).kind === 'digested'
+                  ? t('cleanup.gc.orphans.digest.done')
+                  : t(
+                      'cleanup.gc.orphans.digest.partial',
+                      { n: orphanDigestState(i).missing },
+                      orphanDigestState(i).missing
+                    )
+              }}</span
+            >
           </span>
         </span>
         <span class="text-right text-ui tabular-nums text-text">{{ formatBytes(i.bytes) }}</span>
@@ -317,6 +337,26 @@ function repoLabel(item: ReapItem): string {
               class="shrink-0 rounded-xs border border-warning-line bg-warning-soft px-1.5 py-px text-eyebrow text-warning"
               data-testid="orphan-memory"
               >{{ t('cleanup.gc.orphans.memory') }}</span
+            >
+            <span
+              v-if="orphanDigestState(i).kind !== 'none'"
+              class="shrink-0 rounded-xs border px-1.5 py-px text-eyebrow"
+              :class="
+                orphanDigestState(i).kind === 'digested'
+                  ? 'border-green-line bg-green-soft text-green'
+                  : 'border-warning-line bg-warning-soft text-warning'
+              "
+              :data-state="orphanDigestState(i).kind"
+              data-testid="orphan-digest"
+              >{{
+                orphanDigestState(i).kind === 'digested'
+                  ? t('cleanup.gc.orphans.digest.done')
+                  : t(
+                      'cleanup.gc.orphans.digest.partial',
+                      { n: orphanDigestState(i).missing },
+                      orphanDigestState(i).missing
+                    )
+              }}</span
             >
           </span>
         </span>

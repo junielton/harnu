@@ -197,6 +197,15 @@ export const MCP_OPS = [
   // deliberately no clean verb (the Cleanup surface and the autopilot own removal).
   'list_cleanup',
   'release_worktree',
+  // T655: put sessions away (and restore them) the way the sidebar's Archive action does.
+  // The archive state lives in the main process (`session-archive-core.ts`), so the verb
+  // works with the window closed. Non-destructive and reversible: it never deletes a
+  // transcript or a worktree, so it carries `silentAllowInAgentFolder` like `archive_card`.
+  'archive_session',
+  // T661: hide folders from the sidebar (and show them again) the way the folder menu's Hide
+  // action does. The state is the same `hiddenPaths` in `projects.json`; it deletes and moves
+  // nothing and is reversible, so it carries `silentAllowInAgentFolder` like `archive_session`.
+  'hide_folder',
   // T614 (T611 U3): the shared GitHub API budget, read-only, so an agent can back off its `gh` polling.
   'github_budget',
   // T329: the Containers actions. Each calls the SAME main-process action
@@ -2073,6 +2082,48 @@ export const MCP_TOOLS: McpToolDef[] = [
     silentAllowInAgentFolder: true
     // Deliberately NOT grantable/alwaysAllowable: it deletes nothing, so the free-by-default
     // posture already covers it, and no grant should ever be needed for it.
+  },
+  {
+    name: 'archive_session',
+    description:
+      "Archive sessions (or restore them with `unarchive: true`) exactly like the sidebar's Archive / Unarchive menu action: an archived session leaves the normal list and its live terminal is closed, but its transcript and worktree stay untouched, so it is reversible and deletes nothing. Takes 1..100 session ids (`sessionIds`, the ids `get_fleet` lists). Runs free, works with the Harnu window closed (the archive state lives in the main process), and the sidebar updates live. Idempotent. ACK: `{ ok, op, unarchive, results: [{ sessionId, outcome, reason? }], counts }`, one row per id, `outcome` one of `archived`, `alreadyArchived`, `restored`, `alreadyActive`, `notFound` (no such session) or `refused` with a `reason`: `FOLDER_NOT_ALLOWED` (the session's folder is blocked by the operator), `SESSION_WORKING` (it is working right now; archiving only) or `PENDING_APPROVAL` (an approval is parked for it; archiving only). `ok` is true only when no row is `refused` or `notFound`; read each row rather than retrying the batch. Refuses ARCHIVE_NOT_READY right after Harnu starts: retry shortly.",
+    inputSchema: z.object({
+      sessionIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(100)
+        .describe('The session ids to archive (1..100), as get_fleet lists them.'),
+      unarchive: z
+        .boolean()
+        .optional()
+        .describe('true restores the sessions instead of archiving them.')
+    }),
+    mutates: true,
+    op: 'archive_session',
+    silentAllowInAgentFolder: true
+    // Deliberately NOT grantable/alwaysAllowable: it deletes nothing and is reversible, so the
+    // free-by-default posture already covers it.
+  },
+  {
+    name: 'hide_folder',
+    description:
+      "Hide folders and worktrees from the sidebar (or show them again with `unhide: true`) exactly like the folder menu's Hide / Unhide action: it flips the same `hiddenPaths` flag and nothing else, so it deletes and moves nothing on disk (no directory, worktree, transcript or branch), keeps the folder pinned and keeps its sessions, and is fully reversible. Takes 1..100 absolute folder paths. Runs free, the sidebar updates live, and it is idempotent. Differs from `remove_folder`, which cleans up a folder whose directory is already gone. ACK: `{ ok, op, unhide, results: [{ path, outcome, reason? }], counts }`, one row per path (`path` is the normalized path, symlinks resolved), `outcome` one of `hidden`, `alreadyHidden`, `shown`, `alreadyVisible`, `notFound` (Harnu does not know the path: not pinned, not hidden, not in the session history) or `refused` with a `reason`: `FOLDER_NOT_ALLOWED` (the operator blocked that folder), `SESSION_WORKING` (a session in that exact folder is working right now; hiding only) or `PENDING_APPROVAL` (an approval is parked for a session there; hiding only). `ok` is true only when no row is `refused` or `notFound`; read each row rather than retrying the batch. Refuses HIDE_WRITE_FAILED (nothing changed) if the file cannot be read or written.",
+    inputSchema: z.object({
+      folders: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(100)
+        .describe('The absolute folder paths to hide (1..100).'),
+      unhide: z
+        .boolean()
+        .optional()
+        .describe('true shows the folders again instead of hiding them.')
+    }),
+    mutates: true,
+    op: 'hide_folder',
+    silentAllowInAgentFolder: true
+    // Deliberately NOT grantable/alwaysAllowable: it deletes nothing and is reversible, so the
+    // free-by-default posture already covers it.
   },
   {
     name: 'stop_containers',

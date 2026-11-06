@@ -203,6 +203,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
   <aside
     ref="asideRef"
     data-sidebar
+    data-column="sidebar"
     class="scrollable relative flex shrink-0 select-none flex-col bg-sidebar"
     :style="{ width: layout.sidebarWidth + 'px' }"
     @dragover="onDragOver"
@@ -219,6 +220,8 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
          window-controls inset"). -->
     <header
       role="toolbar"
+      data-island="sidebar-toolbar"
+      data-island-band
       :aria-label="$t('sidebar.menu.label')"
       class="flex shrink-0 items-center border-b border-border"
       style="height: 42px; padding: 8px 8px 8px 12px; gap: 2px; justify-content: flex-end"
@@ -360,6 +363,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
     <div
       v-if="!sessions.drillModeEnabled || (treeStatus && sessions.drillStack.length === 0)"
       class="scrollable flex-1 overflow-y-auto"
+      data-island="sidebar-list"
       style="padding: 6px 0"
     >
       <template v-if="sessions.folders.length === 0 && sessions.foldersLoading">
@@ -439,51 +443,54 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
       v-if="sessions.drillModeEnabled && !(treeStatus && sessions.drillStack.length === 0)"
     />
 
-    <!-- Footer -->
-    <footer
-      class="flex shrink-0 items-center gap-1 border-t border-border"
-      style="padding: 6px 8px"
-    >
-      <button
-        class="group flex flex-1 items-center gap-[7px] rounded text-text-3 transition hover:bg-surface hover:text-text"
-        style="padding: 6px 8px; font-size: 12px"
-        @click="ui.openDialog('addFolder')"
-      >
-        <Plus :size="13" :stroke-width="1.6" />
-        <span>{{ $t('sidebar.addFolder') }}</span>
-      </button>
-      <WatcherStatusPill />
-      <div class="relative flex items-center justify-center">
+    <!-- Dock (design.md §6 "Sidebar dock (slot)"): the lower island is a slot that stacks N
+         sections. Each `data-dock-section` child owns its padding; a new section is a drop-in
+         sibling of this one. Off, it is the same one-row footer it always was. -->
+    <footer class="shrink-0 border-t border-border" data-island="sidebar-dock">
+      <div data-dock-section class="flex items-center gap-1" style="padding: 6px 8px">
         <button
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 26px; height: 26px"
-          :title="
-            keybindings.withChord(
-              claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings'),
-              'view.settings'
-            )
-          "
-          :aria-label="
-            claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings')
-          "
-          @click="ui.openDialog('settings')"
+          class="group flex flex-1 items-center gap-[7px] rounded text-text-3 transition hover:bg-surface hover:text-text"
+          style="padding: 6px 8px; font-size: 12px"
+          @click="ui.openDialog('addFolder')"
         >
-          <Settings :size="14" :stroke-width="1.5" />
+          <Plus :size="13" :stroke-width="1.6" />
+          <span>{{ $t('sidebar.addFolder') }}</span>
         </button>
-        <span
-          v-if="claudeChangelog.hasUnread"
-          class="bg-accent"
-          style="
-            position: absolute;
-            top: 3px;
-            right: 3px;
-            width: 6px;
-            height: 6px;
-            border-radius: 100%;
-            pointer-events: none;
-          "
-          aria-hidden="true"
-        />
+        <WatcherStatusPill />
+        <div class="relative flex items-center justify-center">
+          <button
+            class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
+            style="width: 26px; height: 26px"
+            :title="
+              keybindings.withChord(
+                claudeChangelog.hasUnread
+                  ? $t('sidebar.settingsWithUpdate')
+                  : $t('sidebar.settings'),
+                'view.settings'
+              )
+            "
+            :aria-label="
+              claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings')
+            "
+            @click="ui.openDialog('settings')"
+          >
+            <Settings :size="14" :stroke-width="1.5" />
+          </button>
+          <span
+            v-if="claudeChangelog.hasUnread"
+            class="bg-accent"
+            style="
+              position: absolute;
+              top: 3px;
+              right: 3px;
+              width: 6px;
+              height: 6px;
+              border-radius: 100%;
+              pointer-events: none;
+            "
+            aria-hidden="true"
+          />
+        </div>
       </div>
     </footer>
 

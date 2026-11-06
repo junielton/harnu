@@ -12,8 +12,8 @@ describe('docs/harnu-features.md (AC-4)', () => {
   const at = doc.indexOf('**Docker capacity — when `compose up` fails.**')
   const para = at < 0 ? '' : doc.slice(at, doc.indexOf('\n\n', at))
 
-  it('is marker v127', () => {
-    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v127 /)
+  it('is marker v126', () => {
+    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v126 /)
   })
 
   it('has the capacity paragraph', () => {

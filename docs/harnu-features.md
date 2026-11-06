@@ -1,4 +1,4 @@
-<!-- harnu-features v127 (2026-11-05) -->
+<!-- harnu-features v126 (2026-11-06) -->
 
 # You are running inside Harnu
 
@@ -40,7 +40,7 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `move_card`, `archive_card`, `delete_card`, `submit_manifest`, `draw_canvas`,
 `notify`, `speak`, `message_session`, `create_worker`, `list_workers`,
 `list_containers`, `stop_containers`, `start_containers`, `remove_containers`,
-`list_cleanup`, `release_worktree`, `github_budget`, `update_worker`, `delete_worker`, `orchestrator_arm`, `orchestrator_disarm`,
+`list_cleanup`, `release_worktree`, `archive_session`, `hide_folder`, `github_budget`, `update_worker`, `delete_worker`, `orchestrator_arm`, `orchestrator_disarm`,
 `mission_create`, `mission_get`, `mission_list`, `mission_add_step`,
 `mission_update_step`, `mission_link_child`, `mission_log`, `mission_set_blocker`,
 `mission_clear_blocker`, `mission_set_end`, `mission_verify_step`,
@@ -964,11 +964,48 @@ data), and with `FOLDER_UNKNOWN` if the path isn't pinned, hidden, or known via
 session history at all. There is still no `remove_worktree` — this verb never
 deletes a worktree, branch, or file.
 
+**Hide finished folders — `hide_folder`.**
+`hide_folder({ folders, unhide? })` does what the folder menu's **Hide** / **Unhide** action does, for
+1..100 absolute paths: it flips the same `hiddenPaths` flag in `projects.json` and nothing else, so it
+deletes and moves nothing (no directory, worktree, transcript or branch), keeps the folder pinned and
+its sessions in place, and `unhide: true` brings the folder back. Use it to put finished folders and
+worktrees away after a body of work instead of asking the operator to right-click each one. Runs free,
+is idempotent, and an open sidebar updates live. It differs from `remove_folder`: that one reconciles a
+folder whose directory is already gone (and refuses while it exists); `hide_folder` is for folders that
+still exist and is undone by `unhide`. ACK: `{ ok, op, unhide, results: [{ path, outcome, reason? }],
+counts }`, one row per path (`path` is the normalized path, symlinks resolved); `outcome` is `hidden`,
+`alreadyHidden`, `shown`, `alreadyVisible`, `notFound` (not pinned, not hidden, not in the session
+history) or `refused`, and a `refused` row carries `reason`: `FOLDER_NOT_ALLOWED` (the operator blocked
+that folder), `SESSION_WORKING` or `PENDING_APPROVAL` (hiding only: a session in that exact folder is
+working, or an approval is parked for one). `ok` is true only when no row is `refused` or `notFound`:
+read each row rather than retrying the batch. Rows are decided inside the file's write lock, so
+concurrent calls (and the menu action) read as one serial order and the ACK always matches what was
+saved; `HIDE_WRITE_FAILED` means the file could not be read or written and nothing changed.
+
 **Parked sessions — `hibernated: true` is NOT death.** Harnu caps live `claude` processes
 and parks cold ones (`hibernated: true` in `get_fleet` / `get_session`). The conversation is
 intact; selecting the row resumes it. A parked session reports **no `taskState`** — don't
 read that as a stall or failure, and don't dispatch a replacement. A session actively
 working is never parked.
+
+**Put sessions away — `archive_session`.**
+`archive_session({ sessionIds, unarchive? })` does what the sidebar's **Archive** menu action
+does, for 1..100 sessions (the ids `get_fleet` lists): an archived session leaves the normal
+list and its live terminal is closed, but its transcript and worktree are untouched, so it
+is reversible (`unarchive: true`) and deletes nothing. Use it to triage finished sessions
+instead of asking the operator to right-click each row. Runs free, is idempotent, and works
+with the Harnu window closed (the archive set lives in the main process); an open sidebar
+updates live. ACK: `{ ok, op, unarchive, results: [{ sessionId, outcome, reason? }], counts }`,
+one row per id; `outcome` is `archived`, `alreadyArchived`, `restored`, `alreadyActive`,
+`notFound` or `refused`, and a `refused` row carries `reason`: `FOLDER_NOT_ALLOWED` (the
+operator blocked that session's folder), `SESSION_WORKING` or `PENDING_APPROVAL` (archiving
+only: it is working, or an approval is parked for it). `ok` is true only when no row is
+`refused` or `notFound`: read each row rather than retrying the batch. Every row is decided
+inside the store's own write, so concurrent calls on one session read as one serial order
+(`restored` then `alreadyActive`) and a row always matches what the archive file holds.
+`ARCHIVE_NOT_READY` right after Harnu starts: retry shortly. `ARCHIVE_WRITE_FAILED`: the
+file could not be written, nothing changed; retry. The operator still sees archived rows under their
+folder's "Show N archived" row.
 
 **Undelivered starting prompt.** A `create_session` `prePrompt` (or a card's boot prompt)
 up to ~24,000 characters launches in the `claude` argv and cannot be lost. A longer one is

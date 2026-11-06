@@ -213,6 +213,8 @@ export function submitManualClean(
   const deleteRemote = new Set(opts.deleteRemote ?? [])
   // The stronger confirm of a folder that is missing but not proven gone, per id.
   const confirmedNotFound = new Set(opts.confirmedNotFound ?? [])
+  // "Trash without a digest" (memory U1 S-5): sessions of the project have no digest in memory.
+  const confirmedUndigested = new Set(opts.confirmedUndigested ?? [])
   const queued = deps.queue.busy()
 
   const { jobId } = deps.queue.submit('manual', unique, async (reporter) => {
@@ -531,6 +533,11 @@ export function submitManualClean(
       }
       if (!fresh) return refused(id, 'no-longer-orphan')
       if (transcriptsChangedSince(fresh, seen)) return refused(id, 'changed-since-confirm')
+      // Sessions with no digest in the owning repo's memory are lost for good once trashed: an
+      // explicit choice per id, read from the fresh look so a digest that landed meanwhile lifts it.
+      if (fresh.digest && fresh.digest.done < fresh.digest.total && !confirmedUndigested.has(id)) {
+        return refused(id, 'needs-undigested-confirmation')
+      }
       try {
         await deps.trashTranscripts(item.slug, { bytes: item.bytes, folder: item.folder })
       } catch (err) {

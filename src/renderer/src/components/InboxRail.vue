@@ -286,6 +286,9 @@ onMounted(() => {
   <aside
     class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-sidebar"
     :class="minimized ? 'border-l border-border' : ''"
+    data-column="rail"
+    :data-rail-state="minimized ? 'minimized' : 'expanded'"
+    :data-island="minimized ? 'rail-minimized' : undefined"
     role="complementary"
     data-dsqa="fleet-rail"
     :aria-label="$t('approvalInbox.rail.ariaLabel')"
@@ -398,6 +401,8 @@ onMounted(() => {
            against the Topbar's border. -->
       <div
         class="flex shrink-0 items-center border-b border-border"
+        data-island="rail-header"
+        data-island-band
         style="height: 42px; padding: 0 10px; gap: 8px"
       >
         <svg
@@ -555,104 +560,108 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- Hidden-urgency affordance (T159 — the safety trap): visible ONLY
+      <!-- The list island (design.md §6 "Floating panels layout"): the hidden-urgency notice, the
+           missions strip and the fleet list read as ONE island; off, this wrapper is invisible. -->
+      <div class="flex min-h-0 flex-1 flex-col" data-island="rail-list">
+        <!-- Hidden-urgency affordance (T159 — the safety trap): visible ONLY
            when the active filter is hiding at least one needs-input/errored/
            stuck card. One click clears the filter entirely. This must never
            be silent — a filtered-to-"working" rail hiding a session that just
            went `errored` would defeat the rail's entire reason to exist. -->
-      <button
-        v-if="hiddenAttentionCount > 0"
-        type="button"
-        class="flex w-full shrink-0 items-center border-b border-border bg-transparent text-left text-warning transition hover:bg-surface"
-        style="padding: 7px 10px; gap: 6px; font-size: 11px"
-        data-dsqa="fleet-rail-hidden-attention"
-        @click="layout.clearInboxRailStateFilter()"
-      >
-        <TriangleAlert :size="12" :stroke-width="2" class="shrink-0" />
-        <span class="min-w-0 flex-1">{{
-          $t('approvalInbox.filter.hiddenAttention', { count: hiddenAttentionCount })
-        }}</span>
-        <span class="shrink-0" style="font-size: 10.5px; text-decoration: underline">{{
-          $t('approvalInbox.filter.showAll')
-        }}</span>
-      </button>
-
-      <!-- Active missions strip (T44 S5c). Hidden when there are none. -->
-      <div
-        v-if="activeGrants.length > 0"
-        class="flex shrink-0 flex-col border-b border-border"
-        style="padding: 9px 10px; gap: 6px"
-      >
-        <span
-          class="text-text-3"
-          style="
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.07em;
-            text-transform: uppercase;
-          "
-          >{{ $t('approvalInbox.missionsStrip.title') }}</span
+        <button
+          v-if="hiddenAttentionCount > 0"
+          type="button"
+          class="flex w-full shrink-0 items-center border-b border-border bg-transparent text-left text-warning transition hover:bg-surface"
+          style="padding: 7px 10px; gap: 6px; font-size: 11px"
+          data-dsqa="fleet-rail-hidden-attention"
+          @click="layout.clearInboxRailStateFilter()"
         >
-        <div v-for="g in activeGrants" :key="g.id" class="flex flex-col" style="gap: 4px">
-          <span class="truncate text-text-2" style="font-size: 11.5px" :title="g.goal">
-            {{ g.goal }}
-          </span>
-          <div class="flex items-center" style="gap: 7px">
-            <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
-              $t('mcpServer.missions.budget', { spent: g.spent, budget: g.budget })
-            }}</span>
-            <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
-              $t('mcpServer.missions.expiresIn', { mins: minutesLeft(g) })
-            }}</span>
-            <span class="min-w-0 flex-1" />
-            <button
-              type="button"
-              class="inline-flex shrink-0 items-center bg-red-soft text-red transition hover:opacity-80"
-              style="padding: 2px 7px; font-size: 10.5px; border-radius: 5px"
-              @click="revokeGrant(g.id)"
-            >
-              {{ $t('mcpServer.missions.revoke') }}
-            </button>
+          <TriangleAlert :size="12" :stroke-width="2" class="shrink-0" />
+          <span class="min-w-0 flex-1">{{
+            $t('approvalInbox.filter.hiddenAttention', { count: hiddenAttentionCount })
+          }}</span>
+          <span class="shrink-0" style="font-size: 10.5px; text-decoration: underline">{{
+            $t('approvalInbox.filter.showAll')
+          }}</span>
+        </button>
+
+        <!-- Active missions strip (T44 S5c). Hidden when there are none. -->
+        <div
+          v-if="activeGrants.length > 0"
+          class="flex shrink-0 flex-col border-b border-border"
+          style="padding: 9px 10px; gap: 6px"
+        >
+          <span
+            class="text-text-3"
+            style="
+              font-size: 10px;
+              font-weight: 600;
+              letter-spacing: 0.07em;
+              text-transform: uppercase;
+            "
+            >{{ $t('approvalInbox.missionsStrip.title') }}</span
+          >
+          <div v-for="g in activeGrants" :key="g.id" class="flex flex-col" style="gap: 4px">
+            <span class="truncate text-text-2" style="font-size: 11.5px" :title="g.goal">
+              {{ g.goal }}
+            </span>
+            <div class="flex items-center" style="gap: 7px">
+              <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
+                $t('mcpServer.missions.budget', { spent: g.spent, budget: g.budget })
+              }}</span>
+              <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
+                $t('mcpServer.missions.expiresIn', { mins: minutesLeft(g) })
+              }}</span>
+              <span class="min-w-0 flex-1" />
+              <button
+                type="button"
+                class="inline-flex shrink-0 items-center bg-red-soft text-red transition hover:opacity-80"
+                style="padding: 2px 7px; font-size: 10.5px; border-radius: 5px"
+                @click="revokeGrant(g.id)"
+              >
+                {{ $t('mcpServer.missions.revoke') }}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!--
+        <!--
         Fleet (T151) — the scrolling body: every non-idle session in the
         fleet, one continuous column, no bucket eyebrows. Ordering (anti-
         flood, strict tiers) + idle-hiding come from `fleetCards` above; each
         card's state is carried entirely by its dot + border ring
         (`FleetBoardCard.vue` + design.md §7), never a label.
       -->
-      <div
-        class="scrollable min-h-0 flex-1"
-        style="overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding-top: 6px"
-      >
-        <FleetBoardCard
-          v-for="card in visibleFleetCards"
-          :key="card.session.sessionId"
-          :session="card.session"
-          :state="card.state"
-          :folder-alias="card.folderAlias"
-          live-poll
-        />
         <div
-          v-if="visibleFleetCards.length === 0 && fleetCards.length === 0"
-          class="text-text-4"
-          style="padding: 24px 12px; font-size: 12px; text-align: center"
+          class="scrollable min-h-0 flex-1"
+          style="overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding-top: 6px"
         >
-          {{ $t('approvalInbox.fleetEmpty') }}
+          <FleetBoardCard
+            v-for="card in visibleFleetCards"
+            :key="card.session.sessionId"
+            :session="card.session"
+            :state="card.state"
+            :folder-alias="card.folderAlias"
+            live-poll
+          />
+          <div
+            v-if="visibleFleetCards.length === 0 && fleetCards.length === 0"
+            class="text-text-4"
+            style="padding: 24px 12px; font-size: 12px; text-align: center"
+          >
+            {{ $t('approvalInbox.fleetEmpty') }}
+          </div>
+          <button
+            v-else-if="visibleFleetCards.length === 0"
+            type="button"
+            class="w-full text-text-4 transition hover:text-text-2"
+            style="padding: 24px 12px; font-size: 12px; text-align: center"
+            data-dsqa="fleet-rail-all-filtered"
+            @click="layout.clearInboxRailStateFilter()"
+          >
+            {{ $t('approvalInbox.filter.allHidden') }}
+          </button>
         </div>
-        <button
-          v-else-if="visibleFleetCards.length === 0"
-          type="button"
-          class="w-full text-text-4 transition hover:text-text-2"
-          style="padding: 24px 12px; font-size: 12px; text-align: center"
-          data-dsqa="fleet-rail-all-filtered"
-          @click="layout.clearInboxRailStateFilter()"
-        >
-          {{ $t('approvalInbox.filter.allHidden') }}
-        </button>
       </div>
 
       <!--
@@ -662,7 +671,12 @@ onMounted(() => {
         pending — an idle queue doesn't earn a permanent row once the Fleet
         section above already shows the fleet is quiet.
       -->
-      <div v-if="!isEmpty" class="shrink-0 border-t border-border">
+      <div
+        v-if="!isEmpty"
+        class="shrink-0 border-t border-border"
+        data-island="rail-needs-you"
+        data-rail-section
+      >
         <button
           type="button"
           class="flex w-full items-center bg-transparent text-text-3 transition hover:text-text-2"
@@ -711,7 +725,7 @@ onMounted(() => {
         Would-have — collapsed shadow log pinned below the fleet (T151),
         the same chevron/`.collapsible` chrome as Needs-you above.
       -->
-      <div class="shrink-0 border-t border-border">
+      <div class="shrink-0 border-t border-border" data-island="rail-would-have" data-rail-section>
         <button
           type="button"
           class="flex w-full items-center bg-transparent text-text-3 transition hover:text-text-2"
