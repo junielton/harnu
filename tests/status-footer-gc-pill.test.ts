@@ -58,6 +58,7 @@ function stubApi(first: GcSnapshot): Record<string, (cb: unknown) => void> {
       onGcProgress: sub('progress'),
       onGcDone: sub('done'),
       onGcCycle: sub('cycle'),
+      onGcDockerWatch: sub('dockerWatch'),
       reaperSnapshot: vi.fn(async () => null),
       reaperJournal: vi.fn(async () => []),
       reaperPrefs: vi.fn(async () => ({ dehydrateIdleDays: 7 })),

@@ -30,6 +30,8 @@ const { t } = useI18n()
 const gc = useGcStore()
 
 const loading = ref(true)
+/** Rows of the first-report list the pane shows; the rest is "+N more" (design.md §6). */
+const DOCKER_REPORT_ROWS = 8
 const prefs = ref<GcPrefs | null>(null)
 const reaper = ref<ReaperPrefs | null>(null)
 const protectedBranchesText = ref('')
@@ -409,6 +411,44 @@ const EYEBROW_STYLE =
         >
           {{ t('cleanup.gc.settings.docker.ack') }}
         </Button>
+      </div>
+
+      <!-- What the first pass would do, so the acknowledgement is not blind (U3.6). -->
+      <div
+        v-if="prefs.docker.enabled && !prefs.docker.firstReportAcknowledged && gc.dockerReport"
+        class="border-t border-border"
+        style="margin-top: 10px; padding-top: 10px"
+        data-testid="gc-docker-report-list"
+      >
+        <ul class="m-0 flex list-none flex-col gap-1 p-0">
+          <li
+            v-for="(item, i) in gc.dockerReport.items.slice(0, DOCKER_REPORT_ROWS)"
+            :key="`${item.kind}:${item.target}:${i}`"
+            class="flex flex-col"
+            data-testid="gc-docker-report-item"
+          >
+            <span class="flex min-w-0 items-baseline gap-2">
+              <span class="text-caption uppercase text-text-3" style="flex-shrink: 0">
+                {{ t(`cleanup.gc.settings.docker.report.kind.${item.kind}`) }}
+              </span>
+              <span class="truncate font-mono text-ui text-text" :title="item.target">{{
+                item.target
+              }}</span>
+            </span>
+            <span class="text-caption text-text-3">{{ item.reason }}</span>
+          </li>
+        </ul>
+        <p
+          v-if="gc.dockerReport.found > DOCKER_REPORT_ROWS"
+          class="text-caption text-text-3"
+          style="margin-top: 4px"
+        >
+          {{
+            t('cleanup.gc.settings.docker.report.more', {
+              n: gc.dockerReport.found - DOCKER_REPORT_ROWS
+            })
+          }}
+        </p>
       </div>
 
       <!-- The global pause: stops every autonomous action, shelving and Docker alike. -->

@@ -365,3 +365,106 @@ export function readStackActivity(
     })
   })
 }
+
+// ---- network events (U3.6) -------------------------------------------------------------------------
+
+/** Only a network being created or destroyed changes how many bridge slots are free. */
+export const NETWORK_EVENTS_ARGS: readonly string[] = [
+  'events',
+  '--filter',
+  'type=network',
+  '--filter',
+  'event=create',
+  '--filter',
+  'event=destroy',
+  '--format',
+  '{{json .}}'
+]
+
+export interface NetworkEvent {
+  action: 'create' | 'destroy'
+  id: string
+}
+
+/** One line of `docker events --format '{{json .}}'`, or null when it is not a network create/destroy. */
+export function parseNetworkEvent(line: string): NetworkEvent | null {
+  let v: unknown
+  try {
+    v = JSON.parse(line)
+  } catch {
+    return null
+  }
+  if (!v || typeof v !== 'object') return null
+  const e = v as { Type?: unknown; Action?: unknown; Actor?: { ID?: unknown } | null }
+  if (e.Type !== 'network') return null
+  if (e.Action !== 'create' && e.Action !== 'destroy') return null
+  const id = e.Actor?.ID
+  return typeof id === 'string' && id !== '' ? { action: e.Action, id } : null
+}
+
+/** A running `docker events` stream: lines out, an end signal, a kill. Injected so tests need no docker. */
+export interface EventsProcess {
+  onLine(cb: (line: string) => void): void
+  onExit(cb: () => void): void
+  kill(): void
+}
+export type EventsSpawn = (args: readonly string[]) => EventsProcess
+
+const EVENTS_BACKOFF_MIN_MS = 5_000
+const EVENTS_BACKOFF_MAX_MS = 60_000
+
+/**
+ * Streams network create/destroy events to `onEvent` for as long as it is not stopped. A stream that
+ * ends (the daemon restarted, docker is missing) is started again after 5 s, doubling to 60 s; a
+ * received line resets the wait. The watcher's fallback interval covers the gaps.
+ */
+export function watchNetworkEvents(
+  deps: { spawn: EventsSpawn },
+  onEvent: (e: NetworkEvent) => void
+): { stop(): void } {
+  let stopped = false
+  let proc: EventsProcess | null = null
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let backoff = EVENTS_BACKOFF_MIN_MS
+
+  const restart = (): void => {
+    if (stopped || timer) return
+    timer = setTimeout(() => {
+      timer = null
+      start()
+    }, backoff)
+    backoff = Math.min(backoff * 2, EVENTS_BACKOFF_MAX_MS)
+  }
+
+  const start = (): void => {
+    if (stopped) return
+    let p: EventsProcess
+    try {
+      p = deps.spawn(NETWORK_EVENTS_ARGS)
+    } catch {
+      restart()
+      return
+    }
+    proc = p
+    p.onLine((l) => {
+      backoff = EVENTS_BACKOFF_MIN_MS
+      const e = parseNetworkEvent(l)
+      if (e) onEvent(e)
+    })
+    p.onExit(() => {
+      if (proc === p) proc = null
+      restart()
+    })
+  }
+
+  start()
+  return {
+    stop(): void {
+      stopped = true
+      if (timer) clearTimeout(timer)
+      timer = null
+      proc?.kill()
+      proc = null
+    }
+  }
+}

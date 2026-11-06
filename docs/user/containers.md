@@ -75,12 +75,15 @@ Harnu checks every container of the project, running or stopped, because `compos
 
 **Cleanup pauses an idle stack by itself**, once you have acknowledged its first report: the rules (2 hours idle, 30 minutes since the last start, at most 6 an hour) and everything that protects a stack are in [Cleanup → Docker: pausing and garbage](cleanup.md#docker-pausing-and-garbage). Every pause sends a notification and leaves an entry in **Recent** with the same command to bring the stack back.
 
+**When Docker is nearly out of network slots.** Every compose stack takes a network, and Docker has a limited number of slots for them. Cleanup watches the free slots and, when they run low, removes empty networks and orphan stacks and pauses the longest-idle stacks at once (see [Cleanup → The capacity watcher](cleanup.md)). If that is not enough, an **Activity** entry tells you Docker is nearly out of network slots, and another when none is left. Stopping a stack you do not need is the fastest fix.
+
 ## Recent and undo
 
 Every action writes one entry to a journal, and **Recent** lists them — one entry per action, so "Stop N running" shows up once as "3 stacks stopped", and a cleaning in Cleanup that removes twelve stacks as one "12 stacks removed". Selecting an entry shows what it did and how to undo it:
 
 - **After a stop:** the command that brings it back (with a copy button) and a **Start stack** / **Start all N** button. For a standalone container that was only stopped, the command is `docker start …`; for a compose stack it is the full `docker compose … up -d` command, with its compose files, profiles and env file — never `docker start`, which fails once a stack has been brought down. A stack whose folder is gone has no command.
 - **After a pause:** the entry reads "paused" and shows the same compose command under **To bring it back**; there is no Start button, because [the stack has no containers](#paused-stacks).
+- **After a removal Cleanup made on its own** (actor `autopilot`): an empty compose network, or a stack whose folder no longer exists. The entry carries the reason ("Removed empty network `app_default` — no containers"; "Removed orphan stack `app` — worktree gone, volumes kept: app_data"). A network needs no undo: `compose up` recreates it. An orphan's volumes are never removed; the entry lists them as kept and says they belonged to a worktree that is gone.
 - **After a removal:** removed containers can't be restarted. If the worktree still exists, the entry shows the `docker compose … up -d` command that recreates them from it, and reattaches a volume you kept. If the worktree is gone, there is nothing to recreate them from.
 
 ## When docker isn't there
@@ -100,7 +103,7 @@ Each stack is announced **once**. It is not announced again on later scans, afte
 
 ## Safety
 
-- Harnu never stops or removes anything in this view on its own; every action is a click.
+- Nothing in this view stops or removes anything on its own; every action here is a click. The one automatic exception is [Cleanup's Docker garbage removal](cleanup.md#docker-pausing-and-garbage) (empty compose networks and the stacks of folders that no longer exist), which has its own switch, starts report-only, and never removes a volume.
 - Nothing is removed while it is running, and `--force` is never used.
 - A volume is removed only when you tick it, and the box is always unticked when the **Remove…** dialog opens. That dialog takes one stack and never removes a volume docker reports as shared with another stack.
 - Cleaning many stacks at once is [Cleanup](cleanup.md#the-hero-button-clean-everything-that-is-ready)'s job, and it is as strict: one confirm dialog that lists everything it will take, a re-check of the machine at the moment you confirm (anything that changed is skipped and shown again), and a plain warning that volumes cannot be restored.

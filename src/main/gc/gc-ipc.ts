@@ -21,7 +21,24 @@ import { trashTranscriptsRecorded } from './gc-orphan-trash'
 import { appendTombstone } from '../reaper/journal'
 import { defaultTrashEnv } from './trash-shell'
 import { runStackLeftoverCleanup, type StackLeftoverItem } from './gc-stack-leftovers'
-import { runDocker } from '../containers/containers-shell'
+import {
+  dockerActions,
+  runDocker,
+  scanContainers,
+  spawnDockerStream
+} from '../containers/containers-shell'
+import {
+  appendTombstone as appendContainersTombstone,
+  journalFile as containersJournalFile,
+  readJournal as readContainersJournal
+} from '../containers/containers-journal'
+import { defaultPrefs as defaultContainersPrefs } from '../containers/containers-prefs'
+import {
+  readBridgeCapacity,
+  readEmptyComposeNetworks,
+  watchNetworkEvents
+} from '../containers/docker-facts-shell'
+import { createDockerGarbage } from './docker-garbage-shell'
 import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
@@ -73,7 +90,13 @@ import {
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
-import { composeDockerPlanners, runDockerCycle } from './docker-cycle'
+import { ackWatchNotices, runCapacityPass } from './capacity-watcher-core'
+import {
+  CAPACITY_DEBOUNCE_MS,
+  CAPACITY_INTERVAL_MS,
+  createCapacityWatcher
+} from './capacity-watcher'
+import { composeDockerPlanners, heldDockerReport, runDockerCycle } from './docker-cycle'
 import { createParkPlanner } from './park-cycle'
 import { listOpenPaneUrls } from '../browser/browser-service'
 import { getContainersService } from '../containers/containers-ipc'
@@ -420,6 +443,41 @@ export async function registerGcHandlers(
     now: () => Date.now()
   })
 
+  // Docker garbage removal (U3.3): empty compose networks and orphan stacks, volumes always kept.
+  // Every docker mutation is one of three plain calls (stop, rm, network rm); the journal is the
+  // Containers one, written as the `autopilot`.
+  const containersJournal = containersJournalFile(userData)
+  const dockerGarbage = createDockerGarbage({
+    emptyNetworks: () => readEmptyComposeNetworks({ run: runDocker }),
+    scan: async () =>
+      scanContainers({
+        zombieAfterDays: defaultContainersPrefs().zombieAfterDays,
+        journal: await readContainersJournal(containersJournal),
+        now: Date.now()
+      }),
+    // A corrupt store throws (never reads as empty), which excludes every orphan stack.
+    shelvedPaths: async () =>
+      (await readShelvedForUpdate(path.join(userData, SHELVED_FILE))).entries.map(
+        (e) => e.worktreePath
+      ),
+    mutators: {
+      stop: dockerActions.stop,
+      removeContainers: dockerActions.removeContainers,
+      removeNetwork: dockerActions.removeNetwork
+    },
+    appendTombstone: (t) => appendContainersTombstone(containersJournal, t),
+    now: () => Date.now()
+  })
+  // The Docker slot: garbage first (U3.3), then pauses (U3.5), dispatched by the kind each owns.
+  const dockerPlanners = composeDockerPlanners([
+    {
+      owns: (kind) => kind === 'prune-network' || kind === 'remove-orphan',
+      plan: dockerGarbage.plan,
+      execute: dockerGarbage.execute
+    },
+    parkPlanner
+  ])
+
   const cycleDeps: GcCycleDeps = {
     prefs: () => prefs,
     gather: async (): Promise<GcGather> => gather(),
@@ -460,7 +518,7 @@ export async function registerGcHandlers(
       runDockerCycle(
         {
           prefs: () => prefs,
-          ...composeDockerPlanners([parkPlanner]),
+          ...dockerPlanners,
           // Docker is one daemon per machine: one lock across Harnu instances (`--user-data-dir`).
           lock: (work) => withLockFile(dockerLockPath(), work),
           // The failure-streak kill switch: persisted, so a restart does not start acting again.
@@ -479,6 +537,36 @@ export async function registerGcHandlers(
   reaper.setAfterScan(async () => {
     await runGcCycle(cycleDeps, 'timer')
   })
+
+  // Capacity watcher (U3.6): free bridge slots on a short trigger, not only on the hourly cycle. It
+  // runs the SAME composed Docker planners, lock and kill switch as the cycle's Docker slot.
+  let lastWatchKey = ''
+  const capacityPassDeps = {
+    prefs: () => prefs,
+    readCapacity: () => readBridgeCapacity({ run: runDocker }),
+    ...dockerPlanners,
+    lock: <T>(work: () => Promise<T>) => withLockFile(dockerLockPath(), work),
+    disableDocker: async () => {
+      await persist(withDockerDisabled(prefs))
+    },
+    notify,
+    now: () => Date.now()
+  }
+  const capacityWatcher = createCapacityWatcher({
+    pass: async (trigger) => {
+      const rec = await runCapacityPass(capacityPassDeps, state, trigger)
+      // Pushed only when something besides the clock changed: a quiet machine sends nothing.
+      const key = JSON.stringify({ ...rec, at: 0, trigger: 'timer' })
+      if (key === lastWatchKey) return
+      lastWatchKey = key
+      send('gc:docker:watch', rec)
+    },
+    subscribe: (onEvent) => watchNetworkEvents({ spawn: spawnDockerStream }, () => onEvent()),
+    intervalMs: CAPACITY_INTERVAL_MS,
+    debounceMs: CAPACITY_DEBOUNCE_MS
+  })
+  app.on('before-quit', () => capacityWatcher.stop())
+  capacityWatcher.start()
   reaper.setBusy(() => queue.busy())
 
   /** The Reaper timer owns the interval, so its live value is the one shown. */
@@ -493,6 +581,9 @@ export async function registerGcHandlers(
     docker: g.docker,
     prefs: livePrefs(),
     lastCycle: state.last,
+    dockerWatch: state.dockerWatch,
+    dockerNoticesPending: state.dockerNoticesPending,
+    dockerReport: heldDockerReport(state, prefs),
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null,
     nextClean: planNextClean(g.bundles, livePrefs()),
     backgroundScan: reaper.autoScan(),
@@ -658,7 +749,10 @@ export async function registerGcHandlers(
     },
     ackFirstReport: () => persist(withAcknowledged(prefs)),
     ackShelveReport: () => persist(withShelveAcknowledged(prefs)),
-    ackDockerReport: () => persist(withDockerAcknowledged(prefs)),
+    ackDockerReport: () => {
+      state.dockerReport = null
+      return persist(withDockerAcknowledged(prefs))
+    },
     restoreShelved: async (rawId) => {
       if (typeof rawId !== 'string' || !rawId) {
         throw new Error('gc:shelve:restore expects the id of a shelved worktree')
@@ -754,6 +848,10 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())
   ipcMain.handle('gc:shelve:ack', () => service.ackShelveReport())
   ipcMain.handle('gc:docker:ack', () => service.ackDockerReport())
+  // The renderer has recorded these out-of-capacity notices (Activity + push): stop holding them.
+  ipcMain.handle('gc:docker:watch:ack', (_e, ats: unknown) => {
+    if (Array.isArray(ats) && ats.every((a) => typeof a === 'number')) ackWatchNotices(state, ats)
+  })
   ipcMain.handle('gc:shelve:restore', (_e, id: unknown) => service.restoreShelved(id))
   // A worktree came back (a resume, a terminal or the button): the snapshot and every open
   // Cleanup screen follow.
