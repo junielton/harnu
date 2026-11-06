@@ -296,6 +296,10 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'notify',
     // T445: release_worktree deletes nothing, so it runs free like the board verbs.
     'release_worktree',
+    // T655: archive_session deletes nothing and is reversible, so it runs free like archive_card.
+    'archive_session',
+    // T661: hide_folder only flips the sidebar's hidden flag and is reversible, so it runs free too.
+    'hide_folder',
     // T238: free like every other mutating verb, but NOT grantable and NOT
     // always-allowable — its real gate is the operator's voice switch, which
     // nothing may buy on their behalf.

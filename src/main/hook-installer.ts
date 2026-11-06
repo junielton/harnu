@@ -47,7 +47,10 @@ const EVENT_SPECS: Array<{ event: string; settingsMatcher?: string; tag: string 
   { event: 'SessionStart', tag: '_' },
   { event: 'SessionEnd', tag: '_' },
   { event: 'PreToolUse', settingsMatcher: '*', tag: '_' },
-  { event: 'PermissionRequest', tag: '_' }
+  { event: 'PermissionRequest', tag: '_' },
+  // Memory U1 S-2: a compaction digests the session. No matcher, so a manual and an
+  // automatic compaction both post; the fold leaves the task state unchanged.
+  { event: 'PreCompact', tag: '_' }
 ]
 
 function makeHandler(

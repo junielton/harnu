@@ -13,6 +13,20 @@
     "hideOlder": "Hide older sessions",
     "showArchived": "Show {n} archived",
     "hideArchived": "Hide archived",
+    "shelved": {
+      "label": "Shelved",
+      "tooltip": "{n} shelved worktree — branch and sessions kept | {n} shelved worktrees — branches and sessions kept",
+      "daysShort": "{days} d",
+      "rowTooltip": "Shelved today · branch {branch} kept | Shelved {days} day ago · branch {branch} kept | Shelved {days} days ago · branch {branch} kept",
+      "rowTooltipDetached": "Shelved today · work kept in the archive | Shelved {days} day ago · work kept in the archive | Shelved {days} days ago · work kept in the archive",
+      "sessionTooltip": "Resume — restores the worktree first",
+      "restoring": "restoring…",
+      "restoringPane": "Restoring worktree {branch}…",
+      "restore": "Restore worktree",
+      "openInCleanup": "Open in Cleanup",
+      "restoreFailed": "Couldn't restore {branch}. Nothing was lost — the branch and its archive are kept.",
+      "menuLabel": "Shelved worktree actions"
+    },
     "terminals": "Terminals",
     "terminalLabel": "Terminal {n}",
     "closeTerminal": "Close terminal",
@@ -117,6 +131,10 @@
     "newSessionHere": "New session in this folder",
     "terminal": "Terminal",
     "split": "Split horizontal",
+    "browser": "Browser",
+    "moreActions": "More actions",
+    "splitLayout": "Split layout: {mode}",
+    "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Open folder",
     "openInEditor": "Open in {editor}",
     "editorGeneric": "editor",
@@ -159,6 +177,8 @@
     "close": "Close helper",
     "maximize": "Maximize",
     "restore": "Restore",
+    "expand": "Expand to window",
+    "exitExpand": "Exit expanded view",
     "shellTitle": "Shell",
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
@@ -356,7 +376,15 @@
     "decisionsEmpty": "No decisions recorded yet.",
     "timelineEmpty": "No session digests yet — they appear here as sessions wrap up.",
     "openSession": "Open session",
-    "sessionNotFound": "That session isn't loaded."
+    "sessionNotFound": "That session isn't loaded.",
+    "evidence": {
+      "noCommits": "No commits",
+      "noGit": "No git",
+      "orphan": "Recovered",
+      "noCommitsHint": "Written from the conversation alone: the session made no commits.",
+      "noGitHint": "This folder is not a git repository, so the digest has no git evidence.",
+      "orphanHint": "Recovered from a removed folder's transcript before Cleanup could trash it."
+    }
   },
   "explorerPane": {
     "label": "Project files",
@@ -1162,7 +1190,25 @@
     },
     "appearance": {
       "eyebrow": "Appearance",
-      "extensionBadge": "Installed by {name}"
+      "extensionBadge": "Installed by {name}",
+      "layoutEyebrow": "Layout",
+      "splitLayout": {
+        "label": "Split layout",
+        "hint": "How the session area and the helper panes share the window. Auto stacks them when the window is taller than wide.",
+        "auto": "Auto",
+        "sideBySide": "Side by side",
+        "stacked": "Stacked"
+      },
+      "floatingPanels": {
+        "label": "Floating panels",
+        "hint": "Shows each pane as its own rounded island on a darker background, with an even gap between them. Off keeps the classic edge-to-edge layout."
+      },
+      "expandHides": {
+        "label": "Expand hides",
+        "hint": "What gets out of the way when a helper pane is expanded to the window. Everything also hides the sidebar and the Fleet rail; Session only hides just the session.",
+        "everything": "Everything",
+        "sessionOnly": "Session only"
+      }
     },
     "interface": {
       "eyebrow": "Interface",
@@ -1441,8 +1487,10 @@
       "pane_focusNext": "Focus the next pane",
       "pane_focusPrev": "Focus the previous pane",
       "pane_toggleMaximize": "Maximize or restore the focused pane",
+      "pane_expandToWindow": "Expand the focused pane to the window",
       "pane_close": "Close the focused pane",
       "terminal_toggle": "Toggle the terminal pane",
+      "layout_cycleSplitOrientation": "Cycle the split layout (auto, side by side, stacked)",
       "app_reload": "Reload the window",
       "app_devtools": "Toggle DevTools",
       "app_quit": "Quit Harnu",
@@ -3025,6 +3073,10 @@
           "ack": "I checked: this folder is really gone, not on a drive that's unplugged."
         },
         "memory": "includes memory notes",
+        "digest": {
+          "done": "Digested",
+          "partial": "{n} not digested"
+        },
         "confirm": {
           "title": "Move {n} transcript folder to the trash? | Move {n} transcript folders to the trash?",
           "subtitle": "The folders these sessions ran in are gone, so Claude can no longer resume them here.",
@@ -3032,7 +3084,45 @@
           "recoverable": "They go to the OS trash, so you can bring them back.",
           "memory": "{n} of them also holds Claude memory notes for that folder. | {n} of them also hold Claude memory notes for that folder.",
           "total": "{n} folder · {size} | {n} folders · {size}",
+          "undigested": {
+            "summary": "{n} session in this selection has no digest yet. Trashing it loses what it did. | {n} sessions in this selection have no digest yet. Trashing them loses what they did.",
+            "retry": "Cancel to keep them: Harnu tries the digest again on the next scan.",
+            "row": "{n} not digested · digests are kept in {home}",
+            "noHome": "No repository was found for this folder, so no digest can be written.",
+            "ack": "Trash without a digest"
+          },
           "confirm": "Move to trash"
+        }
+      },
+      "shelved": {
+        "activity": "Shelved `{branch}` — idle {days} d, branch kept",
+        "activityDetached": "Shelved detached HEAD — idle {days} d, archive kept",
+        "title": "Shelved",
+        "sub": "{n} worktree · {size} freed | {n} worktrees · {size} freed",
+        "subNoSize": "{n} worktree | {n} worktrees",
+        "note": "Folders Harnu removed because they sat idle. The branch and every change are kept. Opening a session or terminal in one brings it back by itself.",
+        "listLabel": "Shelved worktrees",
+        "detached": "detached",
+        "idle": "idle {n} d",
+        "restore": "Restore",
+        "restoring": "Restoring…",
+        "copyCommand": "Copy command",
+        "copied": "Copied",
+        "failure": {
+          "repoBusy": "Another Harnu job is working in this repository. Try again in a moment.",
+          "inUse": "A session is working in the folder at that path. Close it, then try again.",
+          "recordMissing": "The archive record is gone, so Harnu cannot rebuild this folder. The branch is still there: copy the command to get a fresh worktree on it.",
+          "archiveUnverified": "The archive no longer checks out, so Harnu will not restore from it. Nothing was changed; copy the command to get a fresh worktree on the branch.",
+          "moveAsideFailed": "A folder is in the way at that path and could not be moved aside. Move or rename it yourself, then try again.",
+          "pathExists": "A folder already exists at that path. Move it aside, then try again.",
+          "other": "Restoring failed: {message}. Nothing was lost and the archive is untouched. Try again, or copy the command to start a fresh worktree on the branch."
+        },
+        "toast": {
+          "restored": "Restored {name}",
+          "restoredDetached": "Restored {name} — detached at the archived commit, because its branch is checked out elsewhere",
+          "present": "{name} was already back",
+          "movedAside": "A folder that was in the way was kept at {path}. Delete it when you like.",
+          "failed": "Could not restore {name}"
         }
       },
       "toast": {
@@ -3056,6 +3146,15 @@
           "intro": "Cleans proven ready worktrees (merged, clean, idle worktrees) on the background timer. The first cycle after you turn it on only reports what it found; automatic cleaning starts once you acknowledge that report in Cleanup.",
           "label": "Clean ready worktrees automatically",
           "hint": "Needs the background scan below to stay on: the cleanup runs on the same timer."
+        },
+        "shelve": {
+          "eyebrow": "Shelving idle worktrees",
+          "intro": "A worktree whose branch is not proven merged, with no session in it, untouched for {days} days is shelved: its folder is removed to free disk while the branch and every change stay archived. It comes back by itself the moment you open a session or a terminal in it, or press Restore in Cleanup.",
+          "label": "Shelve idle worktrees automatically",
+          "hint": "Runs on the same background timer as the autopilot. Branches are never deleted.",
+          "reportOnly": "The first pass only reports what it would shelve; nothing is removed until you acknowledge it.",
+          "ack": "Acknowledge first report",
+          "active": "Shelving is active. Up to {n} worktrees per cycle."
         },
         "interval": {
           "label": "Run every",
@@ -3159,6 +3258,8 @@
         "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
         "missingExpected": "Cleanup could not check it against what you were shown. Review it and try again.",
         "noLongerOrphan": "This volume is in use again, so it was left alone.",
+        "needsUndigestedConfirmation": "Some sessions in this project have no digest yet, so it was left alone. Open it again and choose Trash without a digest, or wait for the next scan.",
+        "needsNotFoundConfirmation": "Harnu can't confirm this folder is really gone, so it was left alone. Check it is not on a drive that's unplugged, then open it again and tick the confirmation.",
         "kept": "You marked it Keep, so it was left alone.",
         "neverClean": "It is on your never-clean list, so it was left alone.",
         "mainCheckout": "This is a main checkout, which is never cleaned.",
@@ -3296,11 +3397,14 @@
           "gcDone": "git gc finished in {repo}",
           "gcFailed": "git gc failed in {repo}",
           "neverClean": "This repo is on the never-clean list, so its archives were left alone.",
-          "protected": "{n} archive was left alone: its folder is on the never-clean list | {n} archives were left alone: their folders are on the never-clean list"
+          "protected": "{n} archive was left alone: its folder is on the never-clean list | {n} archives were left alone: their folders are on the never-clean list",
+          "shelved": "{n} archive was kept: its worktree is shelved and this archive restores it. Restore it first (Cleanup → Shelved). | {n} archives were kept: their worktrees are shelved and these archives restore them. Restore them first (Cleanup → Shelved)."
         },
         "ageUnknown": "age unknown",
         "deleteOne": "Delete…",
-        "protected": "On the never-clean list"
+        "protected": "On the never-clean list",
+        "shelvedTitle": "Shelved worktree — restore it first",
+        "restoreFirst": "Restore first"
       },
       "trash": {
         "title": "In the trash",
@@ -5077,11 +5181,6 @@
       "hintExit": "to exit",
       "disconnectedHint": "Comments are off here: you disconnected the agent from this pane."
     }
-  },
-  "splitMenu": {
-    "label": "More split options",
-    "terminal": "Terminal",
-    "browser": "Browser"
   },
   "githubBudget": {
     "pill": {

@@ -1,0 +1,24 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: terminal-limit
+tags: [single-doc]
+execution:
+  prompt: Per docs/harnu-features.md, how many live agent terminals can a folder have at once, and what error does the next spawn_terminal call get?
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Agent]
+graders:
+  - type: regex
+    name: says-4
+    pattern: '\b(4|four)\b\W{0,4}\s*(live\s+)?(agent\s+)?terminals'
+    flags: i
+    match: contains
+  - type: regex
+    name: names-error
+    pattern: 'TERMINAL_LIMIT'
+    match: contains
+  - type: tool_used
+    name: routed-to-doc-reader
+    tool: Agent
+    min: 1
+    arm: with-only

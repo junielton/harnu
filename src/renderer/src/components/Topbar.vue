@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
@@ -7,6 +7,7 @@ import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useHelpersStore } from '../stores/helpers'
 import { useLayoutStore } from '../stores/layout'
+import { useSettingsStore } from '../stores/settings'
 import { useClaudeBootStore } from '../stores/claudeBoot'
 import { useFolderActions } from '../composables/useFolderActions'
 import { useEditorButton } from '../composables/useEditorButton'
@@ -14,9 +15,19 @@ import EditorIcon from './EditorIcon.vue'
 import { macWindowControlsInset } from '../lib/platform'
 import ActivityBell from './ActivityBell.vue'
 import MissionPill from './MissionPill.vue'
-import SplitMenu from './SplitMenu.vue'
+import TopbarOverflowMenu from './TopbarOverflowMenu.vue'
+import {
+  TOPBAR_BAR_ORDER,
+  TOPBAR_BRANCH_MIN_PX,
+  TOPBAR_MIN_TITLE_PX,
+  clusterBudget,
+  planTopbarOverflow,
+  type TopbarActionId,
+  type TopbarActionView
+} from '../lib/topbar-overflow'
 import {
   Terminal,
+  Globe,
   Folder as FolderIcon,
   FolderOpen,
   FolderTree,
@@ -28,6 +39,8 @@ import {
   GitPullRequest,
   Github,
   Plus,
+  Columns2,
+  Rows2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -39,8 +52,24 @@ const ui = useUiStore()
 const keybindings = useKeybindingsStore()
 const helpers = useHelpersStore()
 const layout = useLayoutStore()
+const settings = useSettingsStore()
 const boot = useClaudeBootStore()
 const { t } = useI18n()
+
+/** T627: "Split layout: Auto (stacked)" / "Split layout: Side by side" — the title and aria-label of the toggle. */
+const splitLayoutLabel = computed(() => {
+  const name = (o: 'side-by-side' | 'stacked'): string =>
+    t(
+      o === 'stacked'
+        ? 'settings.appearance.splitLayout.stacked'
+        : 'settings.appearance.splitLayout.sideBySide'
+    )
+  const mode =
+    settings.splitLayout === 'auto'
+      ? t('topbar.splitLayoutAuto', { layout: name(layout.splitOrientation).toLowerCase() })
+      : name(settings.splitLayout)
+  return t('topbar.splitLayout', { mode })
+})
 const titleEl = ref<HTMLSpanElement | null>(null)
 
 /**
@@ -248,6 +277,247 @@ function onGithubPullsClick(): void {
   if (githubPullsUrl.value) void window.api.shellOpenExternal(githubPullsUrl.value)
 }
 
+/**
+ * BUG-252 — the right cluster as data: one descriptor per action, drawn by the bar and (when it does not
+ * fit) by the `…` menu, so the icon, label, chord, state and handler can never differ between the two.
+ * Which ones leave, and in what order, is `TOPBAR_OVERFLOW_ORDER` (design.md §6 "Topbar overflow").
+ */
+const CHORDS: Partial<
+  Record<TopbarActionId, { title: (label: string) => string; hint: () => string }>
+> = {
+  // Literal `withChord(…, '<action id>')` calls, one per button: `keybindings-tooltips.test.ts` (AC-43)
+  // greps this file for them.
+  'new-session': {
+    title: (l) => keybindings.withChord(l, 'session.newInFolder'),
+    hint: () => keybindings.chordLabel('session.newInFolder')
+  },
+  roadmap: {
+    title: (l) => keybindings.withChord(l, 'view.roadmap'),
+    hint: () => keybindings.chordLabel('view.roadmap')
+  },
+  'pr-stack': {
+    title: (l) => keybindings.withChord(l, 'view.prStack'),
+    hint: () => keybindings.chordLabel('view.prStack')
+  },
+  review: {
+    title: (l) => keybindings.withChord(l, 'view.review'),
+    hint: () => keybindings.chordLabel('view.review')
+  },
+  'open-folder': {
+    title: (l) => keybindings.withChord(l, 'folder.openInFileManager'),
+    hint: () => keybindings.chordLabel('folder.openInFileManager')
+  },
+  editor: {
+    title: (l) => keybindings.withChord(l, 'folder.openInEditor'),
+    hint: () => keybindings.chordLabel('folder.openInEditor')
+  },
+  'github-pulls': {
+    title: (l) => keybindings.withChord(l, 'folder.openGithubPulls'),
+    hint: () => keybindings.chordLabel('folder.openGithubPulls')
+  },
+  explorer: {
+    title: (l) => keybindings.withChord(l, 'folder.browseFiles'),
+    hint: () => keybindings.chordLabel('folder.browseFiles')
+  },
+  terminal: {
+    title: (l) => keybindings.withChord(l, 'folder.newTerminal'),
+    hint: () => keybindings.chordLabel('folder.newTerminal')
+  },
+  'split-layout': {
+    title: (l) => keybindings.withChord(l, 'layout.cycleSplitOrientation'),
+    hint: () => keybindings.chordLabel('layout.cycleSplitOrientation')
+  },
+  'panel-right': {
+    title: (l) => keybindings.withChord(l, 'view.toggleHelper'),
+    hint: () => keybindings.chordLabel('view.toggleHelper')
+  }
+}
+
+/** `data-test` of each bar button (kept as they were; `panel-right` gained one). */
+const TEST_ID: Record<TopbarActionId, string> = {
+  'new-session': 'topbar-new-session',
+  roadmap: 'topbar-roadmap',
+  'pr-stack': 'topbar-pr-stack',
+  review: 'topbar-review',
+  'open-folder': 'topbar-open-folder',
+  editor: 'topbar-editor',
+  'github-pulls': 'topbar-github-pulls',
+  explorer: 'topbar-explorer',
+  terminal: 'topbar-split',
+  browser: 'topbar-browser',
+  'split-layout': 'topbar-split-layout',
+  'panel-right': 'topbar-panel-right'
+}
+
+const LUCIDE = { size: 14, strokeWidth: 1.5 }
+
+/** Every action that exists right now, in bar order. */
+const allActions = computed<TopbarActionView[]>(() => {
+  if (!sessions.activeFolderPath) return []
+  const view = (
+    id: TopbarActionId,
+    label: string,
+    rest: Pick<TopbarActionView, 'icon' | 'run'> &
+      Partial<Pick<TopbarActionView, 'iconProps' | 'state' | 'toggle'>>
+  ): TopbarActionView => {
+    const chord = CHORDS[id]
+    return {
+      id,
+      label,
+      title: chord ? chord.title(label) : label,
+      hint: chord ? chord.hint() : '',
+      iconProps: LUCIDE,
+      state: 'idle',
+      toggle: false,
+      ...rest
+    }
+  }
+  const on = (open: boolean): 'on' | 'idle' => (open ? 'on' : 'idle')
+  const list: TopbarActionView[] = []
+  if (folderOnly.value) {
+    list.push(
+      view('new-session', t('topbar.newSessionHere'), { icon: Plus, run: onNewSessionClick })
+    )
+  }
+  list.push(
+    view('roadmap', t('topbar.roadmapBoard'), {
+      icon: KanbanSquare,
+      toggle: true,
+      state: on(roadmapActive.value),
+      run: () => folderActions.toggleRoadmap()
+    }),
+    view('pr-stack', t('topbar.prStack'), {
+      icon: GitPullRequest,
+      toggle: true,
+      state: on(prStackActive.value),
+      run: () => folderActions.togglePrStack()
+    }),
+    // `CheckSquare` is the icon `ReviewPane` already wears in its own header, so the button and the
+    // view it opens agree.
+    view('review', t('topbar.review'), {
+      icon: CheckSquare,
+      toggle: true,
+      state: on(reviewActive.value),
+      run: onReviewClick
+    }),
+    view('open-folder', t('topbar.openFolder'), {
+      icon: FolderOpen,
+      run: () => folderActions.openInFileManager()
+    }),
+    view('editor', editorButton.label.value, {
+      icon: EditorIcon,
+      iconProps: { editorId: editorButton.editorId.value, size: 14 },
+      run: () => void folderActions.openInEditor()
+    })
+  )
+  // Only when the folder's `origin` is on github.com — hidden, not disabled, otherwise (nothing to open).
+  if (githubPullsUrl.value) {
+    list.push(
+      view('github-pulls', t('topbar.githubPulls'), { icon: Github, run: onGithubPullsClick })
+    )
+  }
+  list.push(
+    view('explorer', t('topbar.openExplorer'), {
+      icon: FolderTree,
+      run: () => folderActions.browseFiles()
+    }),
+    view('terminal', t('topbar.split'), { icon: Terminal, run: () => folderActions.newTerminal() }),
+    // T630: Browser sits right next to Terminal — one click, the same operator pane the old Split
+    // dropdown item opened.
+    view('browser', t('topbar.browser'), { icon: Globe, run: () => folderActions.newBrowser() })
+  )
+  if (helpers.hasHelpersForCurrentWorktree) {
+    // T627: split-layout toggle (design.md §6 "Split orientation"). The glyph is the layout in force;
+    // accent ink = an explicit choice overrides `auto`.
+    list.push(
+      view('split-layout', splitLayoutLabel.value, {
+        icon: layout.splitOrientation === 'stacked' ? Rows2 : Columns2,
+        state: settings.splitLayout === 'auto' ? 'idle' : 'ink',
+        run: () => settings.cycleSplitLayout()
+      }),
+      // Right helper-panel toggle (design.md §6 — Colapsar sidebars): stays visible while collapsed so
+      // the panel is always reopenable.
+      view('panel-right', layout.helperCollapsed ? t('helperStack.show') : t('helperStack.hide'), {
+        icon: layout.helperCollapsed ? PanelRightOpen : PanelRightClose,
+        run: () => layout.toggleHelper()
+      })
+    )
+  }
+  return list.sort((a, b) => TOPBAR_BAR_ORDER.indexOf(a.id) - TOPBAR_BAR_ORDER.indexOf(b.id))
+})
+
+const headerEl = ref<HTMLElement | null>(null)
+/** The ids the last plan moved into the `…` menu. Nothing is hidden before the first measure. */
+const hiddenIds = ref<TopbarActionId[]>([])
+/** The title region's `min-width`: the title's floor plus the badges after it (measured by `planOverflow`). */
+const regionMinPx = ref(TOPBAR_MIN_TITLE_PX)
+const barActions = computed(() => allActions.value.filter((a) => !hiddenIds.value.includes(a.id)))
+const menuActions = computed(() => allActions.value.filter((a) => hiddenIds.value.includes(a.id)))
+
+/** The session view has a breadcrumb before the title; the folder view does not. */
+const hasCrumb = computed(() => !!sessions.selectedSession && !folderOnly.value)
+
+/**
+ * Measure the header and re-plan. Called from the ResizeObserver and, after the DOM settled, when the
+ * actions that exist, the badges after the title or the padding change. It commits only a changed hidden
+ * set, so a steady width does no work after the read.
+ */
+function planOverflow(): void {
+  const header = headerEl.value
+  // Width 0 = not laid out (hidden, or a test renderer): nothing to measure, so nothing is hidden.
+  if (!header || header.clientWidth === 0) return
+  const style = getComputedStyle(header)
+  let extrasWidth = 0
+  header.querySelectorAll<HTMLElement>('[data-topbar-extra]').forEach((el) => {
+    // A badge that can shrink reserves only its minimum; a fixed one reserves its width. Both with the
+    // `gap-2` before them.
+    const min = Number(el.dataset.topbarExtraMin)
+    extrasWidth += (min > 0 ? min : el.offsetWidth) + 8
+  })
+  regionMinPx.value = TOPBAR_MIN_TITLE_PX + extrasWidth
+  const available = clusterBudget({
+    headerWidth: header.clientWidth,
+    paddingX: (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0),
+    hasCrumb: hasCrumb.value,
+    extrasWidth
+  })
+  const plan = planTopbarOverflow({
+    present: allActions.value.map((a) => a.id),
+    available,
+    previousHiddenCount: hiddenIds.value.length
+  })
+  const same =
+    plan.hidden.length === hiddenIds.value.length &&
+    plan.hidden.every((id, i) => id === hiddenIds.value[i])
+  if (!same) hiddenIds.value = plan.hidden
+}
+
+let resizeObserver: ResizeObserver | null = null
+onMounted(() => {
+  planOverflow() // before the first paint: no frame with the title over the actions
+  if (typeof ResizeObserver !== 'undefined' && headerEl.value) {
+    resizeObserver = new ResizeObserver(planOverflow)
+    resizeObserver.observe(headerEl.value)
+  }
+})
+onBeforeUnmount(() => resizeObserver?.disconnect())
+watch(
+  [
+    () => allActions.value.map((a) => a.id).join(),
+    hasCrumb,
+    providerName,
+    isOrchestrator,
+    activeFolderBranch,
+    () => layout.sidebarCollapsed
+  ],
+  planOverflow,
+  { flush: 'post' }
+)
+
+function runHidden(id: TopbarActionId): void {
+  allActions.value.find((a) => a.id === id)?.run()
+}
+
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Enter') {
     e.preventDefault()
@@ -268,7 +538,10 @@ function onKeydown(e: KeyboardEvent): void {
        — "macOS window-controls inset"). While the sidebar is open it covers
        that corner and no inset is needed. -->
   <header
+    ref="headerEl"
     class="flex shrink-0 select-none items-center gap-3 border-b border-border bg-bg"
+    data-island="topbar"
+    data-island-band
     style="height: 42px; padding: 0 16px; -webkit-app-region: drag"
     :style="
       layout.sidebarCollapsed && macWindowControlsInset
@@ -311,49 +584,66 @@ function onKeydown(e: KeyboardEvent): void {
          folder's identity. No editable title, no provider/orchestrator pills —
          those describe a session, and there is none. -->
     <template v-else-if="folderOnly">
-      <div class="flex min-w-0 flex-1 items-center gap-2">
+      <!-- BUG-252: the region's floor is explicit (the title's 96px plus the badges). Left to `auto`, its
+           minimum is the title's full text width, it never shrinks and the cluster is pushed out. -->
+      <div class="flex flex-1 items-center gap-2" :style="{ minWidth: `${regionMinPx}px` }">
         <FolderIcon :size="12" :stroke-width="1.6" class="shrink-0 text-text-4" />
-        <span class="truncate text-text" style="font-size: 13px; font-weight: 500">{{
-          activeFolderLabel
-        }}</span>
+        <span
+          class="truncate text-text"
+          :style="`font-size: 13px; font-weight: 500; min-width: ${TOPBAR_MIN_TITLE_PX}px`"
+          data-test="topbar-title"
+          >{{ activeFolderLabel }}</span
+        >
+        <!-- BUG-252: the branch gives way after the title is at its floor, down to its icon, so a long
+             branch name never takes the actions' room (the plan reserves the icon and the gap only). -->
         <span
           v-if="activeFolderBranch"
-          class="flex shrink-0 items-center font-mono text-text-4"
+          data-topbar-extra
+          :data-topbar-extra-min="TOPBAR_BRANCH_MIN_PX"
+          class="flex min-w-0 shrink items-center font-mono text-text-4"
           style="gap: 4px; font-size: 11px"
         >
-          <GitBranch :size="11" :stroke-width="1.6" />{{ activeFolderBranch }}
+          <GitBranch :size="11" :stroke-width="1.6" class="shrink-0" /><span class="truncate">{{
+            activeFolderBranch
+          }}</span>
         </span>
       </div>
     </template>
 
     <template v-else>
       <!-- Breadcrumb -->
+      <!-- BUG-252: the breadcrumb is the first thing to give way, down to its icon and the `›`. -->
       <div
-        class="flex shrink-0 items-center gap-1.5 text-text-3"
+        class="flex min-w-0 shrink items-center gap-1.5 text-text-3"
         style="font-size: 11.5px; font-weight: 450"
       >
         <FolderIcon :size="12" :stroke-width="1.6" class="shrink-0 text-text-4" />
-        <span class="text-text-3">{{ sessions.selectedPath?.folder }}</span>
-        <span class="text-text-4">›</span>
+        <span class="min-w-0 truncate text-text-3">{{ sessions.selectedPath?.folder }}</span>
+        <span class="shrink-0 text-text-4">›</span>
       </div>
 
       <!-- Editable session title. The wrapping div stays a `flex-1` DRAG region
            (most of its width is empty space, not interactive) — only the
            contenteditable span itself opts out, so a click still places the
            caret instead of starting a window drag. -->
-      <div class="flex min-w-0 flex-1 items-center gap-2">
+      <!-- BUG-252: the region's floor is explicit (the title's 96px plus the badges), see above. The
+           title's own `min-width` is its border box (padding and border included). -->
+      <div class="flex flex-1 items-center gap-2" :style="{ minWidth: `${regionMinPx}px` }">
         <span
           ref="titleEl"
           class="truncate rounded text-text outline-none transition"
           :class="isTerminal ? 'cursor-default' : 'cursor-text'"
-          style="
+          :style="`
             font-size: 13px;
             font-weight: 500;
             padding: 2px 5px;
             margin: -2px -5px;
             border: 1px solid transparent;
+            box-sizing: border-box;
+            min-width: ${TOPBAR_MIN_TITLE_PX}px;
             -webkit-app-region: no-drag;
-          "
+          `"
+          data-test="topbar-title"
           :contenteditable="isTerminal ? 'false' : 'true'"
           spellcheck="false"
           @blur="commitTitle"
@@ -366,6 +656,7 @@ function onKeydown(e: KeyboardEvent): void {
         <!-- Provenance badge — non-default (local/custom) provider -->
         <span
           v-if="providerName"
+          data-topbar-extra
           class="flex shrink-0 items-center rounded border border-warning text-warning"
           style="gap: 4px; padding: 1px 7px; font-size: 10.5px; font-weight: 500; height: 18px"
           :title="$t('topbar.providerBadgeTitle', { name: providerName })"
@@ -376,6 +667,7 @@ function onKeydown(e: KeyboardEvent): void {
         <!-- Orchestrator role pill (T98) -->
         <span
           v-if="isOrchestrator"
+          data-topbar-extra
           class="flex shrink-0 items-center rounded border border-accent text-accent"
           style="gap: 4px; padding: 1px 7px; font-size: 10.5px; font-weight: 500; height: 18px"
           :title="$t('topbar.orchestratorBadgeTitle')"
@@ -398,152 +690,33 @@ function onKeydown(e: KeyboardEvent): void {
            below: reachable with no session selected. design.md — Fleet rail
            reorg §3 "Topbar: … [bell][acts]". -->
       <ActivityBell />
-      <!-- T212 — gated on the ACTIVE FOLDER, not on a selected session: every
-           action below only ever needed a folder path, so a folder with no
-           sessions used to be a dead end here. -->
+      <!-- T212 — gated on the ACTIVE FOLDER, not on a selected session: every action below only
+           ever needed a folder path, so a folder with no sessions used to be a dead end here.
+           BUG-252: the buttons come from `barActions`; what the bar has no room for is in the `…`
+           menu at the end of the cluster. The two per-repo takeovers sit before the external-tool
+           openers: these act inside Harnu, the ones after them leave for the OS. -->
       <template v-if="sessions.activeFolderPath">
-        <!-- Folder branch only: with a session selected, ⌘N and the sidebar `+`
-             already cover starting one. -->
         <button
-          v-if="folderOnly"
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('topbar.newSessionHere'), 'session.newInFolder')"
-          :aria-label="$t('topbar.newSessionHere')"
-          data-test="topbar-new-session"
-          @click="onNewSessionClick"
-        >
-          <Plus :size="14" :stroke-width="1.5" />
-        </button>
-        <!-- The two per-repo takeovers, before the external-tool openers: these
-             act inside Harnu, the ones after them leave for the OS. -->
-        <button
+          v-for="a in barActions"
+          :key="a.id"
           class="flex items-center justify-center rounded transition"
           :class="
-            roadmapActive
+            a.state === 'on'
               ? 'bg-accent-soft text-accent'
-              : 'text-text-3 hover:bg-surface hover:text-text'
+              : a.state === 'ink'
+                ? 'text-accent hover:bg-surface'
+                : 'text-text-3 hover:bg-surface hover:text-text'
           "
           style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('topbar.roadmapBoard'), 'view.roadmap')"
-          :aria-label="$t('topbar.roadmapBoard')"
-          :aria-pressed="roadmapActive"
-          data-test="topbar-roadmap"
-          @click="folderActions.toggleRoadmap()"
+          :title="a.title"
+          :aria-label="a.label"
+          :aria-pressed="a.toggle ? a.state === 'on' : undefined"
+          :data-test="TEST_ID[a.id]"
+          @click="a.run()"
         >
-          <KanbanSquare :size="14" :stroke-width="1.5" />
+          <component :is="a.icon" v-bind="a.iconProps" />
         </button>
-        <button
-          class="flex items-center justify-center rounded transition"
-          :class="
-            prStackActive
-              ? 'bg-accent-soft text-accent'
-              : 'text-text-3 hover:bg-surface hover:text-text'
-          "
-          style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('topbar.prStack'), 'view.prStack')"
-          :aria-label="$t('topbar.prStack')"
-          :aria-pressed="prStackActive"
-          data-test="topbar-pr-stack"
-          @click="folderActions.togglePrStack()"
-        >
-          <GitPullRequest :size="14" :stroke-width="1.5" />
-        </button>
-        <!-- `CheckSquare` is the icon `ReviewPane` already wears in its own
-             header, so the button and the view it opens agree. -->
-        <button
-          class="flex items-center justify-center rounded transition"
-          :class="
-            reviewActive
-              ? 'bg-accent-soft text-accent'
-              : 'text-text-3 hover:bg-surface hover:text-text'
-          "
-          style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('topbar.review'), 'view.review')"
-          :aria-label="$t('topbar.review')"
-          :aria-pressed="reviewActive"
-          data-test="topbar-review"
-          @click="onReviewClick"
-        >
-          <CheckSquare :size="14" :stroke-width="1.5" />
-        </button>
-        <button
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('topbar.openFolder'), 'folder.openInFileManager')"
-          :aria-label="$t('topbar.openFolder')"
-          data-test="topbar-open-folder"
-          @click="folderActions.openInFileManager()"
-        >
-          <FolderOpen :size="14" :stroke-width="1.5" />
-        </button>
-        <button
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 26px; height: 26px"
-          :title="keybindings.withChord(editorButton.label.value, 'folder.openInEditor')"
-          :aria-label="editorButton.label.value"
-          data-test="topbar-editor"
-          @click="folderActions.openInEditor()"
-        >
-          <EditorIcon :editor-id="editorButton.editorId.value" :size="14" />
-        </button>
-        <!-- Only when the folder's `origin` is on github.com — hidden, not
-             disabled, otherwise (nothing to open). -->
-        <button
-          v-if="githubPullsUrl"
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('topbar.githubPulls'), 'folder.openGithubPulls')"
-          :aria-label="$t('topbar.githubPulls')"
-          data-test="topbar-github-pulls"
-          @click="onGithubPullsClick"
-        >
-          <Github :size="14" :stroke-width="1.5" />
-        </button>
-        <button
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('topbar.openExplorer'), 'folder.browseFiles')"
-          :aria-label="$t('topbar.openExplorer')"
-          data-test="topbar-explorer"
-          @click="folderActions.browseFiles()"
-        >
-          <FolderTree :size="14" :stroke-width="1.5" />
-        </button>
-        <button
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('topbar.split'), 'folder.newTerminal')"
-          :aria-label="$t('topbar.split')"
-          data-test="topbar-split"
-          @click="folderActions.newTerminal()"
-        >
-          <Terminal :size="14" :stroke-width="1.5" />
-        </button>
-        <!-- T564 U1: the Split dropdown — Terminal (the button above) or a Browser pane. -->
-        <SplitMenu @terminal="folderActions.newTerminal()" @browser="folderActions.newBrowser()" />
-        <!-- Right helper-panel toggle (design.md §6 — Colapsar sidebars). Only
-             shown when the worktree HAS panes (nothing to toggle otherwise); it
-             stays visible while collapsed so the panel is always reopenable. -->
-        <button
-          v-if="helpers.hasHelpersForCurrentWorktree"
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 26px; height: 26px"
-          :title="
-            keybindings.withChord(
-              layout.helperCollapsed ? $t('helperStack.show') : $t('helperStack.hide'),
-              'view.toggleHelper'
-            )
-          "
-          :aria-label="layout.helperCollapsed ? $t('helperStack.show') : $t('helperStack.hide')"
-          @click="layout.toggleHelper()"
-        >
-          <component
-            :is="layout.helperCollapsed ? PanelRightOpen : PanelRightClose"
-            :size="14"
-            :stroke-width="1.5"
-          />
-        </button>
+        <TopbarOverflowMenu v-if="menuActions.length" :actions="menuActions" @select="runHidden" />
       </template>
     </div>
   </header>

@@ -11,7 +11,9 @@ import type {
   GcOpinionResult,
   GcRecoveryAction,
   GcRecoveryItem,
-  GcSnapshot
+  GcSnapshot,
+  CycleRecord,
+  ShelveRestoreAck
 } from '../../../main/gc/gc-wire'
 import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import { i18n } from '../i18n'
@@ -302,6 +304,34 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
+  /** The cycle whose shelves were last announced, so a replayed record adds no second row. */
+  let lastShelveAnnouncedAt = 0
+
+  /**
+   * Each shelve leaves one Activity line with its reason (autonomous cleanup U2.2): the structured
+   * facts come from main, the words from the app's language. Main raises the native notification.
+   */
+  function announceShelved(c: CycleRecord): void {
+    const shelved = c.shelve?.shelved ?? []
+    if (shelved.length === 0 || c.at <= lastShelveAnnouncedAt) return
+    lastShelveAnnouncedAt = c.at
+    const { t } = i18n.global
+    const notifications = useNotificationsStore()
+    for (const s of shelved) {
+      notifications.notify({
+        ts: c.at,
+        source: 'app',
+        kind: 'info',
+        title: s.branch
+          ? t('cleanup.gc.shelved.activity', { branch: s.branch, days: s.idleDays })
+          : t('cleanup.gc.shelved.activityDetached', { days: s.idleDays }),
+        description: s.folderAlias,
+        folderPath: s.folderPath,
+        target: { view: 'cleanup' }
+      })
+    }
+  }
+
   function onOpinionResult(r: GcOpinionResult): void {
     // Every id the request named gets exactly one result (a verdict, a refusal, or a stale
     // marker), so this is also what ends its pending state.
@@ -432,9 +462,14 @@ export const useGcStore = defineStore('gc', () => {
         window.api.onGcProgress(onProgress),
         window.api.onGcDone((d) => void onDone(d)),
         // A cycle finished (autopilot tick or manual): the world changed.
-        window.api.onGcCycle(() => void refresh()),
+        window.api.onGcCycle((c) => {
+          announceShelved(c)
+          void refresh()
+        }),
         // The prep journal changed (boot recovery finished, a notice was answered).
         window.api.onGcRecoveryChanged(() => void loadRecovery()),
+        // A shelved worktree came back by itself (a resume, a terminal): the Shelved card follows.
+        window.api.onGcShelvedChanged(() => void refresh()),
         window.api.onGcOpinionResult(onOpinionResult),
         window.api.onGcOpinionDone(onOpinionDone)
       ]
@@ -631,6 +666,86 @@ export const useGcStore = defineStore('gc', () => {
     return saved
   }
 
+  /**
+   * Settings → Cleanup: "Acknowledge first report" for shelving. Its own channel, never a settings
+   * write (main refuses an acknowledgement a stale form carries); the answer is the prefs as saved.
+   */
+  async function ackShelveReport(): Promise<GcPrefs> {
+    const saved = await window.api.gcAckShelveReport()
+    if (snapshot.value) snapshot.value = { ...snapshot.value, prefs: saved }
+    return saved
+  }
+
+  // ---- shelved worktrees: bringing one back (autonomous cleanup U2.3a) ---------------------------
+
+  /** Shelved ids whose Restore is running, so a second click cannot start a second restore. */
+  const shelvedBusy = ref<ReadonlySet<string>>(new Set())
+  /** Why the last Restore of an id failed; the row shows it until the next attempt works. */
+  const shelvedFailures = ref<ReadonlyMap<string, ShelveRestoreAck>>(new Map())
+
+  const withBusy = (id: string, on: boolean): ReadonlySet<string> => {
+    const next = new Set(shelvedBusy.value)
+    if (on) next.add(id)
+    else next.delete(id)
+    return next
+  }
+
+  /** One click: restore this shelved worktree, say what happened, never leave the row without a next step. */
+  async function restoreShelved(id: string): Promise<void> {
+    const { t } = i18n.global
+    const ui = useUiStore()
+    const entry = snapshot.value?.shelved?.find((e) => e.id === id)
+    const name = entry ? (entry.worktreePath.split(/[\\/]/).filter(Boolean).pop() ?? id) : id
+    shelvedBusy.value = withBusy(id, true)
+    try {
+      const ack = await window.api.gcRestoreShelved(id)
+      const failures = new Map(shelvedFailures.value)
+      if (ack.ok) {
+        failures.delete(id)
+        const key =
+          ack.status === 'present'
+            ? 'present'
+            : ack.attached === false
+              ? 'restoredDetached'
+              : 'restored'
+        ui.pushToast({
+          kind: 'success',
+          title: t(`cleanup.gc.shelved.toast.${key}`, { name }),
+          ...(ack.movedAside
+            ? { description: t('cleanup.gc.shelved.toast.movedAside', { path: ack.movedAside }) }
+            : {}),
+          timeoutMs: ack.movedAside ? 10000 : 6000
+        })
+      } else {
+        failures.set(id, ack)
+        ui.pushToast({
+          kind: 'warning',
+          title: t('cleanup.gc.shelved.toast.failed', { name }),
+          description: ack.message,
+          timeoutMs: 8000
+        })
+      }
+      shelvedFailures.value = failures
+    } catch (e) {
+      const failures = new Map(shelvedFailures.value)
+      failures.set(id, {
+        ok: false,
+        status: 'failed',
+        message: e instanceof Error ? e.message : String(e)
+      })
+      shelvedFailures.value = failures
+      ui.pushToast({
+        kind: 'danger',
+        title: t('cleanup.gc.shelved.toast.failed', { name }),
+        description: e instanceof Error ? e.message : String(e),
+        timeoutMs: 8000
+      })
+    } finally {
+      shelvedBusy.value = withBusy(id, false)
+      await refresh()
+    }
+  }
+
   // ---- Cleanup's own exhaust: archive refs and what Harnu put in the trash ---------------------
 
   /**
@@ -679,6 +794,12 @@ export const useGcStore = defineStore('gc', () => {
       const guarded = ack.protectedArchives ?? 0
       if (guarded > 0) {
         causes.push(t('cleanup.gc.archives.toast.protected', guarded, { named: { n: guarded } }))
+      }
+      const shelvedKept = ack.shelvedArchives?.length ?? 0
+      if (shelvedKept > 0) {
+        causes.push(
+          t('cleanup.gc.archives.toast.shelved', shelvedKept, { named: { n: shelvedKept } })
+        )
       }
       if (causes.length > 0) {
         ui.pushToast({ kind: 'warning', title: causes.join(' · '), timeoutMs: 8000 })
@@ -812,6 +933,10 @@ export const useGcStore = defineStore('gc', () => {
     answerRecovery,
     savePrefs,
     deleteArchives,
+    ackShelveReport,
+    restoreShelved,
+    shelvedBusy,
+    shelvedFailures,
     runArchiveGc,
     emptyTrash,
     pruneSelection,

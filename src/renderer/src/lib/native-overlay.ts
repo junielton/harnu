@@ -8,7 +8,7 @@
  *  1. **Body layers, automatically.** Every app layer that can overlap a pane is teleported to `<body>` (the 42
  *     `<Teleport to="body">` sites), so a watcher over `<body>`'s children covers all of them by construction,
  *     including ones added later. A forgotten registration would otherwise mean a menu hidden under the page.
- *  2. **In-app layers, explicitly.** A dropdown that lives inside `#app` (the Split menu, the pane's own ⋯
+ *  2. **In-app layers, explicitly.** A dropdown that lives inside `#app` (the pane's own ⋯
  *     menu) registers its element through {@link registerOverlayElement} / `useNativeOverlay`.
  *
  * The pure part ({@link collectOverlays}) is unit-tested; the DOM watcher is a thin adapter around it.

@@ -108,6 +108,7 @@ function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
       gcRecoveryAck: vi.fn(async () => undefined),
       gcRecoveryAct: vi.fn(async () => ({ ok: true })),
       onGcRecoveryChanged: sub('recovery'),
+      onGcShelvedChanged: sub('shelvedChanged'),
       onGcProgress: sub('progress'),
       onGcDone: sub('done'),
       onGcCycle: sub('cycle'),
@@ -932,7 +933,8 @@ describe('gc store', () => {
       'opinion',
       'opinionDone',
       'progress',
-      'recovery'
+      'recovery',
+      'shelvedChanged'
     ])
   })
 })
@@ -1394,5 +1396,126 @@ describe('gc store — confirming the safe ones right before removal', () => {
     api.gcOpinionCached.mockClear()
     expect(await gc.confirmSafe()).toEqual({ kept: [], dropped: [], failed: false })
     expect(api.gcOpinionCached).not.toHaveBeenCalled()
+  })
+})
+
+describe('gc store — restoring a shelved worktree (U2.3a)', () => {
+  const shelvedEntry = {
+    id: '/ws/repo::worktree::/t/feat-x',
+    repoPath: '/ws/repo',
+    worktreePath: '/t/feat-x',
+    branch: 'feat/x',
+    headSha: 'a'.repeat(40),
+    namespace: 'refs/archive/feat/x/20261105T100000Z',
+    shelvedAt: 1_000,
+    idleDays: 9,
+    reason: 'Shelved `feat/x` — idle 9 d, branch kept',
+    freedBytes: 1000
+  }
+  const withRestore = (answer: unknown) => {
+    const api = installApi(snap({ shelved: [shelvedEntry] }))
+    const restore = vi.fn(async () => answer)
+    ;(
+      globalThis as unknown as { window: { api: Record<string, unknown> } }
+    ).window.api.gcRestoreShelved = restore
+    return { api, restore }
+  }
+
+  it('restores, says so, refreshes the snapshot and clears the busy mark', async () => {
+    const { api, restore } = withRestore({
+      ok: true,
+      status: 'restored',
+      attached: true,
+      movedAside: null
+    })
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcSnapshot.mockResolvedValueOnce(snap({ shelved: [] }))
+    const run = gc.restoreShelved(shelvedEntry.id)
+    expect(gc.shelvedBusy.has(shelvedEntry.id)).toBe(true)
+    await run
+    expect(restore).toHaveBeenCalledWith(shelvedEntry.id)
+    expect(gc.shelvedBusy.has(shelvedEntry.id)).toBe(false)
+    expect(toast.mock.calls[0][0]).toMatchObject({ kind: 'success' })
+    expect(gc.snapshot?.shelved).toEqual([])
+  })
+
+  it('names the folder that was in the way and where it went', async () => {
+    withRestore({
+      ok: true,
+      status: 'restored',
+      attached: true,
+      movedAside: '/t/feat-x.leftover-20261105T090807'
+    })
+    const gc = useGcStore()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await gc.init()
+    await gc.restoreShelved(shelvedEntry.id)
+    expect(toast.mock.calls[0][0].description).toContain('/t/feat-x.leftover-20261105T090807')
+  })
+
+  it('keeps a failure for the row (reason and message) and warns, never silently', async () => {
+    withRestore({ ok: false, status: 'failed', reason: 'repo-busy', message: 'busy' })
+    const gc = useGcStore()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await gc.init()
+    await gc.restoreShelved(shelvedEntry.id)
+    expect(gc.shelvedFailures.get(shelvedEntry.id)).toMatchObject({ reason: 'repo-busy' })
+    expect(toast.mock.calls[0][0]).toMatchObject({ kind: 'warning' })
+    expect(gc.shelvedBusy.has(shelvedEntry.id)).toBe(false)
+  })
+
+  it('deleting archives says when it kept those of shelved worktrees, and where to go', async () => {
+    const api = installApi()
+    api.gcDeleteArchives.mockResolvedValueOnce({
+      ok: false,
+      deleted: 0,
+      archives: 0,
+      failed: 0,
+      changed: [],
+      shelvedArchives: [
+        { namespace: 'refs/archive/feat/x/20261101T100000Z', id: 'e1', branch: 'feat/x' }
+      ]
+    })
+    const gc = useGcStore()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await gc.init()
+    await gc.deleteArchives('/ws/repo', [
+      { namespace: 'refs/archive/feat/x/20261101T100000Z', tipSha: null, wipSha: null }
+    ])
+    const warning = toast.mock.calls.map((c) => c[0]).find((c) => c.kind === 'warning')
+    expect(warning?.title).toContain('Restore it first')
+  })
+
+  it('forgets an old failure when the next attempt works', async () => {
+    const { restore } = withRestore({
+      ok: false,
+      status: 'failed',
+      reason: 'repo-busy',
+      message: 'b'
+    })
+    const gc = useGcStore()
+    await gc.init()
+    await gc.restoreShelved(shelvedEntry.id)
+    restore.mockResolvedValueOnce({
+      ok: true,
+      status: 'restored',
+      attached: true,
+      movedAside: null
+    })
+    await gc.restoreShelved(shelvedEntry.id)
+    expect(gc.shelvedFailures.has(shelvedEntry.id)).toBe(false)
+  })
+
+  it('refreshes when main says the shelved set changed (a resume restored one)', async () => {
+    const { api } = withRestore({ ok: true })
+    const gc = useGcStore()
+    await gc.init()
+    const calls = api.gcSnapshot.mock.calls.length
+    api.push.shelvedChanged(undefined)
+    await vi.runAllTimersAsync()
+    expect(api.gcSnapshot.mock.calls.length).toBeGreaterThan(calls)
   })
 })

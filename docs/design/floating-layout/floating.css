@@ -1,0 +1,462 @@
+/* Mock: VS Code-style floating panels. Active only while <html> has .floating. */
+html.floating {
+  --float-canvas: color-mix(in oklab, var(--color-bg) 62%, black);
+  --float-gap: 6px;
+}
+html.floating #app > div {
+  background: var(--float-canvas);
+}
+html.floating #app > div > div.flex.min-h-0.flex-1 {
+  padding: var(--float-gap) var(--float-gap) 0 var(--float-gap);
+}
+/* islands */
+html.floating #app > div > div.flex.min-h-0.flex-1 > aside,
+html.floating #app > div > div.flex.min-h-0.flex-1 > div:not([role='separator']) > aside,
+html.floating main > header,
+html.floating main > div.flex.min-h-0.flex-1 > div:first-child,
+html.floating
+  main
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator']):not(:first-child)
+  > aside
+  > div {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+/* main is no longer one island: topbar, session area and each helper pane float on their own */
+html.floating main > header {
+  margin-bottom: var(--float-gap);
+  background: var(--color-bg);
+}
+html.floating main > div.flex.min-h-0.flex-1 > div:first-child {
+  background: var(--color-bg);
+}
+html.floating
+  main
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator']):not(:first-child)
+  > aside
+  > div
+  + div {
+  margin-top: var(--float-gap);
+}
+/* dividers: the gap is the handle; no line at rest, a short grip on hover */
+html.floating [role='separator'][aria-orientation='vertical'] > div {
+  background: transparent !important;
+  height: 36px;
+  width: 2px;
+  border-radius: 999px;
+  transition: background var(--dur-fast, 120ms) var(--ease, ease);
+}
+html.floating [role='separator'][aria-orientation='vertical']:hover > div {
+  background: var(--color-accent-line) !important;
+}
+/* footer is its own island too */
+html.floating #app > div > footer {
+  margin: var(--float-gap);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+/* compare toggle (preview only) */
+#float-toggle {
+  position: fixed;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%);
+  z-index: 9999;
+  font:
+    500 11px Inter,
+    system-ui,
+    sans-serif;
+  color: var(--color-text-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+#float-toggle:hover {
+  opacity: 1;
+  color: var(--color-text);
+}
+
+/* Variant: footer NOT floating — flush, full width, sitting on the canvas */
+html.floating.footer-flat #app > div > div.flex.min-h-0.flex-1 {
+  padding-bottom: var(--float-gap);
+}
+html.floating.footer-flat #app > div > footer {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface);
+}
+#footer-toggle {
+  left: calc(50% + 120px);
+}
+
+/* Minimized Fleet rail: its resize separator is v-if'd out, so supply the gap */
+html.floating #app > div > div.flex.min-h-0.flex-1 > main + div:not([role='separator']) {
+  margin-left: var(--float-gap);
+}
+
+/* Variant: VERTICAL main split — session on top, helper stack below (preview only, drag not wired) */
+html.vertical main > div.flex.min-h-0.flex-1 {
+  flex-direction: column;
+}
+html.vertical main > div.flex.min-h-0.flex-1 > div:first-child {
+  min-height: 0;
+}
+html.vertical main > div.flex.min-h-0.flex-1 > [role='separator'] {
+  width: auto;
+  height: 6px;
+  cursor: row-resize;
+}
+html.vertical main > div.flex.min-h-0.flex-1 > [role='separator'] > div {
+  width: 36px !important;
+  height: 2px !important;
+}
+/* helper panes sit side by side under the session */
+html.vertical
+  main
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator']):not(:first-child)
+  > aside {
+  flex-direction: row;
+}
+html.vertical
+  main
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator']):not(:first-child)
+  > aside
+  > div {
+  flex: 1 1 0 !important;
+  height: auto !important;
+  min-width: 0;
+}
+html.floating.vertical
+  main
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator']):not(:first-child)
+  > aside
+  > div
+  + div {
+  margin-top: 0;
+  margin-left: var(--float-gap);
+}
+
+/* Mock: helper pane "full screen" stage. html.pane-full = one pane fills the main area;
+   html.pane-full.full-zen = sidebar and Fleet rail hide too. */
+html.pane-full main > div.flex.min-h-0.flex-1 > div:first-child,
+html.pane-full main > div.flex.min-h-0.flex-1 > [role='separator'] {
+  display: none !important;
+}
+html.pane-full main > div.flex.min-h-0.flex-1 > div:not([role='separator']):not(:first-child) {
+  flex: 1 1 0 !important;
+}
+html.pane-full main aside > div:not([data-full]) {
+  display: none !important;
+}
+html.pane-full main aside > div[data-full] {
+  flex: 1 1 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+}
+html.pane-full.full-zen #app > div > div.flex.min-h-0.flex-1 > aside,
+html.pane-full.full-zen #app > div > div.flex.min-h-0.flex-1 > [role='separator'],
+html.pane-full.full-zen #app > div > div.flex.min-h-0.flex-1 > main + div:not([role='separator']) {
+  display: none !important;
+}
+.mock-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-3);
+}
+.mock-expand-btn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+html.pane-full .mock-expand-btn[data-on] {
+  color: var(--color-accent);
+}
+
+/* Mock: layout motion (html.anim). Containers already size via inline width/flex,
+   so a transition on those properties animates maximize, split ratio and rail
+   minimize/expand. The expand-to-window stage switches from display:none to an
+   animatable collapse. */
+html.anim #app > div > div.flex.min-h-0.flex-1 > *,
+html.anim main > div.flex.min-h-0.flex-1 > *,
+html.anim main aside > div {
+  transition:
+    flex var(--dur-slow) var(--ease),
+    width var(--dur-slow) var(--ease),
+    opacity var(--dur) var(--ease),
+    margin var(--dur-slow) var(--ease),
+    border-width var(--dur-slow) var(--ease),
+    padding var(--dur-slow) var(--ease);
+}
+html.anim.pane-full main > div.flex.min-h-0.flex-1 > div:first-child,
+html.anim.pane-full main > div.flex.min-h-0.flex-1 > [role='separator'],
+html.anim.pane-full main aside > div:not([data-full]),
+html.anim.pane-full.full-zen #app > div > div.flex.min-h-0.flex-1 > aside,
+html.anim.pane-full.full-zen #app > div > div.flex.min-h-0.flex-1 > [role='separator'],
+html.anim.pane-full.full-zen
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > main
+  + div:not([role='separator']) {
+  display: flex !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  opacity: 0;
+  margin: 0 !important;
+  border-width: 0 !important;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* flex children that size by flex-grow animate on flex-grow, not on width */
+html.anim.pane-full main > div.flex.min-h-0.flex-1 > div:first-child,
+html.anim.pane-full main aside > div:not([data-full]) {
+  flex-grow: 0 !important;
+}
+/* stacked helper panes collapse in height, not width */
+html.anim.pane-full main aside > div:not([data-full]) {
+  width: auto !important;
+  min-height: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.anim * {
+    transition: none !important;
+  }
+}
+
+/* Sidebar footer (Add folder + Settings) as its own island under the sidebar */
+html.floating #app > div > div.flex.min-h-0.flex-1 > aside {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+html.floating #app > div > div.flex.min-h-0.flex-1 > aside > header {
+  background: var(--color-sidebar);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+html.floating #app > div > div.flex.min-h-0.flex-1 > aside > div.scrollable {
+  background: var(--color-sidebar);
+  border: 1px solid var(--color-border);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+html.floating #app > div > div.flex.min-h-0.flex-1 > aside > footer {
+  margin-top: var(--float-gap);
+  background: var(--color-sidebar);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+/* Mock fix: drill-in Back row pinned OUTSIDE the scroll area.
+   It is positioned against the sidebar <aside> (position: relative), so it neither
+   scrolls nor gets clipped by the scroller, spans the full island width (over the
+   scrollbar gutter), and the scroller starts right below it. */
+aside:has([data-drill-back]) > div.scrollable {
+  margin-top: 30px;
+  padding-top: 0 !important;
+}
+[data-drill-back] {
+  position: absolute !important;
+  top: var(--drill-back-top, 42px);
+  left: 0;
+  right: 0;
+  width: auto !important;
+  z-index: 3;
+  background: var(--color-sidebar);
+}
+html.floating [data-drill-back] {
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+}
+/* soft fade where rows slide under the pinned row, so no half-cut text.
+   A gradient strip hanging under the row, inset 1px so the island borders stay solid. */
+[data-drill-back]::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  right: 11px; /* stop before the scrollbar gutter so the thumb is never veiled */
+  top: 100%;
+  height: 14px;
+  margin-top: 1px; /* below the row's border-bottom */
+  background: linear-gradient(to bottom, var(--color-sidebar), transparent);
+  pointer-events: none;
+}
+
+/* Fleet rail (expanded): fleet list, Needs you and Would-have as separate islands */
+html.floating
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator'])
+  > aside:not(.border-l) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+html.floating
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator'])
+  > aside:not(.border-l)
+  > div:first-child {
+  background: var(--color-sidebar);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+html.floating
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator'])
+  > aside:not(.border-l)
+  > div.scrollable {
+  background: var(--color-sidebar);
+  border: 1px solid var(--color-border);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+html.floating
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator'])
+  > aside:not(.border-l)
+  > div.shrink-0.border-t {
+  margin-top: var(--float-gap);
+  background: var(--color-sidebar);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* "Return here" zone shares the TOOLBAR island: toolbar on top, zone right under it
+   (toolbar keeps its border-b as the inner divider), then the list island below. */
+html.floating
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > aside:has(> header + div:not([class]))
+  > header {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+html.floating #app > div > div.flex.min-h-0.flex-1 > aside > header + div:not([class]) {
+  background: var(--color-sidebar);
+  border: 1px solid var(--color-border);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+}
+html.floating
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > aside:has(> header + div:not([class]))
+  > div.scrollable {
+  margin-top: var(--float-gap);
+  border-top: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+/* drill mode + zone: the list island starts with the pinned Back row */
+html.floating
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > aside:has(> header + div:not([class])):has([data-drill-back])
+  > div.scrollable {
+  margin-top: calc(var(--float-gap) + 30px);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+html.floating
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > aside:has(> header + div:not([class]))
+  [data-drill-back] {
+  border-top: 1px solid var(--color-border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+/* the zone's own divider line separated it from the list; the island gap does that now */
+html.floating
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > aside
+  > header
+  + div:not([class])
+  > div.border-t[aria-hidden='true'] {
+  display: none;
+}
+html.floating #app > div > div.flex.min-h-0.flex-1 > aside > header + div:not([class]) {
+  padding-bottom: 4px;
+}
+
+/* ===== Grid alignment (final, overrides the earlier sidebar/rail blocks) =====
+   The top band is three 42px islands on one line: sidebar toolbar | Topbar | Fleet header.
+   Everything below starts at the same y (top band + gap). */
+html.floating body #app > div > div.flex.min-h-0.flex-1 > aside > header,
+html.floating
+  body
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator'])
+  > aside:not(.border-l)
+  > div:first-child {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+/* Return here: its own island under the toolbar */
+html.floating body #app > div > div.flex.min-h-0.flex-1 > aside > header + div:not([class]) {
+  margin-top: var(--float-gap);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+/* the list islands: sidebar list and fleet list */
+html.floating body #app > div > div.flex.min-h-0.flex-1 > aside > div.scrollable,
+html.floating
+  body
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > div:not([role='separator'])
+  > aside:not(.border-l)
+  > div.scrollable {
+  margin-top: var(--float-gap);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+/* drill mode: the pinned Back row is the top of the list island */
+html.floating
+  body
+  #app
+  > div
+  > div.flex.min-h-0.flex-1
+  > aside:has([data-drill-back])
+  > div.scrollable {
+  margin-top: calc(var(--float-gap) + 30px);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+html.floating body [data-drill-back] {
+  border-top: 1px solid var(--color-border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}

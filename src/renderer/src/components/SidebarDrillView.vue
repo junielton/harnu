@@ -299,7 +299,7 @@ function onPeekClick(kind: 'older' | 'archived'): void {
 </script>
 
 <template>
-  <div class="flex flex-1 flex-col overflow-hidden">
+  <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-island="sidebar-list">
     <!-- Back row — replaces the drilled screen's own title. Shown whenever
          the stack is non-empty (repo screen or folder screen). The whole row
          is the back button (not just the chevron) — same "full row is
@@ -396,62 +396,67 @@ function onPeekClick(kind: 'older' | 'archived'): void {
       </span>
     </button>
 
-    <div class="scrollable flex-1 overflow-y-auto" style="padding: 6px 0">
-      <!-- Root screen -->
-      <template v-if="!top">
-        <button
-          v-for="node in rootNodes"
-          :key="isGroup(node) ? node.key : node.path"
-          :data-drill-root-row="isGroup(node) ? node.key : node.path"
-          class="sidebar-row group flex w-full items-center text-left text-text transition hover:bg-surface"
-          style="height: 30px; padding: 0 10px; gap: 7px; font-size: 12.5px"
-          @click="onRootClick(node)"
-          @contextmenu="onRootActions($event, node)"
-        >
-          <GitBranch
-            v-if="isGroup(node) && node.source === 'repo'"
-            :size="13"
-            :stroke-width="1.8"
-            class="shrink-0 text-text-3"
-          />
-          <FolderIcon v-else :size="13" :stroke-width="1.8" class="shrink-0 text-text-3" />
-          <span
-            class="min-w-0 flex-1 truncate"
-            :class="isGroup(node) ? 'font-semibold' : 'font-medium text-text-2'"
-            >{{ labelFor(node) }}</span
+    <!-- List area. This view renders straight into the sidebar column (Sidebar.vue
+         does not wrap it in its tree scroller), so the Back row above is a sibling
+         of this scroller: it never scrolls, spans the full width and the scrollbar
+         track starts below it (BUG-248). -->
+    <div class="relative flex min-h-0 flex-1 flex-col">
+      <div class="scrollable flex-1 overflow-y-auto" style="padding: 6px 0">
+        <!-- Root screen -->
+        <template v-if="!top">
+          <button
+            v-for="node in rootNodes"
+            :key="isGroup(node) ? node.key : node.path"
+            :data-drill-root-row="isGroup(node) ? node.key : node.path"
+            class="sidebar-row group flex w-full items-center text-left text-text transition hover:bg-surface"
+            style="height: 30px; padding: 0 10px; gap: 7px; font-size: 12.5px"
+            @click="onRootClick(node)"
+            @contextmenu="onRootActions($event, node)"
           >
-          <span v-if="isGroup(node)" class="shrink-0 text-[11px] text-text-4">{{
-            node.source === 'repo'
-              ? $t('sidebar.drill.worktreeCount', { n: node.folders.length })
-              : $t('sidebar.drill.folderCount', { n: node.folders.length })
-          }}</span>
-          <!-- Chooser-row actions (T289) — "Stats on demand": invisible at
+            <GitBranch
+              v-if="isGroup(node) && node.source === 'repo'"
+              :size="13"
+              :stroke-width="1.8"
+              class="shrink-0 text-text-3"
+            />
+            <FolderIcon v-else :size="13" :stroke-width="1.8" class="shrink-0 text-text-3" />
+            <span
+              class="min-w-0 flex-1 truncate"
+              :class="isGroup(node) ? 'font-semibold' : 'font-medium text-text-2'"
+              >{{ labelFor(node) }}</span
+            >
+            <span v-if="isGroup(node)" class="shrink-0 text-[11px] text-text-4">{{
+              node.source === 'repo'
+                ? $t('sidebar.drill.worktreeCount', { n: node.folders.length })
+                : $t('sidebar.drill.folderCount', { n: node.folders.length })
+            }}</span>
+            <!-- Chooser-row actions (T289) — "Stats on demand": invisible at
                rest with the space preserved, revealed on hover/focus, forced
                visible while its own menu is open. -->
-          <span
-            role="button"
-            tabindex="0"
-            :data-drill-row-actions="isGroup(node) ? node.key : node.path"
-            class="flex shrink-0 items-center justify-center rounded text-text-4 transition hover:text-text-2"
-            :class="
-              (isGroup(node) ? groupActionsOpen(node.key) : folderActionsOpen(node.path))
-                ? 'opacity-100'
-                : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-            "
-            style="width: 20px; height: 20px"
-            :title="isGroup(node) ? $t('repoGroup.menuLabel') : $t('folderMenu.label')"
-            :aria-label="isGroup(node) ? $t('repoGroup.menuLabel') : $t('folderMenu.label')"
-            @click.stop="onRootActions($event, node)"
-            @keydown.enter.stop.prevent="onRootActions($event, node)"
-            @keydown.space.stop.prevent="onRootActions($event, node)"
-          >
-            <Ellipsis :size="14" :stroke-width="1.8" />
-          </span>
-          <ChevronRight :size="13" :stroke-width="1.8" class="shrink-0 text-text-4" />
-        </button>
-      </template>
+            <span
+              role="button"
+              tabindex="0"
+              :data-drill-row-actions="isGroup(node) ? node.key : node.path"
+              class="flex shrink-0 items-center justify-center rounded text-text-4 transition hover:text-text-2"
+              :class="
+                (isGroup(node) ? groupActionsOpen(node.key) : folderActionsOpen(node.path))
+                  ? 'opacity-100'
+                  : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+              "
+              style="width: 20px; height: 20px"
+              :title="isGroup(node) ? $t('repoGroup.menuLabel') : $t('folderMenu.label')"
+              :aria-label="isGroup(node) ? $t('repoGroup.menuLabel') : $t('folderMenu.label')"
+              @click.stop="onRootActions($event, node)"
+              @keydown.enter.stop.prevent="onRootActions($event, node)"
+              @keydown.space.stop.prevent="onRootActions($event, node)"
+            >
+              <Ellipsis :size="14" :stroke-width="1.8" />
+            </span>
+            <ChevronRight :size="13" :stroke-width="1.8" class="shrink-0 text-text-4" />
+          </button>
+        </template>
 
-      <!-- Group screen: member folders. Drillable chooser rows while the depth
+        <!-- Group screen: member folders. Drillable chooser rows while the depth
            budget allows another screen; otherwise the same `SidebarFolder`
            component the classic tree renders inside a group, so expansion,
            sessions, teammates, terminals, and the inline action cluster all
@@ -462,49 +467,63 @@ function onPeekClick(kind: 'older' | 'archived'): void {
            establishes "you're inside this group", so the default `flat`
            indent is correct here (see design.md's "Drill-in navigation"
            section for the reasoning). -->
-      <template v-else-if="groupScreen">
-        <template v-if="canDrill">
-          <button
-            v-for="f in groupScreen.folders"
-            :key="f.path"
-            :data-drill-folder-row="f.path"
-            class="sidebar-row group flex w-full items-center text-left text-text transition hover:bg-surface"
-            style="height: 30px; padding: 0 10px; gap: 7px; font-size: 12.5px"
-            @click="sessions.drillIntoFolder(f.path)"
-            @contextmenu="openFolderMenuAt($event, f.path)"
-          >
-            <FolderIcon :size="13" :stroke-width="1.8" class="shrink-0 text-text-3" />
-            <span class="min-w-0 flex-1 truncate font-medium text-text-2">{{ labelFor(f) }}</span>
-            <span
-              role="button"
-              tabindex="0"
-              :data-drill-row-actions="f.path"
-              class="flex shrink-0 items-center justify-center rounded text-text-4 transition hover:text-text-2"
-              :class="
-                folderActionsOpen(f.path)
-                  ? 'opacity-100'
-                  : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-              "
-              style="width: 20px; height: 20px"
-              :title="$t('folderMenu.label')"
-              :aria-label="$t('folderMenu.label')"
-              @click.stop="openFolderMenuAt($event, f.path)"
-              @keydown.enter.stop.prevent="openFolderMenuAt($event, f.path)"
-              @keydown.space.stop.prevent="openFolderMenuAt($event, f.path)"
+        <template v-else-if="groupScreen">
+          <template v-if="canDrill">
+            <button
+              v-for="f in groupScreen.folders"
+              :key="f.path"
+              :data-drill-folder-row="f.path"
+              class="sidebar-row group flex w-full items-center text-left text-text transition hover:bg-surface"
+              style="height: 30px; padding: 0 10px; gap: 7px; font-size: 12.5px"
+              @click="sessions.drillIntoFolder(f.path)"
+              @contextmenu="openFolderMenuAt($event, f.path)"
             >
-              <Ellipsis :size="14" :stroke-width="1.8" />
-            </span>
-            <ChevronRight :size="13" :stroke-width="1.8" class="shrink-0 text-text-4" />
-          </button>
+              <FolderIcon :size="13" :stroke-width="1.8" class="shrink-0 text-text-3" />
+              <span class="min-w-0 flex-1 truncate font-medium text-text-2">{{ labelFor(f) }}</span>
+              <span
+                role="button"
+                tabindex="0"
+                :data-drill-row-actions="f.path"
+                class="flex shrink-0 items-center justify-center rounded text-text-4 transition hover:text-text-2"
+                :class="
+                  folderActionsOpen(f.path)
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                "
+                style="width: 20px; height: 20px"
+                :title="$t('folderMenu.label')"
+                :aria-label="$t('folderMenu.label')"
+                @click.stop="openFolderMenuAt($event, f.path)"
+                @keydown.enter.stop.prevent="openFolderMenuAt($event, f.path)"
+                @keydown.space.stop.prevent="openFolderMenuAt($event, f.path)"
+              >
+                <Ellipsis :size="14" :stroke-width="1.8" />
+              </span>
+              <ChevronRight :size="13" :stroke-width="1.8" class="shrink-0 text-text-4" />
+            </button>
+          </template>
+          <template v-else>
+            <SidebarFolder v-for="f in groupScreen.folders" :key="f.path" :folder="f" />
+          </template>
         </template>
-        <template v-else>
-          <SidebarFolder v-for="f in groupScreen.folders" :key="f.path" :folder="f" />
-        </template>
-      </template>
 
-      <!-- Folder screen: the folder's own sessions, reusing SidebarFolder's
+        <!-- Folder screen: the folder's own sessions, reusing SidebarFolder's
            row rendering headerless — the back row above already names it. -->
-      <SidebarFolder v-else-if="folderScreen" :folder="folderScreen" headerless />
+        <SidebarFolder v-else-if="folderScreen" :folder="folderScreen" headerless />
+      </div>
+      <!-- Fade strip: rows sliding under the Back row dissolve instead of being
+         cut mid-glyph. Stops short of the 8px scrollbar so the thumb stays solid. -->
+      <div
+        v-if="top"
+        data-drill-back-fade
+        aria-hidden="true"
+        class="pointer-events-none absolute left-0 top-0"
+        style="
+          right: 8px;
+          height: 14px;
+          background: linear-gradient(to bottom, var(--color-sidebar), transparent);
+        "
+      />
     </div>
 
     <!-- Group context menu (T289): the same Rename / Reset name / Cleanup items
