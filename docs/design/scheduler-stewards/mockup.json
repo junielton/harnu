@@ -1,0 +1,49 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-11-05",
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css (@theme block, default theme) + src/renderer/src/styles/main.css (font tokens)",
+  "viewports": [1280],
+  "targets": [
+    "src/renderer/src/components/SchedulerStewards.vue",
+    "src/renderer/src/components/SchedulerView.vue"
+  ],
+  "screens": [
+    {
+      "id": "scheduler--list",
+      "title": "Scheduler list column with a collapsible Stewards block",
+      "status": "approved",
+      "approvedAt": "2026-11-05",
+      "states": ["recolhido", "aberto"],
+      "targets": [
+        "src/renderer/src/components/SchedulerStewards.vue",
+        "src/renderer/src/components/SchedulerView.vue"
+      ],
+      "notes": "Stewards becomes a toggled block with Up next's header; collapsed by default and persisted per viewer; open, its rows scroll inside a capped height."
+    }
+  ],
+  "parts": [],
+  "flows": [
+    {
+      "id": "ver-stewards",
+      "title": "Peek at the stewards and fold them away",
+      "steps": [
+        {
+          "screen": "scheduler--list",
+          "state": "recolhido",
+          "via": "click the STEWARDS header"
+        },
+        {
+          "screen": "scheduler--list",
+          "state": "aberto",
+          "via": "click the STEWARDS header again"
+        },
+        {
+          "screen": "scheduler--list",
+          "state": "recolhido"
+        }
+      ]
+    }
+  ]
+}

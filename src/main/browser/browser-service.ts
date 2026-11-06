@@ -27,6 +27,7 @@ import {
 } from '../user-projects'
 import { resolveGateInput, type GateResolution } from './gate-resolve'
 import { createBrowserRegistry } from './registry'
+import { openPaneUrls } from './pane-urls'
 import type { BrowserReadDeps } from './read-verbs'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import { resolveDiscardMs } from './lifecycle'
@@ -161,6 +162,14 @@ export function noteMcpPort(port: number): void {
   mcpPort = port
 }
 
+/**
+ * Addresses of the open browser panes, read-only (autonomous cleanup U3.5: a stack whose port a pane is
+ * looking at is in use). The view host is only touched when a pane exists.
+ */
+export function listOpenPaneUrls(): string[] {
+  return openPaneUrls(browserRegistry.list(), (paneId) => getBrowserHost().info(paneId)?.url)
+}
+
 /** The view host. Created on first use so a headless unit never builds electron views. */
 export function getBrowserHost(): BrowserViewHost {
   if (host) return host
@@ -199,7 +208,7 @@ export function bindBrowserWindow(getWindow: () => BrowserWindow | null): void {
 }
 
 /**
- * Create a pane the OPERATOR opened (the Split menu, a popup the operator clicked). Operator panes use the
+ * Create a pane the OPERATOR opened (the Topbar Browser button, a popup the operator clicked). Operator panes use the
  * operator partition (a popup inherits its opener's) and are never capped (spec §10.1).
  */
 export function openOperatorPane(opts: {

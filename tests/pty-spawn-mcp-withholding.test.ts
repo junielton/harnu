@@ -135,6 +135,7 @@ describe('pty:create — Harnu MCP withholding once mission_* exists (Review Foc
       'mission_request_close',
       'mission_set_blocker',
       'mission_set_end',
+      'mission_transfer_owner',
       'mission_update_step',
       'mission_verify_step'
     ])

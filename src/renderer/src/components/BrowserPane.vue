@@ -17,6 +17,7 @@ import {
   Bug,
   Check,
   Download,
+  Expand,
   ChevronDown,
   FileX,
   Globe,
@@ -159,6 +160,9 @@ const title = computed(
 
 const isMaximized = computed(() => helpers.maximizedPaneId(props.worktreePath) === paneId)
 const onToggleMaximize = (): void => helpers.toggleMaximizePane(props.worktreePath, paneId)
+// T628: expand this pane to the window. The native view follows through the layout-motion freeze.
+const isExpanded = computed(() => helpers.expandedPaneId(props.worktreePath) === paneId)
+const onToggleExpand = (): void => helpers.toggleExpandPane(props.worktreePath, paneId)
 const onClose = (): void => {
   browser.forget(paneId)
   helpers.removeHelper(props.worktreePath, paneId)
@@ -903,6 +907,19 @@ watch(isFrozen, async (frozen) => {
         @click="((menuOpen = !menuOpen), (pickerOpen = false))"
       >
         <MoreHorizontal :size="12" :stroke-width="1.5" />
+      </button>
+      <button
+        class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
+        :class="isExpanded ? 'text-accent' : 'text-text-3'"
+        style="width: 18px; height: 18px"
+        data-test="pane-expand"
+        :title="isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand')"
+        :aria-label="isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand')"
+        :aria-pressed="isExpanded"
+        @mousedown.stop
+        @click="onToggleExpand"
+      >
+        <Expand :size="12" :stroke-width="1.5" />
       </button>
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"

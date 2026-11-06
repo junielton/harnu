@@ -1412,6 +1412,97 @@ export async function hideUserProject(targetPath: string): Promise<UserProjectsF
 }
 
 /**
+ * Like {@link readUserProjects}, but for a read that is the BASE OF A WRITE: only a missing file
+ * (first run) reads as empty. An unreadable, corrupt or unsupported-schema file throws, so the
+ * caller never rewrites `projects.json` from an empty picture and drops the pinned list.
+ */
+async function readUserProjectsForUpdate(): Promise<UserProjectsFile> {
+  const filePath = userProjectsPath()
+  let raw: string
+  try {
+    raw = await fs.readFile(filePath, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { ...EMPTY_FILE, projects: [] }
+    throw new Error(`cannot read ${filePath}: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    throw new Error(
+      `corrupt JSON at ${filePath}: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+  if (!isUserProjectsFile(parsed)) {
+    throw new Error(`unsupported schema at ${filePath}`)
+  }
+  return parsed
+}
+
+/** The full hidden list after a write that changed it. */
+export interface HiddenPathsChange {
+  hiddenPaths: string[]
+}
+
+const hiddenListeners = new Set<(change: HiddenPathsChange) => void>()
+
+/**
+ * Subscribe to hidden-list changes made through {@link transactHiddenPaths} (the `hide_folder`
+ * verb). The sidebar's own `hideUserProject` / `unhideUserProject` do NOT notify: the renderer
+ * already mirrors their IPC response. Returns the unsubscribe function.
+ */
+export function onHiddenPathsChanged(listener: (change: HiddenPathsChange) => void): () => void {
+  hiddenListeners.add(listener)
+  return () => {
+    hiddenListeners.delete(listener)
+  }
+}
+
+/** What a {@link transactHiddenPaths} decider returns: the edits plus whatever it wants handed back. */
+export interface HiddenPathsDecision<T> {
+  /** Normalized paths to add to the hidden list. */
+  toHide: string[]
+  /** Normalized paths to drop from the hidden list. */
+  toShow: string[]
+  result: T
+}
+
+/**
+ * Decide and apply a batch of hide / unhide edits as ONE step of the same write queue
+ * `hideUserProject` / `unhideUserProject` use. `decide` runs INSIDE the lock, on the
+ * `projects.json` just read, so every outcome it reports describes the state the write is about to
+ * change, never a snapshot taken before the queue (BUG-254). The file is written (same atomic tmp +
+ * rename) only when the list changed; a failed write rejects with nothing changed and nothing
+ * announced. Listeners hear the full new list after a write that changed it.
+ */
+export async function transactHiddenPaths<T>(
+  decide: (state: {
+    hidden: ReadonlySet<string>
+    projects: readonly UserProject[]
+  }) => Promise<HiddenPathsDecision<T>>
+): Promise<{ result: T; changed: boolean; hiddenPaths: string[] }> {
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjectsForUpdate()
+    const current = file.hiddenPaths ?? []
+    const decision = await decide({ hidden: new Set(current), projects: file.projects })
+    const dropped = new Set(decision.toShow)
+    const next = current.filter((p) => !dropped.has(p))
+    for (const p of decision.toHide) if (!next.includes(p)) next.push(p)
+    const changed = next.length !== current.length || next.some((p, i) => p !== current[i])
+    if (!changed) return { result: decision.result, changed: false, hiddenPaths: current }
+    await writeUserProjects({ version: 1, projects: file.projects, hiddenPaths: next })
+    for (const listener of [...hiddenListeners]) {
+      try {
+        listener({ hiddenPaths: [...next] })
+      } catch (err) {
+        console.warn('[user-projects] hidden-paths listener threw:', err)
+      }
+    }
+    return { result: decision.result, changed: true, hiddenPaths: next }
+  })
+}
+
+/**
  * Remove `path` from the hidden list. Idempotent — unhiding a path that
  * isn't hidden is a no-op (still returns the current file).
  */

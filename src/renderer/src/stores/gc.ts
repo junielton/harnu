@@ -11,7 +11,12 @@ import type {
   GcOpinionResult,
   GcRecoveryAction,
   GcRecoveryItem,
-  GcSnapshot
+  GcSnapshot,
+  CycleRecord,
+  DockerReportItem,
+  DockerReportList,
+  DockerWatchRecord,
+  ShelveRestoreAck
 } from '../../../main/gc/gc-wire'
 import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import { i18n } from '../i18n'
@@ -100,6 +105,109 @@ function refusalDescription(s: DoneSummary): string | undefined {
 
 export const useGcStore = defineStore('gc', () => {
   const snapshot = ref<GcSnapshot | null>(null)
+  /** The Docker capacity watcher's last pass (U3.6): from the snapshot at load, then from its push. */
+  const dockerWatch = ref<DockerWatchRecord | null>(null)
+
+  /** Keeps the newest record; a snapshot refresh never rewinds a pass that was pushed meanwhile. */
+  function adoptWatch(rec: DockerWatchRecord | null | undefined): void {
+    if (rec && (!dockerWatch.value || rec.at >= dockerWatch.value.at)) dockerWatch.value = rec
+  }
+
+  /**
+   * The passes whose notice was recorded (most recent {@link RECORDED_NOTICES_MAX}), so a notice that
+   * arrives twice, by push and by snapshot, adds no second row. A set, not a high-water mark: a newer
+   * notice pushed while the snapshot loads must not make an older pending one look already seen.
+   */
+  const recordedNoticeAts: number[] = []
+  const RECORDED_NOTICES_MAX = 64
+
+  /**
+   * The out-of-capacity notice (U3.6): one quiet Activity row and one remote push. Main decided WHEN
+   * (once per level until capacity recovers); this only words it, in the app's language.
+   */
+  function recordCapacityNotice(rec: DockerWatchRecord): boolean {
+    const n = rec.notice
+    if (!n) return false
+    // Already recorded: nothing to add, but it counts as recorded (it may still need acknowledging).
+    if (recordedNoticeAts.includes(rec.at)) return true
+    recordedNoticeAts.push(rec.at)
+    if (recordedNoticeAts.length > RECORDED_NOTICES_MAX) recordedNoticeAts.shift()
+    const { t } = i18n.global
+    const title = t(`cleanup.gc.capacity.${n.level}.title`)
+    // Cleanup not acting (switch off, global pause): the same warning, saying why nothing is freed.
+    const suffix = n.autonomyOff === 'off' ? 'Off' : n.autonomyOff === 'paused' ? 'Paused' : ''
+    const description = t(`cleanup.gc.capacity.${n.level}.body${suffix}`, {
+      free: n.free,
+      total: n.total
+    })
+    useNotificationsStore().notify({
+      ts: rec.at,
+      source: 'app',
+      kind: 'warning',
+      title,
+      description,
+      target: { view: 'cleanup' }
+    })
+    try {
+      // Away from the machine is exactly when a compose is about to fail: rides `needs-input`.
+      window.api.pushSend({ kind: 'needs-input', title, body: description })
+    } catch {
+      /* transient IPC teardown: the Activity row is already recorded */
+    }
+    return true
+  }
+
+  /** Tells main these notices are recorded, so it stops holding them (and a reload never replays them). */
+  function ackNotices(recs: DockerWatchRecord[]): void {
+    if (recs.length === 0) return
+    try {
+      void window.api.gcAckDockerWatchNotices(recs.map((r) => r.at))?.catch(() => {})
+    } catch {
+      /* transient IPC teardown: main keeps them and offers them again */
+    }
+  }
+
+  function onDockerWatch(rec: DockerWatchRecord): void {
+    adoptWatch(rec)
+    if (rec.report && (!heldReport.value || rec.report.at >= heldReport.value.at)) {
+      heldReport.value = rec.report
+    }
+    if (recordCapacityNotice(rec)) ackNotices([rec])
+  }
+
+  /**
+   * Notices raised while no window was listening (the boot pass runs first): main holds them and
+   * offers them in the snapshot. Each is recorded once (`recordCapacityNotice` dedupes by pass time)
+   * and then acknowledged.
+   */
+  function adoptPendingNotices(snap: GcSnapshot): void {
+    const pending = [...(snap.dockerNoticesPending ?? [])].sort((a, b) => a.at - b.at)
+    // Acknowledge only what is recorded: a record without a notice stays with main.
+    ackNotices(pending.filter((rec) => recordCapacityNotice(rec)))
+  }
+
+  /**
+   * The list main holds for "Acknowledge first report" (U3.6): the newest report-mode pass that
+   * PLANNED, from the cycle or the watcher. Main derives it, so a locked or idle pass can never
+   * empty it here. A snapshot is authoritative (it replaces, including with null); a watcher push
+   * only replaces it with a newer list, never clears it.
+   */
+  const heldReport = ref<DockerReportList | null>(null)
+  watch(
+    () => snapshot.value?.dockerReport ?? null,
+    (held) => {
+      heldReport.value = held
+    },
+    { immediate: true, flush: 'sync' }
+  )
+
+  /** What "Acknowledge first report" will do: null once acknowledged, or when nothing would be done. */
+  const dockerReport = computed<{ items: DockerReportItem[]; found: number } | null>(() => {
+    const snap = snapshot.value
+    const held = heldReport.value
+    if (!snap || snap.prefs.docker.firstReportAcknowledged) return null
+    return held && held.items.length > 0 ? { items: held.items, found: held.found } : null
+  })
   const jobs = ref<JobsState>(emptyJobs())
   const loading = ref(false)
   const loadError = ref<string | null>(null)
@@ -231,6 +339,8 @@ export const useGcStore = defineStore('gc', () => {
   async function refresh(): Promise<void> {
     try {
       snapshot.value = await window.api.gcSnapshot({ refresh: true })
+      adoptWatch(snapshot.value.dockerWatch)
+      adoptPendingNotices(snapshot.value)
       loadError.value = null
     } catch (e) {
       loadError.value = e instanceof Error ? e.message : String(e)
@@ -298,6 +408,34 @@ export const useGcStore = defineStore('gc', () => {
         title: entry.title,
         description: entry.description,
         target: entry.target
+      })
+    }
+  }
+
+  /** The cycle whose shelves were last announced, so a replayed record adds no second row. */
+  let lastShelveAnnouncedAt = 0
+
+  /**
+   * Each shelve leaves one Activity line with its reason (autonomous cleanup U2.2): the structured
+   * facts come from main, the words from the app's language. Main raises the native notification.
+   */
+  function announceShelved(c: CycleRecord): void {
+    const shelved = c.shelve?.shelved ?? []
+    if (shelved.length === 0 || c.at <= lastShelveAnnouncedAt) return
+    lastShelveAnnouncedAt = c.at
+    const { t } = i18n.global
+    const notifications = useNotificationsStore()
+    for (const s of shelved) {
+      notifications.notify({
+        ts: c.at,
+        source: 'app',
+        kind: 'info',
+        title: s.branch
+          ? t('cleanup.gc.shelved.activity', { branch: s.branch, days: s.idleDays })
+          : t('cleanup.gc.shelved.activityDetached', { days: s.idleDays }),
+        description: s.folderAlias,
+        folderPath: s.folderPath,
+        target: { view: 'cleanup' }
       })
     }
   }
@@ -432,9 +570,15 @@ export const useGcStore = defineStore('gc', () => {
         window.api.onGcProgress(onProgress),
         window.api.onGcDone((d) => void onDone(d)),
         // A cycle finished (autopilot tick or manual): the world changed.
-        window.api.onGcCycle(() => void refresh()),
+        window.api.onGcCycle((c) => {
+          announceShelved(c)
+          void refresh()
+        }),
         // The prep journal changed (boot recovery finished, a notice was answered).
         window.api.onGcRecoveryChanged(() => void loadRecovery()),
+        // A shelved worktree came back by itself (a resume, a terminal): the Shelved card follows.
+        window.api.onGcShelvedChanged(() => void refresh()),
+        window.api.onGcDockerWatch(onDockerWatch),
         window.api.onGcOpinionResult(onOpinionResult),
         window.api.onGcOpinionDone(onOpinionDone)
       ]
@@ -443,6 +587,8 @@ export const useGcStore = defineStore('gc', () => {
         window.api.gcJobs().catch(() => [])
       ])
       snapshot.value = snap
+      adoptWatch(snap.dockerWatch)
+      adoptPendingNotices(snap)
       jobs.value = attachJobs(jobs.value, live)
       void loadRecovery()
     } catch (e) {
@@ -631,6 +777,93 @@ export const useGcStore = defineStore('gc', () => {
     return saved
   }
 
+  /**
+   * Settings → Cleanup: "Acknowledge first report" for shelving. Its own channel, never a settings
+   * write (main refuses an acknowledgement a stale form carries); the answer is the prefs as saved.
+   */
+  async function ackShelveReport(): Promise<GcPrefs> {
+    const saved = await window.api.gcAckShelveReport()
+    if (snapshot.value) snapshot.value = { ...snapshot.value, prefs: saved }
+    return saved
+  }
+
+  /** Acknowledges the first Docker autonomy report (its own switch, its own channel); the answer is the prefs as saved. */
+  async function ackDockerReport(): Promise<GcPrefs> {
+    const saved = await window.api.gcAckDockerReport()
+    if (snapshot.value) snapshot.value = { ...snapshot.value, prefs: saved }
+    return saved
+  }
+
+  // ---- shelved worktrees: bringing one back (autonomous cleanup U2.3a) ---------------------------
+
+  /** Shelved ids whose Restore is running, so a second click cannot start a second restore. */
+  const shelvedBusy = ref<ReadonlySet<string>>(new Set())
+  /** Why the last Restore of an id failed; the row shows it until the next attempt works. */
+  const shelvedFailures = ref<ReadonlyMap<string, ShelveRestoreAck>>(new Map())
+
+  const withBusy = (id: string, on: boolean): ReadonlySet<string> => {
+    const next = new Set(shelvedBusy.value)
+    if (on) next.add(id)
+    else next.delete(id)
+    return next
+  }
+
+  /** One click: restore this shelved worktree, say what happened, never leave the row without a next step. */
+  async function restoreShelved(id: string): Promise<void> {
+    const { t } = i18n.global
+    const ui = useUiStore()
+    const entry = snapshot.value?.shelved?.find((e) => e.id === id)
+    const name = entry ? (entry.worktreePath.split(/[\\/]/).filter(Boolean).pop() ?? id) : id
+    shelvedBusy.value = withBusy(id, true)
+    try {
+      const ack = await window.api.gcRestoreShelved(id)
+      const failures = new Map(shelvedFailures.value)
+      if (ack.ok) {
+        failures.delete(id)
+        const key =
+          ack.status === 'present'
+            ? 'present'
+            : ack.attached === false
+              ? 'restoredDetached'
+              : 'restored'
+        ui.pushToast({
+          kind: 'success',
+          title: t(`cleanup.gc.shelved.toast.${key}`, { name }),
+          ...(ack.movedAside
+            ? { description: t('cleanup.gc.shelved.toast.movedAside', { path: ack.movedAside }) }
+            : {}),
+          timeoutMs: ack.movedAside ? 10000 : 6000
+        })
+      } else {
+        failures.set(id, ack)
+        ui.pushToast({
+          kind: 'warning',
+          title: t('cleanup.gc.shelved.toast.failed', { name }),
+          description: ack.message,
+          timeoutMs: 8000
+        })
+      }
+      shelvedFailures.value = failures
+    } catch (e) {
+      const failures = new Map(shelvedFailures.value)
+      failures.set(id, {
+        ok: false,
+        status: 'failed',
+        message: e instanceof Error ? e.message : String(e)
+      })
+      shelvedFailures.value = failures
+      ui.pushToast({
+        kind: 'danger',
+        title: t('cleanup.gc.shelved.toast.failed', { name }),
+        description: e instanceof Error ? e.message : String(e),
+        timeoutMs: 8000
+      })
+    } finally {
+      shelvedBusy.value = withBusy(id, false)
+      await refresh()
+    }
+  }
+
   // ---- Cleanup's own exhaust: archive refs and what Harnu put in the trash ---------------------
 
   /**
@@ -679,6 +912,12 @@ export const useGcStore = defineStore('gc', () => {
       const guarded = ack.protectedArchives ?? 0
       if (guarded > 0) {
         causes.push(t('cleanup.gc.archives.toast.protected', guarded, { named: { n: guarded } }))
+      }
+      const shelvedKept = ack.shelvedArchives?.length ?? 0
+      if (shelvedKept > 0) {
+        causes.push(
+          t('cleanup.gc.archives.toast.shelved', shelvedKept, { named: { n: shelvedKept } })
+        )
       }
       if (causes.length > 0) {
         ui.pushToast({ kind: 'warning', title: causes.join(' · '), timeoutMs: 8000 })
@@ -795,6 +1034,8 @@ export const useGcStore = defineStore('gc', () => {
     reclaimableBytes,
     blockState,
     failureOf,
+    dockerWatch,
+    dockerReport,
     init,
     dispose,
     refresh,
@@ -812,6 +1053,11 @@ export const useGcStore = defineStore('gc', () => {
     answerRecovery,
     savePrefs,
     deleteArchives,
+    ackShelveReport,
+    ackDockerReport,
+    restoreShelved,
+    shelvedBusy,
+    shelvedFailures,
     runArchiveGc,
     emptyTrash,
     pruneSelection,

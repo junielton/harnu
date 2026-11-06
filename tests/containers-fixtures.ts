@@ -47,6 +47,7 @@ export function container(over: Partial<InspectedContainer> = {}): InspectedCont
     createdAt: NOW - 10 * DAY,
     ports: [],
     mounts: [],
+    networks: [],
     ...over,
     id
   }
@@ -167,6 +168,7 @@ export function available(stacks: StackRow[]): ContainersSnapshotAvailable {
       stoppable: 0
     },
     stacks,
+    paused: [],
     recent: []
   }
 }

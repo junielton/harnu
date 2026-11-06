@@ -488,6 +488,11 @@ export function meterLegend(
 
 // ---- Recent (tombstones) --------------------------------------------------------------
 
+/** True for the journal line a pause writes: every stack in it was brought down with `compose down`. */
+export function isPauseTombstone(t: Pick<ContainersTombstone, 'verb' | 'stacks'>): boolean {
+  return t.verb === 'stop' && t.stacks.length > 0 && t.stacks.every((s) => s.paused !== undefined)
+}
+
 /** A stable key for a tombstone: its time plus the stacks it touched. */
 export function tombstoneKey(t: Pick<ContainersTombstone, 'at' | 'stacks'>): string {
   return `${t.at}:${t.stacks.map((s) => s.stack).join(',')}`
@@ -535,7 +540,8 @@ export function keptVolumesOf(t: Pick<ContainersTombstone, 'stacks'>): KeptVolum
  */
 export function recentVerbKey(
   t: Pick<ContainersTombstone, 'verb' | 'stacks'>
-): 'stopped' | 'started' | 'removed' | 'removedVolumeKept' | 'removedVolumeRemoved' {
+): 'stopped' | 'paused' | 'started' | 'removed' | 'removedVolumeKept' | 'removedVolumeRemoved' {
+  if (isPauseTombstone(t)) return 'paused'
   if (t.verb === 'stop') return 'stopped'
   if (t.verb === 'start') return 'started'
   if (removedVolumes(t).length > 0) return 'removedVolumeRemoved'
@@ -577,7 +583,8 @@ export const ICON_BTN_CLASS =
 
 // ---- selection --------------------------------------------------------------------
 
-export type Selection = { kind: 'stack'; id: string } | { kind: 'recent'; key: string }
+export type Selection =
+  { kind: 'stack'; id: string } | { kind: 'paused'; id: string } | { kind: 'recent'; key: string }
 
 /**
  * Keeps the operator's selection across rescans: the same stack or tombstone
@@ -590,6 +597,7 @@ export function resolveSelection(
 ): Selection | null {
   if (!snap || !snap.dockerAvailable) return null
   if (current?.kind === 'stack' && snap.stacks.some((s) => s.id === current.id)) return current
+  if (current?.kind === 'paused' && snap.paused.some((p) => p.stack === current.id)) return current
   if (current?.kind === 'recent' && snap.recent.some((t) => tombstoneKey(t) === current.key)) {
     return current
   }

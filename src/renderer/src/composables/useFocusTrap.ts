@@ -23,6 +23,11 @@ import { nextTick, onBeforeUnmount, watch, type Ref } from 'vue'
  * SessionMenu marks programmatically-focusable items that should NOT
  * receive Tab focus).
  *
+ * Suspension (T460, design.md §6 "Dialog"): while `suspended` is true — a nested dialog sits on top —
+ * the trap neither wraps Tab nor restores focus; when it flips back to false the trap refocuses the
+ * element that last had focus inside it. Deactivating WHILE suspended also skips the restore: the
+ * dialog on top owns focus then, and pulling it to the page opener would steal it.
+ *
  * We rebuild the focusable list on every keydown rather than cache it.
  * Modals like AddFolderDialog grow/shrink (the Submit button
  * enables/disables as the form fills in) — caching would miss those
@@ -61,13 +66,31 @@ interface UseFocusTrapOptions {
    * directly assignable without a cast at the call site.
    */
   initialFocusRef?: Ref<HTMLElement | null> | Ref<HTMLInputElement | null>
+  /**
+   * Optional reactive flag — `true` while another trap sits on top of this one (see "Suspension"
+   * above). Omitted = never suspended, which is every caller that predates the dialog stack.
+   */
+  suspended?: Ref<boolean>
 }
 
 export function useFocusTrap(options: UseFocusTrapOptions): void {
-  const { active, containerRef, initialFocusRef } = options
+  const { active, containerRef, initialFocusRef, suspended } = options
 
   /** Element that owned focus when the trap activated — restored on release. */
   let previouslyFocused: HTMLElement | null = null
+  /** Last element that held focus INSIDE the container while not suspended — refocused on resume. */
+  let lastFocusedInside: HTMLElement | null = null
+  /** Whether the keydown/focusin listeners are on `window` — so release removes only what it added. */
+  let attached = false
+  /** Set when `suspended` flipped on while the trap was active — only then is there a focus to resume. */
+  let suspendedWhileActive = false
+
+  function detach(): void {
+    if (!attached) return
+    attached = false
+    window.removeEventListener('keydown', onKeydown, true)
+    window.removeEventListener('focusin', onFocusin, true)
+  }
 
   function focusableElements(): HTMLElement[] {
     const root = containerRef.value
@@ -85,8 +108,14 @@ export function useFocusTrap(options: UseFocusTrapOptions): void {
     })
   }
 
+  function onFocusin(e: FocusEvent): void {
+    const target = e.target
+    if (suspended?.value || !(target instanceof HTMLElement)) return
+    if (containerRef.value?.contains(target)) lastFocusedInside = target
+  }
+
   function onKeydown(e: KeyboardEvent): void {
-    if (!active.value) return
+    if (!active.value || suspended?.value) return
     if (e.key !== 'Tab') return
 
     const items = focusableElements()
@@ -123,20 +152,45 @@ export function useFocusTrap(options: UseFocusTrapOptions): void {
         // Use capture so we beat any inner Tab handlers (e.g. CodeMirror
         // inside future inputs). Same pattern as the modal's own Esc
         // listener, which also uses capture.
+        attached = true
         window.addEventListener('keydown', onKeydown, true)
+        if (suspended) window.addEventListener('focusin', onFocusin, true)
         await nextTick()
         const target = initialFocusRef?.value ?? focusableElements()[0] ?? containerRef.value
         target?.focus?.()
       } else {
-        window.removeEventListener('keydown', onKeydown, true)
-        previouslyFocused?.focus?.()
+        detach()
+        // A trap closed under a dialog on top leaves focus to that dialog (see "Suspension").
+        if (!suspended?.value) previouslyFocused?.focus?.()
         previouslyFocused = null
+        lastFocusedInside = null
+        suspendedWhileActive = false
       }
     },
     { immediate: true }
   )
 
-  onBeforeUnmount(() => {
-    window.removeEventListener('keydown', onKeydown, true)
-  })
+  if (suspended) {
+    watch(suspended, (isSuspended) => {
+      if (isSuspended) {
+        if (!active.value) return
+        suspendedWhileActive = true
+        // The dialog on top has not moved focus yet when this runs — remember where we were.
+        const current = document.activeElement
+        if (current instanceof HTMLElement && containerRef.value?.contains(current)) {
+          lastFocusedInside = current
+        }
+        return
+      }
+      if (!active.value || !suspendedWhileActive) return
+      suspendedWhileActive = false
+      const target =
+        lastFocusedInside && containerRef.value?.contains(lastFocusedInside)
+          ? lastFocusedInside
+          : (focusableElements()[0] ?? containerRef.value)
+      target?.focus?.()
+    })
+  }
+
+  onBeforeUnmount(detach)
 }

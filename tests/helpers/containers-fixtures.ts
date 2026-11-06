@@ -1,5 +1,6 @@
 import type {
   ContainerRow,
+  ContainersPausedStack,
   ContainersSnapshot,
   ContainersTombstone,
   ContainersTotals,
@@ -99,7 +100,8 @@ export function totalsFor(stacks: StackRow[]): ContainersTotals {
 
 export function snapshotOf(
   stacks: StackRow[],
-  recent: ContainersTombstone[] = []
+  recent: ContainersTombstone[] = [],
+  paused: ContainersPausedStack[] = []
 ): ContainersSnapshot {
   return {
     scannedAt: NOW - 120_000,
@@ -107,6 +109,7 @@ export function snapshotOf(
     zombieAfterDays: 2,
     totals: totalsFor(stacks),
     stacks,
+    paused,
     recent
   }
 }
@@ -245,4 +248,40 @@ export const REMOVE_TOMB: ContainersTombstone = {
   ],
   restoreHint:
     'docker compose --project-directory /home/dev/Workspace/org/proj/www/worktrees/PROJ-377-blog-foundation up -d'
+}
+
+/** A stack Cleanup brought down: no containers, volumes kept, one command brings it back. */
+export const PAUSED_STACK: ContainersPausedStack = {
+  stack: 'proj-77',
+  name: 'proj-77',
+  actor: 'autopilot',
+  project: 'proj-77',
+  workingDir: '/home/dev/Workspace/org/proj/www/worktrees/PROJ-377-reports',
+  configFiles: ['/home/dev/Workspace/org/proj/www/worktrees/PROJ-377-reports/compose.yml'],
+  profiles: ['web'],
+  envFile: null,
+  hasBuild: true,
+  ports: [8077, 3377],
+  pausedAt: NOW - 3 * 3_600_000,
+  restoreCommand:
+    'docker compose -p proj-77 --project-directory /home/dev/Workspace/org/proj/www/worktrees/PROJ-377-reports ' +
+    '-f /home/dev/Workspace/org/proj/www/worktrees/PROJ-377-reports/compose.yml --profile web up -d --build'
+}
+
+/** The journal line a pause writes: a `stop` whose stack entry carries the paused record. */
+export const PAUSE_TOMB: ContainersTombstone = {
+  at: NOW - 3 * 3_600_000,
+  actor: 'autopilot',
+  verb: 'stop',
+  stacks: [
+    {
+      stack: 'proj-77',
+      name: 'proj-77',
+      path: PAUSED_STACK.workingDir,
+      containerIds: ['7a', '7b'],
+      freed: { ramBytes: 700 * MB, ports: [8077, 3377], volumes: [], volumeBytes: 0 },
+      paused: PAUSED_STACK
+    }
+  ],
+  restoreHint: PAUSED_STACK.restoreCommand
 }

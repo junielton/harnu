@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import SettingHint from './ui/SettingHint.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import Button from './ui/Button.vue'
 import { useGcStore } from '../stores/gc'
 import { toIpc } from '../lib/to-ipc'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
@@ -29,6 +30,8 @@ const { t } = useI18n()
 const gc = useGcStore()
 
 const loading = ref(true)
+/** Rows of the first-report list the pane shows; the rest is "+N more" (design.md §6). */
+const DOCKER_REPORT_ROWS = 8
 const prefs = ref<GcPrefs | null>(null)
 const reaper = ref<ReaperPrefs | null>(null)
 const protectedBranchesText = ref('')
@@ -55,6 +58,16 @@ const BOUNDS: Record<Exclude<NumField, 'minAgeDays'>, { min: number; max: number
 }
 
 const DEBOUNCE_MS = 400
+
+/** Acknowledging the first shelving report has its own channel; the answer is the prefs as saved. */
+async function acknowledgeShelve(): Promise<void> {
+  applyGc(await gc.ackShelveReport())
+}
+
+/** Acknowledging the first Docker report has its own channel too; the answer is the prefs as saved. */
+async function acknowledgeDocker(): Promise<void> {
+  applyGc(await gc.ackDockerReport())
+}
 
 function intervalOptions(): Array<{ value: number; label: string }> {
   return [
@@ -296,6 +309,172 @@ const EYEBROW_STYLE =
             t('cleanup.gc.settings.cap.suffix')
           }}</span>
         </div>
+      </div>
+    </section>
+
+    <!-- Shelving idle worktrees (autonomous cleanup U2.3a) -->
+    <section style="margin-bottom: 16px" data-testid="cleanup-settings-shelve">
+      <div class="text-text-3" :style="EYEBROW_STYLE">
+        {{ t('cleanup.gc.settings.shelve.eyebrow') }}
+      </div>
+      <p class="text-text-3" style="font-size: 11.5px; line-height: 1.5; margin-bottom: 14px">
+        {{ t('cleanup.gc.settings.shelve.intro', { days: prefs.shelve.thresholdDays }) }}
+      </p>
+
+      <div class="flex items-start justify-between" style="gap: 12px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('cleanup.gc.settings.shelve.label') }}
+          </div>
+          <SettingHint>{{ t('cleanup.gc.settings.shelve.hint') }}</SettingHint>
+        </div>
+        <ToggleSwitch
+          data-testid="gc-shelve"
+          :model-value="prefs.shelve.enabled"
+          :aria-label="t('cleanup.gc.settings.shelve.label')"
+          @update:model-value="(v: boolean) => saveGc({ shelve: { ...prefs!.shelve, enabled: v } })"
+        />
+      </div>
+
+      <div
+        v-if="prefs.shelve.enabled"
+        class="flex items-center justify-between"
+        style="gap: 12px; margin-top: 10px"
+        data-testid="gc-shelve-status"
+      >
+        <p
+          v-if="!prefs.shelve.firstReportAcknowledged"
+          class="text-text-3"
+          style="font-size: 11.5px; line-height: 1.5; flex: 1; min-width: 0"
+        >
+          {{ t('cleanup.gc.settings.shelve.reportOnly') }}
+        </p>
+        <p v-else class="text-text-3" style="font-size: 11.5px; line-height: 1.5; flex: 1">
+          {{ t('cleanup.gc.settings.shelve.active', { n: prefs.shelve.maxPerCycle }) }}
+        </p>
+        <Button
+          v-if="!prefs.shelve.firstReportAcknowledged"
+          variant="soft"
+          data-testid="gc-shelve-ack"
+          @click="acknowledgeShelve"
+        >
+          {{ t('cleanup.gc.settings.shelve.ack') }}
+        </Button>
+      </div>
+    </section>
+
+    <!-- Docker: pausing and garbage (autonomous cleanup U3.1) -->
+    <section style="margin-bottom: 16px" data-testid="cleanup-settings-docker">
+      <div class="text-text-3" :style="EYEBROW_STYLE">
+        {{ t('cleanup.gc.settings.docker.eyebrow') }}
+      </div>
+      <p class="text-text-3" style="font-size: 11.5px; line-height: 1.5; margin-bottom: 14px">
+        {{ t('cleanup.gc.settings.docker.intro', { hours: prefs.docker.idleHours }) }}
+      </p>
+
+      <div class="flex items-start justify-between" style="gap: 12px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('cleanup.gc.settings.docker.label') }}
+          </div>
+          <SettingHint>{{ t('cleanup.gc.settings.docker.hint') }}</SettingHint>
+        </div>
+        <ToggleSwitch
+          data-testid="gc-docker"
+          :model-value="prefs.docker.enabled"
+          :aria-label="t('cleanup.gc.settings.docker.label')"
+          @update:model-value="(v: boolean) => saveGc({ docker: { ...prefs!.docker, enabled: v } })"
+        />
+      </div>
+
+      <div
+        v-if="prefs.docker.enabled"
+        class="flex items-center justify-between"
+        style="gap: 12px; margin-top: 10px"
+        data-testid="gc-docker-status"
+      >
+        <p
+          v-if="!prefs.docker.firstReportAcknowledged"
+          class="text-text-3"
+          style="font-size: 11.5px; line-height: 1.5; flex: 1; min-width: 0"
+        >
+          {{ t('cleanup.gc.settings.docker.reportOnly') }}
+        </p>
+        <p v-else class="text-text-3" style="font-size: 11.5px; line-height: 1.5; flex: 1">
+          {{ t('cleanup.gc.settings.docker.active', { n: prefs.docker.maxPerCycle }) }}
+        </p>
+        <Button
+          v-if="!prefs.docker.firstReportAcknowledged"
+          variant="soft"
+          data-testid="gc-docker-ack"
+          @click="acknowledgeDocker"
+        >
+          {{ t('cleanup.gc.settings.docker.ack') }}
+        </Button>
+      </div>
+
+      <!-- What the first pass would do, so the acknowledgement is not blind (U3.6). -->
+      <div
+        v-if="prefs.docker.enabled && !prefs.docker.firstReportAcknowledged && gc.dockerReport"
+        class="border-t border-border"
+        style="margin-top: 10px; padding-top: 10px"
+        data-testid="gc-docker-report-list"
+      >
+        <ul class="m-0 flex list-none flex-col gap-1 p-0">
+          <li
+            v-for="(item, i) in gc.dockerReport.items.slice(0, DOCKER_REPORT_ROWS)"
+            :key="`${item.kind}:${item.target}:${i}`"
+            class="flex flex-col"
+            data-testid="gc-docker-report-item"
+          >
+            <span class="flex min-w-0 items-baseline gap-2">
+              <span class="text-caption uppercase text-text-3" style="flex-shrink: 0">
+                {{ t(`cleanup.gc.settings.docker.report.kind.${item.kind}`) }}
+              </span>
+              <span class="truncate font-mono text-ui text-text" :title="item.target">{{
+                item.target
+              }}</span>
+            </span>
+            <span class="text-caption text-text-3">{{ item.reason }}</span>
+          </li>
+        </ul>
+        <p
+          v-if="gc.dockerReport.found > DOCKER_REPORT_ROWS"
+          class="text-caption text-text-3"
+          style="margin-top: 4px"
+        >
+          {{
+            t('cleanup.gc.settings.docker.report.more', {
+              n: gc.dockerReport.found - DOCKER_REPORT_ROWS
+            })
+          }}
+        </p>
+      </div>
+
+      <!-- The global pause: stops every autonomous action, shelving and Docker alike. -->
+      <div class="border-t border-border" style="margin-top: 14px; padding-top: 14px">
+        <div class="flex items-start justify-between" style="gap: 12px">
+          <div style="flex: 1; min-width: 0">
+            <div class="text-text-2" style="font-size: 12px">
+              {{ t('cleanup.gc.settings.docker.pauseAll.label') }}
+            </div>
+            <SettingHint>{{ t('cleanup.gc.settings.docker.pauseAll.hint') }}</SettingHint>
+          </div>
+          <ToggleSwitch
+            data-testid="gc-pause-all"
+            :model-value="prefs.pauseAutonomous"
+            :aria-label="t('cleanup.gc.settings.docker.pauseAll.label')"
+            @update:model-value="(v: boolean) => saveGc({ pauseAutonomous: v })"
+          />
+        </div>
+        <p
+          v-if="prefs.pauseAutonomous"
+          class="text-warning"
+          style="font-size: 11.5px; line-height: 1.5; margin-top: 8px"
+          data-testid="gc-pause-all-note"
+        >
+          {{ t('cleanup.gc.settings.docker.pauseAll.note') }}
+        </p>
       </div>
     </section>
 

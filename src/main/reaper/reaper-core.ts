@@ -85,6 +85,17 @@ export interface PrFacts {
    * PR resolved through a shared upstream — see {@link PrProvenance}.
    */
   headRefOid: string | null
+  /**
+   * The branch the PR merged (or would merge) INTO, or null when gh did not supply
+   * it — an entry cached before U1 degrades to today's verdicts. A stacked PR names
+   * another feature branch here instead of the default branch.
+   */
+  baseRefName: string | null
+  /**
+   * The commit that landed the PR (`mergeCommit.oid`, MERGED PRs only), or null
+   * when absent. Read only to prove a stacked PR's content reached its base.
+   */
+  mergeCommitOid: string | null
 }
 
 export interface BranchFacts {
@@ -130,6 +141,25 @@ export interface BranchFacts {
    * never probes (ADR-0001).
    */
   patchIdContained: boolean | null
+  /**
+   * Whether the local tip is an ancestor of the MERGED PR's head commit — the
+   * branch got more commits locally than the PR ever merged, or the PR head simply
+   * moved on, but nothing in the tip is missing from the PR. `null` when the
+   * probe did not run, the PR head is absent from the local object store, or git
+   * failed. Never fetched for.
+   *
+   * **Positive-only evidence** (like {@link BranchFacts.patchIdContained}): only
+   * `=== true` may strengthen a fate; `false` and `null` leave it exactly as it
+   * was. Computed by the scanner; the pure classifier never probes (ADR-0001).
+   */
+  tipInPrHead: boolean | null
+  /**
+   * Whether the MERGED PR's content provably reached the default branch — either
+   * the PR merged straight into it, or into a stacked base whose own PR merged
+   * into it and contains this PR's merge commit (see `prLandedInDefault`). Same
+   * positive-only rule as {@link BranchFacts.tipInPrHead}.
+   */
+  prLandedInDefault: boolean | null
   lastCommitAt: number | null
   pr: PrFacts | null
   ghAvailable: boolean

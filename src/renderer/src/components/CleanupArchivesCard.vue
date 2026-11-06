@@ -15,6 +15,7 @@ import { formatBytes } from './system-monitor-format'
 import { relativeTime } from '../composables/useRelativeTime'
 import { coveredBy, expiredArchives } from '../../../main/gc/archives-core'
 import type { ArchiveEntry, ArchiveRepoGroup, GcArchivesCard } from '../../../main/gc/gc-wire'
+import type { ShelvedEntry } from '../../../main/gc/shelve-store'
 
 /**
  * Archives card of the Cleanup screen (design.md "Archives card"). Every removal Harnu makes writes
@@ -28,12 +29,19 @@ const props = defineProps<{
   now?: number
   /** The never-clean paths: archives under them are not offered for deletion (main re-checks). */
   neverClean?: readonly string[]
+  /**
+   * Shelved worktrees by archive namespace. Their archives are what restores them, so Delete is
+   * disabled for them and "Restore first" stands in its place (main refuses the delete as well).
+   */
+  shelved?: ReadonlyMap<string, ShelvedEntry>
 }>()
 const emit = defineEmits<{
   /** Open the delete confirm for these entries of one repo. */
   delete: [group: ArchiveRepoGroup, entries: ArchiveEntry[]]
   /** Open the "Run git gc" confirm for one repo. */
   gc: [group: ArchiveRepoGroup]
+  /** Restore the shelved worktree with this id (the Shelved card's own action). */
+  restore: [id: string]
 }>()
 const { t } = useI18n()
 
@@ -59,8 +67,12 @@ const isProtected = (g: ArchiveRepoGroup, e: ArchiveEntry): boolean =>
   coveredBy(g.repoPath, props.neverClean ?? []) ||
   (e.folder !== null && coveredBy(e.folder, props.neverClean ?? []))
 
+const shelvedHolder = (e: ArchiveEntry): ShelvedEntry | undefined => props.shelved?.get(e.namespace)
+
 const expiredOf = (g: ArchiveRepoGroup): ArchiveEntry[] =>
-  expiredArchives(g.entries, props.archives.keepDays, clock.value).filter((e) => !isProtected(g, e))
+  expiredArchives(g.entries, props.archives.keepDays, clock.value).filter(
+    (e) => !isProtected(g, e) && !shelvedHolder(e)
+  )
 
 function toggle(g: ArchiveRepoGroup): void {
   const next = new Set(open.value)
@@ -226,14 +238,28 @@ async function copy(id: string, text: string | null): Promise<void> {
               <button
                 type="button"
                 class="inline-flex items-center gap-1.5 rounded-sm border border-border bg-bg px-2 py-0.75 text-eyebrow text-text-3 transition hover:border-red-line hover:text-red"
-                :disabled="isProtected(g, e)"
-                :title="isProtected(g, e) ? t('cleanup.gc.archives.protected') : undefined"
+                :disabled="isProtected(g, e) || !!shelvedHolder(e)"
+                :title="
+                  shelvedHolder(e)
+                    ? t('cleanup.gc.archives.shelvedTitle')
+                    : isProtected(g, e)
+                      ? t('cleanup.gc.archives.protected')
+                      : undefined
+                "
                 data-testid="archive-delete"
-                @click="!isProtected(g, e) && emit('delete', g, [e])"
+                @click="!isProtected(g, e) && !shelvedHolder(e) && emit('delete', g, [e])"
               >
                 <Trash2 :size="10" :stroke-width="1.7" />
                 {{ t('cleanup.gc.archives.deleteOne') }}
               </button>
+              <Button
+                v-if="shelvedHolder(e)"
+                variant="soft"
+                data-testid="archive-restore-first"
+                @click="emit('restore', shelvedHolder(e)!.id)"
+              >
+                {{ t('cleanup.gc.archives.restoreFirst') }}
+              </Button>
               <button
                 v-if="e.restoreCommand"
                 type="button"

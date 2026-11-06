@@ -48,6 +48,105 @@ export interface GcPrefs {
    * carry the folder. A mark without an entry here is never dropped for being cleaned.
    */
   releasedFrom: Record<string, ReleasedFrom>
+  /**
+   * Shelving (autonomous cleanup U2.2): an idle worktree whose branch is not proven merged is
+   * preserved, verified and removed from disk, and its branch is kept. It has its OWN switch and
+   * acknowledgement, independent of `autopilot` / `firstReportAcknowledged`, which are already on
+   * for operators who run the autopilot today.
+   */
+  shelve: ShelvePrefs
+  /**
+   * Docker autonomy (autonomous cleanup U3.1): pausing idle stacks and removing Docker garbage. ONE
+   * switch for both, with its own acknowledgement, independent of `autopilot` and of `shelve`.
+   */
+  docker: DockerAutonomyPrefs
+  /**
+   * "Pause autonomous cleanup" (design §5): while on, every autonomous action (the autopilot's
+   * clean, shelving, Docker autonomy) acts on nothing. Manual cleaning is unaffected.
+   */
+  pauseAutonomous: boolean
+}
+
+export interface DockerAutonomyPrefs {
+  /**
+   * ON by default (design C1). A prefs file that never set it reads ON; one that explicitly set it
+   * keeps its value. Even when on, the first cycle only reports until `firstReportAcknowledged`.
+   */
+  enabled: boolean
+  /** Set by `gc:docker:ack`; until then a Docker cycle is report-only. Turning `enabled` on resets it. */
+  firstReportAcknowledged: boolean
+  /** Hours a stack must have shown no sign of life before it can be paused ("parked" in code). */
+  idleHours: number
+  /** Free bridge-network slots under which capacity pressure acts at once. */
+  lowWaterSlots: number
+  /** Stacks one hour may pause (hysteresis against thrash). */
+  maxParksPerHour: number
+  /** Minutes since a stack's last `up` before it can be paused. */
+  minAgeMinutes: number
+  /** Autonomous Docker actions one cycle may run; the rest wait for the next cycle. */
+  maxPerCycle: number
+  /** Failed actions in a row after which Docker autonomy switches itself off. */
+  failureLimit: number
+}
+
+export const DEFAULT_DOCKER_IDLE_HOURS = 2
+export const MAX_DOCKER_IDLE_HOURS = 720
+export const DEFAULT_DOCKER_LOW_WATER_SLOTS = 3
+export const MAX_DOCKER_LOW_WATER_SLOTS = 30
+export const DEFAULT_DOCKER_PARKS_PER_HOUR = 6
+export const MAX_DOCKER_PARKS_PER_HOUR = 60
+export const DEFAULT_DOCKER_MIN_AGE_MINUTES = 30
+export const MAX_DOCKER_MIN_AGE_MINUTES = 1440
+export const DEFAULT_DOCKER_PER_CYCLE = 5
+export const MAX_DOCKER_PER_CYCLE = 20
+export const DEFAULT_DOCKER_FAILURE_LIMIT = 3
+export const MAX_DOCKER_FAILURE_LIMIT = 10
+
+export function defaultDockerPrefs(): DockerAutonomyPrefs {
+  return {
+    enabled: true,
+    firstReportAcknowledged: false,
+    idleHours: DEFAULT_DOCKER_IDLE_HOURS,
+    lowWaterSlots: DEFAULT_DOCKER_LOW_WATER_SLOTS,
+    maxParksPerHour: DEFAULT_DOCKER_PARKS_PER_HOUR,
+    minAgeMinutes: DEFAULT_DOCKER_MIN_AGE_MINUTES,
+    maxPerCycle: DEFAULT_DOCKER_PER_CYCLE,
+    failureLimit: DEFAULT_DOCKER_FAILURE_LIMIT
+  }
+}
+
+export interface ShelvePrefs {
+  /**
+   * ON by default (design C1; U2.3a, once every restore trigger exists). A prefs file that never set
+   * it reads ON; one that explicitly set it keeps its value. Even when on, the first cycle only
+   * reports until `firstReportAcknowledged`.
+   */
+  enabled: boolean
+  /** Set by `gc:shelve:ack`; until then a shelving cycle is report-only. Turning `enabled` on resets it. */
+  firstReportAcknowledged: boolean
+  /** Days a worktree must have shown no sign of life before it is shelved. */
+  thresholdDays: number
+  /** Worktrees one cycle may shelve; the rest wait for the next cycle. */
+  maxPerCycle: number
+  /** Failed shelves in a row after which shelving switches itself off. */
+  failureLimit: number
+}
+
+export const DEFAULT_SHELVE_THRESHOLD_DAYS = 3
+export const MAX_SHELVE_THRESHOLD_DAYS = 365
+export const DEFAULT_SHELVE_PER_CYCLE = 3
+export const MAX_SHELVE_PER_CYCLE = 20
+export const DEFAULT_SHELVE_FAILURE_LIMIT = 3
+export const MAX_SHELVE_FAILURE_LIMIT = 10
+
+export function defaultShelvePrefs(): ShelvePrefs {
+  return {
+    enabled: true,
+    firstReportAcknowledged: false,
+    thresholdDays: DEFAULT_SHELVE_THRESHOLD_DAYS,
+    maxPerCycle: DEFAULT_SHELVE_PER_CYCLE,
+    failureLimit: DEFAULT_SHELVE_FAILURE_LIMIT
+  }
 }
 
 export interface ReleasedFrom {
@@ -90,7 +189,10 @@ export function defaultGcPrefs(): GcPrefs {
     neverClean: [],
     keep: {},
     released: {},
-    releasedFrom: {}
+    releasedFrom: {},
+    shelve: defaultShelvePrefs(),
+    docker: defaultDockerPrefs(),
+    pauseAutonomous: false
   }
 }
 
@@ -194,7 +296,35 @@ export function normalizeGcPrefs(
     neverClean,
     keep,
     released,
-    releasedFrom
+    releasedFrom,
+    shelve: normalizeShelve(r.shelve, d.shelve),
+    docker: normalizeDocker(r.docker, d.docker),
+    pauseAutonomous: bool(r.pauseAutonomous) ?? d.pauseAutonomous
+  }
+}
+
+function normalizeDocker(raw: unknown, d: DockerAutonomyPrefs): DockerAutonomyPrefs {
+  const r = isRecord(raw) ? raw : {}
+  return {
+    enabled: bool(r.enabled) ?? d.enabled,
+    firstReportAcknowledged: bool(r.firstReportAcknowledged) ?? d.firstReportAcknowledged,
+    idleHours: clamped(r.idleHours, 1, MAX_DOCKER_IDLE_HOURS) ?? d.idleHours,
+    lowWaterSlots: clamped(r.lowWaterSlots, 1, MAX_DOCKER_LOW_WATER_SLOTS) ?? d.lowWaterSlots,
+    maxParksPerHour: clamped(r.maxParksPerHour, 1, MAX_DOCKER_PARKS_PER_HOUR) ?? d.maxParksPerHour,
+    minAgeMinutes: clamped(r.minAgeMinutes, 1, MAX_DOCKER_MIN_AGE_MINUTES) ?? d.minAgeMinutes,
+    maxPerCycle: clamped(r.maxPerCycle, 1, MAX_DOCKER_PER_CYCLE) ?? d.maxPerCycle,
+    failureLimit: clamped(r.failureLimit, 1, MAX_DOCKER_FAILURE_LIMIT) ?? d.failureLimit
+  }
+}
+
+function normalizeShelve(raw: unknown, d: ShelvePrefs): ShelvePrefs {
+  const r = isRecord(raw) ? raw : {}
+  return {
+    enabled: bool(r.enabled) ?? d.enabled,
+    firstReportAcknowledged: bool(r.firstReportAcknowledged) ?? d.firstReportAcknowledged,
+    thresholdDays: clamped(r.thresholdDays, 1, MAX_SHELVE_THRESHOLD_DAYS) ?? d.thresholdDays,
+    maxPerCycle: clamped(r.maxPerCycle, 1, MAX_SHELVE_PER_CYCLE) ?? d.maxPerCycle,
+    failureLimit: clamped(r.failureLimit, 1, MAX_SHELVE_FAILURE_LIMIT) ?? d.failureLimit
   }
 }
 
@@ -265,7 +395,24 @@ export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
     // cannot acknowledge (see above), but it can take the acknowledgement away, so an operator
     // who dismissed the banner, or ran the autopilot before, is never cleaned for on a stale ack.
     firstReportAcknowledged:
-      !current.autopilot && next.autopilot ? false : current.firstReportAcknowledged
+      !current.autopilot && next.autopilot ? false : current.firstReportAcknowledged,
+    // Shelving makes the same promise on its own: turning it ON starts a report-only cycle, and no
+    // settings write can acknowledge it (its own channel does).
+    shelve: {
+      ...next.shelve,
+      firstReportAcknowledged:
+        !current.shelve.enabled && next.shelve.enabled
+          ? false
+          : current.shelve.firstReportAcknowledged
+    },
+    // Docker autonomy makes the same promise on its own switch and its own channel (`gc:docker:ack`).
+    docker: {
+      ...next.docker,
+      firstReportAcknowledged:
+        !current.docker.enabled && next.docker.enabled
+          ? false
+          : current.docker.firstReportAcknowledged
+    }
   }
 }
 
@@ -299,4 +446,22 @@ export function withoutReleased(prefs: GcPrefs, ids: readonly string[]): GcPrefs
 
 export function withAcknowledged(prefs: GcPrefs): GcPrefs {
   return { ...prefs, firstReportAcknowledged: true }
+}
+
+export function withShelveAcknowledged(prefs: GcPrefs): GcPrefs {
+  return { ...prefs, shelve: { ...prefs.shelve, firstReportAcknowledged: true } }
+}
+
+export function withDockerAcknowledged(prefs: GcPrefs): GcPrefs {
+  return { ...prefs, docker: { ...prefs.docker, firstReportAcknowledged: true } }
+}
+
+/** The failure-streak kill switch of Docker autonomy: it switches itself off; everything else stays. */
+export function withDockerDisabled(prefs: GcPrefs): GcPrefs {
+  return { ...prefs, docker: { ...prefs.docker, enabled: false } }
+}
+
+/** The failure-streak kill switch: shelving switches itself off; everything else stays. */
+export function withShelveDisabled(prefs: GcPrefs): GcPrefs {
+  return { ...prefs, shelve: { ...prefs.shelve, enabled: false } }
 }

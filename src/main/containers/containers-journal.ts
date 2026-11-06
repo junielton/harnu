@@ -9,8 +9,10 @@ import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import {
   ACT_VERBS,
+  ACTORS as WIRE_ACTORS,
   type Actor,
   type ActVerb,
+  type PausedStack,
   type Tombstone,
   type TombstoneStack
 } from './containers-wire'
@@ -25,13 +27,31 @@ export function serializeTombstone(t: Tombstone): string {
   return JSON.stringify(t) + '\n'
 }
 
-const ACTORS: readonly Actor[] = ['operator', 'agent']
+// The wire's own roster, like the verbs below, so an actor added there is never dropped on read.
+const ACTORS: readonly Actor[] = WIRE_ACTORS
 // The wire's own roster, so a verb added there is never silently dropped when
 // its tombstones are read back (T340).
 const VERBS: readonly ActVerb[] = ACT_VERBS
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === 'string')
+}
+
+function isPausedRecord(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false
+  const r = v as Record<string, unknown>
+  return (
+    (typeof r.project === 'string' || r.project === null) &&
+    typeof r.workingDir === 'string' &&
+    isStringArray(r.configFiles) &&
+    isStringArray(r.profiles) &&
+    (typeof r.envFile === 'string' || r.envFile === null) &&
+    typeof r.hasBuild === 'boolean' &&
+    Array.isArray(r.ports) &&
+    r.ports.every((p) => typeof p === 'number') &&
+    typeof r.restoreCommand === 'string' &&
+    typeof r.pausedAt === 'number'
+  )
 }
 
 function isTombstoneStack(v: unknown): v is TombstoneStack {
@@ -51,7 +71,20 @@ function isTombstoneStack(v: unknown): v is TombstoneStack {
     isStringArray(freed.volumes) &&
     typeof freed.volumeBytes === 'number' &&
     (s.keptVolumes === undefined || isStringArray(s.keptVolumes)) &&
-    (s.keptVolumeBytes === undefined || typeof s.keptVolumeBytes === 'number')
+    (s.keptVolumeBytes === undefined || typeof s.keptVolumeBytes === 'number') &&
+    (s.paused === undefined || isPausedRecord(s.paused)) &&
+    isKeptVolumeOwner(s.keptVolumeOwner)
+  )
+}
+
+function isKeptVolumeOwner(v: unknown): boolean {
+  if (v === undefined) return true
+  if (!v || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  return (
+    o.reason === 'worktree-removed' &&
+    (typeof o.project === 'string' || o.project === null) &&
+    (typeof o.worktreePath === 'string' || o.worktreePath === null)
   )
 }
 
@@ -64,7 +97,8 @@ export function isTombstone(v: unknown): v is Tombstone {
     VERBS.includes(t.verb as ActVerb) &&
     Array.isArray(t.stacks) &&
     t.stacks.every(isTombstoneStack) &&
-    (typeof t.restoreHint === 'string' || t.restoreHint === null)
+    (typeof t.restoreHint === 'string' || t.restoreHint === null) &&
+    (t.reason === undefined || typeof t.reason === 'string')
   )
 }
 
@@ -94,28 +128,114 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
-/** After a stop: `docker start <ids>` (12-char ids, which docker accepts as prefixes). */
-export function restoreHintForStop(containerIds: readonly string[]): string | null {
-  if (containerIds.length === 0) return null
-  return `docker start ${containerIds.map((id) => shellQuote(id.slice(0, 12))).join(' ')}`
+/** What the labels or `docker compose config` know about how a stack starts (all optional). */
+export interface HintFacts {
+  configFiles?: readonly string[]
+  profiles?: readonly string[]
+  envFile?: string | null
+  hasBuild?: boolean
 }
 
-/**
- * After a removal: the compose recreate command when the stack came from a
- * compose project whose worktree still exists; otherwise nothing can bring the
- * stack back, and the hint is null. It names the project with `-p`: a name
- * that came from `-p` or `COMPOSE_PROJECT_NAME` would otherwise come back under
- * the directory's default name, and miss the volumes the operator kept.
- */
-export function restoreHintForRemove(stack: {
+/** The stack facts a restore hint is built from. */
+export interface HintStack {
   kind: 'compose' | 'container'
   project: string | null
   worktreePath: string | null
   worktreeExists: boolean
-}): string | null {
+  facts?: HintFacts | null
+}
+
+/**
+ * The command that brings a compose stack back after `down` or a removal (U3.4, AC-U3d):
+ * `docker compose -p P --project-directory WD [-f F]… [--profile X]… [--env-file E] up -d [--build]`.
+ * It names the project with `-p`: a name that came from `-p` or `COMPOSE_PROJECT_NAME` would
+ * otherwise come back under the directory's default name, and miss the volumes the operator kept.
+ * Every path is shell-quoted, because a restore hint is a command a human pastes into a terminal.
+ */
+export function composeUpCommand(f: {
+  project: string | null
+  workingDir: string
+  configFiles: readonly string[]
+  profiles: readonly string[]
+  envFile: string | null
+  hasBuild: boolean
+}): string {
+  return [
+    'docker compose',
+    ...(f.project ? ['-p', shellQuote(f.project)] : []),
+    '--project-directory',
+    shellQuote(f.workingDir),
+    ...f.configFiles.flatMap((file) => ['-f', shellQuote(file)]),
+    ...f.profiles.flatMap((profile) => ['--profile', shellQuote(profile)]),
+    ...(f.envFile ? ['--env-file', shellQuote(f.envFile)] : []),
+    'up -d',
+    ...(f.hasBuild ? ['--build'] : [])
+  ].join(' ')
+}
+
+/**
+ * The compose command for a stack, or null when nothing can bring it back: not a compose stack,
+ * no known directory, or the directory is gone.
+ */
+function composeHint(stack: HintStack): string | null {
   if (stack.kind !== 'compose' || !stack.worktreePath || !stack.worktreeExists) return null
-  const project = stack.project ? ` -p ${shellQuote(stack.project)}` : ''
-  return `docker compose${project} --project-directory ${shellQuote(stack.worktreePath)} up -d`
+  return composeUpCommand({
+    project: stack.project,
+    workingDir: stack.worktreePath,
+    configFiles: stack.facts?.configFiles ?? [],
+    profiles: stack.facts?.profiles ?? [],
+    envFile: stack.facts?.envFile ?? null,
+    hasBuild: stack.facts?.hasBuild ?? false
+  })
+}
+
+/**
+ * After a stop. A compose stack gets its `compose up -d` command and NEVER `docker start <ids>`
+ * (U3.4, risk 9: it fails once the stack was brought down, and is the wrong tool for a stack that
+ * needs its network back); null when the stack's directory is unknown or gone. A standalone
+ * container that was merely stopped keeps `docker start` (12-char ids, which docker accepts as
+ * prefixes).
+ */
+export function restoreHintForStop(
+  stack: HintStack,
+  containerIds: readonly string[]
+): string | null {
+  if (containerIds.length === 0) return null
+  if (stack.kind === 'compose') return composeHint(stack)
+  return `docker start ${containerIds.map((id) => shellQuote(id.slice(0, 12))).join(' ')}`
+}
+
+/**
+ * After a removal: the compose recreate command when the stack came from a compose project whose
+ * worktree still exists; otherwise nothing can bring the stack back, and the hint is null.
+ */
+export function restoreHintForRemove(stack: HintStack): string | null {
+  return composeHint(stack)
+}
+
+/**
+ * The paused registry (U3.4): stacks whose newest journal entry is a pause and that have no
+ * containers right now. There is no second file to drift: the journal already survives a restart,
+ * so the registry is a view of it. A later entry for the same stack (a start, a removal, another
+ * stop) ends the pause, and so does the project coming back with containers (`liveStacks`).
+ * `journal` is newest first, as {@link parseJournal} returns it.
+ */
+export function derivePaused(
+  journal: readonly Tombstone[],
+  liveStacks: ReadonlySet<string>
+): PausedStack[] {
+  const decided = new Set<string>()
+  const out: PausedStack[] = []
+  for (const t of journal) {
+    for (const s of t.stacks) {
+      if (decided.has(s.stack)) continue
+      decided.add(s.stack)
+      if (s.paused && !liveStacks.has(s.stack)) {
+        out.push({ ...s.paused, stack: s.stack, name: s.name, actor: t.actor })
+      }
+    }
+  }
+  return out
 }
 
 export async function appendTombstone(file: string, t: Tombstone): Promise<void> {

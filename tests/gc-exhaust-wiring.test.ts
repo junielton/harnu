@@ -370,6 +370,85 @@ describe('never-clean protects archives too (delta-2 item 1)', () => {
     expect(free.archives).toBe(1)
   })
 
+  it('deleting by hand refuses an archive whose worktree is shelved, names it, and deletes nothing of it', async () => {
+    const repo = await repoWithOldArchive('shelved-manual')
+    const ns = 'refs/archive/feat/old/20260101T000000Z'
+    const tip = gitIn(repo, 'rev-parse', OLD)
+    const shelved = new Map([
+      [
+        ns,
+        {
+          id: `${repo}::worktree::/t/feat-old`,
+          repoPath: repo,
+          worktreePath: '/t/feat-old',
+          branch: 'feat/old',
+          headSha: tip,
+          namespace: ns,
+          shelvedAt: 1,
+          idleDays: 9,
+          reason: 'r',
+          freedBytes: null
+        }
+      ]
+    ])
+    const req = { repoPath: repo, archives: [{ namespace: ns, tipSha: tip, wipSha: null }] }
+    const ack = await deleteConfirmedArchives(req, [], undefined, shelved)
+    expect(ack.ok).toBe(false)
+    expect(ack.deleted).toBe(0)
+    expect(ack.archives).toBe(0)
+    expect(ack.shelvedArchives).toEqual([
+      { namespace: ns, id: `${repo}::worktree::/t/feat-old`, branch: 'feat/old' }
+    ])
+    expect(has(repo)).toBe(true)
+
+    // Once the worktree is restored (no longer shelved) the same request goes through.
+    const free = await deleteConfirmedArchives(req)
+    expect(free.archives).toBe(1)
+    expect(has(repo)).toBe(false)
+  })
+
+  it('a request that mixes a shelved archive with an ordinary one deletes only the ordinary one', async () => {
+    const repo = await repoWithOldArchive('shelved-mixed')
+    const other = 'refs/archive/feat/other/20260102T000000Z'
+    gitIn(repo, 'update-ref', `${other}/tip`, 'HEAD')
+    const sha = gitIn(repo, 'rev-parse', 'HEAD')
+    const ns = 'refs/archive/feat/old/20260101T000000Z'
+    const shelved = new Map([
+      [
+        ns,
+        {
+          id: 'e1',
+          repoPath: repo,
+          worktreePath: '/t/feat-old',
+          branch: 'feat/old',
+          headSha: sha,
+          namespace: ns,
+          shelvedAt: 1,
+          idleDays: 9,
+          reason: 'r',
+          freedBytes: null
+        }
+      ]
+    ])
+    const ack = await deleteConfirmedArchives(
+      {
+        repoPath: repo,
+        archives: [
+          { namespace: ns, tipSha: sha, wipSha: null },
+          { namespace: other, tipSha: sha, wipSha: null }
+        ]
+      },
+      [],
+      undefined,
+      shelved
+    )
+    expect(ack.archives).toBe(1)
+    expect(ack.shelvedArchives).toHaveLength(1)
+    const left = gitIn(repo, 'for-each-ref', 'refs/archive/')
+    expect(left).toContain('feat/old')
+    expect(left).not.toContain('feat/other')
+  })
+
   it('deleting by hand refuses a never-clean repo too ("never cleaned, automatically or by hand")', async () => {
     const repo = await repoWithOldArchive('manual')
     const tip = gitIn(repo, 'rev-parse', OLD)

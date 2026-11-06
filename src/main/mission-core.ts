@@ -142,7 +142,7 @@ export interface LegacyImport {
 }
 
 /**
- * Campaign spec §3.2 — the eight events Harnu itself records on a mission. Order is
+ * Campaign spec §3.2 — the events Harnu itself records on a mission. Order is
  * the order the spec lists them; a row's `kind` is validated against it on every
  * write, so a stray string can never land in the ledger.
  */
@@ -154,7 +154,9 @@ export const LEDGER_KINDS = [
   'ci',
   'verified',
   'session-died',
-  'compaction'
+  'compaction',
+  // T654: the owner session was replaced (`mission_transfer_owner`); `ref` is the new owner.
+  'owner-transfer'
 ] as const
 export type LedgerKind = (typeof LEDGER_KINDS)[number]
 

@@ -24,7 +24,8 @@ import {
   type Selection
 } from './containers-format'
 import ContainersDetail from './ContainersDetail.vue'
-import type { ContainersTombstone, StackRow } from '../../../preload'
+import ContainersPausedDetail from './ContainersPausedDetail.vue'
+import type { ContainersPausedStack, ContainersTombstone, StackRow } from '../../../preload'
 
 /**
  * Containers takeover (design.md "Containers takeover"; spec
@@ -86,6 +87,11 @@ watch(
 const selectedStack = computed<StackRow | null>(() =>
   selection.value?.kind === 'stack' ? store.stackById(selection.value.id) : null
 )
+const selectedPaused = computed<ContainersPausedStack | null>(() =>
+  selection.value?.kind === 'paused'
+    ? (store.paused.find((p) => p.stack === (selection.value as { id: string }).id) ?? null)
+    : null
+)
 const selectedTomb = computed<ContainersTombstone | null>(() => {
   const sel = selection.value
   if (sel?.kind !== 'recent') return null
@@ -94,6 +100,12 @@ const selectedTomb = computed<ContainersTombstone | null>(() => {
 
 function selectStack(id: string): void {
   selection.value = { kind: 'stack', id }
+}
+function selectPaused(id: string): void {
+  selection.value = { kind: 'paused', id }
+}
+function isPausedOn(id: string): boolean {
+  return selection.value?.kind === 'paused' && selection.value.id === id
 }
 function selectRecent(key: string): void {
   selection.value = { kind: 'recent', key }
@@ -159,6 +171,8 @@ function recentVerb(tb: ContainersTombstone): string {
   return t(`containers.recent.${recentVerbKey(tb)}`)
 }
 
+/** A paused row: name, the Paused chip, and how long ago. */
+const PAUSED_COLS = 'grid-cols-[1fr_auto_auto]'
 const ROW_BASE =
   "relative grid w-full cursor-pointer items-center gap-2.5 rounded-sm py-[7px] pl-2.5 pr-2 before:absolute before:bottom-[7px] before:left-0 before:top-[7px] before:w-0.5 before:rounded-[2px] before:content-['']"
 /** Every stack row and the skeletons: name, verdict chip, RAM, quick-stop. */
@@ -458,6 +472,35 @@ const SKELETON_ROWS_2: Array<{ name: number; chip: number; ram: number }> = [
               </template>
             </template>
 
+            <template v-if="store.paused.length">
+              <div data-testid="containers-paused-eyebrow" :class="EYEBROW">
+                {{ t('containers.section.paused') }}
+              </div>
+              <div
+                v-for="p in store.paused"
+                :key="p.stack"
+                role="button"
+                tabindex="0"
+                :data-paused="p.stack"
+                :class="[ROW_BASE, PAUSED_COLS, isPausedOn(p.stack) ? ON : OFF]"
+                :aria-pressed="isPausedOn(p.stack)"
+                @click="selectPaused(p.stack)"
+                @keydown.enter.self.prevent="selectPaused(p.stack)"
+                @keydown.space.self.prevent="selectPaused(p.stack)"
+              >
+                <span class="truncate font-mono text-[12px] text-text" :title="p.name">{{
+                  p.name
+                }}</span>
+                <span
+                  class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-surface-2 px-[9px] py-[3px] text-[10.5px] font-semibold text-text-3"
+                  >{{ t('containers.paused.chip') }}</span
+                >
+                <span class="text-right text-[10.5px] tabular-nums text-text-4">{{
+                  ago(nowMs - p.pausedAt)
+                }}</span>
+              </div>
+            </template>
+
             <template v-if="recentRows.length">
               <div :class="EYEBROW">{{ t('containers.section.recent') }}</div>
               <div
@@ -485,6 +528,7 @@ const SKELETON_ROWS_2: Array<{ name: number; chip: number; ram: number }> = [
         </div>
 
         <div v-if="firstScan" class="min-w-0" />
+        <ContainersPausedDetail v-else-if="selectedPaused" :paused="selectedPaused" />
         <ContainersDetail
           v-else
           :stack="selectedStack"

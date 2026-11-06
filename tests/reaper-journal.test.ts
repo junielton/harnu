@@ -32,6 +32,29 @@ describe('serializeTombstone / parseJournal round-trip', () => {
     expect(parsed).toEqual([t])
   })
 
+  it('a shelve’s reason and idle days round-trip, and lines without them still parse (AC-7)', () => {
+    const shelve = tombstone({
+      kind: 'shelved-worktree',
+      reason: 'Shelved `feat/x` — idle 9 d, branch kept',
+      idleDays: 9
+    })
+    const old = tombstone({ at: 1 })
+    const parsed = parseJournal(serializeTombstone(old) + serializeTombstone(shelve), 50)
+    expect(parsed[0]).toEqual(shelve)
+    expect(parsed[0]!.reason).toBe('Shelved `feat/x` — idle 9 d, branch kept')
+    expect(parsed[0]!.idleDays).toBe(9)
+    expect(parsed[1]).toEqual(old)
+    expect('reason' in parsed[1]!).toBe(false)
+    expect('idleDays' in parsed[1]!).toBe(false)
+  })
+
+  it('a line whose reason or idle days have the wrong type is malformed and skipped', () => {
+    const bad1 = JSON.stringify({ ...tombstone({ at: 5 }), reason: 42 }) + '\n'
+    const bad2 = JSON.stringify({ ...tombstone({ at: 6 }), idleDays: 'nine' }) + '\n'
+    const good = tombstone({ at: 7 })
+    expect(parseJournal(bad1 + bad2 + serializeTombstone(good), 50)).toEqual([good])
+  })
+
   it('returns newest first', () => {
     const older = tombstone({ at: 1, branch: 'a' })
     const newer = tombstone({ at: 2, branch: 'b' })

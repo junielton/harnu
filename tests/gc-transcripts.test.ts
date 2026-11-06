@@ -249,6 +249,7 @@ describe('transcript activity fails closed (delta 5, item 3)', () => {
     expect(await scanTranscripts(probe, NOW)).toEqual({
       folders: [],
       bySlug: [],
+      drifted: [],
       rootUnreadable: true
     })
   })

@@ -43,6 +43,8 @@ function facts(over: Partial<BranchFacts> = {}): BranchFacts {
     remoteExists: false,
     ancestorOfDefault: true,
     patchIdContained: null,
+    tipInPrHead: null,
+    prLandedInDefault: null,
     lastCommitAt: null,
     pr: null,
     ghAvailable: true,
@@ -60,6 +62,8 @@ function pr(over: Partial<PrFacts> = {}): PrFacts {
     ci: 'passing',
     mergedAt: new Date(NOW).toISOString(),
     headRefOid: TIP,
+    baseRefName: null,
+    mergeCommitOid: null,
     ...over
   }
 }

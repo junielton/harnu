@@ -99,7 +99,12 @@ and as `ownerSessionId` (`mission_get`). `<session8>` is its first 8 characters.
   or pass a `synthetic-…` one (refused `BAD_SESSION_ID`).
 - **That directory reads `agent-<something>`** → you are a subagent, not a
   session. Do NOT create or own a mission. Report back to the session that
-  dispatched you.
+  dispatched you. The one exception is a **tick subagent**: an owner that
+  follows `orchestrate-delivery` ("Every tick runs in a fresh subagent") hands
+  you its own session id in the prompt. You then run the tick below on its
+  behalf, pass that id (never your `agent-…` one) as `sessionId` /
+  `ownerSessionId`, link no session of your own, create no mission, and return
+  the short report the prompt asks for.
 
 ## `mission set <objective>`
 
@@ -186,6 +191,15 @@ where it is. Never write to, archive, or overwrite a goal file whose prefix is
 not yours — another orchestrator may be coordinating live behind it.
 
 ## `mission` — one tick
+
+**An owner does not run this tick in its own context.** Its context would grow with
+every `mission_get` dump, tick after tick. The owner keeps the loop and its push
+subscriptions (`SendMessage { notify_when_idle: true }`) and, on each firing or idle
+notice, spawns a fresh general-purpose subagent — never a fork — that runs steps 1–5
+below and returns a short report; the owner then does step 6 from that report. The
+prompt template and the report shape are in `orchestrate-delivery` ("Every tick
+runs in a fresh subagent"). An unattended run never depends on a human pasting a
+prompt.
 
 1. **Read the mission — one call:** `mission_get({ folder, ownerSessionId: <your
 id> })`. It replaces the old hand-assembly of `get_fleet` + `get_approval` +
@@ -447,8 +461,9 @@ folder, missionId, stepId, note })`. Then stop.
 - **At dispatch, give the child both halves:** your session id and your current
   native name (the first line of `ListAgents`: "This session is `<name> [<ref>]`"),
   plus the rules above.
-- **Re-announce when your name changes.** On every tick, read your own name from
-  `ListAgents`' first line and compare it with the last address you recorded
+- **Re-announce when your name changes.** On every tick, the owner reads its own
+  name from `ListAgents`' first line (a tick subagent is handed it in its prompt)
+  and compares it with the last address recorded
   (`mission_log`: "owner address: `<name> [<ref>]`"). Changed → log the new one
   and send it to each live linked child with `message_session({ sessionId:
 <child uuid> })`, which addresses a Harnu-spawned child by its stable id and
@@ -471,17 +486,17 @@ times, roughly $130. The report message is best-effort; the file is the
 deliverable (rule 4 above says the same from the child's side). The
 `orchestrate-delivery` skill carries the per-role templates.
 
-### Wave boundary — hand the mission to a fresh owner
+### Wave boundary — the owner stays the owner
 
-A mission outlives its owner session: one orchestrator session per delivery wave.
-When your context passes ~400k tokens, or the wave ends at a human pause (a merge
-and a build the operator must do), stop owning it: leave the steps, links, blockers
-and a `mission_log` handover line current, then give the operator the resume
-prompt from `orchestrate-delivery` ("Wave boundary") for a fresh session — it
-opens with `/harnu:status` and `mission_get <missionId>` and names the mission id,
-card slugs, previous owner session id and watchdog worker id. The new owner
-re-derives state from the mission, never from your transcript, and re-announces its
-address to each live child (owner rules above).
+A mission is owned by one session for its whole life. A wave that ends at a human
+pause (a merge and a build the operator must do) is a blocker, not a stand-down:
+raise `mission_set_blocker { owner: 'operator', … }` naming the action, leave the
+loop and subscriptions armed at a slow cadence, and carry on when it clears. There
+is no context threshold at which you stop owning the mission — ticks run in
+subagents, so the owner's context stays flat — and this skill never writes a resume
+prompt for the operator to paste. Replacing a lost owner is recovery, handled by
+Harnu's owner transfer (see `orchestrate-delivery`, "Wave boundary"), not a routine
+handoff.
 
 ## `mission done`
 

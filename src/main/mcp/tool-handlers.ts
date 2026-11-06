@@ -79,6 +79,7 @@ import type { PrEntry } from '../pr-stack-core'
 import { getScreenStates, getShellSessions } from '../detect/screen-detect'
 import {
   createTerminalPty,
+  ShelvedRestoreError,
   discardTerminalPty,
   ensureTerminalScreenModel,
   liveSessionKeys,
@@ -87,6 +88,7 @@ import {
   waitForSessionReady,
   writeTerminalPty
 } from '../pty'
+import { ensureShelvedRestored } from '../gc/shelve-restore-shell'
 import {
   AGENT_TERMINAL_SIZE,
   MAX_AGENT_TERMINALS_PER_FOLDER,
@@ -237,7 +239,12 @@ import {
 } from '../worktree-ipc'
 import { toWorktreeListing } from '../worktree-core'
 import { provisionErrorPayload, WorktreeProvisionError } from '../worktree-manifest'
-import { readUserProjects, terminalReadOptIns } from '../user-projects'
+import {
+  normalizePath as normalizeStoredPath,
+  readUserProjects,
+  terminalReadOptIns,
+  transactHiddenPaths
+} from '../user-projects'
 import {
   appendMemoryEntry,
   queryMemory,
@@ -361,6 +368,9 @@ import {
 import { getGcService } from '../gc/gc-service-registry'
 import { cleanupListing, planRelease } from './cleanup-listing'
 import { realPathLookup } from './real-paths'
+import { getSessionArchive } from '../session-archive-core'
+import { planArchiveSession, summarizeArchive, type ArchivePlan } from './archive-session-core'
+import { planHideFolder, summarizeHide } from './hide-folder-core'
 
 /** Everything a handler may need beyond its own validated `input`. */
 export interface ToolHandlerCtx {
@@ -1006,6 +1016,13 @@ const createSessionHandler: Handler = async (args, ctx) => {
   if (!ctx.bridge) return errorResult('NO_BRIDGE')
   const bridge = ctx.bridge
   const folder = ctx.folder
+  // U2.3a (design C3): a session opened in a shelved worktree brings it back first, here as well as
+  // in `createPty`, so a failure is this call's error and not an `ok:true` with a session that never
+  // materializes.
+  const restored = await ensureShelvedRestored(folder)
+  if (restored.status === 'failed') {
+    return steerError(`SHELVED_RESTORE_FAILED: ${restored.reason}: ${restored.message}`, ctx.folder)
+  }
   const payload: Record<string, unknown> = { folder }
   const prePrompt = strField(args, 'prePrompt')
   if (prePrompt) payload.prePrompt = prePrompt
@@ -1131,6 +1148,13 @@ const spawnTerminalHandler: Handler = async (args, ctx) => {
   let ptyId: string
   try {
     ptyId = await createTerminalPty({ terminalId, folder: targetFolder, ownerSessionId })
+  } catch (err) {
+    // U2.3a: `createPty` restores a shelved worktree before the shell starts; a failed restore is
+    // the agent's steering error, not a thrown tool failure.
+    if (err instanceof ShelvedRestoreError) {
+      return steerError(`SHELVED_RESTORE_FAILED: ${err.reason}: ${err.message}`, ctx.folder)
+    }
+    throw err
   } finally {
     // Registered by now (or the spawn failed): the record, not the reservation, holds the slot.
     terminalRegistry.releaseSlot(targetFolder)
@@ -3123,6 +3147,170 @@ const releaseWorktreeHandler: Handler = async (args, ctx) => {
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
   if (!plan.ack.alreadyReleased) await svc.release(plan.bundleId, now, plan.from)
   return textResult(plan.ack)
+}
+
+// ---- T655 `archive_session` ---------------------------------------------------
+
+/**
+ * Archive or restore sessions through the main-process archive store, the same set the
+ * sidebar's Archive action writes. Each id is judged on its own (see
+ * {@link planArchiveSession}) inside the store's own serialized write, which commits once;
+ * the renderer hears about it through the store's change event, so a window that is open
+ * updates live and one that is closed simply reads the file at boot. This handler never touches a transcript or a worktree: the only file it can write is the store.
+ */
+const archiveSessionHandler: Handler = async (args, ctx) => {
+  const store = getSessionArchive()
+  if (!store) {
+    return errorResult(
+      'ARCHIVE_NOT_READY: the session archive has not started yet. Retry in a moment.'
+    )
+  }
+  const sessionIds = Array.isArray(args.sessionIds)
+    ? args.sessionIds.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : []
+  if (sessionIds.length === 0) return errorResult('BAD_ARGS: pass 1..100 session ids')
+  const unarchive = args.unarchive === true
+
+  const home = os.homedir()
+  const folderBySession = new Map<string, string>()
+  for (const f of ctx.folders) {
+    for (const s of f.sessions) folderBySession.set(s.sessionId, s.projectPath ?? f.path)
+  }
+
+  // Every row is decided INSIDE the store's serialized write, against the set as it stands
+  // after all earlier writes, so concurrent calls read as one serial order and an ACK row can
+  // never describe a state the store did not hold. The deadline check is the commit point:
+  // past the 120s deadline the caller already got TOOL_TIMEOUT, so nothing is written.
+  let plan: ArchivePlan | null
+  try {
+    plan = await store.transact((archived) => {
+      if (ctx.deadlineFlag?.fired) return { result: null }
+      const states = taskStateRecord()
+      const withApproval = new Set(listPendingApprovals().map((a) => a.sessionId))
+      const p = planArchiveSession(sessionIds, unarchive, {
+        archived,
+        folderOf: (id) => folderBySession.get(id),
+        isDenied: (folder) => isFolderDenied(folder, ctx.denyFolders, home),
+        taskStateOf: (id) => states[id],
+        hasPendingApproval: (id) => withApproval.has(id)
+      })
+      return { archive: p.toArchive, unarchive: p.toRestore, result: p }
+    })
+  } catch (err) {
+    // The write failed: the store is exactly as it was, so no row may claim otherwise.
+    return errorResult(
+      `ARCHIVE_WRITE_FAILED: ${err instanceof Error ? err.message : String(err)}. Nothing was changed.`
+    )
+  }
+  if (!plan) return errorResult('DEADLINE_FIRED')
+
+  const counts: Record<string, number> = {}
+  for (const r of plan.rows) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1
+  appendAudit({
+    ts: Date.now(),
+    tool: 'archive_session',
+    folder: '',
+    verdict: 'allow',
+    disclosedPayloadSummary: summarizeArchive(unarchive, plan.rows),
+    result: 'ok'
+  })
+  return textResult({
+    ok: !plan.rows.some((r) => r.outcome === 'refused' || r.outcome === 'notFound'),
+    op: 'archive_session',
+    unarchive,
+    results: plan.rows,
+    counts
+  })
+}
+
+// ---- T661 `hide_folder` -------------------------------------------------------
+
+/**
+ * Hide or show sidebar folders through the SAME `hiddenPaths` the folder menu writes. Every
+ * row is decided inside the user-projects write lock ({@link transactHiddenPaths}), on the
+ * file just read, so N concurrent calls (and the menu action) read as one serial order and
+ * the ACK always matches what was persisted. A failed write rejects the whole call with
+ * nothing changed. The renderer hears the change through the store's listener (forwarded as
+ * `userProjects:hiddenChanged`), so an open sidebar updates live. Nothing on disk is touched.
+ *
+ * The transaction is entered before the first `await`, so calls reach the lock in arrival order.
+ */
+const hideFolderHandler: Handler = (args, ctx) => {
+  const requested = Array.isArray(args.folders)
+    ? args.folders.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : []
+  if (requested.length === 0) {
+    return Promise.resolve(errorResult('BAD_ARGS: pass 1..100 absolute folder paths'))
+  }
+  const unhide = args.unhide === true
+  const home = os.homedir()
+  const states = taskStateRecord()
+  const withApproval = new Set(listPendingApprovals().map((a) => a.sessionId))
+
+  // Group the scanned sessions by the folder they run in, keyed by the normalized path the
+  // store persists (a session counts for its own folder only, never for a parent or child).
+  const sessionsByRawFolder = new Map<string, string[]>()
+  for (const f of ctx.folders) {
+    for (const s of f.sessions) {
+      const raw = s.projectPath ?? f.path
+      const list = sessionsByRawFolder.get(raw)
+      if (list) list.push(s.sessionId)
+      else sessionsByRawFolder.set(raw, [s.sessionId])
+    }
+  }
+  const scannedFolders = ctx.folders.map((f) => f.path)
+
+  return transactHiddenPaths(async ({ hidden, projects }) => {
+    const paths = await Promise.all(requested.map((p) => normalizeStoredPath(p)))
+    const known = new Set<string>([...hidden, ...projects.map((p) => p.path)])
+    for (const p of await Promise.all(scannedFolders.map((p) => normalizeStoredPath(p)))) {
+      known.add(p)
+    }
+    const sessionsByFolder = new Map<string, string[]>()
+    for (const [raw, ids] of sessionsByRawFolder) {
+      const key = await normalizeStoredPath(raw)
+      sessionsByFolder.set(key, [...(sessionsByFolder.get(key) ?? []), ...ids])
+    }
+
+    // The single commit point: past the 120s deadline the caller already got TOOL_TIMEOUT.
+    if (ctx.deadlineFlag?.fired) return { toHide: [], toShow: [], result: null }
+    const plan = planHideFolder(paths, unhide, {
+      hidden,
+      isKnown: (p) => known.has(p),
+      isDenied: (p) => isFolderDenied(p, ctx.denyFolders, home),
+      hasWorkingSession: (p) =>
+        (sessionsByFolder.get(p) ?? []).some((id) => states[id] === 'working'),
+      hasPendingApproval: (p) => (sessionsByFolder.get(p) ?? []).some((id) => withApproval.has(id))
+    })
+    return { toHide: plan.toHide, toShow: plan.toShow, result: plan }
+  }).then(
+    ({ result: plan }) => {
+      if (plan === null) return errorResult('DEADLINE_FIRED')
+      const counts: Record<string, number> = {}
+      for (const r of plan.rows) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1
+      appendAudit({
+        ts: Date.now(),
+        tool: 'hide_folder',
+        folder: '',
+        verdict: 'allow',
+        disclosedPayloadSummary: summarizeHide(unhide, plan.rows),
+        result: 'ok'
+      })
+      return textResult({
+        ok: !plan.rows.some((r) => r.outcome === 'refused' || r.outcome === 'notFound'),
+        op: 'hide_folder',
+        unhide,
+        results: plan.rows,
+        counts
+      })
+    },
+    (err: unknown) =>
+      errorResult(
+        `HIDE_WRITE_FAILED: could not read or save the hidden folders, nothing changed (${
+          err instanceof Error ? err.message : String(err)
+        })`
+      )
+  )
 }
 
 // ---- mission_* verbs (T358 S3 — design.md §4) -------------------------------
@@ -7262,6 +7450,132 @@ const campaignRequestCloseHandler: Handler = async (args, ctx) => {
   })
 }
 
+// ---- T654: owner transfer (the recovery path) ----------------------------------------------
+
+/** The validated new owner and reason of a transfer call, or the refusal. */
+function parseOwnerTransfer(
+  args: Record<string, unknown>
+): { ok: true; to: string; reason: string } | { ok: false; error: string } {
+  const to = strField(args, 'toSessionId') ?? ''
+  if (!SESSION_UUID_RE.test(to)) return { ok: false, error: badSessionIdMessage('toSessionId', to) }
+  // One line: it is written into a Log heading.
+  const reason = (strField(args, 'reason') ?? '').replace(/\s+/g, ' ').trim()
+  if (!reason) {
+    return {
+      ok: false,
+      error: 'BAD_ARGS: reason is required — say why the owner changes (one line).'
+    }
+  }
+  return { ok: true, to, reason }
+}
+
+const sameOwnerMessage = (kind: 'mission' | 'campaign', id: string, to: string): string =>
+  `SAME_OWNER: session ${to} already owns ${kind} ${id} — nothing to transfer.`
+
+/** The Log entry both verbs append: `### <time> · owner transfer: <from> → <to> (<reason>)`. */
+const ownerTransferLog = (at: string, from: string, to: string, reason: string): string =>
+  `\n### ${at} · owner transfer: ${from} → ${to} (${reason})\n\nOwner moved from ${from} to ${to}. Reason: ${reason}\n`
+
+/**
+ * Move a mission's owner (a private copy) and record the ledger row. Only `owner.sessionId`
+ * changes: `owner.folder` stays, as it names where the mission was started.
+ */
+function withOwnerTransferred(m: Mission, to: string, at: string): Mission {
+  const from = m.owner.sessionId
+  const moved = structuredClone(m)
+  moved.owner = { ...moved.owner, sessionId: to }
+  return appendLedgerRow(
+    moved,
+    { kind: 'owner-transfer', ref: to, sessionId: to, detail: `from ${from}` },
+    at
+  )
+}
+
+const missionTransferOwnerHandler: Handler = async (args, ctx) => {
+  const parsed = parseOwnerTransfer(args)
+  if (!parsed.ok) return errorResult(parsed.error)
+  const { to, reason } = parsed
+  return editMission(args, ctx, (m) => {
+    const from = m.owner.sessionId
+    if (from === to) return { ok: false, error: sameOwnerMessage('mission', m.id, to) }
+    const at = new Date().toISOString()
+    return {
+      ok: true,
+      mission: withOwnerTransferred(m, to, at),
+      ack: { ok: true, op: 'mission_transfer_owner', missionId: m.id, from, to },
+      logAppend: ownerTransferLog(at, from, to, reason)
+    }
+  })
+}
+
+const campaignTransferOwnerHandler: Handler = async (args, ctx) => {
+  const parsed = parseOwnerTransfer(args)
+  if (!parsed.ok) return errorResult(parsed.error)
+  const { to, reason } = parsed
+  const includeChapters = args.includeChapters === true
+  let from = ''
+  let campaignId = ''
+  const candidates: string[] = []
+  const res = await editCampaign(args, ctx, async (c, root) => {
+    from = c.owner.sessionId
+    campaignId = c.id
+    if (from === to) return { ok: false, error: sameOwnerMessage('campaign', c.id, to) }
+    if (includeChapters) {
+      // Only chapter missions that are not closed: a closed mission is a record.
+      for (const ch of c.chapters) {
+        if (!ch.missionId) continue
+        const loaded = await loadMission(root, ch.missionId)
+        if (loaded.ok && loaded.mission.status !== 'closed') candidates.push(ch.missionId)
+      }
+    }
+    c.owner = { ...c.owner, sessionId: to }
+    return {
+      ok: true,
+      campaign: c,
+      // The final ACK (with what moved) is built below; this one is only used on a plain move.
+      ack: {},
+      logAppend: ownerTransferLog(new Date().toISOString(), from, to, reason)
+    }
+  })
+  if (res.isError) {
+    // A refusal that came from the edit: nothing moved, nothing to roll forward.
+    return res
+  }
+  // The campaign moved. Its chapter missions follow only when asked, each under its own lock;
+  // a mission that cannot move is reported, never silently dropped (the owner can retry it alone).
+  const missions: string[] = []
+  const skipped: Array<{ missionId: string; error: string }> = []
+  for (const missionId of candidates) {
+    let moved = false
+    const r = await editMission({ missionId }, ctx, (m) => {
+      if (m.owner.sessionId === to) return { ok: true, mission: m, unchanged: true, ack: {} }
+      moved = true
+      const at = new Date().toISOString()
+      return {
+        ok: true,
+        mission: withOwnerTransferred(m, to, at),
+        ack: { ok: true },
+        logAppend: ownerTransferLog(at, m.owner.sessionId, to, reason)
+      }
+    })
+    if (r.isError) {
+      const first = r.content[0]
+      skipped.push({ missionId, error: first && first.type === 'text' ? first.text : 'unknown' })
+    } else if (moved) {
+      missions.push(missionId)
+    }
+  }
+  return textResult({
+    ok: true,
+    op: 'campaign_transfer_owner',
+    campaignId,
+    from,
+    to,
+    moved: { campaign: true, missions },
+    ...(skipped.length > 0 ? { skipped } : {})
+  })
+}
+
 /**
  * Create a chapter's mission and bind it to the chapter, under the campaign's lock: validate
  * the campaign and chapter first (nothing is written on a refusal), write the mission via
@@ -7364,6 +7678,8 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   list_cleanup: listCleanupHandler,
   github_budget: githubBudgetHandler,
   release_worktree: releaseWorktreeHandler,
+  archive_session: archiveSessionHandler,
+  hide_folder: hideFolderHandler,
   stop_containers: stopContainersHandler,
   start_containers: startContainersHandler,
   remove_containers: removeContainersHandler,
@@ -7390,7 +7706,9 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   campaign_get: campaignGetHandler,
   rebase_stack: rebaseStackHandler,
   campaign_list: campaignListHandler,
-  campaign_request_close: campaignRequestCloseHandler
+  campaign_request_close: campaignRequestCloseHandler,
+  mission_transfer_owner: missionTransferOwnerHandler,
+  campaign_transfer_owner: campaignTransferOwnerHandler
 }
 
 /**

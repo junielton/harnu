@@ -13,6 +13,20 @@
     "hideOlder": "Ocultar sessões antigas",
     "showArchived": "Mostrar {n} arquivadas",
     "hideArchived": "Ocultar arquivadas",
+    "shelved": {
+      "label": "Guardadas",
+      "tooltip": "{n} worktree guardada — branch e sessões mantidas | {n} worktrees guardadas — branches e sessões mantidas",
+      "daysShort": "{days} d",
+      "rowTooltip": "Guardada hoje · branch {branch} mantida | Guardada há {days} dia · branch {branch} mantida | Guardada há {days} dias · branch {branch} mantida",
+      "rowTooltipDetached": "Guardada hoje · trabalho mantido no arquivo | Guardada há {days} dia · trabalho mantido no arquivo | Guardada há {days} dias · trabalho mantido no arquivo",
+      "sessionTooltip": "Retomar — restaura a worktree antes",
+      "restoring": "restaurando…",
+      "restoringPane": "Restaurando a worktree {branch}…",
+      "restore": "Restaurar worktree",
+      "openInCleanup": "Abrir na Limpeza",
+      "restoreFailed": "Não foi possível restaurar {branch}. Nada se perdeu — a branch e o arquivo estão mantidos.",
+      "menuLabel": "Ações da worktree guardada"
+    },
     "terminals": "Terminais",
     "terminalLabel": "Terminal {n}",
     "closeTerminal": "Fechar terminal",
@@ -117,6 +131,10 @@
     "newSessionHere": "Nova sessão nesta pasta",
     "terminal": "Terminal",
     "split": "Dividir horizontal",
+    "browser": "Navegador",
+    "moreActions": "Mais ações",
+    "splitLayout": "Divisão: {mode}",
+    "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Abrir pasta",
     "openInEditor": "Abrir no {editor}",
     "editorGeneric": "editor",
@@ -159,6 +177,8 @@
     "close": "Fechar painel",
     "maximize": "Maximizar",
     "restore": "Restaurar",
+    "expand": "Expandir para a janela",
+    "exitExpand": "Sair da visão expandida",
     "shellTitle": "Shell",
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
@@ -356,7 +376,15 @@
     "decisionsEmpty": "Nenhuma decisão registrada ainda.",
     "timelineEmpty": "Ainda sem digests de sessão — eles aparecem aqui conforme as sessões se encerram.",
     "openSession": "Abrir sessão",
-    "sessionNotFound": "Essa sessão não está carregada."
+    "sessionNotFound": "Essa sessão não está carregada.",
+    "evidence": {
+      "noCommits": "Sem commits",
+      "noGit": "Sem git",
+      "orphan": "Recuperado",
+      "noCommitsHint": "Escrito só a partir da conversa: a sessão não fez commits.",
+      "noGitHint": "Esta pasta não é um repositório git, então o digest não tem evidência de git.",
+      "orphanHint": "Recuperado do transcript de uma pasta removida antes de o Cleanup poder mandá-lo para a lixeira."
+    }
   },
   "explorerPane": {
     "label": "Arquivos do projeto",
@@ -1041,6 +1069,7 @@
     "cleanup": "Limpeza…"
   },
   "dialog": {
+    "close": "Fechar",
     "addFolder": {
       "title": "Adicionar pasta",
       "close": "Fechar dialog",
@@ -1162,7 +1191,25 @@
     },
     "appearance": {
       "eyebrow": "Aparência",
-      "extensionBadge": "Instalado por {name}"
+      "extensionBadge": "Instalado por {name}",
+      "layoutEyebrow": "Layout",
+      "splitLayout": {
+        "label": "Divisão da tela",
+        "hint": "Como a área da sessão e os painéis auxiliares dividem a janela. No modo automático, eles empilham quando a janela é mais alta que larga.",
+        "auto": "Automático",
+        "sideBySide": "Lado a lado",
+        "stacked": "Empilhado"
+      },
+      "floatingPanels": {
+        "label": "Painéis flutuantes",
+        "hint": "Mostra cada painel como uma ilha arredondada própria sobre um fundo mais escuro, com um espaço uniforme entre eles. Desligado mantém o layout clássico, de ponta a ponta."
+      },
+      "expandHides": {
+        "label": "Expandir esconde",
+        "hint": "O que sai da frente quando um painel auxiliar é expandido para a janela. Tudo também esconde a barra lateral e o Fleet rail; Só a sessão esconde apenas a sessão.",
+        "everything": "Tudo",
+        "sessionOnly": "Só a sessão"
+      }
     },
     "interface": {
       "eyebrow": "Interface",
@@ -1441,8 +1488,10 @@
       "pane_focusNext": "Focar o próximo painel",
       "pane_focusPrev": "Focar o painel anterior",
       "pane_toggleMaximize": "Maximizar ou restaurar o painel focado",
+      "pane_expandToWindow": "Expandir o painel focado para a janela",
       "pane_close": "Fechar o painel focado",
       "terminal_toggle": "Alternar o painel do terminal",
+      "layout_cycleSplitOrientation": "Alternar a divisão da tela (automático, lado a lado, empilhado)",
       "app_reload": "Recarregar a janela",
       "app_devtools": "Alternar o DevTools",
       "app_quit": "Sair do Harnu",
@@ -3031,6 +3080,10 @@
           "ack": "Eu conferi: essa pasta realmente não existe mais, não está em um disco desconectado."
         },
         "memory": "inclui notas de memória",
+        "digest": {
+          "done": "Com digest",
+          "partial": "{n} sem digest"
+        },
         "confirm": {
           "title": "Mover {n} pasta de transcrições para a lixeira? | Mover {n} pastas de transcrições para a lixeira?",
           "subtitle": "As pastas em que essas sessões rodavam não existem mais, então o Claude não consegue mais retomá-las aqui.",
@@ -3038,7 +3091,59 @@
           "recoverable": "Elas vão para a lixeira do sistema, então dá para trazê-las de volta.",
           "memory": "{n} delas também guarda notas de memória do Claude para essa pasta. | {n} delas também guardam notas de memória do Claude para essa pasta.",
           "total": "{n} pasta · {size} | {n} pastas · {size}",
+          "undigested": {
+            "summary": "{n} sessão desta seleção ainda não tem digest. Ir para a lixeira perde o que ela fez. | {n} sessões desta seleção ainda não têm digest. Ir para a lixeira perde o que elas fizeram.",
+            "retry": "Cancele para mantê-las: o Harnu tenta o digest de novo na próxima varredura.",
+            "row": "{n} sem digest · os digests ficam em {home}",
+            "noHome": "Nenhum repositório foi encontrado para esta pasta, então não dá para escrever um digest.",
+            "ack": "Mover para a lixeira sem digest"
+          },
           "confirm": "Mover para a lixeira"
+        }
+      },
+      "capacity": {
+        "low": {
+          "title": "O Docker está quase sem slots de rede",
+          "body": "{free} de {total} livres. A limpeza não tem mais nada para liberar sozinha.",
+          "bodyOff": "{free} de {total} livres. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "bodyPaused": "{free} de {total} livres. A limpeza automática do Docker está pausada, então nada será liberado sozinho."
+        },
+        "zero": {
+          "title": "O Docker ficou sem slots de rede livres",
+          "body": "O próximo compose up vai falhar. Pare uma stack que você não precisa.",
+          "bodyOff": "O próximo compose up vai falhar. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "bodyPaused": "O próximo compose up vai falhar. A limpeza automática do Docker está pausada, então nada será liberado sozinho."
+        }
+      },
+      "shelved": {
+        "activity": "Worktree `{branch}` guardada — ociosa há {days} d, branch mantida",
+        "activityDetached": "Worktree com HEAD solto guardada — ociosa há {days} d, arquivo mantido",
+        "title": "Guardadas",
+        "sub": "{n} worktree · {size} liberados | {n} worktrees · {size} liberados",
+        "subNoSize": "{n} worktree | {n} worktrees",
+        "note": "Pastas que o Harnu removeu por ficarem ociosas. A branch e todas as alterações são mantidas. Abrir uma sessão ou um terminal em uma delas a traz de volta sozinho.",
+        "listLabel": "Worktrees guardadas",
+        "detached": "HEAD solto",
+        "idle": "ociosa há {n} d",
+        "restore": "Restaurar",
+        "restoring": "Restaurando…",
+        "copyCommand": "Copiar comando",
+        "copied": "Copiado",
+        "failure": {
+          "repoBusy": "Outra tarefa do Harnu está trabalhando neste repositório. Tente de novo em instantes.",
+          "inUse": "Uma sessão está trabalhando na pasta desse caminho. Feche-a e tente de novo.",
+          "recordMissing": "O registro do arquivo sumiu, então o Harnu não consegue reconstruir esta pasta. A branch continua lá: copie o comando para obter uma worktree nova nela.",
+          "archiveUnverified": "O arquivo não confere mais, então o Harnu não restaura a partir dele. Nada foi alterado; copie o comando para obter uma worktree nova na branch.",
+          "moveAsideFailed": "Há uma pasta no caminho e ela não pôde ser movida. Mova ou renomeie você mesmo e tente de novo.",
+          "pathExists": "Já existe uma pasta nesse caminho. Mova-a e tente de novo.",
+          "other": "A restauração falhou: {message}. Nada foi perdido e o arquivo está intacto. Tente de novo ou copie o comando para começar uma worktree nova na branch."
+        },
+        "toast": {
+          "restored": "{name} restaurada",
+          "restoredDetached": "{name} restaurada — com HEAD solto no commit arquivado, porque a branch está em uso em outro lugar",
+          "present": "{name} já tinha voltado",
+          "movedAside": "Uma pasta que estava no caminho foi mantida em {path}. Apague quando quiser.",
+          "failed": "Não foi possível restaurar {name}"
         }
       },
       "toast": {
@@ -3062,6 +3167,37 @@
           "intro": "Limpa worktrees prontas comprovadas (worktrees mergeadas, limpas e ociosas) no timer em segundo plano. O primeiro ciclo depois de ligar só reporta o que encontrou; a limpeza automática começa quando você confirma esse relatório na Limpeza.",
           "label": "Limpar worktrees prontas automaticamente",
           "hint": "Precisa do escaneamento em segundo plano abaixo ligado: a limpeza roda no mesmo timer."
+        },
+        "shelve": {
+          "eyebrow": "Guardar worktrees ociosas",
+          "intro": "Uma worktree cuja branch não tem prova de merge, sem nenhuma sessão nela e sem mexida há {days} dias é guardada: a pasta é removida para liberar disco, enquanto a branch e todas as alterações ficam arquivadas. Ela volta sozinha assim que você abre uma sessão ou um terminal nela, ou aperta Restaurar na Limpeza.",
+          "label": "Guardar worktrees ociosas automaticamente",
+          "hint": "Roda no mesmo timer em segundo plano do Autopilot. Branches nunca são apagadas.",
+          "reportOnly": "A primeira passada só relata o que guardaria; nada é removido até você confirmar.",
+          "ack": "Confirmar o primeiro relatório",
+          "active": "Guardar está ativo. Até {n} worktrees por ciclo."
+        },
+        "docker": {
+          "eyebrow": "Docker: pausar e limpar lixo",
+          "intro": "A Limpeza evita sozinha que o Docker fique sem espaço. Uma stack ociosa há {hours} horas fica Pausada (derrubada, nunca apagada, com os volumes sempre preservados), e redes compose vazias e stacks deixadas por worktrees removidas são limpas. Traga uma stack Pausada de volta com o comando compose up dela.",
+          "label": "Pausar stacks ociosas e limpar lixo do Docker automaticamente",
+          "hint": "Roda no mesmo timer em segundo plano do Autopilot. Volumes nunca são removidos.",
+          "reportOnly": "A primeira passada só registra o que pausaria ou removeria; nada muda no Docker até você confirmar.",
+          "ack": "Confirmar o primeiro relatório",
+          "active": "A limpeza do Docker está ativa. Até {n} ações por ciclo.",
+          "report": {
+            "kind": {
+              "network": "Rede",
+              "orphan": "Stack órfã",
+              "pause": "Pausa"
+            },
+            "more": "+{n} a mais"
+          },
+          "pauseAll": {
+            "label": "Pausar toda a limpeza automática",
+            "hint": "Para de uma vez o guardar worktrees, a limpeza do Docker e a limpeza do Autopilot. Limpar na mão continua funcionando.",
+            "note": "A limpeza automática está pausada. Nada é guardado, pausado ou removido sozinho até você desligar isto."
+          }
         },
         "interval": {
           "label": "Rodar a cada",
@@ -3165,6 +3301,8 @@
         "needsConfirmation": "Precisa da sua confirmação antes. Selecione e escolha Remover.",
         "missingExpected": "A limpeza não conseguiu comparar com o que você viu. Revise e tente de novo.",
         "noLongerOrphan": "Este volume voltou a ser usado, então foi deixado como está.",
+        "needsUndigestedConfirmation": "Algumas sessões deste projeto ainda não têm digest, então ele foi deixado como está. Abra-o de novo e escolha Mover para a lixeira sem digest, ou espere a próxima varredura.",
+        "needsNotFoundConfirmation": "O Harnu não consegue confirmar que esta pasta realmente não existe mais, então ela foi deixada como está. Confira que não está em um disco desconectado, abra-a de novo e marque a confirmação.",
         "kept": "Você marcou como Manter, então foi deixado como está.",
         "neverClean": "Está na sua lista de nunca limpar, então foi deixado como está.",
         "mainCheckout": "Este é um checkout principal, que nunca é limpo.",
@@ -3302,11 +3440,14 @@
           "gcDone": "git gc terminou em {repo}",
           "gcFailed": "git gc falhou em {repo}",
           "neverClean": "Este repo está na lista de nunca limpar, então os arquivos dele foram deixados quietos.",
-          "protected": "{n} arquivo foi deixado quieto: a pasta dele está na lista de nunca limpar | {n} arquivos foram deixados quietos: as pastas deles estão na lista de nunca limpar"
+          "protected": "{n} arquivo foi deixado quieto: a pasta dele está na lista de nunca limpar | {n} arquivos foram deixados quietos: as pastas deles estão na lista de nunca limpar",
+          "shelved": "{n} arquivo foi mantido: a worktree dele está guardada e este arquivo é o que a restaura. Restaure-a primeiro (Limpeza → Guardadas). | {n} arquivos foram mantidos: as worktrees deles estão guardadas e estes arquivos são o que as restaura. Restaure-as primeiro (Limpeza → Guardadas)."
         },
         "ageUnknown": "idade desconhecida",
         "deleteOne": "Apagar…",
-        "protected": "Está na lista de nunca limpar"
+        "protected": "Está na lista de nunca limpar",
+        "shelvedTitle": "Worktree guardada — restaure-a primeiro",
+        "restoreFirst": "Restaurar primeiro"
       },
       "trash": {
         "title": "Na lixeira",
@@ -3556,7 +3697,8 @@
     "section": {
       "needsYou": "Precisa de você",
       "leaveAlone": "Deixe quieto",
-      "recent": "Recentes"
+      "recent": "Recentes",
+      "paused": "Pausadas"
     },
     "verdict": {
       "zombie": "zumbi",
@@ -3606,7 +3748,9 @@
       "bulkWho": "{n} stacks",
       "whenStopped": "parada {ago}",
       "whenStarted": "iniciada {ago}",
-      "whenRemoved": "removida {ago}"
+      "whenRemoved": "removida {ago}",
+      "paused": "pausada",
+      "whenPaused": "pausada {ago}"
     },
     "nav": {
       "openWorktree": "Abrir worktree",
@@ -3660,7 +3804,8 @@
       "actionRemoved": "{n} container removido | {n} containers removidos",
       "actionRemovedKept": "{n} container removido · volume mantido | {n} containers removidos · volume mantido",
       "actionRemovedVolume": "{n} container removido · volume removido | {n} containers removidos · volume removido",
-      "freed": "{ram} de RAM · {n} porta | {ram} de RAM · {n} portas"
+      "freed": "{ram} de RAM · {n} porta | {ram} de RAM · {n} portas",
+      "actionPaused": "pausada · {n} container removido, volumes mantidos | pausada · {n} containers removidos, volumes mantidos"
     },
     "note": {
       "orphan": "Nada no Harnu pode usar esta stack de novo — o código de onde ela rodava sumiu. O volume pode ainda guardar dados que você quer, então ele nunca é removido sem perguntar.",
@@ -3756,7 +3901,23 @@
       "removing": "Removendo…"
     },
     "openCleanup": "Abrir Limpeza · {n} stack | Abrir Limpeza · {n} stacks",
-    "openCleanupTitle": "Limpar stacks agora acontece na Limpeza"
+    "openCleanupTitle": "Limpar stacks agora acontece na Limpeza",
+    "paused": {
+      "chip": "Pausada",
+      "note": "Derrubada com compose down. Os containers e a rede sumiram; os volumes foram mantidos. Nada roda até você trazê-la de volta.",
+      "evidence": {
+        "by": "Pausada por",
+        "when": "Pausada",
+        "folder": "Pasta",
+        "ports": "Portas usadas",
+        "build": "Recompila ao restaurar"
+      },
+      "actor": {
+        "autopilot": "Cleanup",
+        "operator": "Você",
+        "agent": "Um agente"
+      }
+    }
   },
   "prStack": {
     "title": "PR Stack",
@@ -4308,6 +4469,10 @@
       "aria": "Stewards — um por missão, somente leitura",
       "running": "Rodando",
       "paused": "Pausado",
+      "awaitingClose": "Aguardando fechar",
+      "summaryRunning": "{n} rodando",
+      "summaryAwaiting": "{n} aguardando fechar",
+      "closeHint": "Feche uma missão entregue para aposentar o steward dela.",
       "lastWake": "Último despertar há {age}",
       "noTick": "Nenhum ciclo ainda",
       "pausedReason": "Pausado — {reason}",
@@ -4566,7 +4731,11 @@
         "title": "Registrar também",
         "hint": "Marque o que o Harnu deve gravar na memória do projeto. Nada é gravado sem marcar.",
         "nothing": "Nada notável para registrar.",
-        "kind": { "decision": "Decisão", "lesson": "Lição", "hot": "Hot" },
+        "kind": {
+          "decision": "Decisão",
+          "lesson": "Lição",
+          "hot": "Hot"
+        },
         "replaces": "Substitui {id}"
       },
       "warnings": {
@@ -4939,8 +5108,10 @@
   },
   "browserPane": {
     "network": {
-      "label": "Rede",
-      "hint": "A captura de rede está ligada. Ela para sozinha e não grava corpos de resposta, a menos que o agente peça."
+      "off": "Offline",
+      "on": "Rede ativa",
+      "offHint": "Offline: a página não alcança a rede. Clique para permitir neste painel.",
+      "onHint": "Rede ativa: a página alcança a rede. Clique para desligar."
     },
     "label": "Navegador",
     "newTab": "Nova aba",
@@ -5026,12 +5197,6 @@
     "noticeDownloaded": "{name} salvo",
     "noticeDownloadCancelled": "Download cancelado",
     "noticeDownloadFailed": "O download falhou",
-    "network": {
-      "off": "Offline",
-      "on": "Rede ativa",
-      "offHint": "Offline: a página não alcança a rede. Clique para permitir neste painel.",
-      "onHint": "Rede ativa: a página alcança a rede. Clique para desligar."
-    },
     "discarded": {
       "titleIdle": "Pausado para economizar memória",
       "titleRestored": "Ainda não carregado",
@@ -5083,11 +5248,6 @@
       "hintExit": "para sair",
       "disconnectedHint": "Comentários desligados aqui: você desconectou o agente deste painel."
     }
-  },
-  "splitMenu": {
-    "label": "Mais opções de divisão",
-    "terminal": "Terminal",
-    "browser": "Navegador"
   },
   "githubBudget": {
     "pill": {

@@ -5,6 +5,7 @@ import type {
   ContainersActRequest,
   ContainersActResult,
   ContainersNewZombiesAlert,
+  ContainersPausedStack,
   ContainersSnapshot,
   ContainersTombstone,
   StackRow
@@ -127,6 +128,8 @@ export const useContainersStore = defineStore('containers', () => {
   const needsYou = computed(() => stacks.value.filter((s) => isNeedsYou(s.verdict)))
   const leaveAlone = computed(() => stacks.value.filter((s) => !isNeedsYou(s.verdict)))
   const recent = computed<ContainersTombstone[]>(() => snapshot.value?.recent ?? [])
+  /** Stacks Cleanup brought down and that have not come back ("Paused"); never a stack row. */
+  const paused = computed<ContainersPausedStack[]>(() => available.value?.paused ?? [])
   /** The footer pill's count: zombie + orphan stacks. 0 before the first scan. */
   const needsYouCount = computed(() => available.value?.totals.needsYou ?? 0)
 
@@ -305,6 +308,7 @@ export const useContainersStore = defineStore('containers', () => {
     needsYou,
     leaveAlone,
     recent,
+    paused,
     needsYouCount,
     stackById,
     init,

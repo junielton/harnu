@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: scheduler--list</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      /* Stewards: a collapsible block pinned to the bottom of the list column, Up next's header anatomy.
+     Collapsed (default) = the header line only; open = rows inside a capped, self-scrolling area. */
+      [data-dsqa='scheduler--list'] .stewards {
+        border-bottom: 0;
+        border-top: 1px solid var(--color-border);
+      }
+      [data-dsqa='scheduler--list'] .stw-scroll {
+        max-height: 232px; /* no token: proposed --sched-stewards-max-h (≈ 6 rows, ~27% of a 860px column) */
+        overflow-y: auto;
+        margin-right: -6px;
+        padding-right: 6px;
+      }
+      [data-dsqa='scheduler--list'][data-state='recolhido'] .stw-scroll {
+        display: none;
+      }
+      [data-dsqa='scheduler--list'][data-state='recolhido'] .stewards .chev {
+        transform: rotate(-90deg);
+      }
+      [data-dsqa='scheduler--list'][data-state='recolhido'] .when-open {
+        display: none;
+      }
+      [data-dsqa='scheduler--list'][data-state='aberto'] .when-closed {
+        display: none;
+      }
+    </style>
+  </head>
+  <body data-states="recolhido aberto">
+    <div data-dsqa="scheduler--list">
+      <div class="view">
+        <div class="col">
+          <div class="toolbar">
+            <div class="search">⌕ Filter workers or folders</div>
+            <div class="sq">⇕</div>
+          </div>
+          <div class="chips">
+            <span class="chip"><span class="dot green"></span>Running <b>1</b></span>
+            <span class="chip"><span class="dot red"></span>Failing <b>0</b></span>
+            <span class="chip"><span class="dot"></span>Waiting <b>20</b></span>
+            <span class="chip"><span class="dot off"></span>Off <b>3</b></span>
+          </div>
+
+          <div class="sect" data-dsqa-part="up-next">
+            <button type="button" class="sect-head">
+              <svg
+                class="chev"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+              <h4>Up next</h4>
+              <span class="sect-sum">4 in the next 7s</span>
+            </button>
+            <div class="up-row fh-a">
+              <span class="t now">now</span><span class="sqh"></span
+              ><span class="n">Watchdog — migration pipeline</span><span class="f">Acme</span>
+            </div>
+            <div class="up-row fh-c">
+              <span class="t now">now</span><span class="sqh"></span
+              ><span class="n">web-api: Address PRs</span><span class="f">web-api</span>
+            </div>
+            <div class="up-row fh-b">
+              <span class="t">7s</span><span class="sqh"></span
+              ><span class="n">Delivery watchdog (harnu)</span><span class="f">harnu</span>
+            </div>
+            <div class="up-row fh-b">
+              <span class="t">7s</span><span class="sqh"></span
+              ><span class="n">SDD waves A+B — delivery watchdog</span><span class="f">harnu</span>
+            </div>
+          </div>
+
+          <div class="list" data-dsqa-part="folder-groups">
+            <div class="group fh-a">
+              <div class="ghead">
+                <span class="avatar">A</span><span class="gname">Acme</span
+                ><span class="gcount">5</span><span class="gnext">next in 1m</span
+                ><svg
+                  class="chev"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </div>
+              <div class="wrow">
+                <div class="wl1">
+                  <span class="pin">⌖</span><span class="nm">Acme: Address PRs</span
+                  ><span class="st"><span class="dot off"></span>next in 23m</span>
+                </div>
+                <div class="wl2">
+                  every 30m · haiku · <span class="act">act</span
+                  ><span class="ticks"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                  ></span>
+                </div>
+              </div>
+              <div class="wrow">
+                <div class="wl1">
+                  <span class="pin">⌖</span><span class="nm">Acme: PR Review Watcher</span
+                  ><span class="st"><span class="dot off"></span>next in 18m</span>
+                </div>
+                <div class="wl2">
+                  every 30m · haiku · <span class="act">act</span
+                  ><span class="ticks"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                  ></span>
+                </div>
+              </div>
+              <div class="wrow">
+                <div class="wl1">
+                  <span class="pin">⌖</span><span class="nm">Watchdog — migration pipeline</span
+                  ><span class="st"><span class="dot green"></span>running</span>
+                </div>
+                <div class="wl2">
+                  every 20m · sonnet<span class="ticks"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i
+                  ></span>
+                </div>
+              </div>
+              <div class="wrow">
+                <div class="wl1">
+                  <span class="pin">⌖</span><span class="nm">Acme delivery watchdog</span
+                  ><span class="st"><span class="dot off"></span>next in 1m</span>
+                </div>
+                <div class="wl2">
+                  every 15m · haiku<span class="ticks"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                  ></span>
+                </div>
+              </div>
+              <div class="wrow">
+                <div class="wl1">
+                  <span class="pin">⌖</span><span class="nm">Acme: nightly link check</span
+                  ><span class="st"><span class="dot off"></span>off</span>
+                </div>
+                <div class="wl2">daily · haiku</div>
+              </div>
+            </div>
+            <div class="group fh-b">
+              <div class="ghead">
+                <span class="avatar">H</span><span class="gname">harnu</span
+                ><span class="gcount">6</span><span class="gnext">next in 7s</span
+                ><svg
+                  class="chev"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </div>
+              <div class="wrow">
+                <div class="wl1">
+                  <span class="pin">⌖</span><span class="nm">Delivery watchdog (harnu)</span
+                  ><span class="st"><span class="dot off"></span>next in 7s</span>
+                </div>
+                <div class="wl2">
+                  every 10m · haiku<span class="ticks"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                  ></span>
+                </div>
+              </div>
+              <div class="wrow">
+                <div class="wl1">
+                  <span class="pin">⌖</span><span class="nm">SDD waves A+B — delivery watchdog</span
+                  ><span class="st"><span class="dot off"></span>next in 7s</span>
+                </div>
+                <div class="wl2">
+                  every 10m · haiku<span class="ticks"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                  ></span>
+                </div>
+              </div>
+              <div class="wrow">
+                <div class="wl1">
+                  <span class="pin">⌖</span><span class="nm">BUG-186 delivery watchdog</span
+                  ><span class="st"><span class="dot off"></span>next in 4m</span>
+                </div>
+                <div class="wl2">
+                  every 15m · haiku<span class="ticks"><i></i><i></i><i></i><i></i><i></i></span>
+                </div>
+              </div>
+            </div>
+            <div class="group fh-c is-collapsed">
+              <div class="ghead">
+                <span class="avatar">P</span><span class="gname">ProjectAlpha</span
+                ><span class="gcount">4</span><span class="gnext">next in 28s</span
+                ><svg
+                  class="chev"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </div>
+            </div>
+            <div class="group fh-d is-collapsed">
+              <div class="ghead">
+                <span class="avatar">G</span><span class="gname">api-gateway</span
+                ><span class="gcount">3</span><span class="gnext">next in 12m</span
+                ><svg
+                  class="chev"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </div>
+            </div>
+            <div class="group fh-a is-collapsed">
+              <div class="ghead">
+                <span class="avatar">W</span><span class="gname">web-api</span
+                ><span class="gcount">6</span><span class="gnext">next in 2m</span
+                ><svg
+                  class="chev"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <section class="sect stewards" data-dsqa-part="stewards">
+            <button
+              type="button"
+              class="sect-head when-closed"
+              data-goto="scheduler--list?state=aberto"
+              aria-expanded="false"
+            >
+              <svg
+                class="chev"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+              <h4>Stewards</h4>
+              <span class="sect-sum"
+                >13 · <span class="run">1 running</span> ·
+                <span class="owed">10 awaiting close</span></span
+              >
+            </button>
+            <button
+              type="button"
+              class="sect-head when-open"
+              data-goto="scheduler--list?state=recolhido"
+              aria-expanded="true"
+            >
+              <svg
+                class="chev"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+              <h4>Stewards</h4>
+              <span class="sect-sum"
+                >13 · <span class="run">1 running</span> ·
+                <span class="owed">10 awaiting close</span></span
+              >
+            </button>
+            <div class="stw-scroll">
+              <ul class="stw-rows" style="list-style: none; padding: 0; margin-top: 6px">
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Memory upgrade ch.2 — U1 capture every session</span
+                    ><span class="w running">Running</span>
+                  </div>
+                  <div class="stw-l2">Last wake 0m ago · Dispatching a verifier for stp-3</div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Ch.1 — Main green: kill the CI flakes</span>
+                  </div>
+                  <div class="stw-l2">
+                    Last wake 17m ago · Nothing for the steward to do: both PRs still in review
+                  </div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Links shelf in the footer</span>
+                  </div>
+                  <div class="stw-l2">
+                    Last wake 18m ago · Nothing to do: PR #186 is open with green CI
+                  </div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Land reviewer alerts + review TL;DR on main</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">
+                    Last wake 19m ago · Nothing to do: the mission is delivered
+                  </div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Final sweep: crawl, fixes, report</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">
+                    Last wake 18m ago · Nothing to do: the mission is delivered
+                  </div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Memory upgrade ch.1 — spec bundle and memory</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">
+                    Last wake 6m ago · All steps have a green verifier verdict
+                  </div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Chapter 2 — U2 shelve and restore worktrees</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">
+                    Last wake 9m ago · Nothing to do: all four PRs are merged
+                  </div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Chapter 3 — Floating panels, opt-in (S-6, T626)</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">
+                    Last wake 8m ago · Nothing to do: the mission is delivered
+                  </div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">PROJ-231 Laravel scaffold: steps 3-7 and PR</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">Last wake 13m ago · Both verifiers for stp-5 are green</div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Chapter 3 — U3 Docker: park (Paused), garbage report</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">Last wake 1m ago · Nothing to do on mnt-b6156a2c</div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Chapter 4 — Expand to window and layout motion</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">
+                    Last wake 15m ago · Nothing to do: the mission is delivered
+                  </div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Side quest — Topbar overflow menu (BUG-252)</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">Last wake 1m ago · All steps are verified</div>
+                </li>
+                <li class="stw">
+                  <div class="stw-l1">
+                    <svg
+                      class="bot"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="12" cy="5" r="2" />
+                      <path d="M12 7v4M8 16h.01M16 16h.01" /></svg
+                    ><span class="m">Chapter 5 — Integration PR feat/floating-layout</span
+                    ><span class="w owed">Awaiting close</span>
+                  </div>
+                  <div class="stw-l2">Last wake 5m ago · Nothing to do for mnt-11e78c05</div>
+                </li>
+              </ul>
+              <p class="stw-hint">Close a delivered mission to retire its steward.</p>
+            </div>
+          </section>
+        </div>
+        <div class="detail"></div>
+      </div>
+      <div class="caption">Checks every 30s · max 2 workers at once</div>
+    </div>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

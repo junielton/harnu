@@ -104,6 +104,7 @@ import {
   readUserProjects,
   hideUserProject,
   unhideUserProject,
+  onHiddenPathsChanged,
   setUserProjectAgentDenied,
   setUserProjectInterceptActive,
   setUserProjectAlias,
@@ -137,6 +138,7 @@ import { registerMemoryReadHandlers } from './memory-ipc'
 import { registerMemoryLocationHandlers } from './memory-location-ipc'
 import { registerRoadmapHandlers, closeRoadmapWatcher } from './roadmap-ipc'
 import { registerHelpersHandlers } from './helpers-ipc'
+import { registerSessionArchive } from './session-archive-ipc'
 import { registerSettingsHandlers, closeSettingsWatcher } from './settings'
 import { registerClaudeConfigHandlers } from './claude-config'
 import { registerPushHandlers } from './push'
@@ -161,7 +163,7 @@ import {
   registerSessionRegistryWatcher,
   type SessionRegistryWatcherHandle
 } from './session-registry-watch'
-import { registerDigestEngine, closeDigestEngine } from './memory-digest'
+import { registerDigestEngine, closeDigestEngine, setDigestNoticeBridge } from './memory-digest'
 import { bypassQuitConfirm, guardQuit, registerQuitConfirm } from './quit-confirm'
 import {
   registerOrchestratorGuard,
@@ -632,6 +634,8 @@ app.whenReady().then(async () => {
   // "agent never moves a card" invariant (T80 §0) mechanically true.
   registerRoadmapHandlers(() => mainWindow)
   registerHelpersHandlers()
+  // T655: the main-owned session archive (sidebar Archive + the `archive_session` verb).
+  registerSessionArchive(() => mainWindow)
   registerSettingsHandlers(() => mainWindow)
   // T579: confirm before quitting while agents are working (prefs IPC + OS-shutdown bypass).
   registerQuitConfirm()
@@ -756,6 +760,8 @@ app.whenReady().then(async () => {
   // it overrides pty's `--mcp-config` provider, so it must run AFTER
   // `registerPtyHandlers` set the default (order satisfied above).
   const cmdBridge = registerCommandBridge(() => mainWindow)
+  // The digest engine (registered above) posts its "Memory digest failed" notice over this bridge.
+  setDigestNoticeBridge(cmdBridge.bridge)
   // T474: terminal lifecycle IPC. After the bridge, so its `renderer:ready` listener runs once
   // the bridge's own has opened the dispatch gate.
   registerTerminalIpc(cmdBridge.bridge, isRendererUrl)
@@ -990,6 +996,15 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('userProjects:unhide', async (_e, targetPath: string) => {
     return toUserProjectsPayload(await unhideUserProject(targetPath))
+  })
+  // T661: the `hide_folder` MCP verb writes `hiddenPaths` outside the renderer's own calls, so
+  // main pushes the FULL new list after each write that changed it. The menu actions above do not
+  // emit: the renderer already mirrors their IPC response.
+  onHiddenPathsChanged(({ hiddenPaths }) => {
+    const win = mainWindow
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('userProjects:hiddenChanged', { hiddenPaths })
+    }
   })
   // Per-folder agent-control OPT-OUT (MCP). Agents may act in every folder by
   // default; this blocks them in one (and everything under it) — see
