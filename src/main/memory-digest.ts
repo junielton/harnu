@@ -14,6 +14,9 @@
  *    shadow log (`responder-registry.ts`), so it stays auditable after the fact,
  *  - the persisted state (`<userData>/memory-digest-state.json`, S-4): read once at
  *    registration, rewritten atomically after every successful digest,
+ *  - the failure notice (S-8): a digest the memory write refused or threw on posts one
+ *    "Memory digest failed" notice per folder per hour through `notify.push`, over the
+ *    command bridge `index.ts` hands in once it exists ({@link setDigestNoticeBridge}),
  *  - the catch-up sweep (S-4): 60 s after registration and every 30 minutes, the fleet model's
  *    sessions go to `engine.catchUp`, which digests the quiet ones no hook reached.
  *
@@ -25,7 +28,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import { scanFolders } from './claude-reader'
 import { addTaskEventObserver } from './hook-bridge'
-import { appendMemoryEntry, resolveMemoryLocation } from './mcp/memory-store'
+import { appendMemoryEntry, readMemoryPage, resolveMemoryLocation } from './mcp/memory-store'
 import { resolveMemoryCheckout } from './mcp/memory-core'
 import { probeGitMeta } from './git-probe'
 import { pushShadowEntry } from './responder-registry'
@@ -123,7 +126,9 @@ async function writeHot(
       page: 'hot',
       entry: hot,
       author: 'agent',
-      ...(loc.branch ? { branch: loc.branch } : {}),
+      // The stamp names the snapshot's branch (the engine passes it): a snapshot of another
+      // branch that was kept stays filed under that branch, not under the folder's.
+      ...(branch || loc.branch ? { branch: branch ?? loc.branch } : {}),
       sessionId,
       ...(loc.mode === 'central' ? { backlink: { sourcePath: loc.checkout } } : {}),
       now: Date.now()
@@ -153,6 +158,33 @@ async function writeHot(
 async function memoryCheckout(folder: string): Promise<string> {
   const meta = await probeGitMeta(folder)
   return resolveMemoryCheckout(folder, meta.repoId)
+}
+
+/**
+ * The folder's `hot.md` as it is on disk, or null when it has none. Any other failure throws,
+ * so a hot.md that exists but cannot be read is never overwritten blind.
+ */
+async function readHot(folder: string): Promise<string | null> {
+  const loc = await resolveMemoryLocation(folder)
+  const res = await readMemoryPage(loc.memoryDir, 'hot')
+  if (res.ok) return res.content
+  if (res.error === 'PAGE_NOT_FOUND') return null
+  throw new Error(res.detail)
+}
+
+/** The branch the folder is on now; undefined when detached or not a repo. */
+async function folderBranch(folder: string): Promise<string | undefined> {
+  return (await probeGitMeta(folder)).gitBranch
+}
+
+/** Whether the folder is still there; any answer but "it is missing" counts as there. */
+async function folderExists(folder: string): Promise<boolean> {
+  try {
+    await fs.stat(folder)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'ENOENT'
+  }
 }
 
 /** The session's subagent transcripts, next to its main transcript. */
@@ -203,6 +235,38 @@ function saveState(state: DigestState): void {
   })
 }
 
+// ---- Failure notice (S-8) ----------------------------------------------------
+
+/** The slice of the command bridge the notice needs: the `notify.push` dispatch. */
+export interface DigestNoticeBridge {
+  dispatch(command: string, payload: unknown): Promise<unknown>
+}
+
+let noticeBridge: DigestNoticeBridge | null = null
+
+/**
+ * Hands the digest engine the command bridge (it is created after {@link registerDigestEngine}
+ * runs, so `index.ts` calls this right after `registerCommandBridge`). Until then a failure only
+ * logs. `null` detaches it.
+ */
+export function setDigestNoticeBridge(bridge: DigestNoticeBridge | null): void {
+  noticeBridge = bridge
+}
+
+/** Posts the "Memory digest failed" notice. Best-effort: a notice can never break a digest. */
+function notifyDigestFailure(folder: string, reason: string): void {
+  const bridge = noticeBridge
+  if (!bridge) return
+  void Promise.resolve(
+    bridge.dispatch('notify.push', {
+      folderPath: folder,
+      title: 'Memory digest failed',
+      description: reason,
+      kind: 'warning'
+    })
+  ).catch(() => undefined)
+}
+
 const liveDeps: DigestEngineDeps = {
   resolveSession,
   readFacts: readTranscriptFacts,
@@ -210,11 +274,15 @@ const liveDeps: DigestEngineDeps = {
   gatherGit: gatherGitEvidence,
   writeDigest,
   writeHot,
+  readHot,
+  folderBranch,
   memoryCheckout,
+  folderExists,
   subagentTranscripts,
   commitFileStats,
   saveState,
   hasDigest,
+  notify: notifyDigestFailure,
   now: () => Date.now(),
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
@@ -282,6 +350,21 @@ export function registerDigestEngine(): DigestEngineHandle {
     catchUpEvery = setInterval(() => void sweep(e), CATCH_UP_EVERY_MS)
   }, CATCH_UP_FIRST_MS)
   return { close: () => closeDigestEngine() }
+}
+
+/**
+ * Digests an orphaned transcript (a removed worktree's session) into its owning repo's memory
+ * (S-5), for Cleanup's gather. A no-op while the engine is not registered.
+ */
+export async function digestOrphanTranscript(
+  args: Parameters<DigestEngine['digestTranscriptInto']>[0]
+): Promise<void> {
+  await engine?.digestTranscriptInto(args)
+}
+
+/** Whether `home`'s memory already holds a digest of the session (S-5's orphan gather). */
+export function orphanHasDigest(home: string, sessionId: string): Promise<boolean> {
+  return hasDigest(home, sessionId)
 }
 
 /** Teardown for `before-quit` — unsubscribe + clear timers. */

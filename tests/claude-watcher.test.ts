@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { appendFileSync, promises as fs } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   __testables,
@@ -273,6 +273,30 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     }
   }
 
+  // `fs.writeFile` creates the file and writes it in separate steps, and the watcher shares this process's
+  // threadpool, so under load its first read can land between the two and see an EMPTY file. An empty first
+  // read cannot be classified, and by design the `add` handler then announces the transcript (see "A read
+  // that can't classify yet" in claude-watcher.ts). Tests whose premise is "the stamped first line is in the
+  // first read" therefore publish the file whole: write a dotfile (ignored by the watcher), then rename it in.
+  async function writeWhole(file: string, text: string): Promise<void> {
+    const tmp = join(dirname(file), `.${basename(file)}.tmp`)
+    await fs.writeFile(tmp, text, 'utf8')
+    await fs.rename(tmp, file)
+  }
+
+  // chokidar learns about a directory created after `ready` in two steps: it emits `addDir` and scans the
+  // directory, and only AFTER that scan does it attach the directory's own watcher. A file created in that
+  // gap is never reported and nothing triggers a rescan, so a test that writes into a fresh slug dir and then
+  // waits can hang forever under load. Any later event in the directory re-lists all of it, so keep touching
+  // an ignored dotfile while waiting — a live session's directory keeps changing the same way.
+  async function waitForNudged(dir: string, pred: () => boolean, timeoutMs = 4000): Promise<void> {
+    await waitFor(() => {
+      if (pred()) return true
+      appendFileSync(join(dir, '.nudge'), '.')
+      return false
+    }, timeoutMs)
+  }
+
   beforeEach(async () => {
     root = await fs.mkdtemp(join(tmpdir(), 'harnu-watch-root-'))
     events = []
@@ -303,7 +327,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     })
 
     await fs.writeFile(join(slugDir, 'sess-1.jsonl'), JSON.stringify({ n: 1 }) + '\n', 'utf8')
-    await waitFor(() => events.some((e) => e.channel === 'claude:session:added'))
+    await waitForNudged(slugDir, () => events.some((e) => e.channel === 'claude:session:added'))
     expect(events.find((e) => e.channel === 'claude:session:added')).toMatchObject({
       payload: { slug: 'new-worktree-slug', sessionId: 'sess-1' }
     })
@@ -345,7 +369,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     const newSlugDir = join(root, 'new-slug')
     await fs.mkdir(newSlugDir)
     await fs.copyFile(oldPath, join(newSlugDir, 'sess-move.jsonl'))
-    await waitFor(() =>
+    await waitForNudged(newSlugDir, () =>
       events.some(
         (e) =>
           e.channel === 'claude:session:added' &&
@@ -386,7 +410,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
       'utf8'
     )
 
-    await waitFor(() =>
+    await waitForNudged(newSlugDir, () =>
       events.some(
         (e) =>
           e.channel === 'claude:session:added' &&
@@ -419,14 +443,13 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     await waitFor(() => ready)
 
     // A `/usage` poll, written the way Claude Code writes one.
-    await fs.writeFile(
+    await writeWhole(
       join(slugDir, 'probe-1.jsonl'),
       [
         JSON.stringify({ type: 'queue-operation', sessionId: 'probe-1' }),
         JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli', cwd: '/home/u' }),
         JSON.stringify({ type: 'user', message: { role: 'user', content: '/usage' } })
-      ].join('\n') + '\n',
-      'utf8'
+      ].join('\n') + '\n'
     )
     // A real interactive session in the same slug, written right after.
     await fs.writeFile(
@@ -478,11 +501,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     await waitFor(() => ready)
 
     const probe = join(slugDir, 'probe-2.jsonl')
-    await fs.writeFile(
-      probe,
-      JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli' }) + '\n',
-      'utf8'
-    )
+    await writeWhole(probe, JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli' }) + '\n')
     await new Promise((r) => setTimeout(r, 250))
     await fs.appendFile(
       probe,
@@ -610,8 +629,12 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     // append below is guaranteed to queue a `change` behind it on the path chain.
     let release: () => void = () => {}
     let gated = false
+    // Bytes the `add`'s first read consumed. `undefined` means that read saw an EMPTY file (the writer had
+    // created it but not yet written), so the transcript could not be classified and was announced.
+    let firstReadBytes: number | undefined
     __testables.setClassifyGateForTests(async (gatePath) => {
       if (gatePath !== p) return
+      firstReadBytes = __testables.lastTailBytesForTests(p)
       gated = true
       await new Promise<void>((r) => {
         release = r
@@ -629,7 +652,7 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
         onSlugChanged: (s) => slugs.push(s)
       })
       await waitFor(() => ready)
-      await fs.writeFile(p, JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli' }) + '\n')
+      await writeWhole(p, JSON.stringify({ type: 'attachment', entrypoint: 'sdk-cli' }) + '\n')
       await waitFor(() => gated)
       await fs.appendFile(
         p,
@@ -638,13 +661,15 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
       await new Promise((r) => setTimeout(r, 300)) // chokidar emits the change meanwhile
       release()
       await new Promise((r) => setTimeout(r, 800))
+      // Compare the offending events themselves, so a red run says what was announced and not just "true".
       expect(
-        events.some(
+        events.filter(
           (e) =>
             (e.channel === 'claude:session:added' || e.channel === 'claude:session:updated') &&
             (e.payload as { sessionId?: string }).sessionId === 'probe-race'
-        )
-      ).toBe(false)
+        ),
+        `the first read of the add consumed ${firstReadBytes} bytes`
+      ).toEqual([])
       expect(slugs).not.toContain('race-slug')
     } finally {
       release()
@@ -670,8 +695,17 @@ describe('startClaudeWatcher — cross-slug moves + post-ready dirs (e2e chokida
     await fs.writeFile(p, JSON.stringify({ n: 1 }) + '\n', 'utf8')
     await waitFor(() => events.some((e) => e.channel === 'claude:session:added'))
     expect(calls).toContainEqual(['cadence-slug', 'membership'])
-    await fs.appendFile(p, JSON.stringify({ n: 2 }) + '\n', 'utf8')
-    await waitFor(() => calls.some(([, cls]) => cls === 'append'))
+    // Root cause of the AC-17 flake: chokidar DROPS (does not coalesce) any `change` that lands within
+    // 50ms of the previous `change` it emitted for the same path (`_emit` throttle). The first write's own
+    // `change` is delivered right behind the `add` — under load, within a millisecond or two of the line
+    // we append here — so a single append can vanish with no later event to carry it. A real session never
+    // depends on one append: it keeps writing. Model that: append once per poll until the watcher reports
+    // one, instead of betting the whole test on a single write surviving the drop window.
+    let n = 1
+    await waitFor(() => {
+      appendFileSync(p, JSON.stringify({ n: ++n }) + '\n', 'utf8')
+      return calls.some(([, cls]) => cls === 'append')
+    })
     expect(calls.filter(([, cls]) => cls === 'append').every(([s]) => s === 'cadence-slug')).toBe(
       true
     )

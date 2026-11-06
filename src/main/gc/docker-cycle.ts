@@ -1,0 +1,260 @@
+// The Docker slot of the cleanup cycle (autonomous cleanup U3.1, design §4 U3, §5, C1).
+//
+// Every tick, after the clean and the shelve slot: plan what Docker could do on its own (pause idle
+// stacks, remove empty compose networks and orphan stacks) and, once the operator has seen a report,
+// do it. The slot has its OWN switch and its OWN report-only first cycle (`prefs.docker`), so an
+// operator who already runs the autopilot or shelving gets nothing new until they have seen what it
+// would take.
+//
+// THIS UNIT ONLY LAYS THE FOUNDATION: the planner is empty and plans nothing. U3.3 (garbage) and
+// U3.5 (eligibility) fill `plan`; U3.4 fills `execute`. What is already real is everything around
+// them (§5): the global pause, the report-only branch, a per-cycle cap, a failure-streak kill switch
+// that says why, and one lock for the whole slot that holds across Harnu instances (Docker is one
+// daemon per machine, so the lock is machine-wide, not per repository).
+//
+// Every effect is an injected dep, so the slot is unit-tested with fakes in
+// tests/gc-docker-cycle.test.ts.
+
+import type { CycleState } from './gc-cycle'
+import type { GcPrefs } from './gc-prefs'
+import {
+  DOCKER_REPORT_ITEMS_MAX,
+  type DockerCycleRecord,
+  type DockerReportItem,
+  type DockerReportKind,
+  type DockerReportList
+} from './gc-wire'
+import type { RepoLockResult } from './repo-lock-shell'
+
+const NOTICE_TITLE = 'Workspace cleanup'
+const plural = (n: number, one: string, many = `${one}s`): string => (n === 1 ? one : many)
+
+/** One thing Docker autonomy decided to do. "park" is the code word for what the UI calls "Paused". */
+export interface DockerAction {
+  kind: 'park' | 'prune-network' | 'remove-orphan'
+  /** Stable id of the stack or network, the key the failure streak and the journal use. */
+  id: string
+  /** One sentence for the digest. */
+  reason: string
+}
+
+/**
+ * What running one action came to. A `refusal` is the world having moved since the decision (the
+ * re-probe disagreed) or a limit being reached; it is not a failure of Docker autonomy.
+ */
+export type DockerOutcome = { ok: true } | { ok: false; reason: string; refusal?: boolean }
+
+/**
+ * One producer of Docker actions (garbage, pause, ...). The slot has a single `plan` and `execute`;
+ * {@link composeDockerPlanners} builds them from the planners in order, so U3.3 and U3.5 each fill
+ * their own without sharing a file.
+ */
+export interface DockerPlanner {
+  /** True for the action kinds this planner plans and executes. */
+  owns(kind: DockerAction['kind']): boolean
+  plan(): Promise<DockerAction[]>
+  /** Runs one action this planner planned. Never throws. */
+  execute(a: DockerAction): Promise<DockerOutcome>
+}
+
+/**
+ * The slot's `plan` and `execute` from its planners. Plans are concatenated in array order (garbage
+ * before pauses); a planner that throws contributes nothing and is logged, so one broken planner
+ * never hides the others. An action nobody owns is a refusal, never a failure.
+ */
+export function composeDockerPlanners(
+  planners: readonly DockerPlanner[]
+): Pick<DockerCycleDeps, 'plan' | 'execute'> {
+  return {
+    plan: async () => {
+      const out: DockerAction[] = []
+      for (const p of planners) {
+        try {
+          out.push(...(await p.plan()))
+        } catch (err) {
+          console.warn('[gc] docker planner failed', err instanceof Error ? err.message : err)
+        }
+      }
+      return out
+    },
+    execute: async (a) => {
+      const owner = planners.find((p) => p.owns(a.kind))
+      if (!owner) return { ok: false, reason: `no planner owns ${a.kind}`, refusal: true }
+      return owner.execute(a)
+    }
+  }
+}
+
+const REPORT_KIND: Record<DockerAction['kind'], DockerReportKind> = {
+  'prune-network': 'network',
+  'remove-orphan': 'orphan',
+  park: 'pause'
+}
+
+/**
+ * What the operator reads as the target. A stack's id is its compose project name; a network's id is
+ * `net:<64 hex characters>`, so it is shown by the name in its reason (``…network `app_default` …``)
+ * or, failing that, the short id Docker's own listing shows.
+ */
+function targetOf(a: DockerAction): string {
+  if (a.kind !== 'prune-network') return a.id
+  const named = /`([^`]+)`/.exec(a.reason)?.[1]
+  return named ?? a.id.replace(/^net:/, '').slice(0, 12)
+}
+
+/** The list a report-only pass records: kind, target and reason per action, capped. */
+export function reportItemsOf(actions: readonly DockerAction[]): DockerReportItem[] {
+  return actions.slice(0, DOCKER_REPORT_ITEMS_MAX).map((a) => ({
+    kind: REPORT_KIND[a.kind],
+    target: targetOf(a),
+    reason: a.reason
+  }))
+}
+
+/** The held first-report list, hidden once the report is acknowledged (whatever pass wrote it). */
+export function heldDockerReport(state: CycleState, prefs: GcPrefs): DockerReportList | null {
+  return prefs.docker.firstReportAcknowledged ? null : state.dockerReport
+}
+
+/** What the report-only notice says the pass would do, from the kinds the plan holds. */
+export function wouldDoText(actions: readonly DockerAction[]): string {
+  const removes = actions.some((a) => a.kind !== 'park')
+  const pauses = actions.some((a) => a.kind === 'park')
+  const parts: string[] = []
+  if (removes) parts.push('remove empty networks and orphan stacks')
+  if (pauses) parts.push('pause idle stacks')
+  return parts.join(' and ')
+}
+
+/** How many would-pause stacks the report-only notice names; the rest are in Settings → Cleanup. */
+const REPORT_LIST_MAX = 5
+
+function wouldPauseText(actions: readonly DockerAction[]): string {
+  const parks = actions.filter((a) => a.kind === 'park')
+  if (parks.length === 0) return ''
+  const shown = parks.slice(0, REPORT_LIST_MAX).map((a) => `${a.id} (${a.reason})`)
+  const more = parks.length > shown.length ? `, +${parks.length - shown.length} more` : ''
+  return ` Would pause: ${shown.join(', ')}${more}.`
+}
+
+export interface DockerCycleDeps {
+  prefs(): GcPrefs
+  /** What Docker could do right now: {@link composeDockerPlanners} over the garbage and pause planners. */
+  plan(): Promise<DockerAction[]>
+  /** Runs one decided action, bound to the facts it was decided on. Never throws. */
+  execute(a: DockerAction): Promise<DockerOutcome>
+  /** One Docker slot at a time on the machine, across Harnu instances (`--user-data-dir`). */
+  lock<T>(work: () => Promise<T>): Promise<RepoLockResult<T>>
+  /** The kill switch: persists `docker.enabled = false`. */
+  disableDocker(): Promise<void>
+  notify(n: { title: string; body: string }): void
+  now(): number
+}
+
+const empty = (mode: DockerCycleRecord['mode']): DockerCycleRecord => ({
+  mode,
+  found: 0,
+  acted: 0,
+  refused: 0,
+  failed: 0,
+  deferred: 0,
+  locked: false,
+  paused: false,
+  pausedReason: null,
+  items: []
+})
+
+export async function runDockerCycle(
+  deps: DockerCycleDeps,
+  state: CycleState
+): Promise<DockerCycleRecord> {
+  const prefs = deps.prefs()
+  // The global pause beats the switch: it acts on nothing and changes no acknowledgement.
+  if (prefs.pauseAutonomous) return empty('paused')
+  if (!prefs.docker.enabled) return empty('off')
+
+  const locked = await deps.lock(() => runLocked(deps, state, prefs))
+  if (!locked.ok)
+    return { ...empty(prefs.docker.firstReportAcknowledged ? 'act' : 'report'), locked: true }
+  return locked.value
+}
+
+async function runLocked(
+  deps: DockerCycleDeps,
+  state: CycleState,
+  prefs: GcPrefs
+): Promise<DockerCycleRecord> {
+  const cfg = prefs.docker
+  const actions = await deps.plan()
+
+  if (!cfg.firstReportAcknowledged) {
+    const key = String(actions.length)
+    if (actions.length > 0 && key !== state.dockerReportKey) {
+      deps.notify({
+        title: NOTICE_TITLE,
+        body: `${actions.length} Docker ${plural(actions.length, 'item')} would be handled: Harnu would ${wouldDoText(actions)}. No volume is ever removed. Open Settings → Cleanup to review and acknowledge.${wouldPauseText(actions)}`
+      })
+    }
+    state.dockerReportKey = key
+    // This pass planned, so it is the newest list; a locked, off or paused pass never gets here.
+    const items = reportItemsOf(actions)
+    state.dockerReport = { at: deps.now(), source: 'cycle', found: actions.length, items }
+    return { ...empty('report'), found: actions.length, items }
+  }
+  state.dockerReportKey = null
+  state.dockerReport = null
+
+  const record: DockerCycleRecord = {
+    ...empty('act'),
+    found: actions.length,
+    deferred: Math.max(0, actions.length - cfg.maxPerCycle)
+  }
+  let lastFailure = ''
+  const allowed = actions.slice(0, cfg.maxPerCycle)
+  let attempted = 0
+  for (const a of allowed) {
+    if (state.dockerStreak >= cfg.failureLimit) break
+    attempted++
+    const outcome = await deps.execute(a)
+    if (outcome.ok) {
+      state.dockerStreak = 0
+      record.acted++
+    } else if (outcome.refusal) {
+      record.refused++
+    } else {
+      record.failed++
+      state.dockerStreak++
+      lastFailure = outcome.reason
+      console.warn('[gc] docker action failed', a.kind, a.id, outcome.reason)
+    }
+  }
+
+  // Allowed by the cap but kept from running by the kill switch: they wait for the next cycle,
+  // exactly like the ones over the cap, so found = acted + refused + failed + deferred.
+  record.deferred += allowed.length - attempted
+
+  if (state.dockerStreak >= cfg.failureLimit) {
+    record.paused = true
+    record.pausedReason = `${cfg.failureLimit} ${plural(cfg.failureLimit, 'failure')} in a row (last: ${lastFailure})`
+    state.dockerStreak = 0
+    try {
+      await deps.disableDocker()
+    } catch (err) {
+      console.warn(
+        '[gc] could not switch Docker autonomy off',
+        err instanceof Error ? err.message : err
+      )
+    }
+    deps.notify({
+      title: NOTICE_TITLE,
+      body: `Docker cleanup paused itself after ${record.pausedReason}. Nothing was lost: volumes are never removed. Turn it back on in Settings → Cleanup once the cause is fixed.`
+    })
+  }
+  if (record.acted > 0) {
+    deps.notify({
+      title: NOTICE_TITLE,
+      body: `Docker cleanup handled ${record.acted} ${plural(record.acted, 'item')}. Volumes were kept.`
+    })
+  }
+  return record
+}

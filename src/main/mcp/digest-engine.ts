@@ -19,14 +19,16 @@ import type { HookTaskEvent } from '../detect/task-state-hub'
 import { pickTitle, type deriveTranscriptTruth } from '../transcript-truth'
 import { formatMemoryDate } from './memory-core'
 import {
-  buildHotProposal,
   DIGEST_GATE,
   digestSlug,
   digestTargetAllowed,
   digestTriggerFor,
+  hotKeyOf,
+  mergeHotPlan,
   planDigest,
   renderDigest,
   shortSessionId,
+  shouldNotifyDigestFailure,
   type DigestFileStat,
   type DigestReason,
   type GitEvidence
@@ -71,7 +73,13 @@ export interface DigestEngineDeps {
     from?: { offset: number; facts: TranscriptFacts }
   ): Promise<{ facts: TranscriptFacts; offset: number }>
   readTruth(path: string): Promise<ReturnType<typeof deriveTranscriptTruth>>
-  gatherGit(folder: string, sinceUnixSec: number, baselineHead: string | null): Promise<GitEvidence>
+  gatherGit(
+    folder: string,
+    sinceUnixSec: number,
+    baselineHead: string | null,
+    /** A rev other than `HEAD` (S-5's orphan branch, read in the owning repo). */
+    rev?: string
+  ): Promise<GitEvidence>
   writeDigest(
     folder: string,
     page: string,
@@ -85,6 +93,13 @@ export interface DigestEngineDeps {
     title: string,
     hot: string
   ): Promise<void>
+  /** The folder's `hot.md` as it is on disk, or null when it has none (S-7). Absent: none. */
+  readHot?(folder: string): Promise<string | null>
+  /**
+   * The branch the folder is on now, from git (omitted when detached or not a repo). The key of
+   * the folder's hot snapshot when the transcript names no branch (S-7). Absent: none.
+   */
+  folderBranch?(folder: string): Promise<string | undefined>
   /** The checkout whose memory serves `folder` (S-3's unsafe-root guard checks it). */
   memoryCheckout(folder: string): Promise<string>
   /**
@@ -97,6 +112,16 @@ export interface DigestEngineDeps {
    * Absent: a narrowed digest shows no files line rather than another session's files.
    */
   commitFileStats?(folder: string, hashes: string[]): Promise<DigestFileStat[]>
+  /**
+   * Whether the session's folder still exists. A digest for a session whose folder is gone is
+   * skipped, so the memory write can never recreate a removed worktree (S-5). Absent: no check.
+   */
+  folderExists?(folder: string): Promise<boolean>
+  /**
+   * Called when a digest could not be written (the memory write refused, or threw), at most once
+   * per folder per hour (S-8). A skipped plan is not a failure and never calls it. Absent: silent.
+   */
+  notify?(folder: string, reason: string): void
   /** Called with the whole state after every successful digest (S-4). */
   saveState?(state: DigestState): void
   /** Whether the session already has a digest in the folder's memory dir (the catch-up sweep). */
@@ -127,7 +152,22 @@ export interface DigestEngine {
    * session is tried once per engine: one that cannot be written is not re-read every pass.
    */
   catchUp(sessions: readonly CatchUpSession[]): Promise<string[]>
+  /**
+   * Digests the transcript of a session whose folder is gone (S-5, reason `orphan`) into the
+   * memory of `memoryFolder`, its owning repo. Never touches the gone folder, writes no `hot.md`
+   * and keeps no state: the transcript is frozen, so "has a digest" is the dedup.
+   */
+  digestTranscriptInto(args: OrphanDigestArgs): Promise<void>
   close(): void
+}
+
+export interface OrphanDigestArgs {
+  sessionId: string
+  transcriptPath: string
+  /** The owning repo: its memory receives the digest. */
+  memoryFolder: string
+  /** The transcript's `gitBranch`; read as a rev in the owning repo when it resolves. */
+  branch: string | null
 }
 
 /**
@@ -156,6 +196,8 @@ export function createDigestEngine(
     states.set(id, { scan: e.scan, last: e.last, lastDigestAt: e.lastDigestAt })
   }
   const inFlight = new Set<string>()
+  /** When each folder last raised a failure notice (S-8). */
+  const lastNoticeAt = new Map<string, number>()
   /** Sessions a catch-up pass already handed to the digest. */
   const caughtUp = new Set<string>()
   let closed = false
@@ -169,6 +211,38 @@ export function createDigestEngine(
       }
     }
     return pruneDigestState(out, deps.now())
+  }
+
+  /** Raises the failure notice for `folder`, unless one went out in the last hour. */
+  const notifyFailure = (folder: string, reason: string): void => {
+    const nowMs = deps.now()
+    if (!shouldNotifyDigestFailure(lastNoticeAt.get(folder), nowMs)) return
+    lastNoticeAt.set(folder, nowMs)
+    try {
+      deps.notify?.(folder, reason)
+    } catch (err) {
+      console.error('[memory-digest] failure notice failed', err)
+    }
+  }
+
+  /** `writeDigest`, with a refusal or a throw turned into a notice. A throw still propagates. */
+  async function writeDigestNoticing(
+    folder: string,
+    page: string,
+    entry: string,
+    id: string
+  ): Promise<boolean> {
+    let res: Awaited<ReturnType<DigestEngineDeps['writeDigest']>>
+    try {
+      res = await deps.writeDigest(folder, page, entry, id)
+    } catch (err) {
+      notifyFailure(folder, err instanceof Error ? err.message : String(err))
+      throw err
+    }
+    if (res.ok) return true
+    console.warn(`[memory-digest] digest write refused (${res.error}): ${res.detail}`)
+    notifyFailure(folder, [res.error, res.detail].filter(Boolean).join(': ') || 'write refused')
+    return false
   }
 
   const stateFor = (id: string): SessionState => {
@@ -188,9 +262,40 @@ export function createDigestEngine(
     }
   }
 
+  /**
+   * Narrows `repo` evidence to the commits whose committer time falls inside one of the session's
+   * git-call windows, its subagents' included (S-4, D-5). The rest are counted, not listed.
+   */
+  async function attribute(
+    id: string,
+    folder: string,
+    git: GitEvidence,
+    facts: TranscriptFacts
+  ): Promise<{ git: GitEvidence; otherCommits: number }> {
+    if (git.kind !== 'repo' || git.commits.length === 0) return { git, otherCommits: 0 }
+    const subagents: TranscriptFacts[] = []
+    for (const path of (await deps.subagentTranscripts?.(id)) ?? []) {
+      subagents.push((await deps.readFacts(path)).facts)
+    }
+    const attributed = attributeEvidence(git, facts, sessionWindows(facts, subagents, deps.now()))
+    let out = attributed.git
+    if (attributed.narrowed && out.kind === 'repo' && out.commits.length > 0) {
+      const hashes = out.commits.map((c) => c.hash)
+      const fileStats = deps.commitFileStats ? await deps.commitFileStats(folder, hashes) : []
+      out = { ...out, fileStats }
+    }
+    return { git: out, otherCommits: attributed.others }
+  }
+
   async function runDigest(id: string, reason: DigestReason): Promise<void> {
     const session = await deps.resolveSession(id)
     if (!session) return
+    // A removed worktree: writing its memory would recreate the folder. Only the orphan path
+    // (`digestTranscriptInto`) digests such a session, and only into the owning repo.
+    if (deps.folderExists && !(await deps.folderExists(session.folder))) {
+      console.log(`[memory-digest] skipped: folder gone ${session.folder}`)
+      return
+    }
     const st = stateFor(id)
 
     const scan = await deps.readFacts(session.transcriptPath, st.scan)
@@ -201,25 +306,10 @@ export function createDigestEngine(
       unixSec(facts.firstAt) ?? unixSec(session.created) ?? Math.floor(deps.now() / 1000) - DAY_SEC
     let git = await deps.gatherGit(session.folder, since, st.last?.head ?? null)
 
-    // Only the session's own commits are evidence: those whose committer time falls inside one
-    // of its git-call windows, its subagents' included (S-4, D-5). The rest are counted.
-    let otherCommits = 0
-    if (git.kind === 'repo' && git.commits.length > 0) {
-      const subagents: TranscriptFacts[] = []
-      for (const path of (await deps.subagentTranscripts?.(id)) ?? []) {
-        subagents.push((await deps.readFacts(path)).facts)
-      }
-      const attributed = attributeEvidence(git, facts, sessionWindows(facts, subagents, deps.now()))
-      git = attributed.git
-      otherCommits = attributed.others
-      if (attributed.narrowed && git.kind === 'repo' && git.commits.length > 0) {
-        const hashes = git.commits.map((c) => c.hash)
-        const fileStats = deps.commitFileStats
-          ? await deps.commitFileStats(session.folder, hashes)
-          : []
-        git = { ...git, fileStats }
-      }
-    }
+    // Only the session's own commits are evidence (S-4, D-5); the rest are counted.
+    const own = await attribute(id, session.folder, git, facts)
+    git = own.git
+    const otherCommits = own.otherCommits
 
     const plan = planDigest({ facts, git, last: st.last ?? null })
     if (plan.action === 'skip') return
@@ -260,27 +350,56 @@ export function createDigestEngine(
     })
 
     const digestPage = `sessions/${digestSlug(date, id)}`
-    const res = await deps.writeDigest(session.folder, digestPage, entry, id)
-    if (!res.ok) {
-      console.warn(`[memory-digest] digest write refused (${res.error}): ${res.detail}`)
-      return
-    }
+    if (!(await writeDigestNoticing(session.folder, digestPage, entry, id))) return
 
     const head = git.kind === 'repo' ? git.head : null
     st.last = { head, userTurns: facts.userTurns }
     st.lastDigestAt = deps.now()
     deps.saveState?.(snapshot())
 
-    const hot = buildHotProposal({
-      date,
-      title,
-      ...(branch ? { branch } : {}),
-      commits: git.kind === 'repo' ? git.commits : [],
-      ...(lastPrompt ? { lastPrompt } : {}),
-      ...(awaySummary ? { awaySummary } : {}),
-      digestPage
+    // The hot snapshot is merged into the one on disk: another branch's stays, this one becomes a
+    // line of its Parallel list. A hot.md that cannot be read is left alone rather than overwritten.
+    let current: string | null = null
+    try {
+      current = (await deps.readHot?.(session.folder)) ?? null
+    } catch (err) {
+      console.warn('[memory-digest] hot.md unreadable; left as it is', err)
+      return
+    }
+    const currentKey = current === null ? null : hotKeyOf(current)
+    // The snapshot's branch: the transcript's, else the one the folder is on now. Only a folder
+    // outside git (or one on a detached HEAD) is keyed by its path.
+    let hotBranch = branch
+    if (!hotBranch && git.kind === 'repo') {
+      try {
+        hotBranch = (await deps.folderBranch?.(session.folder)) || undefined
+      } catch {
+        hotBranch = undefined
+      }
+    }
+    const merged = mergeHotPlan({
+      current,
+      currentKey,
+      next: {
+        date,
+        title,
+        ...(hotBranch ? { branch: hotBranch } : {}),
+        commits: git.kind === 'repo' ? git.commits : [],
+        ...(lastPrompt ? { lastPrompt } : {}),
+        openQuestions: facts.openQuestions,
+        digestPage
+      },
+      // A folder outside git has no branch: its path is its key, which no stamp can carry.
+      nextKey: hotBranch ?? session.folder
     })
-    await deps.writeHot(session.folder, id, branch, title, hot)
+    // The write path stamps the file with a branch, so the stamp names the snapshot the body is.
+    await deps.writeHot(
+      session.folder,
+      id,
+      merged.kept ? (currentKey ?? undefined) : hotBranch,
+      title,
+      merged.hot
+    )
   }
 
   async function digestNow(id: string, reason: DigestReason): Promise<void> {
@@ -292,6 +411,72 @@ export function createDigestEngine(
       console.error('[memory-digest] digest failed', err)
     } finally {
       inFlight.delete(id)
+    }
+  }
+
+  /** A rev that is safe to hand to git: a branch name, never an option or a range. */
+  const safeBranch = (b: string): boolean => /^[A-Za-z0-9._/+@-]+$/.test(b) && !b.startsWith('-')
+
+  async function runOrphanDigest(a: OrphanDigestArgs): Promise<void> {
+    const id = a.sessionId
+    const { facts } = await deps.readFacts(a.transcriptPath)
+
+    // The folder is gone: its git is not reachable. When the transcript's branch still resolves
+    // in the owning repo, that branch's commits are the evidence (D-10); otherwise none is claimed.
+    let git: GitEvidence = { kind: 'unavailable' }
+    let otherCommits = 0
+    if (a.branch && safeBranch(a.branch)) {
+      const since = unixSec(facts.firstAt) ?? Math.floor(deps.now() / 1000) - DAY_SEC
+      const probed = await deps.gatherGit(a.memoryFolder, since, null, a.branch)
+      if (probed.kind === 'repo' && probed.head !== null) {
+        const own = await attribute(id, a.memoryFolder, probed, facts)
+        git = own.git
+        otherCommits = own.otherCommits
+      }
+    }
+
+    const plan = planDigest({ facts, git, last: null, orphan: true })
+    if (plan.action === 'skip') return
+    const checkout = await deps.memoryCheckout(a.memoryFolder)
+    if (!digestTargetAllowed(checkout, homedir())) {
+      console.log(`[memory-digest] skipped: unsafe memory root ${checkout}`)
+      return
+    }
+
+    const truth = await deps.readTruth(a.transcriptPath)
+    const title =
+      pickTitle(truth.titles) || truth.titles.taskSummary || `Session ${shortSessionId(id)}`
+    const date = formatMemoryDate(deps.now())
+    const branch = a.branch || undefined
+    const awaySummary = truth.awaySummary || undefined
+    const lastPrompt = truth.titles.lastPrompt || undefined
+    const entry = renderDigest({
+      date,
+      title,
+      ...(branch ? { branch } : {}),
+      sessionShort: shortSessionId(id),
+      reason: 'orphan',
+      plan,
+      git,
+      facts,
+      ...(awaySummary ? { awaySummary } : {}),
+      ...(truth.titles.taskSummary ? { taskSummary: truth.titles.taskSummary } : {}),
+      ...(lastPrompt ? { lastPrompt } : {}),
+      ...(otherCommits > 0 ? { otherCommits } : {})
+    })
+    // No `hot.md`: a removed folder's last prompt is not where the project stands now.
+    await writeDigestNoticing(a.memoryFolder, `sessions/${digestSlug(date, id)}`, entry, id)
+  }
+
+  async function digestTranscriptInto(a: OrphanDigestArgs): Promise<void> {
+    if (closed || inFlight.has(a.sessionId)) return
+    inFlight.add(a.sessionId)
+    try {
+      await runOrphanDigest(a)
+    } catch (err) {
+      console.error('[memory-digest] orphan digest failed', err)
+    } finally {
+      inFlight.delete(a.sessionId)
     }
   }
 
@@ -330,6 +515,7 @@ export function createDigestEngine(
     states.clear()
     inFlight.clear()
     caughtUp.clear()
+    lastNoticeAt.clear()
   }
 
   async function catchUp(sessions: readonly CatchUpSession[]): Promise<string[]> {
@@ -344,6 +530,8 @@ export function createDigestEngine(
           hasDigest: async (s) => {
             // An unsafe memory root is never caught up: the digest would refuse it anyway, and
             // asking for its memory dir must not touch it (S-3).
+            // A folder that is gone is never caught up either (the orphan gather covers it).
+            if (deps.folderExists && !(await deps.folderExists(s.folder))) return true
             const checkout = await deps.memoryCheckout(s.folder)
             if (!digestTargetAllowed(checkout, homedir())) return true
             return deps.hasDigest ? deps.hasDigest(s.folder, s.sessionId) : false
@@ -364,5 +552,5 @@ export function createDigestEngine(
     return done
   }
 
-  return { onTaskEdge, digestNow, catchUp, close }
+  return { onTaskEdge, digestNow, catchUp, digestTranscriptInto, close }
 }

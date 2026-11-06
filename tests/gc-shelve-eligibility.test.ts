@@ -203,3 +203,32 @@ describe('shelveVerdict — idle for at least the threshold', () => {
     expect(refusal(unproven(), probe({ lastCommitAt: null }))).toBe('unreadable')
   })
 })
+
+describe('a Paused stack (U3.5, design §4 U3 "Park": pause, then shelve across cycles)', () => {
+  const withPaused = (b: WorktreeBundle, pausedStackIds: string[]): ShelveRefusal | null =>
+    shelveCandidate(b, { prefs: prefs(), driftedCwds: [], pausedStackIds })
+
+  it('does not refuse a worktree whose only stack is Paused', () => {
+    expect(withPaused(unproven({ stackIds: ['shop'] }), ['shop'])).toBe(null)
+    expect(withPaused(unproven({ sharedStackIds: ['shop'] }), ['shop'])).toBe(null)
+  })
+
+  it('still refuses a worktree with a running stack beside a Paused one', () => {
+    expect(withPaused(unproven({ stackIds: ['shop', 'blog'] }), ['shop'])).toBe('stack')
+  })
+
+  it('still refuses a running stack that is not in the Paused registry', () => {
+    expect(withPaused(unproven({ stackIds: ['blog'] }), ['shop'])).toBe('stack')
+    expect(withPaused(unproven({ stackIds: ['blog'] }), [])).toBe('stack')
+  })
+
+  it('without a registry nothing changes', () => {
+    expect(refusal(unproven({ stackIds: ['shop'] }))).toBe('stack')
+  })
+
+  it('a Paused stack does not hide the other rules', () => {
+    expect(withPaused(unproven({ stackIds: ['shop'], session: 'open-idle' }), ['shop'])).toBe(
+      'session'
+    )
+  })
+})

@@ -79,6 +79,7 @@ function install(first: GcSnapshot, jobs: GcJobInfo[] = [], reaper: ReaperStubs 
     onGcProgress: sub('progress'),
     onGcDone: sub('done'),
     onGcCycle: sub('cycle'),
+    onGcDockerWatch: sub('dockerWatch'),
     reaperSnapshot: ipcFn(reaper.snapshot ?? (async () => ({ scannedAt: Date.now(), repos: [] }))),
     reaperScan: ipcFn(reaper.scan ?? (async () => ({ scannedAt: Date.now(), repos: [] }))),
     reaperJournal: ipcFn(async () => []),

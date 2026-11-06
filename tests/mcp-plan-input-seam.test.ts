@@ -104,6 +104,10 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   update_card: { folder: ALLOWED, slug: 'investigate-flaky-test', set: { priority: 'alta' } },
   move_card: { folder: ALLOWED, slug: 'investigate-flaky-test', to: 'ready' },
   archive_card: { folder: ALLOWED, slug: 'investigate-flaky-test' },
+  // T655: addressed by session id, never a folder (a blocked one is refused per id).
+  archive_session: { sessionIds: ['sess-1', 'sess-2'], unarchive: true },
+  // T661: addressed by absolute path, never a gate folder (a blocked one is refused per path).
+  hide_folder: { folders: ['/repos/alpha', '/repos/beta'], unhide: true },
   delete_card: { folder: ALLOWED, slug: 'investigate-flaky-test' },
   submit_manifest: {
     folder: ALLOWED,

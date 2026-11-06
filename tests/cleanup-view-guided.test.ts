@@ -76,6 +76,7 @@ function install(
     onGcProgress: () => () => {},
     onGcDone: () => () => {},
     onGcCycle: () => () => {},
+    onGcDockerWatch: () => () => {},
     reaperSnapshot: ipcFn(async () => ({ scannedAt: Date.now(), repos: [] })),
     reaperJournal: ipcFn(async () => []),
     reaperPrefs: ipcFn(async () => ({ dehydrateIdleDays: 7 }))

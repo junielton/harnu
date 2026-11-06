@@ -568,8 +568,9 @@ export function computeScorecard(input) {
     digestDays = Math.max(1, Math.round((dayMs(to) - dayMs(from)) / DAY_MS) + 1)
   }
 
-  // M7 orphan loss.
-  const orphans = sessions.filter((s) => !s.cwdExists)
+  // M7 orphan loss: orphans that count as sessions (the M1 rule, at least MIN_OPERATOR_TURNS
+  // operator turns); a shorter one is below the digest gate and is not a loss.
+  const orphans = counted.filter((s) => !s.cwdExists)
   const lost = orphans.filter((s) => !hasDigest(s))
   const bytes = (list) => list.reduce((a, s) => a + (s.bytes ?? 0), 0)
 

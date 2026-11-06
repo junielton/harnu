@@ -242,3 +242,164 @@ describe('dockerUnavailableRefusal (AC-3)', () => {
     expect(r.dockerError).not.toContain(`${HOME}/`)
   })
 })
+
+describe('containersListing — paused stacks (U3.4 AC-5)', () => {
+  const OUTSIDE = '/srv/shared/compose'
+  const pausedAt = NOW - 3 * HOUR
+  const pausedStack = (over: Partial<ContainersSnapshotAvailable['paused'][number]> = {}) => ({
+    stack: 'wave-9',
+    name: 'wave-9',
+    actor: 'autopilot' as const,
+    project: 'wave-9',
+    workingDir: WT,
+    configFiles: [`${WT}/compose.yml`, `${OUTSIDE}/base.yml`],
+    profiles: ['web'],
+    envFile: `${OUTSIDE}/.env`,
+    hasBuild: true,
+    ports: [8082],
+    pausedAt,
+    restoreCommand:
+      `docker compose -p wave-9 --project-directory ${WT} -f ${WT}/compose.yml ` +
+      `-f ${OUTSIDE}/base.yml --profile web --env-file ${OUTSIDE}/.env up -d --build`,
+    ...over
+  })
+  const withPaused = (...p: ReturnType<typeof pausedStack>[]): ContainersSnapshotAvailable => ({
+    ...SNAP,
+    paused: p
+  })
+
+  it('marks the stack paused and carries its restore command, paths shown as aliases', () => {
+    const out = containersListing(withPaused(pausedStack()), { denyFolders: [], home: HOME })
+    expect(out.paused).toEqual([
+      {
+        id: 'wave-9',
+        name: 'wave-9',
+        project: 'wave-9',
+        actor: 'autopilot',
+        pausedAt,
+        ports: [8082],
+        profiles: ['web'],
+        hasBuild: true,
+        folderAlias: 'PROJ-231-wave-1',
+        agentControllable: true,
+        restoreCommand:
+          'docker compose -p wave-9 --project-directory <PROJ-231-wave-1> ' +
+          '-f <PROJ-231-wave-1>/compose.yml -f <base.yml> --profile web --env-file <.env> up -d --build'
+      }
+    ])
+  })
+
+  it('no absolute path of a pause leaves the listing — not in paused, not in recent', () => {
+    const p = pausedStack()
+    const tomb: Tombstone = {
+      at: pausedAt,
+      actor: 'autopilot',
+      verb: 'stop',
+      stacks: [
+        {
+          stack: 'wave-9',
+          name: 'wave-9',
+          path: WT,
+          containerIds: ['c9'],
+          freed: { ramBytes: 0, ports: [8082], volumes: [], volumeBytes: 0 },
+          paused: p
+        }
+      ],
+      restoreHint: p.restoreCommand
+    }
+    const out = containersListing(
+      { ...withPaused(p), recent: [tomb] },
+      { denyFolders: [], home: HOME }
+    )
+    const text = JSON.stringify(out)
+    for (const leak of [WT, MAIN, OUTSIDE, `${HOME}/`]) expect(text).not.toContain(leak)
+    expect(out.recent[0]!.restoreHint).toContain('--project-directory <PROJ-231-wave-1>')
+    expect(out.recent[0]!.stacks[0]!.paused?.restoreCommand).toBe(out.paused[0]!.restoreCommand)
+  })
+
+  it('the one-sentence reason of an autopilot pause leaks no path either, but still reads', () => {
+    const p = pausedStack()
+    const tomb: Tombstone = {
+      at: pausedAt,
+      actor: 'autopilot',
+      verb: 'stop',
+      stacks: [
+        {
+          stack: 'wave-9',
+          name: 'wave-9',
+          path: WT,
+          containerIds: ['c9'],
+          freed: { ramBytes: 0, ports: [8082], volumes: [], volumeBytes: 0 },
+          paused: p
+        }
+      ],
+      restoreHint: p.restoreCommand,
+      reason: `Paused \`wave-9\` — idle 3 h · bring back: \`${p.restoreCommand}\``
+    }
+    const out = containersListing(
+      { ...withPaused(p), recent: [tomb] },
+      { denyFolders: [], home: HOME }
+    )
+    const text = JSON.stringify(out)
+    for (const leak of [WT, MAIN, OUTSIDE, `${HOME}/`]) expect(text).not.toContain(leak)
+    expect(out.recent[0]!.reason).toMatch(
+      /^Paused `wave-9` — idle 3 h · bring back: `docker compose/
+    )
+    expect(out.recent[0]!.reason).toContain('--project-directory <PROJ-231-wave-1>')
+  })
+
+  it('a compose file outside the folder never leaks from a remove hint either', () => {
+    const tomb: Tombstone = {
+      ...tombWt,
+      restoreHint: `docker compose -p wave-1 --project-directory '${WT}' -f '${OUTSIDE}/it'\\''s.yml' --env-file ${OUTSIDE}/.env up -d`
+    }
+    const out = containersListing({ ...SNAP, recent: [tomb] }, { denyFolders: [], home: HOME })
+    expect(out.recent[0]!.restoreHint).toBe(
+      "docker compose -p wave-1 --project-directory '<PROJ-231-wave-1>' -f <it's.yml> --env-file <.env> up -d"
+    )
+  })
+
+  it('a stack row never carries the compose label facts (absolute paths)', () => {
+    const row = stackRow({
+      id: 'wave-1',
+      verdict: 'zombie',
+      compose: { configFiles: [`${WT}/compose.yml`], envFile: `${OUTSIDE}/.env` }
+    })
+    const out = containersListing(
+      { ...SNAP, stacks: [row], totals: computeTotals([row]) },
+      { denyFolders: [], home: HOME }
+    )
+    expect(JSON.stringify(out)).not.toContain(OUTSIDE)
+    expect(out.stacks[0]).not.toHaveProperty('compose')
+  })
+
+  it('a blocked folder still lists its pause, with agentControllable:false', () => {
+    const out = containersListing(withPaused(pausedStack()), { denyFolders: [WT], home: HOME })
+    expect(out.paused[0]!.agentControllable).toBe(false)
+  })
+
+  it('a scoped listing keeps only the pauses of that repo', () => {
+    const other = pausedStack({
+      stack: 'gateway-3',
+      name: 'gateway-3',
+      workingDir: OTHER,
+      configFiles: [],
+      envFile: null,
+      restoreCommand: `docker compose -p gateway-3 --project-directory ${OTHER} up -d`
+    })
+    const roots = containersScopeRoots(WT, FOLDERS, HOME)
+    const out = containersListing(withPaused(pausedStack(), other), {
+      denyFolders: [],
+      home: HOME,
+      scopeRoots: roots
+    })
+    expect(out.paused.map((p) => p.id)).toEqual(['wave-9'])
+    expect(
+      containersListing(withPaused(pausedStack(), other), { denyFolders: [], home: HOME }).paused
+    ).toHaveLength(2)
+  })
+
+  it('lists an empty array, never a missing key, when nothing is paused', () => {
+    expect(containersListing(SNAP, { denyFolders: [], home: HOME }).paused).toEqual([])
+  })
+})
