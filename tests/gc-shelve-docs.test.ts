@@ -38,7 +38,7 @@ describe('shelving contracts', () => {
 
   it('the agent doc lists the new list_cleanup fields and carries a bumped marker', () => {
     const doc = read('docs/harnu-features.md')
-    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v125 /)
+    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v126 /)
     expect(doc).toMatch(/shelved: \[\{ id, folderAlias, branch, shelvedAt, idleDays, reason \}\]/)
     expect(doc).toMatch(/shelving: \{ enabled,\s+reportOnly, thresholdDays \}/)
     expect(doc).toMatch(/\*\*not\*\* a removed worktree/)

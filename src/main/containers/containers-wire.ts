@@ -87,6 +87,30 @@ export interface VolumeRow {
   shared: boolean
 }
 
+/** What the compose labels say about how a stack was started (U3.4); the restore command reads it. */
+export interface StackCompose {
+  /** `com.docker.compose.project.config_files`, split on commas; `[]` when the label is missing. */
+  configFiles: string[]
+  /** `com.docker.compose.project.environment_file` (the first one), or null. */
+  envFile: string | null
+}
+
+/**
+ * Everything `docker compose up -d` needs to bring a stack back the way it ran (U3.4). `project`
+ * is null only for a hint built without a project name.
+ */
+export interface ComposeRestoreFacts {
+  project: string | null
+  /** The directory the stack was started from (`--project-directory`). */
+  workingDir: string
+  configFiles: string[]
+  /** Profiles of the services that were running; the restored set needs them to come back. */
+  profiles: string[]
+  envFile: string | null
+  /** True when a restored service has a `build:` section, so `up -d` needs `--build`. */
+  hasBuild: boolean
+}
+
 export interface StackRow {
   /** Stable key every action targets: the compose project name, or the container name. */
   id: string
@@ -117,6 +141,8 @@ export interface StackRow {
   zombieInMs: number | null
   /** A live Harnu session in the attributed folder ("Go to session"), or null. */
   liveSessionId: string | null
+  /** Compose start-up facts from the labels; null for a standalone container (U3.4). */
+  compose?: StackCompose | null
 }
 
 export interface ContainersTotals {
@@ -134,7 +160,12 @@ export interface ContainersTotals {
   stoppable: number
 }
 
-export type Actor = 'operator' | 'agent'
+/**
+ * Who did a journaled action: the operator in the UI, an agent over MCP, or the `autopilot` (Harnu
+ * acting on its own, autonomous cleanup U3). Automatic actions are told apart from the other two.
+ */
+export const ACTORS = ['operator', 'agent', 'autopilot'] as const
+export type Actor = (typeof ACTORS)[number]
 
 export type ActVerb = 'stop' | 'start' | 'remove' | 'sweep'
 
@@ -148,6 +179,19 @@ export const ACT_VERBS: readonly ActVerb[] = ['stop', 'start', 'remove', 'sweep'
  * type the MCP verb-to-op map is checked against, never a comment.
  */
 export type AgentActVerb = Exclude<ActVerb, 'sweep'>
+
+/**
+ * What a pause recorded about the stack it brought down (autonomous cleanup U3.4): everything
+ * `docker compose up -d` needs, the host ports it freed, and the ready-to-paste command.
+ */
+export interface PausedRecord extends ComposeRestoreFacts {
+  /** Host ports the stack held while running; a restore needs them free again. */
+  ports: number[]
+  /** `docker compose -p P --project-directory WD [-f F]… [--profile X]… [--env-file E] up -d [--build]`. */
+  restoreCommand: string
+  /** Epoch ms of the pause. */
+  pausedAt: number
+}
 
 export interface TombstoneStack {
   stack: string
@@ -171,6 +215,19 @@ export interface TombstoneStack {
   keptVolumes?: string[]
   /** Sum of the kept volumes' measured sizes; present exactly when `keptVolumes` is. */
   keptVolumeBytes?: number
+  /** A pause only (U3.4): the stack was brought down with `compose down`, volumes untouched. */
+  paused?: PausedRecord
+  /**
+   * Who the kept volumes belonged to, written when Harnu removed an orphan stack on its own
+   * (autonomous cleanup U3.3): the project and the folder that no longer exists. A live project
+   * that later mounts one of `keptVolumes` can be warned that it inherits a removed worktree's
+   * data (U3.7). Absent on every other removal.
+   */
+  keptVolumeOwner?: {
+    reason: 'worktree-removed'
+    project: string | null
+    worktreePath: string | null
+  }
 }
 
 /** One journal line (PRD §3.5): one per action, however many stacks it touched. */
@@ -180,12 +237,21 @@ export interface Tombstone {
   verb: ActVerb
   stacks: TombstoneStack[]
   /**
-   * `docker start <ids>` after a stop; the compose recreate command after a
-   * removal; null otherwise. A sweep carries a hint only when ONE command
+   * After a stop or a removal of a compose stack: its `docker compose … up -d` command (never
+   * `docker start`, which fails once a stack is down); `docker start <ids>` only for a standalone
+   * container that was merely stopped; null otherwise. A sweep carries a hint only when ONE command
    * honestly restores the whole batch — a batch no single command describes
    * stores null rather than a hint for one arbitrary stack (T340).
    */
   restoreHint: string | null
+  /**
+   * Why an automatic action happened, in one English sentence (autonomous cleanup U3.3, and the
+   * pauses of U3.5): "Removed empty network `x` — no containers", "Paused `x` — idle 3 h · bring
+   * back: `docker compose … up -d`". The digest reads it. Absent on operator and agent lines
+   * and on every line written before this field existed. A network removal has no stack, so its
+   * `stacks` is empty and this sentence is the whole line.
+   */
+  reason?: string
 }
 
 /**
@@ -318,10 +384,24 @@ interface SnapshotBase {
   recent: Tombstone[]
 }
 
+/**
+ * A stack Cleanup brought down with `compose down` and that has not come back (U3.4, shown as
+ * "Paused"). It has no containers, so it is not a {@link StackRow} and no verdict applies to it.
+ */
+export interface PausedStack extends PausedRecord {
+  /** The stack id the pause was journaled under (the compose project). */
+  stack: string
+  name: string
+  /** Who paused it: the autopilot on its own, or an operator or agent. */
+  actor: Actor
+}
+
 export interface ContainersSnapshotAvailable extends SnapshotBase {
   dockerAvailable: true
   totals: ContainersTotals
   stacks: StackRow[]
+  /** Paused stacks, newest first; derived from the journal, never from a second file. */
+  paused: PausedStack[]
 }
 
 /** Docker is missing or its daemon is down. Deliberately carries no `stacks` (PRD §5). */

@@ -3094,6 +3094,20 @@
           "confirm": "Move to trash"
         }
       },
+      "capacity": {
+        "low": {
+          "title": "Docker is nearly out of network slots",
+          "body": "{free} of {total} free. Cleanup has nothing left to free on its own.",
+          "bodyOff": "{free} of {total} free. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "bodyPaused": "{free} of {total} free. Automatic Docker cleanup is paused, so nothing will be freed on its own."
+        },
+        "zero": {
+          "title": "Docker has no free network slots",
+          "body": "The next compose up will fail. Stop a stack you do not need.",
+          "bodyOff": "The next compose up will fail. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "bodyPaused": "The next compose up will fail. Automatic Docker cleanup is paused, so nothing will be freed on its own."
+        }
+      },
       "shelved": {
         "activity": "Shelved `{branch}` — idle {days} d, branch kept",
         "activityDetached": "Shelved detached HEAD — idle {days} d, archive kept",
@@ -3155,6 +3169,28 @@
           "reportOnly": "The first pass only reports what it would shelve; nothing is removed until you acknowledge it.",
           "ack": "Acknowledge first report",
           "active": "Shelving is active. Up to {n} worktrees per cycle."
+        },
+        "docker": {
+          "eyebrow": "Docker: pausing and garbage",
+          "intro": "Cleanup keeps Docker from running out of room by itself. A stack that has sat idle for {hours} hours is Paused (brought down, never deleted, its volumes always kept), and empty compose networks and stacks left behind by removed worktrees are cleared. Bring a Paused stack back with its compose up command.",
+          "label": "Pause idle stacks and clear Docker garbage automatically",
+          "hint": "Runs on the same background timer as the autopilot. Volumes are never removed.",
+          "reportOnly": "The first pass only records what it would pause or remove; nothing changes in Docker until you acknowledge it.",
+          "ack": "Acknowledge first report",
+          "active": "Docker cleanup is active. Up to {n} actions per cycle.",
+          "report": {
+            "kind": {
+              "network": "Network",
+              "orphan": "Orphan stack",
+              "pause": "Pause"
+            },
+            "more": "+{n} more"
+          },
+          "pauseAll": {
+            "label": "Pause all autonomous cleanup",
+            "hint": "Stops shelving, Docker cleanup and the autopilot's cleaning at once. Cleaning by hand keeps working.",
+            "note": "Autonomous cleanup is paused. Nothing is shelved, paused or removed on its own until you turn this off."
+          }
         },
         "interval": {
           "label": "Run every",
@@ -3654,7 +3690,8 @@
     "section": {
       "needsYou": "Needs you",
       "leaveAlone": "Leave alone",
-      "recent": "Recent"
+      "recent": "Recent",
+      "paused": "Paused"
     },
     "verdict": {
       "zombie": "zombie",
@@ -3704,7 +3741,9 @@
       "bulkWho": "{n} stacks",
       "whenStopped": "stopped {ago}",
       "whenStarted": "started {ago}",
-      "whenRemoved": "removed {ago}"
+      "whenRemoved": "removed {ago}",
+      "paused": "paused",
+      "whenPaused": "paused {ago}"
     },
     "nav": {
       "openWorktree": "Open worktree",
@@ -3758,7 +3797,8 @@
       "actionRemoved": "removed {n} container | removed {n} containers",
       "actionRemovedKept": "removed {n} container · volume kept | removed {n} containers · volume kept",
       "actionRemovedVolume": "removed {n} container · volume removed | removed {n} containers · volume removed",
-      "freed": "{ram} RAM · {n} port | {ram} RAM · {n} ports"
+      "freed": "{ram} RAM · {n} port | {ram} RAM · {n} ports",
+      "actionPaused": "paused · {n} container removed, volumes kept | paused · {n} containers removed, volumes kept"
     },
     "note": {
       "orphan": "Nothing in Harnu can use this stack again — the code it ran from is gone. Its volume may still hold data you want, so it is never removed without asking.",
@@ -3854,7 +3894,23 @@
       "removing": "Removing…"
     },
     "openCleanup": "Open Cleanup · {n} stack | Open Cleanup · {n} stacks",
-    "openCleanupTitle": "Cleaning up stacks now happens in Cleanup"
+    "openCleanupTitle": "Cleaning up stacks now happens in Cleanup",
+    "paused": {
+      "chip": "Paused",
+      "note": "Brought down with compose down. Its containers and network are gone; its volumes were kept. Nothing runs until you bring it back.",
+      "evidence": {
+        "by": "Paused by",
+        "when": "Paused",
+        "folder": "Folder",
+        "ports": "Ports held",
+        "build": "Rebuilds on restore"
+      },
+      "actor": {
+        "autopilot": "Cleanup",
+        "operator": "You",
+        "agent": "An agent"
+      }
+    }
   },
   "prStack": {
     "title": "PR Stack",
@@ -4664,7 +4720,11 @@
         "title": "Also record",
         "hint": "Tick what Harnu should write to project memory. Nothing is written without a tick.",
         "nothing": "Nothing notable to record.",
-        "kind": { "decision": "Decision", "lesson": "Lesson", "hot": "Hot" },
+        "kind": {
+          "decision": "Decision",
+          "lesson": "Lesson",
+          "hot": "Hot"
+        },
         "replaces": "Replaces {id}"
       },
       "warnings": {
@@ -5037,8 +5097,10 @@
   },
   "browserPane": {
     "network": {
-      "label": "Network",
-      "hint": "Network capture is on. It stops by itself and records no bodies unless the agent asked for them."
+      "off": "Offline",
+      "on": "Network on",
+      "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
+      "onHint": "Network on: the page can reach the network. Click to turn it off."
     },
     "label": "Browser pane",
     "newTab": "New tab",
@@ -5124,12 +5186,6 @@
     "noticeDownloaded": "Saved {name}",
     "noticeDownloadCancelled": "Download cancelled",
     "noticeDownloadFailed": "The download failed",
-    "network": {
-      "off": "Offline",
-      "on": "Network on",
-      "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
-      "onHint": "Network on: the page can reach the network. Click to turn it off."
-    },
     "discarded": {
       "titleIdle": "Paused to save memory",
       "titleRestored": "Not loaded yet",

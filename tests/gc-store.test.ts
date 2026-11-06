@@ -112,6 +112,7 @@ function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
       onGcProgress: sub('progress'),
       onGcDone: sub('done'),
       onGcCycle: sub('cycle'),
+      onGcDockerWatch: sub('dockerWatch'),
       onGcOpinionResult: sub('opinion'),
       onGcOpinionDone: sub('opinionDone')
     }
@@ -929,6 +930,7 @@ describe('gc store', () => {
     await gc.init()
     expect(Object.keys(api.push).sort()).toEqual([
       'cycle',
+      'dockerWatch',
       'done',
       'opinion',
       'opinionDone',
