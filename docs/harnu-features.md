@@ -1,4 +1,4 @@
-<!-- harnu-features v123 (2026-11-05) -->
+<!-- harnu-features v124 (2026-11-06) -->
 
 # You are running inside Harnu
 
@@ -956,8 +956,11 @@ one row per id; `outcome` is `archived`, `alreadyArchived`, `restored`, `already
 `notFound` or `refused`, and a `refused` row carries `reason`: `FOLDER_NOT_ALLOWED` (the
 operator blocked that session's folder), `SESSION_WORKING` or `PENDING_APPROVAL` (archiving
 only: it is working, or an approval is parked for it). `ok` is true only when no row is
-`refused` or `notFound`: read each row rather than retrying the batch. `ARCHIVE_NOT_READY`
-right after Harnu starts: retry shortly. The operator still sees archived rows under their
+`refused` or `notFound`: read each row rather than retrying the batch. Every row is decided
+inside the store's own write, so concurrent calls on one session read as one serial order
+(`restored` then `alreadyActive`) and a row always matches what the archive file holds.
+`ARCHIVE_NOT_READY` right after Harnu starts: retry shortly. `ARCHIVE_WRITE_FAILED`: the
+file could not be written, nothing changed; retry. The operator still sees archived rows under their
 folder's "Show N archived" row.
 
 **Undelivered starting prompt.** A `create_session` `prePrompt` (or a card's boot prompt)

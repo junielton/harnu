@@ -162,3 +162,52 @@ describe('ids() is a view nobody can write through (BUG-254)', () => {
     expect(JSON.parse(readFileSync(file, 'utf8')).ids).toEqual(['s-1'])
   })
 })
+
+describe('transact: decide and apply in one serialized step (BUG-254)', () => {
+  it('each call decides against the set left by the one before it', async () => {
+    const store = await openSessionArchive(file)
+    await store.archive(['a'])
+    const flip = (op: 'archive' | 'unarchive'): Promise<string> =>
+      store.transact((cur) => ({
+        [op]: ['a'],
+        result:
+          op === 'archive' ? (cur.has('a') ? 'already' : 'did') : cur.has('a') ? 'did' : 'already'
+      }))
+    const out = await Promise.all([flip('unarchive'), flip('unarchive'), flip('archive')])
+    expect(out).toEqual(['did', 'already', 'did'])
+    expect(store.has('a')).toBe(true)
+    expect(JSON.parse(readFileSync(file, 'utf8')).ids).toEqual(['a'])
+  })
+
+  it('writes once, emits the flipped ids, and skips the write when nothing changes', async () => {
+    const store = await openSessionArchive(file)
+    await store.archive(['a', 'b'])
+    const heard: string[][] = []
+    store.onChange((ids) => heard.push(ids))
+
+    await store.transact(() => ({ archive: ['c', 'a'], unarchive: ['b', 'zzz'], result: null }))
+    expect([...store.ids()].sort()).toEqual(['a', 'c'])
+    expect(heard).toEqual([['c', 'b']])
+
+    await store.transact(() => ({ archive: ['a'], unarchive: ['zzz'], result: null }))
+    expect(heard).toHaveLength(1)
+  })
+
+  it('a throwing decide or a failed write changes nothing and rejects', async () => {
+    const store = await openSessionArchive(file)
+    await store.archive(['a'])
+    await expect(
+      store.transact(() => {
+        throw new Error('boom')
+      })
+    ).rejects.toThrow('boom')
+    expect([...store.ids()]).toEqual(['a'])
+    await expect(store.unarchive(['a'])).resolves.toEqual(['a']) // the queue is not wedged
+
+    const blocker = path.join(dir, 'blocker')
+    writeFileSync(blocker, 'not a directory')
+    const broken = await openSessionArchive(path.join(blocker, 'archived-sessions.json'))
+    await expect(broken.transact(() => ({ archive: ['x'], result: 1 }))).rejects.toThrow()
+    expect(broken.has('x')).toBe(false)
+  })
+})
