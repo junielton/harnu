@@ -1503,6 +1503,12 @@ const api = {
   /** Companion to `userProjectsHide`. Idempotent. */
   userProjectsUnhide: (targetPath: string): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:unhide', targetPath),
+  /**
+   * T661: main pushes the FULL hidden list after the `hide_folder` MCP verb changed it (the menu
+   * actions above never trigger it: their IPC response already carries the new list).
+   */
+  onUserProjectsHiddenChanged: (cb: (p: { hiddenPaths: string[] }) => void): (() => void) =>
+    subscribe('userProjects:hiddenChanged', cb),
 
   // ---- Helpers (split layout) persistence (F2) -----------------------------
   // Per-worktree helper-pane state lives in `<userData>/helpers.json` (see

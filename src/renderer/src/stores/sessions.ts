@@ -1329,6 +1329,21 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
+   * T661: main pushes the full hidden list after the `hide_folder` verb changed it outside this
+   * store's own calls. Mirror it; a folder that just became hidden also reloads the model, exactly
+   * as `dismissFolder` does. A push that changes nothing does neither.
+   */
+  function applyHiddenFromMain(hiddenPaths: readonly string[]): void {
+    const current = manuallyHiddenPaths.value
+    const next = new Set(hiddenPaths)
+    const sameSet = next.size === current.size && [...next].every((p) => current.has(p))
+    if (sameSet) return
+    const newlyHidden = [...next].some((p) => !current.has(p))
+    manuallyHiddenPaths.value = next
+    if (newlyHidden) void reloadModel()
+  }
+
+  /**
    * Folders whose archived sessions are temporarily revealed (mirrors
    * `revealedOlderPaths`). NOT persisted — a momentary peek that resets on
    * reload. Keyed by `folder.path`.
@@ -5784,6 +5799,14 @@ export const useSessionsStore = defineStore('sessions', () => {
     await hydrateArchivedIds()
     if (typeof window.api.onSessionArchiveChanged === 'function') {
       cleanupFns.push(window.api.onSessionArchiveChanged(({ ids }) => applyArchivedFromMain(ids)))
+    }
+
+    if (typeof window.api.onUserProjectsHiddenChanged === 'function') {
+      cleanupFns.push(
+        window.api.onUserProjectsHiddenChanged(({ hiddenPaths }) =>
+          applyHiddenFromMain(hiddenPaths)
+        )
+      )
     }
 
     foldersLoading.value = true
