@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
 import { promises as fs, mkdirSync } from 'node:fs'
@@ -36,6 +36,7 @@ import {
 } from '../src/main/canvas-watch'
 import { i18n } from '@renderer/i18n'
 import { installJsdomSvgShim } from './helpers/jsdom-svg'
+import { waitFor } from './helpers/canvas-pane-harness'
 
 installJsdomSvgShim()
 
@@ -53,6 +54,13 @@ installJsdomSvgShim()
  * is held on a deferred promise (the watch "not ready yet"), the write is made
  * while it is held, and the watcher stand-in — like chokidar — delivers no
  * event for a change that landed before it was live.
+ *
+ * BUG-242 — nothing here waits a fixed time either. The pane's open crosses real file
+ * I/O and X6's time-sliced render, so each step waits for the state it causes
+ * (`waitFor`): the held watch having been asked for, the board being drawn, the Save
+ * having landed. The one negative assertion (a closed pane never reads) needs no
+ * wait at all beyond draining microtasks — the pane would call `canvasRead`
+ * synchronously on resuming.
  */
 
 const drawCanvasHandler = WIRED_TOOLS.find((t) => t.op === 'draw_canvas')!.handler!
@@ -67,6 +75,8 @@ let watchLive: (() => void) | null = null
 let holdWatch = false
 let reads = 0
 let failWatch = false
+/** Panes a test left mounted, so `afterEach` unmounts them even when an assertion threw. */
+const mountedPanes = new Set<VueWrapper>()
 
 const ctxFor = (): Parameters<typeof drawCanvasHandler>[1] =>
   ({ folder, folders: [], denyFolders: [], bridge: undefined }) as Parameters<
@@ -84,16 +94,17 @@ async function fileLabels(): Promise<string[]> {
   return read.doc.nodes.map((n) => n.label ?? '').sort()
 }
 
-async function settle(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await new Promise((r) => setTimeout(r, 15))
-    await flushPromises()
-    await nextTick()
-  }
+/** Drain the microtasks and Vue's flush: enough to see a SYNCHRONOUS effect in the DOM. */
+async function flush(): Promise<void> {
+  await flushPromises()
+  await nextTick()
 }
 
-function mountPane() {
-  return mount(DiagramPane, {
+const shows = (root: Element, text: string): boolean => (root.textContent ?? '').includes(text)
+const RENAME = '[data-testid="diagram-rename-input"]'
+
+function mountPane(): VueWrapper {
+  const w = mount(DiagramPane, {
     props: {
       pane: { id: 'pane-a', type: 'canvas' as const, cwd: folder, ratio: 1, filePath: canvasPath },
       worktreeId: undefined,
@@ -102,23 +113,56 @@ function mountPane() {
     global: { plugins: [i18n] },
     attachTo: document.body
   })
+  const unmount = w.unmount.bind(w)
+  w.unmount = () => {
+    mountedPanes.delete(w)
+    unmount()
+  }
+  mountedPanes.add(w)
+  return w
+}
+
+/** The pane's open is blocked on the held `canvasWatchStart`: it has asked for the watch. */
+async function paneWaitsForWatch(): Promise<void> {
+  await waitFor('the pane is waiting for the watch to go live', () => watchLive !== null)
+}
+
+/** Wait until the pane has read the file and drawn `label`. */
+async function paneShows(w: VueWrapper, label: string): Promise<void> {
+  await waitFor(`the pane shows ${label}`, () => shows(w.element, label))
 }
 
 async function operatorDrawsBox(root: Element, name: string): Promise<void> {
-  root.querySelector<HTMLButtonElement>('[data-testid="canvas-tool-rectangle"]')!.click()
-  await settle()
+  const tool = root.querySelector<HTMLButtonElement>('[data-testid="canvas-tool-rectangle"]')!
+  tool.click()
+  await waitFor('the rectangle tool is armed', () => tool.getAttribute('aria-pressed') === 'true')
   const svg = root.querySelector('[data-testid="diagram-canvas-host"] svg')!
   svg.dispatchEvent(
     new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 600, clientY: 400 })
   )
   window.dispatchEvent(new MouseEvent('mousemove', { clientX: 720, clientY: 470 }))
   window.dispatchEvent(new MouseEvent('mouseup', { clientX: 720, clientY: 470 }))
-  await settle()
-  const input = root.querySelector<HTMLInputElement>('[data-testid="diagram-rename-input"]')!
+  await waitFor('the new box asks for its name', () => root.querySelector(RENAME) !== null)
+  const input = root.querySelector<HTMLInputElement>(RENAME)!
   input.value = name
   input.dispatchEvent(new Event('input', { bubbles: true }))
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-  await settle()
+  await waitFor(
+    `${name} is on the board and unsaved`,
+    () =>
+      shows(root, name) &&
+      root.querySelector('[data-testid="diagram-dirty-dot"]') !== null &&
+      root.querySelector(RENAME) === null
+  )
+}
+
+/** Press Save and wait until the write landed (the pane clears its dirty dot only then). */
+async function operatorSaves(root: Element): Promise<void> {
+  root.querySelector<HTMLButtonElement>('[data-testid="diagram-save"]')!.click()
+  await waitFor(
+    'the Save landed',
+    () => root.querySelector('[data-testid="diagram-dirty-dot"]') === null
+  )
 }
 
 beforeEach(async () => {
@@ -185,6 +229,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  for (const w of [...mountedPanes]) w.unmount()
   await fs.rm(folder, { recursive: true, force: true })
   delete (globalThis as Record<string, unknown>).__TEST_ROOT__
 })
@@ -193,12 +238,11 @@ describe('BUG-210 — a write while the pane is still opening', () => {
   it('AC-1 — a write before the watch is live reaches a pane that opens clean', async () => {
     holdWatch = true
     const pane = mountPane()
-    await settle() // the pane is opening; the watch is not live yet
+    await paneWaitsForWatch() // the pane is opening; the watch is not live yet
 
     await agentDraws([{ op: 'add_node', shape: 'box', x: 520, y: 0, label: 'AgentGap' }])
-    expect(watchLive).not.toBeNull()
     watchLive!() // chokidar is ready — it saw nothing: the write landed before it was live
-    await settle()
+    await paneShows(pane, 'AgentGap')
 
     expect(pane.element.textContent).toContain('AgentGap')
     expect(pane.find('[data-testid="diagram-stale-banner"]').exists()).toBe(false)
@@ -208,14 +252,13 @@ describe('BUG-210 — a write while the pane is still opening', () => {
   it('AC-2 — the operator’s next Save keeps that write', async () => {
     holdWatch = true
     const pane = mountPane()
-    await settle()
+    await paneWaitsForWatch()
     await agentDraws([{ op: 'add_node', shape: 'box', x: 520, y: 0, label: 'AgentGap' }])
     watchLive!()
-    await settle()
+    await paneShows(pane, 'AgentGap')
 
     await operatorDrawsBox(pane.element, 'FromOperator')
-    pane.element.querySelector<HTMLButtonElement>('[data-testid="diagram-save"]')!.click()
-    await settle()
+    await operatorSaves(pane.element)
 
     expect(await fileLabels()).toEqual(['AgentGap', 'FromOperator', 'Main', 'Renderer'])
     pane.unmount()
@@ -223,10 +266,10 @@ describe('BUG-210 — a write while the pane is still opening', () => {
 
   it('a write after the watch is live still arrives as an event (the BUG-202 path)', async () => {
     const pane = mountPane()
-    await settle()
+    await paneShows(pane, 'Renderer') // open and watching
     await agentDraws([{ op: 'add_node', shape: 'box', x: 520, y: 0, label: 'AgentLater' }])
     await notifyCanvasChanged(canvasPath)
-    await settle()
+    await paneShows(pane, 'AgentLater')
     expect(pane.element.textContent).toContain('AgentLater')
     pane.unmount()
   })
@@ -234,17 +277,19 @@ describe('BUG-210 — a write while the pane is still opening', () => {
   it('a pane closed while it waits for the watch does not go on to load', async () => {
     holdWatch = true
     const pane = mountPane()
-    await settle()
+    await paneWaitsForWatch()
     pane.unmount()
     watchLive!()
-    await settle()
+    // The pane would call `canvasRead` synchronously on resuming from the watch, so
+    // once the microtask queue is drained a read that was going to happen has happened.
+    await flush()
     expect(reads).toBe(0)
   })
 
   it('a watch that cannot start does not stop the pane from showing the board', async () => {
     failWatch = true
     const pane = mountPane()
-    await settle()
+    await paneShows(pane, 'Renderer')
     expect(pane.element.textContent).toContain('Renderer')
     pane.unmount()
   })

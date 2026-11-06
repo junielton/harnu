@@ -70,6 +70,21 @@ export function shapeDenial(
       folder: ctx.folder,
       detail: browserDetail[2]!
     })
+  // U2.3a: a shelved worktree could not be restored before a session or terminal opened in it.
+  // The code carries the engine's reason and message so the agent can tell the operator why.
+  const shelved = /^SHELVED_RESTORE_FAILED: ([a-z-]+): ([\s\S]*)$/.exec(result)
+  if (shelved) {
+    return {
+      error: 'SHELVED_RESTORE_FAILED',
+      message: `The shelved worktree${at} could not be restored (${shelved[1]}): ${shelved[2]}`,
+      nextActions: [
+        {
+          do: 'Nothing was lost: the work is archived. Ask the operator to open Cleanup, find the worktree in the Shelved card and press Restore, then retry. If the reason is repo-busy, simply retry in a moment.',
+          why: 'A session or terminal never starts in a missing or wrong folder, so the call stopped instead of opening one.'
+        }
+      ]
+    }
+  }
   // T574: the plan-level pane cap names the panes to reuse.
   const paneLimit = /^PANE_LIMIT: ([A-Za-z0-9_,-]*)$/.exec(result)
   if (paneLimit) {

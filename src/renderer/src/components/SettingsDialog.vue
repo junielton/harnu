@@ -8,7 +8,8 @@ import {
   useSettingsStore,
   MIN_TERMINAL_FONT_SIZE,
   MAX_TERMINAL_FONT_SIZE,
-  UI_ZOOM_STEPS
+  UI_ZOOM_STEPS,
+  type ExpandHides
 } from '../stores/settings'
 import { useSessionsStore } from '../stores/sessions'
 import { useVoiceStore } from '../stores/voice'
@@ -39,6 +40,7 @@ import PrStackSettingsPane from './PrStackSettingsPane.vue'
 import GithubBudgetPane from './GithubBudgetPane.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import type { SplitLayoutSetting } from '../lib/split-orientation'
 import SettingHint from './ui/SettingHint.vue'
 import {
   CUSTOM_EDITOR_ID,
@@ -442,6 +444,60 @@ const settingsIndex: Array<{
     labelKey: 'settings.terminal.fontSize',
     keywords: ['font', 'fonte', 'size', 'tamanho', 'terminal', 'text'],
     anchor: 'set-fontSize'
+  },
+  {
+    tabId: 'appearance',
+    labelKey: 'settings.appearance.splitLayout.label',
+    keywords: [
+      'split',
+      'layout',
+      'stacked',
+      'side by side',
+      'orientation',
+      'helper',
+      'divisão',
+      'divisao',
+      'empilhado',
+      'lado a lado',
+      'orientação'
+    ],
+    anchor: 'set-splitLayout'
+  },
+  {
+    tabId: 'appearance',
+    labelKey: 'settings.appearance.floatingPanels.label',
+    keywords: [
+      'floating',
+      'panels',
+      'islands',
+      'layout',
+      'gap',
+      'canvas',
+      'flutuante',
+      'painéis',
+      'paineis',
+      'ilhas'
+    ],
+    anchor: 'set-floatingPanels'
+  },
+  {
+    tabId: 'appearance',
+    labelKey: 'settings.appearance.expandHides.label',
+    keywords: [
+      'expand',
+      'window',
+      'hides',
+      'everything',
+      'session',
+      'full',
+      'expandir',
+      'janela',
+      'esconde',
+      'tudo',
+      'sessão',
+      'sessao'
+    ],
+    anchor: 'set-expandHides'
   },
   {
     tabId: 'general',
@@ -1307,6 +1363,98 @@ onBeforeUnmount(() => {
                       />
                     </div>
                   </button>
+                </div>
+              </section>
+
+              <!-- Layout — split orientation of the session area and the helper stack (T627) -->
+              <section style="margin-bottom: 16px">
+                <div
+                  class="text-text-3"
+                  style="
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    margin-bottom: 8px;
+                  "
+                >
+                  {{ $t('settings.appearance.layoutEyebrow') }}
+                </div>
+                <div
+                  id="set-splitLayout"
+                  class="flex items-start justify-between"
+                  :class="highlightedAnchor === 'set-splitLayout' ? 'anim-setting-flash' : ''"
+                  style="gap: 12px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.appearance.splitLayout.label') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.appearance.splitLayout.hint') }}</SettingHint>
+                  </div>
+                  <SegmentedControl
+                    :model-value="settings.splitLayout"
+                    :options="[
+                      { value: 'auto', label: $t('settings.appearance.splitLayout.auto') },
+                      {
+                        value: 'side-by-side',
+                        label: $t('settings.appearance.splitLayout.sideBySide')
+                      },
+                      { value: 'stacked', label: $t('settings.appearance.splitLayout.stacked') }
+                    ]"
+                    size="sm"
+                    :aria-label="$t('settings.appearance.splitLayout.label')"
+                    @update:model-value="settings.setSplitLayout($event as SplitLayoutSetting)"
+                  />
+                </div>
+                <!-- T626: opt-in floating islands layout (design.md §6 "Floating panels layout"). -->
+                <div
+                  id="set-floatingPanels"
+                  class="flex items-start justify-between"
+                  :class="highlightedAnchor === 'set-floatingPanels' ? 'anim-setting-flash' : ''"
+                  style="gap: 12px; margin-top: 14px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.appearance.floatingPanels.label') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.appearance.floatingPanels.hint') }}</SettingHint>
+                  </div>
+                  <ToggleSwitch
+                    :model-value="settings.floatingPanels"
+                    :aria-label="$t('settings.appearance.floatingPanels.label')"
+                    @update:model-value="settings.setFloatingPanels($event)"
+                  />
+                </div>
+                <!-- T628: what expanding a helper pane to the window hides (design.md §6 "Expanding a pane to the window"). -->
+                <div
+                  id="set-expandHides"
+                  class="flex items-start justify-between"
+                  :class="highlightedAnchor === 'set-expandHides' ? 'anim-setting-flash' : ''"
+                  style="gap: 12px; margin-top: 14px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.appearance.expandHides.label') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.appearance.expandHides.hint') }}</SettingHint>
+                  </div>
+                  <SegmentedControl
+                    :model-value="settings.expandHides"
+                    :options="[
+                      {
+                        value: 'everything',
+                        label: $t('settings.appearance.expandHides.everything')
+                      },
+                      {
+                        value: 'session-only',
+                        label: $t('settings.appearance.expandHides.sessionOnly')
+                      }
+                    ]"
+                    size="sm"
+                    :aria-label="$t('settings.appearance.expandHides.label')"
+                    @update:model-value="settings.setExpandHides($event as ExpandHides)"
+                  />
                 </div>
               </section>
             </template>

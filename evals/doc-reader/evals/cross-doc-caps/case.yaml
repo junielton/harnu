@@ -1,0 +1,25 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: cross-doc-caps
+tags: [multi-doc]
+execution:
+  prompt: Compare docs/specs/2026-10-21-T564-browser-pane.md and docs/specs/T215-message-session-verb.md. Each one sets a size cap on something the agent can send or serve. List each cap, what it applies to, and its value.
+  max_turns: 15
+  allowed_tools: [Read, Glob, Grep, Agent]
+graders:
+  - type: regex
+    name: html-cap
+    pattern: '8\s*MiB'
+    flags: i
+    match: contains
+  - type: regex
+    name: message-cap
+    pattern: '4096|4\s*KiB'
+    flags: i
+    match: contains
+  - type: tool_used
+    name: routed-to-doc-reader
+    tool: Agent
+    min: 1
+    arm: with-only

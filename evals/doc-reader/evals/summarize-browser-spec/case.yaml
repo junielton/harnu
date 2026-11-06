@@ -1,0 +1,18 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: summarize-browser-spec
+tags: [summarize]
+execution:
+  prompt: Give me a short summary of docs/specs/2026-10-21-T564-browser-pane.md, then list its main security and isolation decisions.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Agent]
+graders:
+  - type: llm
+    name: key-facts
+    criteria: The answer must state at least four of these, each matching the spec - (1) the pane is a WebContentsView helper pane; (2) there are two persistent cookie partitions, one for operator-opened panes and one for agent-opened panes, never shared; (3) project files are served over a harnu-page:// protocol behind a path jail inside a known folder; (4) the path jail denies .git and .harnu/memory; (5) page panes get no network egress by default; (6) writing to an operator's or external page needs a lease or confirm. Fail if any stated fact contradicts the spec.
+  - type: tool_used
+    name: routed-to-doc-reader
+    tool: Agent
+    min: 1
+    arm: with-only

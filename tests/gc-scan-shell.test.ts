@@ -126,6 +126,8 @@ function facts(): BranchFacts {
     remoteExists: false,
     ancestorOfDefault: true,
     patchIdContained: null,
+    tipInPrHead: null,
+    prLandedInDefault: null,
     lastCommitAt: null,
     pr: null,
     ghAvailable: true,

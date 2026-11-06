@@ -42,6 +42,35 @@ export function parkedBounds(content: { width: number; height: number }): Rect {
   }
 }
 
+/**
+ * macOS device re-seat. With a device metrics override Chromium sizes the view's surface to the emulated device and
+ * draws the page, scaled, in its top-left corner (U0 A5). When the fit scale is below 1 that surface is larger than
+ * the view, and on macOS the view does not clip it: a blank area spills past the device frame, right and bottom,
+ * until a real resize reallocates the surface. So after a device override is sent the host resizes the view by
+ * 1 px and back, in two separate frames. Only a placed, shown, unfrozen view of a real size qualifies, and one
+ * re-seat at a time.
+ */
+export function shouldReseat(input: {
+  platform: string
+  device: boolean
+  pending: boolean
+  parked: boolean
+  visible: boolean
+  frozen: boolean
+  bounds: Rect
+}): boolean {
+  if (input.platform !== 'darwin' || !input.device || input.pending) return false
+  if (input.parked || !input.visible || input.frozen) return false
+  return input.bounds.width >= 2 && input.bounds.height >= 2
+}
+
+/** How long the nudged rect stays, so the nudge and the restore reach the compositor as two resizes, not one. */
+export const RESEAT_RESTORE_MS = 50
+
+export function reseatNudge(bounds: Rect): Rect {
+  return { ...bounds, width: bounds.width - 1 }
+}
+
 export function rectsIntersect(a: Rect, b: Rect): boolean {
   if (a.width <= 0 || a.height <= 0 || b.width <= 0 || b.height <= 0) return false
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height

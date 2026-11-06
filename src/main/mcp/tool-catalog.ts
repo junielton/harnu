@@ -197,6 +197,15 @@ export const MCP_OPS = [
   // deliberately no clean verb (the Cleanup surface and the autopilot own removal).
   'list_cleanup',
   'release_worktree',
+  // T655: put sessions away (and restore them) the way the sidebar's Archive action does.
+  // The archive state lives in the main process (`session-archive-core.ts`), so the verb
+  // works with the window closed. Non-destructive and reversible: it never deletes a
+  // transcript or a worktree, so it carries `silentAllowInAgentFolder` like `archive_card`.
+  'archive_session',
+  // T661: hide folders from the sidebar (and show them again) the way the folder menu's Hide
+  // action does. The state is the same `hiddenPaths` in `projects.json`; it deletes and moves
+  // nothing and is reversible, so it carries `silentAllowInAgentFolder` like `archive_session`.
+  'hide_folder',
   // T614 (T611 U3): the shared GitHub API budget, read-only, so an agent can back off its `gh` polling.
   'github_budget',
   // T329: the Containers actions. Each calls the SAME main-process action
@@ -2028,7 +2037,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_cleanup',
     description:
-      "List the workspace-cleanup picture Harnu's Cleanup surface shows: every worktree bundle with its bucket — `ready` (Ready to clean: merged, clean, idle, past its grace window), `review` (Needs review: the operator decides) or `in-use` — each with a `reasonCode` and a fixed sentence `reason` when it needs review — plus the disk it occupies (`bytes`, `depsBytes`), orphan Docker volumes, the archive refs (`refs/archive/**`) each repo holds (`archives`: `repoAlias`, `count`, estimated `bytes`, `expired` past the operator's retention), `totals` (`ready`, `readyBytes`, `review`, `reviewBytes`, `inUse`, `orphanVolumes`, `orphanVolumeBytes`, `archives`, `archiveBytes`, `inTrashBytes`, `inTrashCount` — what Harnu moved to the OS trash and verified to still be there, exactly; `trashUnverifiedBytes`, `trashUnverifiedCount` — what it moved but can no longer check, never counted as space in the trash), `lastCycle` (`freedNowBytes` really deleted vs `trashedBytes` only moved to the trash, still on disk), the `autopilot` state (`enabled`, `reportOnly`, `graceDays`) and `nextCycleAt`. It reads the last scan Harnu made (the timer refreshes it); `scannedAt` says when, and the call never writes anything. Read the bucket; never re-derive it. No absolute path appears: `folderAlias` is a basename, `id` a readable label, a reason is a fixed sentence (never the raw git/fs error), and any other text has each path cut to its basename. A worktree in a folder the operator blocked still lists, with `agentControllable: false`. `released` is true for a bundle you already released. `folder` limits the listing (and its totals) to that repo and its worktrees — a worktree belongs to a repo by its own repo, wherever it sits — and leaves out the orphan volumes, which belong to no folder; a blocked `folder` is refused FOLDER_NOT_ALLOWED. Read-only: this verb removes nothing, and no verb cleans a worktree (the operator and the autopilot do; remove_containers removes Docker containers, but only after the operator confirms). `id` is the name release_worktree accepts back.",
+      "List the workspace-cleanup picture Harnu's Cleanup surface shows: every worktree bundle with its bucket — `ready` (Ready to clean: merged, clean, idle, past its grace window), `review` (Needs review: the operator decides) or `in-use` — each with a `reasonCode` and a fixed sentence `reason` when it needs review — plus the disk it occupies (`bytes`, `depsBytes`), orphan Docker volumes, the archive refs (`refs/archive/**`) each repo holds (`archives`: `repoAlias`, `count`, estimated `bytes`, `expired` past the operator's retention), `totals` (`ready`, `readyBytes`, `review`, `reviewBytes`, `inUse`, `orphanVolumes`, `orphanVolumeBytes`, `archives`, `archiveBytes`, `inTrashBytes`, `inTrashCount` — what Harnu moved to the OS trash and verified to still be there, exactly; `trashUnverifiedBytes`, `trashUnverifiedCount` — what it moved but can no longer check, never counted as space in the trash), `lastCycle` (`freedNowBytes` really deleted vs `trashedBytes` only moved to the trash, still on disk), the `autopilot` state (`enabled`, `reportOnly`, `graceDays`), `shelved` (worktrees Harnu shelved — a worktree whose branch is not proven merged and that sat idle: its folder was deleted to free the disk on purpose, its branch, its archive and its sessions are kept; each is `{ id, folderAlias, branch, shelvedAt, idleDays, reason }`, counted in `totals.shelved`, and it is NOT a removed worktree and in no bucket), the `shelving` state (`enabled`, `reportOnly`, `thresholdDays`; its own switch, on by default with a report-only first cycle until the operator acknowledges it, and independent of `autopilot`) and `nextCycleAt`. It reads the last scan Harnu made (the timer refreshes it); `scannedAt` says when, and the call never writes anything. Read the bucket; never re-derive it. No absolute path appears: `folderAlias` is a basename, `id` a readable label, a reason is a fixed sentence (never the raw git/fs error), and any other text has each path cut to its basename. A worktree in a folder the operator blocked still lists, with `agentControllable: false`. `released` is true for a bundle you already released. `folder` limits the listing (and its totals) to that repo and its worktrees — a worktree belongs to a repo by its own repo, wherever it sits — and leaves out the orphan volumes, which belong to no folder; a blocked `folder` is refused FOLDER_NOT_ALLOWED. Read-only: this verb removes nothing, and no verb cleans a worktree (the operator and the autopilot do; remove_containers removes Docker containers, but only after the operator confirms). `id` is the name release_worktree accepts back.",
     inputSchema: z.object({
       folder: z
         .string()
@@ -2073,6 +2082,48 @@ export const MCP_TOOLS: McpToolDef[] = [
     silentAllowInAgentFolder: true
     // Deliberately NOT grantable/alwaysAllowable: it deletes nothing, so the free-by-default
     // posture already covers it, and no grant should ever be needed for it.
+  },
+  {
+    name: 'archive_session',
+    description:
+      "Archive sessions (or restore them with `unarchive: true`) exactly like the sidebar's Archive / Unarchive menu action: an archived session leaves the normal list and its live terminal is closed, but its transcript and worktree stay untouched, so it is reversible and deletes nothing. Takes 1..100 session ids (`sessionIds`, the ids `get_fleet` lists). Runs free, works with the Harnu window closed (the archive state lives in the main process), and the sidebar updates live. Idempotent. ACK: `{ ok, op, unarchive, results: [{ sessionId, outcome, reason? }], counts }`, one row per id, `outcome` one of `archived`, `alreadyArchived`, `restored`, `alreadyActive`, `notFound` (no such session) or `refused` with a `reason`: `FOLDER_NOT_ALLOWED` (the session's folder is blocked by the operator), `SESSION_WORKING` (it is working right now; archiving only) or `PENDING_APPROVAL` (an approval is parked for it; archiving only). `ok` is true only when no row is `refused` or `notFound`; read each row rather than retrying the batch. Refuses ARCHIVE_NOT_READY right after Harnu starts: retry shortly.",
+    inputSchema: z.object({
+      sessionIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(100)
+        .describe('The session ids to archive (1..100), as get_fleet lists them.'),
+      unarchive: z
+        .boolean()
+        .optional()
+        .describe('true restores the sessions instead of archiving them.')
+    }),
+    mutates: true,
+    op: 'archive_session',
+    silentAllowInAgentFolder: true
+    // Deliberately NOT grantable/alwaysAllowable: it deletes nothing and is reversible, so the
+    // free-by-default posture already covers it.
+  },
+  {
+    name: 'hide_folder',
+    description:
+      "Hide folders and worktrees from the sidebar (or show them again with `unhide: true`) exactly like the folder menu's Hide / Unhide action: it flips the same `hiddenPaths` flag and nothing else, so it deletes and moves nothing on disk (no directory, worktree, transcript or branch), keeps the folder pinned and keeps its sessions, and is fully reversible. Takes 1..100 absolute folder paths. Runs free, the sidebar updates live, and it is idempotent. Differs from `remove_folder`, which cleans up a folder whose directory is already gone. ACK: `{ ok, op, unhide, results: [{ path, outcome, reason? }], counts }`, one row per path (`path` is the normalized path, symlinks resolved), `outcome` one of `hidden`, `alreadyHidden`, `shown`, `alreadyVisible`, `notFound` (Harnu does not know the path: not pinned, not hidden, not in the session history) or `refused` with a `reason`: `FOLDER_NOT_ALLOWED` (the operator blocked that folder), `SESSION_WORKING` (a session in that exact folder is working right now; hiding only) or `PENDING_APPROVAL` (an approval is parked for a session there; hiding only). `ok` is true only when no row is `refused` or `notFound`; read each row rather than retrying the batch. Refuses HIDE_WRITE_FAILED (nothing changed) if the file cannot be read or written.",
+    inputSchema: z.object({
+      folders: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(100)
+        .describe('The absolute folder paths to hide (1..100).'),
+      unhide: z
+        .boolean()
+        .optional()
+        .describe('true shows the folders again instead of hiding them.')
+    }),
+    mutates: true,
+    op: 'hide_folder',
+    silentAllowInAgentFolder: true
+    // Deliberately NOT grantable/alwaysAllowable: it deletes nothing and is reversible, so the
+    // free-by-default posture already covers it.
   },
   {
     name: 'stop_containers',

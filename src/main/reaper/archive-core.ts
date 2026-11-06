@@ -66,6 +66,13 @@ export function archiveNamespace(branch: string, at: number): string {
   return `refs/archive/${branch}/${formatArchiveStamp(at)}`
 }
 
+/**
+ * The directory under an archive namespace that holds a shelved worktree's extra refs
+ * (`shelve/record`, `shelve/ignored`, `shelve/stash/<n>`; see `gc/shelve-core.ts`). Named here so the
+ * Archives grouping and the shelve engine agree on one spelling.
+ */
+export const SHELVE_REF_DIR = 'shelve'
+
 /** Where every detached worktree's archive lives: no branch name exists to key it by. */
 export const DETACHED_ARCHIVE_PREFIX = 'refs/archive/detached/'
 

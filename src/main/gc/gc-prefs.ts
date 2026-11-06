@@ -48,6 +48,47 @@ export interface GcPrefs {
    * carry the folder. A mark without an entry here is never dropped for being cleaned.
    */
   releasedFrom: Record<string, ReleasedFrom>
+  /**
+   * Shelving (autonomous cleanup U2.2): an idle worktree whose branch is not proven merged is
+   * preserved, verified and removed from disk, and its branch is kept. It has its OWN switch and
+   * acknowledgement, independent of `autopilot` / `firstReportAcknowledged`, which are already on
+   * for operators who run the autopilot today.
+   */
+  shelve: ShelvePrefs
+}
+
+export interface ShelvePrefs {
+  /**
+   * ON by default (design C1; U2.3a, once every restore trigger exists). A prefs file that never set
+   * it reads ON; one that explicitly set it keeps its value. Even when on, the first cycle only
+   * reports until `firstReportAcknowledged`.
+   */
+  enabled: boolean
+  /** Set by `gc:shelve:ack`; until then a shelving cycle is report-only. Turning `enabled` on resets it. */
+  firstReportAcknowledged: boolean
+  /** Days a worktree must have shown no sign of life before it is shelved. */
+  thresholdDays: number
+  /** Worktrees one cycle may shelve; the rest wait for the next cycle. */
+  maxPerCycle: number
+  /** Failed shelves in a row after which shelving switches itself off. */
+  failureLimit: number
+}
+
+export const DEFAULT_SHELVE_THRESHOLD_DAYS = 3
+export const MAX_SHELVE_THRESHOLD_DAYS = 365
+export const DEFAULT_SHELVE_PER_CYCLE = 3
+export const MAX_SHELVE_PER_CYCLE = 20
+export const DEFAULT_SHELVE_FAILURE_LIMIT = 3
+export const MAX_SHELVE_FAILURE_LIMIT = 10
+
+export function defaultShelvePrefs(): ShelvePrefs {
+  return {
+    enabled: true,
+    firstReportAcknowledged: false,
+    thresholdDays: DEFAULT_SHELVE_THRESHOLD_DAYS,
+    maxPerCycle: DEFAULT_SHELVE_PER_CYCLE,
+    failureLimit: DEFAULT_SHELVE_FAILURE_LIMIT
+  }
 }
 
 export interface ReleasedFrom {
@@ -90,7 +131,8 @@ export function defaultGcPrefs(): GcPrefs {
     neverClean: [],
     keep: {},
     released: {},
-    releasedFrom: {}
+    releasedFrom: {},
+    shelve: defaultShelvePrefs()
   }
 }
 
@@ -194,7 +236,19 @@ export function normalizeGcPrefs(
     neverClean,
     keep,
     released,
-    releasedFrom
+    releasedFrom,
+    shelve: normalizeShelve(r.shelve, d.shelve)
+  }
+}
+
+function normalizeShelve(raw: unknown, d: ShelvePrefs): ShelvePrefs {
+  const r = isRecord(raw) ? raw : {}
+  return {
+    enabled: bool(r.enabled) ?? d.enabled,
+    firstReportAcknowledged: bool(r.firstReportAcknowledged) ?? d.firstReportAcknowledged,
+    thresholdDays: clamped(r.thresholdDays, 1, MAX_SHELVE_THRESHOLD_DAYS) ?? d.thresholdDays,
+    maxPerCycle: clamped(r.maxPerCycle, 1, MAX_SHELVE_PER_CYCLE) ?? d.maxPerCycle,
+    failureLimit: clamped(r.failureLimit, 1, MAX_SHELVE_FAILURE_LIMIT) ?? d.failureLimit
   }
 }
 
@@ -265,7 +319,16 @@ export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
     // cannot acknowledge (see above), but it can take the acknowledgement away, so an operator
     // who dismissed the banner, or ran the autopilot before, is never cleaned for on a stale ack.
     firstReportAcknowledged:
-      !current.autopilot && next.autopilot ? false : current.firstReportAcknowledged
+      !current.autopilot && next.autopilot ? false : current.firstReportAcknowledged,
+    // Shelving makes the same promise on its own: turning it ON starts a report-only cycle, and no
+    // settings write can acknowledge it (its own channel does).
+    shelve: {
+      ...next.shelve,
+      firstReportAcknowledged:
+        !current.shelve.enabled && next.shelve.enabled
+          ? false
+          : current.shelve.firstReportAcknowledged
+    }
   }
 }
 
@@ -299,4 +362,13 @@ export function withoutReleased(prefs: GcPrefs, ids: readonly string[]): GcPrefs
 
 export function withAcknowledged(prefs: GcPrefs): GcPrefs {
   return { ...prefs, firstReportAcknowledged: true }
+}
+
+export function withShelveAcknowledged(prefs: GcPrefs): GcPrefs {
+  return { ...prefs, shelve: { ...prefs.shelve, firstReportAcknowledged: true } }
+}
+
+/** The failure-streak kill switch: shelving switches itself off; everything else stays. */
+export function withShelveDisabled(prefs: GcPrefs): GcPrefs {
+  return { ...prefs, shelve: { ...prefs.shelve, enabled: false } }
 }

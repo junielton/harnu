@@ -7,6 +7,7 @@ import CleanupArchivesCard from '../src/renderer/src/components/CleanupArchivesC
 import CleanupTrashCard from '../src/renderer/src/components/CleanupTrashCard.vue'
 import CleanupExhaustDialog from '../src/renderer/src/components/CleanupExhaustDialog.vue'
 import { buildArchivesCard, groupArchiveRefs, withFolders } from '../src/main/gc/archives-core'
+import type { ShelvedEntry } from '../src/main/gc/shelve-store'
 
 const NOW = Date.parse('2026-10-12T12:00:00Z')
 const sha = (c: string): string => c.repeat(40)
@@ -129,6 +130,60 @@ describe('CleanupArchivesCard', () => {
     await w.get('[data-testid="archives-gc"]').trigger('click')
     expect(w.emitted('gc')).toHaveLength(1)
     expect(w.emitted('delete')).toBeUndefined()
+  })
+
+  describe('archives of shelved worktrees (U2.3a AC-4)', () => {
+    const LOGIN = 'refs/archive/feat/login/20260801T000000Z'
+    const shelvedLogin: ShelvedEntry = {
+      id: `${REPO}::worktree::/ws/org/proj/worktrees/wt-login`,
+      repoPath: REPO,
+      worktreePath: '/ws/org/proj/worktrees/wt-login',
+      branch: 'feat/login',
+      headSha: sha('a'),
+      namespace: LOGIN,
+      shelvedAt: NOW,
+      idleDays: 9,
+      reason: 'r',
+      freedBytes: null
+    }
+    const mountShelved = () =>
+      mount(CleanupArchivesCard, {
+        props: { archives: card(), now: NOW, shelved: new Map([[LOGIN, shelvedLogin]]) },
+        global: { plugins: [i18n] }
+      })
+    const loginRow = async (w: ReturnType<typeof mountShelved>) => {
+      await w.get('[data-testid="archives-repo-toggle"]').trigger('click')
+      return w.findAll('[data-testid="archive-row"]').find((r) => r.text().includes('wt-login'))!
+    }
+
+    it('disables Delete on a shelved archive and says why', async () => {
+      const row = await loginRow(mountShelved())
+      const del = row.get('[data-testid="archive-delete"]')
+      expect(del.attributes('disabled')).toBeDefined()
+      expect(del.attributes('title')).toContain('restore it first')
+    })
+
+    it('offers Restore first right there (the guided way out) and asks the screen to restore it', async () => {
+      const w = mountShelved()
+      const row = await loginRow(w)
+      await row.get('[data-testid="archive-restore-first"]').trigger('click')
+      expect(w.emitted('restore')).toEqual([[shelvedLogin.id]])
+      expect(w.emitted('delete')).toBeUndefined()
+    })
+
+    it('leaves the other rows alone and keeps shelved ones out of "Delete older than"', async () => {
+      const w = mountShelved()
+      await loginRow(w)
+      const others = w
+        .findAll('[data-testid="archive-row"]')
+        .filter((r) => !r.text().includes('wt-login'))
+      for (const r of others) {
+        expect(r.find('[data-testid="archive-restore-first"]').exists()).toBe(false)
+        expect(r.get('[data-testid="archive-delete"]').attributes('disabled')).toBeUndefined()
+      }
+      // The only expired archive is the shelved one: nothing is offered for bulk deletion.
+      expect(w.find('[data-testid="archives-delete-older"]').exists()).toBe(false)
+    })
   })
 
   it('says deleting frees disk only after git gc, and states the retention', () => {

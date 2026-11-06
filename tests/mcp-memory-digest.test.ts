@@ -133,6 +133,64 @@ describe('parseDigestMeta', () => {
     expect(meta.title).toBe('Notes')
   })
 
+  it('parses the digest evidence token', () => {
+    const digest = (kind: string): string =>
+      `# Session abcd1234\n\n_Session \`abcd1234\` · branch \`main\` · ended · auto-digest · evidence: ${kind}_\n\n` +
+      '## Evidence\n\n_Nothing to show._\n\n' +
+      '> provenance: author=agent · at=2026-11-03 · branch=main · session=abcd1234ef\n'
+    for (const kind of ['commits', 'no-commits', 'no-git', 'orphan'] as const) {
+      expect(parseDigestMeta('2026-11-03-abcd1234.md', digest(kind)).evidence).toBe(kind)
+    }
+    // A header without a branch part reads the same.
+    expect(
+      parseDigestMeta(
+        '2026-11-03-abcd1234.md',
+        '# T\n\n_Session `abcd1234` · ended · auto-digest · evidence: no-git_\n'
+      ).evidence
+    ).toBe('no-git')
+
+    // Undefined without the token: an older digest, an unknown kind, or a quoted look-alike.
+    expect(
+      parseDigestMeta(
+        '2026-11-03-abcd1234.md',
+        '# T\n\n_Session `abcd1234` · ended · auto-digest_\n'
+      ).evidence
+    ).toBeUndefined()
+    expect(parseDigestMeta('2026-11-03-abcd1234.md', digest('mystery')).evidence).toBeUndefined()
+    expect(
+      parseDigestMeta(
+        '2026-11-03-abcd1234.md',
+        '# T\n\n> _Session `x` · evidence: no-git_\n\nplain prose · evidence: orphan_\n'
+      ).evidence
+    ).toBeUndefined()
+    expect('evidence' in parseDigestMeta('2026-11-03-abcd1234.md', '# T\n')).toBe(false)
+  })
+
+  it('reads the latest evidence token of a page digested more than once', () => {
+    const header = (kind: string): string =>
+      `_Session \`abcd1234\` · ended · auto-digest · evidence: ${kind}_`
+    const page = (...kinds: string[]): string =>
+      '# Session abcd1234\n\n' +
+      kinds
+        .map(
+          (k) =>
+            `${header(k)}\n\n## Evidence\n\n_x_\n\n> provenance: author=agent · at=2026-11-03 · session=abcd1234ef\n`
+        )
+        .join('\n')
+    // First digested without commits, later with commits: the later state shows.
+    expect(parseDigestMeta('2026-11-03-abcd1234.md', page('no-commits', 'commits')).evidence).toBe(
+      'commits'
+    )
+    expect(parseDigestMeta('2026-11-03-abcd1234.md', page('commits', 'no-commits')).evidence).toBe(
+      'no-commits'
+    )
+    // A later digest of an older, token-less format does not erase an earlier token.
+    expect(
+      parseDigestMeta('2026-11-03-abcd1234.md', page('no-git') + '\n_Session `x` · ended_\n')
+        .evidence
+    ).toBe('no-git')
+  })
+
   it('omits provenance fields when the stamp is absent', () => {
     const meta = parseDigestMeta('2026-07-06-aaaa1111.md', '# T\n\nbody\n')
     expect(meta.author).toBeUndefined()

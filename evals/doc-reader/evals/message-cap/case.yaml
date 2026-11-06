@@ -1,0 +1,24 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: message-cap
+tags: [single-doc]
+execution:
+  prompt: In docs/specs/T215-message-session-verb.md, what is the maximum length of a message_session body, and what error does an over-long one get?
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Agent]
+graders:
+  - type: regex
+    name: cap
+    pattern: '4096|4\s*KiB'
+    flags: i
+    match: contains
+  - type: regex
+    name: error-code
+    pattern: 'MESSAGE_TOO_LARGE'
+    match: contains
+  - type: tool_used
+    name: routed-to-doc-reader
+    tool: Agent
+    min: 1
+    arm: with-only

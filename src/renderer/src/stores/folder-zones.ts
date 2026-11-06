@@ -81,7 +81,7 @@ export function groupKey(source: GroupSource, id: string): string {
  * group, which is what caps the sidebar at ONE level of indentation (T70's
  * anti-VS-Code rule, preserved).
  */
-export interface FolderGroup<F extends ZoneFolder = ZoneFolder> {
+export interface FolderGroup<F extends ZoneFolder = ZoneFolder, S = ZoneSession> {
   kind: 'folder-group'
   source: GroupSource
   /** The group key: the `repoId` for `repo`, the parent directory for `path`. */
@@ -100,12 +100,36 @@ export interface FolderGroup<F extends ZoneFolder = ZoneFolder> {
   parentHint?: string
   expanded: boolean
   folders: F[]
+  /**
+   * U2.3b: the worktrees Harnu shelved for this repo — their folders are gone on purpose, so they are
+   * not in `folders` (the header count stays the live members). Only a `repo` group carries them, and
+   * only when there is at least one; they count toward the 2+ members that make the group.
+   */
+  shelved?: ShelvedMember<S>[]
+}
+
+/**
+ * A shelved worktree as the sidebar shows it (autonomous cleanup U2.3b): the branch survives, the folder
+ * does not, so the identity is the branch and the sessions come from the folder's old transcripts.
+ */
+export interface ShelvedMember<S = ZoneSession> {
+  /** The cleanup bundle id — what the restore IPC takes. */
+  id: string
+  /** The branch, or the folder name for a detached worktree. */
+  label: string
+  /** Null for a detached worktree. */
+  branch: string | null
+  worktreePath: string
+  repoPath: string
+  /** Whole days since it was shelved. */
+  days: number
+  sessions: S[]
 }
 
 /** Type guard for a `FolderGroup` node in a mixed folder/group list. */
-export function isFolderGroup<F extends ZoneFolder>(
-  node: F | FolderGroup<F>
-): node is FolderGroup<F> {
+export function isFolderGroup<F extends ZoneFolder, S = ZoneSession>(
+  node: F | FolderGroup<F, S>
+): node is FolderGroup<F, S> {
   return 'kind' in node && node.kind === 'folder-group'
 }
 
@@ -197,7 +221,7 @@ export function classifyFolder(folder: ZoneFolder, ctx: ClassifyCtx): Zone {
  * Mutates the group objects in place; they're freshly built by the grouping
  * functions and never shared with the caller's input.
  */
-function applyParentHints<F extends ZoneFolder>(groups: Array<FolderGroup<F>>): void {
+function applyParentHints<F extends ZoneFolder, S>(groups: Array<FolderGroup<F, S>>): void {
   const labelCounts = new Map<string, number>()
   for (const g of groups) labelCounts.set(g.label, (labelCounts.get(g.label) ?? 0) + 1)
   for (const g of groups) {
@@ -240,18 +264,24 @@ function applyParentHints<F extends ZoneFolder>(groups: Array<FolderGroup<F>>): 
  * ONLY by explicit user choice, so hiding the whole group is a distinct gesture
  * from expanding/collapsing an inner folder's sessions.
  */
-export function groupByRepo<F extends ZoneFolder>(
+export function groupByRepo<F extends ZoneFolder, S = ZoneSession>(
   folders: F[],
   collapsedKeys?: ReadonlySet<string>,
-  aliases?: Readonly<Record<string, string>>
-): Array<F | FolderGroup<F>> {
-  // Count members per defined, non-empty repoId.
+  aliases?: Readonly<Record<string, string>>,
+  shelvedByRepo?: ReadonlyMap<string, readonly ShelvedMember<S>[]>
+): Array<F | FolderGroup<F, S>> {
+  // Count members per defined, non-empty repoId. A shelved worktree counts too (U2.3b): its repo keeps
+  // a header even when only one live folder is left, so the Shelved section always has a home.
   const counts = new Map<string, number>()
   for (const f of folders) {
     if (f.repoId) counts.set(f.repoId, (counts.get(f.repoId) ?? 0) + 1)
   }
+  if (shelvedByRepo) {
+    for (const id of counts.keys())
+      counts.set(id, (counts.get(id) ?? 0) + (shelvedByRepo.get(id)?.length ?? 0))
+  }
 
-  const out: Array<F | FolderGroup<F>> = []
+  const out: Array<F | FolderGroup<F, S>> = []
   const emitted = new Set<string>()
 
   for (const f of folders) {
@@ -274,6 +304,7 @@ export function groupByRepo<F extends ZoneFolder>(
       return a.path < b.path ? -1 : a.path > b.path ? 1 : 0
     })
 
+    const shelvedForRepo = shelvedByRepo?.get(repoId) ?? []
     const key = groupKey('repo', repoId)
     const derivedLabel = main ? basename(main.path) : basename(dirname(repoId)) || repoId
     const label = aliases?.[key]?.trim() || main?.alias?.trim() || derivedLabel
@@ -286,11 +317,12 @@ export function groupByRepo<F extends ZoneFolder>(
       label,
       derivedLabel,
       expanded: !collapsedKeys?.has(key),
-      folders: ordered
+      folders: ordered,
+      ...(shelvedForRepo.length > 0 ? { shelved: [...shelvedForRepo] } : {})
     })
   }
 
-  applyParentHints(out.filter((n): n is FolderGroup<F> => isFolderGroup(n)))
+  applyParentHints(out.filter((n): n is FolderGroup<F, S> => isFolderGroup(n)))
 
   return out
 }
@@ -325,11 +357,11 @@ export function groupByRepo<F extends ZoneFolder>(
  * `$HOME`) only ever groups its DIRECT children, so it can no longer swallow
  * every descendant in the list the way the old shallowest-ancestor rule did.
  */
-export function groupByParentDir<F extends ZoneFolder>(
-  nodes: Array<F | FolderGroup<F>>,
+export function groupByParentDir<F extends ZoneFolder, S = ZoneSession>(
+  nodes: Array<F | FolderGroup<F, S>>,
   collapsedKeys?: ReadonlySet<string>,
   aliases?: Readonly<Record<string, string>>
-): Array<F | FolderGroup<F>> {
+): Array<F | FolderGroup<F, S>> {
   const bare = nodes.filter((n): n is F => !isFolderGroup(n))
 
   // Bucket by direct parent dir, skipping folders with no usable parent.
@@ -366,7 +398,7 @@ export function groupByParentDir<F extends ZoneFolder>(
   const groupOfMember = new Map<F, string>()
   for (const [dir, members] of groups) for (const m of members) groupOfMember.set(m, dir)
 
-  const out: Array<F | FolderGroup<F>> = []
+  const out: Array<F | FolderGroup<F, S>> = []
   const emitted = new Set<string>()
   for (const node of nodes) {
     if (isFolderGroup(node)) {
@@ -395,7 +427,7 @@ export function groupByParentDir<F extends ZoneFolder>(
     })
   }
 
-  applyParentHints(out.filter((n): n is FolderGroup<F> => isFolderGroup(n)))
+  applyParentHints(out.filter((n): n is FolderGroup<F, S> => isFolderGroup(n)))
 
   return out
 }

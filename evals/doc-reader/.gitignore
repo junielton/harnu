@@ -1,0 +1,12 @@
+# Built from hooks/gate-entry.ts by run.sh on every run.
+hooks/gate.mjs
+# Raw eval output; commit only the summary.md of a run worth keeping.
+results/*/eval.json
+results/*/eval.stderr
+results/*/usage.json
+evals/results/
+results/*/traces/
+results/*/plugin-eval/
+# Written by run.sh from hooks.json.in with this machine's absolute node path.
+hooks/hooks.json
+results/*/plugin-agent-only/

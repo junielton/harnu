@@ -65,6 +65,7 @@ import CleanupRecoveryNotices from './CleanupRecoveryNotices.vue'
 import CleanupDockerCard from './CleanupDockerCard.vue'
 import CleanupArchivesCard from './CleanupArchivesCard.vue'
 import CleanupTrashCard from './CleanupTrashCard.vue'
+import CleanupShelvedCard from './CleanupShelvedCard.vue'
 import CleanupExhaustDialog from './CleanupExhaustDialog.vue'
 import CleanupSplitBar from './CleanupSplitBar.vue'
 import CleanupLegend from './CleanupLegend.vue'
@@ -418,14 +419,17 @@ async function confirmDocker(): Promise<void> {
     errorToast(t('cleanup.gc.error.clean'), e)
   }
 }
-async function confirmTranscripts(opts: { notFoundAck: boolean }): Promise<void> {
+async function confirmTranscripts(opts: {
+  notFoundAck: boolean
+  undigestedAck: boolean
+}): Promise<void> {
   const items = transcriptItems.value
   if (!items) return
   transcriptItems.value = null
   const ids = items.map((i) => i.id)
   busyTranscriptIds.value = [...busyTranscriptIds.value, ...ids]
   try {
-    await gc.submit(transcriptCleanRequest(items, opts.notFoundAck))
+    await gc.submit(transcriptCleanRequest(items, opts.notFoundAck, opts.undigestedAck))
   } catch (e) {
     errorToast(t('cleanup.gc.error.clean'), e)
   } finally {
@@ -990,6 +994,10 @@ type ExhaustDialog =
   | { mode: 'trash'; entries: TrashListEntry[] }
 const exhaustDialog = ref<ExhaustDialog | null>(null)
 const archives = computed(() => gc.snapshot?.archives ?? null)
+/** Shelved worktrees by archive namespace: their archives are guarded (U2.3a AC-4). */
+const shelvedByNamespace = computed(
+  () => new Map((gc.snapshot?.shelved ?? []).map((e) => [e.namespace, e]))
+)
 const trash = computed(() => gc.snapshot?.trash ?? null)
 
 async function confirmExhaust(): Promise<void> {
@@ -1225,8 +1233,16 @@ async function confirmExhaust(): Promise<void> {
             v-if="archives && archives.count > 0"
             :archives="archives"
             :never-clean="prefs?.neverClean ?? []"
+            :shelved="shelvedByNamespace"
+            @restore="(id) => gc.restoreShelved(id)"
             @delete="(group, entries) => (exhaustDialog = { mode: 'delete', group, entries })"
             @gc="(group) => (exhaustDialog = { mode: 'gc', group })"
+          />
+          <CleanupShelvedCard
+            :shelved="gc.snapshot?.shelved ?? []"
+            :busy-ids="gc.shelvedBusy"
+            :failures="gc.shelvedFailures"
+            @restore="(id) => gc.restoreShelved(id)"
           />
           <CleanupTrashCard
             v-if="trash && (trash.inTrashCount > 0 || trash.unverifiedCount > 0)"

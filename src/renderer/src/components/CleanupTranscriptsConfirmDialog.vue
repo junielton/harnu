@@ -5,6 +5,7 @@ import { Trash2, TriangleAlert, X } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 import { useFocusTrap } from '../composables/useFocusTrap'
+import { orphanDigestState, undigestedItems } from '../lib/gc-orphans'
 import type { OrphanTranscriptItem } from '../../../main/gc/gc-wire'
 
 /**
@@ -13,7 +14,10 @@ import type { OrphanTranscriptItem } from '../../../main/gc/gc-wire'
  * request will name; focus starts on Cancel, never on the confirm, and Esc closes only this dialog.
  */
 const props = defineProps<{ items: OrphanTranscriptItem[] }>()
-const emit = defineEmits<{ confirm: [opts: { notFoundAck: boolean }]; cancel: [] }>()
+const emit = defineEmits<{
+  confirm: [opts: { notFoundAck: boolean; undigestedAck: boolean }]
+  cancel: []
+}>()
 const { t } = useI18n()
 
 const count = computed(() => props.items.length)
@@ -21,7 +25,18 @@ const totalBytes = computed(() => props.items.reduce((a, i) => a + i.bytes, 0))
 /** Some folder is only missing, not proven gone: the full path shows and the stronger confirm applies. */
 const hasNotFound = computed(() => props.items.some((i) => i.proof === 'not-found'))
 const ack = ref(false)
-const canConfirm = computed(() => !hasNotFound.value || ack.value)
+/** Some sessions have no digest in the owning repo's memory: trashing them loses what they did. */
+const undigested = computed(() => undigestedItems(props.items))
+const hasUndigested = computed(() => undigested.value.length > 0)
+const undigestedSessions = computed(() =>
+  undigested.value.reduce((a, i) => a + orphanDigestState(i).missing, 0)
+)
+/** Harnu can retry a digest only where a repo was found to hold it. */
+const canRetryDigest = computed(() => undigested.value.some((i) => i.digest?.home))
+const undigestedAck = ref(false)
+const canConfirm = computed(
+  () => (!hasNotFound.value || ack.value) && (!hasUndigested.value || undigestedAck.value)
+)
 const withMemory = computed(() => props.items.filter((i) => i.hasMemory).length)
 
 const nameOf = (folder: string): string =>
@@ -116,6 +131,21 @@ function onBackdropMousedown(e: MouseEvent): void {
                 >{{ i.repoLabel }} ·
                 {{ t('cleanup.gc.orphans.sessions', { n: i.sessionCount }, i.sessionCount) }}</span
               >
+              <span
+                v-if="orphanDigestState(i).kind === 'partial'"
+                class="break-all text-caption text-text-4"
+                :title="i.digest?.home ?? undefined"
+                data-testid="orphan-dialog-digest"
+                >{{
+                  i.digest?.home
+                    ? t(
+                        'cleanup.gc.orphans.confirm.undigested.row',
+                        { n: orphanDigestState(i).missing, home: i.digest.home },
+                        orphanDigestState(i).missing
+                      )
+                    : t('cleanup.gc.orphans.confirm.undigested.noHome')
+                }}</span
+              >
             </span>
             <span class="text-right text-ui leading-4 tabular-nums text-text">{{
               formatBytes(i.bytes)
@@ -140,6 +170,49 @@ function onBackdropMousedown(e: MouseEvent): void {
             </p>
           </div>
         </div>
+
+        <div
+          v-if="hasUndigested"
+          class="mx-5 mt-3 flex items-start gap-2.5 rounded-sm border border-warning-line bg-warning-soft px-3 py-2.5"
+          data-testid="orphan-dialog-undigested"
+        >
+          <TriangleAlert
+            :size="14"
+            :stroke-width="1.6"
+            class="mt-0.5 shrink-0 text-warning"
+            aria-hidden="true"
+          />
+          <div class="min-w-0 text-ui text-text-2">
+            <p class="m-0">
+              {{
+                t(
+                  'cleanup.gc.orphans.confirm.undigested.summary',
+                  { n: undigestedSessions },
+                  undigestedSessions
+                )
+              }}
+            </p>
+            <p v-if="canRetryDigest" class="m-0 mt-1">
+              {{ t('cleanup.gc.orphans.confirm.undigested.retry') }}
+            </p>
+          </div>
+        </div>
+
+        <label
+          v-if="hasUndigested"
+          class="mx-5 mt-3 flex cursor-pointer items-start gap-2.5"
+          data-testid="orphan-dialog-undigested-label"
+        >
+          <input
+            v-model="undigestedAck"
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+            data-testid="orphan-dialog-undigested-ack"
+          />
+          <span class="text-ui text-text">{{
+            t('cleanup.gc.orphans.confirm.undigested.ack')
+          }}</span>
+        </label>
 
         <label
           v-if="hasNotFound"
@@ -179,7 +252,13 @@ function onBackdropMousedown(e: MouseEvent): void {
             variant="danger"
             :disabled="!canConfirm"
             data-testid="orphan-dialog-confirm"
-            @click="canConfirm && emit('confirm', { notFoundAck: hasNotFound && ack })"
+            @click="
+              canConfirm &&
+              emit('confirm', {
+                notFoundAck: hasNotFound && ack,
+                undigestedAck: hasUndigested && undigestedAck
+              })
+            "
           >
             <Trash2 :size="14" :stroke-width="1.6" class="shrink-0" />
             {{ t('cleanup.gc.orphans.confirm.confirm') }}

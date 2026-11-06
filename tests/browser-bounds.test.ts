@@ -11,6 +11,9 @@ import {
   parkedBounds,
   placeView,
   rectsIntersect,
+  RESEAT_RESTORE_MS,
+  reseatNudge,
+  shouldReseat,
   toViewBounds
 } from '../src/main/browser/bounds'
 
@@ -189,5 +192,51 @@ describe('placeView (AC-3: parking, unparking, hiding)', () => {
     expect(
       placeView({ ...base, parked: false, rect: real, visible: true }).clearParkedMetrics
     ).toBe(false)
+  })
+})
+
+describe('shouldReseat (macOS device re-seat)', () => {
+  const base = {
+    platform: 'darwin',
+    device: true,
+    pending: false,
+    parked: false,
+    visible: true,
+    frozen: false,
+    bounds: { x: 10, y: 20, width: 300, height: 200 }
+  }
+
+  it('re-seats a placed, shown device view on macOS, one at a time', () => {
+    expect(shouldReseat(base)).toBe(true)
+    expect(shouldReseat({ ...base, pending: true })).toBe(false)
+  })
+
+  it('leaves a view without a device alone', () => {
+    expect(shouldReseat({ ...base, device: false })).toBe(false)
+  })
+
+  it('never runs off macOS', () => {
+    expect(shouldReseat({ ...base, platform: 'linux' })).toBe(false)
+    expect(shouldReseat({ ...base, platform: 'win32' })).toBe(false)
+  })
+
+  it('waits while parked, hidden or frozen, or at a size too small to nudge', () => {
+    expect(shouldReseat({ ...base, parked: true })).toBe(false)
+    expect(shouldReseat({ ...base, visible: false })).toBe(false)
+    expect(shouldReseat({ ...base, frozen: true })).toBe(false)
+    expect(shouldReseat({ ...base, bounds: { x: 0, y: 0, width: 1, height: 1 } })).toBe(false)
+  })
+
+  it('restores in a later frame, not the same tick', () => {
+    expect(RESEAT_RESTORE_MS).toBeGreaterThanOrEqual(32)
+  })
+
+  it('nudges by one px of width and keeps the origin', () => {
+    expect(reseatNudge({ x: 10, y: 20, width: 300, height: 200 })).toEqual({
+      x: 10,
+      y: 20,
+      width: 299,
+      height: 200
+    })
   })
 })

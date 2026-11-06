@@ -18,7 +18,7 @@ import {
 import type { WorktreeBundle } from './bundle-core'
 import type { JobQueue } from './gc-jobs-core'
 import type { GcPrefs } from './gc-prefs'
-import type { CycleRecord } from './gc-wire'
+import type { CycleRecord, ShelveCycleRecord } from './gc-wire'
 import {
   planHousekeeping,
   type HousekeepingPlan,
@@ -55,10 +55,23 @@ export interface CycleState {
   /** The count behind the last report-only notice, so an unchanged report is not repeated. */
   lastReportKey: string | null
   last: CycleRecord | null
+  /** Shelving: worktrees a shelve was refused or failed for lately (id → when and why). */
+  shelveFailures: Map<string, { at: number; reason: string }>
+  /** Shelving: failed shelves in a row, across cycles; the kill switch counts it. */
+  shelveStreak: number
+  /** The count behind the last shelve report notice, so an unchanged report is not repeated. */
+  shelveReportKey: string | null
 }
 
 export function createCycleState(): CycleState {
-  return { failures: new Map(), lastReportKey: null, last: null }
+  return {
+    failures: new Map(),
+    lastReportKey: null,
+    last: null,
+    shelveFailures: new Map(),
+    shelveStreak: 0,
+    shelveReportKey: null
+  }
 }
 
 export interface GcCycleDeps {
@@ -82,6 +95,11 @@ export interface GcCycleDeps {
     now: number,
     neverClean: readonly string[]
   ): Promise<{ deleted: number; failed: number }>
+  /**
+   * The shelving half (autonomous cleanup U2.2): runs after the clean, on the same gather, behind
+   * its own switch and its own report-only first cycle. A throw is logged and never fails the cycle.
+   */
+  shelve?(bundles: WorktreeBundle[]): Promise<ShelveCycleRecord>
   /** Called with every gather, whether or not the cycle cleans: the Containers feed reads it. */
   onGathered?(g: GcGather): void
   state: CycleState
@@ -245,6 +263,16 @@ export async function runGcCycle(
     }
   }
 
+  // Shelving rides the same tick but not the same switch: it never reads `autopilot`.
+  let shelve: ShelveCycleRecord | undefined
+  if (deps.shelve) {
+    try {
+      shelve = await deps.shelve(bundles)
+    } catch (err) {
+      console.warn('[gc] shelving failed', messageOf(err))
+    }
+  }
+
   const doneCount = cleaned.filter((r) => r.ok).length
   const freedBytes = cleaned.reduce((sum, r) => sum + r.freedBytes, 0) + reclaimed(housekeeping)
   const trashedBytes = cleaned.reduce((sum, r) => sum + (r.trashedBytes ?? 0), 0)
@@ -286,7 +314,8 @@ export async function runGcCycle(
     deferred: plan.deferred,
     housekeeping,
     notified: notice !== null,
-    jobId
+    jobId,
+    ...(shelve ? { shelve } : {})
   }
   deps.state.last = record
   deps.emitCycle(record)
