@@ -204,31 +204,34 @@ describe('non-xterm panes register themselves (AC-25, AC-27)', () => {
 })
 
 /**
- * AC-25's indicator is a visual check, but its contract is a class on the root:
- * a 1px accent-line outline while focus is inside (design.md §6 "Pane focus").
+ * AC-25's indicator is a visual check, but its contract is classes on the root and
+ * header: no accent outline around the pane (T657), a header that brightens while
+ * focus is inside (design.md §6 "Pane focus").
  */
 describe('focus indicator classes (AC-25)', () => {
-  it('every non-xterm pane root carries the focus-within outline, xterm panes do not', async () => {
+  it('no pane root draws an accent outline; non-xterm panes brighten the header instead', async () => {
     const { readFileSync } = await import('node:fs')
     const { resolve } = await import('node:path')
     const read = (f: string): string =>
       readFileSync(resolve(__dirname, '../src/renderer/src/components', f), 'utf8')
-    const INDICATOR = 'focus-within:outline-accent-line'
+    for (const f of [
+      'MarkdownPane.vue',
+      'MemoryPane.vue',
+      'ExplorerPane.vue',
+      'DiagramPane.vue',
+      'HelperPane.vue',
+      'TerminalPane.vue'
+    ]) {
+      expect(read(f), f).not.toMatch(/(focus|focus-within):outline/)
+    }
     for (const f of ['MarkdownPane.vue', 'MemoryPane.vue', 'ExplorerPane.vue', 'DiagramPane.vue']) {
-      // The global :focus-visible ring sits outside the box (clipped by the stack)
-      // and would win over the layered utility, so the root opts out of it.
-      const rootClass = /class="([^"]*focus-within:outline-accent-line[^"]*)"/.exec(read(f))?.[1]
+      // The root still opts out of the global :focus-visible ring (it sits outside
+      // the box, clipped by the stack) and names the group the header reacts to.
+      const src = read(f)
+      const rootClass = /class="([^"]*group\/pane[^"]*)"/.exec(src)?.[1]
       expect(rootClass, f).toContain('no-default-ring')
-      expect(rootClass, f).toContain('focus-within:-outline-offset-1')
+      expect(src, f).toContain('group-focus-within/pane:text-text')
     }
-    for (const f of ['HelperPane.vue', 'TerminalPane.vue']) {
-      expect(read(f), f).not.toContain(INDICATOR)
-    }
-    // A helper pane whose terminal is not live yet takes focus on its root: the
-    // outline shows for the root itself only, never while the xterm is focused.
-    expect(read('HelperPane.vue')).toContain(
-      'focus:outline focus:outline-1 focus:-outline-offset-1 focus:outline-accent-line'
-    )
   })
 
   it('all six focus regions register through useFocusRegion and mark their root', async () => {

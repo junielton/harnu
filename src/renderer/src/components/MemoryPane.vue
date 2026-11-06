@@ -207,12 +207,12 @@ useFocusRegion(props.pane.id, rootEl, {
        scroll body. Non-PTY, so no xterm padding-top hack. -->
   <div
     ref="rootEl"
-    class="flex h-full w-full flex-col overflow-hidden bg-bg no-default-ring focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg group/pane no-default-ring"
     :data-focus-region="pane.id"
     :aria-label="$t('memoryPane.label')"
   >
     <header
-      class="flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
+      class="flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors group-focus-within/pane:text-text"
       :class="
         resizable ? 'cursor-row-resize border-t border-t-border-2 hover:border-t-accent-line' : ''
       "

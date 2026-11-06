@@ -157,8 +157,8 @@ const hostRef = useTemplateRef<HTMLDivElement>('host')
 const rootRef = useTemplateRef<HTMLDivElement>('root')
 // T486 U5b — a region of the pane focus ring: F6 focuses the terminal (or the
 // root while its terminal is not live yet), `pane.close` runs the header X's close.
-// The root itself draws the design.md §6 "Pane focus" outline only while IT holds
-// focus (`focus:`, not `focus-within:`): a focused xterm shows its cursor instead.
+// design.md §6 "Pane focus": the root draws no focus outline (T657); a focused xterm
+// shows its blinking cursor as the indicator.
 useFocusRegion(props.pane.id, rootRef, {
   focus: () => {
     const live = liveHelpers.get(props.pane.id)
@@ -863,7 +863,7 @@ function onPromote(): void {
   -->
   <div
     ref="root"
-    class="no-default-ring relative h-full w-full overflow-hidden bg-bg focus:outline focus:outline-1 focus:-outline-offset-1 focus:outline-accent-line"
+    class="no-default-ring relative h-full w-full overflow-hidden bg-bg"
     tabindex="-1"
     :data-focus-region="pane.id"
     @dragover="onDragOver"

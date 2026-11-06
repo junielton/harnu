@@ -20,6 +20,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **`archive_session` now always reports what was really saved.** When an agent sent several calls on the same session at once (for example restore, restore, archive), each call was judged against the same out-of-date picture, so the answers could contradict each other and one of them could say `alreadyArchived` for a session that ended up restored. Every call is now decided inside the archive's own save queue, so simultaneous calls read as if they ran one after another (`restored`, then `alreadyActive`, then `archived`), and what the answer says is what the archive file holds. If the file cannot be written the verb answers `ARCHIVE_WRITE_FAILED` and changes nothing.
 
+### Changed
+
+- **No more accent outline around the focused pane.** Clicking or tabbing into a helper pane (Markdown, Memory, Explorer, Diagram, shell, browser) no longer draws an accent-coloured border around it. A focused document pane now shows it by brightening its header text; terminal panes keep their blinking cursor.
+
 ## 2026-11-05
 
 ### Added
