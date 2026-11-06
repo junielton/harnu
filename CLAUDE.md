@@ -260,6 +260,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Repo group header (multi-worktree repos)           | `src/renderer/src/components/RepoGroupHeader.vue`                                |
 | Shelved section of a repo group (§6 — U2.3b)       | `SidebarShelvedSection.vue` + `lib/shelved-sidebar.ts`                           |
 | Topbar / breadcrumb / status pill                  | `src/renderer/src/components/Topbar.vue`                                         |
+| Topbar overflow menu (`…` More actions, BUG-252)   | `src/renderer/src/components/TopbarOverflowMenu.vue` + `lib/topbar-overflow.ts`  |
 | Activity bell (Topbar notification popover, T152)  | `src/renderer/src/components/ActivityBell.vue`                                   |
 | Empty state ("Ready to start")                     | `src/renderer/src/components/EmptyState.vue`                                     |
 | Folder View (main pane, T212)                      | `src/renderer/src/components/FolderView.vue` + `folder-view-format.ts`           |
@@ -386,6 +387,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Missions review dialog (§6 — BUG-173 S5)           | `src/renderer/src/components/MissionsReviewDialog.vue`                           |
 | Bulk close confirm (§6 — BUG-173 S5)               | `src/renderer/src/components/MissionBulkCloseConfirmDialog.vue`                  |
 | Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
+| Containers — Paused detail (§6 — U3.4)             | `src/renderer/src/components/ContainersPausedDetail.vue`                         |
 | Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                              |
 
 ## Process for UI work

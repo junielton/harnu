@@ -549,8 +549,12 @@ const AGENTS_EXPANDED_KEY = 'om2tab.agentsExpanded'
  */
 const TEAMMATES_EXPANDED_KEY = 'om2tab.teammatesExpanded'
 
-/** localStorage key for the set of archived session ids (Archive action). */
-const ARCHIVED_SESSIONS_KEY = 'om2tab.archivedSessions'
+/**
+ * Legacy localStorage key of the archived session ids. T655 moved the authoritative set to
+ * the main process; this key is only READ, once, to import what the operator had archived
+ * before the move. It is never written or deleted, so a rollback still finds its data.
+ */
+const LEGACY_ARCHIVED_SESSIONS_KEY = 'om2tab.archivedSessions'
 
 /**
  * Per-session UX preferences. Kept in-memory only (no persistence in v1); lost
@@ -1253,10 +1257,91 @@ export const useSessionsStore = defineStore('sessions', () => {
    * the AUTHORITATIVE source of truth — display derives from it via `isArchived`
    * rather than mutating each `Session.status`, so an archived session survives
    * watcher reloads (which rebuild every real session from disk) without any
-   * re-application step. Persisted to `localStorage`.
+   * re-application step. T655: persisted by the MAIN process (`archived-sessions.json`),
+   * so the `archive_session` MCP verb works with no window open. This ref is hydrated from
+   * it at `init()`, updated optimistically by the menu action (which also writes through),
+   * and replaced whenever main pushes `sessionArchive:changed`.
    */
-  const archivedIdsSet = persistedSet(ARCHIVED_SESSIONS_KEY)
-  const archivedIds = archivedIdsSet.set
+  const archivedIds = ref<Set<string>>(new Set())
+
+  /** Replace the archived set (new identity, so Vue tracks it). */
+  function setArchivedIds(next: Iterable<string>): void {
+    archivedIds.value = new Set(next)
+  }
+
+  /** Write an archive / restore through the main-process store. Best-effort: never throws. */
+  function writeArchive(sessionIds: string[], archived: boolean): void {
+    const write = window.api?.sessionArchiveSet
+    if (typeof write !== 'function') return
+    try {
+      void Promise.resolve(write(sessionIds, archived)).catch(() => {})
+    } catch {
+      /* IPC unavailable (tests, HMR) — the local set still reflects the action */
+    }
+  }
+
+  /** The ids the old `localStorage` key holds; `null` when storage cannot be read at all. */
+  function readLegacyArchivedIds(): string[] | null {
+    try {
+      const raw = localStorage.getItem(LEGACY_ARCHIVED_SESSIONS_KEY)
+      if (raw === null) return []
+      const parsed: unknown = JSON.parse(raw)
+      return Array.isArray(parsed)
+        ? parsed.filter((x): x is string => typeof x === 'string' && x.length > 0)
+        : []
+    } catch (e) {
+      // Unreadable storage: report "unknown" so the import is retried on the next boot.
+      return e instanceof SyntaxError ? [] : null
+    }
+  }
+
+  /**
+   * Load the archived set from main, importing the old `localStorage` ids first when main
+   * has not yet taken them (it takes them exactly once; every later call is ignored there).
+   */
+  async function hydrateArchivedIds(): Promise<void> {
+    if (typeof window.api?.sessionArchiveGet !== 'function') return
+    try {
+      const got = await window.api.sessionArchiveGet()
+      let ids = got.ids
+      const legacy = got.legacyImported ? null : readLegacyArchivedIds()
+      if (legacy !== null && typeof window.api.sessionArchiveImportLegacy === 'function') {
+        const res = await window.api.sessionArchiveImportLegacy(legacy)
+        if (res.ok && res.ids) ids = res.ids
+      }
+      setArchivedIds(ids)
+    } catch {
+      /* main unreachable: keep whatever the local set holds */
+    }
+  }
+
+  /**
+   * Main pushed the full archived set (the verb archived or restored something, or another
+   * window did). A session that just became archived gets the same put-away teardown the
+   * menu action runs; the row itself stays in the model.
+   */
+  function applyArchivedFromMain(ids: readonly string[]): void {
+    const next = new Set(ids)
+    for (const id of next) {
+      if (!archivedIds.value.has(id)) putAway(id)
+    }
+    archivedIds.value = next
+  }
+
+  /**
+   * T661: main pushes the full hidden list after the `hide_folder` verb changed it outside this
+   * store's own calls. Mirror it; a folder that just became hidden also reloads the model, exactly
+   * as `dismissFolder` does. A push that changes nothing does neither.
+   */
+  function applyHiddenFromMain(hiddenPaths: readonly string[]): void {
+    const current = manuallyHiddenPaths.value
+    const next = new Set(hiddenPaths)
+    const sameSet = next.size === current.size && [...next].every((p) => current.has(p))
+    if (sameSet) return
+    const newlyHidden = [...next].some((p) => !current.has(p))
+    manuallyHiddenPaths.value = next
+    if (newlyHidden) void reloadModel()
+  }
 
   /**
    * Folders whose archived sessions are temporarily revealed (mirrors
@@ -3002,8 +3087,16 @@ export const useSessionsStore = defineStore('sessions', () => {
    */
   function archiveSession(sessionId: string): void {
     if (archivedIds.value.has(sessionId)) return
-    // Put-away semantics: stop the live terminal (same teardown as closeSession)
-    // but DON'T splice the row — it stays in the model for Unarchive.
+    putAway(sessionId)
+    setArchivedIds([...archivedIds.value, sessionId])
+    writeArchive([sessionId], true)
+  }
+
+  /**
+   * Put-away semantics: stop the live terminal (same teardown as closeSession) and drop the
+   * selection, but DON'T splice the row — it stays in the model for Unarchive.
+   */
+  function putAway(sessionId: string): void {
     for (const fn of closeHandlers) {
       try {
         fn(sessionId)
@@ -3012,7 +3105,6 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
     }
     unregisterLiveSession(sessionId)
-    archivedIdsSet.add(sessionId)
     if (selectedId.value === sessionId) selectedId.value = null
   }
 
@@ -3023,7 +3115,8 @@ export const useSessionsStore = defineStore('sessions', () => {
    */
   function dropArchived(sessionId: string): void {
     if (!archivedIds.value.has(sessionId)) return
-    archivedIdsSet.delete(sessionId)
+    setArchivedIds([...archivedIds.value].filter((id) => id !== sessionId))
+    writeArchive([sessionId], false)
   }
 
   /** Reverse an archive — the session reappears in normal display. Idempotent. */
@@ -5700,6 +5793,21 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
     pendingCoverage.slugs.clear()
     pendingCoverage.full = 0
+
+    // T655: the archived set is main-owned; load it (importing the old localStorage ids
+    // once) BEFORE the first model load so no archived row flashes into the list.
+    await hydrateArchivedIds()
+    if (typeof window.api.onSessionArchiveChanged === 'function') {
+      cleanupFns.push(window.api.onSessionArchiveChanged(({ ids }) => applyArchivedFromMain(ids)))
+    }
+
+    if (typeof window.api.onUserProjectsHiddenChanged === 'function') {
+      cleanupFns.push(
+        window.api.onUserProjectsHiddenChanged(({ hiddenPaths }) =>
+          applyHiddenFromMain(hiddenPaths)
+        )
+      )
+    }
 
     foldersLoading.value = true
     try {

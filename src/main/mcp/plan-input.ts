@@ -366,6 +366,26 @@ const translateReleaseWorktree: Translator = (args, gateFolder) => {
   return input
 }
 
+// T655: sessions are addressed by id, never a folder, so there is no gate folder to carry; a
+// session in a blocked folder is refused per id by the handler. Fields pass through untouched
+// so the validator does the structural check.
+const translateArchiveSession: Translator = (args) => {
+  const input: Record<string, unknown> = {}
+  if (args.sessionIds !== undefined) input.sessionIds = args.sessionIds
+  if (args.unarchive !== undefined) input.unarchive = args.unarchive
+  return input
+}
+
+// T661: folders are addressed by absolute path, not a single gate folder, so none is carried; a
+// path in a blocked folder is refused per path by the handler. Fields pass through untouched so
+// the validator does the structural check.
+const translateHideFolder: Translator = (args) => {
+  const input: Record<string, unknown> = {}
+  if (args.folders !== undefined) input.folders = args.folders
+  if (args.unhide !== undefined) input.unhide = args.unhide
+  return input
+}
+
 // T329: the Containers actions address stacks by id, never a folder, so there
 // is no gate folder to carry; a blocked folder's stack is refused per stack by
 // the handler. Fields pass through untouched so the validator does the
@@ -518,6 +538,8 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   // T445: both gate on the `folder` arg, like list_containers / adopt_folder.
   list_cleanup: translateListWorkers,
   release_worktree: translateReleaseWorktree,
+  archive_session: translateArchiveSession,
+  hide_folder: translateHideFolder,
   stop_containers: translateStopContainers,
   start_containers: translateStartContainers,
   remove_containers: translateRemoveContainers,

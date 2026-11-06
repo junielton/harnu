@@ -6,6 +6,7 @@ import {
   buildWriterScript,
   isWriterStale,
   isOurWriterScript,
+  extractWriterPath,
   WRITER_SCRIPT_VERSION
 } from '../src/main/statusline-install'
 
@@ -244,5 +245,53 @@ describe('isOurWriterScript', () => {
   })
   it('does not claim an arbitrary script', () => {
     expect(isOurWriterScript('#!/bin/sh\necho hi')).toBe(false)
+  })
+})
+
+describe('extractWriterPath (BUG-243)', () => {
+  it('reads the path out of the posix `sh "<path>"` shape', () => {
+    expect(extractWriterPath('sh "/tmp/harnu-verify-x/statusline/statusline-writer.sh"')).toBe(
+      '/tmp/harnu-verify-x/statusline/statusline-writer.sh'
+    )
+  })
+
+  it('reads the path out of the win32 `cmd /c "<path>"` shape', () => {
+    expect(extractWriterPath('cmd /c "C:\\Temp\\h\\statusline\\statusline-writer.cmd"')).toBe(
+      'C:\\Temp\\h\\statusline\\statusline-writer.cmd'
+    )
+  })
+
+  it('returns null for anything that is not a Harnu-shaped writer invocation', () => {
+    expect(extractWriterPath('node /home/u/bin/my-statusline.js')).toBeNull()
+    expect(extractWriterPath('sh "/home/u/bin/my-statusline.sh"')).toBeNull()
+    expect(extractWriterPath('sh -c "cat > /x/statusline/statusline-writer.sh"')).toBeNull()
+    expect(extractWriterPath('sh /x/statusline/statusline-writer.sh')).toBeNull() // unquoted
+    expect(extractWriterPath('')).toBeNull()
+  })
+})
+
+describe('mergeStatusLine — reclaiming a dead writer (BUG-243)', () => {
+  const DEAD = 'sh "/tmp/harnu-verify-t579/statusline/statusline-writer.sh"'
+  const NEW = 'sh "/home/u/.config/Harnu/statusline/statusline-writer.sh"'
+
+  it('replaces the statusLine whose command is exactly the reclaim target', () => {
+    const { next, installed } = mergeStatusLine(
+      { statusLine: { type: 'command', command: DEAD } },
+      NEW,
+      DEAD
+    )
+    expect(installed).toBe(true)
+    expect(next.statusLine).toEqual({ type: 'command', command: NEW })
+  })
+
+  it('does not replace a different statusLine that appeared since', () => {
+    const { next, installed, foreignPreserved } = mergeStatusLine(
+      { statusLine: { type: 'command', command: 'node /home/u/my.js' } },
+      NEW,
+      DEAD
+    )
+    expect(installed).toBe(false)
+    expect(foreignPreserved).toBe(true)
+    expect(next.statusLine).toEqual({ type: 'command', command: 'node /home/u/my.js' })
   })
 })

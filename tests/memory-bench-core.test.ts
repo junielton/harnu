@@ -362,7 +362,12 @@ describe('memory-bench core', () => {
       })
     expect(isOperatorTurn(JSON.parse(turn('Hello')))).toBe(true)
     expect(isOperatorTurn(JSON.parse(turn('<command-name>/status</command-name>')))).toBe(true)
-    expect(isOperatorTurn(JSON.parse(turn([{ type: 'image' }])))).toBe(true)
+    // An image-only line has no operator text, so it is not a turn (benchmark spec "Operator
+    // turn"; memory U1 AC-2). A line with text beside the image is one.
+    expect(isOperatorTurn(JSON.parse(turn([{ type: 'image' }])))).toBe(false)
+    expect(
+      isOperatorTurn(JSON.parse(turn([{ type: 'text', text: 'look at this' }, { type: 'image' }])))
+    ).toBe(true)
     expect(isOperatorTurn(JSON.parse(turn([{ type: 'tool_result', content: 'x' }])))).toBe(false)
     expect(isOperatorTurn(JSON.parse(turn('Hello', { isMeta: true })))).toBe(false)
     expect(isOperatorTurn(JSON.parse(turn('Hello', { isSidechain: true })))).toBe(false)
@@ -566,7 +571,7 @@ describe('memory-bench core', () => {
       ...base,
       memory: memory({ names: { root: [], sessions: ['2026-10-01-gone0001.md'] } }),
       sessions: [
-        session('gone0001-x', { cwdExists: false, bytes: 300, operatorTurns: 0 }),
+        session('gone0001-x', { cwdExists: false, bytes: 300 }),
         session('gone0002-x', { cwdExists: false, bytes: 100 }),
         session('live0003-x')
       ]
@@ -574,6 +579,32 @@ describe('memory-bench core', () => {
     expect(card.metrics.orphan_transcripts).toBe(2)
     expect(card.metrics.orphan_loss).toBe(0.5)
     expect(card.metrics.orphan_loss_bytes).toBe(0.25)
+  })
+
+  it('metric orphan_loss counts only orphans with at least three operator turns, as capture does', () => {
+    const card = computeScorecard({
+      ...base,
+      memory: memory({ names: { root: [], sessions: [] } }),
+      sessions: [
+        session('gone0001-x', { cwdExists: false, bytes: 100, operatorTurns: 2 }),
+        session('gone0002-x', { cwdExists: false, bytes: 300, operatorTurns: 3 }),
+        session('gone0003-x', { cwdExists: false, bytes: 50, operatorTurns: 0 })
+      ]
+    })
+    // 2 turns and 0 turns are out; 3 turns is in, and it has no digest.
+    expect(card.metrics.orphan_transcripts).toBe(1)
+    expect(card.metrics.orphan_loss).toBe(1)
+    expect(card.metrics.orphan_loss_bytes).toBe(1)
+    const digested = computeScorecard({
+      ...base,
+      memory: memory({ names: { root: [], sessions: ['2026-10-01-gone0002.md'] } }),
+      sessions: [
+        session('gone0001-x', { cwdExists: false, bytes: 100, operatorTurns: 2 }),
+        session('gone0002-x', { cwdExists: false, bytes: 300, operatorTurns: 3 })
+      ]
+    })
+    expect(digested.metrics.orphan_transcripts).toBe(1)
+    expect(digested.metrics.orphan_loss).toBe(0)
   })
 
   it('maps transcript paths and renders markdown for an empty folder', () => {

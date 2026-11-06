@@ -170,6 +170,7 @@ import type { GcPrefs } from '../main/gc/gc-prefs'
 import type { RemoteFacts } from '../main/gc/gc-remote-delete'
 import type {
   CycleRecord as GcCycleRecord,
+  DockerWatchRecord as GcDockerWatchRecord,
   GcCleanAck,
   GcRecheckResult,
   GcGuidance,
@@ -191,6 +192,7 @@ import type {
 import type {
   ContainersSnapshot,
   ContainersTotals,
+  PausedStack as ContainersPausedStack,
   StackRow,
   ContainerRow,
   VolumeRow as ContainersVolumeRow,
@@ -372,6 +374,7 @@ export type {
 export type {
   ContainersSnapshot,
   ContainersTotals,
+  ContainersPausedStack,
   StackRow,
   ContainerRow,
   ContainersVolumeRow,
@@ -1042,6 +1045,10 @@ export interface SettingsData {
   editor?: EditorSetting
   /** T627: session area / helper stack orientation — `auto` (default), `side-by-side` or `stacked`. */
   splitLayout?: 'auto' | 'side-by-side' | 'stacked'
+  /** T626: the opt-in "Floating panels" layout. Absent means off. */
+  floatingPanels?: boolean
+  /** T628: what expanding a helper pane to the window hides — `everything` (default) or `session-only`. */
+  expandHides?: 'everything' | 'session-only'
 }
 
 // ---- Harnu MCP control server wire types (2026-06-25 design) ---------------
@@ -1499,6 +1506,12 @@ const api = {
   /** Companion to `userProjectsHide`. Idempotent. */
   userProjectsUnhide: (targetPath: string): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:unhide', targetPath),
+  /**
+   * T661: main pushes the FULL hidden list after the `hide_folder` MCP verb changed it (the menu
+   * actions above never trigger it: their IPC response already carries the new list).
+   */
+  onUserProjectsHiddenChanged: (cb: (p: { hiddenPaths: string[] }) => void): (() => void) =>
+    subscribe('userProjects:hiddenChanged', cb),
 
   // ---- Helpers (split layout) persistence (F2) -----------------------------
   // Per-worktree helper-pane state lives in `<userData>/helpers.json` (see
@@ -1514,6 +1527,26 @@ const api = {
 
   helpersRemoveWorktree: (args: { worktreePath: string }): Promise<void> =>
     ipcRenderer.invoke('helpers:removeWorktree', args),
+
+  // ---- Session archive (T655) -----------------------------------------------
+  // The archived-session set lives in the main process (`<userData>/archived-sessions.json`),
+  // so the `archive_session` MCP verb works with the window closed. The renderer hydrates
+  // from `sessionArchiveGet`, writes menu actions through `sessionArchiveSet`, sends its old
+  // `localStorage` ids ONCE to `sessionArchiveImportLegacy` (main ignores every later call),
+  // and gets the full set pushed on `onSessionArchiveChanged` after any write, the verb's too.
+  sessionArchiveGet: (): Promise<{ ids: string[]; legacyImported: boolean }> =>
+    ipcRenderer.invoke('sessionArchive:get'),
+  sessionArchiveSet: (
+    sessionIds: string[],
+    archived: boolean
+  ): Promise<{ ok: boolean; ids?: string[] }> =>
+    ipcRenderer.invoke('sessionArchive:set', { sessionIds, archived }),
+  sessionArchiveImportLegacy: (
+    sessionIds: string[]
+  ): Promise<{ ok: boolean; imported?: boolean; ids?: string[] }> =>
+    ipcRenderer.invoke('sessionArchive:importLegacy', { sessionIds }),
+  onSessionArchiveChanged: (cb: (p: { ids: string[] }) => void): (() => void) =>
+    subscribe('sessionArchive:changed', cb),
 
   /**
    * Delete a session's JSONL transcript from disk and, best-effort, remove its
@@ -3014,6 +3047,8 @@ const api = {
   gcAckFirstReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:ackFirstReport'),
   /** Acknowledges the first shelving report: until then a shelving cycle only lists what it would shelve. */
   gcAckShelveReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:shelve:ack'),
+  /** Acknowledges the first Docker autonomy report: until then a Docker cycle only records what it would do. */
+  gcAckDockerReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:docker:ack'),
   /** Cleanup's Restore button: brings one shelved worktree back by its id (same function a resume uses). */
   gcRestoreShelved: (id: string): Promise<ShelveRestoreAck> =>
     ipcRenderer.invoke('gc:shelve:restore', id),
@@ -3085,6 +3120,12 @@ const api = {
     subscribe('gc:opinion:done', cb),
   /** Fires after every autopilot cycle, whatever it did. */
   onGcCycle: (cb: (r: GcCycleRecord) => void): (() => void) => subscribe('gc:cycle', cb),
+  /** Tells main the renderer has recorded these out-of-capacity notices (by pass time), so it stops holding them. */
+  gcAckDockerWatchNotices: (ats: number[]): Promise<void> =>
+    ipcRenderer.invoke('gc:docker:watch:ack', ats),
+  /** Fires when the Docker capacity watcher's pass changed something (U3.6); a quiet machine sends nothing. */
+  onGcDockerWatch: (cb: (r: GcDockerWatchRecord) => void): (() => void) =>
+    subscribe('gc:docker:watch', cb),
 
   // ---- Containers (T320) ------------------------------------------------------
   /** The last snapshot, or `null` before the first scan this session. */

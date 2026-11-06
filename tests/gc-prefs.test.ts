@@ -34,7 +34,18 @@ describe('defaultGcPrefs', () => {
         thresholdDays: 3,
         maxPerCycle: 3,
         failureLimit: 3
-      }
+      },
+      docker: {
+        enabled: true, // design C1: own switch, on by default, report-only until acknowledged
+        firstReportAcknowledged: false,
+        idleHours: 2,
+        lowWaterSlots: 3,
+        maxParksPerHour: 6,
+        minAgeMinutes: 30,
+        maxPerCycle: 5,
+        failureLimit: 3
+      },
+      pauseAutonomous: false
     })
   })
 

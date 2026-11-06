@@ -5,6 +5,7 @@ import { useUiStore } from './ui'
 import { useAgentTerminalsStore } from './agent-terminals'
 import { i18n } from '../i18n'
 import { paneRegistry } from '../lib/pane-registry'
+import type { PaneRingState } from '../lib/pane-ring'
 import { persistedRef } from './persisted'
 import {
   SPLIT_RATIO_DEFAULT,
@@ -26,6 +27,16 @@ import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-
 
 /** An exit sooner than this after spawn means the helper never really started (stale session). */
 export const STALE_EXIT_WINDOW_MS = 2000
+
+/**
+ * T628: the F6 ring while a pane is expanded to the window. Only the expanded pane is on screen, so
+ * the ring holds it alone: the main terminal (inside the collapsed session area) and the other panes
+ * are not reachable. With nothing expanded the state is returned untouched. Pure.
+ */
+export function applyExpandToRing(state: PaneRingState, expandedId: string | null): PaneRingState {
+  if (!expandedId || !state.paneIds.includes(expandedId)) return state
+  return { ...state, mainForeground: false, maximizedId: expandedId }
+}
 
 /** Content/helper-stack split a worktree starts with, and the one the divider's double-click resets to. */
 export const HELPER_SPLIT_RATIO_DEFAULT = SPLIT_RATIO_DEFAULT
@@ -511,6 +522,54 @@ export const useHelpersStore = defineStore('helpers', () => {
     next.set(worktreePath, paneId)
     maximizedByWorktree.value = next
   }
+
+  /**
+   * T628: per-worktree "which pane is expanded to the window". Ephemeral exactly like
+   * {@link maximizedByWorktree}: never added to the persisted shape, so it cannot reach
+   * `helpers.json`. Unlike maximize it is also cleared when the operator leaves the worktree, so
+   * coming back always finds the normal layout.
+   */
+  const expandedByWorktree = ref<Map<string, string>>(new Map())
+
+  /** The expanded pane id for the visible stack, or null. */
+  const expandedPaneIdForCurrentWorktree = computed<string | null>(() => {
+    const p = currentWorktreePath.value
+    if (!p) return null
+    return expandedByWorktree.value.get(p) ?? null
+  })
+
+  /** Which pane (if any) is expanded to the window in `worktreePath`'s stack. */
+  function expandedPaneId(worktreePath: string): string | null {
+    return expandedByWorktree.value.get(worktreePath) ?? null
+  }
+
+  /**
+   * Toggle expand-to-window for `paneId`: exit when it is the expanded one, otherwise expand it (or
+   * re-target from another expanded pane directly). Independent of maximize.
+   */
+  function toggleExpandPane(worktreePath: string, paneId: string): void {
+    const next = new Map(expandedByWorktree.value)
+    if (next.get(worktreePath) === paneId) next.delete(worktreePath)
+    else next.set(worktreePath, paneId)
+    expandedByWorktree.value = next
+  }
+
+  /** Leave the expanded view in `worktreePath` (no-op when nothing is expanded). */
+  function exitExpand(worktreePath: string): void {
+    if (!expandedByWorktree.value.has(worktreePath)) return
+    const next = new Map(expandedByWorktree.value)
+    next.delete(worktreePath)
+    expandedByWorktree.value = next
+  }
+
+  // Leaving a worktree resets its expanded view (flush 'sync' so it lands with the selection).
+  watch(
+    currentWorktreePath,
+    (_now, prev) => {
+      if (prev) exitExpand(prev)
+    },
+    { flush: 'sync' }
+  )
 
   /**
    * Bumped every time a pane is added to — or re-focused by a dedup hit in —
@@ -1316,6 +1375,8 @@ export const useHelpersStore = defineStore('helpers', () => {
       next.delete(worktreePath)
       maximizedByWorktree.value = next
     }
+    // Same for the expanded view (T628): nothing would be left on screen.
+    if (expandedByWorktree.value.get(worktreePath) === helperId) exitExpand(worktreePath)
   }
 
   /**
@@ -1428,6 +1489,7 @@ export const useHelpersStore = defineStore('helpers', () => {
       nextMax.delete(worktreePath)
       maximizedByWorktree.value = nextMax
     }
+    exitExpand(worktreePath)
   }
 
   /**
@@ -1680,6 +1742,11 @@ export const useHelpersStore = defineStore('helpers', () => {
     maximizedPaneIdForCurrentWorktree,
     toggleMaximizePane,
     maximizePane,
+    expandedByWorktree,
+    expandedPaneId,
+    expandedPaneIdForCurrentWorktree,
+    toggleExpandPane,
+    exitExpand,
     unseenAgentPanes,
     unseenAgentPaneCount,
     paneRevealTick,

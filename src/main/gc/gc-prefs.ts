@@ -55,6 +55,64 @@ export interface GcPrefs {
    * for operators who run the autopilot today.
    */
   shelve: ShelvePrefs
+  /**
+   * Docker autonomy (autonomous cleanup U3.1): pausing idle stacks and removing Docker garbage. ONE
+   * switch for both, with its own acknowledgement, independent of `autopilot` and of `shelve`.
+   */
+  docker: DockerAutonomyPrefs
+  /**
+   * "Pause autonomous cleanup" (design §5): while on, every autonomous action (the autopilot's
+   * clean, shelving, Docker autonomy) acts on nothing. Manual cleaning is unaffected.
+   */
+  pauseAutonomous: boolean
+}
+
+export interface DockerAutonomyPrefs {
+  /**
+   * ON by default (design C1). A prefs file that never set it reads ON; one that explicitly set it
+   * keeps its value. Even when on, the first cycle only reports until `firstReportAcknowledged`.
+   */
+  enabled: boolean
+  /** Set by `gc:docker:ack`; until then a Docker cycle is report-only. Turning `enabled` on resets it. */
+  firstReportAcknowledged: boolean
+  /** Hours a stack must have shown no sign of life before it can be paused ("parked" in code). */
+  idleHours: number
+  /** Free bridge-network slots under which capacity pressure acts at once. */
+  lowWaterSlots: number
+  /** Stacks one hour may pause (hysteresis against thrash). */
+  maxParksPerHour: number
+  /** Minutes since a stack's last `up` before it can be paused. */
+  minAgeMinutes: number
+  /** Autonomous Docker actions one cycle may run; the rest wait for the next cycle. */
+  maxPerCycle: number
+  /** Failed actions in a row after which Docker autonomy switches itself off. */
+  failureLimit: number
+}
+
+export const DEFAULT_DOCKER_IDLE_HOURS = 2
+export const MAX_DOCKER_IDLE_HOURS = 720
+export const DEFAULT_DOCKER_LOW_WATER_SLOTS = 3
+export const MAX_DOCKER_LOW_WATER_SLOTS = 30
+export const DEFAULT_DOCKER_PARKS_PER_HOUR = 6
+export const MAX_DOCKER_PARKS_PER_HOUR = 60
+export const DEFAULT_DOCKER_MIN_AGE_MINUTES = 30
+export const MAX_DOCKER_MIN_AGE_MINUTES = 1440
+export const DEFAULT_DOCKER_PER_CYCLE = 5
+export const MAX_DOCKER_PER_CYCLE = 20
+export const DEFAULT_DOCKER_FAILURE_LIMIT = 3
+export const MAX_DOCKER_FAILURE_LIMIT = 10
+
+export function defaultDockerPrefs(): DockerAutonomyPrefs {
+  return {
+    enabled: true,
+    firstReportAcknowledged: false,
+    idleHours: DEFAULT_DOCKER_IDLE_HOURS,
+    lowWaterSlots: DEFAULT_DOCKER_LOW_WATER_SLOTS,
+    maxParksPerHour: DEFAULT_DOCKER_PARKS_PER_HOUR,
+    minAgeMinutes: DEFAULT_DOCKER_MIN_AGE_MINUTES,
+    maxPerCycle: DEFAULT_DOCKER_PER_CYCLE,
+    failureLimit: DEFAULT_DOCKER_FAILURE_LIMIT
+  }
 }
 
 export interface ShelvePrefs {
@@ -132,7 +190,9 @@ export function defaultGcPrefs(): GcPrefs {
     keep: {},
     released: {},
     releasedFrom: {},
-    shelve: defaultShelvePrefs()
+    shelve: defaultShelvePrefs(),
+    docker: defaultDockerPrefs(),
+    pauseAutonomous: false
   }
 }
 
@@ -237,7 +297,23 @@ export function normalizeGcPrefs(
     keep,
     released,
     releasedFrom,
-    shelve: normalizeShelve(r.shelve, d.shelve)
+    shelve: normalizeShelve(r.shelve, d.shelve),
+    docker: normalizeDocker(r.docker, d.docker),
+    pauseAutonomous: bool(r.pauseAutonomous) ?? d.pauseAutonomous
+  }
+}
+
+function normalizeDocker(raw: unknown, d: DockerAutonomyPrefs): DockerAutonomyPrefs {
+  const r = isRecord(raw) ? raw : {}
+  return {
+    enabled: bool(r.enabled) ?? d.enabled,
+    firstReportAcknowledged: bool(r.firstReportAcknowledged) ?? d.firstReportAcknowledged,
+    idleHours: clamped(r.idleHours, 1, MAX_DOCKER_IDLE_HOURS) ?? d.idleHours,
+    lowWaterSlots: clamped(r.lowWaterSlots, 1, MAX_DOCKER_LOW_WATER_SLOTS) ?? d.lowWaterSlots,
+    maxParksPerHour: clamped(r.maxParksPerHour, 1, MAX_DOCKER_PARKS_PER_HOUR) ?? d.maxParksPerHour,
+    minAgeMinutes: clamped(r.minAgeMinutes, 1, MAX_DOCKER_MIN_AGE_MINUTES) ?? d.minAgeMinutes,
+    maxPerCycle: clamped(r.maxPerCycle, 1, MAX_DOCKER_PER_CYCLE) ?? d.maxPerCycle,
+    failureLimit: clamped(r.failureLimit, 1, MAX_DOCKER_FAILURE_LIMIT) ?? d.failureLimit
   }
 }
 
@@ -328,6 +404,14 @@ export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
         !current.shelve.enabled && next.shelve.enabled
           ? false
           : current.shelve.firstReportAcknowledged
+    },
+    // Docker autonomy makes the same promise on its own switch and its own channel (`gc:docker:ack`).
+    docker: {
+      ...next.docker,
+      firstReportAcknowledged:
+        !current.docker.enabled && next.docker.enabled
+          ? false
+          : current.docker.firstReportAcknowledged
     }
   }
 }
@@ -366,6 +450,15 @@ export function withAcknowledged(prefs: GcPrefs): GcPrefs {
 
 export function withShelveAcknowledged(prefs: GcPrefs): GcPrefs {
   return { ...prefs, shelve: { ...prefs.shelve, firstReportAcknowledged: true } }
+}
+
+export function withDockerAcknowledged(prefs: GcPrefs): GcPrefs {
+  return { ...prefs, docker: { ...prefs.docker, firstReportAcknowledged: true } }
+}
+
+/** The failure-streak kill switch of Docker autonomy: it switches itself off; everything else stays. */
+export function withDockerDisabled(prefs: GcPrefs): GcPrefs {
+  return { ...prefs, docker: { ...prefs.docker, enabled: false } }
 }
 
 /** The failure-streak kill switch: shelving switches itself off; everything else stays. */

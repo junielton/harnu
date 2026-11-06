@@ -374,7 +374,18 @@ export function registerKokoroProtocol(): void {
  * so the legacy alias can be dropped later. Best effort: the alias keeps the
  * install playing whether or not this runs or succeeds.
  */
-export async function migrateInstalledMirror(): Promise<void> {
+export function migrateInstalledMirror(): Promise<void> {
+  // Single-flight: the boot migration and the install path can overlap, and two rewrites share one
+  // staging file — a second `open(O_TRUNC)` after the first rename leaves the entry file empty for a moment.
+  migrationInFlight ??= rewriteInstalledMirror().finally(() => {
+    migrationInFlight = null
+  })
+  return migrationInFlight
+}
+
+let migrationInFlight: Promise<void> | null = null
+
+async function rewriteInstalledMirror(): Promise<void> {
   const file = filePathFor(KOKORO_ENTRY_PATH)
   try {
     const source = await fs.readFile(file, 'utf8')

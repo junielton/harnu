@@ -1016,19 +1016,22 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
         /**
          * Show the board as it is on disk, through the operator's Reload button (an agent's
          * write does not reach a clean open pane live; see step 10), and wait for every
-         * edge view to be drawn again.
+         * node and edge view to be drawn again. X6 rebuilds the node views too, and a
+         * geometry measured while they are being rebuilt is of a view about to be replaced
+         * (BUG-242).
          */
         const reloadBoard = async (): Promise<void> => {
           await page.evaluate(() =>
             document
-              .querySelectorAll('[data-testid="diagram-pane"] g.x6-edge')
+              .querySelectorAll('[data-testid="diagram-pane"] :is(g.x6-node, g.x6-edge)')
               .forEach((el) => el.setAttribute('data-pre-redraw', '1'))
           )
           await pane.getByRole('button', { name: 'Reload canvas', exact: true }).click()
           await expect(
-            pane.locator('g.x6-edge[data-pre-redraw]'),
-            'Reload: every edge view was drawn again'
+            pane.locator('g.x6-node[data-pre-redraw], g.x6-edge[data-pre-redraw]'),
+            'Reload: every node and edge view was drawn again'
           ).toHaveCount(0, { timeout: STARTUP_TIMEOUT })
+          await expect(nodes).toHaveCount(onDisk().nodes.length, { timeout: STARTUP_TIMEOUT })
           await expect(edges).toHaveCount(onDisk().edges.length, { timeout: STARTUP_TIMEOUT })
         }
         /** Select the arrow with a real click on the middle of its drawn line. */
@@ -1344,14 +1347,20 @@ async function expectStableGeometry(id: string): Promise<void> {
     page.getByTestId('diagram-pane').locator(`g.x6-node[data-cell-id="${id}"]`),
     `node ${id} is rendered`
   ).toHaveCount(1)
+  // A view X6 is rebuilding has no box for a moment (`boundingBox()` is null); that is "not
+  // settled yet", not a failure, so it is read here and not through `nodeBox`, which throws.
   let last = ''
   await expect
     .poll(async () => {
-      const now = JSON.stringify(await nodeBox(id))
-      const same = now === last
+      const box = await page
+        .getByTestId('diagram-pane')
+        .locator(`g.x6-node[data-cell-id="${id}"]`)
+        .boundingBox()
+      const now = JSON.stringify(box)
+      const same = box !== null && now === last
       last = now
       return same
-    })
+    }, `node ${id} has a box and it stops changing`)
     .toBe(true)
 }
 
@@ -1441,13 +1450,12 @@ async function edgePathD(id: string): Promise<string> {
 }
 
 /**
- * The screen point half way along an arrow's drawn line, measured on the path itself
- * (not its bounding box, which is off the line for a bent route). Checked rather than
- * assumed to be this arrow's: the topmost element there must belong to the edge, so a
- * layout change that put a node or the panel over it fails here with a clear message.
+ * One reading of the screen point half way along an arrow's drawn line, measured on the
+ * path itself (not its bounding box, which is off the line for a bent route), plus the
+ * id of the cell topmost at that point. `null` while the arrow has no drawn line.
  */
-async function edgeMidpoint(id: string): Promise<{ x: number; y: number }> {
-  const hit = await page.evaluate(
+async function edgeHit(id: string): Promise<{ x: number; y: number; owner: string | null } | null> {
+  return page.evaluate(
     ([cellId, sel]) => {
       const path = document.querySelector(
         `[data-testid="diagram-pane"] g.x6-edge[data-cell-id="${cellId}"] ${sel}`
@@ -1462,9 +1470,37 @@ async function edgeMidpoint(id: string): Promise<{ x: number; y: number }> {
     },
     [id, EDGE_LINE]
   )
-  expect(hit, `arrow ${id} has a drawn line`).not.toBeNull()
-  expect(hit?.owner, `the arrow's midpoint is on the arrow, not under something else`).toBe(id)
-  return { x: (hit as { x: number }).x, y: (hit as { y: number }).y }
+}
+
+/**
+ * The screen point half way along an arrow's drawn line, once it can be clicked: the
+ * line is drawn, the topmost element there belongs to the arrow (so a layout change that
+ * put a node or the panel over it still fails, naming that), and the point is the same in
+ * two consecutive readings. X6 draws and re-routes edge views in time-sliced jobs and
+ * the board can still be re-laid-out after a reload, so a single reading can be of a path
+ * that is about to move (BUG-242); waiting for it to hold still is waiting for the state,
+ * not for a delay.
+ */
+async function edgeMidpoint(id: string): Promise<{ x: number; y: number }> {
+  let last = ''
+  let found: { x: number; y: number } | undefined
+  await expect
+    .poll(
+      async () => {
+        const hit = await edgeHit(id)
+        const now = JSON.stringify(hit)
+        const settled = hit !== null && hit.owner === id && now === last
+        last = now
+        if (settled) found = { x: hit.x, y: hit.y }
+        return settled
+      },
+      {
+        message: `arrow ${id} has a drawn line whose midpoint is on the arrow (not under something else) and holds still`,
+        timeout: STARTUP_TIMEOUT
+      }
+    )
+    .toBe(true)
+  return found as { x: number; y: number }
 }
 
 /**

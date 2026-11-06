@@ -88,6 +88,7 @@ function rig(
     lockedRepos?: Set<string>
     journalThrows?: boolean
     drifted?: string[]
+    paused?: string[]
     now?: () => number
     state?: CycleState
   } = {}
@@ -113,6 +114,7 @@ function rig(
   r.deps = {
     prefs: () => prefs,
     driftedCwds: () => opts.drifted ?? [],
+    pausedStackIds: () => opts.paused ?? [],
     probe: async (b) => {
       probed.push(b.item.path ?? '')
       return goodProbe(b)
@@ -622,5 +624,16 @@ describe('what the cycle must never call (AC-5)', () => {
     ]) {
       expect(src).not.toContain(forbidden)
     }
+  })
+})
+
+describe('a Paused stack does not block shelving (U3.5)', () => {
+  it('shelves a worktree whose stack was Paused, and still skips one with a running stack', async () => {
+    const paused = idle('paused', 9, { stackIds: ['shop'] })
+    const running = idle('running', 9, { stackIds: ['blog'] })
+    const r = rig(prefsWith(), { paused: ['shop'] })
+    const rec = await runShelveCycle(r.deps, [paused, running], r.state)
+    expect(rec.shelved).toHaveLength(1)
+    expect(r.decisions.map((d) => d.worktreePath)).toEqual([pathOf('paused')])
   })
 })

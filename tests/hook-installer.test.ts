@@ -23,6 +23,7 @@ describe('buildHookConfig', () => {
       [
         'Notification',
         'PermissionRequest',
+        'PreCompact',
         'PreToolUse',
         'SessionEnd',
         'SessionStart',
@@ -99,6 +100,33 @@ describe('install / uninstall round-trip (temp settings.json)', () => {
     path = join(dir, 'settings.json')
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('installs a PreCompact handler', async () => {
+    // An install from before PreCompact was observed: Harnu's block without it, beside a
+    // foreign PreCompact hook the user wrote.
+    const foreign = { type: 'command', command: 'echo compacting' }
+    const old = buildHookConfig(54000, 'tok') as any
+    delete old.PreCompact
+    const settings = mergeHooks({ hooks: { PreCompact: [{ hooks: [foreign] }] } }, old)
+    writeFileSync(path, JSON.stringify(settings, null, 2) + '\n', 'utf8')
+
+    await installHooks(54000, 'tok', { path })
+    const out = (await readClaudeSettings(path)) as any
+
+    const ours = out.hooks.PreCompact.flatMap((e: any) => e.hooks).filter((h: any) => h._harnu)
+    expect(ours).toHaveLength(1)
+    expect(ours[0].url).toBe('http://127.0.0.1:54000/hook/tok/PreCompact/_')
+    const entry = out.hooks.PreCompact.find((e: any) => e.hooks.includes(ours[0]))
+    expect(entry.matcher).toBeUndefined()
+    expect(
+      out.hooks.PreCompact.some((e: any) => e.hooks.some((h: any) => h.command === foreign.command))
+    ).toBe(true)
+    const all = Object.values(out.hooks).flatMap((entries: any) =>
+      entries.flatMap((e: any) => e.hooks)
+    ) as any[]
+    const harnu = all.filter((h) => h._harnu)
+    expect(new Set(harnu.map((h) => h.url)).size).toBe(harnu.length)
+  })
 
   it('install then uninstall restores the user file (minus our hooks)', async () => {
     const original =

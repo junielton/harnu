@@ -1,36 +1,35 @@
 /**
- * Pure core for the automatic session digest (T79 S2): the deterministic
- * relevance threshold, git-evidence parsing, the evidence-linked digest markdown
- * formatter, and the proposed-`hot.md` snapshot builder.
+ * Pure core for the automatic session digest (T79 S2; memory U1, spec
+ * `docs/specs/2026-11-04-memory-u1-capture/spec.md`): git-evidence parsing, the
+ * hook-edge trigger ({@link digestTriggerFor}), the commit-or-turns planner
+ * ({@link planDigest}), the digest body ({@link renderDigest}) and the `hot.md`
+ * merge ({@link mergeHot}).
  *
  * Framework-free + side-effect-free per ADR-0001 (pure-core / thin-shell): NO
- * `fs`, `child_process`, `electron`, or clock. The shell (`../memory-digest.ts`)
- * probes git + reads the transcript and feeds the bytes + an injected `now` in
- * here, so every gate/format decision is deterministic and lands in the coverage
- * surface (`tests/mcp-digest-core.test.ts`).
+ * `fs`, `child_process`, `electron`, or clock. The engine (`./digest-engine.ts`)
+ * reads the transcript and probes git through injected deps and feeds the bytes +
+ * an injected `now` in here, so every gate/format decision is deterministic and
+ * lands in the coverage surface (`tests/mcp-digest-core.test.ts`).
  *
  * Design contract (PRD §3.4 + §5):
- *  - The digest is EVIDENCE-linked — commits, file stats, the CLI's own recap —
- *    NOT a narrative self-report. The `## Evidence` block is hard git truth; the
- *    `## Recap` block is clearly framed as the session's OWN words (self-report
- *    lies in 22.6% of episodes — PRD §5), never presented as fact.
- *  - The relevance gate LEADS with commit-count — the strongest done-by-evidence
- *    signal (PRD §5). It is a single tunable config so the threshold is pinned by
- *    a unit test and documented, not scattered as a magic number.
+ *  - The digest is EVIDENCE-linked — commits, file stats, what was asked and
+ *    answered, the CLI's own recap — NOT a narrative self-report. The
+ *    `## Evidence` block is hard git truth; the session's own words are quoted
+ *    verbatim and the recap is framed as self-report, never presented as fact.
+ *  - The gate is a commit, or enough user turns ({@link DIGEST_GATE}), a single
+ *    pinned config rather than a magic number.
  *  - The `hot` snapshot is written straight to `hot.md` by the shell, with a
- *    provenance stamp and a shadow-log entry (BUG-26 removed the review gate).
- *
- * Memory U1 (S-1, `docs/specs/2026-11-04-memory-u1-capture/spec.md`) adds the
- * hook-edge trigger ({@link digestTriggerFor}), the commit-or-turns planner
- * ({@link planDigest}) and the new digest body ({@link renderDigest}) beside the
- * older gate and formatter, which S-2 deletes once the engine switches over.
+ *    provenance stamp and a shadow-log entry (BUG-26 removed the review gate). It is
+ *    merged into the snapshot on disk, never laid over another branch's.
  *
  * Content is written in English by default (T85 rule — project-memory language
  * follows the app locale; `en` is the default). The shell does not translate;
  * the labels here are the persisted vocabulary.
  */
 
+import * as path from 'node:path'
 import { cutText, type TranscriptFacts } from './digest-transcript'
+import { HOT_MAX_WORDS, parseProvenanceLine, splitFrontmatter } from './memory-core'
 
 // ---- Constants (all tunable knobs live here, pinned by tests) ----------------
 
@@ -51,56 +50,6 @@ const RECAP_MAX_CHARS = 1500
 
 /** Cap for the single "left off" / "next" line (chars). */
 const LINE_MAX_CHARS = 500
-
-// ---- Relevance gate (§3.4 — "trabalho relevante"; §5 — done-by-evidence) ----
-
-/** The measurable work a session produced, as probed by the shell from git. */
-export interface SessionWorkSignals {
-  /** Commits attributable to THIS session on its branch (the primary signal). */
-  commitCount: number
-  /** Distinct files changed across those commits (context, not a gate). */
-  filesChanged: number
-  /** Uncommitted working-tree files (supplementary evidence, never a gate). */
-  dirtyCount: number
-}
-
-/**
- * The relevance threshold (PRD open-question §8.2). Commit-count is the only gate
- * by default: uncommitted churn and idle duration are narrative, not evidence, so
- * a session that ran long but produced nothing never spams a digest. Kept as a
- * config object (not a literal) so the threshold is a single documented,
- * unit-pinned knob the shell can override.
- */
-export interface DigestRelevanceConfig {
-  /** Minimum session commits for a digest to be worth writing. */
-  minCommits: number
-}
-
-/** The default: ≥1 commit — the strongest done-by-evidence signal (PRD §5). */
-export const DEFAULT_DIGEST_RELEVANCE: DigestRelevanceConfig = { minCommits: 1 }
-
-/** Why a session was (or wasn't) judged worth a digest. */
-export type RelevanceReason = 'commits' | 'insufficient'
-
-/** Outcome of {@link isRelevantWork}. */
-export interface RelevanceVerdict {
-  relevant: boolean
-  reason: RelevanceReason
-}
-
-/**
- * Decide whether a session did enough to warrant a digest. Pure: the shell
- * supplies the git-probed signals. Commit-count leads (§5): ≥`minCommits`
- * commits ⇒ relevant. Everything else ⇒ not relevant (so the digest never fires
- * on time-in-seat alone, and a later commit can still trigger it).
- */
-export function isRelevantWork(
-  signals: SessionWorkSignals,
-  config: DigestRelevanceConfig = DEFAULT_DIGEST_RELEVANCE
-): RelevanceVerdict {
-  if (signals.commitCount >= config.minCommits) return { relevant: true, reason: 'commits' }
-  return { relevant: false, reason: 'insufficient' }
-}
 
 // ---- Git evidence parsing (pure — shell runs git, this reads the bytes) ------
 
@@ -249,43 +198,7 @@ export function digestSlug(date: string, sessionId: string): string {
   return `${date}-${shortSessionId(sessionId)}`
 }
 
-// ---- Digest formatter (the evidence-linked body) ----------------------------
-
-/** Whether the digest was triggered by the session ending or going long-idle. */
-export type DigestEndReason = 'ended' | 'idle'
-
-/** Everything the formatter needs — assembled by the shell from git + transcript. */
-export interface DigestInput {
-  /** `YYYY-MM-DD` (server clock). */
-  date: string
-  /** Session label (custom/ai title, else a fallback) — the `# ` heading. */
-  title: string
-  /** Git branch the work landed on (omitted when detached / not a repo). */
-  branch?: string
-  /** 8-char session-id prefix. */
-  sessionShort: string
-  /** Trigger — renders "ended" vs "went idle". */
-  endReason: DigestEndReason
-  /** The CLI's own "Goal:… Next:…" recap (verbatim), when present (T91 §4). */
-  awaySummary?: string
-  /** The `task-summary` entry text, when present (T91 §3). */
-  taskSummary?: string
-  /** The freshest `last-prompt`, when present (T91 §3). */
-  lastPrompt?: string
-  /** Session commits (newest-first) — the primary evidence. */
-  commits: readonly DigestCommit[]
-  /** Aggregate file churn across those commits. */
-  fileStats: readonly DigestFileStat[]
-  /** Uncommitted working-tree file count (supplementary). */
-  dirtyCount: number
-}
-
-/** Collapse whitespace + hard-cap a free-text field so the body stays bounded. */
-function elide(text: string, max: number): string {
-  const t = text.trim()
-  if (t.length <= max) return t
-  return t.slice(0, max - 1).trimEnd() + '…'
-}
+// ---- Digest body helpers ----------------------------------------------------
 
 /** The uncommitted-changes line of the Evidence block. */
 function dirtyLine(dirtyCount: number): string {
@@ -294,8 +207,8 @@ function dirtyLine(dirtyCount: number): string {
 
 /**
  * The Evidence lines for a commit-backed digest: the capped commit list, the
- * files line and the uncommitted line. Shared by {@link formatDigest} and
- * {@link renderDigest} so the two stay byte-identical (spec Formats §3).
+ * files line and the uncommitted line, as the pre-U1 digest wrote them (spec
+ * Formats §3).
  */
 function commitEvidenceLines(
   commits: readonly DigestCommit[],
@@ -330,63 +243,9 @@ function commitEvidenceLines(
   return lines
 }
 
-/** The best available session recap, framed as the session's OWN words. */
-function recapText(input: DigestInput): string {
-  const src = input.awaySummary || input.taskSummary || input.lastPrompt || ''
-  return src ? elide(src, RECAP_MAX_CHARS) : ''
-}
+// ---- hot.md: the ≤500-word "where we left off" snapshot (memory U1 · S-7) -----
 
-/**
- * Build the evidence-linked digest markdown for `sessions/<slug>.md`. The body
- * has three parts, in trust order: a one-line header, the git `## Evidence`
- * (hard truth), then the session's own `## Recap` (clearly framed as self-report,
- * never as fact). Starts with a `# ` heading so `memory-core.parseDigestMeta`
- * reads it as the timeline title. Provenance is NOT added here — the memory
- * writer (`appendMemoryEntry`) stamps it server-side.
- *
- * Caps the commit + file lists ({@link DIGEST_COMMIT_CAP} / {@link DIGEST_FILE_CAP})
- * and LOGS the elision inline ("+N more") — never a silent truncation.
- */
-export function formatDigest(input: DigestInput): string {
-  const lines: string[] = []
-  const title = input.title.trim() || `Session ${input.sessionShort}`
-  lines.push(`# ${title}`)
-  lines.push('')
-
-  // One-line header: what/where/why-now, all facts.
-  const verb = input.endReason === 'ended' ? 'ended' : 'went idle'
-  const branchPart = input.branch ? ` · branch \`${input.branch}\`` : ''
-  lines.push(`_Session \`${input.sessionShort}\`${branchPart} · ${verb} · auto-digest_`)
-  lines.push('')
-
-  // Evidence — the hard git truth (never self-report).
-  lines.push('## Evidence')
-  lines.push(...commitEvidenceLines(input.commits, input.fileStats, input.dirtyCount))
-
-  // Recap — the session's OWN words (self-report; framed, never trusted as fact).
-  const recap = recapText(input)
-  if (recap) {
-    lines.push('')
-    lines.push('## Recap')
-    lines.push("_The session's own summary — context, not verified fact:_")
-    lines.push('')
-    lines.push(recap)
-  }
-
-  // Left off — the freshest open thread (the retomada cue).
-  const leftOff = input.lastPrompt ? elide(input.lastPrompt, LINE_MAX_CHARS) : ''
-  if (leftOff && leftOff !== recap) {
-    lines.push('')
-    lines.push('## Left off')
-    lines.push(leftOff)
-  }
-
-  return lines.join('\n') + '\n'
-}
-
-// ---- Hot proposal builder (the ≤500-word retomada snapshot) ------------------
-
-/** Everything the hot-proposal builder needs — assembled by the shell. */
+/** Everything the `hot.md` builder needs — assembled by the engine. */
 export interface HotProposalInput {
   /** `YYYY-MM-DD`. */
   date: string
@@ -398,44 +257,181 @@ export interface HotProposalInput {
   commits: readonly DigestCommit[]
   /** The freshest `last-prompt`, when present. */
   lastPrompt?: string
-  /** The CLI's own recap, when present (fallback for "next"). */
-  awaySummary?: string
   /** Page id of the full digest this snapshot summarizes (`sessions/<slug>`). */
   digestPage: string
+  /** The last assistant message's open questions (`facts.openQuestions`). */
+  openQuestions?: readonly string[]
 }
 
 /**
- * Build the `hot.md` snapshot — the "where we left off" retomada cue (PRD §5,
- * Parnin). Deliberately short (well under the 500-word `hot` cap in
- * `memory-core.HOT_MAX_WORDS`): NOW (what this was), LAST (commit evidence), NEXT
- * (the open thread), and a `[[link]]` to the full digest. The shell writes it to
- * `hot.md` directly after the digest, replacing the previous snapshot.
+ * Every label Harnu writes in `hot.md`, in one table (D-8). English until a memory label set
+ * exists for another locale; text copied from the transcript is never translated, it is a
+ * verbatim block. A value is the label as the file shows it, without the markup around it.
  */
-export function buildHotProposal(input: HotProposalInput): string {
-  const lines: string[] = []
-  const title = input.title.trim() || 'Recent session'
-  lines.push(`**Now:** ${elide(title, LINE_MAX_CHARS)}`)
-  lines.push('')
+export const MEMORY_LABELS = {
+  now: 'Now:',
+  /** Followed by ` (<date>):` in the file. */
+  last: 'Last',
+  next: 'Next:',
+  parallel: 'Parallel:',
+  lastPrompt: 'Last prompt (verbatim):',
+  fullDigest: 'Full digest:'
+} as const
 
+/** Max parallel lines kept in `hot.md`. */
+const HOT_PARALLEL_MAX = 5
+
+/** Code points of the title in the Now block and in a parallel line. */
+const HOT_TITLE_CHARS = 200
+const HOT_PARALLEL_TITLE_CHARS = 80
+
+/** How hard the Next block is cut, in order, until the whole fits the word cap. */
+const HOT_NEXT_LADDER = [
+  { question: 300, questions: 5, prompt: LINE_MAX_CHARS },
+  { question: 120, questions: 5, prompt: 120 },
+  { question: 40, questions: 2, prompt: 40 }
+] as const
+
+/** Whitespace-delimited words, as the `hot.md` cap counts them. */
+function wordCount(text: string): number {
+  const t = text.trim()
+  return t.length === 0 ? 0 : t.split(/\s+/).length
+}
+
+const bold = (label: string): string => `**${label}**`
+
+/** The Next block: the open questions, else the last prompt under its label, else a dash. */
+function hotNext(input: HotProposalInput, rung: (typeof HOT_NEXT_LADDER)[number] | null): string {
+  const dash = `${bold(MEMORY_LABELS.next)} —`
+  if (!rung) return dash
+  const questions = (input.openQuestions ?? [])
+    .map((q) => oneLine(q.trim()))
+    .filter((q) => q !== '')
+    .slice(-rung.questions)
+    .map((q) => `> - ${cutText(q, rung.question)}`)
+  if (questions.length > 0) return `${bold(MEMORY_LABELS.next)}\n${questions.join('\n')}`
+  const prompt = (input.lastPrompt ?? '').trim()
+  if (!prompt) return dash
+  return `${bold(MEMORY_LABELS.next)}\n${MEMORY_LABELS.lastPrompt}\n${quoteBlock(cutText(prompt, rung.prompt))}`
+}
+
+/** A fresh snapshot of one session. Never over the word cap: the Next block gives way first. */
+function hotSnapshot(input: HotProposalInput): string {
+  const title = cutText(input.title.trim() || 'Recent session', HOT_TITLE_CHARS)
   const branchPart = input.branch ? ` on \`${input.branch}\`` : ''
   const latest = input.commits[0]
-  if (latest) {
-    const n = input.commits.length
-    const plural = n === 1 ? 'commit' : 'commits'
-    lines.push(
-      `**Last (${input.date}):** ${n} ${plural}${branchPart} — latest \`${latest.shortHash}\` ${latest.subject || '(no subject)'}`
-    )
-  } else {
-    lines.push(`**Last (${input.date}):** no new commits${branchPart}`)
+  const last = latest
+    ? `${input.commits.length} ${input.commits.length === 1 ? 'commit' : 'commits'}${branchPart} — latest \`${latest.shortHash}\` ${cutText(oneLine(latest.subject.trim()) || '(no subject)', HOT_TITLE_CHARS)}`
+    : `no new commits${branchPart}`
+  const build = (next: string): string =>
+    [
+      `${bold(MEMORY_LABELS.now)}\n${quoteBlock(title)}`,
+      `${bold(`${MEMORY_LABELS.last} (${input.date}):`)} ${last}`,
+      next,
+      `${MEMORY_LABELS.fullDigest} [[${input.digestPage}]]`
+    ].join('\n\n') + '\n'
+  for (const rung of HOT_NEXT_LADDER) {
+    const hot = build(hotNext(input, rung))
+    if (wordCount(hot) <= HOT_MAX_WORDS) return hot
   }
-  lines.push('')
+  return build(hotNext(input, null))
+}
 
-  const next = (input.lastPrompt || input.awaySummary || '').trim()
-  lines.push(`**Next:** ${next ? elide(next, LINE_MAX_CHARS) : '—'}`)
-  lines.push('')
+/** A body read back from `hot.md`: the text up to the Parallel list, and the list's lines. */
+function splitHot(current: string): { head: string; lines: string[] } {
+  const rows = splitFrontmatter(current).body.split(/\r?\n/)
+  // The write path ends the file with its stamp (and sometimes an entry line); both are
+  // regenerated by the next write, so they are not part of the body.
+  while (rows.length > 0) {
+    const row = rows[rows.length - 1].trim()
+    if (row === '' || row.startsWith('> provenance:') || row.startsWith('> entry:')) rows.pop()
+    else break
+  }
+  const label = rows.lastIndexOf(bold(MEMORY_LABELS.parallel))
+  const tail = label === -1 ? [] : rows.slice(label + 1)
+  const listed = label !== -1 && tail.every((r) => r.trim() === '' || r.startsWith('- '))
+  const head = (listed ? rows.slice(0, label) : rows).join('\n').trim()
+  return { head, lines: listed ? tail.filter((r) => r.startsWith('- ')) : [] }
+}
 
-  lines.push(`Full digest: [[${input.digestPage}]]`)
-  return lines.join('\n') + '\n'
+/** The key a parallel line is filed under, or null when the line is not one of ours. */
+function parallelKey(line: string): string | null {
+  const m = /^- `([^`]*)` · /.exec(line)
+  return m ? m[1] : null
+}
+
+/** A body followed by its Parallel list; the oldest lines go while the whole is over the cap. */
+function withParallel(head: string, lines: readonly string[]): string {
+  const list = [...lines]
+  const render = (): string =>
+    list.length === 0
+      ? `${head}\n`
+      : `${head}\n\n${bold(MEMORY_LABELS.parallel)}\n${list.join('\n')}\n`
+  while (list.length > 0 && wordCount(render()) > HOT_MAX_WORDS) list.pop()
+  return render()
+}
+
+/**
+ * The merge of a new snapshot into `hot.md` (spec S-7), with which snapshot the body is.
+ * `kept: true` means the current body stands, so the next stamp must name `currentKey`.
+ */
+export function mergeHotPlan(args: {
+  current: string | null
+  currentKey: string | null
+  next: HotProposalInput
+  nextKey: string
+}): { hot: string; kept: boolean } {
+  const { current, currentKey, next, nextKey } = args
+  if (current === null || currentKey === null) return { hot: hotSnapshot(next), kept: false }
+  const key = nextKey.replace(/`/g, "'")
+
+  // The same branch replaces its own body, but the other branches' lines stay (R-5).
+  if (currentKey === nextKey) {
+    const others = splitHot(current).lines.filter((l) => parallelKey(l) !== key)
+    return {
+      hot: withParallel(hotSnapshot(next).trimEnd(), others.slice(0, HOT_PARALLEL_MAX)),
+      kept: false
+    }
+  }
+
+  const { head, lines } = splitHot(current)
+  // Nothing to keep, or a body that fills the cap on its own: a snapshot of one's own it is.
+  if (head === '' || wordCount(head) > HOT_MAX_WORDS) return { hot: hotSnapshot(next), kept: false }
+
+  const title = cutText(oneLine(next.title.trim() || 'Recent session'), HOT_PARALLEL_TITLE_CHARS)
+  const line = `- \`${key}\` · ${next.date} · ${title} → [[${next.digestPage}]]`
+  const list = [line, ...lines.filter((l) => parallelKey(l) !== key)].slice(0, HOT_PARALLEL_MAX)
+  return { hot: withParallel(head, list), kept: true }
+}
+
+/**
+ * Merge the new session's snapshot into the current `hot.md` (spec S-7, R-5). The key is the
+ * branch, or the folder path for a folder outside git. No current hot or a current hot with no
+ * key replaces it; the same key replaces the body but keeps the other branches' Parallel lines;
+ * a different key keeps the current body and files the new snapshot as one line of the Parallel
+ * list at its end (newest first, at most five, the oldest dropped while the whole is over the
+ * word cap). Chapter 3 replaces all of this with the derived handoff.
+ */
+export function mergeHot(args: {
+  current: string | null
+  currentKey: string | null
+  next: HotProposalInput
+  nextKey: string
+}): string {
+  return mergeHotPlan(args).hot
+}
+
+/**
+ * The key of the snapshot a `hot.md` holds: the branch of the stamp the write path left at its
+ * end. The last stamp line counts, so a prompt quoted in the body cannot name the key.
+ */
+export function hotKeyOf(content: string): string | null {
+  const rows = content.split(/\r?\n/)
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].trim().startsWith('> provenance:'))
+      return parseProvenanceLine(rows[i]).branch ?? null
+  }
+  return null
 }
 
 // ---- Memory U1 (S-1): shared types, trigger, planner, digest body ------------
@@ -680,4 +676,41 @@ export function renderDigest(input: DigestRenderInput): string {
     out = assemble()
   }
   return out
+}
+
+// ---- The memory-root guard (S-3) --------------------------------------------
+
+/**
+ * Whether the digest engine may write into the memory of `checkout` (the folder whose
+ * `.harnu/memory/` would hold the digest). False for the home directory itself, the
+ * filesystem root, and anything inside `<home>/.claude` (Claude Code's data) or
+ * `<home>/.harnu` (the global memory layer, ADR-0024), so a session started in one of
+ * those never gets a digest written there. Pure path math: no fs.
+ */
+export function digestTargetAllowed(checkout: string, home: string): boolean {
+  const target = path.resolve(checkout)
+  const homeDir = path.resolve(home)
+  if (target === path.parse(target).root || target === homeDir) return false
+  return !['.claude', '.harnu'].some((name) => isWithin(target, path.join(homeDir, name)))
+}
+
+/** Whether `target` is `dir` or a path below it (both already resolved). */
+function isWithin(target: string, dir: string): boolean {
+  const rel = path.relative(dir, target)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+}
+
+/** How often one folder may raise a "Memory digest failed" notice (spec S-8): once an hour. */
+export const DIGEST_FAILURE_NOTICE_MS = 3_600_000
+
+/**
+ * Whether a digest failure in a folder may raise a notice now: true when none was raised before
+ * (`lastNoticeAt` undefined) or the last one is at least {@link DIGEST_FAILURE_NOTICE_MS} old.
+ * The engine keeps the times per folder; a skipped plan is not a failure and never asks.
+ */
+export function shouldNotifyDigestFailure(
+  lastNoticeAt: number | undefined,
+  nowMs: number
+): boolean {
+  return lastNoticeAt === undefined || nowMs - lastNoticeAt >= DIGEST_FAILURE_NOTICE_MS
 }

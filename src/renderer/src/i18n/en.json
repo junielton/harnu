@@ -132,6 +132,7 @@
     "terminal": "Terminal",
     "split": "Split horizontal",
     "browser": "Browser",
+    "moreActions": "More actions",
     "splitLayout": "Split layout: {mode}",
     "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Open folder",
@@ -176,6 +177,8 @@
     "close": "Close helper",
     "maximize": "Maximize",
     "restore": "Restore",
+    "expand": "Expand to window",
+    "exitExpand": "Exit expanded view",
     "shellTitle": "Shell",
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
@@ -373,7 +376,15 @@
     "decisionsEmpty": "No decisions recorded yet.",
     "timelineEmpty": "No session digests yet — they appear here as sessions wrap up.",
     "openSession": "Open session",
-    "sessionNotFound": "That session isn't loaded."
+    "sessionNotFound": "That session isn't loaded.",
+    "evidence": {
+      "noCommits": "No commits",
+      "noGit": "No git",
+      "orphan": "Recovered",
+      "noCommitsHint": "Written from the conversation alone: the session made no commits.",
+      "noGitHint": "This folder is not a git repository, so the digest has no git evidence.",
+      "orphanHint": "Recovered from a removed folder's transcript before Cleanup could trash it."
+    }
   },
   "explorerPane": {
     "label": "Project files",
@@ -1187,6 +1198,16 @@
         "auto": "Auto",
         "sideBySide": "Side by side",
         "stacked": "Stacked"
+      },
+      "floatingPanels": {
+        "label": "Floating panels",
+        "hint": "Shows each pane as its own rounded island on a darker background, with an even gap between them. Off keeps the classic edge-to-edge layout."
+      },
+      "expandHides": {
+        "label": "Expand hides",
+        "hint": "What gets out of the way when a helper pane is expanded to the window. Everything also hides the sidebar and the Fleet rail; Session only hides just the session.",
+        "everything": "Everything",
+        "sessionOnly": "Session only"
       }
     },
     "interface": {
@@ -1466,6 +1487,7 @@
       "pane_focusNext": "Focus the next pane",
       "pane_focusPrev": "Focus the previous pane",
       "pane_toggleMaximize": "Maximize or restore the focused pane",
+      "pane_expandToWindow": "Expand the focused pane to the window",
       "pane_close": "Close the focused pane",
       "terminal_toggle": "Toggle the terminal pane",
       "layout_cycleSplitOrientation": "Cycle the split layout (auto, side by side, stacked)",
@@ -3051,6 +3073,10 @@
           "ack": "I checked: this folder is really gone, not on a drive that's unplugged."
         },
         "memory": "includes memory notes",
+        "digest": {
+          "done": "Digested",
+          "partial": "{n} not digested"
+        },
         "confirm": {
           "title": "Move {n} transcript folder to the trash? | Move {n} transcript folders to the trash?",
           "subtitle": "The folders these sessions ran in are gone, so Claude can no longer resume them here.",
@@ -3058,7 +3084,28 @@
           "recoverable": "They go to the OS trash, so you can bring them back.",
           "memory": "{n} of them also holds Claude memory notes for that folder. | {n} of them also hold Claude memory notes for that folder.",
           "total": "{n} folder · {size} | {n} folders · {size}",
+          "undigested": {
+            "summary": "{n} session in this selection has no digest yet. Trashing it loses what it did. | {n} sessions in this selection have no digest yet. Trashing them loses what they did.",
+            "retry": "Cancel to keep them: Harnu tries the digest again on the next scan.",
+            "row": "{n} not digested · digests are kept in {home}",
+            "noHome": "No repository was found for this folder, so no digest can be written.",
+            "ack": "Trash without a digest"
+          },
           "confirm": "Move to trash"
+        }
+      },
+      "capacity": {
+        "low": {
+          "title": "Docker is nearly out of network slots",
+          "body": "{free} of {total} free. Cleanup has nothing left to free on its own.",
+          "bodyOff": "{free} of {total} free. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "bodyPaused": "{free} of {total} free. Automatic Docker cleanup is paused, so nothing will be freed on its own."
+        },
+        "zero": {
+          "title": "Docker has no free network slots",
+          "body": "The next compose up will fail. Stop a stack you do not need.",
+          "bodyOff": "The next compose up will fail. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "bodyPaused": "The next compose up will fail. Automatic Docker cleanup is paused, so nothing will be freed on its own."
         }
       },
       "shelved": {
@@ -3122,6 +3169,28 @@
           "reportOnly": "The first pass only reports what it would shelve; nothing is removed until you acknowledge it.",
           "ack": "Acknowledge first report",
           "active": "Shelving is active. Up to {n} worktrees per cycle."
+        },
+        "docker": {
+          "eyebrow": "Docker: pausing and garbage",
+          "intro": "Cleanup keeps Docker from running out of room by itself. A stack that has sat idle for {hours} hours is Paused (brought down, never deleted, its volumes always kept), and empty compose networks and stacks left behind by removed worktrees are cleared. Bring a Paused stack back with its compose up command.",
+          "label": "Pause idle stacks and clear Docker garbage automatically",
+          "hint": "Runs on the same background timer as the autopilot. Volumes are never removed.",
+          "reportOnly": "The first pass only records what it would pause or remove; nothing changes in Docker until you acknowledge it.",
+          "ack": "Acknowledge first report",
+          "active": "Docker cleanup is active. Up to {n} actions per cycle.",
+          "report": {
+            "kind": {
+              "network": "Network",
+              "orphan": "Orphan stack",
+              "pause": "Pause"
+            },
+            "more": "+{n} more"
+          },
+          "pauseAll": {
+            "label": "Pause all autonomous cleanup",
+            "hint": "Stops shelving, Docker cleanup and the autopilot's cleaning at once. Cleaning by hand keeps working.",
+            "note": "Autonomous cleanup is paused. Nothing is shelved, paused or removed on its own until you turn this off."
+          }
         },
         "interval": {
           "label": "Run every",
@@ -3225,6 +3294,8 @@
         "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
         "missingExpected": "Cleanup could not check it against what you were shown. Review it and try again.",
         "noLongerOrphan": "This volume is in use again, so it was left alone.",
+        "needsUndigestedConfirmation": "Some sessions in this project have no digest yet, so it was left alone. Open it again and choose Trash without a digest, or wait for the next scan.",
+        "needsNotFoundConfirmation": "Harnu can't confirm this folder is really gone, so it was left alone. Check it is not on a drive that's unplugged, then open it again and tick the confirmation.",
         "kept": "You marked it Keep, so it was left alone.",
         "neverClean": "It is on your never-clean list, so it was left alone.",
         "mainCheckout": "This is a main checkout, which is never cleaned.",
@@ -3619,7 +3690,8 @@
     "section": {
       "needsYou": "Needs you",
       "leaveAlone": "Leave alone",
-      "recent": "Recent"
+      "recent": "Recent",
+      "paused": "Paused"
     },
     "verdict": {
       "zombie": "zombie",
@@ -3669,7 +3741,9 @@
       "bulkWho": "{n} stacks",
       "whenStopped": "stopped {ago}",
       "whenStarted": "started {ago}",
-      "whenRemoved": "removed {ago}"
+      "whenRemoved": "removed {ago}",
+      "paused": "paused",
+      "whenPaused": "paused {ago}"
     },
     "nav": {
       "openWorktree": "Open worktree",
@@ -3723,7 +3797,8 @@
       "actionRemoved": "removed {n} container | removed {n} containers",
       "actionRemovedKept": "removed {n} container · volume kept | removed {n} containers · volume kept",
       "actionRemovedVolume": "removed {n} container · volume removed | removed {n} containers · volume removed",
-      "freed": "{ram} RAM · {n} port | {ram} RAM · {n} ports"
+      "freed": "{ram} RAM · {n} port | {ram} RAM · {n} ports",
+      "actionPaused": "paused · {n} container removed, volumes kept | paused · {n} containers removed, volumes kept"
     },
     "note": {
       "orphan": "Nothing in Harnu can use this stack again — the code it ran from is gone. Its volume may still hold data you want, so it is never removed without asking.",
@@ -3819,7 +3894,23 @@
       "removing": "Removing…"
     },
     "openCleanup": "Open Cleanup · {n} stack | Open Cleanup · {n} stacks",
-    "openCleanupTitle": "Cleaning up stacks now happens in Cleanup"
+    "openCleanupTitle": "Cleaning up stacks now happens in Cleanup",
+    "paused": {
+      "chip": "Paused",
+      "note": "Brought down with compose down. Its containers and network are gone; its volumes were kept. Nothing runs until you bring it back.",
+      "evidence": {
+        "by": "Paused by",
+        "when": "Paused",
+        "folder": "Folder",
+        "ports": "Ports held",
+        "build": "Rebuilds on restore"
+      },
+      "actor": {
+        "autopilot": "Cleanup",
+        "operator": "You",
+        "agent": "An agent"
+      }
+    }
   },
   "prStack": {
     "title": "PR Stack",
@@ -4629,7 +4720,11 @@
         "title": "Also record",
         "hint": "Tick what Harnu should write to project memory. Nothing is written without a tick.",
         "nothing": "Nothing notable to record.",
-        "kind": { "decision": "Decision", "lesson": "Lesson", "hot": "Hot" },
+        "kind": {
+          "decision": "Decision",
+          "lesson": "Lesson",
+          "hot": "Hot"
+        },
         "replaces": "Replaces {id}"
       },
       "warnings": {
@@ -5002,8 +5097,10 @@
   },
   "browserPane": {
     "network": {
-      "label": "Network",
-      "hint": "Network capture is on. It stops by itself and records no bodies unless the agent asked for them."
+      "off": "Offline",
+      "on": "Network on",
+      "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
+      "onHint": "Network on: the page can reach the network. Click to turn it off."
     },
     "label": "Browser pane",
     "newTab": "New tab",
@@ -5089,12 +5186,6 @@
     "noticeDownloaded": "Saved {name}",
     "noticeDownloadCancelled": "Download cancelled",
     "noticeDownloadFailed": "The download failed",
-    "network": {
-      "off": "Offline",
-      "on": "Network on",
-      "offHint": "Offline: the page cannot reach the network. Click to allow it for this pane.",
-      "onHint": "Network on: the page can reach the network. Click to turn it off."
-    },
     "discarded": {
       "titleIdle": "Paused to save memory",
       "titleRestored": "Not loaded yet",

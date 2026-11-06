@@ -75,6 +75,32 @@ export async function settleUntil(done: () => boolean, timeoutMs = 5000): Promis
 }
 
 /**
+ * Wait until `done()` holds, yielding to timers and I/O between checks, then let
+ * the microtasks and Vue's flush that the condition's cause queued drain.
+ *
+ * For a pane whose load, save or reload crosses REAL async work (file I/O, X6's
+ * time-sliced render): a fixed number of ticks or milliseconds is a bet on how fast
+ * the machine is, and a loaded CI runner loses it (BUG-242). This waits for the
+ * state itself. `timeoutMs` only turns a condition that never comes true into a
+ * failure that names `what`; no test relies on it as a delay.
+ */
+export async function waitFor(
+  what: string,
+  done: () => boolean,
+  timeoutMs = 15_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!done()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for: ${what}`)
+    await new Promise((r) => setTimeout(r, 5))
+    await flushPromises()
+    await nextTick()
+  }
+  await flushPromises()
+  await nextTick()
+}
+
+/**
  * Mount a canvas pane and wait until every cell in `ids` (nodes AND edges) has an
  * element. One `settle()` is not enough on a loaded runner, where X6 spreads the
  * first render over several jobs; a test that drives the board by element must not

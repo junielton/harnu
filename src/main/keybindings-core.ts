@@ -144,6 +144,8 @@ export type ShortcutActionId =
   | 'pane.focusNext'
   | 'pane.focusPrev'
   | 'pane.toggleMaximize'
+  // T628: expand the focused helper pane to the window (unbound; ⌘⇧M stays maximize and exits it).
+  | 'pane.expandToWindow'
   | 'pane.close'
   | 'terminal.toggle'
   // T627: cycle the session area / helper stack orientation (auto → side-by-side → stacked).
@@ -450,6 +452,7 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('pane.focusNext', 'panes', 'F6', { shield: true, palette: false }),
   def('pane.focusPrev', 'panes', 'Shift+F6', { shield: true, palette: false }),
   def('pane.toggleMaximize', 'panes', 'Cmd+Shift+M', { palette: false }),
+  def('pane.expandToWindow', 'panes', null, { palette: false }),
   def('pane.close', 'panes', null, { palette: false }),
   def('terminal.toggle', 'panes', null, { shield: true }),
   // T627 — the Topbar split-layout button's twin: auto → side-by-side → stacked → auto. Unbound,
