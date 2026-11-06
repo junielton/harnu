@@ -3,8 +3,9 @@
  * Links shelf popover content (design.md §6 — "Links pill + popover").
  * Read-only list of the http(s) links the active session's transcript holds — or, with the Folder
  * scope, of every session in the folder — newest first. Each row offers Open / Copy / Reference on
- * hover. Labels are derived from the URL alone in main (no network). Rendered inside the positioned
- * popover container in `StatusFooter.vue`, like `FooterImagePopover`.
+ * hover or focus (an opacity crossfade — the row never changes size). Labels are derived from the URL
+ * alone in main (no network). Rendered inside the positioned popover container in `StatusFooter.vue`,
+ * like `FooterImagePopover`.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -203,7 +204,7 @@ const ACTION_BTN =
           <span class="shrink-0 font-mono text-text-4">{{ item.count }}</span>
         </div>
 
-        <!-- Link row: kind icon · label · time (→ actions on hover) / detail line · excerpt · reason -->
+        <!-- Link row: kind icon · label · time (crossfades to the actions) / detail line · excerpt -->
         <div
           v-else
           class="group grid grid-cols-[16px_1fr_auto] items-center gap-x-2 gap-y-0.5 rounded-sm p-1.5 hover:bg-surface focus-within:bg-surface"
@@ -224,45 +225,49 @@ const ACTION_BTN =
             >{{ item.link.label }}</span
           >
 
-          <!-- Time gives way to the actions on hover / keyboard focus -->
-          <span
-            class="col-start-3 row-span-2 row-start-1 self-start pt-px text-[11px] tabular-nums text-text-4 group-focus-within:hidden group-hover:hidden"
-            >{{ formatLinkTime(item.link.at) }}</span
-          >
-          <span
-            class="col-start-3 row-span-2 row-start-1 hidden items-center gap-0.5 self-center group-focus-within:flex group-hover:flex"
-          >
-            <button
-              type="button"
-              :class="ACTION_BTN"
-              :aria-label="t('links.openAria', { label: item.link.label })"
-              :title="t('links.open')"
-              data-testid="footer-links-open"
-              @click="open(item.link)"
+          <!-- One fixed slot: the time and the actions share the same grid cell, so the cell is always as
+               big as the larger of the two. Hover / focus only crossfades them (opacity) — never display
+               or visibility, and the buttons stay in the tab order so focus-within can reveal them. -->
+          <span class="col-start-3 row-span-2 row-start-1 grid items-center justify-items-end">
+            <span
+              class="col-start-1 row-start-1 self-start pt-px text-[11px] tabular-nums text-text-4 transition-opacity group-focus-within:opacity-0 group-hover:opacity-0"
+              >{{ formatLinkTime(item.link.at) }}</span
             >
-              <ExternalLink :size="13" :stroke-width="1.6" />
-            </button>
-            <button
-              type="button"
-              :class="ACTION_BTN"
-              :aria-label="t('links.copyAria', { label: item.link.label })"
-              :title="t('links.copy')"
-              data-testid="footer-links-copy"
-              @click="copy(item.link)"
+            <span
+              class="col-start-1 row-start-1 flex items-center gap-0.5 self-center opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
             >
-              <Copy :size="13" :stroke-width="1.6" />
-            </button>
-            <button
-              type="button"
-              :class="ACTION_BTN"
-              :disabled="!canReference"
-              :aria-label="t('links.referenceAria', { label: item.link.label })"
-              :title="canReference ? t('links.reference') : t('links.referenceDisabled')"
-              data-testid="footer-links-reference"
-              @click="reference(item.link)"
-            >
-              <Reply :size="13" :stroke-width="1.6" />
-            </button>
+              <button
+                type="button"
+                :class="ACTION_BTN"
+                :aria-label="t('links.openAria', { label: item.link.label })"
+                :title="t('links.open')"
+                data-testid="footer-links-open"
+                @click="open(item.link)"
+              >
+                <ExternalLink :size="13" :stroke-width="1.6" />
+              </button>
+              <button
+                type="button"
+                :class="ACTION_BTN"
+                :aria-label="t('links.copyAria', { label: item.link.label })"
+                :title="t('links.copy')"
+                data-testid="footer-links-copy"
+                @click="copy(item.link)"
+              >
+                <Copy :size="13" :stroke-width="1.6" />
+              </button>
+              <button
+                type="button"
+                :class="ACTION_BTN"
+                :disabled="!canReference"
+                :aria-label="t('links.referenceAria', { label: item.link.label })"
+                :title="canReference ? t('links.reference') : t('links.referenceDisabled')"
+                data-testid="footer-links-reference"
+                @click="reference(item.link)"
+              >
+                <Reply :size="13" :stroke-width="1.6" />
+              </button>
+            </span>
           </span>
 
           <!-- Detail line: kind name · host / node (mono) · who said it -->
@@ -286,22 +291,26 @@ const ACTION_BTN =
             >
           </span>
 
-          <!-- The surrounding sentence, only while the row is hovered / focused -->
+          <!-- The surrounding sentence — always rendered, one ellipsised line -->
           <span
             v-if="item.link.excerpt"
-            class="col-start-2 mt-0.5 hidden truncate border-l-2 border-border-2 py-px pl-1.5 text-[11px] text-text-3 group-focus-within:block group-hover:block"
+            class="col-start-2 mt-0.5 truncate border-l-2 border-border-2 py-px pl-1.5 text-[11px] text-text-3"
             data-testid="footer-links-excerpt"
             >“{{ item.link.excerpt }}”</span
-          >
-          <span
-            v-if="!canReference"
-            class="col-span-2 col-start-2 mt-0.5 hidden text-[11px] text-warning group-focus-within:block group-hover:block"
-            data-testid="footer-links-reference-reason"
-            >{{ t('links.referenceDisabled') }}</span
           >
         </div>
       </template>
     </div>
+
+    <!-- Why Reference is disabled — said once for the whole list, not on every row, and in every
+         state (never only on hover) -->
+    <p
+      v-if="!canReference && items.length > 0"
+      class="px-0.5 text-[11px] text-warning"
+      data-testid="footer-links-reference-reason"
+    >
+      {{ t('links.referenceDisabled') }}
+    </p>
 
     <!-- Where the list is read from — full sentence, with period (§8) -->
     <p class="px-0.5 text-[11px] text-text-4">
