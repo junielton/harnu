@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import {
   ArrowUpRight,
   GitBranch,
+  Expand,
   Maximize2,
   Minimize2,
   NotebookText,
@@ -129,6 +130,25 @@ function hasSessionRef(d: DigestMeta): boolean {
 }
 
 /**
+ * The evidence badge of a timeline row (memory U1 S-8): the digest's header token as a chip.
+ * A commit-backed digest, and one written before the token existed, has none.
+ */
+function evidenceBadge(
+  d: DigestMeta
+): { key: 'noCommits' | 'noGit' | 'orphan'; tone: string } | null {
+  switch (d.evidence) {
+    case 'no-commits':
+      return { key: 'noCommits', tone: 'border-border bg-surface text-text-3' }
+    case 'no-git':
+      return { key: 'noGit', tone: 'border-border bg-surface text-text-3' }
+    case 'orphan':
+      return { key: 'orphan', tone: 'border-accent-line bg-accent-soft text-accent' }
+    default:
+      return null
+  }
+}
+
+/**
  * Click a timeline digest → reveal + select its originating session in the
  * sidebar. Degrades gracefully: a digest whose session isn't loaded (deleted,
  * or from another machine) steers with a toast instead of navigating nowhere.
@@ -162,6 +182,12 @@ function onHeaderMouseDown(ev: MouseEvent): void {
 const isMaximized = computed(() => helpers.maximizedPaneId(props.worktreePath) === props.pane.id)
 function onToggleMaximize(): void {
   helpers.toggleMaximizePane(props.worktreePath, props.pane.id)
+}
+
+/** T628: whether THIS pane is expanded to the window; its header button toggles that. */
+const isExpanded = computed(() => helpers.expandedPaneId(props.worktreePath) === props.pane.id)
+function onToggleExpand(): void {
+  helpers.toggleExpandPane(props.worktreePath, props.pane.id)
 }
 
 // T486 U5b — a region of the pane focus ring: F6 focuses its scroll body (focusing
@@ -203,6 +229,24 @@ useFocusRegion(props.pane.id, rootEl, {
         @click="reload"
       >
         <RotateCcw :size="12" :stroke-width="1.5" />
+      </button>
+      <button
+        class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
+        :class="isExpanded ? 'text-accent' : 'text-text-3'"
+        style="width: 18px; height: 18px"
+        data-test="pane-expand"
+        :title="
+          keybindings.withChord(
+            isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand'),
+            'pane.expandToWindow'
+          )
+        "
+        :aria-label="isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand')"
+        :aria-pressed="isExpanded"
+        @mousedown.stop
+        @click="onToggleExpand"
+      >
+        <Expand :size="12" :stroke-width="1.5" />
       </button>
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
@@ -324,7 +368,7 @@ useFocusRegion(props.pane.id, rootEl, {
               </div>
               <!-- Provenance (author / branch) — visible per §7 (injection mitigation) -->
               <div
-                v-if="d.author || d.branch"
+                v-if="d.author || d.branch || evidenceBadge(d)"
                 class="flex items-center text-text-4"
                 style="gap: 8px; margin-top: 3px; font-size: 10.5px"
               >
@@ -333,6 +377,15 @@ useFocusRegion(props.pane.id, rootEl, {
                   <GitBranch :size="10" :stroke-width="1.6" class="shrink-0" />
                   <span class="truncate font-mono">{{ d.branch }}</span>
                 </span>
+                <span
+                  v-if="evidenceBadge(d)"
+                  class="shrink-0 rounded-xs border px-1.5 py-px text-eyebrow"
+                  :class="evidenceBadge(d)!.tone"
+                  :title="$t(`memoryPane.evidence.${evidenceBadge(d)!.key}Hint`)"
+                  :data-evidence="d.evidence"
+                  data-testid="memory-evidence-badge"
+                  >{{ $t(`memoryPane.evidence.${evidenceBadge(d)!.key}`) }}</span
+                >
               </div>
             </component>
           </li>

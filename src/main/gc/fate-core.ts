@@ -9,7 +9,10 @@ export type BranchFate =
 export interface FateResult {
   fate: BranchFate
   signal: MergeSignal | null
-  /** true only for ancestor, squash-equivalent, or gh-merged whose headRefOid === localTip */
+  /**
+   * true only for ancestor, squash-equivalent, or gh-merged whose headRefOid === localTip —
+   * or whose head CONTAINS the local tip with the PR's content proven landed in the default branch
+   */
   strong: boolean
 }
 
@@ -68,7 +71,8 @@ export function mergedSignal(f: BranchFacts): MergeSignal | null {
 /**
  * Resolve a branch's fate, first match wins:
  *  1. a merge signal               → `merged` (strong only for git-local proof, or a
- *                                    gh-merged PR whose head IS the local tip)
+ *                                    gh-merged PR whose head IS the local tip, or whose
+ *                                    head CONTAINS it with the landing proven — U1)
  *  2. PR CLOSED                    → `closed-unmerged`
  *  3. PR OPEN or remote branch up  → `open`
  *  4. no PR and remote branch gone → `remote-gone`
@@ -77,6 +81,13 @@ export function mergedSignal(f: BranchFacts): MergeSignal | null {
  * `strong` is the ready gate: a branch reused after its merge carries a
  * `gh-merged` signal for a tip that is no longer the PR head, so it is merged but
  * not strongly. A null on either side never counts as a match.
+ *
+ * U1 adds one disjunct: a `gh-merged` signal is also strong when the scanner proved the
+ * local tip is an ancestor of the merged PR head (`tipInPrHead`) AND that the PR's content
+ * reached the default branch, directly or through a merged stacked base
+ * (`prLandedInDefault`). Positive-only: only `=== true` strengthens, `false` and `null`
+ * leave the verdict exactly as before. The upstream-unverified guard is untouched — it is
+ * applied in {@link mergedSignal} before any strength is considered.
  */
 export function resolveFate(f: BranchFacts, localTip: string | null): FateResult {
   const signal = mergedSignal(f)
@@ -87,7 +98,8 @@ export function resolveFate(f: BranchFacts, localTip: string | null): FateResult
       (signal === 'gh-merged' &&
         localTip !== null &&
         f.pr?.headRefOid != null &&
-        f.pr.headRefOid === localTip)
+        f.pr.headRefOid === localTip) ||
+      (signal === 'gh-merged' && f.tipInPrHead === true && f.prLandedInDefault === true)
     return { fate: 'merged', signal, strong }
   }
   if (f.pr?.state === 'CLOSED') return { fate: 'closed-unmerged', signal: null, strong: false }

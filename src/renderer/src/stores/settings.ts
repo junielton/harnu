@@ -5,6 +5,12 @@ import { useUiStore } from './ui'
 import { useKeybindingsStore } from './keybindings'
 import type { EditorSetting, SettingsData } from '../../../preload'
 import { DEFAULT_EDITOR_SETTING, effectiveEditorSetting } from '../../../main/editor-launch'
+import {
+  DEFAULT_SPLIT_LAYOUT,
+  nextSplitLayout,
+  sanitizeSplitLayout,
+  type SplitLayoutSetting
+} from '../lib/split-orientation'
 
 /**
  * Terminal-font-size settings store (terminal-font-settings spec §6).
@@ -15,6 +21,21 @@ import { DEFAULT_EDITOR_SETTING, effectiveEditorSetting } from '../../../main/ed
  * localStorage (`om2tab.settingsPath`) — the file can be relocated, so the
  * pointer must live somewhere other than the file itself.
  */
+
+/**
+ * T628: what expanding a helper pane to the window hides. `everything` collapses the sidebar, the
+ * session area and the Fleet rail; `session-only` collapses the session area alone.
+ */
+export const EXPAND_HIDES = ['everything', 'session-only'] as const
+export type ExpandHides = (typeof EXPAND_HIDES)[number]
+export const DEFAULT_EXPAND_HIDES: ExpandHides = 'everything'
+
+/** Narrow arbitrary input (a hand-edited settings.json) to a known value, else the default. */
+export function sanitizeExpandHides(v: unknown): ExpandHides {
+  return (EXPAND_HIDES as readonly unknown[]).includes(v)
+    ? (v as ExpandHides)
+    : DEFAULT_EXPAND_HIDES
+}
 
 export const DEFAULT_TERMINAL_FONT_SIZE = 13
 export const MIN_TERMINAL_FONT_SIZE = 8
@@ -54,6 +75,14 @@ export const useSettingsStore = defineStore('settings', () => {
   // the user is mid-word); it is sanitized on the way to disk and compared
   // sanitized against external edits.
   const editor = ref<EditorSetting>({ ...DEFAULT_EDITOR_SETTING })
+  // T627: how the session area and the helper stack are laid out. `auto` follows
+  // the window's shape (`layout.splitOrientation` resolves it); the other two pin it.
+  const splitLayout = ref<SplitLayoutSetting>(DEFAULT_SPLIT_LAYOUT)
+  // T626: the opt-in "Floating panels" layout. Mirrored onto <html> as `data-floating="on"` (absent
+  // when off), the same mechanism as `data-theme`; every floating style is scoped to it.
+  const floatingPanels = ref<boolean>(false)
+  // T628: what expanding a helper pane to the window hides (Settings → Appearance).
+  const expandHides = ref<ExpandHides>(DEFAULT_EXPAND_HIDES)
   const path = ref<string>('')
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -66,6 +95,16 @@ export const useSettingsStore = defineStore('settings', () => {
   // after the user typed further) never rewinds the field.
   let editorSaveTimer: ReturnType<typeof setTimeout> | null = null
   let lastSavedEditor = ''
+  let splitLayoutSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let floatingSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let expandHidesSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** Reflect the switch on <html>. Off removes the attribute, so the default layout is untouched. */
+  function applyFloatingAttribute(on: boolean): void {
+    if (typeof document === 'undefined') return
+    if (on) document.documentElement.setAttribute('data-floating', 'on')
+    else document.documentElement.removeAttribute('data-floating')
+  }
 
   // Guard against a double `init()` (e.g. an HMR re-run) so we never stack two
   // `onSettingsChanged` subscriptions. The unsubscribe is retained rather than
@@ -93,6 +132,10 @@ export const useSettingsStore = defineStore('settings', () => {
     uiZoom.value = clampZoom(data.uiZoom)
     window.api.uiZoomApply(uiZoom.value)
     editor.value = effectiveEditorSetting(data.editor)
+    splitLayout.value = sanitizeSplitLayout(data.splitLayout)
+    floatingPanels.value = data.floatingPanels === true
+    applyFloatingAttribute(floatingPanels.value)
+    expandHides.value = sanitizeExpandHides(data.expandHides)
 
     unsubscribe = window.api.onSettingsChanged(({ data: incoming, error }) => {
       if (error) {
@@ -114,6 +157,24 @@ export const useSettingsStore = defineStore('settings', () => {
       if (nextZoom !== uiZoom.value) {
         uiZoom.value = nextZoom
         window.api.uiZoomApply(nextZoom)
+      }
+      // A split-layout change from outside; our own save echoes the in-memory value, so it is ignored.
+      if (!splitLayoutSaveTimer) {
+        const nextLayout = sanitizeSplitLayout(incoming.splitLayout)
+        if (nextLayout !== splitLayout.value) splitLayout.value = nextLayout
+      }
+      // A Floating panels change from outside; skip our own echo and anything still waiting to save.
+      if (!floatingSaveTimer) {
+        const nextFloating = incoming.floatingPanels === true
+        if (nextFloating !== floatingPanels.value) {
+          floatingPanels.value = nextFloating
+          applyFloatingAttribute(nextFloating)
+        }
+      }
+      // An Expand hides change from outside; skip our own echo and anything still waiting to save.
+      if (!expandHidesSaveTimer) {
+        const nextExpand = sanitizeExpandHides(incoming.expandHides)
+        if (nextExpand !== expandHides.value) expandHides.value = nextExpand
       }
       // An editor change from outside (a hand edit of settings.json). Skip our own echo
       // and anything that lands while a local edit is still waiting to be saved.
@@ -174,12 +235,63 @@ export const useSettingsStore = defineStore('settings', () => {
     }, SAVE_DEBOUNCE_MS)
   }
 
+  /**
+   * Choose the split layout (T627). Applies immediately (the layout store reads
+   * it) and debounced-persists to `settings.json` like the other settings.
+   */
+  function setSplitLayout(next: SplitLayoutSetting): void {
+    splitLayout.value = sanitizeSplitLayout(next)
+    if (splitLayoutSaveTimer) clearTimeout(splitLayoutSaveTimer)
+    splitLayoutSaveTimer = setTimeout(() => {
+      splitLayoutSaveTimer = null
+      if (!path.value) return
+      void window.api.settingsSave(path.value, { splitLayout: splitLayout.value })
+    }, SAVE_DEBOUNCE_MS)
+  }
+
+  /**
+   * Turn the Floating panels layout on or off (T626). Applies at once (the attribute on <html>)
+   * and debounced-persists to `settings.json` like the other settings.
+   */
+  function setFloatingPanels(next: boolean): void {
+    floatingPanels.value = next === true
+    applyFloatingAttribute(floatingPanels.value)
+    if (floatingSaveTimer) clearTimeout(floatingSaveTimer)
+    floatingSaveTimer = setTimeout(() => {
+      floatingSaveTimer = null
+      if (!path.value) return
+      void window.api.settingsSave(path.value, { floatingPanels: floatingPanels.value })
+    }, SAVE_DEBOUNCE_MS)
+  }
+
+  /**
+   * Choose what expanding a helper pane to the window hides (T628). Applies at once (the shell
+   * reads it) and debounced-persists to `settings.json` like the other settings.
+   */
+  function setExpandHides(next: ExpandHides): void {
+    expandHides.value = sanitizeExpandHides(next)
+    if (expandHidesSaveTimer) clearTimeout(expandHidesSaveTimer)
+    expandHidesSaveTimer = setTimeout(() => {
+      expandHidesSaveTimer = null
+      if (!path.value) return
+      void window.api.settingsSave(path.value, { expandHides: expandHides.value })
+    }, SAVE_DEBOUNCE_MS)
+  }
+
+  /** The Topbar button and `layout.cycleSplitOrientation`: auto → side-by-side → stacked → auto. */
+  function cycleSplitLayout(): void {
+    setSplitLayout(nextSplitLayout(splitLayout.value))
+  }
+
   /** Relocate settings.json via the native folder picker. */
   async function changeLocation(): Promise<void> {
     const data: SettingsData = {
       terminalFontSize: terminalFontSize.value,
       uiZoom: uiZoom.value,
-      editor: effectiveEditorSetting(editor.value)
+      editor: effectiveEditorSetting(editor.value),
+      splitLayout: splitLayout.value,
+      floatingPanels: floatingPanels.value,
+      expandHides: expandHides.value
     }
     const res = await window.api.settingsChangeLocation(data)
     if (!res) return
@@ -221,6 +333,18 @@ export const useSettingsStore = defineStore('settings', () => {
       clearTimeout(editorSaveTimer)
       editorSaveTimer = null
     }
+    if (splitLayoutSaveTimer) {
+      clearTimeout(splitLayoutSaveTimer)
+      splitLayoutSaveTimer = null
+    }
+    if (floatingSaveTimer) {
+      clearTimeout(floatingSaveTimer)
+      floatingSaveTimer = null
+    }
+    if (expandHidesSaveTimer) {
+      clearTimeout(expandHidesSaveTimer)
+      expandHidesSaveTimer = null
+    }
     unsubscribe?.()
     unsubscribe = null
     started = false
@@ -230,11 +354,18 @@ export const useSettingsStore = defineStore('settings', () => {
     terminalFontSize,
     uiZoom,
     editor,
+    splitLayout,
+    floatingPanels,
+    expandHides,
     path,
     init,
     setFontSize,
     setUiZoom,
     setEditor,
+    setSplitLayout,
+    cycleSplitLayout,
+    setFloatingPanels,
+    setExpandHides,
     changeLocation,
     reveal,
     openInEditor,

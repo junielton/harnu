@@ -53,6 +53,12 @@ export interface TranscriptScan {
    * folder could not be listed). Their only clue is the project slug; see {@link attributeBySlug}.
    */
   bySlug: Array<{ slug: string; mtimeMs: number }>
+  /**
+   * Folders a session drifted into (C4, BUG-144): the folder a transcript or index entry names is
+   * not the one its project slug encodes, so the sidebar and the transcript disagree about where
+   * the session lives. Shelving such a folder would leave that session without its folder.
+   */
+  drifted: string[]
   /** The projects root itself could not be read: nothing can be said about any folder. */
   rootUnreadable: boolean
 }
@@ -94,6 +100,7 @@ export async function scanTranscripts(
 ): Promise<TranscriptScan> {
   const byPath = new Map<string, Array<{ fileMtime?: number; modified?: string }>>()
   const bySlug: TranscriptScan['bySlug'] = []
+  const drifted = new Set<string>()
   const add = (path: string, s: { fileMtime?: number; modified?: string }): void => {
     const list = byPath.get(path) ?? []
     list.push(s)
@@ -103,13 +110,14 @@ export async function scanTranscripts(
   try {
     slugs = await probe.listProjectDirs()
   } catch {
-    return { folders: [], bySlug: [], rootUnreadable: true }
+    return { folders: [], bySlug: [], drifted: [], rootUnreadable: true }
   }
   for (const slug of slugs) {
     try {
       for (const e of (await probe.readIndex(slug)) ?? []) {
         if (typeof e.projectPath === 'string' && e.projectPath) {
           add(e.projectPath, { fileMtime: e.fileMtime, modified: e.modified })
+          if (slugOfPath(e.projectPath) !== slug) drifted.add(e.projectPath)
         }
       }
     } catch {
@@ -127,8 +135,10 @@ export async function scanTranscripts(
       await Promise.all(
         files.slice(i, i + BATCH).map(async (f) => {
           const cwd = await probe.cwdOf(slug, f.name, f.mtimeMs).catch(() => null)
-          if (cwd) add(cwd, { fileMtime: f.mtimeMs })
-          else bySlug.push({ slug, mtimeMs: f.mtimeMs })
+          if (cwd) {
+            add(cwd, { fileMtime: f.mtimeMs })
+            if (slugOfPath(cwd) !== slug) drifted.add(cwd)
+          } else bySlug.push({ slug, mtimeMs: f.mtimeMs })
         })
       )
     }
@@ -136,6 +146,7 @@ export async function scanTranscripts(
   return {
     folders: [...byPath].map(([path, sessions]) => ({ path, sessions })),
     bySlug,
+    drifted: [...drifted].sort(),
     rootUnreadable: false
   }
 }

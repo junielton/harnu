@@ -5,6 +5,13 @@ import { useUiStore } from './ui'
 import { useAgentTerminalsStore } from './agent-terminals'
 import { i18n } from '../i18n'
 import { paneRegistry } from '../lib/pane-registry'
+import type { PaneRingState } from '../lib/pane-ring'
+import { persistedRef } from './persisted'
+import {
+  SPLIT_RATIO_DEFAULT,
+  clampSplitRatio,
+  type SplitOrientation
+} from '../lib/split-orientation'
 import { displayAlias } from '../components/folder-alias'
 import {
   createPaneAlertQueue,
@@ -20,6 +27,26 @@ import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-
 
 /** An exit sooner than this after spawn means the helper never really started (stale session). */
 export const STALE_EXIT_WINDOW_MS = 2000
+
+/**
+ * T628: the F6 ring while a pane is expanded to the window. Only the expanded pane is on screen, so
+ * the ring holds it alone: the main terminal (inside the collapsed session area) and the other panes
+ * are not reachable. With nothing expanded the state is returned untouched. Pure.
+ */
+export function applyExpandToRing(state: PaneRingState, expandedId: string | null): PaneRingState {
+  if (!expandedId || !state.paneIds.includes(expandedId)) return state
+  return { ...state, mainForeground: false, maximizedId: expandedId }
+}
+
+/** Content/helper-stack split a worktree starts with, and the one the divider's double-click resets to. */
+export const HELPER_SPLIT_RATIO_DEFAULT = SPLIT_RATIO_DEFAULT
+
+/**
+ * T627: the stacked layout's own session-area share, per worktree. The side-by-side
+ * ratio lives in each worktree's `helpers.json` state (`splitRatio`); the stacked one
+ * is kept here, in `localStorage`, so switching orientation never overwrites the other.
+ */
+const STACKED_RATIOS_KEY = 'om2tab.stackedSplitRatios'
 
 /** Passed by the agent-dispatch shim (`command-dispatch.ts`) only — never by a
  * human call site. Drives the unseen-panes badge + coalesced OS alert
@@ -409,7 +436,30 @@ export const useHelpersStore = defineStore('helpers', () => {
   })
 
   const splitRatioForCurrentWorktree = computed<number>(() => {
-    return stateForCurrentWorktree.value?.splitRatio ?? 0.65
+    return stateForCurrentWorktree.value?.splitRatio ?? HELPER_SPLIT_RATIO_DEFAULT
+  })
+
+  // T627: stacked ratios by worktree path. An absent or junk entry falls back to the default.
+  const stackedRatios = persistedRef<Record<string, number>>(
+    STACKED_RATIOS_KEY,
+    {},
+    {
+      validate: (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+    }
+  )
+
+  /** The session area's share for one worktree in one orientation (each has its own). */
+  function splitRatioFor(worktreePath: string, orientation: SplitOrientation): number {
+    if (orientation === 'stacked') {
+      const v = stackedRatios.value[worktreePath]
+      return typeof v === 'number' ? clampSplitRatio(v) : HELPER_SPLIT_RATIO_DEFAULT
+    }
+    return byWorktree.value.get(worktreePath)?.splitRatio ?? HELPER_SPLIT_RATIO_DEFAULT
+  }
+
+  const stackedSplitRatioForCurrentWorktree = computed<number>(() => {
+    const p = currentWorktreePath.value
+    return p ? splitRatioFor(p, 'stacked') : HELPER_SPLIT_RATIO_DEFAULT
   })
 
   /** Maximized pane id (if any) for the currently selected worktree. */
@@ -472,6 +522,54 @@ export const useHelpersStore = defineStore('helpers', () => {
     next.set(worktreePath, paneId)
     maximizedByWorktree.value = next
   }
+
+  /**
+   * T628: per-worktree "which pane is expanded to the window". Ephemeral exactly like
+   * {@link maximizedByWorktree}: never added to the persisted shape, so it cannot reach
+   * `helpers.json`. Unlike maximize it is also cleared when the operator leaves the worktree, so
+   * coming back always finds the normal layout.
+   */
+  const expandedByWorktree = ref<Map<string, string>>(new Map())
+
+  /** The expanded pane id for the visible stack, or null. */
+  const expandedPaneIdForCurrentWorktree = computed<string | null>(() => {
+    const p = currentWorktreePath.value
+    if (!p) return null
+    return expandedByWorktree.value.get(p) ?? null
+  })
+
+  /** Which pane (if any) is expanded to the window in `worktreePath`'s stack. */
+  function expandedPaneId(worktreePath: string): string | null {
+    return expandedByWorktree.value.get(worktreePath) ?? null
+  }
+
+  /**
+   * Toggle expand-to-window for `paneId`: exit when it is the expanded one, otherwise expand it (or
+   * re-target from another expanded pane directly). Independent of maximize.
+   */
+  function toggleExpandPane(worktreePath: string, paneId: string): void {
+    const next = new Map(expandedByWorktree.value)
+    if (next.get(worktreePath) === paneId) next.delete(worktreePath)
+    else next.set(worktreePath, paneId)
+    expandedByWorktree.value = next
+  }
+
+  /** Leave the expanded view in `worktreePath` (no-op when nothing is expanded). */
+  function exitExpand(worktreePath: string): void {
+    if (!expandedByWorktree.value.has(worktreePath)) return
+    const next = new Map(expandedByWorktree.value)
+    next.delete(worktreePath)
+    expandedByWorktree.value = next
+  }
+
+  // Leaving a worktree resets its expanded view (flush 'sync' so it lands with the selection).
+  watch(
+    currentWorktreePath,
+    (_now, prev) => {
+      if (prev) exitExpand(prev)
+    },
+    { flush: 'sync' }
+  )
 
   /**
    * Bumped every time a pane is added to — or re-focused by a dedup hit in —
@@ -797,7 +895,7 @@ export const useHelpersStore = defineStore('helpers', () => {
   ): void {
     const current = byWorktree.value.get(worktreePath) ?? {
       splitVisible: false,
-      splitRatio: 0.65,
+      splitRatio: HELPER_SPLIT_RATIO_DEFAULT,
       panes: [] as AnyHelperPane[]
     }
     const next = mutator(current)
@@ -1277,6 +1375,8 @@ export const useHelpersStore = defineStore('helpers', () => {
       next.delete(worktreePath)
       maximizedByWorktree.value = next
     }
+    // Same for the expanded view (T628): nothing would be left on screen.
+    if (expandedByWorktree.value.get(worktreePath) === helperId) exitExpand(worktreePath)
   }
 
   /**
@@ -1324,12 +1424,21 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
-   * Set the main-pane / helper-stack horizontal split ratio. Clamped to
-   * the [0.4, 0.8] user contract — the helper side stays at least 20%
-   * wide and never grows past 60% (so the main pane is always visible).
+   * Set the session area's share of the split for ONE orientation (default
+   * side-by-side, the original contract). Clamped to the [0.4, 0.8] user contract —
+   * the helper side stays at least 20% and never grows past 60%, so the session
+   * area is always visible. The other orientation's ratio is never touched (T627).
    */
-  function setSplitRatio(worktreePath: string, ratio: number): void {
-    const clamped = Math.max(0.4, Math.min(0.8, ratio))
+  function setSplitRatio(
+    worktreePath: string,
+    ratio: number,
+    orientation: SplitOrientation = 'side-by-side'
+  ): void {
+    const clamped = clampSplitRatio(ratio)
+    if (orientation === 'stacked') {
+      stackedRatios.value = { ...stackedRatios.value, [worktreePath]: clamped }
+      return
+    }
     mutateWorktree(worktreePath, (s) => ({ ...s, splitRatio: clamped }))
   }
 
@@ -1380,6 +1489,7 @@ export const useHelpersStore = defineStore('helpers', () => {
       nextMax.delete(worktreePath)
       maximizedByWorktree.value = nextMax
     }
+    exitExpand(worktreePath)
   }
 
   /**
@@ -1625,11 +1735,18 @@ export const useHelpersStore = defineStore('helpers', () => {
     hasHelpersForCurrentWorktree,
     panesForCurrentWorktree,
     splitRatioForCurrentWorktree,
+    stackedSplitRatioForCurrentWorktree,
+    splitRatioFor,
     maximizedByWorktree,
     maximizedPaneId,
     maximizedPaneIdForCurrentWorktree,
     toggleMaximizePane,
     maximizePane,
+    expandedByWorktree,
+    expandedPaneId,
+    expandedPaneIdForCurrentWorktree,
+    toggleExpandPane,
+    exitExpand,
     unseenAgentPanes,
     unseenAgentPaneCount,
     paneRevealTick,

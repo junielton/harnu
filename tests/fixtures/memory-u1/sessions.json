@@ -1,0 +1,96 @@
+{
+  "T": "2026-11-01T10:00:00.000Z",
+  "sessions": [
+    {
+      "id": "a1000001-0000-4000-8000-000000000000",
+      "folder": "repo",
+      "startMin": 0,
+      "endMin": 40,
+      "turns": 4,
+      "gitCalls": [{ "atMin": 15, "subject": "c1" }]
+    },
+    {
+      "id": "a1000002-0000-4000-8000-000000000000",
+      "folder": "repo",
+      "startMin": 120,
+      "endMin": 150,
+      "turns": 3,
+      "gitCalls": []
+    },
+    {
+      "id": "a1000003-0000-4000-8000-000000000000",
+      "folder": "repo",
+      "startMin": 180,
+      "endMin": 250,
+      "turns": 7,
+      "gitCalls": [],
+      "ask": {
+        "atMin": 185,
+        "answers": {
+          "Which storage should the cache use?": "file",
+          "Ship behind a flag?": ["yes", "later"]
+        }
+      },
+      "lastText": "Migrated the cache to file storage. Should we also migrate old entries? Do you want a CHANGELOG entry? See `cache?.ts` and https://example.com/?q=1."
+    },
+    {
+      "id": "a1000004-0000-4000-8000-000000000000",
+      "folder": "repo",
+      "startMin": 270,
+      "endMin": 285,
+      "turns": 2,
+      "gitCalls": []
+    },
+    {
+      "id": "a1000005-0000-4000-8000-000000000000",
+      "folder": "repo",
+      "startMin": 50,
+      "endMin": 90,
+      "turns": 3,
+      "gitCalls": [
+        { "atMin": 65, "subject": "c2" },
+        { "atMin": 80, "subject": "c4", "subagent": true }
+      ]
+    },
+    {
+      "id": "a1000006-0000-4000-8000-000000000000",
+      "folder": "repo",
+      "startMin": 52,
+      "endMin": 90,
+      "turns": 3,
+      "gitCalls": [{ "atMin": 75, "subject": "c3" }]
+    },
+    {
+      "id": "a1000007-0000-4000-8000-000000000000",
+      "folder": "plain",
+      "startMin": 300,
+      "endMin": 330,
+      "turns": 3,
+      "gitCalls": []
+    },
+    {
+      "id": "a1000008-0000-4000-8000-000000000000",
+      "folder": "plain",
+      "startMin": 360,
+      "endMin": 375,
+      "turns": 2,
+      "gitCalls": []
+    },
+    {
+      "id": "a1000009-0000-4000-8000-000000000000",
+      "folder": "gone",
+      "startMin": 420,
+      "endMin": 480,
+      "turns": 5,
+      "gitCalls": []
+    },
+    {
+      "id": "a100000a-0000-4000-8000-000000000000",
+      "folder": "gone",
+      "startMin": 510,
+      "endMin": 515,
+      "turns": 1,
+      "gitCalls": []
+    }
+  ]
+}

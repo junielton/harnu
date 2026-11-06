@@ -1,0 +1,43 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: list-message-errors
+tags: [enumerate]
+execution:
+  prompt: List every failure code that message_session can return according to docs/specs/T215-message-session-verb.md, with one line on what each means. I need the complete list.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Agent]
+graders:
+  - type: regex
+    name: not-found
+    pattern: 'SESSION_NOT_FOUND'
+    match: contains
+  - type: regex
+    name: folder-blocked
+    pattern: 'FOLDER_NOT_ALLOWED'
+    match: contains
+  - type: regex
+    name: scope-refusal
+    pattern: 'RECIPIENT_NOT_CAPY_SPAWNED'
+    match: contains
+  - type: regex
+    name: wake
+    pattern: 'WAKE_TIMEOUT'
+    match: contains
+  - type: regex
+    name: socket-codes
+    pattern: 'PEER_NO_SOCKET[\s\S]*PEER_SOCKET_DEAD|PEER_SOCKET_DEAD[\s\S]*PEER_NO_SOCKET'
+    match: contains
+  - type: regex
+    name: write-failed
+    pattern: 'SOCKET_WRITE_FAILED'
+    match: contains
+  - type: regex
+    name: too-large
+    pattern: 'MESSAGE_TOO_LARGE'
+    match: contains
+  - type: tool_used
+    name: routed-to-doc-reader
+    tool: Agent
+    min: 1
+    arm: with-only

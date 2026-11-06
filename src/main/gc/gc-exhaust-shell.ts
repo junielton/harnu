@@ -33,6 +33,7 @@ import {
   type GitRunner
 } from './archives-shell'
 import type { GcPrefs } from './gc-prefs'
+import type { ShelvedEntry } from './shelve-store'
 import { NO_TRASH, trashedEntries, type GcTrashCard } from './trash-core'
 import {
   defaultTrashEnv,
@@ -192,6 +193,18 @@ export interface ArchiveDeleteAck {
   neverClean?: boolean
   /** Archives left alone because their folder stood under a never-clean path. */
   protectedArchives?: number
+  /**
+   * Archives left alone because their worktree is shelved: the archive is what restores it. Only
+   * present when there were some; each names the shelved entry so the screen can offer its Restore.
+   */
+  shelvedArchives?: ShelvedArchiveRefusal[]
+}
+
+export interface ShelvedArchiveRefusal {
+  namespace: string
+  /** The shelved entry's id (what `gc:shelve:restore` takes). */
+  id: string
+  branch: string | null
 }
 
 /**
@@ -201,7 +214,9 @@ export interface ArchiveDeleteAck {
 export async function deleteConfirmedArchives(
   req: ArchiveDeleteRequest,
   neverClean: readonly string[] = [],
-  git: GitRunner = execGit
+  git: GitRunner = execGit,
+  /** Shelved worktrees by archive namespace: their archives are never deleted by hand (U2.3a). */
+  shelved: ReadonlyMap<string, ShelvedEntry> = new Map()
 ): Promise<ArchiveDeleteAck> {
   const known = await archiveRepos()
   if (!known.includes(req.repoPath)) {
@@ -219,19 +234,30 @@ export async function deleteConfirmedArchives(
   const protectedBy = await protectedPaths(neverClean)
   const entries: ArchiveEntry[] = []
   let protectedArchives = 0
+  const shelvedArchives: ShelvedArchiveRefusal[] = []
   for (const e of withFolders(confirmed.entries, await readJournalCached())) {
-    if (e.folder !== null && (await protectedBy.covers(e.folder))) protectedArchives++
+    // A shelved worktree's archive is the only thing that restores it: refuse, and say which, so
+    // the screen can offer "Restore first" instead of a dead end.
+    const holder = shelved.get(e.namespace)
+    if (holder) {
+      shelvedArchives.push({ namespace: e.namespace, id: holder.id, branch: holder.branch })
+    } else if (e.folder !== null && (await protectedBy.covers(e.folder))) protectedArchives++
     else entries.push(e)
   }
   const result: DeleteArchivesResult = await deleteArchiveEntries(git, req.repoPath, entries)
   sizeCache.delete(req.repoPath)
   return {
-    ok: result.failed.length === 0 && changed.length === 0 && protectedArchives === 0,
+    ok:
+      result.failed.length === 0 &&
+      changed.length === 0 &&
+      protectedArchives === 0 &&
+      shelvedArchives.length === 0,
     deleted: result.deleted.length,
     archives: result.archives,
     failed: result.failed.length,
     changed,
-    protectedArchives
+    protectedArchives,
+    ...(shelvedArchives.length > 0 ? { shelvedArchives } : {})
   }
 }
 

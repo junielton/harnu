@@ -72,7 +72,7 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
   // Point-and-comment (T573): the guest's private channels and the composer's app channels.
   getOverlayBridge().registerIpc({ onApp, handleApp })
 
-  // The operator opened a pane (Split menu). `folder` is the stack's worktree path.
+  // The operator opened a pane (the Topbar Browser button). `folder` is the stack's worktree path.
   handleApp('browser:open', (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.folder !== 'string' || payload.folder.length === 0) {
       return { ok: false as const, error: 'BAD_ARGS' }

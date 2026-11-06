@@ -32,7 +32,7 @@ const GIT_OPTS = { windowsHide: true, timeout: 60_000, maxBuffer: 8 << 20 } as c
  * cannot auto-detect an author, which would turn "preserve the work" into
  * "refuse to sweep" on a machine with no global git identity.
  */
-const ARCHIVE_IDENTITY = {
+export const ARCHIVE_IDENTITY = {
   GIT_AUTHOR_NAME: 'Harnu Reaper',
   GIT_AUTHOR_EMAIL: 'reaper@harnu.dev',
   GIT_COMMITTER_NAME: 'Harnu Reaper',
