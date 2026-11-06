@@ -393,8 +393,9 @@ fail; the conversational behavior itself is the operator's to read in the record
 ## Open decisions
 
 Resolved through `harnu:one-by-one`. Every row was open when the spec was drafted and carries the
-default a slice would have used; the operator resolved all eight on 2026-10-31 (D-1 to D-7 took the
-default, D-8 changed it). A resolved row no longer gates its slices, and each is recorded as one line
+default a slice would have used; the operator resolved D-1 to D-8 on 2026-10-31 (D-1 to D-7 took the
+default, D-8 changed it); D-9 to D-15 were added open by the 2026-11-06 amendment and still carry
+their defaults. A resolved row no longer gates its slices, and each is recorded as one line
 in project memory (`decisions`).
 
 | id   | question                                                                                                                                    | options                                                                                                                                                                                           | default                                                                                                                                                | status                                                                                                            |
