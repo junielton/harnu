@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
@@ -293,5 +293,23 @@ describe('archive_session ACK vs the store (BUG-254)', () => {
     expect(await ack(['s-1'])).toBe('archived')
     expect(await onDisk()).toEqual(['s-1'])
     expect(await ack(['s-1'])).toBe('alreadyArchived')
+  })
+
+  it('a failed store write answers ARCHIVE_WRITE_FAILED, changes nothing and audits no success', async () => {
+    // The store's parent "directory" is a plain file, so every commit fails.
+    const blocker = path.join(dir, 'blocker')
+    writeFileSync(blocker, 'not a directory')
+    const broken = await openSessionArchive(path.join(blocker, 'archived-sessions.json'))
+    setSessionArchive(broken)
+
+    const res = await handler({ sessionIds: ['s-1'] }, ctx())
+
+    expect(res.isError).toBe(true)
+    const first = res.content[0]
+    expect(first && first.type === 'text' ? first.text : '').toMatch(
+      /^ARCHIVE_WRITE_FAILED: .*Nothing was changed\.$/
+    )
+    expect(broken.has('s-1')).toBe(false)
+    expect(getAuditLog().filter((e) => e.tool === 'archive_session')).toHaveLength(0)
   })
 })
