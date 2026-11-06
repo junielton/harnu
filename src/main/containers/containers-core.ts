@@ -18,15 +18,19 @@ import {
   type ContainersSnapshotUnavailable,
   type ContainersTotals,
   type FolderKind,
+  type StackCompose,
   type StackRow,
   type Tombstone,
   type Verdict,
   type VolumeRow
 } from './containers-wire'
+import { derivePaused } from './containers-journal'
 
 export const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project'
 export const COMPOSE_WORKING_DIR_LABEL = 'com.docker.compose.project.working_dir'
 export const COMPOSE_SERVICE_LABEL = 'com.docker.compose.service'
+export const COMPOSE_CONFIG_FILES_LABEL = 'com.docker.compose.project.config_files'
+export const COMPOSE_ENV_FILE_LABEL = 'com.docker.compose.project.environment_file'
 
 const DAY_MS = 86_400_000
 
@@ -41,6 +45,19 @@ export interface MountFact {
   source: string
   /** Volume name, or null for a bind mount. */
   name: string | null
+  /** Where the mount lands inside the container; absent when docker did not say. */
+  destination?: string
+}
+
+/**
+ * One entry of a container's `NetworkSettings.Networks`. Docker keeps the entry (name key and
+ * `NetworkID`) after the container stops — only the endpoint is dropped — so a stopped container
+ * still counts as attached to its networks.
+ */
+export interface NetworkAttachment {
+  name: string
+  /** The attached network's id, or null when docker left it empty. */
+  id: string | null
 }
 
 /** One container as `docker inspect` reports it, reduced to what the core reads. */
@@ -55,6 +72,8 @@ export interface InspectedContainer {
   createdAt: number | null
   ports: number[]
   mounts: MountFact[]
+  /** Networks the container is attached to, sorted by name. */
+  networks: NetworkAttachment[]
 }
 
 /** Facts about a volume from `docker system df -v`. */
@@ -126,6 +145,17 @@ function parsePorts(networkSettings: unknown): number[] {
   return [...out].sort((a, b) => a - b)
 }
 
+function parseNetworks(networkSettings: unknown): NetworkAttachment[] {
+  const networks = asRecord(asRecord(networkSettings)?.Networks)
+  if (!networks) return []
+  const out: NetworkAttachment[] = []
+  for (const [name, raw] of Object.entries(networks)) {
+    if (!name) continue
+    out.push({ name, id: asString(asRecord(raw)?.NetworkID) || null })
+  }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+}
+
 function parseMounts(mounts: unknown): MountFact[] {
   if (!Array.isArray(mounts)) return []
   const out: MountFact[] = []
@@ -134,7 +164,13 @@ function parseMounts(mounts: unknown): MountFact[] {
     if (!m) continue
     const type = asString(m.Type)
     const name = asString(m.Name)
-    out.push({ type, source: asString(m.Source), name: type === 'volume' && name ? name : null })
+    const destination = asString(m.Destination)
+    out.push({
+      type,
+      source: asString(m.Source),
+      name: type === 'volume' && name ? name : null,
+      ...(destination ? { destination } : {})
+    })
   }
   return out
 }
@@ -173,7 +209,8 @@ export function parseInspect(stdout: string): InspectedContainer[] {
       finishedAt: parseDockerTime(state?.FinishedAt),
       createdAt: parseDockerTime(c.Created),
       ports: parsePorts(c.NetworkSettings),
-      mounts: parseMounts(c.Mounts)
+      mounts: parseMounts(c.Mounts),
+      networks: parseNetworks(c.NetworkSettings)
     })
   }
   return out
@@ -550,6 +587,16 @@ export function groupStacks(containers: readonly InspectedContainer[]): StackGro
   return groups
 }
 
+/** How a compose stack was started, from its containers' labels; null for a standalone container. */
+function composeFactsOf(g: StackGroup): StackCompose | null {
+  if (g.kind !== 'compose') return null
+  const label = (name: string): string | undefined =>
+    g.containers.map((c) => c.labels[name]).find((v) => v)
+  const files = (label(COMPOSE_CONFIG_FILES_LABEL) ?? '').split(',').filter(Boolean)
+  const env = (label(COMPOSE_ENV_FILE_LABEL) ?? '').split(',').filter(Boolean)[0] ?? null
+  return { configFiles: files, envFile: env }
+}
+
 export function isHolding(state: string): boolean {
   return HOLDING_STATES.has(state)
 }
@@ -568,6 +615,8 @@ export interface ScanInput {
   now: number
   zombieAfterDays: number
   recent: Tombstone[]
+  /** The whole journal, newest first: the paused registry is derived from it (U3.4). */
+  journal?: readonly Tombstone[]
   platform: string
   /**
    * The workspace-GC bucket of a worktree path (the last GC snapshot), when it has judged
@@ -712,7 +761,8 @@ export function buildSnapshot(input: ScanInput): ContainersSnapshotAvailable {
       lastContainerEventAt,
       unusedForMs: usesClock ? clock : null,
       zombieInMs,
-      liveSessionId
+      liveSessionId,
+      compose: composeFactsOf(g)
     }
   })
 
@@ -729,6 +779,7 @@ export function buildSnapshot(input: ScanInput): ContainersSnapshotAvailable {
     zombieAfterDays: input.zombieAfterDays,
     totals: computeTotals(stacks),
     stacks,
+    paused: derivePaused(input.journal ?? [], new Set(stacks.map((s) => s.id))),
     recent: input.recent
   }
 }

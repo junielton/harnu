@@ -90,15 +90,35 @@ export function isOurStatusLine(sl: unknown): boolean {
   return typeof command === 'string' && WRITER_PATH_RE.test(command)
 }
 
+/** `sh "<path>"` (posix) or `cmd /c "<path>"` (win32), the only shapes {@link ourCommand} writes. */
+const WRITER_COMMAND_RE = /^(?:sh|cmd \/c) "([^"]+)"$/
+/** A Harnu-shaped writer path: `<any userData>/statusline/statusline-writer.{sh,cmd}`. */
+const WRITER_FILE_RE = /[\\/]statusline[\\/]statusline-writer\.(?:sh|cmd)$/
+
+/**
+ * The writer script file a statusLine `command` invokes, when it has the exact shape Harnu writes
+ * (`sh "<path>"` / `cmd /c "<path>"`) and the path ends in `statusline/statusline-writer.{sh,cmd}`.
+ * Unlike {@link isOurStatusLine} the userData dir name is NOT constrained: a dev/verify instance
+ * runs with an arbitrary `--user-data-dir` (`/tmp/harnu-verify-*`). `null` for anything else — a
+ * user's own statusLine, or a command we cannot read — so callers never act on it (BUG-243).
+ */
+export function extractWriterPath(command: string): string | null {
+  const m = WRITER_COMMAND_RE.exec(command.trim())
+  return m && WRITER_FILE_RE.test(m[1]) ? m[1] : null
+}
+
 /**
  * Non-destructive install. Installs ours when (a) no statusLine exists, or (b) the
  * existing one is already ours (idempotent path refresh). When a FOREIGN statusLine
  * is present, it is PRESERVED and ours is stashed under `statusLine_harnu` so the
- * caller can warn / offer migration. Returns the next settings plus flags.
+ * caller can warn / offer migration. A `reclaimCommand` (BUG-243) that equals the present
+ * command is treated as ours too. Returns the next settings plus flags.
  */
 export function mergeStatusLine(
   settings: Record<string, unknown>,
-  ourCommand: string
+  ourCommand: string,
+  /** A command already judged dead (its writer file is gone): replaced like our own. */
+  reclaimCommand?: string
 ): { next: Record<string, unknown>; installed: boolean; foreignPreserved: boolean } {
   const ours: StatusLineConfig = { type: 'command', command: ourCommand }
   const current = settings.statusLine
@@ -109,7 +129,12 @@ export function mergeStatusLine(
     !!current &&
     typeof current === 'object' &&
     (current as Record<string, unknown>).command === ourCommand
-  if (current == null || isCurrent || isOurStatusLine(current)) {
+  const isReclaim =
+    reclaimCommand !== undefined &&
+    !!current &&
+    typeof current === 'object' &&
+    (current as Record<string, unknown>).command === reclaimCommand
+  if (current == null || isCurrent || isReclaim || isOurStatusLine(current)) {
     const next = { ...settings, statusLine: ours }
     delete next[BACKUP_KEY] // a refreshed direct install drops any stale backup
     for (const k of LEGACY_BACKUP_KEYS) delete next[k] // also the pre-Harnu backup keys

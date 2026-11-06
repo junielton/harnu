@@ -249,6 +249,52 @@ Each shelve leaves a line in the journal at the bottom of Cleanup (with the comm
 
 To get a folder back by hand (if you prefer): `git -C <repo> worktree add <path> <branch>`. The files that were only in the folder are in the branch's `refs/archive/…/wip` and `…/shelve/ignored` refs. **The Archives card will not let you delete the archive of a shelved worktree**: it is the only copy of what was in the folder. The row's _Delete_ is disabled with "restore it first", and a **Restore first** button sits next to it. Agents see shelved worktrees in `list_cleanup` as `shelved`.
 
+### Docker: pausing and garbage
+
+Docker can run out of room long before the disk does: it hands out a limited number of private networks, and a pile of leftover stacks and empty networks uses them up, so the next `compose up` fails. Cleanup is getting its own part in keeping that from happening, with its own switch (Settings → Cleanup → _Docker: pausing and garbage_), separate from the autopilot's and from shelving's.
+
+**What it is for.** A stack that has sat idle for a couple of hours is **Paused**: brought down so it stops holding a network, never deleted, with its volumes kept; you bring it back with the `compose up -d` command Harnu records. Empty compose networks, and the stacks of worktrees that no longer exist, are cleared because they can only be regenerated. A volume is never removed this way.
+
+**Garbage.** Cleanup pauses idle stacks and clears Docker garbage, both only after you have acknowledged the first report. Two kinds of leftover are removed:
+
+- **Empty compose networks**: a network that belongs to a compose project, has no container attached (running or stopped), and that no stack on the machine declares `external`. `compose up` recreates it the next time it is needed. If Harnu cannot read one stack's compose file, it keeps every empty network, because it cannot rule out that this stack needs one.
+- **Orphan stacks**: the containers of a stack whose folder no longer exists. A running one is stopped first (a normal stop, never a kill), then its containers are removed. A stack whose worktree was **shelved** is not an orphan: its folder is gone on purpose, and Harnu leaves it alone. If the list of shelved worktrees cannot be read, no stack is removed.
+
+**Volumes are always kept.** Nothing here ever removes a volume, and it never runs `docker volume rm`, `prune` or a forced removal. The volumes of a removed orphan stack stay in Docker, and the journal line names them and says they belonged to a worktree that is gone, so you can find them later.
+
+**Pausing.** Cleanup pauses idle stacks on its own. A pause is `docker compose down`, never with a volume removed, and Harnu records the ports the stack held and the `docker compose … up -d` command that brings it back (see [Paused stacks](containers.md#paused-stacks)). Before it acts it checks the stack again and refuses, saying **changed since decided**, if anything moved. It never pauses on its own a stack with an anonymous volume, or a database with no volume on its data path, because bringing those down would lose data.
+
+**When Cleanup pauses a stack.** All of these must hold:
+
+- the stack belongs to a worktree (never a main checkout, an unknown stack or an orphan) and has been idle for **2 hours**, counted from the newest of the last session activity in its folder and the last time its containers started or stopped;
+- it was started at least **30 minutes** ago, so a stack you just brought back by hand is left alone;
+- fewer than **6 stacks an hour** have been paused (counted from the journal, so a restart does not reset it), and at most 5 in one pass; the longest idle goes first.
+
+**What protects a stack.** Cleanup leaves it running when:
+
+- a working session: a session in its worktree is working or waiting for you;
+- the worktree has a **Keep** mark, or is on your never-clean list. This holds even when Docker is out of room. An open pull request does **not** protect a stack: waiting work is the normal case;
+- its containers are busy: CPU or disk and network traffic above the idle floor, or a container restarted while it was being watched;
+- one of your Harnu browser panes is open on one of its ports (`localhost:PORT`);
+- something on this machine has an open **connection** to one of its published ports;
+- Harnu could not read one of these facts (docker busy, no way to list connections on this system): when it cannot tell, it does nothing.
+
+**Pause, then shelve.** A worktree whose only stacks are Paused no longer counts as having a stack running, so the next shelving pass can shelve it when it has also been idle long enough. A worktree with a running stack still cannot be shelved.
+
+**Each pause is told.** One notification: "Paused `proj` — idle 3 h · bring back: `docker compose … up -d`".
+
+**The capacity watcher.** Docker hands out a limited number of network slots, and a machine with many compose stacks can run out: every `compose up` then fails. Harnu counts the free slots (from Docker's default address pools, or the ones in `/etc/docker/daemon.json`) when a network is created or removed and at least every 30 seconds, not only on the hourly pass. At **3 free slots or fewer** (the low-water mark) it acts at once: first the empty networks and orphan stacks, then the stacks idle the longest, one at a time, checking the free slots after each, until more than 3 are free. The rules above still hold under pressure, including the 2-hour idle floor, the 30-minute minimum age, the Keep mark and the limit of 6 pauses an hour, so a squeeze never makes Cleanup pause a stack you are working on. On **Docker Desktop, a rootless engine or a remote one**, Harnu cannot count the slots; it then does nothing about capacity and the Docker card says why, while the hourly pass keeps clearing garbage and pausing idle stacks.
+
+**When there is nothing left to free.** If the free slots are at or below the mark and Cleanup has nothing it may free (everything left is protected, too recent, or over the hourly limit), one **Activity** entry says so right away, and a remote push goes out if you set one up. When no slot is left, there is one more. Neither is repeated until the free slots have been above the mark again. The heads-up is a warning, not an action, so it also fires while the Docker switch is off or **Pause all autonomous cleanup** is on (on engines where the slots can be counted). Cleanup does nothing in that state, so the entry says that automatic cleanup is off or paused and nothing will be freed on its own. The first report works the same: before you acknowledge it, the watcher only records what it would do. If a session of yours reports that `compose up` failed on an address pool or a port, it raises a blocker on its step and waits for you.
+
+**It starts by only reporting, like shelving.** The switch is on by default, but its first pass only records what it would do. Before you do, the section lists each network, orphan stack and idle stack the first pass would handle, with the reason. Nothing changes in Docker until you press **Acknowledge first report** in the same section. Turning the switch off and on again starts a new report-only pass. Its acknowledgement is its own: the one you gave the autopilot or shelving does not carry over.
+
+**It stops itself.** One Docker pass handles at most 5 actions, only one Harnu at a time works on Docker (even if you run two copies), and after 3 failures in a row the switch turns itself off and tells you why, so you can fix the cause and turn it back on.
+
+**Pause all autonomous cleanup.** The last row of the section is a master switch. While it is on, Harnu shelves nothing, does nothing in Docker and the autopilot cleans nothing. You can still clean by hand from the Cleanup screen. Turn it off and everything goes back to what each switch says; no acknowledgement is lost.
+
+Everything Cleanup does to Docker on its own is written to the Containers journal with the actor `autopilot`, so it is easy to tell from what you or an agent did. Each line says why: "Removed empty network `app_default` — no containers", or "Removed orphan stack `app` — worktree gone, volumes kept: app_data". Before each removal Harnu checks again that nothing changed since it decided (a container attached, a verdict that moved, a worktree that was shelved in the meantime); if something did, it skips the item and says "changed since decided" instead of removing it.
+
 ### Before the first scan
 
 Right after Harnu starts there is nothing to show until the first scan has run. Until then the screen says **Scanning your worktrees…**, the clean button reads **Scanning…** and is disabled, and nothing claims the workspace is clean. If that first scan fails, the screen says so with the error, and **Scan now** tries again.

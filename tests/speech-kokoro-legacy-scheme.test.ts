@@ -1,4 +1,11 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdtempSync,
+  mkdirSync,
+  promises as fsp,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -105,6 +112,26 @@ describe('legacy capy-voice:// scheme (pre-rename installs)', () => {
     const onDisk = readFileSync(entryFile(), 'utf8')
     expect(onDisk).toContain(`${KOKORO_ORIGIN}/hf/`)
     expect(onDisk).not.toContain('capy-voice')
+  })
+
+  // Root cause of the "expected '' to contain '/hf/'" flake: `registerKokoroProtocol()` starts a
+  // fire-and-forget migration at boot, and a second call (the install path, or this test) used to
+  // run its own copy against the SAME staging file. Writer B's `open(O_TRUNC)` could land after
+  // writer A had renamed the staging inode onto the entry file, leaving it empty until B's write.
+  it('concurrent migrations share ONE rewrite, so the staging file has a single writer', async () => {
+    const stagedWrites: string[] = []
+    const realWriteFile = fsp.writeFile
+    const spy = vi.spyOn(fsp, 'writeFile').mockImplementation(async (...args) => {
+      stagedWrites.push(String(args[0]))
+      return realWriteFile(...(args as Parameters<typeof realWriteFile>))
+    })
+    try {
+      await Promise.all([migrateInstalledMirror(), migrateInstalledMirror()])
+    } finally {
+      spy.mockRestore()
+    }
+    expect(stagedWrites).toHaveLength(1)
+    expect(readFileSync(entryFile(), 'utf8')).toContain(`${KOKORO_ORIGIN}/hf/`)
   })
 
   it('does nothing when no voice is installed', async () => {

@@ -13,6 +13,9 @@ import type {
   GcRecoveryItem,
   GcSnapshot,
   CycleRecord,
+  DockerReportItem,
+  DockerReportList,
+  DockerWatchRecord,
   ShelveRestoreAck
 } from '../../../main/gc/gc-wire'
 import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
@@ -102,6 +105,109 @@ function refusalDescription(s: DoneSummary): string | undefined {
 
 export const useGcStore = defineStore('gc', () => {
   const snapshot = ref<GcSnapshot | null>(null)
+  /** The Docker capacity watcher's last pass (U3.6): from the snapshot at load, then from its push. */
+  const dockerWatch = ref<DockerWatchRecord | null>(null)
+
+  /** Keeps the newest record; a snapshot refresh never rewinds a pass that was pushed meanwhile. */
+  function adoptWatch(rec: DockerWatchRecord | null | undefined): void {
+    if (rec && (!dockerWatch.value || rec.at >= dockerWatch.value.at)) dockerWatch.value = rec
+  }
+
+  /**
+   * The passes whose notice was recorded (most recent {@link RECORDED_NOTICES_MAX}), so a notice that
+   * arrives twice, by push and by snapshot, adds no second row. A set, not a high-water mark: a newer
+   * notice pushed while the snapshot loads must not make an older pending one look already seen.
+   */
+  const recordedNoticeAts: number[] = []
+  const RECORDED_NOTICES_MAX = 64
+
+  /**
+   * The out-of-capacity notice (U3.6): one quiet Activity row and one remote push. Main decided WHEN
+   * (once per level until capacity recovers); this only words it, in the app's language.
+   */
+  function recordCapacityNotice(rec: DockerWatchRecord): boolean {
+    const n = rec.notice
+    if (!n) return false
+    // Already recorded: nothing to add, but it counts as recorded (it may still need acknowledging).
+    if (recordedNoticeAts.includes(rec.at)) return true
+    recordedNoticeAts.push(rec.at)
+    if (recordedNoticeAts.length > RECORDED_NOTICES_MAX) recordedNoticeAts.shift()
+    const { t } = i18n.global
+    const title = t(`cleanup.gc.capacity.${n.level}.title`)
+    // Cleanup not acting (switch off, global pause): the same warning, saying why nothing is freed.
+    const suffix = n.autonomyOff === 'off' ? 'Off' : n.autonomyOff === 'paused' ? 'Paused' : ''
+    const description = t(`cleanup.gc.capacity.${n.level}.body${suffix}`, {
+      free: n.free,
+      total: n.total
+    })
+    useNotificationsStore().notify({
+      ts: rec.at,
+      source: 'app',
+      kind: 'warning',
+      title,
+      description,
+      target: { view: 'cleanup' }
+    })
+    try {
+      // Away from the machine is exactly when a compose is about to fail: rides `needs-input`.
+      window.api.pushSend({ kind: 'needs-input', title, body: description })
+    } catch {
+      /* transient IPC teardown: the Activity row is already recorded */
+    }
+    return true
+  }
+
+  /** Tells main these notices are recorded, so it stops holding them (and a reload never replays them). */
+  function ackNotices(recs: DockerWatchRecord[]): void {
+    if (recs.length === 0) return
+    try {
+      void window.api.gcAckDockerWatchNotices(recs.map((r) => r.at))?.catch(() => {})
+    } catch {
+      /* transient IPC teardown: main keeps them and offers them again */
+    }
+  }
+
+  function onDockerWatch(rec: DockerWatchRecord): void {
+    adoptWatch(rec)
+    if (rec.report && (!heldReport.value || rec.report.at >= heldReport.value.at)) {
+      heldReport.value = rec.report
+    }
+    if (recordCapacityNotice(rec)) ackNotices([rec])
+  }
+
+  /**
+   * Notices raised while no window was listening (the boot pass runs first): main holds them and
+   * offers them in the snapshot. Each is recorded once (`recordCapacityNotice` dedupes by pass time)
+   * and then acknowledged.
+   */
+  function adoptPendingNotices(snap: GcSnapshot): void {
+    const pending = [...(snap.dockerNoticesPending ?? [])].sort((a, b) => a.at - b.at)
+    // Acknowledge only what is recorded: a record without a notice stays with main.
+    ackNotices(pending.filter((rec) => recordCapacityNotice(rec)))
+  }
+
+  /**
+   * The list main holds for "Acknowledge first report" (U3.6): the newest report-mode pass that
+   * PLANNED, from the cycle or the watcher. Main derives it, so a locked or idle pass can never
+   * empty it here. A snapshot is authoritative (it replaces, including with null); a watcher push
+   * only replaces it with a newer list, never clears it.
+   */
+  const heldReport = ref<DockerReportList | null>(null)
+  watch(
+    () => snapshot.value?.dockerReport ?? null,
+    (held) => {
+      heldReport.value = held
+    },
+    { immediate: true, flush: 'sync' }
+  )
+
+  /** What "Acknowledge first report" will do: null once acknowledged, or when nothing would be done. */
+  const dockerReport = computed<{ items: DockerReportItem[]; found: number } | null>(() => {
+    const snap = snapshot.value
+    const held = heldReport.value
+    if (!snap || snap.prefs.docker.firstReportAcknowledged) return null
+    return held && held.items.length > 0 ? { items: held.items, found: held.found } : null
+  })
   const jobs = ref<JobsState>(emptyJobs())
   const loading = ref(false)
   const loadError = ref<string | null>(null)
@@ -233,6 +339,8 @@ export const useGcStore = defineStore('gc', () => {
   async function refresh(): Promise<void> {
     try {
       snapshot.value = await window.api.gcSnapshot({ refresh: true })
+      adoptWatch(snapshot.value.dockerWatch)
+      adoptPendingNotices(snapshot.value)
       loadError.value = null
     } catch (e) {
       loadError.value = e instanceof Error ? e.message : String(e)
@@ -470,6 +578,7 @@ export const useGcStore = defineStore('gc', () => {
         window.api.onGcRecoveryChanged(() => void loadRecovery()),
         // A shelved worktree came back by itself (a resume, a terminal): the Shelved card follows.
         window.api.onGcShelvedChanged(() => void refresh()),
+        window.api.onGcDockerWatch(onDockerWatch),
         window.api.onGcOpinionResult(onOpinionResult),
         window.api.onGcOpinionDone(onOpinionDone)
       ]
@@ -478,6 +587,8 @@ export const useGcStore = defineStore('gc', () => {
         window.api.gcJobs().catch(() => [])
       ])
       snapshot.value = snap
+      adoptWatch(snap.dockerWatch)
+      adoptPendingNotices(snap)
       jobs.value = attachJobs(jobs.value, live)
       void loadRecovery()
     } catch (e) {
@@ -672,6 +783,13 @@ export const useGcStore = defineStore('gc', () => {
    */
   async function ackShelveReport(): Promise<GcPrefs> {
     const saved = await window.api.gcAckShelveReport()
+    if (snapshot.value) snapshot.value = { ...snapshot.value, prefs: saved }
+    return saved
+  }
+
+  /** Acknowledges the first Docker autonomy report (its own switch, its own channel); the answer is the prefs as saved. */
+  async function ackDockerReport(): Promise<GcPrefs> {
+    const saved = await window.api.gcAckDockerReport()
     if (snapshot.value) snapshot.value = { ...snapshot.value, prefs: saved }
     return saved
   }
@@ -916,6 +1034,8 @@ export const useGcStore = defineStore('gc', () => {
     reclaimableBytes,
     blockState,
     failureOf,
+    dockerWatch,
+    dockerReport,
     init,
     dispose,
     refresh,
@@ -934,6 +1054,7 @@ export const useGcStore = defineStore('gc', () => {
     savePrefs,
     deleteArchives,
     ackShelveReport,
+    ackDockerReport,
     restoreShelved,
     shelvedBusy,
     shelvedFailures,

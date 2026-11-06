@@ -27,6 +27,7 @@ import {
 } from '../user-projects'
 import { resolveGateInput, type GateResolution } from './gate-resolve'
 import { createBrowserRegistry } from './registry'
+import { openPaneUrls } from './pane-urls'
 import type { BrowserReadDeps } from './read-verbs'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import { resolveDiscardMs } from './lifecycle'
@@ -159,6 +160,14 @@ export function getOverlayBridge(): OverlayBridge {
 /** `server.ts` reports the port it bound, so a page on that port classifies as `external` (spec §7.2). */
 export function noteMcpPort(port: number): void {
   mcpPort = port
+}
+
+/**
+ * Addresses of the open browser panes, read-only (autonomous cleanup U3.5: a stack whose port a pane is
+ * looking at is in use). The view host is only touched when a pane exists.
+ */
+export function listOpenPaneUrls(): string[] {
+  return openPaneUrls(browserRegistry.list(), (paneId) => getBrowserHost().info(paneId)?.url)
 }
 
 /** The view host. Created on first use so a headless unit never builds electron views. */

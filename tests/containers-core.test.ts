@@ -116,12 +116,58 @@ describe('docker output parsing', () => {
       createdAt: Date.parse('2026-09-01T10:00:00.123Z'),
       ports: [5182, 8082],
       mounts: [
-        { type: 'bind', source: WT, name: null },
+        { type: 'bind', source: WT, name: null, destination: '/var/www/html' },
         { type: 'volume', source: '/var/lib/docker/volumes/x/_data', name: 'proj-82_mysql' }
-      ]
+      ],
+      networks: []
     })
     expect(parseInspect('not json')).toEqual([])
     expect(parseInspect('{}')).toEqual([])
+  })
+
+  describe('network attachments (U3.2)', () => {
+    const inspectWith = (networkSettings: unknown, state = 'running'): string =>
+      JSON.stringify([
+        {
+          Id: 'b'.repeat(64),
+          Name: '/proj-1-app-1',
+          State: { Status: state },
+          Config: { Image: 'busybox', Labels: {} },
+          NetworkSettings: networkSettings
+        }
+      ])
+
+    it('reads NetworkSettings.Networks into per-container attachments, sorted by name', () => {
+      const [c] = parseInspect(
+        inspectWith({
+          Networks: {
+            shared: { NetworkID: 'def', EndpointID: 'e2' },
+            proj_default: { NetworkID: 'abc', EndpointID: 'e1' }
+          }
+        })
+      )
+      expect(c?.networks).toEqual([
+        { name: 'proj_default', id: 'abc' },
+        { name: 'shared', id: 'def' }
+      ])
+    })
+
+    it('keeps the attachments of a stopped container (docker keeps the network id, drops the endpoint)', () => {
+      const [c] = parseInspect(
+        inspectWith({ Networks: { proj_default: { NetworkID: 'abc', EndpointID: '' } } }, 'exited')
+      )
+      expect(c?.networks).toEqual([{ name: 'proj_default', id: 'abc' }])
+    })
+
+    it('reports id null when docker leaves NetworkID empty', () => {
+      const [c] = parseInspect(inspectWith({ Networks: { proj_default: { NetworkID: '' } } }))
+      expect(c?.networks).toEqual([{ name: 'proj_default', id: null }])
+    })
+
+    it('reports no attachments when the map is absent or empty', () => {
+      expect(parseInspect(inspectWith({ Networks: {} }))[0]?.networks).toEqual([])
+      expect(parseInspect(inspectWith({}))[0]?.networks).toEqual([])
+    })
   })
 
   it('reads resident memory from docker stats lines', () => {
@@ -781,6 +827,81 @@ describe('buildSnapshot', () => {
       stoppable: 2
     })
     expect(snap).toMatchObject({ dockerAvailable: true, scannedAt: NOW, zombieAfterDays: 2 })
+  })
+})
+
+describe('compose facts on a stack row (U3.4)', () => {
+  it('reads the config files and env file from the compose labels', () => {
+    const s = onlyStack({
+      containers: [
+        composeContainer('p', WT, {
+          labels: {
+            'com.docker.compose.project.config_files': `${WT}/compose.yml,${WT}/compose.dev.yml`,
+            'com.docker.compose.project.environment_file': `${WT}/.env.dev`
+          }
+        })
+      ]
+    })
+    expect(s.compose).toEqual({
+      configFiles: [`${WT}/compose.yml`, `${WT}/compose.dev.yml`],
+      envFile: `${WT}/.env.dev`
+    })
+  })
+
+  it('a stack without those labels has empty facts; a standalone container has none', () => {
+    expect(onlyStack({ containers: [composeContainer('p', WT)] }).compose).toEqual({
+      configFiles: [],
+      envFile: null
+    })
+    expect(onlyStack({ containers: [container({ name: 'scratch' })] }).compose).toBeNull()
+  })
+})
+
+describe('paused stacks in the snapshot (U3.4 AC-5)', () => {
+  const pause: Tombstone = {
+    at: NOW - HOUR,
+    actor: 'autopilot',
+    verb: 'stop',
+    stacks: [
+      {
+        stack: 'p',
+        name: 'p',
+        path: WT,
+        containerIds: ['a'.repeat(64)],
+        freed: { ramBytes: 1, ports: [8082], volumes: [], volumeBytes: 0 },
+        paused: {
+          project: 'p',
+          workingDir: WT,
+          configFiles: [],
+          profiles: [],
+          envFile: null,
+          hasBuild: false,
+          ports: [8082],
+          restoreCommand: `docker compose -p p --project-directory ${WT} up -d`,
+          pausedAt: NOW - HOUR
+        }
+      }
+    ],
+    restoreHint: `docker compose -p p --project-directory ${WT} up -d`
+  }
+
+  it('lists a stack with no containers as paused, and never as a zombie or orphan row', () => {
+    const snap = buildSnapshot(scanInput({ containers: [], journal: [pause] }))
+    expect(snap.paused.map((p) => p.stack)).toEqual(['p'])
+    expect(snap.stacks).toEqual([])
+    expect(snap.totals.needsYou).toBe(0)
+  })
+
+  it('is empty once the project has containers again', () => {
+    const snap = buildSnapshot(
+      scanInput({ containers: [composeContainer('p', WT)], journal: [pause] })
+    )
+    expect(snap.paused).toEqual([])
+    expect(snap.stacks.map((s) => s.id)).toEqual(['p'])
+  })
+
+  it('is empty without a journal', () => {
+    expect(buildSnapshot(scanInput()).paused).toEqual([])
   })
 })
 
