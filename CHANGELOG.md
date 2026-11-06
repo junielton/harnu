@@ -83,6 +83,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- The offline voice no longer risks a silent first start after an update: the one-time rewrite of the installed voice files could run twice at once (at app start and during an install) and briefly leave the entry file empty. It now runs once at a time (BUG-239).
 - **Cleanup now recognizes a worktree as merged when its pull request was squash-merged after more commits were pushed from elsewhere.** A worktree whose latest commit is already inside the merged pull request, and whose changes reached the default branch (straight in, or through a merged base pull request), used to wait in Needs review as "merged, but the local tip differs from the PR head". It is now Ready to clean, and the automatic cleanup can take it. Nothing changes when the pull request's last commit is not in your clone (Harnu never downloads it for this), when the worktree has commits the pull request lacks, or when it has uncommitted changes: those still wait in Needs review.
 
 ## 2026-11-03
