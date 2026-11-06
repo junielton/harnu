@@ -23,12 +23,12 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 
 ## Floating panels
 
-**Settings → Appearance → Layout → Floating panels** turns each pane into its own rounded island on a darker background, with an even 6px gap between islands and around the window edge. It is **off by default**, and with it off Harnu looks exactly as it always has.
+**Settings → Appearance → Layout → Floating panels** turns each pane into its own rounded island on a darker background, with an even 4px gap between islands and around the window edge. It is **off by default**, and with it off Harnu looks exactly as it always has.
 
 With it on:
 
 - The sidebar toolbar, the Topbar and the Fleet rail header line up as one row of three bars; everything below them starts at the same height.
-- The sidebar is a stack of islands: toolbar, **Return here** (when something is waiting), the folder list, and a **dock** at the bottom with Add folder and Settings. The Fleet rail is the same idea: header, the fleet list, **Needs you** (while something is pending) and **Would-have**.
+- The sidebar is a stack of islands: the folder list with its toolbar joined on top as one box, **Return here** (when something is waiting, just above the dock), and a **dock** at the bottom with Add folder and Settings. The Fleet rail is the same idea: the fleet list with its header joined on top as one box, **Needs you** (while something is pending) and **Would-have**.
 - Every helper pane is its own island, and the session area is one too.
 - Pane dividers draw no line at rest. The gap itself is the drag handle: hover it and a short grip appears, then drag to resize or double-click to reset, exactly as before.
 - The footer at the bottom stays a flat full-width bar; it is not an island.

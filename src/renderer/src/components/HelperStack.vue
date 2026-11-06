@@ -173,6 +173,7 @@ function paneFlex(pane: { id: string; ratio: number }): string {
       <div
         v-if="stacked && idx > 0 && !maximizedId && !expandedId"
         class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
+        data-float-divider
         role="separator"
         aria-orientation="vertical"
         @mousedown="onDividerMouseDown(idx - 1, $event)"

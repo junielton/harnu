@@ -927,7 +927,7 @@ textarea,
    (`border-b`, `bg-sidebar`, `border-l`…) the same elements carry in the default layout.
    Islands are addressed by `data-island`, never by DOM shape. */
 
-/* canvas, and the 6px frame around the columns */
+/* canvas, and the --float-gap frame around the columns */
 :root[data-floating='on'] [data-app-shell] {
   background: var(--color-canvas);
 }
@@ -935,17 +935,16 @@ textarea,
   padding: var(--float-gap);
 }
 
-/* every island: its own border and corners, never sharing an edge with another */
+/* every island: its own border and corners, never sharing an edge with another. The corners come
+   from --float-radius, not --radius, so buttons, inputs and popovers keep the global radius. */
 :root[data-floating='on'] [data-island] {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border-radius: var(--float-radius);
   box-sizing: border-box;
 }
-:root[data-floating='on'] [data-island='sidebar-toolbar'],
 :root[data-floating='on'] [data-island='sidebar-return'],
 :root[data-floating='on'] [data-island='sidebar-list'],
 :root[data-floating='on'] [data-island='sidebar-dock'],
-:root[data-floating='on'] [data-island='rail-header'],
 :root[data-floating='on'] [data-island='rail-list'],
 :root[data-floating='on'] [data-island='rail-needs-you'],
 :root[data-floating='on'] [data-island='rail-would-have'],
@@ -971,6 +970,15 @@ textarea,
   height: var(--float-band);
 }
 
+/* a joined head (the sidebar toolbar, the Fleet rail header) is the TOP of its list island, not an
+   island of its own: it sits inside the island's 1px top border, so it is one px shorter than the
+   band and its bottom rule (its own `border-b`, the inner divider) lands on the Topbar's bottom edge.
+   `!important` because both heads carry their 42px as an inline style, which only that beats. */
+:root[data-floating='on'] [data-island-head][data-island-band] {
+  box-sizing: border-box;
+  height: calc(var(--float-band) - 1px) !important;
+}
+
 /* the sidebar column and the expanded Fleet rail are transparent stacks of islands */
 :root[data-floating='on'] aside[data-column]:not([data-rail-state='minimized']) {
   background: transparent;
@@ -979,10 +987,7 @@ textarea,
 :root[data-floating='on'] [data-island='topbar'] {
   margin-bottom: var(--float-gap);
 }
-:root[data-floating='on'] [data-island='sidebar-return'] {
-  padding-bottom: 4px;
-}
-/* the Return here zone's own bottom rule: the island gap separates it from the list now */
+/* the Return here zone's own top rule: the island gap separates it from the list now */
 :root[data-floating='on'] [data-return-divider] {
   display: none;
 }
@@ -1000,7 +1005,15 @@ textarea,
   border-top-width: 0;
 }
 
-/* dividers: the gap is the handle; no line at rest, a short grip on hover */
+/* dividers: the gap is the handle; no line at rest, a short grip on hover. The five column
+   dividers (`data-float-divider`) take their thickness from --float-gap, so the token alone moves
+   every gap; their `w-1.5` / `h-1.5` utilities (the 6px hit area) still apply with the layout off. */
+:root[data-floating='on'] [data-float-divider][aria-orientation='vertical'] {
+  width: var(--float-gap);
+}
+:root[data-floating='on'] [data-float-divider][aria-orientation='horizontal'] {
+  height: var(--float-gap);
+}
 :root[data-floating='on'] [role='separator'] {
   align-items: center;
   justify-content: center;

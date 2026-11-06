@@ -16,6 +16,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **Agents can hide and show sidebar folders.** A new `hide_folder` verb does what a folder's **Hide** / **Unhide** menu action does, for 1 to 100 folders at a time (add `unhide: true` to show them again). Hidden folders move to the hidden-folders view; nothing is deleted or moved on disk, and the folder stays pinned. It runs without asking, is safe to repeat, updates an open sidebar live, and tells the agent what happened to each path (a blocked folder, a folder with a working session or a waiting approval, or a path Harnu has never seen is reported instead of hidden).
 
+### Changed
+
+- **Floating panels are tighter and more joined.** The gap between islands (and around the window edge) is now 4px instead of 6px, and island corners are 4px; buttons, inputs and popovers keep their usual rounding. Dragging the dividers works as before. The sidebar toolbar now sits on top of the folder list as one box, and the Fleet rail header does the same with the session list. **Return here** moved to the bottom of the sidebar, between the folder list and the Add folder / Settings dock, in both layouts. Its height is capped and it scrolls inside, so a long list never pushes the dock off-screen.
+
 ### Fixed
 
 - **The Links popover no longer jumps in size when you move the pointer over it.** Hovering or tabbing to a row used to swap the time for the Open / Copy / Reference buttons and add the quoted sentence and the "Session isn't running" note, so the row grew taller and the whole popover resized under the pointer. Now every row keeps the same size at rest, on hover and on keyboard focus: the time and the buttons share one fixed slot and simply fade into each other, the quoted sentence is always shown, and the "can't reference" reason is printed once under the list instead of on each hovered row.

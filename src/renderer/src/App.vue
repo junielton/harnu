@@ -1916,6 +1916,7 @@ onUnmounted(() => {
         data-lm
         class="group flex w-1.5 shrink-0 cursor-col-resize justify-start"
         :class="{ 'lm-collapse-w': sidebarHidden }"
+        data-float-divider
         role="separator"
         aria-orientation="vertical"
         :aria-label="$t('sidebar.resize')"
@@ -2038,6 +2039,7 @@ onUnmounted(() => {
             data-lm
             class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
             :class="{ 'lm-collapse-w': expandMode }"
+            data-float-divider
             role="separator"
             aria-orientation="vertical"
             @mousedown="onMainDividerMouseDown"
@@ -2050,6 +2052,7 @@ onUnmounted(() => {
             data-lm
             class="group flex h-1.5 shrink-0 cursor-row-resize items-end"
             :class="{ 'lm-collapse-h': expandMode }"
+            data-float-divider
             role="separator"
             aria-orientation="horizontal"
             @mousedown="onMainDividerMouseDown"
@@ -2085,6 +2088,7 @@ onUnmounted(() => {
           data-lm
           class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
           :class="{ 'lm-collapse-w': expandMode === 'everything' }"
+          data-float-divider
           role="separator"
           aria-orientation="vertical"
           :aria-label="$t('approvalInbox.rail.resize')"
