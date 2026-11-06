@@ -46,6 +46,7 @@ import { interceptActivePaths } from './user-projects'
 import { registerApprovalResolver, closeApprovals } from './approval-resolver'
 import { registerSentinel } from './sentinel-resolver'
 import { STEWARD_ROUTES, type StewardRoute } from './steward-routes'
+import { DOC_READER_ROUTE, answerDocReadHook, minLinesFromRoute } from './doc-reader/hook'
 
 // The public surface moved to the hub; re-exported so no importer changes (ARB-5).
 export {
@@ -98,6 +99,11 @@ export function startHookServer(
      * text the hook prints. Absent = the routes answer empty.
      */
     steward?: (route: StewardRoute, body: Record<string, unknown>) => Promise<string>
+    /**
+     * T2: the answer to a doc-reader gate hook (`POST /docread/<token>/<minLines>`), a
+     * `PreToolUse` output JSON. Absent = the route answers `{}` (allow).
+     */
+    docRead?: (minLines: number, body: Record<string, unknown>) => Promise<string>
   } = {}
 ): Promise<StartedServer> {
   // Defaults preserve pure-observer behavior, so existing call-sites/tests that
@@ -116,7 +122,9 @@ export function startHookServer(
       }
       const parts = (req.url ?? '').split('/').filter(Boolean) // ['hook', token, event, tag]
       const isSteward = parts[0] === 'steward' // ['steward', token, route]
-      if (req.method !== 'POST' || (parts[0] !== 'hook' && !isSteward)) return respond(404)
+      const isDocRead = parts[0] === DOC_READER_ROUTE // ['docread', token, minLines]
+      if (req.method !== 'POST' || (parts[0] !== 'hook' && !isSteward && !isDocRead))
+        return respond(404)
       // http-guard parity (lesson 004): DNS-rebind guard on Host + Origin, and a
       // constant-time token compare (no early-exit timing side-channel). The
       // token is a per-boot 122-bit randomUUID in the path, so this is
@@ -126,6 +134,31 @@ export function startHookServer(
       const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined
       if (origin !== undefined && !isAllowedOrigin(origin)) return respond(403)
       if (!constantTimeEqual(parts[1] ?? '', token)) return respond(403)
+
+      if (isDocRead) {
+        // T2: the doc-reader read gate. Fail-open in everything: a bad body, a throwing
+        // handler or no handler at all answers `{}`, which lets the tool call through.
+        const minLines = minLinesFromRoute(parts[2])
+        let rawBody = ''
+        req.on('data', (c) => {
+          rawBody += c
+          if (rawBody.length > 1 << 20) req.destroy()
+        })
+        req.on('end', async () => {
+          let out = '{}'
+          try {
+            const parsed = JSON.parse(rawBody || '{}')
+            if (parsed && typeof parsed === 'object' && opts.docRead)
+              out = await opts.docRead(minLines, parsed as Record<string, unknown>)
+          } catch (err) {
+            console.warn('[doc-reader] gate failed (allowing):', err)
+            out = '{}'
+          }
+          respond(200, out)
+        })
+        req.on('error', () => respond(400))
+        return
+      }
 
       if (isSteward) {
         const route = STEWARD_ROUTES.find((r) => r === parts[2])
@@ -423,7 +456,8 @@ export async function registerHookBridge(getWindow: () => BrowserWindow | null):
   const started = await startHookServer((ev) => handleBridgeEvent(ev, getWindow), currentToken, {
     getMode,
     registry: responderRegistry,
-    steward: async (route, body) => (await stewardRouteHandler?.(route, body)) ?? ''
+    steward: async (route, body) => (await stewardRouteHandler?.(route, body)) ?? '',
+    docRead: (minLines, body) => answerDocReadHook(minLines, body)
   })
   serverClose = started.close
   currentPort = started.port

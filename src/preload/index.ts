@@ -2343,6 +2343,14 @@ const api = {
     ipcRenderer.invoke('bundledSkills:setFolder', folder, name, enabled),
   bundledSkillsSetUserLevel: (name: string, install: boolean): Promise<UserLevelInstallResult> =>
     ipcRenderer.invoke('bundledSkills:setUserLevel', name, install),
+  // T2: the doc-reader threshold for one folder (`null` = the default, 350 lines).
+  bundledSkillsGetDocReaderMinLines: (folder: string): Promise<number | null> =>
+    ipcRenderer.invoke('bundledSkills:getDocReaderMinLines', folder),
+  bundledSkillsSetDocReaderMinLines: (
+    folder: string,
+    minLines: number | null
+  ): Promise<number | null> =>
+    ipcRenderer.invoke('bundledSkills:setDocReaderMinLines', folder, minLines),
 
   // ---- Mods audit (T389 P4W1) ----------------------------------------------
   // Read-only list of the mods a session in `folder` (null = global) can load, with

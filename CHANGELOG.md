@@ -120,6 +120,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **`doc-reader`: let a small model read large docs for you (Settings → Skills, off by default).** Turn it on and a session that tries to read a whole documentation file (Markdown, text, specs) longer than the folder's threshold — 350 lines unless you change it — is told no, and asks a Haiku `doc-reader` agent its question instead, so only the answer lands in the main model's context. Reading just a section (`limit` at most the threshold) still works, a subagent's reads are never stopped, and code files are left alone. In our measurements it cut cost by 63% with no quality loss. The threshold is set per project under the project scope of the same panel. It needs Harnu running: in a session outside Harnu, or with Harnu closed, reads go ahead as before. Never added to a read-only Scheduler worker or a steward.
 - **Memory benchmark.** `npm run memory:bench -- --repo <folder>` scores how well a repo's project memory works, from the files on disk. It reports how many sessions left a digest, how many decisions are recorded per working day, whether a search finds the right note, how big the default `memory_read` answer is, how fresh `hot.md` is, and how many transcripts of deleted worktrees were never summarized. It works on plain folders as well as git repos. It only reads, and two runs on the same files print the same output. The first baseline for this repo is in `docs/reports/2026-11-04-memory-bench-baseline.md`.
 
 ### Fixed

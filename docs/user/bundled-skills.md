@@ -185,6 +185,46 @@ One thing to expect either way: **a spoken line is short.** Harnu's voice cuts a
 utterance at about 300 characters, so the skill leads with the headline and leaves
 the detail on screen. Audio can't be skimmed.
 
+## `doc-reader` — let a small model read large docs
+
+The panel also lists one entry that is not a skill: **`doc-reader`**. It is off by
+default, switched like any other row, and when it is on for a folder its sessions get
+two things:
+
+- a **`harnu:doc-reader` agent** that runs on Haiku and may only read files (`Read`,
+  `Grep`, `Glob`);
+- a **read gate**: when the main model tries to read a whole documentation file —
+  `.md`, `.mdx`, `.markdown`, `.txt`, `.rst`, `.adoc` — longer than the folder's
+  threshold, the read is refused with a message telling it to ask the doc-reader its
+  question instead. The agent reads the file and answers; only the answer enters the
+  main model's context.
+
+What still goes through, by design:
+
+- **Reading a section.** A `Read` with a `limit` of at most the threshold passes, which
+  is what the model does before editing a doc. Starting at an `offset` with no `limit`
+  reads to the end of the file, so that counts as a whole read, and so does a `limit`
+  larger than the threshold.
+- **Small docs, code files, and anything that is not a doc.**
+- **A subagent's reads**, including the doc-reader's own.
+- **A filtered shell read** such as `cat big.md | grep error` or `cat big.md > out.txt`.
+
+**The threshold** is 350 lines unless you change it. Pick the project scope at the top
+of the panel and the `doc-reader` row shows a **Threshold** field for that folder;
+clear it to go back to the default. Like every switch here, it applies to sessions
+started from now on.
+
+**Why it exists.** In our evaluation (11 questions over Harnu's own specs), turning it on
+cut the cost of a session by 63% and the main model's input tokens by 52%, with answers
+graded just as correct. Offering the agent without the gate saved only 27%: the model
+rarely chose to delegate on its own.
+
+**It needs Harnu running.** The gate is answered by Harnu itself. A session whose Harnu
+has quit — or a `claude` you run outside Harnu — reads every file as usual; nothing
+breaks. It is never added to a read-only Scheduler worker or a mission's steward,
+because they cannot call an agent and a refused read would leave them stuck. It has no
+"Also outside Harnu" switch.
+
 ## Turning one on
 
 1. Open **Settings → Skills**.

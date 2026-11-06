@@ -2103,6 +2103,12 @@
       "label": "Also outside Harnu",
       "occupied": "A skill folder for {name} already exists and was not created by Harnu. Nothing was changed.",
       "failed": "Could not install {name} outside Harnu."
+    },
+    "feature": {
+      "threshold": "Threshold",
+      "linesSuffix": "lines",
+      "thresholdHint": "Docs longer than this are read by the doc-reader agent. Empty uses the default ({n} lines).",
+      "globalThresholdHint": "Threshold: {n} lines by default. Set a project’s own under its scope."
     }
   },
   "modsAudit": {

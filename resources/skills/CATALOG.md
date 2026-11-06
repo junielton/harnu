@@ -1,4 +1,4 @@
-<!-- harnu-skills v13 (2026-10-31) -->
+<!-- harnu-skills v14 (2026-11-04) -->
 
 # Harnu bundled skills
 
@@ -40,3 +40,15 @@ renders, so it is deliberately not translated.
 | `one-by-one`           | Drain open decisions one question at a time; each answer becomes a resolved `D-n` row in the spec and a line in project memory. |
 | `grill-me`             | Stress-test a spec or plan one question at a time; every question lands as a `D-n` row, an Amendments row or a non-goal.        |
 | `step-by-step`         | Walk the operator through manual actions one step at a time; each action is a check on a mission step the operator ticks.       |
+
+## Features
+
+A feature is switched on and off in the same panel, but it is not a skill: nothing
+under `features/<name>/` is staged as a `SKILL.md`. `FEATURE.md` carries the
+`name` and `description` the panel renders; `bundled-skills.ts` decides what the
+feature adds to the staged plugin. A feature is never a worker `/mention` and has
+no "Also outside Harnu" install.
+
+| Feature      | What it stages                                                                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doc-reader` | `agents/doc-reader.md` (Haiku, `Read, Grep, Glob`) and a `PreToolUse` http hook on `Read\|Bash` to the Hook Bridge read gate. Never staged into an `observe` tick or a steward. |

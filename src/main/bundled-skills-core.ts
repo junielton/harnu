@@ -31,6 +31,12 @@ export interface BundledSkill {
   /** The `SKILL.md` frontmatter description — model-facing trigger text AND the
    *  panel's one-line purpose. One source of truth, never i18n'd (spec §3.1). */
   description: string
+  /**
+   * T2: `'feature'` for an entry under `features/<name>/FEATURE.md` — something Harnu stages
+   * that is not a skill (the doc-reader's agent and hook). Absent for a skill. A feature is
+   * switched on and off like a skill but is never a `/mention`, never installed outside Harnu.
+   */
+  kind?: 'feature'
 }
 
 /** Per-skill boolean map. A MISSING key means "not set" (inherit / default). */
