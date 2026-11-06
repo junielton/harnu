@@ -4134,7 +4134,7 @@ middle column is the Topbar over a row holding the session area and the helper s
   `--float-gap` wide (4px; the five column dividers carry `data-float-divider`, and the floating
   rule sets their width/height from the token), so the divider **is** the gap and the drag handle at
   once. With the layout off they keep the 6px `w-1.5` / `h-1.5` hit area. Between two helper panes the gap is `--float-gap` as well
-  (a flex gap in side-by-side; the width splitter itself, 6px, when stacked).
+  (a flex gap in side-by-side; the width splitter itself, `--float-gap` wide, when stacked).
 - **Main is not one box.** The Topbar, the session area and each helper pane float on their own.
   The Topbar is separated from the row below by `--float-gap`.
 - **Bottom edge.** The lowest island of every column ends `--float-gap` above the footer.
@@ -4200,7 +4200,7 @@ The lowest one sits `--float-gap` above the footer. A future section is another
 
 A divider that disappears must never take the gap with it. With the switch on:
 
-| State                | What supplies the 6px                                                                        |
+| State                | What supplies the `--float-gap`                                                              |
 | -------------------- | -------------------------------------------------------------------------------------------- |
 | Fleet rail minimized | The rail column carries `margin-left: var(--float-gap)` (its divider is not rendered).       |
 | Fleet rail hidden    | The row's own padding is the gap to the window edge.                                         |
