@@ -12,6 +12,7 @@
  *
  * Nothing here imports electron, node:fs or the settings writer.
  */
+import { extractWriterPath } from './statusline-install'
 
 /** One live `claude` process Harnu owns, as `livePtyDescriptors()` reports it. */
 export interface LiveClaudeProc {
@@ -22,13 +23,14 @@ export interface LiveClaudeProc {
 }
 
 /** What a tick found under `statusLine` in `settings.json`. */
-export type StatusLineFinding = 'ok' | 'missing' | 'replaced'
+export type StatusLineFinding = 'ok' | 'missing' | 'replaced' | 'dead-writer'
 
 /**
  * Classify the `statusLine` value. `missing` is the only finding the tick heals. `replaced` is a
  * different command sitting where WE installed ours earlier in this run: recorded as evidence but
  * never fought, because it may be a user's own statusLine or another live Harnu instance's writer.
  * Without `wasOurs` a foreign value is simply the user's own and is not a finding at all.
+ * (`dead-writer` is decided separately by {@link deadWriterCandidate}, which needs the disk.)
  */
 export function classifyStatusLine(
   current: unknown,
@@ -40,6 +42,19 @@ export function classifyStatusLine(
   const command =
     typeof current === 'object' ? (current as Record<string, unknown>).command : undefined
   return command === ourCommand ? 'ok' : 'replaced'
+}
+
+/**
+ * The writer file a present statusLine points at when it is ANOTHER instance's writer (a Harnu
+ * shaped `sh "<…>/statusline/statusline-writer.sh"` that is not `ourCommand`). `null` when the
+ * statusLine is missing, ours, foreign, or unparseable — those are never a dead-writer candidate.
+ * The caller checks the file; only a vanished file makes it a `dead-writer` (BUG-243).
+ */
+export function deadWriterCandidate(current: unknown, ourCommand: string): string | null {
+  if (!current || typeof current !== 'object') return null
+  const command = (current as Record<string, unknown>).command
+  if (typeof command !== 'string' || command === ourCommand) return null
+  return extractWriterPath(command)
 }
 
 // ---- Evidence log ---------------------------------------------------------------------------
@@ -149,15 +164,27 @@ export interface HealTickDeps {
   enabled(): Promise<boolean>
   /** Missing file → `ok` with `statusLine: undefined` and `mtimeMs: null`; corrupt → `unreadable`. */
   readSettings(): Promise<SettingsRead>
-  reinstall(): Promise<void>
+  /** `reclaim` is the dead sibling's exact command to replace (see `dead-writer`). */
+  reinstall(reclaim?: string): Promise<void>
   appendLog(line: string): Promise<void>
   liveProcs(): readonly LiveClaudeProc[]
   notice(n: HealNotice): void
   /** Whether this run installed our statusLine (so a different value is a `replaced` finding). */
   wasOurs(): boolean
   ourCommand(): string
+  /** Whether a writer script file exists on disk. */
+  writerExists(path: string): Promise<boolean>
   /** Mutated in place by the tick (the shell keeps one object for the process lifetime). */
   noticeState: HealNoticeState
+}
+
+/** Fail safe: a check that throws counts as "exists" — never fight what we cannot read. */
+async function writerExists(deps: HealTickDeps, path: string): Promise<boolean> {
+  try {
+    return await deps.writerExists(path)
+  } catch {
+    return true
+  }
 }
 
 /**
@@ -169,7 +196,11 @@ export async function runHealTick(deps: HealTickDeps): Promise<void> {
   if (!(await deps.enabled())) return
   const read = await deps.readSettings()
   if (read.kind !== 'ok') return // corrupt — never read-modify-write over it
-  const finding = classifyStatusLine(read.statusLine, deps.ourCommand(), deps.wasOurs())
+  const candidate = deadWriterCandidate(read.statusLine, deps.ourCommand())
+  const dead = candidate !== null && !(await writerExists(deps, candidate))
+  const finding = dead
+    ? 'dead-writer'
+    : classifyStatusLine(read.statusLine, deps.ourCommand(), deps.wasOurs())
   if (finding === 'ok') {
     deps.noticeState.lastReplaced = null
     return
@@ -190,9 +221,9 @@ export async function runHealTick(deps: HealTickDeps): Promise<void> {
   } catch {
     /* evidence is best-effort: the heal matters more */
   }
-  if (finding !== 'missing') return
+  if (finding !== 'missing' && finding !== 'dead-writer') return
 
-  await deps.reinstall()
+  await deps.reinstall(dead ? (read.statusLine as { command: string }).command : undefined)
   const { notice, next } = planHealNotice(deps.noticeState, atMs, procs)
   Object.assign(deps.noticeState, next)
   if (notice) deps.notice(notice)

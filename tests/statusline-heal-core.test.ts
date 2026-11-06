@@ -171,6 +171,7 @@ describe('runHealTick (AC-3 + AC-4 end to end, injected deps)', () => {
       },
       wasOurs: () => true,
       ourCommand: () => OURS,
+      writerExists: async () => true,
       noticeState: { lastKey: null, lastAtMs: 0 },
       ...over
     }
@@ -277,5 +278,99 @@ describe('runHealTick (AC-3 + AC-4 end to end, injected deps)', () => {
     expect(deps.reinstall).toHaveBeenCalledTimes(2) // each loss is still healed...
     expect(deps.appended).toHaveLength(2) // ...and each leaves evidence...
     expect(deps.notices).toHaveLength(1) // ...but the operator is told once
+  })
+})
+
+describe('runHealTick — dead sibling writer (BUG-243)', () => {
+  const DEAD = 'sh "/tmp/harnu-verify-t579/statusline/statusline-writer.sh"'
+  const WIN_DEAD =
+    'cmd /c "C:\\Users\\u\\AppData\\Local\\Temp\\harnu-verify\\statusline\\statusline-writer.cmd"'
+
+  function makeDeps(command: unknown, exists: (p: string) => Promise<boolean>, over = {}) {
+    const appended: string[] = []
+    const notices: unknown[] = []
+    const checked: string[] = []
+    const deps: HealTickDeps = {
+      now: () => T0,
+      enabled: async () => true,
+      readSettings: async () => ({
+        kind: 'ok',
+        statusLine: command === undefined ? undefined : { type: 'command', command },
+        mtimeMs: T0 - 7_000
+      }),
+      reinstall: vi.fn(async () => {}),
+      appendLog: async (line) => {
+        appended.push(line)
+      },
+      liveProcs: () => [proc()],
+      notice: (n) => {
+        notices.push(n)
+      },
+      wasOurs: () => true,
+      ourCommand: () => OURS,
+      writerExists: async (p) => {
+        checked.push(p)
+        return exists(p)
+      },
+      noticeState: { lastKey: null, lastAtMs: 0 },
+      ...over
+    }
+    return Object.assign(deps, { appended, notices, checked })
+  }
+
+  it('reclaims a statusLine whose posix writer file no longer exists', async () => {
+    const deps = makeDeps(DEAD, async () => false)
+    await runHealTick(deps)
+    expect(deps.checked).toEqual(['/tmp/harnu-verify-t579/statusline/statusline-writer.sh'])
+    expect(deps.reinstall).toHaveBeenCalledWith(DEAD)
+    expect(JSON.parse(deps.appended[0]).finding).toBe('dead-writer')
+    expect(deps.notices).toEqual([{ atMs: T0, sessionKeys: ['sess-a'] }])
+  })
+
+  it('reclaims a dead win32 cmd /c writer too', async () => {
+    const deps = makeDeps(WIN_DEAD, async () => false)
+    await runHealTick(deps)
+    expect(deps.checked).toEqual([
+      'C:\\Users\\u\\AppData\\Local\\Temp\\harnu-verify\\statusline\\statusline-writer.cmd'
+    ])
+    expect(deps.reinstall).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a sibling instance alone while its writer file exists', async () => {
+    const deps = makeDeps(DEAD, async () => true)
+    await runHealTick(deps)
+    expect(deps.reinstall).not.toHaveBeenCalled()
+    expect(deps.notices).toEqual([])
+    // still the pre-existing `replaced` evidence, never a heal
+    expect(JSON.parse(deps.appended[0]).finding).toBe('replaced')
+  })
+
+  it('never touches a foreign statusLine, even though its path does not exist', async () => {
+    const deps = makeDeps('node /home/u/bin/my-statusline.js', async () => false)
+    await runHealTick(deps)
+    expect(deps.checked).toEqual([])
+    expect(deps.reinstall).not.toHaveBeenCalled()
+  })
+
+  it('treats an unparseable command as existing (fail safe)', async () => {
+    const deps = makeDeps('sh -c "cat > /x/statusline/statusline-writer.sh"', async () => false)
+    await runHealTick(deps)
+    expect(deps.checked).toEqual([])
+    expect(deps.reinstall).not.toHaveBeenCalled()
+  })
+
+  it('treats a failing existence check as existing (fail safe)', async () => {
+    const deps = makeDeps(DEAD, async () => {
+      throw new Error('EACCES')
+    })
+    await runHealTick(deps)
+    expect(deps.reinstall).not.toHaveBeenCalled()
+  })
+
+  it('does not treat our own command as dead', async () => {
+    const deps = makeDeps(OURS, async () => false)
+    await runHealTick(deps)
+    expect(deps.checked).toEqual([])
+    expect(deps.reinstall).not.toHaveBeenCalled()
   })
 })

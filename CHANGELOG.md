@@ -119,6 +119,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - The offline voice no longer risks a silent first start after an update: the one-time rewrite of the installed voice files could run twice at once (at app start and during an install) and briefly leave the entry file empty. It now runs once at a time (BUG-239).
 - **Cleanup now recognizes a worktree as merged when its pull request was squash-merged after more commits were pushed from elsewhere.** A worktree whose latest commit is already inside the merged pull request, and whose changes reached the default branch (straight in, or through a merged base pull request), used to wait in Needs review as "merged, but the local tip differs from the PR head". It is now Ready to clean, and the automatic cleanup can take it. Nothing changes when the pull request's last commit is not in your clone (Harnu never downloads it for this), when the worktree has commits the pull request lacks, or when it has uncommitted changes: those still wait in Needs review.
 
+- **The footer's effort level and other live figures come back after a test or verify Harnu instance crashed.** When a second Harnu (a dev or verify copy with its own data folder) took over the `statusLine` setting and then died without cleaning up, the real Harnu left the setting pointing at a script that no longer existed, so the effort chip and the other statusLine-only figures stayed blank until you restarted it. Harnu now notices that the script is gone, takes the setting back within a minute, and posts the usual Activity notice that sessions started before the repair need a restart. A second Harnu that is still running, and any statusLine of your own, are left alone.
+
 ## 2026-11-03
 
 ### Added
