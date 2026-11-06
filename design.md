@@ -9681,10 +9681,20 @@ text-text-4` — `HH:MM` today, a short date otherwise). The second line is the 
   (`GitHub PR`, `ClickUp`, `Figma`, `Google Docs`, `Web`), a mono secondary (the host for PR / issue /
   task, `node <id>` for a Figma frame) and a **source chip** (`you` neutral, `agent`
   `border-accent-line text-accent`).
-- **On hover or keyboard focus** the time gives way to **Open · Copy · Reference** (`external-link`,
-  `copy`, `reply` at 13px, `rounded-sm p-1`) and the surrounding sentence appears under the row
-  (`text-[11px] text-text-3`, `border-l-2 border-border-2`, one line, ellipsised). The sentence drops
-  the URL when it sits at the start or end of it (the row already shows it) and keeps it mid-sentence.
+- **Hover and focus never change the row's layout (BUG-255).** A row has the same elements and the
+  same size at rest, on hover and on keyboard focus; hover / `focus-within` may only change
+  colour, background or opacity. Never `display` (`hidden` ↔ `flex` / `block`) and never
+  `visibility` — an `invisible` button cannot take keyboard focus, so the focus reveal would never
+  fire. The **time and Open · Copy · Reference share one fixed slot** (`external-link`, `copy`,
+  `reply` at 13px, `rounded-sm p-1`): both sit in the same grid cell, so the slot is always as wide
+  as the actions, and hover or focus-within crossfades them (`opacity`, `transition-opacity`). The
+  buttons stay in the DOM and the tab order at rest; Tab onto one reveals them exactly as hover does.
+- **Excerpt:** the surrounding sentence is **always rendered** under the detail line when the link has
+  one (`text-[11px] text-text-3`, `border-l-2 border-border-2`, one line, ellipsised) — it is no
+  longer a hover reveal. A row without a sentence is shorter than one with it, but a given row never
+  changes height. The sentence drops the URL when it sits at the start or end of it (the row already
+  shows it) and keeps it mid-sentence. Chosen over removing it: it is the only context for _why_ the
+  link is in the transcript, and an always-on line costs one row line, not a layout switch.
 - **Folder scope:** the same rows grouped under a header per session (`text-[11px] text-text-3` title
   - mono count), newest session first; the active session's group reads `links.thisSession`. A
     session's group title is its sidebar name (`sessionTitle`). While the first read is in flight the
@@ -9699,8 +9709,9 @@ scheme). **Copy** writes it to the clipboard and shows the `links.copied` succes
 shell-escaped, which corrupts a `?` or `&` — into the selected session's composer through the writer
 bus Re-attach uses, **without a newline** (one trailing space separates back-to-back references), and
 closes the popover so the operator sees the line. It is **disabled** (`:disabled`, tooltip
-`links.referenceDisabled`) when the session has no live PTY, and a hovered row prints that reason as
-an inline `text-warning` line; Open and Copy stay active. Labels, hosts, `node <id>` and the kind
+`links.referenceDisabled`) when the session has no live PTY, and the reason is printed **once**,
+as a `text-[11px] text-warning` line under the list (above the note), in every state — not on each
+row and never only on hover; Open and Copy stay active. Labels, hosts, `node <id>` and the kind
 names `GitHub` / `ClickUp` / `Figma` / `Notion` are technical and **untranslated** (§8).
 
 **Tokens:** none new — `bg-surface`, `bg-surface-2`, `bg-accent-soft`, `text-accent`,
