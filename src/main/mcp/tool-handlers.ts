@@ -369,7 +369,7 @@ import { getGcService } from '../gc/gc-service-registry'
 import { cleanupListing, planRelease } from './cleanup-listing'
 import { realPathLookup } from './real-paths'
 import { getSessionArchive } from '../session-archive-core'
-import { planArchiveSession, summarizeArchive } from './archive-session-core'
+import { planArchiveSession, summarizeArchive, type ArchivePlan } from './archive-session-core'
 import { planHideFolder, summarizeHide } from './hide-folder-core'
 
 /** Everything a handler may need beyond its own validated `input`. */
@@ -3154,10 +3154,9 @@ const releaseWorktreeHandler: Handler = async (args, ctx) => {
 /**
  * Archive or restore sessions through the main-process archive store, the same set the
  * sidebar's Archive action writes. Each id is judged on its own (see
- * {@link planArchiveSession}); the store is written once for the archives and once for the
- * restores, and the renderer hears about it through the store's change event, so a window
- * that is open updates live and one that is closed simply reads the file at boot. This
- * handler never touches a transcript or a worktree: the only file it can write is the store.
+ * {@link planArchiveSession}) inside the store's own serialized write, which commits once;
+ * the renderer hears about it through the store's change event, so a window that is open
+ * updates live and one that is closed simply reads the file at boot. This handler never touches a transcript or a worktree: the only file it can write is the store.
  */
 const archiveSessionHandler: Handler = async (args, ctx) => {
   const store = getSessionArchive()
@@ -3177,21 +3176,33 @@ const archiveSessionHandler: Handler = async (args, ctx) => {
   for (const f of ctx.folders) {
     for (const s of f.sessions) folderBySession.set(s.sessionId, s.projectPath ?? f.path)
   }
-  const states = taskStateRecord()
-  const withApproval = new Set(listPendingApprovals().map((a) => a.sessionId))
 
-  const plan = planArchiveSession(sessionIds, unarchive, {
-    archived: store.ids(),
-    folderOf: (id) => folderBySession.get(id),
-    isDenied: (folder) => isFolderDenied(folder, ctx.denyFolders, home),
-    taskStateOf: (id) => states[id],
-    hasPendingApproval: (id) => withApproval.has(id)
-  })
-
-  // The single commit point: past the 120s deadline the caller already got TOOL_TIMEOUT.
-  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
-  if (plan.toArchive.length > 0) await store.archive(plan.toArchive)
-  if (plan.toRestore.length > 0) await store.unarchive(plan.toRestore)
+  // Every row is decided INSIDE the store's serialized write, against the set as it stands
+  // after all earlier writes, so concurrent calls read as one serial order and an ACK row can
+  // never describe a state the store did not hold. The deadline check is the commit point:
+  // past the 120s deadline the caller already got TOOL_TIMEOUT, so nothing is written.
+  let plan: ArchivePlan | null
+  try {
+    plan = await store.transact((archived) => {
+      if (ctx.deadlineFlag?.fired) return { result: null }
+      const states = taskStateRecord()
+      const withApproval = new Set(listPendingApprovals().map((a) => a.sessionId))
+      const p = planArchiveSession(sessionIds, unarchive, {
+        archived,
+        folderOf: (id) => folderBySession.get(id),
+        isDenied: (folder) => isFolderDenied(folder, ctx.denyFolders, home),
+        taskStateOf: (id) => states[id],
+        hasPendingApproval: (id) => withApproval.has(id)
+      })
+      return { archive: p.toArchive, unarchive: p.toRestore, result: p }
+    })
+  } catch (err) {
+    // The write failed: the store is exactly as it was, so no row may claim otherwise.
+    return errorResult(
+      `ARCHIVE_WRITE_FAILED: ${err instanceof Error ? err.message : String(err)}. Nothing was changed.`
+    )
+  }
+  if (!plan) return errorResult('DEADLINE_FIRED')
 
   const counts: Record<string, number> = {}
   for (const r of plan.rows) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1

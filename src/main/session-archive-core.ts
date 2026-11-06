@@ -25,14 +25,36 @@ interface ArchiveFile {
   legacyImported: boolean
 }
 
+/** What a {@link SessionArchiveStore.transact} callback decides from the archive set it was handed. */
+export interface ArchiveTransaction<T> {
+  /** Ids to add (those already archived are skipped). */
+  archive?: readonly string[]
+  /** Ids to drop (those not archived are skipped). */
+  unarchive?: readonly string[]
+  /** Handed back to the caller once the write (if any) is on disk. */
+  result: T
+}
+
 export interface SessionArchiveStore {
-  /** The archived ids right now. A read-only view: mutate through the methods. */
+  /**
+   * The archived ids right now, as a COPY: a caller that mutates it (or casts away the
+   * `ReadonlySet`) changes nothing the store, the file or the next ACK is built from.
+   */
   ids(): ReadonlySet<string>
   has(sessionId: string): boolean
   /** Archive these ids. Resolves with the ids that were NOT archived before (empty when idempotent). */
   archive(sessionIds: readonly string[]): Promise<string[]>
   /** Restore these ids. Resolves with the ids that WERE archived before. */
   unarchive(sessionIds: readonly string[]): Promise<string[]>
+  /**
+   * Decide AND apply in one serialized step: `decide` runs inside the store's write queue,
+   * against the set as it is after every earlier write has landed, and what it returns is
+   * committed before the next job starts. A verb that must report what changed (the
+   * `archive_session` ACK) plans here, never from a snapshot taken before it queued, so N
+   * concurrent callers get outcomes consistent with one serial order. If `decide` throws or
+   * the write fails, nothing changes and the promise rejects.
+   */
+  transact<T>(decide: (current: ReadonlySet<string>) => ArchiveTransaction<T>): Promise<T>
   /**
    * Merge the renderer's old `localStorage` ids, exactly once. The first call merges and
    * marks the import done (even for an empty list); every later call is ignored.
@@ -120,8 +142,21 @@ export async function openSessionArchive(filePath: string): Promise<SessionArchi
   }
 
   return {
-    ids: () => set,
+    ids: () => new Set(set),
     has: (id) => set.has(id),
+    transact: (decide) =>
+      enqueue(async () => {
+        const tx = decide(new Set(set))
+        const added = cleanIds(tx.archive ?? []).filter((id) => !set.has(id))
+        const removed = cleanIds(tx.unarchive ?? []).filter(
+          (id) => set.has(id) && !added.includes(id)
+        )
+        if (added.length > 0 || removed.length > 0) {
+          await commit(new Set([...set, ...added].filter((id) => !removed.includes(id))), imported)
+          emit([...added, ...removed])
+        }
+        return tx.result
+      }),
     archive: (sessionIds) =>
       enqueue(async () => {
         const added = cleanIds(sessionIds).filter((id) => !set.has(id))
