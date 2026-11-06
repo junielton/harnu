@@ -1,4 +1,4 @@
-<!-- harnu-features v123 (2026-11-05) -->
+<!-- harnu-features v127 (2026-11-05) -->
 
 # You are running inside Harnu
 
@@ -424,9 +424,24 @@ and stops a live tick. ALWAYS confirms (never covered by a mission grant) — no
 Containers view reads: every Docker stack (a compose project or a standalone container),
 its attributed folder and Harnu's verdict — `unknown`, `orphan`, `active`, `protected`,
 `pending` or `zombie` — plus RAM, host ports, volumes, `unusedForMs` (and `zombieInMs` on a
-`pending` stack), `totals`, and `recent` (the stop/start/remove journal; each entry's
+`pending` stack), `totals`, `paused` and `recent` (the stop/start/remove journal; each entry's
 `actor` is `operator`, `agent` or `autopilot` — `autopilot` is Harnu acting on its own
-(Cleanup's automatic Docker actions), never you or the operator). Read the verdict; never re-derive it. Each call scans
+(Cleanup's automatic Docker actions), never you or the operator). An `autopilot` entry also has a
+`reason`, one English sentence ("Paused `x` — idle 3 h · bring back: `…`", "Removed empty network
+`x` — no containers"; paths shown as `<alias>`; a network removal has an empty `stacks`), absent on
+operator and agent entries. On an orphan stack it removed, `stacks[].keptVolumeOwner`
+(`{ reason: 'worktree-removed', project, worktreePath }`) sits beside `keptVolumes`: those volumes
+belonged to a worktree that is gone, so a project that mounts one is inheriting its data. Cleanup
+never removes a volume on its own. Read the verdict; never re-derive it.
+**`paused`** lists stacks Cleanup brought down with `compose down` (volumes kept) that have not
+come back — the operator sees them as "Paused". A paused stack has no containers, so it is NOT in
+`stacks` and has no verdict. Each entry: `id`, `name`, `project`, `actor`, `pausedAt`, `ports`
+(the host ports it held), `profiles`, `hasBuild`, `folderAlias`, `agentControllable` and
+**`restoreCommand`** — the `docker compose -p … --project-directory … up -d` command (with `-f`,
+`--profile`, `--env-file` and `--build` when the stack needs them; paths shown as `<alias>`).
+Bringing a paused stack back is running that command from the folder, not `start_containers`
+(nothing exists to start). A stop or removal hint for a compose stack is the same kind of command,
+never `docker start`; it is null when the stack's folder is gone. Each call scans
 fresh (`scannedAt`). Paths are redacted (`folderAlias`, `attribution.pathAlias`; a restore
 hint shows `<alias>`). A stack in a blocked folder lists with `agentControllable: false` —
 report it, leave it alone. `folder` narrows the listing, `totals` and `recent` to that repo,
@@ -531,6 +546,16 @@ deleted: false, message }` — report `bucketAfter`/`reason` instead of promisin
   (`alreadyReleased`). Refusals: `FATE_NOT_MERGED` (not merged with a strong proof),
   `FOLDER_NOT_ALLOWED`, `IS_MAIN_CHECKOUT`, `NOT_A_WORKTREE` (pass the `id` `list_cleanup`
   lists). Not open to a Scheduler `observe` worker.
+
+**Docker capacity — when `compose up` fails.** Harnu watches Docker's free bridge-network slots and, when
+few are left, frees what it may on its own (empty networks, orphan stacks, then the longest-idle stacks); when
+nothing is left it tells the operator in Activity. That is the operator's to act on, not yours. If YOUR
+`compose up` fails with `could not find an available, non-overlapping IPv4 address pool` (no slots left) or
+`port is already allocated` (another stack holds the port), call `mission_set_blocker({ …, stepId, reason,
+unblocks, owner: 'operator' })` on your step — `reason` quotes the error, `unblocks` says what would clear it
+("a free network slot / port 5432") — and stop. Do not retry in a loop, do not stop or remove other stacks,
+networks or volumes to make room, and do not edit `daemon.json`: those stacks may be the operator's running work.
+Clear the blocker the turn you see it resolved.
 
 **GitHub budget — `github_budget({})`.** Every `gh` call Harnu makes, and every one you make, spends
 the operator's one personal GitHub quota (5,000 REST requests and 5,000 GraphQL points an hour).

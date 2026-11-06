@@ -170,6 +170,7 @@ import type { GcPrefs } from '../main/gc/gc-prefs'
 import type { RemoteFacts } from '../main/gc/gc-remote-delete'
 import type {
   CycleRecord as GcCycleRecord,
+  DockerWatchRecord as GcDockerWatchRecord,
   GcCleanAck,
   GcRecheckResult,
   GcGuidance,
@@ -191,6 +192,7 @@ import type {
 import type {
   ContainersSnapshot,
   ContainersTotals,
+  PausedStack as ContainersPausedStack,
   StackRow,
   ContainerRow,
   VolumeRow as ContainersVolumeRow,
@@ -372,6 +374,7 @@ export type {
 export type {
   ContainersSnapshot,
   ContainersTotals,
+  ContainersPausedStack,
   StackRow,
   ContainerRow,
   ContainersVolumeRow,
@@ -3087,6 +3090,12 @@ const api = {
     subscribe('gc:opinion:done', cb),
   /** Fires after every autopilot cycle, whatever it did. */
   onGcCycle: (cb: (r: GcCycleRecord) => void): (() => void) => subscribe('gc:cycle', cb),
+  /** Tells main the renderer has recorded these out-of-capacity notices (by pass time), so it stops holding them. */
+  gcAckDockerWatchNotices: (ats: number[]): Promise<void> =>
+    ipcRenderer.invoke('gc:docker:watch:ack', ats),
+  /** Fires when the Docker capacity watcher's pass changed something (U3.6); a quiet machine sends nothing. */
+  onGcDockerWatch: (cb: (r: GcDockerWatchRecord) => void): (() => void) =>
+    subscribe('gc:docker:watch', cb),
 
   // ---- Containers (T320) ------------------------------------------------------
   /** The last snapshot, or `null` before the first scan this session. */

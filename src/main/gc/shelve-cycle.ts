@@ -36,6 +36,8 @@ export interface ShelveCycleDeps {
   prefs(): GcPrefs
   /** Folders a session drifted into (C4); a worktree any of them lies in is not shelved. */
   driftedCwds(): readonly string[]
+  /** Stacks Cleanup has Paused (U3.5); a worktree whose only stacks are these can be shelved. */
+  pausedStackIds?(): readonly string[]
   /** What the worktree itself says right now (HEAD, work fingerprint, last commit…). */
   probe(b: WorktreeBundle): Promise<ShelveProbe>
   /** Shelves one decided worktree (the executor). Never throws. */
@@ -110,7 +112,11 @@ export async function runShelveCycle(
   if (prefs.pauseAutonomous) return empty('paused')
   if (!prefs.shelve.enabled) return empty('off')
   const now = deps.now()
-  const ctx = { prefs, driftedCwds: deps.driftedCwds() }
+  const ctx = {
+    prefs,
+    driftedCwds: deps.driftedCwds(),
+    pausedStackIds: deps.pausedStackIds?.() ?? []
+  }
 
   for (const [id, note] of state.shelveFailures) {
     if (now - note.at >= SHELVE_FAILURE_TTL_MS) state.shelveFailures.delete(id)

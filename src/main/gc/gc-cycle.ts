@@ -18,7 +18,15 @@ import {
 import type { WorktreeBundle } from './bundle-core'
 import type { JobQueue } from './gc-jobs-core'
 import type { GcPrefs } from './gc-prefs'
-import type { CycleRecord, DockerCycleRecord, ShelveCycleRecord } from './gc-wire'
+import type {
+  CapacityNoticeState,
+  CycleRecord,
+  DockerCycleRecord,
+  DockerReportItem,
+  DockerReportList,
+  DockerWatchRecord,
+  ShelveCycleRecord
+} from './gc-wire'
 import {
   planHousekeeping,
   type HousekeepingPlan,
@@ -65,6 +73,26 @@ export interface CycleState {
   dockerStreak: number
   /** The count behind the last Docker report notice, so an unchanged report is not repeated. */
   dockerReportKey: string | null
+  /** Capacity watcher (U3.6): which out-of-capacity notice was given since capacity was last above the mark. */
+  dockerCapacityNotice: CapacityNoticeState
+  /** Capacity watcher (U3.6): the last pass. */
+  dockerWatch: DockerWatchRecord | null
+  /**
+   * Capacity watcher: passes that raised a notice no renderer has acknowledged yet (the boot pass
+   * runs before the window exists). Delivered in the snapshot; the renderer acknowledges them.
+   */
+  dockerNoticesPending: DockerWatchRecord[]
+  /** The newest report-mode pass that planned (cycle or watcher): what the operator acknowledges. */
+  dockerReport: DockerReportList | null
+  /** Capacity watcher: the last full pass that found nothing to free, so the timer can back off. */
+  dockerWatchIdle: {
+    key: string
+    at: number
+    found: number
+    refused: number
+    failed: number
+    items: DockerReportItem[]
+  } | null
 }
 
 export function createCycleState(): CycleState {
@@ -76,7 +104,12 @@ export function createCycleState(): CycleState {
     shelveStreak: 0,
     shelveReportKey: null,
     dockerStreak: 0,
-    dockerReportKey: null
+    dockerReportKey: null,
+    dockerCapacityNotice: 'none',
+    dockerWatch: null,
+    dockerNoticesPending: [],
+    dockerReport: null,
+    dockerWatchIdle: null
   }
 }
 

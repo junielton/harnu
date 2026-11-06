@@ -44,6 +44,7 @@ function install(): { push: Record<string, (p: unknown) => void> } {
       onGcProgress: sub('progress'),
       onGcDone: sub('done'),
       onGcCycle: sub('cycle'),
+      onGcDockerWatch: sub('dockerWatch'),
       onGcOpinionResult: sub('opinion'),
       onGcOpinionDone: sub('opinionDone')
     }

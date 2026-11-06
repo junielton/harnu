@@ -35,6 +35,7 @@ import {
   freedPorts,
   freedRam,
   isAnonymousVolume,
+  isPauseTombstone,
   isWorktreeAttribution,
   keptVolumesOf,
   lastExitedAt,
@@ -432,6 +433,7 @@ const tombWhen = computed(() => {
   const tb = tomb.value
   if (!tb) return ''
   const ago = agoLong(nowMs.value - tb.at)
+  if (isPauseTombstone(tb)) return t('containers.recent.whenPaused', { ago })
   if (tb.verb === 'stop') return t('containers.recent.whenStopped', { ago })
   if (tb.verb === 'start') return t('containers.recent.whenStarted', { ago })
   return t('containers.recent.whenRemoved', { ago })
@@ -463,6 +465,8 @@ const tombEvidence = computed<EvRow[]>(() => {
           ? 'actionRemovedKept'
           : 'actionRemoved'
     action = t(`containers.value.${key}`, n, { named: { n } })
+  } else if (isPauseTombstone(tb) && !isBulk.value) {
+    action = t('containers.value.actionPaused', n, { named: { n } })
   } else if (isBulk.value) {
     const key = tb.verb === 'stop' ? 'actionStoppedBulk' : 'actionStartedBulk'
     action = t(`containers.value.${key}`, { stacks: tb.stacks.length, n })
@@ -538,12 +542,13 @@ const tombNote = computed(() => {
     : t('containers.note.removedNoVolume')
 })
 
+const isPause = computed(() => (tomb.value ? isPauseTombstone(tomb.value) : false))
 const restoreEyebrow = computed(() =>
-  tomb.value?.verb === 'remove'
+  tomb.value?.verb === 'remove' || isPause.value
     ? t('containers.restore.toBringBack')
     : t('containers.restore.toUndo')
 )
-const restoreWraps = computed(() => isBulk.value || tomb.value?.verb === 'remove')
+const restoreWraps = computed(() => isBulk.value || tomb.value?.verb === 'remove' || isPause.value)
 
 /** Stacks a Recent stop can bring back: those still in the scan and not running. */
 const startTargets = computed(() => {
@@ -851,7 +856,7 @@ async function copyHint(hint: string): Promise<void> {
       </div>
 
       <div
-        v-if="tombstone.verb === 'stop'"
+        v-if="tombstone.verb === 'stop' && !isPause"
         class="flex shrink-0 gap-2.5 border-t border-border pt-3.5"
       >
         <div class="flex flex-col gap-[5px]">

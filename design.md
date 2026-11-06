@@ -11159,6 +11159,42 @@ keyframes and no new easing. The "busy" dot is static — a 6px `--accent` dot w
 halo — because `.anim-pulse-dot` carries a green ring today; an accent variant of that class is a
 follow-up, not part of this slice. `prefers-reduced-motion` already zeroes durations.
 
+#### Out-of-capacity Activity notification (autonomous cleanup U3.6)
+
+When Docker is nearly out of bridge-network address slots and Cleanup has nothing left it may free, the
+capacity watcher raises **one Activity entry per level**, immediately (not on the hourly cycle). It is a plain
+`NotificationRecord` in the Activity bell (`ActivityBell.vue`; no new component): `source: 'app'`,
+`kind: 'warning'` (the `--warning` left border and glyph the bell already uses), recorded **quietly** — no
+toast, no sound, no `requestAttention` (the OS notification and the remote push carry the urgency). Main decides
+WHEN (once per level until capacity has recovered above the low-water mark; see `capacity-watcher-core`); the
+renderer only words it, from the structured `notice` on the `gc:docker:watch` push.
+
+- **Two levels, two entries.** _Low_ — title "Docker is nearly out of network slots", description "{free} of
+  {total} free. Cleanup has nothing left to free on its own." _Zero_ — title "Docker has no free network
+  slots", description "The next compose up will fail. Stop a stack you do not need." Titles are complete short
+  sentences without a trailing period (§8), the descriptions end with one.
+- **When Cleanup is not acting.** The heads-up is a warning, not an action, so it also fires while the Docker
+  switch is **off** or **Pause all autonomous cleanup** is on (only on engines where the slots can be counted;
+  unknown capacity stays silent). The description then says why nothing was freed: "{free} of {total} free.
+  Automatic Docker cleanup is off, so nothing will be freed on its own." (zero: "The next compose up will fail.
+  Automatic Docker cleanup is paused, so nothing will be freed on its own."). Same title, same no-repeat rule.
+- **Click** opens the Cleanup takeover (`target: { view: 'cleanup' }`), where the Docker card shows the same
+  numbers. The row has no action button of its own.
+- **Push.** The same title and description go out through `pushSend` as kind `needs-input` (an
+  attention-demanding event: the operator is probably away and a compose is about to fail); the remote master
+  switch and pause still apply.
+- **No repeat.** Neither entry is raised again until the free slots have been above the mark; oscillating
+  around the mark adds nothing. A snapshot refresh or a replayed push never records a second row.
+
+**Docker first-report list (Settings → Cleanup → Docker: pausing and garbage).** While the switch is on and the
+first report is not acknowledged, the status line is followed by a **list of what the first pass would do**
+(`data-testid="gc-docker-report-list"`), so the operator does not acknowledge blind. A compact `<ul>`, 11.5px,
+`--border` hairline above, rows 4px apart: per row a small kind label — **Network**, **Orphan stack** or
+**Pause** — in `--text-3` uppercase 10px, then the target in the monospace face (`font-mono`, `--text`), then
+the reason as a muted second line (`--text-3`). At most 8 rows; beyond that a muted "+{n} more" line. Empty list:
+the existing report-only sentence stands alone. After the acknowledgement the list is gone. No new color, size
+or radius: the rows reuse the Shelved card's label/target/reason anatomy.
+
 #### Settings → Cleanup (supersedes the Cleanup and Containers panes' overlapping controls)
 
 One pane, the `CleanupSettingsPane.vue` anatomy (11px uppercase eyebrow, muted 11.5px intro, label-left /
@@ -11288,7 +11324,7 @@ and below 600px the split scrolls sideways (`overflow-x-auto`, the Cleanup prece
 rather than crushing the detail.
 
 - **Eyebrows** — "Needs you" (zombie, orphan), "Leave alone" (active, protected, pending,
-  unknown), "Recent": 10.5px/500 uppercase, `tracking-[0.07em]`, `--text-4`,
+  unknown), "Paused" (U3.4, stacks Cleanup brought down), "Recent": 10.5px/500 uppercase, `tracking-[0.07em]`, `--text-4`,
   `padding: 10px 8px 6px`. An empty section drops its eyebrow. The "Needs you" eyebrow is
   the one exception: it is a `flex items-center gap-2.5` row with `padding-left: 10px`, so
   its **select-all control** (below) sits in the same 14px column as its rows' checkboxes.
@@ -11332,6 +11368,15 @@ ring-offset-1 ring-offset-bg`, and takes an `aria-label` naming its stack
   stacks" for a bulk action) + verb text, and a 10.5px tabular "ago". One row per journal
   tombstone (one per action, however many stacks it touched), newest first, capped at 10.
   Selectable like a stack row.
+- **Paused row (U3.4)** — a stack Cleanup brought down with `compose down` (volumes kept)
+  and that has not come back. It has no containers, so it is not a stack row and carries no
+  verdict: it is listed from `snapshot.paused`, under its own **"Paused"** eyebrow between
+  "Leave alone" and "Recent", and the eyebrow is dropped while the list is empty. Grid
+  `1fr auto auto`, same `gap`, padding, hover and selected rules as a stack row: the mono 12px
+  name (truncating), a **Paused** chip (10.5px/600, `padding: 3px 9px`, `rounded-full`,
+  `bg-surface-2 text-text-3` — a resting state, not a verdict, so it takes the muted tone), and a
+  10.5px tabular `--text-4` "ago". Selectable. The word is **"Paused"** (pt-BR **"Pausada"**) in
+  every string; "parked" already means a hibernated session and never appears in the UI.
 - **Verdict chip** — Cleanup's chip anatomy (10.5px/600, `padding: 3px 9px`,
   `rounded-full`): zombie `bg-green-soft text-green`, orphan
   `bg-warning-soft text-warning`, active `bg-accent-soft text-accent`, protected / unknown /
@@ -11398,6 +11443,20 @@ action tiers pinned below it.
   …", docker's message below it); the primary button reads **Try again**.
 - **After a stop** a zombie stays under "Needs you" (its RAM reads "stopped") until it is
   removed; one Recent entry is written per action.
+
+**Paused detail (U3.4, `ContainersPausedDetail.vue`)** — the detail pane for a Paused row, same
+padding and `gap` as the stack detail. Title row: a `Pause` icon (15px, stroke 1.6, `--text-3`),
+the mono 13px name and the Paused chip, with an "Open worktree" ghost `sm` button pushed right
+when Harnu knows the folder. Evidence grid (`grid-cols-[150px_1fr]`, 11.5px): **Paused by**
+(Cleanup / You / An agent), **Paused** (the stamp), **Folder** (mono path), **Ports held** (the
+port tags of the container list, mono 10.5px; they must be free again to restore), and
+**Rebuilds on restore** (Yes, only when the stack has a `build:` section). Then a `quiet` note:
+"Brought down with compose down. Its containers and network are gone; its volumes were kept.
+Nothing runs until you bring it back." Last, the **Restore box** under the "To bring it back"
+eyebrow: the full `docker compose … up -d` command and the 22px copy icon button. There are no
+tiers: the command is the restore, run by a session or by the operator (spec C5) — the pane has
+no Start button, because there is nothing to start. A Recent entry for a pause reads "paused" and
+shows the same box.
 
 **Remove dialog** (`ContainersRemoveDialog.vue`, §6 Dialog anatomy): Teleport → overlay →
 a 460px card (`bg-surface border-border-2 rounded-lg shadow-pop`, `padding: 22px 24px

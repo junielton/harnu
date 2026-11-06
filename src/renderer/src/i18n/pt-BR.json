@@ -3061,6 +3061,20 @@
           "confirm": "Mover para a lixeira"
         }
       },
+      "capacity": {
+        "low": {
+          "title": "O Docker está quase sem slots de rede",
+          "body": "{free} de {total} livres. A limpeza não tem mais nada para liberar sozinha.",
+          "bodyOff": "{free} de {total} livres. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "bodyPaused": "{free} de {total} livres. A limpeza automática do Docker está pausada, então nada será liberado sozinho."
+        },
+        "zero": {
+          "title": "O Docker ficou sem slots de rede livres",
+          "body": "O próximo compose up vai falhar. Pare uma stack que você não precisa.",
+          "bodyOff": "O próximo compose up vai falhar. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "bodyPaused": "O próximo compose up vai falhar. A limpeza automática do Docker está pausada, então nada será liberado sozinho."
+        }
+      },
       "shelved": {
         "activity": "Worktree `{branch}` guardada — ociosa há {days} d, branch mantida",
         "activityDetached": "Worktree com HEAD solto guardada — ociosa há {days} d, arquivo mantido",
@@ -3131,6 +3145,14 @@
           "reportOnly": "A primeira passada só registra o que pausaria ou removeria; nada muda no Docker até você confirmar.",
           "ack": "Confirmar o primeiro relatório",
           "active": "A limpeza do Docker está ativa. Até {n} ações por ciclo.",
+          "report": {
+            "kind": {
+              "network": "Rede",
+              "orphan": "Stack órfã",
+              "pause": "Pausa"
+            },
+            "more": "+{n} a mais"
+          },
           "pauseAll": {
             "label": "Pausar toda a limpeza automática",
             "hint": "Para de uma vez o guardar worktrees, a limpeza do Docker e a limpeza do Autopilot. Limpar na mão continua funcionando.",
@@ -3633,7 +3655,8 @@
     "section": {
       "needsYou": "Precisa de você",
       "leaveAlone": "Deixe quieto",
-      "recent": "Recentes"
+      "recent": "Recentes",
+      "paused": "Pausadas"
     },
     "verdict": {
       "zombie": "zumbi",
@@ -3683,7 +3706,9 @@
       "bulkWho": "{n} stacks",
       "whenStopped": "parada {ago}",
       "whenStarted": "iniciada {ago}",
-      "whenRemoved": "removida {ago}"
+      "whenRemoved": "removida {ago}",
+      "paused": "pausada",
+      "whenPaused": "pausada {ago}"
     },
     "nav": {
       "openWorktree": "Abrir worktree",
@@ -3737,7 +3762,8 @@
       "actionRemoved": "{n} container removido | {n} containers removidos",
       "actionRemovedKept": "{n} container removido · volume mantido | {n} containers removidos · volume mantido",
       "actionRemovedVolume": "{n} container removido · volume removido | {n} containers removidos · volume removido",
-      "freed": "{ram} de RAM · {n} porta | {ram} de RAM · {n} portas"
+      "freed": "{ram} de RAM · {n} porta | {ram} de RAM · {n} portas",
+      "actionPaused": "pausada · {n} container removido, volumes mantidos | pausada · {n} containers removidos, volumes mantidos"
     },
     "note": {
       "orphan": "Nada no Harnu pode usar esta stack de novo — o código de onde ela rodava sumiu. O volume pode ainda guardar dados que você quer, então ele nunca é removido sem perguntar.",
@@ -3833,7 +3859,23 @@
       "removing": "Removendo…"
     },
     "openCleanup": "Abrir Limpeza · {n} stack | Abrir Limpeza · {n} stacks",
-    "openCleanupTitle": "Limpar stacks agora acontece na Limpeza"
+    "openCleanupTitle": "Limpar stacks agora acontece na Limpeza",
+    "paused": {
+      "chip": "Pausada",
+      "note": "Derrubada com compose down. Os containers e a rede sumiram; os volumes foram mantidos. Nada roda até você trazê-la de volta.",
+      "evidence": {
+        "by": "Pausada por",
+        "when": "Pausada",
+        "folder": "Pasta",
+        "ports": "Portas usadas",
+        "build": "Recompila ao restaurar"
+      },
+      "actor": {
+        "autopilot": "Cleanup",
+        "operator": "Você",
+        "agent": "Um agente"
+      }
+    }
   },
   "prStack": {
     "title": "PR Stack",
@@ -4643,7 +4685,11 @@
         "title": "Registrar também",
         "hint": "Marque o que o Harnu deve gravar na memória do projeto. Nada é gravado sem marcar.",
         "nothing": "Nada notável para registrar.",
-        "kind": { "decision": "Decisão", "lesson": "Lição", "hot": "Hot" },
+        "kind": {
+          "decision": "Decisão",
+          "lesson": "Lição",
+          "hot": "Hot"
+        },
         "replaces": "Substitui {id}"
       },
       "warnings": {
@@ -5016,8 +5062,10 @@
   },
   "browserPane": {
     "network": {
-      "label": "Rede",
-      "hint": "A captura de rede está ligada. Ela para sozinha e não grava corpos de resposta, a menos que o agente peça."
+      "off": "Offline",
+      "on": "Rede ativa",
+      "offHint": "Offline: a página não alcança a rede. Clique para permitir neste painel.",
+      "onHint": "Rede ativa: a página alcança a rede. Clique para desligar."
     },
     "label": "Navegador",
     "newTab": "Nova aba",
@@ -5103,12 +5151,6 @@
     "noticeDownloaded": "{name} salvo",
     "noticeDownloadCancelled": "Download cancelado",
     "noticeDownloadFailed": "O download falhou",
-    "network": {
-      "off": "Offline",
-      "on": "Rede ativa",
-      "offHint": "Offline: a página não alcança a rede. Clique para permitir neste painel.",
-      "onHint": "Rede ativa: a página alcança a rede. Clique para desligar."
-    },
     "discarded": {
       "titleIdle": "Pausado para economizar memória",
       "titleRestored": "Ainda não carregado",
