@@ -184,7 +184,9 @@ describe('mission_* catalog entries (design §4)', () => {
     // S7
     mission_import_legacy: { mutates: true },
     // Mission v3 §3.6
-    mission_add_check: { mutates: true }
+    mission_add_check: { mutates: true },
+    // T654
+    mission_transfer_owner: { mutates: true }
   }
 
   it('declares exactly the S3 + S4 verbs, each op matching its name', () => {

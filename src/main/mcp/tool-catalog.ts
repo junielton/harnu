@@ -292,6 +292,11 @@ export const MCP_OPS = [
   'campaign_get',
   'campaign_list',
   'campaign_request_close',
+  // T654: the recovery path when an owner session must be replaced (it died, the app was closed, a
+  // successor was spawned). Same gate class as the mission verbs: a local write the agent could already
+  // do with its own tools. Denied to a steward and to an `observe` tick by name (derived deny lists).
+  'mission_transfer_owner',
+  'campaign_transfer_owner',
   // Campaign ch.5a (T597, spec §3.4): the steward's one new verb. Rewrites a step's OWN local
   // branch with `git rebase --onto` in its linked worktree; on a conflict it aborts, leaves the tree
   // as it was and sets a blocker. It never pushes and never touches another branch. Same gate class
@@ -2788,6 +2793,58 @@ export const MCP_TOOLS: McpToolDef[] = [
     }),
     mutates: true,
     op: 'campaign_request_close',
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'mission_transfer_owner',
+    description:
+      "Hand a Mission to a new owner session — the RECOVERY path for when the owner must be replaced (it died, the app was closed, a successor was spawned to resume the delivery). DIRECT write, no confirm. It moves `owner.sessionId` to `toSessionId` and everything keyed on it follows: the Topbar pill and the `you` line show on the new session's row (not the old one's), `mission_get { ownerSessionId }` answers for the new owner only, and the hibernation exemption and the steward's owner lookup go with it. `owner.folder` stays. The normal path is ONE owner for the whole delivery — do not use this to share a mission. Each transfer appends a Log entry (`### <time> · owner transfer: <from> → <to> (<reason>)`) and a ledger row of kind `owner-transfer` (`ref` = the new owner). Refused `MISSION_CLOSED` once the operator ended the mission, `BAD_SESSION_ID` when `toSessionId` is not a real Claude session UUID (never a `synthetic-…` id), `SAME_OWNER` when it already owns the mission, `FOLDER_NOT_ALLOWED` in a blocked folder, `BAD_ARGS` for an empty `reason`. A steward and an `observe` worker cannot call it (STEWARD_VERB_NOT_ALLOWED). ACK `{ ok, op, missionId, from, to }`. Session ids are self-declared, not authenticated.",
+    inputSchema: z.object({
+      folder: MISSION_FOLDER_SCHEMA,
+      missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
+      toSessionId: z
+        .string()
+        .min(1)
+        .describe(
+          'The Claude session UUID that becomes the owner (the transcript id get_fleet reports, never a synthetic-… id).'
+        ),
+      reason: z
+        .string()
+        .min(1)
+        .max(300)
+        .describe('Why the owner changes, one line (it goes in the Log and the audit trail).')
+    }),
+    mutates: true,
+    op: 'mission_transfer_owner',
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'campaign_transfer_owner',
+    description:
+      "Hand a Campaign to a new owner session — the RECOVERY path for when the owner must be replaced (see mission_transfer_owner). DIRECT write, no confirm. It moves the campaign's `owner.sessionId` to `toSessionId`; `campaign_get { ownerSessionId }` and the campaign popover follow. Its chapter missions keep their owner UNLESS you pass `includeChapters: true`, which also transfers every chapter mission that is not closed (each gets its own Log entry and `owner-transfer` ledger row). A campaign has no ledger: the campaign's own Log carries the entry. Refused `CAMPAIGN_CLOSED`, `BAD_SESSION_ID` (not a real session UUID / a `synthetic-…` id), `SAME_OWNER`, `FOLDER_NOT_ALLOWED`, `BAD_ARGS` (empty reason). A steward and an `observe` worker cannot call it. ACK `{ ok, op, campaignId, from, to, moved: { campaign: true, missions: [<missionId>…] } }` — `missions` lists what moved, `[]` without `includeChapters`. Session ids are self-declared, not authenticated.",
+    inputSchema: z.object({
+      folder: CAMPAIGN_FOLDER_SCHEMA,
+      campaignId: z.string().min(1).describe('The campaign id (cmp-<8 hex>).'),
+      toSessionId: z
+        .string()
+        .min(1)
+        .describe(
+          'The Claude session UUID that becomes the owner (the transcript id get_fleet reports, never a synthetic-… id).'
+        ),
+      reason: z
+        .string()
+        .min(1)
+        .max(300)
+        .describe('Why the owner changes, one line (it goes in the Log and the audit trail).'),
+      includeChapters: z
+        .boolean()
+        .optional()
+        .describe(
+          'Also transfer every non-closed chapter mission to the new owner. Default false: only the campaign moves.'
+        )
+    }),
+    mutates: true,
+    op: 'campaign_transfer_owner',
     silentAllowInAgentFolder: true
   },
   {

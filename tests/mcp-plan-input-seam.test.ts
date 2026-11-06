@@ -245,6 +245,20 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     campaignId: 'cmp-0000abcd',
     sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
   },
+  // T654
+  mission_transfer_owner: {
+    folder: ALLOWED,
+    missionId: 'mnt-0000abcd',
+    toSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    reason: 'the owner session died'
+  },
+  campaign_transfer_owner: {
+    folder: ALLOWED,
+    campaignId: 'cmp-0000abcd',
+    toSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    reason: 'the owner session died',
+    includeChapters: true
+  },
   // Campaign ch.5a (T597).
   rebase_stack: { folder: ALLOWED, missionId: 'mnt-0000abcd', onto: 'origin/main' }
 }

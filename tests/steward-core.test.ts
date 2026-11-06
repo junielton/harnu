@@ -39,7 +39,10 @@ const ctx = { mcpConfigPath: '/ud/steward-mcp/w-1.json' }
 
 describe('AC-5a.1 — steward mode allowlist is exactly spec §3.4', () => {
   it('names the verbs: every mission_*, campaign_get, message_session, notify, create_session, rebase_stack', () => {
-    const missionVerbs = CATALOG.filter((v) => v.startsWith('mission_'))
+    // T654: `mission_transfer_owner` starts with mission_ but is the owner's recovery verb, denied by name.
+    const missionVerbs = CATALOG.filter(
+      (v) => v.startsWith('mission_') && v !== 'mission_transfer_owner'
+    )
     expect(missionVerbs.length).toBeGreaterThan(10)
     expect([...STEWARD_ALLOW_VERBS].sort()).toEqual(
       [

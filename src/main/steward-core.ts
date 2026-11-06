@@ -28,13 +28,20 @@ export const STEWARD_NATIVE_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob', 
 const CATALOG_VERBS: readonly string[] = MCP_TOOLS.map((t) => t.name)
 
 /**
+ * `mission_*` verbs a steward must NOT get although the prefix rule would admit them. A steward is a
+ * Harnu worker bound to one mission; who OWNS that mission is the operator's and the owner's business
+ * (T654), never the steward's — it would be re-pointing the very session it reports to.
+ */
+const STEWARD_DENIED_MISSION_VERBS: ReadonlySet<string> = new Set(['mission_transfer_owner'])
+
+/**
  * Verbs a steward may call, by name (spec §3.4): every `mission_*`, `campaign_get`,
  * `message_session`, `notify`, `create_session` (verifier sessions only — see
  * {@link stewardCallRefusal}) and `rebase_stack`. The `mission_*` set is read from the catalog,
  * so a mission verb added later joins it; everything else is a closed list.
  */
 export const STEWARD_ALLOW_VERBS: readonly string[] = [
-  ...CATALOG_VERBS.filter((v) => v.startsWith('mission_')),
+  ...CATALOG_VERBS.filter((v) => v.startsWith('mission_') && !STEWARD_DENIED_MISSION_VERBS.has(v)),
   'campaign_get',
   'message_session',
   'notify',
