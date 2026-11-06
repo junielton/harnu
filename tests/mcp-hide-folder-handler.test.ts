@@ -304,6 +304,7 @@ describe('hide_folder handler', () => {
   })
 
   it('fails the whole call, with nothing changed, when the file cannot be written', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const seen: string[][] = []
     const off = onHiddenPathsChanged((p) => seen.push(p.hiddenPaths))
     // userData is a regular file, so the store directory can never be created.
@@ -312,6 +313,7 @@ describe('hide_folder handler', () => {
     live.userData = path.join(blockedDir, 'sub')
     const res = await handler({ folders: [P.alpha] }, ctx())
     off()
+    warn.mockRestore()
     expect(res.isError).toBe(true)
     expect(errorText(res)).toMatch(/^HIDE_WRITE_FAILED/)
     expect(seen).toEqual([])

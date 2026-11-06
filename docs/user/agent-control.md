@@ -388,6 +388,16 @@ Harnu keeps the archived list itself now, not the window, so a session can archi
 
 Each session is judged on its own, and the answer lists one result per session: archived, already archived, restored, already active, not found, or refused. A session is refused when its folder is one you blocked for agents, when it is working right now, or when it is waiting on an approval from you; those stay as they are until you or the agent come back to them. The call is recorded in the audit log like the other actions that run without asking.
 
+## Hiding finished folders
+
+A session can hide folders and worktrees from the sidebar for you, the same as choosing **Hide** from a folder's right-click menu, instead of you doing it row by row once a body of work is finished. It names between 1 and 100 folders by their full path, and each one moves out of the sidebar into the hidden-folders view, where you (or the session) can show it again. Nothing is deleted or moved: the folder, its worktree, its branch and its conversations stay exactly where they were, the folder stays pinned if you had pinned it, and the only thing that changes is the same hidden flag the menu action writes. It runs without asking, and calling it twice changes nothing the second time.
+
+When Harnu's window is open the sidebar updates on the spot; the menu's Hide and Unhide, and the hidden-folders view, work exactly as before.
+
+Each folder is judged on its own, and the answer lists one result per folder: hidden, already hidden, shown, already visible, not found, or refused. A folder is refused when you blocked it for agents, when a session in that exact folder is working right now, or when one of its sessions is waiting on an approval from you (showing a folder is only refused for a blocked one). "Not found" means Harnu has never seen that path: it is not pinned, not hidden and has no sessions. If two actions touch the same folder at the same moment, the results are consistent with one of them having happened first, and the answer always matches what was saved. The call is recorded in the audit log like the other actions that run without asking.
+
+This is not the same as cleaning up a folder whose directory is already gone: that is a separate action that removes the leftover sidebar entry for a deleted folder, and it refuses while the folder still exists. Hiding is for folders that are still there and can be undone at any time.
+
 ## Parked and hibernated sessions
 
 If a session goes idle for a while, Harnu may kill its underlying process to free up memory — but this doesn't lose anything, and it isn't the same as a session getting stuck. Clicking the session resumes it exactly where it left off. If you're watching your fleet through the tools above (or a session is), a quiet or "parked" session should be read as dormant, not failed.

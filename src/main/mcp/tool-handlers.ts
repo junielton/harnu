@@ -239,7 +239,12 @@ import {
 } from '../worktree-ipc'
 import { toWorktreeListing } from '../worktree-core'
 import { provisionErrorPayload, WorktreeProvisionError } from '../worktree-manifest'
-import { readUserProjects, terminalReadOptIns } from '../user-projects'
+import {
+  normalizePath as normalizeStoredPath,
+  readUserProjects,
+  terminalReadOptIns,
+  transactHiddenPaths
+} from '../user-projects'
 import {
   appendMemoryEntry,
   queryMemory,
@@ -365,6 +370,7 @@ import { cleanupListing, planRelease } from './cleanup-listing'
 import { realPathLookup } from './real-paths'
 import { getSessionArchive } from '../session-archive-core'
 import { planArchiveSession, summarizeArchive } from './archive-session-core'
+import { planHideFolder, summarizeHide } from './hide-folder-core'
 
 /** Everything a handler may need beyond its own validated `input`. */
 export interface ToolHandlerCtx {
@@ -3204,6 +3210,96 @@ const archiveSessionHandler: Handler = async (args, ctx) => {
     results: plan.rows,
     counts
   })
+}
+
+// ---- T661 `hide_folder` -------------------------------------------------------
+
+/**
+ * Hide or show sidebar folders through the SAME `hiddenPaths` the folder menu writes. Every
+ * row is decided inside the user-projects write lock ({@link transactHiddenPaths}), on the
+ * file just read, so N concurrent calls (and the menu action) read as one serial order and
+ * the ACK always matches what was persisted. A failed write rejects the whole call with
+ * nothing changed. The renderer hears the change through the store's listener (forwarded as
+ * `userProjects:hiddenChanged`), so an open sidebar updates live. Nothing on disk is touched.
+ *
+ * The transaction is entered before the first `await`, so calls reach the lock in arrival order.
+ */
+const hideFolderHandler: Handler = (args, ctx) => {
+  const requested = Array.isArray(args.folders)
+    ? args.folders.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : []
+  if (requested.length === 0) {
+    return Promise.resolve(errorResult('BAD_ARGS: pass 1..100 absolute folder paths'))
+  }
+  const unhide = args.unhide === true
+  const home = os.homedir()
+  const states = taskStateRecord()
+  const withApproval = new Set(listPendingApprovals().map((a) => a.sessionId))
+
+  // Group the scanned sessions by the folder they run in, keyed by the normalized path the
+  // store persists (a session counts for its own folder only, never for a parent or child).
+  const sessionsByRawFolder = new Map<string, string[]>()
+  for (const f of ctx.folders) {
+    for (const s of f.sessions) {
+      const raw = s.projectPath ?? f.path
+      const list = sessionsByRawFolder.get(raw)
+      if (list) list.push(s.sessionId)
+      else sessionsByRawFolder.set(raw, [s.sessionId])
+    }
+  }
+  const scannedFolders = ctx.folders.map((f) => f.path)
+
+  return transactHiddenPaths(async ({ hidden, projects }) => {
+    const paths = await Promise.all(requested.map((p) => normalizeStoredPath(p)))
+    const known = new Set<string>([...hidden, ...projects.map((p) => p.path)])
+    for (const p of await Promise.all(scannedFolders.map((p) => normalizeStoredPath(p)))) {
+      known.add(p)
+    }
+    const sessionsByFolder = new Map<string, string[]>()
+    for (const [raw, ids] of sessionsByRawFolder) {
+      const key = await normalizeStoredPath(raw)
+      sessionsByFolder.set(key, [...(sessionsByFolder.get(key) ?? []), ...ids])
+    }
+
+    // The single commit point: past the 120s deadline the caller already got TOOL_TIMEOUT.
+    if (ctx.deadlineFlag?.fired) return { toHide: [], toShow: [], result: null }
+    const plan = planHideFolder(paths, unhide, {
+      hidden,
+      isKnown: (p) => known.has(p),
+      isDenied: (p) => isFolderDenied(p, ctx.denyFolders, home),
+      hasWorkingSession: (p) =>
+        (sessionsByFolder.get(p) ?? []).some((id) => states[id] === 'working'),
+      hasPendingApproval: (p) => (sessionsByFolder.get(p) ?? []).some((id) => withApproval.has(id))
+    })
+    return { toHide: plan.toHide, toShow: plan.toShow, result: plan }
+  }).then(
+    ({ result: plan }) => {
+      if (plan === null) return errorResult('DEADLINE_FIRED')
+      const counts: Record<string, number> = {}
+      for (const r of plan.rows) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1
+      appendAudit({
+        ts: Date.now(),
+        tool: 'hide_folder',
+        folder: '',
+        verdict: 'allow',
+        disclosedPayloadSummary: summarizeHide(unhide, plan.rows),
+        result: 'ok'
+      })
+      return textResult({
+        ok: !plan.rows.some((r) => r.outcome === 'refused' || r.outcome === 'notFound'),
+        op: 'hide_folder',
+        unhide,
+        results: plan.rows,
+        counts
+      })
+    },
+    (err: unknown) =>
+      errorResult(
+        `HIDE_WRITE_FAILED: could not save the hidden folders, nothing changed (${
+          err instanceof Error ? err.message : String(err)
+        })`
+      )
+  )
 }
 
 // ---- mission_* verbs (T358 S3 — design.md §4) -------------------------------
@@ -7446,6 +7542,7 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   github_budget: githubBudgetHandler,
   release_worktree: releaseWorktreeHandler,
   archive_session: archiveSessionHandler,
+  hide_folder: hideFolderHandler,
   stop_containers: stopContainersHandler,
   start_containers: startContainersHandler,
   remove_containers: removeContainersHandler,

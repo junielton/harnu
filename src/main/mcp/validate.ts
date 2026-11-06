@@ -1098,6 +1098,34 @@ export function parseArchiveSession(input: unknown): ParseResult<ArchiveSessionA
   return { ok: true, value }
 }
 
+/** Validated args for the `hide_folder` mutation tool (T661): 1..100 absolute folder paths. */
+export interface HideFolderArgs {
+  folders: string[]
+  unhide?: boolean
+}
+
+const HideFolderSchema = z.object({
+  folders: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .refine((p) => path.isAbsolute(p), 'must be an absolute path')
+    )
+    .min(1)
+    .max(100),
+  unhide: z.boolean().optional()
+})
+
+/** Validate `hide_folder` args (T661). */
+export function parseHideFolder(input: unknown): ParseResult<HideFolderArgs> {
+  const parsed = HideFolderSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: HideFolderArgs = { folders: parsed.data.folders }
+  if (parsed.data.unhide !== undefined) value.unhide = parsed.data.unhide
+  return { ok: true, value }
+}
+
 /** Stack ids from `list_containers`: a non-empty list of non-empty strings. */
 const StackIdsSchema = z.array(z.string().min(1)).min(1)
 
@@ -1945,6 +1973,8 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   release_worktree: parseReleaseWorktree,
   // T655: sessions are named by id, never a folder; the handler refuses a blocked one per id.
   archive_session: parseArchiveSession,
+  // T661: folders are named by absolute path; the handler refuses a blocked one per path.
+  hide_folder: parseHideFolder,
   stop_containers: parseStopContainers,
   start_containers: parseStartContainers,
   remove_containers: parseRemoveContainers,

@@ -103,6 +103,7 @@ import {
   readUserProjects,
   hideUserProject,
   unhideUserProject,
+  onHiddenPathsChanged,
   setUserProjectAgentDenied,
   setUserProjectInterceptActive,
   setUserProjectAlias,
@@ -990,6 +991,15 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('userProjects:unhide', async (_e, targetPath: string) => {
     return toUserProjectsPayload(await unhideUserProject(targetPath))
+  })
+  // T661: the `hide_folder` MCP verb writes `hiddenPaths` outside the renderer's own calls, so
+  // main pushes the FULL new list after each write that changed it. The menu actions above do not
+  // emit: the renderer already mirrors their IPC response.
+  onHiddenPathsChanged(({ hiddenPaths }) => {
+    const win = mainWindow
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('userProjects:hiddenChanged', { hiddenPaths })
+    }
   })
   // Per-folder agent-control OPT-OUT (MCP). Agents may act in every folder by
   // default; this blocks them in one (and everything under it) — see

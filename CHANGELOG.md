@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-06
+
+### Added
+
+- **Agents can hide and show sidebar folders.** A new `hide_folder` verb does what a folder's **Hide** / **Unhide** menu action does, for 1 to 100 folders at a time (add `unhide: true` to show them again). Hidden folders move to the hidden-folders view; nothing is deleted or moved on disk, and the folder stays pinned. It runs without asking, is safe to repeat, updates an open sidebar live, and tells the agent what happened to each path (a blocked folder, a folder with a working session or a waiting approval, or a path Harnu has never seen is reported instead of hidden).
+
 ## 2026-11-05
 
 ### Added
