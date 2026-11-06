@@ -53,13 +53,14 @@ The state is already main-owned, so no storage has to move. Two things are missi
    the directory exists). `hide_folder` is for folders that still exist: it only flips the hidden flag,
    leaves the pin and every session alone, and is undone by `unhide: true`. It is not changed by this card.
 
-**Per-path outcome, in this order.** `notFound` (Harnu does not know the path: not pinned, not hidden,
-not a folder in the scanned session history); `refused` with `FOLDER_NOT_ALLOWED` (the path is inside a
-folder the operator blocked for agents); then for `unhide`, `shown` / `alreadyVisible`; for hide,
-`alreadyHidden` (nothing changes, so nothing is refused), then `refused` with `SESSION_WORKING` (a session
-whose folder is exactly this path is working right now), then `refused` with `PENDING_APPROVAL` (an
-approval is parked for such a session), then `hidden`. Showing a folder is never refused except for a
-blocked folder. Rows echo the **normalized** path (symlinks resolved), the string that is persisted.
+**Per-path outcome, in this order.** `refused` with `FOLDER_NOT_ALLOWED` (the path is inside a folder the
+operator blocked for agents; asked first, like every other verb, so a blocked path never reveals whether
+Harnu knows it); `notFound` (Harnu does not know the path: not pinned, not hidden, not a folder in the
+scanned session history); then for `unhide`, `shown` / `alreadyVisible`; for hide, `alreadyHidden`
+(nothing changes, so nothing is refused), then `refused` with `SESSION_WORKING` (a session whose folder is
+exactly this path is working right now), then `refused` with `PENDING_APPROVAL` (an approval is parked
+for such a session), then `hidden`. Showing a folder is never refused except for a blocked folder. Rows
+echo the **normalized** path (symlinks resolved), the string that is persisted.
 
 ## Slices
 
