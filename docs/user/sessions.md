@@ -52,7 +52,7 @@ The links you and Claude trade in a long session — the task, the pull request 
 
 Click the pill for the list, newest first. Each row is named from the link itself, with no lookup: a GitHub pull request or issue reads `owner/repo #183`, a ClickUp task reads `Task <id>`, a Figma link shows the file name and the frame (`node 812-4410`), and any other page shows its address without the query string. A small chip says who wrote it (**you** or **agent**), and the time sits on the right. Only what is written in the conversation counts — a URL that merely appeared in a command's output, a fetched page or a log is left out, so the list stays about the links you actually exchanged.
 
-Hover a row to see the sentence the link came from and three actions: **Open** (in your default browser), **Copy** (to the clipboard, with a "Link copied" toast), and **Reference** (types the link into the session's prompt so you can build on it — it doesn't press Enter, so you review the line and send it yourself; it needs a running session, so it's greyed out with the reason otherwise).
+Each row always shows the sentence the link came from, on one line under the label. Hover a row, or Tab onto it, to swap the time for three actions (the row never changes size): **Open** (in your default browser), **Copy** (to the clipboard, with a "Link copied" toast), and **Reference** (types the link into the session's prompt so you can build on it — it doesn't press Enter, so you review the line and send it yourself; it needs a running session, so it's greyed out with the reason otherwise).
 
 The **Session · Folder** toggle in the popover header widens the list from this session to every session in the folder, grouped under each session's name, newest session first. `Esc` or a click outside closes it, and opening it closes the other footer popovers (and vice versa).
 
@@ -144,7 +144,7 @@ Maximize works inside the split. **Expand to window** goes one step further: the
 ### Moving between panes from the keyboard
 
 - `F6` moves focus to the next pane: the main terminal, then each split pane from top to bottom, then back to the main terminal. `Shift+F6` goes the other way. Both work while a terminal has focus, so the program running there no longer receives `F6`. A collapsed split, and the panes hidden behind a maximized one, are skipped; when a view such as the Roadmap covers the main terminal, only the split panes are visited. With a dialog, the command palette or a menu open, they do nothing. On most Mac keyboards press `Fn+F6` and `Fn+Shift+F6`.
-- A Markdown, Memory, file-browser or canvas pane shows a thin accent outline while it has focus. Terminal panes don't: their cursor already tells you.
+- A Markdown, Memory, file-browser or canvas pane brightens its header text while it has focus. Terminal panes don't: their cursor already tells you.
 - `Cmd/Ctrl+Shift+M` maximizes the focused split pane, or restores it if it's already maximized. With no split pane focused, it restores whichever pane is maximized.
 - **Close the focused pane** has no shortcut out of the box (command id `pane.close`). Once you bind one, it closes the pane that has focus exactly like its header's close button: a Markdown or canvas pane with unsaved changes still asks before discarding them. Focus then moves to the next pane.
 
