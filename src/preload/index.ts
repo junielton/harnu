@@ -1519,6 +1519,26 @@ const api = {
   helpersRemoveWorktree: (args: { worktreePath: string }): Promise<void> =>
     ipcRenderer.invoke('helpers:removeWorktree', args),
 
+  // ---- Session archive (T655) -----------------------------------------------
+  // The archived-session set lives in the main process (`<userData>/archived-sessions.json`),
+  // so the `archive_session` MCP verb works with the window closed. The renderer hydrates
+  // from `sessionArchiveGet`, writes menu actions through `sessionArchiveSet`, sends its old
+  // `localStorage` ids ONCE to `sessionArchiveImportLegacy` (main ignores every later call),
+  // and gets the full set pushed on `onSessionArchiveChanged` after any write, the verb's too.
+  sessionArchiveGet: (): Promise<{ ids: string[]; legacyImported: boolean }> =>
+    ipcRenderer.invoke('sessionArchive:get'),
+  sessionArchiveSet: (
+    sessionIds: string[],
+    archived: boolean
+  ): Promise<{ ok: boolean; ids?: string[] }> =>
+    ipcRenderer.invoke('sessionArchive:set', { sessionIds, archived }),
+  sessionArchiveImportLegacy: (
+    sessionIds: string[]
+  ): Promise<{ ok: boolean; imported?: boolean; ids?: string[] }> =>
+    ipcRenderer.invoke('sessionArchive:importLegacy', { sessionIds }),
+  onSessionArchiveChanged: (cb: (p: { ids: string[] }) => void): (() => void) =>
+    subscribe('sessionArchive:changed', cb),
+
   /**
    * Delete a session's JSONL transcript from disk and, best-effort, remove its
    * entry from the parent project's `sessions-index.json` (if present). The

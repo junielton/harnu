@@ -1078,6 +1078,26 @@ export function parseReleaseWorktree(input: unknown): ParseResult<ReleaseWorktre
   return { ok: true, value }
 }
 
+/** Validated args for the `archive_session` mutation tool (T655): 1..100 session ids. */
+export interface ArchiveSessionArgs {
+  sessionIds: string[]
+  unarchive?: boolean
+}
+
+const ArchiveSessionSchema = z.object({
+  sessionIds: z.array(z.string().min(1)).min(1).max(100),
+  unarchive: z.boolean().optional()
+})
+
+/** Validate `archive_session` args (T655). */
+export function parseArchiveSession(input: unknown): ParseResult<ArchiveSessionArgs> {
+  const parsed = ArchiveSessionSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: ArchiveSessionArgs = { sessionIds: parsed.data.sessionIds }
+  if (parsed.data.unarchive !== undefined) value.unarchive = parsed.data.unarchive
+  return { ok: true, value }
+}
+
 /** Stack ids from `list_containers`: a non-empty list of non-empty strings. */
 const StackIdsSchema = z.array(z.string().min(1)).min(1)
 
@@ -1923,6 +1943,8 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   // T445: list_cleanup takes the optional folder; release_worktree takes a folder or an id.
   list_cleanup: parseListCleanup,
   release_worktree: parseReleaseWorktree,
+  // T655: sessions are named by id, never a folder; the handler refuses a blocked one per id.
+  archive_session: parseArchiveSession,
   stop_containers: parseStopContainers,
   start_containers: parseStartContainers,
   remove_containers: parseRemoveContainers,

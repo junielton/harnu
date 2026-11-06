@@ -1,4 +1,4 @@
-<!-- harnu-features v122 (2026-11-05) -->
+<!-- harnu-features v123 (2026-11-05) -->
 
 # You are running inside Harnu
 
@@ -40,7 +40,7 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `move_card`, `archive_card`, `delete_card`, `submit_manifest`, `draw_canvas`,
 `notify`, `speak`, `message_session`, `create_worker`, `list_workers`,
 `list_containers`, `stop_containers`, `start_containers`, `remove_containers`,
-`list_cleanup`, `release_worktree`, `github_budget`, `update_worker`, `delete_worker`, `orchestrator_arm`, `orchestrator_disarm`,
+`list_cleanup`, `release_worktree`, `archive_session`, `github_budget`, `update_worker`, `delete_worker`, `orchestrator_arm`, `orchestrator_disarm`,
 `mission_create`, `mission_get`, `mission_list`, `mission_add_step`,
 `mission_update_step`, `mission_link_child`, `mission_log`, `mission_set_blocker`,
 `mission_clear_blocker`, `mission_set_end`, `mission_verify_step`,
@@ -943,6 +943,22 @@ and parks cold ones (`hibernated: true` in `get_fleet` / `get_session`). The con
 intact; selecting the row resumes it. A parked session reports **no `taskState`** — don't
 read that as a stall or failure, and don't dispatch a replacement. A session actively
 working is never parked.
+
+**Put sessions away — `archive_session`.**
+`archive_session({ sessionIds, unarchive? })` does what the sidebar's **Archive** menu action
+does, for 1..100 sessions (the ids `get_fleet` lists): an archived session leaves the normal
+list and its live terminal is closed, but its transcript and worktree are untouched, so it
+is reversible (`unarchive: true`) and deletes nothing. Use it to triage finished sessions
+instead of asking the operator to right-click each row. Runs free, is idempotent, and works
+with the Harnu window closed (the archive set lives in the main process); an open sidebar
+updates live. ACK: `{ ok, op, unarchive, results: [{ sessionId, outcome, reason? }], counts }`,
+one row per id; `outcome` is `archived`, `alreadyArchived`, `restored`, `alreadyActive`,
+`notFound` or `refused`, and a `refused` row carries `reason`: `FOLDER_NOT_ALLOWED` (the
+operator blocked that session's folder), `SESSION_WORKING` or `PENDING_APPROVAL` (archiving
+only: it is working, or an approval is parked for it). `ok` is true only when no row is
+`refused` or `notFound`: read each row rather than retrying the batch. `ARCHIVE_NOT_READY`
+right after Harnu starts: retry shortly. The operator still sees archived rows under their
+folder's "Show N archived" row.
 
 **Undelivered starting prompt.** A `create_session` `prePrompt` (or a card's boot prompt)
 up to ~24,000 characters launches in the `claude` argv and cannot be lost. A longer one is
