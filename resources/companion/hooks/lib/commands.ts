@@ -10,7 +10,8 @@ const RUNNABLE: ReadonlySet<CommandName> = new Set([
   'flush',
   'config.update',
   'context.append',
-  'ui.band.set'
+  'ui.band.set',
+  'mission.state'
 ])
 
 /**

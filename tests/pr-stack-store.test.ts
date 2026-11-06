@@ -360,3 +360,47 @@ describe('refresh failure (BUG-148)', () => {
     expect(store.refreshFailure).toBeNull()
   })
 })
+
+// T611 U2 AC-3b — only the interval refresh is a "background" load. Main skips a background load
+// while the GitHub budget is low or exhausted; a load on open (and the manual refresh) must never
+// carry the flag, or the canvas would stay empty while the budget is spent.
+describe('background refresh (T611)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('marks the interval refresh as background and a load on open as not', async () => {
+    vi.useFakeTimers()
+    const prStackLoad = vi.fn(async () => snapshot())
+    vi.stubGlobal(
+      'window',
+      Object.assign(globalThis.window, {
+        api: {
+          prStackLoad,
+          prStackPrefs: vi.fn(async () => ({
+            autoRefresh: true,
+            intervalMs: 5_000,
+            showLabels: false,
+            openPrLinksInCanvas: false
+          }))
+        }
+      })
+    )
+    const store = usePrStackStore()
+
+    store.start(REPO)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(prStackLoad).toHaveBeenCalledTimes(1)
+    // The load on open: no options at all.
+    expect(prStackLoad.mock.calls[0]).toEqual([REPO, []])
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(prStackLoad).toHaveBeenCalledTimes(2)
+    expect(prStackLoad.mock.calls[1]).toEqual([REPO, [], { background: true }])
+
+    // A manual refresh goes through `load` without the flag, whatever the timer is doing.
+    await store.load(REPO)
+    expect(prStackLoad.mock.calls[2]).toEqual([REPO, []])
+    store.stop()
+  })
+})

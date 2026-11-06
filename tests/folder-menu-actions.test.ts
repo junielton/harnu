@@ -370,7 +370,7 @@ describe('AC-37 — the menus and the bindings share one function', () => {
       'folder.browseFiles',
       'folder.newTerminal',
       'folder.openInFileManager',
-      'folder.openInVSCode',
+      'folder.openInEditor',
       'folder.openGithubPulls'
     ])
     const mine = ids.filter((id) => !t1.has(id))

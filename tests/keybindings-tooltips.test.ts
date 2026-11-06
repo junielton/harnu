@@ -96,7 +96,7 @@ const TOOLTIP_SITES: Record<string, string[]> = {
     'view.prStack',
     'view.review',
     'folder.openInFileManager',
-    'folder.openInVSCode',
+    'folder.openInEditor',
     'folder.openGithubPulls',
     'folder.browseFiles',
     'folder.newTerminal',

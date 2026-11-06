@@ -67,19 +67,31 @@ Free, and they catch the dumb failures. Run these before any judgement; each is
 pass/fail with no interpretation. The table is the **code** rubric's; the other
 three rubrics below carry their own.
 
-| Check                         | Command                                                | Failure means                                                    |
-| ----------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
-| Commits exist                 | `git rev-list --count <base>..<head>`                  | the unit delivered nothing — stop here, everything is `unmet`    |
-| Nothing uncommitted           | `git status --porcelain` in the worktree               | work exists but is not on the branch                             |
-| Right base                    | `gh pr view <n> --json baseRefName`                    | the PR targets the wrong branch                                  |
-| Gates green                   | the repo's own gate command                            | broken build or tests                                            |
-| Tests ran after the last edit | test-run timestamp vs. last commit time                | a "lucky pass": passing output from before the final change      |
-| Scope respected               | diff file list vs. the unit's scope boundary           | scope creep — the most common reason a grader rejects agent work |
-| Acceptance tests untouched    | did the diff edit the tests encoding the ACs?          | the contract was edited to fit the code                          |
-| Visual ACs have a capture     | a screenshot exists for every AC about rendered output | nobody ever opened the page                                      |
+| Check                         | Command                                                | Failure means                                                      |
+| ----------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
+| Commits exist                 | `git rev-list --count <base>..<head>`                  | the unit delivered nothing — stop here, everything is `unmet`      |
+| Nothing uncommitted           | `git status --porcelain` in the worktree               | work exists but is not on the branch                               |
+| Right base                    | `gh pr view <n> --json baseRefName`                    | the PR targets the wrong branch                                    |
+| Gates green                   | the repo's own gate command                            | broken build or tests                                              |
+| Tests ran after the last edit | test-run timestamp vs. last commit time                | a "lucky pass": passing output from before the final change        |
+| Scope respected               | diff file list vs. the unit's scope boundary           | scope creep — the most common reason a grader rejects agent work   |
+| Acceptance tests untouched    | did the diff edit the tests encoding the ACs?          | the contract was edited to fit the code                            |
+| Proof changed                 | did the diff edit a test file named by an AC `proof:`? | a weak proof can pass green by being loosened — flag it, see below |
+| Visual ACs have a capture     | a screenshot exists for every AC about rendered output | nobody ever opened the page                                        |
 
 A failure here is a **finding on the unit**, reported regardless of how the ACs
 grade.
+
+**"Proof changed" is always a visible finding, never a silent pass.** When the unit
+has a spec, each AC's `proof:` names what proves it (`test:<file>::<name>`,
+`script:<cmd>`, …). If the diff edits any test file a proof names — added, loosened,
+renamed or deleted assertions — list it as `proof changed: <AC id> · <file>` in the
+unit's findings and in the Delivery Report's "Check by hand" list, with the hunk,
+even when the AC then grades `met`. A test written by the executor in the same PR
+for a brand-new AC is the normal case and needs only the line; an _existing_ proof
+that was edited needs a reason the operator can read. Two weak proofs on Campaign
+wave 1 (a loosened benchmark, a fixture seeded instead of scrubbed) passed green
+and were noticed only because someone read the diff.
 
 ## Step 2 — Grade one AC per call
 
@@ -188,7 +200,35 @@ rubric.
   record shows the operator made it — an agent recording its own preference as
   decided is `needs-human` ("the operator has to confirm this choice").
 
-## Step 3 — Record on the card and on the mission step
+## Step 3 — Re-run the checks and keep the evidence
+
+A verdict nobody can re-read is a claim. Before you record one, **re-run the checks the
+ACs name** — the `proof:` commands, the gate command, the screens a visual AC names —
+yourself, at the PR head, in a clean worktree, and keep what they printed:
+
+1. Resolve the head: `gh pr view <n> --json headRefOid`. Cut a clean worktree at that
+   commit (`git worktree add --detach <dir> <headRefOid>`), install what the repo needs
+   there, and run each named check in it. Never run them in the executor's worktree: its
+   uncommitted state and stale build are exactly what you are checking against.
+2. Store the **evidence bundle** in the repo's main checkout, under
+   `.harnu/evidence/<missionId>/<stepId>/`: the **test output** of each run (one file per
+   check, the command on the first line), the **screenshots** a visual AC needs (browser
+   tools when you have them), the **console** output of the run or page, and a short
+   `README.md` naming the head commit and which AC each file backs. Never commit the
+   bundle — `.harnu/` is local evidence, not source.
+3. Link it on the step **before** you call `mission_verify_step`:
+   `mission_link_child({ folder, missionId, stepId, link: { kind: 'worktree', ref:
+'.harnu/evidence/<missionId>/<stepId>' } })`. The ref is that directory, relative to
+   the repo root.
+
+The `verifier` gate reads that link: a step whose proof is `verified` but that has no
+bundle link reads `running`, not `green` — and so does one whose linked directory is
+gone — so the step stays `done`, never `verified`, until the evidence exists. A check you
+could not re-run (no browser, a device you cannot reach) is not a reason to skip the
+bundle: store what you did run, say in the README what is missing, and grade that AC
+`needs-human`.
+
+## Step 4 — Record on the card and on the mission step
 
 Write the per-AC table to the board card (`update_card` with `appendBody`). Every
 row carries its evidence reference, and every verdict carries who produced it:
@@ -201,6 +241,21 @@ row carries its evidence reference, and every verdict carries who produced it:
 
 An executor's own tick is recorded as `by: executor` and **never counted** in the
 report totals. Self-verification does not catch the failures that matter.
+
+**When the unit has a spec, write the deviations into the spec too.** Besides the
+card table, append one row per AC to the spec's `## Amendments · Deviations` section,
+in the unit's PR (the shipper's branch, so the row lands with the code it describes):
+
+| date       | kind      | what changed                                               | by       |
+| ---------- | --------- | ---------------------------------------------------------- | -------- |
+| 2026-11-02 | deviation | AC-3 #a1b2 met · `tests/list.test.ts::paginates` · ci#1234 | verifier |
+
+`what changed` is the AC id with its hash, the verdict and the one-line evidence; an
+AC that met exactly as written still gets its row (`met as written`), because the
+absence of a row is how silent rescoping hides. Append only — never edit a row, the
+spec body above, or another unit's rows. A spec without that section gets it added
+as the last section. This is how the spec learns what actually shipped, instead of
+reading `_Draft_` long after the merge.
 
 **When the unit is a Mission step, record the step's verdict on it:**
 `mission_verify_step({ folder, missionId, stepId, verdict, evidence, sessionId:
@@ -236,12 +291,13 @@ only by the operator (`WRONG_VERIFICATION_LEVEL`).
 the per-unit verdicts are in: its builders are every session linked to any step,
 so the orchestrator — a session that built no step — lands `verified` with its own
 id once each unit's child session is linked to its step and the end's evidence
-exists. Then `mission_get`'s `closeReadiness` tells whether the close will land
+exists. The end is a `verifier`-level step like any other, so it needs its own
+evidence bundle (Step 3, `<stepId>` = the end's) linked before it can read `green`. Then `mission_get`'s `closeReadiness` tells whether the close will land
 (`null`), or names what is in the way before anyone calls `mission_request_close`.
 When you run as a verifier subagent inside the orchestrator, you hand it the
 verdicts; the orchestrator records the end.
 
-## Step 4 — The Delivery Report
+## Step 5 — The Delivery Report
 
 One report per wave, one per feature. Generate it from the cards and the evidence —
 never from memory or from what the sessions said. Write it to
@@ -295,7 +351,7 @@ Integration branch feat/<epic> @ <sha>, rebased on main @ <sha>, full suite <gre
 The chat message stays a short checklist plus the report's path. The document is the
 durable handoff.
 
-## Step 5 — Tracker projection
+## Step 6 — Tracker projection
 
 The card is the source of truth; a connected tracker is a projection — but a
 mandatory one when it exists, because that is the surface the rest of the team

@@ -19,6 +19,10 @@ export interface NotifyDispatchOptions {
    */
   sessionId: string
   toastKind: 'info' | 'success' | 'warning' | 'danger'
+  /** Unit of work (T599) — repeats for the same unit fold into one Activity row. */
+  unit?: string
+  /** Notice kind (`completed`, `needs-input`, …) — only same-kind notices fold. */
+  notificationType?: string
   toastAction?: { label: string; handler: () => void }
 }
 
@@ -44,7 +48,9 @@ export function dispatchNotification(opts: NotifyDispatchOptions): boolean {
         // BUG-49: without this, every persisted "Session completed" /
         // "Needs your input" row loses its sessionId and the Activity bell
         // can't navigate — clicking it just dismisses, having done nothing.
-        sessionId: opts.sessionId
+        sessionId: opts.sessionId,
+        unit: opts.unit,
+        notificationType: opts.notificationType
       })
     }
     if (opts.sound) playNotificationSound()

@@ -26,7 +26,7 @@ export type DialogId =
   | null
 
 /**
- * Identifier of a main-pane "takeover" view — the eight mutually-exclusive views
+ * Identifier of a main-pane "takeover" view — the nine mutually-exclusive views
  * that cover the transcript, born from `VIEW_REGISTRY` below (T297/T299).
  * Adding a view is one entry in that registry plus `TakeoverHost.vue`'s
  * `VIEW_COMPONENTS`; there is no separate `ref`, `closeAllTakeovers()` line,
@@ -47,6 +47,7 @@ export type ViewId =
   | 'review'
   | 'scheduler'
   | 'containers'
+  | 'campaignMap'
 
 /**
  * The params each `ViewId` needs to render, keyed so that opening a view with
@@ -68,6 +69,8 @@ export interface ViewParams {
   scheduler: Record<string, never>
   /** T331 — global, like `cleanup`: every docker stack on the machine, not one folder's. */
   containers: Record<string, never>
+  /** T607 — global like `scheduler`: the campaign names its own folder; the map reads it by id. */
+  campaignMap: { campaignId: string }
 }
 
 /**
@@ -126,6 +129,7 @@ export type SettingsTabId =
   | 'cleanup'
   | 'containers'
   | 'prStack'
+  | 'githubApi'
 
 /**
  * Every `SettingsTabId`, in tab order (T486 §3.5). `App.vue` generates one
@@ -153,7 +157,8 @@ const SETTINGS_TABS: Record<SettingsTabId, true> = {
   claudeCode: true,
   cleanup: true,
   containers: true,
-  prStack: true
+  prStack: true,
+  githubApi: true
 }
 export const SETTINGS_TAB_IDS = Object.keys(SETTINGS_TABS) as readonly SettingsTabId[]
 
@@ -210,7 +215,7 @@ export interface SidebarJumpPaletteState {
 
 /**
  * The anchored popovers whose open flag lives here (T486 U4a, spec §3.5 / §6.1):
- * the Topbar's Activity bell and Mission pill, the footer's pasted images,
+ * the Topbar's Activity bell and Mission pill, the footer's pasted images, links shelf,
  * Claude service status and plan usage, and the Fleet rail's state filter. Each
  * component keeps its own Esc and click-outside handlers; the flag moved here so
  * a keybinding can open the popover and so `anyPopoverOpen` can tell the App's
@@ -224,8 +229,10 @@ export const POPOVER_IDS = [
   'activity',
   'missionProgress',
   'pastedImages',
+  'links',
   'claudeStatus',
   'usagePanel',
+  'githubBudget',
   'inboxFilter'
 ] as const
 export type PopoverId = (typeof POPOVER_IDS)[number]
@@ -234,10 +241,15 @@ function popoverFlags(): Record<PopoverId, boolean> {
   return Object.fromEntries(POPOVER_IDS.map((id) => [id, false])) as Record<PopoverId, boolean>
 }
 
-/** The footer popovers that close each other when one opens. */
-const POPOVER_MUTEX: Partial<Record<PopoverId, PopoverId>> = {
-  pastedImages: 'usagePanel',
-  usagePanel: 'pastedImages'
+/**
+ * The footer popovers that close each other when one opens (T611: the GitHub budget joins them;
+ * T617: so does the Links shelf).
+ */
+const POPOVER_MUTEX: Partial<Record<PopoverId, PopoverId[]>> = {
+  pastedImages: ['usagePanel', 'githubBudget', 'links'],
+  usagePanel: ['pastedImages', 'githubBudget', 'links'],
+  githubBudget: ['pastedImages', 'usagePanel', 'links'],
+  links: ['pastedImages', 'usagePanel', 'githubBudget']
 }
 
 /**
@@ -317,6 +329,12 @@ export interface Toast {
    * at persist time (see `NotificationAction` in `stores/notifications.ts`).
    */
   sessionId?: string
+  /**
+   * Unit of work + notice kind (T599) — threaded to the persisted record so the
+   * Activity history folds repeats of the same notice for one unit into one row.
+   */
+  unit?: string
+  notificationType?: string
   /**
    * The view this toast should open on click, if any (T163) — the
    * view-targeted twin of `sessionId` above. Threaded through to the
@@ -458,6 +476,8 @@ export const useUiStore = defineStore('ui', () => {
     systemMonitor: { scope: 'global', titleKey: 'systemMonitor.title' },
     scheduler: { scope: 'global', titleKey: 'scheduler.title' },
     containers: { scope: 'global', titleKey: 'containers.title' },
+    // T607: `campaign.map.title` / `campaign.map.close` (the shell derives the close key).
+    campaignMap: { scope: 'global', titleKey: 'campaign.map.title' },
     // T245 AC-6: the review companion is scoped to the review, so the review
     // ending is what disposes it — see `fireReviewClosed` below.
     review: { scope: 'folder', titleKey: 'review.title', onClose: () => fireReviewClosed() }
@@ -607,6 +627,14 @@ export const useUiStore = defineStore('ui', () => {
   const cleanupOpen = computed(() => activeView.value?.id === 'cleanup')
   const schedulerOpen = computed(() => activeView.value?.id === 'scheduler')
   const containersOpen = computed(() => activeView.value?.id === 'containers')
+
+  /** T607: the Campaign map takeover and the campaign it shows. */
+  const campaignMap = computed<{ open: boolean; campaignId: string | null }>(() => {
+    const v = activeView.value
+    return v?.id === 'campaignMap'
+      ? { open: true, campaignId: v.params.campaignId }
+      : { open: false, campaignId: null }
+  })
 
   /**
    * Repo path to scroll `CleanupView` to on open (Reaper PR4, repo-group
@@ -847,8 +875,7 @@ export const useUiStore = defineStore('ui', () => {
    */
   function openPopover(id: PopoverId): boolean {
     if (!popoverAnchors.value[id]) return false
-    const peer = POPOVER_MUTEX[id]
-    if (peer) closePopover(peer)
+    for (const peer of POPOVER_MUTEX[id] ?? []) closePopover(peer)
     popovers.value[id] = true
     return true
   }
@@ -942,6 +969,18 @@ export const useUiStore = defineStore('ui', () => {
 
   function closeContainers(): void {
     closeView('containers')
+  }
+
+  /**
+   * Open the Campaign map takeover (T607) for one campaign, by id. Global scope like Cleanup:
+   * the map reads the campaign from the campaigns store, so there is no folder to compare.
+   */
+  function openCampaignMap(campaignId: string): void {
+    openView('campaignMap', { campaignId })
+  }
+
+  function closeCampaignMap(): void {
+    closeView('campaignMap')
   }
 
   /**
@@ -1126,6 +1165,8 @@ export const useUiStore = defineStore('ui', () => {
         title: toast.title,
         description: toast.description,
         sessionId: toast.sessionId,
+        unit: toast.unit,
+        notificationType: toast.notificationType,
         target: toast.target,
         action: toast.action ? { label: toast.action.label } : undefined
       })
@@ -1170,6 +1211,7 @@ export const useUiStore = defineStore('ui', () => {
     cleanupOpen,
     schedulerOpen,
     containersOpen,
+    campaignMap,
     prStack,
     review,
     anyTakeoverOpen,
@@ -1220,6 +1262,8 @@ export const useUiStore = defineStore('ui', () => {
     closeCleanup,
     openContainers,
     closeContainers,
+    openCampaignMap,
+    closeCampaignMap,
     openPrStack,
     closePrStack,
     openReview,

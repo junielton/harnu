@@ -42,6 +42,8 @@ The notification history used to live as a section inside the rail; it now lives
 
 Each row shows a short title (and sometimes a longer description) with a colored bar on the left marking its kind — success, warning, danger, or a plain info notice. If a session posted the notice itself, it's marked "Session says." Short text always shows in full; if it's long enough to need clamping, you'll always see an expand arrow rather than text quietly getting cut off.
 
+When the same piece of work reports again, the bell doesn't pile up rows. If a session tied to a mission step or a roadmap card finishes, or needs you, a second time within 10 minutes of the last notice of that kind, Harnu keeps the one row, moves it to the newest time and adds a small "already reported · ×N" line under it. A different step or card, a different kind of notice (finished versus needs your input), or a repeat after more than 10 minutes gets its own row, and a session that isn't linked to any step or card is never folded. Dismissing a folded row removes it entirely; the next notice starts a fresh one. The toast and the OS notification still appear each time — only the history is tidied.
+
 Clicking a row jumps to the session it's about — revealing and scrolling to it in the sidebar, not just switching tabs — and removes it from the list. Hovering a row swaps its timestamp for a small × so you can clear it without navigating anywhere, and "Clear all" empties the whole list from the popover's header. There's no read/unread state to track — being in the list is the only signal; once you've dealt with a notice (or just don't need it anymore), dismissing it is the only action.
 
 ## Mission grants

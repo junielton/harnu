@@ -32,6 +32,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 import type { MissionDoor, MissionDoorResult, MissionView } from '../../../main/mission-ipc'
+import type { MergeBatchResult } from '../../../main/merge-batch-ipc'
 import { i18n } from '../i18n'
 import {
   decideCue,
@@ -98,6 +99,8 @@ function owedWhat(view: MissionView): string {
       )
     case 'review-import':
       return t('mission.you.reviewImport')
+    case 'main-red':
+      return t('mission.you.mainRed', { pr: item.pr, step: stepTitles(view, [item.stepId]) })
     default:
       return t('mission.state.needsYou')
   }
@@ -192,6 +195,12 @@ export const useMissionsStore = defineStore('missions', () => {
   const views = shallowRef<MissionView[]>([])
   /** Wall clock of the last refresh — the stale callout's "now". */
   const refreshedAt = ref(Date.now())
+  /**
+   * Bumped by every successful list read (T596): the campaigns store watches it, so a campaign
+   * refreshes whenever the missions it rolls up have just been re-read — `refreshedAt` alone can
+   * repeat within one millisecond.
+   */
+  const refreshSeq = ref(0)
   /** Doors awaiting their answer — a count, so overlapping doors keep the controls disabled. */
   const doorsInFlight = ref(0)
   const doorInFlight = computed(() => doorsInFlight.value > 0)
@@ -230,6 +239,7 @@ export const useMissionsStore = defineStore('missions', () => {
       )
       views.value = list
       refreshedAt.value = Date.now()
+      refreshSeq.value++
       // Sidebar folders not loaded yet: the list says nothing about reality, and a
       // decision now would rebuild the memory empty and re-cue the backlog later.
       if (folders.length === 0) return
@@ -364,7 +374,11 @@ export const useMissionsStore = defineStore('missions', () => {
     doorsInFlight.value++
     let res: MissionDoorResult
     try {
-      res = await window.api.missionOperatorDoor(door)
+      // Campaign spec §4: Choose has its own channel; every other door shares one.
+      res =
+        door.door === 'chooseDecision'
+          ? await window.api.missionChoose(door)
+          : await window.api.missionOperatorDoor(door)
     } catch (err) {
       res = { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {
@@ -374,6 +388,16 @@ export const useMissionsStore = defineStore('missions', () => {
       writeSeq++
       applyDoorResult(door, res.view)
       void refreshAfterWrite()
+      // Campaign ch.6: the mission closed, but the memory write refused some ticked drafts.
+      if (res.recorded?.failed.length) {
+        useUiStore().pushToast({
+          kind: 'warning',
+          title: i18n.global.t('mission.recordFailedTitle'),
+          description: i18n.global.t('mission.recordFailed', {
+            drafts: res.recorded.failed.map((f) => `${f.id} (${f.error})`).join(', ')
+          })
+        })
+      }
     } else if (door.door === 'end' && res.error.startsWith('MISSION_CLOSED')) {
       // Ending a mission that is already closed (a double Close, or another
       // window got there first) is what the operator asked for: drop it if it
@@ -388,6 +412,38 @@ export const useMissionsStore = defineStore('missions', () => {
         description: res.error
       })
     }
+    return res
+  }
+
+  /**
+   * Campaign spec §4 — the Merge batch door. Long-running (it waits on the steward and on CI between
+   * merges), so it has its own in-flight flag instead of holding every other door shut. A refusal or an
+   * IPC failure toasts and comes back `{ ok: false }`; a STOP (a red gate) is an `ok` outcome the dialog shows.
+   */
+  const mergeBatchInFlight = ref(false)
+  async function runMergeBatch(args: {
+    root: string
+    missionId: string
+    prs: number[]
+  }): Promise<MergeBatchResult> {
+    mergeBatchInFlight.value = true
+    let res: MergeBatchResult
+    try {
+      res = await window.api.missionMergeBatch(args)
+    } catch (err) {
+      res = { ok: false, error: err instanceof Error ? err.message : String(err) }
+    } finally {
+      mergeBatchInFlight.value = false
+    }
+    if (!res.ok) {
+      useUiStore().pushToast({
+        kind: 'danger',
+        title: i18n.global.t('mission.doorFailed'),
+        description: res.error
+      })
+    }
+    writeSeq++
+    void refreshAfterWrite()
     return res
   }
 
@@ -437,12 +493,15 @@ export const useMissionsStore = defineStore('missions', () => {
   return {
     views,
     refreshedAt,
+    refreshSeq,
     doorInFlight,
     refresh,
     ensureStarted,
     viewForSession,
     modelForSession,
     runDoor,
+    runMergeBatch,
+    mergeBatchInFlight,
     runDoors,
     popoverRequest,
     requestPopover,

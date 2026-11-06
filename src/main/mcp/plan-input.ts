@@ -165,6 +165,9 @@ const translateMemoryAppend: Translator = (args, gateFolder) => {
   const page = strField(args, 'page')
   if (page) input.page = page
   if (args.entry !== undefined) input.entry = args.entry
+  if (args.supersedes !== undefined) input.supersedes = args.supersedes
+  if (args.watches !== undefined) input.watches = args.watches
+  if (args.mission !== undefined) input.mission = args.mission
   return input
 }
 
@@ -363,6 +366,26 @@ const translateReleaseWorktree: Translator = (args, gateFolder) => {
   return input
 }
 
+// T655: sessions are addressed by id, never a folder, so there is no gate folder to carry; a
+// session in a blocked folder is refused per id by the handler. Fields pass through untouched
+// so the validator does the structural check.
+const translateArchiveSession: Translator = (args) => {
+  const input: Record<string, unknown> = {}
+  if (args.sessionIds !== undefined) input.sessionIds = args.sessionIds
+  if (args.unarchive !== undefined) input.unarchive = args.unarchive
+  return input
+}
+
+// T661: folders are addressed by absolute path, not a single gate folder, so none is carried; a
+// path in a blocked folder is refused per path by the handler. Fields pass through untouched so
+// the validator does the structural check.
+const translateHideFolder: Translator = (args) => {
+  const input: Record<string, unknown> = {}
+  if (args.folders !== undefined) input.folders = args.folders
+  if (args.unhide !== undefined) input.unhide = args.unhide
+  return input
+}
+
 // T329: the Containers actions address stacks by id, never a folder, so there
 // is no gate folder to carry; a blocked folder's stack is refused per stack by
 // the handler. Fields pass through untouched so the validator does the
@@ -460,6 +483,8 @@ const translateBrowserPane: Translator = (args, gateFolder) => {
  */
 const TRANSLATORS: { [K in McpOp]: Translator } = {
   get_fleet: translateGetFleet,
+  // T614: a global read, like get_fleet.
+  github_budget: translateGetFleet,
   get_approval: translateGetApproval,
   plan_mission: translatePlanMission,
   get_session: translateGetSession,
@@ -513,6 +538,8 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   // T445: both gate on the `folder` arg, like list_containers / adopt_folder.
   list_cleanup: translateListWorkers,
   release_worktree: translateReleaseWorktree,
+  archive_session: translateArchiveSession,
+  hide_folder: translateHideFolder,
   stop_containers: translateStopContainers,
   start_containers: translateStartContainers,
   remove_containers: translateRemoveContainers,
@@ -534,7 +561,15 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   mission_verify_step: translateMission,
   mission_request_close: translateMission,
   mission_import_legacy: translateMission,
-  mission_add_check: translateMission
+  mission_add_check: translateMission,
+  // Campaign ch.3a: same shape as the mission verbs — the gate folder IS the catalog `folder`.
+  campaign_create: translateMission,
+  campaign_add_chapter: translateMission,
+  campaign_get: translateMission,
+  campaign_list: translateMission,
+  campaign_request_close: translateMission,
+  // Campaign ch.5a: the gate folder IS the catalog `folder`.
+  rebase_stack: translateMission
 }
 
 /**

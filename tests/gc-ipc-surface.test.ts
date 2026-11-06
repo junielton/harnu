@@ -28,6 +28,8 @@ const REQUESTS = [
   'gc:recovery:act',
   'gc:recovery:list',
   'gc:remoteFacts',
+  'gc:shelve:ack',
+  'gc:shelve:restore',
   'gc:snapshot',
   'gc:trash:empty',
   'gc:unkeep'
@@ -38,7 +40,8 @@ const EVENTS = [
   'gc:opinion:done',
   'gc:opinion:result',
   'gc:progress',
-  'gc:recovery:changed'
+  'gc:recovery:changed',
+  'gc:shelved:changed'
 ]
 
 describe('workspace GC IPC surface (AC-10)', () => {

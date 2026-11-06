@@ -36,6 +36,9 @@ import {
   freezeCaptureRect,
   parkedBounds,
   placeView,
+  RESEAT_RESTORE_MS,
+  reseatNudge,
+  shouldReseat,
   type Rect
 } from './bounds'
 import { decideForward, type GuestInput } from './chord'
@@ -272,6 +275,8 @@ interface ViewEntry {
   lastMetricsKey: string | null
   /** Resolves a wait for the renderer's next bounds report (device mode relayout). */
   boundsWaiter: (() => void) | null
+  /** A macOS device re-seat is between its nudge and its restore (`shouldReseat`). */
+  reseating: boolean
   /** The operator's download waiting for an answer. */
   prompt: PendingDownload | null
   /** The agent's download that is arriving now. */
@@ -396,6 +401,7 @@ export class BrowserViewHost implements BrowserReadHost {
       deviceScale: 1,
       lastMetricsKey: null,
       boundsWaiter: null,
+      reseating: false,
       prompt: null,
       agentDownload: null
     }
@@ -1107,6 +1113,41 @@ export class BrowserViewHost implements BrowserReadHost {
     this.syncMetrics(e)
   }
 
+  /**
+   * The macOS device re-seat (`shouldReseat`): put the view 1 px narrower, then back after `RESEAT_RESTORE_MS`, so
+   * the surface is reallocated at the view's size. A change of rect in between wins: the restore only runs if the
+   * view is still at the nudged rect.
+   */
+  private reseat(e: ViewEntry): void {
+    if (e.wc.isDestroyed()) return
+    const bounds = e.view.getBounds()
+    const go = shouldReseat({
+      platform: process.platform,
+      device: this.deviceMode(e.paneId),
+      pending: e.reseating,
+      parked: e.parked,
+      visible: e.visibleReported,
+      frozen: e.frozen,
+      bounds
+    })
+    if (!go) return
+    e.reseating = true
+    const nudged = reseatNudge(bounds)
+    e.view.setBounds(nudged)
+    setTimeout(() => {
+      e.reseating = false
+      if (e.wc.isDestroyed()) return
+      const now = e.view.getBounds()
+      if (
+        now.x === nudged.x &&
+        now.y === nudged.y &&
+        now.width === nudged.width &&
+        now.height === nudged.height
+      )
+        e.view.setBounds(bounds)
+    }, RESEAT_RESTORE_MS)
+  }
+
   setOverlays(overlays: BrowserOverlayRect[]): void {
     this.overlays = overlays
     this.reconcileFreeze()
@@ -1612,7 +1653,9 @@ export class BrowserViewHost implements BrowserReadHost {
     e.lastMetricsKey = key
     // Clearing an override that was never sent is a no-op.
     if (!wasSent && cmd.method === 'Emulation.clearDeviceMetricsOverride') return
-    void this.cdpQuiet(e, cmd.method, cmd.params)
+    const sent = this.cdpQuiet(e, cmd.method, cmd.params)
+    // macOS: a device override leaves a device-sized surface that spills past the view until a resize (`shouldReseat`).
+    if (device && !e.parked) void sent.then(() => this.reseat(e))
   }
 
   /** Touch, user agent and media features of the record, fire-and-forget (navigation start, spec §9.2). */

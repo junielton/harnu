@@ -50,6 +50,12 @@ export interface ArchiveEntry {
   /** True when the namespace says the source was a detached HEAD. */
   detached: boolean
   /**
+   * True when the namespace holds a shelve record (`shelve/record`, shelve-core.ts): the worktree's
+   * folder may be gone and these refs are what restores it. Such an entry is never expired on its
+   * own while its branch exists (see {@link expiredArchives}).
+   */
+  shelved: boolean
+  /**
    * The folder the sweep removed, when the journal remembers it (its `trashedPath`); null for an
    * archive older than that record or one written by something else. Filled by `withFolders`.
    */
@@ -115,7 +121,15 @@ const SWEEP_REF = /^refs\/archive\/(.+)\/(\d{8}T\d{6}Z)\/(tip|wip)$/
  * removal's namespace under `detached/`; every ref sharing it is ONE archive.
  */
 const DETACHED_REF =
-  /^refs\/archive\/detached\/(\d{8}T\d{6}Z\/[^/]+|[^/]+)\/(tip|wip|wip-\d{14}(?:-\d+)?|reflog\/[^/]+)$/
+  /^refs\/archive\/detached\/(\d{8}T\d{6}Z\/[^/]+|[^/]+)\/(tip|wip|wip-\d{14}(?:-\d+)?|reflog\/[^/]+|shelve\/(?:record|ignored|stash\/\d+))$/
+
+/**
+ * A ref a shelve adds to a branch sweep's namespace (`shelve-core.ts`): the gitignored-files
+ * snapshot, a stash copy, or the record that marks the shelve complete. They are members of the
+ * sweep's entry, not entries of their own.
+ */
+const SHELVE_SWEEP_REF =
+  /^refs\/archive\/(.+)\/(\d{8}T\d{6}Z)\/shelve\/(record|ignored|stash\/\d+)$/
 
 interface Draft {
   namespace: string
@@ -126,6 +140,8 @@ interface Draft {
   wip: ArchiveRefInfo | null
   /** Siblings of the wip and the reflog refs: members of a detached removal that are neither tip nor wip. */
   extra: ArchiveRefInfo[]
+  /** The namespace holds a `shelve/record` ref. */
+  shelved: boolean
 }
 
 /** The members of an entry, whatever built it: older hand-made entries carry only a tip and a wip. */
@@ -165,6 +181,7 @@ function finish(repoPath: string, d: Draft): ArchiveEntry {
     hasWip: wipSha !== null,
     branch: d.branch,
     detached: d.detached,
+    shelved: d.shelved,
     folder: null,
     at: d.stampAt ?? Number.NaN,
     ageKnown: d.stampAt !== null,
@@ -173,6 +190,27 @@ function finish(repoPath: string, d: Draft): ArchiveEntry {
       ? `git worktree add --detach ../restored-${wipSha.slice(0, SHORT)} ${wipSha}`
       : null
   }
+}
+
+/** The draft of a branch sweep's namespace, created on first sight of any of its refs (list order is not trusted). */
+function sweepDraft(drafts: Map<string, Draft>, branch: string, stamp: string): Draft {
+  const namespace = `${ARCHIVE_PREFIX}${branch}/${stamp}`
+  let d = drafts.get(namespace)
+  if (!d) {
+    const detached = branch === 'detached'
+    d = {
+      namespace,
+      branch: detached ? null : branch,
+      detached,
+      stampAt: parseArchiveStamp(stamp),
+      tip: null,
+      wip: null,
+      extra: [],
+      shelved: false
+    }
+    drafts.set(namespace, d)
+  }
+  return d
 }
 
 /**
@@ -198,6 +236,13 @@ export function groupArchiveRefs(
       else candidates.set(key, [{ info: r, role: det[2]! }])
       continue
     }
+    const sh = SHELVE_SWEEP_REF.exec(r.ref)
+    if (sh) {
+      const d = sweepDraft(drafts, sh[1]!, sh[2]!)
+      d.extra.push(r)
+      if (sh[3] === 'record') d.shelved = true
+      continue
+    }
     const m = SWEEP_REF.exec(r.ref)
     if (!m) {
       drafts.set(r.ref, {
@@ -207,26 +252,13 @@ export function groupArchiveRefs(
         stampAt: null,
         tip: r,
         wip: null,
-        extra: []
+        extra: [],
+        shelved: false
       })
       continue
     }
     const [, branch, stamp, role] = m as unknown as [string, string, string, 'tip' | 'wip']
-    const namespace = `${ARCHIVE_PREFIX}${branch}/${stamp}`
-    let d = drafts.get(namespace)
-    if (!d) {
-      const detached = branch === 'detached'
-      d = {
-        namespace,
-        branch: detached ? null : branch,
-        detached,
-        stampAt: parseArchiveStamp(stamp),
-        tip: null,
-        wip: null,
-        extra: []
-      }
-      drafts.set(namespace, d)
-    }
+    const d = sweepDraft(drafts, branch, stamp)
     if (role === 'tip') d.tip = r
     else d.wip = r
   }
@@ -247,7 +279,8 @@ export function groupArchiveRefs(
         stampAt: parseArchiveStamp(key.split('/')[0]!),
         tip,
         wip: members.find((m) => m.role === 'wip')?.info ?? null,
-        extra: members.filter((m) => m.role !== 'tip' && m.role !== 'wip').map((m) => m.info)
+        extra: members.filter((m) => m.role !== 'tip' && m.role !== 'wip').map((m) => m.info),
+        shelved: members.some((m) => m.role === 'shelve/record')
       }
       drafts.set(namespace, d)
     } else {
@@ -259,7 +292,8 @@ export function groupArchiveRefs(
           stampAt: null,
           tip: m.info,
           wip: null,
-          extra: []
+          extra: [],
+          shelved: false
         })
       }
     }
@@ -292,16 +326,23 @@ const DAY_MS = 86_400_000
  * The entries strictly older than `keepDays`, oldest first. Fails closed: a retention that is
  * not a positive finite number expires nothing, and an entry whose age is unknown (no stamp in its
  * name) is never expired: nothing says how old it is.
+ *
+ * A shelved entry (it holds a shelve record: the worktree's folder may be gone and these refs are
+ * what restores it) is never returned while its branch exists. The caller proves the branch is gone
+ * by passing it in `branchesGone`; without that proof, and for a detached shelve that has no branch
+ * at all, the entry is kept.
  */
 export function expiredArchives(
   entries: readonly ArchiveEntry[],
   keepDays: number,
-  now: number
+  now: number,
+  branchesGone?: ReadonlySet<string>
 ): ArchiveEntry[] {
   if (!Number.isFinite(keepDays) || keepDays <= 0) return []
   const cutoff = now - keepDays * DAY_MS
   return entries
     .filter((e) => e.ageKnown && Number.isFinite(e.at) && e.at < cutoff)
+    .filter((e) => !e.shelved || (e.branch !== null && branchesGone?.has(e.branch) === true))
     .sort((a, b) => a.at - b.at)
 }
 

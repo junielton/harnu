@@ -333,6 +333,12 @@ export interface MemoryAppendArgs {
   page: string
   /** Markdown body to append (or, for `hot`, the full replacement snapshot). */
   entry: string
+  /** Campaign ch.6: the `e-<hex>` id of the `decisions` entry this one replaces. */
+  supersedes?: string
+  /** Campaign ch.6: repo paths / topics the entry is about (recalled when a new mission's scope overlaps). */
+  watches?: string[]
+  /** Campaign ch.6: the `mnt-<hex>` mission this entry is recorded for (`provenance.mission`). */
+  mission?: string
 }
 
 /** Validated args for the `memory_query` read tool. */
@@ -369,7 +375,16 @@ export function parseMemoryRead(input: unknown): ParseResult<MemoryReadArgs> {
 const MemoryAppendSchema = z.object({
   folder: absolutePathSchema,
   page: z.string().min(1),
-  entry: z.string().min(1).max(MEMORY_ENTRY_MAX_CHARS)
+  entry: z.string().min(1).max(MEMORY_ENTRY_MAX_CHARS),
+  supersedes: z
+    .string()
+    .regex(/^e-[0-9a-f]{8}$/, 'supersedes is an entry id like e-1a2b3c4d')
+    .optional(),
+  watches: z.array(z.string().min(1).max(200)).max(20).optional(),
+  mission: z
+    .string()
+    .regex(/^mnt-[0-9a-f]{8}$/, 'mission is a mission id like mnt-1a2b3c4d')
+    .optional()
 })
 
 /**
@@ -383,12 +398,30 @@ const MemoryAppendSchema = z.object({
 export function parseMemoryAppend(input: unknown): ParseResult<MemoryAppendArgs> {
   const parsed = MemoryAppendSchema.safeParse(input)
   if (!parsed.success) return fromZod(parsed.error)
-  const { folder, page, entry } = parsed.data
+  const { folder, page, entry, supersedes, watches, mission } = parsed.data
   const pageResult = parseMemoryPage(page)
   if (!pageResult.ok) return { ok: false, error: 'BAD_ARGS', detail: pageResult.detail }
   const entryCheck = validateEntry(pageResult.value, entry)
   if (!entryCheck.ok) return { ok: false, error: 'BAD_ARGS', detail: entryCheck.detail }
-  return { ok: true, value: { folder, page, entry } }
+  // Entry ids and watches exist on `decisions` only; hot is a replaced snapshot, cards are bodies.
+  if ((supersedes || watches) && pageResult.value.page !== 'decisions') {
+    return {
+      ok: false,
+      error: 'BAD_ARGS',
+      detail: 'supersedes and watches apply to the decisions page only'
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      folder,
+      page,
+      entry,
+      ...(supersedes ? { supersedes } : {}),
+      ...(watches ? { watches } : {}),
+      ...(mission ? { mission } : {})
+    }
+  }
 }
 
 const MemoryQuerySchema = z.object({
@@ -1042,6 +1075,54 @@ export function parseReleaseWorktree(input: unknown): ParseResult<ReleaseWorktre
   const value: ReleaseWorktreeArgs = {}
   if (parsed.data.folder !== undefined) value.folder = parsed.data.folder
   if (parsed.data.id !== undefined) value.id = parsed.data.id
+  return { ok: true, value }
+}
+
+/** Validated args for the `archive_session` mutation tool (T655): 1..100 session ids. */
+export interface ArchiveSessionArgs {
+  sessionIds: string[]
+  unarchive?: boolean
+}
+
+const ArchiveSessionSchema = z.object({
+  sessionIds: z.array(z.string().min(1)).min(1).max(100),
+  unarchive: z.boolean().optional()
+})
+
+/** Validate `archive_session` args (T655). */
+export function parseArchiveSession(input: unknown): ParseResult<ArchiveSessionArgs> {
+  const parsed = ArchiveSessionSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: ArchiveSessionArgs = { sessionIds: parsed.data.sessionIds }
+  if (parsed.data.unarchive !== undefined) value.unarchive = parsed.data.unarchive
+  return { ok: true, value }
+}
+
+/** Validated args for the `hide_folder` mutation tool (T661): 1..100 absolute folder paths. */
+export interface HideFolderArgs {
+  folders: string[]
+  unhide?: boolean
+}
+
+const HideFolderSchema = z.object({
+  folders: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .refine((p) => path.isAbsolute(p), 'must be an absolute path')
+    )
+    .min(1)
+    .max(100),
+  unhide: z.boolean().optional()
+})
+
+/** Validate `hide_folder` args (T661). */
+export function parseHideFolder(input: unknown): ParseResult<HideFolderArgs> {
+  const parsed = HideFolderSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: HideFolderArgs = { folders: parsed.data.folders }
+  if (parsed.data.unhide !== undefined) value.unhide = parsed.data.unhide
   return { ok: true, value }
 }
 
@@ -1836,6 +1917,8 @@ function dropUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
  */
 const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   get_fleet: parseGetFleet,
+  // T614: no args, like get_fleet.
+  github_budget: parseGetFleet,
   get_approval: parseGetApproval,
   get_session: parseGetSession,
   list_worktrees: parseListWorktrees,
@@ -1888,6 +1971,10 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   // T445: list_cleanup takes the optional folder; release_worktree takes a folder or an id.
   list_cleanup: parseListCleanup,
   release_worktree: parseReleaseWorktree,
+  // T655: sessions are named by id, never a folder; the handler refuses a blocked one per id.
+  archive_session: parseArchiveSession,
+  // T661: folders are named by absolute path; the handler refuses a blocked one per path.
+  hide_folder: parseHideFolder,
   stop_containers: parseStopContainers,
   start_containers: parseStartContainers,
   remove_containers: parseRemoveContainers,
@@ -1908,7 +1995,15 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   mission_verify_step: parseMissionVerb('mission_verify_step'),
   mission_request_close: parseMissionVerb('mission_request_close'),
   mission_import_legacy: parseMissionVerb('mission_import_legacy'),
-  mission_add_check: parseMissionVerb('mission_add_check')
+  mission_add_check: parseMissionVerb('mission_add_check'),
+  // Campaign ch.3a: validated against their own catalog schema, like the mission verbs.
+  campaign_create: parseMissionVerb('campaign_create'),
+  campaign_add_chapter: parseMissionVerb('campaign_add_chapter'),
+  campaign_get: parseMissionVerb('campaign_get'),
+  campaign_list: parseMissionVerb('campaign_list'),
+  campaign_request_close: parseMissionVerb('campaign_request_close'),
+  // Campaign ch.5a: validated against its own catalog schema, like the mission verbs.
+  rebase_stack: parseMissionVerb('rebase_stack')
 }
 
 /**

@@ -3,6 +3,7 @@ import { join, dirname, resolve, relative, isAbsolute } from 'path'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
 import chokidar, { type FSWatcher } from 'chokidar'
+import { effectiveEditorSetting, sanitizeEditorSetting, type EditorSetting } from './editor-launch'
 
 /**
  * Settings persistence + file-watch (terminal-font-settings spec §4).
@@ -29,10 +30,26 @@ import chokidar, { type FSWatcher } from 'chokidar'
  * - `uiZoom` — whole-UI zoom factor applied via `webFrame.setZoomFactor`
  *   (T54): scales typography *and* icons across the app. Distinct from
  *   `terminalFontSize`, which only tunes the terminal relative to that zoom.
+ * - `editor` — which editor the Topbar "Open in {editor}" button launches
+ *   (T581). Absent means the default (VS Code); main reads it at launch time
+ *   via {@link readEditorSetting}, so the renderer never names the command.
+ * - `splitLayout` — session area / helper stack orientation (T627). Absent = `auto`.
+ * - `floatingPanels` — the opt-in floating-islands layout (T626). Absent = off.
+ * - `expandHides` — what expanding a helper pane to the window hides (T628). Absent = `everything`.
  */
 export interface SettingsData {
   terminalFontSize: number
   uiZoom: number
+  editor?: EditorSetting
+  /**
+   * T627: how the session area and the helper stack are laid out — `auto`
+   * (follow the window's shape), `side-by-side` or `stacked`. Absent means `auto`.
+   */
+  splitLayout?: 'auto' | 'side-by-side' | 'stacked'
+  /** T626: the opt-in "Floating panels" layout. Absent means off. */
+  floatingPanels?: boolean
+  /** T628: what expanding a helper pane to the window hides. Absent means `everything`. */
+  expandHides?: 'everything' | 'session-only'
 }
 
 const DEFAULT_SETTINGS: SettingsData = {
@@ -51,6 +68,10 @@ const MIN_FONT_SIZE = 8
 const MAX_FONT_SIZE = 32
 const MIN_UI_ZOOM = 0.5
 const MAX_UI_ZOOM = 2
+/** Mirrors `SPLIT_LAYOUTS` in `renderer/src/lib/split-orientation.ts` (main never imports the renderer). */
+const SPLIT_LAYOUTS: readonly string[] = ['auto', 'side-by-side', 'stacked']
+/** Mirrors `EXPAND_HIDES` in `renderer/src/stores/settings.ts`. */
+const EXPAND_HIDES: readonly string[] = ['everything', 'session-only']
 
 /**
  * Build a clean, known-shape patch from arbitrary renderer input: clamp/round the
@@ -72,6 +93,31 @@ export function sanitizePatch(patch: Record<string, unknown>): Partial<SettingsD
       // and never accumulate float drift on disk.
       const clamped = Math.min(MAX_UI_ZOOM, Math.max(MIN_UI_ZOOM, v))
       out.uiZoom = Math.round(clamped * 100) / 100
+    }
+  }
+  if (patch && typeof patch === 'object' && 'editor' in patch) {
+    // An invalid editor (unknown preset, over-long command) is dropped, so the
+    // previously stored value — or the default — keeps applying.
+    const editor = sanitizeEditorSetting(patch.editor)
+    if (editor) out.editor = editor
+  }
+  if (patch && typeof patch === 'object' && 'splitLayout' in patch) {
+    // An unknown value is dropped, so the stored one (or `auto`) keeps applying.
+    const v = patch.splitLayout
+    if (typeof v === 'string' && SPLIT_LAYOUTS.includes(v)) {
+      out.splitLayout = v as NonNullable<SettingsData['splitLayout']>
+    }
+  }
+  if (patch && typeof patch === 'object' && 'floatingPanels' in patch) {
+    // Only a real boolean is stored; anything else is dropped, so the stored value (or off) applies.
+    const v = patch.floatingPanels
+    if (typeof v === 'boolean') out.floatingPanels = v
+  }
+  if (patch && typeof patch === 'object' && 'expandHides' in patch) {
+    // An unknown value is dropped, so the stored one (or `everything`) keeps applying.
+    const v = patch.expandHides
+    if (typeof v === 'string' && EXPAND_HIDES.includes(v)) {
+      out.expandHides = v as NonNullable<SettingsData['expandHides']>
     }
   }
   return out
@@ -192,6 +238,23 @@ function resolveAllowedPath(path: string): string {
     throw new Error('settings: path escapes the allowed settings location')
   }
   return resolved
+}
+
+/**
+ * The editor the Topbar button should launch, read from the app's current
+ * settings.json on every call (a hand edit or a Settings change applies on the
+ * next click, no restart). Never rejects: a missing, unreadable or invalid file
+ * yields the default (VS Code).
+ */
+export async function readEditorSetting(): Promise<EditorSetting> {
+  try {
+    const parsed = JSON.parse(await readFile(currentSettingsPath(), 'utf8')) as {
+      editor?: unknown
+    }
+    return effectiveEditorSetting(parsed.editor)
+  } catch {
+    return effectiveEditorSetting(undefined)
+  }
 }
 
 /** Serialize with 2-space indent + trailing newline, VSCode-style. */

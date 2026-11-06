@@ -9,24 +9,56 @@
  * mission UI makes. Ending is the one irreversible door: its buttons only open
  * `MissionCloseConfirmDialog`, and the door fires from that dialog's confirm.
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useI18n } from 'vue-i18n'
-import { Check, FileText, Flag, TriangleAlert } from 'lucide-vue-next'
+import {
+  Bot,
+  Check,
+  ChevronLeft,
+  FileText,
+  Flag,
+  GitMerge,
+  Play,
+  TriangleAlert
+} from 'lucide-vue-next'
 import type { MissionDoor, MissionView } from '../../../main/mission-ipc'
-import type { MissionLinkSignal, MissionYouItem } from '../../../main/mcp/tool-handlers'
-import { endWarnings, headlineText, type EndChoice, type MissionModel } from '../lib/mission-view'
+import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
+import {
+  endWarnings,
+  formatDuration,
+  youRowAge,
+  headlineText,
+  type EndChoice,
+  type MissionModel,
+  youRowText,
+  type YouRow
+} from '../lib/mission-view'
 import { useMissionsStore } from '../stores/missions'
+import { useSchedulerStore } from '../stores/scheduler'
 import { useSessionsStore } from '../stores/sessions'
+import { stewardForMission, summarizeSteward } from '../lib/steward-view'
 import { sessionTitle } from '../lib/session-label'
 import Button from './ui/Button.vue'
 import MissionStepRail from './MissionStepRail.vue'
 import MissionCloseConfirmDialog from './MissionCloseConfirmDialog.vue'
+import StewardPauseDialog from './StewardPauseDialog.vue'
+import MergeBatchDialog from './MergeBatchDialog.vue'
 
-const props = defineProps<{ view: MissionView; model: MissionModel }>()
+const props = defineProps<{
+  view: MissionView
+  model: MissionModel
+  /**
+   * T596 — set when this chapter popover was opened from the Campaign popover: the back row's
+   * "Chapter {ordinal} of {total}" (`ordinal: null` for a side chapter). Absent = no back row.
+   */
+  campaignBack?: { ordinal: number | null; total: number; side?: boolean }
+}>()
+const emit = defineEmits<{ back: [] }>()
 
 const { t } = useI18n()
 const missions = useMissionsStore()
+const scheduler = useSchedulerStore()
 const sessions = useSessionsStore()
 
 const headline = computed(() => headlineText(t, props.model.headline))
@@ -58,39 +90,33 @@ function sessionName(id: string): string {
   return (s && sessionTitle(s, sessions.allSessions, t)) || id.slice(0, 8)
 }
 
-/** Step ids as the operator reads them: their titles. */
-function stepTitles(ids: readonly string[]): string {
-  return ids.map((id) => props.view.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
+/** One You-lane row in the operator's words; a "Decide" row names its decision node. */
+function rowText(row: YouRow): string {
+  return youRowText(t, props.view, row, sessionName)
 }
 
-/** One owed item in the operator's words (never the English `mission_get` sentence). */
-function youText(item: MissionYouItem): string {
-  switch (item.kind) {
-    case 'rescope':
-      return t('mission.you.rescope', { kind: item.end.kind, target: item.end.target })
-    case 'close':
-      return t('mission.you.close')
-    case 'blocker':
-      return t('mission.you.blocker', { reason: item.reason, unblocks: item.unblocks })
-    case 'checks':
-      return t(
-        'mission.you.checks',
-        { count: item.count, steps: stepTitles(item.stepIds) },
-        item.count
-      )
-    case 'human-steps':
-      return t('mission.you.humanSteps', { steps: stepTitles(item.stepIds) }, item.stepIds.length)
-    case 'review-import':
-      return t('mission.you.reviewImport')
-    case 'approvals':
-      return t('mission.you.approvals', { count: item.count, session: sessionName(item.sessionId) })
-    case 'needs-input':
-      return t('mission.you.needsInput', { session: sessionName(item.sessionId) })
-  }
+/** Campaign spec Amendment d: the first row is boxed, every other row stands on its own. */
+const firstRow = computed<YouRow | null>(() => props.model.youRows[0] ?? null)
+const restRows = computed(() => props.model.youRows.slice(1))
+
+const RISK_CLASS: Record<YouRow['risk'], string> = {
+  high: 'text-red',
+  mid: 'text-warning',
+  low: 'text-text-4'
 }
 
-const firstYou = computed<MissionYouItem | null>(() => props.view.you[0] ?? null)
-const youExpanded = ref(false)
+/** "3h 0m" — only where the record had a timestamp. */
+function ageText(row: YouRow): string | null {
+  return youRowAge(row)
+}
+
+/** The ledger tail's "3m ago". */
+function ledgerAge(at: string): string {
+  const ms = Date.parse(at)
+  return Number.isFinite(ms)
+    ? t('mission.ledger.ago', { age: formatDuration(Math.max(0, Date.now() - ms)) })
+    : ''
+}
 
 /** Run a door on this mission; a refusal or IPC failure is toasted by the store. */
 async function door(d: Omit<MissionDoor, 'root' | 'missionId'>): Promise<boolean> {
@@ -117,11 +143,16 @@ function openEnd(choice: EndChoice): void {
  * the door's `view: null` at once, which unmounts this popover and the dialog;
  * on a refusal or an IPC failure the store toasts and the dialog closes here.
  */
-async function confirmClose(closedAs: EndChoice, reason?: string): Promise<void> {
+async function confirmClose(
+  closedAs: EndChoice,
+  reason?: string,
+  record?: string[]
+): Promise<void> {
   await door({
     door: 'end',
     closedAs,
-    ...(reason ? { reason } : {})
+    ...(reason ? { reason } : {}),
+    ...(record?.length ? { record } : {})
   } as Omit<MissionDoor, 'root' | 'missionId'>)
   confirmingClose.value = false
 }
@@ -156,6 +187,59 @@ function onDeleteCheck(stepId: string, checkId: string): void {
   void door({ door: 'deleteCheck', stepId, checkId } as Omit<MissionDoor, 'root' | 'missionId'>)
 }
 
+/** Campaign spec §4 — Choose: the operator picks a decision node's option (`mission:choose`). */
+function onChoose(stepId: string, index: number): void {
+  void door({ door: 'chooseDecision', stepId, index } as Omit<MissionDoor, 'root' | 'missionId'>)
+}
+
+// ---- Campaign ch.5b (T609): the steward line and its doors --------------------------------
+
+onMounted(() => {
+  // The steward is the Scheduler's system worker bound to this mission; its last action comes from the
+  // runs the Scheduler recorded. The footer normally has the store loaded already.
+  // Best-effort: with no Scheduler the steward line is simply not drawn.
+  if (!scheduler.loaded) void scheduler.init().catch(() => {})
+})
+
+const steward = computed(() => {
+  const w = stewardForMission(scheduler.workers ?? [], props.view.mission.id)
+  return w
+    ? summarizeSteward(w, scheduler.runsByWorker[w.id] ?? [], scheduler.runningIds.includes(w.id))
+    : null
+})
+const stewardPause = computed(() => props.view.mission.stewardPause ?? null)
+const stewardLast = computed<string>(() => {
+  const s = steward.value
+  if (!s || s.lastAction === null) return t('mission.steward.noAction')
+  return s.lastAction
+})
+const stewardAge = computed<string | null>(() => {
+  const at = steward.value?.lastWakeAt
+  return at == null
+    ? null
+    : t('mission.steward.ago', { age: formatDuration(Math.max(0, Date.now() - at)) })
+})
+
+/** The Pause steward dialog is open — the only way the pause door can fire. */
+const pausingSteward = ref(false)
+async function confirmPause(reason: string): Promise<void> {
+  const ok = await door({ door: 'pauseSteward', reason } as Omit<MissionDoor, 'root' | 'missionId'>)
+  if (ok) pausingSteward.value = false
+}
+function resumeSteward(): void {
+  void door({ door: 'resumeSteward' } as Omit<MissionDoor, 'root' | 'missionId'>)
+}
+
+/**
+ * The Merge batch dialog and the PRs it was opened with. A SNAPSHOT, like the Campaign popover's: the
+ * store refreshes after every merge, and once #305 is merged the merge-batch row (and its PR list)
+ * disappears from the view — the open dialog, with its "Stopped at…" panel, must not go with it.
+ */
+const mergeBatch = ref<NonNullable<YouRow['prs']> | null>(null)
+function openMergeBatch(row: YouRow): void {
+  if (row.prs) mergeBatch.value = [...row.prs]
+}
+
 // An in-app popover: registers with the native-overlay freeze (a browser pane under it freezes, spec §2.4).
 const rootEl = ref<HTMLElement | null>(null)
 useNativeOverlay('mission-popover', rootEl)
@@ -168,6 +252,25 @@ useNativeOverlay('mission-popover', rootEl)
     style="width: 400px; max-height: 560px"
     :data-dsqa="`mission-popover--${model.state}`"
   >
+    <button
+      v-if="campaignBack"
+      type="button"
+      class="flex shrink-0 cursor-pointer items-center text-text-3 hover:text-text-2"
+      style="gap: 4px; padding: 8px 14px 0; font-size: 11px"
+      data-test="mission-back-to-campaign"
+      @click="emit('back')"
+    >
+      <ChevronLeft :size="12" :stroke-width="1.8" class="shrink-0" />
+      <span>{{ $t('mission.back.campaign') }}</span>
+      <template v-if="campaignBack.ordinal !== null || campaignBack.side">
+        <span class="text-text-4">·</span>
+        <span class="tabular-nums">{{
+          campaignBack.ordinal === null
+            ? $t('mission.back.sideQuest')
+            : $t('mission.back.chapter', { n: campaignBack.ordinal, m: campaignBack.total })
+        }}</span>
+      </template>
+    </button>
     <div class="shrink-0 border-b border-border" style="padding: 10px 14px">
       <div class="flex items-center" style="gap: 8px">
         <span class="text-text" style="font-size: 12.5px; font-weight: 500">{{
@@ -231,6 +334,7 @@ useNativeOverlay('mission-popover', rootEl)
         @add-check="onAddCheck"
         @tick-check="onTickCheck"
         @delete-check="onDeleteCheck"
+        @choose="onChoose"
       />
 
       <div class="bg-border" style="height: 1px; margin: 12px 0" />
@@ -271,31 +375,16 @@ useNativeOverlay('mission-popover', rootEl)
             >{{ $t('mission.you.label') }}</span
           >
           <span data-test="mission-you-first">{{
-            firstYou ? youText(firstYou) : $t('mission.you.clear')
+            firstRow ? rowText(firstRow) : $t('mission.you.clear')
           }}</span>
-          <ul
-            v-if="youExpanded && view.you.length > 1"
-            class="list-disc"
-            style="margin: 4px 0 0; padding-left: 15px"
-            data-test="mission-you-rest"
+          <span
+            v-if="firstRow && ageText(firstRow)"
+            class="ml-2 tabular-nums opacity-75"
+            style="font-size: 10.5px"
+            data-test="mission-you-first-age"
+            >{{ ageText(firstRow) }}</span
           >
-            <li v-for="(item, i) in view.you.slice(1)" :key="i">{{ youText(item) }}</li>
-          </ul>
-          <button
-            v-if="view.you.length > 1"
-            type="button"
-            class="block hover:underline"
-            style="margin-top: 3px; font-size: 11px"
-            data-test="mission-you-more"
-            @click="youExpanded = !youExpanded"
-          >
-            {{
-              youExpanded
-                ? $t('mission.you.less')
-                : $t('mission.you.more', { n: view.you.length - 1 })
-            }}
-          </button>
-          <div v-if="firstYou?.kind === 'close'" style="margin-top: 7px">
+          <div v-if="firstRow?.kind === 'close'" style="margin-top: 7px">
             <Button
               variant="success"
               :disabled="missions.doorInFlight"
@@ -305,7 +394,29 @@ useNativeOverlay('mission-popover', rootEl)
               <Check :size="14" :stroke-width="1.8" />{{ $t('mission.close') }}
             </Button>
           </div>
-          <div v-if="firstYou?.kind === 'rescope'" style="margin-top: 7px">
+          <div v-if="firstRow?.kind === 'steward-paused'" style="margin-top: 7px">
+            <Button
+              variant="primary"
+              :disabled="missions.doorInFlight"
+              data-test="mission-resume-steward"
+              @click="resumeSteward"
+            >
+              <Play :size="14" :stroke-width="1.8" />{{ $t('mission.steward.resume') }}
+            </Button>
+          </div>
+          <div v-if="firstRow?.kind === 'merge-batch'" style="margin-top: 7px">
+            <Button
+              variant="primary"
+              :disabled="missions.doorInFlight || missions.mergeBatchInFlight"
+              data-test="mission-merge-batch"
+              @click="openMergeBatch(firstRow)"
+            >
+              <GitMerge :size="14" :stroke-width="1.8" />{{
+                $t('mission.mergeBatch.action', { n: firstRow.prs?.length ?? 0 })
+              }}
+            </Button>
+          </div>
+          <div v-if="firstRow?.kind === 'rescope'" style="margin-top: 7px">
             <Button
               variant="primary"
               :disabled="missions.doorInFlight"
@@ -315,6 +426,80 @@ useNativeOverlay('mission-popover', rootEl)
               <Check :size="14" :stroke-width="1.8" />{{ $t('mission.approveRescope') }}
             </Button>
           </div>
+        </div>
+      </div>
+
+      <!-- The rest of the You lane: one row per owed item with its risk dot and age (Amendment d). -->
+      <div v-if="restRows.length" style="margin-top: 6px" data-test="mission-you-rest">
+        <div
+          v-for="(row, i) in restRows"
+          :key="i"
+          class="flex items-baseline border-t border-border text-text-2 first:border-t-0"
+          style="gap: 8px; padding: 5px 0; font-size: 11.5px"
+          data-test="mission-you-row"
+        >
+          <span
+            class="shrink-0"
+            :class="RISK_CLASS[row.risk]"
+            style="font-size: 10px"
+            aria-hidden="true"
+            >●</span
+          >
+          <span class="min-w-0 flex-1">{{ rowText(row) }}</span>
+          <button
+            v-if="row.kind === 'merge-batch'"
+            type="button"
+            class="shrink-0 cursor-pointer text-accent hover:underline"
+            style="font-size: 11px"
+            :disabled="missions.doorInFlight || missions.mergeBatchInFlight"
+            data-test="mission-merge-batch"
+            @click="openMergeBatch(row)"
+          >
+            {{ $t('mission.mergeBatch.action', { n: row.prs?.length ?? 0 }) }}
+          </button>
+          <button
+            v-else-if="row.kind === 'steward-paused'"
+            type="button"
+            class="shrink-0 cursor-pointer text-accent hover:underline"
+            style="font-size: 11px"
+            :disabled="missions.doorInFlight"
+            data-test="mission-resume-steward"
+            @click="resumeSteward"
+          >
+            {{ $t('mission.steward.resume') }}
+          </button>
+          <span
+            v-if="ageText(row)"
+            class="shrink-0 tabular-nums text-text-4"
+            style="font-size: 10.5px"
+            data-test="mission-you-age"
+            >{{ ageText(row) }}</span
+          >
+        </div>
+      </div>
+
+      <!-- The ledger tail (Amendment c): the last rows Harnu wrote, newest first. -->
+      <div v-if="model.ledgerTail.length" style="margin-top: 12px" data-test="mission-ledger">
+        <div
+          class="uppercase text-text-4"
+          style="font-size: 10.5px; font-weight: 500; letter-spacing: 0.07em; margin-bottom: 5px"
+        >
+          {{ $t('mission.ledger.label') }}
+        </div>
+        <div
+          v-for="(r, i) in model.ledgerTail"
+          :key="`${r.at}-${i}`"
+          class="flex items-baseline text-text-3"
+          style="gap: 8px; padding: 2px 0; font-size: 11px"
+          data-test="mission-ledger-row"
+        >
+          <span class="shrink-0">{{ $t(`mission.ledger.kind.${r.kind}`) }}</span>
+          <span class="min-w-0 flex-1 truncate font-mono text-text-2" style="font-size: 10.5px">{{
+            r.ref
+          }}</span>
+          <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
+            ledgerAge(r.at)
+          }}</span>
         </div>
       </div>
 
@@ -334,6 +519,61 @@ useNativeOverlay('mission-popover', rootEl)
       </div>
     </div>
 
+    <!-- The steward line (T609, mockup v6 owed strip): pinned above the end door so Pause / Resume is always in reach. -->
+    <div
+      v-if="steward"
+      class="flex shrink-0 items-center border-t border-border"
+      style="gap: 6px; padding: 7px 14px; font-size: 11.5px"
+      data-test="mission-steward"
+    >
+      <Bot :size="11" :stroke-width="1.7" class="shrink-0 text-text-3" aria-hidden="true" />
+      <span class="shrink-0 text-text-2" style="font-weight: 500">{{
+        $t('mission.steward.label')
+      }}</span>
+      <span class="shrink-0 text-text-4">·</span>
+      <span
+        v-if="stewardPause"
+        class="min-w-0 flex-1 truncate text-warning"
+        data-test="mission-steward-state"
+        >{{ $t('mission.steward.paused') }}</span
+      >
+      <template v-else>
+        <span class="min-w-0 truncate text-text-3" data-test="mission-steward-last">{{
+          stewardLast
+        }}</span>
+        <span
+          v-if="stewardAge"
+          class="shrink-0 text-text-4"
+          style="font-size: 10.5px"
+          data-test="mission-steward-age"
+          >· {{ stewardAge }}</span
+        >
+        <span class="min-w-0 flex-1" />
+      </template>
+      <button
+        v-if="stewardPause"
+        type="button"
+        class="shrink-0 cursor-pointer text-accent hover:underline"
+        style="font-size: 11px"
+        :disabled="missions.doorInFlight"
+        data-test="mission-steward-resume"
+        @click="resumeSteward"
+      >
+        {{ $t('mission.steward.resume') }}
+      </button>
+      <button
+        v-else
+        type="button"
+        class="shrink-0 cursor-pointer text-text-4 hover:text-text-2"
+        style="font-size: 11px"
+        :disabled="missions.doorInFlight"
+        data-test="mission-steward-pause"
+        @click="pausingSteward = true"
+      >
+        {{ $t('mission.steward.pause') }}
+      </button>
+    </div>
+
     <!-- The end door (Mission v3 §3.5): any non-closed mission, any time. -->
     <div class="flex shrink-0 justify-end border-t border-border" style="padding: 8px 14px">
       <Button
@@ -346,12 +586,27 @@ useNativeOverlay('mission-popover', rootEl)
       </Button>
     </div>
 
+    <StewardPauseDialog
+      v-if="pausingSteward"
+      :busy="missions.doorInFlight"
+      @cancel="pausingSteward = false"
+      @confirm="confirmPause"
+    />
+    <MergeBatchDialog
+      v-if="mergeBatch"
+      :root="view.root"
+      :mission-id="view.mission.id"
+      :prs="mergeBatch"
+      @close="mergeBatch = null"
+    />
     <MissionCloseConfirmDialog
       v-if="confirmingClose"
       :title="view.title"
       :busy="missions.doorInFlight"
       :warnings="endWarnings(view)"
       :initial="endChoice"
+      :drafts="view.mission.memoryDrafts ?? []"
+      :nothing-notable="view.mission.outcome?.nothingNotable === true"
       @cancel="confirmingClose = false"
       @confirm="confirmClose"
     />

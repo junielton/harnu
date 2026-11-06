@@ -1,0 +1,102 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-10-29",
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css",
+  "viewports": [1280, 900],
+  "targets": [
+    "src/renderer/src/components/SchedulerView.vue",
+    "src/renderer/src/components/SchedulerWorkerRow.vue",
+    "design.md"
+  ],
+  "screens": [
+    {
+      "id": "pastas--combinada",
+      "title": "Scheduler — list by folder",
+      "status": "approved",
+      "approvedAt": "2026-10-29",
+      "states": [
+        "default",
+        "upnext-recolhido",
+        "colapsado",
+        "filtro-falhas",
+        "busca-vazia",
+        "hover"
+      ],
+      "targets": [
+        "src/renderer/src/components/SchedulerView.vue",
+        "src/renderer/src/components/SchedulerWorkerRow.vue"
+      ],
+      "notes": "Revision 2 (approved 2026-10-29 after the operator found the first build too busy): no cycle bar, no selected-row accent rail (selection = surface background only); rows are two lines — line 1: reserved 14px pin slot + name (ellipsis) + state right-aligned, line 2: meta (every · model · mode) + 48px run ticks right-aligned, both on one right edge; a single pin toggle (accent when pinned, --text-disabled when not, --text-4 on row hover) replaces the Pin hover action — hover shows only Run now/Stop + Delete in the state slot; uniform 12px left / 10px right padding; collapse-all button 26px bordered like the search field; state chips on one row without All (clicking the active chip clears it); Up next time column left-aligned; long names truncate, state/meta/ticks never shrink."
+    }
+  ],
+  "parts": [
+    {
+      "id": "takeover-head",
+      "variants": ["default"]
+    }
+  ],
+  "flows": [
+    {
+      "id": "recolher-pastas",
+      "title": "Collapse and reopen the folders",
+      "steps": [
+        {
+          "screen": "pastas--combinada",
+          "state": "default",
+          "via": "Collapse all button on the list bar"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "colapsado",
+          "via": "Expand all (ou click on a folder header)"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "filtrar-falhas",
+      "title": "See only what is failing",
+      "steps": [
+        {
+          "screen": "pastas--combinada",
+          "state": "default",
+          "via": "Failing chip"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "filtro-falhas",
+          "via": "Failing chip again (clears the filter)"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "recolher-upnext",
+      "title": "Collapse and reopen Up next",
+      "steps": [
+        {
+          "screen": "pastas--combinada",
+          "state": "default",
+          "via": "Up next header"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "upnext-recolhido",
+          "via": "Up next header"
+        },
+        {
+          "screen": "pastas--combinada",
+          "state": "default"
+        }
+      ]
+    }
+  ]
+}

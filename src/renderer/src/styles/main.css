@@ -113,17 +113,6 @@ textarea,
   background: var(--color-border-2);
 }
 
-.xterm-viewport::-webkit-scrollbar {
-  width: 8px;
-}
-.xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
-}
-.xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-2);
-}
-
 /* Eyebrow / section label — design.md §3 (Eyebrow scale) + §6 (Section label).
    Typography only (size/weight/tracking/uppercase); the COLOR is applied per
    context (default text-4; the Fleet status board tints each section header by
@@ -211,6 +200,38 @@ textarea,
 }
 .anim-overlay-fade {
   animation: overlay-fade var(--dur) var(--ease) both;
+}
+/* Folder hue (design.md §2 "Folder hue", T590). One class per pool member sets the
+   single custom property `--fh` from the terminal ANSI palette, which every theme
+   defines; everything inside a folder group reads `var(--fh)` — no raw colour. The
+   pool and the stable path-hash live in `components/scheduler-list.ts` (FOLDER_HUES). */
+/* Live run tick (design.md "Scheduler (takeover)" — run ticks): a 3px bar has no room
+   for the `.anim-pulse-dot` halo, so a run in flight just breathes. */
+@keyframes tick-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.anim-tick-pulse {
+  animation: tick-pulse 1.6s var(--ease) infinite;
+}
+.fh-blue {
+  --fh: var(--term-ansi-blue);
+}
+.fh-magenta {
+  --fh: var(--term-ansi-magenta);
+}
+.fh-cyan {
+  --fh: var(--term-ansi-cyan);
+}
+.fh-yellow {
+  --fh: var(--term-ansi-yellow);
+}
+.fh-bright-red {
+  --fh: var(--term-ansi-bright-red);
+}
+.fh-bright-blue {
+  --fh: var(--term-ansi-bright-blue);
 }
 /* Live pulse (design.md §6/§7). The halo is an `::after` ring animated with
    transform/opacity only — compositor-only, so it never repaints the window
@@ -824,6 +845,17 @@ textarea,
   overflow-wrap: anywhere;
 }
 
+/* BUG-234 — xterm 6's DOM renderer appends its hidden "W" measuring element INSIDE
+   `.xterm-rows`, so the element inherits the `letter-spacing` xterm just wrote
+   there. It then measures an understated glyph advance and sets
+   `letter-spacing = cell.width - W`, which creeps up on every re-measure (resize,
+   font-size change) until the row text outgrows its own `overflow: hidden` box and
+   the last column renders half-clipped. Pinning the spacing to 0 on the measuring
+   element breaks the loop. */
+.xterm .xterm-width-cache-measure-container {
+  letter-spacing: 0 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -832,4 +864,167 @@ textarea,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  /* T628: the layout motion is off outright, not merely 0.01ms long (see the layout-motion block). */
+  [data-layout-motion] [data-lm] {
+    transition: none !important;
+  }
 }
+
+/* layout-motion:start */
+/* T628 — layout motion (design.md §7 "Layout motion").
+   Transitions exist ONLY while the layout store has raised `data-layout-motion` on the app shell
+   (around a maximize, an expand, a sidebar or Fleet rail change, an orientation switch). A divider
+   drag never raises it, so a drag follows the pointer with no easing. Containers opt in with
+   `data-lm`. An orientation switch also sets `data-lm-flip`: that one is animated by a transform
+   (FLIP, App.vue), because a flex row turning into a column cannot be interpolated. Both `--dur-slow` and `--ease` are the existing motion tokens. */
+[data-layout-motion]:not([data-lm-flip]) [data-lm] {
+  transition:
+    flex var(--dur-slow) var(--ease),
+    width var(--dur-slow) var(--ease),
+    height var(--dur-slow) var(--ease),
+    opacity var(--dur-slow) var(--ease),
+    margin var(--dur-slow) var(--ease),
+    border-width var(--dur-slow) var(--ease),
+    padding var(--dur-slow) var(--ease);
+}
+
+/* Collapse classes: a hidden column or pane that can still animate (display:none cannot).
+   Unlayered and !important on purpose, to beat the layered utilities and the floating rules that
+   give the same elements sizes, margins and borders.
+   .lm-collapse    a flex item sized by `flex` (session area, helper stack, a pane)
+   .lm-collapse-w  an item sized by `width` (sidebar, Fleet rail column, a vertical divider)
+   .lm-collapse-h  an item sized by `height` (a horizontal divider) */
+.lm-collapse,
+.lm-collapse-w,
+.lm-collapse-h {
+  margin: 0 !important;
+  padding: 0 !important;
+  border-width: 0 !important;
+  overflow: hidden !important;
+  opacity: 0;
+  pointer-events: none;
+}
+.lm-collapse {
+  flex: 0 0 0px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+.lm-collapse-w {
+  width: 0 !important;
+  min-width: 0 !important;
+}
+.lm-collapse-h {
+  height: 0 !important;
+  min-height: 0 !important;
+}
+/* layout-motion:end */
+
+/* floating-panels:start */
+/* T626 — the opt-in "Floating panels" layout (design.md §6 "Floating panels layout").
+   EVERY selector below starts with `:root[data-floating='on']`, the attribute the settings store
+   puts on <html>; with it absent none of this applies and the default layout is untouched.
+   These rules are UNLAYERED on purpose: they must beat the layered Tailwind utilities
+   (`border-b`, `bg-sidebar`, `border-l`…) the same elements carry in the default layout.
+   Islands are addressed by `data-island`, never by DOM shape. */
+
+/* canvas, and the 6px frame around the columns */
+:root[data-floating='on'] [data-app-shell] {
+  background: var(--color-canvas);
+}
+:root[data-floating='on'] [data-columns] {
+  padding: var(--float-gap);
+}
+
+/* every island: its own border and corners, never sharing an edge with another */
+:root[data-floating='on'] [data-island] {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-sizing: border-box;
+}
+:root[data-floating='on'] [data-island='sidebar-toolbar'],
+:root[data-floating='on'] [data-island='sidebar-return'],
+:root[data-floating='on'] [data-island='sidebar-list'],
+:root[data-floating='on'] [data-island='sidebar-dock'],
+:root[data-floating='on'] [data-island='rail-header'],
+:root[data-floating='on'] [data-island='rail-list'],
+:root[data-floating='on'] [data-island='rail-needs-you'],
+:root[data-floating='on'] [data-island='rail-would-have'],
+:root[data-floating='on'] [data-island='rail-minimized'] {
+  background: var(--color-sidebar);
+}
+:root[data-floating='on'] [data-island='topbar'],
+:root[data-floating='on'] [data-island='session'],
+:root[data-floating='on'] [data-island='helper-pane'] {
+  background: var(--color-bg);
+}
+/* islands whose content must not poke past the rounded corners (scrollers already clip) */
+:root[data-floating='on'] [data-island='session'],
+:root[data-floating='on'] [data-island='sidebar-return'],
+:root[data-floating='on'] [data-island='rail-needs-you'],
+:root[data-floating='on'] [data-island='rail-would-have'] {
+  overflow: hidden;
+}
+
+/* the top band: three islands of the band height on one line */
+:root[data-floating='on'] [data-island-band] {
+  box-sizing: border-box;
+  height: var(--float-band);
+}
+
+/* the sidebar column and the expanded Fleet rail are transparent stacks of islands */
+:root[data-floating='on'] aside[data-column]:not([data-rail-state='minimized']) {
+  background: transparent;
+  gap: var(--float-gap);
+}
+:root[data-floating='on'] [data-island='topbar'] {
+  margin-bottom: var(--float-gap);
+}
+:root[data-floating='on'] [data-island='sidebar-return'] {
+  padding-bottom: 4px;
+}
+/* the Return here zone's own bottom rule: the island gap separates it from the list now */
+:root[data-floating='on'] [data-return-divider] {
+  display: none;
+}
+/* dock and rail sections are drop-in slots: each extra section is divided from the one above */
+:root[data-floating='on'] [data-dock-section] + [data-dock-section] {
+  border-top: 1px solid var(--color-border);
+}
+
+/* helper panes: a gap between stacked panes (stacked orientation gets its gap from the splitters) */
+:root[data-floating='on'] #helper-stack-host[data-orientation='side-by-side'] {
+  gap: var(--float-gap);
+}
+/* the header-as-handle hover line between panes is not drawn between islands */
+:root[data-floating='on'] [data-island='helper-pane'] header.cursor-row-resize {
+  border-top-width: 0;
+}
+
+/* dividers: the gap is the handle; no line at rest, a short grip on hover */
+:root[data-floating='on'] [role='separator'] {
+  align-items: center;
+  justify-content: center;
+}
+:root[data-floating='on'] [role='separator'][aria-orientation='vertical'] > div {
+  background: transparent;
+  height: 36px;
+  width: 2px;
+  border-radius: 999px;
+  transition: background var(--dur-fast) var(--ease);
+}
+:root[data-floating='on'] [role='separator'][aria-orientation='horizontal'] > div {
+  background: transparent;
+  height: 2px;
+  width: 36px;
+  border-radius: 999px;
+  transition: background var(--dur-fast) var(--ease);
+}
+:root[data-floating='on'] [role='separator']:hover > div {
+  background: var(--color-accent-line);
+}
+
+/* a divider that is not rendered must not take the gap with it: the minimized Fleet rail */
+:root[data-floating='on'] [data-rail-column][data-rail-state='minimized'] {
+  margin-left: var(--float-gap);
+}
+/* floating-panels:end */

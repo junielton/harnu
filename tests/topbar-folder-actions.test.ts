@@ -35,7 +35,7 @@ describe('topbar with a folder selected', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(window as any).api = {
       openPath: vi.fn(),
-      openInVSCode: vi.fn(),
+      openInEditor: vi.fn(),
       githubPullsUrl: vi.fn().mockResolvedValue(null),
       shellOpenExternal: vi.fn()
     }
@@ -126,7 +126,7 @@ describe('topbar takeover active state with a folder selected', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(window as any).api = {
       openPath: vi.fn(),
-      openInVSCode: vi.fn(),
+      openInEditor: vi.fn(),
       githubPullsUrl: vi.fn().mockResolvedValue(null),
       shellOpenExternal: vi.fn()
     }

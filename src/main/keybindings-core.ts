@@ -44,7 +44,7 @@ export type ShortcutActionId =
   | 'view.roadmap'
   | 'view.prStack'
   | 'folder.openInFileManager'
-  | 'folder.openInVSCode'
+  | 'folder.openInEditor'
   | 'folder.openGithubPulls'
   | 'folder.browseFiles'
   | 'folder.newTerminal'
@@ -128,6 +128,7 @@ export type ShortcutActionId =
   | 'view.settings.cleanup'
   | 'view.settings.containers'
   | 'view.settings.prStack'
+  | 'view.settings.githubApi'
   | 'sidebar.cursor.down'
   | 'sidebar.cursor.up'
   | 'sidebar.cursor.right'
@@ -143,8 +144,12 @@ export type ShortcutActionId =
   | 'pane.focusNext'
   | 'pane.focusPrev'
   | 'pane.toggleMaximize'
+  // T628: expand the focused helper pane to the window (unbound; ⌘⇧M stays maximize and exits it).
+  | 'pane.expandToWindow'
   | 'pane.close'
   | 'terminal.toggle'
+  // T627: cycle the session area / helper stack orientation (auto → side-by-side → stacked).
+  | 'layout.cycleSplitOrientation'
   // T564 U1 (spec §2.5): the browser pane's own actions, scoped to a focused browser pane.
   | 'browser.overlay.toggle'
   | 'browser.zoom.in'
@@ -314,7 +319,7 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.roadmap', 'takeovers', null, MENU),
   def('view.prStack', 'takeovers', null, MENU),
   def('folder.openInFileManager', 'folders', null, MENU),
-  def('folder.openInVSCode', 'folders', null, MENU),
+  def('folder.openInEditor', 'folders', null, MENU),
   def('folder.openGithubPulls', 'folders', null, MENU),
   def('folder.browseFiles', 'folders', null, MENU),
   def('folder.newTerminal', 'folders', null, MENU),
@@ -429,6 +434,7 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.settings.cleanup', 'views', null),
   def('view.settings.containers', 'views', null),
   def('view.settings.prStack', 'views', null),
+  def('view.settings.githubApi', 'views', null),
   // T486 §10 — session navigation history, the browser convention per platform:
   // ⌘[ / ⌘] on macOS (⌥← is word-jump in every macOS text field), Alt+← / Alt+→
   // elsewhere. Menu-backed (`&Session`) and shielded: xterm turns Alt+← into a
@@ -446,8 +452,12 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('pane.focusNext', 'panes', 'F6', { shield: true, palette: false }),
   def('pane.focusPrev', 'panes', 'Shift+F6', { shield: true, palette: false }),
   def('pane.toggleMaximize', 'panes', 'Cmd+Shift+M', { palette: false }),
+  def('pane.expandToWindow', 'panes', null, { palette: false }),
   def('pane.close', 'panes', null, { palette: false }),
   def('terminal.toggle', 'panes', null, { shield: true }),
+  // T627 — the Topbar split-layout button's twin: auto → side-by-side → stacked → auto. Unbound,
+  // renderer-only (no menu item), and listed in the palette like the other layout toggles.
+  def('layout.cycleSplitOrientation', 'views', null),
   // Reserved — un-rebindable. Handled entirely in the main process, so none of
   // them has a renderer handler the palette could run.
   def('app.reload', 'app', 'F5', { ...MENU, reserved: true, palette: false }),
@@ -1044,6 +1054,16 @@ function reservedChordKeys(mac: boolean): Set<string> {
 }
 
 /**
+ * Command ids that were renamed. `resolveKeybindings` maps an old id in a user's
+ * `keybindings.json` to its current one, so a saved binding (or unbind) still
+ * applies after the rename. Add the OLD id here whenever a `ShortcutActionId` is
+ * renamed; never remove an entry.
+ */
+export const LEGACY_COMMAND_ALIASES: Readonly<Record<string, ShortcutActionId>> = {
+  'folder.openInVSCode': 'folder.openInEditor'
+}
+
+/**
  * Merge `raw` (the parsed `keybindings.json` array) over the defaults.
  *
  * - `raw == null` → defaults only (still runs conflict detection).
@@ -1094,6 +1114,9 @@ export function resolveKeybindings(
           warnings.push({ code: 'bad-entry' })
           continue
         }
+        // A command id renamed in a later release: a binding saved under the old
+        // id keeps working (T581: `folder.openInVSCode` → `folder.openInEditor`).
+        command = LEGACY_COMMAND_ALIASES[command] ?? command
         const descriptor = DESCRIPTOR_BY_ID[command as ShortcutActionId]
         if (!descriptor) {
           warnings.push({ code: 'unknown-command', command })

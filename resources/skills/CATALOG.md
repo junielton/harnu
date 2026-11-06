@@ -1,4 +1,4 @@
-<!-- harnu-skills v12 (2026-10-03) -->
+<!-- harnu-skills v13 (2026-10-31) -->
 
 # Harnu bundled skills
 
@@ -26,14 +26,17 @@ renders, so it is deliberately not translated.
 
 ## Entries
 
-| Skill                  | What it does                                                                                                                 |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `orchestrate-delivery` | Decompose an objective into board cards, dispatch one session per unit, verify, hand back a report.                          |
-| `delivery-verifier`    | Grade a finished unit's acceptance criteria from repo evidence, one at a time.                                               |
-| `mission`              | Run one coordination tick over dispatched work and report a single line.                                                     |
-| `delivery-watchdog`    | Read-only stall detector for dispatched deliveries; built to run as an `observe` Scheduler worker.                           |
-| `conductor`            | Drive the Harnu fleet through the `harnu` MCP verbs.                                                                         |
-| `status`               | Render a fixed six-line glance card of where every front stands, plus the links worth opening.                               |
-| `read-aloud`           | Speak a short, ear-friendly summary of a result — the `speak` verb inside Harnu, a TTS command outside it.                   |
-| `report-back`          | The shared final-report format for a multi-step run: a step rail, what the operator owes, the links, a 3-line summary.       |
-| `draft-to-prompt`      | Turn a rough draft into a production prompt: pick the cheapest model that clears the bar, the harness, and the prompt shape. |
+| Skill                  | What it does                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `orchestrate-delivery` | Decompose an objective into board cards, dispatch one session per unit, verify, hand back a report.                             |
+| `delivery-verifier`    | Grade a finished unit's acceptance criteria from repo evidence, one at a time.                                                  |
+| `mission`              | Run one coordination tick over dispatched work and report a single line.                                                        |
+| `delivery-watchdog`    | Read-only stall detector for dispatched deliveries; built to run as an `observe` Scheduler worker.                              |
+| `conductor`            | Drive the Harnu fleet through the `harnu` MCP verbs.                                                                            |
+| `status`               | Render a fixed six-line glance card of where every front stands, plus the links worth opening.                                  |
+| `read-aloud`           | Speak a short, ear-friendly summary of a result — the `speak` verb inside Harnu, a TTS command outside it.                      |
+| `report-back`          | The shared final-report format for a multi-step run: a step rail, what the operator owes, the links, a 3-line summary.          |
+| `draft-to-prompt`      | Turn a rough draft into a production prompt: pick the cheapest model that clears the bar, the harness, and the prompt shape.    |
+| `one-by-one`           | Drain open decisions one question at a time; each answer becomes a resolved `D-n` row in the spec and a line in project memory. |
+| `grill-me`             | Stress-test a spec or plan one question at a time; every question lands as a `D-n` row, an Amendments row or a non-goal.        |
+| `step-by-step`         | Walk the operator through manual actions one step at a time; each action is a check on a mission step the operator ticks.       |

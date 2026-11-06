@@ -197,6 +197,17 @@ export const MCP_OPS = [
   // deliberately no clean verb (the Cleanup surface and the autopilot own removal).
   'list_cleanup',
   'release_worktree',
+  // T655: put sessions away (and restore them) the way the sidebar's Archive action does.
+  // The archive state lives in the main process (`session-archive-core.ts`), so the verb
+  // works with the window closed. Non-destructive and reversible: it never deletes a
+  // transcript or a worktree, so it carries `silentAllowInAgentFolder` like `archive_card`.
+  'archive_session',
+  // T661: hide folders from the sidebar (and show them again) the way the folder menu's Hide
+  // action does. The state is the same `hiddenPaths` in `projects.json`; it deletes and moves
+  // nothing and is reversible, so it carries `silentAllowInAgentFolder` like `archive_session`.
+  'hide_folder',
+  // T614 (T611 U3): the shared GitHub API budget, read-only, so an agent can back off its `gh` polling.
+  'github_budget',
   // T329: the Containers actions. Each calls the SAME main-process action
   // function as the takeover (`getContainersService().act(raw, 'agent')`), so
   // the tiers are enforced once, in main. The gate follows reversibility:
@@ -270,7 +281,22 @@ export const MCP_OPS = [
   // Mission v3 §3.6: the agent adds a human check to a step. Same gate class as
   // the other mission writes. Ticking and deleting a check are the operator's UI
   // doors (`mission-ipc.ts`) — no verb reaches them.
-  'mission_add_check'
+  'mission_add_check',
+  // Campaign ch.3a (T595, spec §3.3): the quest line above the mission. Same gate class as
+  // the mission verbs: direct writes of a local, gitignored record, reads with no gate field.
+  // No verb here — or anywhere — merges, chooses a decision, ticks a check or closes a
+  // campaign: `campaign_request_close` only SIGNALS (`delivered` + `pendingClose`); the end is
+  // the operator's door.
+  'campaign_create',
+  'campaign_add_chapter',
+  'campaign_get',
+  'campaign_list',
+  'campaign_request_close',
+  // Campaign ch.5a (T597, spec §3.4): the steward's one new verb. Rewrites a step's OWN local
+  // branch with `git rebase --onto` in its linked worktree; on a conflict it aborts, leaves the tree
+  // as it was and sets a blocker. It never pushes and never touches another branch. Same gate class
+  // as the mission verbs (a local write the agent could already do with its own tools).
+  'rebase_stack'
 ] as const
 
 /** A router-dispatchable op — one of {@link MCP_OPS}. */
@@ -377,6 +403,41 @@ const MISSION_FOLDER_SCHEMA = z
   .string()
   .min(1)
   .describe('Absolute path of any folder/worktree of the repo that holds the mission.')
+
+/** Campaign ch.3a: the gate folder every campaign verb is anchored to. */
+const CAMPAIGN_FOLDER_SCHEMA = z
+  .string()
+  .min(1)
+  .describe('Absolute path of any folder/worktree of the repo that holds the campaign.')
+
+/** Campaign ch.3a: prerequisite tokens (spec §3.5) — free strings agreed by the skill. */
+const CAMPAIGN_TOKENS_SCHEMA = z.array(z.string().trim().min(1).max(100)).max(20)
+
+/** Campaign ch.3a: the fields a chapter is declared with, shared by `campaign_create` and `campaign_add_chapter`. */
+const CAMPAIGN_CHAPTER_SHAPE = {
+  title: z.string().trim().min(1).max(200).describe('Chapter title (1..200 chars, single line).'),
+  required: z
+    .boolean()
+    .optional()
+    .describe(
+      'Default true. false = a SIDE-QUEST chapter: outside the headline, never "left behind".'
+    ),
+  consumes: CAMPAIGN_TOKENS_SCHEMA.optional().describe(
+    'Prerequisite tokens this chapter needs (e.g. "images-on-cdn"). Each must be produced by an EARLIER chapter, or the call is refused PREREQ_MISSING unless force: true.'
+  ),
+  produces: CAMPAIGN_TOKENS_SCHEMA.optional().describe(
+    'Tokens this chapter makes available to later chapters.'
+  ),
+  radiant: z
+    .object({
+      template: z.string().trim().min(1).max(200),
+      total: z.number().int().min(1).max(100_000)
+    })
+    .optional()
+    .describe(
+      'One template run N times, e.g. { template: "migrate page {slug}", total: 88 }. Its progress is the chapter mission\'s done steps out of total.'
+    )
+}
 
 /** One MCP tool the server registers: its name, schema, and gate/router wiring. */
 export interface McpToolDef {
@@ -518,6 +579,39 @@ export interface McpToolDef {
  * the approval gate; the mutating tools are `mutates:true` and require it (per
  * their gate fields above). No destructive worktree op is present by design.
  */
+/** Campaign spec §3.2 — the relation fields `mission_add_step` takes (and `mission_update_step.set` mirrors). */
+const MISSION_STEP_RELATIONS_SHAPE = {
+  required: z
+    .boolean()
+    .optional()
+    .describe('false = a side step: outside the headline, listed under progress.side.'),
+  discoveredFrom: z
+    .string()
+    .regex(/^stp-\d+$/)
+    .optional()
+    .describe('The step id this side step was discovered from.'),
+  edges: z
+    .array(
+      z.object({
+        kind: z.enum(['blocks', 'validates', 'related']),
+        to: z.string().regex(/^stp-\d+$/)
+      })
+    )
+    .max(20)
+    .optional()
+    .describe('Typed edges to other steps. `blocks`: the target reads locked until this is done.'),
+  decision: z
+    .object({
+      title: z.string().min(1).max(200),
+      options: z.array(z.string().min(1).max(200)).min(2).max(10),
+      blocks: z.array(z.string().regex(/^stp-\d+$/)).max(20)
+    })
+    .optional()
+    .describe(
+      'Makes the step a decision node; the `blocks` steps read locked until the operator chooses. Never carries `chosen`.'
+    )
+}
+
 export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'get_fleet',
@@ -597,6 +691,12 @@ export const MCP_TOOLS: McpToolDef[] = [
         .optional()
         .describe(
           'Optional launch overrides, model / effort only: an object { model?: string, effort?: string } (e.g. {"model":"sonnet","effort":"high"}). Any other field is refused with INVALID_BOOT_OVERRIDE.'
+        ),
+      role: z
+        .enum(['verifier'])
+        .optional()
+        .describe(
+          "Optional: what the session is for. `verifier` marks a session started to verify a unit's acceptance criteria. A mission's steward may call create_session ONLY with role: 'verifier' (STEWARD_ROLE_REQUIRED otherwise); for any other caller it is a label, echoed in the ACK."
         )
     }),
     mutates: true,
@@ -1475,6 +1575,24 @@ export const MCP_TOOLS: McpToolDef[] = [
         .min(1)
         .describe(
           'Markdown to append (or, for hot, the full new snapshot). Provenance is stamped by Harnu.'
+        ),
+      supersedes: z
+        .string()
+        .optional()
+        .describe(
+          'decisions only: the id (`e-1a2b3c4d`, from the `> entry:` line memory_query shows) of the entry this one replaces. The old entry gains `superseded_by`; memory_query then shows it with its successor. Refused SUPERSEDES_NOT_FOUND for an id that is not live on the page.'
+        ),
+      watches: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'decisions only: repo paths (a file, or a directory with a trailing /) and single-word topics the entry is about. A new mission or campaign whose scope or chapter titles overlap them gets the entry back in its create ACK `recall`.'
+        ),
+      mission: z
+        .string()
+        .optional()
+        .describe(
+          'The `mnt-…` mission this entry is recorded for; stamped as `provenance.mission`.'
         )
     }),
     mutates: true,
@@ -1894,7 +2012,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_workers',
     description:
-      'List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome.',
+      "List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome. A mission's STEWARD is listed with `category: 'steward'`, its `missionId` and `agentControllable: false`: it is a system worker bound to its mission, and update_worker / delete_worker refuse it (WORKER_IS_STEWARD).",
     inputSchema: z.object({
       folder: z.string().min(1).optional().describe('Absolute path to scope the listing.')
     }),
@@ -1919,7 +2037,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_cleanup',
     description:
-      "List the workspace-cleanup picture Harnu's Cleanup surface shows: every worktree bundle with its bucket — `ready` (Ready to clean: merged, clean, idle, past its grace window), `review` (Needs review: the operator decides) or `in-use` — each with a `reasonCode` and a fixed sentence `reason` when it needs review — plus the disk it occupies (`bytes`, `depsBytes`), orphan Docker volumes, the archive refs (`refs/archive/**`) each repo holds (`archives`: `repoAlias`, `count`, estimated `bytes`, `expired` past the operator's retention), `totals` (`ready`, `readyBytes`, `review`, `reviewBytes`, `inUse`, `orphanVolumes`, `orphanVolumeBytes`, `archives`, `archiveBytes`, `inTrashBytes`, `inTrashCount` — what Harnu moved to the OS trash and verified to still be there, exactly; `trashUnverifiedBytes`, `trashUnverifiedCount` — what it moved but can no longer check, never counted as space in the trash), `lastCycle` (`freedNowBytes` really deleted vs `trashedBytes` only moved to the trash, still on disk), the `autopilot` state (`enabled`, `reportOnly`, `graceDays`) and `nextCycleAt`. It reads the last scan Harnu made (the timer refreshes it); `scannedAt` says when, and the call never writes anything. Read the bucket; never re-derive it. No absolute path appears: `folderAlias` is a basename, `id` a readable label, a reason is a fixed sentence (never the raw git/fs error), and any other text has each path cut to its basename. A worktree in a folder the operator blocked still lists, with `agentControllable: false`. `released` is true for a bundle you already released. `folder` limits the listing (and its totals) to that repo and its worktrees — a worktree belongs to a repo by its own repo, wherever it sits — and leaves out the orphan volumes, which belong to no folder; a blocked `folder` is refused FOLDER_NOT_ALLOWED. Read-only: this verb removes nothing, and no verb cleans a worktree (the operator and the autopilot do; remove_containers removes Docker containers, but only after the operator confirms). `id` is the name release_worktree accepts back.",
+      "List the workspace-cleanup picture Harnu's Cleanup surface shows: every worktree bundle with its bucket — `ready` (Ready to clean: merged, clean, idle, past its grace window), `review` (Needs review: the operator decides) or `in-use` — each with a `reasonCode` and a fixed sentence `reason` when it needs review — plus the disk it occupies (`bytes`, `depsBytes`), orphan Docker volumes, the archive refs (`refs/archive/**`) each repo holds (`archives`: `repoAlias`, `count`, estimated `bytes`, `expired` past the operator's retention), `totals` (`ready`, `readyBytes`, `review`, `reviewBytes`, `inUse`, `orphanVolumes`, `orphanVolumeBytes`, `archives`, `archiveBytes`, `inTrashBytes`, `inTrashCount` — what Harnu moved to the OS trash and verified to still be there, exactly; `trashUnverifiedBytes`, `trashUnverifiedCount` — what it moved but can no longer check, never counted as space in the trash), `lastCycle` (`freedNowBytes` really deleted vs `trashedBytes` only moved to the trash, still on disk), the `autopilot` state (`enabled`, `reportOnly`, `graceDays`), `shelved` (worktrees Harnu shelved — a worktree whose branch is not proven merged and that sat idle: its folder was deleted to free the disk on purpose, its branch, its archive and its sessions are kept; each is `{ id, folderAlias, branch, shelvedAt, idleDays, reason }`, counted in `totals.shelved`, and it is NOT a removed worktree and in no bucket), the `shelving` state (`enabled`, `reportOnly`, `thresholdDays`; its own switch, on by default with a report-only first cycle until the operator acknowledges it, and independent of `autopilot`) and `nextCycleAt`. It reads the last scan Harnu made (the timer refreshes it); `scannedAt` says when, and the call never writes anything. Read the bucket; never re-derive it. No absolute path appears: `folderAlias` is a basename, `id` a readable label, a reason is a fixed sentence (never the raw git/fs error), and any other text has each path cut to its basename. A worktree in a folder the operator blocked still lists, with `agentControllable: false`. `released` is true for a bundle you already released. `folder` limits the listing (and its totals) to that repo and its worktrees — a worktree belongs to a repo by its own repo, wherever it sits — and leaves out the orphan volumes, which belong to no folder; a blocked `folder` is refused FOLDER_NOT_ALLOWED. Read-only: this verb removes nothing, and no verb cleans a worktree (the operator and the autopilot do; remove_containers removes Docker containers, but only after the operator confirms). `id` is the name release_worktree accepts back.",
     inputSchema: z.object({
       folder: z
         .string()
@@ -1930,6 +2048,14 @@ export const MCP_TOOLS: McpToolDef[] = [
     mutates: false,
     op: 'list_cleanup',
     discloses: 'paths'
+  },
+  {
+    name: 'github_budget',
+    description:
+      "Read the shared GitHub API budget Harnu watches for the operator's `gh` login (the footer GitHub pill shows the same figures). Check it BEFORE you start a polling loop on `gh`, and back off while `throttle.state` is `low` (poll far less often, skip nice-to-have reads) or `exhausted` (stop reading until `rest.resetAt` / `graphql.resetAt`). Returns `{ ok, login, rest, graphql, tighter, throttle, harnu, outside, sampledAt }`: `rest` and `graphql` are `{ limit, remaining, used, resetAt, callsPerMin, minutesToEmpty }` (`resetAt` an ISO time; the pace is GitHub's `used` over the last 10 minutes); `tighter` is the bucket with the lower share remaining and the one the throttle follows; `throttle` is `{ state, since, threshold, pausedUntil }` with `state` one of `normal`, `low`, `exhausted` or `unavailable`, and `pausedUntil` an ISO time while GitHub's secondary limit has paused reads even though the buckets have budget (wait until then before calling `gh`; the state does not change) or `null`; `harnu.byConsumer` is how many calls each Harnu consumer (`missions`, `pr-stack`, `review`, `cleanup`, `steward`, the merge batch, `budget` for its own login lookup) made in the tighter bucket's current window, and `outside` is the rest of what was used there (an estimate: other tools and other machines on the same login). `login` is `null` when Harnu does not know it. When `gh` is missing or not signed in the call still succeeds with `ok: true`, `throttle.state: 'unavailable'`, a `reason` (`missing`, `unauthenticated` or `error`) and null buckets. It reads Harnu's in-memory tracker: no `gh` call, no folder, nothing written. `sampledAt` (ISO) is the last good poll; polls run every minute.",
+    inputSchema: z.object({}),
+    mutates: false,
+    op: 'github_budget'
   },
   {
     name: 'release_worktree',
@@ -1956,6 +2082,48 @@ export const MCP_TOOLS: McpToolDef[] = [
     silentAllowInAgentFolder: true
     // Deliberately NOT grantable/alwaysAllowable: it deletes nothing, so the free-by-default
     // posture already covers it, and no grant should ever be needed for it.
+  },
+  {
+    name: 'archive_session',
+    description:
+      "Archive sessions (or restore them with `unarchive: true`) exactly like the sidebar's Archive / Unarchive menu action: an archived session leaves the normal list and its live terminal is closed, but its transcript and worktree stay untouched, so it is reversible and deletes nothing. Takes 1..100 session ids (`sessionIds`, the ids `get_fleet` lists). Runs free, works with the Harnu window closed (the archive state lives in the main process), and the sidebar updates live. Idempotent. ACK: `{ ok, op, unarchive, results: [{ sessionId, outcome, reason? }], counts }`, one row per id, `outcome` one of `archived`, `alreadyArchived`, `restored`, `alreadyActive`, `notFound` (no such session) or `refused` with a `reason`: `FOLDER_NOT_ALLOWED` (the session's folder is blocked by the operator), `SESSION_WORKING` (it is working right now; archiving only) or `PENDING_APPROVAL` (an approval is parked for it; archiving only). `ok` is true only when no row is `refused` or `notFound`; read each row rather than retrying the batch. Refuses ARCHIVE_NOT_READY right after Harnu starts: retry shortly.",
+    inputSchema: z.object({
+      sessionIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(100)
+        .describe('The session ids to archive (1..100), as get_fleet lists them.'),
+      unarchive: z
+        .boolean()
+        .optional()
+        .describe('true restores the sessions instead of archiving them.')
+    }),
+    mutates: true,
+    op: 'archive_session',
+    silentAllowInAgentFolder: true
+    // Deliberately NOT grantable/alwaysAllowable: it deletes nothing and is reversible, so the
+    // free-by-default posture already covers it.
+  },
+  {
+    name: 'hide_folder',
+    description:
+      "Hide folders and worktrees from the sidebar (or show them again with `unhide: true`) exactly like the folder menu's Hide / Unhide action: it flips the same `hiddenPaths` flag and nothing else, so it deletes and moves nothing on disk (no directory, worktree, transcript or branch), keeps the folder pinned and keeps its sessions, and is fully reversible. Takes 1..100 absolute folder paths. Runs free, the sidebar updates live, and it is idempotent. Differs from `remove_folder`, which cleans up a folder whose directory is already gone. ACK: `{ ok, op, unhide, results: [{ path, outcome, reason? }], counts }`, one row per path (`path` is the normalized path, symlinks resolved), `outcome` one of `hidden`, `alreadyHidden`, `shown`, `alreadyVisible`, `notFound` (Harnu does not know the path: not pinned, not hidden, not in the session history) or `refused` with a `reason`: `FOLDER_NOT_ALLOWED` (the operator blocked that folder), `SESSION_WORKING` (a session in that exact folder is working right now; hiding only) or `PENDING_APPROVAL` (an approval is parked for a session there; hiding only). `ok` is true only when no row is `refused` or `notFound`; read each row rather than retrying the batch. Refuses HIDE_WRITE_FAILED (nothing changed) if the file cannot be read or written.",
+    inputSchema: z.object({
+      folders: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(100)
+        .describe('The absolute folder paths to hide (1..100).'),
+      unhide: z
+        .boolean()
+        .optional()
+        .describe('true shows the folders again instead of hiding them.')
+    }),
+    mutates: true,
+    op: 'hide_folder',
+    silentAllowInAgentFolder: true
+    // Deliberately NOT grantable/alwaysAllowable: it deletes nothing and is reversible, so the
+    // free-by-default posture already covers it.
   },
   {
     name: 'stop_containers',
@@ -2065,7 +2233,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'delete_worker',
     description:
-      'Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.',
+      "Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. A mission's steward (category 'steward') is refused WORKER_IS_STEWARD: it is deleted only when the operator ends its mission. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.",
     inputSchema: z.object({
       id: z.string().min(1).describe("The worker's id, from create_worker or list_workers.")
     }),
@@ -2103,7 +2271,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_create',
     description:
-      "Create a Mission — structured progress tracking for a body of work, stored repo-scoped under the main checkout's `.harnu/missions/` (every worktree of the repo shares it). DIRECT write, no confirm. A complete `declaredEnd` is REQUIRED — kind (code | ui | research | decision | other) + a concrete target + the evidence that proves it; the call is refused (DECLARED_END_INCOMPLETE) without all three. The mission is born `active` — there is no draft and no approval step: the end you agreed with the operator in chat IS the agreement (stamped as `declaredEndApproval.via: 'chat'`). Declare the plan in the same call with `steps` — `{ title, verification }[]`, one step per deliverable that moves where the work is (1 unit = 1 PR = 1 step) — numbered from stp-1 and followed by the fixed last step \"Delivered and verified\" (verifier), found by its kind, never by id. Planning steps need no reason. Pass `scope` — the repo-relative paths of the spec / PRD / ADR — and they are attached to the mission as `scope`: an attachment, never a step, never counted in progress (`derived.scope` reports whether each path exists). `sessionId` names the OWNER: pass your own Claude session UUID. It is SELF-DECLARED and NOT authenticated — Harnu's MCP transport has no per-session identity — so a wrong id is not caught, it just means the mission-owner hibernation exemption never finds you. A Mission (`mission_*`) is unrelated to plan_mission (a capability grant); they share a word, not a mechanism.",
+      "Create a Mission — structured progress tracking for a body of work, stored repo-scoped under the main checkout's `.harnu/missions/` (every worktree of the repo shares it). DIRECT write, no confirm. A complete `declaredEnd` is REQUIRED — kind (code | ui | research | decision | other) + a concrete target + the evidence that proves it; the call is refused (DECLARED_END_INCOMPLETE) without all three. The mission is born `active` — there is no draft and no approval step: the end you agreed with the operator in chat IS the agreement (stamped as `declaredEndApproval.via: 'chat'`). Declare the plan in the same call with `steps` — `{ title, verification }[]`, one step per deliverable that moves where the work is (1 unit = 1 PR = 1 step) — numbered from stp-1 and followed by the fixed last step \"Delivered and verified\" (verifier), found by its kind, never by id. Planning steps need no reason. Pass `scope` — the repo-relative paths of the spec / PRD / ADR — and they are attached to the mission as `scope`: an attachment, never a step, never counted in progress (`derived.scope` reports whether each path exists). `sessionId` names the OWNER: pass your own Claude session UUID. It is SELF-DECLARED and NOT authenticated — Harnu's MCP transport has no per-session identity — so a wrong id is not caught, it just means the mission-owner hibernation exemption never finds you. A Mission (`mission_*`) is unrelated to plan_mission (a capability grant); they share a word, not a mechanism. To make the mission a CHAPTER of a campaign, pass `campaignId` AND `chapterId` together (campaign spec §3.2): the mission records both and the chapter records the mission's id — a chapter takes one mission (CHAPTER_ALREADY_BOUND), the campaign must be open (CAMPAIGN_CLOSED), and an unknown campaign or chapter is CAMPAIGN_NOT_FOUND / CHAPTER_NOT_FOUND; a refusal writes no mission. The ACK echoes `campaignId` and `chapterId` when bound. A mission gets a STEWARD by default (campaign spec §3.4): a Harnu-owned system worker that wakes on mission events (a ledger row, a CI change, a child going idle, a blocker cleared; 20-minute fallback) and does the routine moves — rebase a stack, dispatch a verifier, nudge a stalled child — inside a closed allowlist. Harnu also installs three hooks in your folder's `.claude/settings.local.json` for it (SessionStart(compact) prints the Mission Brief, PreCompact records the compaction, Stop/SubagentStop wake the steward) and removes them, and the steward, when the operator ends the mission. Pass `steward: false` to opt out. The ACK carries `steward: { created, workerId?, hooks? }`.",
     inputSchema: z.object({
       folder: z
         .string()
@@ -2112,6 +2280,22 @@ export const MCP_TOOLS: McpToolDef[] = [
           "Absolute path of the folder/worktree you are working in; the mission is stored in its repo's main checkout."
         ),
       title: z.string().min(1).max(200).describe('Mission title (1..200 chars, single line).'),
+      steward: z
+        .boolean()
+        .optional()
+        .describe(
+          'Give the mission a steward (default true). `false` creates none and installs no hooks.'
+        ),
+      campaignId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('The campaign (cmp-<8 hex>) this mission is a chapter of. Pass with chapterId.'),
+      chapterId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('The chapter (chp-<n>) of campaignId this mission IS. Pass with campaignId.'),
       declaredEnd: MISSION_DECLARED_END_SCHEMA,
       sessionId: z
         .string()
@@ -2151,7 +2335,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_get',
     description:
-      'Read one Mission: the full stored record (declared end, steps with their verification level, proof, links and blockers, open questions, status) plus its free-text Log, a `derived` block, `youItems` — the ordered list of what the operator owes (rescope, close, operator blockers, due checks, human steps, an imported end to review, child approvals, child needs-input; [] when nothing) — and the `you` line, ALWAYS present: the first item plus "(+N more)", or "— nothing, you\'re clear". `derived.progress` is THE progress — render it, never recount: { total, current { from, to } | null, allDone, done, verified, states, leftBehind, unprovable, computedAt } — position, not proof ("Step N of M" with N = current.from; ✓ only when allDone). Address it by `missionId`, or by `ownerSessionId` to find the mission a session owns (the most recently updated one that is not closed). `ownerSessionId` is a SELF-DECLARED, NOT authenticated lookup key — Harnu\'s MCP transport has no per-session identity. `derived` is computed fresh on every read: per step, each linked session\'s live state (scoped to this mission), each worktree/card/pr link resolved to commits and PRs, and an `existence` proof for existence-level steps; plus `derived.stall` — an active mission with no new evidence for over an hour and no linked session working is flagged `derived.stale: true` — recomputed on every read, never written to the stored status. Each child carries `taskState` (what the session is doing: working / idle / needs-input …) and `status` (the sidebar row\'s state) — read `taskState` to know whether it is working. Each PR (a `pr` link, or a PR summarized under a worktree/card link) carries `baseRefName`, the branch it merges into. `closeReadiness` is what `mission_request_close` would refuse right now — `{ code, reason }` (MISSION_CLOSED | END_NOT_VERIFIED | OPEN_BLOCKERS | RESCOPE_PENDING) — or `null` when a request would land.',
+      'Read one Mission: the full stored record (declared end, steps with their verification level, proof, links and blockers, open questions, status) plus its free-text Log, a `derived` block, `youItems` — the ordered list of what the operator owes (rescope, close, operator blockers, due checks, human steps, an imported end to review, child approvals, child needs-input; [] when nothing) — and the `you` line, ALWAYS present: the first item plus "(+N more)", or "— nothing, you\'re clear". `derived.progress` is THE progress — render it, never recount: { total, current { from, to } | null, allDone, done, verified, states, leftBehind, unprovable, computedAt } — position, not proof ("Step N of M" with N = current.from; ✓ only when allDone). Address it by `missionId`, or by `ownerSessionId` to find the mission a session owns (the most recently updated one that is not closed). `ownerSessionId` is a SELF-DECLARED, NOT authenticated lookup key — Harnu\'s MCP transport has no per-session identity. `derived` is computed fresh on every read: per step, each linked session\'s live state (scoped to this mission), each worktree/card/pr link resolved to commits and PRs, and an `existence` proof for existence-level steps; plus `derived.stall` — an active mission with no new evidence for over an hour and no linked session working is flagged `derived.stale: true` — recomputed on every read, never written to the stored status. Each child carries `taskState` (what the session is doing: working / idle / needs-input …) and `status` (the sidebar row\'s state) — read `taskState` to know whether it is working. Each PR (a `pr` link, or a PR summarized under a worktree/card link) carries `baseRefName`, the branch it merges into. Every `derived.steps[]` row carries `gates` — { pr, ci, main, verifier, checks }, each green | red | running | off | na (plus `stale: true` when GitHub was unreachable and these are the last known values) — and `prNumber`: the facts that prove the step, derived from the linked PR, its CI, the CI of its merge commit on the default branch, the verifier verdict and the ticked checks; never stored. A red `main` on a done step adds a `main-red` item to `youItems`. `ledger` is the last 20 rows of what Harnu itself did and saw (dispatches, worktree cuts, PRs opened/merged, CI changes, verdicts, a linked session ending, compactions), oldest first, and `ledgerCount` the total — read it instead of re-deriving dispatch state; no verb writes it. `closeReadiness` is what `mission_request_close` would refuse right now — `{ code, reason }` (MISSION_CLOSED | END_NOT_VERIFIED | OPEN_BLOCKERS | RESCOPE_PENDING) — or `null` when a request would land.',
     inputSchema: z
       .object({
         folder: z
@@ -2176,7 +2360,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_list',
     description:
-      "List Missions — one row per mission: id, slug, title, status, the repo folder it lives in, owner session, linked card, `progress` (the last derive's — up to one poll old, see its computedAt; null before any read — call mission_get for exact numbers), the deprecated step counts (total / verified / claimed, a legacy fixed start excluded) and whether it carries a blocker. With `folder`, only that repo's missions (any worktree of it resolves to the same list); without it, every repo Harnu knows, skipping folders the operator blocked. Use mission_get for one mission's steps and Log.",
+      "List Missions — one row per mission: id, slug, title, status, the repo folder it lives in, owner session, linked card, `progress` (the last derive's — up to one poll old, see its computedAt; null before any read — call mission_get for exact numbers), the deprecated step counts (total / verified / claimed, a legacy fixed start excluded), whether it carries a blocker and `ledgerCount` (rows in the Harnu-written ledger). With `folder`, only that repo's missions (any worktree of it resolves to the same list); without it, every repo Harnu knows, skipping folders the operator blocked. Use mission_get for one mission's steps and Log.",
     inputSchema: z.object({
       folder: z
         .string()
@@ -2190,11 +2374,12 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_add_step',
     description:
-      'Add a middle step to a Mission — DIRECT write, no confirm. The step is inserted before the fixed end (or right after `afterStepId`; never after the fixed end), gets a stable `stp-<n>` id and an `addedAt` stamp, starts `unproven`, and declares its `verification` level up front (existence = Harnu checks a linked artifact exists; verifier = an independent session verifies it; human = only the operator can mark it). Pass `links` to make the step provable at birth (an existence step with no path, card or PR link can never be proven). `reason` is REQUIRED once the mission has STARTED — any step has a link or a proof (refused REASON_REQUIRED without it); the added step and its reason show on the mission, so a growing total is always explained. Before that, steps are planning: no reason is needed and none is stored. ACK: `{ ok, stepId, totalSteps }`.',
+      'Add a middle step to a Mission — DIRECT write, no confirm. The step is inserted before the fixed end (or right after `afterStepId`; never after the fixed end), gets a stable `stp-<n>` id and an `addedAt` stamp, starts `unproven`, and declares its `verification` level up front (existence = Harnu checks a linked artifact exists; verifier = an independent session verifies it; human = only the operator can mark it). Pass `links` to make the step provable at birth (an existence step with no path, card or PR link can never be proven). `reason` is REQUIRED once the mission has STARTED — any step has a link or a proof (refused REASON_REQUIRED without it); the added step and its reason show on the mission, so a growing total is always explained. Before that, steps are planning: no reason is needed and none is stored. Campaign spec §3.2 relations: `required: false` makes it a SIDE step (outside the headline, never left behind, listed in `progress.side`), `discoveredFrom` names the step it came from, `edges` types its links to other steps (`blocks` locks the target until this step is done; `validates` and `related` are informational), and `decision` makes it a decision node whose `blocks` steps read `locked` until the operator chooses. A decision is declared without `chosen` — the operator picks (refused CONTROLLED_FIELD otherwise). Every named step must exist (STEP_NOT_FOUND). ACK: `{ ok, stepId, totalSteps }`.',
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
       title: z.string().min(1).max(200).describe('Step title (1..200 chars, single line).'),
+      ...MISSION_STEP_RELATIONS_SHAPE,
       verification: z
         .enum(['existence', 'verifier', 'human'])
         .describe('How the step gets proven: existence | verifier | human. Immutable afterwards.'),
@@ -2231,7 +2416,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_update_step',
     description:
-      "Edit one Mission step — DIRECT write, no confirm. `set` may carry `title` (custom steps only — the fixed frame's titles are fixed) and `proof: 'claimed'` — the owner's \"I believe this is done, unverified\", allowed only on a verifier/human step that is still unproven. Proof is otherwise a CONTROLLED field, like `verifiedBy`: any other `proof` value (verified, self-verified, unproven) and any `verifiedBy` are refused (CONTROLLED_FIELD) — a step is verified only through verification, never by assertion. ACK: `{ ok, stepId }`.",
+      "Edit one Mission step — DIRECT write, no confirm. `set` may carry `title` (custom steps only — the fixed frame's titles are fixed) and `proof: 'claimed'` — the owner's \"I believe this is done, unverified\", allowed only on a verifier/human step that is still unproven. Proof is otherwise a CONTROLLED field, like `verifiedBy`: any other `proof` value (verified, self-verified, unproven) and any `verifiedBy` are refused (CONTROLLED_FIELD) — a step is verified only through verification, never by assertion. Also settable: `required`, `discoveredFrom`, `edges` and `decision` (same shapes as mission_add_step; a fixed step cannot be made a side step, and a decision the operator already made is no longer rewritable — DECISION_CHOSEN). `chosen` — a decision's picked option — is the operator's: `set.chosen` (or a decision carrying it) is refused CONTROLLED_FIELD. ACK: `{ ok, stepId, changed }`.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
@@ -2239,7 +2424,7 @@ export const MCP_TOOLS: McpToolDef[] = [
       set: z
         .record(z.string(), z.unknown())
         .describe(
-          "Fields to set: title | proof ('claimed' only). proof (any other value) and verifiedBy are CONTROLLED and refused."
+          "Fields to set: title | proof ('claimed' only) | required | discoveredFrom | edges | decision. proof (any other value), verifiedBy and chosen are CONTROLLED and refused."
         )
     }),
     mutates: true,
@@ -2289,7 +2474,13 @@ export const MCP_TOOLS: McpToolDef[] = [
         .min(1)
         .optional()
         .describe('Optional step id (stp-<n>) the note is about.'),
-      note: z.string().min(1).max(8_000).describe('Markdown note to append (≤ 8000 chars).')
+      note: z.string().min(1).max(8_000).describe('Markdown note to append (≤ 8000 chars).'),
+      kind: z
+        .enum(['note', 'decision', 'surprise', 'steward'])
+        .optional()
+        .describe(
+          "What the entry is (default note). The heading carries it (`### <time> · <kind>`), so the Log can be read by kind. A mission's steward's own actions are written as `steward` entries by Harnu itself."
+        )
     }),
     mutates: true,
     op: 'mission_log',
@@ -2469,6 +2660,164 @@ export const MCP_TOOLS: McpToolDef[] = [
     }),
     mutates: true,
     op: 'mission_add_check',
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'campaign_create',
+    description:
+      'Create a Campaign — the quest line ABOVE a Mission, stored repo-scoped under the main checkout\'s `.harnu/campaigns/` (every worktree shares it). DIRECT write, no confirm. A campaign is an ordered list of CHAPTERS, and a chapter IS a mission: declare the chapters here, then create each chapter\'s mission with `mission_create { campaignId, chapterId }` (ids are `chp-1`, `chp-2`, … in the order given). Detail only the next chapter to steps (rolling wave). A complete `declaredEnd` (kind + target + evidence) is REQUIRED (DECLARED_END_INCOMPLETE otherwise); the campaign is born `active`. Each chapter may `consume` and `produce` free-string tokens ("images-on-cdn", "page-templates"): the PREREQUISITE PASS refuses (PREREQ_MISSING, naming every token and chapter) a chapter that consumes a token no EARLIER chapter produces — fix the order, or pass `force: true` to accept the gap, which logs a `surprise` in the campaign Log and echoes `forced` in the ACK. `sessionId` names the OWNER (your own Claude session UUID; self-declared, NOT authenticated). Refused BAD_SESSION_ID for a non-UUID. ACK: `{ ok, campaignId, slug, chapters, scope?, forced? }`. No verb merges, chooses a decision, ticks a check or ends a campaign — those are the operator\'s.',
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .describe(
+          "Absolute path of the folder/worktree you are working in; the campaign is stored in its repo's main checkout."
+        ),
+      title: z.string().min(1).max(200).describe('Campaign title (1..200 chars, single line).'),
+      declaredEnd: MISSION_DECLARED_END_SCHEMA,
+      sessionId: z
+        .string()
+        .min(1)
+        .describe(
+          'The owner — your own Claude session UUID (never a synthetic-… id). Self-declared, not authenticated.'
+        ),
+      chapters: z
+        .array(z.object(CAMPAIGN_CHAPTER_SHAPE))
+        .min(1)
+        .max(50)
+        .describe(
+          'The chapters in order (1..50). Each becomes chp-<n>. Add more later with campaign_add_chapter.'
+        ),
+      scope: z
+        .array(z.string().min(1))
+        .max(20)
+        .optional()
+        .describe(
+          "Repo-relative paths of the spec / PRD / ADR, stored as the campaign's `scope` attachment under the same rules as mission_create's `scope` (BAD_SCOPE_PATH outside the repo, on the repo root, under .git/.harnu/.capy, or in a worktree checkout)."
+        ),
+      force: z
+        .boolean()
+        .optional()
+        .describe(
+          'Accept chapters whose `consumes` has no earlier producer; each gap is logged as a surprise. Default false.'
+        )
+    }),
+    mutates: true,
+    op: 'campaign_create',
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'campaign_add_chapter',
+    description:
+      "Append a chapter to a Campaign — DIRECT write, no confirm. Chapters are append-only for agents (never removed or reordered): the new one gets the next `chp-<n>` id and ordinal. Same prerequisite pass as campaign_create, applied to the new chapter only: a `consumes` token no earlier chapter produces is refused PREREQ_MISSING (naming it) unless `force: true`, which logs a `surprise`. A detour is a SIDE-QUEST chapter: `required: false` with `discoveredFrom` naming the chapter (and optionally the step) it came from — it never counts in the headline. `unlocks: { kind: 'chapter', ref }` keeps the chapter `locked` until that chapter is done (`decision` and `pr` are recorded for later). Refused CAMPAIGN_NOT_FOUND, CAMPAIGN_CLOSED, CHAPTER_NOT_FOUND (an unknown `discoveredFrom`/`unlocks` chapter). ACK: `{ ok, campaignId, chapterId, totalChapters, forced? }`.",
+    inputSchema: z.object({
+      folder: CAMPAIGN_FOLDER_SCHEMA,
+      campaignId: z.string().min(1).describe('The campaign id (cmp-<8 hex>).'),
+      ...CAMPAIGN_CHAPTER_SHAPE,
+      discoveredFrom: z
+        .object({ chapterId: z.string().min(1), stepId: z.string().min(1).optional() })
+        .optional()
+        .describe(
+          'The chapter (and optionally its mission step) this side quest was discovered from.'
+        ),
+      unlocks: z
+        .object({ kind: z.enum(['decision', 'chapter', 'pr']), ref: z.string().min(1).max(200) })
+        .optional()
+        .describe(
+          'What the chapter waits for. `chapter` (ref = a chapter id) is resolved from the record.'
+        ),
+      force: z
+        .boolean()
+        .optional()
+        .describe(
+          'Accept a `consumes` token with no earlier producer; logged as a surprise. Default false.'
+        )
+    }),
+    mutates: true,
+    op: 'campaign_add_chapter',
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'campaign_get',
+    description:
+      'Read one Campaign: the full stored record (declared end, chapters with their bound `missionId`, status), its free-text Log, a `derived` block and `closeReadiness`. `derived.progress` is THE campaign progress — render it, never recount: { total, current { from, to } | null, allDone, done, inReview, running, locked, side { total, done, open }, radiant? { done, total }, states, computedAt } — it counts CHAPTERS (the required ones; "Chapter N of M"). The state of a chapter rolls up from its bound mission with no second door: `done` = the mission is delivered or was closed as delivered; `inReview` = every step of the mission is done and it waits for the operator to close it; `running` = a step is running; `locked` = it consumes a token whose producers are not all done, or its `unlocks` chapter is not done; `todo` otherwise. `derived.chapters[]` has one row per chapter: `{ chapterId, state, missionId, mission: { status, headline } | null }`. `closeReadiness` is what campaign_request_close would refuse right now — `{ code, reason }` (CAMPAIGN_CLOSED | CHAPTERS_OPEN) — or `null`. Address it by `campaignId`, or by `ownerSessionId` (self-declared, NOT authenticated) for the most recently updated open campaign that session owns. Derived fresh on every read.',
+    inputSchema: z
+      .object({
+        folder: CAMPAIGN_FOLDER_SCHEMA,
+        campaignId: z.string().min(1).optional().describe('The campaign id (cmp-<8 hex>).'),
+        ownerSessionId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Find the open campaign this Claude session UUID owns. Self-declared, not authenticated.'
+          )
+      })
+      .refine((v) => (v.campaignId === undefined) !== (v.ownerSessionId === undefined), {
+        message: 'pass exactly one of campaignId / ownerSessionId'
+      }),
+    mutates: false,
+    op: 'campaign_get'
+  },
+  {
+    name: 'campaign_list',
+    description:
+      "List Campaigns — one row per campaign: id, slug, title, status, the repo folder it lives in, owner session, `progress` (chapter counts rolled up from what each bound mission last reported — up to one poll old; call campaign_get for exact numbers) and updatedAt. With `folder`, only that repo's campaigns (any worktree of it resolves to the same list); without it, every repo Harnu knows, skipping folders the operator blocked.",
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Absolute path of a folder/worktree to scope the list to its repo.')
+    }),
+    mutates: false,
+    op: 'campaign_list'
+  },
+  {
+    name: 'campaign_request_close',
+    description:
+      'Ask the operator to close a Campaign — DIRECT write, no confirm, but it never closes anything: it is your "it\'s done" signal — it sets `pendingClose` and moves the campaign to `delivered`; only the operator ends a campaign, from the UI (no verb can). Once the operator ends it, every campaign write refuses CAMPAIGN_CLOSED — stop and report. Refused CHAPTERS_OPEN unless every REQUIRED chapter reads done (an open side quest holds nothing back; a campaign with no required chapter has delivered nothing); `closeReadiness` on campaign_get reports the same refusal ahead of time. `sessionId` (optional, self-declared) is recorded as who asked; omitted, the owner. ACK: `{ ok, pendingClose: true }`.',
+    inputSchema: z.object({
+      folder: CAMPAIGN_FOLDER_SCHEMA,
+      campaignId: z.string().min(1).describe('The campaign id (cmp-<8 hex>).'),
+      sessionId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Your Claude session UUID, recorded as who asked. Omitted: the campaign owner.')
+    }),
+    mutates: true,
+    op: 'campaign_request_close',
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'rebase_stack',
+    description:
+      "Rebase a mission step's branch onto a new base — `git rebase --onto <onto> <from|onto>` in the step's LINKED worktree (the steward's routine move after a parent lands). DIRECT write, no confirm. It rewrites the step's own LOCAL branch and NOTHING else: it never pushes (ACK `pushed: false` — publishing the rewritten branch, a `--force-with-lease` of that one branch, is the owner's move), never touches another branch, never rebases the main checkout, a detached HEAD or a dirty tree. The step is `stepId`, or — omitted — the one open step that links a linked worktree of this repo (STEP_AMBIGUOUS listing the candidates when several do, NO_STEP_WORKTREE when none). `onto` and `from` are refs or commits, shape-checked and resolved first (BAD_ONTO). Pass `from` — the old parent tip — to drop a squash-merged parent's commits (`git rebase --onto main <parentTip>`). On a conflict it ABORTS, leaves the tree exactly as it was and refuses REBASE_CONFLICT naming the files, and sets an agent-owned blocker on the step (once; a retry does not stack another) — do not retry; tell the operator. Other refusals: REBASE_DIRTY, DETACHED_HEAD, NOT_A_LINKED_WORKTREE, WORKTREE_NOT_IN_REPO, MISSION_CLOSED. ACK: `{ ok, stepId, branch, before, after, rebased, pushed: false }`.",
+    inputSchema: z.object({
+      folder: MISSION_FOLDER_SCHEMA,
+      missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
+      onto: z
+        .string()
+        .min(1)
+        .max(200)
+        .describe('The new base: a branch, tag, remote ref (origin/main) or commit.'),
+      stepId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          'The step (stp-<n>) whose worktree to rebase. Omitted: the single open step with a worktree link.'
+        ),
+      from: z
+        .string()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe('The old base to drop (git rebase --onto <onto> <from>). Default: onto.')
+    }),
+    mutates: true,
+    op: 'rebase_stack',
     silentAllowInAgentFolder: true
   }
 ]

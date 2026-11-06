@@ -1,0 +1,474 @@
+/* Shared anatomy for the System Monitor redesign variants. var(--token) only. */
+* {
+  box-sizing: border-box;
+}
+:root {
+  --mk-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; /* no token: --font-sans lives in main.css @theme */
+  --mk-mono:
+    'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; /* no token: --font-mono lives in main.css @theme */
+}
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: 12px/1.35 var(--mk-sans);
+}
+.ic {
+  display: block;
+  flex: none;
+}
+.sp {
+  flex: 1;
+}
+.num {
+  font-family: var(--mk-mono);
+  font-size: 11.5px;
+  color: var(--color-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.dim {
+  color: var(--color-text-4);
+}
+.is-green {
+  color: var(--color-green);
+}
+.is-warn {
+  color: var(--color-warning);
+}
+.lbl {
+  font-size: 10.5px;
+  color: var(--color-text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.k-s {
+  font-size: 11px;
+  color: var(--color-text-3);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+em {
+  font-style: italic;
+  color: var(--color-text-4);
+}
+.tree {
+  color: var(--color-text-disabled);
+  width: 14px;
+  display: inline-block;
+  font-family: var(--mk-mono);
+}
+.glyph {
+  color: var(--color-text-4);
+  width: 18px;
+  display: inline-flex;
+  justify-content: center;
+}
+.br {
+  color: var(--color-text-4);
+  font-size: 11px;
+}
+
+/* folder hue — the terminal ANSI palette, same rule as the Scheduler (design.md §2 "Folder hue") */
+.h-blue {
+  --fh: var(--term-ansi-blue);
+}
+.h-magenta {
+  --fh: var(--term-ansi-magenta);
+}
+.h-cyan {
+  --fh: var(--term-ansi-cyan);
+}
+.h-yellow {
+  --fh: var(--term-ansi-yellow);
+}
+.h-coral {
+  --fh: var(--term-ansi-bright-red);
+}
+.h-lav {
+  --fh: var(--term-ansi-bright-blue);
+}
+
+/* takeover shell */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 860px; /* no token: fixed mockup canvas */
+}
+.thead {
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.thead .ttl {
+  font-size: 13px;
+  font-weight: 600;
+}
+.thead .sub {
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.thead .accent {
+  color: var(--color-accent);
+}
+.tbody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.tfoot {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-4);
+  font-size: 11px;
+  background: var(--color-sidebar);
+}
+.tfoot .link {
+  color: var(--color-accent);
+}
+.iconbtn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-3);
+  cursor: pointer;
+  flex: none;
+}
+.iconbtn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.iconbtn.is-warn {
+  color: var(--color-warning);
+}
+.iconbtn.is-danger {
+  color: var(--color-red);
+}
+.iconslot {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: inline-block;
+}
+
+/* folder avatar */
+.fav {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--fh);
+  background: color-mix(in srgb, var(--fh) 18%, transparent);
+}
+.fav.lg {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+  border-radius: var(--radius);
+}
+
+/* chevron pair: open when collapsed, close when expanded */
+.chev {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-4);
+  cursor: pointer;
+  padding: 0;
+}
+.chev-close {
+  display: none;
+}
+[data-state='expandido'] .chev-open.x-open {
+  display: none;
+}
+[data-state='expandido'] .chev-close.x-open {
+  display: inline-flex;
+}
+.c-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.c-name .nm {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* state pip + reason chip + notes */
+.pip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  flex: none;
+}
+.pip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.st-live {
+  color: var(--color-green);
+}
+.st-live .dot {
+  background: var(--color-green);
+}
+.st-parked {
+  color: var(--color-text-3);
+}
+.st-parked .dot {
+  background: var(--color-text-4);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-3);
+  font-size: 10.5px;
+  font-family: var(--mk-mono);
+  flex: none;
+}
+.sweep {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--color-warning);
+  flex: none;
+}
+.mod {
+  font-size: 11px;
+  color: var(--color-text-3);
+  flex: none;
+}
+.mod-legacy,
+.mod-off {
+  color: var(--color-text-4);
+}
+.saved {
+  font-size: 11px;
+  color: var(--color-green);
+  flex: none;
+}
+
+/* bars */
+.bar {
+  position: relative;
+  display: inline-block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border-2);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.bar b {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: var(--color-text-3);
+}
+.bar.is-mute b {
+  background: var(--color-text-4);
+}
+.bar.is-hue b {
+  background: var(--fh);
+}
+.bar.is-warn b {
+  background: var(--color-warning);
+}
+.bar.thin {
+  height: 3px;
+}
+.heapmini {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.heapmini .bar {
+  width: 60px;
+}
+.heapmini > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* heap state: ok by default, warn in heap-alerta */
+.heap-warn {
+  display: none !important;
+}
+[data-state='heap-alerta'] .heap-warn {
+  display: revert !important;
+}
+[data-state='heap-alerta'] .heapmini .heap-warn {
+  display: inline-flex !important;
+}
+[data-state='heap-alerta'] .heap-ok {
+  display: none !important;
+}
+.heap-warn.is-warn,
+.heap-warn .is-warn {
+  color: var(--color-warning);
+}
+
+/* sparklines */
+.spark {
+  display: block;
+  flex: none;
+}
+.spark polyline {
+  fill: none;
+  stroke: var(--color-text-3);
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.spark.is-mute polyline {
+  stroke: var(--color-text-4);
+}
+.spark.is-hue polyline {
+  stroke: var(--fh);
+}
+.spark.is-cpu polyline {
+  stroke: var(--color-warning);
+}
+.spark.fat polyline {
+  stroke-width: 1.8;
+}
+
+/* row actions: hidden at rest, shown on the hovered row (hover state) */
+.acts {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  flex: none;
+}
+[data-state='hover'] .is-hovered .acts {
+  opacity: 1;
+}
+[data-state='hover'] .is-hovered {
+  background: var(--color-surface);
+}
+
+/* KPI strip (variants A) */
+.kpis {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1.2fr;
+  gap: 10px;
+}
+@media (max-width: 1000px) {
+  .kpis {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.kpi {
+  background: var(--color-sidebar);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.k-l {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--color-text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.k-v {
+  font-size: 22px;
+  font-weight: 600;
+  font-family: var(--mk-mono);
+  letter-spacing: -0.02em;
+}
+.k-v small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-3);
+  font-family: var(--mk-sans);
+  letter-spacing: 0;
+}
+.kpi .bar {
+  width: 100%;
+}
+.split {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  gap: 2px;
+}
+.split i {
+  display: block;
+  height: 100%;
+}
+.sp-h,
+.sw-h {
+  background: color-mix(in srgb, var(--color-text-4) 45%, var(--color-surface));
+}
+.sp-s {
+  background: var(--color-accent);
+}
+.kpi .sw {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+  margin-left: 4px;
+}
+.kpi .sw-s {
+  background: var(--color-accent);
+}
+.st-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.thi {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

@@ -1,0 +1,28 @@
+schema_version: '1.1'
+context:
+  scaffold_script: setup.sh
+name: path-jail
+tags: [single-doc]
+execution:
+  prompt: According to docs/specs/2026-10-21-T564-browser-pane.md, which directories does the harnu-page path jail always deny, and what size cap applies to HTML served to a pane?
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Agent]
+graders:
+  - type: regex
+    name: denies-git
+    pattern: '\.git'
+    match: contains
+  - type: regex
+    name: denies-memory
+    pattern: '\.harnu/memory'
+    match: contains
+  - type: regex
+    name: html-cap
+    pattern: '8\s*MiB'
+    flags: i
+    match: contains
+  - type: tool_used
+    name: routed-to-doc-reader
+    tool: Agent
+    min: 1
+    arm: with-only

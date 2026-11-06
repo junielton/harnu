@@ -8,9 +8,18 @@
  * any more — scope is an attachment (§3.3) — so it is excluded here.
  */
 import type { Mission, MissionStep } from './mission-core'
+import { GATE_NAMES, type StepGates } from './mission-gates'
 import type { MissionChildState } from './mcp/fleet-snapshot'
 
-export type StepState = 'verified' | 'done' | 'running' | 'waiting' | 'blocked' | 'todo'
+export type StepState =
+  | 'verified'
+  | 'done'
+  | 'running'
+  | 'waiting'
+  | 'blocked'
+  | 'todo'
+  // Campaign spec §3.2 — an open `blocks` edge (or an undecided decision) holds it back.
+  | 'locked'
 
 /** What {@link computeProgress} needs from the live derive, per step. */
 export interface StepSignalsLite {
@@ -18,6 +27,12 @@ export interface StepSignalsLite {
   children: Pick<MissionChildState, 'sessionId' | 'taskState'>[]
   /** An existence-level step proven by its links right now. */
   existenceProven: boolean
+  /**
+   * The step's derived gates (Campaign spec §3.2, Amendment (a)). They GOVERN `verified`:
+   * a step whose stored proof is `verified` reads `done` while any applicable gate is red or
+   * running. Absent = none derived, so nothing is held back.
+   */
+  gates?: StepGates
 }
 
 export interface MissionProgress {
@@ -34,23 +49,50 @@ export interface MissionProgress {
   leftBehind: string[]
   /** Reached or current existence steps with no link that can resolve (§3.9). */
   unprovable: string[]
+  /**
+   * Campaign spec §3.2 — the Side bucket: `required: false` steps, outside `total`,
+   * `current` and `leftBehind`. Absent when the mission has none, so a mission that
+   * uses no side step keeps the exact v3 shape.
+   */
+  side?: {
+    count: number
+    steps: { id: string; state: StepState; discoveredFrom: string | null }[]
+  }
   computedAt: string
+}
+
+/**
+ * Campaign spec Amendment (a) (operator decision, 2026-10-31): do the step's gates allow it to
+ * read `verified`? Every APPLICABLE gate must be green. A gate is applicable unless it is `off`
+ * (no signal yet) or `na` (does not apply); the `checks` gate also applies only when the step
+ * actually has checks — whatever the facts say, a step with none has nothing to tick. A step
+ * with no PR (pr gate `off`) is therefore unchanged, and gates never upgrade: only a stored
+ * `verified` proof can read `verified`.
+ */
+function gatesAllowVerified(step: MissionStep, gates: StepGates | undefined): boolean {
+  if (!gates) return true
+  return GATE_NAMES.every((name) => {
+    if (name === 'checks' && (step.checks?.length ?? 0) === 0) return true
+    return gates[name] !== 'red' && gates[name] !== 'running'
+  })
 }
 
 /** §3.1 step state, first match wins. */
 function stepState(step: MissionStep, sig: StepSignalsLite | undefined, owner: string): StepState {
   const by = step.verifiedBy
+  // Campaign spec §3.2: a decision the operator has made is a finished step — the
+  // choice is its whole deliverable (only the Choose door writes `chosen`).
+  if (step.decision?.chosen !== undefined) return 'done'
   // A `needs-human` verdict: the machine part is met and the human part became a
   // check (§3.6), so the step is done — even when the verifier's label says
   // `verified`. A later `met` verdict replaces it.
   if (by?.verdict === 'needs-human') return 'done'
   // A human step the operator ticked is `proof: 'verified'` with the operator as
   // verifier (`applyOperatorVerifyStep`), so the first clause covers it.
-  if (
-    step.proof === 'verified' ||
-    (step.verification === 'existence' && sig?.existenceProven === true)
-  )
-    return 'verified'
+  // Amendment (a): a stored `verified` proof READS `verified` only while the step's
+  // applicable gates are all green; otherwise it reads `done` (the stored proof is untouched).
+  if (step.proof === 'verified') return gatesAllowVerified(step, sig?.gates) ? 'verified' : 'done'
+  if (step.verification === 'existence' && sig?.existenceProven === true) return 'verified'
   if (step.proof === 'claimed' || (step.proof === 'self-verified' && by?.verdict === 'met'))
     return 'done'
   // The owner is never a builder: its own link on a step does not make it run.
@@ -68,14 +110,52 @@ export function progressSteps(mission: Pick<Mission, 'steps'>): MissionStep[] {
   return mission.steps.filter((s) => s.kind !== 'fixed-start')
 }
 
+/** A required step (the default) counts in the headline; `required: false` is a side step. */
+const isRequired = (s: MissionStep): boolean => s.required !== false
+
+/**
+ * Campaign spec §3.2 — which steps read `locked`: the target of a `blocks` edge whose
+ * source is not done, or a member of an undecided decision's `blocks`. Only a step that
+ * has not started (`todo`/`waiting`) is locked — a done, running or blocked step keeps
+ * what actually happened. `base` is every step's state before locking, so a chain of
+ * locks resolves from facts and never from other locks.
+ */
+function lockedIds(
+  steps: readonly MissionStep[],
+  base: ReadonlyMap<string, StepState>
+): Set<string> {
+  const locked = new Set<string>()
+  for (const s of steps) {
+    const sourceOpen = !isDone(base.get(s.id) ?? 'todo')
+    for (const e of s.edges ?? []) if (e.kind === 'blocks' && sourceOpen) locked.add(e.to)
+    if (s.decision && s.decision.chosen === undefined)
+      for (const to of s.decision.blocks) locked.add(to)
+  }
+  return new Set(
+    [...locked].filter((id) => {
+      const state = base.get(id)
+      return state === 'todo' || state === 'waiting'
+    })
+  )
+}
+
 export function computeProgress(
   mission: Pick<Mission, 'steps' | 'owner'>,
   signals: readonly StepSignalsLite[],
   now: number
 ): MissionProgress {
   const sig = new Map(signals.map((s) => [s.stepId, s]))
-  const steps = progressSteps(mission)
-  const st = steps.map((s) => stepState(s, sig.get(s.id), mission.owner.sessionId))
+  const all = progressSteps(mission)
+  const base = new Map(
+    all.map((s) => [s.id, stepState(s, sig.get(s.id), mission.owner.sessionId)] as const)
+  )
+  const locked = lockedIds(all, base)
+  const stateOf = new Map(
+    all.map((s) => [s.id, locked.has(s.id) ? 'locked' : base.get(s.id)!] as const)
+  )
+  const steps = all.filter(isRequired)
+  const sideSteps = all.filter((s) => !isRequired(s))
+  const st = steps.map((s) => stateOf.get(s.id)!)
   const lastDone = st.map(isDone).lastIndexOf(true)
   const lastDoneAt = lastDone >= 0 ? Date.parse(steps[lastDone].verifiedBy?.at ?? '') : NaN
   const running = st.flatMap((s, i) => (s === 'running' ? [i] : []))
@@ -90,8 +170,10 @@ export function computeProgress(
       // The first open step after the last done one; when every step after it is
       // done but an earlier one is open, the last step (no ✓). A blocked step
       // later on never pulls the marker forward.
-      let i = st.findIndex((s, k) => k > lastDone && !isDone(s))
-      if (i === -1) i = steps.length - 1
+      // A locked step never takes the marker (Campaign spec §3.2).
+      const open = (s: StepState): boolean => !isDone(s) && s !== 'locked'
+      let i = st.findIndex((s, k) => k > lastDone && open(s))
+      if (i === -1) i = st.some(open) ? steps.length - 1 : Math.max(lastDone, 0)
       current = { from: i + 1, to: i + 1 }
     }
   }
@@ -119,9 +201,22 @@ export function computeProgress(
     allDone,
     done: st.filter(isDone).length,
     verified: st.filter((s) => s === 'verified').length,
-    states: Object.fromEntries(steps.map((s, i) => [s.id, st[i]])),
+    // Side steps are listed too: the rail draws their glyph from the same map.
+    states: Object.fromEntries(all.map((s) => [s.id, stateOf.get(s.id)!])),
     leftBehind,
     unprovable,
+    ...(sideSteps.length > 0
+      ? {
+          side: {
+            count: sideSteps.length,
+            steps: sideSteps.map((s) => ({
+              id: s.id,
+              state: stateOf.get(s.id)!,
+              discoveredFrom: s.discoveredFrom ?? null
+            }))
+          }
+        }
+      : {}),
     computedAt: new Date(now).toISOString()
   }
 }

@@ -1,0 +1,513 @@
+/* Shared anatomy for the Scheduler folder-grouped list. var(--token) only. */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font:
+    12px/1.35 'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif; /* no token: font stack lives in main.css */
+}
+.ic {
+  display: block;
+  flex: none;
+}
+
+/* ---- folder hue: the terminal ANSI palette, which every theme already defines ---- */
+.h-blue {
+  --fh: var(--term-ansi-blue);
+}
+.h-magenta {
+  --fh: var(--term-ansi-magenta);
+}
+.h-cyan {
+  --fh: var(--term-ansi-cyan);
+}
+.h-yellow {
+  --fh: var(--term-ansi-yellow);
+}
+.h-coral {
+  --fh: var(--term-ansi-bright-red);
+}
+.h-lav {
+  --fh: var(--term-ansi-bright-blue);
+}
+
+/* ---- takeover shell ---- */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 860px; /* no token: fixed mockup canvas */
+}
+.thead {
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.thead .ttl {
+  font-size: 13px;
+  font-weight: 600;
+}
+.thead .sub {
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.thead .accent {
+  color: var(--color-accent);
+}
+.thead .sp {
+  flex: 1;
+}
+.btn-primary {
+  height: 24px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+.iconbtn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-3);
+  cursor: pointer;
+}
+.iconbtn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.iconbtn.is-danger:hover {
+  color: var(--color-red);
+}
+.tbody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.tfoot {
+  height: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-4);
+  font-size: 11px;
+  background: var(--color-sidebar);
+}
+
+/* ---- list column ---- */
+.wlist {
+  width: 300px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-sidebar);
+  border-right: 1px solid var(--color-border);
+  overflow: hidden;
+}
+.wlist.is-wide {
+  width: 340px;
+}
+.wlist-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ltool {
+  height: 32px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.seg span {
+  padding: 2px 8px;
+  color: var(--color-text-3);
+}
+.seg span.on {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+/* folder group header */
+.fgroup {
+  position: relative;
+}
+.fhead {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px 0 12px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+}
+.fhead::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--fh);
+}
+.fav {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--fh);
+  background: color-mix(in srgb, var(--fh) 18%, transparent);
+}
+.fname {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.fcount {
+  font-size: 11px;
+  color: var(--color-text-4);
+  flex: none;
+}
+.fsum {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.fsum .n {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.fchev {
+  color: var(--color-text-4);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.fgroup.is-collapsed .fchev {
+  transform: rotate(-90deg);
+}
+.fgroup.is-collapsed .wrow {
+  display: none;
+}
+
+/* worker row */
+.wrow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+}
+.wrow:hover,
+.wrow.is-selected {
+  background: var(--color-surface);
+}
+.wrow.is-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-accent);
+}
+.wrow.is-off {
+  opacity: 0.55;
+}
+.wmain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wname {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.wname > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wname .pin {
+  color: var(--color-accent);
+}
+.wmeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--color-text-4);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.wmeta .sep {
+  color: var(--color-text-disabled);
+}
+.wstate {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+.st-waiting {
+  color: var(--color-text-3);
+}
+.st-waiting .dot {
+  background: var(--color-text-4);
+}
+.st-running {
+  color: var(--color-green);
+}
+.st-running .dot {
+  background: var(--color-green);
+  animation: mk-pulse 1.6s var(--ease) infinite;
+}
+.st-failed,
+.st-disabled {
+  color: var(--color-red);
+}
+.st-failed .dot,
+.st-disabled .dot {
+  background: var(--color-red);
+}
+.st-off {
+  color: var(--color-text-4);
+}
+.st-off .dot {
+  background: var(--color-text-disabled);
+}
+@keyframes mk-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.wactions {
+  display: none;
+  gap: 2px;
+  flex: none;
+}
+[data-state='hover'] .wrow.is-hovered .wactions {
+  display: flex;
+}
+[data-state='hover'] .wrow.is-hovered .wstate {
+  display: none;
+}
+[data-state='hover'] .wrow.is-hovered {
+  background: var(--color-surface);
+}
+
+/* badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 500;
+  flex: none;
+}
+.b-observe {
+  color: var(--color-text-3);
+  background: var(--color-surface-2);
+}
+.b-act {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+.b-model {
+  color: var(--color-text-3);
+  border: 1px solid var(--color-border-2);
+}
+
+/* run history ticks: last 10 runs, oldest left */
+.ticks {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+  flex: none;
+}
+.ticks i {
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--color-border-2);
+}
+.ticks i.ok {
+  background: var(--color-green);
+  height: 7px;
+}
+.ticks i.x {
+  background: var(--color-red);
+}
+.ticks i.t {
+  background: var(--color-warning);
+}
+.ticks i.r {
+  background: var(--color-green);
+  animation: mk-pulse 1.6s var(--ease) infinite;
+}
+
+/* cycle bar: how far into its cadence the worker is */
+.cycle {
+  position: absolute;
+  left: 14px;
+  right: 10px;
+  bottom: -1px;
+  height: 2px;
+  background: color-mix(in srgb, var(--fh) 14%, transparent);
+}
+.cycle b {
+  display: block;
+  height: 100%;
+  background: var(--fh);
+}
+.cycle.is-running b {
+  background: var(--color-green);
+}
+
+/* health bar on a folder header */
+.health {
+  display: flex;
+  height: 3px;
+  width: 54px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--color-border-2);
+  flex: none;
+}
+.health i {
+  display: block;
+  height: 100%;
+}
+.health .h-run {
+  background: var(--color-green);
+}
+.health .h-wait {
+  background: var(--color-text-4);
+}
+.health .h-fail {
+  background: var(--color-red);
+}
+.health .h-off {
+  background: var(--color-text-disabled);
+}
+
+/* ---- detail stub (out of scope, context only) ---- */
+.wdetail {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.fchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fh);
+  background: color-mix(in srgb, var(--fh) 14%, transparent);
+}
+.dtabs {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--color-text-3);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 6px;
+}
+.dtabs .on {
+  color: var(--color-text);
+}
+.skel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.skel-line {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-surface-2);
+  margin: 10px 12px;
+}

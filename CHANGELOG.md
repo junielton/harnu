@@ -10,6 +10,307 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-06
+
+### Added
+
+- **Agents can hide and show sidebar folders.** A new `hide_folder` verb does what a folder's **Hide** / **Unhide** menu action does, for 1 to 100 folders at a time (add `unhide: true` to show them again). Hidden folders move to the hidden-folders view; nothing is deleted or moved on disk, and the folder stays pinned. It runs without asking, is safe to repeat, updates an open sidebar live, and tells the agent what happened to each path (a blocked folder, a folder with a working session or a waiting approval, or a path Harnu has never seen is reported instead of hidden).
+
+### Fixed
+
+- **`archive_session` now always reports what was really saved.** When an agent sent several calls on the same session at once (for example restore, restore, archive), each call was judged against the same out-of-date picture, so the answers could contradict each other and one of them could say `alreadyArchived` for a session that ended up restored. Every call is now decided inside the archive's own save queue, so simultaneous calls read as if they ran one after another (`restored`, then `alreadyActive`, then `archived`), and what the answer says is what the archive file holds. If the file cannot be written the verb answers `ARCHIVE_WRITE_FAILED` and changes nothing.
+
+## 2026-11-05
+
+### Added
+
+- **Agents can archive and restore sessions.** A new `archive_session` verb does what a session's **Archive** menu action does, for 1 to 100 sessions at a time (add `unarchive: true` to restore them). Archived sessions move under their folder's **Show N archived** row with their terminal closed; their conversations and worktrees are never touched. It runs without asking, is safe to repeat, and tells the agent what happened to each session. Sessions in a folder you blocked, sessions that are working right now and sessions waiting on an approval are refused and left alone.
+
+- **Expand a helper pane to the whole window.** Every pane has a new expand button in its header, right before maximize. Click it and the pane takes the whole working area, leaving only the Topbar and the footer; click it again, press `Esc` or press `Cmd/Ctrl+Shift+M` to come back. Nothing restarts: a shell keeps its scrollback and process, a browser keeps its page, and the session terminal keeps its size while hidden. **Settings → Appearance → Layout → Expand hides** picks what gets out of the way: **Everything** (the default: sidebar, session and Fleet rail) or **Session only**. A new **Expand the focused pane to the window** shortcut (no default key) works on any focused pane.
+- **Layout changes animate.** Maximizing or restoring a pane, expanding it to the window, minimizing or restoring the Fleet rail, collapsing or reopening the sidebar and switching the split layout now ease over about a fifth of a second instead of snapping. Dragging a divider still follows the pointer with no easing. Terminals refit once when the motion ends rather than on every frame, a browser pane shows a still picture of its page while the layout moves and is live again right after, and with **Reduce motion** on in your system everything snaps as before.
+- **Floating panels: an optional island layout.** Settings → Appearance has a new **Floating panels** switch (off by default). Turned on, every pane becomes its own rounded island on a darker background, with an even 6px gap between them and around the window edge. The sidebar toolbar, Topbar and Fleet rail header line up as one row; Return here, the folder list and a dock with Add folder and Settings are separate islands in the sidebar, and the Fleet rail's list, Needs you and Would-have are separate islands too. Dividers draw no line at rest, and show a short grip when you hover the gap between two islands. The footer stays flat and full width. The gap survives a minimized Fleet rail, a collapsed sidebar and a closed helper stack. With the switch off, nothing changes.
+- **The helper panes can sit under the session instead of beside it.** Settings → Appearance has a new **Split layout** choice: **Auto** (the default), **Side by side** and **Stacked**. Stacked puts the session on top and the helper panes underneath, laid out left to right, which suits a tall window. Auto stacks them by itself once the window is clearly taller than wide, and goes back to side by side when it is clearly wider than tall; in between it keeps whatever it was doing, so a nearly square window does not flip back and forth. The new button next to Browser in the Topbar (only shown while the folder has helper panes) switches layouts with one click, cycling Auto, Side by side, Stacked, and its icon always shows the layout in use. There is also a **Cycle the split layout** shortcut you can bind in Settings → Keyboard Shortcuts. The two layouts remember their own split size for each folder, so changing layout never resizes the other one, and double-clicking the divider resets only the layout you are in.
+
+- **Cleanup can now shelve idle worktrees whose branch is not proven merged.** A worktree whose branch has no merge proof, with no session in it, nothing running from it, no Keep mark, and nothing touched (transcript, commit, or edited file) for 3 days used to sit in Needs review forever, holding its disk. Shelving saves everything git does not already hold (uncommitted and untracked files, stash entries, gitignored files outside the dependency folders the repo's own `WORKTREE.md` lists, at any depth), checks that it can bring the worktree back byte for byte, and only then deletes the folder to free the disk. The branch, every archive ref and the session list stay; a shelved worktree is not treated as removed, so its Claude transcripts are never offered as orphans. It has its own switch and its own report-only first cycle, independent of the autopilot: the first cycle lists what it would shelve and does nothing until acknowledged, a cycle shelves at most 3, and it switches itself off after 3 failures in a row. Each shelve writes a journal line and an Activity entry ("Shelved `feat/x` — idle 9 d, branch kept"). It never touches a worktree with a rebase, bisect or `git am` in progress, a lock, a nested checkout, a running stack, or a repo whose `WORKTREE.md` sets `create:`/`remove:`. `list_cleanup` now also lists `shelved` worktrees and the `shelving` state.
+
+- **A shelved worktree comes back by itself.** Resume a session that ran in it, open a new session or a terminal in it (from the app, or an agent's `create_session` / `spawn_terminal`), and Harnu restores the folder first: same path, same branch, your uncommitted, untracked and gitignored files back as they were, and the session opens there with its history. The Scheduler never restores one. If the restore fails (the repo is busy, the archive no longer checks out), a Claude session shows a clear notice and a terminal reports the reason, and nothing is ever started in another folder. A folder already standing at that path is moved aside to `<path>.leftover-<time>`, never deleted. Cleanup has a new **Shelved** card listing every shelved worktree with a one-click **Restore**; when a restore cannot work, the row says what to do next and can copy the command that makes a fresh worktree on the kept branch.
+
+- **Shelved worktrees live in a "Shelved" section of their repo group.** A worktree Cleanup shelved no longer shows as a folder row (or a ghost); it waits in a collapsed **Shelved · N** row at the end of its repo group ("Guardadas" in pt-BR), as one compact, dimmed line with its branch and how long ago it was shelved. Click one of its sessions and Harnu restores the worktree, then resumes the session in its own folder, showing **restoring…** meanwhile; **Restore worktree** and **Open in Cleanup** are in its right-click menu. A repo with one live worktree and a shelved one still gets its group header.
+
+- **Settings → Cleanup has a Shelving section.** A switch, and an **Acknowledge first report** button that lets shelving start for real after its report-only first pass.
+
+### Changed
+
+- **Archived sessions are now kept by Harnu itself, not the window.** The list used to live in the app window only, so nothing could archive a session while the window was closed. It is now saved in Harnu's own data folder, the sidebar behaves exactly as before, and it updates live when an agent archives or restores something. Sessions you had already archived are carried over once, automatically, and the old copy is left in place.
+
+- **Shelving is on by default, and still only reports first.** A settings file that never mentioned shelving now reads as on; one that explicitly turned it off stays off. Until you acknowledge the first report in Settings → Cleanup it removes nothing: it lists what it would shelve in Activity.
+
+- **The Archives card no longer lets you delete the archive of a shelved worktree.** That archive is what restores it. The row's Delete is disabled with "Shelved worktree — restore it first" and a **Restore first** button next to it; a stale screen that still sends the delete is refused by Harnu as well.
+
+- **Browser has its own button in the Topbar.** The globe button sits right next to Terminal and opens a browser pane in one click, where before it was hidden one step deeper in the small arrow beside the Split button. That arrow is gone, since Terminal was the only other thing in it.
+
+- **Cleanup shows which transcripts were digested.** A row in "Other leftovers" for the transcripts of a folder that is gone now has a green **Digested** chip when every session that counts has a digest in project memory, and an amber **N not digested** chip when some do not. The confirm lists how many sessions have no digest and where digests are kept, and **Move to trash** stays off until you tick **Trash without a digest**; Cancel keeps the folder. This is the way forward for the projects that Cleanup would otherwise refuse. If a project is still refused after you confirm (a session lost its digest meanwhile, or a folder turned out to be only missing), the notice now says why and what to do instead of a generic failure.
+
+- **Session digests no longer need a commit.** A session with at least three of your messages now leaves a digest in project memory even when it committed nothing, marked "none in this session" under Evidence. Each digest also quotes what the session asked you and what you answered, the questions its last message left open, and the last message itself. Your messages are counted over the whole transcript, so a long session's early turns count too.
+
+- **A session is digested when it compacts.** Harnu now listens for Claude Code's compaction hook, so a session that compacts leaves a digest before its context is summarized, alongside the existing digests on end and after 5 idle minutes. The hook is added to your Claude Code settings at the next launch.
+- **Folders outside git get session digests.** A session in a folder that isn't a git repository is now digested like any other, into that folder's `.harnu/memory/` (or your central memory folder when its settings say so), marked `evidence: no-git`. Harnu never writes a digest into your home folder, the root of the disk, or `~/.claude` and `~/.harnu`; a session started in one of those is skipped.
+- **A session digest lists only the commits that session made.** Two sessions on one checkout used to each claim the other's commits. A commit now counts as a session's only when it was made during one of that session's own `git` commands, its subagents' included; the other commits that landed on the checkout while it ran are counted on one line at the end of Evidence, and the files line covers the session's own commits only.
+- **Digests survive a restart, and sessions Harnu missed are caught up.** What each session's last digest saw is kept in `memory-digest-state.json` in Harnu's data folder, so restarting Harnu no longer writes the same digest again or rereads a transcript from its first line. A minute after Harnu starts, and every 30 minutes after that, it digests sessions from the last 7 days that no hook reached (they ran while Harnu was closed, after a crash, or with the hook bridge off), at most 10 at a time, marked `caught up`.
+- **Sessions of a removed worktree are digested before Cleanup can trash their transcripts.** When Cleanup lists the transcripts of folders that are gone, Harnu now writes a digest of each session with at least three of your messages into the memory of the repo the worktree belonged to (`sessions/`, marked `evidence: orphan`, at most 20 per scan, oldest first), unless it already has one. A project that still has sessions without a digest (no repo could be found, or a write failed) is not trashed by the ordinary confirm: it needs an explicit "Trash without a digest" choice, so nothing is lost without you choosing it.
+- **`hot.md` no longer loses another branch's snapshot.** The session that digested last used to replace `hot.md` whole, so two sessions on two branches overwrote each other. A digest now replaces the snapshot only when it is the same branch's (or there is none), and even then it keeps the other branches' **Parallel:** lines; otherwise the snapshot stays and the new session is added as a line of a **Parallel:** list at its end (newest first, at most 5, trimmed to keep `hot.md` under its 500 words). **Next** now lists the questions the session left open, and shows the last prompt only under a "Last prompt (verbatim):" label; whatever came from the transcript is quoted and never translated, and Harnu's own labels in `hot.md` are English.
+- **The Memory pane tells you how a digest was written.** In the Timeline tab, a digest written without a commit shows a **No commits** badge, one from a folder outside git shows **No git**, and one recovered from a removed worktree's transcript shows **Recovered**. A digest backed by commits, and any written before this, shows no badge.
+- **You are told when a session digest cannot be written.** If project memory refuses or fails a digest, the Activity bell shows one **Memory digest failed** notice with the folder and the reason, at most once an hour per folder. A session that is simply too short, or has nothing new, stays silent.
+
+### Fixed
+
+- **A narrow Topbar no longer draws the title over its buttons.** The title now shortens with an ellipsis (down to a minimum width), and when the buttons still do not fit they leave the bar one at a time, the least important first, into a new **More actions** (`…`) menu at the end of the bar. They come back as the bar gets wider. Nothing was removed: each action in the menu keeps its icon, name, keyboard shortcut and highlight, and the menu works from the keyboard (arrows, Enter, Esc). With enough room the Topbar looks exactly as before, with Floating panels on or off.
+
+- **The pane dividers read as one edge again.** Between the sidebar and the session, and between the session and the Fleet rail, the resize handle drew its thin line in the middle of a 6px gap, which left a sliver of background on each side and made the boundary look like a double bar. The line now sits flush against the panel it belongs to. The grab area is just as wide as before. Double-clicking the divider between the session and the helper stack now resets the split, like the other two dividers already did.
+
+- **The drill-in "Back" row stays put while the list scrolls.** In the sidebar's drill-in mode the Back row used to scroll away with the list, so in a long worktree group you had to scroll all the way up to go back. It is now pinned above the list: it spans the full sidebar width, the scrollbar starts below it, and rows sliding under its edge fade out instead of showing half-cut.
+
+- **A session digest never recreates a removed worktree's folder.** A digest for a session whose folder no longer exists (a worktree removed after the session ended, say) used to write into `<folder>/.harnu/memory/` and bring the folder back. Harnu now skips it; the digest of a removed worktree's sessions is written into its repo's memory instead, when Cleanup lists their transcripts.
+- **The memory benchmark's orphan loss ignores very short sessions.** `npm run memory:bench` counted a removed folder's one-message session as a lost orphan even though no digest is meant to exist for it. `orphan_loss` and `orphan_transcripts` now count only sessions with at least three of your messages, the same rule as capture coverage.
+
+- **The memory benchmark no longer counts a pasted image on its own as one of your messages.** `npm run memory:bench` counted an image-only message as an operator turn, which put sessions with two typed messages and one screenshot into the capture-coverage count.
+
+## 2026-11-04
+
+### Added
+
+- **Memory benchmark.** `npm run memory:bench -- --repo <folder>` scores how well a repo's project memory works, from the files on disk. It reports how many sessions left a digest, how many decisions are recorded per working day, whether a search finds the right note, how big the default `memory_read` answer is, how fresh `hot.md` is, and how many transcripts of deleted worktrees were never summarized. It works on plain folders as well as git repos. It only reads, and two runs on the same files print the same output. The first baseline for this repo is in `docs/reports/2026-11-04-memory-bench-baseline.md`.
+
+### Fixed
+
+- **Cleanup now recognizes a worktree as merged when its pull request was squash-merged after more commits were pushed from elsewhere.** A worktree whose latest commit is already inside the merged pull request, and whose changes reached the default branch (straight in, or through a merged base pull request), used to wait in Needs review as "merged, but the local tip differs from the PR head". It is now Ready to clean, and the automatic cleanup can take it. Nothing changes when the pull request's last commit is not in your clone (Harnu never downloads it for this), when the worktree has commits the pull request lacks, or when it has uncommitted changes: those still wait in Needs review.
+
+## 2026-11-03
+
+### Added
+
+- **A Links shelf in the footer collects the links of a session.** A new `🔗 N` pill, right of the pasted-images pill, appears when the session you're looking at has links, and its count follows the conversation — paste a URL (or let the agent mention one) and it shows up within a few seconds. Click it for a list, newest first, of every link the operator or the agent wrote in the conversation: the task, the pull request the agent opened, the Figma frame, the doc. Each row is named from the URL alone — `owner/repo #183` for a GitHub PR or issue, `Task <id>` for ClickUp, the file name and node for Figma, `host/path` for anything else — with who said it (**you** or **agent**) and when; hover a row to see the sentence it came from. **Open** sends the link to your browser, **Copy** puts it on the clipboard, and **Reference** types it into the session's prompt without submitting it (greyed out, with the reason, when the session isn't running). The **Folder** toggle widens the list to every session in the folder, grouped by session. Nothing is saved and no page is ever fetched: the list is read from the transcript each time, and links that only appear in tool output (fetched pages, logs) are left out.
+
+### Fixed
+
+- **A browser pane showing a phone or tablet no longer spills past its device frame on macOS.** With a device picked, a blank area could be drawn to the right of and below the device frame, over the rest of the window, until you clicked the pane or resized it. Harnu now re-fits the view to the frame each time the device is applied.
+
+## 2026-11-02
+
+### Added
+
+- **Sessions can read the GitHub budget.** A new read-only `github_budget` verb returns the REST and GraphQL buckets (remaining, reset time, pace), which one is tighter, whether Harnu is slowing down, and how many of the calls in the window were Harnu's own per feature versus everything else on your login. Sessions are told to check it before polling `gh` in a loop, to back off when it reads `low`, and to wait out a GitHub secondary-limit pause when the answer carries `pausedUntil`; read-only Scheduler workers can call it too.
+- **A GitHub pill in the footer and a Settings → GitHub API tab show where your GitHub budget goes.**
+  The footer now has a **GitHub** pill, left of the Cleanup pill, that shows how many calls are left in
+  the tighter of the REST and GraphQL buckets, amber while Harnu is slowing down and red once the limit
+  is spent (with the time to the reset). Click it for the two meters and **Who spent it · this hour**:
+  Harnu against everything outside Harnu, and one row per feature (missions, PR Stack, Review,
+  Cleanup, the steward). **Settings → GitHub API** adds the pace over the last 10 minutes, the last hour
+  in 5-minute columns, how often each feature checks (with the old cadence struck through while Harnu
+  is slowing down), and the controls: check delivered missions, slow down below 10 / 15 / 25 %, pause
+  PR Stack auto-refresh, and **Tell me when it happens** — one toast when Harnu starts slowing down and
+  one system notification when the limit is reached, each at most once per GitHub window.
+
+- **Harnu now watches its own GitHub API budget and slows down near the limit.** Every `gh` call
+  Harnu makes spends the same personal GitHub quota your sessions and scripts use (5,000 REST
+  requests and 5,000 GraphQL points an hour), and on a busy day it could run dry with Harnu still
+  polling and showing nothing. Harnu now reads the budget once a minute (`gh api rate_limit`, which
+  is free), counts its own calls per feature (missions, PR Stack, Review, Cleanup, the steward, the
+  merge batch) so it can tell its share from everything else on your token, and follows whichever of
+  the two buckets is tighter. When that bucket drops to 15 % (10, 15 or 25 % in the prefs file) Harnu
+  stretches the mission PR and main-CI caches from 1 minute to 5 and pauses PR Stack's background
+  refresh; when it reaches zero it stops reading GitHub, shows the last values it knew, and resumes
+  by itself after the reset. A "rate limit exceeded" message from `gh` is no longer mistaken for a
+  network failure: Harnu checks the real budget right away, and if you still have calls left (GitHub's
+  secondary limit) it only pauses its reads for a minute, or for the wait GitHub names, instead of
+  stopping until the reset. Your own actions — a review, a merge, marking a file viewed — are never
+  held back. The footer pill and the Settings pane that show all of this arrive next.
+
+- **Closing a mission or campaign now drafts what to remember.** When a session asks you to close a
+  mission or campaign, Harnu reads the record (the steps, the Log, the ledger and the pull requests and
+  commits linked to them, never a session's transcript) and prepares two things: an **outcome**
+  (what was declared, what landed, what changed on the way, what was never independently verified) and
+  **memory drafts** — decisions, lessons and a refreshed "where we left off" that stays within its size
+  cap. Every draft cites the step, PR or commit it came from, a candidate with nothing to cite is
+  dropped, and a close with nothing worth keeping says "nothing notable" instead of padding. Nothing is
+  written to your project memory by this: the drafts wait for your tick (the "Also record" panel in the
+  end dialog is the next piece).
+- **The end dialog asks what to record.** When you close a mission as delivered, an **Also record**
+  panel lists the memory drafts Harnu prepared — each with its kind, its text, the step, PR or commit it
+  cites and, for a decision that replaces an older one, which one — all unticked. Closing writes only
+  the ones you ticked, through the same path as a session's `memory_append` (so the replaced decision is
+  marked as superseded), and logs which ones landed. A close with nothing worth keeping says "Nothing
+  notable to record." Discard writes nothing. If memory refuses a ticked draft the mission still
+  closes, a warning names the draft, and it stays in the mission file.
+- **A verifier now leaves its evidence.** The `delivery-verifier` skill re-runs the named checks at the
+  pull request's head in a clean worktree and stores the test output, screenshots and console under
+  `.harnu/evidence/<mission>/<step>/`, linked on the step.
+
+- **A new mission or campaign recalls what you already decided.** `mission_create` and `campaign_create`
+  now list, in their reply as `recall`, the decisions in project memory that watch the paths in the new
+  scope or the words in its title and chapter titles, and the steward's Mission Brief after a
+  compaction repeats them. A decision that has been replaced is never recalled; its replacement is.
+- **Decisions can replace each other.** `memory_append` on the `decisions` page gives every entry an id
+  and a start date, and accepts `supersedes` (the id of the entry it replaces), `watches` (the paths and
+  topics the entry is about) and `mission` (stamped into the entry's provenance). The old entry is
+  marked as superseded, and `memory_query` shows a match inside it together with the entry that
+  replaced it.
+- **Pause a mission's steward.** The mission popover now has a steward line (its last action, how long ago, and what wakes it next) with **Pause steward…** beside it. Pausing asks for a reason, writes a `steward` line in the mission Log and stops the steward waking — on events and on its 20-minute beat — until you press **Resume steward**. While it is paused the Topbar pill turns warning and the You list says "Steward paused 2h 0m: CI is flaky today". It is your door only: no agent verb can pause or resume a steward.
+- **Merge batch.** When two or more of a mission's PRs are open with green CI, the You list offers "Merge 3 in order…" (in the chapter popover and in the Campaign popover). Confirm and Harnu merges the first PR, lets the steward rebase the rest and re-check their gates, and only then merges the next. It stops on any red — failing checks, a PR that was closed, a merge GitHub refuses, checks that never settle — says why, and asks you again for the rest. Only the mission's own PRs can be merged this way, and it uses the merge method the repository allows (squash first). Nothing about it is available to agents.
+- **A "Stewards" section in the Scheduler.** Mission stewards no longer mix with your own workers: they are listed under their own heading at the bottom of the list, read-only (no switch, no delete, no prompt editing), each with its mission, when it last woke and what it last did. A paused steward says so, with the reason.
+- **`delivery-watchdog` is now the steward's tick.** Woken as a mission's steward, the skill reads the mission's gates and ledger, starts a verifier session for a PR that is ready, nudges a stalled child, rebases a stack after a merge and logs each action as `steward`. Without a steward it stays the read-only sweep it was.
+
+### Fixed
+
+- **Harnu no longer stutters while missions are open.** With many missions on the go, the progress
+  poll started hundreds of `git` and `gh` processes every 20 seconds, which froze scrolling, typing
+  and terminal output in bursts and made held keys repeat too slowly. A poll now reuses what it
+  already knows: a worktree's branch, head and commit count are read from the repository's own files
+  and refreshed the moment you commit, switch branch or fetch; links that point to a file or to a
+  folder that is not a repository cost nothing; and the CI result of a merged pull request is
+  re-checked at most every 10 minutes (every minute while it is still running) instead of every
+  minute forever. What a mission reports is unchanged.
+- **The GitHub popover tells GitHub's secondary limit apart from an empty budget.** When GitHub slows
+  requests while both buckets still have calls, the popover shows _GitHub is slowing requests. Harnu
+  resumes at 14:00._ in place of the low or limit-reached note, and the footer pill keeps the real
+  number of calls left, so "Limit reached" now only appears for a bucket that is really empty.
+- The GitHub budget store now retries its first read if the app was not ready for it, instead of staying
+  empty until the next restart.
+- **PR Stack no longer refreshes in the background while the GitHub budget is low.** Only the canvas's
+  timed refresh is skipped; opening the canvas and pressing Refresh always read GitHub. When GitHub's
+  limit is the reason a refresh failed, the canvas now says _GitHub API limit reached, resets at 14:00_
+  and keeps the last read, instead of calling it a network problem.
+- Decisions recorded at the same moment can no longer overwrite each other or lose a "replaced by"
+  mark, two identical decisions on the same day now get distinct ids, and a close-out draft is always
+  small enough to be written (an oversized Log entry is clipped, a Log line that imitates a provenance
+  stamp is escaped, and the "where we left off" note keeps a single heading).
+- **Merge batch is stricter about what it merges.** Each PR is re-read right before its own merge and merged only at the commit whose checks were read (a push in between makes GitHub refuse the merge instead of landing unchecked code). A PR with merge conflicts, or one that does not target the default branch, is no longer merged — a stacked PR must be retargeted first. The batch now also stops when the steward's turn between merges did not run (paused, absent or timed out), when the mission is closed or its steward paused mid-batch, and treats a PR whose checks have not reported yet as still pending instead of "not ready". Only one batch can run on a mission at a time, and the "Stopped at…" panel stays open while the mission popover refreshes.
+
+### Changed
+
+- **A new verifier sign-off reads "done" until its evidence is linked.** The verifier gate (the
+  fourth dot on a step) now needs the step's evidence bundle as well as the verdict, so a
+  verifier-level step verified from now on with no bundle linked, or whose folder is gone, shows an
+  amber dot and counts as done rather than verified. Steps verified before this change are not
+  affected and keep reading as they did.
+- **Delivered missions are no longer checked on GitHub.** Once a mission is delivered it keeps the
+  pull-request, CI and main-CI state it last had instead of being asked about on every poll. The
+  `Check delivered missions` preference (off by default, in `github-budget-prefs.json` until the
+  Settings pane lands) brings the old behaviour back.
+
+- `mission_request_close` and `campaign_request_close` now also report `consolidation` (how many drafts
+  were prepared, or that nothing was notable).
+
+## 2026-10-31
+
+### Added
+
+- **Every mission now has a steward.** A mission gets a Harnu-owned helper that wakes when something
+  happens on it (a PR opens or merges, CI changes, a child session goes idle, a blocker is cleared, or
+  every 20 minutes) and does the routine moves for you: rebase a stack after a parent lands, start a
+  verifier session when a PR is ready, nudge a stalled child. It can only do that: it never merges,
+  closes, chooses a decision or ticks a check, and it works on its own mission alone. It is created
+  with the mission and deleted when you end it, it cannot be edited or deleted on its own, and it stops
+  when agent control is off or its folder is blocked. Every action it takes is a `steward` line in the
+  mission Log. Pass `steward: false` to `mission_create` to opt out.
+- **`rebase_stack`.** A new verb that rebases a step's own branch onto a new base in its worktree. It
+  never pushes, aborts and leaves the tree untouched on a conflict, and flags the step with a blocker.
+- **Mission Brief after a compaction.** When a mission has a steward, Harnu adds three hooks to the
+  folder's `.claude/settings.local.json` (and removes them when the mission ends, leaving your own
+  hooks alone): after a context compaction the owner session gets a short brief of the mission, the
+  compaction is recorded in the mission ledger, and a child session stopping wakes the steward.
+- `mission_log` takes a `kind` (`note`, `decision`, `surprise`, `steward`), shown in the Log heading.
+- The steward only rebases a step's own branch: a worktree you opened yourself, or one that another
+  step or mission also uses, is refused (`NOT_STEP_WORKTREE`) and never rewritten. A pile of blockers
+  can no longer crowd the Mission Brief's step table out, and a steward is no longer missed at startup
+  when the hook bridge finishes booting before the Scheduler.
+
+- **Sessions can now keep a Campaign: an ordered list of chapters, each of them its own mission.** Five new actions (`campaign_create`, `campaign_add_chapter`, `campaign_get`, `campaign_list`, `campaign_request_close`) store it in your repo's main checkout under `.harnu/campaigns/`, shared by every worktree. A chapter that needs something no earlier chapter produces is refused before anything is written; a mission can now be created as a chapter (`campaignId` and `chapterId` on `mission_create`). Harnu counts chapters done, in review, running and locked from the missions themselves, so nobody can mark a chapter done by saying so. No session can end a campaign: `campaign_request_close` only asks you. The campaign screens come in a later release; today sessions read it through these actions.
+- **Specs get a template and a CI gate.** `docs/specs/TEMPLATE.md` fixes the shape of a spec (problem and request atoms, goals, slices with the files each may touch, an acceptance-criteria table with one typed proof per row, open decisions, and an append-only amendments and deviations section), with a `status: draft|approved` and `tier: medium|large|complex` header. A new spec gate, run by CI and by `/local-ci`, lints every approved spec: duplicate AC ids, a slice citing an AC that does not exist, an AC without proof, a `prd`/`adr`/`mockup` path that is not tracked, any gitignored `.harnu/out` path, and any section the tier does not allow. Drafts and older specs are skipped.
+- **The campaign now has a full-screen map.** In the campaign popover, **Open map** (no longer switched off) opens every chapter as a tile on a board, joined by arrows that follow what each chapter needs and produces (a chapter nothing depends on follows the plan's order), with the chapter you are on marked "▼ You are here", locked chapters dashed with a padlock, and each side quest hanging under the chapter it was found in. The strip above the board shows the campaign's finish line and, when a chapter repeats one template many times, how far along it is. The right column lists everything you owe with how long each has been waiting (its **Open** button jumps to that chapter), the Steward feed (it says "No steward yet" until the steward lands) and the side quests; click a tile to see that chapter's steps with their four gate dots, **Back** to return. Esc or the ✕ closes it. Every number is the one Harnu computed.
+- **The campaign pill now draws a margin rail and the radiant counter.** After "Ch. 9/12 · Step 2/4" a row of thin ticks shows every chapter at a glance (green done, paler green in review, the chapter you are on wider and in the accent colour — amber while something waits on you — and locked ones faint), and a campaign with a repeated-template chapter ends the pill with how far along it is, such as "48/88".
+- **A session that is part of a campaign now shows it in the top bar.** The pill reads "Ch. 2/3 · Step 8/9" (chapter, then step), adds "· 3 for you" in amber when something waits on you, and turns green with "Ch. 3/3 ✓" when the campaign is delivered; click it for the new campaign popover: Main quest, Side quests and Locked chapters on the left, the selected chapter's steps with their four gate dots on the right, and everything the campaign owes you underneath. Sessions that are not part of a campaign keep the pill they had. "End campaign…" and "Open map" are shown disabled for now.
+- **A mission's popover now lists what you owe as rows, with how long each has been waiting, and shows the last five things Harnu recorded for it.** The old "+N more" fold is gone: the first item stays in the box and every other item is its own row, with a risk dot and an age wherever the record holds a time. A decision waiting for you appears as a "Decide: …" row, and a **Ledger** section lists the last five recorded events (dispatches, pull requests, CI, verdicts), newest first. Opened from a campaign, the popover has a "‹ Campaign · Chapter N of M" link back.
+- **Three conversation skills now ship with Harnu and leave a record: `one-by-one`, `grill-me` and `step-by-step`.** Switch them on in **Settings → Skills** (off by default, like every bundled skill). `one-by-one` asks the open decisions of your spec one at a time and writes each answer into the spec's Open decisions table and the project memory; `grill-me` stress-tests a spec or plan and places everything you raise as an open decision, an amendment or a non-goal, then lists what it could not place; `step-by-step` walks you through manual actions and adds each one as a check on the Mission step it belongs to. None of them decides for you or ticks a check on your behalf — a Mission decision is still made with **Choose…**, and checks are still ticked by you.
+
+### Changed
+
+- **The delivery skills now plan and report in campaigns.** `orchestrate-delivery` declares one campaign for an objective with more than one chapter, spells out what each chapter produces and consumes, and details only the next chapter to steps; if Harnu refuses the order it re-orders the chapters instead of forcing the plan. A detour found on the way becomes a side step with a known origin. The `mission` tick now reads each step's gates and the ledger from the mission itself instead of asking GitHub, opens a side step when a gate turns red, and tells you about it with an age and the risk. `status` shows the campaign headline ("Ch. 2/5 · Step 2/4") and `report-back` reads the ledger and links the campaign. Switch the skills on in **Settings → Skills**; single-chapter work behaves as before.
+- **A step now reads "verified" only while the facts back it up.** A step a verifying session signed off shows as done, not verified, while its pull request is still open, its checks are running or failing, or `main` is red after the merge, and turns verified again on its own once those are green. Nothing stored is changed, and a step with no pull request is unaffected.
+- **Repeated "session completed" notices for the same piece of work now share one Activity row.** When a session working on a mission step or a roadmap card finishes (or asks for you) again within 10 minutes, the Activity bell keeps a single row — it moves to the newest time and reads "already reported · ×N" — instead of adding one row per transition. A different step or card, a different kind of notice, or a repeat after more than 10 minutes still gets its own row.
+- **Delivery packets copy their acceptance criteria from the spec instead of retyping them.** `orchestrate-delivery` now writes each AC with the spec's id verbatim plus a short content hash (`AC-3 #a1b2`), forbids inventing an id the spec lacks, and pastes the slice's `files-may-touch` as the scope boundary. Before dispatching it names the entry door and the sizing rule (small work gets card ACs only, no spec), refuses to start while the spec or mockup sits in `.harnu/out/`, and treats landing the spec bundle as a named first unit with an owner. A resolved open decision is recorded as one structured line in project memory. `delivery-verifier` now also appends a deviation row per AC to the spec and flags any edit to a test an AC names as proof as a visible "proof changed" finding.
+- **The orchestration skills now hand workers fixed role prompts instead of re-written ones.** `orchestrate-delivery` carries a boot template per role (executor, shipper, lander, reviewer) that cites the right skill by name (`ship`, `land-prs`, `review-peer`) rather than restating its steps, and no longer suggests a plain `gh pr create` when no ship pipeline exists. Every done condition it writes — and the `mission` skill's dispatch packets — must be checkable by the worker alone (commits pushed, tree clean, a report file written); "a message was delivered to another session" is now ruled out, after one worker was re-prompted 578 times by a Stop hook waiting on it.
+- **The orchestrator now closes a delivery that ends "on main" by dispatching a lander session**, sizes small fixes without a spec, names the Figma or mockup implementation and QA skills in a UI unit's packet, and hands a long delivery to a fresh owner session at each wave boundary (about 400k tokens of context, or a human merge-and-build pause) with a ready-made resume prompt.
+- **The `status` skill now also fires on Portuguese phrasings** such as "como estamos", "onde estamos", "qual o estado" and "tem PR?".
+
+### Fixed
+
+- **The mission ledger now dates a pull request by when it happened.** A "PR opened" or "PR merged" row carries the time GitHub reports for it, not the moment Harnu first noticed it, so the ledger reads in the order things actually occurred. When GitHub gives no time, the row falls back to when Harnu saw it and is marked "observed".
+- **A signed-off step's verifier dot no longer stays amber.** When an independent verifier signs a step off but leaves a human part, the verifier gate turns green and only the checks gate waits on the human; a self-verified or merely claimed step still waits on a verifier.
+- **A merged unit no longer reads as ten commits of unfinished work.** A worktree whose pull request merged now reports 0 commits in the step's links and pulse, however the PR was merged (squash included); open PRs and branches without a PR count as before.
+
+## 2026-10-30
+
+### Added
+
+- **A mission step is now proven by facts, with four dots to show it.** Each step in the Mission popover ends its label with four dots — PR merged, CI green on the PR, `main` green after the merge, and the verifier's verdict. Hover one for its name and state; the dots keep the last known values (and say so) when GitHub can't be reached. If `main` goes red after a merge, the step keeps its place and a "main is red after #N" line appears under **You**.
+- **Side steps, locked steps and decision nodes in the Mission popover.** A detour a session finds along the way can now be tracked as a _side step_ that keeps a known origin ("discovered from B") instead of moving the headline: it sits in a collapsible **Side steps** bucket under the rail, is never counted as left behind, and does not change "Step N of M". A step that depends on another unfinished step, or on an open decision, shows a lock and never takes the current-step marker. A decision node lists its options and what it blocks; you pick one and press **Choose…**, which records the choice in the mission's Log and unlocks the steps it held back. Sessions can declare all of this (`mission_add_step` / `mission_update_step`) but can never make the choice for you. Each main step also shows its rail letter (A, B, C…).
+- **Missions keep a ledger Harnu writes itself.** Dispatches, worktree cuts, pull requests opening and merging, CI changes, verifier verdicts, a linked session ending and compactions are recorded as they happen. Sessions can read the latest 20 rows with `mission_get` (and the row count in `mission_list`) but can't write them, so a coordinating session no longer has to re-derive what it already dispatched.
+
+### Fixed
+
+- **Hovering a Scheduler row no longer makes the list jump.** The row's state label and its Run now / Delete buttons now share a fixed-height line, so swapping them on hover or keyboard focus moves nothing.
+- **The Scheduler search field no longer shows a box inside a box when focused.** Only the field's own border lights up; the Collapse all button keeps its keyboard focus ring.
+- **Scheduler folder groups are now separated by a 1px line.** Collapsed folder headers no longer touch and read as one block; the line holds expanded too, and nothing is drawn under the last group.
+
+### Changed
+
+- **The System Monitor is redesigned.** A Harnu sidebar on the left shows the main-process heap (with its 70% and 85% marks), every Electron process with a bar, and the Harnu-plus-sessions total. A KPI strip on top of the right side gives total RAM (split between Harnu and sessions), CPU, and how many sessions are live and parked with the RAM that parking reclaimed. Sessions are now cards by default — each wearing its folder's colour, with a 60-second sparkline and a bar showing where its memory goes — or a table through the new Cards / Table toggle, which remembers your choice. Expanding a session still lists its own memory and its child processes, and Park now, Close and Test Harnu mod channel work as before. When the heap warns or goes critical, the sidebar gauge, its number and the header gauge turn amber or red with a warning icon.
+- **Scheduler folders and rows keep a steady order.** Folders stay alphabetical whatever is running or failing, and inside a folder the workers that are on sit above the ones that are off (pinned first within each), so nothing reshuffles under your pointer.
+
+## 2026-10-29
+
+### Added
+
+- **The Scheduler's worker list is grouped by folder.** Instead of one flat Pinned / Enabled / Off list, each folder gets a tinted header with its initial, worker count, git branch, how many workers are on and off, when the next run is due, **failing** / **running** pills and a small health bar — in a fixed alphabetical order that never reshuffles while workers run or fail. Click a header to fold a folder; a button next to the new search field folds or opens them all, and Harnu remembers what you folded. The search matches worker names, folders and prompts, and the **Running · Failing · Waiting · Off** chips show live counts (click the active chip to clear it). An **Up next** strip lists the next four runs across every folder and folds to a one-line summary.
+- **Each Scheduler row shows how the worker has been doing.** A row is two lines on one right edge: the worker's name and state, then `every 30m · haiku · observe` (an `act` worker in amber) with a tick for each of its last ten runs — green ok, red failed, amber timed out, pulsing green running. The history now loads for every worker, not only the selected one.
+
+### Changed
+
+- A pinned Scheduler worker now sorts first inside its folder's on or off group instead of living in a separate **Pinned** group; inside a folder, workers that are on are listed above workers that are off, and running, waiting or failing never moves a row, and the pin is one button in front of the worker's name (accent when pinned, dim otherwise; the hover actions are just **Run now** / **Stop** and **Delete**). The **Enabled** and **Off** groups are gone (use the **Off** chip), the old last-result line is not on the row, and the selected row is marked by its background alone — the thin accent line on its left edge is gone from this list.
+
+### Fixed
+
+- The terminal's right edge is no longer cut off. Harnu sized the terminal grid to the full pane width, so a box's right border and the last one or two characters of wrapped lines slid under the scrollbar; the grid now leaves the scrollbar's width free, in the main pane and in split panes alike. The old scrollbar styling rules that matched nothing in the current terminal were removed.
+- The terminal's last column no longer renders half-cut. The terminal drew every character slightly wider than the grid it was sized for (the gap grew with each resize or font-size change), so the final character of a full-width line was clipped at the edge, more so in wider panes. Harnu now stops the terminal's width measurement from feeding back on itself, sizes the grid by the width each character really takes, and keeps one character of margin at the right edge (so a tight fit gives up one column), in the main pane and in split panes alike.
+
+## 2026-10-28
+
+### Added
+
+- **Messages from agents take one line, and a loop tick becomes a live mission card.** In a session with the Harnu mod on, what you did not type no longer floods the transcript. A report from another session is one line: who sent it, the mission and step when it is a `Report for session … · mission … · step …` report, and its first sentence. A finished background task is one line too (`✓ bg task … · exit 0`), and a teammate's idle notice reads `◌ name idle 07:14 · «what they said»`. A `/loop` tick over a mission (its prompt starts with `/harnu:mission tick · <mission id>`) is drawn as a card: the mission's title, a progress bar with "Step 3 of 5 · 1 verified", what is running now and for how long, what it waits on, and what you owe. The card comes from the mission's real state, which Harnu sends to the session, not from the prompt text. A tick that finds nothing new is one dim line, "no change since #14"; one that finds something shows what changed ("stp-3 verified · PR #269 merged"). What you type is never touched, and Ctrl+O shows every row as written. Turn it off with **Draw agent messages compactly** in Settings → General → Harnu mod; sessions already running keep their setting until they restart.
+- **Status and report-back replies are drawn as a card.** When a session's reply contains a `status` glance card or a `report-back` final report, the Harnu mod draws it in the terminal as a card: a bordered box with the title, a progress bar and the ledger, a separate yellow box for what needs you, the checklist with aligned labels and coloured `✓ ! ✗ -` marks, and PR numbers and URLs as links. The card border and its progress bar are green when the front is finished (a full bar, "Step 5 of 5 ✓" or 100%, or every step succeeded and no bar is unfinished), red when one step failed, otherwise the accent colour. On a narrow terminal only a checklist row is cut short; what is owed to you and every link wrap. Anything that is not a complete report (a half-streamed block, a `tree` listing, a bare link) is shown exactly as before, and the message itself never changes: Ctrl+O shows it as written. It works in any language, because it reads the report's shape, not its labels. Turn it off with **Draw reports as cards** in Settings → General → Harnu mod; sessions already running keep their setting until they restart.
+
+### Changed
+
+- **Loop tick prompts name their mission on a fixed first line.** The `mission` and `orchestrate-delivery` skills now tell an orchestrator to start every `/loop` or wakeup prompt it arms with `/harnu:mission tick · <missionId>`, so Harnu can recognise which mission a tick belongs to.
+- **Orchestration reports use the same format as every other final report.** When an orchestrated delivery finishes, its wrap-up is now the `report-back` rail (`✓` / `-` / `!` / `✗` rows with topology, heartbeat, one row per unit with its PR and `ACs n/m met`, review findings and the delivery report) under the status card, with what you owe in the `you` line and links at the bottom. The emoji checklist (`✅` / `⚠️`) it used to print is gone.
+
+## 2026-10-27
+
+### Added
+
+- **Harnu asks before quitting while agents are mid-turn.** Closing the window (the X button) or quitting with Ctrl+Q or the app menu now shows a native prompt — "2 agents are still working" — listing the sessions by name (up to five, then "and N more") when any session is actively working. **Cancel** keeps the app, the window and every terminal alive; **Quit anyway** quits exactly as before. Idle, parked, finished and errored sessions never trigger it, and it never gets in the way of an update restart or a system shutdown. Tick **Don't ask again** to stop it, and turn it back on from Settings → General → Quitting.
+- **Choose which editor "Open in…" launches.** Settings → General → **Editor** now offers VS Code (the default), Cursor, Zed, Sublime Text, JetBrains (IntelliJ IDEA or WebStorm), Neovim and Helix, plus **Custom…** for any other command. The Topbar button (and the one on a folder's page) shows that editor's own mark and reads "Open in Cursor", "Open in Neovim" and so on; nothing changes until you pick something else.
+- **Terminal editors open in a Harnu terminal pane.** Neovim, Helix, or a custom command with **Runs in a terminal** switched on start inside a shell pane in the folder's split (or as a folder terminal when no session is selected), in that folder, instead of as a detached process.
+- **Custom editor commands.** Write the command with a `{path}` placeholder, for example `nvim {path}` or `code --reuse-window {path}`. It is split into arguments without a shell, and the folder is always passed as one argument, so spaces and odd characters in a path are safe; without `{path}`, the folder is added at the end.
+
+### Changed
+
+- **A missing editor now tells you what to do.** If the editor's command isn't found, the toast names the command and points at Settings → General → Editor; VS Code keeps its "Install 'code' command in PATH" hint.
+- The `folder.openInVSCode` shortcut is now `folder.openInEditor`. A chord you already saved in `keybindings.json` under the old name keeps working.
+- The Topbar's **Pull requests on GitHub** button now shows the GitHub logo instead of a pull-request arrow, so it no longer looks like the PR Stack Canvas button next to it and makes clear it opens GitHub in your browser.
+
 ## 2026-10-26
 
 ### Added
@@ -2289,11 +2590,10 @@ retarget` to apply it as a filter; click it again to clear. A count of zero is p
 ### Fixed
 
 - **The bundled-skills catalog no longer ships a committed merge conflict.**
-  `resources/skills/CATALOG.md` had carried `<<<<<<< Updated upstream` / `=======`
-  since v0.3.29, left by a bad stash-pop resolution. Prettier rendered the closing
-  marker as a blockquote, so the formatter passed and nothing flagged it. The
-  version marker is resolved to a single line and bumped to `v6`, which is the
-  honest value: four `SKILL.md` files changed after `v5` was written without the
+  `resources/skills/CATALOG.md` had carried ` since v0.3.29, left by a bad stash-pop resolution. Prettier rendered the closing
+marker as a blockquote, so the formatter passed and nothing flagged it. The
+version marker is resolved to a single line and bumped to`v6`, which is the
+honest value: four `SKILL.md`files changed after`v5` was written without the
   catalog moving with them, so staged copies were never told to refresh.
 - **A goal file's frontmatter is now stated as mandatory, not just shown.**
   `mission` displayed the `session:` block in its template but never said it was

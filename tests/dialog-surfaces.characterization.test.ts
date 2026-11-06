@@ -2,7 +2,7 @@
 /**
  * T460 batch 0 — the dialog characterization net (spec §6.2.4).
  *
- * Table-driven over the 29 dialog components that can be mounted headlessly. For each one the
+ * Table-driven over the 31 dialog components that can be mounted headlessly. For each one the
  * test MOUNTS the real component (`tests/dialog-surfaces/*`), MEASURES what it does — dispatches
  * Esc from `<body>` and from inside the card, `mousedown` and a bare `click` on the scrim,
  * `mousedown` inside the card, Tab on the last focusable; reads which element holds focus after
@@ -94,7 +94,7 @@ const ui = (f: string, init: string, name: Row['accessibleName'] = 'labelledby')
 })
 const STORE = 'ui.dialog=null'
 
-/** The 29 mountable components — spec §1.2 "Surface" rows, current behaviour. */
+/** The 31 mountable components — spec §1.2 "Surface" rows, current behaviour. */
 const TABLE: Record<string, Row> = {
   'AddFolderDialog.vue': ui(STORE, 'input'),
   'CardCreateModal.vue': ui('close[[]]', 'input', 'label'),
@@ -112,6 +112,7 @@ const TABLE: Record<string, Row> = {
   'ImageLightbox.vue': ui('close[[]]', 'none', 'label'),
   'McpConfirmOverlay.vue': ui('', 'dismiss', 'label'),
   'MemoryLocationDialog.vue': ui(STORE, 'close'),
+  'MergeBatchDialog.vue': ui('close[]', 'cancel'),
   'MissionBulkCloseConfirmDialog.vue': ui('cancel[]', 'cancel'),
   'MissionCloseConfirmDialog.vue': ui('cancel[]', 'cancel'),
   'MissionsReviewDialog.vue': ui('local open=false (card removed from DOM)', 'cancel'),
@@ -123,6 +124,7 @@ const TABLE: Record<string, Row> = {
   'RenameFolderDialog.vue': ui(STORE, 'input'),
   'RenameRepoDialog.vue': ui(STORE, 'input'),
   'SettingsDialog.vue': ui(STORE, 'close'),
+  'StewardPauseDialog.vue': ui('cancel[]', 'input'),
   'SweepConfirmDialog.vue': ui('close[false]', 'cancel'),
   'TrustedHostsDialog.vue': ui(STORE, 'input')
 }
@@ -196,7 +198,7 @@ describe('characterization table — coverage (AC-2)', () => {
       .sort()
     // `ui/` primitives live in a subfolder and are not listed by this top-level read.
     expect(Object.keys(TABLE).sort()).toEqual(onDisk)
-    expect(Object.keys(TABLE)).toHaveLength(29)
+    expect(Object.keys(TABLE)).toHaveLength(31)
   })
 
   it('lists the two inline overlays with a reason instead of mounting them', () => {

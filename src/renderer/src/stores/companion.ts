@@ -95,6 +95,18 @@ export const useCompanionStore = defineStore('companion', () => {
     await refresh()
   }
 
+  /** T585: "Draw reports as cards". Sessions started after the change read it at hello. */
+  async function setReportCards(on: boolean): Promise<void> {
+    await window.api.companionSetReportCards?.(on)
+    await refresh()
+  }
+
+  /** T589: "Draw agent messages compactly". Sessions started after the change read it at hello. */
+  async function setQuietRows(on: boolean): Promise<void> {
+    await window.api.companionSetQuietRows?.(on)
+    await refresh()
+  }
+
   function reveal(): void {
     void window.api.companionReveal?.()
   }
@@ -105,5 +117,15 @@ export const useCompanionStore = defineStore('companion', () => {
     started = false
   }
 
-  return { status, stateFor, refresh, init, setEnabled, reveal, dispose }
+  return {
+    status,
+    stateFor,
+    refresh,
+    init,
+    setEnabled,
+    setReportCards,
+    setQuietRows,
+    reveal,
+    dispose
+  }
 })

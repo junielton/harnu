@@ -35,12 +35,21 @@ const MATRIX: Partial<
   'ui.status': { internal: ['arbitration'], debug: true },
   // T257 (U2a-i): the two rows the review selection registers. Nothing else opens them.
   'context.append': { operator: ['review.selection.send'] },
-  'ui.band.set': { internal: ['reviewSelectionBand'] }
+  'ui.band.set': { internal: ['reviewSelectionBand'] },
+  // T589: the mission state the quiet rows draw from. Only the mission-state feed may send it.
+  'mission.state': { internal: ['missionState'] }
 }
 
 const GESTURES = ['diagnostics.ping', 'debug', 'review.selection.send', 'bogus', '']
 const VERBS = ['message_session', 'orchestrator_arm', 'notify', 'bogus']
-const SUBSYSTEMS = ['arbitration', 'parity', 'prefs', 'reviewSelectionBand', 'bogus']
+const SUBSYSTEMS = [
+  'arbitration',
+  'parity',
+  'prefs',
+  'reviewSelectionBand',
+  'missionState',
+  'bogus'
+]
 
 function expected(name: CommandName, cause: CommandCause, debugOn: boolean): boolean {
   const row = MATRIX[name]
@@ -119,6 +128,55 @@ describe('origin gate', () => {
     expect(
       checkOrigin('prompt.submit', { kind: 'verb', verb: 'create_session' }, { debug: true }).ok
     ).toBe(false)
+  })
+})
+
+describe('mission.state (T589)', () => {
+  const entry = {
+    id: 'mnt-7be1529e',
+    title: 'Acme migration',
+    role: 'owner',
+    progress: { total: 2, current: { from: 1, to: 1 }, done: 0, verified: 0, allDone: false },
+    steps: [{ id: 'stp-1', title: 'a', state: 'running', children: [], prs: [] }],
+    blockers: [],
+    you: []
+  }
+  const feed: CommandCause = { kind: 'internal', subsystem: 'missionState' }
+
+  it('rides on the quiet rows feature, and only the mission-state feed may send it', () => {
+    expect(gateRowFor('mission.state')?.feature).toBe('ui.quietRows')
+    expect(checkOrigin('mission.state', feed, { debug: false }).ok).toBe(true)
+    expect(checkOrigin('mission.state', feed, { debug: true }).ok).toBe(true)
+    expect(
+      checkOrigin('mission.state', { kind: 'verb', verb: 'message_session' }, { debug: true }).ok
+    ).toBe(false)
+    expect(
+      checkOrigin('mission.state', { kind: 'operator', gesture: 'debug' }, { debug: true }).ok
+    ).toBe(false)
+  })
+
+  it('takes a well-formed push from the feed and nothing else', () => {
+    expect(validateArgs('mission.state', { missions: [entry] }, feed).ok).toBe(true)
+    expect(validateArgs('mission.state', { missions: [] }, feed).ok).toBe(true)
+    expect(validateArgs('mission.state', { missions: [{ ...entry, id: 'x' }] }, feed).ok).toBe(
+      false
+    )
+    expect(validateArgs('mission.state', { missions: [entry], extra: 1 }, feed).ok).toBe(false)
+    expect(validateArgs('mission.state', null, feed).ok).toBe(false)
+    expect(
+      validateArgs('mission.state', { missions: [entry] }, { kind: 'internal', subsystem: 'x' }).ok
+    ).toBe(false)
+  })
+
+  it('is for a session in Harnu: headless and external are refused', () => {
+    expect(profileRefusal('headless', 'mission.state')).toBe('HEADLESS')
+    expect(profileRefusal('external', 'mission.state')).toBe('EXTERNAL')
+    expect(profileRefusal('interactive', 'mission.state')).toBeNull()
+  })
+
+  it('passes the default shadow channel (display only, like the band), never an off one', () => {
+    expect(shadowRefusal('shadow', 'mission.state', { missions: [] })).toBeNull()
+    expect(shadowRefusal('off', 'mission.state', { missions: [] })).toBe('FEATURE_OFF')
   })
 })
 

@@ -112,6 +112,13 @@ jobs:
           USER_DOCS_GATE_BASE: ${{ github.event.pull_request.base.sha }}
           GATE_PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
 
+      # Contract gate (T600): every docs/specs/*/spec.md with `status: approved` must have
+      # unique AC ids, slices that cite real ACs, a proof on every AC, tracked prd/adr/mockup
+      # paths, no .harnu/out path and only the sections its tier allows. Drafts and specs
+      # without a header are skipped. Checks the tree, so it runs on pushes to main too.
+      - name: Approved specs lint clean
+        run: node scripts/ci/spec-gate.mjs
+
       # ntfy.sh push via the CI_FAIL_NTFY_TOPIC secret; a no-op until that secret
       # exists (empty topic short-circuits the curl).
       - name: Notify main failure

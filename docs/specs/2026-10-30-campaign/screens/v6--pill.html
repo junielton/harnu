@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: v6--pill</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      /* ---- Journal vocabulary (shared by the four v1 screens) ------------------------------ */
+      .jbook {
+        width: 14px;
+        height: 14px;
+        color: var(--color-accent);
+        align-self: center;
+      }
+      .radiant {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--color-text-3);
+      }
+      .radiant .bar {
+        flex: 1;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--color-border-2);
+        overflow: hidden;
+      }
+      .radiant .bar i {
+        display: block;
+        height: 100%;
+        width: 54.5%; /* no token: 48 of 88 pages */
+        background: var(--color-accent);
+      }
+      .radiant b {
+        color: var(--color-text);
+        font-weight: 500;
+      }
+      .lk {
+        color: var(--color-text-4);
+        display: inline-flex;
+      }
+      .lk .ic {
+        width: 10px;
+        height: 10px;
+      }
+      .jtag {
+        font-size: 10px;
+        color: var(--color-text-4);
+        white-space: nowrap;
+      }
+      .jtag b {
+        font-weight: 500;
+        color: var(--color-text-3);
+      }
+      .dline {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        color: var(--color-accent);
+        margin-top: 3px;
+      }
+      .dline .glyph {
+        margin-top: 0;
+        width: 10px;
+        height: 10px;
+      }
+      .ic {
+        width: 12px;
+        height: 12px;
+      }
+      .pop-head .row > .ic,
+      .thead > .ic {
+        width: 14px;
+        height: 14px;
+        color: var(--color-accent);
+        align-self: center;
+      }
+      .btn .ic {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* Journal pill: book + chapter counter + a 12-tick margin rail (one tick per chapter) + radiant. */
+      .jpill {
+        gap: 5px;
+      }
+      .jpill .ticks {
+        display: inline-flex;
+        align-items: center;
+        gap: 1px;
+        height: 8px;
+      }
+      .jpill .tk {
+        width: 2px;
+        height: 8px;
+        border-radius: 1px;
+        background: var(--color-border-2);
+      }
+      .jpill .tk--done {
+        background: var(--color-green);
+      }
+      .jpill .tk--rev {
+        background: var(--color-green);
+        opacity: 0.5;
+      }
+      .jpill .tk--cur {
+        background: var(--color-accent);
+        width: 4px;
+      }
+      .jpill--warning .tk--cur {
+        background: var(--color-warning);
+      }
+      .jpill .tk--all {
+        background: var(--color-green);
+      }
+      [data-dsqa='v6--pill'] .topbar {
+        max-width: 900px; /* no token: mockup canvas width */
+      }
+      [data-dsqa='v6--pill'][data-state='active'] [data-only]:not([data-only~='active']) {
+        display: none;
+      }
+      [data-dsqa='v6--pill'][data-state='needs-you'] [data-only]:not([data-only~='needs-you']) {
+        display: none;
+      }
+      [data-dsqa='v6--pill'][data-state='delivered'] [data-only]:not([data-only~='delivered']) {
+        display: none;
+      }
+    </style>
+  </head>
+  <body data-states="active needs-you delivered">
+    <div data-dsqa="v6--pill">
+      <div class="topbar" data-dsqa-part="topbar">
+        <div class="crumb">
+          <span>Acme</span><span class="sep">·</span><span class="mono">org/proj/www</span
+          ><span class="sep">·</span><b>orchestrator</b>
+        </div>
+        <span class="sp"></span>
+        <div class="pills">
+          <button type="button" class="pill pill--neutral" data-dsqa-part="orchestrator-pill">
+            <svg
+              class="ic"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"
+              />
+              <path d="M5 21h14" /></svg
+            ><span>Orchestrator</span>
+          </button>
+
+          <button
+            type="button"
+            class="pill pill--accent jpill"
+            data-only="active"
+            data-goto="v6--campaign"
+            data-dsqa-part="campaign-pill"
+          >
+            <svg
+              class="ic"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 7v14" />
+              <path
+                d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+              /></svg
+            ><span class="num">Ch. 9/12</span
+            ><span class="ticks"
+              ><i class="tk tk--done"></i><i class="tk tk--done"></i><i class="tk tk--done"></i
+              ><i class="tk tk--done"></i><i class="tk tk--done"></i><i class="tk tk--done"></i
+              ><i class="tk tk--done"></i><i class="tk tk--rev"></i><i class="tk tk--cur"></i
+              ><i class="tk"></i><i class="tk"></i><i class="tk"></i></span
+            ><span class="sub num">48/88</span>
+          </button>
+
+          <button
+            type="button"
+            class="pill pill--warning jpill jpill--warning"
+            data-only="needs-you"
+            data-goto="v6--campaign?state=needs-you"
+            data-dsqa-part="campaign-pill"
+          >
+            <svg
+              class="ic"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 7v14" />
+              <path
+                d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+              /></svg
+            ><span class="num">Ch. 9/12</span
+            ><span class="ticks"
+              ><i class="tk tk--done"></i><i class="tk tk--done"></i><i class="tk tk--done"></i
+              ><i class="tk tk--done"></i><i class="tk tk--done"></i><i class="tk tk--done"></i
+              ><i class="tk tk--done"></i><i class="tk tk--rev"></i><i class="tk tk--cur"></i
+              ><i class="tk"></i><i class="tk"></i><i class="tk"></i></span
+            ><span class="sub num">4 for you</span>
+          </button>
+
+          <button
+            type="button"
+            class="pill pill--green jpill"
+            data-only="delivered"
+            data-goto="v6--campaign"
+            data-dsqa-part="campaign-pill"
+          >
+            <svg
+              class="ic"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M20 6 9 17l-5-5" /></svg
+            ><span class="num">Delivered</span
+            ><span class="ticks"
+              ><i class="tk tk--all"></i><i class="tk tk--all"></i><i class="tk tk--all"></i
+              ><i class="tk tk--all"></i><i class="tk tk--all"></i><i class="tk tk--all"></i
+              ><i class="tk tk--all"></i><i class="tk tk--all"></i><i class="tk tk--all"></i
+              ><i class="tk tk--all"></i><i class="tk tk--all"></i><i class="tk tk--all"></i></span
+            ><span class="sub num">88/88</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

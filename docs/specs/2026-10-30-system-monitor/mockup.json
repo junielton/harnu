@@ -1,0 +1,119 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-10-30",
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css",
+  "viewports": [1280, 900],
+  "targets": [
+    "src/renderer/src/components/SystemMonitor.vue",
+    "src/renderer/src/components/SystemMonitorRow.vue",
+    "src/renderer/src/stores/monitor.ts",
+    "src/renderer/src/components/system-monitor-format.ts",
+    "design.md"
+  ],
+  "screens": [
+    {
+      "id": "f--combinada",
+      "title": "F · Combinada (round 2)",
+      "status": "approved",
+      "approvedAt": "2026-10-30",
+      "states": ["default", "expandido", "tabela", "tabela-expandida", "hover", "heap-alerta"],
+      "targets": [
+        "src/renderer/src/components/SystemMonitor.vue",
+        "src/renderer/src/components/SystemMonitorRow.vue",
+        "src/renderer/src/stores/monitor.ts"
+      ],
+      "notes": "Round 2, from your picks: D's Harnu sidebar on the left (heap gauge with the 70/85% marks, process list, totals), A's KPI strip on top of the right side (heap moved to the sidebar, so 3 tiles), and the sessions as C's cards by default or A's table via a Cards / Table toggle (remembered per user)."
+    }
+  ],
+  "parts": [
+    {
+      "id": "monitor-head",
+      "variants": ["default"]
+    }
+  ],
+  "sampleData": "Harnu: main 360 MB (heap 3% / 78% in heap-alerta), renderer 355, GPU 212, network 78, utility 69. Sessions: harnu·main live 940 MB 11.8% (claude 612, node 184, rg 38, bash 21, own 85), portal·feat/checkout live 720 MB, web-api·fix/auth-refresh live 380 MB lru 12m, api-gateway·main live 410 MB hard-idle 38m sweepRank 1, example-web·main parked saved 290 MB, org/www·release/2.4 parked saved 310 MB.",
+  "flows": [
+    {
+      "id": "switch-view",
+      "title": "F — switch between cards and table",
+      "steps": [
+        {
+          "screen": "f--combinada",
+          "state": "default",
+          "via": "Table in the view toggle"
+        },
+        {
+          "screen": "f--combinada",
+          "state": "tabela",
+          "via": "Cards in the view toggle"
+        },
+        {
+          "screen": "f--combinada",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "expandir-tabela--f",
+      "title": "F — open a session's processes in the table",
+      "steps": [
+        {
+          "screen": "f--combinada",
+          "state": "tabela",
+          "via": "the harnu session's chevron"
+        },
+        {
+          "screen": "f--combinada",
+          "state": "tabela-expandida",
+          "via": "the chevron again"
+        },
+        {
+          "screen": "f--combinada",
+          "state": "tabela"
+        }
+      ]
+    },
+    {
+      "id": "expandir--f",
+      "title": "F — open and close a session's processes",
+      "steps": [
+        {
+          "screen": "f--combinada",
+          "state": "default",
+          "via": "the harnu session's chevron"
+        },
+        {
+          "screen": "f--combinada",
+          "state": "expandido",
+          "via": "the chevron again"
+        },
+        {
+          "screen": "f--combinada",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "expandir--f",
+      "title": "F — open and close a session's processes (cards)",
+      "steps": [
+        {
+          "screen": "f--combinada",
+          "state": "default",
+          "via": "the harnu card's chevron"
+        },
+        {
+          "screen": "f--combinada",
+          "state": "expandido",
+          "via": "the chevron again"
+        },
+        {
+          "screen": "f--combinada",
+          "state": "default"
+        }
+      ]
+    }
+  ]
+}

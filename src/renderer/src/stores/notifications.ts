@@ -10,6 +10,13 @@ export const NOTIFICATIONS_MAX_COUNT = 200
 export const NOTIFICATIONS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 /**
+ * Notice coalescing window (T599): a repeat of the same notice kind for the same
+ * unit within this long of the previous one folds into that row instead of adding
+ * a new one. Measured from the row's latest `ts`, so a steady drip keeps folding.
+ */
+export const NOTICE_COALESCE_WINDOW_MS = 10 * 60 * 1000
+
+/**
  * Governs grouping/filter/icon (T83 S3). `'agent'` (T116) is distinct from
  * `'session'` — the latter is a Harnu-authored notice ABOUT a session (e.g. a
  * hook edge); `'agent'` is a notice a session's own MCP `notify` call AUTHORED
@@ -79,6 +86,14 @@ export interface NotificationRecord {
   group?: string
   /** Per-subject rows for a grouped entry; absent on every pre-existing record. */
   items?: NotificationItem[]
+  /**
+   * The unit of work this notice is about (T599) — `step:<missionId>/<stepId>` or
+   * `card:<slug>`, see `lib/notice-unit.ts`. Two notices with the same `unit` and
+   * `notificationType` inside {@link NOTICE_COALESCE_WINDOW_MS} share one row.
+   */
+  unit?: string
+  /** How many notices this row stands for; absent (= 1) until one is folded in. */
+  count?: number
 }
 
 /** What a caller supplies to `notify()` — `id` is assigned by the store. A
@@ -133,6 +148,26 @@ export const useNotificationsStore = defineStore('notifications', () => {
    * group entry is simply gone, so the next call appends a fresh one.
    */
   function notify(entry: NewNotification): NotificationRecord {
+    // T599: fold a repeat notice for the same unit into its row. Only unit-tagged,
+    // group-less entries take part; a different unit or notice kind never folds.
+    if (entry.unit && !entry.group) {
+      const prior = records.value.find(
+        (r) =>
+          r.unit === entry.unit &&
+          !r.group &&
+          r.notificationType === entry.notificationType &&
+          Math.abs(entry.ts - r.ts) <= NOTICE_COALESCE_WINDOW_MS
+      )
+      if (prior) {
+        const folded: NotificationRecord = {
+          ...prior,
+          ts: Math.max(prior.ts, entry.ts),
+          count: (prior.count ?? 1) + 1
+        }
+        records.value = prune(records.value.map((r) => (r === prior ? folded : r)))
+        return folded
+      }
+    }
     const existing = entry.group ? records.value.find((r) => r.group === entry.group) : undefined
     if (existing) {
       const updated: NotificationRecord = {

@@ -2,9 +2,9 @@
 
 Settings is organized into tabs. Most are covered in depth on their own pages — this page is the map, plus the tabs that don't have a home elsewhere.
 
-- **General** — app-wide preferences that don't fit a more specific tab.
+- **General** — app-wide preferences that don't fit a more specific tab, including the [editor](#editor) the Topbar's open button launches.
 - **Keyboard Shortcuts** — covered below.
-- **Appearance** — pick a theme. Harnu ships 13: nine dark (including Tokyo Night, Dracula, Catppuccin Mocha, One Dark, GitHub Dark, Gruvbox Dark, Nord) and four light (Light, Catppuccin Latte, GitHub Light, Gruvbox Light), plus a Monospace theme. Your choice is remembered across restarts. A theme installed via an [extension](extensions.md) shows up in the same grid, marked with a small puzzle-piece badge.
+- **Appearance** — pick a theme and the [split layout](sessions.md#splits). Harnu ships 13 themes: nine dark (including Tokyo Night, Dracula, Catppuccin Mocha, One Dark, GitHub Dark, Gruvbox Dark, Nord) and four light (Light, Catppuccin Latte, GitHub Light, Gruvbox Light), plus a Monospace theme. Your choice is remembered across restarts. A theme installed via an [extension](extensions.md) shows up in the same grid, marked with a small puzzle-piece badge. Under **Layout**, **Split layout** decides whether your helper panes sit beside the session or under it: **Auto** (the default), **Side by side** or **Stacked**. The choice is saved in `settings.json`. Right below it, **Floating panels** is an opt-in look for the whole window: see [Floating panels](#floating-panels).
 - **Startup** — your global [Claude Boot](claude-boot.md) defaults (model, effort, flags) applied to every session unless a folder or session overrides them.
 - **Claude config** — a focused editor for your global `~/.claude/settings.json`: the handful of settings Harnu understands (model, cleanup period, permission defaults, and a few others) get real form controls with Set/Default indicators; anything else already in the file is still shown, just read-only, so an unfamiliar or newer setting is never silently dropped or overwritten.
 - **Endpoints** — the registry of custom Claude-compatible endpoints, covered in [Claude Boot](claude-boot.md#custom-endpoints).
@@ -21,6 +21,21 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 - **Containers** — the inspector's own background scan, its idle clock and the new-zombie notification behind the [Containers](containers.md#settings) view.
 - **Claude Code** — renders Claude Code's own official changelog (fetched from Anthropic, separate from Harnu's own Changelog tab above). Claude's live service status (incidents, scheduled maintenance) is shown in the footer popover alongside your [usage](usage.md#the-footer-popover), not here.
 
+## Floating panels
+
+**Settings → Appearance → Layout → Floating panels** turns each pane into its own rounded island on a darker background, with an even 6px gap between islands and around the window edge. It is **off by default**, and with it off Harnu looks exactly as it always has.
+
+With it on:
+
+- The sidebar toolbar, the Topbar and the Fleet rail header line up as one row of three bars; everything below them starts at the same height.
+- The sidebar is a stack of islands: toolbar, **Return here** (when something is waiting), the folder list, and a **dock** at the bottom with Add folder and Settings. The Fleet rail is the same idea: header, the fleet list, **Needs you** (while something is pending) and **Would-have**.
+- Every helper pane is its own island, and the session area is one too.
+- Pane dividers draw no line at rest. The gap itself is the drag handle: hover it and a short grip appears, then drag to resize or double-click to reset, exactly as before.
+- The footer at the bottom stays a flat full-width bar; it is not an island.
+- Minimizing the Fleet rail, collapsing the sidebar or closing the helper stack never closes the gap.
+
+The switch takes effect immediately and is remembered across restarts; the setting is saved in `settings.json` as `floatingPanels`. Every theme has a darker background to float on; on the light themes it is a soft grey picked by hand, not a heavy dark slab.
+
 ## Harnu mod
 
 **Settings → General → Integrations → Harnu mod** is the switch for the small mod Harnu loads into the `claude` sessions it starts. It runs unsandboxed inside the `claude` process and talks only to Harnu on this machine; today it only observes, and Harnu still reads every fact the old way (hooks, the transcript, polling) as well.
@@ -33,6 +48,19 @@ Under the switch you may see the folder the mod is loaded from (with a **Reveal 
 **The statusLine switch.** The mod can supply a session's cost, context and plan limits, but not eight figures: lines added and removed, thinking on or off, output style, the pull request, the model's display name, the session duration and the effort level. **Settings → General → Session telemetry (statusLine)** is still where those come from, so turning it off blanks them. The details are under [Where the figures come from](usage.md#where-the-figures-come-from).
 
 The per-session state is in the hover preview and in the [System Monitor](system-monitor.md#what-you-see). If a session says `legacy` and you want to know why, see [Troubleshooting](troubleshooting.md#harnu-mod-legacy).
+
+## Editor
+
+The Topbar has an **Open in {editor}** button (and the folder's page has the same action) that opens the selected folder in your editor. By default it launches VS Code with the `code` command. **Settings → General → Editor** changes that:
+
+- **Presets** — VS Code, Cursor, Zed, Sublime Text, JetBrains (IntelliJ IDEA or WebStorm, whichever launcher Harnu finds), Neovim and Helix. The button shows that editor's own icon, and its tooltip reads "Open in Cursor", "Open in Neovim" and so on. The row's hint names the command a preset runs (`cursor`, `nvim`, …).
+- **GUI editors** (VS Code, Cursor, Zed, Sublime Text, JetBrains) start as a separate process, so they keep running when you close Harnu.
+- **Terminal editors** (Neovim, Helix) open inside Harnu: a terminal pane in the selected session's split, running the editor in that folder. With only a folder selected and no session, it opens as a terminal for that folder instead. Quit the editor as you normally would; the pane stays open until you close it.
+- **Custom…** — type a command with a `{path}` placeholder, for example `nvim {path}` or `code --reuse-window {path}`. Harnu splits it into arguments itself, with no shell involved: quotes group words, `{path}` becomes the folder as exactly one argument (so spaces or symbols in a folder name are safe), and a command without `{path}` gets the folder added at the end. `|`, `;`, `&&` and `$VARIABLE` have no special meaning. Switch on **Runs in a terminal** for a terminal editor; leave it off for a GUI one. A custom editor uses the generic `<>` icon and reads "Open in editor".
+
+Harnu only looks for the command on your `PATH` (plus the usual install locations on macOS); it does not scan for installed editors. If it can't find the command, a toast names it and points back to this setting. For VS Code, install the shell command from VS Code's Command Palette ("Shell Command: Install 'code' command in PATH").
+
+The choice is saved in `settings.json` and applies on the next click, no restart. The action also has a [shortcut](sessions.md#customizing-shortcuts) you can bind: `folder.openInEditor`.
 
 ## Keyboard Shortcuts
 
@@ -62,6 +90,10 @@ The **General** tab has a SIDEBAR section that controls how the folder/session l
 - **Show sessions within** — hide sessions older than a window (All / 24h / 48h / 7d) inside each folder; the selected and live sessions are never hidden.
 - **Active-elsewhere window** — how recently a non-pinned folder must have been active to show up in the "Active elsewhere" zone.
 
+## Quitting
+
+The **General** tab has a QUITTING section with one switch, **Confirm before quitting while agents are working** (on by default). While it is on, closing the window or quitting (Ctrl+Q, the app menu) shows a native prompt if any session is actively working at that moment, so you don't kill a turn by accident. See [Quitting Harnu](sessions.md#quitting-harnu) for what the prompt shows. The prompt's own **Don't ask again** checkbox turns this switch off; come back here to turn it on again. The choice survives restarts.
+
 ## Daily budget
 
 **Settings → Usage history** has a **Daily budget** group that drives the `Today` row in the footer's usage popover — what that row actually means is explained under [Usage](usage.md#today--your-daily-budget).
@@ -71,6 +103,36 @@ The **General** tab has a SIDEBAR section that controls how the folder/session l
 - Below the buttons, a live readout — `5 working days → today's budget 12%` — pairs how many days you have ticked with what today's budget works out to, so the effect of ticking Sunday is visible without opening the footer. It previews the split as it stands right now, rather than the start-of-day figure the popover freezes, so once you have spent something today it reads a little lower than the popover. The popover is the number of record.
 
 The alert lives in the other tab: **Settings → General**, in the **OS notifications** group, as **Daily budget alerts**. It is **on by default** and fires at most twice a day — once when you cross 80% of the day's budget, while it is still correctable, and once when you cross 100%. It does not repeat: the crossing is remembered across restarts, so relaunching Harnu mid-afternoon will not replay an alert you already saw, and a new day re-arms both steps. Turning the master **OS notifications** switch off silences it along with everything else.
+
+## GitHub API budget
+
+Harnu asks GitHub (through your `gh` login) about pull requests, CI and reviews, and every one of those requests spends **your** quota: 5,000 REST requests and 5,000 GraphQL points an hour, shared with every other session, script and monitor using the same account. Harnu keeps an eye on that budget so it never spends you dry.
+
+- **It reads the budget once a minute** with `gh api rate_limit`, which GitHub does not charge for. If `gh` is missing or not signed in, Harnu treats the budget as unavailable and only looks again every ten minutes. It follows whichever of the two buckets (REST or GraphQL) has the smaller share left.
+- **It counts its own calls** per feature — missions, PR Stack, Review, Cleanup, the mission steward and the merge batch — so it can tell what it spent from what the rest of your account spent. "Outside Harnu" is GitHub's figure minus Harnu's count, so treat it as an estimate.
+- **Near the limit it slows down.** When the tighter bucket drops to **15 %** or less (10, 15 or 25 %), Harnu keeps mission PR and main-CI results for five minutes instead of one and pauses PR Stack's background refresh (opening the canvas, or pressing Refresh, still reads GitHub). At zero it stops reading GitHub altogether, shows the last values it knew, and starts again by itself after the reset. If `gh` ever prints "rate limit exceeded", Harnu checks the budget at once: when a bucket really is empty it stops as above, but when you still have calls left (GitHub's separate "secondary" limit, which can hit with budget to spare) it only pauses its reads for a minute, or for the wait GitHub asks for, and carries on.
+- **Your own actions are never held back.** Posting a review, merging, and marking a file viewed always go through.
+- **Delivered missions are not checked on GitHub.** A mission that has been delivered keeps the pull-request and CI state it last had. A `Check delivered missions` switch (off by default) turns the checking back on.
+
+### The footer pill
+
+A **GitHub** pill sits in the footer, left of the Cleanup pill, and shows how many calls are left in the tighter bucket (`4,112 left`). It turns amber while Harnu is slowing down (`640 left`) and red once the limit is spent (`0 left · 12m`, with the time to the reset). It is hidden while the budget is unavailable — `gh` missing, not signed in, or no answer yet.
+
+Click it for the popover: the **REST** and **GraphQL** meters (they turn accent from 80 % used and red from 95 %, like the Plan usage meters), and **Who spent it · this hour** — a split bar of Harnu against everything outside Harnu, and one row per Harnu feature. While Harnu is slowing down the Missions row says _slowed_; once the limit is spent every Harnu row says _paused_, and a note explains what Harnu changed and when it resumes. **Details ↗** opens the Settings pane. When GitHub itself slows Harnu down while your buckets still have calls (its secondary limit), the note says _GitHub is slowing requests. Harnu resumes at 14:00._ and the pill keeps the real number of calls left — it is not the same as running out. Esc or a click outside closes the popover.
+
+### Settings → GitHub API
+
+The tab shows the whole picture and holds the slow-down rules:
+
+- **Tiles** — REST and GraphQL left (and when each resets), and the **pace** over the last 10 minutes: calls per minute, whether the budget lasts past the reset or runs out first, and how that splits between Harnu and everything else.
+- **Last 60 minutes** — twelve 5-minute columns for the tighter bucket: Harnu, Harnu while slowed, and outside Harnu.
+- **Who spends it · this hour** — each Harnu feature with its calls, its share and how often it checks (`1 min`, `on open`, `on event`, …). While Harnu is slowing down the old cadence is struck through next to the new one; delivered missions show as _not checked_.
+- **Check delivered missions** — off by default.
+- **Slow down below** — 10, 15 or 25 % of the tighter bucket.
+- **Pause PR Stack auto-refresh** — on by default; the canvas then refreshes when you open it, not in the background, while Harnu is slowing down.
+- **Tell me when it happens** — on by default: one toast when Harnu starts slowing down and one system notification when the limit is reached, each at most once per GitHub window.
+
+Every control saves as you change it (to `github-budget-prefs.json` in Harnu's data folder; a missing or damaged file just means the defaults). The numbers for Harnu's own share are counts of its calls, and "Outside Harnu" is GitHub's total minus that, so it is an estimate. When the limit is spent, PR Stack says _GitHub API limit reached, resets at 14:00_ and keeps showing the last read.
 
 ## Cleanup
 

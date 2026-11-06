@@ -8,7 +8,8 @@ import {
   useSettingsStore,
   MIN_TERMINAL_FONT_SIZE,
   MAX_TERMINAL_FONT_SIZE,
-  UI_ZOOM_STEPS
+  UI_ZOOM_STEPS,
+  type ExpandHides
 } from '../stores/settings'
 import { useSessionsStore } from '../stores/sessions'
 import { useVoiceStore } from '../stores/voice'
@@ -36,9 +37,17 @@ import HibernationPolicyPane from './HibernationPolicyPane.vue'
 import CleanupSettingsPane from './CleanupSettingsPane.vue'
 import ContainersSettingsPane from './ContainersSettingsPane.vue'
 import PrStackSettingsPane from './PrStackSettingsPane.vue'
+import GithubBudgetPane from './GithubBudgetPane.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import type { SplitLayoutSetting } from '../lib/split-orientation'
 import SettingHint from './ui/SettingHint.vue'
+import {
+  CUSTOM_EDITOR_ID,
+  EDITOR_PRESETS,
+  effectiveEditorSetting,
+  findPreset
+} from '../../../main/editor-launch'
 import Button from './ui/Button.vue'
 import { useCompanionStore } from '../stores/companion'
 import { settingsStatusKey } from '../lib/companion-view'
@@ -65,6 +74,10 @@ const companion = useCompanionStore()
 // T389 P1W4: the Harnu mod block (set-companion). The store mirrors main; the switch is IPC only.
 const companionEnabled = computed(() => companion.status?.enabled ?? true)
 const companionStagedDir = computed(() => companion.status?.stagedDir ?? null)
+// T585: the report-card feature switch. It only matters while the mod itself is on.
+const companionReportCards = computed(() => companion.status?.reportCards ?? true)
+// T589: the quiet-rows feature switch, next to it.
+const companionQuietRows = computed(() => companion.status?.quietRows ?? true)
 const companionStatusKey = computed(() => settingsStatusKey(companion.status))
 // T239: the voice master switch shown under Sound. The full pane is its own tab.
 const voiceStore = useVoiceStore()
@@ -307,6 +320,26 @@ const tabs: Array<{ id: SettingsTabId; labelKey: string; keywords: string[] }> =
     keywords: ['usage', 'uso', 'history', 'historico', 'cost', 'custo', 'token', 'plan', 'plano']
   },
   {
+    id: 'githubApi',
+    labelKey: 'settings.tabs.githubApi',
+    keywords: [
+      'github',
+      'gh',
+      'api',
+      'rate limit',
+      'limite',
+      'budget',
+      'orcamento',
+      'quota',
+      'throttle',
+      'slow down',
+      'graphql',
+      'rest',
+      'notify',
+      'notificar'
+    ]
+  },
+  {
     id: 'changelog',
     labelKey: 'settings.tabs.changelog',
     keywords: ['changelog', 'release', 'changes', 'mudancas', 'updates']
@@ -413,6 +446,60 @@ const settingsIndex: Array<{
     anchor: 'set-fontSize'
   },
   {
+    tabId: 'appearance',
+    labelKey: 'settings.appearance.splitLayout.label',
+    keywords: [
+      'split',
+      'layout',
+      'stacked',
+      'side by side',
+      'orientation',
+      'helper',
+      'divisão',
+      'divisao',
+      'empilhado',
+      'lado a lado',
+      'orientação'
+    ],
+    anchor: 'set-splitLayout'
+  },
+  {
+    tabId: 'appearance',
+    labelKey: 'settings.appearance.floatingPanels.label',
+    keywords: [
+      'floating',
+      'panels',
+      'islands',
+      'layout',
+      'gap',
+      'canvas',
+      'flutuante',
+      'painéis',
+      'paineis',
+      'ilhas'
+    ],
+    anchor: 'set-floatingPanels'
+  },
+  {
+    tabId: 'appearance',
+    labelKey: 'settings.appearance.expandHides.label',
+    keywords: [
+      'expand',
+      'window',
+      'hides',
+      'everything',
+      'session',
+      'full',
+      'expandir',
+      'janela',
+      'esconde',
+      'tudo',
+      'sessão',
+      'sessao'
+    ],
+    anchor: 'set-expandHides'
+  },
+  {
     tabId: 'general',
     labelKey: 'settings.uiScale.label',
     keywords: [
@@ -429,6 +516,30 @@ const settingsIndex: Array<{
       'ícone'
     ],
     anchor: 'set-uiZoom'
+  },
+  {
+    tabId: 'general',
+    labelKey: 'settings.editor.label',
+    keywords: [
+      'editor',
+      'ide',
+      'vscode',
+      'vs code',
+      'code',
+      'cursor',
+      'zed',
+      'sublime',
+      'jetbrains',
+      'intellij',
+      'webstorm',
+      'neovim',
+      'nvim',
+      'vim',
+      'helix',
+      'editor de código',
+      'abrir'
+    ],
+    anchor: 'set-editor'
   },
   {
     tabId: 'general',
@@ -784,6 +895,29 @@ function toggleAutoname(): void {
   }
 }
 
+// Quit guard (T579): "confirm before quitting while agents are working". Persisted main-side
+// (`<userData>/quit-guard-prefs.json`) because the main process decides at quit time, possibly
+// with a hung renderer. Default ON; the dialog's "Don't ask again" flips this off.
+const quitConfirmEnabled = ref(true)
+async function loadQuitConfirm(): Promise<void> {
+  try {
+    quitConfirmEnabled.value = (await window.api.quitGuardPrefs()).confirmOnQuit
+  } catch {
+    /* keep the default (ask) */
+  }
+}
+async function toggleQuitConfirm(): Promise<void> {
+  const next = !quitConfirmEnabled.value
+  quitConfirmEnabled.value = next
+  try {
+    quitConfirmEnabled.value = (
+      await window.api.quitGuardSetPrefs({ version: 1, confirmOnQuit: next })
+    ).confirmOnQuit
+  } catch {
+    quitConfirmEnabled.value = !next
+  }
+}
+
 // Interface language (T68). `'system'` = follow the OS/`navigator` language (no
 // stored override); the two locales pin the choice. Applied live via `setLocale`,
 // which persists (or clears) `om2tab.locale`. Seeded from the persisted override.
@@ -830,6 +964,44 @@ function zoomIn(): void {
   const next = UI_ZOOM_STEPS.find((s) => s > settings.uiZoom)
   if (next === undefined) return
   settings.setUiZoom(next)
+}
+
+// Editor picker (T581): which editor the Topbar "Open in {editor}" button
+// launches. A preset, or Custom with a command template + a "runs in a terminal"
+// switch. The value lives in `settings.json` through the settings store.
+const editorSetting = computed(() => effectiveEditorSetting(settings.editor))
+const editorIsCustom = computed(() => editorSetting.value.id === CUSTOM_EDITOR_ID)
+const editorPreset = computed(() => findPreset(editorSetting.value.id))
+const editorPresetCommand = computed(() => editorPreset.value?.candidates.default[0] ?? '')
+
+function onEditorSelect(e: Event): void {
+  const id = (e.target as HTMLSelectElement).value
+  if (id === CUSTOM_EDITOR_ID) {
+    // Keep what was typed before if the user flips away and back.
+    settings.setEditor({
+      id: CUSTOM_EDITOR_ID,
+      customCommand: settings.editor.customCommand ?? '',
+      customTerminal: settings.editor.customTerminal === true
+    })
+  } else {
+    settings.setEditor({ id })
+  }
+}
+
+function onEditorCommandInput(e: Event): void {
+  settings.setEditor({
+    id: CUSTOM_EDITOR_ID,
+    customCommand: (e.target as HTMLInputElement).value,
+    customTerminal: settings.editor.customTerminal === true
+  })
+}
+
+function onEditorTerminalToggle(on: boolean): void {
+  settings.setEditor({
+    id: CUSTOM_EDITOR_ID,
+    customCommand: settings.editor.customCommand ?? '',
+    customTerminal: on
+  })
 }
 
 function close(): void {
@@ -895,6 +1067,7 @@ watch(isOpen, (open) => {
     void loadResponderStatus()
     void loadRampProjects()
     loadAutonameEnabled()
+    void loadQuitConfirm()
     void boot.init()
     window.addEventListener('keydown', onKeydown, true)
   } else {
@@ -1098,6 +1271,7 @@ onBeforeUnmount(() => {
             <CleanupSettingsPane v-else-if="activeTab === 'cleanup'" />
             <ContainersSettingsPane v-else-if="activeTab === 'containers'" @navigate="goToTab" />
             <PrStackSettingsPane v-else-if="activeTab === 'prStack'" />
+            <GithubBudgetPane v-else-if="activeTab === 'githubApi'" />
             <template v-else-if="activeTab === 'appearance'">
               <!-- Appearance — theme picker (design §9, themes.css) -->
               <section style="margin-bottom: 16px">
@@ -1189,6 +1363,98 @@ onBeforeUnmount(() => {
                       />
                     </div>
                   </button>
+                </div>
+              </section>
+
+              <!-- Layout — split orientation of the session area and the helper stack (T627) -->
+              <section style="margin-bottom: 16px">
+                <div
+                  class="text-text-3"
+                  style="
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    margin-bottom: 8px;
+                  "
+                >
+                  {{ $t('settings.appearance.layoutEyebrow') }}
+                </div>
+                <div
+                  id="set-splitLayout"
+                  class="flex items-start justify-between"
+                  :class="highlightedAnchor === 'set-splitLayout' ? 'anim-setting-flash' : ''"
+                  style="gap: 12px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.appearance.splitLayout.label') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.appearance.splitLayout.hint') }}</SettingHint>
+                  </div>
+                  <SegmentedControl
+                    :model-value="settings.splitLayout"
+                    :options="[
+                      { value: 'auto', label: $t('settings.appearance.splitLayout.auto') },
+                      {
+                        value: 'side-by-side',
+                        label: $t('settings.appearance.splitLayout.sideBySide')
+                      },
+                      { value: 'stacked', label: $t('settings.appearance.splitLayout.stacked') }
+                    ]"
+                    size="sm"
+                    :aria-label="$t('settings.appearance.splitLayout.label')"
+                    @update:model-value="settings.setSplitLayout($event as SplitLayoutSetting)"
+                  />
+                </div>
+                <!-- T626: opt-in floating islands layout (design.md §6 "Floating panels layout"). -->
+                <div
+                  id="set-floatingPanels"
+                  class="flex items-start justify-between"
+                  :class="highlightedAnchor === 'set-floatingPanels' ? 'anim-setting-flash' : ''"
+                  style="gap: 12px; margin-top: 14px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.appearance.floatingPanels.label') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.appearance.floatingPanels.hint') }}</SettingHint>
+                  </div>
+                  <ToggleSwitch
+                    :model-value="settings.floatingPanels"
+                    :aria-label="$t('settings.appearance.floatingPanels.label')"
+                    @update:model-value="settings.setFloatingPanels($event)"
+                  />
+                </div>
+                <!-- T628: what expanding a helper pane to the window hides (design.md §6 "Expanding a pane to the window"). -->
+                <div
+                  id="set-expandHides"
+                  class="flex items-start justify-between"
+                  :class="highlightedAnchor === 'set-expandHides' ? 'anim-setting-flash' : ''"
+                  style="gap: 12px; margin-top: 14px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.appearance.expandHides.label') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.appearance.expandHides.hint') }}</SettingHint>
+                  </div>
+                  <SegmentedControl
+                    :model-value="settings.expandHides"
+                    :options="[
+                      {
+                        value: 'everything',
+                        label: $t('settings.appearance.expandHides.everything')
+                      },
+                      {
+                        value: 'session-only',
+                        label: $t('settings.appearance.expandHides.sessionOnly')
+                      }
+                    ]"
+                    size="sm"
+                    :aria-label="$t('settings.appearance.expandHides.label')"
+                    @update:model-value="settings.setExpandHides($event as ExpandHides)"
+                  />
                 </div>
               </section>
             </template>
@@ -1374,6 +1640,39 @@ onBeforeUnmount(() => {
                 </div>
               </section>
 
+              <!-- Quitting — confirm before quitting while agents are working (T579) -->
+              <section style="margin-bottom: 16px">
+                <div
+                  class="text-text-3"
+                  style="
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    margin-bottom: 8px;
+                  "
+                >
+                  {{ $t('settings.quit.eyebrow') }}
+                </div>
+                <div
+                  id="set-quit-confirm"
+                  class="flex items-start justify-between"
+                  style="gap: 12px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('settings.quit.confirmLabel') }}
+                    </div>
+                    <SettingHint>{{ $t('settings.quit.confirmHint') }}</SettingHint>
+                  </div>
+                  <ToggleSwitch
+                    :model-value="quitConfirmEnabled"
+                    :aria-label="$t('settings.quit.confirmLabel')"
+                    @update:model-value="toggleQuitConfirm()"
+                  />
+                </div>
+              </section>
+
               <!-- Terminal -->
               <section style="margin-bottom: 16px">
                 <div
@@ -1499,6 +1798,102 @@ onBeforeUnmount(() => {
                 </div>
               </section>
 
+              <!-- Editor — which editor the Topbar "Open in {editor}" button launches (T581) -->
+              <section style="margin-bottom: 16px">
+                <div
+                  class="text-text-3"
+                  style="
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    margin-bottom: 8px;
+                  "
+                >
+                  {{ $t('settings.editor.eyebrow') }}
+                </div>
+                <div
+                  id="set-editor"
+                  :class="highlightedAnchor === 'set-editor' ? 'anim-setting-flash' : ''"
+                  style="display: flex; flex-direction: column; gap: 10px"
+                >
+                  <div class="flex items-center justify-between" style="gap: 12px">
+                    <div style="flex: 1; min-width: 0">
+                      <div class="text-text-2" style="font-size: 12px">
+                        {{ $t('settings.editor.label') }}
+                      </div>
+                      <SettingHint v-if="editorPreset">
+                        {{
+                          editorPreset.mode === 'terminal'
+                            ? $t('settings.editor.terminalHint', { command: editorPresetCommand })
+                            : $t('settings.editor.presetHint', { command: editorPresetCommand })
+                        }}
+                      </SettingHint>
+                    </div>
+                    <select
+                      class="shrink-0 border border-border-2 bg-surface text-text-2 outline-none focus:border-accent-line"
+                      style="
+                        height: 28px;
+                        border-radius: var(--radius-sm);
+                        padding: 0 8px;
+                        font-size: 12px;
+                      "
+                      :aria-label="$t('settings.editor.label')"
+                      :value="editorSetting.id"
+                      data-test="settings-editor-select"
+                      @change="onEditorSelect"
+                    >
+                      <option v-for="p in EDITOR_PRESETS" :key="p.id" :value="p.id">
+                        {{ p.name }}
+                      </option>
+                      <option :value="CUSTOM_EDITOR_ID">{{ $t('settings.editor.custom') }}</option>
+                    </select>
+                  </div>
+                  <template v-if="editorIsCustom">
+                    <div class="flex items-center justify-between" style="gap: 12px">
+                      <div style="flex: 1; min-width: 0">
+                        <div class="text-text-2" style="font-size: 12px">
+                          {{ $t('settings.editor.commandLabel') }}
+                        </div>
+                        <SettingHint>{{ $t('settings.editor.commandHint') }}</SettingHint>
+                      </div>
+                      <input
+                        type="text"
+                        spellcheck="false"
+                        autocomplete="off"
+                        class="shrink-0 border border-border bg-bg font-mono text-text outline-none focus:border-accent-line"
+                        style="
+                          width: 220px;
+                          height: 28px;
+                          border-radius: 5px;
+                          padding: 0 8px;
+                          font-size: 12px;
+                        "
+                        :aria-label="$t('settings.editor.commandLabel')"
+                        :placeholder="$t('settings.editor.commandPlaceholder')"
+                        :value="settings.editor.customCommand ?? ''"
+                        data-test="settings-editor-command"
+                        @input="onEditorCommandInput"
+                      />
+                    </div>
+                    <div class="flex items-center justify-between" style="gap: 12px">
+                      <div style="flex: 1; min-width: 0">
+                        <div class="text-text-2" style="font-size: 12px">
+                          {{ $t('settings.editor.terminalToggle') }}
+                        </div>
+                        <SettingHint>{{ $t('settings.editor.terminalToggleHint') }}</SettingHint>
+                      </div>
+                      <ToggleSwitch
+                        :model-value="editorSetting.customTerminal === true"
+                        :aria-label="$t('settings.editor.terminalToggle')"
+                        data-test="settings-editor-terminal"
+                        @update:model-value="onEditorTerminalToggle"
+                      />
+                    </div>
+                  </template>
+                </div>
+              </section>
+
               <!-- Integrations — Hook Bridge opt-out (session-state spec §7) -->
               <section style="margin-bottom: 16px">
                 <div
@@ -1615,7 +2010,56 @@ onBeforeUnmount(() => {
                       {{ $t(companionStatusKey) }}
                     </div>
                     <!-- Later waves mount their own feature switches here; the Mods tab moves the block. -->
-                    <div id="set-companion-keys" />
+                    <div id="set-companion-keys">
+                      <!-- T585: the report card (design §6 → Settings row). -->
+                      <div
+                        id="set-companion-report-cards"
+                        class="flex items-start justify-between"
+                        style="gap: 12px; margin-top: 10px"
+                      >
+                        <div style="flex: 1; min-width: 0">
+                          <div class="text-text-2" style="font-size: 12px">
+                            {{ $t('harnuMod.settings.reportCards.label') }}
+                          </div>
+                          <SettingHint>{{
+                            $t('harnuMod.settings.reportCards.description')
+                          }}</SettingHint>
+                          <SettingHint v-if="!companionEnabled">{{
+                            $t('harnuMod.external.needsMod')
+                          }}</SettingHint>
+                        </div>
+                        <ToggleSwitch
+                          :model-value="companionReportCards"
+                          :disabled="!companionEnabled"
+                          :aria-label="$t('harnuMod.settings.reportCards.label')"
+                          @update:model-value="companion.setReportCards($event)"
+                        />
+                      </div>
+                      <!-- T589: the quiet rows (design §6 → Settings row, next to the report card). -->
+                      <div
+                        id="set-companion-quiet-rows"
+                        class="flex items-start justify-between"
+                        style="gap: 12px; margin-top: 10px"
+                      >
+                        <div style="flex: 1; min-width: 0">
+                          <div class="text-text-2" style="font-size: 12px">
+                            {{ $t('harnuMod.settings.quietRows.label') }}
+                          </div>
+                          <SettingHint>{{
+                            $t('harnuMod.settings.quietRows.description')
+                          }}</SettingHint>
+                          <SettingHint v-if="!companionEnabled">{{
+                            $t('harnuMod.external.needsMod')
+                          }}</SettingHint>
+                        </div>
+                        <ToggleSwitch
+                          :model-value="companionQuietRows"
+                          :disabled="!companionEnabled"
+                          :aria-label="$t('harnuMod.settings.quietRows.label')"
+                          @update:model-value="companion.setQuietRows($event)"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <ToggleSwitch
                     :model-value="companionEnabled"

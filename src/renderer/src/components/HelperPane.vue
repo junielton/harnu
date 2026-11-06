@@ -29,6 +29,8 @@ interface LiveHelper {
    * keeps streaming into the xterm buffer while the pane is hidden. */
   ioDisposers: Array<() => void>
   resizeObserver: ResizeObserver | null
+  /** T628: cancels the observer's pending trailing refit (see `createReflowGate`). */
+  reflowCancel?: () => void
   focusCleanup: (() => void) | null
 }
 
@@ -70,6 +72,7 @@ import { ImageAddon } from '@xterm/addon-image'
 import {
   Bot,
   ChevronRight,
+  Expand,
   GitFork,
   Maximize2,
   Minimize2,
@@ -80,6 +83,7 @@ import {
   type LucideIcon
 } from 'lucide-vue-next'
 import {
+  focusRegion,
   registerFocusedPane,
   unregisterFocusedPane,
   useFocusRegion
@@ -92,6 +96,7 @@ import { adoptTerminal } from '../lib/adopt-pty'
 import { releaseHelperPty } from '../lib/helper-pty-release'
 import { paneRegistry, type HelperPtyKind } from '../lib/pane-registry'
 import { useThemeStore } from '../stores/theme'
+import { REFLOW_DELAY_MS, createReflowGate, useLayoutStore } from '../stores/layout'
 import { ensureTerminalFontLoaded, measureCells, measureXtermCells } from '../lib/terminalMetrics'
 import { themeFromCss } from '../lib/terminalTheme'
 import { installTerminalKeymap } from '../lib/terminalKeymap'
@@ -146,6 +151,7 @@ const ui = useUiStore()
 const keybindings = useKeybindingsStore()
 const settings = useSettingsStore()
 const helpers = useHelpersStore()
+const layout = useLayoutStore()
 const theme = useThemeStore()
 const hostRef = useTemplateRef<HTMLDivElement>('host')
 const rootRef = useTemplateRef<HTMLDivElement>('root')
@@ -180,6 +186,21 @@ function openTerminalLink(_event: MouseEvent, uri: string): void {
  */
 function paneKindToPtyKind(pane: AnyHelperPane): HelperPtyKind {
   return paneRegistry[pane.type]?.ptyKind ?? 'shell'
+}
+
+/**
+ * T581: the program a `shell` pane runs instead of the user's shell — a terminal
+ * editor opened from "Open in {editor}". Read off the pane's `payload` (plain
+ * strings, so it clones across IPC). Absent for every ordinary shell.
+ */
+function paneShellCommand(pane: AnyHelperPane): { cmd: string; args: string[] } | undefined {
+  if (pane.type !== 'shell') return undefined
+  const payload = (pane as { payload?: { cmd?: unknown; args?: unknown } }).payload
+  if (!payload || typeof payload.cmd !== 'string' || payload.cmd === '') return undefined
+  const args = Array.isArray(payload.args)
+    ? payload.args.filter((a): a is string => typeof a === 'string')
+    : []
+  return { cmd: payload.cmd, args }
 }
 
 function paneClaudeSessionId(pane: AnyHelperPane): string | undefined {
@@ -233,18 +254,34 @@ function installFocusListeners(live: LiveHelper, paneId: string): () => void {
  * FitAddon — its `parentNode.clientWidth` bug (findings/04 §5) makes it
  * unreliable in nested flex columns like the helper stack.
  */
-function attachResizeObserver(live: LiveHelper, host: HTMLElement): void {
+function attachResizeObserver(live: LiveHelper, host: HTMLElement, paneId: string): void {
   if (live.resizeObserver) {
     live.resizeObserver.disconnect()
     live.resizeObserver = null
   }
-  const ro = new ResizeObserver(() => {
+  live.reflowCancel?.()
+  const fit = (): void => {
+    // T628: a pane collapsed away by another pane's expanded view keeps its grid (the host has no
+    // room, so measuring it would shrink the PTY to nothing); it refits when it is shown again.
+    const expanded = helpers.expandedPaneIdForCurrentWorktree
+    if (expanded && expanded !== paneId) return
     const fs = settings.terminalFontSize
     const next = measureXtermCells(host, fs) ?? measureCells(host, undefined, fs)
     if (next.cols === live.term.cols && next.rows === live.term.rows) return
     live.term.resize(next.cols, next.rows)
     window.api.ptyResize(live.ptyId, next.cols, next.rows)
+  }
+  // T628: during an animated layout change the grid refits once, after the last frame, instead of
+  // on every frame; outside one (a divider drag, a window resize) it follows the host live.
+  const gate = createReflowGate({
+    isMotion: () => layout.layoutMotion,
+    fit,
+    delayMs: REFLOW_DELAY_MS,
+    setTimer: (cb, ms) => setTimeout(cb, ms),
+    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
   })
+  live.reflowCancel = gate.cancel
+  const ro = new ResizeObserver(() => gate.observe())
   ro.observe(host)
   live.resizeObserver = ro
 }
@@ -267,7 +304,7 @@ function attachLiveHelper(live: LiveHelper, host: HTMLElement, paneId: string): 
     live.term.resize(next.cols, next.rows)
     window.api.ptyResize(live.ptyId, next.cols, next.rows)
   }
-  attachResizeObserver(live, host)
+  attachResizeObserver(live, host, paneId)
   if (live.focusCleanup) {
     live.focusCleanup()
     live.focusCleanup = null
@@ -297,6 +334,7 @@ function attachLiveHelper(live: LiveHelper, host: HTMLElement, paneId: string): 
  * PTY keeps streaming into the xterm buffer in the background (issue #10).
  */
 function detachLiveHelper(live: LiveHelper, paneId: string): void {
+  live.reflowCancel?.()
   if (live.resizeObserver) {
     live.resizeObserver.disconnect()
     live.resizeObserver = null
@@ -406,6 +444,7 @@ async function createLiveHelper(
 
   const kind = paneKindToPtyKind(props.pane)
   const claudeSessionId = paneClaudeSessionId(props.pane)
+  const shellCommand = paneShellCommand(props.pane)
 
   // T474: an agent terminal's PTY already exists (main spawned it at `spawn_terminal`), so the
   // pane adopts it instead of creating one — a second PTY here would orphan the first.
@@ -421,6 +460,7 @@ async function createLiveHelper(
           cols: term.cols,
           rows: term.rows,
           claudeSessionId,
+          ...(shellCommand ? { cmd: shellCommand.cmd, args: shellCommand.args } : {}),
           // T245: read from the REGISTRY, not from a `type === 'review-companion'`
           // literal here — the pane type is what knows it is read-only, and a
           // future read-only type must not have to remember this call site.
@@ -475,7 +515,7 @@ async function createLiveHelper(
     if (agentTerminal.exited.snapshot) term.write(agentTerminal.exited.snapshot)
     term.write(`\r\n\x1b[2m[${i18n('helperPane.processExited')}]\x1b[0m\r\n`)
     liveHelpers.set(paneId, live)
-    attachResizeObserver(live, host)
+    attachResizeObserver(live, host, paneId)
     live.focusCleanup = installFocusListeners(live, paneId)
     return live
   }
@@ -518,7 +558,7 @@ async function createLiveHelper(
   })
 
   liveHelpers.set(paneId, live)
-  attachResizeObserver(live, host)
+  attachResizeObserver(live, host, paneId)
   live.focusCleanup = installFocusListeners(live, paneId)
   term.focus()
   return live
@@ -657,6 +697,14 @@ function onClose(): void {
 const isMaximized = computed(() => helpers.maximizedPaneId(props.worktreePath) === props.pane.id)
 function onToggleMaximize(): void {
   helpers.toggleMaximizePane(props.worktreePath, props.pane.id)
+}
+
+/** T628: whether THIS pane is expanded to the window; its button toggles that. */
+const isExpanded = computed(() => helpers.expandedPaneId(props.worktreePath) === props.pane.id)
+function onToggleExpand(): void {
+  helpers.toggleExpandPane(props.worktreePath, props.pane.id)
+  // The button held focus; the pane the operator is now working in should have it.
+  void nextTick(() => void focusRegion(props.pane.id))
 }
 
 // ---- File drop → path injection (file-explorer Cluster B) ----
@@ -903,6 +951,24 @@ function onPromote(): void {
           :exited="!!agentTerminalPane?.exited"
         />
       </template>
+      <button
+        class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
+        :class="isExpanded ? 'text-accent' : 'text-text-3'"
+        style="width: 18px; height: 18px"
+        data-test="pane-expand"
+        :title="
+          keybindings.withChord(
+            isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand'),
+            'pane.expandToWindow'
+          )
+        "
+        :aria-label="isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand')"
+        :aria-pressed="isExpanded"
+        @mousedown.stop
+        @click="onToggleExpand"
+      >
+        <Expand :size="12" :stroke-width="1.5" />
+      </button>
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"

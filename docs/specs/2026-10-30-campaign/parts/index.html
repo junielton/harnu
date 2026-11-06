@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>parts: mission-campaign</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        display: grid;
+        gap: 32px;
+      }
+      h2 {
+        font:
+          600 13px/1 system-ui,
+          sans-serif;
+        opacity: 0.6;
+        margin: 0 0 8px;
+      }
+      section > div {
+        max-width: 400px;
+      }
+    </style>
+  </head>
+  <body>
+    <section>
+      <h2>pill · accent</h2>
+      <div data-dsqa="part--pill--accent">
+        <mk-pill tone="accent" label="Ch. 9/12" sub="· Step 1/4"></mk-pill>
+      </div>
+    </section>
+    <section>
+      <h2>pill · warning</h2>
+      <div data-dsqa="part--pill--warning">
+        <mk-pill tone="warning" label="Ch. 9/12" sub="· 2 for you"></mk-pill>
+      </div>
+    </section>
+    <section>
+      <h2>pill · green</h2>
+      <div data-dsqa="part--pill--green">
+        <mk-pill tone="green" icon="check" label="Ch. 12/12 ✓"></mk-pill>
+      </div>
+    </section>
+    <section>
+      <h2>gates · all green</h2>
+      <div data-dsqa="part--gates--green">
+        <mk-gates pr="green" ci="green" main="green" verifier="green" labels></mk-gates>
+      </div>
+    </section>
+    <section>
+      <h2>gates · main red</h2>
+      <div data-dsqa="part--gates--red">
+        <mk-gates pr="green" ci="green" main="red" verifier="off" labels></mk-gates>
+      </div>
+    </section>
+    <section>
+      <h2>gates · running</h2>
+      <div data-dsqa="part--gates--running">
+        <mk-gates pr="off" ci="running" main="na" verifier="off" labels></mk-gates>
+      </div>
+    </section>
+    <section>
+      <h2>you · clear</h2>
+      <div data-dsqa="part--you--clear"><mk-you tone="clear"></mk-you></div>
+    </section>
+    <section>
+      <h2>you · warning</h2>
+      <div data-dsqa="part--you--warning">
+        <mk-you
+          tone="warning"
+          first="3 PRs are ready to merge in order (#305, #306, #308)."
+          action="Merge 3 in order…"
+          more="2"
+          items='[{"text":"Decide: Standard vs Combined (blocks chapter 10)","age":"6h","risk":"high"},{"text":"Tick: Accessories copy reads right","age":"1d","risk":"low"}]'
+        ></mk-you>
+      </div>
+    </section>
+    <section>
+      <h2>you · success</h2>
+      <div data-dsqa="part--you--success">
+        <mk-you
+          tone="success"
+          first="Delivered — awaiting your close."
+          action="Close campaign"
+          action-tone="success"
+        ></mk-you>
+      </div>
+    </section>
+    <section>
+      <h2>steward · line</h2>
+      <div data-dsqa="part--steward--line">
+        <mk-steward last="rebased #317 onto main" age="4m ago" next="on CI change"></mk-steward>
+      </div>
+    </section>
+    <section>
+      <h2>steward · feed</h2>
+      <div data-dsqa="part--steward--feed">
+        <mk-steward
+          last="dispatched verifier for #316"
+          age="just now"
+          next="on verdict"
+          feed='[{"t":"18:21","text":"#315 merged → rebased #316, #317 onto main"},{"t":"18:09","text":"CI red on #316 → nudged executor (segments-dto)"},{"t":"17:40","text":"no commits on step F for 45m → asked status"}]'
+        ></mk-steward>
+      </div>
+    </section>
+    <script src="pill.js"></script>
+    <script src="gates.js"></script>
+    <script src="you.js"></script>
+    <script src="steward.js"></script>
+  </body>
+</html>

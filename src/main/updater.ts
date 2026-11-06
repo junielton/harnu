@@ -2,6 +2,7 @@ import { autoUpdater } from 'electron-updater'
 import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { shouldSurfaceUpdaterError, usesManualUpdateFlow, releaseUrlFor } from './updater-policy'
+import { bypassQuitConfirm } from './quit-confirm'
 
 /**
  * Module-level guard preventing `ipcMain.handle('updater:install', ...)`
@@ -49,6 +50,8 @@ export function registerUpdater(getWindow: () => BrowserWindow | null): void {
   // fires in dev because the rest of this function early-returns below.
   if (!installHandlerRegistered) {
     ipcMain.handle('updater:install', () => {
+      // T579: the operator just clicked "Restart now" — never ask "quit anyway?" on top of it.
+      bypassQuitConfirm('update-install')
       autoUpdater.quitAndInstall()
     })
     installHandlerRegistered = true

@@ -538,7 +538,7 @@ describe('mission-core — per-mission-id write lock (design.md §9, Review Focu
   })
 
   it('names the step fields mission_update_step may never set', () => {
-    expect(MISSION_STEP_CONTROLLED_FIELDS).toEqual(['proof', 'verifiedBy'])
+    expect(MISSION_STEP_CONTROLLED_FIELDS).toEqual(['proof', 'verifiedBy', 'chosen'])
   })
 })
 

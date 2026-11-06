@@ -19,7 +19,7 @@ async function paddingLeftOf(opts: { platform: string; collapsed: boolean }): Pr
   const Topbar = (await import('../src/renderer/src/components/Topbar.vue')).default
   const { useLayoutStore } = await import('../src/renderer/src/stores/layout')
 
-  ;(window as unknown as { api: unknown }).api = { openPath: vi.fn(), openInVSCode: vi.fn() }
+  ;(window as unknown as { api: unknown }).api = { openPath: vi.fn(), openInEditor: vi.fn() }
 
   const layout = useLayoutStore()
   layout.sidebarCollapsed = opts.collapsed

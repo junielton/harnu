@@ -1,0 +1,2234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: pastas--combinada</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa='pastas--combinada'] .wlist {
+        width: 340px;
+      }
+      [data-dsqa='pastas--combinada'] .lsearch {
+        margin: 8px 10px 0;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-sm);
+        background: var(--color-bg);
+        color: var(--color-text-4);
+        font-size: 11px;
+      }
+      [data-dsqa='pastas--combinada'] .lsearch .q {
+        color: var(--color-text);
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'] .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--color-border);
+      }
+      [data-dsqa='pastas--combinada'] .fchip-st {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 7px;
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      [data-dsqa='pastas--combinada'] .fchip-st b {
+        font-weight: 600;
+        color: var(--color-text);
+      }
+      [data-dsqa='pastas--combinada'] .fchip-st.st-all .dot {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'] .fchip-st.st-all {
+        color: var(--color-text-3);
+      }
+      [data-dsqa='pastas--combinada'][data-state='default'] .chip-all,
+      [data-dsqa='pastas--combinada'][data-state='busca-vazia'] .chip-all {
+        background: var(--color-surface-2);
+        border-color: var(--color-border-2);
+      }
+      [data-dsqa='pastas--combinada'][data-state='filtro-falhas'] .chip-failed {
+        background: var(--color-red-soft);
+        border-color: var(--color-red-line);
+      }
+      [data-dsqa='pastas--combinada'] .upnext {
+        padding: 8px 10px 6px;
+        border-bottom: 1px solid var(--color-border);
+      }
+      [data-dsqa='pastas--combinada'] .upnext h4 {
+        margin: 0 0 4px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--color-text-3);
+      }
+      [data-dsqa='pastas--combinada'] .nx {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 20px;
+        font-size: 11px;
+      }
+      [data-dsqa='pastas--combinada'] .nx-t {
+        width: 30px;
+        text-align: right;
+        color: var(--color-text-3);
+        font-variant-numeric: tabular-nums;
+      }
+      [data-dsqa='pastas--combinada'] .nx-t.is-now {
+        color: var(--color-green);
+        font-weight: 600;
+      }
+      [data-dsqa='pastas--combinada'] .nx-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 2px;
+        background: var(--fh);
+      }
+      [data-dsqa='pastas--combinada'] .nx-n {
+        color: var(--color-text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      [data-dsqa='pastas--combinada'] .nx-f {
+        margin-left: auto;
+        color: var(--fh);
+        white-space: nowrap;
+      }
+      [data-dsqa='pastas--combinada'] .empty {
+        display: none;
+        padding: 40px 20px;
+        text-align: center;
+        color: var(--color-text-3);
+        font-size: 12px;
+      }
+      [data-dsqa='pastas--combinada'] .empty b {
+        display: block;
+        color: var(--color-text-2);
+        font-weight: 500;
+        margin-bottom: 4px;
+      }
+      [data-dsqa='pastas--combinada'] .empty button {
+        margin-top: 10px;
+        height: 22px;
+        padding: 0 8px;
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--color-text-2);
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      [data-dsqa='pastas--combinada'][data-state='filtro-falhas'] .upnext {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='filtro-falhas'] .fgroup:not(.has-bad) {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='filtro-falhas'] .wrow:not(.is-bad) {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='busca-vazia'] .upnext,
+      [data-dsqa='pastas--combinada'][data-state='busca-vazia'] .fgroup {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='busca-vazia'] .empty {
+        display: block;
+      }
+      [data-dsqa='pastas--combinada'][data-state='busca-vazia'] .lsearch .q {
+        display: inline;
+      }
+      [data-dsqa='pastas--combinada'][data-state='busca-vazia'] .lsearch .ph {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'] .wrow.is-selected::before {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'] .wrow {
+        padding: 0 10px 0 12px;
+      }
+      [data-dsqa='pastas--combinada'] .pinbtn {
+        display: inline-flex;
+        width: 14px;
+        height: 14px;
+        padding: 0;
+        margin-left: -2px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--color-text-disabled);
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+      }
+      [data-dsqa='pastas--combinada'] .pinbtn.is-pinned {
+        color: var(--color-accent);
+      }
+      [data-dsqa='pastas--combinada'] .wrow:hover .pinbtn:not(.is-pinned),
+      [data-dsqa='pastas--combinada'][data-state='hover'] .wrow.is-hovered .pinbtn:not(.is-pinned) {
+        color: var(--color-text-4);
+      }
+      [data-dsqa='pastas--combinada'] .pinbtn:hover {
+        color: var(--color-text);
+        background: var(--color-surface-2);
+      }
+      [data-dsqa='pastas--combinada'] .pinbtn.is-pinned:hover {
+        color: var(--color-accent);
+      }
+      [data-dsqa='pastas--combinada'] .r1,
+      [data-dsqa='pastas--combinada'] .r2 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      [data-dsqa='pastas--combinada'] .r1 .wname,
+      [data-dsqa='pastas--combinada'] .r2 .wmeta {
+        flex: 1;
+        min-width: 0;
+      }
+      [data-dsqa='pastas--combinada'] .r1 .wstate {
+        justify-content: flex-end;
+      }
+      [data-dsqa='pastas--combinada'] .ticks {
+        width: 48px;
+        justify-content: flex-end;
+      }
+      [data-dsqa='pastas--combinada'] .fhead {
+        padding: 0 10px 0 12px;
+      }
+      [data-dsqa='pastas--combinada'] .stoolbar {
+        margin: 10px 10px 0 12px;
+        gap: 6px;
+      }
+      [data-dsqa='pastas--combinada'] .stoolbar .iconbtn {
+        width: 26px;
+        height: 26px;
+        border: 1px solid var(--color-border-2);
+        background: var(--color-bg);
+      }
+      [data-dsqa='pastas--combinada'] .chips {
+        padding: 8px 10px 10px 12px;
+        flex-wrap: nowrap;
+        gap: 6px;
+      }
+      [data-dsqa='pastas--combinada'] .fchip-st {
+        padding: 0 8px;
+      }
+      [data-dsqa='pastas--combinada'] .chip-on {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='filtro-falhas'] .chip-on {
+        display: inline-flex;
+      }
+      [data-dsqa='pastas--combinada'][data-state='filtro-falhas'] .chip-off {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'] .upnext {
+        padding: 8px 10px 8px 12px;
+      }
+      [data-dsqa='pastas--combinada'] .nx-t {
+        width: 28px;
+        text-align: left;
+      }
+      [data-dsqa='pastas--combinada'] .fhead {
+        height: 44px;
+        background: color-mix(in srgb, var(--fh) 7%, var(--color-surface));
+      }
+      [data-dsqa='pastas--combinada'] .fav {
+        width: 22px;
+        height: 22px;
+        font-size: 11px;
+      }
+      [data-dsqa='pastas--combinada'] .ftext {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+      [data-dsqa='pastas--combinada'] .fl1 {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        min-width: 0;
+      }
+      [data-dsqa='pastas--combinada'] .fl2 {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+        color: var(--color-text-4);
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      [data-dsqa='pastas--combinada'] .fl2 .sep {
+        color: var(--color-text-disabled);
+      }
+      [data-dsqa='pastas--combinada'] .fbr {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      [data-dsqa='pastas--combinada'] .fsum {
+        gap: 6px;
+      }
+      [data-dsqa='pastas--combinada'] .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 16px;
+        padding: 0 5px;
+        border-radius: var(--radius-sm);
+        font-size: 10px;
+      }
+      [data-dsqa='pastas--combinada'] .p-bad {
+        color: var(--color-red);
+        background: var(--color-red-soft);
+      }
+      [data-dsqa='pastas--combinada'] .p-bad .dot {
+        background: var(--color-red);
+      }
+      [data-dsqa='pastas--combinada'] .p-run {
+        color: var(--color-green);
+        background: var(--color-green-soft);
+      }
+      [data-dsqa='pastas--combinada'] .p-run .dot {
+        background: var(--color-green);
+        animation: mk-pulse 1.6s var(--ease) infinite;
+      }
+      [data-dsqa='pastas--combinada'] .health {
+        width: 40px;
+      }
+      [data-dsqa='pastas--combinada'] .m-act {
+        color: var(--color-warning);
+      }
+      [data-dsqa='pastas--combinada'] .stoolbar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin: 8px 10px 0;
+      }
+      [data-dsqa='pastas--combinada'] .stoolbar .lsearch {
+        flex: 1;
+        margin: 0;
+      }
+      [data-dsqa='pastas--combinada'] .btn-expand {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='colapsado'] .btn-expand {
+        display: inline-flex;
+      }
+      [data-dsqa='pastas--combinada'][data-state='colapsado'] .btn-collapse {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='colapsado'] .fgroup .wrow {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='colapsado'] .fchev {
+        transform: rotate(-90deg);
+      }
+      [data-dsqa='pastas--combinada'][data-state='colapsado'] .chip-all,
+      [data-dsqa='pastas--combinada'][data-state='hover'] .chip-all {
+        background: var(--color-surface-2);
+        border-color: var(--color-border-2);
+      }
+      [data-dsqa='pastas--combinada'] .uptoggle {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        width: 100%;
+        padding: 0;
+        margin: 0 0 4px;
+        border: 0;
+        background: transparent;
+        font: inherit;
+        cursor: pointer;
+      }
+      [data-dsqa='pastas--combinada'] .uptoggle h4 {
+        margin: 0;
+      }
+      [data-dsqa='pastas--combinada'] .uptoggle .upsum {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--color-text-4);
+      }
+      [data-dsqa='pastas--combinada'] .uptoggle:hover h4 {
+        color: var(--color-text-2);
+      }
+      [data-dsqa='pastas--combinada'] .up-show {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='upnext-recolhido'] .up-hide,
+      [data-dsqa='pastas--combinada'][data-state='upnext-recolhido'] .uprows {
+        display: none;
+      }
+      [data-dsqa='pastas--combinada'][data-state='upnext-recolhido'] .up-show {
+        display: flex;
+        margin: 0;
+      }
+      [data-dsqa='pastas--combinada'][data-state='upnext-recolhido'] .up-show .fchev {
+        transform: rotate(-90deg);
+      }
+      [data-dsqa='pastas--combinada'][data-state='upnext-recolhido'] .chip-all {
+        background: var(--color-surface-2);
+        border-color: var(--color-border-2);
+      }
+    </style>
+  </head>
+  <body data-states="default upnext-recolhido colapsado filtro-falhas busca-vazia hover">
+    <div data-dsqa="pastas--combinada">
+      <div class="app">
+        <mk-takeover-head sub="17 workers · 1 running"></mk-takeover-head>
+        <div class="tbody">
+          <div class="wlist" data-dsqa-part="worker-list">
+            <div class="stoolbar">
+              <div class="lsearch">
+                <svg
+                  class="ic"
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" /></svg
+                ><span class="ph">Filter workers or folders</span><span class="q">deploy</span>
+              </div>
+              <button
+                type="button"
+                class="iconbtn btn-collapse"
+                aria-label="Collapse all"
+                title="Collapse all"
+                data-goto="pastas--combinada?state=colapsado"
+              >
+                <svg
+                  class="ic"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m7 20 5-5 5 5" />
+                  <path d="m7 4 5 5 5-5" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="iconbtn btn-expand"
+                aria-label="Expand all"
+                title="Expand all"
+                data-goto="pastas--combinada?state=default"
+              >
+                <svg
+                  class="ic"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m7 15 5 5 5-5" />
+                  <path d="m7 9 5-5 5 5" />
+                </svg>
+              </button>
+            </div>
+            <div class="chips">
+              <button
+                type="button"
+                class="fchip-st st-running"
+                data-goto="pastas--combinada?state=default"
+              >
+                <span class="dot"></span>Running<b>1</b>
+              </button>
+              <button
+                type="button"
+                class="fchip-st chip-off st-failed chip-failed"
+                data-goto="pastas--combinada?state=filtro-falhas"
+              >
+                <span class="dot"></span>Failing<b>2</b>
+              </button>
+              <button
+                type="button"
+                class="fchip-st chip-on st-failed chip-failed"
+                data-goto="pastas--combinada?state=default"
+              >
+                <span class="dot"></span>Failing<b>2</b>
+              </button>
+              <button
+                type="button"
+                class="fchip-st st-waiting"
+                data-goto="pastas--combinada?state=default"
+              >
+                <span class="dot"></span>Waiting<b>12</b>
+              </button>
+              <button
+                type="button"
+                class="fchip-st st-off"
+                data-goto="pastas--combinada?state=default"
+              >
+                <span class="dot"></span>Off<b>2</b>
+              </button>
+            </div>
+            <div class="upnext" data-dsqa-part="up-next">
+              <button
+                type="button"
+                class="uptoggle up-hide"
+                data-goto="pastas--combinada?state=upnext-recolhido"
+                aria-expanded="true"
+              >
+                <span class="fchev"
+                  ><svg
+                    class="ic"
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" /></svg
+                ></span>
+                <h4>Up next</h4>
+                <span class="upsum">4 in the next 2m</span></button
+              ><button
+                type="button"
+                class="uptoggle up-show"
+                data-goto="pastas--combinada?state=default"
+                aria-expanded="false"
+              >
+                <span class="fchev"
+                  ><svg
+                    class="ic"
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" /></svg
+                ></span>
+                <h4>Up next</h4>
+                <span class="upsum">now · Delivery watchdog · portal</span>
+              </button>
+              <div class="uprows">
+                <div class="nx h-yellow">
+                  <span class="nx-t is-now">now</span><span class="nx-dot"></span
+                  ><span class="nx-n">Delivery watchdog</span><span class="nx-f">portal</span>
+                </div>
+                <div class="nx h-blue">
+                  <span class="nx-t">28s</span><span class="nx-dot"></span
+                  ><span class="nx-n">dtk wave-1 delivery</span><span class="nx-f">harnu</span>
+                </div>
+                <div class="nx h-magenta">
+                  <span class="nx-t">2m</span><span class="nx-dot"></span
+                  ><span class="nx-n">PR Review Watcher</span><span class="nx-f">www · org-a</span>
+                </div>
+                <div class="nx h-cyan">
+                  <span class="nx-t">2m</span><span class="nx-dot"></span
+                  ><span class="nx-n">PR Review Watcher</span><span class="nx-f">www · org-b</span>
+                </div>
+              </div>
+            </div>
+            <div class="wlist-scroll">
+              <div class="fgroup h-magenta has-bad" data-dsqa-part="folder-group">
+                <div
+                  class="fhead"
+                  title="~/Workspace/org/www"
+                  data-goto="pastas--combinada?state=default"
+                >
+                  <span class="fav">A</span>
+                  <span class="ftext">
+                    <span class="fl1"
+                      ><span class="fname">www · org-a</span><span class="fcount">3</span></span
+                    >
+                    <span class="fl2"
+                      ><span class="fbr"
+                        ><svg
+                          class="ic"
+                          width="9"
+                          height="9"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <line x1="6" x2="6" y1="3" y2="15" />
+                          <circle cx="18" cy="6" r="3" />
+                          <circle cx="6" cy="18" r="3" />
+                          <path d="M18 9a9 9 0 0 1-9 9" /></svg
+                        >main</span
+                      ><span class="sep">·</span><span>3 on</span><span class="sep">·</span
+                      ><span>next in 2m</span></span
+                    >
+                  </span>
+                  <span class="fsum">
+                    <span class="pill p-bad"><span class="dot"></span>1 failing</span>
+
+                    <span class="health"
+                      ><i class="h-fail" style="width: 33.33333333333333%"></i
+                      ><i class="h-wait" style="width: 66.66666666666666%"></i
+                    ></span>
+                    <span class="fchev"
+                      ><svg
+                        class="ic"
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="m6 9 6 6 6-6" /></svg
+                    ></span>
+                  </span>
+                </div>
+                <div class="wrow is-selected" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn is-pinned"
+                          aria-label="Unpin"
+                          title="Unpin"
+                          aria-pressed="true"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>PR Review Watcher</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 2m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 15m</span><span class="sep">·</span><span>sonnet</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow is-hovered" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn is-pinned"
+                          aria-label="Unpin"
+                          title="Unpin"
+                          aria-pressed="true"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>Address PR's</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 17m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>sonnet</span
+                        ><span class="sep">·</span><span class="m-act">act</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="x"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow is-hovered is-bad" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>Delivery watchdog for the payments reconciliation wave</span>
+                      </div>
+                      <span class="wstate st-failed"
+                        ><span class="dot"></span><span>failed · 2 in a row</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>haiku</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="x"></i><i class="x"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="fgroup h-blue has-bad" data-dsqa-part="folder-group">
+                <div
+                  class="fhead"
+                  title="~/Workspace/org/harnu"
+                  data-goto="pastas--combinada?state=default"
+                >
+                  <span class="fav">H</span>
+                  <span class="ftext">
+                    <span class="fl1"
+                      ><span class="fname">harnu</span><span class="fcount">5</span></span
+                    >
+                    <span class="fl2"
+                      ><span class="fbr"
+                        ><svg
+                          class="ic"
+                          width="9"
+                          height="9"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <line x1="6" x2="6" y1="3" y2="15" />
+                          <circle cx="18" cy="6" r="3" />
+                          <circle cx="6" cy="18" r="3" />
+                          <path d="M18 9a9 9 0 0 1-9 9" /></svg
+                        >main</span
+                      ><span class="sep">·</span><span>5 on</span><span class="sep">·</span
+                      ><span>next in 28s</span></span
+                    >
+                  </span>
+                  <span class="fsum">
+                    <span class="pill p-bad"><span class="dot"></span>1 failing</span>
+
+                    <span class="health"
+                      ><i class="h-fail" style="width: 20%"></i
+                      ><i class="h-wait" style="width: 80%"></i
+                    ></span>
+                    <span class="fchev"
+                      ><svg
+                        class="ic"
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="m6 9 6 6 6-6" /></svg
+                    ></span>
+                  </span>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>dtk wave-1 delivery</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 28s</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>haiku</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span
+                          >BUG-186 delivery watchdog — fleet rail stable order and the parked units
+                          follow-up</span
+                        >
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 11m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>haiku</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class=""></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>i18n wave 2 · vigil</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 12m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>haiku</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>Watchdog · analysis</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 12m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>sonnet</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="t"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow is-bad" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>Watchdog T60</span>
+                      </div>
+                      <span class="wstate st-disabled"
+                        ><span class="dot"></span><span>disabled · 3 failures</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>haiku</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="x"></i
+                        ><i class="x"></i><i class="x"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="fgroup h-yellow" data-dsqa-part="folder-group">
+                <div
+                  class="fhead"
+                  title="~/Workspace/org/portal"
+                  data-goto="pastas--combinada?state=default"
+                >
+                  <span class="fav">P</span>
+                  <span class="ftext">
+                    <span class="fl1"
+                      ><span class="fname">portal</span><span class="fcount">3</span></span
+                    >
+                    <span class="fl2"
+                      ><span class="fbr"
+                        ><svg
+                          class="ic"
+                          width="9"
+                          height="9"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <line x1="6" x2="6" y1="3" y2="15" />
+                          <circle cx="18" cy="6" r="3" />
+                          <circle cx="6" cy="18" r="3" />
+                          <path d="M18 9a9 9 0 0 1-9 9" /></svg
+                        >develop</span
+                      ><span class="sep">·</span><span>3 on</span><span class="sep">·</span
+                      ><span><span class="st-running">running now</span></span></span
+                    >
+                  </span>
+                  <span class="fsum">
+                    <span class="pill p-run"><span class="dot"></span>1 running</span>
+                    <span class="health"
+                      ><i class="h-run" style="width: 33.33333333333333%"></i
+                      ><i class="h-wait" style="width: 66.66666666666666%"></i
+                    ></span>
+                    <span class="fchev"
+                      ><svg
+                        class="ic"
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="m6 9 6 6 6-6" /></svg
+                    ></span>
+                  </span>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>Delivery watchdog</span>
+                      </div>
+                      <span class="wstate st-running"
+                        ><span class="dot"></span><span>running · 1m 12s</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>haiku</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="r"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn is-pinned"
+                          aria-label="Unpin"
+                          title="Unpin"
+                          aria-pressed="true"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>PR Review Watcher</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 10m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 15m</span><span class="sep">·</span><span>sonnet</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn is-pinned"
+                          aria-label="Unpin"
+                          title="Unpin"
+                          aria-pressed="true"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>Address PR's</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 9m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>sonnet</span
+                        ><span class="sep">·</span><span class="m-act">act</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="fgroup h-cyan" data-dsqa-part="folder-group">
+                <div
+                  class="fhead"
+                  title="~/Workspace/org/www-b"
+                  data-goto="pastas--combinada?state=default"
+                >
+                  <span class="fav">B</span>
+                  <span class="ftext">
+                    <span class="fl1"
+                      ><span class="fname">www · org-b</span><span class="fcount">2</span></span
+                    >
+                    <span class="fl2"
+                      ><span class="fbr"
+                        ><svg
+                          class="ic"
+                          width="9"
+                          height="9"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <line x1="6" x2="6" y1="3" y2="15" />
+                          <circle cx="18" cy="6" r="3" />
+                          <circle cx="6" cy="18" r="3" />
+                          <path d="M18 9a9 9 0 0 1-9 9" /></svg
+                        >main</span
+                      ><span class="sep">·</span><span>2 on</span><span class="sep">·</span
+                      ><span>next in 2m</span></span
+                    >
+                  </span>
+                  <span class="fsum">
+                    <span class="health"><i class="h-wait" style="width: 100%"></i></span>
+                    <span class="fchev"
+                      ><svg
+                        class="ic"
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="m6 9 6 6 6-6" /></svg
+                    ></span>
+                  </span>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn is-pinned"
+                          aria-label="Unpin"
+                          title="Unpin"
+                          aria-pressed="true"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>PR Review Watcher</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 2m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 15m</span><span class="sep">·</span><span>sonnet</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn is-pinned"
+                          aria-label="Unpin"
+                          title="Unpin"
+                          aria-pressed="true"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>Address PR's</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 9m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>sonnet</span
+                        ><span class="sep">·</span><span class="m-act">act</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="fgroup h-coral" data-dsqa-part="folder-group">
+                <div
+                  class="fhead"
+                  title="~/Workspace/org/jarvis"
+                  data-goto="pastas--combinada?state=default"
+                >
+                  <span class="fav">J</span>
+                  <span class="ftext">
+                    <span class="fl1"
+                      ><span class="fname">jarvis</span><span class="fcount">3</span></span
+                    >
+                    <span class="fl2"
+                      ><span>2 on · 1 off</span><span class="sep">·</span
+                      ><span>next in 11m</span></span
+                    >
+                  </span>
+                  <span class="fsum">
+                    <span class="health"
+                      ><i class="h-wait" style="width: 66.66666666666666%"></i
+                      ><i class="h-off" style="width: 33.33333333333333%"></i
+                    ></span>
+                    <span class="fchev"
+                      ><svg
+                        class="ic"
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="m6 9 6 6 6-6" /></svg
+                    ></span>
+                  </span>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>jarvis-day</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 11m</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>sonnet</span
+                        ><span class="sep">·</span><span class="m-act">act</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>jarvis-self-improve</span>
+                      </div>
+                      <span class="wstate st-waiting"
+                        ><span class="dot"></span><span>next in 2h</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 3h</span><span class="sep">·</span><span>opus</span
+                        ><span class="sep">·</span><span class="m-act">act</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class=""></i><i class=""></i><i class=""></i><i class=""></i
+                        ><i class=""></i><i class="ok"></i><i class="ok"></i><i class="ok"></i
+                        ><i class="ok"></i><i class="ok"></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="wrow is-off" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>morning briefing</span>
+                      </div>
+                      <span class="wstate st-off"><span class="dot"></span><span>off</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>haiku</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class=""></i><i class=""></i><i class=""></i><i class=""></i
+                        ><i class=""></i><i class=""></i><i class=""></i><i class=""></i
+                        ><i class=""></i><i class=""></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="fgroup h-lav" data-dsqa-part="folder-group">
+                <div class="fhead" title="~" data-goto="pastas--combinada?state=default">
+                  <span class="fav">~</span>
+                  <span class="ftext">
+                    <span class="fl1"
+                      ><span class="fname">~</span><span class="fcount">1</span></span
+                    >
+                    <span class="fl2"
+                      ><span>0 on · 1 off</span><span class="sep">·</span
+                      ><span>nothing scheduled</span></span
+                    >
+                  </span>
+                  <span class="fsum">
+                    <span class="health"><i class="h-off" style="width: 100%"></i></span>
+                    <span class="fchev"
+                      ><svg
+                        class="ic"
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="m6 9 6 6 6-6" /></svg
+                    ></span>
+                  </span>
+                </div>
+                <div class="wrow is-off" data-dsqa-part="worker-row">
+                  <div class="wmain">
+                    <div class="r1">
+                      <div class="wname">
+                        <button
+                          type="button"
+                          class="pinbtn"
+                          aria-label="Pin"
+                          title="Pin"
+                          aria-pressed="false"
+                        >
+                          <svg
+                            class="ic"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 17v5" />
+                            <path
+                              d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                            />
+                          </svg></button
+                        ><span>USD/BRL Monitor</span>
+                      </div>
+                      <span class="wstate st-off"><span class="dot"></span><span>off</span></span
+                      ><span class="wactions"
+                        ><button type="button" class="iconbtn" aria-label="Run now">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polygon points="6 3 20 12 6 21 6 3" />
+                          </svg></button
+                        ><button type="button" class="iconbtn is-danger" aria-label="Delete">
+                          <svg
+                            class="ic"
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg></button
+                      ></span>
+                    </div>
+                    <div class="r2">
+                      <div class="wmeta">
+                        <span>every 30m</span><span class="sep">·</span><span>haiku</span
+                        ><span class="sep">·</span><span class="">observe</span>
+                      </div>
+                      <span class="ticks" title="Last 10 runs"
+                        ><i class=""></i><i class=""></i><i class=""></i><i class=""></i
+                        ><i class=""></i><i class=""></i><i class=""></i><i class=""></i
+                        ><i class=""></i><i class=""></i
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="empty">
+                <b>No worker matches “deploy”</b>Search covers worker names, folders and prompts.<br /><button
+                  type="button"
+                  data-goto="pastas--combinada?state=default"
+                >
+                  Clear filter
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="wdetail h-magenta" data-dsqa-part="detail-stub">
+            <div class="dtitle">
+              PR Review Watcher<span class="fchip"
+                ><svg
+                  class="ic"
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" /></svg
+                >www · org-a</span
+              >
+            </div>
+            <div class="dtabs"><span class="on">Runs</span><span>Settings</span></div>
+            <div class="skel" style="height: 96px">
+              <div class="skel-line" style="width: 40%"></div>
+              <div class="skel-line" style="width: 72%"></div>
+              <div class="skel-line" style="width: 55%"></div>
+            </div>
+            <div class="skel" style="flex: 1">
+              <div class="skel-line" style="width: 30%"></div>
+              <div class="skel-line"></div>
+              <div class="skel-line"></div>
+              <div class="skel-line"></div>
+              <div class="skel-line"></div>
+            </div>
+          </div>
+        </div>
+        <div class="tfoot">
+          <svg
+            class="ic"
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" /></svg
+          >Checks every 30s · max 2 workers at once · nothing runs while Harnu is closed
+        </div>
+      </div>
+    </div>
+    <script src="../parts/takeover-head.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

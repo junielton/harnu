@@ -59,7 +59,7 @@ import {
   dropOperatorScreenModels,
   livePtyDescriptors
 } from './pty'
-import { registerBrowserIpc } from './browser/browser-ipc'
+import { registerBrowserIpc, closeBrowserIpc } from './browser/browser-ipc'
 import {
   bindBrowserBridge,
   refreshBrowserTrustedHosts,
@@ -103,6 +103,7 @@ import {
   readUserProjects,
   hideUserProject,
   unhideUserProject,
+  onHiddenPathsChanged,
   setUserProjectAgentDenied,
   setUserProjectInterceptActive,
   setUserProjectAlias,
@@ -136,6 +137,7 @@ import { registerMemoryReadHandlers } from './memory-ipc'
 import { registerMemoryLocationHandlers } from './memory-location-ipc'
 import { registerRoadmapHandlers, closeRoadmapWatcher } from './roadmap-ipc'
 import { registerHelpersHandlers } from './helpers-ipc'
+import { registerSessionArchive } from './session-archive-ipc'
 import { registerSettingsHandlers, closeSettingsWatcher } from './settings'
 import { registerClaudeConfigHandlers } from './claude-config'
 import { registerPushHandlers } from './push'
@@ -159,7 +161,8 @@ import {
   registerSessionRegistryWatcher,
   type SessionRegistryWatcherHandle
 } from './session-registry-watch'
-import { registerDigestEngine, closeDigestEngine } from './memory-digest'
+import { registerDigestEngine, closeDigestEngine, setDigestNoticeBridge } from './memory-digest'
+import { bypassQuitConfirm, guardQuit, registerQuitConfirm } from './quit-confirm'
 import {
   registerOrchestratorGuard,
   arm as armOrchestrator,
@@ -205,14 +208,19 @@ import { registerReaperHandlers } from './reaper/reaper-ipc'
 import { registerContainersHandlers } from './containers/containers-ipc'
 import { registerGcHandlers } from './gc/gc-ipc'
 import { registerScheduler, setSchedulerCompanionProvider } from './scheduler-shell'
+import { reconcileStewardsOnBoot, registerStewardWiring } from './steward-bridge'
 import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
+import { registerGithubBudget, stopGithubBudget } from './github-budget'
 import { registerMissionIpc } from './mission-ipc'
+import { registerMergeBatchIpc } from './merge-batch-ipc'
+import { registerCampaignIpc } from './campaign-ipc'
 import { registerReviewHandlers } from './review-ipc'
 import { resolveCliFolderArg } from './cli-folder-arg'
 import { registerMcpServer, closeMcpServer } from './mcp/server'
 import { registerImageCache } from './image-cache'
+import { registerSessionLinks } from './session-links'
 import { setDataDirAppVersion } from './data-dir'
 import { migrateUserData } from './migrate-userdata'
 import {
@@ -349,6 +357,12 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+
+  // T579: the X button. `before-quit` carries the same guard for Ctrl+Q / the app menu; once
+  // the operator picks "Quit anyway" both pass, so a quit attempt asks once.
+  mainWindow.on('close', (event) => guardQuit(event, () => mainWindow))
+  // Windows logoff / shutdown: never hold the session hostage.
+  mainWindow.on('session-end', () => bypassQuitConfirm('system-shutdown'))
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -548,13 +562,15 @@ app.whenReady().then(async () => {
   // T52: hover-triggered per-folder git status (dirty count + ahead/behind) for
   // the FolderPreview card. Throttled + cached, outside the folder-scan hot path.
   registerFolderGitStatusHandlers()
-  // Open-in-external-app channels (Topbar "Open folder" / "Open in VS Code").
-  // `external:openPath` reveals a folder in the OS file manager; `external:openInVSCode`
-  // spawns the `code` CLI detached and never crashes if it's absent from PATH.
+  // Open-in-external-app channels (Topbar "Open folder" / "Open in {editor}").
+  // `external:openPath` reveals a folder in the OS file manager; `external:openInEditor`
+  // launches the configured editor and never crashes if its binary is absent from PATH.
   registerExternal()
   // Pasted-images gallery: read-only list/read/copy over ~/.claude/image-cache.
   // Stateless (no watcher, no teardown); every handler validates uuid + name.
   registerImageCache()
+  // T617: Links shelf — read-only links of a session/folder, derived from the transcript. Stateless.
+  registerSessionLinks()
   registerSessionOpHandlers()
   // T74: confined markdown reader for the viewer pane. Reads `.md`/`.markdown`/
   // `.txt` UTF-8 (size-capped) only from the known Harnu folders (pinned +
@@ -595,8 +611,12 @@ app.whenReady().then(async () => {
   // than recomputed, so the canvas and the Cleanup view can never disagree
   // about whether a worktree is done with.
   registerPrStack()
+  // T611: the GitHub API budget — `gh api rate_limit` poller, throttle state and its IPC.
+  registerGithubBudget()
   // T370 (T358 S9): mission progress read + the operator doors.
   registerMissionIpc()
+  registerMergeBatchIpc()
+  registerCampaignIpc()
   // T164 U2: branch-vs-base diff + the evidence header's receipts, plus the
   // per-repo blast-radius list (operator-owned, never reachable from an MCP verb).
   registerReviewHandlers(() => mainWindow)
@@ -612,7 +632,11 @@ app.whenReady().then(async () => {
   // "agent never moves a card" invariant (T80 §0) mechanically true.
   registerRoadmapHandlers(() => mainWindow)
   registerHelpersHandlers()
+  // T655: the main-owned session archive (sidebar Archive + the `archive_session` verb).
+  registerSessionArchive(() => mainWindow)
   registerSettingsHandlers(() => mainWindow)
+  // T579: confirm before quitting while agents are working (prefs IPC + OS-shutdown bypass).
+  registerQuitConfirm()
   // T1: the `keybindings.json` override layer. Sits next to settings.json and
   // follows its relocation. The renderer store calls `keybindings:load` at boot;
   // a hand-edit re-resolves and pushes `keybindings:changed`. P3: the resolved
@@ -650,9 +674,14 @@ app.whenReady().then(async () => {
   // receives Claude Code hook events → real per-session task-state. Opt-out
   // (installs observer hooks into ~/.claude/settings.json unless disabled);
   // async + best-effort, degrades to the activity heuristic if it can't install.
-  void registerHookBridge(() => mainWindow).catch((err) =>
-    console.error('[hook-bridge] register failed', err)
-  )
+  void registerHookBridge(() => mainWindow)
+    // Campaign ch.5a: once the bridge is listening, answer the steward's hooks and re-point every
+    // steward's `.claude/settings.local.json` hooks at the live port/token (both change per boot).
+    .then(async () => {
+      registerStewardWiring()
+      await reconcileStewardsOnBoot()
+    })
+    .catch((err) => console.error('[hook-bridge] register failed', err))
   // Harnu mod host (T389). Dark by default: it only listens when the developer mode file asks for
   // it, so a default install opens no socket and creates no directory.
   void registerCompanionHost(() => mainWindow).catch((err) =>
@@ -726,6 +755,8 @@ app.whenReady().then(async () => {
   // it overrides pty's `--mcp-config` provider, so it must run AFTER
   // `registerPtyHandlers` set the default (order satisfied above).
   const cmdBridge = registerCommandBridge(() => mainWindow)
+  // The digest engine (registered above) posts its "Memory digest failed" notice over this bridge.
+  setDigestNoticeBridge(cmdBridge.bridge)
   // T474: terminal lifecycle IPC. After the bridge, so its `renderer:ready` listener runs once
   // the bridge's own has opened the dispatch gate.
   registerTerminalIpc(cmdBridge.bridge, isRendererUrl)
@@ -961,6 +992,15 @@ app.whenReady().then(async () => {
   ipcMain.handle('userProjects:unhide', async (_e, targetPath: string) => {
     return toUserProjectsPayload(await unhideUserProject(targetPath))
   })
+  // T661: the `hide_folder` MCP verb writes `hiddenPaths` outside the renderer's own calls, so
+  // main pushes the FULL new list after each write that changed it. The menu actions above do not
+  // emit: the renderer already mirrors their IPC response.
+  onHiddenPathsChanged(({ hiddenPaths }) => {
+    const win = mainWindow
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('userProjects:hiddenChanged', { hiddenPaths })
+    }
+  })
   // Per-folder agent-control OPT-OUT (MCP). Agents may act in every folder by
   // default; this blocks them in one (and everything under it) — see
   // `mcp/policy-assemble.ts`. Toggled from the folder context menu or Settings →
@@ -1173,6 +1213,10 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', async (event) => {
+  stopGithubBudget()
+  // T579: ask first when agents are mid-turn. Cancel keeps everything alive (nothing below runs).
+  guardQuit(event, () => mainWindow)
+  if (event.defaultPrevented) return
   // We always synchronously kill PTYs; the watcher close is async but
   // best-effort. Defer Electron's actual quit until the watcher is closed
   // so chokidar's file descriptors are released cleanly.
@@ -1201,6 +1245,8 @@ app.on('before-quit', async (event) => {
   // harnu.mcp.json) is awaited in the watcher branch below.
   closeMcpConfirm()
   closeCommandBridge()
+  // Quitting destroys every browser pane (T579: here, below the guard — not a listener of its own).
+  closeBrowserIpc()
   await closeAllMarkdownWatchers()
   await closeAllCanvasWatchers()
   closeUsagePoller()

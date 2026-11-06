@@ -12,6 +12,8 @@ function pr(over: Partial<PrFacts> = {}): PrFacts {
     ci: 'passing',
     mergedAt: '2026-07-01T00:00:00Z',
     headRefOid: TIP,
+    baseRefName: null,
+    mergeCommitOid: null,
     ...over
   }
 }
@@ -30,6 +32,8 @@ function facts(over: Partial<BranchFacts> = {}): BranchFacts {
     remoteExists: false,
     ancestorOfDefault: null,
     patchIdContained: null,
+    tipInPrHead: null,
+    prLandedInDefault: null,
     lastCommitAt: null,
     pr: null,
     ghAvailable: true,
@@ -90,6 +94,66 @@ describe('resolveFate — the 5-step order', () => {
       fate: 'merged',
       signal: 'remote-gone-after-close',
       strong: false
+    })
+  })
+
+  describe('1. merged: a gh-merged PR whose head contains the local tip (U1)', () => {
+    const moved = pr({ headRefOid: 'newer' })
+
+    it('is strong when the head contains the tip and the content landed in default', () =>
+      expect(
+        resolveFate(facts({ pr: moved, tipInPrHead: true, prLandedInDefault: true }), TIP)
+      ).toEqual({ fate: 'merged', signal: 'gh-merged', strong: true }))
+
+    it('stays weak when containment is unknown or false (head missing locally, branch reused after merge)', () => {
+      expect(
+        resolveFate(facts({ pr: moved, tipInPrHead: null, prLandedInDefault: true }), TIP).strong
+      ).toBe(false)
+      expect(
+        resolveFate(facts({ pr: moved, tipInPrHead: false, prLandedInDefault: true }), TIP).strong
+      ).toBe(false)
+    })
+
+    it('stays weak when the landing is unproven or refuted (stacked base never landed)', () => {
+      expect(
+        resolveFate(facts({ pr: moved, tipInPrHead: true, prLandedInDefault: false }), TIP).strong
+      ).toBe(false)
+      expect(
+        resolveFate(facts({ pr: moved, tipInPrHead: true, prLandedInDefault: null }), TIP).strong
+      ).toBe(false)
+    })
+
+    it('leaves the tip === head path unchanged, whatever the new facts say', () => {
+      expect(
+        resolveFate(facts({ pr: pr(), tipInPrHead: null, prLandedInDefault: null }), TIP).strong
+      ).toBe(true)
+      expect(
+        resolveFate(facts({ pr: pr(), tipInPrHead: false, prLandedInDefault: false }), TIP).strong
+      ).toBe(true)
+    })
+
+    it('never becomes merged through containment for an upstream-unverified PR', () => {
+      const f = facts({
+        pr: moved,
+        prProvenance: 'upstream-unverified',
+        remoteExists: false,
+        tipInPrHead: true,
+        prLandedInDefault: true
+      })
+      expect(resolveFate(f, TIP).fate).not.toBe('merged')
+    })
+
+    it('does not strengthen a non-gh signal that is already weak', () => {
+      const f = facts({
+        pr: pr({ state: 'CLOSED' }),
+        tipInPrHead: true,
+        prLandedInDefault: true
+      })
+      expect(resolveFate(f, TIP)).toEqual({
+        fate: 'merged',
+        signal: 'remote-gone-after-close',
+        strong: false
+      })
     })
   })
 

@@ -1,0 +1,657 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- test code reads drawn trees loosely */
+import { expect, test } from 'claude-code/testing'
+import {
+  cardTone,
+  inlineOf,
+  splitReports,
+  type Report,
+  type Segment
+} from '../hooks/lib/report-card'
+import { helloOk, installRig, START, defaultScript, type Script } from './support/rig'
+
+/**
+ * T583 U2: the report card. The fixtures are the two bundled skills' own examples
+ * (`status` and `report-back`), an English and a pt-BR report, and the shape of the T579 report.
+ * A ledger row is built by `row` so the 2-wide gutter and the 9-wide label are never miscounted.
+ */
+
+const row = (gutter: string, label: string, value: string): string =>
+  `${gutter.padEnd(2)}${label.padEnd(9)}${value}`
+const fence = (...lines: string[]): string => ['```', ...lines, '```'].join('\n')
+
+// ---- fixtures ------------------------------------------------------------------------------------
+
+const REPORT_BACK_EN = fence(
+  'avatar-cache  ▰▰▰▰▰▰▰▱▱▱ 70%',
+  '│',
+  '├─ ✓ review-local — 2 safe fixes',
+  '├─ ✓ commit + push — 3 commits on PROJ-231-fix-avatar-cache',
+  '├─ ✓ PR #142 opened',
+  '├─ - reviewers — already assigned on the existing PR',
+  '├─ ✓ CI green — 12/12 checks',
+  '└─ ✗ Copilot — 1 CR needs a product decision',
+  '',
+  row('⚑', 'you', 'decide the retry config (3 attempts vs backoff)'),
+  row('?', 'open', 'does the cache invalidate on logout?'),
+  '',
+  'PR #142 · diff + threads → https://github.com/org/repo/pull/142',
+  'Green CI run → https://github.com/org/repo/actions/runs/9912',
+  'Task PROJ-231 → https://tracker.example.com/t/PROJ-231',
+  'review-local report → docs/reports/avatar-cache.md'
+)
+const EN_MESSAGE = `The avatar cache run stopped at one review decision.\n\n${REPORT_BACK_EN}\n\nShipped the fix; the retry config needs a decision before the merge.`
+
+const STATUS_EN = fence(
+  '  **T381** mission v3       ▰▰▰▱▱ Step 4 of 5 · 2 verified',
+  row('', 'now', 'S4 skills · `8f2c11ab` · 25 min'),
+  row('', 'done', 'S1 core · S2 reads · S3 renderer'),
+  row('', 'next', 'S5 amendments'),
+  row('⚑', 'you', 'tick the due check on S3 (designer sign-off)'),
+  row('?', 'open', 'S3 is done, not yet verified')
+)
+
+// The `status` skill's own three-front example, verbatim (resources/skills/skills/status/SKILL.md).
+const THREE_FRONTS = fence(
+  '  **T215** message_session   spec ▰▰▰▱ 3/4 · impl ▱▱▱▱ 0/4',
+  '  now      gate decision → spec PR · `ab53791f` · 14 min',
+  '  done     O-1 answered · gate decided · `#224` merged',
+  '  next     predicate spec · implementation · live probe',
+  "  you      — nothing, you're clear",
+  '? open     `--permission-mode auto` never probed',
+  '',
+  '! **T216** delivery assurance  S1 ▰▰▱▱ 2/4 · S2–S4 ▱▱▱ 0/3',
+  '! now      idle 3 h — waiting on `T215`',
+  '  done     research · S0 skills · S1 spec (`#225` merged)',
+  '  next     S1 implementation (needs `T215` for the send-back)',
+  '⚑ you      decide whether S1 lands before `T215` or waits for it',
+  '? open     wave collision across worktrees (§11 Q4)',
+  '',
+  '✓ **T217** bundled skills      ▰▰▰▰ 4/4 · shipped `0.3.27`',
+  '  now      —',
+  '  done     staging + namespacing verified live',
+  '  next     —',
+  '⚑ you      close the card · close `BUG-86`',
+  '  open     —',
+  '',
+  'PR `#224` · spec merged → https://github.com/org/repo/pull/224',
+  'PR `#225` · S1 spec → https://github.com/org/repo/pull/225',
+  'Release `0.3.27` → https://github.com/org/repo/releases/tag/v0.3.27'
+)
+
+// pt-BR labels, padded to the same 9 columns: the parser keys on shape, never on the words.
+const T579_PT = fence(
+  '**T579** aviso ao fechar o app  ▰▰ Passo 2 de 2 ✓',
+  row('', 'agora', 'nada'),
+  row('', 'feito', 'PR #149 aberto (`3794ae04`) · card em Review'),
+  row('', 'próximo', 'você faz o merge do PR #149'),
+  row('⚑', 'você', 'testar o teclado num build empacotado · fechar a mission'),
+  '  '.padEnd(11) + 'Cancel mantém app e browser panes · Quit fecha',
+  row('?', 'aberto', 'os ACs foram escritos por mim, não vieram de uma spec'),
+  '',
+  'PR #149 · aviso ao fechar → https://github.com/junielton/harnu/pull/149'
+)
+const T579_RAIL = fence(
+  'T579',
+  '│',
+  '├─ ✓ Topologia — unidade única, PR direto para main',
+  '├─ ✓ Heartbeat — loop parado · watchdog 76f16855 desligado',
+  '├─ ! macOS — fechar a janela também avisa (mata os terminais)',
+  '└─ ✓ Revisão — 1 bug (AC-3) corrigido + teste de regressão',
+  '',
+  row('⚑', 'você', 'fechar a mission'),
+  '',
+  'PR #149 → https://github.com/junielton/harnu/pull/149'
+)
+
+const TREE = fence('src', '├── main', '│   └── index.ts', '├── preload', '└── renderer')
+
+// ---- the parser (AC-1, AC-2, AC-3) ---------------------------------------------------------------
+
+const reports = (segments: Segment[] | null): Report[] =>
+  (segments ?? []).flatMap((s) => (s.kind === 'report' ? [s.report] : []))
+
+test('a reply with no report is left alone', () => {
+  expect(splitReports('Just a sentence.')).toBeNull()
+  expect(splitReports('Some code:\n\n```ts\nconst a = 1\n```\n')).toBeNull()
+  expect(splitReports('')).toBeNull()
+})
+
+test('an English report-back splits into the sentence, the card and the summary', () => {
+  const segments = splitReports(EN_MESSAGE)
+  expect(segments?.map((s) => s.kind)).toEqual(['text', 'report', 'text'])
+  expect((segments?.[0] as { text: string }).text).toContain('stopped at one review decision')
+  expect((segments?.[2] as { text: string }).text).toContain('needs a decision')
+  const [r] = reports(segments)
+  expect(r.header).toMatchObject({ title: 'avatar-cache', bar: { filled: 7, total: 10 } })
+  expect(r.header?.detail).toBe('70%')
+  expect(r.rail.map((x) => x.glyph)).toEqual(['✓', '✓', '✓', '-', '✓', '✗'])
+  expect(r.rail[0]).toEqual({ glyph: '✓', text: 'review-local — 2 safe fixes' })
+  expect(r.ledger).toEqual([
+    { gutter: 'owed', label: 'you', lines: ['decide the retry config (3 attempts vs backoff)'] },
+    { gutter: 'open', label: 'open', lines: ['does the cache invalidate on logout?'] }
+  ])
+  expect(r.links).toHaveLength(4)
+  expect(r.links[0]).toEqual({
+    label: 'PR #142 · diff + threads',
+    target: 'https://github.com/org/repo/pull/142'
+  })
+  expect(r.links[3]).toEqual({
+    label: 'review-local report',
+    target: 'docs/reports/avatar-cache.md'
+  })
+})
+
+test('a status glance card parses: bold id, bar, gutter rows', () => {
+  const [r] = reports(splitReports(`Status.\n\n${STATUS_EN}`))
+  expect(r.header).toMatchObject({
+    mark: null,
+    title: 'T381 mission v3',
+    bar: { filled: 3, total: 5 },
+    detail: 'Step 4 of 5 · 2 verified'
+  })
+  expect(r.ledger.map((x) => [x.gutter, x.label])).toEqual([
+    ['none', 'now'],
+    ['none', 'done'],
+    ['none', 'next'],
+    ['owed', 'you'],
+    ['open', 'open']
+  ])
+  expect(r.rail).toEqual([])
+})
+
+test('three fronts in one fence become three reports', () => {
+  const rs = reports(splitReports(THREE_FRONTS))
+  expect(rs).toHaveLength(3)
+  expect(rs[0].header?.title).toBe('T215 message_session')
+  expect(rs[0].links).toHaveLength(0)
+  expect(rs[1].header).toMatchObject({ mark: '!', title: 'T216 delivery assurance' })
+  expect(rs[1].ledger[0]).toMatchObject({ gutter: 'warn', label: 'now' })
+  expect(rs[1].links).toHaveLength(0)
+  // the third front is shipped, and the links block that follows belongs to it
+  expect(rs[2].header).toMatchObject({
+    mark: '✓',
+    title: 'T217 bundled skills',
+    bar: { filled: 4, total: 4 }
+  })
+  expect(rs[2].ledger.map((x) => [x.gutter, x.label])).toEqual([
+    ['none', 'now'],
+    ['none', 'done'],
+    ['none', 'next'],
+    ['owed', 'you'],
+    ['none', 'open']
+  ])
+  expect(rs[2].links).toHaveLength(3)
+  expect(rs.map((r) => cardTone(r))).toEqual(['accent', 'accent', 'ok'])
+})
+
+test('pt-BR labels and a ledger continuation line parse by shape', () => {
+  const [r] = reports(splitReports(`Pronto.\n\n${T579_PT}`))
+  expect(r.header).toMatchObject({
+    title: 'T579 aviso ao fechar o app',
+    bar: { filled: 2, total: 2 }
+  })
+  expect(r.header?.detail).toBe('Passo 2 de 2 ✓')
+  const owed = r.ledger.find((x) => x.gutter === 'owed')
+  expect(owed?.label).toBe('você')
+  expect(owed?.lines).toEqual([
+    'testar o teclado num build empacotado · fechar a mission',
+    'Cancel mantém app e browser panes · Quit fecha'
+  ])
+  expect(r.ledger.find((x) => x.gutter === 'open')?.label).toBe('aberto')
+  expect(r.links[0].label).toBe('PR #149 · aviso ao fechar')
+})
+
+test('a rail report without a bar still draws when it has a ledger', () => {
+  const [r] = reports(splitReports(T579_RAIL))
+  expect(r.header).toMatchObject({ title: 'T579', bar: null })
+  expect(r.rail).toHaveLength(4)
+  expect(r.ledger).toHaveLength(1)
+})
+
+test('only the report fence is replaced; a tree block beside it stays text', () => {
+  const segments = splitReports(`Layout:\n\n${TREE}\n\n${REPORT_BACK_EN}\n\nDone.`)
+  expect(segments?.filter((s) => s.kind === 'report')).toHaveLength(1)
+  const first = segments?.[0] as { kind: 'text'; text: string }
+  expect(first.text).toContain('├── main')
+})
+
+test('the card tone follows the markers: all ✓ green, any ✗ red, else accent', () => {
+  const tone = (...rail: string[]) =>
+    cardTone(reports(splitReports(fence('x  ▰▱ 1/2', ...rail, '', row('', 'you', '—'))))[0])
+  expect(tone('├─ ✓ a — b', '└─ ✗ c — d')).toBe('fail')
+  expect(tone('├─ ✓ a — b', '└─ ! c — d')).toBe('accent')
+  expect(tone('├─ ✓ a — b', '└─ - c — d')).toBe('accent')
+})
+
+// Review finding 1: an unfinished header keeps the card accent even when every rail row is ✓; the
+// rail decides only for a report whose header carries no bar or count.
+test('an unfinished bar stays accent although every rail marker is ✓', () => {
+  const rail = ['├─ ✓ a — b', '└─ ✓ c — d']
+  const withHeader = (h: string) => toneOf(fence(h, ...rail, '', row('', 'you', '—')))
+  expect(withHeader('x  ▰▱ 1/2')).toBe('accent')
+  expect(withHeader('x  ▰▰▰▱▱ Step 3 of 5')).toBe('accent')
+  expect(withHeader('x  ▰▰▰▰▰▰▰▱▱▱ 70%')).toBe('accent')
+  // a finished header, or one with no bar at all, lets the all-✓ rail read as done
+  expect(withHeader('x  ▰▰ 2/2')).toBe('ok')
+  expect(toneOf(fence('x', '│', ...rail, '', row('', 'you', '—')))).toBe('ok')
+  // and a ✗ still wins
+  expect(toneOf(fence('x  ▰▱ 1/2', '├─ ✗ a — b', '', row('', 'you', '—')))).toBe('fail')
+})
+
+// A finished card reads as done (green) whatever carries the proof: a full bar, a trailing ✓, a
+// complete step count. T585 delta: the T579 status card ("Passo 2 de 2 ✓", no rail) drew accent.
+const DONE_EN = fence(
+  '  **T381** mission v3       ▰▰▰▰▰ Step 5 of 5 ✓',
+  row('', 'now', '—'),
+  row('', 'done', 'S1 core · S2 reads · S3 renderer · S4 skills · S5 amendments'),
+  row('', 'you', "— nothing, you're clear")
+)
+const DONE_PT = T579_PT.replace(
+  row('⚑', 'você', 'testar o teclado num build empacotado · fechar a mission'),
+  row('', 'você', '— nada, está tudo certo')
+).replace('  '.padEnd(11) + 'Cancel mantém app e browser panes · Quit fecha\n', '')
+const IN_PROGRESS = fence(
+  '  **T381** mission v3       ▰▰▰▱▱ Step 4 of 5 · 2 verified',
+  row('', 'now', 'S4 skills'),
+  row('⚑', 'you', 'tick the due check on S3')
+)
+const TEN_CELL_DONE = fence(
+  'avatar-cache  ▰▰▰▰▰▰▰▰▰▰ 100%',
+  '│',
+  '├─ ! a — caveat',
+  '',
+  row('', 'you', '—')
+)
+
+const toneOf = (text: string) => cardTone(reports(splitReports(text))[0])
+
+test('a finished header is done: a full bar, a trailing ✓ or 100%', () => {
+  expect(toneOf(DONE_EN)).toBe('ok')
+  expect(toneOf(DONE_PT)).toBe('ok')
+  expect(toneOf(TEN_CELL_DONE)).toBe('ok')
+})
+
+test('a header with a ✓ mark and no rail is done; a ✗ anywhere is still red', () => {
+  expect(toneOf(fence('✓ **T9** x  ▰▰▰ 3/3', row('', 'you', '—')))).toBe('ok')
+  expect(toneOf(fence('  **T9** x  ▰▰▰▰▰ 5/5 ✓', '├─ ✗ a — b', row('', 'you', '—')))).toBe('fail')
+  expect(toneOf(REPORT_BACK_EN)).toBe('fail')
+})
+
+test('an unfinished card is accent, also when a later phase of its header is still open', () => {
+  expect(toneOf(IN_PROGRESS)).toBe('accent')
+  expect(toneOf(THREE_FRONTS)).toBe('accent')
+  expect(toneOf(fence('  **T9** x  S1 ▰▰ 2/2 · S2 ▱▱ 0/2', row('', 'you', '—')))).toBe('accent')
+})
+
+// Review finding 2: a `▰▱` run inside a ledger VALUE is part of that row, not a new header.
+test('a progress bar inside a ledger value stays a ledger row', () => {
+  const [r] = reports(
+    splitReports(
+      fence(
+        '  **T1** mission  ▰▰▱▱ Step 2 of 4',
+        row('', 'now', 'build ▰▰▱▱ 2/4 · linking'),
+        row('', 'done', 'S1'),
+        row('?', 'open', 'is ▰▱ enough?'),
+        row('⚑', 'you', 'merge ▰▰▰▱ later')
+      )
+    )
+  )
+  expect(r.header).toMatchObject({ title: 'T1 mission', bar: { filled: 2, total: 4 } })
+  expect(r.ledger.map((x) => x.label)).toEqual(['now', 'done', 'open', 'you'])
+  expect(r.ledger[0].lines).toEqual(['build ▰▰▱▱ 2/4 · linking'])
+})
+
+test('a barred front name with no id is still the header when it opens the block', () => {
+  const [r] = reports(
+    splitReports(fence('  wave     ▰▰▱▱▱ 3 units running · 0 PRs open', row('', 'now', 'T164')))
+  )
+  expect(r.header).toMatchObject({ title: 'wave', bar: { filled: 2, total: 5 } })
+  expect(r.ledger).toHaveLength(1)
+})
+
+// Review finding 3: an info string with attributes does not break the pairing of fences.
+test('a fence whose info string has attributes still pairs and still draws', () => {
+  const titled = REPORT_BACK_EN.replace('```\n', '```text title="report"\n')
+  const segments = splitReports(`Intro.\n\n${titled}\n\nEnd.`)
+  expect(segments?.map((s) => s.kind)).toEqual(['text', 'report', 'text'])
+})
+
+test('a code fence with attributes beside a report stays plain text', () => {
+  const code = '```ts title="a.ts"\nconst a = 1\n```'
+  const segments = splitReports(`${code}\n\n${REPORT_BACK_EN}`)
+  expect(segments?.map((s) => s.kind)).toEqual(['text', 'report'])
+  expect((segments?.[0] as { text: string }).text).toContain('const a = 1')
+})
+
+// Review finding 6: a URL keeps a ")" that closes its own "(".
+test('a URL keeps a balanced closing parenthesis and drops an unbalanced one', () => {
+  const link = (text: string) => inlineOf(text, new Map()).find((p) => p.t === 'link') as any
+  expect(link('see https://en.wikipedia.org/wiki/Foo_(bar) now').href).toBe(
+    'https://en.wikipedia.org/wiki/Foo_(bar)'
+  )
+  expect(link('(see https://example.com/a)').href).toBe('https://example.com/a')
+  expect(link('https://example.com/a_(b).').href).toBe('https://example.com/a_(b)')
+  expect(link('https://example.com/a.').href).toBe('https://example.com/a')
+  expect(link('https://example.com/a?x=1,').href).toBe('https://example.com/a?x=1')
+})
+
+// ---- malformed and partial reports fall back (AC-3) ----------------------------------------------
+
+const FALLBACKS: [string, string][] = [
+  ['no closing fence', `Report:\n\n${REPORT_BACK_EN.split('\n').slice(0, 8).join('\n')}`],
+  ['a rail without a ledger', fence('x  ▰▰ 1/2', '│', '├─ ✓ a — b', '└─ ✓ c — d')],
+  ['a ledger without a header or a rail', fence(row('⚑', 'you', 'merge it'))],
+  ['a tree output', TREE],
+  [
+    'a bare URL beside the card',
+    REPORT_BACK_EN.replace('```\n', '```\nhttps://github.com/org/repo/pull/142\n')
+  ],
+  ['a bare URL', 'https://github.com/org/repo/pull/142'],
+  [
+    'an unknown line inside the block',
+    fence('x  ▰▰ 1/2', row('', 'you', 'a'), 'something else entirely')
+  ],
+  ['a row far past any sane length', fence('x  ▰▰ 1/2', row('', 'you', 'x'.repeat(5000)))],
+  [
+    'a label wider than its column',
+    fence('x  ▰▰ 1/2', '  Em andamento nothing here', row('', 'you', '—'))
+  ]
+]
+for (const [name, text] of FALLBACKS) {
+  test(`falls back untouched: ${name}`, () => {
+    expect(splitReports(text)).toBeNull()
+  })
+}
+
+test('the parser never throws on hostile input', () => {
+  const nasty = [
+    '```',
+    '```\n```',
+    '```\n\n```',
+    '├─ ✓',
+    '⚑ ',
+    '▰'.repeat(10_000),
+    '```\n' + '├─ ✓ a\n'.repeat(5000) + '```'
+  ]
+  for (const text of nasty) {
+    let out: unknown = 'threw'
+    try {
+      out = splitReports(text)
+    } catch {
+      out = 'threw'
+    }
+    expect(out === 'threw').toBe(false)
+  }
+})
+
+// ---- the hook (AC-1, AC-2, AC-3, AC-4) -----------------------------------------------------------
+
+const ENABLE = ['sense.identity', 'ui.reportCard']
+const scriptWith =
+  (enable: string[]): Script =>
+  (route, body, n) =>
+    route === 'hello' ? helloOk(enable) : defaultScript(route, body, n)
+
+const ASSISTANT = { plugin: 'harnu-companion', component: 'AssistantMessage' } as const
+const props = (text: string, over: Record<string, unknown> = {}) => ({
+  text,
+  isFirstOfReply: true,
+  ...over
+})
+
+const mountWith = async ($: any, on: any, enable: string[], text: string, over = {}) => {
+  const rig = installRig(on, { script: scriptWith(enable) })
+  on('ui.render', ($: any, e: any) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await $.session.start(START)
+  await rig.clock.settle()
+  return $.ui.mount({ ...ASSISTANT, surface: 'terminal', props: props(text, over) } as never)
+}
+
+const textOf = async (ui: any, re: RegExp) => (await ui.find({ type: 'Text', text: re }))?.text
+
+test('a reply with no report draws exactly what the engine draws', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, 'Just a sentence, no report.')
+  expect(await textOf(ui, /^engine$/)).toBe('engine')
+  expect(await ui.find({ type: 'Markdown' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a recognized report draws as the card, and text around it stays Markdown', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE)
+  expect(await textOf(ui, /^engine$/)).toBeUndefined() // the engine drawing is replaced
+  expect(
+    (await ui.find({ type: 'Markdown', text: /stopped at one review decision/ }))?.text
+  ).toBeTruthy()
+  expect((await ui.find({ type: 'Markdown', text: /needs a decision/ }))?.text).toBeTruthy()
+  expect(await textOf(ui, /avatar-cache/)).toBeTruthy()
+  // the owed row sits in its own box, not in the card
+  expect(await textOf(ui, /you · 1/)).toBeTruthy()
+  expect(await textOf(ui, /decide the retry config/)).toBeTruthy()
+  // PR numbers and URLs are links
+  const link = await ui.find({ type: 'Link', text: /#142|pull\/142/ })
+  expect(link?.props.href).toBe('https://github.com/org/repo/pull/142')
+  await ui.unmount()
+})
+
+test('long rows truncate at the edge; the card border follows the state', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE)
+  const rows = await ui.findAll({ type: 'Text', text: /commit \+ push|Copilot/ })
+  expect(rows.length).toBeGreaterThan(0)
+  for (const r of rows) expect(r.props.wrap).toBe('truncate-end')
+  const boxes = await ui.findAll({ type: 'Box' })
+  const borders = boxes.map((b: any) => b.props.borderColor).filter(Boolean)
+  expect(borders).toContain('error') // the report has a ✗
+  expect(borders).toContain('warning') // and an owed row
+  await ui.unmount()
+})
+
+// Review finding 4: what is owed and every URL wrap; only a rail row may be cut at the edge.
+test('owed rows, ledger rows and link rows wrap; only rail rows truncate', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE)
+  const mustWrap = [
+    /decide the retry config/,
+    /does the cache invalidate/,
+    /diff \+ threads/,
+    /Task PROJ-231/
+  ]
+  for (const re of mustWrap) {
+    const found = await ui.findAll({ type: 'Text', text: re })
+    expect(found.length).toBeGreaterThan(0)
+    for (const f of found) expect(f.props.wrap === 'truncate-end').toBe(false)
+  }
+  const rail = await ui.findAll({ type: 'Text', text: /commit \+ push|Copilot|CI green/ })
+  expect(rail.length).toBeGreaterThan(0)
+  for (const f of rail) expect(f.props.wrap).toBe('truncate-end')
+  await ui.unmount()
+})
+
+// Review finding 5, as it reproduces: on a narrow terminal the checklist's glyph column shrank, so
+// `✓ commit` drew as `✓commit` and the label column moved. Every glyph, and the ledger gutter, now
+// sits in a fixed 2-cell box that never shrinks, whatever the row's text.
+test('the checklist glyph and the ledger gutter are fixed 2-cell columns that never shrink', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE)
+  const fixed = (await ui.findAll({ type: 'Box' })).filter(
+    (b: any) => b.props.width === 2 && b.props.flexShrink === 0
+  )
+  // 6 rail rows + the open ledger row + the owed row in its box
+  expect(fixed.length).toBe(8)
+  await ui.unmount()
+})
+
+// Delta 3 (1): the engine puts a blank row above the first block of a reply; drawing our own tree
+// must not lose it, or the reply sticks to the prompt line above it.
+test('the first block of a reply keeps the engine top margin', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE, { isFirstOfReply: true })
+  const root: any = await ui.drawn()
+  expect(root.type).toBe('Box')
+  expect(root.props.marginTop).toBe(1)
+  await ui.unmount()
+})
+
+test('a later block of the reply has no top margin', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE, { isFirstOfReply: false })
+  const root: any = await ui.drawn()
+  expect(root.props.marginTop ?? 0).toBe(0)
+  await ui.unmount()
+})
+
+// Delta 3 (2): the glyph and gutter colours are part of the card's meaning (✓ green ... ✗ red). This
+// passes on the code as it stands; it is a regression guard, so there is no failing-first commit.
+test('checklist glyphs and ledger gutters keep their colours', async ($, on) => {
+  const text = `Mixed.\n\n${fence(
+    'x  ▰▱ 1/2',
+    '├─ ✓ a — b',
+    '├─ ! c — d',
+    '├─ ✗ e — f',
+    '└─ - g — h',
+    '',
+    row('?', 'open', 'a question'),
+    row('!', 'now', 'a stale executor'),
+    row('⚑', 'you', 'a thing to do')
+  )}`
+  const ui = await mountWith($, on, ENABLE, text)
+  const colourOf = async (glyph: string) =>
+    (await ui.findAll({ type: 'Text', text: new RegExp('^' + glyph + '$') })).map(
+      (f: any) => f.props.color
+    )
+  expect(await colourOf('✓')).toEqual(['success'])
+  expect(await colourOf('!')).toEqual(['warning', 'warning']) // the rail's `!` and the `!` gutter
+  expect(await colourOf('✗')).toEqual(['error'])
+  expect(await colourOf('-')).toEqual(['inactive'])
+  expect(await colourOf('\\?')).toEqual(['warning'])
+  expect(await colourOf('⚑')).toEqual(['warning'])
+  await ui.unmount()
+})
+
+test('the whole-green card is green', async ($, on) => {
+  const green = `Done.\n\n${fence('x  ▰▰ 2/2', '├─ ✓ a — b', '└─ ✓ c — d', '', row('', 'you', "— nothing, you're clear"))}`
+  const ui = await mountWith($, on, ENABLE, green)
+  const borders = (await ui.findAll({ type: 'Box' })).map((b: any) => b.props.borderColor)
+  expect(borders).toContain('success')
+  expect(borders).not.toContain('warning') // nothing owed: no yellow box
+  await ui.unmount()
+})
+
+const colours = async (ui: any) => {
+  const boxes = await ui.findAll({ type: 'Box' })
+  return {
+    borders: boxes.map((b: any) => b.props.borderColor).filter(Boolean),
+    fills: boxes.map((b: any) => b.props.backgroundColor).filter(Boolean)
+  }
+}
+
+for (const [lang, text] of [
+  ['en', `Done.\n\n${DONE_EN}`],
+  ['pt-BR', `Pronto.\n\n${DONE_PT}`]
+] as const) {
+  test(`a finished status card draws a green border and a green bar (${lang})`, async ($, on) => {
+    const ui = await mountWith($, on, ENABLE, text)
+    const c = await colours(ui)
+    expect(c.borders).toContain('success')
+    expect(c.borders).not.toContain('claude')
+    expect(c.fills).toContain('success')
+    expect(c.fills).not.toContain('claude')
+    await ui.unmount()
+  })
+}
+
+test('a report with a ✗ draws a red border and a red bar', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE)
+  const c = await colours(ui)
+  expect(c.borders).toContain('error')
+  expect(c.fills).toContain('error')
+  expect(c.fills).not.toContain('claude')
+  await ui.unmount()
+})
+
+test('an in-progress card keeps the accent border and bar', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, `Status.\n\n${IN_PROGRESS}`)
+  const c = await colours(ui)
+  expect(c.borders).toContain('claude')
+  expect(c.fills).toContain('claude')
+  expect(c.borders).not.toContain('success')
+  await ui.unmount()
+})
+
+const HOOK_FALLBACKS: [string, string][] = [
+  ['an unterminated fence', 'Report:\n\n```\nx  ▰▰ 1/2\n' + row('', 'you', 'a')],
+  ['a tree output', `Layout:\n\n${TREE}`],
+  ['a rail without a ledger', fence('x  ▰▰ 1/2', '│', '├─ ✓ a — b')],
+  ['a bare URL', 'See https://github.com/org/repo/pull/142 for details.']
+]
+for (const [name, text] of HOOK_FALLBACKS) {
+  test(`${name} draws what the engine draws, with no failure`, async ($, on) => {
+    const ui = await mountWith($, on, ENABLE, text)
+    expect(await textOf(ui, /^engine$/)).toBe('engine')
+    await ui.unmount()
+  })
+}
+
+test('with the feature not enabled by the host, nothing is drawn', async ($, on) => {
+  const ui = await mountWith($, on, ['sense.identity'], EN_MESSAGE)
+  expect(await textOf(ui, /^engine$/)).toBe('engine')
+  await ui.unmount()
+})
+
+test('a summary block is never redrawn', async ($, on) => {
+  const ui = await mountWith($, on, ENABLE, EN_MESSAGE, { isSummary: true })
+  expect(await textOf(ui, /^engine$/)).toBe('engine')
+  await ui.unmount()
+})
+
+const SCREEN = { first: 0, last: 3, of: 12 }
+
+/** What the engine's own drawing, beneath the mod, is handed: the props `next(e)` passed down. */
+const mountSeen = async ($: any, on: any, text: string, over: Record<string, unknown>) => {
+  const rig = installRig(on, { script: scriptWith(ENABLE) })
+  const seen: { isSummary: unknown; onScreen: unknown }[] = []
+  on('ui.render', ($: any, e: any) => {
+    seen.push({ isSummary: e.props.isSummary, onScreen: e.props.onScreen })
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await $.session.start(START)
+  await rig.clock.settle()
+  const ui = await $.ui.mount({
+    ...ASSISTANT,
+    surface: 'terminal',
+    props: props(text, over)
+  } as never)
+  return { ui, seen }
+}
+
+test('isSummary and onScreen reach the engine unchanged when the mod steps aside', async ($, on) => {
+  const { ui, seen } = await mountSeen($, on, EN_MESSAGE, { isSummary: true, onScreen: SCREEN })
+  expect(seen.length).toBeGreaterThan(0)
+  for (const s of seen) expect(s).toEqual({ isSummary: true, onScreen: SCREEN })
+  await ui.unmount()
+})
+
+test('a card is drawn for a block on screen; the props are never rewritten', async ($, on) => {
+  const { ui } = await mountSeen($, on, EN_MESSAGE, { onScreen: SCREEN })
+  expect(await textOf(ui, /avatar-cache/)).toBeTruthy()
+  // a rewrite that changed `onScreen` would have been refused and the engine's drawing kept
+  expect(await textOf(ui, /^engine$/)).toBeUndefined()
+  await ui.unmount()
+})
+
+test('another component is not touched', async ($, on) => {
+  const rig = installRig(on, { script: scriptWith(ENABLE) })
+  on('ui.render', ($: any, e: any) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await $.session.start(START)
+  await rig.clock.settle()
+  const ui = await $.ui.mount({
+    plugin: 'harnu-companion',
+    component: 'UserMessage',
+    surface: 'terminal',
+    props: { text: EN_MESSAGE }
+  } as never)
+  expect(await textOf(ui, /^engine$/)).toBe('engine')
+  await ui.unmount()
+})

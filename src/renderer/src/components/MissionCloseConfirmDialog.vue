@@ -24,6 +24,8 @@ import { Check, Trash2, TriangleAlert, X } from 'lucide-vue-next'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { playNotificationSound } from '../lib/notification-sound'
 import type { EndChoice, EndWarning } from '../lib/mission-view'
+import type { MemoryDraft } from '../../../main/consolidator-core'
+import { citationRefs, draftExcerpt, draftHeading } from '../lib/memory-draft-view'
 import Button from './ui/Button.vue'
 
 const props = withDefaults(
@@ -34,15 +36,28 @@ const props = withDefaults(
     warnings?: EndWarning[]
     /** The choice the dialog opens on. */
     initial?: EndChoice
+    /** Campaign ch.6 — the memory drafts the consolidator stored on the mission. */
+    drafts?: MemoryDraft[]
+    /** Campaign ch.6 — the consolidator found nothing worth recording. */
+    nothingNotable?: boolean
   }>(),
-  { warnings: () => [], initial: 'delivered' }
+  { warnings: () => [], initial: 'delivered', drafts: () => [], nothingNotable: false }
 )
-const emit = defineEmits<{ cancel: []; confirm: [closedAs: EndChoice, reason?: string] }>()
+const emit = defineEmits<{
+  cancel: []
+  confirm: [closedAs: EndChoice, reason?: string, record?: string[]]
+}>()
 
 const { t } = useI18n()
 
 const choice = ref<EndChoice>(props.initial)
 const reason = ref('')
+/** Draft ids the operator ticked under "Also record" — unticked by default, kept across a switch to Discard. */
+const ticked = ref<string[]>([])
+/** The panel shows only for a delivered end that has something to say. */
+const showRecord = computed(
+  () => choice.value === 'delivered' && (props.drafts.length > 0 || props.nothingNotable)
+)
 
 const WARNING_KEY: Record<EndWarning['kind'], string> = {
   'end-unverified': 'endUnverified',
@@ -67,8 +82,12 @@ const CHOICES: ReadonlyArray<{ value: EndChoice; label: string; hint: string }> 
 
 function onConfirm(): void {
   const why = reason.value.trim()
-  if (why) emit('confirm', choice.value, why)
-  else emit('confirm', choice.value)
+  // Only a delivered end records; ids follow the order the record stores the drafts in.
+  const record =
+    choice.value === 'delivered'
+      ? props.drafts.filter((d) => ticked.value.includes(d.id)).map((d) => d.id)
+      : []
+  emit('confirm', choice.value, why || undefined, record.length ? record : undefined)
 }
 
 const dialogRef = ref<HTMLElement | null>(null)
@@ -204,6 +223,92 @@ onBeforeUnmount(() => {
               data-test="mission-end-reason"
             />
           </label>
+
+          <section
+            v-if="showRecord"
+            class="rounded-sm border border-border-2"
+            style="margin-top: 10px; padding: 8px 10px"
+            data-test="mission-record"
+          >
+            <span
+              class="block uppercase text-text-3"
+              style="font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em"
+              >{{ t('mission.end.record.title') }}</span
+            >
+            <p
+              v-if="drafts.length === 0"
+              class="text-text-3"
+              style="margin: 4px 0 0; font-size: 11.5px"
+              data-test="mission-record-nothing"
+            >
+              {{ t('mission.end.record.nothing') }}
+            </p>
+            <template v-else>
+              <p class="text-text-3" style="margin: 2px 0 4px; font-size: 11px">
+                {{ t('mission.end.record.hint') }}
+              </p>
+              <label
+                v-for="(d, i) in drafts"
+                :key="d.id"
+                class="flex cursor-pointer items-start"
+                :class="i > 0 ? 'border-t border-border' : ''"
+                style="gap: 8px; padding: 6px 0"
+                data-test="mission-record-draft"
+                :data-id="d.id"
+              >
+                <input
+                  v-model="ticked"
+                  type="checkbox"
+                  :value="d.id"
+                  class="shrink-0"
+                  style="margin-top: 3px; accent-color: var(--color-accent)"
+                  :disabled="busy"
+                />
+                <span class="min-w-0 flex-1">
+                  <span
+                    class="block uppercase text-text-4"
+                    style="font-size: 9.5px; font-weight: 600"
+                    >{{ t(`mission.end.record.kind.${d.kind}`) }}</span
+                  >
+                  <span
+                    class="block truncate text-text"
+                    style="font-size: 12px; font-weight: 500"
+                    >{{ draftHeading(d) }}</span
+                  >
+                  <span
+                    v-if="draftExcerpt(d)"
+                    class="block text-text-3"
+                    style="
+                      font-size: 11px;
+                      display: -webkit-box;
+                      -webkit-line-clamp: 3;
+                      -webkit-box-orient: vertical;
+                      overflow: hidden;
+                    "
+                    >{{ draftExcerpt(d) }}</span
+                  >
+                  <span
+                    class="block font-mono text-text-2"
+                    style="font-size: 10.5px"
+                    data-test="mission-record-cites"
+                    >{{ citationRefs(d).join(' · ') }}</span
+                  >
+                  <span
+                    v-if="d.supersedes"
+                    class="block text-text-3"
+                    style="font-size: 11px"
+                    data-test="mission-record-supersedes"
+                  >
+                    <i18n-t keypath="mission.end.record.replaces" scope="global">
+                      <template #id
+                        ><span class="font-mono">{{ d.supersedes }}</span></template
+                      >
+                    </i18n-t>
+                  </span>
+                </span>
+              </label>
+            </template>
+          </section>
 
           <div
             v-if="warnings.length"

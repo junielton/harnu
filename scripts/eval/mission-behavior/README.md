@@ -177,6 +177,21 @@ single mission (it fails unless exactly one exists). `label` overrides the repor
 | { "mission", "eachLink": { "match": {…}, "remove": true } } ] }`. Write one per regression the
 scenario exists to catch.
 
+**Campaigns (chapter 3b).** The grader also reads `.harnu/campaigns/*.md`. Assertions:
+`{ "campaignCount": n }`; `{ "campaign": slug | "*", "chapter"?: sel, "path"?, <matcher> }` (chapter
+selectors `index:<n>`, `id:<chp-n>`, `title:<exact>`, `produces:<token>`, `consumes:<token>`; matchers
+as for missions, plus `lengthAtLeast`); `{ "campaign", "logContains" | "logNotContains" }`;
+`{ "campaign", "chapterCount": {…}, "equals": n }`; `{ "campaign", "chapterBefore": [sel, sel] }`; and
+`{ "bound": { "campaign", "chapter", "mission" } }` (the chapter and the mission name each other).
+Breaks take `{ "campaign", "chapter"?, "set" | "unset" | "logAppend" | "logRemove" | "swapChapters" }`,
+`{ "dropCampaign": slug }`, and for missions `{ "mission", "removeSteps": {…} }` /
+`{ "mission", "eachStep": { "match", "set"?, "unset"? } }`. A scenario that needs a RED `ci` gate
+(no sandbox repo has a GitHub) declares `"gateCache": [{ "pr", "ci" }]`: the harness seeds Harnu's
+sticky last-known cache before the instance boots, a `seed` phase takes `steps: [{ title, links }]`
+to put a PR link on a step, and a `precondition` phase reads the gate through `mission_get` and
+stops the scenario if it is not as declared. A phase granting `Bash` makes `gh` reachable (the frame
+stops saying it does not exist), so "no `gh` call" is a real assertion on the recorded `tools=` line.
+
 **Check a grader offline before a live run.** A live run costs real API time, so iterate on a new
 scenario's grader in the unit suite instead: build the state a correct session leaves on disk,
 grade it with `gradeState`, and grade every break through `applyBreak` — the good state must pass

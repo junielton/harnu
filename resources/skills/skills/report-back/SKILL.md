@@ -148,6 +148,27 @@ Miss any one and the clause is omitted — an omitted verdict honestly reads as
 "not proven finished". A run that stopped takes the negative form instead:
 `· stopped at <what>`. Never write either from the feeling that it went well.
 
+## When the run belongs to a Mission or a Campaign
+
+Take the rail's evidence from what Harnu derived, not from a fresh `gh` pass.
+
+- **The rail reads the `ledger`.** `mission_get` returns the dated rows Harnu wrote
+  itself (dispatched, PR opened, PR merged, CI changed, verified, session died,
+  compaction). A row for a step ("PR `#312` merged", "verified") is the rail's
+  outcome for that step, with its own time; a step with no row has no outcome
+  yet, so it is `-`, not `✓`.
+- **Read `outcome` when it exists.** When `mission_get` or `campaign_get` carries
+  an `outcome` (written when the mission or campaign closes), its `deviations`,
+  `blockers` and `verificationGaps` feed the `open` line and the summary's
+  caveat. When there is none yet, say nothing about it: never write an outcome
+  yourself.
+- **The header is the campaign's, when there is one.** For a mission that is a
+  chapter, build the header's counts from `campaign_get` and `mission_get`
+  exactly as the `status` skill does (`Ch. N/M · Step a/b`), never recounted.
+- **Link the campaign.** Add one line to the links block: the campaign record,
+  `campaign <cmp-id> → .harnu/campaigns/<id>-<slug>.md`, so the reader can open
+  the whole plan, not only the chapter this run touched.
+
 ## Summary rules
 
 - **At most 3 lines**, below the block, plain sentences, no bullets.

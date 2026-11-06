@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — Scheduler by folder</title>
+    <style>
+      :root {
+        --ix-bg: #f6f6f7;
+        --ix-fg: #1b1b1f;
+        --ix-muted: #6b6b76;
+        --ix-line: #dcdce2;
+        --ix-card: #fff;
+        --ix-accent: #2f5bea;
+        --ix-draft: #b7791f;
+        --ix-ok: #2f855a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ix-bg: #121216;
+          --ix-fg: #ececf1;
+          --ix-muted: #9a9aa6;
+          --ix-line: #2b2b33;
+          --ix-card: #1b1b21;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        color: var(--ix-fg);
+        background: var(--ix-bg);
+      }
+      header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--ix-line);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ix-draft);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status[data-status='approved'] {
+        background: var(--ix-ok);
+      }
+      nav.toc {
+        font-size: 13px;
+        color: var(--ix-muted);
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      nav.toc a {
+        color: inherit;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        margin-bottom: 48px;
+      }
+      section > h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .prose {
+        max-width: 72ch;
+        color: var(--ix-fg);
+      }
+      .prose p {
+        margin: 0 0 10px;
+      }
+      /* one card per screen */
+      .screen {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .screen .bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .screen h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .screen h3 code {
+        font-size: 12px;
+        color: var(--ix-muted);
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .screen .notes {
+        font-size: 13px;
+        color: var(--ix-muted);
+        margin: 0 0 12px;
+        max-width: 80ch;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chips button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--ix-line);
+        background: transparent;
+        color: var(--ix-fg);
+        cursor: pointer;
+      }
+      .chips button[aria-pressed='true'] {
+        background: var(--ix-accent);
+        border-color: var(--ix-accent);
+        color: #fff;
+      }
+      .open {
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .viewport {
+        overflow: hidden;
+        border: 1px solid var(--ix-line);
+        border-radius: 6px;
+        background: #fff;
+      }
+      .viewport iframe {
+        display: block;
+        border: 0;
+        transform-origin: top left;
+      }
+      .screen .approval {
+        font-size: 12px;
+        margin-top: 8px;
+        color: var(--ix-muted);
+      }
+      /* flows */
+      .flow {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .flow ol {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 0;
+        margin: 8px 0 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .flow li {
+        counter-increment: step;
+        font-size: 13px;
+      }
+      .flow li::before {
+        content: counter(step) '. ';
+        color: var(--ix-muted);
+      }
+      .flow li + li::before {
+        content: '→ ' counter(step) '. ';
+      }
+      .flow li small {
+        color: var(--ix-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Scheduler — list by folder</h1>
+      <!-- data-status MUST mirror mockup.json "status"; check-mockup.mjs enforces it -->
+      <span class="status" data-status="approved">approved</span>
+      <nav class="toc">
+        <a href="#contexto">Context</a><a href="#telas">Screens</a><a href="#fluxos">Flows</a
+        ><a href="parts/index.html">Parts</a>
+      </nav>
+    </header>
+    <main>
+      <section id="contexto">
+        <h2>Context and decisions</h2>
+        <div class="prose">
+          <p>
+            <strong>Problem.</strong> Today the worker column is a flat list (Pinned / Enabled /
+            Off). With 17–45 workers across 6 folders, the folder becomes a truncated alias in the
+            row meta (<code>ma… · m… · every 15m</code>), three "PR Review Watcher" workers from
+            different repos are indistinguishable, and nothing says whether a worker keeps failing
+            or what it found last.
+          </p>
+          <p>
+            <strong>Common proposal for the 3 variants.</strong> Group by folder (header with an
+            identity colour, initial, count, health). The pin becomes an icon on the name and sorts
+            inside the folder; folders with something running or failing rise.
+            <em>(Round 1 also drew a 2px cycle bar per row; revision 2 dropped it.)</em>
+          </p>
+          <p>
+            <strong>Token decision to approve.</strong> The system has no per-folder colour. The
+            mockups use the <code>--term-ansi-*</code> palette (already defined in every theme) as
+            the folder hue, and tints via <code>color-mix(var(--fh) N%, transparent)</code>.
+            Implementing it requires declaring this in <code>design.md</code> §2/§9 first. Risk:
+            coral (<code>bright-red</code>) sits close to the failure red — mitigated because the
+            state always carries a word plus a dot.
+          </p>
+          <p>
+            <em>Round 1:</em> <strong>A</strong> = minimal change (same row, same width).
+            <strong>B</strong> = maximum information per row. <strong>C</strong> = triage focus
+            (filters, "Up next"). They can be combined: e.g. B's header + C's filters.
+          </p>
+        </div>
+      </section>
+
+      <section id="telas">
+        <h2>Screens</h2>
+        <article
+          class="screen"
+          data-screen="pastas--combinada"
+          data-states="default upnext-recolhido colapsado filtro-falhas busca-vazia hover"
+        >
+          <div class="bar">
+            <h3>Scheduler — list by folder <code>pastas--combinada</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/pastas--combinada.html" target="_blank"
+              >open on its own ↗</a
+            >
+          </div>
+          <p class="notes">
+            Revision 2 (calmer). Search and "Up next" from C; B's tall folder header (44px) with
+            branch, on/off counts, next run, <em>failing</em>/<em>running</em> pills and a health
+            bar, collapsible (button beside the search); two-line rows: pin slot + name + state,
+            then <code>every · model · mode</code> (<code>act</code> in amber) + run ticks, both on
+            one right edge. No cycle bar, no selected-row rail, no last-result line. "Up next"
+            collapses from its own header; collapsed it shows only the next run.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="pastas--combinada"></iframe></div>
+          <p class="approval">
+            Approval:
+            <strong
+              >approved · 2026-10-29 (revision 2: no cycle bar and no selection rail, two
+              right-aligned lines per row, single pin, uniform padding, chips without All)</strong
+            >
+          </p>
+        </article>
+      </section>
+
+      <section id="fluxos">
+        <h2>Flows</h2>
+        <article class="flow" data-flow="recolher-pastas">
+          <h3>
+            Collapse and reopen the folders —
+            <a href="screens/pastas--combinada.html" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/pastas--combinada.html?state=default" target="_blank"
+                >pastas--combinada</a
+              >
+              <small>via "Collapse all"</small>
+            </li>
+            <li>
+              <a href="screens/pastas--combinada.html?state=colapsado" target="_blank"
+                >pastas--combinada?colapsado</a
+              >
+              <small>via "Expand all ou cabeçalho"</small>
+            </li>
+            <li>
+              <a href="screens/pastas--combinada.html?state=default" target="_blank"
+                >pastas--combinada</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="filtrar-falhas">
+          <h3>
+            See only what is failing —
+            <a href="screens/pastas--combinada.html" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/pastas--combinada.html?state=default" target="_blank"
+                >pastas--combinada</a
+              >
+              <small>via "chip Failing"</small>
+            </li>
+            <li>
+              <a href="screens/pastas--combinada.html?state=filtro-falhas" target="_blank"
+                >pastas--combinada?filtro-falhas</a
+              >
+              <small>via "chip Failing de novo (limpa o filtro)"</small>
+            </li>
+            <li>
+              <a href="screens/pastas--combinada.html?state=default" target="_blank"
+                >pastas--combinada</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="recolher-upnext">
+          <h3>
+            Collapse and reopen Up next —
+            <a href="screens/pastas--combinada.html" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/pastas--combinada.html?state=default" target="_blank"
+                >pastas--combinada</a
+              >
+              <small>via "cabeçalho Up next"</small>
+            </li>
+            <li>
+              <a href="screens/pastas--combinada.html?state=upnext-recolhido" target="_blank"
+                >pastas--combinada?upnext-recolhido</a
+              >
+              <small>via "cabeçalho Up next"</small>
+            </li>
+            <li>
+              <a href="screens/pastas--combinada.html?state=default" target="_blank"
+                >pastas--combinada</a
+              >
+            </li>
+          </ol>
+        </article>
+      </section>
+    </main>
+    <script>
+      /* index runtime: sizes each frame to the chosen viewport, swaps ?state=, listens for
+   mockup:size from the screens. Do not add behaviour here; screens own their behaviour. */
+      ;(() => {
+        const VIEWPORTS = [1280, 900] // MUST mirror mockup.json "viewports"
+        const frames = new Map() // iframe -> {w, h}
+        const fit = (card) => {
+          const vp = card.querySelector('.viewport'),
+            ifr = vp.querySelector('iframe'),
+            f = frames.get(ifr)
+          const s = Math.min(1, vp.parentElement.clientWidth / f.w)
+          ifr.style.width = f.w + 'px'
+          ifr.style.height = f.h + 'px'
+          ifr.style.transform = `scale(${s})`
+          vp.style.height = Math.ceil(f.h * s) + 'px'
+          vp.style.width = Math.ceil(f.w * s) + 'px'
+        }
+        const load = (card) => {
+          const ifr = card.querySelector('iframe')
+          const state =
+            card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state ||
+            card.dataset.states.split(/\s+/)[0]
+          ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`
+        }
+        document.querySelectorAll('.screen').forEach((card) => {
+          const ifr = card.querySelector('iframe')
+          frames.set(ifr, { w: VIEWPORTS[0], h: 600 })
+          const vps = card.querySelector('[data-role="viewports"]')
+          VIEWPORTS.forEach((w, i) => {
+            const b = document.createElement('button')
+            b.textContent = w + 'px'
+            b.dataset.w = w
+            b.setAttribute('aria-pressed', String(i === 0))
+            b.onclick = () => {
+              vps
+                .querySelectorAll('button')
+                .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+              frames.get(ifr).w = w
+              fit(card)
+            }
+            vps.append(b)
+          })
+          const sts = card.querySelector('[data-role="states"]')
+          card.dataset.states
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((st, i) => {
+              const b = document.createElement('button')
+              b.textContent = st
+              b.dataset.state = st
+              b.setAttribute('aria-pressed', String(i === 0))
+              b.onclick = () => {
+                sts
+                  .querySelectorAll('button')
+                  .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+                load(card)
+              }
+              sts.append(b)
+            })
+          new IntersectionObserver(
+            (es, io) =>
+              es.forEach((e) => {
+                if (e.isIntersecting) {
+                  io.disconnect()
+                  load(card)
+                }
+              }),
+            { rootMargin: '600px' }
+          ).observe(card)
+          fit(card)
+        })
+        addEventListener('message', (e) => {
+          const m = e.data
+          if (!m || m.type !== 'mockup:size') return
+          for (const [ifr, f] of frames)
+            if (ifr.contentWindow === e.source) {
+              f.h = Math.max(320, m.height)
+              fit(ifr.closest('.screen'))
+            }
+        })
+        addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit))
+      })()
+    </script>
+  </body>
+</html>

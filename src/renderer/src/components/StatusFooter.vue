@@ -50,6 +50,7 @@ import {
   DollarSign,
   TriangleAlert,
   Image,
+  Link,
   ExternalLink,
   Recycle,
   Clock,
@@ -67,11 +68,14 @@ import { useStatuslineHealStore } from '../stores/statusline-heal'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useSessionImages } from '../composables/useSessionImages'
+import { useSessionLinks, type LinksScope } from '../composables/useSessionLinks'
 import UsagePanel from './UsagePanel.vue'
 import ClaudeStatusPanel from './ClaudeStatusPanel.vue'
 import FooterImagePopover from './FooterImagePopover.vue'
+import FooterLinksPopover from './FooterLinksPopover.vue'
 import ImageLightbox from './ImageLightbox.vue'
 import HeapGauge from './HeapGauge.vue'
+import GithubBudgetPill from './GithubBudgetPill.vue'
 import { severityDotClass, severityLabelKey } from './claude-status-format'
 import {
   footerSessionChips,
@@ -373,6 +377,49 @@ const {
 } = useSessionImages(imagesUuid, canReattach)
 const imageFolderAlias = computed(() => sessions.selectedPath?.folder ?? '')
 
+// ── Links shelf (footer pill + popover, T617) ────────────────────────────────
+// Same gating as the images pill: the active session's real uuid, hide-when-zero. The count is
+// read from the transcript in main (user + assistant text only, no network) and follows it live.
+const linksScope = ref<LinksScope>('session')
+const linksPopoverOpen = computed(() => ui.popovers.links)
+// The Folder scope's lookup key. Only resolved while the popover is open, so a closed popover costs
+// nothing and an open one always starts from a fresh read.
+const linksFolderPath = computed<string | null>(() => {
+  const id = sessions.selectedId
+  if (!linksPopoverOpen.value || !id) return null
+  return sessions.folders.find((f) => f.sessions.some((s) => s.sessionId === id))?.path ?? null
+})
+const {
+  count: linkCount,
+  entries: linkEntries,
+  folderGroups: linkFolderGroups,
+  folderCount: linkFolderCount,
+  refresh: refreshLinks,
+  refreshFolder: refreshLinkFolder
+} = useSessionLinks(imagesUuid, {
+  active: canReattach,
+  folderPath: linksFolderPath,
+  folderWanted: computed(() => linksPopoverOpen.value && linksScope.value === 'folder'),
+  isHidden: (id) => sessions.isArchived(id)
+})
+const linksPopoverEl = ref<HTMLElement | null>(null)
+useNativeOverlay('footer-links-popover', linksPopoverEl)
+const linksRef = ref<HTMLElement | null>(null)
+// The pill hides at zero links, and the popover hangs off it.
+watch(linkCount, (n) => ui.setPopoverAnchor('links', n > 0), { immediate: true })
+onClickOutside(linksRef, () => ui.closePopover('links'))
+onKeyStroke('Escape', () => ui.closePopover('links'))
+// Every open re-reads (the list may have grown since the last poll) and starts on the Session scope;
+// the Folder scope reads its own list the moment it is chosen.
+watch(linksPopoverOpen, (open) => {
+  if (!open) return
+  linksScope.value = 'session'
+  void refreshLinks()
+})
+watch(linksScope, (scope) => {
+  if (scope === 'folder' && linksPopoverOpen.value) void refreshLinkFolder()
+})
+
 const imagesPopoverOpen = computed(() => ui.popovers.pastedImages)
 const imagesPopoverEl = ref<HTMLElement | null>(null)
 useNativeOverlay('footer-images-popover', imagesPopoverEl)
@@ -412,6 +459,7 @@ onBeforeUnmount(() => {
   ui.setPopoverAnchor('usagePanel', false)
   ui.setPopoverAnchor('claudeStatus', false)
   ui.setPopoverAnchor('pastedImages', false)
+  ui.setPopoverAnchor('links', false)
 })
 
 /** One clean exit out of the whole image flow: lightbox AND popover behind it. */
@@ -554,6 +602,44 @@ function openFullDashboard(): void {
       </div>
     </div>
 
+    <!-- Links pill (hide-when-zero) — immediately right of the images pill -->
+    <div v-if="linkCount > 0" ref="linksRef" class="relative">
+      <button
+        type="button"
+        class="flex items-center gap-1 rounded border px-1 transition-colors"
+        :class="
+          linksPopoverOpen
+            ? 'border-accent-line bg-accent-soft text-accent'
+            : 'border-border bg-surface-2 text-text-2 hover:border-border-2 hover:text-text'
+        "
+        :aria-label="t('links.pillAria', { count: linkCount })"
+        :title="t('links.pillAria', { count: linkCount })"
+        :aria-expanded="linksPopoverOpen"
+        data-testid="footer-links-pill"
+        @click="ui.togglePopover('links')"
+      >
+        <Link :size="12" :stroke-width="1.6" class="shrink-0" />
+        <span class="tabular-nums">{{ linkCount }}</span>
+      </button>
+      <div
+        v-if="linksPopoverOpen"
+        ref="linksPopoverEl"
+        class="anim-fade-in-scale absolute bottom-full left-0 z-50 mb-1.5 w-[400px] rounded-lg border border-border-2 bg-surface-2 shadow-pop"
+      >
+        <FooterLinksPopover
+          v-model:scope="linksScope"
+          :entries="linkEntries"
+          :groups="linkFolderGroups"
+          :folder-alias="imageFolderAlias"
+          :count="linkCount"
+          :folder-count="linkFolderCount"
+          :uuid="imagesUuid ?? ''"
+          :can-reference="canReattach"
+          @referenced="ui.closePopover('links')"
+        />
+      </div>
+    </div>
+
     <!-- Image lightbox (z-60, teleported to body) — opened from a popover tile -->
     <ImageLightbox
       v-if="lightboxIndex !== null"
@@ -616,6 +702,10 @@ function openFullDashboard(): void {
       <!-- Heap gauge (T127 S3) — the always-on early-warning signal, grafted
            into the fleet pill; opens the System Monitor takeover on click -->
       <HeapGauge />
+
+      <!-- GitHub budget pill (T611) — calls left in the tighter gh bucket, left of the Cleanup
+           pill. Owns its popover; hidden while the budget is unavailable. -->
+      <GithubBudgetPill />
 
       <!-- Cleanup pill (T443) — ONE pill for Workspace GC, replacing the old Cleanup and
            Containers pills. Idle shows what is reclaimable, running mirrors the hero's progress

@@ -148,6 +148,7 @@ Three consequences of the owner-approved Brand v0 values (2026-10-03):
 | `--surface-2` | `#29231f` | Surface hover, `<kbd>`, quiet badges                   |
 | `--border`    | `#302a25` | Default borders (1px)                                  |
 | `--border-2`  | `#38312c` | Elevated borders (dialogs, menus)                      |
+| `--canvas`    | `#070503` | Backdrop behind floating islands (§6)                  |
 
 ### Text
 
@@ -176,6 +177,32 @@ Three consequences of the owner-approved Brand v0 values (2026-10-03):
 | `--warning`      | `#c08a3e`                | Mild warning (rare)                                                                  |
 | `--warning-soft` | `rgba(192,138,62,0.10)`  | Warning badge background                                                             |
 | `--warning-line` | `rgba(192,138,62,0.30)`  | Warning badge border; the warmed border of a sensitive-path file box                 |
+
+### Folder hue (T590)
+
+A **folder** (a repo or directory the app tracks work in) can carry an identity colour when a surface
+groups rows by folder — today the Scheduler worker list (§6 "Scheduler (takeover)") and the System Monitor's session cards and rows (§6 "System Monitor (takeover)"). The helper is shared: `lib/folder-hue.ts`. The colour is
+**a hue, not a status**: it never says "ok" or "broken", only "this is the same folder as the row above".
+
+- **Source: the terminal ANSI palette (`--term-ansi-*`, §9).** It is already defined in every theme, so a
+  folder hue recolours with the theme for free and no new token exists. The pool is the **six** slots
+  `blue`, `magenta`, `cyan`, `yellow`, `bright-red` (coral), `bright-blue` (lavender). `green` is out
+  (running / ok), `red` is out (failure), `white`/`black`/`bright-black`/`bright-white` are out (they read
+  as neutrals), and `bright-green`/`bright-yellow`/`bright-cyan`/`bright-magenta` are out (too close to a
+  pool member or to green).
+- **Assignment is stable per folder path**, never per render order: `FNV-1a(path) % 6` indexes the pool
+  in the order above. A folder keeps its hue across restarts, sorts and filters, and adding a folder
+  never recolours another. Two folders can share a hue (6 slots, no uniqueness guarantee) — the folder
+  _name_ stays the identity, the hue only helps the eye.
+- **How a component uses it:** the row/group root sets one custom property, `--fh`, from a helper class
+  in `main.css` (`.fh-blue { --fh: var(--term-ansi-blue) }`, one class per pool member). Everything
+  inside reads `var(--fh)` — **no raw colour, no hex**. Tints are always
+  `color-mix(in srgb, var(--fh) N%, transparent)` (or `…, var(--color-surface)` for a header wash), with
+  `N` taken from the Scheduler spec: **7%** header wash, **18%** avatar fill.
+- **Risk, mitigated by construction:** coral (`bright-red`) sits next to `--red`. A hue is therefore
+  only ever painted on _chrome_ (a 3px stripe, an avatar, a header wash, a 2px bar, a name in the Up next
+  strip); a failure is always a **word + dot + `--red`** (`failing`, `failed · 2 in a row`). Never use
+  `--fh` for text that states a status, and never use a status token for a hue.
 
 ### Target ratio
 
@@ -306,26 +333,28 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 
 ### Layout dimensions
 
-| Dimension                              | Value                                                         | Use                                                                                                                                                                                                                                                                                                                                                                                |
-| -------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sidebar — minimum width                | 200px                                                         | Drag-resize floor                                                                                                                                                                                                                                                                                                                                                                  |
-| Sidebar — default width                | 268px                                                         | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
-| Sidebar — maximum width                | 480px                                                         | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — minimum width             | 260px                                                         | Drag-resize floor (4th column, T83)                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — default width             | 300px                                                         | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
-| Inbox rail — maximum width             | 440px                                                         | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — minimized strip           | 44px                                                          | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
-| Resizable divider — hit area           | 6px                                                           | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
-| Resizable divider — visible stripe     | 1px                                                           | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                                                                                                                                                                                                             |
-| Footer / status bar — height           | 24px (`h-6`)                                                  | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
-| Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)`          | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
-| Settings pane — bounded list           | max-height `280px`                                            | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                                                                                                                                                                                              |
-| Cleanup side panel — width             | 320px                                                         | Docked detail panel beside the treemap (§6 "Workspace GC — unified Cleanup"); overlays the map below 1100px instead of docking                                                                                                                                                                                                                                                     |
-| Cleanup treemap — region minimum width | 340px                                                         | A repo region never lays out narrower; the map wraps onto another shelf (row) instead of squeezing, and the canvas height is computed from the data, not fixed (§6 "Workspace GC — unified Cleanup / Treemap")                                                                                                                                                                     |
-| Cleanup list dialog — width            | `min(720px, 90vw)`                                            | The bulk-clean / remove-selected confirm: wider than the 560px Dialog so a row holds name + chips; the card is capped at `--dialog-max-h` (see "Dialog — viewport cap") and its body — list and refused section together — is the one scroller                                                                                                                                     |
-| Dialog — viewport cap                  | `--dialog-max-h` = `84vh`                                     | Upper bound of a dialog card's height, written `max-h-(--dialog-max-h)`. The card is a flex column: header and footer `shrink-0`, the body `min-h-0 flex-1 overflow-y-auto` is the only scroller, so title and actions never leave the window (BUG-184: Cleanup bulk confirm, Containers remove). 84vh sits mid-range of the shipped 80–88vh caps and leaves ≥ 8vh above and below |
-| Dialog — width scale                   | `--dialog-w-sm / -md / -lg / -xl` = `480 / 560 / 720 / 940px` | Width of a dialog card is `min(<size>, 90vw)`; a dialog picks a size, it does not invent a width (§6 "Dialog" → Size scale). `xl` must pass a fixed `height`, still ≤ the cap                                                                                                                                                                                                      |
-| macOS window-controls inset            | 78px (macOS only; 0 elsewhere)                                | Left inset on the corner header (sidebar always; topbar when sidebar collapsed) so content clears the macOS traffic lights                                                                                                                                                                                                                                                         |
+| Dimension                              | Value                                                          | Use                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar — minimum width                | 200px                                                          | Drag-resize floor                                                                                                                                                                                                                                                                                                                                                                  |
+| Sidebar — default width                | 268px                                                          | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
+| Sidebar — maximum width                | 480px                                                          | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — minimum width             | 260px                                                          | Drag-resize floor (4th column, T83)                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — default width             | 300px                                                          | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
+| Inbox rail — maximum width             | 440px                                                          | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — minimized strip           | 44px                                                           | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
+| Progress popover — standard / wide     | 400px / 520px                                                  | The Mission progress popover is 400px; the Campaign popover (`.pop--wide`, §6 "Campaign progress") is the one 520px variant — two panes need the room                                                                                                                                                                                                                              |
+| Campaign map — board                   | tile `164×96px` · gutter `36px` · row gap `40px` · lane `20px` | The one fixed canvas of the Campaign map (§6 "Campaign map"): 4 columns × 164 + 3 × 36 + the 20px return lane = 784px wide; a dock chip is 164×20px. Mockup `v6--map`; scrolls inside its wrapper, never reflows                                                                                                                                                                   |
+| Resizable divider — hit area           | 6px                                                            | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
+| Resizable divider — visible stripe     | 1px                                                            | Colored stripe (`w-px`) flush to the side panel's edge inside the 6px hit area                                                                                                                                                                                                                                                                                                     |
+| Footer / status bar — height           | 24px (`h-6`)                                                   | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
+| Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)`           | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
+| Settings pane — bounded list           | max-height `280px`                                             | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                                                                                                                                                                                              |
+| Cleanup side panel — width             | 320px                                                          | Docked detail panel beside the treemap (§6 "Workspace GC — unified Cleanup"); overlays the map below 1100px instead of docking                                                                                                                                                                                                                                                     |
+| Cleanup treemap — region minimum width | 340px                                                          | A repo region never lays out narrower; the map wraps onto another shelf (row) instead of squeezing, and the canvas height is computed from the data, not fixed (§6 "Workspace GC — unified Cleanup / Treemap")                                                                                                                                                                     |
+| Cleanup list dialog — width            | `min(720px, 90vw)`                                             | The bulk-clean / remove-selected confirm: wider than the 560px Dialog so a row holds name + chips; the card is capped at `--dialog-max-h` (see "Dialog — viewport cap") and its body — list and refused section together — is the one scroller                                                                                                                                     |
+| Dialog — viewport cap                  | `--dialog-max-h` = `84vh`                                      | Upper bound of a dialog card's height, written `max-h-(--dialog-max-h)`. The card is a flex column: header and footer `shrink-0`, the body `min-h-0 flex-1 overflow-y-auto` is the only scroller, so title and actions never leave the window (BUG-184: Cleanup bulk confirm, Containers remove). 84vh sits mid-range of the shipped 80–88vh caps and leaves ≥ 8vh above and below |
+| Dialog — width scale                   | `--dialog-w-sm / -md / -lg / -xl` = `480 / 560 / 720 / 940px`  | Width of a dialog card is `min(<size>, 90vw)`; a dialog picks a size, it does not invent a width (§6 "Dialog" → Size scale). `xl` must pass a fixed `height`, still ≤ the cap                                                                                                                                                                                                      |
+| macOS window-controls inset            | 78px (macOS only; 0 elsewhere)                                 | Left inset on the corner header (sidebar always; topbar when sidebar collapsed) so content clears the macOS traffic lights                                                                                                                                                                                                                                                         |
 
 Sidebar width is **state persisted globally** (`localStorage`,
 key `om2tab.sidebarWidth`) — same anatomy as the theme. Out of range it is
@@ -367,7 +396,7 @@ _another_ folder.
 | `folder-tree`                            | Browse project files (Topbar button + Explorer pane header, T100)                                                                                                                                                                      |
 | `kanban-square`                          | Roadmap board (FolderMenu + session Context menu + Topbar button)                                                                                                                                                                      |
 | `git-pull-request`                       | PR Stack Canvas (FolderMenu + Topbar button + the canvas' own header)                                                                                                                                                                  |
-| `git-pull-request-arrow`                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com)                                                                                                                                      |
+| `github`                                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com). Lucide's brand glyph, deprecated upstream as a brand icon: if a future lucide major drops it, the import breaks at build time       |
 | `message-square`                         | Unresolved review threads on a PR Stack card (T275 — readiness chip at `full`, identity-row badge at `compact`); Review pane companion link                                                                                            |
 | `text-select`                            | Select the whole file (Review pane file header, T257); `lucide-vue-next` ships it as `TextSelect`. The delivery chip (T257 U2b) carries no glyph of its own.                                                                           |
 | `git-branch`                             | Branch badge (git folder) / repo-group header                                                                                                                                                                                          |
@@ -386,6 +415,7 @@ _another_ folder.
 | `split-square-vertical`                  | Split the terminal                                                                                                                                                                                                                     |
 | `maximize-2`                             | Fullscreen / maximize a helper-stack pane (pane header, §6 Pane header)                                                                                                                                                                |
 | `minimize-2`                             | Restore a maximized helper-stack pane back to the normal split (pane header, §6 Pane header)                                                                                                                                           |
+| `expand`                                 | Expand a helper pane to the window (pane header, before maximize, T628 — §6 "Expanding a pane to the window"); accent ink while the pane is expanded                                                                                   |
 | `panel-left-close` / `panel-left-open`   | Collapse / show the left sidebar (Topbar button — §6 Collapse sidebars)                                                                                                                                                                |
 | `panel-right-close` / `panel-right-open` | Collapse / show the right auxiliary panel (Topbar button — §6 Collapse sidebars)                                                                                                                                                       |
 | `x`                                      | Close                                                                                                                                                                                                                                  |
@@ -402,8 +432,8 @@ _another_ folder.
 | `pencil`                                 | Markdown pane → enter edit mode (view→edit toggle)                                                                                                                                                                                     |
 | `save`                                   | Markdown pane → explicit save (edit mode; ⌘/Ctrl-S)                                                                                                                                                                                    |
 | `rotate-ccw`                             | Restart session (context menu — kills and respawns the `claude` process)                                                                                                                                                               |
-| `archive`                                | Archive                                                                                                                                                                                                                                |
-| `archive-restore`                        | Unarchive (restore an archived session)                                                                                                                                                                                                |
+| `archive`                                | Archive · **shelved worktree row + the "Shelved" disclosure row of a repo group (U2)**                                                                                                                                                 |
+| `archive-restore`                        | Unarchive (restore an archived session) · **Restore worktree (menu + hover action) and the "restoring…" glyph of a shelved worktree (U2)**                                                                                             |
 | `trash-2`                                | Delete                                                                                                                                                                                                                                 |
 | `clock`                                  | History, recents                                                                                                                                                                                                                       |
 | `cloud`                                  | Cloud/bridge session (conversation lives on claude.ai, no resumable local transcript)                                                                                                                                                  |
@@ -425,6 +455,13 @@ _another_ folder.
 | `inbox`                                  | Inbox rail ("Needs you" queue — minimized strip of the 4th column + "Open approvals" palette action)                                                                                                                                   |
 | `image`                                  | Pasted-images pill/popover (footer — gallery of screenshots pasted into the session)                                                                                                                                                   |
 | `reply`                                  | Re-attach an image (re-injects the screenshot into the running session's prompt)                                                                                                                                                       |
+| `link`                                   | Links pill/popover (footer — the links of a session, newest first)                                                                                                                                                                     |
+| `git-pull-request`                       | Link row, kind `pr` (Links popover — GitHub pull request)                                                                                                                                                                              |
+| `circle-dot`                             | Link row, kind `issue` (Links popover — GitHub issue)                                                                                                                                                                                  |
+| `square-check`                           | Link row, kind `task` (Links popover — ClickUp task)                                                                                                                                                                                   |
+| `figma`                                  | Link row, kind `figma` (Links popover — Figma file or frame)                                                                                                                                                                           |
+| `file-text`                              | Link row, kind `doc` (Links popover — Google Docs, Notion)                                                                                                                                                                             |
+| `globe`                                  | Link row, kind `web` (Links popover — any other page)                                                                                                                                                                                  |
 | `volume-2`                               | Preview a voice (Settings → Voice → VOICES row — speaks the phrase in the voice already in use)                                                                                                                                        |
 | `volume-x`                               | Nothing was spoken (Settings → Voice — the `dropped` / `stopped` outcome of a Test or a per-voice preview)                                                                                                                             |
 | `list-checks`                            | Mission progress — the Topbar "Step N of M" pill's leading glyph (T370, Mission v3, §6 "Mission progress"); swaps to `check` once the headline is done or the mission delivered                                                        |
@@ -438,7 +475,8 @@ _another_ folder.
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
 | `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
 | `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
-| `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane")                                                                                                                                                                         |
+| `globe`                                  | Browser pane header / address bar (T564 U1, §6 "Browser pane") · the Topbar's Browser button (T630, §6 "Topbar per-repo view buttons")                                                                                                 |
+| `columns-2` / `rows-2`                   | The Topbar's split-layout toggle (T627, §6 "Split orientation"): side by side / stacked                                                                                                                                                |
 | `arrow-left` / `arrow-right`             | Browser pane → back / forward (address bar)                                                                                                                                                                                            |
 | `rotate-cw`                              | Browser pane → reload (swaps to `x` — stop — while a load is in flight)                                                                                                                                                                |
 | `play`                                   | Browser pane → Resume the agent after "Pause agent for 10 min" (chip)                                                                                                                                                                  |
@@ -455,6 +493,24 @@ _another_ folder.
 | `arrow-down`                             | Canvas properties panel → Layers: Send backward (T536 U4)                                                                                                                                                                              |
 | `arrow-up`                               | Canvas properties panel → Layers: Bring forward (T536 U4)                                                                                                                                                                              |
 | `arrow-up-to-line`                       | Canvas properties panel → Layers: Bring to front (T536 U4)                                                                                                                                                                             |
+
+### Editor marks (brand glyphs, T581)
+
+The Topbar "Open in {editor}" button (and the Folder View action) shows the **configured editor's own
+mark** so the button says which editor it launches. This is the one place §5's Lucide-only rule is
+relaxed, under these rules:
+
+- **Source:** monochrome single-path marks copied from [Simple Icons](https://simpleicons.org) (CC0).
+  Paths are inlined in `components/EditorIcon.vue`; **no npm dependency**, and no icon is read from the
+  OS or a fetched URL.
+- **Colour:** `fill="currentColor"`, never the brand colour — the mark inherits the toolbar's
+  `--text-3` → `--text` pair exactly like a Lucide icon, so the cluster stays one visual family.
+- **Size:** 14px in the Topbar (26×26 button), 13px in the Folder View action bar — the same box as the
+  Lucide glyph it replaces. The mark is `aria-hidden`; the button's `aria-label` carries the name.
+- **Presets with a mark:** VS Code, Cursor, Zed, Sublime Text, JetBrains (IntelliJ IDEA / WebStorm),
+  Neovim, Helix. A preset with no Simple Icons mark falls back to the generic `code` Lucide glyph.
+- **Custom editor:** always the generic `code` Lucide glyph (`<>`) — Harnu never guesses a brand from a
+  command string.
 
 ### Novelty dot (on an icon button)
 
@@ -595,7 +651,8 @@ Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P`
 | `⌘⇧B`              | Toggle the Fleet rail                                                                                                                                                                                                                                                     | global   | Renderer-only (no menu item), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                                    |
 | `⌘⇧D`              | Review the active folder's branch                                                                                                                                                                                                                                         | global   | Renderer-only; opens the Review pane (T164)                                                                                                                                                                                                                                                                                                                                                                      |
 | `F6` / `⇧F6`       | Focus the next / previous pane: the main terminal, then the helper panes in stack order, wrapping                                                                                                                                                                         | global   | **Shielded** (`pane.focusNext` / `pane.focusPrev`): works while a terminal holds focus, so the program there no longer gets F6. Inert while a dialog, palette or menu is open. On a Mac keyboard: Fn+F6 / Fn+⇧F6. See "Pane focus"                                                                                                                                                                               |
-| `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one                                                                                                                                                                                 | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
+| `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one. While a pane is **expanded to the window** it exits the expanded view instead (T628)                                                                                           | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
+| _unbound_          | Expand the focused helper pane to the window, or exit the expanded view (`pane.expandToWindow`, T628; not in the palette, like the other focus-dependent pane actions)                                                                                                    | global   | Renderer-only, no default chord (⌘⇧M is `pane.toggleMaximize`; two actions never share one). Esc and the pane's own button exit too — see "Expanding a pane to the window"                                                                                                                                                                                                                                       |
 | `⌘C` / `⌃⇧C`       | Copy terminal selection                                                                                                                                                                                                                                                   | terminal | Only with a selection; reads `term.getSelection()` (xterm's selection isn't a native DOM selection). On Mac, `editMenu` may intercept `⌘C` before xterm — see `menu.ts`                                                                                                                                                                                                                                          |
 | `⌘V` / `⌃⇧V`       | Paste into the terminal                                                                                                                                                                                                                                                   | terminal | Via `term.paste()` — respects _bracketed paste_, so a multi-line paste doesn't auto-submit in the Claude TUI                                                                                                                                                                                                                                                                                                     |
 | `⇧↩`               | Line break (without sending)                                                                                                                                                                                                                                              | terminal | Sends `\u000a` (LF, = Ctrl+J) to the PTY — Claude treats it as a newline; `Enter` alone (`\r`) sends. xterm's default ignores `Shift` and would send                                                                                                                                                                                                                                                             |
@@ -626,7 +683,8 @@ access (block agents, let agents read terminals, Modes ▸, Set / Clear parent f
 the older / archived peeks and
 the repo-group menu (rename, reset name, Clean up), the Cleanup, Scheduler, System
 Monitor and Containers takeovers, and every Settings tab ("Open Settings: General", …)
-have a keybindings id and can be given a chord in Settings → Keyboard Shortcuts; none
+have a keybindings id and can be given a chord in Settings → Keyboard Shortcuts (so do
+`layout.cycleSplitOrientation` and `pane.expandToWindow`); none
 ships with one except Rename folder (`F2`), closing the open takeover (`Esc`) and the
 Keyboard Shortcuts tab (`⌘⌥S`). Session actions act on the **selected** session and are available only
 when the Session menu would show that item for it; folder actions act on the
@@ -1222,7 +1280,7 @@ when every row is already a default.
 which are not shown because they cannot be rebound. T486 grows the table toward ~108
 visible rows, and most of the actions it adds ship unbound (their rows start on "Set a
 shortcut…"), which is why the pane is searchable, grouped and filterable (below). Seven of the T1 rows — the Topbar's per-folder actions (`view.roadmap`,
-`view.prStack`, `folder.openInFileManager`, `folder.openInVSCode`,
+`view.prStack`, `folder.openInFileManager`, `folder.openInEditor`,
 `folder.openGithubPulls`, `folder.browseFiles`, `folder.newTerminal`) — ship with no
 default chord, so their rows start on the empty "Set a shortcut…" state, as does
 `view.usageDashboard` (View menu). They are `menu: true`, backed by a native **Folder**
@@ -1543,7 +1601,13 @@ ghost `Button`, and **at most one** status line (`--text-3`, 11px, no icon, **no
 colour**: `legacy` is not an error). Which line: the CLI is older than the minimum, the CLI
 is newer than the last version tested (the mod only observes), or nothing. The block hosts a
 region `id="set-companion-keys"` at its end, where later waves mount their own feature
-switches; the Mods tab moves the whole block when it lands. Searchable via "harnu mod",
+switches; the Mods tab moves the whole block when it lands. The first is **Draw reports as
+cards** (T585, `id="set-companion-report-cards"`): the same row anatomy as above (`--text-2`
+12px label, one `SettingHint`, `ToggleSwitch` on the right, `margin-top: 10px`), default **on**;
+the switch takes the toggle's disabled treatment, with the hint `The Harnu mod is off. Turn it
+on first.`, while the mod itself is off. The second is **Draw agent messages compactly** (T589,
+`id="set-companion-quiet-rows"`), the same row anatomy, default **on**, with the same disabled
+treatment. No new variant. Searchable via "harnu mod",
 "mod", "mods", "plugin". The kill switch is renderer IPC only: nothing an agent can call
 reaches it. No new design token.
 
@@ -2351,6 +2415,122 @@ the only clue to how many worktrees are hidden), and under the keyboard cursor
   **renderer-only**, persisted in `localStorage` (`om2tab.repoAliases`), same as
   `collapsedRepoGroups` (also per-repoId) — no round-trip through
   `projects.json`. **No new tokens.**
+
+### Shelved section (repo group)
+
+**What it is.** A worktree Harnu **shelved** (autonomous cleanup U2: idle, branch not merged, folder removed
+after its uncommitted, untracked and ignored files were preserved in git refs) leaves the repo group's main
+list and moves into a collapsed **Shelved** section (pt-BR **Guardadas**), the last block of its
+`RepoGroupHeader` group. The branch and its sessions stay; the folder comes back when one of its sessions is
+resumed (spec C3). Merged worktrees never land here (D-A: they are removed as before).
+
+Files: `Sidebar.vue` renders the section through `SidebarShelvedSection.vue`, after the group's live members;
+the grouping lives in `folder-zones.ts` (`groupByRepo`) and `lib/shelved-sidebar.ts`.
+
+**Position and grouping.**
+
+- The section is the **last** child of the repo group, after every live member folder (and after any lineage
+  children). It never appears outside a repo group and never in a `source: 'path'` group.
+- **Shelved members count toward the 2+ that makes a repo group.** A repo with one live worktree and one or
+  more shelved ones still renders its `RepoGroupHeader`, so the section always has a home.
+- The repo-group header's member count stays **live members only**; the shelved count lives on the
+  disclosure row.
+- A shelved worktree **never renders as a normal or ghost folder row**, in the group or outside it: its
+  folder is gone on purpose, so the only place it shows is this section.
+- Shelved rows sit at the **same folder indent** as live members (`28px`, nested). No extra indent step:
+  the hard one-level rule ("anti-VS-Code") holds. The disclosure row's eyebrow type and the dimmed content are
+  what separate them.
+
+**Disclosure row** — `Shelved · {n}`
+
+- Geometry: the folder row (`26px` Comfortable / `23px` Compact), `padding: 0 12px 0 28px`, `gap 4px`.
+- Anatomy: chevron `12px` in the `16×16` slot (`--text-4`, rotates 90° when open, `--dur` `--ease`),
+  `archive` `12px` stroke 1.6, `margin-right 2px`, label in **Eyebrow** typography (`.eyebrow`, 10.5/14,
+  500, uppercase, +0.07em) `--text-4`, then `·` (decorative, `aria-hidden`) and the count, `10.5px`
+  `tabular-nums` `--text-4`.
+- The count is **always visible** (collapsed it is the only clue to what is hidden, same rule as a collapsed
+  repo-group header; expanded it stays for stability — the row is short).
+- Hover: `bg-surface`, text `--text-3`. Keyboard cursor: the shared `data-focused` outline
+  (`--accent-line` 2px). `role="button"`, `aria-expanded`, Enter / Space toggle.
+- Native tooltip (`title`): `sidebar.shelved.tooltip` — "{n} shelved worktrees — branches and sessions kept".
+- **Collapsed by default.** Open state persists per repo in `localStorage`
+  (`om2tab.shelvedSectionsOpen`, the same `persistedSet` mechanism as `om2tab.repoGroupsCollapsed`, keyed by
+  the group key). An active text filter forces the section open when a match is inside it (same rule as
+  collapsed groups). Collapse All / Expand All in the folder-list toolbar include it.
+- Renders only when the group has ≥ 1 shelved worktree. When the last one is restored, the row disappears.
+
+**Shelved worktree row** — compact single line (variant B, the operator's pick).
+
+- `24px` / `22px` Compact (the agent/teammate row height — an existing value).
+- Anatomy: chevron `11px` · `archive` `11px` · **branch** as the label, JetBrains Mono **Code-sm**
+  (`11px`/14) `--text-3`, truncate (the folder is gone; the branch is what survives, so it is the identity) ·
+  **meta** `{days} d`, `10.5px` `tabular-nums` `--text-4`. A detached worktree shows its folder name instead of
+  a branch. The folder name moves to the tooltip.
+- Content (chevron, glyph, label, meta) at **opacity 0.62** — the value hibernated, cloud and idle-old rows
+  already use: at rest, not broken. **Never `--red`, never `--warning`.** The opacity is on the content
+  wrapper, not the row, so hover and the context-menu target paint a crisp `--surface`.
+- Glyph: `archive` (`--text-4`) in place of `folder`.
+- Hover / keyboard cursor / open menu: `bg-surface`; reveals a hover-only `archive-restore` `11px`
+  `role="button"` at the right edge (`--text-4` → `--accent` on hover, `@click.stop`), label
+  `sidebar.shelved.restore`. Space reserved (`opacity 0`), no layout shift (Stats on demand, T118).
+- Native tooltip: `sidebar.shelved.rowTooltip` — "Shelved {days} days ago · branch {branch} kept".
+- Clicking the row toggles its session list (like a folder row). It does **not** restore: looking is free,
+  restoring writes a worktree to disk.
+- The folder hover preview (`FolderPreview.vue`) is not shown for a shelved row (no folder to describe).
+
+**Sessions of a shelved worktree**
+
+- Ordinary session rows (nested indent `44px` / `32px` Compact, slots 12 + 14, `gap 9px`), content at
+  opacity 0.62, status slot keeps its normal idle / idle-old glyph.
+- Tooltip: `sidebar.shelved.sessionTooltip` — "Resume — restores the worktree first".
+- **Clicking a session restores, then resumes** (spec C3, AC-U2b): the session never starts in a missing
+  folder.
+
+**States**
+
+| State     | Worktree row                                                                                                                                                                                  | Clicked session row                                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Rest      | content 0.62, `archive`, meta `9 d`                                                                                                                                                           | content 0.62, idle dot / idle-old ring                                                                                    |
+| Hover     | `bg-surface`, hover-only `archive-restore` action                                                                                                                                             | session hover tint (`rgba(255,255,255,0.025)`, as today)                                                                  |
+| Restoring | content back to 1 (`--dur`), glyph → `archive-restore` `--text-3` + `.anim-shimmer-dot`, meta → `restoring…` `--text-3` + `.anim-shimmer-dot`; the hover action hides; the row ignores clicks | selected at once (accent bar + `--accent-soft`, the click landed), status slot = 6px `--text-3` dot + `.anim-shimmer-dot` |
+| Restored  | the row leaves the section and lands in the live list (normal folder row, expanded if a session triggered it) with `.anim-jump-flash`; the count drops by one                                 | resumes in its own folder; normal status from here                                                                        |
+| Failed    | row returns to Rest; a `danger` toast (`sidebar.shelved.restoreFailed`) with the action "Open in Cleanup"                                                                                     | selection reverts to the previous session                                                                                 |
+
+The terminal pane, while restoring, shows the existing pane placeholder with `sidebar.shelved.restoringPane`
+("Restoring worktree `{branch}`…").
+
+**Context menu** (right-click on a shelved worktree row)
+
+Same card as every context menu (§6 "Context menu": `--surface`, 1px `--border-2`, `--radius`,
+`--shadow-pop`, `.anim-fade-in-scale`, items `6px 8px` / 12px / `--text-2` → `--surface-2` + `--text`,
+icon gap 9px). Dismiss on Esc / click outside / wheel. Two items only — a shelved worktree has no folder, so
+New terminal, Explorer, Rename… and the rest of `FolderMenu` do not apply:
+
+1. **Restore worktree** (`archive-restore`) → restores without resuming anything; the row goes through the
+   Restoring state and lands collapsed in the live list.
+2. **Open in Cleanup** (`recycle`, the Cleanup glyph per §5) → opens the Cleanup takeover focused on this
+   worktree's block.
+
+Shelved session rows keep the normal `SessionMenu`.
+
+**Motion** — nothing new.
+
+| Action                    | Spec                                                             |
+| ------------------------- | ---------------------------------------------------------------- |
+| Section expand / collapse | "Expand project": chevron rotate + max-height reveal, 220ms      |
+| Restoring                 | `.anim-shimmer-dot` (1.2s loop, opacity only)                    |
+| Restored row lands        | `.anim-jump-flash` (`--dur-slow`, `--accent-soft` → transparent) |
+| Menu                      | `.anim-fade-in-scale`                                            |
+
+Reduced motion: the global reset applies; the word `restoring…` carries the state without the shimmer.
+
+**Copy** (§8): short labels, no trailing period; `worktree` and `branch` untranslated; `d` for days, as in
+the Cleanup Activity line ("Shelved `{branch}` — idle {days} d, branch kept"). Never "deleted", "lost" or
+"failed" for a shelved worktree: nothing was lost. Internally the state is `shelved`, matching
+`cleanup.gc.shelved.*` and `list_cleanup`; Cleanup's **Archives** card and the folder row's archived-sessions
+peek are different things and keep their own names.
+
+**No new tokens.**
 
 ### Session name
 
@@ -3721,6 +3901,19 @@ the new-session flow for the drilled-into folder
 **`⋯` (folder actions)**, below. The repo screen has no peek or `+` actions,
 only a folder screen hosts sessions directly.
 
+**The back row is pinned, outside the scroller (BUG-248).** The back row is a
+sibling ABOVE the drill list's scroller, like the sidebar's own header — not a
+row inside the scroll area, and not `position: sticky` (a sticky row stops short
+of the scrollbar gutter and lets half-cut rows show at its edge). The drill view
+renders directly in the sidebar column (it is not wrapped by the classic tree's
+scroller), so the back row spans the full column width, its bottom `border`
+reaches both edges over the gutter, and the scrollbar track starts below it. The
+row is opaque (`bg-sidebar`). Rows sliding under its edge fade out through a
+14px strip at the top of the scroller (`--color-sidebar` → transparent,
+`pointer-events: none`), inset from the right by the 8px scrollbar so the thumb
+is never veiled; the borders stay solid. The scroller keeps its `6px 0`
+padding. Non-drill mode is unchanged.
+
 **Row actions — every drill-in row has the menu its classic-tree twin has.**
 Drill-in used to be a dead end for actions: right-clicking a back row or a
 chooser row did nothing, and reaching Rename / Hide / New worktree meant
@@ -3787,31 +3980,226 @@ folder's own screen.
 
 ### Resizable divider (handle)
 
-A vertical, draggable bar that separates two panels. Used in two places with the same
-anatomy: between the **sidebar and the content**, and between the **terminal and the
-helper-stack** (split).
+A vertical, draggable bar that separates two panels. Used in three places with the same
+anatomy: between the **sidebar and the content**, between the **terminal and the
+helper-stack** (split), and between the **content and the Fleet rail** (expanded only).
 
-- **Width:** two layers. The **hit-area** (drag target) is the outer 6px `<div>`
-  (`w-1.5`, `cursor-col-resize`), transparent. The **visible stripe** is a centered 1px
-  child (`w-px`, `h-full`) — thin enough not to compete with the content, while the 6px
-  hit-area stays comfortable to drag.
+- **Anatomy — hit area vs. visible line.** Two layers. The **hit area** (drag target) is the
+  outer 6px `<div>` (`w-1.5`, `cursor-col-resize`, `shrink-0`), transparent — it sits on the
+  window's `--bg`. The **visible line** is a 1px child (`w-px`, `h-full`) — thin enough not
+  to compete with the content, while the 6px hit area stays comfortable to drag.
+- **One edge at rest.** The line is **flush against the side panel's edge**, never centered
+  in the hit column: a centered line leaves a strip of `--bg` on each side of it, and next to
+  a `--sidebar` panel that strip reads as a second bar (BUG-247). So the hit column aligns
+  its line toward the panel it belongs to — `justify-start` for the sidebar (panel on the
+  left), `justify-end` for the helper stack and the Fleet rail (panel on the right). The
+  remaining 5px of `--bg` sit on the content side, where the content's own `--bg` continues
+  them, so they are not an edge. The hit area keeps its full 6px width; only the line moves.
+- **Collapsed / minimized.** A collapsed sidebar and a minimized Fleet rail render **no
+  divider** (`v-if`): the minimized rail's own `border-l` is then the only edge.
+  With Floating panels on the dividers change look and the gap is kept in these states; see
+  "Floating panels layout (T626)" below.
 - **Background:** only the 1px stripe is colored — `--border-2` (default) →
   `--accent-line` on hover (via `group-hover`, since the hover is on the outer hit-area).
 - **Cursor:** `col-resize` when hovering over it.
 - **Drag:** adjusts the width in real time. In the sidebar, the `clientX` delta is
   added to the initial width and clamped to `[200, 480]` (see §4 — Layout dimensions).
-- **Double-click:** resets to the default width (268px in the sidebar).
+- **Double-click:** resets to the default — 268px for the sidebar, 300px for the Fleet rail,
+  the 0.65 content/helper split for the helper stack.
 - **Motion:** only the background color transition (`--dur` / `--ease`); the width
   tracks the pointer 1:1 during the drag, **no** easing animation (an animated drag
   feels laggy). Respects `prefers-reduced-motion` via §7's global reset.
 - **A11y:** `role="separator"`, `aria-orientation="vertical"`.
+- **Horizontal variant (T627).** When the helper stack sits below the session area (see "Split
+  orientation" below) the helper-stack divider turns 90°: the hit area is `h-1.5 w-full
+shrink-0 cursor-row-resize`, the visible line is `h-px w-full`, flush against the helper
+  stack's top edge (`items-end`, the same "one edge at rest" rule as `justify-end` above), and
+  it carries `aria-orientation="horizontal"`. Drag computes the ratio on Y, double-click resets
+  the **stacked** ratio. Colors, hover and motion are unchanged.
+
+#### Split orientation (T627)
+
+The session area and the helper stack sit **side by side** (today's layout) or **stacked**
+(session area on top, helper stack below). One setting, one Topbar control, one shortcut.
+
+- **Setting.** Settings → Appearance → **Split layout**, a three-way segmented control:
+  `auto` (default), `side-by-side`, `stacked`. Persisted in `settings.json` as `splitLayout`
+  (absent = `auto`), like the other settings-store values; an unknown value reads as `auto`.
+- **`auto` rule.** Measured on the **main area** (the box that holds the session area and the
+  helper stack, i.e. the window minus the sidebar and the Fleet rail), as the ratio
+  `height / width`. It resolves to **stacked** once the area is **taller than wide by 5%**
+  (`height / width > 1.05`) and back to **side by side** once it is **wider than tall by 5%**
+  (`height / width < 0.95`). Between the two (0.95 … 1.05) the previous result holds, so a
+  near-square window never flickers while it is resized across the diagonal; before any
+  measurement the result is side by side. The resolver is a pure function in
+  `lib/split-orientation.ts`; `layout.splitOrientation` is the resolved value every consumer
+  reads. An explicit `side-by-side` or `stacked` ignores the measurement.
+- **Stacked anatomy.** The row becomes a column: session area on top (`flex: ratio 1 0`),
+  horizontal divider, helper stack below (`flex: (1 - ratio) 1 0`). The helper stack lays its
+  panes out **left to right** (`flex-row`); each pane keeps its 24px header, now on top of its own
+  column. Between two panes sits a **width splitter**: `role="separator"
+aria-orientation="vertical"`, a 6px `cursor-col-resize` hit area with a 1px `--border-2` line
+  (→ `--accent-line` on hover), the same anatomy as the vertical divider above. A pane header
+  is still the resize handle: dragging pane[idx]'s header moves the boundary on its **left**, the
+  header shows `cursor: col-resize`, and the first pane's header is inert. The pane ratios are the
+  same `ratio` values, now read as widths.
+- **Maximize and close** work as before. A maximized pane fills the stack; every other pane
+  collapses to a **24px-wide** strip (the counterpart of the 24px header-only strip in the
+  vertical stack) — still mounted, still alive. Drag handles are disabled while a pane is
+  maximized.
+- **One ratio per orientation.** The session-area share is stored **per worktree and per
+  orientation**: side by side keeps `splitRatio` in `helpers.json` (default 0.65, clamped to
+  [0.4, 0.8]); stacked keeps its own (default 0.65, same clamp) in `localStorage`
+  (`om2tab.stackedSplitRatios`, keyed by worktree path). Dragging or resetting in one
+  orientation never touches the other's value. Pane ratios inside the stack are shared by both
+  orientations.
+- **Topbar control.** A 26×26 toggle button in the right cluster, right after **Browser** and
+  before the panel toggle: `[terminal] [browser] [split-layout] [panel-right]`. Glyph =
+  the **resolved** orientation: `columns-2` for side by side, `rows-2` for stacked. Standard
+  anatomy (`--text-3` → `--text`, `--surface` hover); while the setting is an explicit
+  `side-by-side` / `stacked` the ink is `--accent` (an override is on), under `auto` it is the
+  idle `--text-3`. One click **cycles the setting** `auto → side-by-side → stacked → auto`
+  (the same action as the shortcut). `title` = `topbar.splitLayout` + the current mode, with
+  the chord when bound; `aria-label` the same text; `data-test="topbar-split-layout"`. Shown
+  only when the worktree has helper panes (nothing to orient otherwise), like the panel
+  toggle.
+- **Shortcut.** `layout.cycleSplitOrientation` (group Views, **unbound** by default, in the
+  command palette) cycles the setting exactly as the Topbar button does. Label key
+  `keybindings.actions.layout_cycleSplitOrientation`.
+- **Motion.** Switching orientation animates (§7 "Layout motion", T628). Divider drags never animate.
+
+#### Floating panels layout (T626)
+
+An **opt-in** layout in the style of VS Code's floating panels: every pane is an **island** (its
+own border and rounded corners) sitting on a darker **canvas**, with an even gap between islands
+and no visible divider line at rest. **Off by default.** With it off, the app renders exactly as
+it does without this section: the setting adds no pixel to the default layout.
+
+- **Setting and attribute.** Settings → Appearance → **Floating panels** (a switch). Persisted in
+  `settings.json` as `floatingPanels` (boolean, absent = `false`), like `splitLayout`, and applied as
+  the attribute `data-floating="on"` on `<html>`, the same mechanism as `data-theme`. When off the
+  attribute is **absent** (not `"off"`). **Every** floating rule is scoped to
+  `:root[data-floating]`; nothing outside that scope changes.
+- **Canvas.** The window background behind the islands is the `--canvas` token (§2 Surfaces, §9),
+  not `--bg`: `color-mix(in oklab, var(--bg) 62%, black)` on every dark theme, a **hand-picked**
+  value on each light theme (the mix would read as a heavy grey slab there). See the per-theme
+  table in §9. An extension theme inherits the dark-theme mix.
+- **Gap = 6px, everywhere.** `--float-gap` is the empty space between two islands' outer borders
+  AND between an island and the window edge (top, left, right, and the bottom edge above the
+  footer). The row of columns carries `padding: var(--float-gap)`.
+- **Radius.** Every island is fully rounded with `--radius` (7px). `--radius-sm` (5px) is used
+  only for surfaces **inside** an island (rows, minicards, buttons), unchanged.
+- **Border.** Each island has its **own** 1px `--border` on all four sides and never shares an edge
+  with another island. A flat inner divider that used to separate two regions of one box
+  (`border-b` under the sidebar toolbar, `border-t` over the Fleet rail sections, the Return here
+  zone's bottom rule) is replaced by the island gap and is not drawn.
+- **Island background.** Sidebar-family islands (sidebar toolbar, Return here, folder list, dock,
+  Fleet rail header/list/sections) paint `--sidebar`; content-family islands (Topbar, the session
+  area, every helper pane) paint `--bg`.
+
+##### Islands and the grid
+
+One grid, three columns. The sidebar column and the Fleet rail column are stacks of islands; the
+middle column is the Topbar over a row holding the session area and the helper stack.
+
+| Column     | Island, top to bottom (`data-island`)                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| Sidebar    | `sidebar-toolbar` · [`sidebar-return`] · `sidebar-list` · `sidebar-dock`                               |
+| Middle     | `topbar` · then `session` and each helper pane (`helper-pane`), side by side or stacked                |
+| Fleet rail | `rail-header` · `rail-list` · [`rail-needs-you`] · `rail-would-have` (minimized: one `rail-minimized`) |
+
+- **Top band.** `sidebar-toolbar`, `topbar` and `rail-header` are the **band**: three islands of
+  `--float-band` (42px) on one line, sharing top and bottom (y = gap … gap + 42). They are marked
+  `data-island-band`.
+- **Below the band.** The first island under each column starts at the same y: band + gap
+  (`6 + 42 + 6 = 54px` from the window top). That island is `sidebar-return` when it shows, else
+  `sidebar-list`; the session area and the first helper pane in the middle column; `rail-list`
+  in the Fleet rail.
+- **Columns are separated by the dividers.** The three vertical dividers are exactly
+  `--float-gap` wide (6px, the same `w-1.5` hit column as today), so the divider **is** the gap
+  and the drag handle at once. Between two helper panes the gap is `--float-gap` as well
+  (a flex gap in side-by-side; the width splitter itself, 6px, when stacked).
+- **Main is not one box.** The Topbar, the session area and each helper pane float on their own.
+  The Topbar is separated from the row below by `--float-gap`.
+- **Bottom edge.** The lowest island of every column ends `--float-gap` above the footer.
+
+##### Dividers in the floating layout
+
+- **At rest** no line is drawn. The 6px hit column stays (`cursor-col-resize` / `row-resize`,
+  drag, double-click reset all unchanged); it sits **in the gap**.
+- **On hover** a short **grip** appears centered in the gap: **2px × 36px**, fully rounded
+  (`999px`), `--accent-line`, with the `--dur-fast` / `--ease` color transition. The stacked
+  (horizontal) divider shows the same grip rotated: **36px × 2px**.
+- A helper pane's header keeps acting as the resize handle between panes (unchanged); its
+  top-edge hover line is not drawn between floating islands (the gap and the grip carry it).
+
+##### Footer exception
+
+The app footer is **not** an island. It stays **flush and full width**: no margin, no radius, no
+side border. It keeps `--surface` and a 1px `--border` **top rule**. The islands keep
+`--float-gap` above it.
+
+##### Sidebar column: Return here and drill Back row
+
+- `sidebar-return` (the Return here zone) is its **own island** between the toolbar and the list,
+  `--float-gap` from both. When the zone is empty it is not rendered and the toolbar and the list
+  are 6px apart as usual. Its internal bottom divider (the `aria-hidden` `border-t`) is hidden;
+  the island gap separates it from the list.
+- In **drill mode** `sidebar-list` is the drill view's own root, and it **starts with the pinned
+  Back row** (`data-drill-back`, BUG-248): the Back row is the first child of the island, so it
+  sits on the island's top edge and the island's rounded corners clip it. No extra rule is needed
+  (the Back row already lives outside the scroller); the default layout is untouched.
+
+##### Sidebar dock (slot)
+
+The sidebar's lower island is a **slot**, not a footer row. It holds Add folder, the watcher pill
+and Settings today, and it must accept more sections later without a layout change.
+
+- **Contract.** The island is the `<footer data-island="sidebar-dock">` element; each **section** is
+  a direct child marked `data-dock-section`. Sections stack top to bottom; the island's height is
+  the sum of its sections (the folder list above takes the remaining height); every section after
+  the first is separated from the one above by a 1px `--border` top rule
+  (`[data-dock-section] + [data-dock-section]`), so a new section is a drop-in child, never a new
+  hard-coded row or border. A section owns its own padding (today `6px 8px`).
+- **Position.** The dock is the last island of the sidebar column, `--float-gap` below the list
+  and `--float-gap` above the footer.
+- Off, the dock is the same footer it always was: one section, a 1px `--border` top rule.
+
+##### Fleet rail sections (slots)
+
+The expanded Fleet rail is the same idea for its lower part: after the `rail-list` island,
+each section is a direct child of the rail with a `data-island` of its own and a
+`data-rail-section` marker, `--float-gap` apart:
+
+1. `rail-needs-you`, present **only while something is pending** (as today);
+2. `rail-would-have`.
+
+The lowest one sits `--float-gap` above the footer. A future section is another
+`data-rail-section` child, not a layout change. The **minimized** rail is a **single**
+`rail-minimized` island (44px wide, its own border on all sides, no separate `border-l`).
+
+##### Collapsed and hidden states keep the gap
+
+A divider that disappears must never take the gap with it. With the switch on:
+
+| State                | What supplies the 6px                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| Fleet rail minimized | The rail column carries `margin-left: var(--float-gap)` (its divider is not rendered).       |
+| Fleet rail hidden    | The row's own padding is the gap to the window edge.                                         |
+| Sidebar collapsed    | The row's own padding is the gap to the window edge (the divider is not rendered).           |
+| Helper stack closed  | The session area simply spans the middle column; the divider next to the rail is unaffected. |
+
+##### Motion
+
+None added here: the grip fades in with `--dur-fast`; layout changes are instant in this slice
+(the layout motion belongs to floating-layout S-7). Respects `prefers-reduced-motion` via §7.
 
 #### Origins of a helper-stack pane
 
 A split pane is born from three paths, all using the same visual anatomy
 (`HelperPane`) and differing only in the `kind` of PTY they spawn:
 
-- **New shell** (Split menu) → `kind: shell` in the worktree's cwd.
+- **New shell** (Topbar Terminal button) → `kind: shell` in the worktree's cwd.
 - **Fork session** (Split menu / context menu) → `kind: claude-fork`
   (`claude --resume <src> --fork-session`), via a pending synthetic session.
 - **Open in new tab** (session context menu, `external-link` icon) →
@@ -3835,6 +4223,14 @@ which was too dim over the terminal content.
 - **Content (left):** pane-type icon (`terminal` for shell, `bot` for claude,
   `git-fork` for a pending fork, 12px `--text-3`) + pane name (`cwd` basename,
   truncated with `…` on overflow). The native `title` exposes the full path on hover.
+- **Expand button (right, before maximize; T628):** `expand` icon 12px, 18×18px target, the
+  same anatomy as the maximize button (`--text-3` → `--text`, `--surface-2` hover,
+  `mousedown.stop`). The glyph does not change while the pane is expanded; its ink turns
+  `--accent` and it carries `aria-pressed="true"`. `aria-label`/`title` =
+  `helperPane.expand` / `helperPane.exitExpand`, the title with the `pane.expandToWindow`
+  chord when bound. A separate button, not a third state of maximize. See "Expanding a pane
+  to the window". Every pane type carries it in the same place: shell / Claude (`HelperPane`),
+  `BrowserPane`, `MarkdownPane`, `MemoryPane`, `ExplorerPane` and `DiagramPane`.
 - **Maximize button (right, before close):** `maximize-2` icon 12px, 18×18px target,
   same hover treatment as the close button. Swaps to `minimize-2` while this pane IS
   the maximized one. `aria-label`/`title` = `helperPane.maximize` /
@@ -3872,6 +4268,43 @@ while one is maximized (ratios are meaningless in that state). The maximized
 pane id is **ephemeral, per-worktree state** — never persisted to `helpers.json`
 — so it resets to the normal split on a worktree switch or app restart.
 
+#### Expanding a pane to the window (T628)
+
+Maximize works inside the helper stack. **Expand to window** is the stage beyond it: one helper
+pane takes the whole working area of the window. The Topbar and the footer always stay; what else
+hides is the **Expand hides** setting.
+
+- **Enter and exit.** The pane header's `expand` button (before maximize) toggles it. Exits:
+  **Esc**, the same button, or `⌘⇧M` (`pane.toggleMaximize`: while a pane is expanded it exits the
+  expanded view instead of toggling maximize, so the chord stays one action's). `pane.expandToWindow`
+  is a separate bindable action with **no default chord**; it toggles the expanded view for the
+  focused helper pane. Esc is a window listener in the bubble phase that ignores a press an overlay
+  or a text field already took, and a press made inside a terminal: there Esc belongs to the
+  program (Claude Code cancels with it), so a terminal exits with the button or `⌘⇧M`. Only one
+  pane is expanded at a time; expanding another pane re-targets directly.
+- **Expand hides (Settings → Appearance → Layout, a two-option segmented control after Floating panels;
+  `settings.json` key `expandHides`).** `everything`
+  (default): the sidebar, the session area and the Fleet rail collapse, and only the Topbar, the
+  pane and the footer remain. `session-only`: only the session area collapses; the sidebar and
+  the Fleet rail stay. Both variants also collapse the other helper panes to nothing (no 24px
+  strips, unlike maximize), and the dividers that touched a collapsed column collapse with it.
+- **No remount, no move.** The pane is never re-parented. It grows because everything around it
+  collapses (`.lm-collapse`, below), so an xterm keeps the same `Terminal` and PTY, and a browser
+  pane keeps its native view. The main terminal inside the collapsed session area keeps the pixel
+  size it had (its host is pinned while the area is collapsed), so it never reflows to two columns;
+  it reflows at most once when the expanded view ends.
+- **State.** Ephemeral, per worktree, never written to `helpers.json`, and cleared when the
+  operator switches worktree or the expanded pane closes. It is independent of maximize: exiting
+  expand returns to whatever maximize or split ratio was there before.
+- **Focus.** The F6 ring holds only the expanded pane (the main terminal and the other panes are
+  not reachable while hidden). Entering expand focuses the pane; exiting returns focus to it.
+- **Both layouts, both orientations.** With Floating panels on, the Topbar island, the expanded
+  pane's island and the footer keep the 6px gap and the canvas frame; with it off, the pane meets
+  the footer as today. Side by side and stacked expand the same way (the collapsed session area
+  gives up its share along the split axis).
+- **Browser panes.** A native view cannot follow the animation, so it is swapped for the JPEG
+  stand-in below for the whole motion (see §7 "Layout motion").
+
 #### Pane focus (T486 U5b)
 
 The main terminal and every helper pane are **focus regions**. Each root carries
@@ -3883,7 +4316,8 @@ holding `document.activeElement` is the focused one.
   is the foreground layer (not covered by a takeover or the Folder View), then the
   current folder's helper panes in stack order when the panel is shown and not
   collapsed. While a pane is maximized, the ring holds only that pane (the others are
-  24px headers). Focus outside the ring goes to the first region (`F6`) or the last
+  24px headers); while a pane is expanded to the window it holds only that pane too, and not
+  the main terminal (T628). Focus outside the ring goes to the first region (`F6`) or the last
   (`⇧F6`); an empty ring does nothing.
 - **What takes focus.** An xterm pane focuses its terminal (its root, `tabindex="-1"`,
   while the terminal is not live yet). The Markdown, Memory and Explorer panes focus
@@ -4176,11 +4610,11 @@ page), and main hides the view. When the last overlay closes the view returns an
 next frame. While frozen the page keeps running and agent verbs keep working; the operator sees a still image.
 No new colour or motion: the swap is instant (no fade, so a menu opening never flashes). Every app layer that can
 overlap a pane registers with the native-overlay composable: context menus, dialogs, popovers, palettes, toasts,
-the Split dropdown, and the pane's own ⋯ menu. A **parked** view (spec §2.3, a 1×1 view in the window's
+and the pane's own ⋯ menu. A **parked** view (spec §2.3, a 1×1 view in the window's
 bottom-right corner) registers the same way and is hidden while an overlay intersects that corner.
 
-**Open from the Split menu.** The Split dropdown gains a **Browser** item (`globe`) that opens an operator pane at
-`about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
+**Open from the Topbar.** The Topbar's **Browser** button (`globe`, next to the Terminal button) opens an operator
+pane at `about:blank` and focuses the address field. An operator pane uses the operator partition and an agent pane the
 agent partition (spec §3.4). Operator panes are unlimited; agent panes are capped at 4 per folder.
 
 **Page pane** (T569 U2, spec §4 and §5). A pane showing one of **our own files** served from `harnu-page://`
@@ -5014,9 +5448,25 @@ already looking at that repo's session.
   `--accent-soft` background + `--accent` ink (replacing the idle/hover pair), plus
   `aria-pressed` — the button is a toggle (see "Takeover dismissal" above), and a
   pressed-looking button is what makes the second click discoverable.
-- **Order:** `[bell] [board] [pr-stack] │ [folder] [vscode] [github-pulls] [explorer]
-[split] [panel-right]`. The two view buttons sit **before** the external-tool openers:
+- **Order:** `[bell] [board] [pr-stack] │ [folder] [editor] [github-pulls] [explorer]
+[terminal] [browser] [split-layout] [panel-right]` (the split-layout toggle is T627, §6 "Split
+  orientation"). The two view buttons sit **before** the external-tool openers:
   they act _inside_ Harnu, the ones after them leave for the OS or another app.
+- **GitHub pull requests** (`github` — lucide's brand glyph, so it reads as "leaves for GitHub" and not as the PR Stack Canvas button; deprecated upstream as a brand icon, so a future lucide major may drop it and break the import at build time; `topbar.githubPulls`): opens
+- **Terminal and Browser** (T630): the two panes you split off the session sit side by side, Terminal
+  first. **Terminal** (`terminal`, `topbar.split`, `data-test="topbar-split"`) opens a shell in one click; **Browser**
+  (`globe`, `topbar.browser`, `data-test="topbar-browser"`) opens an operator browser pane at `about:blank` and
+  focuses its address field, exactly as the old dropdown item did. Both are plain 26×26 buttons with the standard
+  anatomy above and no active state (they open a pane, they do not toggle a view); the `title` carries the
+  keyboard chord where one exists, the `aria-label` is the plain i18n label. The former "More split options"
+  chevron dropdown is gone: with Browser out, Terminal was its only item and duplicated the button.
+- **Open in editor** (`topbar.openInEditor`, T581): launches the editor chosen in Settings → General →
+  **Editor** (default VS Code) on the active folder. The glyph is that editor's mark (§5 "Editor marks");
+  the `title` and `aria-label` read "Open in {editor}" with the editor's display name, so the button
+  never claims an editor it will not launch. A **GUI** editor starts detached; a **terminal** editor
+  (Neovim, Helix, or a custom command flagged "Runs in a terminal") opens in a new shell pane in the
+  folder's split stack. Failure is a danger toast (§8), never a silent no-op. Same anatomy as the other
+  openers, no active state (it leaves Harnu, or lands in a pane).
 - **GitHub pull requests** (`git-pull-request-arrow`, `topbar.githubPulls`): opens
   `https://github.com/<owner>/<repo>/pulls` in the browser for the active folder's
   `origin`. **Hidden, not disabled,** when the folder has no `origin` or it isn't on
@@ -5028,6 +5478,84 @@ already looking at that repo's session.
   both routes land on the same view.
 - **Labels (i18n):** `topbar.roadmapBoard` / `topbar.prStack` (`title` + `aria-label`).
   Short labels → no trailing period (§8).
+
+#### Topbar overflow (BUG-252)
+
+The Topbar never lets its title and its controls collide. When the right cluster does not fit, the
+actions leave the bar **one at a time, lowest priority first**, into a `…` **More** menu at the end of
+the bar. They come back, one at a time, as space returns. Nothing is removed and no action changes
+what it does: the menu runs the same handler as the button.
+
+- **What can overflow.** Every action button of the right cluster: `new-session` (folder view only),
+  `roadmap`, `pr-stack`, `review`, `open-folder`, `editor`, `github-pulls`, `explorer`, `terminal`,
+  `browser`, `split-layout`, `panel-right`. These never overflow: the left sidebar toggle (the
+  collapsed sidebar must always be reopenable) and the Activity bell (a badge and a popover of its
+  own, and it is reachable with nothing selected).
+- **Priority, declared once.** The order is one list in code (`TOPBAR_OVERFLOW_ORDER` in
+  `lib/topbar-overflow.ts`), written **hide first → hide last**. Nothing else decides who leaves.
+
+  | # (leaves…) | Action         | Why it sits there                                                      |
+  | ----------- | -------------- | ---------------------------------------------------------------------- |
+  | 1st         | `github-pulls` | Leaves Harnu for the browser; also hidden when `origin` is not GitHub  |
+  | 2nd         | `open-folder`  | Leaves Harnu for the file manager                                      |
+  | 3rd         | `editor`       | Leaves Harnu for an editor (or a shell pane)                           |
+  | 4th         | `explorer`     | Opens a pane; the file tree is also reachable with its shortcut        |
+  | 5th         | `split-layout` | A rare preference toggle; also reachable from Settings and its command |
+  | 6th         | `browser`      | Opens a pane, right next to Terminal                                   |
+  | 7th         | `terminal`     | Opens a pane; reachable with its shortcut                              |
+  | 8th         | `review`       | A per-repo takeover that acts inside Harnu                             |
+  | 9th         | `pr-stack`     | A per-repo takeover that acts inside Harnu                             |
+  | 10th        | `roadmap`      | The per-repo board: the view operators open most                       |
+  | 11th        | `panel-right`  | The only way to reopen a collapsed helper panel without the keyboard   |
+  | 12th (last) | `new-session`  | The primary action of a folder with no session                         |
+
+  An action that is not present right now (no `origin`, no helper panes, a session instead of a
+  folder) is not in the list that frame, so it neither takes room nor leaves a gap.
+
+- **Order in the bar and in the menu.** Both keep the cluster order `[new-session] [roadmap]
+[pr-stack] [review] [open-folder] [editor] [github-pulls] [explorer] [terminal] [browser]
+[split-layout] [panel-right] […]`, whatever the priority order is. The `…` button is last; it is
+  drawn only while at least one action is hidden.
+- **Minimum title width: 96px.** The title (the session name, or the folder name in the folder
+  view) is a truncating span with `min-width: 96px` (its border box, padding and border included, so the room it takes in the bar is 10px less and the budget errs on the safe side): it ends in an ellipsis as the bar narrows, and
+  actions start to leave **only once the title is at 96px**. The breadcrumb folder label before it
+  truncates too, to its icon and separator at the very end, so no part of the left side can push
+  into the cluster. The provider and Orchestrator badges that follow the title (marked `data-topbar-extra`) keep their width and are counted in the reserve. The folder view's branch badge shrinks, with an ellipsis, after the title is at its floor, down to its 11px icon, and reserves only that icon, so a long branch name never takes the actions' room. The mission pill already shrinks with its own ellipsis and reserves nothing. Below the width where even `[…]` plus the
+  96px title do not fit (about 240px of Topbar, far under the 800px window minimum) the bar is
+  simply full; nothing is hidden beyond the last action.
+- **The fit rule.** Every action button is 26px wide with a 2px gap, so the number that fit is a pure
+  function of one number, the width left for the cluster: the bar width, minus the 16px padding on
+  both sides, the sidebar toggle, the bell, the 12px gaps between regions, the breadcrumb's minimum,
+  the badges and the 96px title. If an action has to leave, the `…` button takes a slot of the same
+  size, so one more action leaves with it. The math lives in `planTopbarOverflow`
+  (`lib/topbar-overflow.ts`) and is unit-tested; the component only measures and renders.
+- **Measuring.** A `ResizeObserver` on the header feeds the plan, and a post-render watch re-plans when the list of present actions, the badges, the breadcrumb or the sidebar state (the macOS inset changes the padding) change. It is never polled and never read per frame, and it commits only when the hidden set changes. A header with no width yet (not laid out) is left alone: nothing is hidden. **Hysteresis:** an action
+  that is hidden comes back only when it fits with **8px** to spare, so a width sitting on the
+  boundary does not flip an action in and out. Hiding and returning are instant (no animation): a
+  moving control under the pointer is worse than a jump.
+- **The `…` button.** Same anatomy as every right-cluster button: 26×26, `--text-3` → `--text` with a
+  `--surface` hover, 14px `ellipsis` glyph at stroke 1.5; `--accent-soft` + `--accent` while its menu
+  is open. `aria-haspopup="menu"`, `aria-expanded`, `title` and `aria-label` =
+  `topbar.moreActions` ("More actions"), `data-test="topbar-more"`.
+- **The menu** is the Context menu of §6 (`--surface`, 1px `--border-2`, 6px radius, 4px padding,
+  `--shadow-pop`, 12px items, `6px 8px` padding, 9px icon-to-text gap, the shortcut hint on the right
+  edge in `--text-4` mono 10.5px, `.anim-fade-in-scale`), anchored under the `…` button with its right
+  edge on the button's (the Activity bell convention), 200px minimum width, and registered as a native
+  overlay so a browser pane under it freezes. Each row is one hidden action: the **same icon**, the
+  **same label** (the button's `aria-label`), the **same chord hint**, the **same handler**. An
+  **active** action (Roadmap, PR Stack and Review while their view is open; split-layout while the
+  setting is an explicit override) keeps its look in the row: the three view toggles (Roadmap, PR Stack, Review) keep `--accent-soft` + `--accent` and are exposed as a checked `menuitemcheckbox` (`aria-checked`), split-layout keeps `--accent` ink only; a disabled one is dimmed to `--text-disabled` and skipped by the
+  arrows. Rows are in the bar's order, with no separators and no header.
+- **Keyboard.** `Enter`, `Space` or `ArrowDown` on the `…` button opens the menu with the first row
+  focused (`ArrowUp` opens it on the last). Inside: `ArrowDown` / `ArrowUp` move (wrapping),
+  `Home` / `End` jump, `Enter` or `Space` runs the action, closes the menu and leaves focus on the `…`
+  button, `Esc` closes it and returns focus to the `…` button, and `Tab` closes it. Roving
+  `tabindex`: only the focused row is tabbable. Click outside closes it without moving focus.
+- **Floating panels.** Unchanged. The Topbar is the same 42px band island with or without them; only
+  the width the cluster gets differs, because the island borders and gaps take theirs. The menu is a
+  popover above the islands and is not clipped by them.
+- **Copy (i18n).** `topbar.moreActions` = "More actions" (no trailing period). Every action row reuses
+  its button's existing key; the menu adds no other string.
 
 #### Memory pane (project memory viewer, non-PTY)
 
@@ -5068,7 +5596,15 @@ translated in pt-BR).
   on top** (`buildTimeline`, pure). Each row: **date** (`YYYY-MM-DD`, mono
   `tabular-nums` 10.5px `--text-4`) + **title** (digest's first `# `, 12px, truncated) +
   — when the digest references a session — the `arrow-up-right` icon (`--text-4`) on
-  the right; below, the **visible provenance** (raw `author` `human`/`agent` + `branch`
+  the right; below, on the provenance line after the branch (so the title keeps its width),
+  an **evidence badge** when the digest's header names one (memory U1 S-8, `data-testid="memory-evidence-badge"`): the chip
+  shape of the Cleanup memory chip (`rounded-xs`, `1px` border, `px-1.5 py-px`, 10.5px
+  `text-eyebrow`), **"No commits"** and **"No git"** in the Badge _Default_ triple
+  (`--surface` / `--text-3` / `--border`), **"Recovered"** (a removed folder's
+  transcript) in the Badge _Accent_ triple (`--accent-soft` / `--accent` /
+  `--accent-line`), each with a one-sentence `title`
+  (`memoryPane.evidence.*Hint`). A commit-backed digest and any digest written before the
+  token existed show **no badge**. That line is the **visible provenance** (raw `author` `human`/`agent` + `branch`
   with the `git-branch` icon, 10.5px `--text-4`) — visible per §7 (cross-session
   prompt-injection mitigation). A row with a session reference is a `<button>`
   (`cursor-pointer`, hover `--surface-2`, `title` `memoryPane.openSession`); **clicking
@@ -6215,6 +6751,12 @@ own border without colliding with the row divider below):
   `stopPropagation`s so it never triggers the row's navigate-and-dismiss.
 - **Relative timestamp**: `text-text-4`, `10px`, `tabular-nums`, right-aligned
   — replaced by the dismiss × on row hover (above).
+- **Folded repeats (T599).** Repeat idle / task-finished notices for the same
+  unit (one mission step, or one card) within 10 minutes share one row: the
+  row's timestamp moves to the latest one and a count line appears under the
+  text — `activityBell.alreadyReported`, "already reported · ×N", `--text-4`,
+  `10px`, `tabular-nums`, shown only from ×2. A different unit or a different
+  notice kind in the same window is never folded. No new token or row height.
 - Rows separated by a `1px --border` top rule; **order: most-recent-first**.
 
 **Grouped entry (BUG-173).** A record that carries `items` is a **list
@@ -6463,6 +7005,63 @@ step-row hover / focus elsewhere — it never adds a line to the rail) and opens
 (any case) is deduped by the server (`deduped: true`): nothing is added and no
 duplicate row appears. Checks never change the step's visual or the headline.
 
+**Gate dots (campaign spec §3.2, T593).** Four dots follow the step label on **every**
+rail row, in a fixed order: **PR · CI · main · verifier** — the facts that prove a
+step done, read from the server's derived `gates` (`derived.steps[].gates`) and never
+recomputed in the renderer (the fifth gate, `checks`, has no dot: it is the checkboxes
+below). Anatomy: an inline group (`gap: 4px`, `role="group"`, label "Step gates"),
+each dot `7px × 7px`, `rounded-full`, `1.5px` border, no text. States, tokens only:
+
+| State     | Meaning                            | Look                                                                                         |
+| --------- | ---------------------------------- | -------------------------------------------------------------------------------------------- |
+| `green`   | the fact holds                     | `bg-green` + `border-green`                                                                  |
+| `red`     | the fact failed                    | `bg-red` + `border-red`                                                                      |
+| `running` | in progress / waiting on something | `border-accent`, left half filled `accent` (`bg-linear-to-r`), `.anim-tick-pulse` (breathes) |
+| `off`     | no signal yet                      | hollow `border-text-4`                                                                       |
+| `na`      | does not apply to this step        | dashed `border-text-4`, `opacity-50`                                                         |
+
+Each dot carries a `title` (and the same `aria-label`) that names the gate and the
+state — "PR merged: green", "main green after merge: red" — never a colour alone.
+When the server marked the gates `stale: true` (GitHub was unreachable, the values
+are the last known) the title ends "(last known)". No new token, size or animation
+beyond the `7px` dot; the mockup is `parts/gates.js` / screen `v6--chapter` state
+`gate-red`. A red `main` on a done step also lands one **You** item, "main is red
+after #{pr}" — nothing stored is downgraded.
+
+**Rail letters, locked, Side bucket and decision node (campaign spec §3.2, T594).**
+Every main step's label row starts with its **rail letter** (A, B, C… by position;
+none on the end step; `10.5px`, `font-weight: 500`, `tabular-nums`, `text-text-4`) —
+the handle a side step cites as its origin. The seven rail glyphs gain an eighth,
+**locked** (`lock` icon 10px, `text-text-4`, inside the same 12px glyph slot): an
+unfinished step has a `blocks` edge into it, or an undecided decision lists it; a
+locked step never takes the current marker and is not counted as left behind.
+
+The **Side bucket** sits under the main rail after a `border-t border-border`
+(`margin-top: 14px`, `padding-top: 10px`) and appears only when a step has
+`required: false`. Header: a full-width button — chevron (12px, right = collapsed,
+down = expanded, `text-text-4`), a 10px outline `diamond` (`text-text-4`), "Side
+steps" (`11.5px`, `text-text-2`) and, right-aligned, the meta (`10.5px`, `tabular-nums`,
+`text-text-4`): collapsed "{n} open", expanded "{n} open · {m} done". It starts
+**collapsed**. Expanded, the rows hang off a dashed 2px `border-border-2` line
+(`left: 5px`): glyph (outline diamond while open, `circle-check` `text-text-3` once
+done/verified) at `left: 0`, the title (`11.5px`, `text-text-3`) over a `10.5px`
+`text-text-4` caption "discovered from {letter}" (a side origin reads its title;
+none, no caption) and, on an open row, the Badge `Open` (default variant) pushed right.
+Side steps never appear on the main rail and never move "Step N of M".
+
+The **decision node** hangs under its step, only while undecided: `rounded-sm border
+border-border-2 bg-surface-2`, `padding: 8px 10px`, `margin-top: 6px`. Header row —
+a filled 10px `diamond` (`accent`), the title (`12px`, weight 500, `text-text`,
+truncating) and, right-aligned, a warning Badge "Blocks {letters}". Each option is a
+`radio` button row (`margin-top: 6px`, `padding: 5px 8px`, `border-border-2`,
+`bg-surface`, `rounded-sm`, `11.5px`, `text-text-2`) with a 10px ring (`border-text-4`);
+the picked option takes `border-accent-line`, `text-text` and a filled `accent` ring.
+Below, the primary button **Choose…** (`h-6`, `bg-accent text-accent-ink`) is disabled
+until an option is picked; pressing it fires the `chooseDecision` door
+(`mission:choose`). Once decided the node collapses to one accent line (`11px`,
+filled diamond) "{title} · Chose {option}". No new token, size or animation; the
+mockup is screen `v6--chapter` states `side` and `decision`.
+
 **Callouts** (`padding: 6px 8px`, `rounded-sm`, `11px`, `line-height: 1.5`,
 `border`, `margin-top: 5px`, 13px icon): Warning = `bg-warning-soft
 text-warning border-warning-line`. Blocked (`triangle-alert`) — "**Blocked** —
@@ -6520,17 +7119,43 @@ go-to-session action raises an info toast ("Session not loaded yet") instead of
 doing nothing.
 
 **The `you` block never hides.** Eyebrow "You" (`9.5px / 700`, uppercase,
-`0.06em`). It shows the **first** item of the ordered `you` list (spec §3.12),
-translated per kind — never the English string `mission_get` prints — and
-"+{n} more" (`11px`, underline-on-hover text button) below it, which expands
-the rest as a plain list. Three looks: **clear** (`text-text-4`, no box —
-"Nothing — you're clear."), **warning** (`bg-warning-soft text-warning
-border-warning-line`, `padding: 8px 10px`, `triangle-alert` 13px), **success**
-(`bg-green-soft text-green border-green-line`, same padding, `check` 13px) —
-success only when the first item is a requested close and the server returns
-no `closeWarnings`. A requested close carries a **Close mission** button
-(Success) that opens the end dialog preset to "Close as delivered"; a staged
-re-scope carries **Approve re-scope** (Primary).
+`0.06em`). It is a **list** (campaign spec Amendment d, T596): the **first** owed
+item sits in the box, translated per kind — never the English string
+`mission_get` prints — and **every other item is its own row under it**, one per
+item, so nothing hides behind a "+N more" (that control is gone). A row
+(`11.5px`, `text-text-2`, `padding: 5px 0`, `border-t border-border`, `gap: 8px`)
+reads: a 10px `●` risk dot, the item, and right-aligned its **age** (`10.5px`,
+`text-text-4`, `tabular-nums`, "3h 0m"). The risk dot is `text-red` for what blocks
+others (a blocker, an undecided decision, a red `main`, a staged re-scope),
+`text-warning` for what waits on the operator's click (a requested close, a human
+step, a child's approvals or input) and `text-text-4` for the small chores (due
+checks, an imported end to review). **An age is shown only where the record holds a
+timestamp** — a blocker's `raisedAt`, the requested close's `pendingClose.at`, the
+merge of a red `main` PR from the ledger — and is left out otherwise; the UI never
+invents one. An undecided **decision node** adds a dedicated **"Decide: {title}"**
+item (campaign spec Amendment e) after the blockers, so the box can say what the
+operator must choose. Three looks: **clear** (`text-text-4`, no box — "Nothing —
+you're clear."), **warning** (`bg-warning-soft text-warning border-warning-line`,
+`padding: 8px 10px`, `triangle-alert` 13px), **success** (`bg-green-soft text-green
+border-green-line`, same padding, `check` 13px) — success only when the first item
+is a requested close and the server returns no `closeWarnings`. A requested close
+carries a **Close mission** button (Success) that opens the end dialog preset to
+"Close as delivered"; a staged re-scope carries **Approve re-scope** (Primary).
+
+**Ledger tail (campaign spec Amendment c, T596).** Under the `you` block a
+mission that has a ledger shows its **last 5 rows, newest first** — the facts
+Harnu wrote (a dispatch, a worktree, a PR opened or merged, CI, a verdict, a dead
+session, a compaction), never anything an agent said. Eyebrow "Ledger" (`10.5px /
+500`, uppercase, `0.07em`, `text-text-4`), then one row each (`11px`,
+`text-text-3`, `gap: 8px`): the event in words, the ref in `font-mono 10.5px`, and
+the age right-aligned (`10.5px`, `text-text-4`, `tabular-nums`). No ledger, no
+section.
+
+**Back link (campaign spec §5, T596).** A chapter popover opened from the
+Campaign popover starts with a **"‹ Campaign · Chapter N of M"** row above the
+title (`11px`, `text-text-3`, `chevron-left` 12px, `padding: 8px 14px 0`) — a text
+button that returns to the Campaign popover; the number comes from the campaign's
+`derived.progress`. A mission with no campaign has no such row.
 
 **Open questions** render only when non-empty: an eyebrow ("Open questions",
 `10.5px / 500`, uppercase, `0.07em`, `text-text-4`) + a plain list (`11.5px`,
@@ -6552,9 +7177,55 @@ verified** is a button wearing the Badge **Accent** anatomy (`check` 10px) and
 | Add check              | "+ check" on a step                       | inline input            | `applyAddCheck`           |
 | Tick / untick check    | the check's checkbox                      | inline checkbox         | `applyTickCheck`          |
 | Delete check           | the check row's `x` (hover)               | icon button             | `applyDeleteCheck`        |
+| Pause steward…         | the steward line → reason dialog          | Ghost → dialog          | `applyPauseSteward`       |
+| Resume steward         | the steward line / the paused `you` row   | Primary (you) / link    | `applyResumeSteward`      |
+| Merge batch            | the `merge-batch` `you` row → dialog      | Primary → dialog        | `runMergeBatchDoor`       |
 
 No MCP verb reaches any of them. A refused door, or an IPC failure, raises a
 danger toast with the reason ("Mission action refused").
+
+**Steward line (T609, campaign ch.5b; mockup `v6--campaign` owed strip).** One line **pinned above the
+footer** of the Mission popover (outside the scrolling body, `border-t border-border`, `padding: 7px 14px`, so
+Pause / Resume is never scrolled out of reach), drawn only when the mission has a steward (the Scheduler's system worker
+bound to it, §6 "Scheduler" → Stewards): the `bot` glyph (11px, `text-text-3`), "Steward" (`11.5px / 500`,
+`text-text-2`), a `·`, its last action (the last tick's one-line result, `text-text-3`, truncated), the age
+("4m ago", `text-text-4`) and the next wake ("next: on CI change" while armed). Right-aligned, a bare text
+link (`11px`, `text-text-4`, `hover:text-text-2`): **Pause steward…** while it runs, **Resume steward**
+(`text-accent`) while it is paused. A paused steward reads "Steward · paused", in `text-warning`, instead
+of its last action.
+
+**Pause steward dialog (`StewardPauseDialog.vue`).** The End dialog's anatomy, copied (Teleport, z-60,
+overlay fade, fade-in-scale card, `min(440px, 90vw)`, focus trap, `Esc` / backdrop / X cancel, **initial
+focus on the reason field**; the backdrop carries `data-mission-close-confirm` so the pill's click-outside
+leaves the popover open behind it). Header "Pause the steward?" (`13.5px / 600`); body: one sentence
+("It stops waking on events and on its 20-minute beat until you resume it. Nothing is lost — the mission
+keeps its state.") and a **mandatory Reason** field (label `11px`, `text-text-3`; a 2-row textarea in the
+End dialog's field look). The footer is **Cancel** (Ghost) + **Pause steward** (Primary), which stays
+**disabled while the reason is blank**. Pausing writes a `steward` Log entry carrying the reason.
+
+**Paused state.** While paused the mission's state is `needs-you` — the pill wears the warning tone — and
+the `you` list carries "Steward paused {age}: {reason}" (a `steward-paused` item; mid risk; the age is
+part of the sentence, so the row's own age slot stays empty). When it is the first row, it is boxed in the
+warning look with a **Resume steward** button (Primary, `play` 14px) under the sentence. Resuming writes a
+second `steward` Log entry and clears the row.
+
+**Merge batch (T609; mockup `v6--campaign` state `merge-batch`).** A derived `you` row, drawn when two or
+more of a mission's steps have an open PR whose CI is green, in step order: "{n} PRs ready to merge in
+order: #305 → #306 → #308" (mid risk, no age) with the action **Merge {n} in order…** (Primary, `git-merge`
+14px) at the row's end. It opens the **Merge batch dialog (`MergeBatchDialog.vue`)** — the End dialog's
+anatomy again, `min(480px, 90vw)`: header "Merge {n} PRs in order"; a "who" line (the `running` step glyph,
+"**Steward** merges one, then works between merges"); an ordered list — a PR row (the `waiting` step glyph,
+**#305** `font-mono 500`, the step title, a dim "· CI green") and, between two PRs, a "between" row (the
+mockup's `.between`: a 12px `bot` marker and three chips "rebase --onto #306", "re-check gates", "stop on
+red", `10.5px`, `border border-border-2 rounded-sm px-1.5`, `text-text-3`). Footer: **Cancel** (Ghost) +
+**Merge {n} in order** (Primary; **initial focus is Cancel**). While the batch runs the list is
+non-interactive, each PR row shows its state glyph (`verified` once merged, `running` for the one being
+merged) and the footer reads "Merging…" disabled — a batch waits on the steward and on CI between merges
+and can take minutes. A **stop** replaces the footer's confirm with a warning callout (Warning look,
+`triangle-alert` 13px, eyebrow "Stopped at #306": the reason in words — "has failing checks", "conflicts with its base", "does not merge into the default branch", "is not
+open any more", "the steward did not run", "the mission was closed", "the steward was paused", "GitHub refused the merge: {message}", "checks still running") over the merged PRs and the
+PRs still to merge, and the confirm becomes **Merge the rest…** — Harnu asks again, and nothing more is
+merged until the operator answers. Merging is the operator's: no MCP verb reaches this door.
 
 **End dialog (`MissionCloseConfirmDialog.vue`, spec §3.5).** One dialog ends
 any non-closed mission, with a choice. Ending is the one irreversible door
@@ -6587,6 +7258,31 @@ bg-accent-soft`): **Close as delivered** ("The work is done.") and
   id** ("Design review — DSQA done"): the server's `closeWarnings` decide which
   warnings show, the renderer builds the lines from the view's structured data
   (`endWarnings`). Warnings **never** disable or hide the confirm.
+- **"Also record" panel** (Campaign ch.6, spec §3.6; `data-test="mission-record"`).
+  Between the Reason field and the warnings callout, only while **Close as
+  delivered** is selected and the mission carries `memoryDrafts` (or its
+  `outcome.nothingNotable`). A plain section, no new token: `rounded-sm border
+border-border-2`, `margin-top: 10px`, `padding: 8px 10px`. Eyebrow "Also
+  record" (`9.5px / 700`, uppercase, `letter-spacing: 0.06em`, `text-text-3`)
+  and one hint line under it (`11px`, `text-text-3`): "Tick what Harnu should
+  write to project memory. Nothing is written without a tick." Then one
+  **draft row** per `memoryDrafts` entry (`gap: 8px`, `padding: 6px 0`,
+  `border-t border-border` between rows): a checkbox (`accent-color:
+var(--color-accent)`, **unticked by default**) + a block with the **kind**
+  (`Decision` / `Lesson` / `Hot` — `9.5px / 600` uppercase, `text-text-4`), the
+  entry's heading as the title (`12px / 500`, `text-text`, one line,
+  truncated), the rest of the entry as an excerpt (`11px`, `text-text-3`, at
+  most 3 lines), the **citations** (`font-mono`, `10.5px`, `text-text-2`, one
+  per cited step / PR / commit, separated by `·`) and, when the draft carries
+  `supersedes`, a line "Replaces {entry id}" (`11px`, `text-text-3`, id in
+  `font-mono`). When the consolidator found nothing (`nothingNotable`) the
+  panel shows a single line "Nothing notable to record." (`11.5px`,
+  `text-text-3`) and no rows. **Discard** hides the panel (it writes nothing);
+  ticks are kept in the dialog if the operator switches back. Closing writes
+  only the ticked drafts, in the order the record stores them; a draft the
+  memory write refuses does not stop the close — a warning toast names it and
+  the draft stays on the closed mission's record. The panel scrolls with the
+  dialog body (the dialog is `max-height: 80vh`), so it holds at 900 px tall.
 - **Footer** (`border-t border-border`, `padding: 12px 18px`, `gap: 8px`,
   right-aligned): **Cancel** (Button `ghost`) + the confirm — **Close as
   delivered** (Button `success`, `check` 14px) or **Discard** (Button `danger`,
@@ -6734,6 +7430,182 @@ Non-interactive: the popover is reached from the Topbar pill.
   warning.
 - ❌ Show a draft state, an Approve button or an approval callout.
 - ❌ Show the mission's stored `status: 'stale'` — there is none; stale is derived.
+
+### Campaign progress (pill, popover)
+
+**T596 (campaign chapter 4b); spec `docs/specs/2026-10-30-campaign/spec.md` §5,
+approved mockup v6 (`screens/v6--pill.html`, `v6--campaign.html`,
+`v6--chapter.html`).** A **Campaign** is the quest line above a Mission; each
+chapter IS a mission. The surfaces below render the campaign's server
+`derived.progress` (`computeCampaignProgress`, `src/main/campaign-progress.ts`) and
+**never recount** — chapter numbers, states, counts and the radiant counter are
+the server's. Data: read over `campaign:list` (`src/main/campaign-ipc.ts`,
+read-only — no campaign door exists yet) into `stores/campaigns.ts`, refreshed
+whenever the mission store refreshes. A session whose mission has no campaign
+(or whose campaign is not loaded) keeps the Mission progress pill and popover
+unchanged. **Tokens only; no new color, size or animation.** The one new width is
+the wide popover (§4 Layout dimensions).
+
+**Pill (`MissionPill.vue`).** Same anatomy as the Mission pill (§6 "Topbar pill":
+height `18px`, `padding: 1px 7px`, `10.5px / 500`, `tabular-nums`, 10px leading
+icon), a `<button>` that toggles the Campaign popover. Label, from the campaign
+headline plus the own mission's headline: **"Ch. {n}/{m} · Step {a}/{b}"**
+(parallel chapters read "Ch. {n}–{to}/{m}"); the warning state appends **"· {k} for
+you"**, k being everything the campaign's open chapters owe (`you` lists, plus
+undecided decisions); delivered reads **"Ch. {m}/{m} ✓"** with no step part. Tones
+as the Mission pill: `accent` active, `warning` when anything is owed or blocked,
+`success` when delivered (`check` icon).
+
+**Pill margin rail and radiant counter (T607, mockup `v6--pill`).** After the label
+the campaign pill draws a **margin rail**: one tick per _required_ chapter, in plan
+order (side chapters are not ticks), `aria-hidden` — the label already says the
+position. A tick is `2px × 8px`, `rounded-[1px]`, `1px` apart, from the chapter's
+state in the server's `progress.states`: `done` → `bg-green`; `inReview` →
+`bg-green` at `opacity-50`; `running` or inside the server's `current` range →
+`bg-accent`, **`4px`** wide (`bg-warning` while the pill is in its warning tone);
+`locked` → `bg-border-2` at `opacity-50`; `todo` → `bg-border-2`. Delivered: every
+tick `bg-green`, none wide. A campaign with no required chapters draws no rail. When
+the server reports a radiant (`progress.radiant`, present only when some chapter
+declares one) the pill ends with the **radiant counter** `"{done}/{total}"`
+(`tabular-nums`, `opacity-70`, the pill's `10.5px`) — the server's numbers, never a
+sum of the chapters' own `radiant.total`. The tick rail and the counter are the
+only additions to the pill's anatomy; a mission with no campaign has neither.
+
+**Campaign popover (`CampaignPopover.vue`, `.pop--wide` 520px).** The Mission
+popover's shell (`rounded border border-border-2 bg-surface shadow-pop`,
+`anim-fade-in-scale`, `max-height: 560px`), width **520px**. Header
+(`padding: 10px 14px`): the campaign title (`12.5px / 500`), the headline
+"Chapter {n} of {m}" right-aligned (`11px`, `text-text-4`), the declared end
+(`11px`, `text-text-3`, truncated), the counts line (`11px`, `text-text-4`: "{done}
+done · {inReview} in review · {running} running · {locked} locked · {side} side
+({sideDone} done, {sideOpen} open)") and, when a chapter declares a radiant, a 3px
+`bg-border-2` track with an `accent` fill and "**{done} / {total}** units" beside
+it. Body, two panes: **left** (`~190px`, `border-r border-border`) the groups
+**Main quest** / **Side quests** / **Locked** (eyebrow `10.5px / 500`, uppercase,
+`0.07em`, `text-text-4`, the group count right-aligned); a chapter row is the §6
+step-rail glyph for its state (`verified`/`done`, `running`, `waiting` for in
+review, `lock` 10px for locked), its number, its title (`12px`; the open chapter
+`text-text` / 500, a click selects it) and a muted state word. **Right** the
+selected chapter's **objectives**: its mission's counted steps as compact rows
+(rail letter, title, the four gate dots of "Gate dots" above) with "{done} of
+{total} steps" and **Open chapter →** (text link, `accent`). Below both panes, the
+**You lane** (the Mission `you` block's three looks, aggregated over the open
+chapters, each row tagged "ch. {n}") and a footer (`padding: 8px 14px`,
+`border-t border-border`): **End campaign…** (Ghost) — rendered **disabled with a
+tooltip** until main exposes a campaign end door — and **Open map** (Primary) —
+enabled since T607: it closes the Topbar popover and opens the Campaign map takeover
+for this campaign (§6 "Campaign map"). The **merge-batch** row and dialog of the mockup (T609) are
+the Mission popover's, drawn in the You lane the same way (§6 "Mission progress" → Merge batch); the
+**Steward** line stays with the chapter popover, where its Pause door lives.
+
+States (mockup `v6--campaign`): `default`; `side` (a side quest selected —
+eyebrow "Side quest · not required for the end", its origin chapter and gates);
+`needs-you` (the You lane's first item boxed in the warning look).
+
+### Campaign map (takeover)
+
+**T607 (campaign chapter 4c); spec §5, approved mockup `screens/v6--map.html`.** A
+main-pane takeover (`CampaignMap.vue`, view id `campaignMap`, **global** scope — the
+campaign is read by id from `stores/campaigns.ts`) rendered through `TakeoverShell`
+like every takeover (§6 "Takeover dismissal"): the shell owns the 40px header, the
+title "Campaign map", the `Map` icon in its icon zone and the close ✕ ("Close
+campaign map", Esc through `view.closeTakeover`). It opens from the Campaign
+popover's **Open map**. **Tokens only; no new color, easing or animation** — the one
+new dimension is the board canvas (§4 Layout dimensions). Every number it prints is
+the server's (`CampaignView.progress`, each chapter mission's own `progress`); the
+renderer never counts chapters, units or steps.
+
+**Layout.** Under the shell header a campaign strip (`padding: 8px 12px`,
+`border-b border-border`, `bg-surface`): line 1 the campaign title (`13px / 600`)
+and the server headline "Chapter {n} of {m}" (`11px`, `text-text-3`); line 2 the
+declared end ("End: …", `11px`, `text-text-3`, truncated); at the right, when the
+server reports a radiant, the **radiant counter** — "**{done} / {total}** units"
+(`11px`, mono numerals `text-text`) and a `160px × 3px` `bg-border-2` track with an
+`accent` fill at the server's ratio. Below it the body is two columns,
+`grid-template-columns: 2fr 1fr` from `720px` wide (stacked, board first, below
+that): the **board** on the left (`overflow-auto`, `padding: 20px`,
+`border-r border-border`) and the **right column** (`padding: 14px 16px`,
+`gap: 14px`, `bg-bg`, `overflow-auto`). The footer strip (`h-[30px]`, `border-t
+border-border`, `bg-sidebar`, `11px`, `text-text-4`) prints the server's counts line
+(the Campaign popover's) and, at the right, "gates: PR · CI · main · verifier".
+
+**Board.** A fixed canvas (§4: tile `164×96px`, gutter `36px`, row gap `40px`, lane
+`20px`) laid out by `lib/campaign-map.ts`. Required chapters are **tiles** in plan
+order on a 4-column grid; arrows are the chapters' **dependencies** — a chapter
+that consumes a token is entered from each earlier required chapter that produces
+it, a chapter that unlocks on another chapter from that chapter, and a chapter
+nothing explicit enters follows the plan order from the previous one. An edge
+whose end has no tile (a side chapter, an unknown id) is not drawn. Arrows are
+`1.25px` strokes with a `6px` arrowhead in `text-text-4`; **`ok`** (the source is
+done) `stroke-green`; **`cur`** (the target is the current chapter) `stroke-accent`;
+**`lock`** (the target is locked) dashed `3 3`. Neighbours in a row are joined
+straight; any other arrow leaves through the gutter right of its source, runs along
+the channel above the target's row and drops into the target's top edge (the last
+column leaves through the return lane).
+
+A **tile** is `rounded-sm border border-border-2 bg-surface`, `padding: 6px 8px`,
+`gap: 3px`: line 1 the chapter number (`10px`, mono, `text-text-4`) and title
+(`12px`, truncated); a two-line clamped sub-line (`10.5px`, `text-text-4`) — the
+current step's title when the chapter's mission is open, "Waits for …" when it is
+locked; and a last line with the **four gate dots** of the mission's current step
+(the §6 "Gate dots", only when the chapter's mission is open — a chapter with no
+open mission shows none rather than invented ones) and the **state word** at the
+right (`10px`, `text-text-4`). By state: `done` — state word `text-green` with ✓;
+`inReview` — `border-warning-line`, word `text-warning`; `running` (the current
+chapter) — `border-accent`, `ring-2 ring-accent-soft`, title `text-text`, word
+`text-accent` / 600, and the **"▼ You are here"** tag (`9.5px / 700`, `bg-accent`
+on `text-accent-ink`, `rounded-sm`, `top: -9px; right: 8px`) on every chapter the
+server's current range names; `locked` — `border-dashed`, `opacity-60`, the
+`Lock` glyph (10px) before the state word; `todo` — plain. Every tile is a
+button: clicking it opens **chapter-focus**.
+
+**Docks.** A side chapter (`required: false`) with a resolvable `discoveredFrom`
+hangs **under its origin tile**: a `164×20px` chip (`border-dashed border-border-2`,
+`rounded-sm`, `10.5px`) per side chapter, 24px apart starting 8px under the tile,
+joined by a dashed `1px` stem at the tile's left (`x + 10`). The chip wears ✓
+(`text-green`) when the server says the chapter is done, otherwise ◇
+(`text-warning`, and `border-warning-line` while it is not `todo`). A chip is a
+button too. A side chapter with no origin is not drawn on the board; it is still in
+the side-quests list. (The mockup's ◇{n} count on a tile is **not** drawn: it would
+be a recount.)
+
+**Right column.** Top to bottom:
+
+1. **You ledger** — the campaign's whole You lane: the Campaign popover's rows
+   (one per owed item of every open chapter), in the Mission v3 order. A box
+   `border border-warning-line bg-warning-soft rounded` (the "clear" look is
+   `border-border-2 bg-surface-2`); header `px-2.5 py-1.5` with "YOU" (`10.5px /
+700`, uppercase, `0.07em`, `text-warning`) and "{n} owed" (`11px`,
+   `text-text-2`); a row is a 4-column grid `8px · 1fr · 24px · auto` (risk dot —
+   `bg-red` high, `bg-warning` mid, a hollow `border-text-4` ring low; the item's
+   words with a dim "ch. {n}" tag; the age, `10.5px`, `text-text-4`; an **Open**
+   button, the §6 secondary button at `h-5`) with `border-t border-border` between
+   rows. **Open focuses the chapter** that owes the item. Nothing owed reads "—
+   nothing, you're clear". (The mockup's risk mix "1 high · 1 mid · 1 low" is not
+   drawn: it would be a recount.)
+2. **Steward** — eyebrow "STEWARD" and the steward feed. Chapter 5 wires the feed;
+   until then it renders its **empty state**, "No steward yet" (`11.5px`,
+   `text-text-4`).
+3. **Side quests** — eyebrow with the server's meta "{total} · {done} done · {open}
+   open" at the right, then a bordered box of rows (`12px 1fr auto 38px` grid): ✓ /
+   ◇ glyph, the title (truncated), "ch. {n}" (the origin chapter's number), the state
+   word. A row is a button that opens chapter-focus on that quest.
+
+**chapter-focus** (mockup state). Clicking a tile (or a dock, or a ledger row's
+Open) selects the chapter: the other tiles fall to `opacity-50` (locked ones to
+`opacity-30`), the selected tile takes the `running` look, and the Steward and Side
+quests blocks are replaced by the **focus panel** — `rounded border
+border-accent-line bg-surface`, header (`px-2.5 py-1.5`, `border-b`): a compact **Back**
+button (`h-5`, the ledger's Open button look), "{n} · {title}" (`12px / 600`) and the mission's own headline at the right
+("Step 2 of 4", `10.5px`, `text-text-4`). Below it one row per counted step of the
+chapter's mission, exactly the Campaign popover's objectives: rail letter, §6 step
+glyph, title, and the four **gate dots with their names** ("PR · CI · main ·
+verifier") — beside the title when the panel is `340px` or wider (a container query), under it when narrower, so a narrow right column never crushes the titles. The current step's row is `bg-accent-soft`. A chapter whose mission is
+not open (locked, not started, closed) shows one line saying why, no steps. Back
+(or selecting nothing) returns to the default state. Esc still closes the whole
+map.
+
+States (mockup `v6--map`): `default`; `chapter-focus`.
 
 ### Dialog
 
@@ -6939,13 +7811,28 @@ content, the card was widened to `min(92vw, 940px)`.
     new token** — reuses `--accent`, `--surface-2`, and the text tokens.
 
 - **General:** the remaining settings (Interface — UI language + scale —,
-  Terminal, Integrations — Session state hooks/statusLine/OS notifications/Sound —,
+  Terminal, Editor, Integrations — Session state hooks/statusLine/OS notifications/Sound —,
   Intelligence, Sidebar, Storage).
   - **Interface → Language**: UI language selector (System default / English /
     Português (Brasil)) — segmented control with the same anatomy as the section's
     other toggles. `System default` clears the override and goes back to following
     the system language; the other options persist to `om2tab.locale` and switch the
     locale **live**. No new token.
+  - **Editor → Open in** (T581, `id="set-editor"`): which editor the Topbar "Open in {editor}"
+    button and the `folder.openInEditor` shortcut launch. A section with the `Editor` eyebrow
+    (same 11px/500 uppercase eyebrow as Terminal / Interface). The row is label + hint on the left and
+    a native `<select>` on the right (the Roadmap filter bar's select frame: `h-[28px]`,
+    `bg-surface`, `border-border-2`, radius `--radius-sm`, 12px text, `focus:border-accent-line`)
+    listing the presets (VS Code, Cursor, Zed, Sublime Text, JetBrains — the IntelliJ IDEA or
+    WebStorm launcher, whichever is found — Neovim, Helix) and **Custom…** last. Default VS Code. Picking **Custom…** reveals, below the row:
+    - a **Command** text field (Inputs frame, `font-mono`, `{path}` placeholder example `nvim {path}`)
+      with a `SettingHint` explaining that the line is split into arguments without a shell and
+      `{path}` becomes one argument; a command with no `{path}` gets the folder path appended;
+    - a **Runs in a terminal** `ToggleSwitch` row (off = GUI editor, spawned detached; on = opens in a
+      Harnu terminal pane).
+      A preset row shows a one-line `SettingHint` naming the command it runs (`code`, `nvim`, …) and,
+      for a terminal preset, that it opens in a terminal pane. The choice persists in `settings.json`
+      and applies on the next click — no restart. No new token.
   - **Interface → Interface scale**: `Minus`/`Plus` stepper
     (**same anatomy as Terminal → Font size** — 28×28 buttons, radius `5px`,
     `border --border`/`bg --surface`, lucide icons `13px`; central value
@@ -8038,7 +8925,6 @@ the surface:
 | Hover preview        | `SessionPreview.vue`       | 40                | `pointer-events: auto` — interactive/scrollable card (T86 §3.9); row+card hover zone with grace delay                                                                                                                                                                                                                                                                                                                                      |
 | Hover preview        | `FolderPreview.vue`        | 40                | Folder card. Peer of `SessionPreview` — they share the `ui.preview` slot (a `sessionId` **or** a `folderPath`); `pointer-events: auto` (T86 §3.9)                                                                                                                                                                                                                                                                                          |
 | Context menu         | `SessionMenu.vue`          | 50                | Suppresses preview on open                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Split menu           | `SplitMenu.vue`            | 50                | Mutex via `useUiStore.splitMenu`. Dropdown anchored to the Topbar's Split button. Peer of `SessionMenu` — never open simultaneously                                                                                                                                                                                                                                                                                                        |
 | Footer fleet popover | `StatusFooter.vue`         | 50                | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal. Open flag in the `ui` store (`ui.popovers.usagePanel`, see "Anchored popovers" below)                                                                                                                                                                                                                                                  |
 | Sidebar jump palette | `SidebarJumpPalette.vue`   | 50                | T288. Peer of the menus in the `ui` mutex (`ui.sidebarJumpPalette`), but the ONLY surface here NOT `<Teleport>`ed to `<body>`: it is `position: absolute` inside the sidebar `<aside>` so it tracks the sidebar's width and clipping. Not modal — closes on Esc / click-outside / the Search button                                                                                                                                        |
 | Dialog (modal)       | `AddFolderDialog.vue`      | 60                | Suppresses menu + preview                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -8754,6 +9640,73 @@ disappeared, the lightbox closes.
 
 ---
 
+### Links pill + popover (links shelf)
+
+**Files:** `StatusFooter.vue` (pill + popover scaffold) + `FooterLinksPopover.vue` (header, scope
+toggle, rows) + `composables/useSessionLinks.ts` (reads + pure row helpers). Mockup:
+`docs/design/links-shelf/` (screen `footer--links`); spec: `docs/specs/2026-11-03-links-shelf/spec.md`.
+Surfaces the links a session's transcript holds — the task link, the PR the agent opened, the Figma
+frame, the doc the operator pasted — as a **read-only window** next to the pasted-images gallery.
+**Read-only and derived:** Harnu lists what the transcript says at the moment it reads, persists
+nothing and never touches the network — every label comes from the URL alone.
+
+**What counts as a link:** an `http(s)` URL in a **user** or **assistant text** block, never in
+`tool_use` input, `tool_result` content, thinking blocks or subagent lines (fetched pages, logs and
+`npm` output would drown the list). Deduplicated by URL keeping the latest occurrence, newest first;
+a row carries `source` (`you` / `agent`), the time of that occurrence and the surrounding sentence.
+
+**Pill (footer):** `🔗 N` (`link` icon 12px + `tabular-nums` counter), **immediately right of** the
+pasted-images pill. Same grammar as it — closed `bg-surface-2 text-text-2` (hover `border-border-2`),
+open `bg-accent-soft text-accent border-accent-line`; **hide-when-zero** (it doesn't render at 0
+links, for a synthetic / UUID-less session, or with nothing selected). **Live:** the count follows the
+transcript (a ~2s visibility-gated poll while the session is running, main re-reading only the
+appended bytes), so a URL pasted into the current session shows up within a few seconds without
+switching away. No bump animation — a link is not a transient event the way a screenshot is. Click →
+toggles the popover; it joins the footer popover mutex (`ui.popovers.links` closes pasted images,
+plan usage and the GitHub budget, and each closes it); `Esc` and an outside click close it.
+`aria-label` via `links.pillAria`.
+
+**Popover:** the images popover's frame (z-50, `anim-fade-in-scale`, `shadow-pop`, `bg-surface-2`,
+`border-border-2`, `bottom-full`) at **400px** wide — a row needs more room than a thumbnail.
+Anatomy:
+
+- **Header:** `links.title` + `<folder alias> · N` (`text-text-3`) on the left; a two-option
+  `Session · Folder` segmented toggle on the right (`border-border`, active option
+  `bg-accent-soft text-accent`, `aria-pressed`). Opening always starts on **Session**.
+- **Row** (`grid 16px · 1fr · auto`, `rounded-sm p-1.5`, hover `bg-surface`): a kind icon (13px,
+  `text-text-3`) · the **label** (`text-[12px] text-text`; **mono `text-[11px] text-text-2` for kinds
+  `web` / `doc`**, whose label is a raw `host/path`) · the **time** (`text-[11px] tabular-nums
+text-text-4` — `HH:MM` today, a short date otherwise). The second line is the detail: the kind name
+  (`GitHub PR`, `ClickUp`, `Figma`, `Google Docs`, `Web`), a mono secondary (the host for PR / issue /
+  task, `node <id>` for a Figma frame) and a **source chip** (`you` neutral, `agent`
+  `border-accent-line text-accent`).
+- **On hover or keyboard focus** the time gives way to **Open · Copy · Reference** (`external-link`,
+  `copy`, `reply` at 13px, `rounded-sm p-1`) and the surrounding sentence appears under the row
+  (`text-[11px] text-text-3`, `border-l-2 border-border-2`, one line, ellipsised). The sentence drops
+  the URL when it sits at the start or end of it (the row already shows it) and keeps it mid-sentence.
+- **Folder scope:** the same rows grouped under a header per session (`text-[11px] text-text-3` title
+  - mono count), newest session first; the active session's group reads `links.thisSession`. A
+    session's group title is its sidebar name (`sessionTitle`). While the first read is in flight the
+    list shows `anim-shimmer-dot`; a folder with no links says so.
+- **Note (popover footer):** `links.noteSession` / `links.noteFolder` (`text-text-4`, full sentence)
+  — says where the list is read from, so it never reads as a file Harnu keeps.
+- The list is `max-h-[300px]` and scrolls (`scrollable`).
+
+**Actions.** **Open** hands the URL to the OS browser (`shellOpenExternal`; main re-checks the
+scheme). **Copy** writes it to the clipboard and shows the `links.copied` success toast
+(`persist: false`, like the images copy). **Reference** writes the URL **as is** — a path would be
+shell-escaped, which corrupts a `?` or `&` — into the selected session's composer through the writer
+bus Re-attach uses, **without a newline** (one trailing space separates back-to-back references), and
+closes the popover so the operator sees the line. It is **disabled** (`:disabled`, tooltip
+`links.referenceDisabled`) when the session has no live PTY, and a hovered row prints that reason as
+an inline `text-warning` line; Open and Copy stay active. Labels, hosts, `node <id>` and the kind
+names `GitHub` / `ClickUp` / `Figma` / `Notion` are technical and **untranslated** (§8).
+
+**Tokens:** none new — `bg-surface`, `bg-surface-2`, `bg-accent-soft`, `text-accent`,
+`border-accent-line`, `text-warning`, `rounded-xs` and the standard text scale.
+
+---
+
 ### Heap gauge (footer)
 
 **Files:** `HeapGauge.vue` (new, presentational) grafted into `StatusFooter.vue`'s
@@ -8791,122 +9744,263 @@ markup; the accessible label (`footer.a11yHeapGauge`) goes through `$t()`.
 
 ### System Monitor (takeover)
 
-A Chrome-task-manager-style live view of every process's resource cost — the answer to
-"what's using RAM/CPU right now, and why", built after Harnu's main process OOM'd on
-2026-07-14 with zero visibility while it was forming (`docs/specs/T127-system-monitor.md`).
-This is the **observe + act** surface — per-row Park now/Close ship in this slice;
-the footer heap gauge is another (S3). The hibernation-policy editor these actions feed into
-is a dedicated Settings tab, documented below (§ "Hibernation policy pane").
+A live view of every process's resource cost — the answer to "what's using RAM/CPU right now,
+and why", built after Harnu's main process OOM'd on 2026-07-14 with zero visibility while it
+was forming (`docs/specs/T127-system-monitor.md`). This is the **observe + act** surface —
+per-session Park now/Close live here; the footer heap gauge is another way in (S3). The
+hibernation-policy editor these actions feed into is a dedicated Settings tab, documented
+below (§ "Hibernation policy pane").
 
-**Visual pattern: main-pane takeover, not a modal.** `TakeoverShell` chrome (T300/U3,
-see "TakeoverShell — shared chrome" above) — replaces the `<main>` content (sidebar and
-topbar stay visible), icon `Cpu`, a title, close `X`. Teleported into the shell's
-header: an inline heap gauge, only rendered once the first heap sample has arrived. Body
-`overflow-y-auto` with a sticky column header. A footer bar states the sampling cadence
-and links to the hibernation policy editor in Settings.
+The layout is the approved mockup **f--combinada** (T591, `docs/specs/2026-10-30-system-monitor/`):
+a Harnu sidebar on the left, a KPI strip on top of the right side, and the sessions below as
+**cards** (default) or a **table**. The flat four-column table that preceded it is gone.
+
+**Visual pattern: main-pane takeover, not a modal.** `TakeoverShell` chrome (T300/U3, see
+"TakeoverShell — shared chrome" above) — replaces the `<main>` content (the app sidebar and
+topbar stay visible), icon `Cpu`, a title, close `X`. Teleported into the shell's header
+(`#takeover-shell-actions`): the summary `{n} processes · {live} live · {parked} parked`
+(`text-[11px] text-text-3`), a spacer, and the **header heap gauge** — `heap`, a 96×6px track
+and the %, `font-mono text-[11.5px]`, rendered only once the first heap sample has arrived.
+The body is one `overflow-y-auto` scroller holding the two columns; a footer bar states the
+sampling cadence and links to the hibernation policy editor in Settings.
 
 **Data source: the two S1 cadences, both fed into `stores/monitor.ts`.** `monitor:heap`
-(always-on, 30s, `v8.getHeapStatistics()` only) feeds the heap gauge; `monitor:sample`
-(1–2s, `app.getAppMetrics()` + a `/proc` walk) feeds the table — but only while this
+(always-on, 30s, `v8.getHeapStatistics()` only) feeds the heap gauges; `monitor:sample`
+(1–2s, `app.getAppMetrics()` + a `/proc` walk) feeds everything else — but only while this
 takeover is mounted and the window is focused. `SystemMonitor.vue` acquires the full
 sampler (`monitorStart()`) on mount and on window `focus`, and releases it
 (`monitorStop()`) on unmount and on window `blur` — a local `acquired` boolean guards
 against a double-acquire (main's refcount only balances 1:1; an extra release is
 harmless — `Math.max(0, refcount - 1)` — but an extra acquire would leak a live
-refcount that never reaches zero).
+refcount that never reaches zero). Nothing in this redesign samples more often or reads more
+from `/proc`: every number is derived from the payload that already arrives.
 
-**Row model — two groups, one row shape (`SystemMonitorRow`).** A 4-column grid (Name /
-RAM / CPU / State-detail), default-sorted RAM descending (`null` — unmeasured or
-parked — always sorts last, never mixed with real numbers):
+**Layout.** A two-column grid inside the body: `grid-cols-[320px_1fr]`, stacking to one
+column when the **monitor's own width** drops below ~1000px (a container query on the
+body, `@max-[1000px]:grid-cols-1` — not the window width, because the app sidebar and the
+Fleet rail already take a third of a 1280px window; the sidebar then sits above the KPI
+strip, its border moving from the right edge to the bottom). The left column is `bg-sidebar` with a
+`border-r border-border`, `p-4`, `gap-4`. The right column is `p-4` (`px-[18px]`), `gap-3.5`,
+`min-w-0`. A KPI value never wraps (`whitespace-nowrap`), and its legend wraps item by item.
 
-- **Harnu group** — one row per Electron process (`main` / `renderer` / `GPU` /
-  `network` / …, from `app.getAppMetrics()`, untranslated technical labels). The
-  `main` row alone carries the inline heap gauge (track + %, `--warning` at `warn`,
-  `--red` at `critical`, a `TriangleAlert` icon when non-`ok`) — this is the exact
-  2026-07-14 OOM signal made visible.
-- **Harnu mod cell (T389 P1W4).** A live session row's state-detail column gains one
-  `text-[11px] text-text-3` span after the state pip: **Harnu mod live** / **off** /
-  **legacy**, with the reason in the `title` tooltip (`harnuMod.reason.*`). Same rule as
-  the hover preview: `legacy` is quiet, never `--warning` or `--red`; nothing renders when
-  the state is `null`. `SystemMonitorRow` takes it as an optional `companion` prop and
-  `SystemMonitor` reads `stores/companion.ts`; parked rows show none.
-- **Test Harnu mod channel (T389 P2W1).** A live row whose Harnu mod state is `live` gains one
-  more per-row action beside Park now and Close: a `RadioTower`-icon button, `22×22px`,
-  `hover:bg-surface-2`, `--text-3` glyph, revealed on row hover like the other two (a `22×22px`
-  placeholder keeps the pip aligned on rows without it). It sends the session a `flush` and a
-  terminal toast and answers with one Harnu toast: `info` "Harnu mod channel answered in {ms} ms",
-  or `warning` "Harnu mod channel did not answer" / "…is not available: {reason}". The reason
-  comes from a fixed three-word map (`legacy`, `shadow`, `headless`), never from text the session
-  sent. In the terminal the session shows the line `harnu-companion: Harnu mod channel check`
-  for the default 4 s; the engine draws the prefix. There is no abort or compact control: none is
-  designed yet. No new token, size or motion.
-- **Sessions group** — one row per live-or-parked session. **Live**, expandable
-  (`ChevronRight`/`ChevronDown`) into its real `/proc` descendants (flat list, `└`
-  prefix, no further nesting) when it has any. Name is the owning folder's alias (or a
-  path-basename fallback) + `· <branch>`, mirroring the sidebar's own labeling.
-  **Own-memory row.** `sampler.ts` deliberately excludes the session's root pid from
-  its descendant list (its cost rolls into the row's own total instead) — expanded
-  without explanation, that reads as the children silently not summing to the parent.
-  The first row under an expanded session is therefore a synthetic **own memory**
-  row (`system-monitor-format.ts#selfSample`: the row's total minus every listed
-  descendant, `null` — never a misleading `0` — if any one reading is unknown) with a
-  `•` marker instead of `└` and muted italic text so it never reads as a real `/proc`
-  entry; hovering the label explains what it is. This is a client-side subtraction
-  over numbers already sampled — no extra `/proc` reads, no added sampling cost.
-  **Parked**: `procs` is always empty (no caret), RAM/CPU render as an em-dash
-  (`—`, `system-monitor-format.ts#formatBytes/formatPct` — never a false `0`), and a
-  second `<tr>` right below it explains why: the policy `reason` chip, the RAM
-  reclaimed (`savedBytes`, when known — `"saved ~290 MB"`, `--color-green`), and a
-  hint to wake it by selecting it in the sidebar. **Live + a sweep candidate**
-  (`reason` is `'lru'`/`'hard-idle'`) gets the same reason chip plus its idle duration
-  inline next to the state pip, rather than a whole explain row — that distinction
-  stays exclusive to already-parked rows, both because the row has room and because a
-  parked row's idle clock has stopped. A live row whose `sweepRank === 1` (the
-  coldest hard-idle candidate — i.e. `evaluateFleet`'s next actual sweep victim) gets
-  a small `--warning` "next to be swept" note.
-- **Per-row actions.** A live, resumable session row (`parkable: true`)
-  gets a `Pause`-icon **Park now** button (`--warning`); every session row gets an
-  `X`-icon **Close** button (`--red`). Both render at `22×22px`, `hover:bg-surface-2`,
-  invisible at rest and revealed on row hover (`opacity-0 group-hover:opacity-100`,
-  `transition`) so the table reads clean when nothing is being acted on — the exact
-  `.actions`-on-hover mockup S2 shaped the row's 4-column layout for. The Park slot
-  always reserves its `22×22px` box (an invisible placeholder when the row isn't
-  parkable) so the state pip lands at the same x position for every session row,
-  parkable or not — a row-to-row-varying actions width would otherwise shift the
-  right-justified state pip out of alignment. **Park now**
-  kills the session's PTY (`ptyDestroy`) then flags it parked (`monitor:park`); the
-  row shows an em-dash + reason on the very next sample, same as an auto-parked
-  session. **Close** calls the sidebar's own `closeSession` — no new verb, matching
-  §3's "wake reuses the existing select-the-session path" posture for the whole
-  action surface.
+#### Left column — the Harnu sidebar
 
-**Group headers** are a plain `<tr colspan="4">` (`bg-surface`, `--text-3` uppercase
-11px), showing the running totals (`{n} processes · {size}"`, `"{live} live · {n}
-parked"`) — same visual grammar as a table section break elsewhere in the app.
+Top to bottom, `gap-4`:
 
-**RAM column hint.** An 11px `Info` glyph sits right of the "RAM" header label
-(`normal-case`, `--text-4`, `cursor-help`), carrying a native-title tooltip that
-explains the number is per-process RSS summed across rows — shared libraries get
-counted once per process that holds them, so the total can read higher than an
-OS-level tool (KDE System Monitor, `htop`) that deduplicates shared pages. Static
-copy, no extra sampling — the same "answer the obvious next question inline" posture
-as the own-memory row above.
+1. **Header.** `HARNU` (`text-[10.5px] font-semibold uppercase tracking-wide text-text-2`) then
+   `{n} processes · {size}` (`text-[11px] text-text-3`; `monitor.harnuCount`).
+2. **Heap card.** `bg-surface`, `border border-border`, `rounded-[var(--radius-lg)]`, `px-3.5 py-3`,
+   `gap-2`. A `text-[10.5px] uppercase tracking-wide text-text-4` label "Main-process heap";
+   the **big %** (`font-mono text-[30px] font-semibold tracking-tight`) with `{used} of {limit}`
+   (`text-[11px] text-text-4`, the same baseline) beside it; then a **10px track**
+   (`h-2.5 rounded-full bg-border-2`) whose fill is `bg-text-3`, with two 1px **tick marks**
+   (`bg-text-4`, 3px taller than the track above and below) at **70%** (`warn`) and **85%**
+   (`critical`) — the thresholds in `thresholds.ts`, unchanged. Under the track a tick-label row
+   (`font-mono text-[10px] text-text-4`, 12px high): `warn 70%` is right-aligned to its tick
+   (`-translate-x-full pr-1`) and `85% crit` is left-aligned to its tick (`pl-1`), so the two
+   labels sit on opposite sides of their ticks and **never overlap** at any width.
+3. **Process rows** (the Electron processes, one per `app.getAppMetrics()` entry, untranslated
+   technical labels, RAM-descending). Each is a 30px row, `border-t border-border` between rows,
+   `text-[12px]`: the name (66px), a **muted bar** (flex-1, 4px, `bg-border-2` track, `bg-text-4`
+   fill, **relative to the largest process**), the RSS (`font-mono`, 56px, right) and the CPU
+   (`font-mono text-text-4`, 38px, right).
+4. **Totals line**, pinned to the bottom of the column (`mt-auto`, `border-t border-border`,
+   `pt-3`, `text-[11px] text-text-3`): `Harnu + sessions` on the left, `{total} · {cpu} CPU` on
+   the right (`font-mono`). It counts Harnu plus **live** sessions — a parked session costs nothing.
 
-**State pip.** `live` — `--green` dot + text; `parked` — `--text-4` dot, `--text-3`
-text. Same `state.live`/`state.parked` shape the sidebar's own session rows use.
+#### Right column — KPI strip, Sessions header, sessions
 
-**Policy link.** The footer's "Edit hibernation policy → Settings" deep-links straight
-into the Settings dialog's Hibernation policy tab (`ui.openSettings('hibernationPolicy')`).
+**KPI strip.** Three tiles, `grid-cols-[1.4fr_1fr_1.2fr] gap-2.5`; each tile is `bg-sidebar`,
+`border border-border`, `rounded-[var(--radius-lg)]`, `px-3 py-2.5`, `gap-1.5`. A tile's label is
+`text-[10.5px] uppercase tracking-wide text-text-4` with a 12px icon; its value is
+`font-mono text-[22px] font-semibold tracking-tight`; its sub line is `text-[11px] text-text-3`.
 
-**Entry point.** The footer heap gauge ("Heap gauge (footer, T127 S3)" above) is the
-way in — clicking it calls `ui.openSystemMonitor()`. The takeover mutex in
-`stores/ui.ts` treats it as a third peer of `roadmap`/`usageDashboardOpen` — opening
-any one of the three closes the other two.
+- **Total RAM** (`MemoryStick`) — Harnu plus live sessions. Under the value a **split bar**
+  (6px, `rounded-[3px]`, 2px gap): Harnu is neutral (`color-mix(in srgb, var(--color-text-4) 45%,
+var(--color-surface))`), sessions are `bg-accent`. A legend below: `Harnu {size}` and
+  `Sessions {size}`, each with an 8px swatch in its bar colour.
+- **CPU** (`Cpu`) — the summed CPU, one decimal (`18.4%`); sub line `across {n} processes`, where
+  `n` is the Harnu processes plus every live session's listed `/proc` children.
+- **Sessions** (`Moon`) — `{live} live · {parked} parked` (the numbers `font-mono`, the words
+  `text-[11px] text-text-3`); sub line `~{size} reclaimed by parking` in `text-green`, where
+  `size` is the sum of the known `savedBytes`. When no `savedBytes` is known the line is hidden —
+  never `~0 MB`.
 
-**Copy (§8):** process/session technical labels (`main`, `renderer`, `claude`, branch
-names, the policy `reason` codes `lru`/`hard-idle`/`selected`/`active`/`not-parkable`/
-`parked`) stay untranslated, same rule as git branches and tool names elsewhere;
-everything else (state words, hints, column headers) goes through `$t()`.
+All sums treat a `null` reading as "not counted", never as `0` in a displayed row. The CPU total renders `—` when no process reports a CPU reading (a platform without `/proc`), and the reclaimed line is hidden when no `savedBytes` is known.
+
+**Sessions header.** `SESSIONS` (same label style as the sidebar header), `{live} live · {size}`
+(`text-[11px] text-text-3`), a spacer, and the **Cards / Table segmented toggle**: an inline
+two-button group, `border border-border-2`, `rounded-[var(--radius-sm)]`, `overflow-hidden`;
+each button `h-6 px-2.5 text-[11px]`, the active one `bg-surface-2 text-text`, the other
+transparent `text-text-3`. It is a `role="group"` of two `aria-pressed` buttons. The choice
+persists in `localStorage` under **`om2tab.systemMonitor.view`** (`cards` | `table`; anything
+else reads as `cards`; every read/write is `try/catch`-wrapped).
+
+**Folder hue.** Every session carries its folder's hue — the same FNV-1a rule, pool and
+`.fh-*` classes as the Scheduler (§2 "Folder hue"); the helper moved from `scheduler-list.ts`
+to the shared `lib/folder-hue.ts` and `scheduler-list.ts` re-exports it. The hash input is the
+session's **folder path**; a session that cannot be resolved locally hashes its `sessionKey`.
+The root of a card/row carries `fh-<name>` and everything inside reads `var(--fh)`. Tints are
+`color-mix(in srgb, var(--fh) N%, …)` only: **18%** avatar fill, **4%** expanded-row wash, the
+**25 / 75 / 55 / 40 / 30%** composition-bar shades.
+
+**Folder avatar.** An initial in a rounded square: `font-bold`, `text-[var(--fh)]`, fill
+`color-mix(in srgb, var(--fh) 18%, transparent)`. 30×30px `rounded` + `text-[13px]` on a card,
+18×18px `rounded-sm` + `text-[10px]` in a table row. The letter is `folderInitial(name)`.
+
+##### Cards view (default)
+
+A grid, `grid-cols-[repeat(auto-fill,minmax(270px,1fr))]`, `gap-3`, `items-start`. Sessions are
+RAM-descending; parked ones (`null` RSS) last. A card is `bg-sidebar`, `border border-border`,
+`rounded-[var(--radius-lg)]`, `px-3.5 py-3`, `gap-2.5`, `overflow-hidden`, with a **3px stripe**
+along its top edge in `var(--fh)`. Top to bottom:
+
+1. **Header.** The 30px avatar, then the folder alias (`text-[13px] font-semibold`) over the
+   branch (`text-[11px] text-text-4`), then the **actions** (below), then the expand chevron.
+2. **Metrics.** `RAM` and `CPU`, each a `font-mono text-[22px] font-semibold` number (the unit
+   `text-[11px] text-text-3 font-normal`) over a `text-[10.5px] uppercase text-text-4` label;
+   the 60s **sparkline** (110×30, 1.8px, `var(--fh)`) pushed to the right.
+3. **Composition bar** — the session's memory split into **own** + its children: a 6px bar
+   (`rounded-[3px]`, 1px gap), one segment per entry in `--fh` shades `25% / 75% / 55% / 40% /
+30%` over `--surface`, widths relative to the session's total RSS; below it a legend
+   (`text-[11px] text-text-3`, 7px swatches, name + MB). At most five entries: own, the four
+   largest children, and any remainder folded into one `other` entry. Hidden when the total is `null`.
+4. **Footer** (`border-t border-border`, `pt-2`, `min-h-[30px]`, wraps): the **state pip**
+   (live: `text-green`; parked: `text-text-3`; a 6px dot), the **reason chip** when noteworthy
+   (`lru`/`hard-idle`, with ` · {idle}`), the **"next to be swept"** note (`--warning`, `Moon`
+   icon, only on `sweepRank === 1`), a spacer, and the **Harnu mod cell** (`text-[11px]
+text-text-3`; `legacy`/`off` `text-text-4` — quiet, never `--warning`/`--red`).
+5. **Expanded children** (see "Expand"), under the footer, separated by `border-t border-border`.
+
+**Parked card.** `bg-transparent`, `border-dashed`, stripe at 40% opacity, no sparkline, no
+composition bar. The metrics row shows `−{size}` (`text-green`, `font-mono text-[22px]`) over
+`reclaimed` — an **em dash** (`—`) instead of a number when `savedBytes` is `null` — and, right-
+aligned (`text-[11px] text-text-4`, max 140px), `Select it in the sidebar to wake it`. The footer
+holds the parked pip and the reason chip. No chevron: a parked session has no children.
+
+##### Table view
+
+One rounded container (`bg-sidebar`, `border border-border`, `rounded-[var(--radius)]`,
+`overflow-hidden`, a `@container`) with a header row and one row per session. Rows are `gap-3 px-3`
+grids with `border-t border-border` between them and a **2px rail** along the left edge in
+`var(--fh)` (a parked row's name text at 60% opacity). Columns: **Name** | **RAM** | **CPU** |
+**Last 60s** | **State**, as
+`grid-cols-[minmax(160px,1fr)_130px_52px_76px_minmax(280px,1.8fr)]`; the header is 30px,
+`bg-surface`, `text-[10.5px] uppercase tracking-wide text-text-4`, with the `Info` hint on RAM.
+**Every session row is a fixed 36px (`h-9`) and nothing in it wraps** — a row never grows and
+no cell ever paints over its neighbour.
+
+- **Name** — expand chevron (a 16px slot, empty for a parked row so names align), the 18px
+  avatar, the alias (`font-medium`), `· {branch}` (`text-text-4`, the part that truncates first).
+  Both carry the full `name · branch` as a tooltip.
+- **RAM** — the number (`font-mono`, 60px, right) then a 4px bar in `var(--fh)` on a `bg-border-2`
+  track, **relative to the largest session**. A parked row shows `−{size}` in `text-green`
+  (`—` for a null `savedBytes`), no bar.
+- **CPU** — `font-mono`, right-aligned; parked: `—` in `text-text-4`.
+- **Last 60s** — the 72×14 sparkline, 1.3px, `var(--fh)`; empty for a parked row.
+- **State** — right-aligned, `min-w-0`, **one line, `flex-nowrap`, `overflow-hidden`**: the pip,
+  the reason chip, the sweep note, the Harnu mod cell, then the actions (their 3 × 22px slots
+  stay reserved). When there is not room, things give way in this order, always inside the cell:
+  the **chip and the mod cell truncate** with an ellipsis (`min-w-0 truncate`; the full text is
+  their tooltip), and the **sweep note drops to its `Moon` icon** in a table narrower than
+  ~960px (the text stays as the tooltip and for screen readers). The pip and the icon never shrink.
+
+**Narrow tables** (a container query on the table). Below ~960px the **Last 60s column drops
+out** (`grid-cols-[minmax(160px,1fr)_130px_52px_minmax(280px,1.8fr)]`) so State keeps its room.
+Below ~760px — the case in a 1280px window, where the monitor is only ~700px wide next to the
+app sidebar and the Fleet rail — the columns tighten again to
+`grid-cols-[minmax(130px,0.8fr)_120px_46px_minmax(250px,1.6fr)]` and the **branch hides** (it
+stays in the name's tooltip). At every width the State column stays inside its own track and
+inside the 36px row: it never overlaps the CPU column and never makes a row taller.
+
+##### Expand
+
+A live session with listed `/proc` children shows a chevron (`ChevronRight` collapsed,
+`ChevronDown` expanded; `aria-expanded`) in the card header / the Name cell. Expanding changes
+**only that session**, in both views, and is not persisted. The expanded content is:
+
+- an **own memory** entry first — the row total minus every listed child
+  (`system-monitor-format.ts#selfSample`; `null`, never a misleading `0`, if any single reading
+  is unknown), marked `•` (not `└`) and in muted italic with a hover hint explaining it is the
+  session's own process, not a child; then
+- one entry per `/proc` child, `└`-prefixed, flat (no nesting), RAM-descending.
+
+In a **card** these are 24px rows under the footer (`text-[11.5px] text-text-3`): marker, name,
+spacer, RAM (`font-mono`, 60px), CPU (`font-mono`, 40px). In the **table** they are 28px
+indented rows (name indented 46px) with a `color-mix(in srgb, var(--fh) 4%, var(--color-sidebar))`
+wash: the RAM cell carries a **3px `--fh` bar relative to the session total**, and the own-memory
+entry shows only its number.
+
+##### Per-session actions
+
+A live, resumable session (`parkable: true`) gets a `Pause`-icon **Park now** (`--warning`);
+every session gets an `X`-icon **Close** (`--red`); a live session whose Harnu mod is `live`
+gets a `RadioTower`-icon **Test Harnu mod channel** (`--text-3`). Behaviour is unchanged
+from T127 S4 / T389 P2W1: Park now kills the PTY and flags it parked (`monitor:park`) and the
+row shows an em dash plus its reason on the next sample; Close calls the sidebar's own
+`closeSession`; Test Harnu mod channel sends a `flush` plus a terminal toast and answers with
+one Harnu toast (`info` "Harnu mod channel answered in {ms} ms", or `warning` "…did not answer"
+/ "…is not available: {reason}", the reason from a fixed three-word map, never session text).
+
+Each button is `22×22px`, `rounded-sm`, `hover:bg-surface-2`. The group is **invisible at rest and
+shown on hover and on keyboard focus** (`opacity-0 transition group-hover:opacity-100
+group-focus-within:opacity-100`) so the surface reads clean, and **every slot keeps its 22×22px
+box** — an invisible placeholder where an action is absent — so nothing shifts and the pip,
+chip and mod cell sit at the same x on every row. In a **card** the group sits in the header,
+between the name block and the chevron; in the **table** it is the last item of the State cell.
+There is no abort or compact control: none is designed yet.
+
+##### Sparklines and the ring buffer
+
+A sparkline is a single `<polyline>` in a fixed-size `<svg>` (`fill: none`, `stroke-linejoin:
+round`, `stroke-linecap: round`, `aria-hidden`), scaled to its own min–max with a 1px inset, and
+it plots **RAM (RSS)**. Fewer than two readings draw nothing; a `null` reading breaks the line.
+
+The history lives in `stores/monitor.ts`: **the last 40 samples (≈ 60 s at the 1.5 s cadence)**,
+per Harnu process (`harnu:<pid>`) and per session (`session:<sessionKey>`), appended from every
+`monitor:sample` that arrives. The store **never starts sampling itself**; a key absent from the
+latest sample is **pruned** the same tick (a closed session or a dead pid leaves no residue), so
+the buffer is bounded by (live keys × 40) and cannot grow without limit.
+
+##### Heap states
+
+The sidebar gauge, its big number and the header gauge move together on `HeapSample.status`
+(thresholds unchanged: `warn` ≥ 70%, `critical` ≥ 85%):
+
+| Status     | Fill / number                 | Extra                                             |
+| ---------- | ----------------------------- | ------------------------------------------------- |
+| `ok`       | `bg-text-3` / `text`          | none                                              |
+| `warn`     | `bg-warning` / `text-warning` | `TriangleAlert` (11px) before `{used} of {limit}` |
+| `critical` | `bg-red` / `text-red`         | the same `TriangleAlert`, in `text-red`           |
+
+The footer `HeapGauge` keeps its own green / amber / red scale (`heapBarClass`) — the monitor's
+neutral `ok` fill is deliberate: a healthy heap should not draw the eye.
+
+##### Copy (§8)
+
+Process/session technical labels (`main`, `renderer`, `claude`, branch names, the policy
+`reason` codes `lru`/`hard-idle`/`selected`/`active`/`not-parkable`/`parked`) stay untranslated,
+same rule as git branches and tool names elsewhere; everything else — section labels, KPI
+labels and sub lines, the toggle, state words, hints, column headers — goes through `$t()`
+(`systemMonitor.*`, in `en.json` and `pt-BR.json` together). Short labels carry no trailing period;
+the wake hint and the own-memory hint are sentences.
+
+##### Unchanged from T127 / T389
+
+- **Harnu mod cell (T389 P1W4).** A live session shows one `text-[11px] text-text-3` span:
+  **Harnu mod live** / **off** / **legacy**, the reason in the `title` tooltip (`harnuMod.reason.*`).
+  `legacy` is quiet; nothing renders when the state is `null`; a parked session shows none.
+- **Parked reason and savings.** A parked session's `procs` is always empty, RAM/CPU render as
+  an em dash (`formatBytes`/`formatPct` — never a false `0`), and the reason chip, the reclaimed
+  RAM (`savedBytes`) and the wake hint are the card's / row's explanation.
+- **RAM column hint.** An 11px `Info` glyph beside the RAM header (table) carries a native-title
+  tooltip: RAM is per-process RSS, shared libraries count once per process, so totals can read
+  higher than an OS-level tool that deduplicates shared pages.
+- **Policy link.** The footer's "Edit hibernation policy → Settings" opens the Settings dialog's
+  Hibernation policy tab (`ui.openSettings('hibernationPolicy')`).
+- **Entry point.** The footer heap gauge ("Heap gauge (footer, T127 S3)" above) is the way in —
+  clicking it calls `ui.openSystemMonitor()`. The takeover mutex in `stores/ui.ts` treats it as
+  a peer of the other takeovers.
 
 ### Hibernation policy pane (Settings tab)
 
@@ -10206,7 +11300,12 @@ now is not), and no existing folder spells the same slug.
   `MessagesSquare` icon (`--text-4`, 14px); the folder's name in 12px mono `--text` (`orphan-folder`, full
   path as the tooltip) over a one-line meta in 11px `--text-4`: "{n} sessions · last {ago}"; when the project
   folder also holds Claude's auto-memory notes, a `Warning`-ink chip **"includes memory notes"**
-  (`orphan-memory`, 10.5px, `--warning-soft` / `--warning-line`). The size right (13px, tabular), then an
+  (`orphan-memory`, 10.5px, `--warning-soft` / `--warning-line`). Right after it, a **digest chip**
+  (`orphan-digest`, same shape and size as the memory chip, `data-state` says which): **"Digested"** in the
+  Badge _Success_ triple (`--green-soft` / `--green` / `--green-line`) when every session worth a digest
+  (at least three of your messages) has one in the owning repo's memory, **"{n} not digested"** in the
+  memory chip's Warning triple when `n` of them have none, and no chip when none is worth a digest or
+  the gather did not say. The size right (13px, tabular), then an
   icon-only **Delete** button (`Trash2`, red on hover, `aria-label` "Delete the transcripts of {name}",
   `orphan-delete`), disabled while that row's delete is running.
 - **Confirm dialog** (`CleanupTranscriptsConfirmDialog.vue`, `data-testid="orphan-dialog"`, the bulk
@@ -10217,6 +11316,17 @@ now is not), and no existing folder spells the same slug.
   has memory notes a second line "{n} of them also hold Claude memory notes for that folder."
   (`orphan-dialog-memory`); footer "{n} folders · {size}" (`orphan-dialog-total`), **Cancel**
   (focused first) and **Move to trash** (`Trash2`, Danger). Esc closes the dialog only.
+- **Undigested sessions (memory U1 S-6).** When any listed row has sessions with no digest, each such row
+  gets a third line in 11px `--text-4` (`orphan-dialog-digest`): "{n} not digested · digests are kept in
+  {home}" (the repo folder, full path as the tooltip), or "No repository was found for this folder, so no
+  digest can be written." when there is none. Below the recoverable callout a second Warning callout
+  (`orphan-dialog-undigested`, `TriangleAlert`) says "{n} sessions in this selection have no digest yet.
+  Trashing them loses what they did." and, when a repository exists for at least one of them, "Cancel to
+  keep them: Harnu tries the digest again on the next scan." Under it a checkbox **"Trash without a
+  digest"** (`orphan-dialog-undigested-ack`); **Move to trash stays disabled until it is ticked**, together
+  with the not-found box when that applies. Cancel is always the way out, so a project with undigested
+  sessions is never a dead end. Ticking sends the undigested ids in `confirmedUndigested`. A refusal that still comes back (`needs-undigested-confirmation`, `needs-not-found-confirmation`) is a known
+  refusal code with its own sentence in the toast and the block panel, saying what to do next.
 - **Proven gone, or only "Folder not found".** A folder counts as gone only when that is **positively
   proven**: Harnu removed it itself (its own ledger), git lists it as prunable in a repo that still exists,
   or it sits under a known worktrees parent (`<repo>/.claude/worktrees`, `<repo>-worktrees`) that exists
@@ -10230,7 +11340,7 @@ now is not), and no existing folder spells the same slug.
   ticked**. The recency rule (nothing written in the last 24 hours) applies to both groups, and both go to
   the trash.
 - Confirming sends `gc:clean(ids, { confirmed, expected })` (plus `confirmedNotFound` for the ticked
-  not-found ids), each id `transcripts:<slug>` confirmed by its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
+  not-found ids and `confirmedUndigested` for the ticked undigested ids), each id `transcripts:<slug>` confirmed by its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
   or is no longer an orphan. A refusal is shown by the usual toast.
 
 **Left by removed worktrees (unit D, AC-D3).** A fourth block on the Docker card, drawn only when the
@@ -10320,6 +11430,32 @@ worktree add --detach ../restored-… <sha>`). A row past the retention has a Wa
   skipped too. The row of an archive with no stamp reads **age unknown** (also in the confirm list), never a dash.
 - **Autopilot:** the card says nothing about it; it is the setting **Expire archives automatically** (Settings →
   Cleanup, off by default). The autopilot never deletes a ref otherwise.
+
+#### Shelved card (autonomous cleanup U2.3a, AC-3 / AC-5)
+
+Under the Archives card, above the in-the-trash strip. Own region (`data-testid="shelved-card"`, the Archives card
+anatomy: `border-border`, radius 7, `bg-surface`; header `ArchiveRestore` icon 14px, title **Shelved**, an 11px
+`--text-4` subtitle `{n} worktrees · {size} freed`). Zero shelved worktrees: the card is **not drawn**. One 11px
+`--text-4` note under the header: "Folders Harnu removed because they sat idle. The branch and every change are
+kept. Opening a session or terminal in one brings it back by itself."
+
+- **Row** (`data-testid="shelved-row"`, the archive row chrome): the folder's name (mono), the branch (mono,
+  `--text-3`) or the word **detached**, **idle {n} d** (11px `--text-3`), the time it was shelved (relative, absolute
+  on hover) and the freed size. At the right a Soft button **Restore** (`data-testid="shelved-restore"`): one
+  click, no confirm (nothing is deleted, an existing folder is moved aside, never removed). While it runs the
+  button is disabled and reads **Restoring…**.
+- **Failure** stays under its row (`data-testid="shelved-failure"`, 11px, `--warning` text): one sentence that says
+  what to do next, in every case. A lost archive record also offers a ghost **Copy command** button
+  (`data-testid="shelved-copy-command"`, the Archives card's copy button) that puts
+  `git -C <repo> worktree add <path> <branch>` on the clipboard (every part shell-quoted), because the branch is
+  still there. The Restore button stays available for a retry.
+- **Success** is a toast ("Restored {name}"); when a folder was in the way the toast also says where it went
+  ("kept at {path}, delete it when you like"). The row leaves the card on the next refresh.
+
+**Archives card × shelved worktrees.** A row whose namespace belongs to a shelved worktree shows its Delete button
+**disabled** (`title`: "Shelved worktree — restore it first") and, next to it, a Soft **Restore first** button
+(`data-testid="archive-restore-first"`) that does the same thing as the Shelved card's Restore. Deleting by hand is
+refused in main as well, so a stale screen cannot get past it.
 
 #### In-the-trash card (unit C, AC-C5)
 
@@ -10468,6 +11604,14 @@ control-right rows with `SettingHint`). Groups, 16px apart, every control writin
   age** (days); and, instead of a volumes switch, a `--warning-soft` note: **Docker volumes are always
   kept** — cleaning a worktree never removes its volumes; they show up in Needs review as orphan volumes
   and each one is removed by hand — with "a removed volume cannot be restored" in `--warning`.
+- **Shelving idle worktrees** (autonomous cleanup U2.3a; own section, `data-testid="cleanup-settings-shelve"`) —
+  the `shelve.enabled` toggle (`gc-shelve`; **on by default**). Writes through `gc:prefs:set` like every other
+  row (whole `GcPrefs`; `shelve.firstReportAcknowledged` is never writable there). Under the row, when the switch
+  is on, a **status line** (`data-testid="gc-shelve-status"`, 11.5px `--text-3`): _report only_ — "The first pass
+  only reports what it would shelve; nothing is removed until you acknowledge it" — with a Soft inline button
+  **Acknowledge first report** (`gc-shelve-ack`, the `gc:shelve:ack` channel), or _active_ — "Shelving is active.
+  Up to {n} worktrees per cycle." — with no button. Switched off: no status line, only the intro, which says what
+  shelving does and that a shelved worktree comes back by itself when a session or terminal opens in it.
 - **Archives** — **Keep archives for** (days, default 30; `archiveKeepDays`) and **Expire archives
   automatically** (toggle, off by default; `archiveAutoExpire`): when on, and only then, the autopilot deletes
   the archive refs older than the retention (never `git gc`). The hint says the refs go, the git objects go
@@ -11943,44 +13087,116 @@ still catches it.
 
 **Body: list/detail split**, `flex; min-height: 0`.
 
-#### Worker list (`SchedulerWorkerRow.vue`, 300px column)
+#### Worker list (`SchedulerView.vue` + `SchedulerFolderGroup.vue` + `SchedulerWorkerRow.vue`, 340px column)
 
-`width: 300px; border-right border-border; bg-sidebar; overflow-y: auto` —
-the same shell as the sidebar itself, because a worker list reads like a
-second sidebar, not a table. Grouped under two `wgroup` headers (`24px`,
-`bg-surface`, 11px uppercase `--text-3`, `0.04em` tracking): **Pinned · {n}**
-(T483), then **Enabled · {n}**, then **Off · {n}** — off workers sink into
-their own group instead of interleaving, so a quiet list reads at a glance.
+T590 — approved mockup `pastas--combinada` (2026-10-29, `docs/specs/2026-10-29-scheduler-folders/`).
+`width: 340px; border-right border-border; bg-sidebar; overflow: hidden; flex column` — the same shell as
+the sidebar itself, because a worker list reads like a second sidebar, not a table. It was 300px and a flat
+Pinned / Enabled / Off list; with 17–45 workers across 6 folders that turned the folder into a truncated
+alias and made three "PR Review Watcher"s from different repos indistinguishable. The column is now,
+top to bottom: **toolbar → state chips → Up next → scrolling folder groups**.
 
-**Pinned group (T483).** Holds every pinned worker, enabled or off, ordered by
-`pinnedAt` ascending (first pinned stays first — no drag-reorder in v1). A
-worker appears in exactly ONE group: pinning moves it out of Enabled/Off, so
-counts never double-count. A pinned **off** worker keeps its own row state —
-`off` label and the 55% dim — it just lives on top. The **Pinned** header is
-not rendered at all when nothing is pinned, so an uncurated Scheduler looks
-exactly as before. The default selection is the first visible row (the first
-pinned worker when any).
+**One padding for the whole column: `12px` left / `10px` right** — the toolbar, the chips, Up next, the
+folder headers and the rows all start and end on the same two verticals, so the list reads as one column
+(revision 2; the first build used `10px` on both sides for the controls and `14px` on rows).
 
-**Collapsible Off group (T483).** The **Off · {n}** header is a `<button>`
-(same 24px / `bg-surface` / 11px uppercase `--text-3` strip) with a leading
-`ChevronDown` (11px, `--text-4`; rotated −90° when collapsed, `--dur-fast`
-`--ease`). Collapsed, only the header and its count remain. State is a
-per-viewer convenience in `localStorage` (`om2tab.scheduler.offCollapsed`,
-try/catch, default expanded). Collapsing never changes the selection: the
-detail stays on the selected worker even when its row is hidden.
+**Toolbar (`margin: 10px 10px 0 12px`, flex, `gap: 6px`).** A search field (`flex: 1`, `26px`, `0 8px`,
+`border border-border-2`, `rounded-sm`, `bg-bg`; `Search` icon 11px `--text-4`; 11px text, placeholder
+"Filter workers or folders" in `--text-4`, typed text in `--text`) and, to its right, a **Collapse all /
+Expand all** button — `26×26px`, `border border-border-2`, `bg-bg`, `rounded-sm`, the same box as the
+search field so the two read as one control row (`ChevronsDownUp` / `ChevronsUpDown`, 12px, `--text-3`,
+`--text` + `bg-surface-2` on hover; the icon and its label swap with the
+state — it reads "Expand all" when every visible group is collapsed). Search matches the worker name, the
+folder (alias and path) and the prompt, case-insensitively.
 
-**Row anatomy** (`46px`, `padding: 0 10px 0 12px`, `border-bottom
-border-border`, `cursor: pointer`, `position: relative`):
+**State chips (`padding: 8px 10px 10px 12px`, one row — `nowrap`, `gap: 6px`, `border-b border-border`).**
+`Running · Failing · Waiting · Off` — **no "All" chip**: no chip active _is_ "all", and **clicking the active
+chip clears the filter** (one active at a time, none by default). Each chip is `20px`, `0 8px`, `border
+border-border-2`, `rounded-sm`, 11px, a 6px state dot + label + a live count in `<b>` 600
+`--text`. The count is the number of workers that chip would show **given the current search**. Dot and
+label inks are the row-state pairs below (`Running` `--green`, `Failing` `--red`, `Waiting`/`Off`
+`--text-3`/`--text-4`). Active chip: `Waiting`/`Off` `bg-surface-2`, `Running`
+`bg-green-soft border-green-line`, `Failing` `bg-red-soft border-red-line`. **Failing = `failed` +
+`disabled`** (both are "this cadence stopped producing anything trustworthy"); **Off = `off` only**.
+Filtering hides a folder group that has no visible worker; nothing else moves.
 
-- **Main column** (flex, min-width 0): the worker name (12px/500 `--text`,
-  ellipsised) over a meta line (11px `--text-4`) — `folder · branch ·
-cadence`, separators inked `--text-disabled` (dimmer than the meta text
-  itself — a separator earns less ink than the words it splits).
-- **State column** (right-aligned, 11px, flex: none): a 6px dot + a label,
-  one of the five states below.
-- Hover: `bg-surface`. Nothing else about the row's geometry moves on hover —
-  the actions cluster (below) slides in over the same fixed layout rather
-  than reflowing it.
+**Up next (`padding: 8px 10px 8px 12px`, `border-b border-border`).** The next **four** due runs across _all_
+folders (running now first, then soonest `nextAt`; off/disabled workers are never due). Header = a
+`<button>` (`aria-expanded`) with a leading `ChevronDown` 11px (`-90°` collapsed), `Up next` as a 10px/600
+uppercase `0.04em` `--text-3` heading (`--text-2` on hover) and, right-aligned, a 10px `--text-4` summary:
+expanded `{n} in the next {x}`; collapsed, the **next run in one line** (`now · Delivery watchdog · portal`).
+Each row is `20px`, 11px, `gap: 7px`: relative time (`28px`, **left-aligned**, tabular, `--text-3`;
+`now` in `--green` 600 when the worker is running), a 6×6 `rounded-[2px]` square in the folder hue, the
+worker name (`--text`, ellipsised), and the folder name right-aligned in `var(--fh)`. Hidden while a state
+chip or a search is active (it answers "what is next", not "what matches"). Collapsed
+state persists per viewer like the folder groups.
+
+**Folder group.** One per folder, in a **fixed order: alphabetical by folder name, then by path.** Activity
+never reorders folders — a folder that starts running or failing keeps its place, and its header pills say
+what is happening (a list that reshuffles under the pointer is unreadable). Hue per §2 "Folder hue". The
+group root sets `--fh`.
+
+- **Separator between groups** — the group root carries `border-b border-border last:border-b-0`: a 1px
+  token line under every group except the last, so consecutive folder groups never touch (collapsed, the
+  tinted headers would otherwise read as one block) and nothing is drawn under the list. The groups are
+  direct children of the scrolling list, which is what makes `last:` pick the final one.
+- **Header** — `44px`, `padding: 0 10px 0 12px`, `gap: 8px`, `border-b border-border` **only while
+  expanded** (it separates the header from its rows; collapsed, the group's own line is the only one, so it
+  never doubles to 2px), `cursor: pointer`,
+  background `color-mix(in srgb, var(--fh) 7%, var(--color-surface))`, a **3px `::before` stripe** in
+  `var(--fh)` on the left edge. A `<button>` (`aria-expanded`) toggling the group.
+  - **Avatar** `22×22px`, `rounded-sm`, the folder's first letter uppercased, 11px/700 `var(--fh)` on
+    `color-mix(in srgb, var(--fh) 18%, transparent)`.
+  - **Line 1:** folder name (12px/600 `--text`, ellipsised) + worker count (11px `--text-4`).
+  - **Line 2 (10px `--text-4`, separators `--text-disabled`):** `⑂ {branch}` (`GitBranch` 9px — omitted when
+    the folder is not a git repo) · `{n} on` · `{m} off` (only when `m > 0`) · `next in {x}` — or
+    `running now` (`--green`) when something is running, `due now` when the soonest worker is overdue, or
+    `nothing scheduled` when no enabled worker is due. The title attribute carries the full path.
+  - **Summary (right, `gap: 6px`):** a `{n} failing` pill (`--red` on `--red-soft`) and/or a `{n} running`
+    pill (`--green` on `--green-soft`, pulsing dot) — `16px`, `0 5px`, `rounded-sm`, 10px; a **health bar**
+    (`40×3px`, `rounded-sm`, track `--border-2`) of segments in proportion `running` `--green` · `failing`
+    `--red` · `waiting` `--text-4` · `off` `--text-disabled`; and a `ChevronDown` 11px `--text-4` (`-90°`
+    collapsed, `--dur-fast` `--ease`).
+- **Collapse.** Per-group, from the header. Collapsed, only the header remains. State is a per-viewer
+  convenience in `localStorage` (`om2tab.scheduler.collapsedFolders`, a JSON list of folder paths; also
+  `om2tab.scheduler.upNextCollapsed`), every access in try/catch, default expanded. **Collapsing never
+  changes the selection:** the detail stays on the selected worker even when its row is hidden. Collapse and filters are independent: a filter narrows what a group holds, a collapsed group stays collapsed (its header pills still say what matched).
+
+**Row order inside a folder (T483, reshaped; revision 3).** There are no Pinned or Enabled/Off group
+headers, but there are two silent **bands**: **enabled workers sit above off workers**. Within each band a
+pinned worker **sorts first**, by `pinnedAt` ascending (first pinned stays first — no drag-reorder in v1);
+then the rest in storage order. So the order is: pinned on · on · pinned off · off. **Runtime state
+(running, waiting, failing) never moves a row** — only `enabled` and `pinnedAt` do. The pin itself is the row's **one pin toggle** (below). The detail
+pane's pin toggle is unchanged. The default selection is the first row in display order (the first row of
+the first folder).
+
+**Row anatomy** (revision 2 — `46px`, `padding: 0 10px 0 12px`, `border-bottom border-border`,
+`cursor: pointer`, `position: relative`). **Two lines on one right edge**, in a flex column (`gap: 3px`,
+min-width 0):
+
+- **Line 1** (flex, `gap: 8px`, **a fixed `20px` high**): the **pin slot** + the **name** (12px/500 `--text`, ellipsised) on the
+  left, the **state** (6px dot + label, 11px, one of the five states below) right-aligned. The pin slot is
+  **reserved on every row** — `14×14px`, `margin-left: -2px` (so the 10px glyph's ink lines up with the
+  folder avatar's edge), `rounded-sm` — so names line up whether or not a worker is pinned.
+- **Line 2** (flex, `gap: 8px`): the **meta** (11px `--text-4`, separators `--text-disabled`) —
+  `every {x} · {model} · {mode}` with `act` in `--warning` (an `act` worker runs with permissions
+  bypassed; the colour is the only signal, kept from the T295 badge) — starting at the row's left padding
+  (under the pin slot, not under the name), and the **run ticks** in a **fixed `48px` box**
+  (10 ticks × 3px + 9 gaps × 2px), right-aligned on the same edge as the state above it.
+- **What shrinks:** only the name — it ellipsises first. The state, the meta and the ticks **never
+  shrink** (`flex-shrink: 0`; the meta clips only as a last resort). There is **no last-result line**, **no
+  cycle bar**, and the folder is not repeated on the row (the group header carries it).
+- **Run ticks** — the last 10 runs, oldest left, `3px` wide, `2px` gap, `10px` tall box, `rounded-[1px]`:
+  `ok` `--green` 7px short bar · `error` `--red` full height · `timeout` `--warning` full height · a run in
+  flight `--green` full height, breathing (`.anim-tick-pulse`, opacity 1 → 0.35, 1.6s — a 3px bar has no
+  room for the `.anim-pulse-dot` halo) · an empty slot `--border-2`. Fewer than 10 runs pad on the
+  **left**, so the newest run is always the rightmost tick.
+- **The one pin.** The slot before the name is the pin **toggle** (a `<button>`, `aria-pressed`,
+  labelled Pin / Unpin; `Pin` glyph 10px): **pinned** `--color-accent`; **unpinned** `--color-text-disabled`,
+  always visible, `--color-text-4` while the row is hovered; hovering the slot itself lifts an unpinned pin
+  to `--text` on `bg-surface-2`. There is no second pin in the hover actions.
+- Hover: `bg-surface`. Line 1's right edge swaps the state for the actions (below); nothing else about the
+  row's geometry moves.
 
 **Five row states, five token pairs:**
 
@@ -11992,40 +13208,60 @@ cadence`, separators inked `--text-disabled` (dimmer than the meta text
 | `disabled` | `--red` (the SAME `dot-failed`/`st-failed` pair as `failed`) | `--red`     | `disabled · {n} failures` |
 | `off`      | `--text-disabled`                                            | `--text-4`  | `off`                     |
 
-**`disabled` reuses `failed`'s exact tokens — no new pair.** A worker
-auto-disables after N consecutive failures (the tick runner's own guard,
-`card/T294-scheduler-runtime`); the row's copy is what tells the two apart,
-because both are the same fact from the operator's chair: "this worker's
-cadence stopped producing anything trustworthy." `off`, in contrast, is a
-**deliberate** stop (the header `ToggleSwitch`, see below) — it gets its own
-quieter `--text-4`/`--text-disabled` pair and, on top of the row's own
-coloring, dims the **entire row** to `opacity: 0.55` (`.wrow.is-off`). That
-55% dim is the row's only opacity rule, and it applies to nothing else —
-`failed`/`disabled` stay at full strength, because a red row that is also
-dimmed would read as "less broken" than it is.
+**`disabled` reuses `failed`'s exact tokens — no new pair.** A worker auto-disables after N consecutive
+failures (the tick runner's own guard, `card/T294-scheduler-runtime`); the row's copy is what tells the two
+apart, because both are the same fact from the operator's chair: "this worker's cadence stopped producing
+anything trustworthy." `off`, in contrast, is a **deliberate** stop (the header `ToggleSwitch`, see below) —
+it gets its own quieter `--text-4`/`--text-disabled` pair and, on top of the row's own coloring, dims the
+**entire row** to `opacity: 0.55` (`.wrow.is-off`). That 55% dim is the row's only opacity rule, and it
+applies to nothing else — `failed`/`disabled` stay at full strength, because a red row that is also dimmed
+would read as "less broken" than it is.
 
-**Selected row: a 2px accent rail, painted as a `::before` bar — never a
-border.** `.wrow.is-selected::before { position: absolute; left: 0; top: 0;
-bottom: 0; width: 2px; background: var(--color-accent) }`, layered over the
-`bg-surface` wash `.is-selected` itself already applies. This is the exact
-contract the Review pane's blast-radius marker already established (§ "Diff —
-file box" above, "It is a bar child, not a border on the box"): a left
-**border** on a row that also carries its own `border-bottom` would either
-collide with that border's shorthand or get silently clipped, and — because
-the list column has no per-row rounding — would still shift every row's
-content box by its own width the instant it toggled on. The rail is a sibling
-layer instead, so selecting a row costs zero reflow.
+**Selected row: the `bg-surface` wash and nothing else (revision 2).** The first build of this list kept the
+2px accent rail the Review pane's blast-radius marker established (a `::before` bar, never a border, so
+selecting costs zero reflow). The operator found the result too busy — a rail, a cycle bar, a stripe on every
+folder header and a pin icon on top of each other — so **for this list the rail is gone**: selection and
+hover share the same `bg-surface` wash, and the selected row is told apart by the detail pane beside it
+(and `aria-selected`). This reverses the rail **only here**; every other selectable list keeps its rail. The
+folder header's 3px stripe is a different element and is unchanged.
 
-**Row actions — hover-revealed, three icon buttons.** `.wrow-actions { opacity:
-0; transition: opacity var(--dur) var(--ease) }`, revealed on `:hover` or
-`.is-hovered` (keyboard/touch parity, the same idiom every other hover-gated
-row action in this app follows): **Pin / Unpin** (T483 — `Pin` when unpinned,
-`PinOff` when pinned, `.iconbtn`, `--text-3` at rest, `--text` on hover),
-**Run now** (`Play`, `.iconbtn`) and
-**Delete** (`Trash2`, `.iconbtn.is-danger` — `--text-3` at rest, `--red` on
-hover). `22×22px`, `hover:bg-surface-2`. The actions cluster and the state
-column share the same slot at the row's trailing edge; hovering (or the
-`.is-hovered` state) is what decides which one is currently showing.
+**Row actions — hover-revealed icon buttons.** `display: none` at rest, `display: flex` on `:hover` or
+keyboard focus within the row (the mockup's `.is-hovered` is a screenshot aid for the same state): **Run
+now** / **Stop** (`Play` / `Square`, `.iconbtn`, `--text-3` at rest, `--text` on hover) and **Delete**
+(`Trash2`, `.iconbtn.is-danger` — `--text-3` at rest, `--red` on hover). **Pin is not here** — the slot before
+the name is the one pin. `20×20px` — exactly the line-1 height — `hover:bg-surface-2`. The actions cluster
+**takes the state's slot** on line 1 — the state is hidden while the cluster shows. They are
+`display: none`, never `opacity: 0`: an invisible cluster would still reserve width on line 1 and squeeze
+the name. **Hover and focus change no box size:** line 1 is `20px` at rest and on hover, and the buttons
+fit inside it, so the swap moves neither the row nor anything on it or below it (the row is `46px`
+regardless). Pinned by `tests/e2e/ci/scheduler-row-hover.spec.ts`, which compares every row's and every
+inner box's `getBoundingClientRect` before and after hover and focus.
+
+**Search field focus.** The field's focus shows once, on the wrapping label (`focus-within:border-accent-line`).
+The `<input>` carries `no-default-ring` so the global `:focus-visible` outline does not draw a second box
+inside the first. The **Collapse all** button next to it keeps the global keyboard ring.
+
+**Empty states.** No worker matches the search or chip: a centred block (`padding: 40px 20px`, 12px
+`--text-3`) — `No worker matches “{q}”` in `--text-2`/500 over `Search covers worker names, folders and
+prompts.` and a `Clear filter` ghost button (`22px`, `0 8px`, `border border-border-2`, `rounded-sm`,
+11px `--text-2`) that clears both the search and the chip. (The no-workers-at-all empty state is unchanged.)
+
+**Stewards section (T609, campaign ch.5b — `SchedulerStewards.vue`).** A mission's steward is a **system
+worker**, not a user worker (campaign spec §3.4), so it never appears among the folder groups, the chips,
+Up next or the worker counter. It has its own block at the **bottom of the list column**, under the scrolling
+folder groups: `border-t border-border`, `padding: 8px 10px 8px 12px`, an eyebrow "STEWARDS" (`10.5px / 500`,
+uppercase, `0.07em`, `text-text-4`) with the count at the right, then one row per steward. A row is
+**read-only**: no enable switch, no pin, no Run now, no delete, no prompt edit, and it is not selectable (no
+detail pane). Two lines, `gap: 2px`: the mission's title (`12px`, `text-text-2`, truncated) with a `bot` glyph
+(11px, `text-text-3`) before it and, at the right, a state word — "Running" (`text-accent`), "Paused"
+(`text-warning`) or nothing; then `11px text-text-4`: "Last wake {age} ago · {last action}" (the last tick's
+first result line, truncated; "No tick yet" before the first). A **paused** row (the operator paused it from the
+mission popover) shows its reason instead of the last action, in `text-warning`. The block is hidden when no
+mission has a steward. When the Scheduler holds stewards but no user worker, the list column draws no
+empty block above the Stewards section (its "No worker matches this filter" copy is about filtering) and the
+section ends with one hint line (`10.5px`, `text-text-4`, `margin-top: 8px`): "A steward belongs to its
+mission. Pause it from the mission's popover." (Inside the 340px column, never in the detail pane: at 900px
+that pane can be squeezed to a sliver.) The footer caption below the view is unchanged.
 
 #### Worker detail (`SchedulerWorkerDetail.vue`, remaining width)
 
@@ -12398,6 +13634,94 @@ active-state contract every other takeover entry point follows (see
 
 ---
 
+### GitHub budget pill (StatusFooter.vue → GithubBudgetPill.vue)
+
+Spec: `docs/specs/2026-11-02-github-rate-limit/` (mockup `b--own-pill`). **No new tokens.** Its own
+pill in the footer's right cluster, in the same slot family as the Cleanup and Scheduler pills
+(`h-5`, `px-1.5`, 11px, `rounded-sm`, borderless), placed **between the heap gauge and the Cleanup
+pill**. It shows the GitHub glyph (`Github`, 12px, stroke 1.6) and how many calls are left in the
+**tighter** bucket (REST or GraphQL, whichever has the lower remaining fraction):
+
+| State               | Text                                | Tone                                           |
+| ------------------- | ----------------------------------- | ---------------------------------------------- |
+| Healthy (and click) | `4,112 left`                        | `--text-2`, `--text` + `bg-surface-2` on hover |
+| Low                 | `640 left`                          | `--warning`                                    |
+| Exhausted           | `0 left · 12m` (countdown to reset) | `--red`                                        |
+
+The pill **hides** while the budget is `unavailable` (no `gh`, not signed in, or no answer yet) and
+its tone does not change while the popover is open — the open popover is the signal. Click toggles
+the popover (`ui.popovers.githubBudget`, one of the footer popovers: it closes the Plan-usage and
+Pasted-images popovers when it opens, closes on Esc and outside click, and joins the native-overlay
+freeze).
+
+**Popover** (`GithubBudgetPopover.vue`): the footer-popover frame (`w-[320px]`, `bg-surface-2`,
+`border-border-2`, `rounded-lg`, `shadow-pop`, `p-2`), three blocks, `border-t border-border` between
+them:
+
+1. **Header** — `Github` glyph, "GitHub API" (12px / 600), and on the right `@login · updated 20s ago`
+   (11px, `--text-4`; the `@login ·` part is dropped when the gh user is unknown).
+2. **Two meters** (REST · 5,000/h, GraphQL · 5,000 pts/h) in the Plan-usage anatomy (§ "Plan usage"):
+   label + `N left`, a 3px track (`bg-surface`) and the same **80 / 95 ramp** (green below 80% used,
+   accent 80–95, red from 95; the `N left` figure takes the same colour above 80), and a reset line —
+   `resets in 38m`, with `· at this pace, empty in 6m` when the pace empties it first, or
+   `resets at 14:00 (in 12m)` when spent.
+3. **Who spent it · this hour** for the tighter bucket: a 6px split bar (Harnu in `--accent`, outside
+   in `--text-4`, widths a share of the limit), a legend (`Harnu 582` / `Outside Harnu 306`), one
+   row per consumer (name · count · 3px bar relative to the busiest consumer; Missions, PR Stack,
+   Review, Cleanup, Steward, plus Merge batch once it has spent a call), the outside row in `--text-3`.
+   While low, Missions carries a `slowed` tag; while exhausted every Harnu row reads `--text-4` with a
+   `paused` tag. A **note** closes the block in the Throttle-note anatomy: `accent-soft` / `accent-line`
+   ("Harnu is polling slower. …") while low, `red-soft` / `red-line` ("Limit reached. …") while spent;
+   none while healthy. While GitHub's **secondary limit** holds Harnu's reads (the snapshot's
+   `secondaryPauseUntil`, a short pause with calls still left in both buckets) the note is the accent
+   one — "GitHub is slowing requests. Harnu resumes at 14:00." — **in place of** the low / spent note,
+   and the pill keeps showing the real calls left.
+
+A `Details ↗` link (right-aligned, `--accent`, 11px) closes the popover and opens **Settings → GitHub
+API**.
+
+**Toast and OS notification** (pref `Tell me when it happens`): one `warning` toast on entering `low`
+("GitHub budget low", with a _Details_ action) and one OS notification on reaching `exhausted`, each
+**once per GitHub window**, never on the first snapshot after launch.
+
+---
+
+### GitHub API pane (Settings → GitHub API, GithubBudgetPane.vue)
+
+Spec: `docs/specs/2026-11-02-github-rate-limit/` (mockup `d--settings-pane`). **No new tokens.** A
+Settings tab (`githubApi`) between Usage history and Changelog. Top to bottom:
+
+- **Title and intro** — "GitHub API" (14px / 600) and an 11.5px `--text-3` paragraph naming the gh
+  user (`@login`, mono; "the gh token on this machine" when unknown) and the free `gh api rate_limit`
+  read.
+- **Throttle banner** (only while low or spent) — the Throttle-note anatomy, accent while low
+  ("Harnu has been slowing down since 13:39. REST budget dropped below 15%. …"), red while spent.
+- **Three tiles** (`grid 1fr 1fr 1.2fr`, `gap-2.5`, `bg-sidebar`, `border-border`, `rounded-lg`,
+  `px-3 py-2.5`): REST and GraphQL (a mono 20px / 600 figure with `left of 5,000` in 11px sans, a 3px
+  track on `bg-surface-2` with the 80 / 95 ramp, the reset time) and **Pace · last 10 min** (calls per
+  minute, `lasts past the reset` or `empty in 6m`, and the Harnu / outside split per minute, with
+  `(was N)` once Harnu has slowed down).
+- **Last 60 minutes** — twelve 5-minute columns stacked from the bottom: Harnu (`--accent`), Harnu
+  while slowed (`--warning`) and outside (`--text-4`); a `border-b` baseline and a clock label on
+  every other column; the legend sits at the right of the heading. It follows the tighter bucket and
+  the heading names it.
+- **Who spends it · this hour** — a table (Consumer · Calls · Share · Checks every) in 11.5px with
+  `border-t border-border` rows. While throttled the _Checks every_ cell shows the old cadence struck
+  through and the new one in `--accent` (`--red` and `paused` while spent). Delivered missions sit
+  under Missions as `N delivered missions · 0 · 0% · not checked`.
+- **Missions** — one `ToggleSwitch`: _Check delivered missions_ (off by default).
+- **When the budget runs low** — a `SegmentedControl` _Slow down below_ 10 / 15 / 25 %, a
+  `ToggleSwitch` _Pause PR Stack auto-refresh_ and a `ToggleSwitch` _Tell me when it happens_, each
+  with a `SettingHint`.
+- **Fine print** — 11px `--text-4`: Harnu counts only its own calls; "Outside Harnu" is GitHub's total
+  minus Harnu's share.
+
+All of it reads one snapshot (`stores/github-budget.ts`, fed by `window.api.githubBudgetSnapshot` and
+the `github-budget:changed` push) and writes the four prefs through `githubBudgetSetPrefs`.
+Everything is an estimate of Harnu's own share; only GitHub knows the real total.
+
+---
+
 ### Folder View (FolderView.vue)
 
 Spec: `docs/specs/T212-folder-view.md` (the original view). The main-pane view a **folder click**
@@ -12595,7 +13919,7 @@ tagging it would imply the rest of the view is equally local.
 
 **Action bar.** One accent-filled primary (`New session`, `--accent` on
 `--accent-ink`) followed by bordered secondaries: Roadmap board, PR Stack, Browse
-files, Open in VS Code, Open folder, Terminal here. Buttons are radius
+files, Open in {editor} (the configured editor, with its mark), Open folder, Terminal here. Buttons are radius
 `--radius-sm`, `7px 12px`, 12px text, with a 13px lucide icon at 1.6 stroke. This
 duplicates the Topbar cluster on purpose: the view is the folder's home, and a
 home you must leave to act on is not one. Identical in both profiles.
@@ -12989,32 +14313,66 @@ appears in the folder branch only.
 Short movement, ease-out, rarely noticed. **If the user notices the animation,
 it ran too long.**
 
-| Action                  | Duration     | Easing      | Description                                                                                                                                                                                               |
-| ----------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hover row               | 100ms        | ease        | Background fade + scale 1.003                                                                                                                                                                             |
-| Select                  | 120ms        | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
-| Review selection bar    | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
-| Expand project          | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
-| Overlay (dialog/menu)   | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
-| Divider hover           | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
-| Pulse (active status)   | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
-| Agent activity pulse    | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
-| Terminal cursor         | 1s           | steps(1)    | Blinking accent block                                                                                                                                                                                     |
-| Chart bar (BI)          | `--dur`      | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
-| Copy button reveal      | `--dur-fast` | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
-| Copy → copied           | 1.5s         | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
-| Fleet card entrance     | 620ms        | custom¹     | Whole card fades + slides 22px from the right, as one unit (`.card-enter`)                                                                                                                                |
-| Fleet card ring fade    | 900ms        | custom¹     | Border ring eases in after the entrance settles (suppressed during the slide)                                                                                                                             |
-| Fleet rail section      | `--dur-slow` | `--ease`    | Needs-you / Would-have collapse via `grid-template-rows: 1fr↔0fr` (`.collapsible`)                                                                                                                        |
-| Rescan spin             | 0.7s loop    | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
-| Pasted-images pill bump | 300ms        | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
-| Lightbox image swap     | `--dur`      | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
-| Jump flash              | `--dur-slow` | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
-| PR focus ring           | `--dur-slow` | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
+| Action                       | Duration     | Easing      | Description                                                                                                                                                                                               |
+| ---------------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hover row                    | 100ms        | ease        | Background fade + scale 1.003                                                                                                                                                                             |
+| Select                       | 120ms        | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
+| Review selection bar         | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
+| Expand project               | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
+| Overlay (dialog/menu)        | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
+| Divider hover                | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
+| Pulse (active status)        | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
+| Agent activity pulse         | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
+| Terminal cursor              | 1s           | steps(1)    | Blinking accent block                                                                                                                                                                                     |
+| Chart bar (BI)               | `--dur`      | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
+| Copy button reveal           | `--dur-fast` | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
+| Copy → copied                | 1.5s         | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
+| Fleet card entrance          | 620ms        | custom¹     | Whole card fades + slides 22px from the right, as one unit (`.card-enter`)                                                                                                                                |
+| Fleet card ring fade         | 900ms        | custom¹     | Border ring eases in after the entrance settles (suppressed during the slide)                                                                                                                             |
+| Fleet rail section           | `--dur-slow` | `--ease`    | Needs-you / Would-have collapse via `grid-template-rows: 1fr↔0fr` (`.collapsible`)                                                                                                                        |
+| Rescan spin                  | 0.7s loop    | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
+| Pasted-images pill bump      | 300ms        | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
+| Lightbox image swap          | `--dur`      | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
+| Jump flash                   | `--dur-slow` | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
+| PR focus ring                | `--dur-slow` | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
+| Pane maximize / restore      | `--dur-slow` | `--ease`    | The maximized pane grows and the others shrink to their 24px strip by `flex`; one pass (T628). Reduced motion: snaps                                                                                      |
+| Expand to window / restore   | `--dur-slow` | `--ease`    | The collapsed columns and panes go to 0 (`.lm-collapse`: size, opacity, margin, border) while the expanded pane grows; no remount (T628). Reduced motion: snaps                                           |
+| Fleet rail minimize / expand | `--dur-slow` | `--ease`    | The rail column animates `width` between 300px (or the dragged width) and the 44px strip (T628). Reduced motion: snaps                                                                                    |
+| Sidebar collapse / expand    | `--dur-slow` | `--ease`    | The sidebar and its divider animate `width` to 0 and back, with `opacity` (T628). Reduced motion: snaps                                                                                                   |
+| Split orientation switch     | `--dur-slow` | `--ease`    | The session area and the helper stack slide and scale from their old box to the new one (FLIP, one pass) (T628). Reduced motion: snaps                                                                    |
 
 ¹ `cubic-bezier(0.22, 0.61, 0.36, 1)` — a touch snappier than the default
 `--ease`, since this is a list-insertion cue that must read as immediate, not
 a decorative overlay entrance.
+
+### Layout motion (T628)
+
+Size changes of the big layout containers animate briefly instead of snapping: pane maximize and
+restore, expand to window and back, Fleet rail minimize and expand, sidebar collapse and expand, and
+the split orientation switch. All use `--dur-slow` and `--ease` (never a new duration or curve).
+
+- **Transient, never ambient.** The transitions exist only while `[data-app-shell][data-layout-motion]`
+  is set. The layout store sets it for one `--dur-slow` (plus a short slack) around a state change that
+  is NOT a drag: a divider drag never sets it, so the size follows the pointer with no easing, exactly
+  as before. Elements opt in with `data-lm`; `transition` lists only the properties a collapse or a
+  resize changes (`flex`, `width`, `height`, `opacity`, `margin`, `border-width`, `padding`).
+- **Collapse classes.** `.lm-collapse` (a flex item sized by `flex`: the session area, the helper
+  stack, a pane), `.lm-collapse-w` (sized by `width`: the sidebar, the Fleet rail column, a vertical
+  divider) and `.lm-collapse-h` (a horizontal divider) bring an element to zero size with `overflow:
+hidden`, `opacity: 0`, no margin or border, and `pointer-events: none`. They replace `display: none` /
+  `v-show`, which cannot animate. The floating-panels rules are untouched; the collapse classes win over them
+  with `!important`.
+- **xterm reflows once.** A terminal pane does not refit on each frame of a motion: while the motion
+  flag is set its resize observer only arms one trailing refit, so the grid changes once, after the
+  last frame. Outside a motion it refits per observation as before (drags stay live).
+- **Browser panes.** A browser pane is a native `WebContentsView` and cannot follow CSS. The motion
+  freezes it exactly as a splitter or sidebar drag does (`browserDrag(true)`; see "Frozen frame" in
+  the browser pane section): the JPEG stand-in fills the pane, stretched with the host while it
+  animates, and when the motion ends the pane reports its final rectangle, the view comes back live
+  and the stand-in is removed on the next frame.
+- **Reduced motion.** With `prefers-reduced-motion: reduce` the transitions are `none` (extending the
+  existing reduce block in `main.css`, not a second one), the layout store never sets the flag and the
+  browser pane is never frozen: the layout snaps as it did before.
 
 ### Fleet state ring (Fleet rail)
 
@@ -13185,6 +14543,12 @@ this`) — never that a question was asked or answered, and nothing is ever "rev
   any failure code this build does not know — a code or message from main is never shown. A
   sentence that says what to do next is guidance in `text-3`, not a button, unless the bar can do
   it itself.
+- **Open in editor** — the label interpolates the editor's display name: "Open in {editor}"
+  (`Open in Cursor`, `Open in Neovim`); a custom editor reads "Open in editor". Failure titles read
+  "Couldn't open {editor}". VS Code keeps its install hint (`Install 'code' command in PATH`); any
+  other editor says "`{command}` not found on PATH." and points at the setting ("Check Settings →
+  General → Editor."). Complete sentences, so they end with a period; `PATH` and command names stay
+  untranslated.
 - **Mods audit chips** — facts in the form "can …": "can run processes", "can read every
   prompt". Never a verdict: no "safe", "verified", "trusted", "secure", "malicious" or
   "approved", in any language, and never a colour that grades a mod.
@@ -13295,6 +14659,11 @@ codebase is a bug to fix.
   --shadow-pop:
     0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 12px 32px rgba(0, 0, 0, 0.45),
     0 2px 8px rgba(0, 0, 0, 0.3);
+
+  /* floating panels (§6 "Floating panels layout"), used only under :root[data-floating] */
+  --canvas: color-mix(in oklab, var(--bg) 62%, black); /* dark themes; light themes override it */
+  --float-gap: 6px; /* between islands, and from an island to the window edge */
+  --float-band: 42px; /* height of the three top-band islands */
 }
 
 body {
@@ -13367,6 +14736,30 @@ since `data-theme` only applies the active theme).
 | `nord`             | Nord             | dark  | frost        |
 | `monospace`        | Monospace        | dark  | grayscale    |
 
+**Canvas per theme (Floating panels).** `--canvas` is the window backdrop behind the islands
+(§6 "Floating panels layout"). It is **not** part of the 20-token contract a theme must define:
+the base `:root` derives it from the theme's own `--bg` (`color-mix(in oklab, var(--bg) 62%, black)`),
+which is right for every dark theme and is also what an extension theme gets. The four light
+themes **override it with a hand-picked value**, because that mix would read as a heavy grey slab
+on a light surface; each pick is one step below the theme's `--sidebar` and above its `--border`,
+so the 1px island border stays visible on it.
+
+| `data-theme`       | `--bg`    | `--canvas`                                                            |
+| ------------------ | --------- | --------------------------------------------------------------------- |
+| `default-dark`     | `#17120e` | mix (`#070503`)                                                       |
+| `tokyo-night`      | `#1a1b26` | mix (`#08090f`)                                                       |
+| `dracula`          | `#282a36` | mix (`#101117`)                                                       |
+| `catppuccin-mocha` | `#1e1e2e` | mix (`#0a0a13`)                                                       |
+| `one-dark`         | `#282c34` | mix (`#101216`)                                                       |
+| `github-dark`      | `#0d1117` | mix (`#030407`)                                                       |
+| `gruvbox-dark`     | `#282828` | mix (`#101010`)                                                       |
+| `nord`             | `#2e3440` | mix (`#13161d`)                                                       |
+| `monospace`        | `#0c0c0c` | mix (`#030303`)                                                       |
+| `light`            | `#fafafa` | **`#ececef`** (hand-picked, = its `--surface-2`)                      |
+| `github-light`     | `#ffffff` | **`#eaeef2`** (hand-picked, = its `--surface-2`)                      |
+| `catppuccin-latte` | `#eff1f5` | **`#d8dce5`** (hand-picked, between its `--surface-2` and `--border`) |
+| `gruvbox-light`    | `#fbf1c7` | **`#ebdbb2`** (hand-picked, = its `--surface-2`)                      |
+
 Adding a theme = (1) a complete `:root[data-theme='<id>']` block in
 `themes.css`, (2) an entry in `THEMES` + `THEME_META` in `theme.ts`, (3) a label in
 `theme.<id>` in **both** locales, (4) a row in this table. Alternate theme accents
@@ -13416,6 +14809,11 @@ xterm's order:
 
 xterm's `background`/`foreground`/`cursor`/`selection` still derive from
 `--color-bg`/`--color-text`/`--color-accent`/`--color-accent-soft`.
+
+**Second consumer — folder hue (T590).** Six of the sixteen slots (`blue`, `magenta`, `cyan`, `yellow`,
+`bright-red`, `bright-blue`) double as the **folder hue** pool (§2 "Folder hue"). They are exposed to
+components through the `.fh-*` helper classes in `main.css`, which set `--fh`; a theme only has to keep
+those six slots distinguishable from each other, which every terminal palette already must.
 
 ### Diff surfaces (Review pane)
 

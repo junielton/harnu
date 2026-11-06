@@ -1,0 +1,5 @@
+{
+  "name": "harnu",
+  "version": "0.0.0-spike",
+  "description": "T1 spike: the doc-reader read gate and its Haiku agent, packaged standalone so claude plugin eval can A/B it."
+}

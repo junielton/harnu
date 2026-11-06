@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: v6--chapter</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      /* ---- Journal vocabulary (shared by the four v1 screens) ------------------------------ */
+      .jbook {
+        width: 14px;
+        height: 14px;
+        color: var(--color-accent);
+        align-self: center;
+      }
+      .radiant {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--color-text-3);
+      }
+      .radiant .bar {
+        flex: 1;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--color-border-2);
+        overflow: hidden;
+      }
+      .radiant .bar i {
+        display: block;
+        height: 100%;
+        width: 54.5%; /* no token: 48 of 88 pages */
+        background: var(--color-accent);
+      }
+      .radiant b {
+        color: var(--color-text);
+        font-weight: 500;
+      }
+      .lk {
+        color: var(--color-text-4);
+        display: inline-flex;
+      }
+      .lk .ic {
+        width: 10px;
+        height: 10px;
+      }
+      .jtag {
+        font-size: 10px;
+        color: var(--color-text-4);
+        white-space: nowrap;
+      }
+      .jtag b {
+        font-weight: 500;
+        color: var(--color-text-3);
+      }
+      .dline {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        color: var(--color-accent);
+        margin-top: 3px;
+      }
+      .dline .glyph {
+        margin-top: 0;
+        width: 10px;
+        height: 10px;
+      }
+      .ic {
+        width: 12px;
+        height: 12px;
+      }
+      .pop-head .row > .ic,
+      .thead > .ic {
+        width: 14px;
+        height: 14px;
+        color: var(--color-accent);
+        align-self: center;
+      }
+      .btn .ic {
+        width: 14px;
+        height: 14px;
+      }
+
+      [data-dsqa='v6--chapter'][data-state='default'] [data-only]:not([data-only~='default']) {
+        display: none;
+      }
+      [data-dsqa='v6--chapter'][data-state='gate-red'] [data-only]:not([data-only~='gate-red']) {
+        display: none;
+      }
+      [data-dsqa='v6--chapter'][data-state='decision'] [data-only]:not([data-only~='decision']) {
+        display: none;
+      }
+      [data-dsqa='v6--chapter'][data-state='side'] [data-only]:not([data-only~='side']) {
+        display: none;
+      }
+
+      [data-dsqa='v6--chapter'] {
+        padding: 16px;
+      }
+      [data-dsqa='v6--chapter'] .pop {
+        max-height: none; /* chapter page shown whole; the real popover scrolls past 560 */
+      }
+      .backrow {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: 6px;
+        font-size: 11px;
+        color: var(--color-text-4);
+      }
+      .backrow .link {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+      }
+      .backrow .link .ic {
+        width: 12px;
+        height: 12px;
+      }
+
+      /* Steps: margin letter + rail + body */
+      .pop-body .step .label-row mk-gates {
+        margin-left: auto;
+      }
+      .let {
+        width: 14px;
+        flex: none;
+        text-align: right;
+        font-family: var(--mk-mono);
+        font-size: 10.5px;
+        color: var(--color-text-4);
+        padding-top: 2px;
+      }
+      .step.is-current .let {
+        color: var(--color-accent);
+      }
+      .step.is-blocked .label {
+        color: var(--color-text);
+        font-weight: 500;
+        opacity: 1;
+      }
+      .step .pr.is-red b {
+        font-weight: 600;
+      }
+      .step .pr .mono {
+        font-size: 10.5px;
+      }
+      .step .end {
+        font-family: var(--mk-mono);
+        font-size: 10.5px;
+        color: var(--color-text-4);
+        margin-top: 3px;
+        line-height: 1.5;
+      }
+
+      /* Decision node */
+      .dec {
+        margin-top: 6px;
+        border: 1px solid var(--color-accent-line);
+        background: var(--color-accent-soft);
+        border-radius: var(--radius-sm);
+        padding: 8px 10px;
+      }
+      .dec-h {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--color-text);
+      }
+      .dec-h .glyph {
+        margin-top: 0;
+        width: 10px;
+        height: 10px;
+      }
+      .dec-h .badge {
+        margin-left: auto;
+      }
+      .dec-opt {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+        padding: 5px 8px;
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface);
+        font-size: 11.5px;
+        color: var(--color-text-2);
+      }
+      .dec-opt i {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 1.5px solid var(--color-text-4);
+        flex: none;
+      }
+      .dec-act {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .dec-act .jtag {
+        margin-left: auto;
+      }
+      [data-dsqa='v6--chapter'][data-state='decision'] .step--f .label {
+        color: var(--color-text);
+        font-weight: 500;
+        opacity: 1;
+      }
+
+      /* Side steps bucket */
+      .side {
+        margin-top: 14px;
+        padding-top: 10px;
+        border-top: 1px solid var(--color-border);
+      }
+      .side-h {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11.5px;
+        color: var(--color-text-2);
+        cursor: pointer;
+        background: none;
+        border: 0;
+        padding: 0;
+        width: 100%;
+        text-align: left;
+      }
+      .side-h .ic {
+        width: 12px;
+        height: 12px;
+        color: var(--color-text-4);
+      }
+      .side-h .glyph {
+        margin-top: 0;
+        width: 10px;
+        height: 10px;
+      }
+      .side-h .meta {
+        margin-left: auto;
+        font-size: 10.5px;
+        color: var(--color-text-4);
+      }
+      .sidelist {
+        margin-top: 6px;
+        position: relative;
+      }
+      .sidelist::before {
+        content: '';
+        position: absolute;
+        left: 5px;
+        top: 12px;
+        bottom: 12px;
+        width: 0;
+        border-left: 2px dashed var(--color-border-2);
+      }
+      .sd {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 0 5px 20px;
+        min-height: 28px;
+        font-size: 11.5px;
+      }
+      .sd .glyph {
+        position: absolute;
+        left: 0;
+        top: 50%;
+        margin: -6px 0 0;
+      }
+      .sd .t {
+        color: var(--color-text-3);
+        min-width: 0;
+      }
+      .sd.is-new {
+        background: var(--color-warning-soft);
+        border-radius: var(--radius-sm);
+        padding-right: 6px;
+        margin-left: -4px;
+        padding-left: 24px;
+      }
+      .sd.is-new .glyph {
+        left: 4px;
+      }
+      .sd.is-new .t {
+        color: var(--color-text);
+        font-weight: 500;
+      }
+      .sd .badge {
+        margin-left: auto;
+        flex: none;
+      }
+      .sd .jtag {
+        margin-left: auto;
+        flex: none;
+      }
+      .sd .t small {
+        display: block;
+        font-size: 10.5px;
+        color: var(--color-text-4);
+        font-weight: 400;
+      }
+    </style>
+  </head>
+  <body data-states="default gate-red decision side">
+    <div data-dsqa="v6--chapter">
+      <div class="pop" data-dsqa-part="chapter-popover">
+        <div class="pop-head" data-dsqa-part="chapter-head">
+          <div class="backrow">
+            <button type="button" class="link" data-goto="v6--campaign">
+              <svg
+                class="ic"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m15 18-6-6 6-6" /></svg
+              >Campaign</button
+            ><span>·</span><span class="num">Chapter 9 of 12</span>
+          </div>
+          <div class="row">
+            <svg
+              class="ic"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 7v14" />
+              <path
+                d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+              /></svg
+            ><span class="ttl">Round 3 <span class="dim">· Step 2 of 4</span></span
+            ><span class="headline" data-only="default decision"
+              ><span class="badge badge--accent">Running</span></span
+            ><span class="headline" data-only="gate-red side"
+              ><span class="badge badge--danger">main red</span></span
+            >
+          </div>
+          <div class="sub">Segments DTO · Upgrades · /products/</div>
+          <div class="counts num">1 verified · 1 running · 1 waiting · 1 todo</div>
+        </div>
+
+        <div class="pop-body" data-dsqa-part="chapter-body">
+          <div class="rail" data-dsqa-part="step-rail">
+            <!-- D -->
+            <div class="step is-done">
+              <span class="let">D</span>
+              <div class="col">
+                <span class="line"></span><span class="glyph glyph--verified"></span>
+              </div>
+              <div class="body">
+                <div class="label-row">
+                  <span class="label">Segments DTO and page type PR</span
+                  ><mk-gates pr="green" ci="green" main="green" verifier="green"></mk-gates>
+                </div>
+                <div class="caption">7 commits · verified</div>
+                <div class="sess">
+                  <span class="arrow">↳</span><span class="dot"></span
+                  ><span class="name">segments-dto</span><span class="state">idle</span>
+                </div>
+                <div class="sess">
+                  <span class="arrow">↳</span><span class="dot"></span
+                  ><span class="name">segments-dto-ship</span><span class="state">idle</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- E: running -->
+            <div class="step is-current" data-only="default decision">
+              <span class="let">E</span>
+              <div class="col">
+                <span class="line"></span><span class="glyph glyph--running current-ring"></span>
+              </div>
+              <div class="body">
+                <div class="label-row">
+                  <span class="label">Upgrades family page PR</span
+                  ><mk-gates pr="off" ci="green" main="na" verifier="off" labels></mk-gates>
+                </div>
+                <div class="pulse">4 commits · active 1m ago</div>
+                <div class="pr">PR #316 · open · CI green</div>
+                <div class="sess">
+                  <span class="arrow">↳</span><span class="dot dot--working"></span
+                  ><span class="name">upgrades</span><span class="state">working</span>
+                </div>
+                <label class="check"
+                  ><input type="checkbox" /><span>Accessories copy reads right</span
+                  ><span class="due">due</span></label
+                >
+              </div>
+            </div>
+
+            <!-- E: merged, main red -->
+            <div class="step is-current is-blocked" data-only="gate-red side">
+              <span class="let">E</span>
+              <div class="col">
+                <span class="line"></span><span class="glyph glyph--blocked"></span>
+              </div>
+              <div class="body">
+                <div class="label-row">
+                  <span class="label">Upgrades family page PR</span
+                  ><mk-gates pr="green" ci="green" main="red" verifier="off" labels></mk-gates>
+                </div>
+                <div class="pr is-red">
+                  PR #316 · merged · main CI red (test
+                  <span class="mono">ProductsPageTest::renders_cta_heading</span>)
+                </div>
+                <div class="callout callout--danger" data-only="gate-red">
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" /></svg
+                  ><span><b>main is red after #316.</b> Verifier waits for a green main.</span>
+                </div>
+                <div class="callout callout--accent" data-only="side">
+                  <span class="glyph glyph--side"></span
+                  ><span
+                    ><b>Tracked as a side step.</b> Fix main after #316 (discovered from E).</span
+                  >
+                </div>
+                <div class="sess">
+                  <span class="arrow">↳</span><span class="dot"></span
+                  ><span class="name">upgrades</span><span class="state">idle</span>
+                </div>
+                <label class="check"
+                  ><input type="checkbox" /><span>Accessories copy reads right</span
+                  ><span class="due">due</span></label
+                >
+              </div>
+            </div>
+
+            <!-- F -->
+            <div class="step step--f">
+              <span class="let">F</span>
+              <div class="col">
+                <span class="line"></span><span class="glyph glyph--waiting"></span>
+              </div>
+              <div class="body">
+                <div class="label-row">
+                  <span class="label">/products/ landing PR (ProductsPage)</span
+                  ><mk-gates pr="off" ci="off" main="off" verifier="off"></mk-gates>
+                </div>
+                <div class="sess">
+                  <span class="arrow">↳</span><span class="dot"></span
+                  ><span class="name">products-type</span><span class="state">idle</span>
+                </div>
+                <div class="sess">
+                  <span class="arrow">↳</span><span class="dot"></span
+                  ><span class="name">products-ship</span><span class="state">idle</span>
+                </div>
+                <div class="dline" data-only="default gate-red side">
+                  <span class="glyph glyph--decision"></span>Standard vs Combined · blocks chapter
+                  10
+                </div>
+                <div class="dec" data-only="decision" data-dsqa-part="decision-node">
+                  <div class="dec-h">
+                    <span class="glyph glyph--decision"></span>Standard vs Combined<span
+                      class="badge badge--warning"
+                      >Blocks chapter 10</span
+                    >
+                  </div>
+                  <div class="dec-opt"><i></i>Standard page first</div>
+                  <div class="dec-opt"><i></i>Combined, one page</div>
+                  <div class="dec-act">
+                    <button type="button" class="btn btn--primary">Choose…</button
+                    ><span class="jtag num">6h waiting</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- End -->
+            <div class="step last">
+              <span class="let">End</span>
+              <div class="col">
+                <span class="line"></span><span class="glyph glyph--todo"></span>
+              </div>
+              <div class="body">
+                <div class="label-row"><span class="label">Delivered and verified</span></div>
+                <div class="end">
+                  End: code · 3 PRs merged, main green · evidence: review sheets
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Side steps bucket -->
+          <div class="side" data-dsqa-part="side-bucket">
+            <button
+              type="button"
+              class="side-h"
+              data-only="default gate-red decision"
+              data-goto="v6--chapter?state=side"
+            >
+              <svg
+                class="ic"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m9 18 6-6-6-6" /></svg
+              ><span class="glyph glyph--side"></span>Side steps<span class="meta num">1 open</span>
+            </button>
+            <button
+              type="button"
+              class="side-h"
+              data-only="side"
+              data-goto="v6--chapter?state=gate-red"
+            >
+              <svg
+                class="ic"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m6 9 6 6 6-6" /></svg
+              ><span class="glyph glyph--side"></span>Side steps<span class="meta num"
+                >2 open · 3 done</span
+              >
+            </button>
+            <div class="sidelist" data-only="side">
+              <div class="sd is-new">
+                <span class="glyph glyph--side is-accent"></span
+                ><span class="t">Fix main after #316<small>discovered from E</small></span
+                ><span class="badge badge--warning">New</span>
+              </div>
+              <div class="sd">
+                <span class="glyph glyph--side"></span
+                ><span class="t"
+                  >Docker address pool exhausted (20 stacks)<small
+                    >discovered from chapter 9</small
+                  ></span
+                ><span class="badge badge--default">Open</span>
+              </div>
+              <div class="sd">
+                <span class="glyph glyph--done"></span
+                ><span class="t"
+                  >Lighter images (46 files over 300 KB, 54 MB)<small>from chapter 4</small></span
+                >
+              </div>
+              <div class="sd">
+                <span class="glyph glyph--done"></span
+                ><span class="t">Fix red main after #279/#286<small>from chapter 8</small></span>
+              </div>
+              <div class="sd">
+                <span class="glyph glyph--done"></span
+                ><span class="t"
+                  >CDN advice correction in #286 review<small>from chapter 8</small></span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- You lane -->
+          <div data-only="default">
+            <mk-you
+              tone="warning"
+              first="Decide: Standard vs Combined — blocks chapter 10 <span class='dim'>· 6h</span>"
+              items='[{"text":"Tick: Accessories copy reads right (step E)","age":"1d","risk":"low"}]'
+            ></mk-you>
+          </div>
+          <div data-only="decision">
+            <mk-you
+              tone="warning"
+              first="Decide: Standard vs Combined — blocks chapter 10 <span class='dim'>· 6h</span>"
+              action="Choose…"
+              items='[{"text":"Tick: Accessories copy reads right (step E)","age":"1d","risk":"low"}]'
+            ></mk-you>
+          </div>
+          <div data-only="gate-red">
+            <mk-you
+              tone="warning"
+              first="main is red after #316 — fix or revert"
+              action="Open as side quest"
+              action-tone="warning"
+              action-goto="v6--chapter?state=side"
+              items='[{"text":"Decide: Standard vs Combined — blocks chapter 10","age":"6h","risk":"high"},{"text":"Tick: Accessories copy reads right (step E)","age":"1d","risk":"low"}]'
+            ></mk-you>
+          </div>
+          <div data-only="side">
+            <mk-you
+              tone="warning"
+              first="main is red after #316 — tracked as a side step"
+              items='[{"text":"Decide: Standard vs Combined — blocks chapter 10","age":"6h","risk":"high"},{"text":"Tick: Accessories copy reads right (step E)","age":"1d","risk":"low"}]'
+            ></mk-you>
+          </div>
+          <mk-steward last="rebased #317 onto main" age="4m ago" next="on CI change"></mk-steward>
+        </div>
+
+        <div class="pop-foot">
+          <button type="button" class="btn btn--ghost" data-goto="v6--campaign">
+            <svg
+              class="ic"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="m15 18-6-6 6-6" /></svg
+            >Back to campaign
+          </button>
+        </div>
+      </div>
+    </div>
+    <script src="../parts/gates.js"></script>
+    <script src="../parts/you.js"></script>
+    <script src="../parts/steward.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

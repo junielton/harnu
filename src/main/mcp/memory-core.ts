@@ -31,6 +31,7 @@
 
 import * as path from 'node:path'
 import { dataDirAt } from '../data-dir'
+import { renderEntryMeta, type EntryMeta } from './memory-entries'
 
 // ---- Constants --------------------------------------------------------------
 
@@ -423,6 +424,8 @@ export interface Provenance {
   sessionId?: string
   /** Originating branch/worktree, derived server-side from the folder's git meta. */
   branch?: string
+  /** Campaign ch.6: the mission this entry was recorded for (`mission:<id>`), stamped server-side. */
+  mission?: string
 }
 
 /** Format an injected epoch-ms clock as the `YYYY-MM-DD` provenance date. */
@@ -439,6 +442,7 @@ export function renderProvenance(p: Provenance): string {
   const parts = [`author=${p.author}`, `at=${p.at}`]
   if (p.branch) parts.push(`branch=${p.branch}`)
   if (p.sessionId) parts.push(`session=${p.sessionId}`)
+  if (p.mission) parts.push(`mission=${p.mission}`)
   return `> provenance: ${parts.join(' · ')}`
 }
 
@@ -469,10 +473,13 @@ export function buildMemoryWrite(input: {
   entry: string
   provenance: Provenance
   mode: MemoryWriteMode
+  /** Campaign ch.6: the `> entry:` line (id, valid_from, watches, supersedes) — see `memory-entries.ts`. */
+  meta?: EntryMeta
 }): string {
-  const { existing, entry, provenance, mode } = input
+  const { existing, entry, provenance, mode, meta } = input
   const { frontmatter, body } = splitFrontmatter(existing)
-  const block = `${entry.trim()}\n\n${renderProvenance(provenance)}\n`
+  const metaLine = meta ? `${renderEntryMeta(meta)}\n` : ''
+  const block = `${entry.trim()}\n\n${metaLine}${renderProvenance(provenance)}\n`
 
   if (mode === 'replace') {
     const fmPart = frontmatter ? `${frontmatter.replace(/\s*$/, '')}\n\n` : ''
@@ -721,6 +728,32 @@ export interface DigestMeta {
   branch?: string
   /** FULL session id from the provenance stamp, when present (may exceed the 8-char stem). */
   sessionId?: string
+  /**
+   * What the digest was written from, read off its header line (`· evidence: <kind>_`): commits,
+   * no commits, a folder outside git, or a removed folder. Absent for a digest without the token.
+   */
+  evidence?: DigestEvidence
+}
+
+/** The evidence kinds a digest header can carry (memory U1, "Evidence token"). */
+export type DigestEvidence = 'commits' | 'no-commits' | 'no-git' | 'orphan'
+
+/** The header line `renderDigest` writes: an italic line ending `· evidence: <kind>_`. */
+const EVIDENCE_TOKEN = /^_.*·\s*evidence:\s*(commits|no-commits|no-git|orphan)_\s*$/
+
+/**
+ * The evidence kind of the latest digest header in the body, or undefined without one. A session
+ * page is appended to by each later digest of the session that day, so the last header is the
+ * session's current state (first no commits, later commits reads "commits").
+ */
+function digestEvidence(content: string): DigestEvidence | undefined {
+  const { body } = splitFrontmatter(content)
+  let kind: DigestEvidence | undefined
+  for (const rawLine of body.split(/\r?\n/)) {
+    const m = EVIDENCE_TOKEN.exec(rawLine.trim())
+    if (m) kind = m[1] as DigestEvidence
+  }
+  return kind
 }
 
 /** A raw digest file fed to {@link buildTimeline}: its filename and full content. */
@@ -794,6 +827,8 @@ export function parseDigestMeta(name: string, content: string): DigestMeta {
   if (prov.author) meta.author = prov.author
   if (prov.branch) meta.branch = prov.branch
   if (prov.sessionId) meta.sessionId = prov.sessionId
+  const evidence = digestEvidence(content)
+  if (evidence) meta.evidence = evidence
   return meta
 }
 

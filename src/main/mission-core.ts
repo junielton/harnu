@@ -25,6 +25,8 @@ import * as path from 'node:path'
 import yaml from 'js-yaml'
 import { z } from 'zod'
 import { dataDirAt, mkdirDataDir } from './data-dir'
+import type { MemoryDraft, Outcome } from './consolidator-core'
+import { MemoryDraftSchema, OutcomeSchema } from './outcome-schema'
 import type { MissionProgress } from './mission-progress'
 import { serializeByKey } from './roadmap-core'
 
@@ -84,6 +86,12 @@ export interface MissionStep {
     sessionId: string
     at: string
     verdict?: 'met' | 'unmet' | 'blocked' | 'needs-human'
+    /**
+     * Campaign ch.6 (T610): stamped by `mission_verify_step` on every verification it records.
+     * The verifier gate asks for an evidence bundle ONLY when this is present, so a
+     * verification recorded before the bundle existed keeps reading as it did.
+     */
+    evidenceRequired?: true
   }
   links: StepLink[]
   blockers: Blocker[]
@@ -92,6 +100,32 @@ export interface MissionStep {
   addedAt?: string
   /** Mission v3 §3.6 — the step's human checks. */
   checks?: Check[]
+  /** Campaign spec §3.2 — `false` = a side step: outside the headline, listed in the Side bucket. Absent = required. */
+  required?: boolean
+  /** Campaign spec §3.2 — the step this side step was discovered from (a step id). */
+  discoveredFrom?: string
+  /** Campaign spec §3.2 — typed edges; progress reads only `blocks` (the target is `locked` until the source is done). */
+  edges?: StepEdge[]
+  /** Campaign spec §3.2 — a decision node: the steps in `blocks` stay `locked` until the operator chooses. */
+  decision?: StepDecision
+}
+
+/** Campaign spec §3.2 — a typed edge from a step to another step. */
+export interface StepEdge {
+  kind: 'blocks' | 'validates' | 'related'
+  to: string
+}
+
+/**
+ * Campaign spec §3.2 — a decision node. `chosen` (an index into `options`) is written
+ * only by the operator's Choose door ({@link applyChooseDecision}); no verb sets it.
+ */
+export interface StepDecision {
+  title: string
+  options: string[]
+  chosen?: number
+  /** Step ids that read `locked` until `chosen` is set. */
+  blocks: string[]
 }
 
 /**
@@ -105,6 +139,44 @@ export interface LegacyImport {
   /** `sha256:<hex>` of the source file's bytes at import time. */
   sha256: string
   needsReview: 'declaredEnd'[]
+}
+
+/**
+ * Campaign spec §3.2 — the eight events Harnu itself records on a mission. Order is
+ * the order the spec lists them; a row's `kind` is validated against it on every
+ * write, so a stray string can never land in the ledger.
+ */
+export const LEDGER_KINDS = [
+  'dispatched',
+  'worktree',
+  'pr-opened',
+  'pr-merged',
+  'ci',
+  'verified',
+  'session-died',
+  'compaction'
+] as const
+export type LedgerKind = (typeof LEDGER_KINDS)[number]
+
+/**
+ * Campaign spec §3.2 — one row of what Harnu did or observed. Written server-side
+ * only (the create_session / create_worktree / submit_manifest handlers, link
+ * resolution, the verifier verdict, the compaction hook); no verb takes a row as an
+ * argument and the only operation is append.
+ */
+export interface LedgerRow {
+  at: string
+  kind: LedgerKind
+  /** The step the event belongs to, when one could be named. */
+  stepId?: string
+  /** The thing the event is about: a session id, a worktree path, `#<pr>`, a card slug. */
+  ref: string
+  sessionId?: string
+  worktree?: string
+  branch?: string
+  pr?: number
+  /** A short fact: the CI state, the verdict, the folder. */
+  detail?: string
 }
 
 /** design.md §1.1 — one mission, stored as one `.harnu/missions/<id>-<slug>.md`. */
@@ -148,6 +220,12 @@ export interface Mission {
   blockers: Blocker[]
   openQuestions: string[]
   pendingClose?: { at: string; requestedBy: string }
+  /**
+   * Campaign spec §3.4 — set only by the operator's "Pause steward…" door ({@link applyPauseSteward}):
+   * while present, the mission's steward does not tick, and the You list says so until it is
+   * resumed. No verb reads or writes it.
+   */
+  stewardPause?: { at: string; reason: string }
   createdAt: string
   updatedAt: string
   provenance: { author: 'agent' | 'human'; at: string; branch?: string }
@@ -155,6 +233,16 @@ export interface Mission {
   legacy?: LegacyImport
   /** design.md §9 — that legacy file's full content, byte-for-byte (the no-loss guarantee). */
   legacyRaw?: string
+  /** Campaign spec §3.2 — what Harnu did and saw, append-only. Absent until the first event. */
+  ledger?: LedgerRow[]
+  /** Campaign spec §3.6 — written by Harnu when a close is requested; never by a verb. */
+  outcome?: Outcome
+  /** Campaign spec §3.6 — memory drafts waiting for the operator's tick in the end dialog. */
+  memoryDrafts?: MemoryDraft[]
+  /** Campaign spec §3.2 — the campaign this mission is a chapter of (set with `chapterId`, at creation). */
+  campaignId?: string
+  /** Campaign spec §3.2 — the chapter of `campaignId` this mission IS (the chapter records this mission's id). */
+  chapterId?: string
 }
 
 // ---- Validation schemas (one per interface, typed against it) ---------------
@@ -202,6 +290,20 @@ const CheckSchema: z.ZodType<Check> = z
   })
   .passthrough()
 
+const LedgerRowSchema: z.ZodType<LedgerRow> = z
+  .object({
+    at: z.string(),
+    kind: z.enum(LEDGER_KINDS),
+    stepId: z.string().optional(),
+    ref: z.string(),
+    sessionId: z.string().optional(),
+    worktree: z.string().optional(),
+    branch: z.string().optional(),
+    pr: z.number().int().optional(),
+    detail: z.string().optional()
+  })
+  .passthrough()
+
 const MissionStepSchema: z.ZodType<MissionStep> = z
   .object({
     id: z.string().regex(STEP_ID_RE),
@@ -214,14 +316,31 @@ const MissionStepSchema: z.ZodType<MissionStep> = z
       .object({
         sessionId: z.string(),
         at: z.string(),
-        verdict: z.enum(['met', 'unmet', 'blocked', 'needs-human']).optional()
+        verdict: z.enum(['met', 'unmet', 'blocked', 'needs-human']).optional(),
+        evidenceRequired: z.literal(true).optional()
       })
       .optional(),
     links: z.array(StepLinkSchema),
     blockers: z.array(BlockerSchema),
     addedReason: z.string().optional(),
     addedAt: z.string().optional(),
-    checks: z.array(CheckSchema).optional()
+    checks: z.array(CheckSchema).optional(),
+    required: z.boolean().optional(),
+    discoveredFrom: z.string().optional(),
+    edges: z
+      .array(
+        z.object({ kind: z.enum(['blocks', 'validates', 'related']), to: z.string() }).passthrough()
+      )
+      .optional(),
+    decision: z
+      .object({
+        title: z.string(),
+        options: z.array(z.string()),
+        chosen: z.number().int().optional(),
+        blocks: z.array(z.string())
+      })
+      .passthrough()
+      .optional()
   })
   .passthrough()
 
@@ -253,6 +372,7 @@ const MissionSchema: z.ZodType<Mission> = z
     blockers: z.array(BlockerSchema).default([]),
     openQuestions: z.array(z.string()),
     pendingClose: z.object({ at: z.string(), requestedBy: z.string() }).optional(),
+    stewardPause: z.object({ at: z.string(), reason: z.string() }).optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
     provenance: z.object({
@@ -269,7 +389,12 @@ const MissionSchema: z.ZodType<Mission> = z
         needsReview: z.array(z.enum(['declaredEnd']))
       })
       .optional(),
-    legacyRaw: z.string().optional()
+    legacyRaw: z.string().optional(),
+    ledger: z.array(LedgerRowSchema).optional(),
+    outcome: OutcomeSchema.optional(),
+    memoryDrafts: z.array(MemoryDraftSchema).optional(),
+    campaignId: z.string().optional(),
+    chapterId: z.string().optional()
   })
   .passthrough()
 
@@ -450,7 +575,7 @@ export async function createMissionFile(
  * through `mission_verify_step` or the operator's UI (design §4, the same
  * posture as `update_card` refusing `status`/`approved`).
  */
-export const MISSION_STEP_CONTROLLED_FIELDS = ['proof', 'verifiedBy'] as const
+export const MISSION_STEP_CONTROLLED_FIELDS = ['proof', 'verifiedBy', 'chosen'] as const
 
 /** Per-mission-id promise chains — serializes {@link withMissionIdMintLock} calls. */
 const missionLocks = new Map<string, Promise<unknown>>()
@@ -648,6 +773,78 @@ export function applyOperatorVerifyStep(
     delete step.verifiedBy
   }
   next.updatedAt = mark.at
+  return next
+}
+
+/**
+ * Campaign spec §3.2/§4 — the operator's Choose door: record which option of a
+ * decision node was picked. The only writer of `decision.chosen`; choosing unlocks
+ * the steps in `decision.blocks` (progress reads `chosen`) and the caller appends the
+ * `decision` Log entry. A decision is made once: a second choice is refused so a double
+ * click cannot flip it. Pure; throws STEP_NOT_FOUND, NOT_A_DECISION, BAD_ARGS,
+ * ALREADY_CHOSEN or MISSION_CLOSED.
+ */
+export function applyChooseDecision(
+  mission: Mission,
+  stepId: string,
+  index: number,
+  op: { at: string }
+): Mission {
+  assertCheckable(mission)
+  const next = structuredClone(mission)
+  const step = checkStep(next, stepId)
+  const decision = step.decision
+  if (!decision) {
+    throw new Error(
+      `NOT_A_DECISION: step ${stepId} of mission ${mission.id} is not a decision node.`
+    )
+  }
+  if (!Number.isInteger(index) || index < 0 || index >= decision.options.length) {
+    throw new Error(
+      `BAD_ARGS: index must be 0..${decision.options.length - 1} (an option of "${decision.title}").`
+    )
+  }
+  if (decision.chosen !== undefined) {
+    throw new Error(
+      `ALREADY_CHOSEN: "${decision.title}" was decided: ${decision.options[decision.chosen]}.`
+    )
+  }
+  decision.chosen = index
+  next.updatedAt = op.at
+  return next
+}
+
+/**
+ * Campaign spec §3.4 — the operator pauses the mission's steward. The reason is mandatory (it is
+ * what the You list shows, and what the next reader of the Log learns). Pure; throws BAD_ARGS,
+ * ALREADY_PAUSED or MISSION_CLOSED.
+ */
+export function applyPauseSteward(mission: Mission, reason: string, op: { at: string }): Mission {
+  assertCheckable(mission)
+  const text = typeof reason === 'string' ? reason.trim() : ''
+  if (!text) {
+    throw new Error('BAD_ARGS: a reason is required to pause the steward.')
+  }
+  if (mission.stewardPause) {
+    throw new Error(
+      `ALREADY_PAUSED: the steward of ${mission.id} is already paused (${mission.stewardPause.reason}).`
+    )
+  }
+  const next = structuredClone(mission)
+  next.stewardPause = { at: op.at, reason: text }
+  next.updatedAt = op.at
+  return next
+}
+
+/** Campaign spec §3.4 — the operator resumes a paused steward. Pure; throws NOT_PAUSED or MISSION_CLOSED. */
+export function applyResumeSteward(mission: Mission, op: { at: string }): Mission {
+  assertCheckable(mission)
+  if (!mission.stewardPause) {
+    throw new Error(`NOT_PAUSED: the steward of ${mission.id} is not paused.`)
+  }
+  const next = structuredClone(mission)
+  delete next.stewardPause
+  next.updatedAt = op.at
   return next
 }
 

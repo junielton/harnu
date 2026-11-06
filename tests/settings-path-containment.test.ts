@@ -98,3 +98,19 @@ describe('settings sanitizePatch', () => {
     expect(sanitizePatch({})).toEqual({})
   })
 })
+
+describe('sanitizePatch editor (T581)', () => {
+  it('keeps a valid preset and a trimmed custom command', () => {
+    expect(sanitizePatch({ editor: { id: 'cursor' } })).toEqual({ editor: { id: 'cursor' } })
+    expect(
+      sanitizePatch({
+        editor: { id: 'custom', customCommand: ' nvim {path} ', customTerminal: true }
+      })
+    ).toEqual({ editor: { id: 'custom', customCommand: 'nvim {path}', customTerminal: true } })
+  })
+
+  it('drops an unknown preset or a non-object, so the stored value keeps applying', () => {
+    expect(sanitizePatch({ editor: { id: 'emacs' } })).toEqual({})
+    expect(sanitizePatch({ editor: 'vscode' })).toEqual({})
+  })
+})

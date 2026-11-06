@@ -22,8 +22,11 @@ import {
   isFolderGroup,
   groupKey,
   type ClassifyCtx,
-  type FolderGroup
+  type FolderGroup,
+  type ShelvedMember
 } from './folder-zones'
+import { isInsidePath, partitionShelved, shelvedMatchesQuery } from '../lib/shelved-sidebar'
+import { useGcStore } from './gc'
 import { persistedRef, persistedSet } from './persisted'
 import { useApprovalQueue } from './session-approvals'
 import { useMcpConfirmQueue } from './session-mcp-confirms'
@@ -87,6 +90,9 @@ import { useUiStore } from './ui'
 import { useRoadmapDrainStore } from './roadmap-drain'
 import { useLayoutStore } from './layout'
 import { dispatchNotification } from './notify-dispatch'
+import { noticeUnitFor } from '../lib/notice-unit'
+import { useMissionsStore } from './missions'
+import { useRoadmapStore } from './roadmap'
 import { speech } from '../lib/speech'
 import { playNotificationSound } from '../lib/notification-sound'
 import {
@@ -371,6 +377,11 @@ export interface Session {
    */
   isShellTerminal?: true
   /**
+   * T581: set on a folder terminal opened by "Open in {editor}" for a terminal editor
+   * — the program the shell runs instead of the user's shell. Never set on a Claude session.
+   */
+  shellCommand?: { cmd: string; args: string[] }
+  /**
    * `session-<8 hex>` when this session is an agent-teams TEAMMATE (T99 — this
    * is a plain on-disk JSONL fact, present on every line of a teammate
    * transcript). The hex suffix is the first 8 chars of the team lead's own
@@ -538,8 +549,12 @@ const AGENTS_EXPANDED_KEY = 'om2tab.agentsExpanded'
  */
 const TEAMMATES_EXPANDED_KEY = 'om2tab.teammatesExpanded'
 
-/** localStorage key for the set of archived session ids (Archive action). */
-const ARCHIVED_SESSIONS_KEY = 'om2tab.archivedSessions'
+/**
+ * Legacy localStorage key of the archived session ids. T655 moved the authoritative set to
+ * the main process; this key is only READ, once, to import what the operator had archived
+ * before the move. It is never written or deleted, so a rollback still finds its data.
+ */
+const LEGACY_ARCHIVED_SESSIONS_KEY = 'om2tab.archivedSessions'
 
 /**
  * Per-session UX preferences. Kept in-memory only (no persistence in v1); lost
@@ -620,6 +635,8 @@ const SESSION_WINDOW_KEY = 'om2tab.sessionWindowMs'
 
 /** localStorage key for the set of collapsed sidebar groups (by namespaced group key). */
 const REPO_GROUPS_COLLAPSED_KEY = 'om2tab.repoGroupsCollapsed'
+/** U2.3b: open Shelved sections per repo group (same namespaced keys as the collapsed set). */
+const SHELVED_SECTIONS_OPEN_KEY = 'om2tab.shelvedSectionsOpen'
 
 /** localStorage key for per-repo group aliases (T88), a `{ repoId: alias }` map. */
 const REPO_ALIASES_KEY = 'om2tab.repoAliases'
@@ -830,6 +847,32 @@ export const useSessionsStore = defineStore('sessions', () => {
     migrate: (x) => (x.startsWith('repo:') || x.startsWith('path:') ? x : groupKey('repo', x))
   })
   const collapsedGroups = collapsedGroupsSet.set
+
+  /**
+   * U2.3b: which repo groups have their Shelved section open, by the same namespaced group key as
+   * `collapsedGroups`. The default is CLOSED (empty set): a shelved worktree is at rest, not in the way.
+   * A text filter with a match inside the section forces it open (see `shelvedSectionOpen`).
+   */
+  const shelvedOpenSet = persistedSet<string>(SHELVED_SECTIONS_OPEN_KEY)
+  const shelvedOpen = shelvedOpenSet.set
+
+  /**
+   * U2.3b: shelved worktrees whose restore is running → the session the operator clicked to resume
+   * (`null` for a plain "Restore worktree"). Drives the "restoring…" state of the row and the session.
+   */
+  const shelvedRestoring = ref<ReadonlyMap<string, string | null>>(new Map())
+  /**
+   * The branch of the worktree a CLICKED SESSION is waiting on, while its restore runs: the main pane
+   * shows "Restoring worktree …" instead of leaving the previous session in view. Null otherwise
+   * (a plain "Restore worktree" resumes nothing, so the pane has nothing to wait for).
+   */
+  const shelvedResumeLabels = ref<ReadonlyMap<string, string>>(new Map())
+  const shelvedRestoringLabel = computed<string | null>(() => {
+    // Two worktrees can restore at once; the pane names the most recently clicked one that is still running.
+    let last: string | null = null
+    for (const label of shelvedResumeLabels.value.values()) last = label
+    return last
+  })
 
   /** Legacy boolean drill-in preference, read once for migration (see DRILL_DEPTH_KEY). */
   const DRILL_MODE_KEY = 'om2tab.sidebarDrillMode'
@@ -1214,10 +1257,91 @@ export const useSessionsStore = defineStore('sessions', () => {
    * the AUTHORITATIVE source of truth — display derives from it via `isArchived`
    * rather than mutating each `Session.status`, so an archived session survives
    * watcher reloads (which rebuild every real session from disk) without any
-   * re-application step. Persisted to `localStorage`.
+   * re-application step. T655: persisted by the MAIN process (`archived-sessions.json`),
+   * so the `archive_session` MCP verb works with no window open. This ref is hydrated from
+   * it at `init()`, updated optimistically by the menu action (which also writes through),
+   * and replaced whenever main pushes `sessionArchive:changed`.
    */
-  const archivedIdsSet = persistedSet(ARCHIVED_SESSIONS_KEY)
-  const archivedIds = archivedIdsSet.set
+  const archivedIds = ref<Set<string>>(new Set())
+
+  /** Replace the archived set (new identity, so Vue tracks it). */
+  function setArchivedIds(next: Iterable<string>): void {
+    archivedIds.value = new Set(next)
+  }
+
+  /** Write an archive / restore through the main-process store. Best-effort: never throws. */
+  function writeArchive(sessionIds: string[], archived: boolean): void {
+    const write = window.api?.sessionArchiveSet
+    if (typeof write !== 'function') return
+    try {
+      void Promise.resolve(write(sessionIds, archived)).catch(() => {})
+    } catch {
+      /* IPC unavailable (tests, HMR) — the local set still reflects the action */
+    }
+  }
+
+  /** The ids the old `localStorage` key holds; `null` when storage cannot be read at all. */
+  function readLegacyArchivedIds(): string[] | null {
+    try {
+      const raw = localStorage.getItem(LEGACY_ARCHIVED_SESSIONS_KEY)
+      if (raw === null) return []
+      const parsed: unknown = JSON.parse(raw)
+      return Array.isArray(parsed)
+        ? parsed.filter((x): x is string => typeof x === 'string' && x.length > 0)
+        : []
+    } catch (e) {
+      // Unreadable storage: report "unknown" so the import is retried on the next boot.
+      return e instanceof SyntaxError ? [] : null
+    }
+  }
+
+  /**
+   * Load the archived set from main, importing the old `localStorage` ids first when main
+   * has not yet taken them (it takes them exactly once; every later call is ignored there).
+   */
+  async function hydrateArchivedIds(): Promise<void> {
+    if (typeof window.api?.sessionArchiveGet !== 'function') return
+    try {
+      const got = await window.api.sessionArchiveGet()
+      let ids = got.ids
+      const legacy = got.legacyImported ? null : readLegacyArchivedIds()
+      if (legacy !== null && typeof window.api.sessionArchiveImportLegacy === 'function') {
+        const res = await window.api.sessionArchiveImportLegacy(legacy)
+        if (res.ok && res.ids) ids = res.ids
+      }
+      setArchivedIds(ids)
+    } catch {
+      /* main unreachable: keep whatever the local set holds */
+    }
+  }
+
+  /**
+   * Main pushed the full archived set (the verb archived or restored something, or another
+   * window did). A session that just became archived gets the same put-away teardown the
+   * menu action runs; the row itself stays in the model.
+   */
+  function applyArchivedFromMain(ids: readonly string[]): void {
+    const next = new Set(ids)
+    for (const id of next) {
+      if (!archivedIds.value.has(id)) putAway(id)
+    }
+    archivedIds.value = next
+  }
+
+  /**
+   * T661: main pushes the full hidden list after the `hide_folder` verb changed it outside this
+   * store's own calls. Mirror it; a folder that just became hidden also reloads the model, exactly
+   * as `dismissFolder` does. A push that changes nothing does neither.
+   */
+  function applyHiddenFromMain(hiddenPaths: readonly string[]): void {
+    const current = manuallyHiddenPaths.value
+    const next = new Set(hiddenPaths)
+    const sameSet = next.size === current.size && [...next].every((p) => current.has(p))
+    if (sameSet) return
+    const newlyHidden = [...next].some((p) => !current.has(p))
+    manuallyHiddenPaths.value = next
+    if (newlyHidden) void reloadModel()
+  }
 
   /**
    * Folders whose archived sessions are temporarily revealed (mirrors
@@ -2265,10 +2389,37 @@ export const useSessionsStore = defineStore('sessions', () => {
    * the palette's query straight to this filter — a query that found a folder
    * by its path must not come up empty the moment it is applied to the tree.
    */
+  /**
+   * U2.3b: the folders the sidebar may LIST. A shelved worktree's folder is gone on purpose, but its
+   * transcripts still make the scan report one — it must never render as a normal or ghost row, so it is
+   * pulled out here and re-presented as a member of its repo group's Shelved section (`shelvedByRepo`).
+   * The entries come from the GC snapshot, which the footer keeps live (`gc.init()`).
+   */
+  const shelvedPartition = computed(() => {
+    const entries = useGcStore().snapshot?.shelved ?? []
+    return partitionShelved<Session, Folder>(folders.value, entries, closureNow.value)
+  })
+  const listableFolders = computed<Folder[]>(() => shelvedPartition.value.live)
+
+  const shelvedTitle = (s: Session): string => sessionTitle(s, allSessions.value, i18n.global.t)
+
+  /** The shelved members per repo; under a text filter only the ones the query matches. */
+  const shelvedByRepo = computed<ReadonlyMap<string, ShelvedMember<Session>[]>>(() => {
+    const all = shelvedPartition.value.byRepo
+    const q = filterQuery.value.trim()
+    if (!q) return all
+    const out = new Map<string, ShelvedMember<Session>[]>()
+    for (const [repoId, list] of all) {
+      const hit = list.filter((m) => shelvedMatchesQuery(m, q, shelvedTitle))
+      if (hit.length > 0) out.set(repoId, hit)
+    }
+    return out
+  })
+
   const filteredFolders = computed<Folder[]>(() => {
     const q = filterQuery.value.trim()
     if (!q) return []
-    return folders.value.filter((f) => {
+    const matched = listableFolders.value.filter((f) => {
       if (matchesFilter(f.alias, q)) return true
       if (f.gitBranch && matchesFilter(f.gitBranch, q)) return true
       if (matchesFilter(f.path, q)) return true
@@ -2280,6 +2431,16 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
       return false
     })
+    // A query that matches only a shelved worktree still needs its repo group to show it: borrow the
+    // repo's main worktree (else its first folder) as the host, so the match is not silently lost.
+    const hosted = new Set(matched.map((f) => f.repoId).filter((id): id is string => !!id))
+    for (const repoId of shelvedByRepo.value.keys()) {
+      if (hosted.has(repoId)) continue
+      const members = listableFolders.value.filter((f) => f.repoId === repoId)
+      const host = members.find((f) => f.isMainWorktree === true) ?? members[0]
+      if (host) matched.push(host)
+    }
+    return matched
   })
 
   /**
@@ -2306,7 +2467,8 @@ export const useSessionsStore = defineStore('sessions', () => {
         groupByRepo(
           sortFolders(filteredFolders.value, folderSort.value),
           undefined,
-          groupAliases.value
+          groupAliases.value,
+          shelvedByRepo.value
         ),
         undefined,
         groupAliases.value
@@ -2315,14 +2477,15 @@ export const useSessionsStore = defineStore('sessions', () => {
     return groupByParentDir(
       groupByRepo(
         sortFolders(
-          folders.value.filter((f) => {
+          listableFolders.value.filter((f) => {
             const status = classifyFolder(f, ctx)
             return status === 'pinned' || status === 'active'
           }),
           folderSort.value
         ),
         collapsedGroups.value,
-        groupAliases.value
+        groupAliases.value,
+        shelvedByRepo.value
       ),
       collapsedGroups.value,
       groupAliases.value
@@ -2924,8 +3087,16 @@ export const useSessionsStore = defineStore('sessions', () => {
    */
   function archiveSession(sessionId: string): void {
     if (archivedIds.value.has(sessionId)) return
-    // Put-away semantics: stop the live terminal (same teardown as closeSession)
-    // but DON'T splice the row — it stays in the model for Unarchive.
+    putAway(sessionId)
+    setArchivedIds([...archivedIds.value, sessionId])
+    writeArchive([sessionId], true)
+  }
+
+  /**
+   * Put-away semantics: stop the live terminal (same teardown as closeSession) and drop the
+   * selection, but DON'T splice the row — it stays in the model for Unarchive.
+   */
+  function putAway(sessionId: string): void {
     for (const fn of closeHandlers) {
       try {
         fn(sessionId)
@@ -2934,7 +3105,6 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
     }
     unregisterLiveSession(sessionId)
-    archivedIdsSet.add(sessionId)
     if (selectedId.value === sessionId) selectedId.value = null
   }
 
@@ -2945,7 +3115,8 @@ export const useSessionsStore = defineStore('sessions', () => {
    */
   function dropArchived(sessionId: string): void {
     if (!archivedIds.value.has(sessionId)) return
-    archivedIdsSet.delete(sessionId)
+    setArchivedIds([...archivedIds.value].filter((id) => id !== sessionId))
+    writeArchive([sessionId], false)
   }
 
   /** Reverse an archive — the session reappears in normal display. Idempotent. */
@@ -3484,7 +3655,10 @@ export const useSessionsStore = defineStore('sessions', () => {
    * empty `fullPath`) but not a full app restart. Returns the new id, or `null`
    * when `folderPath` doesn't match anything in the current model.
    */
-  function createFolderTerminal(folderPath: string): string | null {
+  function createFolderTerminal(
+    folderPath: string,
+    command?: { cmd: string; args: string[] }
+  ): string | null {
     const folder = findFolderByPath(folderPath)
     if (!folder) return null
 
@@ -3506,7 +3680,8 @@ export const useSessionsStore = defineStore('sessions', () => {
       resumable: true,
       bridged: false,
       synthetic: false,
-      isShellTerminal: true
+      isShellTerminal: true,
+      ...(command ? { shellCommand: { cmd: command.cmd, args: [...command.args] } } : {})
     }
     folder.sessions.push(terminal)
     folder.expanded = true
@@ -3568,16 +3743,123 @@ export const useSessionsStore = defineStore('sessions', () => {
     collapsedGroupsSet.toggle(key)
   }
 
-  /** Expand every folder's session list (spec §5 — expand all). */
+  /** Expand every folder's session list (spec §5 — expand all). Shelved sections open with them (U2.3b). */
   function expandAll(): void {
     for (const f of folders.value) f.expanded = true
+    for (const repoId of shelvedPartition.value.byRepo.keys()) {
+      shelvedOpenSet.add(groupKey('repo', repoId))
+    }
   }
 
-  /** Collapse every folder. Companion to `expandAll`. */
+  /** Collapse every folder. Companion to `expandAll`; shelved sections close too (U2.3b). */
   function collapseAll(): void {
     for (const f of folders.value) {
       f.expanded = false
       forgetPeeks(f.path)
+    }
+    shelvedOpenSet.clear()
+  }
+
+  // ---- Shelved worktrees in the sidebar (autonomous cleanup U2.3b) ------------------------------
+
+  /**
+   * Whether a repo group's Shelved section shows its rows. Closed by default; open when the operator
+   * opened it. A text filter lists only the matching rows, so it forces the section open — a closed
+   * section would hide the very matches the filter is looking for.
+   */
+  function shelvedSectionOpen(groupKeyValue: string): boolean {
+    return filterQuery.value.trim() !== '' || shelvedOpen.value.has(groupKeyValue)
+  }
+
+  function toggleShelvedSection(groupKeyValue: string): void {
+    shelvedOpenSet.toggle(groupKeyValue)
+  }
+
+  /**
+   * A shelved worktree's folder is back on disk: the scan that listed it as a ghost ran while it was
+   * gone, so tell the list the directory exists again — otherwise the folder would classify `stale` the
+   * moment its entry leaves the Shelved section, and the row would vanish instead of landing.
+   */
+  function markShelvedFolderPresent(worktreePath: string): void {
+    for (const f of folders.value) {
+      if (isInsidePath(f.path, worktreePath)) f.diskExists = true
+    }
+  }
+
+  // An entry leaving the GC snapshot means the worktree came back (a resume, a terminal, Cleanup's
+  // Restore, or the sidebar's own): whichever path restored it, its folder must list again.
+  watch(
+    () => (useGcStore().snapshot?.shelved ?? []).map((e) => e.worktreePath),
+    (now, before) => {
+      const still = new Set(now)
+      for (const p of before ?? []) if (!still.has(p)) markShelvedFolderPresent(p)
+    }
+  )
+
+  /**
+   * Restore a shelved worktree from the sidebar, then (when a session was clicked) resume that session in
+   * its own folder (spec C3, AC-U2b). The session is selected only AFTER the folder exists, so nothing ever
+   * starts in a missing directory; until then the sidebar shows the optimistic "restoring…" state. On a
+   * failure nothing changes selection and the toast offers the way out (Cleanup → Shelved).
+   */
+  async function restoreShelvedWorktree(
+    member: ShelvedMember<Session>,
+    resumeSessionId: string | null = null
+  ): Promise<boolean> {
+    if (shelvedRestoring.value.has(member.id)) return false
+    const mark = (on: boolean): void => {
+      const next = new Map(shelvedRestoring.value)
+      if (on) next.set(member.id, resumeSessionId)
+      else next.delete(member.id)
+      shelvedRestoring.value = next
+    }
+    const ui = useUiStore()
+    const gc = useGcStore()
+    const { t } = i18n.global
+    const failed = (detail?: string): false => {
+      ui.pushToast({
+        kind: 'danger',
+        title: t('sidebar.shelved.restoreFailed', { branch: member.label }),
+        ...(detail ? { description: detail } : {}),
+        action: {
+          label: t('sidebar.shelved.openInCleanup'),
+          handler: () => ui.openCleanup(member.repoPath)
+        },
+        timeoutMs: 10000
+      })
+      return false
+    }
+    const markLabel = (on: boolean): void => {
+      const next = new Map(shelvedResumeLabels.value)
+      if (on) next.set(member.id, member.label)
+      else next.delete(member.id)
+      shelvedResumeLabels.value = next
+    }
+    mark(true)
+    if (resumeSessionId) markLabel(true)
+    try {
+      const ack = await window.api.gcRestoreShelved(member.id)
+      if (!ack.ok) return failed(ack.message)
+      markShelvedFolderPresent(member.worktreePath)
+      await gc.refresh()
+      if (resumeSessionId) {
+        for (const f of folders.value) {
+          if (
+            isInsidePath(f.path, member.worktreePath) &&
+            f.sessions.some((x) => x.sessionId === resumeSessionId)
+          ) {
+            f.expanded = true
+          }
+        }
+        select(resumeSessionId)
+      }
+      raiseJumpFlash(`folder:${member.worktreePath}`)
+      return true
+    } catch (e) {
+      return failed(e instanceof Error ? e.message : String(e))
+    } finally {
+      mark(false)
+      markLabel(false)
     }
   }
 
@@ -4149,6 +4431,22 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
+   * The unit of work (mission step or roadmap card) a session's notices belong to,
+   * for Activity-row coalescing (T599). The stores are read lazily — `missions`
+   * and `roadmap` import this store — and a failure just means "no unit".
+   */
+  function noticeUnitOfSession(sessionId: string): string | undefined {
+    try {
+      return noticeUnitFor(sessionId, {
+        views: useMissionsStore().views,
+        cards: useRoadmapStore().cards
+      })
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
    * Surface a task-state edge, if the pure decision (os-notifications spec §4)
    * says so, on the channel it picks: an in-app **toast** when the window is
    * focused (you're in Harnu), a native **OS notification** when it isn't (pull
@@ -4175,6 +4473,9 @@ export const useSessionsStore = defineStore('sessions', () => {
       sound: decision.sound,
       sessionId: s.sessionId,
       toastKind: TOAST_KIND[decision.kind],
+      // T599: tag the Activity row with its unit so repeats fold into one.
+      unit: noticeUnitOfSession(s.sessionId),
+      notificationType: decision.kind,
       toastAction: {
         label: 'toast.actions.goToSession',
         handler: () => activateSession(s.sessionId)
@@ -5493,6 +5794,21 @@ export const useSessionsStore = defineStore('sessions', () => {
     pendingCoverage.slugs.clear()
     pendingCoverage.full = 0
 
+    // T655: the archived set is main-owned; load it (importing the old localStorage ids
+    // once) BEFORE the first model load so no archived row flashes into the list.
+    await hydrateArchivedIds()
+    if (typeof window.api.onSessionArchiveChanged === 'function') {
+      cleanupFns.push(window.api.onSessionArchiveChanged(({ ids }) => applyArchivedFromMain(ids)))
+    }
+
+    if (typeof window.api.onUserProjectsHiddenChanged === 'function') {
+      cleanupFns.push(
+        window.api.onUserProjectsHiddenChanged(({ hiddenPaths }) =>
+          applyHiddenFromMain(hiddenPaths)
+        )
+      )
+    }
+
     foldersLoading.value = true
     try {
       await reloadModel()
@@ -5961,6 +6277,11 @@ export const useSessionsStore = defineStore('sessions', () => {
     setGroupAlias,
     expandAll,
     collapseAll,
+    shelvedRestoring,
+    shelvedRestoringLabel,
+    shelvedSectionOpen,
+    toggleShelvedSection,
+    restoreShelvedWorktree,
     pinFolder,
     dismissFolder,
     unhideFolder,

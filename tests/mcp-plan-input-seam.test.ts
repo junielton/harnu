@@ -104,6 +104,10 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   update_card: { folder: ALLOWED, slug: 'investigate-flaky-test', set: { priority: 'alta' } },
   move_card: { folder: ALLOWED, slug: 'investigate-flaky-test', to: 'ready' },
   archive_card: { folder: ALLOWED, slug: 'investigate-flaky-test' },
+  // T655: addressed by session id, never a folder (a blocked one is refused per id).
+  archive_session: { sessionIds: ['sess-1', 'sess-2'], unarchive: true },
+  // T661: addressed by absolute path, never a gate folder (a blocked one is refused per path).
+  hide_folder: { folders: ['/repos/alpha', '/repos/beta'], unhide: true },
   delete_card: { folder: ALLOWED, slug: 'investigate-flaky-test' },
   submit_manifest: {
     folder: ALLOWED,
@@ -126,6 +130,8 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   send_terminal: { folder: ALLOWED, terminalId: 'h-1', input: 'ls', keys: ['Enter'], paste: false },
   // T445: the cleanup read and the release both gate on the `folder` arg.
   list_cleanup: { folder: ALLOWED },
+  // T614: a global read, no folder to carry.
+  github_budget: {},
   release_worktree: { folder: ALLOWED },
   // T329: stacks are addressed by id; there is no folder to carry.
   stop_containers: { stacks: ['wave-1'], force: true },
@@ -212,7 +218,35 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     missionId: 'mnt-0000abcd',
     stepId: 'stp-1',
     label: 'Validated visually'
-  }
+  },
+  // Campaign ch.3a (T595)
+  campaign_create: {
+    folder: ALLOWED,
+    title: 'Content migration',
+    declaredEnd: { kind: 'code', target: 'every page migrated', evidence: 'the audit is green' },
+    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    chapters: [
+      { title: 'Images', produces: ['images-on-cdn'] },
+      { title: 'Pages', consumes: ['images-on-cdn'] }
+    ],
+    force: false
+  },
+  campaign_add_chapter: {
+    folder: ALLOWED,
+    campaignId: 'cmp-0000abcd',
+    title: 'Detour',
+    required: false,
+    discoveredFrom: { chapterId: 'chp-1' }
+  },
+  campaign_get: { folder: ALLOWED, campaignId: 'cmp-0000abcd' },
+  campaign_list: { folder: ALLOWED },
+  campaign_request_close: {
+    folder: ALLOWED,
+    campaignId: 'cmp-0000abcd',
+    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+  },
+  // Campaign ch.5a (T597).
+  rebase_stack: { folder: ALLOWED, missionId: 'mnt-0000abcd', onto: 'origin/main' }
 }
 
 /** Mirrors the shell: the gate folder is plucked from the catalog `folder` arg. */

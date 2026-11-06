@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ArchiveRestore } from 'lucide-vue-next'
 import Sidebar from './components/Sidebar.vue'
 import TerminalPane from './components/TerminalPane.vue'
 import Topbar from './components/Topbar.vue'
@@ -9,6 +10,7 @@ import EmptyState from './components/EmptyState.vue'
 import FolderView from './components/FolderView.vue'
 import CloudSessionPanel from './components/CloudSessionPanel.vue'
 import { isCloudStub } from './lib/cloud-session'
+import { sessionTitle } from './lib/session-label'
 import Onboarding from './components/Onboarding.vue'
 import AddFolderDialog from './components/AddFolderDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
@@ -38,8 +40,19 @@ import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
 import { formatWindowTitle } from './stores/attention'
 import { useUiStore, SETTINGS_TAB_IDS } from './stores/ui'
-import { useHelpersStore, isAgentTerminalPane } from './stores/helpers'
-import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
+import {
+  useHelpersStore,
+  isAgentTerminalPane,
+  applyExpandToRing,
+  HELPER_SPLIT_RATIO_DEFAULT
+} from './stores/helpers'
+import {
+  useLayoutStore,
+  helperPanelVisible,
+  inboxRailWidthFor,
+  slowDurationMs
+} from './stores/layout'
+import { useSettingsStore } from './stores/settings'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
 import {
@@ -66,7 +79,7 @@ import {
   type FolderAction,
   type RepoGroupAction
 } from './composables/useFolderMenuActions'
-import { notInTextEntry } from './lib/text-entry'
+import { notInTextEntry, isTextEntryTarget } from './lib/text-entry'
 import {
   DESCRIPTOR_BY_ID,
   defaultKeysFor,
@@ -96,6 +109,7 @@ const sessions = useSessionsStore()
 const ui = useUiStore()
 const helpers = useHelpersStore()
 const layout = useLayoutStore()
+const settings = useSettingsStore()
 const claudeChangelog = useClaudeChangelogStore()
 const companion = useCompanionStore()
 // T1 P2: resolved keybindings (defaults ← keybindings.json). Seeded with
@@ -187,7 +201,33 @@ watch(
  * gesture, not an automatic yank.
  */
 
-let mainDragging: { startX: number; startRatio: number } | null = null
+// Which axis the session-area / helper-stack divider drags on (T627): X when the two sit side by
+// side, Y when they are stacked. `startRatio` is the active orientation's ratio at mousedown.
+let mainDragging: { start: number; startRatio: number; stacked: boolean } | null = null
+
+// T627 — the box that holds the session area and the helper stack. `auto` resolves the split
+// orientation from its shape, so it is measured here (ResizeObserver) and fed to the layout store.
+const mainRowEl = ref<HTMLElement | null>(null)
+const stackedLayout = computed(() => layout.splitOrientation === 'stacked')
+/** The session area's share in the layout in force; each orientation keeps its own. */
+const activeSplitRatio = computed(() =>
+  stackedLayout.value
+    ? helpers.stackedSplitRatioForCurrentWorktree
+    : helpers.splitRatioForCurrentWorktree
+)
+let mainRowObserver: ResizeObserver | null = null
+watch(mainRowEl, (el) => {
+  mainRowObserver?.disconnect()
+  mainRowObserver = null
+  if (!el || typeof ResizeObserver === 'undefined') return
+  mainRowObserver = new ResizeObserver((entries) => {
+    const box = entries[0]?.contentRect
+    // While a pane is expanded the area is far wider than usual: `auto` must not flip on that.
+    if (box && !expandMode.value) layout.setMainAreaSize(box.width, box.height)
+  })
+  mainRowObserver.observe(el)
+})
+onUnmounted(() => mainRowObserver?.disconnect())
 
 // Inbox-rail drag-resize. The rail is the RIGHTMOST column, so dragging its
 // divider left must GROW it — hence `startX - clientX` (the sidebar's handler is
@@ -216,9 +256,11 @@ function onMainDividerMouseDown(ev: MouseEvent): void {
   const wt = helpers.currentWorktreePath
   if (!wt) return
   ev.preventDefault()
+  const stacked = stackedLayout.value
   mainDragging = {
-    startX: ev.clientX,
-    startRatio: helpers.splitRatioForCurrentWorktree
+    start: stacked ? ev.clientY : ev.clientX,
+    startRatio: activeSplitRatio.value,
+    stacked
   }
   document.addEventListener('mousemove', onMainDividerMouseMove)
   document.addEventListener('mouseup', onMainDividerMouseUp)
@@ -228,14 +270,36 @@ function onMainDividerMouseMove(ev: MouseEvent): void {
   if (!mainDragging) return
   const wt = helpers.currentWorktreePath
   if (!wt) return
-  // Approximate available width: window minus a typical sidebar (250px).
-  // The setSplitRatio store clamps to [0.4, 0.8] so exact precision isn't
-  // required here.
-  const totalW = window.innerWidth - 250
-  if (totalW < 1) return
-  const deltaX = ev.clientX - mainDragging.startX
-  const deltaRatio = deltaX / totalW
-  helpers.setSplitRatio(wt, mainDragging.startRatio + deltaRatio)
+  // The row's own size when it has one; otherwise approximate the available width as the
+  // window minus a typical sidebar (250px) and the height as the window minus the Topbar and
+  // footer. The store clamps to [0.4, 0.8] so exact precision isn't required here.
+  const row = mainRowEl.value
+  const measured = row ? (mainDragging.stacked ? row.offsetHeight : row.offsetWidth) : 0
+  const total =
+    measured > 0
+      ? measured
+      : mainDragging.stacked
+        ? window.innerHeight - 100
+        : window.innerWidth - 250
+  if (total < 1) return
+  const delta = (mainDragging.stacked ? ev.clientY : ev.clientX) - mainDragging.start
+  helpers.setSplitRatio(
+    wt,
+    mainDragging.startRatio + delta / total,
+    mainDragging.stacked ? 'stacked' : 'side-by-side'
+  )
+}
+
+// Double-click resets the helper-stack split to its default, like the sidebar
+// and Fleet-rail dividers reset their widths. Only the orientation in force is reset.
+function onMainDividerDblClick(): void {
+  const wt = helpers.currentWorktreePath
+  if (!wt) return
+  helpers.setSplitRatio(
+    wt,
+    HELPER_SPLIT_RATIO_DEFAULT,
+    stackedLayout.value ? 'stacked' : 'side-by-side'
+  )
 }
 
 function onMainDividerMouseUp(): void {
@@ -319,6 +383,9 @@ const showScheduler = computed(() => ui.activeView?.id === 'scheduler')
 // T331: the Containers takeover, opened from its footer pill. Global like
 // Cleanup (every docker stack on the machine), so no onboarding gate.
 const showContainers = computed(() => ui.activeView?.id === 'containers')
+// T607: the Campaign map takeover, opened from the Campaign popover's "Open map". Global —
+// the campaign is read by id from the campaigns store — so no onboarding gate.
+const showCampaignMap = computed(() => ui.activeView?.id === 'campaignMap')
 // T198: the PR Stack Canvas takeover, opened from the folder menu. Per-repo
 // like the roadmap board, so it takes the same onboarding gate.
 const showPrStack = computed(() => !showOnboarding.value && ui.activeView?.id === 'prStack')
@@ -351,6 +418,7 @@ const showActiveView = computed(
     showSystemMonitor.value ||
     showScheduler.value ||
     showContainers.value ||
+    showCampaignMap.value ||
     showRoadmap.value
 )
 /**
@@ -440,6 +508,115 @@ const showHelperStack = computed(
   () =>
     showHelper.value &&
     (showRoadmap.value || showTerminal.value || showFolder.value || showReview.value)
+)
+
+/**
+ * T628 — expand to window. The expanded pane id, and what the expanded view hides (the "Expand hides"
+ * setting) while it is in force; `null` when nothing is expanded or the helper stack is not on screen.
+ * Collapsing is CSS (`.lm-collapse*` in `main.css`): nothing is moved, re-parented or remounted.
+ */
+const expandedPaneId = computed(() => helpers.expandedPaneIdForCurrentWorktree)
+const expandMode = computed<'everything' | 'session-only' | null>(() =>
+  expandedPaneId.value && showHelperStack.value ? settings.expandHides : null
+)
+/** The sidebar is out of the way: collapsed by the operator, or hidden by the expanded view. */
+const sidebarHidden = computed(() => layout.sidebarCollapsed || expandMode.value === 'everything')
+
+/**
+ * T628 — layout motion (design.md §7). Each of these is a layout STATE change (never a drag, which
+ * only moves a width or a ratio), so each raises the transient motion flag first: the `pre` flush
+ * runs before this component patches, so the flag and the new sizes land in the same frame and the
+ * transitions in `main.css` see both. The store also freezes browser panes for the duration.
+ */
+const sessionIslandEl = ref<HTMLElement | null>(null)
+const helperColEl = ref<HTMLElement | null>(null)
+/** The size the main terminal's host is pinned to while the session area is collapsed (px). */
+const pinnedTerminal = ref<{ width: number; height: number } | null>(null)
+/** Set for an orientation switch: transitions are off for it, the FLIP below animates instead. */
+const flipping = ref(false)
+
+watch(
+  [
+    expandMode,
+    () => helpers.maximizedPaneIdForCurrentWorktree,
+    () => layout.sidebarCollapsed,
+    () => layout.inboxRailState
+  ],
+  () => void layout.beginLayoutMotion(),
+  { flush: 'pre' }
+)
+
+// The main terminal sits inside the session area. Collapsing that area to zero would resize its host
+// and reflow the PTY to two columns, so its host keeps the pixel size it had until the area is back.
+watch(
+  expandMode,
+  (mode, prev) => {
+    if (!mode || prev) return
+    const box = sessionIslandEl.value?.getBoundingClientRect()
+    if (box && box.width > 0 && box.height > 0) {
+      pinnedTerminal.value = { width: box.width, height: box.height }
+    }
+  },
+  { flush: 'pre' }
+)
+watch([() => layout.layoutMotion, expandMode], ([moving, mode]) => {
+  if (!mode && !moving) pinnedTerminal.value = null
+})
+watch(
+  () => layout.layoutMotion,
+  (moving) => {
+    if (!moving) flipping.value = false
+  }
+)
+const terminalHostStyle = computed(() =>
+  pinnedTerminal.value
+    ? {
+        inset: 'auto',
+        top: '0',
+        left: '0',
+        width: `${pinnedTerminal.value.width}px`,
+        height: `${pinnedTerminal.value.height}px`
+      }
+    : undefined
+)
+
+/**
+ * The orientation switch flips a flex row into a column, which no CSS transition can interpolate.
+ * FLIP instead: measure both big boxes before the switch, let the layout change, then animate each
+ * from its old box to its new one with a transform (one pass, `--dur-slow`, `--ease`).
+ */
+watch(
+  () => layout.splitOrientation,
+  () => {
+    const els = [sessionIslandEl.value, helperColEl.value].filter((e): e is HTMLElement => !!e)
+    if (!els.length || !layout.beginLayoutMotion()) return
+    const before = els.map((e) => e.getBoundingClientRect())
+    flipping.value = true
+    void nextTick(() => {
+      if (typeof document === 'undefined') return
+      const css = getComputedStyle(document.documentElement)
+      const duration = slowDurationMs()
+      const easing = css.getPropertyValue('--ease').trim() || 'ease-out'
+      layout.beginLayoutMotion() // the animations below start now: keep the flag (and the freeze) for them
+      els.forEach((el, i) => {
+        if (typeof el.animate !== 'function') return
+        const from = before[i]
+        const to = el.getBoundingClientRect()
+        if (to.width < 1 || to.height < 1) return
+        el.animate(
+          [
+            {
+              transformOrigin: 'top left',
+              transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`
+            },
+            { transformOrigin: 'top left', transform: 'none' }
+          ],
+          { duration, easing }
+        )
+      })
+    })
+  },
+  { flush: 'pre' }
 )
 
 /**
@@ -572,13 +749,18 @@ onUnmounted(installKeyOrigin())
  */
 const paneDeps: PaneCommandDeps = {
   ring: () =>
-    paneRing({
-      mainForeground: showTerminalForeground.value,
-      stackShown: showHelperStack.value,
-      helperCollapsed: layout.helperCollapsed,
-      paneIds: helpers.panesForCurrentWorktree.map((p) => p.id),
-      maximizedId: helpers.maximizedPaneIdForCurrentWorktree
-    }),
+    paneRing(
+      applyExpandToRing(
+        {
+          mainForeground: showTerminalForeground.value,
+          stackShown: showHelperStack.value,
+          helperCollapsed: layout.helperCollapsed,
+          paneIds: helpers.panesForCurrentWorktree.map((p) => p.id),
+          maximizedId: helpers.maximizedPaneIdForCurrentWorktree
+        },
+        expandMode.value ? expandedPaneId.value : null
+      )
+    ),
   current: () => focusedRegionId(),
   focus: (id) => void focusRegion(id),
   close: (id) => closeRegion(id),
@@ -600,6 +782,45 @@ const paneDeps: PaneCommandDeps = {
   },
   blur: () => (document.activeElement as HTMLElement | null)?.blur(),
   afterRender: (fn) => void nextTick(fn)
+}
+
+/**
+ * T628 — the expanded view: Esc exits it. A window listener in the bubble phase, so a dialog, a menu
+ * or a text field that already took the key keeps it, and a terminal (xterm stops the event) keeps
+ * its own Esc: Claude Code cancels with it. A terminal exits with the button or ⌘⇧M.
+ */
+function onExpandEscape(ev: KeyboardEvent): void {
+  if (ev.key !== 'Escape' || ev.defaultPrevented) return
+  const wt = helpers.currentWorktreePath
+  if (!wt || !helpers.expandedPaneId(wt)) return
+  if (anyOverlayOpen.value || isTextEntryTarget()) return
+  if (ev.target instanceof Element && ev.target.closest('.xterm')) return
+  helpers.exitExpand(wt)
+}
+onMounted(() => window.addEventListener('keydown', onExpandEscape))
+onUnmounted(() => window.removeEventListener('keydown', onExpandEscape))
+
+/** `pane.toggleMaximize` (⌘⇧M): while a pane is expanded it exits the expanded view instead. */
+function onToggleMaximizeChord(): void {
+  const wt = helpers.currentWorktreePath
+  if (wt && helpers.expandedPaneId(wt)) {
+    helpers.exitExpand(wt)
+    return
+  }
+  togglePaneMaximize(paneDeps)
+}
+
+/** `pane.expandToWindow` (unbound): toggle the focused helper pane; with none focused, exit. */
+function onExpandToWindow(): void {
+  const wt = helpers.currentWorktreePath
+  if (!wt) return
+  const focused = focusedRegionId()
+  if (focused && helpers.panesForCurrentWorktree.some((p) => p.id === focused)) {
+    helpers.toggleExpandPane(wt, focused)
+    void nextTick(() => void focusRegion(focused))
+    return
+  }
+  helpers.exitExpand(wt)
 }
 
 function kb(id: ShortcutActionId): string | undefined {
@@ -784,7 +1005,14 @@ useShortcuts(
       id: 'pane.toggleMaximize',
       scope: 'global',
       keys: kb('pane.toggleMaximize'),
-      handler: () => togglePaneMaximize(paneDeps)
+      handler: onToggleMaximizeChord
+    },
+    {
+      // T628 — unbound. Expand the focused helper pane to the window, or leave the expanded view.
+      id: 'pane.expandToWindow',
+      scope: 'global',
+      keys: kb('pane.expandToWindow'),
+      handler: onExpandToWindow
     },
     {
       // Unbound. Runs the focused pane's own close (discard guards hold).
@@ -792,6 +1020,13 @@ useShortcuts(
       scope: 'global',
       keys: kb('pane.close'),
       handler: () => closeFocusedPane(paneDeps)
+    },
+    {
+      // T627 — unbound. The Topbar split-layout button's twin: auto → side-by-side → stacked → auto.
+      id: 'layout.cycleSplitOrientation',
+      scope: 'global',
+      keys: kb('layout.cycleSplitOrientation'),
+      handler: () => settings.cycleSplitLayout()
     },
     {
       // Unbound. Add → reveal and focus → collapse the first shell pane (§8.2);
@@ -858,11 +1093,11 @@ useShortcuts(
       handler: () => folderActions.openInFileManager()
     },
     {
-      id: 'folder.openInVSCode',
+      id: 'folder.openInEditor',
       scope: 'global',
-      keys: kb('folder.openInVSCode'),
+      keys: kb('folder.openInEditor'),
       enabled: () => !!sessions.activeFolderPath,
-      handler: () => folderActions.openInVSCode()
+      handler: () => folderActions.openInEditor()
     },
     {
       id: 'folder.openGithubPulls',
@@ -1563,6 +1798,7 @@ async function onAddFolderSubmit(payload: { path: string; alias: string }): Prom
  */
 let unsubscribeUpdater: (() => void) | null = null
 let unsubscribeUpdateError: (() => void) | null = null
+let unsubscribeQuitGuard: (() => void) | null = null
 let unsubscribeUpdateManualAvailable: (() => void) | null = null
 let unsubscribeChangelogActivate: (() => void) | null = null
 onMounted(() => {
@@ -1611,6 +1847,29 @@ onMounted(() => {
       }
     })
   })
+  // T579: main is about to show the native "agents still working" dialog and asks for readable
+  // session names + the translated copy. `{app}`/`{count}`/`{n}` stay literal — main fills them.
+  unsubscribeQuitGuard = window.api.onQuitGuardLabelsRequest((req) => {
+    const labels: Record<string, string> = {}
+    for (const id of req.ids) {
+      const s = sessions.findSessionById(id)
+      if (s) labels[id] = sessionTitle(s, sessions.allSessions, t)
+    }
+    const literal = { app: '{app}', count: '{count}', n: '{n}' }
+    window.api.quitGuardLabelsReply({
+      requestId: req.requestId,
+      labels,
+      strings: {
+        messageOne: t('quitGuard.messageOne', literal),
+        messageMany: t('quitGuard.messageMany', literal),
+        detail: t('quitGuard.detail', literal),
+        andMore: t('quitGuard.andMore', literal),
+        quitAnyway: t('quitGuard.quitAnyway'),
+        cancel: t('quitGuard.cancel'),
+        dontAskAgain: t('quitGuard.dontAskAgain')
+      }
+    })
+  })
   void claudeChangelog.init()
   // T389 P1W4: the Harnu mod state, and the one-time notice that precedes loading it.
   void companion.init()
@@ -1624,6 +1883,8 @@ onUnmounted(() => {
   unsubscribeUpdater = null
   unsubscribeUpdateError?.()
   unsubscribeUpdateError = null
+  unsubscribeQuitGuard?.()
+  unsubscribeQuitGuard = null
   unsubscribeUpdateManualAvailable?.()
   unsubscribeUpdateManualAvailable = null
   claudeChangelog.dispose()
@@ -1634,8 +1895,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-screen w-screen bg-bg text-text">
-    <div class="flex min-h-0 flex-1">
+  <div
+    class="flex flex-col h-screen w-screen bg-bg text-text"
+    data-app-shell
+    :data-expand="expandMode ?? undefined"
+    :data-layout-motion="layout.layoutMotion ? 'on' : undefined"
+    :data-lm-flip="flipping ? '' : undefined"
+  >
+    <div class="flex min-h-0 flex-1" data-columns>
       <!--
         Left sidebar collapse (design.md §6 — Colapsar sidebars). `v-show` (not
         `v-if`) keeps the sidebar mounted so its scroll position / filter / zone
@@ -1643,10 +1910,12 @@ onUnmounted(() => {
         `v-if`'d out while collapsed (no width to drag). Reopen affordance: the
         panel-toggle button in the Topbar (always visible) + ⌘B / Ctrl+B.
       -->
-      <Sidebar v-show="!layout.sidebarCollapsed" />
+      <Sidebar data-lm :class="{ 'lm-collapse-w': sidebarHidden }" :inert="sidebarHidden" />
       <div
         v-if="!layout.sidebarCollapsed"
-        class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+        data-lm
+        class="group flex w-1.5 shrink-0 cursor-col-resize justify-start"
+        :class="{ 'lm-collapse-w': sidebarHidden }"
         role="separator"
         aria-orientation="vertical"
         :aria-label="$t('sidebar.resize')"
@@ -1655,9 +1924,9 @@ onUnmounted(() => {
       >
         <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
       </div>
-      <main class="flex min-w-0 flex-1 flex-col">
+      <main class="flex min-w-0 flex-1 flex-col" data-main>
         <Topbar />
-        <div class="flex min-h-0 flex-1">
+        <div ref="mainRowEl" class="flex min-h-0 flex-1" :class="{ 'flex-col': stackedLayout }">
           <!--
             Main-content view. Wrapped in a sizing div (rather than each view
             owning its own flex-basis) so the SAME split-ratio math applies
@@ -1666,12 +1935,12 @@ onUnmounted(() => {
             being mutually exclusive takeovers.
           -->
           <div
+            ref="sessionIslandEl"
             class="relative flex min-w-0 min-h-0 flex-col"
-            :style="
-              showHelperStack
-                ? { flex: `${helpers.splitRatioForCurrentWorktree} 1 0` }
-                : { flex: '1 1 0' }
-            "
+            :class="{ 'lm-collapse': expandMode }"
+            data-lm
+            data-island="session"
+            :style="showHelperStack ? { flex: `${activeSplitRatio} 1 0` } : { flex: '1 1 0' }"
           >
             <!--
               BUG-103: TerminalPane renders UNCONDITIONALLY here (never `v-if`),
@@ -1703,6 +1972,7 @@ onUnmounted(() => {
             -->
             <div
               class="absolute inset-0"
+              :style="terminalHostStyle"
               data-test="terminal-pane-host"
               :class="{
                 invisible: !showTerminalForeground,
@@ -1730,6 +2000,29 @@ onUnmounted(() => {
             >
               <CloudSessionPanel :session="sessions.selectedSession" />
             </div>
+            <!-- U2.3b: a session of a shelved worktree was clicked; its folder is being restored.
+                 Nothing starts in the missing folder, so the pane says what it waits for
+                 (design.md § "Shelved section", States). -->
+            <div
+              v-if="sessions.shelvedRestoringLabel"
+              class="absolute inset-0 flex items-center justify-center bg-bg"
+              data-test="shelved-restoring-pane"
+              role="status"
+            >
+              <div class="flex items-center text-text-3" style="gap: 9px; font-size: 12.5px">
+                <ArchiveRestore
+                  :size="14"
+                  :stroke-width="1.6"
+                  class="anim-shimmer-dot shrink-0"
+                  aria-hidden="true"
+                />
+                <i18n-t keypath="sidebar.shelved.restoringPane" tag="span">
+                  <template #branch>
+                    <code class="font-mono text-text-2">{{ sessions.shelvedRestoringLabel }}</code>
+                  </template>
+                </i18n-t>
+              </div>
+            </div>
           </div>
           <!--
             Right helper panel — auto-show gated by `showHelperStack`, which ANDs
@@ -1738,19 +2031,38 @@ onUnmounted(() => {
             design.md §6). Collapsed hides the divider + stack even with panes;
             the Topbar panel-toggle button (⌘⌥B / Ctrl+Alt+B) brings it back.
           -->
+          <!-- T627: the divider turns 90° when the helper stack sits below the session area. The line
+               stays flush against the helper stack's edge (right when side by side, top when stacked). -->
           <div
-            v-if="showHelperStack"
-            class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+            v-if="showHelperStack && !stackedLayout"
+            data-lm
+            class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
+            :class="{ 'lm-collapse-w': expandMode }"
             role="separator"
             aria-orientation="vertical"
             @mousedown="onMainDividerMouseDown"
+            @dblclick="onMainDividerDblClick"
           >
             <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
           </div>
           <div
+            v-else-if="showHelperStack"
+            data-lm
+            class="group flex h-1.5 shrink-0 cursor-row-resize items-end"
+            :class="{ 'lm-collapse-h': expandMode }"
+            role="separator"
+            aria-orientation="horizontal"
+            @mousedown="onMainDividerMouseDown"
+            @dblclick="onMainDividerDblClick"
+          >
+            <div class="h-px w-full bg-border-2 transition-colors group-hover:bg-accent-line" />
+          </div>
+          <div
             v-if="showHelperStack"
+            ref="helperColEl"
+            data-lm
             class="flex min-w-0 min-h-0 flex-col"
-            :style="{ flex: `${1 - helpers.splitRatioForCurrentWorktree} 1 0` }"
+            :style="{ flex: expandMode ? '1 1 0' : `${1 - activeSplitRatio} 1 0` }"
           >
             <HelperStack />
           </div>
@@ -1770,7 +2082,9 @@ onUnmounted(() => {
       <template v-if="showInboxRail">
         <div
           v-if="layout.inboxRailState === 'expanded'"
-          class="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
+          data-lm
+          class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
+          :class="{ 'lm-collapse-w': expandMode === 'everything' }"
           role="separator"
           aria-orientation="vertical"
           :aria-label="$t('approvalInbox.rail.resize')"
@@ -1779,7 +2093,15 @@ onUnmounted(() => {
         >
           <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
         </div>
-        <div class="flex min-h-0 shrink-0 flex-col" :style="{ width: `${inboxRailPx}px` }">
+        <div
+          data-lm
+          class="flex min-h-0 shrink-0 flex-col"
+          :class="{ 'lm-collapse-w': expandMode === 'everything' }"
+          :inert="expandMode === 'everything'"
+          data-rail-column
+          :data-rail-state="layout.inboxRailState"
+          :style="{ width: `${inboxRailPx}px` }"
+        >
           <InboxRail />
         </div>
       </template>

@@ -36,6 +36,10 @@ export interface SessionStatus {
 
 export interface CompanionStatus {
   enabled: boolean
+  /** T585: the "Draw reports as cards" switch. New sessions read it at hello. */
+  reportCards: boolean
+  /** T589: the "Draw agent messages compactly" switch. New sessions read it at hello. */
+  quietRows: boolean
   disclosureShownAt: number | null
   stagedDir: string | null
   modVersion: string
@@ -49,6 +53,8 @@ export interface CompanionStatus {
 
 export interface StatusDeps {
   enabled(): boolean
+  reportCards(): boolean
+  quietRows(): boolean
   disclosureShownAt(): number | null
   stagedDir(): string | null
   modVersion(): string
@@ -166,6 +172,8 @@ export function buildCompanionStatus(deps: StatusDeps): CompanionStatus {
 
   return {
     enabled: deps.enabled(),
+    reportCards: deps.reportCards(),
+    quietRows: deps.quietRows(),
     disclosureShownAt: deps.disclosureShownAt(),
     stagedDir: deps.stagedDir(),
     modVersion: deps.modVersion(),

@@ -11,6 +11,25 @@
 /** Family of the bundled Nerd Font; matches the `@font-face` in `fonts.css`. */
 const TERMINAL_FONT_FAMILY = 'JetBrainsMono Nerd Font Mono'
 
+/**
+ * Width xterm 6 reserves for its overlay vertical scrollbar:
+ * `verticalScrollbarSize = options.overviewRuler?.width || 14`. The official
+ * FitAddon subtracts it; our manual sizing must too, or the grid's last columns
+ * (a box's right border, the tail of wrapped lines) render under the scrollbar.
+ * Pass the terminal's `overviewRuler.width` when it is set; the default matches
+ * xterm's.
+ */
+export const XTERM_SCROLLBAR_WIDTH = 14
+
+/**
+ * Whole cells kept free at the right edge, beyond the scrollbar (BUG-234). Even
+ * with the rendered letter-spacing accounted for, a sub-pixel disagreement between
+ * our measurement and what xterm really draws would otherwise cost the last column
+ * a fraction of its width; one spare cell makes the grid immune to it. The price is
+ * one column whenever the fit is tight.
+ */
+export const SAFETY_GUTTER_CELLS = 1
+
 export interface CellDims {
   cols: number
   rows: number
@@ -50,8 +69,22 @@ export function ensureTerminalFontLoaded(): Promise<void> {
  * When `cellHOverride` is provided, that height is used in place of the
  * span-measured height — the call from `measureXtermCells` passes xterm's
  * actual `.xterm-rows > div` height there.
+ *
+ * `scrollbarWidth` is carved out of the usable width (see
+ * `XTERM_SCROLLBAR_WIDTH`) so `cols` never extends under xterm's scrollbar.
+ *
+ * `SAFETY_GUTTER_CELLS` whole cells are also left free at the right edge.
+ *
+ * `letterSpacing` is the extra advance xterm's DOM renderer adds to every glyph
+ * (see `measureXtermCells`); it widens the cell so `cols × advance` still fits.
  */
-export function measureCells(el: HTMLElement, cellHOverride?: number, fontSize = 13): CellDims {
+export function measureCells(
+  el: HTMLElement,
+  cellHOverride?: number,
+  fontSize = 13,
+  scrollbarWidth = XTERM_SCROLLBAR_WIDTH,
+  letterSpacing = 0
+): CellDims {
   const cs = getComputedStyle(document.documentElement)
   const fontFamily = cs.getPropertyValue('--font-mono').trim() || 'monospace'
   const lineHeight = 1.55
@@ -64,7 +97,7 @@ export function measureCells(el: HTMLElement, cellHOverride?: number, fontSize =
   measureSpan.textContent = 'M'.repeat(10)
   el.appendChild(measureSpan)
   const rect = measureSpan.getBoundingClientRect()
-  const charWidth = rect.width / 10
+  const charWidth = rect.width / 10 + letterSpacing
   const charHeight = cellHOverride ?? rect.height
   el.removeChild(measureSpan)
 
@@ -72,7 +105,8 @@ export function measureCells(el: HTMLElement, cellHOverride?: number, fontSize =
   const padX = parseFloat(elCs.paddingLeft) + parseFloat(elCs.paddingRight)
   const padY = parseFloat(elCs.paddingTop) + parseFloat(elCs.paddingBottom)
 
-  const innerW = Math.max(0, el.clientWidth - padX)
+  const gutter = SAFETY_GUTTER_CELLS * Math.max(1, charWidth)
+  const innerW = Math.max(0, el.clientWidth - padX - scrollbarWidth - gutter)
   const innerH = Math.max(0, el.clientHeight - padY)
 
   const cols = Math.max(2, Math.floor(innerW / Math.max(1, charWidth)))
@@ -98,11 +132,25 @@ export function measureCells(el: HTMLElement, cellHOverride?: number, fontSize =
  *     source is the span method (`measureCells`), which renders 10 known 'M's
  *     in the current `--font-mono` and divides. See CDP investigation
  *     2026-05-28.
+ *   - **Letter-spacing** is the one width input that DOES come from xterm: the
+ *     DOM renderer sets it on `.xterm-rows` (a single element, so coalescing
+ *     doesn't apply) and every glyph advances `glyph + letter-spacing`. Ignoring
+ *     it sized the grid by the bare glyph and let the last column overrun the
+ *     host (BUG-234). Only a positive spacing widens the cell; a negative one
+ *     keeps the span-sized grid.
  */
-export function measureXtermCells(host: HTMLElement, fontSize = 13): CellDims | null {
-  const xtermRow = host.querySelector('.xterm-rows')?.firstElementChild as HTMLElement | null
-  if (!xtermRow) return null
+export function measureXtermCells(
+  host: HTMLElement,
+  fontSize = 13,
+  scrollbarWidth = XTERM_SCROLLBAR_WIDTH
+): CellDims | null {
+  const xtermRows = host.querySelector('.xterm-rows') as HTMLElement | null
+  const xtermRow = xtermRows?.firstElementChild as HTMLElement | null
+  if (!xtermRows || !xtermRow) return null
   const actualCharH = xtermRow.getBoundingClientRect().height
   if (!actualCharH) return null
-  return measureCells(host, actualCharH, fontSize)
+  // `letter-spacing` computes to the keyword `normal` when unset → NaN → no extra advance.
+  const spacing = parseFloat(getComputedStyle(xtermRows).letterSpacing)
+  const letterSpacing = spacing > 0 ? spacing : 0
+  return measureCells(host, actualCharH, fontSize, scrollbarWidth, letterSpacing)
 }

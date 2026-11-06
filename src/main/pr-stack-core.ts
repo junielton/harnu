@@ -101,6 +101,10 @@ export interface PrEntry {
   url: string
   author: string
   updatedAt: string | null
+  /** When the PR was opened (`createdAt`), or `null` when `gh` did not say. */
+  createdAt: string | null
+  /** When the PR merged (`mergedAt`), or `null` when it has not or `gh` did not say. */
+  mergedAt: string | null
   /**
    * `headRefOid` — the PR's current head SHA, or `null` when the caller did not
    * ask `gh` for it. The review pane compares it against its local copy of the
@@ -228,7 +232,7 @@ const CI_PASS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED'])
  * disagree about what "green" means, or the canvas and the Cleanup view would
  * tell the operator different stories about the same PR.
  */
-function checkState(raw: Record<string, unknown>): CiState {
+export function checkState(raw: Record<string, unknown>): CiState {
   const status = typeof raw.status === 'string' ? raw.status.toUpperCase() : null
   if (status === 'QUEUED' || status === 'IN_PROGRESS' || status === 'PENDING') return 'pending'
   const conclusion = typeof raw.conclusion === 'string' ? raw.conclusion.toUpperCase() : null
@@ -350,7 +354,7 @@ function autoMergeOf(raw: unknown): PrAutoMerge | null {
 
 /**
  * Parses `gh pr list --json
- * number,title,headRefName,baseRefName,state,isDraft,mergeable,reviewDecision,statusCheckRollup,url,author,updatedAt,mergeStateStatus,additions,deletions,changedFiles,reviewRequests,labels,autoMergeRequest`
+ * number,title,headRefName,baseRefName,state,isDraft,mergeable,reviewDecision,statusCheckRollup,url,author,updatedAt,createdAt,mergedAt,mergeStateStatus,additions,deletions,changedFiles,reviewRequests,labels,autoMergeRequest`
  * (`headRefOid` and `id` too, when the caller asked for them — see
  * {@link PrEntry.headOid} and {@link PrEntry.nodeId}).
  *
@@ -407,6 +411,8 @@ export function parsePrList(stdout: string): PrEntry[] {
           ? ((author as Record<string, unknown>).login as string)
           : '',
       updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+      createdAt: typeof raw.createdAt === 'string' && raw.createdAt ? raw.createdAt : null,
+      mergedAt: typeof raw.mergedAt === 'string' && raw.mergedAt ? raw.mergedAt : null,
       headOid: typeof raw.headRefOid === 'string' && raw.headRefOid ? raw.headRefOid : null,
       nodeId: typeof raw.id === 'string' && raw.id ? raw.id : null,
       mergeStateStatus: mergeStateOf(raw.mergeStateStatus),
@@ -930,7 +936,7 @@ export function graphEdges(graph: PrGraph, worktrees: WorktreeNode[] = []): Edge
  * `child_process` into the renderer's type graph.
  */
 /** A transient `gh` failure: the CLI is usable, this call did not come back. */
-export type GhFailure = 'timeout' | 'outputTooLarge' | 'network' | 'other'
+export type GhFailure = 'timeout' | 'outputTooLarge' | 'network' | 'rateLimit' | 'other'
 
 /** What a failed `gh` child error says about the CLI. Duck-typed: execFile errors are plain objects. */
 interface ExecFailure {
@@ -959,10 +965,15 @@ export function classifyGhFailure(err: unknown): GhFailure | null {
   if (/gh auth login|not logged in|authentication required|GH_TOKEN/i.test(stderr)) return null
   if (/none of the git remotes|not a github|no github remote/i.test(stderr)) return null
 
+  // T611: a spent budget is not a flaky network. The runner marks the budget `exhausted` from this
+  // same stderr; here it gets its own kind so the canvas can say when the limit resets instead of
+  // telling the operator to check their connection.
+  if (/rate limit|GH_THROTTLED|Harnu paused GitHub reads/i.test(stderr)) return 'rateLimit'
+
   if (e.killed === true || e.signal != null || e.code === 'ETIMEDOUT') return 'timeout'
   if (e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'outputTooLarge'
   if (
-    /error connecting|could not resolve|no such host|network is unreachable|connection (refused|reset)|timeout|rate limit|HTTP 5\d\d|EOF/i.test(
+    /error connecting|could not resolve|no such host|network is unreachable|connection (refused|reset)|timeout|HTTP 5\d\d|EOF/i.test(
       stderr
     )
   ) {

@@ -32,6 +32,9 @@ import {
  */
 
 const READ_TOOLS = [
+  // Campaign ch.3a (T595)
+  'campaign_get',
+  'campaign_list',
   'get_fleet',
   'get_session',
   'list_worktrees',
@@ -40,6 +43,8 @@ const READ_TOOLS = [
   'list_workers',
   'list_containers',
   'list_cleanup',
+  // T614
+  'github_budget',
   'list_terminals',
   // T358 S3: the Mission reads (design §4 "read, no gate").
   'mission_get',
@@ -84,7 +89,13 @@ const MUTATE_TOOLS = [
   // T358 S7
   'mission_import_legacy',
   // Mission v3 §3.6
-  'mission_add_check'
+  'mission_add_check',
+  // Campaign ch.3a (T595): the three writes run free, like the mission writes.
+  'campaign_create',
+  'campaign_add_chapter',
+  'campaign_request_close',
+  // Campaign ch.5a (T597): a local write, free like the mission writes.
+  'rebase_stack'
 ] as const
 
 describe('MCP_TOOLS catalog shape', () => {
@@ -285,6 +296,10 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'notify',
     // T445: release_worktree deletes nothing, so it runs free like the board verbs.
     'release_worktree',
+    // T655: archive_session deletes nothing and is reversible, so it runs free like archive_card.
+    'archive_session',
+    // T661: hide_folder only flips the sidebar's hidden flag and is reversible, so it runs free too.
+    'hide_folder',
     // T238: free like every other mutating verb, but NOT grantable and NOT
     // always-allowable — its real gate is the operator's voice switch, which
     // nothing may buy on their behalf.
@@ -328,7 +343,13 @@ describe('T120 declarative gate fields — the def is the single source of truth
     // T358 S7
     'mission_import_legacy',
     // Mission v3 §3.6
-    'mission_add_check'
+    'mission_add_check',
+    // Campaign ch.3a (T595): the writes run free like the mission writes.
+    'campaign_create',
+    'campaign_add_chapter',
+    'campaign_request_close',
+    // Campaign ch.5a (T597): a local write, free like the mission writes.
+    'rebase_stack'
   ]
   const bootstrapExpected = ['adopt_folder', 'plan_mission']
 

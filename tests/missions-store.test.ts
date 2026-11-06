@@ -125,6 +125,27 @@ describe('runDoor — the door answer patches the store at once', () => {
     await vi.waitFor(() => expect(store.views).toEqual([]))
   })
 
+  it('a chooseDecision door goes over mission:choose, not the shared door, and patches the view', async () => {
+    const v = mission()
+    const patched = fixtureView('faq-like', { view: { title: 'after the choice' } })
+    const store = await storeWith([v])
+    const choose = vi.fn().mockResolvedValue({ ok: true, view: patched })
+    ;(window as unknown as { api: Record<string, unknown> }).api.missionChoose = choose
+    const res = await store.runDoor({
+      door: 'chooseDecision',
+      root: '/repo',
+      missionId: v.mission.id,
+      stepId: 'stp-3',
+      index: 1
+    })
+    expect(res.ok).toBe(true)
+    expect(choose).toHaveBeenCalledWith(
+      expect.objectContaining({ missionId: v.mission.id, stepId: 'stp-3', index: 1 })
+    )
+    expect(door).not.toHaveBeenCalled()
+    expect(store.views[0].title).toBe('after the choice')
+  })
+
   it('a tick patches that mission in place from the door’s view', async () => {
     const v = mission()
     const patched = fixtureView('faq-like', { view: { title: 'after the tick' } })

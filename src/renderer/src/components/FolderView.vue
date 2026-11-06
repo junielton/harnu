@@ -7,7 +7,6 @@ import {
   GitPullRequest,
   FolderOpen,
   FolderTree,
-  Code,
   Terminal
 } from 'lucide-vue-next'
 import type { PrEntry } from '../../../main/pr-stack-core'
@@ -17,6 +16,9 @@ import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import { useHelpersStore } from '../stores/helpers'
 import { useMemoryStore } from '../stores/memory'
+import { useFolderActions } from '../composables/useFolderActions'
+import { useEditorButton } from '../composables/useEditorButton'
+import EditorIcon from './EditorIcon.vue'
 import { displayAlias } from './folder-alias'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import ScopeTag from './ui/ScopeTag.vue'
@@ -67,6 +69,8 @@ import {
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const helpers = useHelpersStore()
+const folderActions = useFolderActions()
+const editorButton = useEditorButton()
 const memory = useMemoryStore()
 
 const folder = computed(() => {
@@ -381,8 +385,8 @@ function onBrowseFiles(): void {
   if (folder.value) helpers.addExplorerHelper(folder.value.path, folder.value.path)
 }
 
-function onOpenInVSCode(): void {
-  if (folder.value) void window.api.openInVSCode(folder.value.path)
+function onOpenInEditor(): void {
+  if (folder.value) void folderActions.openInEditor()
 }
 
 function onOpenFolder(): void {
@@ -512,10 +516,12 @@ function onTerminalHere(): void {
         <button
           class="flex cursor-pointer items-center border border-border text-text-2 transition hover:bg-surface hover:text-text"
           style="gap: 6px; border-radius: var(--radius-sm); padding: 7px 12px; font-size: 12px"
-          data-test="folder-view-vscode"
-          @click="onOpenInVSCode"
+          data-test="folder-view-editor"
+          @click="onOpenInEditor"
         >
-          <Code :size="13" :stroke-width="1.6" />{{ $t('folderView.openInVSCode') }}
+          <EditorIcon :editor-id="editorButton.editorId.value" :size="13" />{{
+            editorButton.label.value
+          }}
         </button>
         <button
           class="flex cursor-pointer items-center border border-border text-text-2 transition hover:bg-surface hover:text-text"

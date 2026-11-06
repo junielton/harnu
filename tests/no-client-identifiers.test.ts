@@ -99,11 +99,18 @@ const ALLOWED_LOWER_PREFIXES = [
   'pt',
   // `top`: a Tailwind inset utility (`top-14`, the canvas toolbar's own row), not a tracker key.
   'top',
+  // `from`: a Tailwind gradient-stop utility (`from-50%`, the mission gate dots' half-filled ring), not a
+  // tracker key.
+  'from',
   'agent',
   'agents',
   'argv',
   'bug',
+  // `by`: English prose in a cited article's URL slug (`…-usage-by-90`), not a tracker key.
+  'by',
   'capy', // pre-rename product name — kept while historical docs still carry it
+  // T595: a Campaign chapter id (`chp-<n>`, campaign spec §3.1) — Harnu's own vocabulary, like `stp`.
+  'chp',
   'harnu',
   'claude',
   'exit',

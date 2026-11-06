@@ -26,6 +26,16 @@ Each session's terminal is a real xterm.js terminal, not a log viewer — it beh
 
 Switching away from a session doesn't stop it. Claude keeps working, output keeps streaming, and scrollback keeps filling in the background — switching tabs only detaches the view, it never tears down the process. The terminal (and any background process it's running, like a dev server) only actually stops if you explicitly restart or delete the session, or quit Harnu.
 
+### Quitting Harnu
+
+Quitting stops every terminal, so a session that is mid-turn loses that turn. When you close the window (the X button) or quit (Ctrl+Q, the app menu) while at least one session is **working**, Harnu first shows a native prompt like "2 agents are still working". It lists the sessions by name (up to five, then "and N more") and says that quitting interrupts them.
+
+- **Cancel** (the default) keeps Harnu, the window and every terminal exactly as they were.
+- **Quit anyway** quits normally.
+- **Don't ask again** (a checkbox) stops the prompt from appearing on later quits. Turn it back on in [Settings → General → Quitting](settings.md#quitting).
+
+Only sessions that are actively working count. Idle, parked (hibernated), finished and errored sessions never trigger the prompt, so quitting with nothing running is instant. The prompt also stays out of the way of an update restart ("Restart now") and of a system shutdown or logout. It is a native dialog, so it appears even if Harnu's window has stopped responding.
+
 ### Pasted screenshots
 
 When you paste a screenshot into a session, Claude Code saves it into a hidden per-session cache (the system temp folder for current Claude Code versions, `~/.claude/image-cache/` for older ones — Harnu reads both). Harnu surfaces that cache as a small `🖼 N` pill in the footer — it only appears when the session actually has images, and the count updates live, so pasting a screenshot into the session you're looking at makes the pill react without switching away and back. When a new screenshot lands, the pill gives a brief pop so you notice it registered; it stays quiet when you merely switch to a session that already has images, and on the very first image (the pill fading in is signal enough).
@@ -35,6 +45,18 @@ Click the pill for a grid of the session's screenshots, newest first. Hovering a
 Clicking the thumbnail itself opens the image full size, filling the window. From there you can step through the session's screenshots with the on-screen arrows or the `←` / `→` keys (they wrap around), jump straight to any image from the strip along the bottom, and use those same four actions on whichever image you're looking at. `Esc`, a click on the dark backdrop, the close button, or Re-attach all take you back to the plain footer.
 
 This gallery is **read-only and temporary**: Harnu only shows what's on disk right now and never writes to either cache, so images disappear when Claude Code prunes the session. If you want to keep one, use **Reveal in folder** or **Copy**.
+
+### Links shelf
+
+The links you and Claude trade in a long session — the task, the pull request Claude opened, the Figma frame, the doc you pasted — scroll away inside the conversation. Harnu collects them in a small `🔗 N` pill in the footer, right of the `🖼 N` one. Like the screenshots pill it only appears when the session you're looking at has something to show, and the count follows the conversation: paste a URL (or let Claude mention one) and the pill reacts within a few seconds, without switching away and back.
+
+Click the pill for the list, newest first. Each row is named from the link itself, with no lookup: a GitHub pull request or issue reads `owner/repo #183`, a ClickUp task reads `Task <id>`, a Figma link shows the file name and the frame (`node 812-4410`), and any other page shows its address without the query string. A small chip says who wrote it (**you** or **agent**), and the time sits on the right. Only what is written in the conversation counts — a URL that merely appeared in a command's output, a fetched page or a log is left out, so the list stays about the links you actually exchanged.
+
+Hover a row to see the sentence the link came from and three actions: **Open** (in your default browser), **Copy** (to the clipboard, with a "Link copied" toast), and **Reference** (types the link into the session's prompt so you can build on it — it doesn't press Enter, so you review the line and send it yourself; it needs a running session, so it's greyed out with the reason otherwise).
+
+The **Session · Folder** toggle in the popover header widens the list from this session to every session in the folder, grouped under each session's name, newest session first. `Esc` or a click outside closes it, and opening it closes the other footer popovers (and vice versa).
+
+The shelf is **read-only and derived**: Harnu reads the session's transcript each time you look, keeps nothing of its own, and never opens a link to find out what it is — if a session is deleted, its links go with it.
 
 ### Hibernated sessions
 
@@ -91,12 +113,33 @@ Any session can be promoted to **Orchestrator** from this menu. Promoting arms a
 
 The area to the right of your main terminal can hold a vertical stack of extra panes — a "split" — so you can keep a file, a shell, or another session visible alongside the one you're focused on. Panes you can open:
 
-- A plain **shell** (Topbar's Split button)
+- A plain **shell** (Topbar's Terminal button)
+- A **browser** (Topbar's Browser button, next to the Terminal button) — see [Browser pane](browser-pane.md)
 - A **file browser** (Topbar's browse-files button), and clicking a file in it opens that file in a **Markdown viewer** pane. Every code block in that viewer has a hover-revealed copy button, and the pane's toolbar has a "Copy file" button that copies the whole raw file — no more hand-selecting text out of the pane
 - A folder's **Project memory** pane (from the folder's right-click menu)
 - Another session, resumed as its own pane (a session's **Open in new tab** action)
 
+### Side by side or stacked
+
+By default the split sits to the right of your main terminal (**side by side**). In a tall window you can put it **under** the terminal instead (**stacked**): the session is on top, the divider between them is horizontal, and the panes in the split sit left to right with a thin splitter between each pair.
+
+- **Choose it** in Settings → Appearance → **Split layout**: **Auto** (the default), **Side by side** or **Stacked**.
+- **Auto** stacks the split once the area is clearly taller than wide (about 5% taller) and goes back to side by side once it is clearly wider than tall. In between it keeps whatever it was doing, so a nearly square window does not flicker.
+- **Switch quickly** with the layout button in the Topbar, right after the Browser button (it only shows while the folder has panes in the split). Each click cycles **Auto → Side by side → Stacked**. The icon shows the layout in use; it turns accent-coloured when you have pinned one instead of Auto. You can also bind **Cycle the split layout** to a shortcut in Settings → Keyboard Shortcuts (it has no default key).
+- **Each layout keeps its own size** for each folder. Drag the divider in one layout and the other one is untouched; double-click the divider to reset the layout you are in.
+- Maximize, close and dragging a pane's header work in both layouts. Stacked, a maximized pane takes the whole width and the others shrink to a thin strip.
+
 Drag a pane's header to resize it. Split panes follow the same rule as the main terminal — a shell running in a split (say, `npm run dev`) keeps running in the background even if you switch to a different worktree or session. Every pane's header also has a maximize button: click it to grow that pane to fill the split while the others collapse to a thin header strip (still running in the background); click it again, or a different pane's maximize button, to restore or switch.
+
+### Expanding a pane to the window
+
+Maximize works inside the split. **Expand to window** goes one step further: the pane takes the whole working area, with only the Topbar and the footer left around it. Click the expand button in any pane's header (right before maximize). To leave, click the same button again, press `Esc`, or press `Cmd/Ctrl+Shift+M`. Inside a terminal `Esc` still belongs to the program running there (Claude Code cancels with it), so from a terminal use the button or `Cmd/Ctrl+Shift+M`.
+
+- **What gets out of the way** is **Settings → Appearance → Layout → Expand hides**. **Everything** (the default) collapses the sidebar, the session and the Fleet rail. **Session only** collapses just the session and leaves the sidebar and the Fleet rail where they are. The other panes in the split collapse to nothing while one is expanded. The choice is remembered across restarts (it is saved in `settings.json` as `expandHides`).
+- **Nothing restarts.** The pane is not moved or reloaded: a shell keeps its scrollback and its process, and a browser page stays loaded. The session terminal keeps its size while it is hidden, so it does not redraw when you come back.
+- **It is not remembered.** Expanded is per folder, and switching to another folder or restarting puts the layout back to normal. Closing the expanded pane also leaves the expanded view. `F6` visits only the expanded pane.
+- **The shortcut.** Bind **Expand the focused pane to the window** in Settings → Keyboard Shortcuts to toggle it from the keyboard for any focused pane; it has no default key, because `Cmd/Ctrl+Shift+M` stays maximize (and exits the expanded view).
+- **Motion.** Maximize, expand, minimizing or restoring the Fleet rail, collapsing the sidebar and switching the split layout now animate for about a fifth of a second instead of snapping; dragging a divider never does. A browser pane shows a still picture of its page while the layout moves and goes live again right after. With **Reduce motion** on in your operating system, everything snaps as before.
 
 ### Moving between panes from the keyboard
 
@@ -168,13 +211,15 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `Shift+F10`        | Open the right-click menu for the cursor row (`Fn+Shift+F10` on a Mac)          |
 | `F2`               | Rename the cursor folder row, or the active folder (`Fn+F2` on a Mac)           |
 | `F6` / `Shift+F6`  | Focus the next / previous pane, even from a terminal (`Fn+F6` on a Mac)         |
-| `Cmd/Ctrl+Shift+M` | Maximize or restore the focused split pane                                      |
+| `Cmd/Ctrl+Shift+M` | Maximize or restore the focused split pane (leaves an expanded pane)            |
+| _(unbound)_        | Expand the focused split pane to the window (bind it in Keyboard Shortcuts)     |
+| _(unbound)_        | Cycle the split layout (bind **Cycle the split layout** in Keyboard Shortcuts)  |
 | `Alt+←` / `Cmd+[`  | Back to the previous session you viewed                                         |
 | `Alt+→` / `Cmd+]`  | Forward again after going back                                                  |
 | Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar                            |
 
 The Topbar's folder actions — roadmap board, PR Stack, open in file manager,
-open in VS Code, pull requests on GitHub, Browse files, and open a terminal —
+open in your [editor](settings.md#editor), pull requests on GitHub, Browse files, and open a terminal —
 have no shortcut out of the box, and neither does the usage overview, but you
 can give each one a chord (see
 [Customizing shortcuts](#customizing-shortcuts)). They're also in the native
@@ -306,8 +351,9 @@ It's a VS Code-shaped array, one entry per action, merged over the defaults:
 
 The Topbar's folder actions have no default chord. Their command ids are
 `view.roadmap`, `view.prStack`, `folder.openInFileManager`,
-`folder.openInVSCode`, `folder.openGithubPulls`, `folder.browseFiles`, and
-`folder.newTerminal`. The usage overview is `view.usageDashboard`, and Settings
+`folder.openInEditor`, `folder.openGithubPulls`, `folder.browseFiles`, and
+`folder.newTerminal`. (`folder.openInEditor` used to be called `folder.openInVSCode`; a
+binding saved under the old name still works.) The usage overview is `view.usageDashboard`, and Settings
 (`Cmd/Ctrl+,` by default) is `view.settings`.
 
 - `Cmd` means ⌘ on macOS and `Ctrl` on Linux/Windows — one file works on every

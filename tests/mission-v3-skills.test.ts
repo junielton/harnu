@@ -239,3 +239,24 @@ describe('delivery-watchdog — reads progress, no draft skip (§3.11)', () => {
     expect(raw).not.toMatch(/has not started/)
   })
 })
+
+describe('mission — tick prompts open with a fixed first line (T587 U1)', () => {
+  const raw = readSkill('mission')
+  const rule = section(raw, '`mission` — one tick')
+
+  it('documents the exact first-line shape: skill, `tick`, middle dot, mission id', () => {
+    expect(rule).toContain('/harnu:mission tick · <missionId>')
+    expect(rule).toContain('U+00B7')
+    expect(rule).toMatch(/\/harnu:mission tick · mnt-[0-9a-f]{8}\n/)
+  })
+
+  it('says why: the mod draws the tick from live state keyed by that id', () => {
+    expect(flat(rule)).toMatch(/Harnu mod draws each tick as a live card/)
+  })
+
+  it('orchestrate-delivery points at the rule instead of restating the shape', () => {
+    const od = flat(readSkill('orchestrate-delivery'))
+    expect(od).toContain("The tick prompt's first line")
+    expect(od).not.toContain('/harnu:mission tick ·')
+  })
+})

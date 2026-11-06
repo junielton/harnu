@@ -235,7 +235,7 @@ describe('consistency (BUG-78 AC14, mounted surfaces)', () => {
     setActivePinia(createPinia())
     ;(window as unknown as { api: unknown }).api = {
       openPath: vi.fn(),
-      openInVSCode: vi.fn(),
+      openInEditor: vi.fn(),
       githubPullsUrl: vi.fn().mockResolvedValue(null),
       shellOpenExternal: vi.fn()
     }

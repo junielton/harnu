@@ -59,6 +59,25 @@ function pr(over: Partial<PrEntry> & { number: number; branch: string; base: str
 }
 
 describe('parsePrList', () => {
+  it('reads createdAt / mergedAt, and lands an absent one as null (BUG-235)', () => {
+    const [merged, open] = parsePrList(
+      JSON.stringify([
+        {
+          number: 1,
+          headRefName: 'a',
+          createdAt: '2026-10-31T08:00:00Z',
+          mergedAt: '2026-10-31T08:53:20Z'
+        },
+        { number: 2, headRefName: 'b', mergedAt: '' }
+      ])
+    )
+    expect(merged).toMatchObject({
+      createdAt: '2026-10-31T08:00:00Z',
+      mergedAt: '2026-10-31T08:53:20Z'
+    })
+    expect(open).toMatchObject({ createdAt: null, mergedAt: null })
+  })
+
   it('reads the fields the canvas needs, including baseRefName', () => {
     const [entry] = parsePrList(
       JSON.stringify([

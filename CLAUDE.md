@@ -258,7 +258,9 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Sidebar folder row                                 | `src/renderer/src/components/SidebarFolder.vue`                                  |
 | Sidebar jump palette (§6 — T288)                   | `src/renderer/src/components/SidebarJumpPalette.vue`                             |
 | Repo group header (multi-worktree repos)           | `src/renderer/src/components/RepoGroupHeader.vue`                                |
+| Shelved section of a repo group (§6 — U2.3b)       | `SidebarShelvedSection.vue` + `lib/shelved-sidebar.ts`                           |
 | Topbar / breadcrumb / status pill                  | `src/renderer/src/components/Topbar.vue`                                         |
+| Topbar overflow menu (`…` More actions, BUG-252)   | `src/renderer/src/components/TopbarOverflowMenu.vue` + `lib/topbar-overflow.ts`  |
 | Activity bell (Topbar notification popover, T152)  | `src/renderer/src/components/ActivityBell.vue`                                   |
 | Empty state ("Ready to start")                     | `src/renderer/src/components/EmptyState.vue`                                     |
 | Folder View (main pane, T212)                      | `src/renderer/src/components/FolderView.vue` + `folder-view-format.ts`           |
@@ -279,10 +281,10 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Helper pane (one cell)                             | `src/renderer/src/components/HelperPane.vue`                                     |
 | Agent connection chip (pane header, T474 U1)       | `src/renderer/src/components/AgentConnectionChip.vue` + `lib/agent-chip.ts`      |
 | Image lightbox (Pasted-images gallery, §6)         | `src/renderer/src/components/ImageLightbox.vue`                                  |
+| Links pill + popover (footer, §6 — T617)           | `src/renderer/src/components/FooterLinksPopover.vue`                             |
 | Markdown pane (file-backed viewer, §6 — T74)       | `src/renderer/src/components/MarkdownPane.vue`                                   |
 | Markdown renderer (string→prose, reusable)         | `src/renderer/src/components/MarkdownRenderer.vue` + `lib/markdown.ts` seam      |
 | Memory pane (project memory viewer, §6 — T79)      | `src/renderer/src/components/MemoryPane.vue` + `stores/memory.ts`                |
-| Split menu (Topbar dropdown)                       | `src/renderer/src/components/SplitMenu.vue`                                      |
 | Fleet rail — approvals + fleet state (§6, T151)    | `src/renderer/src/components/InboxRail.vue`                                      |
 | Approval Inbox row (§6)                            | `src/renderer/src/components/ApprovalRow.vue`                                    |
 | Settings dialog (§6)                               | `src/renderer/src/components/SettingsDialog.vue`                                 |
@@ -316,8 +318,14 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Usage Dashboard ranked list (§6)                   | `src/renderer/src/components/UsageDashboardRankList.vue`                         |
 | Usage Dashboard session anatomy (§6)               | `src/renderer/src/components/UsageDashboardAnatomy.vue`                          |
 | Usage Dashboard explorer table (§6)                | `src/renderer/src/components/UsageDashboardExplorerTable.vue`                    |
-| System Monitor (takeover, T127 S2)                 | `src/renderer/src/components/SystemMonitor.vue`                                  |
-| System Monitor row (process/session/child)         | `src/renderer/src/components/SystemMonitorRow.vue`                               |
+| System Monitor (takeover, T127 S2 / T591)          | `src/renderer/src/components/SystemMonitor.vue`                                  |
+| System Monitor Harnu sidebar (T591)                | `src/renderer/src/components/SystemMonitorSidebar.vue`                           |
+| System Monitor KPI strip (T591)                    | `src/renderer/src/components/SystemMonitorKpis.vue`                              |
+| System Monitor session card (T591)                 | `src/renderer/src/components/SystemMonitorCard.vue`                              |
+| System Monitor table row + children (T591)         | `src/renderer/src/components/SystemMonitorRow.vue`                               |
+| System Monitor state / actions (T591)              | `SystemMonitorState.vue` + `SystemMonitorActions.vue`                            |
+| System Monitor spark / avatar (T591)               | `SystemMonitorSpark.vue` + `SystemMonitorAvatar.vue`                             |
+| System Monitor history + folder hue (T591)         | `lib/monitor-history.ts` + `stores/monitor.ts`; `lib/folder-hue.ts`              |
 | Heap gauge (footer, T127 S3)                       | `src/renderer/src/components/HeapGauge.vue`                                      |
 | Hibernation policy pane (Settings tab, T127 S4)    | `src/renderer/src/components/HibernationPolicyPane.vue`                          |
 | Cleanup takeover (unified Workspace GC, T443)      | `src/renderer/src/components/CleanupView.vue`                                    |
@@ -356,6 +364,9 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Diagram pane (canvas viewer, non-PTY, T218)        | `src/renderer/src/components/DiagramPane.vue` + `components/canvas/*`            |
 | Canvas toolbar (§6 — T536)                         | `src/renderer/src/components/CanvasToolbar.vue` + `canvas/canvas-tools.ts`       |
 | Canvas properties panel (§6 — T536 U3)             | `CanvasPropertiesPanel.vue` + `canvas/canvas-{style,layers}.ts`                  |
+| GitHub budget footer pill + popover (§6 — T611)    | `src/renderer/src/components/GithubBudgetPill.vue` + `GithubBudgetPopover.vue`   |
+| GitHub API settings pane (§6 — T611)               | `src/renderer/src/components/GithubBudgetPane.vue` + `lib/github-budget-view.ts` |
+| GitHub budget store + notices (§6 — T611)          | `stores/github-budget.ts` + `lib/github-budget-notice.ts`                        |
 | Scheduler (takeover, T291)                         | `src/renderer/src/components/SchedulerView.vue`                                  |
 | Scheduler worker row                               | `src/renderer/src/components/SchedulerWorkerRow.vue`                             |
 | Scheduler prompt field (skill mentions, T305)      | `src/renderer/src/components/SchedulerPromptField.vue` + `scheduler-mentions.ts` |
@@ -364,7 +375,15 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission progress pill (Topbar, §6 — T370)          | `src/renderer/src/components/MissionPill.vue` + `lib/mission-view.ts`            |
 | Mission progress popover (§6 — T370)               | `src/renderer/src/components/MissionPopover.vue` + `stores/missions.ts`          |
 | Mission step rail (§6 — T370)                      | `src/renderer/src/components/MissionStepRail.vue`                                |
+| Mission step glyph (§6 — T596)                     | `src/renderer/src/components/MissionStepGlyph.vue`                               |
+| Campaign popover (§6 — T596)                       | `src/renderer/src/components/CampaignPopover.vue` + `lib/campaign-view.ts`       |
+| Campaign map takeover (§6 — T607)                  | `src/renderer/src/components/CampaignMap.vue` + `lib/campaign-map.ts`            |
+| Campaign map gate dots (§6 — T607)                 | `src/renderer/src/components/CampaignGateDots.vue`                               |
+| Campaign store + IPC (§6 — T596)                   | `stores/campaigns.ts` + `src/main/campaign-ipc.ts`                               |
 | Mission close confirm (§6 — T370 AC-S9-8)          | `src/renderer/src/components/MissionCloseConfirmDialog.vue`                      |
+| Pause steward dialog (§6 — T609)                   | `src/renderer/src/components/StewardPauseDialog.vue`                             |
+| Merge batch dialog (§6 — T609)                     | `src/renderer/src/components/MergeBatchDialog.vue` + `src/main/merge-batch-*.ts` |
+| Scheduler Stewards section (§6 — T609)             | `src/renderer/src/components/SchedulerStewards.vue` + `lib/steward-view.ts`      |
 | Missions review dialog (§6 — BUG-173 S5)           | `src/renderer/src/components/MissionsReviewDialog.vue`                           |
 | Bulk close confirm (§6 — BUG-173 S5)               | `src/renderer/src/components/MissionBulkCloseConfirmDialog.vue`                  |
 | Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |

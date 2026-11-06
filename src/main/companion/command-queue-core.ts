@@ -114,8 +114,9 @@ export function planEnqueue(
         dedupe: waiting
       }
     }
-  } else if (spec.name === 'ui.status') {
-    replace.push(...q.items.filter((i) => isQueued(i, 'ui.status')))
+  } else if (spec.name === 'ui.status' || spec.name === 'mission.state') {
+    // A newer snapshot makes an undelivered older one pointless (T589: the mission state is a whole).
+    replace.push(...q.items.filter((i) => isQueued(i, spec.name)))
   } else if (spec.name === 'config.update') {
     const older = q.items.filter((i) => isQueued(i, 'config.update'))
     replace.push(...older)

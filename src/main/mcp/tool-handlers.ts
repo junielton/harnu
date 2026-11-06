@@ -42,17 +42,44 @@ import { addTaskEventObserver, getTaskStates } from '../hook-bridge'
 import { lastSubagentActivity } from '../subagent-activity'
 import { buildStepPulse, withHelperActivity, type MissionStepPulse } from '../mission-pulse'
 import { listPendingApprovals } from '../approval-resolver'
-import { findPrsForWorktrees, type MissionPrJoin } from '../pr-stack'
 import {
+  findMainCi,
+  findPrsForWorktrees,
+  type MissionPrJoin,
+  type WorktreePrJoin
+} from '../pr-stack'
+import { checkDeliveredMissions, githubBudget } from '../github-budget-tracker'
+import { githubBudgetPayload } from './github-budget-view'
+import {
+  addObservedLedger,
   ensureLinkCacheLoaded,
   forgetResolved,
   getLastKnown,
+  getObservedLedger,
   rememberResolved
 } from '../mission-link-cache'
+import {
+  computeStepGates,
+  hasEvidenceBundle,
+  type GateCi,
+  type GatePrFacts,
+  type StepGates
+} from '../mission-gates'
+import {
+  appendLedgerRow,
+  hasLedgerRow,
+  lastLedgerDetail,
+  ledgerTail,
+  mergeLedger,
+  pickLedgerTargets,
+  type LedgerHints,
+  type LedgerRowInput
+} from '../mission-ledger'
 import type { PrEntry } from '../pr-stack-core'
 import { getScreenStates, getShellSessions } from '../detect/screen-detect'
 import {
   createTerminalPty,
+  ShelvedRestoreError,
   discardTerminalPty,
   ensureTerminalScreenModel,
   liveSessionKeys,
@@ -61,6 +88,7 @@ import {
   waitForSessionReady,
   writeTerminalPty
 } from '../pty'
+import { ensureShelvedRestored } from '../gc/shelve-restore-shell'
 import {
   AGENT_TERMINAL_SIZE,
   MAX_AGENT_TERMINALS_PER_FOLDER,
@@ -135,6 +163,7 @@ import { hibernatedKeys, isHibernated } from '../hibernation'
 import {
   applyAddCheck,
   buildMissionFileContent,
+  type LedgerRow,
   CHECK_LABEL_MAX,
   createMissionFile,
   OPERATOR_VERIFIER,
@@ -149,14 +178,45 @@ import {
   withMissionIdMintLock,
   MISSION_ID_RE,
   MISSION_STEP_CONTROLLED_FIELDS,
+  STEP_ID_RE,
   type Blocker,
   type DeclaredEnd,
   type Mission,
   type MissionStep,
+  type StepDecision,
+  type StepEdge,
   type StepLink
 } from '../mission-core'
 import { probeGitMeta } from '../git-probe'
-import { computeProgress, progressSteps, type MissionProgress } from '../mission-progress'
+import {
+  computeProgress,
+  progressHeadline,
+  progressSteps,
+  type MissionProgress
+} from '../mission-progress'
+import {
+  applyAddChapter,
+  buildCampaignFileContent,
+  buildChapter,
+  CAMPAIGN_ID_RE,
+  campaignsDir,
+  createCampaignFile,
+  mintCampaignId,
+  missingPrerequisites,
+  parseCampaignFile,
+  readCampaignLog,
+  withCampaignLock,
+  type Campaign,
+  type Chapter,
+  type MissingPrerequisite,
+  type NewChapter
+} from '../campaign-core'
+import {
+  campaignCloseRefusal,
+  computeCampaignProgress,
+  type CampaignProgress,
+  type ChapterFacts
+} from '../campaign-progress'
 import { importLegacyGoalFile } from '../mission-migration'
 import { atomicWriteFile } from './atomic-write'
 import {
@@ -179,14 +239,27 @@ import {
 } from '../worktree-ipc'
 import { toWorktreeListing } from '../worktree-core'
 import { provisionErrorPayload, WorktreeProvisionError } from '../worktree-manifest'
-import { readUserProjects, terminalReadOptIns } from '../user-projects'
+import {
+  normalizePath as normalizeStoredPath,
+  readUserProjects,
+  terminalReadOptIns,
+  transactHiddenPaths
+} from '../user-projects'
 import {
   appendMemoryEntry,
   queryMemory,
   readMemoryOverview,
   readMemoryPage,
+  recallForScope,
   resolveMemoryLocation
 } from './memory-store'
+import type { RecallHit, RecallQuery } from './memory-entries'
+import {
+  consolidate,
+  parseLogEntries,
+  type Consolidation,
+  type ConsolidatorInput
+} from '../consolidator-core'
 import { checkMarkdownReadAllowed, markdownKnownRoots } from '../markdown-read'
 import { readAgentSpeechPrefs } from '../speech'
 import { resolveSpeakGate, speakUnspokenHint, SPEAK_GATE_ERRORS } from '../speech-gate-core'
@@ -272,11 +345,16 @@ import {
   createWorkerForAgent,
   deleteWorkerForAgent,
   isSchedulerNotReady,
+  isWorkerIsSteward,
   isWorkerNotFound,
   listWorkersForAgent,
   updateWorkerForAgent,
+  wakeStewardForMission,
   type UpdateWorkerPatch
 } from '../scheduler-shell'
+import { startStewardForMission } from '../steward-shell'
+import { currentBranch, rebaseStack, repoCommonDir, worktreeToplevel } from '../steward-rebase'
+import type { WakeReason } from '../steward-core'
 import type { Effort, NotifyOn, WorkerMode } from '../scheduler-core'
 import { getContainersService } from '../containers/containers-ipc'
 import type { AgentActVerb } from '../containers/containers-wire'
@@ -290,6 +368,9 @@ import {
 import { getGcService } from '../gc/gc-service-registry'
 import { cleanupListing, planRelease } from './cleanup-listing'
 import { realPathLookup } from './real-paths'
+import { getSessionArchive } from '../session-archive-core'
+import { planArchiveSession, summarizeArchive, type ArchivePlan } from './archive-session-core'
+import { planHideFolder, summarizeHide } from './hide-folder-core'
 
 /** Everything a handler may need beyond its own validated `input`. */
 export interface ToolHandlerCtx {
@@ -935,6 +1016,13 @@ const createSessionHandler: Handler = async (args, ctx) => {
   if (!ctx.bridge) return errorResult('NO_BRIDGE')
   const bridge = ctx.bridge
   const folder = ctx.folder
+  // U2.3a (design C3): a session opened in a shelved worktree brings it back first, here as well as
+  // in `createPty`, so a failure is this call's error and not an `ok:true` with a session that never
+  // materializes.
+  const restored = await ensureShelvedRestored(folder)
+  if (restored.status === 'failed') {
+    return steerError(`SHELVED_RESTORE_FAILED: ${restored.reason}: ${restored.message}`, ctx.folder)
+  }
   const payload: Record<string, unknown> = { folder }
   const prePrompt = strField(args, 'prePrompt')
   if (prePrompt) payload.prePrompt = prePrompt
@@ -994,12 +1082,33 @@ const createSessionHandler: Handler = async (args, ctx) => {
     release: (f) => releaseInFlight(f),
     deadlineFired: () => ctx.deadlineFlag?.fired === true
   }
-  return runCreateSession(
+  const res = await runCreateSession(
     folder,
     payload,
     { effectiveModel: resolvedBoot.effectiveModel, effectiveEffort: resolvedBoot.effectiveEffort },
     deps
   )
+  // Campaign spec §3.2: the dispatch is a ledger event — written here, once, on success.
+  const sessionId = createdSessionId(res)
+  if (sessionId) {
+    await recordLedgerEvent(folder, { folder }, { kind: 'dispatched', ref: sessionId, sessionId })
+  }
+  return res
+}
+
+/** The session id a successful `create_session` ACK names (materialized, else synthetic). */
+function createdSessionId(res: CallToolResult): string | null {
+  if (res.isError) return null
+  const first = res.content[0]
+  if (!first || first.type !== 'text') return null
+  try {
+    const ack = asRecord(JSON.parse(first.text))
+    if (ack.ok !== true) return null
+    const result = asRecord(ack.result)
+    return strField(result, 'sessionId') ?? strField(result, 'syntheticId') ?? null
+  } catch {
+    return null
+  }
 }
 
 /** Whether Harnu knows `sessionId`: the scan, or either in-flight registry (a live born-synthetic). */
@@ -1039,6 +1148,13 @@ const spawnTerminalHandler: Handler = async (args, ctx) => {
   let ptyId: string
   try {
     ptyId = await createTerminalPty({ terminalId, folder: targetFolder, ownerSessionId })
+  } catch (err) {
+    // U2.3a: `createPty` restores a shelved worktree before the shell starts; a failed restore is
+    // the agent's steering error, not a thrown tool failure.
+    if (err instanceof ShelvedRestoreError) {
+      return steerError(`SHELVED_RESTORE_FAILED: ${err.reason}: ${err.message}`, ctx.folder)
+    }
+    throw err
   } finally {
     // Registered by now (or the spawn failed): the record, not the reservation, holds the slot.
     terminalRegistry.releaseSlot(targetFolder)
@@ -1465,6 +1581,12 @@ const createWorktreeHandler: Handler = async (args, ctx) => {
         ? { inherit: { optedOut: ctx.opts.worktreeInherit.optedOut } }
         : {})
     })
+    // Campaign spec §3.2: the cut is a ledger event, written once the worktree exists.
+    await recordLedgerEvent(
+      ctx.folder,
+      { folder: result.path, branch: result.branch },
+      { kind: 'worktree', ref: result.path, worktree: result.path, branch: result.branch }
+    )
     // T64/BUG-12: echo the base the worktree was actually cut from (the passed
     // folder's HEAD, not the main checkout's) + the branch, so the agent has
     // proprioception for stacked fan-out instead of a silently wrong base.
@@ -1572,6 +1694,10 @@ const memoryAppendHandler: Handler = async (args, ctx) => {
     ...(branch ? { branch } : {}),
     // T89: central storage seeds a `where.md` backlink to the source project.
     ...(mode === 'central' ? { backlink: { sourcePath: checkout } } : {}),
+    // Campaign ch.6: the entry's chain and recall metadata (validated at the gate).
+    ...(strField(args, 'supersedes') ? { supersedes: strField(args, 'supersedes') } : {}),
+    ...(Array.isArray(args.watches) ? { watches: args.watches.map(String) } : {}),
+    ...(strField(args, 'mission') ? { mission: strField(args, 'mission') } : {}),
     now: Date.now()
   })
   if (!res.ok) return errorResult(`${res.error}: ${res.detail}`)
@@ -1580,7 +1706,8 @@ const memoryAppendHandler: Handler = async (args, ctx) => {
     op: 'memory_append',
     page: res.page,
     file: res.file,
-    bytes: res.bytes
+    bytes: res.bytes,
+    ...(res.entryId ? { entryId: res.entryId } : {})
   })
 }
 
@@ -2206,6 +2333,14 @@ async function stampManifestAndAck(
     substrateOverrides
   )
   const skipped = resolved.map((r) => r.slug).filter((slug) => !selectedSlugs.includes(slug))
+  // Campaign spec §3.2: each stamped card drains into a dispatch — one ledger row per card.
+  for (const slug of stampResult.stamped) {
+    await recordLedgerEvent(
+      folder,
+      { card: slug },
+      { kind: 'dispatched', ref: slug, detail: 'manifest' }
+    )
+  }
   pushShadowEntry({
     sessionId: '',
     event: shadow.event,
@@ -2619,7 +2754,10 @@ const listWorkersHandler: Handler = async (args, ctx) => {
     mode: w.mode,
     everyMinutes: w.everyMinutes,
     enabled: w.enabled,
-    agentControllable: !isFolderDenied(w.folder, ctx.denyFolders),
+    // Campaign ch.5a: a steward is a system worker — never agent-controllable, whatever the folder.
+    agentControllable:
+      w.category === 'steward' ? false : !isFolderDenied(w.folder, ctx.denyFolders),
+    ...(w.category === 'steward' ? { category: w.category, missionId: w.missionId } : {}),
     ...(w.lastRun ? { lastRun: w.lastRun } : {})
   }))
   return textResult({ workers })
@@ -2695,6 +2833,7 @@ const updateWorkerHandler: Handler = async (args) => {
     // matched on `code`, never `instanceof`.
     if (isSchedulerNotReady(err)) return errorResult((err as Error).message)
     if (isWorkerNotFound(err)) return errorResult((err as Error).message)
+    if (isWorkerIsSteward(err)) return errorResult((err as Error).message)
     throw err
   }
   const { worker, missingSkills, rejectedSkills, tickInFlight } = result
@@ -2725,6 +2864,7 @@ const deleteWorkerHandler: Handler = async (args) => {
   } catch (err) {
     if (isSchedulerNotReady(err)) return errorResult((err as Error).message)
     if (isWorkerNotFound(err)) return errorResult((err as Error).message)
+    if (isWorkerIsSteward(err)) return errorResult((err as Error).message)
     throw err
   }
   return textResult({ ok: true, op: 'delete_worker', id, wasRunning: result.wasRunning })
@@ -2919,6 +3059,14 @@ const removeContainersHandler: Handler = (args, ctx) => {
   return actOnContainers('remove', raw, [stack], ctx)
 }
 
+// ---- T614 `github_budget` -----------------------------------------------------
+
+/** The shared GitHub budget (T611). Reads the in-memory tracker: no `gh` call, no folder, no write. */
+const githubBudgetHandler: Handler = async () => {
+  githubBudget.tick()
+  return textResult(githubBudgetPayload(githubBudget.snapshot()))
+}
+
 // ---- T445 `list_cleanup` / `release_worktree` --------------------------------
 
 const GC_NOT_READY =
@@ -2999,6 +3147,170 @@ const releaseWorktreeHandler: Handler = async (args, ctx) => {
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
   if (!plan.ack.alreadyReleased) await svc.release(plan.bundleId, now, plan.from)
   return textResult(plan.ack)
+}
+
+// ---- T655 `archive_session` ---------------------------------------------------
+
+/**
+ * Archive or restore sessions through the main-process archive store, the same set the
+ * sidebar's Archive action writes. Each id is judged on its own (see
+ * {@link planArchiveSession}) inside the store's own serialized write, which commits once;
+ * the renderer hears about it through the store's change event, so a window that is open
+ * updates live and one that is closed simply reads the file at boot. This handler never touches a transcript or a worktree: the only file it can write is the store.
+ */
+const archiveSessionHandler: Handler = async (args, ctx) => {
+  const store = getSessionArchive()
+  if (!store) {
+    return errorResult(
+      'ARCHIVE_NOT_READY: the session archive has not started yet. Retry in a moment.'
+    )
+  }
+  const sessionIds = Array.isArray(args.sessionIds)
+    ? args.sessionIds.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : []
+  if (sessionIds.length === 0) return errorResult('BAD_ARGS: pass 1..100 session ids')
+  const unarchive = args.unarchive === true
+
+  const home = os.homedir()
+  const folderBySession = new Map<string, string>()
+  for (const f of ctx.folders) {
+    for (const s of f.sessions) folderBySession.set(s.sessionId, s.projectPath ?? f.path)
+  }
+
+  // Every row is decided INSIDE the store's serialized write, against the set as it stands
+  // after all earlier writes, so concurrent calls read as one serial order and an ACK row can
+  // never describe a state the store did not hold. The deadline check is the commit point:
+  // past the 120s deadline the caller already got TOOL_TIMEOUT, so nothing is written.
+  let plan: ArchivePlan | null
+  try {
+    plan = await store.transact((archived) => {
+      if (ctx.deadlineFlag?.fired) return { result: null }
+      const states = taskStateRecord()
+      const withApproval = new Set(listPendingApprovals().map((a) => a.sessionId))
+      const p = planArchiveSession(sessionIds, unarchive, {
+        archived,
+        folderOf: (id) => folderBySession.get(id),
+        isDenied: (folder) => isFolderDenied(folder, ctx.denyFolders, home),
+        taskStateOf: (id) => states[id],
+        hasPendingApproval: (id) => withApproval.has(id)
+      })
+      return { archive: p.toArchive, unarchive: p.toRestore, result: p }
+    })
+  } catch (err) {
+    // The write failed: the store is exactly as it was, so no row may claim otherwise.
+    return errorResult(
+      `ARCHIVE_WRITE_FAILED: ${err instanceof Error ? err.message : String(err)}. Nothing was changed.`
+    )
+  }
+  if (!plan) return errorResult('DEADLINE_FIRED')
+
+  const counts: Record<string, number> = {}
+  for (const r of plan.rows) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1
+  appendAudit({
+    ts: Date.now(),
+    tool: 'archive_session',
+    folder: '',
+    verdict: 'allow',
+    disclosedPayloadSummary: summarizeArchive(unarchive, plan.rows),
+    result: 'ok'
+  })
+  return textResult({
+    ok: !plan.rows.some((r) => r.outcome === 'refused' || r.outcome === 'notFound'),
+    op: 'archive_session',
+    unarchive,
+    results: plan.rows,
+    counts
+  })
+}
+
+// ---- T661 `hide_folder` -------------------------------------------------------
+
+/**
+ * Hide or show sidebar folders through the SAME `hiddenPaths` the folder menu writes. Every
+ * row is decided inside the user-projects write lock ({@link transactHiddenPaths}), on the
+ * file just read, so N concurrent calls (and the menu action) read as one serial order and
+ * the ACK always matches what was persisted. A failed write rejects the whole call with
+ * nothing changed. The renderer hears the change through the store's listener (forwarded as
+ * `userProjects:hiddenChanged`), so an open sidebar updates live. Nothing on disk is touched.
+ *
+ * The transaction is entered before the first `await`, so calls reach the lock in arrival order.
+ */
+const hideFolderHandler: Handler = (args, ctx) => {
+  const requested = Array.isArray(args.folders)
+    ? args.folders.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : []
+  if (requested.length === 0) {
+    return Promise.resolve(errorResult('BAD_ARGS: pass 1..100 absolute folder paths'))
+  }
+  const unhide = args.unhide === true
+  const home = os.homedir()
+  const states = taskStateRecord()
+  const withApproval = new Set(listPendingApprovals().map((a) => a.sessionId))
+
+  // Group the scanned sessions by the folder they run in, keyed by the normalized path the
+  // store persists (a session counts for its own folder only, never for a parent or child).
+  const sessionsByRawFolder = new Map<string, string[]>()
+  for (const f of ctx.folders) {
+    for (const s of f.sessions) {
+      const raw = s.projectPath ?? f.path
+      const list = sessionsByRawFolder.get(raw)
+      if (list) list.push(s.sessionId)
+      else sessionsByRawFolder.set(raw, [s.sessionId])
+    }
+  }
+  const scannedFolders = ctx.folders.map((f) => f.path)
+
+  return transactHiddenPaths(async ({ hidden, projects }) => {
+    const paths = await Promise.all(requested.map((p) => normalizeStoredPath(p)))
+    const known = new Set<string>([...hidden, ...projects.map((p) => p.path)])
+    for (const p of await Promise.all(scannedFolders.map((p) => normalizeStoredPath(p)))) {
+      known.add(p)
+    }
+    const sessionsByFolder = new Map<string, string[]>()
+    for (const [raw, ids] of sessionsByRawFolder) {
+      const key = await normalizeStoredPath(raw)
+      sessionsByFolder.set(key, [...(sessionsByFolder.get(key) ?? []), ...ids])
+    }
+
+    // The single commit point: past the 120s deadline the caller already got TOOL_TIMEOUT.
+    if (ctx.deadlineFlag?.fired) return { toHide: [], toShow: [], result: null }
+    const plan = planHideFolder(paths, unhide, {
+      hidden,
+      isKnown: (p) => known.has(p),
+      isDenied: (p) => isFolderDenied(p, ctx.denyFolders, home),
+      hasWorkingSession: (p) =>
+        (sessionsByFolder.get(p) ?? []).some((id) => states[id] === 'working'),
+      hasPendingApproval: (p) => (sessionsByFolder.get(p) ?? []).some((id) => withApproval.has(id))
+    })
+    return { toHide: plan.toHide, toShow: plan.toShow, result: plan }
+  }).then(
+    ({ result: plan }) => {
+      if (plan === null) return errorResult('DEADLINE_FIRED')
+      const counts: Record<string, number> = {}
+      for (const r of plan.rows) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1
+      appendAudit({
+        ts: Date.now(),
+        tool: 'hide_folder',
+        folder: '',
+        verdict: 'allow',
+        disclosedPayloadSummary: summarizeHide(unhide, plan.rows),
+        result: 'ok'
+      })
+      return textResult({
+        ok: !plan.rows.some((r) => r.outcome === 'refused' || r.outcome === 'notFound'),
+        op: 'hide_folder',
+        unhide,
+        results: plan.rows,
+        counts
+      })
+    },
+    (err: unknown) =>
+      errorResult(
+        `HIDE_WRITE_FAILED: could not read or save the hidden folders, nothing changed (${
+          err instanceof Error ? err.message : String(err)
+        })`
+      )
+  )
 }
 
 // ---- mission_* verbs (T358 S3 — design.md §4) -------------------------------
@@ -3418,6 +3730,84 @@ async function writeNewMission(
   })
 }
 
+/**
+ * Campaign ch.6 (AC-6.3): the live memory entries whose `watches` overlap what a new mission or
+ * campaign is about. Best-effort — memory trouble must never fail a create, so it recalls nothing.
+ */
+async function recallFor(folder: string, query: RecallQuery): Promise<RecallHit[]> {
+  try {
+    const { memoryDir } = await resolveMemoryLocation(folder)
+    return await recallForScope(memoryDir, query)
+  } catch (err) {
+    console.warn('[recall] could not read memory:', err)
+    return []
+  }
+}
+
+/**
+ * The steward Brief's recall (AC-6.3): the same match `mission_create` ran, redone at compaction
+ * time so a decision recorded since still reaches the resumed owner. Titles and scope only.
+ */
+export async function recallForMission(mission: Mission, title: string): Promise<RecallHit[]> {
+  return recallFor(mission.owner.folder, {
+    paths: scopePaths(missionScope(mission)),
+    topics: [title, ...mission.steps.map((s) => s.title)]
+  })
+}
+
+/** The repo paths a scope attachment names. */
+const scopePaths = (links: readonly StepLink[]): string[] =>
+  links.filter((l) => l.kind === 'worktree').map((l) => l.ref)
+
+/** The current `hot.md` body, for the consolidator's refresh; `undefined` when there is none. */
+async function readHotBody(folder: string): Promise<string | undefined> {
+  try {
+    const { memoryDir } = await resolveMemoryLocation(folder)
+    return await fs.readFile(path.join(memoryDir, 'hot.md'), 'utf8')
+  } catch {
+    return undefined
+  }
+}
+
+const missionConsolidatorInput = (
+  m: Mission,
+  log: string,
+  currentHot: string | undefined
+): ConsolidatorInput => ({
+  kind: 'mission',
+  id: m.id,
+  title: log.match(/^# (.+)$/m)?.[1] ?? m.slug,
+  declaredEnd: m.declaredEnd,
+  createdAt: m.createdAt,
+  scopePaths: scopePaths(missionScope(m)),
+  steps: m.steps.map((s) => ({
+    id: s.id,
+    title: s.title,
+    kind: s.kind,
+    proof: s.proof,
+    required: s.required !== false,
+    ...(s.addedAt ? { addedAt: s.addedAt } : {}),
+    ...(s.addedReason ? { addedReason: s.addedReason } : {}),
+    ...(s.decision
+      ? {
+          decision: {
+            title: s.decision.title,
+            options: s.decision.options,
+            ...(s.decision.chosen !== undefined ? { chosen: s.decision.chosen } : {})
+          }
+        }
+      : {})
+  })),
+  log: parseLogEntries(log),
+  ledger: m.ledger ?? [],
+  ...(currentHot ? { currentHot } : {})
+})
+
+const consolidationAck = (c: Consolidation): Record<string, unknown> => ({
+  drafts: c.drafts.length,
+  nothingNotable: c.nothingNotable
+})
+
 const missionCreateHandler: Handler = async (args, ctx) => {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -3439,6 +3829,14 @@ const missionCreateHandler: Handler = async (args, ctx) => {
   if (!SESSION_UUID_RE.test(sessionId))
     return errorResult(badSessionIdMessage('sessionId', sessionId))
   const linkedCard = strField(args, 'linkedCard')
+  // Campaign spec §3.2: the mission IS a chapter of a campaign — both ids, or neither.
+  const campaignId = strField(args, 'campaignId')
+  const chapterId = strField(args, 'chapterId')
+  if ((campaignId === undefined) !== (chapterId === undefined)) {
+    return errorResult(
+      'BAD_ARGS: campaignId and chapterId go together — name the campaign and the chapter this mission IS, or neither.'
+    )
+  }
 
   const root = missionRoot(folder)
   // The gate checked the raw `folder` arg; a worktree outside its main checkout's
@@ -3454,39 +3852,66 @@ const missionCreateHandler: Handler = async (args, ctx) => {
   // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
 
-  const created = await writeNewMission(
-    root,
-    title,
-    (id, slug, now) => ({
-      id,
-      slug,
-      folder: root,
-      owner: { sessionId, folder: path.resolve(folder) },
-      ...(linkedCard ? { linkedCard } : {}),
-      // Mission v3 §3.4: born active — the end agreed in chat is the agreement.
-      status: 'active',
-      declaredEnd,
-      declaredEndApproval: { at: now, bodyHash: declaredEndHash(declaredEnd), via: 'chat' },
-      // Mission v3 §3.3: scope is an attachment, never a step.
-      ...(scope.links.length > 0 ? { scope: scope.links } : {}),
-      steps: planWithEnd(plan.plan),
-      blockers: [],
-      openQuestions: [],
-      createdAt: now,
-      updatedAt: now,
-      provenance: { author: 'agent', at: now, ...(gitBranch ? { branch: gitBranch } : {}) }
-    }),
-    // The title has no Mission field (design §1.1); it heads the Log body.
-    `# ${title}\n\n## Log\n`
-  )
+  const createMission = (): Promise<MissionWrite> =>
+    writeNewMission(
+      root,
+      title,
+      (id, slug, now) => ({
+        id,
+        slug,
+        folder: root,
+        owner: { sessionId, folder: path.resolve(folder) },
+        ...(linkedCard ? { linkedCard } : {}),
+        ...(campaignId && chapterId ? { campaignId, chapterId } : {}),
+        // Mission v3 §3.4: born active — the end agreed in chat is the agreement.
+        status: 'active',
+        declaredEnd,
+        declaredEndApproval: { at: now, bodyHash: declaredEndHash(declaredEnd), via: 'chat' },
+        // Mission v3 §3.3: scope is an attachment, never a step.
+        ...(scope.links.length > 0 ? { scope: scope.links } : {}),
+        steps: planWithEnd(plan.plan),
+        blockers: [],
+        openQuestions: [],
+        createdAt: now,
+        updatedAt: now,
+        provenance: { author: 'agent', at: now, ...(gitBranch ? { branch: gitBranch } : {}) }
+      }),
+      // The title has no Mission field (design §1.1); it heads the Log body.
+      `# ${title}\n\n## Log\n`
+    )
+  // A chapter's mission is created and bound under the campaign's lock, so two creates
+  // for one chapter can never both land (CHAPTER_ALREADY_BOUND); every campaign refusal
+  // happens before the mission is written.
+  const created: MissionWrite =
+    campaignId && chapterId
+      ? await bindMissionToChapter(root, campaignId, chapterId, createMission, ctx)
+      : await createMission()
   if (!created.ok) return errorResult(created.error)
+  // Campaign ch.5a (spec §3.4): a mission gets a steward unless it opts out. The mission is on disk
+  // already, so a steward that cannot start is reported in the ACK, never a failed create.
+  const steward =
+    args.steward === false
+      ? { created: false }
+      : await startStewardForMission({
+          missionId: created.mission.id,
+          ownerFolder: path.resolve(folder),
+          title
+        })
+  // Campaign ch.6 (AC-6.3): what memory already knows about this scope.
+  const recall = await recallFor(folder, {
+    paths: scopePaths(created.mission.scope ?? []),
+    topics: [title, ...created.mission.steps.map((s) => s.title)]
+  })
   return textResult({
     ok: true,
     op: 'mission_create',
     missionId: created.mission.id,
     slug: created.mission.slug,
     steps: created.mission.steps,
-    ...(created.mission.scope ? { scope: created.mission.scope } : {})
+    ...(created.mission.scope ? { scope: created.mission.scope } : {}),
+    ...(campaignId && chapterId ? { campaignId, chapterId } : {}),
+    steward,
+    recall
   })
 }
 
@@ -3730,16 +4155,20 @@ const YOU_CLEAR = "— nothing, you're clear"
 export type MissionYouItem =
   | { kind: 'rescope'; end: DeclaredEnd }
   | { kind: 'close' }
+  /** Campaign spec §3.4 — the operator paused the steward; it does not tick until they resume it. */
+  | { kind: 'steward-paused'; reason: string; at: string }
   | { kind: 'blocker'; reason: string; unblocks: string }
   | { kind: 'checks'; count: number; stepIds: string[] }
   | { kind: 'human-steps'; stepIds: string[] }
   | { kind: 'review-import' }
+  /** Campaign spec §3.2 — a step is done, its PR merged, and the merge commit's CI on main is red. */
+  | { kind: 'main-red'; stepId: string; pr: number }
   | { kind: 'approvals'; count: number; sessionId: string }
   | { kind: 'needs-input'; sessionId: string }
 
 /**
  * What the operator owes this mission (Mission v3 §3.12), in this order: a
- * re-scope to approve, a pending close, each operator-owned blocker, the due
+ * re-scope to approve, a pending close, a paused steward, each operator-owned blocker, the due
  * checks (unticked checks on a reached step — not `todo`/`blocked`), the `human`
  * steps that are current or left behind and not ticked, an imported end to
  * review, and the linked children's parked approvals and needs-input. A closed
@@ -3749,12 +4178,17 @@ export type MissionYouItem =
 export function youItems(
   m: Mission,
   children: readonly MissionChildState[],
-  progress: MissionProgress
+  progress: MissionProgress,
+  /** The derived steps, for the gates (campaign spec §3.2); omitted = no gate items. */
+  steps: readonly Pick<MissionStepSignals, 'stepId' | 'gates' | 'prNumber'>[] = []
 ): MissionYouItem[] {
   if (m.status === 'closed') return []
   const items: MissionYouItem[] = []
   if (m.pendingRescope) items.push({ kind: 'rescope', end: m.pendingRescope })
   if (m.pendingClose) items.push({ kind: 'close' })
+  if (m.stewardPause) {
+    items.push({ kind: 'steward-paused', reason: m.stewardPause.reason, at: m.stewardPause.at })
+  }
   for (const b of [...m.blockers, ...m.steps.flatMap((s) => s.blockers)]) {
     if (b.owner === 'operator')
       items.push({ kind: 'blocker', reason: b.reason, unblocks: b.unblocks })
@@ -3772,17 +4206,33 @@ export function youItems(
   // in progress but never clears it, and a gate the work moved past (a later step
   // running, or the mission otherwise reached it) must not drop off the list.
   const current = progress.current
-  const counted = m.steps.filter((s) => s.kind !== 'fixed-start')
+  // The headline's own steps: `current` counts positions among them, so a side step
+  // (`required: false`, campaign spec §3.2) must not shift the index.
+  const counted = m.steps.filter((s) => s.kind !== 'fixed-start' && s.required !== false)
   const humans = counted
     .filter((s, i) => {
       if (s.verification !== 'human') return false
       if (s.proof === 'verified' && s.verifiedBy?.sessionId === OPERATOR_VERIFIER) return false
+      // A decision the operator has made is finished — nothing left to confirm.
+      if (s.decision?.chosen !== undefined) return false
       const isCurrent = current !== null && i + 1 >= current.from && i + 1 <= current.to
       return reached(s.id) || isCurrent || progress.leftBehind.includes(s.id)
     })
     .map((s) => s.id)
   if (humans.length > 0) items.push({ kind: 'human-steps', stepIds: humans })
   if (m.legacy?.needsReview.includes('declaredEnd')) items.push({ kind: 'review-import' })
+  // A red main after a merge downgrades nothing stored — the step stays as it was —
+  // but it is the operator's to know about (campaign spec §8 AC-1).
+  for (const st of steps) {
+    const state = progress.states[st.stepId]
+    if (
+      st.gates.main === 'red' &&
+      st.prNumber !== null &&
+      (state === 'done' || state === 'verified')
+    ) {
+      items.push({ kind: 'main-red', stepId: st.stepId, pr: st.prNumber })
+    }
+  }
   for (const c of children) {
     if (c.pendingApprovals > 0) {
       items.push({ kind: 'approvals', count: c.pendingApprovals, sessionId: c.sessionId })
@@ -3802,6 +4252,8 @@ function youSentence(item: MissionYouItem): string {
       return `Approve the new declared end (${item.end.kind}: ${item.end.target}).`
     case 'close':
       return 'Close the mission — its end is verified and a close was requested.'
+    case 'steward-paused':
+      return `The steward is paused (${item.reason}) — resume it from the mission popover when ready.`
     case 'blocker':
       return `Unblock: ${item.reason} — unblocks when ${item.unblocks}.`
     case 'checks':
@@ -3810,6 +4262,8 @@ function youSentence(item: MissionYouItem): string {
       return `Confirm the human step${s(item.stepIds.length)} ${item.stepIds.join(', ')}.`
     case 'review-import':
       return 'Review the imported end — it is a placeholder until you approve a re-scope.'
+    case 'main-red':
+      return `main is red after #${item.pr} — ${item.stepId} is merged but its merge commit fails CI.`
     case 'approvals':
       return `Answer ${item.count} pending approval${s(item.count)} in the Approval Inbox — from linked session ${item.sessionId.slice(0, 8)}.`
     case 'needs-input':
@@ -3930,6 +4384,9 @@ export interface MissionPrSummary {
   url: string
   /** The branch the PR merges INTO (Mission v2 §3.6) — informative, no derived flag. */
   baseRefName: string
+  /** When GitHub says the PR was opened / merged (ISO); present only when it said. */
+  createdAt?: string
+  mergedAt?: string
 }
 
 function prSummary(p: PrEntry): MissionPrSummary {
@@ -3940,7 +4397,9 @@ function prSummary(p: PrEntry): MissionPrSummary {
     isDraft: p.isDraft,
     ci: p.ci,
     url: p.url,
-    baseRefName: p.base
+    baseRefName: p.base,
+    ...(p.createdAt ? { createdAt: p.createdAt } : {}),
+    ...(p.mergedAt ? { mergedAt: p.mergedAt } : {})
   }
 }
 
@@ -3981,6 +4440,11 @@ export type MissionLinkSignal =
       url?: string
       /** The branch the PR merges INTO (Mission v2 §3.6); absent when the PR is unknown. */
       baseRefName?: string
+      /** Campaign spec §3.2 — CI of the PR head (live, or the last known when `stale`). */
+      ci?: GateCi
+      /** When GitHub says the PR was opened / merged (ISO); present only when it said. */
+      createdAt?: string
+      mergedAt?: string
       /**
        * Mission v3 §3.7 — GitHub could not say (unreachable, or the PR is not
        * among the recent ones): the last-known state is shown, or, if the link
@@ -3988,6 +4452,87 @@ export type MissionLinkSignal =
        */
       stale?: true
     }
+
+/**
+ * Commits a worktree link reports. Once the branch's PR merged (and no PR on it is
+ * still open) nothing is left to land, whatever the merge style: a squash leaves the
+ * branch's commits "ahead" of the default branch forever, so git's count would read
+ * the finished unit as 10 commits of unmerged work. An open PR, or no PR, keeps the
+ * git count (`undefined` = git could not count).
+ */
+function commitsOf(w: WorktreePrJoin | undefined): number | undefined {
+  if (!w) return undefined
+  const prs = w.prs ?? []
+  if (prs.some((p) => p.state === 'MERGED') && !prs.some((p) => p.state === 'OPEN')) return 0
+  return w.commits
+}
+
+/** A CI word from `pr-stack-core` (or the cache) as the gates' four states. */
+function gateCiOf(ci: string | undefined): GateCi {
+  return ci === 'passing' || ci === 'failing' || ci === 'pending' ? ci : 'unknown'
+}
+
+/**
+ * The PR a step's gates read, from its resolved links: a `pr` link first, else a PR
+ * joined through a linked worktree or card. An open or merged PR beats a closed one;
+ * among equals the newest number wins. `stale` = the values are last-known.
+ */
+function stepPrFacts(
+  links: readonly MissionLinkSignal[]
+): { facts: GatePrFacts; stale: boolean } | null {
+  const found: Array<{ facts: GatePrFacts; stale: boolean; direct: boolean }> = []
+  for (const l of links) {
+    if (l.kind === 'pr') {
+      if (l.number !== null && l.state !== undefined) {
+        found.push({
+          facts: {
+            number: l.number,
+            state: l.state,
+            ci: l.ci ?? 'unknown',
+            ...(l.createdAt ? { createdAt: l.createdAt } : {}),
+            ...(l.mergedAt ? { mergedAt: l.mergedAt } : {})
+          },
+          stale: l.stale === true,
+          direct: true
+        })
+      }
+    } else if (l.kind === 'worktree' || l.kind === 'card') {
+      for (const p of l.prs) {
+        if (p.state === 'OPEN' || p.state === 'MERGED' || p.state === 'CLOSED') {
+          found.push({
+            facts: {
+              number: p.number,
+              state: p.state,
+              ci: gateCiOf(p.ci),
+              ...(p.createdAt ? { createdAt: p.createdAt } : {}),
+              ...(p.mergedAt ? { mergedAt: p.mergedAt } : {})
+            },
+            stale: false,
+            direct: false
+          })
+        }
+      }
+    }
+  }
+  const rank = (f: { facts: GatePrFacts; direct: boolean }): number =>
+    (f.facts.state === 'CLOSED' ? 0 : 2) + (f.direct ? 1 : 0)
+  found.sort((a, b) => rank(b) - rank(a) || b.facts.number - a.facts.number)
+  return found.length > 0 ? { facts: found[0].facts, stale: found[0].stale } : null
+}
+
+/**
+ * Campaign ch.6 (T610) — whether the evidence bundle a step links is on disk. `undefined`
+ * when the step links no bundle at all (the gate then says why it is waiting).
+ */
+function bundleOnDisk(
+  root: string,
+  missionId: string,
+  step: Pick<MissionStep, 'id' | 'links'>,
+  exists: ReadonlyMap<string, boolean>
+): boolean | undefined {
+  const link = step.links.find((l) => hasEvidenceBundle([l], missionId, step.id))
+  return link ? (exists.get(linkPath(root, link.ref)) ?? false) : undefined
+}
 
 export interface MissionStepSignals {
   stepId: string
@@ -3999,6 +4544,13 @@ export interface MissionStepSignals {
   existence: { proven: boolean; reason?: string } | null
   /** T547 — signs of movement inside the step: commits landed and the newest activity. */
   pulse: MissionStepPulse
+  /**
+   * Campaign spec §3.2 — the facts that prove the step: PR, CI, main CI, verifier,
+   * checks. Computed on every read, never stored; `stale: true` = last-known values.
+   */
+  gates: StepGates
+  /** The PR the gates read, or `null` when the step has none. */
+  prNumber: number | null
 }
 
 /** The PR number a `pr` link names: `owner/repo#123`, `#123`, `123` or a `/pull/123` URL. */
@@ -4180,6 +4732,164 @@ async function missionChildren(
   return projected.map((c) => withHelperActivity(c, lastSubagentActivity(c.sessionId), now))
 }
 
+/** How long `mission_get` waits for a merged PR's merge-commit CI before reading last-known. */
+const MAIN_CI_GET_WAIT_MS = 3000
+/** A merge commit that has been green this long is not asked about again. */
+const MAIN_CI_FINAL_AFTER_MS = 30 * 60 * 1000
+
+/**
+ * CI of each merged PR's merge commit on the default branch (campaign spec §3.2
+ * `main` gate), sticky: a result that has stayed green for {@link MAIN_CI_FINAL_AFTER_MS}
+ * is final and not asked again, everything else is re-checked (`findMainCi` caches for
+ * 60 s), and an unreachable GitHub — or a lookup still running past `waitMs` — reads
+ * the last-known value (`stale: true`) or nothing. The lookup itself keeps running and
+ * lands in the cache, so the next read has it. `pending` is live-only — never remembered.
+ */
+async function resolveMainCi(
+  root: string,
+  numbers: readonly number[],
+  ghAvailable: boolean | null,
+  waitMs: number
+): Promise<Map<number, { ci: GateCi | null; stale: boolean }>> {
+  const out = new Map<number, { ci: GateCi | null; stale: boolean }>()
+  const ask: number[] = []
+  for (const n of numbers) {
+    const known = getLastKnown(root, 'pr-main', String(n))
+    if (known?.state === 'passing' && Date.now() - Date.parse(known.at) > MAIN_CI_FINAL_AFTER_MS) {
+      out.set(n, { ci: 'passing', stale: false })
+    } else {
+      ask.push(n)
+    }
+  }
+  const live =
+    ask.length > 0 && ghAvailable !== false
+      ? await findMainCi(root, ask, { waitMs })
+      : { ghAvailable: false as boolean | null, byNumber: {} as Record<number, GateCi | null> }
+  for (const n of ask) {
+    const seen = live.ghAvailable ? live.byNumber[n] : undefined
+    if (seen !== undefined && seen !== null) {
+      if (seen === 'passing' || seen === 'failing') {
+        rememberResolved(root, 'pr-main', String(n), { state: seen, prNumber: n })
+      }
+      out.set(n, { ci: seen, stale: false })
+      continue
+    }
+    const known = getLastKnown(root, 'pr-main', String(n))
+    if (live.ghAvailable === false && known) {
+      out.set(n, { ci: gateCiOf(known.state), stale: true })
+    } else {
+      out.set(n, { ci: null, stale: false })
+    }
+  }
+  return out
+}
+
+/** `taskState`s of a session whose process has ended — the ledger's `session-died`. */
+const SESSION_DEATH_STATES: ReadonlySet<string> = new Set(['completed', 'failed', 'stopped'])
+/** `taskState`s that prove a session is alive right now. */
+const SESSION_ALIVE_STATES: ReadonlySet<string> = new Set(['working', 'needs-input', 'idle'])
+/**
+ * Linked sessions seen alive by a read in this process. A session whose PTY is gone has
+ * no disclosed `taskState` at all (the hook state is hidden without a live PTY), so its
+ * death is "alive before, no state now" — which needs the "before". The ledger's own
+ * `dispatched` row is the same evidence across a restart.
+ */
+const seenAlive = new Set<string>()
+const SEEN_ALIVE_MAX = 2000
+
+/**
+ * Campaign spec §3.2 — record what this read OBSERVED: a PR opened or merged, a CI
+ * change, a linked builder ending. Only a new fact appends a row (deduped against the
+ * ledger so far, file rows and observed rows together), so N reads of an unchanged
+ * world record nothing. The rows go to the link-cache sidecar, never to the mission
+ * file: a read does not rewrite it (Mission v3 §3.7). Synchronous on purpose — the
+ * check and the insert share one tick, so two concurrent reads cannot both add a row.
+ */
+function observeLedger(
+  mission: Mission,
+  steps: readonly MissionStepSignals[],
+  prByStep: ReadonlyArray<{ facts: GatePrFacts } | null>,
+  now: number
+): void {
+  if (mission.status === 'closed') return
+  const at = new Date(now).toISOString()
+  const seen = { ledger: mergeLedger(mission.ledger, getObservedLedger(mission.id)) }
+  const added: LedgerRow[] = []
+  /**
+   * `eventAt`: omitted = the event has no single time of its own (CI, a session end),
+   * the observation time stands. A PR event passes GitHub's time (ISO) or `null` when
+   * GitHub gave none, and then the row falls back to the observation, saying so.
+   */
+  const push = (row: LedgerRowInput, eventAt?: string | null): void => {
+    const t = eventAt ? Date.parse(eventAt) : NaN
+    const full: LedgerRow = Number.isFinite(t)
+      ? { at: new Date(t).toISOString(), ...row }
+      : eventAt === undefined
+        ? { at, ...row }
+        : { at, ...row, detail: 'observed' }
+    added.push(full)
+    seen.ledger.push(full)
+  }
+  steps.forEach((st, i) => {
+    const stepId = st.stepId
+    const facts = prByStep[i]?.facts
+    if (facts) {
+      const ref = `#${facts.number}`
+      if (facts.state === 'OPEN' && !hasLedgerRow(seen, 'pr-opened', ref)) {
+        push({ kind: 'pr-opened', stepId, ref, pr: facts.number }, facts.createdAt ?? null)
+      }
+      if (facts.state === 'MERGED' && !hasLedgerRow(seen, 'pr-merged', ref)) {
+        push({ kind: 'pr-merged', stepId, ref, pr: facts.number }, facts.mergedAt ?? null)
+      }
+      if (
+        facts.ci !== 'unknown' &&
+        lastLedgerDetail(seen, 'ci', ref) !== facts.ci &&
+        facts.state !== 'CLOSED'
+      ) {
+        push({ kind: 'ci', stepId, ref, pr: facts.number, detail: facts.ci })
+      }
+    }
+    for (const c of st.children) {
+      if (c.sessionId === mission.owner.sessionId || !c.known) continue
+      if (c.taskState !== undefined && SESSION_ALIVE_STATES.has(c.taskState)) {
+        seenAlive.add(c.sessionId)
+        if (seenAlive.size > SEEN_ALIVE_MAX) {
+          const oldest = seenAlive.values().next().value
+          if (oldest !== undefined) seenAlive.delete(oldest)
+        }
+        continue
+      }
+      if (hasLedgerRow(seen, 'session-died', c.sessionId)) continue
+      // Parked and still-spawning sessions are not dead; a session with no state and
+      // no process is, once it is known to have lived.
+      const exited = c.taskState === undefined && !c.hibernated && !c.inflight
+      const ended = c.taskState !== undefined && SESSION_DEATH_STATES.has(c.taskState)
+      const wasAlive = seenAlive.has(c.sessionId) || hasLedgerRow(seen, 'dispatched', c.sessionId)
+      if (!ended && !(exited && wasAlive)) continue
+      push({
+        kind: 'session-died',
+        stepId,
+        ref: c.sessionId,
+        sessionId: c.sessionId,
+        detail: c.taskState ?? 'exited'
+      })
+    }
+  })
+  addObservedLedger(mission.id, added)
+  // Campaign ch.5a: what this read OBSERVED is an event too — a CI change, a PR opening or merging,
+  // a builder ending. One wake per read, named for the most specific thing seen.
+  if (added.length > 0) {
+    void wakeSteward(
+      mission.id,
+      added.some((r) => r.kind === 'ci')
+        ? 'ci'
+        : added.some((r) => r.kind === 'session-died')
+          ? 'child-idle'
+          : 'ledger'
+    )
+  }
+}
+
 /**
  * Derive design §7's live signals for one mission: each step's linked children
  * (scoped projection), its worktree/card/pr links joined to commits and PRs
@@ -4193,7 +4903,7 @@ export async function deriveMissionSignals(
   ctx: ToolHandlerCtx,
   now: number,
   /** `prWaitMs`: how long to wait for GitHub before reading the sticky last-known states. */
-  opts: { prWaitMs?: number } = {}
+  opts: { prWaitMs?: number; mainCiWaitMs?: number } = {}
 ): Promise<{ derived: MissionDerived; children: MissionChildState[] }> {
   const scopeLinks = missionScope(mission)
   const links = [...mission.steps.flatMap((s) => s.links), ...(mission.scope ?? [])]
@@ -4234,12 +4944,15 @@ export async function deriveMissionSignals(
   for (const p of worktreePaths) exists.set(p, await pathExists(p))
   // git/gh only for the paths that exist (a plain file link needs neither).
   const gitPaths = worktreePaths.filter((p) => exists.get(p))
+  // T611 D-5: a delivered mission is never asked of GitHub (unless the operator opts back in). Its
+  // local git facts are still read; its PR facts and gates are the sticky last-known ones below.
+  const skipGithub = mission.status === 'delivered' && !checkDeliveredMissions()
   const join: MissionPrJoin =
     gitPaths.length + branches.length + numbers.length > 0
       ? await findPrsForWorktrees(
           root,
           { worktrees: gitPaths, branches, numbers },
-          { waitMs: opts.prWaitMs }
+          { waitMs: opts.prWaitMs, skipGh: skipGithub }
         )
       : { ghAvailable: null, worktrees: {}, branches: {}, numbers: {} }
 
@@ -4280,7 +4993,7 @@ export async function deriveMissionSignals(
         exists: onDisk,
         branch: w?.branch ?? null,
         head: w?.head ?? null,
-        ...(w?.commits !== undefined ? { commits: w.commits } : {}),
+        ...(commitsOf(w) !== undefined ? { commits: commitsOf(w) } : {}),
         prs: (w?.prs ?? []).map(prSummary)
       }
     }
@@ -4306,8 +5019,12 @@ export async function deriveMissionSignals(
             state: pr.state,
             prNumber: number,
             url: pr.url,
-            baseRefName: pr.base
+            baseRefName: pr.base,
+            ...(pr.mergedAt ? { mergedAt: pr.mergedAt } : {})
           })
+          if (pr.ci === 'passing' || pr.ci === 'failing') {
+            rememberResolved(root, 'pr-ci', String(number), { state: pr.ci, prNumber: number })
+          }
         } else {
           // Closed unmerged: the one contrary observation that downgrades.
           forgetResolved(root, 'pr', String(number))
@@ -4319,7 +5036,10 @@ export async function deriveMissionSignals(
           exists: pr.state === 'OPEN' || pr.state === 'MERGED',
           state: pr.state,
           url: pr.url,
-          baseRefName: pr.base
+          baseRefName: pr.base,
+          ci: gateCiOf(pr.ci),
+          ...(pr.createdAt ? { createdAt: pr.createdAt } : {}),
+          ...(pr.mergedAt ? { mergedAt: pr.mergedAt } : {})
         }
       }
       // gh unreachable, or the PR is not among the recent ones: unknown.
@@ -4333,6 +5053,8 @@ export async function deriveMissionSignals(
         state: known.state as PrEntry['state'],
         ...(known.url ? { url: known.url } : {}),
         ...(known.baseRefName ? { baseRefName: known.baseRefName } : {}),
+        ...(known.mergedAt ? { mergedAt: known.mergedAt } : {}),
+        ci: gateCiOf(getLastKnown(root, 'pr-ci', String(number))?.state),
         stale: true
       }
     }
@@ -4355,7 +5077,7 @@ export async function deriveMissionSignals(
       ? { proven: false, reason: unfitReason(scopeUnfit) }
       : existenceOf(scopeResolved, join.ghAvailable)
   }
-  const steps = mission.steps.map((s): MissionStepSignals => {
+  const stepRows = mission.steps.map((s): Omit<MissionStepSignals, 'gates' | 'prNumber'> => {
     const resolved = s.links.map(resolve).filter((l): l is MissionLinkSignal => l !== null)
     const unfit = s === fixedStart ? unfitOf(resolved) : undefined
     const stepChildren = s.links
@@ -4377,6 +5099,37 @@ export async function deriveMissionSignals(
             : existenceOf(resolved, join.ghAvailable)
     }
   })
+  // Campaign spec §3.2 — the gates: the PR, its CI and the CI of its merge commit on
+  // the default branch, read once per merged PR and kept sticky like every other fact.
+  const prByStep = stepRows.map((st) => stepPrFacts(st.links))
+  const mergedNumbers = [
+    ...new Set(prByStep.flatMap((f) => (f?.facts.state === 'MERGED' ? [f.facts.number] : [])))
+  ]
+  const mainCi = await resolveMainCi(
+    root,
+    mergedNumbers,
+    skipGithub ? false : join.ghAvailable,
+    opts.mainCiWaitMs ?? 0
+  )
+  const steps = stepRows.map((st, i): MissionStepSignals => {
+    const found = prByStep[i]
+    const merged = found?.facts.state === 'MERGED'
+    const main = merged ? mainCi.get(found.facts.number) : undefined
+    const step = mission.steps[i]
+    return {
+      ...st,
+      prNumber: found?.facts.number ?? null,
+      gates: computeStepGates({
+        missionId: mission.id,
+        step,
+        pr: found?.facts ?? null,
+        mainCi: main?.ci ?? null,
+        // Campaign ch.6 (T610): the verifier gate reads the evidence bundle the step links.
+        bundleOnDisk: bundleOnDisk(root, mission.id, step, exists),
+        stale: found?.stale === true || main?.stale === true
+      })
+    }
+  })
   // T547: a commit landing on a linked worktree is evidence the work moves, even
   // while the child session itself reads idle.
   const commitEvidence = steps.flatMap((st) =>
@@ -4388,11 +5141,14 @@ export async function deriveMissionSignals(
     steps.map((s) => ({
       stepId: s.stepId,
       children: s.children.map((c) => ({ sessionId: c.sessionId, taskState: c.taskState })),
-      existenceProven: s.existence?.proven === true
+      existenceProven: s.existence?.proven === true,
+      // Amendment (a): the gates govern `verified`, so progress reads the SAME gates the rows carry.
+      gates: s.gates
     })),
     now
   )
   rememberProgress(mission.id, progress)
+  observeLedger(mission, steps, prByStep, now)
   return {
     children,
     derived: {
@@ -4435,6 +5191,93 @@ export async function readAllMissions(root: string): Promise<{
     else unreadable.push(entry.name)
   }
   return { missions, unreadable }
+}
+
+/**
+ * Campaign spec §3.2 — append one ledger row to each target mission, under its lock.
+ * The ledger is Harnu's own record, so this is called by the handlers that DO the
+ * thing (never from a verb argument), and it never fails the action it describes:
+ * a mission that cannot be read or written is skipped with a warning. The append also
+ * stamps `updatedAt` — a dispatch is real evidence the mission is moving (the stall
+ * rule's input). A closed mission is a record and never receives a row.
+ */
+async function appendLedgerTo(
+  root: string,
+  targets: readonly { missionId: string; stepId?: string }[],
+  row: LedgerRowInput
+): Promise<void> {
+  for (const t of targets) {
+    try {
+      await withMissionIdMintLock(t.missionId, async () => {
+        const loaded = await loadMission(root, t.missionId)
+        if (!loaded.ok || loaded.mission.status === 'closed') return
+        const at = new Date().toISOString()
+        const next: Mission = {
+          ...appendLedgerRow(
+            loaded.mission,
+            { ...row, ...(t.stepId ? { stepId: t.stepId } : {}) },
+            at
+          ),
+          updatedAt: at
+        }
+        await atomicWriteFile(loaded.file, buildMissionFileContent(next, loaded.log), 0o644)
+      })
+      // Campaign ch.5a: a ledger row is an event the mission's steward wakes on.
+      await wakeSteward(t.missionId, row.kind === 'ci' ? 'ci' : 'ledger')
+    } catch (err) {
+      console.warn(`[mission-ledger] could not record ${row.kind} on ${t.missionId}:`, err)
+    }
+  }
+}
+
+/** Wake a mission's steward; fire-and-forget, and never a reason for the caller to fail. */
+function wakeSteward(missionId: string, reason: WakeReason): Promise<unknown> {
+  return wakeStewardForMission(missionId, reason).catch((err) => {
+    console.warn(`[steward] could not wake the steward of ${missionId}:`, err)
+  })
+}
+
+/** The open missions of `folder`'s repo, without creating a data dir where there is none. */
+async function openMissionsOf(root: string): Promise<Mission[]> {
+  if (!(await pathExists(missionsDir(root)))) return []
+  return (await readAllMissions(root)).missions
+    .map((m) => m.mission)
+    .filter((m) => m.status !== 'closed')
+}
+
+/**
+ * Campaign spec §3.2 — record a write-time event (dispatch, worktree cut, manifest
+ * drain) on the mission it belongs to: the one whose step links the worktree or card,
+ * else the repo's only open mission. Best-effort; never throws.
+ */
+export async function recordLedgerEvent(
+  folder: string,
+  hints: LedgerHints,
+  row: LedgerRowInput
+): Promise<void> {
+  try {
+    const root = missionRoot(folder)
+    const missions = await openMissionsOf(root)
+    await appendLedgerTo(root, pickLedgerTargets(missions, hints), row)
+  } catch (err) {
+    console.warn(`[mission-ledger] could not record ${row.kind}:`, err)
+  }
+}
+
+/**
+ * Campaign spec §3.2 — a session's context was compacted: note it on the open
+ * mission(s) that session OWNS. Called by the compaction hook (chapter 5 installs it).
+ */
+export async function recordMissionCompaction(folder: string, sessionId: string): Promise<void> {
+  try {
+    const root = missionRoot(folder)
+    const owned = (await openMissionsOf(root))
+      .filter((m) => m.owner.sessionId === sessionId)
+      .map((m) => ({ missionId: m.id }))
+    await appendLedgerTo(root, owned, { kind: 'compaction', ref: sessionId, sessionId })
+  } catch (err) {
+    console.warn('[mission-ledger] could not record compaction:', err)
+  }
 }
 
 /** One readable mission copy with the repo root it was read from. */
@@ -4554,11 +5397,18 @@ const missionGetHandler: Handler = async (args, ctx) => {
   // design §3/§8: `active ↔ stale` is derived on every read and NEVER written back —
   // the stored status stays `active`, so nothing that reads it (S2's never-park
   // exemption) loses a mission exactly when it stalls.
-  const { derived, children } = await deriveMissionSignals(root, mission, log, ctx, Date.now())
-  const items = youItems(mission, children, derived.progress)
+  // An agent reading one mission waits a moment for the merge-commit CI of a merged PR;
+  // the 20 s polls do not (the lookup runs on and lands in the cache for the next read).
+  const { derived, children } = await deriveMissionSignals(root, mission, log, ctx, Date.now(), {
+    mainCiWaitMs: MAIN_CI_GET_WAIT_MS
+  })
+  const items = youItems(mission, children, derived.progress, derived.steps)
   // design §9: an imported mission's legacyRaw (up to the whole legacy file) is
-  // left out of the projection — every tick reads this — and pointed at instead.
-  const { legacyRaw, ...projected } = mission
+  // left out of the projection — every tick reads this — and pointed at instead. The
+  // ledger is left out too: the tail below is the read (campaign spec §3.2).
+  const { legacyRaw, ledger: _ledger, ...projected } = mission
+  void _ledger
+  const ledger = mergeLedger(mission.ledger, getObservedLedger(mission.id))
   return textResult({
     ok: true,
     op: 'mission_get',
@@ -4569,6 +5419,9 @@ const missionGetHandler: Handler = async (args, ctx) => {
     title: missionTitle(log, mission.slug),
     log,
     derived,
+    // Campaign spec §3.2: what Harnu did and saw, last 20 rows (oldest first) + the total.
+    ledger: ledgerTail({ ledger }),
+    ledgerCount: ledger.length,
     // Mission v3 §3.12: the ordered list, and its first item as the one line.
     you: youLine(items),
     youItems: items,
@@ -4610,6 +5463,8 @@ const missionListHandler: Handler = async (_args, ctx) => {
       claimed: progressSteps(m).filter((s) => s.proof === 'claimed').length
     },
     blocked: m.blockers.length > 0 || m.steps.some((s) => s.blockers.length > 0),
+    // Campaign spec §3.2: how many rows the ledger holds; mission_get returns the tail.
+    ledgerCount: mergeLedger(m.ledger, getObservedLedger(m.id)).length,
     updatedAt: m.updatedAt
   }))
   return textResult({
@@ -4636,7 +5491,14 @@ type MissionEdit =
   | { ok: false; error: string }
 
 /** The step fields `mission_update_step` may set (anything else is refused). */
-const MISSION_STEP_EDITABLE_FIELDS = ['title', 'proof'] as const
+const MISSION_STEP_EDITABLE_FIELDS = [
+  'title',
+  'proof',
+  'required',
+  'discoveredFrom',
+  'edges',
+  'decision'
+] as const
 
 function missionClosedMessage(id: string): string {
   return `MISSION_CLOSED: mission ${id} was closed by the operator — a closed mission is immutable by verb.`
@@ -4644,6 +5506,115 @@ function missionClosedMessage(id: string): string {
 
 function stepNotFoundMessage(id: string, stepId: string): string {
   return `STEP_NOT_FOUND: mission ${id} has no step ${stepId} — mission_get lists its steps.`
+}
+
+/** Campaign spec §3.2 — the optional relation fields a step can be declared with. */
+interface StepRelations {
+  required?: boolean
+  discoveredFrom?: string
+  edges?: StepEdge[]
+  decision?: StepDecision
+}
+
+const STEP_EDGE_KINDS: readonly string[] = ['blocks', 'validates', 'related']
+const isStepId = (v: unknown): v is string => typeof v === 'string' && STEP_ID_RE.test(v)
+
+/**
+ * Parse `required` / `discoveredFrom` / `edges` / `decision` from a verb's args (add)
+ * or `set` (update). Shape only — whether the referenced steps exist is checked
+ * against the mission in {@link checkStepRelations}. A `decision` that already carries
+ * `chosen` is CONTROLLED_FIELD: only the operator's Choose door writes it.
+ */
+function parseStepRelations(
+  src: Record<string, unknown>
+): { ok: true; relations: StepRelations } | { ok: false; error: string } {
+  const bad = (what: string): { ok: false; error: string } => ({
+    ok: false,
+    error: `BAD_ARGS: ${what}`
+  })
+  const relations: StepRelations = {}
+  if (src.required !== undefined) {
+    if (typeof src.required !== 'boolean') return bad('required must be a boolean')
+    relations.required = src.required
+  }
+  if (src.discoveredFrom !== undefined) {
+    if (!isStepId(src.discoveredFrom)) return bad('discoveredFrom must be a step id (stp-<n>)')
+    relations.discoveredFrom = src.discoveredFrom
+  }
+  if (src.edges !== undefined) {
+    if (!Array.isArray(src.edges) || src.edges.length > 20) {
+      return bad('edges must be an array of at most 20 { kind: blocks | validates | related, to }')
+    }
+    const edges: StepEdge[] = []
+    for (const e of src.edges as unknown[]) {
+      const o = (typeof e === 'object' && e !== null ? e : {}) as Record<string, unknown>
+      if (typeof o.kind !== 'string' || !STEP_EDGE_KINDS.includes(o.kind) || !isStepId(o.to)) {
+        return bad('each edge needs kind (blocks | validates | related) and to (a step id)')
+      }
+      edges.push({ kind: o.kind as StepEdge['kind'], to: o.to })
+    }
+    relations.edges = edges
+  }
+  if (src.decision !== undefined) {
+    const d = (
+      typeof src.decision === 'object' && src.decision !== null ? src.decision : null
+    ) as Record<string, unknown> | null
+    if (!d) return bad('decision must be { title, options, blocks }')
+    if ('chosen' in d) {
+      return {
+        ok: false,
+        error:
+          "CONTROLLED_FIELD: chosen is the operator's — a decision is declared without it, and only the Choose door in the UI records which option was picked."
+      }
+    }
+    const title = typeof d.title === 'string' ? d.title.replace(/\s+/g, ' ').trim() : ''
+    const options = d.options
+    const blocks = d.blocks ?? []
+    if (!title || title.length > 200) return bad('decision.title must be 1..200 chars')
+    if (
+      !Array.isArray(options) ||
+      options.length < 2 ||
+      options.length > 10 ||
+      !options.every((o) => typeof o === 'string' && o.trim().length > 0 && o.length <= 200)
+    ) {
+      return bad('decision.options must be 2..10 non-empty strings (≤ 200 chars)')
+    }
+    if (!Array.isArray(blocks) || blocks.length > 20 || !blocks.every(isStepId)) {
+      return bad('decision.blocks must be an array of at most 20 step ids')
+    }
+    relations.decision = {
+      title,
+      options: (options as string[]).map((o) => o.trim()),
+      blocks: blocks as string[]
+    }
+  }
+  return { ok: true, relations }
+}
+
+/** What a step stores of its relations: a default (`required: true`) or an empty list is not written. */
+function storedRelations(r: StepRelations): StepRelations {
+  return {
+    ...(r.required === false ? { required: false } : {}),
+    ...(r.discoveredFrom ? { discoveredFrom: r.discoveredFrom } : {}),
+    ...(r.edges && r.edges.length > 0 ? { edges: r.edges } : {}),
+    ...(r.decision ? { decision: r.decision } : {})
+  }
+}
+
+/** Every step a relation names must exist in the mission, and none may name `selfId`. */
+function checkStepRelations(m: Mission, r: StepRelations, selfId?: string): string | null {
+  const named = [
+    ...(r.discoveredFrom ? [r.discoveredFrom] : []),
+    ...(r.edges ?? []).map((e) => e.to),
+    ...(r.decision?.blocks ?? [])
+  ]
+  for (const id of named) {
+    if (id === selfId) {
+      return `BAD_ARGS: ${id} cannot name itself — a step is not its own origin, edge target or lock.`
+    }
+    if (!m.steps.some((s) => s.id === id)) return stepNotFoundMessage(m.id, id)
+  }
+  return null
 }
 
 /** Next free `stp-<n>` — ids are never reused, even when ordinals shift. */
@@ -4661,7 +5632,7 @@ function nextStepId(steps: readonly MissionStep[]): string {
 async function editMission(
   args: Record<string, unknown>,
   ctx: ToolHandlerCtx,
-  fn: (mission: Mission) => MissionEdit
+  fn: (mission: Mission, log: string) => MissionEdit
 ): Promise<CallToolResult> {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -4673,7 +5644,7 @@ async function editMission(
     const loaded = await loadMission(root, id)
     if (!loaded.ok) return errorResult(loaded.error)
     if (loaded.mission.status === 'closed') return errorResult(missionClosedMessage(id))
-    const edit = fn(structuredClone(loaded.mission))
+    const edit = fn(structuredClone(loaded.mission), loaded.log)
     if (!edit.ok) return errorResult(edit.error)
     if (edit.unchanged) return textResult(edit.ack)
     const next: Mission = { ...edit.mission, updatedAt: new Date().toISOString() }
@@ -4701,7 +5672,11 @@ const missionAddStepHandler: Handler = async (args, ctx) => {
   const afterStepId = strField(args, 'afterStepId')
   const links = parseStepLinks(args.links)
   if (!links.ok) return errorResult(links.error)
+  const relations = parseStepRelations(args)
+  if (!relations.ok) return errorResult(relations.error)
   return editMission(args, ctx, (m) => {
+    const dangling = checkStepRelations(m, relations.relations)
+    if (dangling) return { ok: false, error: dangling }
     // Mission v3 §3.4: keyed on "started" (a step has a link or a proof), never on
     // a status — planning steps added before any work need no reason.
     const started = isStarted(m)
@@ -4737,7 +5712,8 @@ const missionAddStepHandler: Handler = async (args, ctx) => {
       // Only real growth carries a reason (the "total changed" marker); a
       // planning step added before the start carries none.
       ...(started && reason ? { addedReason: reason } : {}),
-      addedAt: new Date().toISOString()
+      addedAt: new Date().toISOString(),
+      ...storedRelations(relations.relations)
     }
     m.steps.splice(insertAt, 0, step)
     m.steps.forEach((s, i) => (s.ordinal = i + 1))
@@ -4766,7 +5742,7 @@ const missionUpdateStepHandler: Handler = async (args, ctx) => {
   )
   if (controlled.length > 0) {
     return errorResult(
-      `CONTROLLED_FIELD: mission_update_step cannot write ${controlled.join(', ')} — proof reaches verified/self-verified only through verification (and a human step only through the operator), and verifiedBy is recorded by that same path. The one proof value this verb sets is 'claimed'.`
+      `CONTROLLED_FIELD: mission_update_step cannot write ${controlled.join(', ')} — proof reaches verified/self-verified only through verification (and a human step only through the operator), and verifiedBy is recorded by that same path. The one proof value this verb sets is 'claimed'. A decision's chosen option is the operator's (the Choose door), never a verb's.`
     )
   }
   const unknown = keys.filter(
@@ -4774,7 +5750,7 @@ const missionUpdateStepHandler: Handler = async (args, ctx) => {
   )
   if (unknown.length > 0) {
     return errorResult(
-      `BAD_ARGS: unknown set field(s) ${unknown.join(', ')} — editable fields are title | proof ('claimed').`
+      `BAD_ARGS: unknown set field(s) ${unknown.join(', ')} — editable fields are title | proof ('claimed') | required | discoveredFrom | edges | decision.`
     )
   }
   let title: string | undefined
@@ -4782,9 +5758,26 @@ const missionUpdateStepHandler: Handler = async (args, ctx) => {
     title = typeof set.title === 'string' ? set.title.replace(/\s+/g, ' ').trim() : ''
     if (!title || title.length > 200) return errorResult('BAD_ARGS: title must be 1..200 chars')
   }
+  const relations = parseStepRelations(set)
+  if (!relations.ok) return errorResult(relations.error)
+  const rel = relations.relations
   return editMission(args, ctx, (m) => {
     const step = m.steps.find((s) => s.id === stepId)
     if (!step) return { ok: false, error: stepNotFoundMessage(m.id, stepId) }
+    const dangling = checkStepRelations(m, rel, stepId)
+    if (dangling) return { ok: false, error: dangling }
+    if (rel.required === false && step.kind !== 'custom') {
+      return {
+        ok: false,
+        error: `FIXED_STEP: ${stepId} is the mission's fixed ${step.kind === 'fixed-start' ? 'start' : 'end'} — it is part of the frame and cannot be a side step.`
+      }
+    }
+    if (rel.decision && step.decision?.chosen !== undefined) {
+      return {
+        ok: false,
+        error: `DECISION_CHOSEN: ${stepId} was already decided by the operator — its decision can no longer be rewritten.`
+      }
+    }
     const changed: string[] = []
     if (title !== undefined) {
       if (step.kind !== 'custom') {
@@ -4811,6 +5804,25 @@ const missionUpdateStepHandler: Handler = async (args, ctx) => {
       }
       step.proof = 'claimed'
       changed.push('proof')
+    }
+    if (rel.required !== undefined) {
+      // The default is not stored: `required: true` clears the key.
+      if (rel.required) delete step.required
+      else step.required = false
+      changed.push('required')
+    }
+    if (rel.discoveredFrom !== undefined) {
+      step.discoveredFrom = rel.discoveredFrom
+      changed.push('discoveredFrom')
+    }
+    if (rel.edges !== undefined) {
+      if (rel.edges.length > 0) step.edges = rel.edges
+      else delete step.edges
+      changed.push('edges')
+    }
+    if (rel.decision !== undefined) {
+      step.decision = rel.decision
+      changed.push('decision')
     }
     return { ok: true, mission: m, ack: { ok: true, op: 'mission_update_step', stepId, changed } }
   })
@@ -4939,7 +5951,7 @@ const missionClearBlockerHandler: Handler = async (args, ctx) => {
     return errorResult('BAD_ARGS: pass exactly one of reason / index')
   }
   const stepId = strField(args, 'stepId')
-  return editMission(args, ctx, (m) => {
+  const cleared = await editMission(args, ctx, (m) => {
     const target = blockerTarget(m, stepId)
     if (!target.ok) return target
     const at =
@@ -4966,6 +5978,10 @@ const missionClearBlockerHandler: Handler = async (args, ctx) => {
       }
     }
   })
+  // Campaign ch.5a: a cleared blocker is a steward wake-up, once the write has landed.
+  const missionId = strField(args, 'missionId')
+  if (!cleared.isError && missionId) await wakeSteward(missionId, 'blocker-cleared')
+  return cleared
 }
 
 /** One timestamped Log entry, led by a newline when `before` does not end with one. */
@@ -5119,7 +6135,14 @@ const missionVerifyStepHandler: Handler = async (args, ctx) => {
     // Mission v3 §3.6: `needs-human` means the machine part is met — the proof
     // keeps its label — and the human part becomes a check on the step.
     step.proof = verdict === 'met' || verdict === 'needs-human' ? label : 'unproven'
-    step.verifiedBy = { sessionId: callerId, at, verdict }
+    step.verifiedBy = { sessionId: callerId, at, verdict, evidenceRequired: true }
+    // Campaign spec §3.2: the verdict is a ledger event, written here — not by an argument.
+    const withVerdict = (mm: Mission): Mission =>
+      appendLedgerRow(
+        mm,
+        { kind: 'verified', stepId, ref: callerId, sessionId: callerId, detail: verdict },
+        at
+      )
     if (verdict === 'needs-human') {
       try {
         m = applyAddCheck(m, stepId, checkLabel, 'verifier', at)
@@ -5129,11 +6152,180 @@ const missionVerifyStepHandler: Handler = async (args, ctx) => {
     }
     return {
       ok: true,
-      mission: m,
+      mission: withVerdict(m),
       ack: { ok: true, op: 'mission_verify_step', stepId, proof: step.proof, verdict },
       logAppend: `\n### ${at} · ${stepId} · ${step.proof} (${verdict}) by ${callerId}\n\n${evidence}\n`
     }
   })
+}
+
+// ---- Campaign ch.5a: rebase_stack ---------------------------------------------
+
+/** A step that is still open (its proof is not final). */
+const stepIsOpen = (s: MissionStep): boolean =>
+  s.kind === 'custom' && s.proof !== 'verified' && s.proof !== 'self-verified'
+
+/** The linked worktrees (not the main checkout) a step's `worktree` links resolve to. */
+async function stepWorktrees(root: string, step: MissionStep): Promise<string[]> {
+  const found = new Set<string>()
+  for (const l of step.links) {
+    if (l.kind !== 'worktree') continue
+    const p = linkPath(root, l.ref)
+    const st = await fs.stat(p).catch(() => null)
+    if (!st) continue
+    const top = await worktreeToplevel(st.isDirectory() ? p : path.dirname(p))
+    if (top) found.add(top)
+  }
+  return [...found]
+}
+
+/**
+ * Why `worktree` is NOT `step`'s own (a reason), or `null` when it is. A worktree being linked on the
+ * step proves little — a step may link a sibling it only reads — so ownership needs evidence:
+ *
+ *  1. if a card the step links was dispatched (`executedIn` is the owner branch Harnu stamped), the
+ *     worktree's branch must be exactly that branch;
+ *  2. otherwise (nothing names the branch) the worktree must be claimed by THIS step alone — not
+ *     linked by any other step of this or another open mission — and must not be a trunk branch.
+ */
+async function foreignWorktreeReason(
+  root: string,
+  mission: Mission,
+  step: MissionStep,
+  worktree: string
+): Promise<string | null> {
+  const branch = await currentBranch(worktree)
+  if (branch === 'main' || branch === 'master') return `it is on ${branch}`
+  const owned = new Set<string>()
+  for (const l of step.links) {
+    if (l.kind !== 'card') continue
+    const read = await readCard(root, l.ref).catch(() => null)
+    if (read?.ok && read.card.executedIn) owned.add(read.card.executedIn)
+  }
+  if (owned.size > 0) {
+    return branch && owned.has(branch)
+      ? null
+      : `its branch ${branch ?? '(detached)'} is not the branch ${[...owned].join(', ')} the step's card was dispatched to`
+  }
+  const others = (await readAllMissions(root)).missions
+    .map((m) => m.mission)
+    .filter((m) => m.status !== 'closed')
+  for (const m of others) {
+    for (const s of m.steps) {
+      if (m.id === mission.id && s.id === step.id) continue
+      if ((await stepWorktrees(root, s)).includes(worktree)) {
+        return `${m.id === mission.id ? s.id : `${m.id}/${s.id}`} links it too, and nothing names which branch is this step's`
+      }
+    }
+  }
+  return null
+}
+
+const rebaseStackHandler: Handler = async (args, ctx) => {
+  const folder = ctx.folder
+  if (!folder) return errorResult('BAD_ARGS: folder is required')
+  const missionId = strField(args, 'missionId') ?? ''
+  const onto = strField(args, 'onto') ?? ''
+  const from = strField(args, 'from')
+  const wantedStep = strField(args, 'stepId')
+  const root = missionRoot(folder)
+  const refusal = missionFolderRefusal(folder, root, ctx)
+  if (refusal) return errorResult(refusal)
+
+  const loaded = await loadMission(root, missionId)
+  if (!loaded.ok) return errorResult(loaded.error)
+  if (loaded.mission.status === 'closed') return errorResult(missionClosedMessage(missionId))
+  const mission = loaded.mission
+
+  // Which step, and which of its linked worktrees.
+  const candidates: Array<{ step: MissionStep; worktree: string }> = []
+  const pool = wantedStep
+    ? mission.steps.filter((s) => s.id === wantedStep)
+    : mission.steps.filter(stepIsOpen)
+  if (wantedStep && pool.length === 0)
+    return errorResult(stepNotFoundMessage(missionId, wantedStep))
+  const repoDir = await repoCommonDir(root)
+  // Fail CLOSED: if the mission's own repository cannot be identified, no worktree can be shown to
+  // belong to it, so nothing is rebased.
+  if (!repoDir) {
+    return errorResult(
+      `WORKTREE_NOT_IN_REPO: could not identify the repository of ${root}, so no worktree can be shown to belong to it — rebase_stack rebases nothing.`
+    )
+  }
+  for (const step of pool) {
+    for (const wt of await stepWorktrees(root, step)) {
+      if (wt === root) continue // never the main checkout: the rebase core would refuse it anyway
+      if ((await repoCommonDir(wt)) !== repoDir) {
+        return errorResult(
+          `WORKTREE_NOT_IN_REPO: ${wt}, linked on ${step.id}, belongs to a different repository than this mission — rebase_stack only rebases this repo's own worktrees.`
+        )
+      }
+      candidates.push({ step, worktree: wt })
+    }
+  }
+  if (candidates.length === 0) {
+    return errorResult(
+      `NO_STEP_WORKTREE: ${wantedStep ? wantedStep : 'no open step of this mission'} links a linked worktree — mission_link_child { kind: 'worktree', ref: <path> } the step's worktree first.`
+    )
+  }
+  // Path trust: a worktree linked on the step is not yet the step's OWN. Keep only the ones that are —
+  // a sibling (the operator's, another mission's) is never rewritten.
+  const own: typeof candidates = []
+  const foreign: string[] = []
+  for (const c of candidates) {
+    const why = await foreignWorktreeReason(root, mission, c.step, c.worktree)
+    if (why) foreign.push(`${c.worktree} (${why})`)
+    else own.push(c)
+  }
+  if (own.length === 0) {
+    return errorResult(
+      `NOT_STEP_WORKTREE: none of the worktrees linked on ${wantedStep ?? 'the open steps'} is this step's own — ${foreign.join('; ')}. rebase_stack rewrites only a step's own branch.`
+    )
+  }
+  candidates.splice(0, candidates.length, ...own)
+  if (candidates.length > 1) {
+    return errorResult(
+      `STEP_AMBIGUOUS: several steps link a worktree (${candidates.map((c) => `${c.step.id} → ${c.worktree}`).join('; ')}) — pass stepId.`
+    )
+  }
+  const { step, worktree } = candidates[0]
+
+  const res = await rebaseStack({ worktree, onto, ...(from ? { from } : {}) })
+  if (res.ok) {
+    return textResult({
+      ok: true,
+      op: 'rebase_stack',
+      stepId: step.id,
+      branch: res.branch,
+      before: res.before,
+      after: res.after,
+      rebased: res.rebased,
+      // The local branch moved; no remote ref did. Publishing is the owner's move.
+      pushed: false
+    })
+  }
+  if (res.code === 'REBASE_CONFLICT') {
+    const reason = `Rebase of ${res.branch} onto ${onto} conflicted in ${res.conflicts.join(', ')}`
+    // The tree is exactly as it was (the core verified). Flag the step, once; the retry of an
+    // unchanged conflict updates the existing blocker instead of stacking a second.
+    await editMission(args, ctx, (m) => {
+      const target = m.steps.find((s) => s.id === step.id)
+      if (!target) return { ok: false, error: stepNotFoundMessage(m.id, step.id) }
+      const unblocks =
+        'Resolve the conflict by hand (rebase the branch yourself, or fix the overlap), then clear this blocker.'
+      const existing = target.blockers.find((b) => b.reason === reason)
+      if (existing) {
+        existing.unblocks = unblocks
+        return { ok: true, mission: m, unchanged: true, ack: { ok: true } }
+      }
+      target.blockers.push({ reason, unblocks, owner: 'agent', raisedAt: new Date().toISOString() })
+      return { ok: true, mission: m, ack: { ok: true } }
+    })
+    return errorResult(
+      `REBASE_CONFLICT: ${reason}. The rebase was aborted and ${worktree} is exactly as it was (HEAD ${res.head}). An agent-owned blocker is set on ${step.id}; do not retry — tell the operator.`
+    )
+  }
+  return errorResult(`${res.code}: ${res.detail}`)
 }
 
 const missionRequestCloseHandler: Handler = async (args, ctx) => {
@@ -5141,7 +6333,8 @@ const missionRequestCloseHandler: Handler = async (args, ctx) => {
   if (requestedBy !== undefined && !SESSION_UUID_RE.test(requestedBy)) {
     return errorResult(badSessionIdMessage('sessionId', requestedBy))
   }
-  return editMission(args, ctx, (m) => {
+  const currentHot = ctx.folder ? await readHotBody(ctx.folder) : undefined
+  return editMission(args, ctx, (m, log) => {
     // The same checks mission_get reports as `closeReadiness` (Mission v2 §3.5).
     const refused = requestCloseRefusal(m)
     if (refused) return { ok: false, error: `${refused.code}: ${refused.reason}` }
@@ -5149,12 +6342,63 @@ const missionRequestCloseHandler: Handler = async (args, ctx) => {
     // the operator's UI (`applyOperatorEnd`) reaches `closed`.
     m.status = 'delivered'
     m.pendingClose = { at: new Date().toISOString(), requestedBy: requestedBy ?? m.owner.sessionId }
+    // Campaign ch.6 (AC-6.1): one consolidation pass over the structured record. It stores the
+    // outcome and the drafts; writing any of them to memory is the operator's tick (AC-6.2).
+    const c = consolidate(
+      missionConsolidatorInput(m, log, currentHot),
+      new Date().toISOString().slice(0, 10)
+    )
+    m.outcome = c.outcome
+    if (c.drafts.length > 0) m.memoryDrafts = c.drafts
+    else delete m.memoryDrafts
     return {
       ok: true,
       mission: m,
-      ack: { ok: true, op: 'mission_request_close', pendingClose: true }
+      ack: {
+        ok: true,
+        op: 'mission_request_close',
+        pendingClose: true,
+        consolidation: consolidationAck(c)
+      }
     }
   })
+}
+
+/** Campaign spec §3.2: what a Log entry can be. */
+const LOG_KINDS: ReadonlySet<string> = new Set(['note', 'decision', 'surprise', 'steward'])
+
+/**
+ * Campaign ch.5a (spec §3.4): "every action it takes is a `steward` Log entry". Called by the
+ * control server after a steward's successful write, so the entry exists whether or not the model
+ * remembers to write one. Never throws: the action already happened.
+ */
+export async function appendStewardLog(
+  folder: string,
+  missionId: string,
+  op: string,
+  args: Record<string, unknown>
+): Promise<void> {
+  try {
+    const root = missionRoot(folder)
+    await withMissionIdMintLock(missionId, async () => {
+      const loaded = await loadMission(root, missionId)
+      if (!loaded.ok || loaded.mission.status === 'closed') return
+      const { folder: _f, missionId: _m, ...rest } = args
+      void _f
+      void _m
+      const brief = JSON.stringify(rest, (_k, v) =>
+        typeof v === 'string' && v.length > 200 ? `${v.slice(0, 199)}…` : v
+      )
+      const text = `${op} ${brief.length > 600 ? `${brief.slice(0, 599)}…` : brief}`
+      await atomicWriteFile(
+        loaded.file,
+        loaded.raw + missionLogEntry(loaded.raw, ' · steward', text),
+        0o644
+      )
+    })
+  } catch (err) {
+    console.warn(`[steward] could not log ${op} on ${missionId}:`, err)
+  }
 }
 
 const missionLogHandler: Handler = async (args, ctx) => {
@@ -5174,8 +6418,12 @@ const missionLogHandler: Handler = async (args, ctx) => {
     if (stepId && !loaded.mission.steps.some((s) => s.id === stepId)) {
       return errorResult(stepNotFoundMessage(id, stepId))
     }
-    // Append to the raw file: the frontmatter bytes stay exactly as they were.
-    const entry = missionLogEntry(loaded.raw, stepId ? ` · ${stepId}` : '', note)
+    // Append to the raw file: the frontmatter bytes stay exactly as they were. The heading carries the
+    // entry's kind (`### <time> · steward · stp-2`), so the Log can be read by kind; a plain note keeps
+    // the heading it always had.
+    const kind = strField(args, 'kind')
+    const kindTag = kind && kind !== 'note' && LOG_KINDS.has(kind) ? ` · ${kind}` : ''
+    const entry = missionLogEntry(loaded.raw, `${kindTag}${stepId ? ` · ${stepId}` : ''}`, note)
     if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
     await atomicWriteFile(loaded.file, loaded.raw + entry, 0o644)
     return textResult({ ok: true, op: 'mission_log' })
@@ -5573,6 +6821,684 @@ const browserPatchHandler: Handler = async (args, ctx) => {
 }
 
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
+// ---- campaign_* verbs (T595, chapter 3a — campaign spec §3.1/§3.3/§3.5) ------
+//
+// A campaign is the quest line ABOVE a mission: ordered chapters, each of which IS a
+// mission. Stored in the repo's MAIN checkout like missions (`missionRoot`), so every
+// worktree shares it. No verb here merges, chooses a decision, ticks a check or closes a
+// campaign: `campaign_request_close` only signals. Same locking rule as missions: each
+// read-modify-write runs under `withCampaignLock(id)` exactly ONCE (the lock is not
+// re-entrant), and no helper below takes it on its own.
+
+interface CampaignFileEntry {
+  id: string
+  slug: string
+  name: string
+}
+
+/** Every `<id>-<slug>.md` in `root`'s campaigns dir; `[]` when there is none yet. */
+async function listCampaignEntries(root: string): Promise<CampaignFileEntry[]> {
+  await dataDirReady(root)
+  let names: string[]
+  try {
+    names = await fs.readdir(campaignsDir(root))
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw err
+  }
+  const out: CampaignFileEntry[] = []
+  for (const name of names.sort()) {
+    const m = /^(cmp-[0-9a-f]{8})-(.+)\.md$/.exec(name)
+    if (m) out.push({ id: m[1], slug: m[2], name })
+  }
+  return out
+}
+
+type LoadedCampaign =
+  | { ok: true; file: string; raw: string; campaign: Campaign; log: string }
+  | { ok: false; error: string }
+
+/** Read + parse one campaign by id; a steerable error when absent or corrupt. */
+export async function loadCampaign(root: string, id: string): Promise<LoadedCampaign> {
+  if (!CAMPAIGN_ID_RE.test(id)) {
+    return { ok: false, error: `BAD_ARGS: campaignId "${id}" is not a campaign id (cmp-<8 hex>).` }
+  }
+  const entry = (await listCampaignEntries(root)).find((e) => e.id === id)
+  if (!entry) {
+    return {
+      ok: false,
+      error: `CAMPAIGN_NOT_FOUND: no campaign ${id} in this repo — campaign_list shows the ones that exist.`
+    }
+  }
+  const file = path.join(campaignsDir(root), entry.name)
+  const raw = await fs.readFile(file, 'utf8')
+  const parsed = parseCampaignFile(raw)
+  if ('error' in parsed) {
+    return { ok: false, error: `CAMPAIGN_UNREADABLE: ${entry.name} — ${parsed.error}` }
+  }
+  return { ok: true, file, raw, campaign: parsed, log: readCampaignLog(raw) }
+}
+
+/** Every readable campaign under `root`, with its Log; corrupt files are reported, not thrown. */
+async function readAllCampaigns(root: string): Promise<{
+  campaigns: Array<{ campaign: Campaign; log: string; file: string }>
+  unreadable: string[]
+}> {
+  const campaigns: Array<{ campaign: Campaign; log: string; file: string }> = []
+  const unreadable: string[] = []
+  for (const entry of await listCampaignEntries(root)) {
+    const loaded = await loadCampaign(root, entry.id)
+    if (loaded.ok) campaigns.push({ campaign: loaded.campaign, log: loaded.log, file: loaded.file })
+    else unreadable.push(entry.name)
+  }
+  return { campaigns, unreadable }
+}
+
+/** A refusal for a folder (or its repo root) the operator blocked for agents. */
+function campaignFolderRefusal(folder: string, root: string, ctx: ToolHandlerCtx): string | null {
+  if (isFolderDenied(folder, ctx.denyFolders) || isFolderDenied(root, ctx.denyFolders)) {
+    return 'FOLDER_NOT_ALLOWED: the operator blocked this folder for agents — its campaigns are off limits. Tell the operator; they can unblock it from the folder menu.'
+  }
+  return null
+}
+
+function campaignClosedMessage(id: string): string {
+  return `CAMPAIGN_CLOSED: campaign ${id} was closed by the operator — a closed campaign is immutable by verb.`
+}
+
+function chapterNotFoundMessage(campaignId: string, chapterId: string): string {
+  return `CHAPTER_NOT_FOUND: campaign ${campaignId} has no chapter ${chapterId} — campaign_get lists its chapters.`
+}
+
+/** A campaign slug from its title; `campaign` when the title has nothing slug-able. */
+function campaignSlugBase(title: string): string {
+  const slug = slugifyTitle(title)
+  // `slugifyTitle` falls back to `card` for an empty result — wrong noun here.
+  return slug === 'card' && !/card/i.test(title) ? 'campaign' : slug
+}
+
+/** Per-repo create lock: serializes id-mint + slug pick so concurrent creates stay unique. */
+const campaignCreateLocks = new Map<string, Promise<unknown>>()
+
+const CHAPTERS_MAX = 50
+const TOKENS_MAX = 20
+
+/** A token list as stored: trimmed, deduped, non-empty; `undefined` when absent. */
+function parseTokens(raw: unknown): string[] | undefined | null {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw) || raw.length > TOKENS_MAX) return null
+  const out: string[] = []
+  for (const t of raw) {
+    if (typeof t !== 'string') return null
+    const token = t.trim()
+    if (!token || token.length > 100) return null
+    if (!out.includes(token)) out.push(token)
+  }
+  return out
+}
+
+/**
+ * One chapter's declared fields (the shape shared by `campaign_create`'s `chapters[]` and
+ * `campaign_add_chapter`), or a BAD_ARGS refusal. The id, ordinal and `missionId` are never
+ * taken from an argument.
+ */
+function parseChapterInput(
+  raw: unknown
+): { ok: true; chapter: NewChapter } | { ok: false; error: string } {
+  const bad = (why: string): { ok: false; error: string } => ({
+    ok: false,
+    error: `BAD_ARGS: a chapter is { title (1..200 chars), required?, consumes?, produces?, radiant? } — ${why}.`
+  })
+  if (typeof raw !== 'object' || raw === null) return bad('not an object')
+  const r = raw as Record<string, unknown>
+  const title = typeof r.title === 'string' ? r.title.replace(/\s+/g, ' ').trim() : ''
+  if (!title || title.length > 200) return bad('title must be 1..200 characters')
+  if (r.required !== undefined && typeof r.required !== 'boolean')
+    return bad('required must be a boolean')
+  const consumes = parseTokens(r.consumes)
+  const produces = parseTokens(r.produces)
+  if (consumes === null || produces === null) {
+    return bad(`consumes/produces are arrays of at most ${TOKENS_MAX} non-empty tokens`)
+  }
+  let radiant: NewChapter['radiant']
+  if (r.radiant !== undefined) {
+    const rd = r.radiant as Record<string, unknown> | null
+    const template = typeof rd?.template === 'string' ? rd.template.trim() : ''
+    const total = rd?.total
+    if (!template || typeof total !== 'number' || !Number.isInteger(total) || total < 1) {
+      return bad('radiant is { template, total >= 1 }')
+    }
+    radiant = { template, total }
+  }
+  return {
+    ok: true,
+    chapter: {
+      title,
+      required: r.required !== false,
+      ...(consumes ? { consumes } : {}),
+      ...(produces ? { produces } : {}),
+      ...(radiant ? { radiant } : {})
+    }
+  }
+}
+
+/** The PREREQ_MISSING refusal (spec §3.5): names every gap, and the way out. */
+function prereqMessage(missing: readonly MissingPrerequisite[]): string {
+  const lines = missing.map(
+    (m) =>
+      `chapter "${m.title}" (${m.chapterId}) consumes "${m.token}", which no earlier chapter produces`
+  )
+  return `PREREQ_MISSING: ${lines.join('; ')} — put the chapter that produces it first, or pass force: true to accept the gap (it is logged as a surprise). Nothing was written.`
+}
+
+/** The Log entry a forced prerequisite gap leaves (campaign spec §3.5: `force` logs a `surprise`). */
+function surpriseEntry(at: string, missing: readonly MissingPrerequisite[]): string {
+  const lines = missing.map(
+    (m) =>
+      `PREREQ_MISSING accepted with force: chapter "${m.title}" (${m.chapterId}) consumes "${m.token}", which no earlier chapter produces.`
+  )
+  return `\n### ${at} · surprise\n\n${lines.join('\n')}\n`
+}
+
+type CampaignWrite = { ok: true; campaign: Campaign } | { ok: false; error: string }
+
+/**
+ * Mint a fresh id and a repo-unique slug (from `title`) and exclusively write the campaign
+ * `build` returns, with `log` as its body. Runs under the repo's campaign-create lock;
+ * `createCampaignFile` rejects EEXIST on a genuine id collision — the id is redrawn.
+ */
+async function writeNewCampaign(
+  root: string,
+  title: string,
+  build: (id: string, slug: string, now: string) => Campaign,
+  log: (now: string) => string
+): Promise<CampaignWrite> {
+  return serializeByKey(campaignCreateLocks, root, async (): Promise<CampaignWrite> => {
+    const entries = await listCampaignEntries(root)
+    const takenIds = entries.map((e) => e.id)
+    const slug = resolveUniqueSlug(campaignSlugBase(title), new Set(entries.map((e) => e.slug)))
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const now = new Date().toISOString()
+      const campaign = build(mintCampaignId(takenIds), slug, now)
+      try {
+        await createCampaignFile(root, campaign, log(now))
+        return { ok: true, campaign }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+          return { ok: false, error: `WRITE_FAILED: ${(err as Error).message}` }
+        }
+        takenIds.push(campaign.id)
+      }
+    }
+    return { ok: false, error: 'WRITE_FAILED: could not mint a free campaign id' }
+  })
+}
+
+const campaignCreateHandler: Handler = async (args, ctx) => {
+  const folder = ctx.folder
+  if (!folder) return errorResult('BAD_ARGS: folder is required')
+  const title = strField(args, 'title')?.replace(/\s+/g, ' ').trim()
+  if (!title) return errorResult('BAD_ARGS: title is required')
+  const problems = declaredEndProblems(args.declaredEnd)
+  if (problems.length > 0) {
+    return errorResult(
+      `DECLARED_END_INCOMPLETE: missing or invalid ${problems.join(', ')} — a campaign needs a complete declared end at creation: kind (${DECLARED_END_KINDS.join(' | ')}), a concrete target, and the evidence that proves it.`
+    )
+  }
+  const rawEnd = args.declaredEnd as Record<string, string>
+  const declaredEnd: DeclaredEnd = {
+    kind: rawEnd.kind as DeclaredEnd['kind'],
+    target: rawEnd.target.trim(),
+    evidence: rawEnd.evidence.trim()
+  }
+  const sessionId = strField(args, 'sessionId') ?? ''
+  if (!SESSION_UUID_RE.test(sessionId))
+    return errorResult(badSessionIdMessage('sessionId', sessionId))
+  const root = missionRoot(folder)
+  const refusal = campaignFolderRefusal(folder, root, ctx)
+  if (refusal) return errorResult(refusal)
+
+  const rawChapters = args.chapters
+  if (!Array.isArray(rawChapters) || rawChapters.length < 1 || rawChapters.length > CHAPTERS_MAX) {
+    return errorResult(`BAD_ARGS: chapters must be an array of 1..${CHAPTERS_MAX} chapters.`)
+  }
+  const chapters: Chapter[] = []
+  for (const raw of rawChapters) {
+    const parsed = parseChapterInput(raw)
+    if (!parsed.ok) return errorResult(parsed.error)
+    chapters.push(buildChapter(parsed.chapter, chapters.length + 1))
+  }
+  // Spec §3.5: the prerequisite pass — before any write.
+  const missing = missingPrerequisites(chapters)
+  const force = args.force === true
+  if (missing.length > 0 && !force) return errorResult(prereqMessage(missing))
+
+  const scope = await resolveScopeLinks(root, args.scope)
+  if (!scope.ok) return errorResult(scope.error)
+  const { gitBranch } = await probeGitMeta(folder)
+  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+
+  const created = await writeNewCampaign(
+    root,
+    title,
+    (id, slug, now) => ({
+      id,
+      slug,
+      folder: root,
+      owner: { sessionId, folder: path.resolve(folder) },
+      title,
+      declaredEnd,
+      chapters,
+      status: 'active',
+      ...(scope.links.length > 0 ? { scope: scope.links } : {}),
+      createdAt: now,
+      updatedAt: now,
+      provenance: { author: 'agent', at: now, ...(gitBranch ? { branch: gitBranch } : {}) }
+    }),
+    (now) => `# ${title}\n\n## Log\n${missing.length > 0 ? surpriseEntry(now, missing) : ''}`
+  )
+  if (!created.ok) return errorResult(created.error)
+  // Campaign ch.6 (AC-6.3): what memory already knows about this scope and these chapters.
+  const recall = await recallFor(folder, {
+    paths: scopePaths(created.campaign.scope ?? []),
+    topics: [title, ...created.campaign.chapters.map((c) => c.title)]
+  })
+  return textResult({
+    ok: true,
+    op: 'campaign_create',
+    campaignId: created.campaign.id,
+    slug: created.campaign.slug,
+    chapters: created.campaign.chapters,
+    ...(created.campaign.scope ? { scope: created.campaign.scope } : {}),
+    recall,
+    ...(missing.length > 0
+      ? { forced: missing.map((m) => ({ chapterId: m.chapterId, token: m.token })) }
+      : {})
+  })
+}
+
+type CampaignEdit =
+  | {
+      ok: true
+      campaign: Campaign
+      ack: Record<string, unknown>
+      logAppend?: string
+    }
+  | { ok: false; error: string }
+
+/**
+ * One locked read → mutate → write of a campaign's frontmatter. `fn` gets a private copy; its
+ * result is re-validated by `buildCampaignFileContent` before an atomic replace, and
+ * `updatedAt` is stamped here so no verb forgets it. The Log body is carried over, plus
+ * `logAppend`. A closed campaign is a record: refused CAMPAIGN_CLOSED before `fn` runs.
+ */
+async function editCampaign(
+  args: Record<string, unknown>,
+  ctx: ToolHandlerCtx,
+  fn: (campaign: Campaign, root: string, log: string) => CampaignEdit | Promise<CampaignEdit>
+): Promise<CallToolResult> {
+  const folder = ctx.folder
+  if (!folder) return errorResult('BAD_ARGS: folder is required')
+  const id = strField(args, 'campaignId') ?? ''
+  const root = missionRoot(folder)
+  const refusal = campaignFolderRefusal(folder, root, ctx)
+  if (refusal) return errorResult(refusal)
+  return withCampaignLock(id, async () => {
+    const loaded = await loadCampaign(root, id)
+    if (!loaded.ok) return errorResult(loaded.error)
+    if (loaded.campaign.status === 'closed') return errorResult(campaignClosedMessage(id))
+    const edit = await fn(structuredClone(loaded.campaign), root, loaded.log)
+    if (!edit.ok) return errorResult(edit.error)
+    const next: Campaign = { ...edit.campaign, updatedAt: new Date().toISOString() }
+    let content: string
+    try {
+      content = buildCampaignFileContent(next, loaded.log + (edit.logAppend ?? ''))
+    } catch (err) {
+      return errorResult(`BAD_ARGS: ${(err as Error).message}`)
+    }
+    // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort the write.
+    if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+    await atomicWriteFile(loaded.file, content, 0o644)
+    return textResult(edit.ack)
+  })
+}
+
+const campaignAddChapterHandler: Handler = async (args, ctx) => {
+  const parsed = parseChapterInput(args)
+  if (!parsed.ok) return errorResult(parsed.error)
+  const input: NewChapter = { ...parsed.chapter }
+  const df = args.discoveredFrom as Record<string, unknown> | undefined
+  if (df !== undefined) {
+    if (typeof df?.chapterId !== 'string' || !df.chapterId) {
+      return errorResult('BAD_ARGS: discoveredFrom is { chapterId, stepId? }.')
+    }
+    input.discoveredFrom = {
+      chapterId: df.chapterId,
+      ...(typeof df.stepId === 'string' && df.stepId ? { stepId: df.stepId } : {})
+    }
+  }
+  const un = args.unlocks as Record<string, unknown> | undefined
+  if (un !== undefined) {
+    if (
+      !['decision', 'chapter', 'pr'].includes(un?.kind as string) ||
+      typeof un.ref !== 'string' ||
+      !un.ref
+    ) {
+      return errorResult("BAD_ARGS: unlocks is { kind: 'decision' | 'chapter' | 'pr', ref }.")
+    }
+    input.unlocks = { kind: un.kind as ChapterUnlockKind, ref: un.ref }
+  }
+  const force = args.force === true
+  return editCampaign(args, ctx, (c) => {
+    const known = new Set(c.chapters.map((x) => x.id))
+    if (input.discoveredFrom && !known.has(input.discoveredFrom.chapterId)) {
+      return { ok: false, error: chapterNotFoundMessage(c.id, input.discoveredFrom.chapterId) }
+    }
+    if (input.unlocks?.kind === 'chapter' && !known.has(input.unlocks.ref)) {
+      return { ok: false, error: chapterNotFoundMessage(c.id, input.unlocks.ref) }
+    }
+    const at = new Date().toISOString()
+    const next = applyAddChapter(c, input, at)
+    // Spec §3.5: only the chapter being added is judged — earlier ones were accepted (or forced).
+    const missing = missingPrerequisites(next.chapters, next.chapters.length - 1)
+    if (missing.length > 0 && !force) return { ok: false, error: prereqMessage(missing) }
+    const added = next.chapters[next.chapters.length - 1]
+    return {
+      ok: true,
+      campaign: next,
+      ack: {
+        ok: true,
+        op: 'campaign_add_chapter',
+        campaignId: c.id,
+        chapterId: added.id,
+        totalChapters: next.chapters.length,
+        ...(missing.length > 0
+          ? { forced: missing.map((m) => ({ chapterId: m.chapterId, token: m.token })) }
+          : {})
+      },
+      ...(missing.length > 0 ? { logAppend: surpriseEntry(at, missing) } : {})
+    }
+  })
+}
+
+type ChapterUnlockKind = 'decision' | 'chapter' | 'pr'
+
+/**
+ * Each chapter's bound-mission facts from what is on disk plus the last progress derive —
+ * no GitHub, no live signals. Enough for everything a campaign decides from a mission's
+ * STATUS (done), and the best last-known for the rest (`campaign_list`, the close check).
+ */
+async function cachedChapterFacts(root: string, campaign: Campaign): Promise<ChapterFacts[]> {
+  return Promise.all(
+    campaign.chapters.map(async (c): Promise<ChapterFacts> => {
+      if (!c.missionId) return { chapterId: c.id, mission: null }
+      const loaded = await loadMission(root, c.missionId)
+      if (!loaded.ok) return { chapterId: c.id, mission: null }
+      const m = loaded.mission
+      return {
+        chapterId: c.id,
+        mission: {
+          status: m.status,
+          ...(m.closedAs ? { closedAs: m.closedAs } : {}),
+          progress: lastProgress.get(m.id) ?? null
+        }
+      }
+    })
+  )
+}
+
+const campaignGetHandler: Handler = async (args, ctx) => {
+  const folder = ctx.folder
+  if (!folder) return errorResult('BAD_ARGS: folder is required')
+  const campaignId = strField(args, 'campaignId')
+  const ownerSessionId = strField(args, 'ownerSessionId')
+  if (!campaignId === !ownerSessionId) {
+    return errorResult('BAD_ARGS: pass exactly one of campaignId / ownerSessionId')
+  }
+  const root = missionRoot(folder)
+  const refusal = campaignFolderRefusal(folder, root, ctx)
+  if (refusal) return errorResult(refusal)
+
+  let found: { campaign: Campaign; log: string }
+  if (campaignId) {
+    const loaded = await loadCampaign(root, campaignId)
+    if (!loaded.ok) return errorResult(loaded.error)
+    found = loaded
+  } else {
+    const owned = (await readAllCampaigns(root)).campaigns
+      .filter(
+        (c) => c.campaign.owner.sessionId === ownerSessionId && c.campaign.status !== 'closed'
+      )
+      .sort((a, b) => b.campaign.updatedAt.localeCompare(a.campaign.updatedAt))
+    if (owned.length === 0) {
+      return errorResult(
+        `CAMPAIGN_NOT_FOUND: session ${ownerSessionId} owns no open campaign in this repo.`
+      )
+    }
+    found = owned[0]
+  }
+  const { campaign, log } = found
+  const now = Date.now()
+  // Each chapter's mission is derived fresh (the same derive `mission_get` runs), so the
+  // chapter states below come from live facts, not from a poll that may be a minute old.
+  const facts: ChapterFacts[] = []
+  const missions = new Map<string, Mission>()
+  for (const c of campaign.chapters) {
+    if (!c.missionId) {
+      facts.push({ chapterId: c.id, mission: null })
+      continue
+    }
+    const loaded = await loadMission(root, c.missionId)
+    if (!loaded.ok) {
+      facts.push({ chapterId: c.id, mission: null })
+      continue
+    }
+    missions.set(c.id, loaded.mission)
+    const m = loaded.mission
+    const progress =
+      m.status === 'closed'
+        ? null
+        : (await deriveMissionSignals(root, m, loaded.log, ctx, now)).derived.progress
+    facts.push({
+      chapterId: c.id,
+      mission: { status: m.status, ...(m.closedAs ? { closedAs: m.closedAs } : {}), progress }
+    })
+  }
+  const progress = computeCampaignProgress(campaign, facts, now)
+  const rows = campaign.chapters.map((c, i) => {
+    const m = missions.get(c.id)
+    const mp = facts[i].mission?.progress ?? null
+    return {
+      chapterId: c.id,
+      ordinal: c.ordinal,
+      title: c.title,
+      required: c.required,
+      state: progress.states[c.id],
+      missionId: c.missionId ?? null,
+      mission: m
+        ? {
+            status: m.status,
+            ...(m.closedAs ? { closedAs: m.closedAs } : {}),
+            headline: mp ? progressHeadline(mp) : null
+          }
+        : null,
+      ...(c.missionId && !m ? { missionProblem: 'the bound mission could not be read' } : {})
+    }
+  })
+  return textResult({
+    ok: true,
+    op: 'campaign_get',
+    campaign,
+    title: campaign.title,
+    log,
+    derived: { computedAt: new Date(now).toISOString(), progress, chapters: rows },
+    closeReadiness: campaignCloseRefusal(campaign, progress)
+  })
+}
+
+const campaignListHandler: Handler = async (_args, ctx) => {
+  const folder = ctx.folder
+  let roots: string[]
+  if (folder) {
+    const root = missionRoot(folder)
+    const refusal = campaignFolderRefusal(folder, root, ctx)
+    if (refusal) return errorResult(refusal)
+    roots = [root]
+  } else {
+    roots = [...new Set(ctx.folders.map((f) => missionRoot(f.path)))].filter(
+      (root) => !isFolderDenied(root, ctx.denyFolders)
+    )
+  }
+  const now = Date.now()
+  const rows: Record<string, unknown>[] = []
+  const unreadable: string[] = []
+  for (const root of roots) {
+    const read = await readAllCampaigns(root)
+    unreadable.push(...read.unreadable.map((n) => path.join(campaignsDir(root), n)))
+    for (const { campaign: c } of read.campaigns) {
+      const progress = computeCampaignProgress(c, await cachedChapterFacts(root, c), now)
+      rows.push({
+        id: c.id,
+        slug: c.slug,
+        title: c.title,
+        status: c.status,
+        folder: c.folder,
+        ownerSessionId: c.owner.sessionId,
+        // Last-known (see computedAt): campaign_get derives each mission fresh.
+        progress,
+        updatedAt: c.updatedAt
+      })
+    }
+  }
+  return textResult({
+    ok: true,
+    op: 'campaign_list',
+    campaigns: rows,
+    ...(unreadable.length > 0 ? { unreadable } : {})
+  })
+}
+
+const campaignRequestCloseHandler: Handler = async (args, ctx) => {
+  const requestedBy = strField(args, 'sessionId')
+  if (requestedBy !== undefined && !SESSION_UUID_RE.test(requestedBy)) {
+    return errorResult(badSessionIdMessage('sessionId', requestedBy))
+  }
+  const currentHot = ctx.folder ? await readHotBody(ctx.folder) : undefined
+  return editCampaign(args, ctx, async (c, root, log) => {
+    // The same check campaign_get reports as `closeReadiness`.
+    const progress: CampaignProgress = computeCampaignProgress(
+      c,
+      await cachedChapterFacts(root, c),
+      Date.now()
+    )
+    const refused = campaignCloseRefusal(c, progress)
+    if (refused) return { ok: false, error: `${refused.code}: ${refused.reason}` }
+    // The agent's request lands on `delivered` + `pendingClose`; only the operator's UI
+    // reaches `closed`.
+    c.status = 'delivered'
+    c.pendingClose = { at: new Date().toISOString(), requestedBy: requestedBy ?? c.owner.sessionId }
+    // Campaign ch.6 (AC-6.1): a chapter is the campaign's "step"; its mission's ledger is the
+    // evidence. Only the structured records are read — never a session.
+    const steps: ConsolidatorInput['steps'] = []
+    const ledger: ConsolidatorInput['ledger'] = []
+    for (const ch of c.chapters) {
+      const loadedMission = ch.missionId ? await loadMission(root, ch.missionId) : null
+      const mission = loadedMission?.ok ? loadedMission.mission : null
+      const delivered =
+        mission !== null &&
+        (mission.status === 'delivered' ||
+          (mission.status === 'closed' && mission.closedAs === 'delivered'))
+      steps.push({
+        id: ch.id,
+        title: ch.title,
+        kind: 'custom',
+        proof: delivered ? 'verified' : 'unproven',
+        required: ch.required
+      })
+      for (const row of mission?.ledger ?? []) ledger.push({ ...row, stepId: ch.id })
+    }
+    const consolidated = consolidate(
+      {
+        kind: 'campaign',
+        id: c.id,
+        title: c.title,
+        declaredEnd: c.declaredEnd,
+        createdAt: c.createdAt,
+        scopePaths: scopePaths(c.scope ?? []),
+        steps,
+        endState: 'verified', // the close was just accepted: every required chapter reads done
+        log: parseLogEntries(log),
+        ledger,
+        ...(currentHot ? { currentHot } : {})
+      },
+      new Date().toISOString().slice(0, 10)
+    )
+    c.outcome = consolidated.outcome
+    if (consolidated.drafts.length > 0) c.memoryDrafts = consolidated.drafts
+    else delete c.memoryDrafts
+    return {
+      ok: true,
+      campaign: c,
+      ack: {
+        ok: true,
+        op: 'campaign_request_close',
+        pendingClose: true,
+        consolidation: consolidationAck(consolidated)
+      }
+    }
+  })
+}
+
+/**
+ * Create a chapter's mission and bind it to the chapter, under the campaign's lock: validate
+ * the campaign and chapter first (nothing is written on a refusal), write the mission via
+ * `create`, then record its id on the chapter. If the campaign cannot be rewritten after the
+ * mission landed, the error says so and names the mission — it is never silently half-bound.
+ */
+async function bindMissionToChapter(
+  root: string,
+  campaignId: string,
+  chapterId: string,
+  create: () => Promise<MissionWrite>,
+  ctx: ToolHandlerCtx
+): Promise<MissionWrite> {
+  return withCampaignLock(campaignId, async (): Promise<MissionWrite> => {
+    const loaded = await loadCampaign(root, campaignId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const { campaign } = loaded
+    if (campaign.status === 'closed') return { ok: false, error: campaignClosedMessage(campaignId) }
+    const chapter = campaign.chapters.find((c) => c.id === chapterId)
+    if (!chapter) return { ok: false, error: chapterNotFoundMessage(campaignId, chapterId) }
+    if (chapter.missionId) {
+      return {
+        ok: false,
+        error: `CHAPTER_ALREADY_BOUND: chapter ${chapterId} of campaign ${campaignId} already is mission ${chapter.missionId} — a chapter takes one mission; add a chapter (campaign_add_chapter) for further work.`
+      }
+    }
+    // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
+    if (ctx.deadlineFlag?.fired) return { ok: false, error: 'DEADLINE_FIRED' }
+    const made = await create()
+    if (!made.ok) return made
+    const next: Campaign = {
+      ...campaign,
+      chapters: campaign.chapters.map((c) =>
+        c.id === chapterId ? { ...c, missionId: made.mission.id } : c
+      ),
+      updatedAt: new Date().toISOString()
+    }
+    try {
+      await atomicWriteFile(loaded.file, buildCampaignFileContent(next, loaded.log), 0o644)
+    } catch (err) {
+      return {
+        ok: false,
+        error: `WRITE_FAILED: mission ${made.mission.id} was created but campaign ${campaignId} could not record it on chapter ${chapterId}: ${(err as Error).message}`
+      }
+    }
+    return made
+  })
+}
+
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
   get_fleet: getFleetHandler,
   get_session: getSessionHandler,
@@ -5624,7 +7550,10 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   list_workers: listWorkersHandler,
   list_containers: listContainersHandler,
   list_cleanup: listCleanupHandler,
+  github_budget: githubBudgetHandler,
   release_worktree: releaseWorktreeHandler,
+  archive_session: archiveSessionHandler,
+  hide_folder: hideFolderHandler,
   stop_containers: stopContainersHandler,
   start_containers: startContainersHandler,
   remove_containers: removeContainersHandler,
@@ -5645,7 +7574,13 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   mission_verify_step: missionVerifyStepHandler,
   mission_request_close: missionRequestCloseHandler,
   mission_import_legacy: missionImportLegacyHandler,
-  mission_add_check: missionAddCheckHandler
+  mission_add_check: missionAddCheckHandler,
+  campaign_create: campaignCreateHandler,
+  campaign_add_chapter: campaignAddChapterHandler,
+  campaign_get: campaignGetHandler,
+  rebase_stack: rebaseStackHandler,
+  campaign_list: campaignListHandler,
+  campaign_request_close: campaignRequestCloseHandler
 }
 
 /**

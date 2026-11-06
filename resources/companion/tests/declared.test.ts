@@ -98,3 +98,11 @@ test('the base set missing (session.end fails to register) declares neither feat
   expect(hello.declared).not.toContain('ui.band')
   expect(hello.declared).not.toContain('act.channel')
 })
+
+// T585 review finding 7: the card feature rides only on its own hook, so a registration that fails
+// elsewhere (here `session.end`, which gates the identity branch) must not take it away.
+test('ui.reportCard is declared whenever its AssistantMessage hook registered', async () => {
+  expect((await helloDeclared([])).declared).toContain('ui.reportCard')
+  const hello = await helloDeclared(['session.end'])
+  expect(hello.declared).toContain('ui.reportCard')
+})

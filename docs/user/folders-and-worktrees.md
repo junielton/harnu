@@ -14,7 +14,7 @@ The sidebar is one flat list — every folder you've explicitly pinned, plus eve
 
 Folders that belong together collapse under one **group header** instead of each taking a flat row. Two things can make folders belong together, and both render the same way:
 
-- **Same repo.** A repo with **two or more visible worktrees** (your main checkout plus one or more linked worktrees) groups under a header carrying a branch icon, the repo's name (or your custom alias), and the worktree count.
+- **Same repo.** A repo with **two or more visible worktrees** (your main checkout plus one or more linked worktrees; a [shelved](#shelved-worktrees) worktree counts too) groups under a header carrying a branch icon, the repo's name (or your custom alias), and the worktree count.
 - **Same parent directory.** Two or more folders sitting **directly inside the same directory** group under a header carrying a folder icon and that directory's name — even when the directory itself isn't a folder you pinned. Pin `~/work/api` and `~/work/web` and they gather under a `work` header.
 
 Click a header to expand or collapse the group. If two groups resolve to the same display name, Harnu adds a small disambiguating hint next to each (e.g. distinguishing two groups both named `www`).
@@ -22,6 +22,16 @@ Click a header to expand or collapse the group. If two groups resolve to the sam
 Right-click any group header for **Rename group** (set a custom label) and **Reset name** (clear back to the default, only shown once you've set one). Repo groups additionally offer **Cleanup…**, which a parent-directory group doesn't — there's no shared git history to sweep.
 
 Grouping only ever uses the **direct** parent, and a group never contains another group, so the list stays exactly one level deep. That's deliberate: pinning something broad like your home directory groups only its immediate children, instead of swallowing everything beneath it into one giant pile. A folder with no sibling under its parent just sits as a normal row.
+
+## Shelved worktrees
+
+When Cleanup [shelves](cleanup.md#shelving-idle-worktrees) an idle worktree, its folder is gone on purpose but the branch and the sessions are kept. Such a worktree never shows as a normal row, and never as a "ghost" folder either. It waits in a **Shelved** section (pt-BR: **Guardadas**) at the **end of its repo group**, after the live worktrees:
+
+- **Collapsed by default.** The row reads **Shelved · 3** (the number is always visible, even collapsed) and only appears when the repo has at least one shelved worktree. Click it to open it. Whether it is open is remembered per repo. Typing in the sidebar filter opens it when a shelved branch or session matches; **Collapse all** closes it and **Expand all** opens it. The group header's own count stays the live worktrees only.
+- **A repo with one live worktree and one shelved worktree still gets its group header**, so the section always has a place to live.
+- **One compact, dimmed line per worktree:** the branch (a detached worktree shows its folder name), a small archive icon and how long ago it was shelved (**9 d**). Hover for the full wording ("Shelved 9 days ago · branch `feat/x` kept"). Clicking the line only opens its list of sessions; it never restores anything.
+- **Click a session to resume it.** Harnu restores the worktree first (the row reads **restoring…** and the session is highlighted at once), then opens the session in its own folder, so nothing ever starts in a missing directory. The worktree then moves back into the group as a normal row. If the restore cannot work, nothing is started anywhere else, the selection stays where it was, and a message names the branch and offers **Open in Cleanup**, where the Shelved card says what to do next. Nothing was lost.
+- **Right-click a shelved worktree** for **Restore worktree** (brings the folder back without resuming anything) and **Open in Cleanup**. A shelved worktree has no folder, so the usual folder actions (new terminal, rename, hide...) do not apply. The hover action at the right edge of the line does the same as **Restore worktree**.
 
 ## Worktree lineage
 
@@ -143,7 +153,7 @@ stacks into one column.
 The view is the folder's home screen:
 
 - **Header** — the folder's name, full path, git branch, whether it's the main worktree or a linked one, and live git status (uncommitted count, ahead/behind).
-- **Actions** — New session, [Roadmap board](roadmap-board.md), [PR Stack](pr-stack.md), Browse files, Open in VS Code, Open folder in your file manager, and a terminal in that folder.
+- **Actions** — New session, [Roadmap board](roadmap-board.md), [PR Stack](pr-stack.md), Browse files, Open in your [editor](settings.md#editor), Open folder in your file manager, and a terminal in that folder.
 - **Sessions** — the folder's sessions, newest first; click one to open it. A folder with no sessions shows a **New session** button instead of an empty list. **Older** and **Archived** sit below as expandable sections, so you no longer need the hover-only peek icons on the sidebar row to reach them.
 - **Where we left off** — the top of the repo's [project memory](project-memory.md) snapshot, when it has one.
 - **Roadmap** — how many cards sit in each column, and every card currently in progress or in review by name.
@@ -356,9 +366,11 @@ hasn't said anything yet shows no number at all rather than a `0`.
 
 Selecting a folder never stops a running session. Pressing **Enter** on a folder with the arrow-key sidebar navigation does the same as clicking it. Sessions keep running in the background with their scrollback and conversation intact; clicking one brings you straight back to it.
 
-**Folder actions no longer need a session.** The Topbar's buttons (Roadmap board, PR Stack, Browse files, Open in VS Code, Pull requests on GitHub, Open folder, terminal) act on whichever folder you have selected. Previously they were only available while a session was selected, which made a folder with no sessions a dead end — you had to start a session just to open that folder's board.
+**Folder actions no longer need a session.** The Topbar's buttons (Roadmap board, PR Stack, Browse files, Open in your [editor](settings.md#editor), Pull requests on GitHub, Open folder, terminal) act on whichever folder you have selected. Previously they were only available while a session was selected, which made a folder with no sessions a dead end — you had to start a session just to open that folder's board.
 
 **Pull requests on GitHub.** When the selected folder's `origin` remote points at github.com, the Topbar shows a pull-request button that opens the repo's **Pull requests** page in your browser. Both HTTPS and SSH remotes work, including SSH host aliases like `git@github.com-work:owner/repo.git`. The button is hidden when the folder isn't a git repo, has no `origin`, or its `origin` is somewhere else (GitLab, Bitbucket, a GitHub Enterprise host). It only reads `origin`, so a fork whose `origin` is your own copy opens your fork's pull requests, not the upstream's.
+
+**A narrow Topbar folds its buttons into a `…` menu.** When the window (or the column) is too narrow for the Topbar's buttons, the title shortens with an ellipsis — down to a minimum of about 96px — and then the buttons start to leave the bar one at a time, the least important first, into a **More actions** (`…`) button at the end of the bar. They come back, one at a time, when the bar gets wider. The first to go are Pull requests on GitHub, Open folder and Open in your editor, then Browse files, the split-layout toggle, Browser and Terminal; the Review, PR Stack and Roadmap buttons, the panel toggle and **New session** go last. The sidebar toggle and the Activity bell never fold. Everything in the menu works as it did in the bar: same icon, name, keyboard shortcut and highlight (a board that is open is still lit). Open it with a click, or press **Enter**, **Space** or the **Down** arrow on the `…` button; move with the arrow keys, press **Enter** to run an action, **Esc** to close it and return to the button.
 
 ## Hover preview
 

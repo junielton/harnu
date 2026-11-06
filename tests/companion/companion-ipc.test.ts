@@ -29,6 +29,8 @@ const extras = (over: Partial<CompanionIpcExtras> = {}): CompanionIpcExtras => (
   restartListener: async () => undefined,
   status: () => ({}) as never,
   stagedDir: async () => null,
+  setReportCards: () => undefined,
+  setQuietRows: () => undefined,
   ...over
 })
 const host = { diagnostics: () => ({}) as never, mintSpawnToken: () => null }
@@ -50,6 +52,34 @@ describe('registration', () => {
   it('the route exists only with the flag', () => {
     registerCompanionIpc(host, extras({ debug: true }))
     expect(handlers.has('companion:debug:enqueue')).toBe(true)
+  })
+})
+
+describe('the report-card switch (T585)', () => {
+  it('passes a boolean to main and refuses anything else', async () => {
+    const setReportCards = vi.fn()
+    registerCompanionIpc(host, extras({ setReportCards }))
+    const call = handlers.get('companion:setReportCards')!
+    expect(await call({}, false)).toEqual({ ok: true })
+    expect(await call({}, true)).toEqual({ ok: true })
+    expect(setReportCards.mock.calls).toEqual([[false], [true]])
+    for (const bad of ['true', 1, null, undefined, {}])
+      expect(await call({}, bad)).toEqual({ ok: false })
+    expect(setReportCards).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('the quiet-rows switch (T589)', () => {
+  it('passes a boolean to main and refuses anything else', async () => {
+    const setQuietRows = vi.fn()
+    registerCompanionIpc(host, extras({ setQuietRows }))
+    const call = handlers.get('companion:setQuietRows')!
+    expect(await call({}, false)).toEqual({ ok: true })
+    expect(await call({}, true)).toEqual({ ok: true })
+    expect(setQuietRows.mock.calls).toEqual([[false], [true]])
+    for (const bad of ['true', 1, null, undefined, {}])
+      expect(await call({}, bad)).toEqual({ ok: false })
+    expect(setQuietRows).toHaveBeenCalledTimes(2)
   })
 })
 

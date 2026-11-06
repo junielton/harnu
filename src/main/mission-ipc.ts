@@ -11,7 +11,8 @@
  *
  * Write side: `mission:operatorDoor` is the ONLY write the mission UI makes —
  * approve a staged re-scope, tick a human step, end a mission (close as
- * delivered or discard), and add / tick / delete a human check. Each is a pure
+ * delivered or discard), add / tick / delete a human check, and choose a decision
+ * node's option (also reachable as `mission:choose`). Each is a pure
  * function in `mission-core.ts` applied under the same per-mission-id lock the
  * `mission_*` verbs use, then written atomically with a Log line saying what
  * the operator did. No MCP verb reaches this module (pinned by
@@ -20,13 +21,17 @@
  * `mission_request_close`) or add a check, never apply.
  */
 
+import { retireStewardForClosedMission } from './steward-shell'
 import { ipcMain } from 'electron'
 import { scanFolders } from './claude-reader'
 import type { FolderEntry } from './folder-model'
 import { mapLimit } from './map-limit'
 import {
   applyAddCheck,
+  applyChooseDecision,
   applyApprovedRescope,
+  applyPauseSteward,
+  applyResumeSteward,
   applyDeleteCheck,
   applyOperatorEnd,
   applyOperatorVerifyStep,
@@ -39,6 +44,7 @@ import {
 } from './mission-core'
 import type { MissionProgress } from './mission-progress'
 import { atomicWriteFile } from './mcp/atomic-write'
+import { recordMemoryDrafts, unknownDraftIds, type RecordResult } from './mission-record'
 import {
   deriveMissionSignals,
   loadMission,
@@ -88,6 +94,11 @@ export type MissionDoor =
       missionId: string
       closedAs: 'delivered' | 'discarded'
       reason?: string
+      /**
+       * Campaign ch.6 (T610) — ids of the stored `memoryDrafts` the operator ticked under
+       * "Also record". Only meaningful with `closedAs: 'delivered'`; absent = write nothing.
+       */
+      record?: string[]
     }
   | { door: 'verifyStep'; root: string; missionId: string; stepId: string; verified: boolean }
   // Mission v3 §3.6 — human checks. Only these doors tick or delete one.
@@ -101,6 +112,11 @@ export type MissionDoor =
       ticked: boolean
     }
   | { door: 'deleteCheck'; root: string; missionId: string; stepId: string; checkId: string }
+  // Campaign spec §4 — Choose: the operator picks an option of a decision node.
+  | { door: 'chooseDecision'; root: string; missionId: string; stepId: string; index: number }
+  // Campaign spec §3.4 — Pause steward…: a mandatory reason; Resume steward. A mission door, not a worker switch.
+  | { door: 'pauseSteward'; root: string; missionId: string; reason: string }
+  | { door: 'resumeSteward'; root: string; missionId: string }
 
 /**
  * Mission v3 §3.2 — a door answers with the mission it changed, re-derived on
@@ -110,7 +126,14 @@ export type MissionDoor =
  * `deduped`: an `addCheck` whose label was already on the step — nothing was written or logged.
  */
 export type MissionDoorResult =
-  { ok: true; view: MissionView | null; deduped?: true } | { ok: false; error: string }
+  | {
+      ok: true
+      view: MissionView | null
+      deduped?: true
+      /** An `end` that ticked memory drafts: which landed, which the memory write refused. */
+      recorded?: RecordResult
+    }
+  | { ok: false; error: string }
 
 /** How long one fleet scan serves `mission:list` passes (Mission v3 §3.8). */
 const SCAN_TTL_MS = 10_000
@@ -159,7 +182,7 @@ async function buildMissionView(
     mission: projected,
     title: missionTitle(log, mission.slug),
     derived,
-    you: youItems(mission, children, derived.progress),
+    you: youItems(mission, children, derived.progress, derived.steps),
     progress: derived.progress,
     closeWarnings: closeWarnings(mission, derived.progress)
   }
@@ -173,7 +196,14 @@ async function buildMissionView(
  */
 export async function listMissionViews(
   folders: readonly string[],
-  now = Date.now()
+  now = Date.now(),
+  opts: {
+    /**
+     * Only the missions one of these sessions owns or is linked to as a child are derived (the files
+     * are all read; the derive, the costly part, is skipped for the rest). Absent: every open mission.
+     */
+    onlySessions?: ReadonlySet<string>
+  } = {}
 ): Promise<MissionListResult> {
   const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
   if (roots.length === 0) return { views: [], unreadable: [], shadowed: [] }
@@ -184,7 +214,15 @@ export async function listMissionViews(
   const unreadable = read.unreadable.map((u) => u.name)
   // One list per repo root, so the jobs below can be taken round-robin across repos.
   const perRoot = new Map<string, RootedMission[]>()
-  for (const m of read.missions) perRoot.set(m.root, [...(perRoot.get(m.root) ?? []), m])
+  const only = opts.onlySessions
+  const wanted = (m: Mission): boolean =>
+    only === undefined ||
+    only.has(m.owner.sessionId) ||
+    m.steps.some((s) => s.links.some((l) => l.kind === 'session' && only.has(l.ref)))
+  for (const m of read.missions) {
+    if (!wanted(m.mission)) continue
+    perRoot.set(m.root, [...(perRoot.get(m.root) ?? []), m])
+  }
   const lists = [...perRoot.values()]
   const jobs: Array<{ root: string; mission: Mission; log: string }> = []
   for (let k = 0; lists.some((list) => k < list.length); k++) {
@@ -223,6 +261,12 @@ function applyDoor(door: MissionDoor, mission: Mission, at: string): Mission {
       return applyTickCheck(mission, door.stepId, door.checkId, { at, ticked: door.ticked })
     case 'deleteCheck':
       return applyDeleteCheck(mission, door.stepId, door.checkId, { at })
+    case 'chooseDecision':
+      return applyChooseDecision(mission, door.stepId, door.index, { at })
+    case 'pauseSteward':
+      return applyPauseSteward(mission, door.reason, { at })
+    case 'resumeSteward':
+      return applyResumeSteward(mission, { at })
   }
 }
 
@@ -231,7 +275,12 @@ function applyDoor(door: MissionDoor, mission: Mission, at: string): Mission {
  * Log, so it learns what the operator did — and a closed mission refuses its
  * verbs with MISSION_CLOSED.
  */
-function doorLogEntry(door: MissionDoor, at: string): string {
+function doorLogEntry(
+  door: MissionDoor,
+  at: string,
+  applied: Mission,
+  recorded?: RecordResult
+): string {
   const what = ((): string => {
     switch (door.door) {
       case 'approveRescope':
@@ -246,15 +295,41 @@ function doorLogEntry(door: MissionDoor, at: string): string {
         return `operator ${door.ticked ? 'ticked' : 'un-ticked'} ${door.checkId} on ${door.stepId}`
       case 'deleteCheck':
         return `operator deleted ${door.checkId} on ${door.stepId}`
+      case 'chooseDecision':
+        return `operator chose "${chosenOption(door, applied)}"`
+      // Campaign spec §3.4: these two are `steward` Log entries (the heading's kind tag).
+      case 'pauseSteward':
+        return 'steward · operator paused the steward'
+      case 'resumeSteward':
+        return 'steward · operator resumed the steward'
     }
   })()
   const body =
     door.door === 'end'
-      ? door.reason?.trim() || '(no reason given)'
+      ? [door.reason?.trim() || '(no reason given)', ...recordedLines(recorded)].join('\n')
       : door.door === 'addCheck'
         ? door.label
-        : ''
+        : door.door === 'pauseSteward'
+          ? (applied.stewardPause?.reason ?? '')
+          : door.door === 'chooseDecision'
+            ? // Campaign spec §3.2 — the Log entry kind: a decision, for what reads the Log.
+              `kind: decision\nstep: ${door.stepId}\n${applied.steps.find((s) => s.id === door.stepId)?.decision?.title ?? ''}`
+            : ''
   return `\n### ${at} · ${what}\n${body ? `\n${body}\n` : ''}`
+}
+
+/** The Log lines saying what "Also record" wrote to memory, and what it could not. */
+function recordedLines(recorded: RecordResult | undefined): string[] {
+  if (!recorded) return []
+  return [
+    ...(recorded.written.length ? [`recorded to memory: ${recorded.written.join(', ')}`] : []),
+    ...recorded.failed.map((f) => `not recorded: ${f.id} (${f.error})`)
+  ]
+}
+
+/** The option text a Choose door picked, read off the mission it produced. */
+function chosenOption(door: Extract<MissionDoor, { door: 'chooseDecision' }>, m: Mission): string {
+  return m.steps.find((s) => s.id === door.stepId)?.decision?.options[door.index] ?? ''
 }
 
 const DOORS: ReadonlySet<string> = new Set([
@@ -263,7 +338,10 @@ const DOORS: ReadonlySet<string> = new Set([
   'verifyStep',
   'addCheck',
   'tickCheck',
-  'deleteCheck'
+  'deleteCheck',
+  'chooseDecision',
+  'pauseSteward',
+  'resumeSteward'
 ])
 
 /** A door's own required fields, or the BAD_ARGS refusal naming them. */
@@ -271,10 +349,16 @@ function doorArgsProblem(door: Partial<Record<string, unknown>>): string | null 
   const str = (k: string): boolean => typeof door[k] === 'string'
   switch (door.door) {
     case 'end':
-      return (door.closedAs === 'delivered' || door.closedAs === 'discarded') &&
-        (door.reason === undefined || str('reason'))
+      if (
+        !(door.closedAs === 'delivered' || door.closedAs === 'discarded') ||
+        !(door.reason === undefined || str('reason'))
+      ) {
+        return 'BAD_ARGS: end needs closedAs (delivered | discarded) and an optional string reason'
+      }
+      return door.record === undefined ||
+        (Array.isArray(door.record) && door.record.every((id) => typeof id === 'string'))
         ? null
-        : 'BAD_ARGS: end needs closedAs (delivered | discarded) and an optional string reason'
+        : 'BAD_ARGS: end record must be an array of draft ids'
     case 'verifyStep':
       return str('stepId') && typeof door.verified === 'boolean'
         ? null
@@ -289,6 +373,14 @@ function doorArgsProblem(door: Partial<Record<string, unknown>>): string | null 
       return str('stepId') && str('checkId')
         ? null
         : 'BAD_ARGS: deleteCheck needs stepId and checkId'
+    case 'chooseDecision':
+      return str('stepId') && typeof door.index === 'number'
+        ? null
+        : 'BAD_ARGS: chooseDecision needs stepId and a numeric index'
+    case 'pauseSteward':
+      return typeof door.reason === 'string' && door.reason.trim() !== ''
+        ? null
+        : 'BAD_ARGS: pauseSteward needs a reason — say why the steward is paused'
     default:
       return null
   }
@@ -324,13 +416,32 @@ export async function runOperatorDoor(
   const written = await withMissionIdMintLock(
     missionId,
     async (): Promise<
-      { ok: true; mission: Mission; log: string; deduped?: true } | { ok: false; error: string }
+      | { ok: true; mission: Mission; log: string; deduped?: true; recorded?: RecordResult }
+      | { ok: false; error: string }
     > => {
       const loaded = await loadMission(root, missionId)
       if (!loaded.ok) return { ok: false, error: loaded.error }
       try {
         const at = now()
         const mission = applyDoor(door as MissionDoor, loaded.mission, at)
+        // Campaign ch.6 (T610): "Also record" — only a delivered end writes memory, only the
+        // ticked drafts, and only after the end itself validated (a closed mission throws above).
+        let recorded: RecordResult | undefined
+        if (door.door === 'end' && door.closedAs === 'delivered' && door.record?.length) {
+          const unknown = unknownDraftIds(loaded.mission.memoryDrafts, door.record)
+          if (unknown.length) {
+            return {
+              ok: false,
+              error: `UNKNOWN_DRAFT: no stored memory draft ${unknown.join(', ')} on ${missionId}`
+            }
+          }
+          recorded = await recordMemoryDrafts(
+            root,
+            loaded.mission.memoryDrafts,
+            door.record,
+            Date.parse(at)
+          )
+        }
         if (door.door === 'addCheck') {
           const count = (m: Mission): number =>
             m.steps.find((s) => s.id === door.stepId)?.checks?.length ?? 0
@@ -343,9 +454,9 @@ export async function runOperatorDoor(
         const log =
           loaded.log +
           (loaded.log.endsWith('\n') ? '' : '\n') +
-          doorLogEntry(door as MissionDoor, at)
+          doorLogEntry(door as MissionDoor, at, mission, recorded)
         await atomicWriteFile(loaded.file, buildMissionFileContent(mission, log), 0o644)
-        return { ok: true, mission, log }
+        return { ok: true, mission, log, ...(recorded ? { recorded } : {}) }
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
@@ -353,7 +464,14 @@ export async function runOperatorDoor(
   )
   if (!written.ok) return written
   // Ended: it leaves every surface — nothing to derive.
-  if (written.mission.status === 'closed') return { ok: true, view: null }
+  if (written.mission.status === 'closed') {
+    // Campaign ch.5a: the mission's steward (a system worker) and its hooks end with the mission.
+    await retireStewardForClosedMission({
+      missionId: written.mission.id,
+      ownerFolder: written.mission.owner.folder
+    })
+    return { ok: true, view: null, ...(written.recorded ? { recorded: written.recorded } : {}) }
+  }
   try {
     const ctx: ToolHandlerCtx = {
       folder: root,
@@ -380,4 +498,9 @@ export function registerMissionIpc(): void {
   ipcMain.handle('mission:operatorDoor', async (_e, door: unknown): Promise<MissionDoorResult> =>
     runOperatorDoor(door)
   )
+  // Campaign spec §4 — the Choose door has its own channel; it is the same door.
+  ipcMain.handle('mission:choose', async (_e, args: unknown): Promise<MissionDoorResult> => {
+    const a = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
+    return runOperatorDoor({ ...a, door: 'chooseDecision' })
+  })
 }

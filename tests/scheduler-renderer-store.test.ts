@@ -97,3 +97,59 @@ describe('scheduler renderer store', () => {
     )
   })
 })
+
+describe('scheduler renderer store — run history for every worker (T590 AC-5)', () => {
+  let changed: ((s: { workers: Worker[]; runningIds: string[] }) => void) | null
+  let schedulerRuns: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    changed = null
+    schedulerRuns = vi.fn(async (id: string) => [{ workerId: id, status: 'ok', startedAt: 1 }])
+    ;(globalThis as unknown as { window: { api: unknown } }).window = {
+      api: {
+        schedulerList: vi.fn(async () => [makeWorker({ id: 'a' }), makeWorker({ id: 'b' })]),
+        schedulerRuns,
+        onSchedulerChanged: vi.fn((cb: typeof changed) => {
+          changed = cb
+          return () => {}
+        })
+      }
+    }
+  })
+
+  it('init() loads the last runs of EVERY worker, not only a selected one', async () => {
+    const store = useSchedulerStore()
+    await store.init()
+    expect(schedulerRuns).toHaveBeenCalledTimes(2)
+    expect(Object.keys(store.runsByWorker).sort()).toEqual(['a', 'b'])
+  })
+
+  it('loads a worker that appears after init, and refreshes one whose tick just finished', async () => {
+    const store = useSchedulerStore()
+    await store.init()
+    schedulerRuns.mockClear()
+
+    changed?.({
+      workers: [makeWorker({ id: 'a' }), makeWorker({ id: 'b' }), makeWorker({ id: 'c' })],
+      runningIds: ['a']
+    })
+    await Promise.resolve()
+    expect(schedulerRuns.mock.calls.map((c) => c[0])).toEqual(['c'])
+
+    schedulerRuns.mockClear()
+    changed?.({
+      workers: [makeWorker({ id: 'a' }), makeWorker({ id: 'b' }), makeWorker({ id: 'c' })],
+      runningIds: []
+    })
+    await Promise.resolve()
+    expect(schedulerRuns.mock.calls.map((c) => c[0])).toEqual(['a'])
+  })
+
+  it('loadAllRuns() refreshes every worker', async () => {
+    const store = useSchedulerStore()
+    await store.init()
+    schedulerRuns.mockClear()
+    await store.loadAllRuns()
+    expect(schedulerRuns).toHaveBeenCalledTimes(2)
+  })
+})

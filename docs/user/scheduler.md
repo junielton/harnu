@@ -12,16 +12,29 @@ Nothing carries over from one run to the next. A worker has no memory of its pre
 
 Click the **Scheduler** pill in the footer. It reads quietly ("Scheduler") when nothing is running, and turns green with a live count ("2 running") the moment a tick is in flight — click it from either state to open the takeover. The × in the header, or selecting a session in the sidebar, closes it again.
 
-Inside: a worker list on the left, grouped **Pinned**, **Enabled** and **Off**, and the selected worker's detail on the right, with **Runs** and **Settings** tabs.
+Inside: a worker list on the left, **grouped by folder**, and the selected worker's detail on the right, with **Runs** and **Settings** tabs.
+
+### Reading the list
+
+With a few dozen workers across several repos, the list is built to answer "which folder, and is anything wrong?" at a glance. Top to bottom:
+
+- **Search and chips.** The search field ("Filter workers or folders") matches a worker's name, its folder and its prompt. Under it, the chips **Running · Failing · Waiting · Off** each show a live count and filter the list; click one to filter, click it again to clear. **Failing** covers both a worker whose last run failed and one Harnu switched off after repeated failures; **Off** is only the workers you switched off. Folders with nothing left to show disappear while a filter is on. If nothing matches, the list says so and offers **Clear filter**.
+- **Collapse all / Expand all.** The small button to the right of the search folds every folder to its header, or opens them all again.
+- **Up next.** The next four runs due across all your folders — how soon, the worker, and its folder in the folder's colour. A worker that is running shows **now** in green. Click the **Up next** header to fold it to a single line with the very next run. It steps aside while a search or chip is active.
+- **Folders.** Each folder gets a tinted header with its initial, name, how many workers it holds, and a second line with its git branch (when it is a repo), how many workers are on and off, and when the next run is due (or **running now**, or **nothing scheduled**). A red **failing** pill and/or a green **running** pill appear when they apply, and a small bar shows the folder's mix of running, failing, waiting and off workers. Folders always stay in alphabetical order, so the list never reshuffles while workers run or fail — the pills tell you what is happening. Click a header to fold or open that folder. Each folder's colour is picked from your theme's terminal palette and stays the same for that folder.
+- **Rows.** A row is two lines. The first has the pin, the worker's name and its state on the right (`next in 10m`, `running · 5s`, `failed · 2 in a row`…); long names are shortened, the state never is. The second has `every 30m · haiku · observe` (an `act` worker shows **act** in amber) and, on the right, one small bar for each of its last ten runs: green for ok, red for failed, amber for timed out, a pulsing green one for a run in flight, grey for a gap. The selected row is shown by its background alone. Hover a row and the state gives way to **Run now** (or **Stop**) and a delete button.
+
+- **Stewards.** A mission's steward is a system worker, so it never appears among the folders, the chips, Up next or the worker count. It has its own **Stewards** block at the bottom of the list, one row per steward: the mission it serves, when it last woke ("Last wake 4m ago") and the one-line result of that run. The rows are read-only — no switch, no pin, no Run now, no delete, nothing to select or edit — because a steward lives and dies with its mission. A paused steward says **Paused** with your reason. To pause or resume one, use **Pause steward…** in the mission's popover. The block is hidden when no mission has a steward.
+
+Harnu remembers which folders you folded and whether **Up next** is folded. Folding never changes which worker is selected, and the detail pane keeps showing the selected worker even when its row is hidden. When you open the Scheduler with nothing selected, it lands on the first worker of the first folder (alphabetically), which is an enabled one when the folder has any.
 
 ### Pinning your own workers
 
-A Scheduler that agents also write into fills up with workers you didn't make by hand. Pin the ones you use every day so they sit on top:
+A Scheduler that agents also write into fills up with workers you didn't make by hand. Pin the ones you use every day so they sit on top of their folder:
 
-- Hover a worker's row and click the pin icon (before **Run now**), or click the pin button in the worker's detail header, next to **Run now**. The worker moves into a **Pinned** group at the top of the list, in the order you pinned them — whether it is on or off. A pinned worker that is off keeps its dimmed "off" look.
-- Click the pin again to unpin it: it goes back to **Enabled** or **Off**, depending on its switch.
-- The **Pinned** header is not shown until you pin something, and pins survive a restart. Pinning is only your choice of order — it never changes whether, when or how a worker runs. A session can't pin or unpin a worker, and an edit a session makes to a pinned worker leaves it pinned.
-- Click the **Off** header to collapse that group (click again to expand). Harnu remembers the choice, and collapsing it never changes which worker is selected. When you open the Scheduler with nothing selected, it lands on the first worker in the list — the first pinned one if you have any.
+- Click the small pin in front of a worker's name (it is always there, dim until the worker is pinned and a touch brighter when you hover the row), or click the pin button in the worker's detail header, next to **Run now**. The pin turns accent-coloured and the worker moves to the top of its group in the folder, in the order you pinned them. Inside a folder, workers that are on are listed above workers that are off, and pins sort first within each of those two groups; whether a worker is running, waiting or failing never moves its row. A pinned worker that is off keeps its dimmed "off" look.
+- Click the pin again to unpin it: it goes back to its place among the on (or off) workers of the folder.
+- Pins survive a restart. Pinning is only your choice of order — it never changes whether, when or how a worker runs. A session can't pin or unpin a worker, and an edit a session makes to a pinned worker leaves it pinned.
 
 ## Creating a worker
 

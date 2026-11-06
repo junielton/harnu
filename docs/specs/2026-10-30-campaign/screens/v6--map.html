@@ -1,0 +1,1088 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: v6--map</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa] {
+        font-variant-numeric: tabular-nums;
+      }
+      /* ---- v4 "Control room": the owed-to-you ledger is the hero. Dense, 11-12px, no decoration. ---- */
+      .cr-pop {
+        width: 560px; /* no token: three tile columns need the wide shell */
+        max-height: 900px; /* no token: tall enough to show ledger + grid + feed */
+      }
+      .cr-pop .pop-head {
+        padding: 8px 12px;
+      }
+      .cr-pop .pop-body {
+        padding: 10px 12px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .cr-pop .pop-foot {
+        justify-content: flex-start;
+        padding: 6px 12px;
+      }
+      .cr-sech {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 5px;
+      }
+      .cr-sech .meta {
+        margin-left: auto;
+        font-size: 10.5px;
+        color: var(--color-text-4);
+      }
+      .cr-rad {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--color-text-2);
+      }
+      .cr-rad b {
+        font-family: var(--mk-mono);
+        font-weight: 500;
+        color: var(--color-text);
+      }
+      .cr-rad .bar {
+        flex: 1;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--color-border-2);
+        overflow: hidden;
+      }
+      .cr-rad .bar i {
+        display: block;
+        height: 100%;
+        background: var(--color-accent);
+      }
+
+      /* Ledger */
+      .cr-led {
+        border: 1px solid var(--color-warning-line);
+        border-radius: var(--radius);
+        background: var(--color-warning-soft);
+      }
+      .cr-led--clear {
+        border-color: var(--color-border-2);
+        background: var(--color-surface-2);
+      }
+      .cr-ledh {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--color-warning-line);
+      }
+      .cr-ledh .ttl {
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--color-warning);
+      }
+      .cr-ledh .tot {
+        font-size: 11px;
+        color: var(--color-text-2);
+      }
+      .cr-ledh .mix {
+        margin-left: auto;
+        font-size: 10.5px;
+        color: var(--color-text-4);
+      }
+      .cr-r {
+        display: grid;
+        grid-template-columns: 8px minmax(0, 1fr) 24px 104px;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        min-height: 28px;
+        font-size: 11.5px;
+        color: var(--color-text);
+      }
+      .cr-r + .cr-r {
+        border-top: 1px solid var(--color-border);
+      }
+      .cr-r .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--color-text-4);
+      }
+      .cr-r--high .dot {
+        background: var(--color-red);
+      }
+      .cr-r--mid .dot {
+        background: var(--color-warning);
+      }
+      .cr-r--low .dot {
+        background: transparent;
+        border: 1.5px solid var(--color-text-4);
+        width: 7px;
+        height: 7px;
+      }
+      .cr-r .txt {
+        min-width: 0;
+        line-height: 1.35;
+      }
+      .cr-r .txt .dim {
+        margin-left: 4px;
+      }
+      .cr-r .age {
+        text-align: right;
+        font-size: 10.5px;
+        color: var(--color-text-4);
+      }
+      .cr-r .act {
+        display: flex;
+        justify-content: flex-end;
+      }
+      .cr-r--hot .txt {
+        font-weight: 600;
+      }
+      .cr-b {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 20px;
+        padding: 0 8px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border-2);
+        background: var(--color-surface);
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--color-text-2);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .cr-b:hover {
+        background: var(--color-surface-2);
+        color: var(--color-text);
+      }
+      .cr-b--warn {
+        border-color: var(--color-warning);
+        color: var(--color-warning);
+        background: var(--color-warning-soft);
+      }
+      .cr-b--red {
+        border-color: var(--color-red);
+        color: var(--color-red);
+        background: var(--color-red-soft);
+      }
+      .cr-b--pri {
+        border-color: var(--color-accent);
+        background: var(--color-accent);
+        color: var(--color-accent-ink);
+      }
+      .cr-b--pri:hover {
+        background: var(--color-accent);
+        color: var(--color-accent-ink);
+        filter: brightness(1.1);
+      }
+      .cr-b .ic {
+        width: 11px;
+        height: 11px;
+      }
+
+      /* Chapter tiles */
+      .cr-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 5px;
+      }
+      .cr-tile {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+        padding: 5px 8px;
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface);
+      }
+      .cr-tile .l1 {
+        display: flex;
+        align-items: baseline;
+        gap: 5px;
+        min-width: 0;
+      }
+      .cr-tile .n {
+        width: 16px;
+        flex: none;
+        text-align: right;
+        font-family: var(--mk-mono);
+        font-size: 10px;
+        color: var(--color-text-4);
+      }
+      .cr-tile .t {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11.5px;
+        color: var(--color-text-3);
+      }
+      .cr-tile .sq {
+        margin-left: auto;
+        flex: none;
+        font-size: 10px;
+        color: var(--color-text-4);
+      }
+      .cr-tile .l2 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding-left: 21px;
+      }
+      .cr-tile .st {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--color-text-4);
+        white-space: nowrap;
+      }
+      .cr-tile--done .st {
+        color: var(--color-green);
+      }
+      .cr-tile--rev {
+        border-color: var(--color-warning-line);
+      }
+      .cr-tile--rev .t {
+        color: var(--color-text-2);
+      }
+      .cr-tile--rev .st {
+        color: var(--color-warning);
+      }
+      .cr-tile--ready {
+        border-color: var(--color-warning);
+        background: var(--color-warning-soft);
+      }
+      .cr-tile--ready .t {
+        color: var(--color-text);
+      }
+      .cr-tile--ready .st {
+        color: var(--color-warning);
+        font-weight: 600;
+      }
+      .cr-tile--cur {
+        border-color: var(--color-accent);
+        box-shadow: 0 0 0 2px var(--color-accent-soft);
+        cursor: pointer;
+      }
+      .cr-tile--cur .t {
+        color: var(--color-text);
+        font-weight: 500;
+      }
+      .cr-tile--cur .st {
+        color: var(--color-accent);
+        font-weight: 600;
+      }
+      .cr-tile--cur:hover {
+        background: var(--color-surface-2);
+      }
+      .cr-tile--lock {
+        border-style: dashed;
+        opacity: 0.6;
+      }
+
+      /* Steward + side bucket */
+      .cr-pop mk-steward .steward {
+        margin-top: 0;
+      }
+      .cr-pop .steward-feed {
+        margin-top: 5px;
+      }
+      .cr-pop .steward-feed .ev {
+        gap: 8px;
+      }
+      .cr-sideh {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 5px 8px;
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--color-text-2);
+        font-size: 11.5px;
+        cursor: pointer;
+        text-align: left;
+      }
+      .cr-sideh:hover {
+        background: var(--color-surface-2);
+      }
+      .cr-sideh .meta {
+        margin-left: auto;
+        font-size: 10.5px;
+        color: var(--color-text-4);
+      }
+      .cr-sideh .ic {
+        width: 11px;
+        height: 11px;
+        color: var(--color-text-4);
+      }
+      .cr-sq {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr) auto 38px;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 8px;
+        font-size: 11.5px;
+        color: var(--color-text-2);
+      }
+      .cr-sq + .cr-sq {
+        border-top: 1px solid var(--color-border);
+      }
+      .cr-sq .g {
+        font-size: 10px;
+        text-align: center;
+        color: var(--color-text-4);
+      }
+      .cr-sq .g.ok {
+        color: var(--color-green);
+      }
+      .cr-sq .g.open {
+        color: var(--color-warning);
+      }
+      .cr-sq .ti {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .cr-sq--done .ti {
+        color: var(--color-text-3);
+      }
+      .cr-sq .from {
+        font-size: 10.5px;
+        color: var(--color-text-4);
+        white-space: nowrap;
+      }
+      .cr-sq .stt {
+        font-size: 10.5px;
+        text-align: right;
+        color: var(--color-text-4);
+      }
+      .cr-sq .stt.open {
+        color: var(--color-warning);
+      }
+      .cr-sq .stt.ok {
+        color: var(--color-green);
+      }
+      .cr-sqbox {
+        border: 1px solid var(--color-border-2);
+        border-top: 0;
+        border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+        margin-top: -5px;
+        padding-top: 5px;
+      }
+      .cr-new {
+        font-size: 9.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-accent);
+        margin-left: 4px;
+      }
+
+      /* Gates inside tiles stay on one line */
+      .cr-tile .gates,
+      .cr-bt .gates {
+        gap: 3px;
+      }
+
+      .app {
+        min-height: 820px; /* no token: fixed mockup canvas */
+        width: 1280px; /* no token: takeover canvas width */
+      }
+      .thead {
+        height: auto;
+        min-height: 40px; /* no token: two-line header */
+        padding-top: 6px;
+        padding-bottom: 6px;
+      }
+      .cr-hl {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+      }
+      .cr-hl1 {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .cr-end {
+        font-size: 11px;
+        color: var(--color-text-3);
+        line-height: 1.35;
+        white-space: nowrap;
+      }
+      .cr-rad2 {
+        flex: none;
+      }
+      .cr-rad2 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: 16px;
+        font-size: 11px;
+        color: var(--color-text-2);
+      }
+      .cr-rad2 b {
+        font-family: var(--mk-mono);
+        font-weight: 500;
+        color: var(--color-text);
+      }
+      .cr-rad2 .bar {
+        width: 160px; /* no token: radiant bar */
+        height: 3px;
+        border-radius: 999px;
+        background: var(--color-border-2);
+        overflow: hidden;
+      }
+      .cr-rad2 .bar i {
+        display: block;
+        height: 100%;
+        background: var(--color-accent);
+      }
+      .cr-map {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        min-height: 0;
+      }
+      .cr-bwrap {
+        padding: 20px;
+        border-right: 1px solid var(--color-border);
+        overflow: auto;
+      }
+      .cr-board {
+        position: relative;
+        width: 784px; /* no token: board grid, 4 x 164 + 3 x 36 + wrap gutter */
+        height: 530px; /* no token: 3 rows + docks */
+      }
+      .cr-edges {
+        position: absolute;
+        inset: 0;
+        overflow: visible;
+        pointer-events: none;
+      }
+      .edge {
+        fill: none;
+        stroke: var(--color-text-4);
+        stroke-width: 1.25;
+      }
+      .edge--ok {
+        stroke: var(--color-green);
+      }
+      .edge--cur {
+        stroke: var(--color-accent);
+      }
+      .edge--lock {
+        stroke-dasharray: 3 3;
+        stroke: var(--color-text-4);
+      }
+      .ah {
+        fill: var(--color-text-4);
+      }
+      .cr-bt {
+        position: absolute;
+        width: 164px; /* no token: board tile */
+        height: 96px; /* no token: board tile */
+        gap: 3px;
+        padding: 6px 8px;
+      }
+      .cr-bt .t {
+        font-size: 12px;
+      }
+      .cr-bt .sub {
+        font-size: 10.5px;
+        line-height: 1.3;
+        color: var(--color-text-4);
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        flex: 1;
+        padding-left: 21px;
+      }
+      .cr-bt .l2 {
+        margin-top: auto;
+      }
+      .cr-bt .here {
+        position: absolute;
+        top: -9px;
+        right: 8px;
+        padding: 1px 6px;
+        border-radius: var(--radius-sm);
+        background: var(--color-accent);
+        color: var(--color-accent-ink);
+        font-size: 9.5px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      [data-dsqa='v6--map'][data-state='chapter-focus'] .cr-bt:not(.cr-tile--cur) {
+        opacity: 0.5;
+      }
+      [data-dsqa='v6--map'][data-state='chapter-focus'] .cr-bt.cr-tile--lock {
+        opacity: 0.3;
+      }
+      .dkl {
+        position: absolute;
+        width: 0;
+        border-left: 1px dashed var(--color-text-4);
+      }
+      .dk {
+        position: absolute;
+        width: 164px; /* no token: dock chip */
+        height: 20px; /* no token: dock chip */
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 0 6px;
+        border: 1px dashed var(--color-border-2);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface);
+        font-size: 10.5px;
+        color: var(--color-text-3);
+      }
+      .dk .g {
+        color: var(--color-green);
+        font-size: 10px;
+      }
+      .dk--open .g {
+        color: var(--color-warning);
+      }
+      .dk--open {
+        border-color: var(--color-warning-line);
+        color: var(--color-text-2);
+      }
+      .dk .ti {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .cr-col {
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        overflow: auto;
+        background: var(--color-bg);
+      }
+      .cr-col .cr-sqbox {
+        margin-top: 0;
+        border-top: 1px solid var(--color-border-2);
+        border-radius: var(--radius-sm);
+        padding-top: 0;
+      }
+      .cr-fp {
+        border: 1px solid var(--color-accent-line);
+        border-radius: var(--radius);
+        background: var(--color-surface);
+      }
+      .cr-fph {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .cr-fph .ttl {
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .cr-fph .meta {
+        margin-left: auto;
+        font-size: 10.5px;
+        color: var(--color-text-4);
+      }
+      .cr-fs {
+        display: grid;
+        grid-template-columns: 14px 14px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        font-size: 11.5px;
+        color: var(--color-text-2);
+      }
+      .cr-fs + .cr-fs {
+        border-top: 1px solid var(--color-border);
+      }
+      .cr-fs .glyph {
+        margin-top: 0;
+      }
+      .cr-fs .letter {
+        font-family: var(--mk-mono);
+        font-size: 10.5px;
+        color: var(--color-text-4);
+      }
+      .cr-fs.is-cur {
+        background: var(--color-accent-soft);
+      }
+      .cr-fs.is-cur .lb {
+        color: var(--color-text);
+        font-weight: 500;
+      }
+      .cr-fsx {
+        grid-column: 3 / 5;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 10.5px;
+        color: var(--color-text-4);
+      }
+      .cr-fsx .pr .num {
+        color: var(--color-text-3);
+      }
+      .cr-fsx .ss {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-family: var(--mk-mono);
+        font-size: 10.5px;
+        color: var(--color-text-3);
+      }
+      .cr-fsx .ss .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--color-text-4);
+      }
+      .cr-fsx .ss .dot--working {
+        background: var(--color-green);
+        animation: mk-pulse 1.6s var(--ease) infinite;
+      }
+      .cr-fsx .ss .s {
+        margin-left: auto;
+        font-family: var(--mk-sans);
+        color: var(--color-text-4);
+      }
+
+      [data-dsqa='v6--map'][data-state='default'] [data-v]:not([data-v~='default']) {
+        display: none !important;
+      }
+      [data-dsqa='v6--map'][data-state='chapter-focus'] [data-v]:not([data-v~='chapter-focus']) {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body data-states="default chapter-focus">
+    <div data-dsqa="v6--map">
+      <div class="app" data-dsqa-part="takeover">
+        <div class="thead">
+          <div class="cr-hl">
+            <div class="cr-hl1">
+              <span class="ttl">Acme content migration</span
+              ><span class="sub">Chapter 9 of 12</span>
+            </div>
+            <div class="cr-end">
+              All 88 product and service pages live from the client's docs, verified by the review
+              sheets
+            </div>
+          </div>
+          <span class="cr-rad2"
+            ><b>48 / 88</b><span>pages live</span
+            ><span class="bar"><i style="width: 54.5%"></i></span
+          ></span>
+          <span class="sp"></span>
+          <button type="button" class="cr-b" data-goto="v6--campaign">
+            <svg
+              class="ic"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" /></svg
+            >Close map
+          </button>
+        </div>
+        <div class="tbody cr-map">
+          <div class="cr-bwrap">
+            <div class="cr-board" data-dsqa-part="board">
+              <svg class="cr-edges" viewBox="0 0 784 530" width="784" height="530">
+                <defs>
+                  <marker
+                    id="cr-ah"
+                    markerWidth="6"
+                    markerHeight="6"
+                    refX="5"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <path d="M0,0 L6,3 L0,6z" class="ah" />
+                  </marker>
+                </defs>
+                <path class="edge edge--ok" d="M166,48 H198" marker-end="url(#cr-ah)" />
+                <path class="edge edge--ok" d="M366,48 H398" marker-end="url(#cr-ah)" />
+                <path class="edge edge--ok" d="M566,48 H598" marker-end="url(#cr-ah)" />
+                <path class="edge edge--ok" d="M166,240 H198" marker-end="url(#cr-ah)" />
+                <path class="edge edge--ok" d="M366,240 H398" marker-end="url(#cr-ah)" />
+                <path class="edge edge--ok" d="M566,240 H598" marker-end="url(#cr-ah)" />
+                <path
+                  class="edge edge--ok"
+                  d="M764,48 H780 V172 H82 V190"
+                  marker-end="url(#cr-ah)"
+                />
+                <path
+                  class="edge edge--cur"
+                  d="M764,240 H780 V364 H82 V382"
+                  marker-end="url(#cr-ah)"
+                />
+                <path class="edge edge--lock" d="M166,432 H198" marker-end="url(#cr-ah)" />
+                <path class="edge edge--lock" d="M366,432 H398" marker-end="url(#cr-ah)" />
+                <path class="edge edge--lock" d="M566,432 H598" marker-end="url(#cr-ah)" />
+              </svg>
+              <div class="cr-bt cr-tile cr-tile--done" style="left: 0px; top: 0px" data-ch="1">
+                <div class="l1">
+                  <span class="n">1</span><span class="t" title="Pipeline">Pipeline</span>
+                </div>
+                <div class="sub" title="extractor + normalizer + generator">
+                  extractor + normalizer + generator
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="green" ci="green" main="green" verifier="green"></mk-gates
+                  ><span class="st">✓ done</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--done" style="left: 200px; top: 0px" data-ch="2">
+                <div class="l1">
+                  <span class="n">2</span><span class="t" title="Test pages">Test pages</span>
+                </div>
+                <div class="sub" title="Series-A + Accessories · #264–#274">
+                  Series-A + Accessories · #264–#274
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="green" ci="green" main="green" verifier="green"></mk-gates
+                  ><span class="st">✓ done</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--done" style="left: 400px; top: 0px" data-ch="3">
+                <div class="l1">
+                  <span class="n">3</span
+                  ><span class="t" title="Content batches">Content batches</span>
+                </div>
+                <div class="sub" title="Support, 11 series, 9 categories, 5 services">
+                  Support, 11 series, 9 categories, 5 services
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="green" ci="green" main="green" verifier="green"></mk-gates
+                  ><span class="st">✓ done</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--done" style="left: 600px; top: 0px" data-ch="4">
+                <div class="l1">
+                  <span class="n">4</span><span class="t" title="Images">Images</span
+                  ><span class="sq">◇1</span>
+                </div>
+                <div class="sub" title="Storage upload + lighter images (#294)">
+                  Storage upload + lighter images (#294)
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="green" ci="green" main="green" verifier="green"></mk-gates
+                  ><span class="st">✓ done</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--done" style="left: 0px; top: 192px" data-ch="5">
+                <div class="l1">
+                  <span class="n">5</span><span class="t" title="ADR-006">ADR-006</span>
+                </div>
+                <div class="sub" title="page reads record by URL · PR queue (#295)">
+                  page reads record by URL · PR queue (#295)
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="green" ci="green" main="green" verifier="green"></mk-gates
+                  ><span class="st">✓ done</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--done" style="left: 200px; top: 192px" data-ch="6">
+                <div class="l1">
+                  <span class="n">6</span
+                  ><span class="t" title="Overflow record">Overflow record</span>
+                </div>
+                <div class="sub" title="592 rows in Migration Report">
+                  592 rows in Migration Report
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="green" ci="green" main="green" verifier="green"></mk-gates
+                  ><span class="st">✓ done</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--done" style="left: 400px; top: 192px" data-ch="7">
+                <div class="l1">
+                  <span class="n">7</span><span class="t" title="Segments">Segments</span>
+                </div>
+                <div class="sub" title="11 pages live (#302 + #298)">
+                  11 pages live (#302 + #298)
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="green" ci="green" main="green" verifier="green"></mk-gates
+                  ><span class="st">✓ done</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--rev" style="left: 600px; top: 192px" data-ch="8">
+                <div class="l1">
+                  <span class="n">8</span><span class="t" title="Round 2">Round 2</span
+                  ><span class="sq">◇2</span>
+                </div>
+                <div class="sub" title="#308 fixes · #305 Partners · #306 images">
+                  #308 fixes · #305 Partners · #306 images
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="running" ci="green" main="na" verifier="off"></mk-gates
+                  ><span class="st">in review</span>
+                </div>
+              </div>
+              <div
+                class="cr-bt cr-tile cr-tile--cur"
+                data-goto="v6--map?state=chapter-focus"
+                style="left: 0px; top: 384px"
+                data-ch="9"
+              >
+                <span class="here">▼ You are here</span>
+                <div class="l1">
+                  <span class="n">9</span><span class="t" title="Round 3">Round 3</span
+                  ><span class="sq">◇1</span>
+                </div>
+                <div class="sub" title="Segments DTO · Upgrades · /products/">
+                  Segments DTO · Upgrades · /products/
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="off" ci="green" main="na" verifier="off"></mk-gates
+                  ><span class="st">running</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--lock" style="left: 200px; top: 384px" data-ch="10">
+                <div class="l1">
+                  <span class="n">10</span><span class="t" title="Next rounds">Next rounds</span>
+                </div>
+                <div class="sub" title="Alpha, Beta, Gamma · Tools · 5 landings · Resources">
+                  Alpha, Beta, Gamma · Tools · 5 landings · Resources
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="off" ci="off" main="off" verifier="off"></mk-gates
+                  ><span class="st">locked ◆</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--lock" style="left: 400px; top: 384px" data-ch="11">
+                <div class="l1">
+                  <span class="n">11</span><span class="t" title="Home">Home</span>
+                </div>
+                <div class="sub" title="waits for #306">waits for #306</div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="off" ci="off" main="off" verifier="off"></mk-gates
+                  ><span class="st">locked</span>
+                </div>
+              </div>
+              <div class="cr-bt cr-tile cr-tile--lock" style="left: 600px; top: 384px" data-ch="12">
+                <div class="l1">
+                  <span class="n">12</span><span class="t" title="Closing">Closing</span>
+                </div>
+                <div class="sub" title="PM/design decisions · blurred images · headshots · QA">
+                  PM/design decisions · blurred images · headshots · QA
+                </div>
+                <div class="l2" style="padding-left: 0">
+                  <mk-gates pr="off" ci="off" main="off" verifier="off"></mk-gates
+                  ><span class="st">locked</span>
+                </div>
+              </div>
+              <i class="dkl" style="left: 610px; top: 96px; height: 28px"></i>
+              <div class="dk dk--ok" style="left: 600px; top: 104px">
+                <span class="g">✓</span
+                ><span class="ti" title="Lighter images">Lighter images</span>
+              </div>
+              <i class="dkl" style="left: 610px; top: 288px; height: 52px"></i>
+              <div class="dk dk--ok" style="left: 600px; top: 296px">
+                <span class="g">✓</span
+                ><span class="ti" title="Fix red main after #279/#286"
+                  >Fix red main after #279/#286</span
+                >
+              </div>
+              <div class="dk dk--ok" style="left: 600px; top: 320px">
+                <span class="g">✓</span
+                ><span class="ti" title="CDN advice correction">CDN advice correction</span>
+              </div>
+              <i class="dkl" style="left: 10px; top: 480px; height: 28px"></i>
+              <div class="dk dk--open" style="left: 0px; top: 488px">
+                <span class="g">◇</span
+                ><span class="ti" title="Docker address pool exhausted"
+                  >Docker address pool exhausted</span
+                >
+              </div>
+            </div>
+          </div>
+          <div class="cr-col">
+            <div class="cr-led" data-dsqa-part="you-ledger">
+              <div class="cr-ledh">
+                <span class="ttl">You</span><span class="tot">3 owed</span
+                ><span class="mix">1 high · 1 mid · 1 low</span>
+              </div>
+              <div class="cr-r cr-r--high">
+                <span class="dot"></span
+                ><span class="txt"
+                  >Decide: Standard vs Combined <span class="dim">— blocks chapter 10</span></span
+                ><span class="age">6h</span
+                ><span class="act"
+                  ><button
+                    type="button"
+                    class="cr-b cr-b--warn"
+                    data-goto="v6--chapter?state=decision"
+                  >
+                    Choose…
+                  </button></span
+                >
+              </div>
+              <div class="cr-r cr-r--mid">
+                <span class="dot"></span
+                ><span class="txt"
+                  >Approve memory draft from chapter 7 close
+                  <span class="dim">(2 decisions, 1 lesson)</span></span
+                ><span class="age">3d</span
+                ><span class="act"><button type="button" class="cr-b">Review</button></span>
+              </div>
+              <div class="cr-r cr-r--low">
+                <span class="dot"></span
+                ><span class="txt"
+                  >Tick: Accessories copy reads right <span class="dim">(step E)</span></span
+                ><span class="age">1d</span
+                ><span class="act"
+                  ><button type="button" class="cr-b" data-goto="v6--chapter">Open</button></span
+                >
+              </div>
+            </div>
+            <div data-v="default" data-dsqa-part="steward-feed">
+              <div class="cr-sech"><span class="eyebrow">Steward</span></div>
+              <mk-steward
+                last="rebased #317 onto main"
+                age="4m ago"
+                next="on CI change"
+                feed='[{"t": "18:21", "text": "#315 merged → rebased #316, #317 onto main"}, {"t": "18:09", "text": "CI red on #316 → nudged executor (segments-dto)"}, {"t": "17:40", "text": "no commits on step F for 45m → asked status"}, {"t": "17:02", "text": "dispatched verifier for step D → verdict met"}]'
+              ></mk-steward>
+            </div>
+            <div data-v="default" data-dsqa-part="side">
+              <div class="cr-sech">
+                <span class="eyebrow">Side quests</span
+                ><span class="meta">4 · 3 done · 1 open</span>
+              </div>
+              <div class="cr-sqbox">
+                <div class="cr-sq cr-sq--done">
+                  <span class="g ok">✓</span
+                  ><span class="ti" title="Lighter images (46 files over 300 KB, 54 MB)"
+                    >Lighter images (46 files over 300 KB, 54 MB)</span
+                  ><span class="from">ch. 4</span><span class="stt ok">done</span>
+                </div>
+                <div class="cr-sq cr-sq--done">
+                  <span class="g ok">✓</span
+                  ><span class="ti" title="Fix red main after #279/#286"
+                    >Fix red main after #279/#286</span
+                  ><span class="from">ch. 8</span><span class="stt ok">done</span>
+                </div>
+                <div class="cr-sq cr-sq--open">
+                  <span class="g open">◇</span
+                  ><span class="ti" title="Docker address pool exhausted (20 stacks)"
+                    >Docker address pool exhausted (20 stacks)</span
+                  ><span class="from">ch. 9</span><span class="stt open">open</span>
+                </div>
+                <div class="cr-sq cr-sq--done">
+                  <span class="g ok">✓</span
+                  ><span class="ti" title="CDN advice correction in #286 review"
+                    >CDN advice correction in #286 review</span
+                  ><span class="from">ch. 8</span><span class="stt ok">done</span>
+                </div>
+              </div>
+            </div>
+            <div class="cr-fp" data-v="chapter-focus" data-dsqa-part="chapter-focus">
+              <div class="cr-fph">
+                <button type="button" class="cr-b" data-goto="v6--map">
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m15 18-6-6 6-6" /></svg
+                  >Back</button
+                ><span class="ttl">9 · Round 3</span><span class="meta">Step 2 of 4</span
+                ><button type="button" class="cr-b" data-goto="v6--chapter">Open</button>
+              </div>
+              <div class="cr-fs">
+                <span class="letter">D</span><span class="glyph glyph--verified"></span
+                ><span class="lb">Segments DTO and page type PR</span
+                ><mk-gates pr="green" ci="green" main="green" verifier="green" labels></mk-gates>
+                <div class="cr-fsx">
+                  <div>7 commits · verified</div>
+                  <div class="ss">
+                    <i class="dot"></i><span>segments-dto</span><span class="s">idle</span>
+                  </div>
+                  <div class="ss">
+                    <i class="dot"></i><span>segments-dto-ship</span><span class="s">idle</span>
+                  </div>
+                </div>
+              </div>
+              <div class="cr-fs is-cur">
+                <span class="letter">E</span><span class="glyph glyph--running"></span
+                ><span class="lb">Upgrades family page PR</span
+                ><mk-gates pr="off" ci="green" main="na" verifier="off" labels></mk-gates>
+                <div class="cr-fsx">
+                  <div class="pr">PR #316 · open · CI green · 4 commits · active 1m ago</div>
+                  <div class="ss">
+                    <i class="dot dot--working"></i><span>upgrades</span
+                    ><span class="s">working</span>
+                  </div>
+                </div>
+              </div>
+              <div class="cr-fs">
+                <span class="letter">F</span><span class="glyph glyph--waiting"></span
+                ><span class="lb">/products/ landing PR</span
+                ><mk-gates pr="off" ci="off" main="off" verifier="off" labels></mk-gates>
+                <div class="cr-fsx">
+                  <div class="ss">
+                    <i class="dot"></i><span>products-type</span><span class="s">idle</span>
+                  </div>
+                  <div class="ss">
+                    <i class="dot"></i><span>products-ship</span><span class="s">idle</span>
+                  </div>
+                  <div>
+                    <span class="is-accent">◆</span> Standard vs Combined · blocks chapter 10
+                  </div>
+                </div>
+              </div>
+              <div class="cr-fs">
+                <span class="letter">End</span><span class="glyph glyph--todo"></span
+                ><span class="lb">Delivered and verified</span>
+                <div class="cr-fsx">
+                  <div class="mono">
+                    End: code · 3 PRs merged, main green · evidence: review sheets
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tfoot">
+          <span>7 done · 1 in review · 1 running · 3 locked · 4 side (3 done, 1 open)</span
+          ><span class="sp"></span><span>gates: PR · CI · main · verifier</span>
+        </div>
+      </div>
+    </div>
+    <script src="../parts/gates.js"></script>
+    <script src="../parts/steward.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

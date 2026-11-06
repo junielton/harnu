@@ -1,0 +1,100 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-11-03",
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css (@theme block, default theme) + src/renderer/src/styles/main.css (font tokens)",
+  "viewports": [
+    1280
+  ],
+  "targets": [
+    "src/renderer/src/components/StatusFooter.vue",
+    "src/renderer/src/components/FooterLinksPopover.vue"
+  ],
+  "screens": [
+    {
+      "id": "footer--links",
+      "title": "Footer links pill + popover",
+      "status": "approved",
+      "approvedAt": "2026-11-03",
+      "states": [
+        "fechado",
+        "aberto",
+        "hover",
+        "pasta",
+        "sem-pty",
+        "copiado",
+        "referenciado"
+      ],
+      "targets": [
+        "src/renderer/src/components/StatusFooter.vue",
+        "src/renderer/src/components/FooterLinksPopover.vue"
+      ],
+      "notes": "Links pill next to the images pill; popover lists every URL in the session transcript (or the folder's), newest first. v1 has NO title resolution: each row's label is derived from the URL alone (GitHub PR -> owner/repo #n, ClickUp -> Task <id>, Figma -> file name + node, anything else -> host+path in mono). Actions: Open / Copy / Reference.",
+      "sampleData": "7 session links (3 agent, 4 user); folder scope = 12 links in 3 sessions, 2-3 shown per group in the mockup."
+    }
+  ],
+  "parts": [],
+  "flows": [
+    {
+      "id": "achar-e-referenciar",
+      "title": "Find a link and reference it in the session",
+      "steps": [
+        {
+          "screen": "footer--links",
+          "state": "fechado",
+          "via": "click the 🔗 7 pill"
+        },
+        {
+          "screen": "footer--links",
+          "state": "aberto",
+          "via": "hover the first row (click it in the mockup)"
+        },
+        {
+          "screen": "footer--links",
+          "state": "hover",
+          "via": "Reference action"
+        },
+        {
+          "screen": "footer--links",
+          "state": "referenciado"
+        }
+      ]
+    },
+    {
+      "id": "copiar",
+      "title": "Copy a link",
+      "steps": [
+        {
+          "screen": "footer--links",
+          "state": "aberto",
+          "via": "hover the first row (click it in the mockup)"
+        },
+        {
+          "screen": "footer--links",
+          "state": "hover",
+          "via": "Copy action"
+        },
+        {
+          "screen": "footer--links",
+          "state": "copiado"
+        }
+      ]
+    },
+    {
+      "id": "escopo-pasta",
+      "title": "Widen to every session in the folder",
+      "steps": [
+        {
+          "screen": "footer--links",
+          "state": "aberto",
+          "via": "Folder in the scope toggle"
+        },
+        {
+          "screen": "footer--links",
+          "state": "pasta"
+        }
+      ]
+    }
+  ]
+}

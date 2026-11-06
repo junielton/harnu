@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { SessionEntry, SessionStatus } from '../main/claude-reader'
 import type { FolderEntry, GitMeta } from '../main/folder-model'
+import type { EditorSetting } from '../main/editor-launch'
+import type { OpenInEditorResult } from '../main/external'
 import type {
   AvailableSkill,
   BundledSkillsView,
@@ -58,7 +60,14 @@ import type { IdentityClaim, IdentityOutcome } from '../main/companion/identity-
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
 import type { PrStackSnapshot, WorktreeNode as PrStackWorktree } from '../main/pr-stack-core'
 import type { PrStackPrefs } from '../main/pr-stack-prefs'
+import type {
+  BudgetPrefs as GithubBudgetPrefs,
+  BudgetSnapshot as GithubBudgetSnapshot
+} from '../main/github-budget-core'
+import type { QuitDialogStrings, QuitGuardPrefs } from '../main/quit-guard'
 import type { MissionDoor, MissionDoorResult, MissionListResult } from '../main/mission-ipc'
+import type { MergeBatchResult } from '../main/merge-batch-ipc'
+import type { CampaignListResult } from '../main/campaign-ipc'
 import type {
   ReviewSnapshot,
   ReviewLoadArgs,
@@ -93,6 +102,7 @@ import type { UsageBiSnapshot, UsageBiRange } from '../main/usage-bi'
 import type { HeapSample, MonitorSample } from '../main/monitor/types'
 import type { Policy } from '../main/fleet-policy'
 import type { ImageEntry } from '../main/image-cache'
+import type { FolderLinkGroup, SessionLink } from '../main/session-links'
 import type {
   SubfolderEntry,
   SubfolderScan,
@@ -173,7 +183,8 @@ import type {
   GcOpinionAck,
   GcOpinionDone,
   GcOpinionResult,
-  GcSnapshot
+  GcSnapshot,
+  ShelveRestoreAck
 } from '../main/gc/gc-wire'
 // Containers wire types (T320, ADR-0014 §1): the ONLY containers module the
 // preload and the renderer may import — plain JSON-safe types, no main internals.
@@ -375,7 +386,13 @@ export type {
 }
 // PR Stack Canvas wire types (T198). The snapshot and its worktree rows come
 // from the pure core; the prefs are the Settings → PR Stack contract.
-export type { PrStackSnapshot, PrStackWorktree, PrStackPrefs }
+export type {
+  PrStackSnapshot,
+  PrStackWorktree,
+  PrStackPrefs,
+  GithubBudgetPrefs,
+  GithubBudgetSnapshot
+}
 // Model routing policy wire types (T97). Pure module (no node deps beyond the
 // JSON-file persistence, which never crosses the IPC boundary) — the renderer
 // imports the table/resolution shapes as type-only for the dispatch confirm +
@@ -448,6 +465,7 @@ export type { Policy } from '../main/fleet-policy'
 export type { SessionAnatomy, EnrichedWindow, EnrichedWindowSession } from '../main/usage-bi-core'
 // Pasted-images gallery: `image-cache.ts` keeps its type next to the pure core.
 export type { ImageEntry } from '../main/image-cache'
+export type { FolderLinkGroup, LinkKind, SessionLink } from '../main/session-links'
 
 // Hook-derived task-state (session-state real-state spec). `hook-state.ts` is a
 // pure module, so the renderer imports the type directly.
@@ -1008,6 +1026,9 @@ export interface UserProjectsPayload {
   hiddenPaths: string[]
 }
 
+// T581: wire types of the configurable "Open in editor" button.
+export type { EditorSetting, OpenInEditorResult }
+
 /**
  * On-disk settings schema (terminal-font-settings spec §5). Mirrors
  * `SettingsData` in `src/main/settings.ts`; duplicated here as the wire format
@@ -1017,6 +1038,14 @@ export interface UserProjectsPayload {
 export interface SettingsData {
   terminalFontSize: number
   uiZoom: number
+  /** T581: which editor the Topbar "Open in {editor}" button launches. Absent = VS Code. */
+  editor?: EditorSetting
+  /** T627: session area / helper stack orientation — `auto` (default), `side-by-side` or `stacked`. */
+  splitLayout?: 'auto' | 'side-by-side' | 'stacked'
+  /** T626: the opt-in "Floating panels" layout. Absent means off. */
+  floatingPanels?: boolean
+  /** T628: what expanding a helper pane to the window hides — `everything` (default) or `session-only`. */
+  expandHides?: 'everything' | 'session-only'
 }
 
 // ---- Harnu MCP control server wire types (2026-06-25 design) ---------------
@@ -1319,17 +1348,19 @@ const api = {
 
   // ---- Open in external app (Topbar buttons) -------------------------------
   // `openPath` reveals a folder in the OS file manager (resolves with '' on
-  // success, or an error message string). `openInVSCode` spawns the `code` CLI
-  // detached; it resolves `{ ok, error? }` and never rejects, so a missing
-  // `code` binary degrades gracefully instead of crashing.
+  // success, or an error message string). `openInEditor` (T581) launches the editor
+  // configured in Settings: a GUI editor is spawned detached, a terminal editor is
+  // resolved and handed back as `{ cmd, args }` for the renderer to run in a shell
+  // pane. It never rejects, so a missing binary degrades gracefully into a typed
+  // `{ ok: false, code }` the renderer turns into a toast.
   openPath: (path: string): Promise<string> => ipcRenderer.invoke('external:openPath', path),
   // Reveal a file highlighted in the OS file manager (T46 — Pasted-images "Reveal").
   showItemInFolder: (path: string): Promise<string> =>
     ipcRenderer.invoke('external:showItemInFolder', path),
   // T45: pull + pin the folder Harnu was launched with (`harnu .`), if any.
   cliOpenPending: (): Promise<void> => ipcRenderer.invoke('cli:openPending'),
-  openInVSCode: (path: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('external:openInVSCode', path),
+  openInEditor: (path: string): Promise<OpenInEditorResult> =>
+    ipcRenderer.invoke('external:openInEditor', path),
   // The folder's `origin` as its github.com `/pulls` URL, or `null` when there
   // is no GitHub origin (the Topbar hides its button then). Never rejects.
   githubPullsUrl: (path: string): Promise<string | null> =>
@@ -1346,6 +1377,15 @@ const api = {
     ipcRenderer.invoke('imageCache:read', { uuid, name }),
   imageCacheCopy: (uuid: string, name: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('imageCache:copy', { uuid, name }),
+
+  // ---- Links shelf (T617) ----------------------------------------------------
+  // Read-only window over the http(s) links a session's transcript holds (user + assistant text
+  // only). `uuid` / `folder` are lookup keys into the sessions main already knows — never a path.
+  // Open / Copy reuse `shellOpenExternal` / the clipboard; Reference writes to the live PTY.
+  sessionLinksList: (uuid: string): Promise<SessionLink[]> =>
+    ipcRenderer.invoke('sessionLinks:session', uuid),
+  sessionLinksFolder: (folder: string): Promise<FolderLinkGroup[]> =>
+    ipcRenderer.invoke('sessionLinks:folder', folder),
 
   // ---- Claude model + watcher ----------------------------------------------
   /**
@@ -1463,6 +1503,12 @@ const api = {
   /** Companion to `userProjectsHide`. Idempotent. */
   userProjectsUnhide: (targetPath: string): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:unhide', targetPath),
+  /**
+   * T661: main pushes the FULL hidden list after the `hide_folder` MCP verb changed it (the menu
+   * actions above never trigger it: their IPC response already carries the new list).
+   */
+  onUserProjectsHiddenChanged: (cb: (p: { hiddenPaths: string[] }) => void): (() => void) =>
+    subscribe('userProjects:hiddenChanged', cb),
 
   // ---- Helpers (split layout) persistence (F2) -----------------------------
   // Per-worktree helper-pane state lives in `<userData>/helpers.json` (see
@@ -1478,6 +1524,26 @@ const api = {
 
   helpersRemoveWorktree: (args: { worktreePath: string }): Promise<void> =>
     ipcRenderer.invoke('helpers:removeWorktree', args),
+
+  // ---- Session archive (T655) -----------------------------------------------
+  // The archived-session set lives in the main process (`<userData>/archived-sessions.json`),
+  // so the `archive_session` MCP verb works with the window closed. The renderer hydrates
+  // from `sessionArchiveGet`, writes menu actions through `sessionArchiveSet`, sends its old
+  // `localStorage` ids ONCE to `sessionArchiveImportLegacy` (main ignores every later call),
+  // and gets the full set pushed on `onSessionArchiveChanged` after any write, the verb's too.
+  sessionArchiveGet: (): Promise<{ ids: string[]; legacyImported: boolean }> =>
+    ipcRenderer.invoke('sessionArchive:get'),
+  sessionArchiveSet: (
+    sessionIds: string[],
+    archived: boolean
+  ): Promise<{ ok: boolean; ids?: string[] }> =>
+    ipcRenderer.invoke('sessionArchive:set', { sessionIds, archived }),
+  sessionArchiveImportLegacy: (
+    sessionIds: string[]
+  ): Promise<{ ok: boolean; imported?: boolean; ids?: string[] }> =>
+    ipcRenderer.invoke('sessionArchive:importLegacy', { sessionIds }),
+  onSessionArchiveChanged: (cb: (p: { ids: string[] }) => void): (() => void) =>
+    subscribe('sessionArchive:changed', cb),
 
   /**
    * Delete a session's JSONL transcript from disk and, best-effort, remove its
@@ -2404,7 +2470,7 @@ const api = {
     ipcRenderer.invoke('mcp:agentBrowserWrites:set', enabled),
 
   // ---- T564 U1: the browser pane. The renderer owns geometry and chrome, main owns the native view. ----
-  /** The operator opened a pane (Split menu): main creates the guest view and returns its pane id. */
+  /** The operator opened a pane (Topbar Browser button): main creates the guest view and returns its pane id. */
   browserOpen: (payload: {
     folder: string
     url?: string
@@ -2733,8 +2799,16 @@ const api = {
    * recomputed — the canvas and the Cleanup view must never disagree about
    * whether a worktree is done with.
    */
-  prStackLoad: (repoPath: string, worktrees?: PrStackWorktree[]): Promise<PrStackSnapshot> =>
-    ipcRenderer.invoke('pr-stack:load', repoPath, worktrees),
+  prStackLoad: (
+    repoPath: string,
+    worktrees?: PrStackWorktree[],
+    /**
+     * `background: true` marks the canvas' interval refresh: main skips it (and hands back the last
+     * snapshot) while the GitHub budget is `low` or `exhausted`. A load on open, and the manual
+     * refresh, never pass it (T611).
+     */
+    opts?: { background?: boolean }
+  ): Promise<PrStackSnapshot> => ipcRenderer.invoke('pr-stack:load', repoPath, worktrees, opts),
   /**
    * Option+click on a PR link in a transcript: `{ prNumber }` when `url` is an
    * OPEN pull request of the folder's own repo (checked with `gh`), else `null`.
@@ -2745,6 +2819,46 @@ const api = {
   prStackPrefs: (): Promise<PrStackPrefs> => ipcRenderer.invoke('pr-stack:prefs'),
   prStackSetPrefs: (prefs: PrStackPrefs): Promise<PrStackPrefs> =>
     ipcRenderer.invoke('pr-stack:setPrefs', prefs),
+
+  // ---- GitHub API budget (T611) -----------------------------------------------
+  /** The budget now: both buckets, the throttle state, who spent it, the last hour, the pace. */
+  githubBudgetSnapshot: (): Promise<GithubBudgetSnapshot> =>
+    ipcRenderer.invoke('github-budget:snapshot'),
+  /** Throttle prefs (threshold, check delivered missions, pause PR Stack, notify). Whole-object GET/PUT. */
+  githubBudgetPrefs: (): Promise<GithubBudgetPrefs> => ipcRenderer.invoke('github-budget:prefs'),
+  githubBudgetSetPrefs: (prefs: GithubBudgetPrefs): Promise<GithubBudgetPrefs> =>
+    ipcRenderer.invoke('github-budget:setPrefs', prefs),
+  /** Pushed on every poll, every throttle transition and every prefs change. */
+  onGithubBudgetChanged: (cb: (snapshot: GithubBudgetSnapshot) => void): (() => void) => {
+    const handler = (_e: unknown, snapshot: GithubBudgetSnapshot): void => cb(snapshot)
+    ipcRenderer.on('github-budget:changed', handler)
+    return () => ipcRenderer.removeListener('github-budget:changed', handler)
+  },
+
+  // ---- Quit guard (T579) ------------------------------------------------------
+  /** Settings → General: "Confirm before quitting while agents are working". Whole-object GET/PUT. */
+  quitGuardPrefs: (): Promise<QuitGuardPrefs> => ipcRenderer.invoke('quit-guard:prefs'),
+  quitGuardSetPrefs: (prefs: QuitGuardPrefs): Promise<QuitGuardPrefs> =>
+    ipcRenderer.invoke('quit-guard:setPrefs', prefs),
+  /**
+   * Main is about to show the native "agents still working" dialog and asks for readable
+   * session names + translated copy; answer with `quitGuardLabelsReply` (it falls back after ~400 ms).
+   */
+  onQuitGuardLabelsRequest: (
+    cb: (req: { requestId: number; ids: string[]; maxNames: number }) => void
+  ): (() => void) => {
+    const handler = (
+      _e: unknown,
+      req: { requestId: number; ids: string[]; maxNames: number }
+    ): void => cb(req)
+    ipcRenderer.on('quitGuard:labelsRequest', handler)
+    return () => ipcRenderer.off('quitGuard:labelsRequest', handler)
+  },
+  quitGuardLabelsReply: (reply: {
+    requestId: number
+    labels: Record<string, string>
+    strings: QuitDialogStrings
+  }): void => ipcRenderer.send('quitGuard:labelsReply', reply),
 
   // ---- Mission progress (T370, T358 S9; UI-only, never exposed to an agent) --
   /**
@@ -2761,6 +2875,26 @@ const api = {
    */
   missionOperatorDoor: (door: MissionDoor): Promise<MissionDoorResult> =>
     ipcRenderer.invoke('mission:operatorDoor', door),
+  /** Campaign spec §4 — Choose: the operator picks an option of a decision node. */
+  missionChoose: (args: {
+    root: string
+    missionId: string
+    stepId: string
+    index: number
+  }): Promise<MissionDoorResult> => ipcRenderer.invoke('mission:choose', args),
+  /**
+   * Campaign spec §4 — Merge batch: the operator confirmed "merge #A → #B → #C in order". Resolves
+   * when the batch ends or stops (a red gate, a refused merge); `outcome.remaining` is what to ask about again.
+   */
+  missionMergeBatch: (args: {
+    root: string
+    missionId: string
+    prs: number[]
+  }): Promise<MergeBatchResult> => ipcRenderer.invoke('mission:mergeBatch', args),
+  // ---- Campaign progress (T596; UI-only, read-only — no campaign door exists in main yet) --
+  /** Every open campaign in the repos of `folders`, with the server's chapter progress. */
+  campaignList: (folders: string[]): Promise<CampaignListResult> =>
+    ipcRenderer.invoke('campaign:list', folders),
 
   // ---- Review pane (T164; UI-only, never exposed to an agent) --------------
   /**
@@ -2908,6 +3042,13 @@ const api = {
   gcSetPrefs: (prefs: GcPrefs): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:set', prefs),
   /** Turns the first, report-only autopilot cycle into real cleaning from the next tick on. */
   gcAckFirstReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:ackFirstReport'),
+  /** Acknowledges the first shelving report: until then a shelving cycle only lists what it would shelve. */
+  gcAckShelveReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:shelve:ack'),
+  /** Cleanup's Restore button: brings one shelved worktree back by its id (same function a resume uses). */
+  gcRestoreShelved: (id: string): Promise<ShelveRestoreAck> =>
+    ipcRenderer.invoke('gc:shelve:restore', id),
+  /** A shelved worktree came back (a resume, a terminal or the button): the Shelved card should refresh. */
+  onGcShelvedChanged: (cb: () => void): (() => void) => subscribe('gc:shelved:changed', () => cb()),
   /** Running, queued and recent jobs, so a reloaded renderer can re-attach. */
   gcJobs: (): Promise<GcJobInfo[]> => ipcRenderer.invoke('gc:jobs'),
   onGcProgress: (cb: (p: GcJobProgress) => void): (() => void) => subscribe('gc:progress', cb),
@@ -2945,6 +3086,7 @@ const api = {
     unknownRepo?: boolean
     neverClean?: boolean
     protectedArchives?: number
+    shelvedArchives?: Array<{ namespace: string; id: string; branch: string | null }>
   }> => ipcRenderer.invoke('gc:archives:delete', req),
   /** "Run git gc now" in one repo, after its own confirm. */
   gcRunArchiveGc: (repoPath: string): Promise<{ ok: boolean; error?: string }> =>
@@ -3060,6 +3202,12 @@ const api = {
   /** The kill switch. Off revokes every running mod at once; on reaches new sessions only. */
   companionSetEnabled: (on: boolean): Promise<{ enabled: boolean }> =>
     ipcRenderer.invoke('companion:setEnabled', on),
+  /** T585: "Draw reports as cards". Sessions started after the change read it; running ones keep theirs. */
+  companionSetReportCards: (on: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('companion:setReportCards', on),
+  /** T589: "Draw agent messages compactly". Sessions started after the change read it; running ones keep theirs. */
+  companionSetQuietRows: (on: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('companion:setQuietRows', on),
   /** Stamps that the one-time notice was rendered; sessions spawned after it carry the mod. */
   companionDisclosureShown: (): Promise<void> => ipcRenderer.invoke('companion:disclosureShown'),
   /** Opens the folder the sessions load the mod from. */

@@ -13,6 +13,20 @@
     "hideOlder": "Ocultar sessões antigas",
     "showArchived": "Mostrar {n} arquivadas",
     "hideArchived": "Ocultar arquivadas",
+    "shelved": {
+      "label": "Guardadas",
+      "tooltip": "{n} worktree guardada — branch e sessões mantidas | {n} worktrees guardadas — branches e sessões mantidas",
+      "daysShort": "{days} d",
+      "rowTooltip": "Guardada hoje · branch {branch} mantida | Guardada há {days} dia · branch {branch} mantida | Guardada há {days} dias · branch {branch} mantida",
+      "rowTooltipDetached": "Guardada hoje · trabalho mantido no arquivo | Guardada há {days} dia · trabalho mantido no arquivo | Guardada há {days} dias · trabalho mantido no arquivo",
+      "sessionTooltip": "Retomar — restaura a worktree antes",
+      "restoring": "restaurando…",
+      "restoringPane": "Restaurando a worktree {branch}…",
+      "restore": "Restaurar worktree",
+      "openInCleanup": "Abrir na Limpeza",
+      "restoreFailed": "Não foi possível restaurar {branch}. Nada se perdeu — a branch e o arquivo estão mantidos.",
+      "menuLabel": "Ações da worktree guardada"
+    },
     "terminals": "Terminais",
     "terminalLabel": "Terminal {n}",
     "closeTerminal": "Fechar terminal",
@@ -117,9 +131,17 @@
     "newSessionHere": "Nova sessão nesta pasta",
     "terminal": "Terminal",
     "split": "Dividir horizontal",
+    "browser": "Navegador",
+    "moreActions": "Mais ações",
+    "splitLayout": "Divisão: {mode}",
+    "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Abrir pasta",
-    "openInVSCode": "Abrir no VS Code",
-    "openInVSCodeFailed": "Não foi possível abrir o VS Code",
+    "openInEditor": "Abrir no {editor}",
+    "editorGeneric": "editor",
+    "openInEditorFailed": "Não foi possível abrir o {editor}",
+    "openInEditorNotFound": "`{command}` não encontrado no PATH. Confira Configurações → Geral → Editor.",
+    "openInEditorVSCodeHint": "Não foi possível iniciar a CLI do VS Code (`code`). No VS Code, abra a Paleta de Comandos e execute \"Shell Command: Install 'code' command in PATH\", depois tente de novo.",
+    "openInEditorBadCommand": "O comando do editor personalizado está vazio ou malformado. Confira Configurações → Geral → Editor.",
     "openExplorer": "Navegar arquivos",
     "githubPulls": "Pull requests no GitHub",
     "roadmapBoard": "Board do roadmap",
@@ -155,6 +177,8 @@
     "close": "Fechar painel",
     "maximize": "Maximizar",
     "restore": "Restaurar",
+    "expand": "Expandir para a janela",
+    "exitExpand": "Sair da visão expandida",
     "shellTitle": "Shell",
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
@@ -352,7 +376,15 @@
     "decisionsEmpty": "Nenhuma decisão registrada ainda.",
     "timelineEmpty": "Ainda sem digests de sessão — eles aparecem aqui conforme as sessões se encerram.",
     "openSession": "Abrir sessão",
-    "sessionNotFound": "Essa sessão não está carregada."
+    "sessionNotFound": "Essa sessão não está carregada.",
+    "evidence": {
+      "noCommits": "Sem commits",
+      "noGit": "Sem git",
+      "orphan": "Recuperado",
+      "noCommitsHint": "Escrito só a partir da conversa: a sessão não fez commits.",
+      "noGitHint": "Esta pasta não é um repositório git, então o digest não tem evidência de git.",
+      "orphanHint": "Recuperado do transcript de uma pasta removida antes de o Cleanup poder mandá-lo para a lixeira."
+    }
   },
   "explorerPane": {
     "label": "Arquivos do projeto",
@@ -811,7 +843,6 @@
     "openRoadmap": "Board do roadmap",
     "openPrStack": "PR Stack",
     "browseFiles": "Navegar arquivos",
-    "openInVSCode": "Abrir no VS Code",
     "openFolder": "Abrir pasta",
     "terminalHere": "Terminal aqui",
     "fanout": {
@@ -1101,6 +1132,15 @@
       }
     }
   },
+  "quitGuard": {
+    "messageOne": "1 agente ainda está trabalhando",
+    "messageMany": "{count} agentes ainda estão trabalhando",
+    "detail": "Sair do {app} agora interrompe esses agentes.",
+    "andMore": "e mais {n}",
+    "quitAnyway": "Sair mesmo assim",
+    "cancel": "Cancelar",
+    "dontAskAgain": "Não perguntar novamente"
+  },
   "settings": {
     "title": "Configurações",
     "close": "Fechar",
@@ -1131,6 +1171,7 @@
       "cleanup": "Limpeza",
       "containers": "Containers",
       "prStack": "PR Stack",
+      "githubApi": "API do GitHub",
       "voice": "Voz"
     },
     "search": {
@@ -1150,7 +1191,25 @@
     },
     "appearance": {
       "eyebrow": "Aparência",
-      "extensionBadge": "Instalado por {name}"
+      "extensionBadge": "Instalado por {name}",
+      "layoutEyebrow": "Layout",
+      "splitLayout": {
+        "label": "Divisão da tela",
+        "hint": "Como a área da sessão e os painéis auxiliares dividem a janela. No modo automático, eles empilham quando a janela é mais alta que larga.",
+        "auto": "Automático",
+        "sideBySide": "Lado a lado",
+        "stacked": "Empilhado"
+      },
+      "floatingPanels": {
+        "label": "Painéis flutuantes",
+        "hint": "Mostra cada painel como uma ilha arredondada própria sobre um fundo mais escuro, com um espaço uniforme entre eles. Desligado mantém o layout clássico, de ponta a ponta."
+      },
+      "expandHides": {
+        "label": "Expandir esconde",
+        "hint": "O que sai da frente quando um painel auxiliar é expandido para a janela. Tudo também esconde a barra lateral e o Fleet rail; Só a sessão esconde apenas a sessão.",
+        "everything": "Tudo",
+        "sessionOnly": "Só a sessão"
+      }
     },
     "interface": {
       "eyebrow": "Interface",
@@ -1158,6 +1217,11 @@
       "languageSystem": "Padrão do sistema",
       "languageEn": "English",
       "languagePtBR": "Português (Brasil)"
+    },
+    "quit": {
+      "eyebrow": "Saída",
+      "confirmLabel": "Confirmar antes de sair com agentes trabalhando",
+      "confirmHint": "Pergunta antes se alguma sessão estiver no meio de um turno ao fechar a janela ou sair. Desativado, pula a pergunta."
     },
     "terminal": {
       "eyebrow": "Terminal",
@@ -1173,6 +1237,18 @@
       "hint": "Escala a tipografia e os ícones de todo o app.",
       "decrease": "Diminuir escala da interface",
       "increase": "Aumentar escala da interface"
+    },
+    "editor": {
+      "eyebrow": "Editor",
+      "label": "Abrir em",
+      "presetHint": "Executa `{command}`.",
+      "terminalHint": "Executa `{command}` em um painel de terminal.",
+      "custom": "Personalizado…",
+      "commandLabel": "Comando",
+      "commandPlaceholder": "nvim {'{path}'}",
+      "commandHint": "Dividido em argumentos, sem shell. `{'{path}'}` vira a pasta como um único argumento; sem ele, a pasta é adicionada no fim.",
+      "terminalToggle": "Executa em um terminal",
+      "terminalToggleHint": "Abre o comando em um painel de terminal em vez de iniciá-lo separado."
     },
     "storage": {
       "eyebrow": "Armazenamento"
@@ -1317,7 +1393,7 @@
       "view_roadmap": "Alternar o quadro de roadmap",
       "view_prStack": "Alternar o PR Stack",
       "folder_openInFileManager": "Abrir a pasta ativa no gerenciador de arquivos",
-      "folder_openInVSCode": "Abrir a pasta ativa no VS Code",
+      "folder_openInEditor": "Abrir a pasta ativa no editor",
       "folder_openGithubPulls": "Abrir os pull requests no GitHub",
       "folder_browseFiles": "Navegar pelos arquivos",
       "folder_newTerminal": "Abrir um terminal",
@@ -1406,13 +1482,16 @@
       "view_settings_cleanup": "Abrir Configurações: Limpeza",
       "view_settings_containers": "Abrir Configurações: Containers",
       "view_settings_prStack": "Abrir Configurações: PR Stack",
+      "view_settings_githubApi": "Abrir Configurações: API do GitHub",
       "nav_back": "Voltar à sessão anterior",
       "nav_forward": "Avançar para a próxima sessão",
       "pane_focusNext": "Focar o próximo painel",
       "pane_focusPrev": "Focar o painel anterior",
       "pane_toggleMaximize": "Maximizar ou restaurar o painel focado",
+      "pane_expandToWindow": "Expandir o painel focado para a janela",
       "pane_close": "Fechar o painel focado",
       "terminal_toggle": "Alternar o painel do terminal",
+      "layout_cycleSplitOrientation": "Alternar a divisão da tela (automático, lado a lado, empilhado)",
       "app_reload": "Recarregar a janela",
       "app_devtools": "Alternar o DevTools",
       "app_quit": "Sair do Harnu",
@@ -1843,6 +1922,31 @@
     "lightboxCloseAria": "Fechar o visualizador de imagens",
     "lightboxHint": "← → para navegar · Esc para fechar"
   },
+  "links": {
+    "title": "Links",
+    "pillAria": "Links — {count}",
+    "scopeAria": "Escopo",
+    "scopeSession": "Sessão",
+    "scopeFolder": "Pasta",
+    "metaSession": "{folder} · {count}",
+    "metaFolder": "{folder} · {count} em {sessions} sessão | {folder} · {count} em {sessions} sessões",
+    "thisSession": "Esta sessão",
+    "sourceUser": "você",
+    "sourceAgent": "agente",
+    "kindWeb": "Web",
+    "open": "Abrir",
+    "copy": "Copiar",
+    "reference": "Referenciar na sessão",
+    "openAria": "Abrir {label}",
+    "copyAria": "Copiar o link de {label}",
+    "referenceAria": "Referenciar {label} na sessão",
+    "referenceDisabled": "A sessão não está rodando — retome para referenciar",
+    "copied": "Link copiado",
+    "noteSession": "Lido da transcrição desta sessão.",
+    "noteFolder": "Lido das transcrições de todas as sessões desta pasta.",
+    "emptySession": "Nenhum link nesta sessão ainda.",
+    "emptyFolder": "Nenhum link nesta pasta ainda."
+  },
   "theme": {
     "label": "Tema",
     "defaultDark": "Harnu",
@@ -1932,7 +2036,8 @@
     "sessionSays": "A sessão diz",
     "dismissAria": "Descartar",
     "expandAria": "Mostrar texto completo",
-    "collapseAria": "Recolher"
+    "collapseAria": "Recolher",
+    "alreadyReported": "já informado · ×{count}"
   },
   "mcpServer": {
     "title": "Servidor de controle (MCP)",
@@ -2412,26 +2517,49 @@
   "systemMonitor": {
     "title": "Monitor do sistema",
     "close": "Fechar monitor",
-    "expand": "Expandir",
-    "collapse": "Recolher",
+    "expand": "Expandir {name}",
+    "collapse": "Recolher {name}",
     "heapLabel": "heap",
     "stateLive": "ativa",
     "stateParked": "parada",
     "nextSweep": "próxima a ser varrida",
-    "idleFor": "ociosa há {duration}",
-    "savedRam": "economizou ~{size}",
-    "wakeHint": "acorda selecionando na sidebar",
+    "wakeHint": "Selecione na sidebar para acordar",
+    "reclaimed": "recuperados",
     "ownMemory": "memória própria",
     "ownMemoryHint": "O processo da própria sessão, não um filho — sempre fez parte do total acima, só nunca apareceu como uma linha própria.",
+    "compositionOwn": "própria",
+    "compositionOther": "outros",
     "groupHarnu": "Harnu",
     "groupSessions": "Sessões",
     "harnuCount": "{count} processos · {size}",
-    "sessionsCount": "{live} ativas · {parked} paradas",
+    "headerSummary": "{count} processos · {live} ativas · {parked} paradas",
+    "sessionsSummary": "{live} ativas · {size}",
+    "heapCardLabel": "Heap do processo principal",
+    "heapOf": "{used} de {limit}",
+    "heapTickWarn": "alerta {pct}%",
+    "heapTickCrit": "{pct}% crítico",
+    "totalsLabel": "Harnu + sessões",
+    "totalsValue": "{size} · {cpu} de CPU",
+    "kpi": {
+      "totalRam": "RAM total",
+      "ramHarnu": "Harnu {size}",
+      "ramSessions": "Sessões {size}",
+      "cpu": "CPU",
+      "cpuAcross": "em {count} processos",
+      "sessions": "Sessões",
+      "live": "ativas",
+      "parked": "paradas",
+      "reclaimed": "~{size} recuperados ao parar"
+    },
+    "viewToggle": "Visão das sessões",
+    "viewCards": "Cartões",
+    "viewTable": "Tabela",
     "columnName": "Nome",
     "columnRam": "RAM",
     "ramColumnHint": "RAM soma a memória própria (RSS) de cada processo. Bibliotecas compartilhadas são contadas uma vez por processo, então o total pode ficar mais alto que ferramentas do SO, como o Monitor do Sistema do KDE, que contam a memória compartilhada uma única vez.",
     "columnCpu": "CPU",
-    "columnState": "Estado / detalhe",
+    "columnLast60": "Últimos 60s",
+    "columnState": "Estado",
     "footerSampling": "Amostrando a cada 1,5s · para quando este painel fecha",
     "policyLink": "Editar política de hibernação → Configurações",
     "loading": "Aguardando a primeira amostra…",
@@ -2946,6 +3074,10 @@
           "ack": "Eu conferi: essa pasta realmente não existe mais, não está em um disco desconectado."
         },
         "memory": "inclui notas de memória",
+        "digest": {
+          "done": "Com digest",
+          "partial": "{n} sem digest"
+        },
         "confirm": {
           "title": "Mover {n} pasta de transcrições para a lixeira? | Mover {n} pastas de transcrições para a lixeira?",
           "subtitle": "As pastas em que essas sessões rodavam não existem mais, então o Claude não consegue mais retomá-las aqui.",
@@ -2953,7 +3085,45 @@
           "recoverable": "Elas vão para a lixeira do sistema, então dá para trazê-las de volta.",
           "memory": "{n} delas também guarda notas de memória do Claude para essa pasta. | {n} delas também guardam notas de memória do Claude para essa pasta.",
           "total": "{n} pasta · {size} | {n} pastas · {size}",
+          "undigested": {
+            "summary": "{n} sessão desta seleção ainda não tem digest. Ir para a lixeira perde o que ela fez. | {n} sessões desta seleção ainda não têm digest. Ir para a lixeira perde o que elas fizeram.",
+            "retry": "Cancele para mantê-las: o Harnu tenta o digest de novo na próxima varredura.",
+            "row": "{n} sem digest · os digests ficam em {home}",
+            "noHome": "Nenhum repositório foi encontrado para esta pasta, então não dá para escrever um digest.",
+            "ack": "Mover para a lixeira sem digest"
+          },
           "confirm": "Mover para a lixeira"
+        }
+      },
+      "shelved": {
+        "activity": "Worktree `{branch}` guardada — ociosa há {days} d, branch mantida",
+        "activityDetached": "Worktree com HEAD solto guardada — ociosa há {days} d, arquivo mantido",
+        "title": "Guardadas",
+        "sub": "{n} worktree · {size} liberados | {n} worktrees · {size} liberados",
+        "subNoSize": "{n} worktree | {n} worktrees",
+        "note": "Pastas que o Harnu removeu por ficarem ociosas. A branch e todas as alterações são mantidas. Abrir uma sessão ou um terminal em uma delas a traz de volta sozinho.",
+        "listLabel": "Worktrees guardadas",
+        "detached": "HEAD solto",
+        "idle": "ociosa há {n} d",
+        "restore": "Restaurar",
+        "restoring": "Restaurando…",
+        "copyCommand": "Copiar comando",
+        "copied": "Copiado",
+        "failure": {
+          "repoBusy": "Outra tarefa do Harnu está trabalhando neste repositório. Tente de novo em instantes.",
+          "inUse": "Uma sessão está trabalhando na pasta desse caminho. Feche-a e tente de novo.",
+          "recordMissing": "O registro do arquivo sumiu, então o Harnu não consegue reconstruir esta pasta. A branch continua lá: copie o comando para obter uma worktree nova nela.",
+          "archiveUnverified": "O arquivo não confere mais, então o Harnu não restaura a partir dele. Nada foi alterado; copie o comando para obter uma worktree nova na branch.",
+          "moveAsideFailed": "Há uma pasta no caminho e ela não pôde ser movida. Mova ou renomeie você mesmo e tente de novo.",
+          "pathExists": "Já existe uma pasta nesse caminho. Mova-a e tente de novo.",
+          "other": "A restauração falhou: {message}. Nada foi perdido e o arquivo está intacto. Tente de novo ou copie o comando para começar uma worktree nova na branch."
+        },
+        "toast": {
+          "restored": "{name} restaurada",
+          "restoredDetached": "{name} restaurada — com HEAD solto no commit arquivado, porque a branch está em uso em outro lugar",
+          "present": "{name} já tinha voltado",
+          "movedAside": "Uma pasta que estava no caminho foi mantida em {path}. Apague quando quiser.",
+          "failed": "Não foi possível restaurar {name}"
         }
       },
       "toast": {
@@ -2977,6 +3147,15 @@
           "intro": "Limpa worktrees prontas comprovadas (worktrees mergeadas, limpas e ociosas) no timer em segundo plano. O primeiro ciclo depois de ligar só reporta o que encontrou; a limpeza automática começa quando você confirma esse relatório na Limpeza.",
           "label": "Limpar worktrees prontas automaticamente",
           "hint": "Precisa do escaneamento em segundo plano abaixo ligado: a limpeza roda no mesmo timer."
+        },
+        "shelve": {
+          "eyebrow": "Guardar worktrees ociosas",
+          "intro": "Uma worktree cuja branch não tem prova de merge, sem nenhuma sessão nela e sem mexida há {days} dias é guardada: a pasta é removida para liberar disco, enquanto a branch e todas as alterações ficam arquivadas. Ela volta sozinha assim que você abre uma sessão ou um terminal nela, ou aperta Restaurar na Limpeza.",
+          "label": "Guardar worktrees ociosas automaticamente",
+          "hint": "Roda no mesmo timer em segundo plano do Autopilot. Branches nunca são apagadas.",
+          "reportOnly": "A primeira passada só relata o que guardaria; nada é removido até você confirmar.",
+          "ack": "Confirmar o primeiro relatório",
+          "active": "Guardar está ativo. Até {n} worktrees por ciclo."
         },
         "interval": {
           "label": "Rodar a cada",
@@ -3080,6 +3259,8 @@
         "needsConfirmation": "Precisa da sua confirmação antes. Selecione e escolha Remover.",
         "missingExpected": "A limpeza não conseguiu comparar com o que você viu. Revise e tente de novo.",
         "noLongerOrphan": "Este volume voltou a ser usado, então foi deixado como está.",
+        "needsUndigestedConfirmation": "Algumas sessões deste projeto ainda não têm digest, então ele foi deixado como está. Abra-o de novo e escolha Mover para a lixeira sem digest, ou espere a próxima varredura.",
+        "needsNotFoundConfirmation": "O Harnu não consegue confirmar que esta pasta realmente não existe mais, então ela foi deixada como está. Confira que não está em um disco desconectado, abra-a de novo e marque a confirmação.",
         "kept": "Você marcou como Manter, então foi deixado como está.",
         "neverClean": "Está na sua lista de nunca limpar, então foi deixado como está.",
         "mainCheckout": "Este é um checkout principal, que nunca é limpo.",
@@ -3217,11 +3398,14 @@
           "gcDone": "git gc terminou em {repo}",
           "gcFailed": "git gc falhou em {repo}",
           "neverClean": "Este repo está na lista de nunca limpar, então os arquivos dele foram deixados quietos.",
-          "protected": "{n} arquivo foi deixado quieto: a pasta dele está na lista de nunca limpar | {n} arquivos foram deixados quietos: as pastas deles estão na lista de nunca limpar"
+          "protected": "{n} arquivo foi deixado quieto: a pasta dele está na lista de nunca limpar | {n} arquivos foram deixados quietos: as pastas deles estão na lista de nunca limpar",
+          "shelved": "{n} arquivo foi mantido: a worktree dele está guardada e este arquivo é o que a restaura. Restaure-a primeiro (Limpeza → Guardadas). | {n} arquivos foram mantidos: as worktrees deles estão guardadas e estes arquivos são o que as restaura. Restaure-as primeiro (Limpeza → Guardadas)."
         },
         "ageUnknown": "idade desconhecida",
         "deleteOne": "Apagar…",
-        "protected": "Está na lista de nunca limpar"
+        "protected": "Está na lista de nunca limpar",
+        "shelvedTitle": "Worktree guardada — restaure-a primeiro",
+        "restoreFirst": "Restaurar primeiro"
       },
       "trash": {
         "title": "Na lixeira",
@@ -3803,7 +3987,11 @@
       },
       "network": {
         "title": "Não foi possível alcançar o GitHub",
-        "body": "A requisição falhou ou atingiu o limite de uso. Mostrando a última leitura ({age}). Clique para tentar de novo."
+        "body": "A requisição falhou. Mostrando a última leitura ({age}). Clique para tentar de novo."
+      },
+      "rateLimit": {
+        "title": "Limite da API do GitHub atingido",
+        "body": "Limite da API do GitHub atingido, renova às {time}. Mostrando a última leitura ({age})."
       },
       "other": {
         "title": "A atualização falhou",
@@ -4214,11 +4402,49 @@
     "subtitle": "{workers} workers · {running} rodando",
     "newWorker": "Novo worker",
     "footerNote": "Verifica a cada 30s · no máximo 2 workers por vez · nada roda com o Harnu fechado",
+    "stewards": {
+      "title": "Stewards",
+      "aria": "Stewards — um por missão, somente leitura",
+      "running": "Rodando",
+      "paused": "Pausado",
+      "lastWake": "Último despertar há {age}",
+      "noTick": "Nenhum ciclo ainda",
+      "pausedReason": "Pausado — {reason}",
+      "unknownMission": "Missão {id}",
+      "hint": "Um steward pertence à missão dele. Pause-o pelo popover da missão."
+    },
     "emptyTitle": "Nenhum worker ainda",
     "emptyBody": "Um worker roda um prompt em uma pasta, numa cadência, sem abrir uma sessão. Bom para observar um repositório, responder comentários de review ou checar algo periodicamente.",
-    "groupPinned": "Fixados · {n}",
-    "groupEnabled": "Ativos · {n}",
-    "groupOff": "Desligados · {n}",
+    "list": {
+      "searchPlaceholder": "Filtrar workers ou pastas",
+      "searchLabel": "Filtrar workers ou pastas",
+      "collapseAll": "Recolher tudo",
+      "expandAll": "Expandir tudo",
+      "chipsLabel": "Filtrar por estado",
+      "chipRunning": "Rodando",
+      "chipFailing": "Falhando",
+      "chipWaiting": "Aguardando",
+      "chipOff": "Desligados",
+      "upNext": "Em seguida",
+      "upNextSummary": "{n} nos próximos {span}",
+      "upNextNow": "agora",
+      "upNextDueNow": "{n} pendentes agora",
+      "folderFailing": "{n} falhando",
+      "folderRunning": "{n} rodando",
+      "folderOn": "{n} ligados",
+      "folderOff": "{n} desligados",
+      "folderNextIn": "próxima em {countdown}",
+      "folderDueNow": "pendente agora",
+      "folderRunningNow": "rodando agora",
+      "folderNothingScheduled": "nada agendado",
+      "folderCollapse": "Recolher {name}",
+      "folderExpand": "Expandir {name}",
+      "lastRuns": "Últimas 10 execuções",
+      "emptyTitle": "Nenhum worker corresponde a “{q}”",
+      "emptyTitleFilter": "Nenhum worker corresponde a este filtro",
+      "emptyBody": "A busca cobre nomes de workers, pastas e prompts.",
+      "clearFilter": "Limpar filtro"
+    },
     "row": {
       "every": "a cada",
       "runNow": "Rodar agora",
@@ -4366,7 +4592,48 @@
       "waiting": "Aguardando",
       "blocked": "Bloqueado",
       "todo": "A fazer",
+      "locked": "Travado",
       "leftBehind": "Deixado para trás"
+    },
+    "side": {
+      "title": "Passos paralelos",
+      "show": "Mostrar passos paralelos",
+      "hide": "Ocultar passos paralelos",
+      "metaOpen": "{open} abertos",
+      "metaBoth": "{open} abertos · {done} feitos",
+      "discoveredFrom": "descoberto a partir de {origin}",
+      "open": "Aberto"
+    },
+    "decision": {
+      "blocks": "Bloqueia {steps}",
+      "options": "Opções",
+      "choose": "Escolher…",
+      "pickFirst": "Escolha uma opção primeiro",
+      "chose": "Escolheu {option}"
+    },
+    "gates": {
+      "label": "Gates do passo",
+      "name": {
+        "pr": "PR mergeado",
+        "ci": "CI verde no PR",
+        "main": "main verde após o merge",
+        "verifier": "Veredito do verificador"
+      },
+      "state": {
+        "green": "verde",
+        "red": "vermelho",
+        "running": "em andamento",
+        "off": "ainda não",
+        "na": "n/a"
+      },
+      "short": {
+        "pr": "PR",
+        "ci": "CI",
+        "main": "main",
+        "verifier": "verificador"
+      },
+      "tooltip": "{gate}: {state}",
+      "tooltipStale": "{gate}: {state} (último conhecido)"
     },
     "sub": {
       "totalChanged": "Total: {total} passos (eram {was}) — {n} adicionado(s)",
@@ -4394,6 +4661,13 @@
       "reasonPlaceholder": "Vai para o Log da missão",
       "cancel": "Cancelar",
       "dismiss": "Cancelar e manter a missão aberta",
+      "record": {
+        "title": "Registrar também",
+        "hint": "Marque o que o Harnu deve gravar na memória do projeto. Nada é gravado sem marcar.",
+        "nothing": "Nada notável para registrar.",
+        "kind": { "decision": "Decisão", "lesson": "Lição", "hot": "Hot" },
+        "replaces": "Substitui {id}"
+      },
       "warnings": {
         "title": "Antes de encerrar",
         "endUnverified": "O fim não está verificado",
@@ -4438,10 +4712,12 @@
       "checks": "Marque a checagem pendente em {steps}. | Marque as {count} checagens pendentes em {steps}.",
       "humanSteps": "Confirme o passo humano: {steps}. | Confirme os passos humanos: {steps}.",
       "reviewImport": "Revise o fim importado — ele é provisório até você aprovar um re-escopo.",
+      "stewardPaused": "Steward pausado {age}: {reason}",
+      "mergeBatch": "{n} PRs prontos para mergear em ordem: {chain}",
+      "mainRed": "main está vermelha após #{pr} — {step} foi mergeado, mas o commit de merge falha no CI da main.",
       "approvals": "Responda às aprovações pendentes ({count}) de {session} no Approval Inbox.",
       "needsInput": "{session} está esperando por você — abra e responda.",
-      "more": "+{n} a mais",
-      "less": "Mostrar menos"
+      "decide": "Decidir: {title}"
     },
     "markVerified": "Marcar verificado",
     "unmark": "Desmarcar",
@@ -4480,6 +4756,62 @@
       "elsewhere": "+{n} sessão | +{n} sessões"
     },
     "doorFailed": "Ação da missão recusada",
+    "steward": {
+      "label": "Steward",
+      "lastAction": "{what}",
+      "noAction": "nenhuma ação ainda",
+      "ago": "há {age}",
+      "next": "próximo: {when}",
+      "nextEvents": "no próximo evento",
+      "paused": "pausado",
+      "pause": "Pausar steward…",
+      "resume": "Retomar steward",
+      "pauseDialog": {
+        "title": "Pausar o steward?",
+        "body": "Ele para de acordar por eventos e pelo ciclo de 20 minutos até você retomá-lo. Nada se perde — a missão mantém o estado.",
+        "reason": "Motivo",
+        "reasonPlaceholder": "Vai para o Log da missão e para a lista Você",
+        "confirm": "Pausar steward",
+        "cancel": "Cancelar",
+        "dismiss": "Cancelar e manter o steward rodando"
+      }
+    },
+    "mergeBatch": {
+      "title": "Mergear {n} PRs em ordem",
+      "who": "O {steward} mergeia um e trabalha entre os merges",
+      "stewardWord": "Steward",
+      "ciGreen": "· CI verde",
+      "rebase": "rebase --onto #{pr}",
+      "recheck": "reverificar gates",
+      "stopOnRed": "parar no vermelho",
+      "action": "Mergear {n} em ordem…",
+      "confirm": "Mergear {n} em ordem",
+      "merging": "Mergeando…",
+      "mergeRest": "Mergear o resto…",
+      "cancel": "Cancelar",
+      "close": "Fechar",
+      "dismiss": "Cancelar — nada é mergeado",
+      "running": "Mergeando em ordem — espera o steward e o CI entre os merges, então pode levar alguns minutos.",
+      "stoppedAt": "Parou em #{pr}",
+      "merged": "Mergeados: {list}",
+      "remaining": "Faltam mergear: {list}",
+      "done": "{n} PRs mergeados em ordem.",
+      "reason": {
+        "closed": "#{pr} não está mais aberto.",
+        "red": "#{pr} tem checks falhando.",
+        "not-ready": "#{pr} não está pronto — um rascunho, ou ainda sem checks passando.",
+        "pending": "#{pr} ainda tem checks rodando.",
+        "wrong-base": "#{pr} não mergeia na branch padrão — redirecione-o antes.",
+        "conflict": "#{pr} tem conflito com a base.",
+        "steward-skipped": "O steward não rodou depois do último merge, então #{pr} não foi rebaseado nem reverificado.",
+        "steward-timeout": "O steward não terminou a tempo depois do último merge, então #{pr} não foi rebaseado nem reverificado.",
+        "mission-closed": "A missão foi encerrada — #{pr} não foi mergeado.",
+        "paused": "O steward foi pausado — #{pr} não foi mergeado.",
+        "merge-failed": "O GitHub recusou o merge de #{pr}: {detail}"
+      }
+    },
+    "recordFailedTitle": "Parte da memória não foi registrada",
+    "recordFailed": "A missão foi encerrada, mas a memória recusou: {drafts}",
     "sidebarChip": "Missão: {headline}",
     "sidebarChipNeedsYou": "Missão: {headline} — precisa de você",
     "cue": {
@@ -4517,6 +4849,104 @@
       "closing": "Fechando {done} de {total}…",
       "done": "{count} missão fechada | {count} missões fechadas",
       "partial": "{failed} de {total} não puderam ser fechadas"
+    },
+    "back": {
+      "campaign": "Campanha",
+      "chapter": "Capítulo {n} de {m}",
+      "sideQuest": "Missão paralela"
+    },
+    "ledger": {
+      "label": "Registro",
+      "ago": "há {age}",
+      "kind": {
+        "dispatched": "Despachado",
+        "worktree": "Worktree",
+        "pr-opened": "PR aberto",
+        "pr-merged": "PR mergeado",
+        "ci": "CI",
+        "verified": "Verificado",
+        "session-died": "Sessão encerrada",
+        "compaction": "Compactada"
+      }
+    }
+  },
+  "campaign": {
+    "pill": {
+      "single": "Cap. {n}/{m}",
+      "range": "Cap. {n}–{to}/{m}",
+      "done": "Cap. {m}/{m} ✓",
+      "step": {
+        "single": "Passo {n}/{m}",
+        "range": "Passos {n}–{to}/{m}",
+        "done": "Passo {m}/{m} ✓"
+      },
+      "forYou": "{n} para você",
+      "radiant": "{done}/{total}",
+      "title": "{title} — campanha, {label}"
+    },
+    "headline": {
+      "single": "Capítulo {n} de {m}",
+      "range": "Capítulos {n}–{to} de {m}",
+      "done": "Capítulo {m} de {m} ✓"
+    },
+    "counts": "{done} concluídos · {inReview} em revisão · {running} em andamento · {locked} bloqueados · {side} paralelas ({sideDone} concluídas, {sideOpen} abertas)",
+    "radiant": "{done} / {total} unidades",
+    "declaredEnd": "Fim: {target}",
+    "group": {
+      "main": "Missão principal",
+      "side": "Missões paralelas",
+      "locked": "Bloqueados",
+      "mainMeta": "{n} de {m}",
+      "sideMeta": "{n} abertas"
+    },
+    "state": {
+      "done": "concluído",
+      "inReview": "em revisão",
+      "running": "em andamento",
+      "locked": "bloqueado",
+      "todo": "a fazer"
+    },
+    "objectives": "Objetivos",
+    "objectivesStepsOf": "{done} de {total} passos",
+    "openChapter": "Abrir capítulo →",
+    "noMission": "Ainda sem missão — este capítulo não começou.",
+    "missionNotOpen": "A missão deste capítulo está encerrada.",
+    "sideQuest": "Missão paralela",
+    "sideNotRequired": "não necessária para o fim",
+    "discoveredFrom": "Descoberta no capítulo {n} · {title}",
+    "lockedUntil": "Bloqueado até que seus pré-requisitos estejam concluídos.",
+    "you": {
+      "chapterTag": "cap. {n}"
+    },
+    "end": {
+      "open": "Encerrar campanha…",
+      "unavailable": "Ainda não dá para encerrar a campanha por aqui — encerre as missões dos capítulos."
+    },
+    "map": {
+      "title": "Mapa da campanha",
+      "close": "Fechar mapa da campanha",
+      "open": "Abrir mapa",
+      "here": "▼ Você está aqui",
+      "missing": "Esta campanha não está disponível — talvez tenha sido encerrada.",
+      "tileLabel": "Capítulo {n}: {title} — {state}",
+      "dockLabel": "Missão paralela: {title} — {state}",
+      "waitsFor": "Aguarda {what}",
+      "waitsForChapter": "o capítulo {n}",
+      "gatesLegend": "gates: PR · CI · main · verificador",
+      "ledger": {
+        "owed": "{n} pendentes",
+        "open": "Abrir"
+      },
+      "steward": {
+        "title": "Steward",
+        "empty": "Ainda sem steward"
+      },
+      "side": {
+        "meta": "{total} · {done} concluídas · {open} abertas"
+      },
+      "focus": {
+        "back": "Voltar"
+      }
     }
   },
   "harnuMod": {
@@ -4525,6 +4955,14 @@
       "description": "O Harnu carrega um mod pequeno nas sessões que ele inicia. Ele roda sem sandbox dentro do processo `claude` e fala apenas com o Harnu nesta máquina.",
       "offHint": "Desligado impede o Harnu de usá-lo agora e de carregá-lo em novas sessões. Desligado significa hooks e polling.",
       "reveal": "Mostrar pasta",
+      "reportCards": {
+        "label": "Desenhar relatórios como cards",
+        "description": "Mostra uma resposta de status ou de report-back como um card no transcript. A mensagem em si não muda, e o Ctrl+O continua mostrando o texto original. Sessões já em andamento mantêm a configuração até reiniciar."
+      },
+      "quietRows": {
+        "label": "Desenhar mensagens de agentes de forma compacta",
+        "description": "Mostra reports de outras sessões e avisos de tarefas em uma linha, e o tick de um loop como um card ao vivo da mission. O que você digita nunca é alterado, e o Ctrl+O continua mostrando cada linha como foi escrita. Sessões já em andamento mantêm a configuração até reiniciar."
+      },
       "policy": "Bloqueado pela política da sua organização.",
       "modsOff": "Desligado por uma configuração ou pela política da sua organização.",
       "remoteOff": "Os mods estão desligados remotamente nesta instalação do Claude Code.",
@@ -4745,9 +5183,145 @@
       "disconnectedHint": "Comentários desligados aqui: você desconectou o agente deste painel."
     }
   },
-  "splitMenu": {
-    "label": "Mais opções de divisão",
-    "terminal": "Terminal",
-    "browser": "Navegador"
+  "githubBudget": {
+    "pill": {
+      "left": "{n} restantes",
+      "exhausted": "{n} restantes · {countdown}",
+      "a11y": "Orçamento da API do GitHub: {n} chamadas restantes",
+      "a11yLow": "Orçamento da API do GitHub baixo: {n} chamadas restantes, o Harnu está desacelerando",
+      "a11yExhausted": "Limite da API do GitHub atingido, renova em {countdown}"
+    },
+    "meter": {
+      "rest": "REST · {limit}/h",
+      "graphql": "GraphQL · {limit} pts/h",
+      "left": "{n} restantes"
+    },
+    "popover": {
+      "title": "API do GitHub",
+      "updatedSeconds": "atualizado há {n}s",
+      "updatedMinutes": "atualizado há {n}min",
+      "resetsIn": "renova em {countdown}",
+      "resetsAt": "renova às {clock} (em {countdown})",
+      "emptyIn": "neste ritmo, acaba em {countdown}",
+      "whoSpent": "Quem gastou · esta hora",
+      "harnu": "Harnu {n}",
+      "outside": "Fora do Harnu {n}",
+      "details": "Detalhes ↗",
+      "lowNote": {
+        "title": "O Harnu está consultando mais devagar.",
+        "body": "Missões checadas a cada 5 min, até a renovação às {time}.",
+        "bodyPrStack": "Missões checadas a cada 5 min e o PR Stack atualiza ao abrir, até a renovação às {time}."
+      },
+      "secondaryNote": {
+        "title": "O GitHub está desacelerando as requisições.",
+        "body": "O Harnu retoma às {time}."
+      },
+      "exhaustedNote": {
+        "title": "Limite atingido.",
+        "body": "O Harnu pausou as checagens no GitHub até as {time} e mostra o último estado conhecido."
+      }
+    },
+    "consumer": {
+      "missions": "Missões · PR e CI",
+      "prStack": "PR Stack",
+      "review": "Review",
+      "cleanup": "Limpeza",
+      "steward": "Steward",
+      "mergeBatch": "Merge em lote",
+      "outside": "Fora do Harnu"
+    },
+    "tag": {
+      "slowed": "desacelerado",
+      "paused": "pausado"
+    },
+    "table": {
+      "consumer": "Consumidor",
+      "calls": "Chamadas",
+      "share": "Parcela",
+      "every": "Checa a cada",
+      "missions": "Missões · gates de PR e CI",
+      "prStack": "PR Stack",
+      "review": "Review",
+      "cleanup": "Limpeza · checagens de merge",
+      "steward": "Steward",
+      "mergeBatch": "Merge em lote",
+      "delivered": "{n} missão entregue | {n} missões entregues",
+      "outside": "Fora do Harnu · sessões, scripts, monitores"
+    },
+    "cadence": {
+      "every": {
+        "s": "{n} s",
+        "min": "{n} min",
+        "h": "{n} h"
+      },
+      "onOpen": "ao abrir",
+      "onEvent": "por evento",
+      "notChecked": "não checada",
+      "paused": "pausado"
+    },
+    "pane": {
+      "title": "API do GitHub",
+      "intro": {
+        "budgetOf": "Toda sessão, script e o próprio Harnu gastam do mesmo orçamento: o token do gh de ",
+        "budgetLocal": "Toda sessão, script e o próprio Harnu gastam do mesmo orçamento: o token do gh desta máquina",
+        "reads": ". O Harnu o lê a cada 60 s com ",
+        "after": ", que não custa nada."
+      },
+      "restLabel": "REST · por hora",
+      "graphqlLabel": "GraphQL · pontos por hora",
+      "leftOf": "restantes de {limit}",
+      "resetsAtIn": "renova às {clock} · em {countdown}",
+      "resetsAt": "renova às {clock}",
+      "paceLabel": "Ritmo · últimos 10 min",
+      "paceWaiting": "medindo o ritmo…",
+      "paceLasts": "chamadas/min · dura além da renovação",
+      "paceEmptyIn": "chamadas/min · acaba em {countdown}",
+      "paceSplit": "Harnu {harnu}/min · fora {outside}/min",
+      "paceSplitWas": "Harnu {harnu}/min (era {was}) · fora {outside}/min",
+      "chartTitle": "Últimos 60 minutos · chamadas {resource} a cada 5 min",
+      "legendHarnu": "Harnu",
+      "legendSlowed": "Harnu, desacelerado",
+      "legendOutside": "Fora do Harnu",
+      "tableTitle": "Quem gasta · esta hora",
+      "missionsTitle": "Missões",
+      "delivered": {
+        "label": "Checar missões entregues",
+        "hint": "Desligado: uma missão entregue mantém o último estado conhecido de PR e CI e não custa nada, em qualquer orçamento."
+      },
+      "lowTitle": "Quando o orçamento está acabando",
+      "threshold": {
+        "label": "Desacelerar abaixo de",
+        "hint": "O Harnu espaça as próprias checagens quando sobra só essa parte do orçamento mais apertado (REST ou GraphQL) e volta ao normal na renovação."
+      },
+      "pausePrStack": {
+        "label": "Pausar a atualização automática do PR Stack",
+        "hint": "O canvas atualiza quando você o abre, não em segundo plano."
+      },
+      "notify": {
+        "label": "Avise-me quando acontecer",
+        "hint": "Um toast quando o Harnu começa a desacelerar e uma notificação quando o limite é atingido."
+      },
+      "fine": "O Harnu conta apenas as próprias chamadas. \"Fora do Harnu\" é o total que o GitHub informa menos a parte do Harnu.",
+      "unavailable": "O orçamento do GitHub está indisponível: o gh não está instalado, não está logado ou o GitHub ainda não respondeu. Rode gh auth login e o Harnu percebe em até dez minutos.",
+      "lowBanner": {
+        "title": "O Harnu está desacelerando desde as {since}.",
+        "body": "O orçamento {resource} caiu abaixo de {threshold}%. O ritmo normal volta na renovação, às {time}."
+      },
+      "exhaustedBanner": {
+        "title": "Limite {resource} atingido.",
+        "body": "O Harnu pausou as checagens no GitHub até as {time} e mostra o último estado conhecido."
+      }
+    },
+    "notice": {
+      "details": "Detalhes",
+      "low": {
+        "title": "Orçamento do GitHub baixo",
+        "body": "Restam {left} chamadas {resource}. O Harnu está desacelerando até as {time}."
+      },
+      "exhausted": {
+        "title": "Limite do GitHub atingido",
+        "body": "O Harnu pausou as checagens no GitHub até as {time} (em {minutes} min)."
+      }
+    }
   }
 }

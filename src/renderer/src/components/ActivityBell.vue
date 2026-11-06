@@ -331,6 +331,14 @@ function actionLabel(n: NotificationRecord): string {
             >
               {{ n.description }}
             </span>
+            <!-- T599: repeats of one unit's notice folded into this row. -->
+            <span
+              v-if="(n.count ?? 1) > 1"
+              data-dsqa="activity-row-count"
+              class="tabular-nums text-text-4"
+              style="font-size: 10px; line-height: 1.4"
+              >{{ $t('activityBell.alreadyReported', { count: n.count }) }}</span
+            >
             <div v-if="n.items?.length" class="flex w-full flex-col" style="margin-top: 4px">
               <button
                 v-for="item in n.items.slice(0, MISSION_ROWS_MAX)"
