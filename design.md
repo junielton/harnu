@@ -4324,17 +4324,18 @@ holding `document.activeElement` is the focused one.
   their scroll body (`tabindex="-1"`; the Markdown editor in edit mode) — never the
   `overflow-hidden` root, where Chromium would find no scroller for `PageDown` / arrows;
   the Diagram pane focuses its canvas body, where its own keys live.
-- **Focus indicator.** A focused non-xterm pane (Markdown, Memory, Explorer, Diagram)
-  draws a **1px `--accent-line` outline inset on its root** (`outline-offset: -1px`, so
-  the stack's `overflow-hidden` never clips it) while focus is anywhere inside it
-  (`:focus-within`). Utilities: `focus-within:outline focus-within:outline-1
-focus-within:-outline-offset-1 focus-within:outline-accent-line`. The root (and the
-  Diagram pane's canvas body) carries `.no-default-ring`, opting out of the global
-  `:focus-visible` ring (`main.css`): that ring sits 1px OUTSIDE the box, where the
-  stack's `overflow-hidden` clips it, and it would draw a second ring. No motion — it appears and disappears with focus. xterm
-  panes (shell, `claude`, the main terminal) draw none: their blinking cursor is the
-  indicator. The one exception is a helper pane whose root itself holds focus (its
-  terminal is not live yet): the same outline, on `:focus` rather than `:focus-within`.
+- **Focus indicator (T657).** No pane draws an outline or border around itself: an accent
+  outline around the whole pane read as noise next to the neighbouring pane's header. A focused
+  non-xterm pane (Markdown, Memory, Explorer, Diagram) instead **brightens its header text**
+  from `--text-2` to `--text` while focus is anywhere inside it (`:focus-within`). Utilities:
+  the root carries `group/pane`, the header `group-focus-within/pane:text-text`. The root (and
+  the Diagram pane's canvas body) keeps `.no-default-ring`, opting out of the global
+  `:focus-visible` ring (`main.css`): that ring sits 1px OUTSIDE the box, where the stack's
+  `overflow-hidden` clips it. The drag-drop target ring and the resize-handle hover are
+  separate states and unchanged. No motion beyond the header's existing colour transition.
+  xterm panes (shell, `claude`, the main terminal) draw none: their blinking cursor is the
+  indicator; a helper pane whose root itself holds focus (its terminal is not live yet) shows
+  no cue until the terminal starts.
 - **Close and maximize from the keyboard.** `⌘⇧M` toggles maximize on the focused
   helper pane (focus stays in it); with no helper pane focused it restores a maximized
   pane. `pane.close` (unbound) runs the focused pane's own close — a dirty Markdown or

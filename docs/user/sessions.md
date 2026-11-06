@@ -144,7 +144,7 @@ Maximize works inside the split. **Expand to window** goes one step further: the
 ### Moving between panes from the keyboard
 
 - `F6` moves focus to the next pane: the main terminal, then each split pane from top to bottom, then back to the main terminal. `Shift+F6` goes the other way. Both work while a terminal has focus, so the program running there no longer receives `F6`. A collapsed split, and the panes hidden behind a maximized one, are skipped; when a view such as the Roadmap covers the main terminal, only the split panes are visited. With a dialog, the command palette or a menu open, they do nothing. On most Mac keyboards press `Fn+F6` and `Fn+Shift+F6`.
-- A Markdown, Memory, file-browser or canvas pane shows a thin accent outline while it has focus. Terminal panes don't: their cursor already tells you.
+- A Markdown, Memory, file-browser or canvas pane brightens its header text while it has focus. Terminal panes don't: their cursor already tells you.
 - `Cmd/Ctrl+Shift+M` maximizes the focused split pane, or restores it if it's already maximized. With no split pane focused, it restores whichever pane is maximized.
 - **Close the focused pane** has no shortcut out of the box (command id `pane.close`). Once you bind one, it closes the pane that has focus exactly like its header's close button: a Markdown or canvas pane with unsaved changes still asks before discarding them. Focus then moves to the next pane.
 
