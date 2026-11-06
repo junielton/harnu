@@ -3061,6 +3061,20 @@
           "confirm": "Mover para a lixeira"
         }
       },
+      "capacity": {
+        "low": {
+          "title": "O Docker está quase sem slots de rede",
+          "body": "{free} de {total} livres. A limpeza não tem mais nada para liberar sozinha.",
+          "bodyOff": "{free} de {total} livres. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "bodyPaused": "{free} de {total} livres. A limpeza automática do Docker está pausada, então nada será liberado sozinho."
+        },
+        "zero": {
+          "title": "O Docker ficou sem slots de rede livres",
+          "body": "O próximo compose up vai falhar. Pare uma stack que você não precisa.",
+          "bodyOff": "O próximo compose up vai falhar. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "bodyPaused": "O próximo compose up vai falhar. A limpeza automática do Docker está pausada, então nada será liberado sozinho."
+        }
+      },
       "shelved": {
         "activity": "Worktree `{branch}` guardada — ociosa há {days} d, branch mantida",
         "activityDetached": "Worktree com HEAD solto guardada — ociosa há {days} d, arquivo mantido",
@@ -3131,6 +3145,14 @@
           "reportOnly": "A primeira passada só registra o que pausaria ou removeria; nada muda no Docker até você confirmar.",
           "ack": "Confirmar o primeiro relatório",
           "active": "A limpeza do Docker está ativa. Até {n} ações por ciclo.",
+          "report": {
+            "kind": {
+              "network": "Rede",
+              "orphan": "Stack órfã",
+              "pause": "Pausa"
+            },
+            "more": "+{n} a mais"
+          },
           "pauseAll": {
             "label": "Pausar toda a limpeza automática",
             "hint": "Para de uma vez o guardar worktrees, a limpeza do Docker e a limpeza do Autopilot. Limpar na mão continua funcionando.",

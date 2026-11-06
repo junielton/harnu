@@ -17,7 +17,13 @@
 
 import type { CycleState } from './gc-cycle'
 import type { GcPrefs } from './gc-prefs'
-import type { DockerCycleRecord } from './gc-wire'
+import {
+  DOCKER_REPORT_ITEMS_MAX,
+  type DockerCycleRecord,
+  type DockerReportItem,
+  type DockerReportKind,
+  type DockerReportList
+} from './gc-wire'
 import type { RepoLockResult } from './repo-lock-shell'
 
 const NOTICE_TITLE = 'Workspace cleanup'
@@ -38,9 +44,102 @@ export interface DockerAction {
  */
 export type DockerOutcome = { ok: true } | { ok: false; reason: string; refusal?: boolean }
 
+/**
+ * One producer of Docker actions (garbage, pause, ...). The slot has a single `plan` and `execute`;
+ * {@link composeDockerPlanners} builds them from the planners in order, so U3.3 and U3.5 each fill
+ * their own without sharing a file.
+ */
+export interface DockerPlanner {
+  /** True for the action kinds this planner plans and executes. */
+  owns(kind: DockerAction['kind']): boolean
+  plan(): Promise<DockerAction[]>
+  /** Runs one action this planner planned. Never throws. */
+  execute(a: DockerAction): Promise<DockerOutcome>
+}
+
+/**
+ * The slot's `plan` and `execute` from its planners. Plans are concatenated in array order (garbage
+ * before pauses); a planner that throws contributes nothing and is logged, so one broken planner
+ * never hides the others. An action nobody owns is a refusal, never a failure.
+ */
+export function composeDockerPlanners(
+  planners: readonly DockerPlanner[]
+): Pick<DockerCycleDeps, 'plan' | 'execute'> {
+  return {
+    plan: async () => {
+      const out: DockerAction[] = []
+      for (const p of planners) {
+        try {
+          out.push(...(await p.plan()))
+        } catch (err) {
+          console.warn('[gc] docker planner failed', err instanceof Error ? err.message : err)
+        }
+      }
+      return out
+    },
+    execute: async (a) => {
+      const owner = planners.find((p) => p.owns(a.kind))
+      if (!owner) return { ok: false, reason: `no planner owns ${a.kind}`, refusal: true }
+      return owner.execute(a)
+    }
+  }
+}
+
+const REPORT_KIND: Record<DockerAction['kind'], DockerReportKind> = {
+  'prune-network': 'network',
+  'remove-orphan': 'orphan',
+  park: 'pause'
+}
+
+/**
+ * What the operator reads as the target. A stack's id is its compose project name; a network's id is
+ * `net:<64 hex characters>`, so it is shown by the name in its reason (``…network `app_default` …``)
+ * or, failing that, the short id Docker's own listing shows.
+ */
+function targetOf(a: DockerAction): string {
+  if (a.kind !== 'prune-network') return a.id
+  const named = /`([^`]+)`/.exec(a.reason)?.[1]
+  return named ?? a.id.replace(/^net:/, '').slice(0, 12)
+}
+
+/** The list a report-only pass records: kind, target and reason per action, capped. */
+export function reportItemsOf(actions: readonly DockerAction[]): DockerReportItem[] {
+  return actions.slice(0, DOCKER_REPORT_ITEMS_MAX).map((a) => ({
+    kind: REPORT_KIND[a.kind],
+    target: targetOf(a),
+    reason: a.reason
+  }))
+}
+
+/** The held first-report list, hidden once the report is acknowledged (whatever pass wrote it). */
+export function heldDockerReport(state: CycleState, prefs: GcPrefs): DockerReportList | null {
+  return prefs.docker.firstReportAcknowledged ? null : state.dockerReport
+}
+
+/** What the report-only notice says the pass would do, from the kinds the plan holds. */
+export function wouldDoText(actions: readonly DockerAction[]): string {
+  const removes = actions.some((a) => a.kind !== 'park')
+  const pauses = actions.some((a) => a.kind === 'park')
+  const parts: string[] = []
+  if (removes) parts.push('remove empty networks and orphan stacks')
+  if (pauses) parts.push('pause idle stacks')
+  return parts.join(' and ')
+}
+
+/** How many would-pause stacks the report-only notice names; the rest are in Settings → Cleanup. */
+const REPORT_LIST_MAX = 5
+
+function wouldPauseText(actions: readonly DockerAction[]): string {
+  const parks = actions.filter((a) => a.kind === 'park')
+  if (parks.length === 0) return ''
+  const shown = parks.slice(0, REPORT_LIST_MAX).map((a) => `${a.id} (${a.reason})`)
+  const more = parks.length > shown.length ? `, +${parks.length - shown.length} more` : ''
+  return ` Would pause: ${shown.join(', ')}${more}.`
+}
+
 export interface DockerCycleDeps {
   prefs(): GcPrefs
-  /** What Docker could do right now. Empty in U3.1. */
+  /** What Docker could do right now: {@link composeDockerPlanners} over the garbage and pause planners. */
   plan(): Promise<DockerAction[]>
   /** Runs one decided action, bound to the facts it was decided on. Never throws. */
   execute(a: DockerAction): Promise<DockerOutcome>
@@ -61,7 +160,8 @@ const empty = (mode: DockerCycleRecord['mode']): DockerCycleRecord => ({
   deferred: 0,
   locked: false,
   paused: false,
-  pausedReason: null
+  pausedReason: null,
+  items: []
 })
 
 export async function runDockerCycle(
@@ -92,13 +192,17 @@ async function runLocked(
     if (actions.length > 0 && key !== state.dockerReportKey) {
       deps.notify({
         title: NOTICE_TITLE,
-        body: `${actions.length} Docker ${plural(actions.length, 'item')} would be cleaned (stacks paused, never removed with their volumes). Open Settings → Cleanup to review and acknowledge.`
+        body: `${actions.length} Docker ${plural(actions.length, 'item')} would be handled: Harnu would ${wouldDoText(actions)}. No volume is ever removed. Open Settings → Cleanup to review and acknowledge.${wouldPauseText(actions)}`
       })
     }
     state.dockerReportKey = key
-    return { ...empty('report'), found: actions.length }
+    // This pass planned, so it is the newest list; a locked, off or paused pass never gets here.
+    const items = reportItemsOf(actions)
+    state.dockerReport = { at: deps.now(), source: 'cycle', found: actions.length, items }
+    return { ...empty('report'), found: actions.length, items }
   }
   state.dockerReportKey = null
+  state.dockerReport = null
 
   const record: DockerCycleRecord = {
     ...empty('act'),
@@ -106,8 +210,11 @@ async function runLocked(
     deferred: Math.max(0, actions.length - cfg.maxPerCycle)
   }
   let lastFailure = ''
-  for (const a of actions.slice(0, cfg.maxPerCycle)) {
+  const allowed = actions.slice(0, cfg.maxPerCycle)
+  let attempted = 0
+  for (const a of allowed) {
     if (state.dockerStreak >= cfg.failureLimit) break
+    attempted++
     const outcome = await deps.execute(a)
     if (outcome.ok) {
       state.dockerStreak = 0
@@ -121,6 +228,10 @@ async function runLocked(
       console.warn('[gc] docker action failed', a.kind, a.id, outcome.reason)
     }
   }
+
+  // Allowed by the cap but kept from running by the kill switch: they wait for the next cycle,
+  // exactly like the ones over the cap, so found = acted + refused + failed + deferred.
+  record.deferred += allowed.length - attempted
 
   if (state.dockerStreak >= cfg.failureLimit) {
     record.paused = true

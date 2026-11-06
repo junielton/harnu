@@ -120,7 +120,7 @@ describe('runDockerCycle: switch, pause, report-only (AC-3, AC-4)', () => {
     expect(rec).toMatchObject({ mode: 'report', found: 3, acted: 0, deferred: 0 })
     expect(r.executed).toEqual([])
     expect(r.notices).toHaveLength(1)
-    expect(r.notices[0]!.body).toMatch(/3 Docker items would be cleaned/)
+    expect(r.notices[0]!.body).toMatch(/3 Docker items would be handled/)
     // the same report is not announced twice
     await runDockerCycle(r.deps, r.state)
     expect(r.notices).toHaveLength(1)
@@ -166,6 +166,27 @@ describe('runDockerCycle: cap, streak, kill switch (AC-4)', () => {
     expect(why?.body).toMatch(/3 failures in a row/)
     expect(why?.body).toMatch(/daemon said no 3/)
     expect(r.state.dockerStreak).toBe(0)
+  })
+
+  it('actions the kill switch kept from running are counted as deferred, so found adds up', async () => {
+    const r = rig(acked({ failureLimit: 3, maxPerCycle: 10 }), {
+      plan: async () => actions(6),
+      execute: () => ({ ok: false, reason: 'daemon said no' })
+    })
+    const rec = await runDockerCycle(r.deps, r.state)
+    expect(rec).toMatchObject({ found: 6, failed: 3, deferred: 3 })
+    expect(rec.acted + rec.refused + rec.failed + rec.deferred).toBe(rec.found)
+  })
+
+  it('found adds up when both the cap and the kill switch leave actions behind', async () => {
+    const r = rig(acked({ failureLimit: 3, maxPerCycle: 4 }), {
+      plan: async () => actions(7),
+      execute: () => ({ ok: false, reason: 'daemon said no' })
+    })
+    const rec = await runDockerCycle(r.deps, r.state)
+    // 3 ran and failed; 1 of the 4 allowed never ran (kill switch); 3 were over the cap.
+    expect(rec).toMatchObject({ found: 7, failed: 3, deferred: 4 })
+    expect(rec.acted + rec.refused + rec.failed + rec.deferred).toBe(rec.found)
   })
 
   it('the streak carries across cycles and resets on a success', async () => {
@@ -329,6 +350,7 @@ const dockerRecord = (over: Partial<DockerCycleRecord> = {}): DockerCycleRecord 
   locked: false,
   paused: false,
   pausedReason: null,
+  items: [],
   ...over
 })
 

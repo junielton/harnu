@@ -317,6 +317,37 @@ describe('containersListing — paused stacks (U3.4 AC-5)', () => {
     expect(out.recent[0]!.stacks[0]!.paused?.restoreCommand).toBe(out.paused[0]!.restoreCommand)
   })
 
+  it('the one-sentence reason of an autopilot pause leaks no path either, but still reads', () => {
+    const p = pausedStack()
+    const tomb: Tombstone = {
+      at: pausedAt,
+      actor: 'autopilot',
+      verb: 'stop',
+      stacks: [
+        {
+          stack: 'wave-9',
+          name: 'wave-9',
+          path: WT,
+          containerIds: ['c9'],
+          freed: { ramBytes: 0, ports: [8082], volumes: [], volumeBytes: 0 },
+          paused: p
+        }
+      ],
+      restoreHint: p.restoreCommand,
+      reason: `Paused \`wave-9\` — idle 3 h · bring back: \`${p.restoreCommand}\``
+    }
+    const out = containersListing(
+      { ...withPaused(p), recent: [tomb] },
+      { denyFolders: [], home: HOME }
+    )
+    const text = JSON.stringify(out)
+    for (const leak of [WT, MAIN, OUTSIDE, `${HOME}/`]) expect(text).not.toContain(leak)
+    expect(out.recent[0]!.reason).toMatch(
+      /^Paused `wave-9` — idle 3 h · bring back: `docker compose/
+    )
+    expect(out.recent[0]!.reason).toContain('--project-directory <PROJ-231-wave-1>')
+  })
+
   it('a compose file outside the folder never leaks from a remove hint either', () => {
     const tomb: Tombstone = {
       ...tombWt,

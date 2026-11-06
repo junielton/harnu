@@ -89,11 +89,39 @@ export interface ShelveCycleRecord {
   journalFailed: number
 }
 
+/** What a Docker action is, in the words the UI uses: a network removed, an orphan stack removed, a stack paused. */
+export type DockerReportKind = 'network' | 'orphan' | 'pause'
+
+/** One thing a report-only Docker pass would do (U3.6): kind, the network or stack, and why. */
+export interface DockerReportItem {
+  kind: DockerReportKind
+  /** The network or stack id the action would touch. */
+  target: string
+  /** One English sentence, the same the journal would carry. */
+  reason: string
+}
+
+/**
+ * The list the operator acknowledges (U3.6): what the newest pass that actually PLANNED in report
+ * mode would do, from the hourly cycle or the capacity watcher. A record that was locked, off,
+ * paused or did not plan never replaces it; it is cleared once the first report is acknowledged.
+ */
+export interface DockerReportList {
+  at: number
+  source: 'cycle' | 'watcher'
+  /** The true number of planned actions; `items` is capped at {@link DOCKER_REPORT_ITEMS_MAX}. */
+  found: number
+  items: DockerReportItem[]
+}
+
+/** The most items a record carries; `found` stays the true count. */
+export const DOCKER_REPORT_ITEMS_MAX = 100
+
 /** What the Docker slot of one cycle did (autonomous cleanup U3.1). */
 export interface DockerCycleRecord {
   /** `off`: the switch is off. `paused`: the global pause. `report`: first cycle, acted on nothing. `act`: acted. */
   mode: 'off' | 'paused' | 'report' | 'act'
-  /** Actions the planner found this cycle (always 0 in U3.1: the planner is empty). */
+  /** Actions the planner found this cycle . */
   found: number
   /** Actions that ran and succeeded. */
   acted: number
@@ -109,6 +137,68 @@ export interface DockerCycleRecord {
   paused: boolean
   /** Why it switched itself off, in words; null otherwise. */
   pausedReason: string | null
+  /**
+   * Report-only pass (the first one, before the operator acknowledges): the LIST of what it would
+   * do, capped at {@link DOCKER_REPORT_ITEMS_MAX}. Empty in every other mode.
+   */
+  items: DockerReportItem[]
+}
+
+/** Free bridge-network slots as the UI shows them: counted, or unknown with the reason (design C11). */
+export type DockerCapacityView =
+  | { known: true; total: number; used: number; free: number; source: 'daemon.json' | 'default' }
+  | { known: false; reason: string }
+
+/** The out-of-capacity notice a pass raised (U3.6): `low` at the low-water mark, `zero` at no free slot. */
+export interface DockerCapacityNotice {
+  level: 'low' | 'zero'
+  free: number
+  total: number
+  mark: number
+  /**
+   * Set when Docker cleanup was not acting on this pass: the Docker switch is `off` or the global
+   * pause is on (`paused`). The heads-up still fires, and says why nothing was freed. Absent otherwise.
+   */
+  autonomyOff?: 'off' | 'paused'
+}
+
+/** Where the out-of-capacity notice stands; it only re-arms once capacity is above the mark again. */
+export type CapacityNoticeState = 'none' | 'low' | 'zero'
+
+/**
+ * What one pass of the capacity watcher did (U3.6), pushed on `gc:docker:watch` and kept in
+ * `GcSnapshot.dockerWatch`. Counts mean what they mean in {@link DockerCycleRecord}; when capacity
+ * recovers mid-pass the rest of the plan is simply not run and is not counted as deferred.
+ */
+export interface DockerWatchRecord {
+  at: number
+  trigger: 'boot' | 'event' | 'timer'
+  /** `off`: the Docker switch. `paused`: the global pause. Both still read capacity (for the heads-up) but plan and run nothing. `report`: first pass, acted on nothing. */
+  mode: 'off' | 'paused' | 'report' | 'act'
+  /** The low-water mark in force: acts at or below it. */
+  mark: number
+  /** Null only when the pass could not read anything at all (never in `off`/`paused` on a readable engine). */
+  capacity: DockerCapacityView | null
+  /** Known free slots were at or below the mark when the pass started. */
+  pressure: boolean
+  found: number
+  acted: number
+  refused: number
+  failed: number
+  deferred: number
+  /** Another pass or Harnu holds the Docker lock: nothing was done. */
+  locked: boolean
+  /** Docker autonomy switched itself off during this pass. */
+  paused: boolean
+  pausedReason: string | null
+  /** Capacity is still at or below the mark and nothing is left that Cleanup may free. */
+  nothingLeft: boolean
+  /** Report-only pass: what it would do, capped at {@link DOCKER_REPORT_ITEMS_MAX}. Empty otherwise. */
+  items: DockerReportItem[]
+  /** Set on the pass that raised the out-of-capacity notice; the renderer records it once. */
+  notice: DockerCapacityNotice | null
+  /** The held first-report list as of this pass (see {@link DockerReportList}); null once acknowledged or when none. */
+  report: DockerReportList | null
 }
 
 /** What one pass of the autopilot did. Pushed on `gc:cycle` and kept as `lastCycle`. */
@@ -170,6 +260,16 @@ export interface GcSnapshot {
   docker: GcDockerCard
   prefs: GcPrefs
   lastCycle: CycleRecord | null
+  /** The capacity watcher's last pass (U3.6); null before its first one. */
+  dockerWatch: DockerWatchRecord | null
+  /**
+   * Out-of-capacity notices raised while no renderer was listening (the boot pass runs before the
+   * window exists), oldest first. The renderer records each once and acknowledges them with
+   * `gc:docker:watch:ack`; the pushes on `gc:docker:watch` carry the same records live.
+   */
+  dockerNoticesPending: DockerWatchRecord[]
+  /** The list "Acknowledge first report" will act on, held in main; null once acknowledged or when none. */
+  dockerReport: DockerReportList | null
   /** When the next timer tick fires, or null when the Reaper background scan is off. */
   nextCycleAt: number | null
   /**

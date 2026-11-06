@@ -713,3 +713,44 @@ describe('pauseStack — failures leave the stack alone or say so (U3.4 review f
     expect(downCall(w.calls)).toContain("/tmp/my proj/it's.yml")
   })
 })
+
+describe('the pause line the digest reads (U3.5 AC-5)', () => {
+  it('an autopilot pause journals its reason: what, how long idle, and how to bring it back', async () => {
+    const w = setup({ stack: composeStack() })
+    const out = (await pauseStack(
+      { ...w.decision, idle: 'idle 3 h' },
+      'autopilot',
+      w.deps
+    )) as Extract<PauseOutcome, { ok: true }>
+    expect(w.tombstones[0]!.reason).toBe(
+      `Paused \`proj-82\` — idle 3 h · bring back: \`${out.record.restoreCommand}\``
+    )
+    expect(parseJournal(serializeTombstone(w.tombstones[0]!))[0]!.reason).toBe(
+      w.tombstones[0]!.reason
+    )
+  })
+
+  it('an autopilot pause with no idle text still says what was paused and how to bring it back', async () => {
+    const w = setup({ stack: composeStack() })
+    const out = (await pauseStack(w.decision, 'autopilot', w.deps)) as Extract<
+      PauseOutcome,
+      { ok: true }
+    >
+    expect(w.tombstones[0]!.reason).toBe(
+      `Paused \`proj-82\` · bring back: \`${out.record.restoreCommand}\``
+    )
+  })
+
+  it.each(['operator', 'agent'] as const)('a pause by the %s carries no reason', async (actor) => {
+    const w = setup({ stack: composeStack() })
+    await pauseStack({ ...w.decision, idle: 'idle 3 h' }, actor, w.deps)
+    expect(w.tombstones[0]).not.toHaveProperty('reason')
+  })
+
+  it('a pause whose journal write failed has nothing to journal, and still returns the record', async () => {
+    const w = setup({ stack: composeStack(), appendFails: true })
+    const out = await pauseStack({ ...w.decision, idle: 'idle 3 h' }, 'autopilot', w.deps)
+    expect(out).toMatchObject({ ok: false, code: 'JOURNAL_FAILED' })
+    expect(w.tombstones).toEqual([])
+  })
+})

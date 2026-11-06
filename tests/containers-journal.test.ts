@@ -397,3 +397,28 @@ describe('derivePaused — the paused registry is the journal (U3.4 AC-5)', () =
     expect(derivePaused([], new Set())).toEqual([])
   })
 })
+
+describe('the optional reason of a journal line (U3.5 AC-5)', () => {
+  const line = {
+    at: 1,
+    actor: 'autopilot',
+    verb: 'stop',
+    stacks: [],
+    restoreHint: null
+  }
+
+  it('accepts a line with a string reason, and one without', () => {
+    expect(isTombstone({ ...line, reason: 'Paused `x` — idle 3 h · bring back: `y`' })).toBe(true)
+    expect(isTombstone(line)).toBe(true)
+  })
+
+  it('rejects a reason that is not a string', () => {
+    expect(isTombstone({ ...line, reason: 3 })).toBe(false)
+    expect(isTombstone({ ...line, reason: null })).toBe(false)
+  })
+
+  it('keeps the reason when the line is read back', () => {
+    const t = { ...line, reason: 'Paused `x` — idle 3 h · bring back: `y`' }
+    expect(parseJournal(JSON.stringify(t))[0]!.reason).toBe(t.reason)
+  })
+})

@@ -249,7 +249,16 @@ function listTombstone(t: Tombstone): ListedTombstone {
       pathAlias: alias(p),
       ...(paused ? { paused: listPaused(paused) } : {})
     })),
-    restoreHint: redactRestoreHint(t)
+    restoreHint: redactRestoreHint(t),
+    // The one-sentence reason of an automatic action may quote a restore command: same redaction.
+    ...(t.reason === undefined
+      ? {}
+      : {
+          reason: redactCommand(
+            t.reason,
+            t.stacks.flatMap((s) => [s.path, s.paused?.workingDir ?? null])
+          )
+        })
   }
 }
 

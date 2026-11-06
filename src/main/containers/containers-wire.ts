@@ -217,6 +217,17 @@ export interface TombstoneStack {
   keptVolumeBytes?: number
   /** A pause only (U3.4): the stack was brought down with `compose down`, volumes untouched. */
   paused?: PausedRecord
+  /**
+   * Who the kept volumes belonged to, written when Harnu removed an orphan stack on its own
+   * (autonomous cleanup U3.3): the project and the folder that no longer exists. A live project
+   * that later mounts one of `keptVolumes` can be warned that it inherits a removed worktree's
+   * data (U3.7). Absent on every other removal.
+   */
+  keptVolumeOwner?: {
+    reason: 'worktree-removed'
+    project: string | null
+    worktreePath: string | null
+  }
 }
 
 /** One journal line (PRD §3.5): one per action, however many stacks it touched. */
@@ -233,6 +244,14 @@ export interface Tombstone {
    * stores null rather than a hint for one arbitrary stack (T340).
    */
   restoreHint: string | null
+  /**
+   * Why an automatic action happened, in one English sentence (autonomous cleanup U3.3, and the
+   * pauses of U3.5): "Removed empty network `x` — no containers", "Paused `x` — idle 3 h · bring
+   * back: `docker compose … up -d`". The digest reads it. Absent on operator and agent lines
+   * and on every line written before this field existed. A network removal has no stack, so its
+   * `stacks` is empty and this sentence is the whole line.
+   */
+  reason?: string
 }
 
 /**

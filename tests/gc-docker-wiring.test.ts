@@ -45,8 +45,13 @@ describe('the service wires the Docker slot behind its own switch', () => {
     expect(read('preload/index.ts')).toMatch(/gcAckDockerReport/)
     expect(read('renderer/src/stores/gc.ts')).toMatch(/ackDockerReport/)
   })
-  it('plans nothing and changes no Docker state in this unit', () => {
-    expect(ipc).toMatch(/plan:\s*async\s*\(\)\s*=>\s*\[\]/)
+  it('fills the slot with the garbage planner (U3.3) then the park planner (U3.5), composed', () => {
+    expect(ipc).toMatch(/composeDockerPlanners\(\[/)
+    expect(ipc).toMatch(/plan:\s*dockerGarbage\.plan/)
+    expect(ipc).toMatch(/execute:\s*dockerGarbage\.execute/)
+    expect(ipc).toMatch(/\.\.\.dockerPlanners/)
+    expect(ipc).not.toMatch(/plan:\s*async\s*\(\)\s*=>\s*\[\]/)
+    // The cycle module still only decides when and how much: it spawns nothing itself.
     const cycle = read('main/gc/docker-cycle.ts')
     expect(cycle).not.toMatch(/execFile|spawn|child_process|docker (down|rm|network)/)
   })
