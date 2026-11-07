@@ -1,0 +1,139 @@
+{
+  "_note": "S-4 (card T668) mutations, in the same shape as ../triage/mutations.json: each is applied to the real text it targets (skill = SKILL.md, template = docs/specs/TEMPLATE.md); the test first asserts its anchor matches, then that the named check reports at least one problem on the mutated text.",
+  "authoringOrder": [
+    {
+      "target": "skill",
+      "find": "1. **Facts first.**",
+      "replace": "8. **Facts first.**",
+      "why": "facts are looked up first, before any decision is asked"
+    },
+    {
+      "target": "skill",
+      "find": "`memory_query` on the entry's nouns",
+      "replace": "a search on the entry's nouns",
+      "why": "facts first must look in project memory"
+    },
+    {
+      "target": "skill",
+      "find": "goes through `harnu:one-by-one`",
+      "replace": "goes through `AskUserQuestion`",
+      "why": "decisions go through one-by-one"
+    },
+    {
+      "target": "skill",
+      "find": "An unanswered D-n stays `open`",
+      "replace": "An unanswered D-n is written `declined`",
+      "why": "an unanswered decision stays open"
+    },
+    {
+      "target": "skill",
+      "find": "never write it `declined`, and never write it `resolved` on silence",
+      "replace": "write it `resolved` on silence",
+      "why": "silence is never consent"
+    },
+    {
+      "target": "skill",
+      "find": "| <what a slice uses until it is chosen> | open |",
+      "replace": "| <what a slice uses until it is chosen> | declined |",
+      "why": "the example row of an unanswered decision is open"
+    }
+  ],
+  "review": [
+    {
+      "target": "skill",
+      "find": "6. **Goldfish review.**",
+      "replace": "8. **Goldfish review.**",
+      "why": "the review runs before the approval question"
+    },
+    {
+      "target": "skill",
+      "find": "6. **Goldfish review.**",
+      "replace": "6. **Goldfish review.** Then run one blind builder-check on S-1.",
+      "why": "the separate blind builder-check is gone"
+    },
+    {
+      "target": "skill",
+      "find": "| hostile critic, overhead lens, traceability lens |",
+      "replace": "| hostile critic, overhead lens                    |",
+      "why": "Complex runs both lens critics beside the hostile critic"
+    },
+    {
+      "target": "skill",
+      "find": "reads only the files it is handed",
+      "replace": "reads the conversation so far",
+      "why": "a Goldfish never reads the author's history"
+    }
+  ],
+  "amendment": [
+    {
+      "target": "skill",
+      "pattern": "- a card whose `spec:` names this spec carries `spec-slice: S-n`[^\\n]*\\n[^\\n]*\\n",
+      "replace": "",
+      "why": "a spec-slice marker on a card is a trigger too"
+    },
+    {
+      "target": "skill",
+      "find": "never edit\nthe body above it",
+      "replace": "edit\nthe body above it when needed",
+      "why": "the frozen body is never edited"
+    },
+    {
+      "target": "skill",
+      "find": "Then send the affected executor the change as a delta",
+      "replace": "Then mention the change in the PR",
+      "why": "the executor gets the amendment as a delta"
+    }
+  ],
+  "complexPaths": [
+    {
+      "target": "skill",
+      "find": "prd: docs/prds/<card>-<slug>.md",
+      "replace": "prd: .harnu/out/prd.md",
+      "why": "the PRD is a tracked path, never the scratch directory"
+    },
+    {
+      "target": "skill",
+      "find": "only when\n  the spec records an architectural decision",
+      "replace": "always",
+      "why": "an ADR exists only when an architectural decision is recorded"
+    },
+    {
+      "target": "skill",
+      "find": "only when the work has UI",
+      "replace": "always",
+      "why": "a mockup only when the work has UI"
+    },
+    {
+      "target": "skill",
+      "find": "and never under the\ngitignored scratch directory `.harnu/out/`",
+      "replace": "and may sit under the\ngitignored scratch directory `.harnu/out/`",
+      "why": "no bundle path under the scratch directory"
+    }
+  ],
+  "template": [
+    {
+      "target": "template",
+      "find": "- gated-by: D-1\n",
+      "replace": "",
+      "why": "D-1: a slice carries gated-by"
+    },
+    {
+      "target": "template",
+      "find": "existing:",
+      "replace": "legacy:",
+      "why": "D-1: a consumed capability from the repo is written existing:"
+    },
+    {
+      "target": "template",
+      "pattern": "\\| [0-9-]+ \\| card +\\|[^\\n]*\\n",
+      "replace": "",
+      "why": "D-1: the slice-to-card map is an Amendments row of kind card"
+    },
+    {
+      "target": "template",
+      "pattern": "- NG-1 [^\\n]*\\n",
+      "replace": "",
+      "why": "D-1: a non-goal is an NG-n bullet citing its atoms"
+    }
+  ]
+}
