@@ -58,6 +58,12 @@
       "find": "**Small ends here.**",
       "replace": "**Small ends here.** First call `mission_create` for the entry.",
       "why": "the Medium-and-up procedure must not leak into triage"
+    },
+    {
+      "target": "skill",
+      "find": "`memory_query` and lessons first",
+      "replace": "`memory_read` and lessons first",
+      "why": "triage may name memory_query only, never another memory verb (S-3)"
     }
   ],
   "description": [
