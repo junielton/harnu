@@ -346,7 +346,8 @@ function onSidebarDividerMouseUp(): void {
   document.removeEventListener('mouseup', onSidebarDividerMouseUp)
 }
 
-const showOnboarding = computed(() => sessions.folders.length === 0)
+// BUG-257: not while the folder model is still loading — a cold boot is "loading", not "empty".
+const showOnboarding = computed(() => sessions.folders.length === 0 && !sessions.foldersLoading)
 // T212: a selected FOLDER renders its own view. It ranks BELOW the takeovers
 // (see `showTerminalForeground`'s priority, BUG-103), so opening the Roadmap
 // board from a folder shows the board, and closing it returns here — the
