@@ -1,10 +1,11 @@
-// The parser and the two checks behind `harnu:spec check` (T601 S-1).
+// The parser and the checks behind `harnu:spec check` (T601 S-1, S-2).
 //
 // `parseSpec(content)` reads the wave-A template shape (docs/specs/TEMPLATE.md plus the
 // conventions the spec adds: `gated-by:`, `NG-n` bullets, `existing:` tokens, `card` rows)
 // into plain data. `acHash(statement, proof)` is the Wave A content hash of an AC line.
 // `checkSpecFile` runs the gate's rules as if the draft were approved, then the capability-order
-// and atom-coverage checks, and returns every finding.
+// and atom-coverage checks, and returns every finding. `parseCard` and `checkCards` are the
+// `--cards` drift lint: card AC lines compared with the spec rows, never graded.
 //
 // Dependency-free ES module (Node built-ins only), vendored in the skill directory so the
 // staging copies it into any session that has the skill. No I/O: the CLI in spec-check.mjs
@@ -334,6 +335,154 @@ export function checkAtomCoverage(parsed, options = {}) {
       rule: 'uncovered-atom',
       message: `request atom ${atom.id} is cited by no AC \`covers\` cell, no NG- bullet and no Open-decisions question — cover it, record a non-goal, or ask the decision`
     }))
+}
+
+const CARD_AC_RE =
+  /^\s*[-*]\s+\[[ xX]\]\s+\**([A-Za-z]+-[A-Za-z0-9]+)\**(?:\s+#([0-9a-fA-F]{4}))?(?=\s|$)/
+const SLICE_MARKER_RE = /^\s*spec-slice:\s*`?(S-[A-Za-z0-9]+)`?\s*$/
+
+/** A repo-relative path as a card or a CLI writes it: backticks, quotes and a leading `./` dropped. */
+const normalizePath = (p) =>
+  p
+    .replace(/[`'"]/g, '')
+    .trim()
+    .replace(/^(?:\.\/)+/, '')
+
+/**
+ * One board card, as `spec check --cards` reads it.
+ * @param {string} content  the card file text
+ * @returns {{ spec: string | null, specLine: number | null, slice: string | null,
+ *   sliceLine: number | null, acs: { id: string, hash: string | null, line: number }[] }}
+ *   `spec` is the frontmatter `spec:` value, `slice` the body's `spec-slice: S-n` marker, `acs`
+ *   every `- [ ] <id> [#xxxx] …` line outside fenced code (`hash` null on an unhashed line).
+ *   Line numbers are 1-based.
+ */
+export function parseCard(content) {
+  const lines = content.split('\n')
+  let spec = null
+  let specLine = null
+  let bodyStart = 0
+  if (lines[0]?.trim() === '---') {
+    const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---')
+    if (end !== -1) {
+      for (let i = 1; i < end; i++) {
+        const m = /^spec:\s*(.*)$/.exec(lines[i])
+        if (m && normalizePath(m[1])) {
+          spec = normalizePath(m[1])
+          specLine = i + 1
+        }
+      }
+      bodyStart = end + 1
+    }
+  }
+
+  let slice = null
+  let sliceLine = null
+  const acs = []
+  let inFence = false
+  for (let i = bodyStart; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence) continue
+    const marker = SLICE_MARKER_RE.exec(line)
+    if (marker && slice === null) {
+      slice = marker[1]
+      sliceLine = i + 1
+      continue
+    }
+    const ac = CARD_AC_RE.exec(line)
+    if (ac) acs.push({ id: ac[1], hash: ac[2] ? `#${ac[2].toLowerCase()}` : null, line: i + 1 })
+  }
+  return { spec, specLine, slice, sliceLine, acs }
+}
+
+/**
+ * Card-versus-spec drift (`spec check --cards`). Reads the cards whose `spec:` names the spec and
+ * reports, per AC line: `hash-diverged` (the card's `#xxxx` differs from the hash of the spec
+ * row), `unknown-ac` (a hashed id the spec does not have) and `missing-ac` (an AC the slice lists
+ * that its card does not carry). A card's slice is its `spec-slice` marker, else the Amendments
+ * `card` row naming its slug (the marker wins when they disagree). An unhashed line is a card-only
+ * AC: listed as information, never compared. It lints and never grades.
+ * @param {ReturnType<typeof parseSpec>} parsed
+ * @param {string} specPath  the spec's repo-relative path, as cards write it in `spec:`
+ * @param {{ path: string, slug: string, content: string }[]} cards  the board's cards
+ * @returns {{ matched: string[],
+ *   findings: { path: string, line: number, rule: 'hash-diverged' | 'unknown-ac' | 'missing-ac', message: string }[],
+ *   info: { path: string, line: number, message: string }[] }}  `matched` lists the paths read
+ */
+export function checkCards(parsed, specPath, cards) {
+  const target = normalizePath(specPath)
+  const acById = new Map(parsed.acs.map((ac) => [ac.id, ac]))
+  const sliceById = new Map(parsed.slices.map((s) => [s.id, s]))
+  const sliceBySlug = new Map(parsed.cards.map((c) => [c.card, c.slice]))
+  const matched = []
+  const findings = []
+  const info = []
+
+  for (const { path, slug, content } of cards) {
+    const card = parseCard(content)
+    if (card.spec !== target) continue
+    matched.push(path)
+
+    for (const line of card.acs) {
+      if (line.hash === null) {
+        info.push({
+          path,
+          line: line.line,
+          message: `${line.id} has no hash: a card-only AC, listed for information and not compared with the spec`
+        })
+        continue
+      }
+      const row = acById.get(line.id)
+      if (!row) {
+        findings.push({
+          path,
+          line: line.line,
+          rule: 'unknown-ac',
+          message: `${line.id} ${line.hash} is not in the spec's Acceptance criteria table — an id the spec does not have cannot be traced to it; add the AC to the spec through an Amendments row, or drop the hash if it is a card-only AC`
+        })
+        continue
+      }
+      const expected = acHash(row.statement, row.proof)
+      if (line.hash !== expected) {
+        findings.push({
+          path,
+          line: line.line,
+          rule: 'hash-diverged',
+          message: `${line.id} carries ${line.hash}, but the spec row (line ${row.line}) hashes to ${expected} — the card no longer says what the spec says; copy the statement and proof from the spec row again, or amend the spec`
+        })
+      }
+    }
+
+    const sliceId = card.slice ?? sliceBySlug.get(slug) ?? null
+    if (sliceId === null) continue
+    const slice = sliceById.get(sliceId)
+    if (!slice) {
+      info.push({
+        path,
+        line: card.sliceLine ?? card.specLine ?? 1,
+        message: `the card names slice ${sliceId}, which the spec does not have; its slice ACs are not compared`
+      })
+      continue
+    }
+    const onCard = new Set(card.acs.map((a) => a.id))
+    const line = (card.slice !== null ? card.sliceLine : card.specLine) ?? 1
+    for (const id of slice.acs) {
+      if (onCard.has(id)) continue
+      findings.push({
+        path,
+        line,
+        rule: 'missing-ac',
+        message: `${slice.id} lists ${id}, but its card has no ${id} line — copy the AC line from the spec row onto the card`
+      })
+    }
+  }
+
+  const byLine = (a, b) => (a.path === b.path ? a.line - b.line : a.path < b.path ? -1 : 1)
+  return { matched, findings: findings.sort(byLine), info: info.sort(byLine) }
 }
 
 /**
