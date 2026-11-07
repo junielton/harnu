@@ -101,8 +101,9 @@ step produced: a brainstorm's objective, a `scope-task` report, or a PRD. Work i
    it is clean. Never flip `status: approved` while a finding stands.
 6. **Goldfish review.** Run the staged review of _Goldfish review_ below. Every finding gets its
    disposition, and an open `Blocker` keeps the next step from running.
-7. **Approval question.** Hand the spec over with `open_file` and ask the one question:
-   `Approve this spec?` The approval is the operator's yes.
+7. **Approval question.** Run the no-code check of _Before the approval question_ below; a path
+   outside the bundle stops you there. Then hand the spec over with `open_file` and ask the one
+   question: `Approve this spec?` The approval is the operator's yes.
 
 An unanswered decision in the Open decisions table:
 
@@ -153,10 +154,117 @@ conversation. Stages run in order; the reviewers within a stage run in parallel:
 | Large   | comprehension   | hostile critic                                   | implementation readiness | 3          |
 | Complex | comprehension   | hostile critic, overhead lens, traceability lens | implementation readiness | 5          |
 
-One re-review per stage after fixes, so the worst case is twice the column. Write each finding's
-one disposition in `critics.md` beside the spec: fix it, contest it with checkable evidence,
-escalate it to a D-n, or decline it to an `NG-n`. A reviewer that failed is `not run`, never
-"no findings".
+One re-review per stage after fixes, so the worst case is twice the column. A round spawns
+at most five sub-agents, and a Small entry spawns none: it never reaches this section.
+
+**Spawning.** Each reviewer is one `Agent` call with `subagent_type: "general-purpose"` (never
+`fork`, which inherits this conversation) and, under D-14, a `model` other than yours whenever one
+is available. The prompt carries absolute paths and nothing else: no summary, no excerpt, no line
+of this conversation.
+
+| Reviewer                 | Persona                   | Reading list                                    |
+| ------------------------ | ------------------------- | ----------------------------------------------- |
+| comprehension            | `agents/comprehension.md` | none: the spec alone                            |
+| hostile critic           | `agents/critic.md`        | optional: the PRD, the ADR, files a slice names |
+| overhead lens            | `agents/overhead.md`      | optional: the PRD, the ADR, files a slice names |
+| traceability lens        | `agents/traceability.md`  | optional: the PRD, the ADR, files a slice names |
+| implementation readiness | `agents/readiness.md`     | optional: the PRD, the ADR, files a slice names |
+
+```text
+Persona: <absolute path of the persona file>
+Spec: <absolute path of spec.md>
+Reading list: <absolute path>, <absolute path>
+```
+
+Leave the `Reading list:` line out when there is none, and always for comprehension.
+
+**Reading the comprehension report.** It opens with "What this proposes" and "How the system works,
+per this spec". Before its gaps, compare the paraphrase with your intent: where it differs, the
+spec says what you did not mean, and a wrong paraphrase is a finding (reviewer `comprehension`,
+at least `Major`). Fix the spec; a comprehension gap is never contested.
+
+**Dispositions.** Write each finding's one disposition in `critics.md` beside the spec: fix it,
+contest it with checkable evidence, escalate it to a D-n, or decline it to an `NG-n`. A reviewer
+that failed is `not run`, never "no findings"; a re-review is a new row with the next round.
+
+```md
+# Goldfish review
+
+Author model: <model> · reviewer model: <a different model, when one is available (D-14)>
+Persona files are read by a general-purpose sub-agent, so `CLAUDE.md` may reach the reviewer (D-9).
+
+## Reviewers
+
+| reviewer      | round | model   | status          |
+| ------------- | ----- | ------- | --------------- |
+| comprehension | 1     | <model> | ran             |
+| critic        | 1     | <model> | not run — <why> |
+| critic        | 2     | <model> | ran             |
+
+## Findings
+
+| id  | reviewer      | severity | finding          | disposition | evidence                  |
+| --- | ------------- | -------- | ---------------- | ----------- | ------------------------- |
+| F-1 | comprehension | Major    | <what it raised> | fix         | <what changed, and where> |
+```
+
+`disposition` is `fix`, `contest`, `escalate D-n` or `decline NG-n`. `check` lints this file:
+`undisposed-finding` (no disposition, or a D-n or NG-n the spec lacks), `weak-contest` (evidence
+that is only "intentional", or a contested comprehension gap) and `reviewer-not-run` (a reviewer
+whose last round failed).
+
+**Recording.** Each disposition is one `mission_log` on the mission's "Approve spec" step (its
+`stepId` from `mission_get`): `kind: 'decision'`, or `'surprise'` for a finding that changed the design.
+
+```json
+{
+  "folder": "<absolute path of the repo>",
+  "missionId": "<mnt-…>",
+  "stepId": "<stp-n of the Approve spec step>",
+  "kind": "decision",
+  "note": "F-1 (comprehension, Major): fix — <what changed, and where>"
+}
+```
+
+Each resolved D-n, answered in step 3 or escalated here and answered, is one `memory_append` to
+`decisions`. Its `watches` lists
+the literal directory prefix of each `files-may-touch` glob of the slices whose `gated-by:` names it,
+plus single-word topics from the question. Recall matches only a literal path or a directory prefix,
+never a glob, so a literal file path stays as it is and a glob gives its prefix:
+`resources/skills/skills/spec/agents/*.md` → `resources/skills/skills/spec/agents/`. When
+`harnu:one-by-one` drained the decision, its memory line is this one: hand it the `watches`.
+
+```json
+{
+  "folder": "<absolute path of the repo>",
+  "page": "decisions",
+  "entry": "D-n · <question> · chosen: <option> · <YYYY-MM-DD>",
+  "watches": ["src/badge/", "badge"],
+  "mission": "<mnt-…>"
+}
+```
+
+**An open `Blocker` holds the question.** A `Blocker` stays open until its disposition is written
+and, for a fix, the stage's re-review no longer raises it. While a `Blocker` is open,
+the approval question is not asked.
+
+## Before the approval question
+
+Nothing outside the spec bundle changes while you author. The bundle is the spec directory, and
+for Complex the PRD, the ADR and the mockup folder; Harnu's own `.harnu/` is not code. When
+authoring begins, note `git rev-parse HEAD` as `<base>`. Before the approval question, print every
+path changed since then that lies outside the bundle:
+
+```sh
+{ git diff --no-renames --name-only <base>; git ls-files --others --exclude-standard; } | sort -u | grep -v -e '^<spec directory>/' -e '^<prd>$' -e '^<adr>$' -e '^<mockup folder>' -e '^\.harnu/'
+```
+
+Drop the `-e` of a file the tier does not carry. Nothing printed: go on. Any line is a stop: name
+every path it printed, ask no approval, and leave the code to a card of its own. This check always
+runs (D-10). In a session Harnu spawned for an agent, also call `orchestrator_arm` with your own
+`sessionId`, so nothing outside `.harnu/` is written while the operator reads; `TARGET_OPERATOR_OWNED`
+means the operator's own session, so go on without the guard. `orchestrator_disarm` lifts it to
+apply a change they ask for or to flip the header after the yes; then run this check again.
 
 ## Once a slice has a card
 
@@ -202,7 +310,8 @@ node <skill directory>/scripts/spec-check.mjs <spec-path> --cards
 
 **Reading the result.** One line per finding, `path:line [rule] message`, every finding collected:
 the gate's own rules, then `missing-producer`, `producer-not-before`, `no-atoms`,
-`uncovered-atom`, and with `--cards` `hash-diverged`, `unknown-ac`, `missing-ac`. A card-only
+`uncovered-atom`, the `critics.md` rules when one sits beside the spec (`undisposed-finding`,
+`weak-contest`, `reviewer-not-run`), and with `--cards` `hash-diverged`, `unknown-ac`, `missing-ac`. A card-only
 AC line with no hash prints as `info:` and is not a finding. Exit 0 clean, 1 on any finding, 2
 on a usage error or an unreadable file.
 
