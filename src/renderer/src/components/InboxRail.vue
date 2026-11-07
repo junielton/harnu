@@ -286,6 +286,9 @@ onMounted(() => {
   <aside
     class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-sidebar"
     :class="minimized ? 'border-l border-border' : ''"
+    data-column="rail"
+    :data-rail-state="minimized ? 'minimized' : 'expanded'"
+    :data-island="minimized ? 'rail-minimized' : undefined"
     role="complementary"
     data-dsqa="fleet-rail"
     :aria-label="$t('approvalInbox.rail.ariaLabel')"
@@ -396,263 +399,271 @@ onMounted(() => {
       <!-- Header — 42px to match the Topbar/Sidebar header row (design.md §4), so
            its bottom border lines up across the whole window instead of stair-stepping
            against the Topbar's border. -->
-      <div
-        class="flex shrink-0 items-center border-b border-border"
-        style="height: 42px; padding: 0 10px; gap: 8px"
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="var(--color-text-3)"
-          stroke-width="1.7"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          class="shrink-0"
+      <!-- The list island (design.md §6 "Floating panels layout"): the header is the HEAD of the
+           fleet list, so with Floating panels on they read as ONE island (the header's own bottom
+           border is the inner rule); the hidden-urgency notice, the missions strip and the fleet
+           list follow it. Off, this wrapper is an invisible flex column. -->
+      <div class="flex min-h-0 flex-1 flex-col" data-island="rail-list">
+        <div
+          class="flex shrink-0 items-center border-b border-border"
+          data-island-head="rail-header"
+          data-island-band
+          style="height: 42px; padding: 0 10px; gap: 8px"
         >
-          <rect x="3" y="4" width="18" height="16" rx="2" />
-          <path d="M3 10h18" />
-          <path d="M9 4v6" />
-        </svg>
-        <span class="text-text" style="font-size: 12.5px; font-weight: 500">{{
-          $t('approvalInbox.title')
-        }}</span>
-        <span
-          v-if="sessions.inboxCount > 0"
-          class="shrink-0 bg-accent text-accent-ink tabular-nums"
-          style="
-            padding: 1px 6px;
-            border-radius: 999px;
-            font-size: 9.5px;
-            font-weight: 700;
-            letter-spacing: 0;
-          "
-          >{{ sessions.inboxCount }}</span
-        >
-        <span class="min-w-0 flex-1" />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--color-text-3)"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="shrink-0"
+          >
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M3 10h18" />
+            <path d="M9 4v6" />
+          </svg>
+          <span class="text-text" style="font-size: 12.5px; font-weight: 500">{{
+            $t('approvalInbox.title')
+          }}</span>
+          <span
+            v-if="sessions.inboxCount > 0"
+            class="shrink-0 bg-accent text-accent-ink tabular-nums"
+            style="
+              padding: 1px 6px;
+              border-radius: 999px;
+              font-size: 9.5px;
+              font-weight: 700;
+              letter-spacing: 0;
+            "
+            >{{ sessions.inboxCount }}</span
+          >
+          <span class="min-w-0 flex-1" />
 
-        <!-- Card order toggle (T459) — cards sit in creation order inside each
+          <!-- Card order toggle (T459) — cards sit in creation order inside each
              state group, newest first by default; this inverts it. The icon
              shows the CURRENT order, the title/aria-label say what a click does. -->
-        <button
-          type="button"
-          class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 22px; height: 22px"
-          data-dsqa="fleet-rail-order-button"
-          :title="keybindings.withChord(orderLabel, 'inbox.toggleOrder')"
-          :aria-label="orderLabel"
-          @click="layout.toggleInboxRailOrder()"
-        >
-          <ArrowDownWideNarrow
-            v-if="layout.inboxRailOrder === 'newest-first'"
-            :size="14"
-            :stroke-width="1.7"
-          />
-          <ArrowUpNarrowWide v-else :size="14" :stroke-width="1.7" />
-        </button>
-
-        <!-- Fleet rail state filter (T159) — icon + anchored popover, doubles
-             as the legend for the dot/ring language the removed bucket
-             labels used to provide (design.md — Fleet rail). -->
-        <div ref="filterAnchorRef" class="relative shrink-0">
           <button
             type="button"
-            class="relative flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-            :class="hasActiveStateFilter ? 'text-accent' : ''"
+            class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
             style="width: 22px; height: 22px"
-            data-dsqa="fleet-rail-filter-button"
-            :title="$t('approvalInbox.filter.title')"
-            :aria-label="$t('approvalInbox.filter.title')"
-            :aria-expanded="filterPopoverOpen"
-            @click="ui.togglePopover('inboxFilter')"
+            data-dsqa="fleet-rail-order-button"
+            :title="keybindings.withChord(orderLabel, 'inbox.toggleOrder')"
+            :aria-label="orderLabel"
+            @click="layout.toggleInboxRailOrder()"
           >
-            <ListFilter :size="14" :stroke-width="1.7" />
-            <span
-              v-if="hasActiveStateFilter"
-              class="absolute rounded-full bg-accent"
-              style="width: 6px; height: 6px; top: 2px; right: 2px"
+            <ArrowDownWideNarrow
+              v-if="layout.inboxRailOrder === 'newest-first'"
+              :size="14"
+              :stroke-width="1.7"
             />
+            <ArrowUpNarrowWide v-else :size="14" :stroke-width="1.7" />
           </button>
 
-          <div
-            v-if="filterPopoverOpen"
-            class="anim-fade-in-scale absolute right-0 top-full z-50 mt-1.5 flex flex-col overflow-hidden rounded border border-border-2 bg-surface shadow-pop"
-            style="width: 220px"
-            data-dsqa="fleet-rail-filter-popover"
-          >
-            <div
-              class="flex shrink-0 items-center border-b border-border"
-              style="height: 32px; padding: 0 10px; gap: 6px"
+          <!-- Fleet rail state filter (T159) — icon + anchored popover, doubles
+             as the legend for the dot/ring language the removed bucket
+             labels used to provide (design.md — Fleet rail). -->
+          <div ref="filterAnchorRef" class="relative shrink-0">
+            <button
+              type="button"
+              class="relative flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
+              :class="hasActiveStateFilter ? 'text-accent' : ''"
+              style="width: 22px; height: 22px"
+              data-dsqa="fleet-rail-filter-button"
+              :title="$t('approvalInbox.filter.title')"
+              :aria-label="$t('approvalInbox.filter.title')"
+              :aria-expanded="filterPopoverOpen"
+              @click="ui.togglePopover('inboxFilter')"
             >
-              <span class="text-text" style="font-size: 11.5px; font-weight: 500">{{
-                $t('approvalInbox.filter.title')
-              }}</span>
-              <span class="min-w-0 flex-1" />
-              <button
+              <ListFilter :size="14" :stroke-width="1.7" />
+              <span
                 v-if="hasActiveStateFilter"
-                type="button"
-                class="rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
-                style="padding: 2px 5px; font-size: 10.5px; font-weight: 500"
-                @click="layout.clearInboxRailStateFilter()"
-              >
-                {{ $t('approvalInbox.filter.showAll') }}
-              </button>
-            </div>
+                class="absolute rounded-full bg-accent"
+                style="width: 6px; height: 6px; top: 2px; right: 2px"
+              />
+            </button>
+
             <div
-              v-for="state in INBOX_RAIL_FILTERABLE_STATES"
-              :key="state"
-              class="flex items-center"
-              style="padding: 6px 10px; gap: 8px"
+              v-if="filterPopoverOpen"
+              class="anim-fade-in-scale absolute right-0 top-full z-50 mt-1.5 flex flex-col overflow-hidden rounded border border-border-2 bg-surface shadow-pop"
+              style="width: 220px"
+              data-dsqa="fleet-rail-filter-popover"
             >
-              <span
-                v-if="state === 'working'"
-                class="anim-pulse-dot shrink-0 rounded-full bg-green"
-                style="width: 6px; height: 6px"
-              />
-              <span
-                v-else-if="state === 'needs-input'"
-                class="anim-attention-dot shrink-0 rounded-full bg-warning"
-                style="width: 6px; height: 6px"
-              />
-              <span
-                v-else-if="state === 'errored'"
-                class="shrink-0 rounded-full bg-red"
-                style="width: 6px; height: 6px"
-              />
-              <span
-                v-else-if="state === 'stuck'"
-                class="shrink-0 rounded-full border border-red"
-                style="width: 6px; height: 6px"
-              />
-              <Check v-else :size="11" :stroke-width="1.8" class="shrink-0 text-text-4" />
-              <span class="min-w-0 flex-1 truncate text-text-2" style="font-size: 11.5px">{{
-                $t(stateLabelKey(state))
-              }}</span>
-              <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
-                fleetStateCounts[state]
-              }}</span>
-              <ToggleSwitch
-                :model-value="!layout.inboxRailHiddenStates.has(state)"
-                :aria-label="
-                  $t('approvalInbox.filter.toggleAria', { state: $t(stateLabelKey(state)) })
-                "
-                @update:model-value="layout.toggleInboxRailStateVisibility(state)"
-              />
+              <div
+                class="flex shrink-0 items-center border-b border-border"
+                style="height: 32px; padding: 0 10px; gap: 6px"
+              >
+                <span class="text-text" style="font-size: 11.5px; font-weight: 500">{{
+                  $t('approvalInbox.filter.title')
+                }}</span>
+                <span class="min-w-0 flex-1" />
+                <button
+                  v-if="hasActiveStateFilter"
+                  type="button"
+                  class="rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
+                  style="padding: 2px 5px; font-size: 10.5px; font-weight: 500"
+                  @click="layout.clearInboxRailStateFilter()"
+                >
+                  {{ $t('approvalInbox.filter.showAll') }}
+                </button>
+              </div>
+              <div
+                v-for="state in INBOX_RAIL_FILTERABLE_STATES"
+                :key="state"
+                class="flex items-center"
+                style="padding: 6px 10px; gap: 8px"
+              >
+                <span
+                  v-if="state === 'working'"
+                  class="anim-pulse-dot shrink-0 rounded-full bg-green"
+                  style="width: 6px; height: 6px"
+                />
+                <span
+                  v-else-if="state === 'needs-input'"
+                  class="anim-attention-dot shrink-0 rounded-full bg-warning"
+                  style="width: 6px; height: 6px"
+                />
+                <span
+                  v-else-if="state === 'errored'"
+                  class="shrink-0 rounded-full bg-red"
+                  style="width: 6px; height: 6px"
+                />
+                <span
+                  v-else-if="state === 'stuck'"
+                  class="shrink-0 rounded-full border border-red"
+                  style="width: 6px; height: 6px"
+                />
+                <Check v-else :size="11" :stroke-width="1.8" class="shrink-0 text-text-4" />
+                <span class="min-w-0 flex-1 truncate text-text-2" style="font-size: 11.5px">{{
+                  $t(stateLabelKey(state))
+                }}</span>
+                <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
+                  fleetStateCounts[state]
+                }}</span>
+                <ToggleSwitch
+                  :model-value="!layout.inboxRailHiddenStates.has(state)"
+                  :aria-label="
+                    $t('approvalInbox.filter.toggleAria', { state: $t(stateLabelKey(state)) })
+                  "
+                  @update:model-value="layout.toggleInboxRailStateVisibility(state)"
+                />
+              </div>
             </div>
           </div>
+
+          <button
+            type="button"
+            class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
+            style="width: 22px; height: 22px"
+            :title="keybindings.withChord($t('approvalInbox.rail.minimize'), 'inbox.toggle')"
+            :aria-label="$t('approvalInbox.rail.minimize')"
+            @click="layout.setInboxRailState('minimized')"
+          >
+            <ChevronsRight :size="14" :stroke-width="1.7" />
+          </button>
         </div>
 
-        <button
-          type="button"
-          class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 22px; height: 22px"
-          :title="keybindings.withChord($t('approvalInbox.rail.minimize'), 'inbox.toggle')"
-          :aria-label="$t('approvalInbox.rail.minimize')"
-          @click="layout.setInboxRailState('minimized')"
-        >
-          <ChevronsRight :size="14" :stroke-width="1.7" />
-        </button>
-      </div>
-
-      <!-- Hidden-urgency affordance (T159 — the safety trap): visible ONLY
+        <!-- Hidden-urgency affordance (T159 — the safety trap): visible ONLY
            when the active filter is hiding at least one needs-input/errored/
            stuck card. One click clears the filter entirely. This must never
            be silent — a filtered-to-"working" rail hiding a session that just
            went `errored` would defeat the rail's entire reason to exist. -->
-      <button
-        v-if="hiddenAttentionCount > 0"
-        type="button"
-        class="flex w-full shrink-0 items-center border-b border-border bg-transparent text-left text-warning transition hover:bg-surface"
-        style="padding: 7px 10px; gap: 6px; font-size: 11px"
-        data-dsqa="fleet-rail-hidden-attention"
-        @click="layout.clearInboxRailStateFilter()"
-      >
-        <TriangleAlert :size="12" :stroke-width="2" class="shrink-0" />
-        <span class="min-w-0 flex-1">{{
-          $t('approvalInbox.filter.hiddenAttention', { count: hiddenAttentionCount })
-        }}</span>
-        <span class="shrink-0" style="font-size: 10.5px; text-decoration: underline">{{
-          $t('approvalInbox.filter.showAll')
-        }}</span>
-      </button>
-
-      <!-- Active missions strip (T44 S5c). Hidden when there are none. -->
-      <div
-        v-if="activeGrants.length > 0"
-        class="flex shrink-0 flex-col border-b border-border"
-        style="padding: 9px 10px; gap: 6px"
-      >
-        <span
-          class="text-text-3"
-          style="
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.07em;
-            text-transform: uppercase;
-          "
-          >{{ $t('approvalInbox.missionsStrip.title') }}</span
+        <button
+          v-if="hiddenAttentionCount > 0"
+          type="button"
+          class="flex w-full shrink-0 items-center border-b border-border bg-transparent text-left text-warning transition hover:bg-surface"
+          style="padding: 7px 10px; gap: 6px; font-size: 11px"
+          data-dsqa="fleet-rail-hidden-attention"
+          @click="layout.clearInboxRailStateFilter()"
         >
-        <div v-for="g in activeGrants" :key="g.id" class="flex flex-col" style="gap: 4px">
-          <span class="truncate text-text-2" style="font-size: 11.5px" :title="g.goal">
-            {{ g.goal }}
-          </span>
-          <div class="flex items-center" style="gap: 7px">
-            <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
-              $t('mcpServer.missions.budget', { spent: g.spent, budget: g.budget })
-            }}</span>
-            <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
-              $t('mcpServer.missions.expiresIn', { mins: minutesLeft(g) })
-            }}</span>
-            <span class="min-w-0 flex-1" />
-            <button
-              type="button"
-              class="inline-flex shrink-0 items-center bg-red-soft text-red transition hover:opacity-80"
-              style="padding: 2px 7px; font-size: 10.5px; border-radius: 5px"
-              @click="revokeGrant(g.id)"
-            >
-              {{ $t('mcpServer.missions.revoke') }}
-            </button>
+          <TriangleAlert :size="12" :stroke-width="2" class="shrink-0" />
+          <span class="min-w-0 flex-1">{{
+            $t('approvalInbox.filter.hiddenAttention', { count: hiddenAttentionCount })
+          }}</span>
+          <span class="shrink-0" style="font-size: 10.5px; text-decoration: underline">{{
+            $t('approvalInbox.filter.showAll')
+          }}</span>
+        </button>
+
+        <!-- Active missions strip (T44 S5c). Hidden when there are none. -->
+        <div
+          v-if="activeGrants.length > 0"
+          class="flex shrink-0 flex-col border-b border-border"
+          style="padding: 9px 10px; gap: 6px"
+        >
+          <span
+            class="text-text-3"
+            style="
+              font-size: 10px;
+              font-weight: 600;
+              letter-spacing: 0.07em;
+              text-transform: uppercase;
+            "
+            >{{ $t('approvalInbox.missionsStrip.title') }}</span
+          >
+          <div v-for="g in activeGrants" :key="g.id" class="flex flex-col" style="gap: 4px">
+            <span class="truncate text-text-2" style="font-size: 11.5px" :title="g.goal">
+              {{ g.goal }}
+            </span>
+            <div class="flex items-center" style="gap: 7px">
+              <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
+                $t('mcpServer.missions.budget', { spent: g.spent, budget: g.budget })
+              }}</span>
+              <span class="shrink-0 tabular-nums text-text-4" style="font-size: 10.5px">{{
+                $t('mcpServer.missions.expiresIn', { mins: minutesLeft(g) })
+              }}</span>
+              <span class="min-w-0 flex-1" />
+              <button
+                type="button"
+                class="inline-flex shrink-0 items-center bg-red-soft text-red transition hover:opacity-80"
+                style="padding: 2px 7px; font-size: 10.5px; border-radius: 5px"
+                @click="revokeGrant(g.id)"
+              >
+                {{ $t('mcpServer.missions.revoke') }}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!--
+        <!--
         Fleet (T151) — the scrolling body: every non-idle session in the
         fleet, one continuous column, no bucket eyebrows. Ordering (anti-
         flood, strict tiers) + idle-hiding come from `fleetCards` above; each
         card's state is carried entirely by its dot + border ring
         (`FleetBoardCard.vue` + design.md §7), never a label.
       -->
-      <div
-        class="scrollable min-h-0 flex-1"
-        style="overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding-top: 6px"
-      >
-        <FleetBoardCard
-          v-for="card in visibleFleetCards"
-          :key="card.session.sessionId"
-          :session="card.session"
-          :state="card.state"
-          :folder-alias="card.folderAlias"
-          live-poll
-        />
         <div
-          v-if="visibleFleetCards.length === 0 && fleetCards.length === 0"
-          class="text-text-4"
-          style="padding: 24px 12px; font-size: 12px; text-align: center"
+          class="scrollable min-h-0 flex-1"
+          style="overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding-top: 6px"
         >
-          {{ $t('approvalInbox.fleetEmpty') }}
+          <FleetBoardCard
+            v-for="card in visibleFleetCards"
+            :key="card.session.sessionId"
+            :session="card.session"
+            :state="card.state"
+            :folder-alias="card.folderAlias"
+            live-poll
+          />
+          <div
+            v-if="visibleFleetCards.length === 0 && fleetCards.length === 0"
+            class="text-text-4"
+            style="padding: 24px 12px; font-size: 12px; text-align: center"
+          >
+            {{ $t('approvalInbox.fleetEmpty') }}
+          </div>
+          <button
+            v-else-if="visibleFleetCards.length === 0"
+            type="button"
+            class="w-full text-text-4 transition hover:text-text-2"
+            style="padding: 24px 12px; font-size: 12px; text-align: center"
+            data-dsqa="fleet-rail-all-filtered"
+            @click="layout.clearInboxRailStateFilter()"
+          >
+            {{ $t('approvalInbox.filter.allHidden') }}
+          </button>
         </div>
-        <button
-          v-else-if="visibleFleetCards.length === 0"
-          type="button"
-          class="w-full text-text-4 transition hover:text-text-2"
-          style="padding: 24px 12px; font-size: 12px; text-align: center"
-          data-dsqa="fleet-rail-all-filtered"
-          @click="layout.clearInboxRailStateFilter()"
-        >
-          {{ $t('approvalInbox.filter.allHidden') }}
-        </button>
       </div>
 
       <!--
@@ -662,7 +673,12 @@ onMounted(() => {
         pending — an idle queue doesn't earn a permanent row once the Fleet
         section above already shows the fleet is quiet.
       -->
-      <div v-if="!isEmpty" class="shrink-0 border-t border-border">
+      <div
+        v-if="!isEmpty"
+        class="shrink-0 border-t border-border"
+        data-island="rail-needs-you"
+        data-rail-section
+      >
         <button
           type="button"
           class="flex w-full items-center bg-transparent text-text-3 transition hover:text-text-2"
@@ -711,7 +727,7 @@ onMounted(() => {
         Would-have — collapsed shadow log pinned below the fleet (T151),
         the same chevron/`.collapsible` chrome as Needs-you above.
       -->
-      <div class="shrink-0 border-t border-border">
+      <div class="shrink-0 border-t border-border" data-island="rail-would-have" data-rail-section>
         <button
           type="button"
           class="flex w-full items-center bg-transparent text-text-3 transition hover:text-text-2"

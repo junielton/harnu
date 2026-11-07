@@ -1078,6 +1078,54 @@ export function parseReleaseWorktree(input: unknown): ParseResult<ReleaseWorktre
   return { ok: true, value }
 }
 
+/** Validated args for the `archive_session` mutation tool (T655): 1..100 session ids. */
+export interface ArchiveSessionArgs {
+  sessionIds: string[]
+  unarchive?: boolean
+}
+
+const ArchiveSessionSchema = z.object({
+  sessionIds: z.array(z.string().min(1)).min(1).max(100),
+  unarchive: z.boolean().optional()
+})
+
+/** Validate `archive_session` args (T655). */
+export function parseArchiveSession(input: unknown): ParseResult<ArchiveSessionArgs> {
+  const parsed = ArchiveSessionSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: ArchiveSessionArgs = { sessionIds: parsed.data.sessionIds }
+  if (parsed.data.unarchive !== undefined) value.unarchive = parsed.data.unarchive
+  return { ok: true, value }
+}
+
+/** Validated args for the `hide_folder` mutation tool (T661): 1..100 absolute folder paths. */
+export interface HideFolderArgs {
+  folders: string[]
+  unhide?: boolean
+}
+
+const HideFolderSchema = z.object({
+  folders: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .refine((p) => path.isAbsolute(p), 'must be an absolute path')
+    )
+    .min(1)
+    .max(100),
+  unhide: z.boolean().optional()
+})
+
+/** Validate `hide_folder` args (T661). */
+export function parseHideFolder(input: unknown): ParseResult<HideFolderArgs> {
+  const parsed = HideFolderSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: HideFolderArgs = { folders: parsed.data.folders }
+  if (parsed.data.unhide !== undefined) value.unhide = parsed.data.unhide
+  return { ok: true, value }
+}
+
 /** Stack ids from `list_containers`: a non-empty list of non-empty strings. */
 const StackIdsSchema = z.array(z.string().min(1)).min(1)
 
@@ -1923,6 +1971,10 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   // T445: list_cleanup takes the optional folder; release_worktree takes a folder or an id.
   list_cleanup: parseListCleanup,
   release_worktree: parseReleaseWorktree,
+  // T655: sessions are named by id, never a folder; the handler refuses a blocked one per id.
+  archive_session: parseArchiveSession,
+  // T661: folders are named by absolute path; the handler refuses a blocked one per path.
+  hide_folder: parseHideFolder,
   stop_containers: parseStopContainers,
   start_containers: parseStartContainers,
   remove_containers: parseRemoveContainers,
@@ -1950,6 +2002,9 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   campaign_get: parseMissionVerb('campaign_get'),
   campaign_list: parseMissionVerb('campaign_list'),
   campaign_request_close: parseMissionVerb('campaign_request_close'),
+  // T654: validated against their own catalog schema, like the other mission/campaign verbs.
+  mission_transfer_owner: parseMissionVerb('mission_transfer_owner'),
+  campaign_transfer_owner: parseMissionVerb('campaign_transfer_owner'),
   // Campaign ch.5a: validated against its own catalog schema, like the mission verbs.
   rebase_stack: parseMissionVerb('rebase_stack')
 }

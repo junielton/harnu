@@ -52,7 +52,7 @@ The links you and Claude trade in a long session — the task, the pull request 
 
 Click the pill for the list, newest first. Each row is named from the link itself, with no lookup: a GitHub pull request or issue reads `owner/repo #183`, a ClickUp task reads `Task <id>`, a Figma link shows the file name and the frame (`node 812-4410`), and any other page shows its address without the query string. A small chip says who wrote it (**you** or **agent**), and the time sits on the right. Only what is written in the conversation counts — a URL that merely appeared in a command's output, a fetched page or a log is left out, so the list stays about the links you actually exchanged.
 
-Hover a row to see the sentence the link came from and three actions: **Open** (in your default browser), **Copy** (to the clipboard, with a "Link copied" toast), and **Reference** (types the link into the session's prompt so you can build on it — it doesn't press Enter, so you review the line and send it yourself; it needs a running session, so it's greyed out with the reason otherwise).
+Each row always shows the sentence the link came from, on one line under the label. Hover a row, or Tab onto it, to swap the time for three actions (the row never changes size): **Open** (in your default browser), **Copy** (to the clipboard, with a "Link copied" toast), and **Reference** (types the link into the session's prompt so you can build on it — it doesn't press Enter, so you review the line and send it yourself; it needs a running session, so it's greyed out with the reason otherwise).
 
 The **Session · Folder** toggle in the popover header widens the list from this session to every session in the folder, grouped under each session's name, newest session first. `Esc` or a click outside closes it, and opening it closes the other footer popovers (and vice versa).
 
@@ -131,10 +131,20 @@ By default the split sits to the right of your main terminal (**side by side**).
 
 Drag a pane's header to resize it. Split panes follow the same rule as the main terminal — a shell running in a split (say, `npm run dev`) keeps running in the background even if you switch to a different worktree or session. Every pane's header also has a maximize button: click it to grow that pane to fill the split while the others collapse to a thin header strip (still running in the background); click it again, or a different pane's maximize button, to restore or switch.
 
+### Expanding a pane to the window
+
+Maximize works inside the split. **Expand to window** goes one step further: the pane takes the whole working area, with only the Topbar and the footer left around it. Click the expand button in any pane's header (right before maximize). To leave, click the same button again, press `Esc`, or press `Cmd/Ctrl+Shift+M`. Inside a terminal `Esc` still belongs to the program running there (Claude Code cancels with it), so from a terminal use the button or `Cmd/Ctrl+Shift+M`.
+
+- **What gets out of the way** is **Settings → Appearance → Layout → Expand hides**. **Everything** (the default) collapses the sidebar, the session and the Fleet rail. **Session only** collapses just the session and leaves the sidebar and the Fleet rail where they are. The other panes in the split collapse to nothing while one is expanded. The choice is remembered across restarts (it is saved in `settings.json` as `expandHides`).
+- **Nothing restarts.** The pane is not moved or reloaded: a shell keeps its scrollback and its process, and a browser page stays loaded. The session terminal keeps its size while it is hidden, so it does not redraw when you come back.
+- **It is not remembered.** Expanded is per folder, and switching to another folder or restarting puts the layout back to normal. Closing the expanded pane also leaves the expanded view. `F6` visits only the expanded pane.
+- **The shortcut.** Bind **Expand the focused pane to the window** in Settings → Keyboard Shortcuts to toggle it from the keyboard for any focused pane; it has no default key, because `Cmd/Ctrl+Shift+M` stays maximize (and exits the expanded view).
+- **Motion.** Maximize, expand, minimizing or restoring the Fleet rail, collapsing the sidebar and switching the split layout now animate for about a fifth of a second instead of snapping; dragging a divider never does. A browser pane shows a still picture of its page while the layout moves and goes live again right after. With **Reduce motion** on in your operating system, everything snaps as before.
+
 ### Moving between panes from the keyboard
 
 - `F6` moves focus to the next pane: the main terminal, then each split pane from top to bottom, then back to the main terminal. `Shift+F6` goes the other way. Both work while a terminal has focus, so the program running there no longer receives `F6`. A collapsed split, and the panes hidden behind a maximized one, are skipped; when a view such as the Roadmap covers the main terminal, only the split panes are visited. With a dialog, the command palette or a menu open, they do nothing. On most Mac keyboards press `Fn+F6` and `Fn+Shift+F6`.
-- A Markdown, Memory, file-browser or canvas pane shows a thin accent outline while it has focus. Terminal panes don't: their cursor already tells you.
+- A Markdown, Memory, file-browser or canvas pane brightens its header text while it has focus. Terminal panes don't: their cursor already tells you.
 - `Cmd/Ctrl+Shift+M` maximizes the focused split pane, or restores it if it's already maximized. With no split pane focused, it restores whichever pane is maximized.
 - **Close the focused pane** has no shortcut out of the box (command id `pane.close`). Once you bind one, it closes the pane that has focus exactly like its header's close button: a Markdown or canvas pane with unsaved changes still asks before discarding them. Focus then moves to the next pane.
 
@@ -201,7 +211,8 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `Shift+F10`        | Open the right-click menu for the cursor row (`Fn+Shift+F10` on a Mac)          |
 | `F2`               | Rename the cursor folder row, or the active folder (`Fn+F2` on a Mac)           |
 | `F6` / `Shift+F6`  | Focus the next / previous pane, even from a terminal (`Fn+F6` on a Mac)         |
-| `Cmd/Ctrl+Shift+M` | Maximize or restore the focused split pane                                      |
+| `Cmd/Ctrl+Shift+M` | Maximize or restore the focused split pane (leaves an expanded pane)            |
+| _(unbound)_        | Expand the focused split pane to the window (bind it in Keyboard Shortcuts)     |
 | _(unbound)_        | Cycle the split layout (bind **Cycle the split layout** in Keyboard Shortcuts)  |
 | `Alt+←` / `Cmd+[`  | Back to the previous session you viewed                                         |
 | `Alt+→` / `Cmd+]`  | Forward again after going back                                                  |

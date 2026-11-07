@@ -59,9 +59,28 @@
   --gc-panel-w: 320px;
   --gc-dialog-w: min(720px, 90vw);
 
+  /* Scheduler list: the open Stewards block scrolls inside this height (design.md §6 Scheduler →
+   * Stewards, §9). Theme-invariant; ≈ 6 rows. */
+  --sched-stewards-max-h: 232px;
+
   /* Dialog viewport cap (design.md §4 "Dialog — viewport cap"): every dialog card is at most this tall;
    * its body scrolls, header and footer stay on screen. Theme-invariant. */
   --dialog-max-h: 84vh;
+
+  /* Dialog shell tokens (design.md §6 "Dialog", T460): the scrim behind every modal card, the size
+   * scale a dialog picks from (width is always min(<size>, 90vw)) and the dialog z-layers. All
+   * theme-invariant — the scrim stays black at 0.55 in light themes. `--color-scrim-strong` is the
+   * Image lightbox's heavier scrim; `--z-palette` also carries the comboboxes' dropdown panels,
+   * which must float above a dialog. */
+  --color-scrim: rgba(0, 0, 0, 0.55);
+  --color-scrim-strong: rgba(0, 0, 0, 0.82);
+  --dialog-w-sm: 480px;
+  --dialog-w-md: 560px;
+  --dialog-w-lg: 720px;
+  --dialog-w-xl: 940px;
+  --z-dialog: 60;
+  --z-dialog-raised: 65;
+  --z-palette: 70;
 
   /* motion */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
@@ -89,6 +108,15 @@
    * when painted on top of one. */
   --diff-add-word: rgba(122, 148, 85, 0.34);
   --diff-del-word: rgba(209, 113, 124, 0.26);
+
+  /* Floating panels (design.md §6 "Floating panels layout", §9). Read only under
+   * :root[data-floating]. The canvas is derived from the theme's own --color-bg, which is right
+   * for every dark theme and for extension themes (they never define it); the four light
+   * themes override it below with a hand-picked value. */
+  --color-canvas: color-mix(in oklab, var(--color-bg) 62%, black);
+  --float-gap: 4px;
+  --float-radius: 4px;
+  --float-band: 42px;
 
   --term-ansi-black: #302a25;
   --term-ansi-red: #c6675a;
@@ -120,6 +148,7 @@
   --color-surface-2: #ececef;
   --color-border: #e4e4e7;
   --color-border-2: #d4d4d8;
+  --color-canvas: #ececef; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
 
   --color-text: #18181b;
   --color-text-2: #3f3f46;
@@ -336,6 +365,7 @@
   --color-surface-2: #dce0e8;
   --color-border: #ccd0da;
   --color-border-2: #bcc0cc;
+  --color-canvas: #d8dce5; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
 
   --color-text: #4c4f69;
   --color-text-2: #5c5f77;
@@ -498,6 +528,7 @@
   --color-surface-2: #eaeef2;
   --color-border: #d0d7de;
   --color-border-2: #afb8c1;
+  --color-canvas: #eaeef2; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
 
   --color-text: #1f2328;
   --color-text-2: #424a53;
@@ -606,6 +637,7 @@
   --color-surface-2: #ebdbb2;
   --color-border: #d5c4a1;
   --color-border-2: #bdae93;
+  --color-canvas: #ebdbb2; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
 
   --color-text: #3c3836;
   --color-text-2: #504945;

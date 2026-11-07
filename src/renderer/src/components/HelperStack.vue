@@ -24,6 +24,8 @@ const worktreePath = computed<string>(() => helpers.currentWorktreePath ?? '')
 const panes = computed(() => helpers.panesForCurrentWorktree)
 /** Maximized pane id for the visible stack, or null when nothing is maximized. */
 const maximizedId = computed(() => helpers.maximizedPaneIdForCurrentWorktree)
+/** T628: the pane expanded to the window, or null. It outranks maximize while it is set. */
+const expandedId = computed(() => helpers.expandedPaneIdForCurrentWorktree)
 
 /** markdown-write/-read deny code → i18n subkey under `markdownPane.error` (mirrors MarkdownPane's own map). */
 function errorKey(code: string): string {
@@ -134,6 +136,9 @@ function onDividerMouseUp(): void {
  * WIDTH (the panes run left to right), so the other panes shrink to a sliver.
  */
 function paneFlex(pane: { id: string; ratio: number }): string {
+  // T628: expanded, the pane takes everything and every other pane collapses to nothing (not to a
+  // 24px strip: that is maximize). The wrapper is the same node either way, so nothing remounts.
+  if (expandedId.value) return pane.id === expandedId.value ? '1 1 0' : '0 0 0px'
   if (!maximizedId.value) return `${pane.ratio} 1 0`
   return pane.id === maximizedId.value ? '1 1 0' : '0 0 24px'
 }
@@ -166,15 +171,22 @@ function paneFlex(pane: { id: string; ratio: number }): string {
     <template v-for="(pane, idx) in panes" :key="pane.id">
       <!-- Width splitter (stacked only, none while a pane is maximized — ratios are meaningless then). -->
       <div
-        v-if="stacked && idx > 0 && !maximizedId"
+        v-if="stacked && idx > 0 && !maximizedId && !expandedId"
         class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
+        data-float-divider
         role="separator"
         aria-orientation="vertical"
         @mousedown="onDividerMouseDown(idx - 1, $event)"
       >
         <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
       </div>
-      <div class="min-h-0 min-w-0 overflow-hidden" :style="{ flex: paneFlex(pane) }">
+      <div
+        class="min-h-0 min-w-0 overflow-hidden"
+        :class="{ 'lm-collapse': expandedId && pane.id !== expandedId }"
+        data-lm
+        data-island="helper-pane"
+        :style="{ flex: paneFlex(pane) }"
+      >
         <!-- T121 — one registration point per pane type (`pane-components.ts`).
            Non-PTY types (markdown = T74, memory = T79, explorer = Cluster D) route
            to their own viewer; every PTY-backed type shares the xterm-backed
@@ -185,7 +197,7 @@ function paneFlex(pane: { id: string; ratio: number }): string {
           :is="paneComponents[pane.type]"
           :pane="pane"
           :worktree-path="worktreePath"
-          :resizable="idx > 0 && !maximizedId"
+          :resizable="idx > 0 && !maximizedId && !expandedId"
           @header-mouse-down="onDividerMouseDown(idx - 1, $event)"
           @open-file="onExplorerOpenFile"
         />

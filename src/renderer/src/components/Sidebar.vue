@@ -203,6 +203,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
   <aside
     ref="asideRef"
     data-sidebar
+    data-column="sidebar"
     class="scrollable relative flex shrink-0 select-none flex-col bg-sidebar"
     :style="{ width: layout.sidebarWidth + 'px' }"
     @dragover="onDragOver"
@@ -217,273 +218,281 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
          padding also clears the window controls (traffic lights), which the
          `hiddenInset` title bar paints over this corner (design.md §4 — "macOS
          window-controls inset"). -->
-    <header
-      role="toolbar"
-      :aria-label="$t('sidebar.menu.label')"
-      class="flex shrink-0 items-center border-b border-border"
-      style="height: 42px; padding: 8px 8px 8px 12px; gap: 2px; justify-content: flex-end"
-      :style="
-        macWindowControlsInset ? { paddingLeft: `${12 + macWindowControlsInset}px` } : undefined
-      "
-    >
-      <template v-if="!sessions.filterActive">
-        <template v-if="sessions.folders.length > 0">
+    <!-- The list island (design.md §6 "Floating panels layout"): the toolbar is the HEAD of the
+         folder list, so with Floating panels on they read as ONE island (the toolbar's own bottom
+         border is the inner rule). Off, this wrapper is an invisible flex column. The Jump palette
+         is absolute against the aside, so it stays a sibling of the island. -->
+    <SidebarJumpPalette />
+    <div class="flex min-h-0 flex-1 flex-col" data-island="sidebar-list">
+      <header
+        role="toolbar"
+        data-island-head="sidebar-toolbar"
+        data-island-band
+        :aria-label="$t('sidebar.menu.label')"
+        class="flex shrink-0 items-center border-b border-border"
+        style="height: 42px; padding: 8px 8px 8px 12px; gap: 2px; justify-content: flex-end"
+        :style="
+          macWindowControlsInset ? { paddingLeft: `${12 + macWindowControlsInset}px` } : undefined
+        "
+      >
+        <template v-if="!sessions.filterActive">
+          <template v-if="sessions.folders.length > 0">
+            <button
+              data-sidebar-rescan
+              class="flex items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
+              style="width: 26px; height: 26px"
+              :title="keybindings.withChord($t('sidebar.menu.rescan'), 'sidebar.rescan')"
+              :aria-label="$t('sidebar.menu.rescan')"
+              @click="rescan()"
+            >
+              <RefreshCw :size="14" :stroke-width="1.7" :class="rescanning ? 'anim-spin' : ''" />
+            </button>
+            <button
+              data-drill-toggle
+              class="flex items-center justify-center rounded transition"
+              :class="
+                sessions.drillDepth > 0
+                  ? 'bg-accent-soft text-accent'
+                  : 'text-text-4 hover:bg-surface hover:text-text'
+              "
+              style="width: 26px; height: 26px"
+              :title="keybindings.withChord(drillLabel, 'sidebar.cycleDrillDepth')"
+              :aria-label="drillLabel"
+              @click="sessions.cycleDrillDepth()"
+            >
+              <Columns3 v-if="sessions.drillDepth === 2" :size="14" :stroke-width="1.7" />
+              <Columns2 v-else-if="sessions.drillDepth === 1" :size="14" :stroke-width="1.7" />
+              <ListTree v-else :size="14" :stroke-width="1.7" />
+            </button>
+            <button
+              v-if="sessions.drillDepth < 2"
+              class="flex items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
+              style="width: 26px; height: 26px"
+              :title="
+                keybindings.withChord(
+                  anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll'),
+                  'sidebar.toggleCollapseAll'
+                )
+              "
+              :aria-label="
+                anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll')
+              "
+              @click="toggleCollapseAll"
+            >
+              <ChevronsDownUp v-if="anyExpanded" :size="14" :stroke-width="1.7" />
+              <ChevronsUpDown v-else :size="14" :stroke-width="1.7" />
+            </button>
+            <button
+              data-sidebar-hidden-trigger
+              class="flex items-center rounded text-text-4 transition hover:bg-surface hover:text-text"
+              :class="ui.sidebarHiddenPopover.open ? 'bg-surface text-text' : ''"
+              style="height: 26px; padding: 0 7px; gap: 4px"
+              :title="
+                keybindings.withChord(
+                  $t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length }),
+                  'sidebar.hiddenFolders'
+                )
+              "
+              :aria-label="$t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length })"
+              :aria-expanded="ui.sidebarHiddenPopover.open"
+              @click.stop="toggleHiddenFolders"
+              @keydown.enter.stop
+              @keydown.space.stop
+            >
+              <EyeOff :size="14" :stroke-width="1.7" />
+              <span
+                v-if="sessions.dismissedFolders.length > 0"
+                class="tabular-nums"
+                style="font-size: 11px"
+                >{{ sessions.dismissedFolders.length }}</span
+              >
+            </button>
+            <!-- Divider between the tree actions and the search affordance. -->
+            <div
+              class="bg-border-2"
+              style="width: 1px; height: 16px; margin: 0 4px"
+              aria-hidden="true"
+            />
+          </template>
           <button
-            data-sidebar-rescan
-            class="flex items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
-            style="width: 26px; height: 26px"
-            :title="keybindings.withChord($t('sidebar.menu.rescan'), 'sidebar.rescan')"
-            :aria-label="$t('sidebar.menu.rescan')"
-            @click="rescan()"
-          >
-            <RefreshCw :size="14" :stroke-width="1.7" :class="rescanning ? 'anim-spin' : ''" />
-          </button>
-          <button
-            data-drill-toggle
+            data-sidebar-jump-trigger
             class="flex items-center justify-center rounded transition"
             :class="
-              sessions.drillDepth > 0
+              ui.sidebarJumpPalette.open
                 ? 'bg-accent-soft text-accent'
                 : 'text-text-4 hover:bg-surface hover:text-text'
             "
             style="width: 26px; height: 26px"
-            :title="keybindings.withChord(drillLabel, 'sidebar.cycleDrillDepth')"
-            :aria-label="drillLabel"
-            @click="sessions.cycleDrillDepth()"
+            :title="keybindings.withChord($t('sidebar.jump.label'), 'sidebar.jump')"
+            :aria-label="$t('sidebar.jump.label')"
+            :aria-expanded="ui.sidebarJumpPalette.open"
+            @click.stop="toggleJump"
           >
-            <Columns3 v-if="sessions.drillDepth === 2" :size="14" :stroke-width="1.7" />
-            <Columns2 v-else-if="sessions.drillDepth === 1" :size="14" :stroke-width="1.7" />
-            <ListTree v-else :size="14" :stroke-width="1.7" />
+            <Search :size="14" :stroke-width="1.5" />
           </button>
-          <button
-            v-if="sessions.drillDepth < 2"
-            class="flex items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
-            style="width: 26px; height: 26px"
-            :title="
-              keybindings.withChord(
-                anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll'),
-                'sidebar.toggleCollapseAll'
-              )
-            "
-            :aria-label="
-              anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll')
-            "
-            @click="toggleCollapseAll"
-          >
-            <ChevronsDownUp v-if="anyExpanded" :size="14" :stroke-width="1.7" />
-            <ChevronsUpDown v-else :size="14" :stroke-width="1.7" />
-          </button>
-          <button
-            data-sidebar-hidden-trigger
-            class="flex items-center rounded text-text-4 transition hover:bg-surface hover:text-text"
-            :class="ui.sidebarHiddenPopover.open ? 'bg-surface text-text' : ''"
-            style="height: 26px; padding: 0 7px; gap: 4px"
-            :title="
-              keybindings.withChord(
-                $t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length }),
-                'sidebar.hiddenFolders'
-              )
-            "
-            :aria-label="$t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length })"
-            :aria-expanded="ui.sidebarHiddenPopover.open"
-            @click.stop="toggleHiddenFolders"
-            @keydown.enter.stop
-            @keydown.space.stop
-          >
-            <EyeOff :size="14" :stroke-width="1.7" />
-            <span
-              v-if="sessions.dismissedFolders.length > 0"
-              class="tabular-nums"
-              style="font-size: 11px"
-              >{{ sessions.dismissedFolders.length }}</span
-            >
-          </button>
-          <!-- Divider between the tree actions and the search affordance. -->
-          <div
-            class="bg-border-2"
-            style="width: 1px; height: 16px; margin: 0 4px"
-            aria-hidden="true"
-          />
         </template>
-        <button
-          data-sidebar-jump-trigger
-          class="flex items-center justify-center rounded transition"
-          :class="
-            ui.sidebarJumpPalette.open
-              ? 'bg-accent-soft text-accent'
-              : 'text-text-4 hover:bg-surface hover:text-text'
-          "
-          style="width: 26px; height: 26px"
-          :title="keybindings.withChord($t('sidebar.jump.label'), 'sidebar.jump')"
-          :aria-label="$t('sidebar.jump.label')"
-          :aria-expanded="ui.sidebarJumpPalette.open"
-          @click.stop="toggleJump"
-        >
-          <Search :size="14" :stroke-width="1.5" />
-        </button>
-      </template>
-      <template v-else>
-        <input
-          ref="filterInputRef"
-          type="text"
-          class="flex-1 bg-transparent text-text placeholder:text-text-4 focus:outline-none"
-          style="font-size: 12.5px; min-width: 0"
-          :placeholder="$t('sidebar.filter.placeholder')"
-          :value="sessions.filterQuery"
-          @input="(e) => sessions.setFilterQuery((e.target as HTMLInputElement).value)"
-          @keydown.escape="onFilterEsc"
-        />
-        <button
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 24px; height: 24px"
-          :title="$t('sidebar.filter.clear')"
-          :aria-label="$t('sidebar.filter.clear')"
-          @click="onFilterClose"
-        >
-          <X :size="14" :stroke-width="1.5" />
-        </button>
-      </template>
-    </header>
+        <template v-else>
+          <input
+            ref="filterInputRef"
+            type="text"
+            class="flex-1 bg-transparent text-text placeholder:text-text-4 focus:outline-none"
+            style="font-size: 12.5px; min-width: 0"
+            :placeholder="$t('sidebar.filter.placeholder')"
+            :value="sessions.filterQuery"
+            @input="(e) => sessions.setFilterQuery((e.target as HTMLInputElement).value)"
+            @keydown.escape="onFilterEsc"
+          />
+          <button
+            class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
+            style="width: 24px; height: 24px"
+            :title="$t('sidebar.filter.clear')"
+            :aria-label="$t('sidebar.filter.clear')"
+            @click="onFilterClose"
+          >
+            <X :size="14" :stroke-width="1.5" />
+          </button>
+        </template>
+      </header>
 
-    <!-- Jump palette (T288) — floats above the tree, anchored under the header.
-         The tree behind it is never filtered. -->
-    <SidebarJumpPalette />
-
-    <!-- RETURN HERE zone (T37 — closure axis) — forgotten needs-input sessions.
-         Self-hides when the forgotten set is empty (calm-tech); sits above the
-         folder list so a blocked-and-abandoned session stays at the top. -->
-    <SidebarReturnZone />
-
-    <!-- Tree (folder view). In drill mode the drill view owns its own scroller so
+      <!-- Tree (folder view). In drill mode the drill view owns its own scroller so
          its Back row can sit ABOVE it (BUG-248); this wrapper then only mounts to
          host the loading / empty states while the root screen has nothing to show. -->
-    <div
-      v-if="!sessions.drillModeEnabled || (treeStatus && sessions.drillStack.length === 0)"
-      class="scrollable flex-1 overflow-y-auto"
-      style="padding: 6px 0"
-    >
-      <template v-if="sessions.folders.length === 0 && sessions.foldersLoading">
-        <div data-sidebar-loading class="flex h-full flex-col items-center justify-center gap-3">
-          <RefreshCw :size="20" :stroke-width="1.5" class="text-accent anim-spin" />
-          <div class="text-text-3" style="font-size: 11.5px">{{ $t('sidebar.loading') }}</div>
-        </div>
-      </template>
-      <template v-else-if="sessions.folders.length === 0">
-        <div class="text-text-3" style="padding: 14px 12px; font-size: 11.5px; line-height: 1.5">
-          {{ $t('sidebar.emptyShort') }}
-        </div>
-      </template>
-      <template v-else-if="sessions.visibleFolders.length === 0 && sessions.filterQuery.trim()">
-        <div class="text-text-3" style="padding: 14px 12px; font-size: 11.5px; line-height: 1.5">
-          {{ $t('sidebar.filter.empty') }}
-        </div>
-      </template>
+      <div
+        v-if="!sessions.drillModeEnabled || (treeStatus && sessions.drillStack.length === 0)"
+        class="scrollable flex-1 overflow-y-auto"
+        style="padding: 6px 0"
+      >
+        <template v-if="sessions.folders.length === 0 && sessions.foldersLoading">
+          <div data-sidebar-loading class="flex h-full flex-col items-center justify-center gap-3">
+            <RefreshCw :size="20" :stroke-width="1.5" class="text-accent anim-spin" />
+            <div class="text-text-3" style="font-size: 11.5px">{{ $t('sidebar.loading') }}</div>
+          </div>
+        </template>
+        <template v-else-if="sessions.folders.length === 0">
+          <div class="text-text-3" style="padding: 14px 12px; font-size: 11.5px; line-height: 1.5">
+            {{ $t('sidebar.emptyShort') }}
+          </div>
+        </template>
+        <template v-else-if="sessions.visibleFolders.length === 0 && sessions.filterQuery.trim()">
+          <div class="text-text-3" style="padding: 14px 12px; font-size: 11.5px; line-height: 1.5">
+            {{ $t('sidebar.filter.empty') }}
+          </div>
+        </template>
 
-      <!-- Single flat list: every visible folder (pinned ∪ active), one
+        <!-- Single flat list: every visible folder (pinned ∪ active), one
            classify → sort → groupByRepo → groupByParentDir pass (BUG-39,
            T182). No section header, no zone divider, no visual distinction
            between a pinned and a merely-active folder. Replaced by
            SidebarDrillView when drill-in mode is on (design.md §6). -->
-      <template v-if="!sessions.drillModeEnabled">
-        <template
-          v-for="node in sessions.visibleFolders"
-          :key="isGroup(node) ? node.key : node.path"
-        >
-          <template v-if="isGroup(node)">
-            <RepoGroupHeader :group="node" />
-            <div
-              class="overflow-hidden transition-[max-height] duration-300 ease-out"
-              :style="{ maxHeight: node.expanded ? '4000px' : '0' }"
-            >
-              <!-- T191: worktree lineage — a mother's fork badge + its children,
+        <template v-if="!sessions.drillModeEnabled">
+          <template
+            v-for="node in sessions.visibleFolders"
+            :key="isGroup(node) ? node.key : node.path"
+          >
+            <template v-if="isGroup(node)">
+              <RepoGroupHeader :group="node" />
+              <div
+                class="overflow-hidden transition-[max-height] duration-300 ease-out"
+                :style="{ maxHeight: node.expanded ? '4000px' : '0' }"
+              >
+                <!-- T191: worktree lineage — a mother's fork badge + its children,
                    indented one level with a guide line, nested within this repo
                    group's member list (design.md § "Worktree lineage"). -->
-              <template
-                v-for="ln in withLineage(node.folders)"
-                :key="isLineageNode(ln) ? ln.mother.path : ln.path"
-              >
-                <template v-if="isLineageNode(ln)">
-                  <SidebarFolder
-                    :folder="ln.mother"
-                    nested
-                    :lineage-child-count="ln.children.length"
-                    :lineage-expanded="ln.expanded"
-                    @toggle-lineage="toggleLineage(ln.mother.path)"
-                  />
-                  <div
-                    v-if="ln.expanded"
-                    class="border-l border-border-2"
-                    style="margin-left: 20px"
-                  >
+                <template
+                  v-for="ln in withLineage(node.folders)"
+                  :key="isLineageNode(ln) ? ln.mother.path : ln.path"
+                >
+                  <template v-if="isLineageNode(ln)">
                     <SidebarFolder
-                      v-for="c in ln.children"
-                      :key="c.path"
-                      :folder="c"
+                      :folder="ln.mother"
                       nested
-                      lineage-child
+                      :lineage-child-count="ln.children.length"
+                      :lineage-expanded="ln.expanded"
+                      @toggle-lineage="toggleLineage(ln.mother.path)"
                     />
-                  </div>
+                    <div
+                      v-if="ln.expanded"
+                      class="border-l border-border-2"
+                      style="margin-left: 20px"
+                    >
+                      <SidebarFolder
+                        v-for="c in ln.children"
+                        :key="c.path"
+                        :folder="c"
+                        nested
+                        lineage-child
+                      />
+                    </div>
+                  </template>
+                  <SidebarFolder v-else :folder="ln" nested />
                 </template>
-                <SidebarFolder v-else :folder="ln" nested />
-              </template>
-              <!-- U2.3b: the repo group's shelved worktrees — always the LAST block, after any
+                <!-- U2.3b: the repo group's shelved worktrees — always the LAST block, after any
                    lineage children (design.md § "Shelved section"). -->
-              <SidebarShelvedSection v-if="node.shelved?.length" :group="node" />
-            </div>
+                <SidebarShelvedSection v-if="node.shelved?.length" :group="node" />
+              </div>
+            </template>
+            <SidebarFolder v-else :folder="node" />
           </template>
-          <SidebarFolder v-else :folder="node" />
         </template>
-      </template>
+      </div>
+      <SidebarDrillView
+        v-if="sessions.drillModeEnabled && !(treeStatus && sessions.drillStack.length === 0)"
+      />
     </div>
-    <SidebarDrillView
-      v-if="sessions.drillModeEnabled && !(treeStatus && sessions.drillStack.length === 0)"
-    />
 
-    <!-- Footer -->
-    <footer
-      class="flex shrink-0 items-center gap-1 border-t border-border"
-      style="padding: 6px 8px"
-    >
-      <button
-        class="group flex flex-1 items-center gap-[7px] rounded text-text-3 transition hover:bg-surface hover:text-text"
-        style="padding: 6px 8px; font-size: 12px"
-        @click="ui.openDialog('addFolder')"
-      >
-        <Plus :size="13" :stroke-width="1.6" />
-        <span>{{ $t('sidebar.addFolder') }}</span>
-      </button>
-      <WatcherStatusPill />
-      <div class="relative flex items-center justify-center">
+    <!-- RETURN HERE zone (T37 — closure axis, T660) — forgotten needs-input sessions. Sits at the
+         BOTTOM, between the list island and the dock, so it never competes with the toolbar. It
+         self-hides when the forgotten set is empty (calm-tech) and caps its own height. -->
+    <SidebarReturnZone />
+
+    <!-- Dock (design.md §6 "Sidebar dock (slot)"): the lower island is a slot that stacks N
+         sections. Each `data-dock-section` child owns its padding; a new section is a drop-in
+         sibling of this one. Off, it is the same one-row footer it always was. -->
+    <footer class="shrink-0 border-t border-border" data-island="sidebar-dock">
+      <div data-dock-section class="flex items-center gap-1" style="padding: 6px 8px">
         <button
-          class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
-          style="width: 26px; height: 26px"
-          :title="
-            keybindings.withChord(
-              claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings'),
-              'view.settings'
-            )
-          "
-          :aria-label="
-            claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings')
-          "
-          @click="ui.openDialog('settings')"
+          class="group flex flex-1 items-center gap-[7px] rounded text-text-3 transition hover:bg-surface hover:text-text"
+          style="padding: 6px 8px; font-size: 12px"
+          @click="ui.openDialog('addFolder')"
         >
-          <Settings :size="14" :stroke-width="1.5" />
+          <Plus :size="13" :stroke-width="1.6" />
+          <span>{{ $t('sidebar.addFolder') }}</span>
         </button>
-        <span
-          v-if="claudeChangelog.hasUnread"
-          class="bg-accent"
-          style="
-            position: absolute;
-            top: 3px;
-            right: 3px;
-            width: 6px;
-            height: 6px;
-            border-radius: 100%;
-            pointer-events: none;
-          "
-          aria-hidden="true"
-        />
+        <WatcherStatusPill />
+        <div class="relative flex items-center justify-center">
+          <button
+            class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
+            style="width: 26px; height: 26px"
+            :title="
+              keybindings.withChord(
+                claudeChangelog.hasUnread
+                  ? $t('sidebar.settingsWithUpdate')
+                  : $t('sidebar.settings'),
+                'view.settings'
+              )
+            "
+            :aria-label="
+              claudeChangelog.hasUnread ? $t('sidebar.settingsWithUpdate') : $t('sidebar.settings')
+            "
+            @click="ui.openDialog('settings')"
+          >
+            <Settings :size="14" :stroke-width="1.5" />
+          </button>
+          <span
+            v-if="claudeChangelog.hasUnread"
+            class="bg-accent"
+            style="
+              position: absolute;
+              top: 3px;
+              right: 3px;
+              width: 6px;
+              height: 6px;
+              border-radius: 100%;
+              pointer-events: none;
+            "
+            aria-hidden="true"
+          />
+        </div>
       </div>
     </footer>
 

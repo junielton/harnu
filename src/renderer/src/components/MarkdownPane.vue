@@ -44,6 +44,7 @@ import {
   Copy,
   Eye,
   FileText,
+  Expand,
   Maximize2,
   Minimize2,
   Pencil,
@@ -567,10 +568,16 @@ function onToggleMaximize(): void {
   helpers.toggleMaximizePane(props.worktreePath, props.pane.id)
 }
 
+/** T628: whether THIS pane is expanded to the window; its header button toggles that. */
+const isExpanded = computed(() => helpers.expandedPaneId(props.worktreePath) === props.pane.id)
+function onToggleExpand(): void {
+  helpers.toggleExpandPane(props.worktreePath, props.pane.id)
+}
+
 // T486 U5b — a region of the pane focus ring: F6 focuses the editor in edit mode,
 // else the scroll body (focusing the overflow-hidden root would leave PageDown /
 // arrows with no scroller to drive), and `pane.close` runs the header X's close (the
-// discard guard holds). The root draws the design.md §6 "Pane focus" outline while
+// discard guard holds). The root brightens the header text (design.md §6 "Pane focus") while
 // focus is inside.
 const rootEl = ref<HTMLDivElement | null>(null)
 const bodyEl = ref<HTMLDivElement | null>(null)
@@ -586,12 +593,12 @@ useFocusRegion(props.pane.id, rootEl, {
        so it needs no padding-top hack — the header sits in flow at the top. -->
   <div
     ref="rootEl"
-    class="flex h-full w-full flex-col overflow-hidden bg-bg no-default-ring focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg group/pane no-default-ring"
     :data-focus-region="pane.id"
     :aria-label="$t('markdownPane.label')"
   >
     <header
-      class="flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
+      class="flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors group-focus-within/pane:text-text"
       :class="
         resizable ? 'cursor-row-resize border-t border-t-border-2 hover:border-t-accent-line' : ''
       "
@@ -683,6 +690,24 @@ useFocusRegion(props.pane.id, rootEl, {
         @click="reload"
       >
         <RotateCcw :size="12" :stroke-width="1.5" />
+      </button>
+      <button
+        class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
+        :class="isExpanded ? 'text-accent' : 'text-text-3'"
+        style="width: 18px; height: 18px"
+        data-test="pane-expand"
+        :title="
+          keybindings.withChord(
+            isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand'),
+            'pane.expandToWindow'
+          )
+        "
+        :aria-label="isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand')"
+        :aria-pressed="isExpanded"
+        @mousedown.stop
+        @click="onToggleExpand"
+      >
+        <Expand :size="12" :stroke-width="1.5" />
       </button>
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"

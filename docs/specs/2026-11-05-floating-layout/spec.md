@@ -215,6 +215,7 @@ between two islands' outer borders.
 
 ## Amendments · Deviations
 
-| date       | kind      | what changed                                                                                 | by           |
-| ---------- | --------- | -------------------------------------------------------------------------------------------- | ------------ |
-| 2026-11-05 | amendment | AC-16: "the Topbar split menu" → "a Topbar control" (SplitMenu.vue was removed by S-4, AC-9) | orchestrator |
+| date       | kind      | what changed                                                                                                                                                   | by           |
+| ---------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| 2026-11-05 | amendment | AC-16: "the Topbar split menu" → "a Topbar control" (SplitMenu.vue was removed by S-4, AC-9)                                                                   | orchestrator |
+| 2026-11-05 | amendment | S-7 files-may-touch += SettingsDialog.vue and the Markdown/Memory/Explorer/Diagram pane components (AC-26 button on every helper pane, AC-27 Settings control) | orchestrator |

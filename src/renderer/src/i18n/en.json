@@ -132,6 +132,7 @@
     "terminal": "Terminal",
     "split": "Split horizontal",
     "browser": "Browser",
+    "moreActions": "More actions",
     "splitLayout": "Split layout: {mode}",
     "splitLayoutAuto": "Auto ({layout})",
     "openFolder": "Open folder",
@@ -176,6 +177,8 @@
     "close": "Close helper",
     "maximize": "Maximize",
     "restore": "Restore",
+    "expand": "Expand to window",
+    "exitExpand": "Exit expanded view",
     "shellTitle": "Shell",
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
@@ -373,7 +376,15 @@
     "decisionsEmpty": "No decisions recorded yet.",
     "timelineEmpty": "No session digests yet — they appear here as sessions wrap up.",
     "openSession": "Open session",
-    "sessionNotFound": "That session isn't loaded."
+    "sessionNotFound": "That session isn't loaded.",
+    "evidence": {
+      "noCommits": "No commits",
+      "noGit": "No git",
+      "orphan": "Recovered",
+      "noCommitsHint": "Written from the conversation alone: the session made no commits.",
+      "noGitHint": "This folder is not a git repository, so the digest has no git evidence.",
+      "orphanHint": "Recovered from a removed folder's transcript before Cleanup could trash it."
+    }
   },
   "explorerPane": {
     "label": "Project files",
@@ -1058,6 +1069,7 @@
     "cleanup": "Cleanup…"
   },
   "dialog": {
+    "close": "Close",
     "addFolder": {
       "title": "Add folder",
       "close": "Close dialog",
@@ -1187,6 +1199,16 @@
         "auto": "Auto",
         "sideBySide": "Side by side",
         "stacked": "Stacked"
+      },
+      "floatingPanels": {
+        "label": "Floating panels",
+        "hint": "Shows each pane as its own rounded island on a darker background, with an even gap between them. Off keeps the classic edge-to-edge layout."
+      },
+      "expandHides": {
+        "label": "Expand hides",
+        "hint": "What gets out of the way when a helper pane is expanded to the window. Everything also hides the sidebar and the Fleet rail; Session only hides just the session.",
+        "everything": "Everything",
+        "sessionOnly": "Session only"
       }
     },
     "interface": {
@@ -1466,6 +1488,7 @@
       "pane_focusNext": "Focus the next pane",
       "pane_focusPrev": "Focus the previous pane",
       "pane_toggleMaximize": "Maximize or restore the focused pane",
+      "pane_expandToWindow": "Expand the focused pane to the window",
       "pane_close": "Close the focused pane",
       "terminal_toggle": "Toggle the terminal pane",
       "layout_cycleSplitOrientation": "Cycle the split layout (auto, side by side, stacked)",
@@ -3154,6 +3177,10 @@
           "ack": "I checked: this folder is really gone, not on a drive that's unplugged."
         },
         "memory": "includes memory notes",
+        "digest": {
+          "done": "Digested",
+          "partial": "{n} not digested"
+        },
         "confirm": {
           "title": "Move {n} transcript folder to the trash? | Move {n} transcript folders to the trash?",
           "subtitle": "The folders these sessions ran in are gone, so Claude can no longer resume them here.",
@@ -3161,6 +3188,13 @@
           "recoverable": "They go to the OS trash, so you can bring them back.",
           "memory": "{n} of them also holds Claude memory notes for that folder. | {n} of them also hold Claude memory notes for that folder.",
           "total": "{n} folder · {size} | {n} folders · {size}",
+          "undigested": {
+            "summary": "{n} session in this selection has no digest yet. Trashing it loses what it did. | {n} sessions in this selection have no digest yet. Trashing them loses what they did.",
+            "retry": "Cancel to keep them: Harnu tries the digest again on the next scan.",
+            "row": "{n} not digested · digests are kept in {home}",
+            "noHome": "No repository was found for this folder, so no digest can be written.",
+            "ack": "Trash without a digest"
+          },
           "confirm": "Move to trash"
         }
       },
@@ -3364,6 +3398,8 @@
         "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
         "missingExpected": "Cleanup could not check it against what you were shown. Review it and try again.",
         "noLongerOrphan": "This volume is in use again, so it was left alone.",
+        "needsUndigestedConfirmation": "Some sessions in this project have no digest yet, so it was left alone. Open it again and choose Trash without a digest, or wait for the next scan.",
+        "needsNotFoundConfirmation": "Harnu can't confirm this folder is really gone, so it was left alone. Check it is not on a drive that's unplugged, then open it again and tick the confirmation.",
         "kept": "You marked it Keep, so it was left alone.",
         "neverClean": "It is on your never-clean list, so it was left alone.",
         "mainCheckout": "This is a main checkout, which is never cleaned.",
@@ -4540,6 +4576,10 @@
       "aria": "Stewards — one per mission, read-only",
       "running": "Running",
       "paused": "Paused",
+      "awaitingClose": "Awaiting close",
+      "summaryRunning": "{n} running",
+      "summaryAwaiting": "{n} awaiting close",
+      "closeHint": "Close a delivered mission to retire its steward.",
       "lastWake": "Last wake {age} ago",
       "noTick": "No tick yet",
       "pausedReason": "Paused — {reason}",

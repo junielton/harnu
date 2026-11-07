@@ -48,6 +48,22 @@ const KNOWN_VIOLATORS: Record<string, string> = {
   // KNOWN_VIOLATORS:END
 }
 
+/**
+ * Dialogs that keep header and footer on screen but do not carry the shared cap YET, keyed by
+ * route id. Batch 1 declares `--z-dialog`, which arms the cap assertion for every route; a dialog
+ * gets the cap when its batch moves it onto `Dialog.vue`. Only the cap assertion is waived — the
+ * geometry assertions above still run for these routes. The waiver is a ratchet: a listed route
+ * that is already capped fails, so the batch that fixes one must delete its line.
+ */
+const KNOWN_UNCAPPED: Record<string, string> = {
+  // KNOWN_UNCAPPED:BEGIN — one entry per line, sorted. The batch that fixes one deletes its line.
+  CardCreateModal: 'T460 batch 6 (Card modals): 88vh today, above the 84vh cap',
+  CardDetailModal: 'T460 batch 6 (Card modals): 88vh today, above the 84vh cap',
+  OpenSubfolderDialog: 'T460 batch 3 (Forms): fixed height, no max-height today',
+  SettingsDialog: 'T460 batch 7 (Heavy shells): fixed height, no max-height today'
+  // KNOWN_UNCAPPED:END
+}
+
 let seed: DialogSeed
 let app: ElectronApplication
 let page: Page
@@ -127,11 +143,20 @@ test.describe('dialog geometry invariants (T460 batch 0)', () => {
               ? (parseFloat(token.cap) / 100) * m.viewport.height
               : parseFloat(token.cap)
             const max = m.card.style['max-height']
-            expect(max, `${key}: card has no max-height`).not.toBe('none')
-            expect(
-              parseFloat(max),
-              `${key}: max-height ${max} exceeds ${token.cap}`
-            ).toBeLessThanOrEqual(capPx + 0.5)
+            const capped = max !== 'none' && parseFloat(max) <= capPx + 0.5
+            const waiver = KNOWN_UNCAPPED[route.id]
+            if (waiver) {
+              expect(
+                capped,
+                `${key} is capped now: delete its KNOWN_UNCAPPED line (${waiver})`
+              ).toBe(false)
+            } else {
+              expect(max, `${key}: card has no max-height`).not.toBe('none')
+              expect(
+                parseFloat(max),
+                `${key}: max-height ${max} exceeds ${token.cap}`
+              ).toBeLessThanOrEqual(capPx + 0.5)
+            }
           }
         } finally {
           await closeRoute(route, ctx)

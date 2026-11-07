@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { helloSpawnRequest } from '../../resources/companion/tests/fixtures/hello'
 import { LEASE_TTL_MS, type EndpointFile } from '../../src/main/companion/contract'
 import {
+  flushCompanionPrefs,
   rolloutView,
   resetPrefsKeysForTests,
   setCompanionCliGate,
@@ -70,6 +71,9 @@ beforeEach(() => {
 
 afterEach(async () => {
   for (const c of closers.splice(0)) await c()
+  // `setPrefsKey` persists fire-and-forget on a module-level write chain. Let it land before the
+  // directory it writes into is removed, or it recreates the directory (or races `rmSync`).
+  await flushCompanionPrefs()
   setCompanionPrefsPath(null)
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })

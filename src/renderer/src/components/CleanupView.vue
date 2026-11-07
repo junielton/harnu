@@ -455,14 +455,17 @@ async function confirmDocker(): Promise<void> {
     errorToast(t('cleanup.gc.error.clean'), e)
   }
 }
-async function confirmTranscripts(opts: { notFoundAck: boolean }): Promise<void> {
+async function confirmTranscripts(opts: {
+  notFoundAck: boolean
+  undigestedAck: boolean
+}): Promise<void> {
   const items = transcriptItems.value
   if (!items) return
   transcriptItems.value = null
   const ids = items.map((i) => i.id)
   busyTranscriptIds.value = [...busyTranscriptIds.value, ...ids]
   try {
-    await gc.submit(transcriptCleanRequest(items, opts.notFoundAck))
+    await gc.submit(transcriptCleanRequest(items, opts.notFoundAck, opts.undigestedAck))
   } catch (e) {
     errorToast(t('cleanup.gc.error.clean'), e)
   } finally {

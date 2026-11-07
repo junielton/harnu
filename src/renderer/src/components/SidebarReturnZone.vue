@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * RETURN HERE zone (T37 — closure axis, slice 1c). A top-of-sidebar surface
- * that lists sessions the operator FORGOT: a `needs-input` session they haven't
+ * RETURN HERE zone (T37 — closure axis, slice 1c). A sidebar surface, at the
+ * BOTTOM between the folder list and the dock (T660), that lists sessions the operator FORGOT: a `needs-input` session they haven't
  * viewed in ~10 min and aren't currently viewing (`sessions.forgottenSessions`,
  * already filtered + reactive). It exists so a blocked-and-abandoned session
- * doesn't get lost below the fold.
+ * doesn't get lost. Its height is capped and the rows scroll inside, so a long
+ * list can never push the dock off-screen.
  *
  * Calm-tech: the whole zone (eyebrow + list + divider) renders ONLY when the
  * forgotten set is non-empty — no persistent empty chrome. Each row is per
@@ -32,12 +33,22 @@ function labelFor(s: Session): string {
 </script>
 
 <template>
-  <div v-if="sessions.forgottenSessions.length > 0">
+  <div
+    v-if="sessions.forgottenSessions.length > 0"
+    class="flex shrink-0 flex-col"
+    style="max-height: 168px"
+    data-island="sidebar-return"
+  >
+    <!-- 1px zone divider (--border) separating the folder list from RETURN HERE. Off, it is the
+         rule above the zone (the dock draws its own below); Floating panels hides it, the island
+         gap does that job. -->
+    <div data-return-divider class="shrink-0 border-t border-border" aria-hidden="true" />
+
     <!-- Section-label eyebrow (design.md §6) — uppercase 10.5px / 500 / 0.06em /
          --text-4, mirroring the FOLDERS / ACTIVE ELSEWHERE eyebrows. Not
          collapsible: the zone is a transient nudge, gone the moment it's empty. -->
     <div
-      class="flex items-center text-text-4"
+      class="flex shrink-0 items-center text-text-4"
       style="
         padding: 8px 12px 4px 12px;
         gap: 4px;
@@ -52,47 +63,46 @@ function labelFor(s: Session): string {
       <span class="tabular-nums">{{ sessions.forgottenSessions.length }}</span>
     </div>
 
-    <!-- Flat list of forgotten sessions -->
-    <button
-      v-for="s in sessions.forgottenSessions"
-      :key="s.sessionId"
-      class="group relative flex w-full cursor-pointer items-center text-left text-text-2 transition hover:bg-surface hover:text-text"
-      style="height: 28px; padding-left: 12px; padding-right: 8px; gap: 8px; font-size: 12.5px"
-      @click="sessions.activateSession(s.sessionId)"
-    >
-      <!-- Amber needs-input dot (--color-warning) -->
-      <span
-        class="anim-attention-dot shrink-0 rounded-full bg-warning"
-        style="width: 6px; height: 6px"
-        :aria-label="$t('session.statusNeedsInput')"
-      />
-
-      <!-- Session summary -->
-      <span class="flex-1 truncate">{{ labelFor(s) }}</span>
-
-      <!-- Muted folder alias -->
-      <span class="shrink-0 truncate text-text-4" style="font-size: 10.5px; max-width: 96px">{{
-        sessions.folderAliasOf(s.sessionId)
-      }}</span>
-
-      <!-- Dismiss (mark as seen) — role=button span so it isn't a <button>
-           nested in the row <button>; stop propagation so it doesn't also jump. -->
-      <span
-        role="button"
-        tabindex="0"
-        class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
-        style="width: 18px; height: 18px"
-        :aria-label="$t('sidebar.returnHere.dismiss')"
-        :title="$t('sidebar.returnHere.dismiss')"
-        @click.stop="sessions.markSessionSeen(s.sessionId)"
-        @keydown.enter.stop.prevent="sessions.markSessionSeen(s.sessionId)"
-        @keydown.space.stop.prevent="sessions.markSessionSeen(s.sessionId)"
+    <!-- Flat list of forgotten sessions: the only part that scrolls (the eyebrow stays put). -->
+    <div class="scrollable min-h-0 flex-1 overflow-y-auto" style="padding-bottom: 4px">
+      <button
+        v-for="s in sessions.forgottenSessions"
+        :key="s.sessionId"
+        class="group relative flex w-full cursor-pointer items-center text-left text-text-2 transition hover:bg-surface hover:text-text"
+        style="height: 28px; padding-left: 12px; padding-right: 8px; gap: 8px; font-size: 12.5px"
+        @click="sessions.activateSession(s.sessionId)"
       >
-        <X :size="12" :stroke-width="1.8" />
-      </span>
-    </button>
+        <!-- Amber needs-input dot (--color-warning) -->
+        <span
+          class="anim-attention-dot shrink-0 rounded-full bg-warning"
+          style="width: 6px; height: 6px"
+          :aria-label="$t('session.statusNeedsInput')"
+        />
 
-    <!-- 1px zone divider (--border) separating RETURN HERE from FOLDERS -->
-    <div class="border-t border-border" style="margin: 6px 0" aria-hidden="true" />
+        <!-- Session summary -->
+        <span class="flex-1 truncate">{{ labelFor(s) }}</span>
+
+        <!-- Muted folder alias -->
+        <span class="shrink-0 truncate text-text-4" style="font-size: 10.5px; max-width: 96px">{{
+          sessions.folderAliasOf(s.sessionId)
+        }}</span>
+
+        <!-- Dismiss (mark as seen) — role=button span so it isn't a <button>
+             nested in the row <button>; stop propagation so it doesn't also jump. -->
+        <span
+          role="button"
+          tabindex="0"
+          class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+          style="width: 18px; height: 18px"
+          :aria-label="$t('sidebar.returnHere.dismiss')"
+          :title="$t('sidebar.returnHere.dismiss')"
+          @click.stop="sessions.markSessionSeen(s.sessionId)"
+          @keydown.enter.stop.prevent="sessions.markSessionSeen(s.sessionId)"
+          @keydown.space.stop.prevent="sessions.markSessionSeen(s.sessionId)"
+        >
+          <X :size="12" :stroke-width="1.8" />
+        </span>
+      </button>
+    </div>
   </div>
 </template>

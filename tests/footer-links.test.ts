@@ -384,6 +384,78 @@ describe('FooterLinksPopover — AC-6 / AC-7 / AC-8', () => {
       unregisterWriter('s2')
     }
   })
+
+  // BUG-255 — hover / focus may change colour, background or opacity, never the row's layout. jsdom
+  // loads no CSS, so the contract is asserted on the class tokens: nothing inside a row may toggle
+  // `display` (a bare `hidden`, or a display utility behind a hover / focus variant), and nothing
+  // may be `invisible` (a `visibility:hidden` button cannot take keyboard focus, so the focus-within
+  // reveal would never fire).
+  describe('BUG-255 — rest and hover/focus render the same layout', () => {
+    const DISPLAY =
+      /^(hidden|block|flex|grid|inline|inline-block|inline-flex|inline-grid|contents)$/
+    const STATE_VARIANT =
+      /(^|:)(group-hover|hover|group-focus-within|focus-within|focus|focus-visible|group-focus)$/
+
+    /** Class tokens that would switch a row's layout between rest and hover / focus. */
+    function layoutSwitches(root: Element): string[] {
+      const bad: string[] = []
+      for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
+        for (const token of Array.from(el.classList)) {
+          const parts = token.split(':')
+          const utility = parts[parts.length - 1]
+          const variants = parts.slice(0, -1).join(':')
+          if (!DISPLAY.test(utility)) continue
+          // A bare `hidden` removes the element at rest; `flex` / `block` behind a state variant adds it back.
+          if (utility === 'hidden' || STATE_VARIANT.test(variants)) bad.push(token)
+        }
+        if (el.classList.contains('invisible')) bad.push('invisible')
+      }
+      return bad
+    }
+
+    const withExcerpt = link()
+    const withoutExcerpt = link({
+      url: 'https://example.com/a',
+      kind: 'web',
+      label: 'example.com/a',
+      detail: '',
+      source: 'user',
+      excerpt: ''
+    })
+
+    it('no element inside a row toggles display or visibility on hover or focus', () => {
+      const w = mountPopover({ entries: [withExcerpt, withoutExcerpt], count: 2 })
+      for (const row of rows(w)) expect(layoutSwitches(row.element)).toEqual([])
+    })
+
+    it('the time, all three actions and the excerpt are in the DOM before any hover', () => {
+      const w = mountPopover({ entries: [withExcerpt], count: 1 })
+      const [row] = rows(w)
+      expect(row.text()).toContain(formatLinkTime(withExcerpt.at))
+      for (const id of ['open', 'copy', 'reference']) {
+        expect(row.find(`[data-testid="footer-links-${id}"]`).exists()).toBe(true)
+      }
+      expect(row.find('[data-testid="footer-links-excerpt"]').exists()).toBe(true)
+    })
+
+    it('the "can\'t reference" reason is rendered at rest and carries no hover-only display', () => {
+      const w = mountPopover({ entries: [withExcerpt], count: 1, canReference: false })
+      const reason = w.get('[data-testid="footer-links-reference-reason"]')
+      expect(reason.text()).toBe("Session isn't running — resume it to reference")
+      expect(layoutSwitches(reason.element)).toEqual([])
+      // Reachable at rest means no ancestor hides it either.
+      expect(layoutSwitches(w.get('[data-testid="footer-links-popover"]').element)).toEqual([])
+    })
+
+    it('hovering or focusing a row neither adds nor removes elements', async () => {
+      const w = mountPopover({ entries: [withExcerpt, withoutExcerpt], count: 2 })
+      const before = rows(w).map((r) => r.element.querySelectorAll('*').length)
+      await rows(w)[0].trigger('mouseenter')
+      await rows(w)[0].trigger('mouseover')
+      await w.get('[data-testid="footer-links-copy"]').trigger('focus')
+      expect(rows(w).map((r) => r.element.querySelectorAll('*').length)).toEqual(before)
+    })
+  })
 })
 
 describe('StatusFooter — the links pill (AC-5)', () => {

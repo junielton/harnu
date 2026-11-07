@@ -4,7 +4,7 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 
 - **General** — app-wide preferences that don't fit a more specific tab, including the [editor](#editor) the Topbar's open button launches.
 - **Keyboard Shortcuts** — covered below.
-- **Appearance** — pick a theme and the [split layout](sessions.md#splits). Harnu ships 13 themes: nine dark (including Tokyo Night, Dracula, Catppuccin Mocha, One Dark, GitHub Dark, Gruvbox Dark, Nord) and four light (Light, Catppuccin Latte, GitHub Light, Gruvbox Light), plus a Monospace theme. Your choice is remembered across restarts. A theme installed via an [extension](extensions.md) shows up in the same grid, marked with a small puzzle-piece badge. Under **Layout**, **Split layout** decides whether your helper panes sit beside the session or under it: **Auto** (the default), **Side by side** or **Stacked**. The choice is saved in `settings.json`.
+- **Appearance** — pick a theme and the [split layout](sessions.md#splits). Harnu ships 13 themes: nine dark (including Tokyo Night, Dracula, Catppuccin Mocha, One Dark, GitHub Dark, Gruvbox Dark, Nord) and four light (Light, Catppuccin Latte, GitHub Light, Gruvbox Light), plus a Monospace theme. Your choice is remembered across restarts. A theme installed via an [extension](extensions.md) shows up in the same grid, marked with a small puzzle-piece badge. Under **Layout**, **Split layout** decides whether your helper panes sit beside the session or under it: **Auto** (the default), **Side by side** or **Stacked**. The choice is saved in `settings.json`. Right below it, **Floating panels** is an opt-in look for the whole window: see [Floating panels](#floating-panels).
 - **Startup** — your global [Claude Boot](claude-boot.md) defaults (model, effort, flags) applied to every session unless a folder or session overrides them.
 - **Claude config** — a focused editor for your global `~/.claude/settings.json`: the handful of settings Harnu understands (model, cleanup period, permission defaults, and a few others) get real form controls with Set/Default indicators; anything else already in the file is still shown, just read-only, so an unfamiliar or newer setting is never silently dropped or overwritten.
 - **Endpoints** — the registry of custom Claude-compatible endpoints, covered in [Claude Boot](claude-boot.md#custom-endpoints).
@@ -20,6 +20,21 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 - **Cleanup** — the autopilot, what it cleans, the never-clean list and the background scan behind the [Cleanup](cleanup.md) screen; covered [below](#cleanup).
 - **Containers** — the inspector's own background scan, its idle clock and the new-zombie notification behind the [Containers](containers.md#settings) view.
 - **Claude Code** — renders Claude Code's own official changelog (fetched from Anthropic, separate from Harnu's own Changelog tab above). Claude's live service status (incidents, scheduled maintenance) is shown in the footer popover alongside your [usage](usage.md#the-footer-popover), not here.
+
+## Floating panels
+
+**Settings → Appearance → Layout → Floating panels** turns each pane into its own rounded island on a darker background, with an even 4px gap between islands and around the window edge. It is **off by default**, and with it off Harnu looks exactly as it always has.
+
+With it on:
+
+- The sidebar toolbar, the Topbar and the Fleet rail header line up as one row of three bars; everything below them starts at the same height.
+- The sidebar is a stack of islands: the folder list with its toolbar joined on top as one box, **Return here** (when something is waiting, just above the dock), and a **dock** at the bottom with Add folder and Settings. The Fleet rail is the same idea: the fleet list with its header joined on top as one box, **Needs you** (while something is pending) and **Would-have**.
+- Every helper pane is its own island, and the session area is one too.
+- Pane dividers draw no line at rest. The gap itself is the drag handle: hover it and a short grip appears, then drag to resize or double-click to reset, exactly as before.
+- The footer at the bottom stays a flat full-width bar; it is not an island.
+- Minimizing the Fleet rail, collapsing the sidebar or closing the helper stack never closes the gap.
+
+The switch takes effect immediately and is remembered across restarts; the setting is saved in `settings.json` as `floatingPanels`. Every theme has a darker background to float on; on the light themes it is a soft grey picked by hand, not a heavy dark slab.
 
 ## Harnu mod
 

@@ -590,6 +590,22 @@ const CONTRACT: ContractRow[] = [
       legacyPath: '.harnu/goals/contract.md',
       sessionId: s.sessionId
     })
+  },
+  // ---- T654: the owner recovery path (last: it moves the owner the rows above are keyed on) ----
+  {
+    op: 'mission_transfer_owner',
+    // { ok, op, missionId, from, to } — the old owner and the new one.
+    ack: ack('mission_transfer_owner', {
+      missionId: z.string().regex(/^mnt-[0-9a-f]{8}$/),
+      from: z.string().uuid(),
+      to: z.literal('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')
+    }),
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.missionId,
+      toSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      reason: 'the owner session died'
+    })
   }
 ]
 

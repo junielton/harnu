@@ -364,6 +364,12 @@ export interface GcCleanOptions {
    */
   confirmedNotFound?: string[]
   /**
+   * Ids of orphaned transcript folders the operator chose to trash WITHOUT a digest ("Trash
+   * without a digest"): some of their sessions have no digest in the owning repo's memory. An item
+   * with `digest.done < digest.total` and no entry here is refused `needs-undigested-confirmation`.
+   */
+  confirmedUndigested?: string[]
+  /**
    * A guided action's one preparatory step, per id, run inside the job before that item is judged
    * for the ordinary guarded remove ("No dead ends"). Only a confirmed review worktree takes one, and
    * only when it still applies to what main finds (see `prepareClean`).

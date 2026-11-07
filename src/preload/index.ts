@@ -1047,6 +1047,10 @@ export interface SettingsData {
   editor?: EditorSetting
   /** T627: session area / helper stack orientation — `auto` (default), `side-by-side` or `stacked`. */
   splitLayout?: 'auto' | 'side-by-side' | 'stacked'
+  /** T626: the opt-in "Floating panels" layout. Absent means off. */
+  floatingPanels?: boolean
+  /** T628: what expanding a helper pane to the window hides — `everything` (default) or `session-only`. */
+  expandHides?: 'everything' | 'session-only'
 }
 
 // ---- Harnu MCP control server wire types (2026-06-25 design) ---------------
@@ -1504,6 +1508,12 @@ const api = {
   /** Companion to `userProjectsHide`. Idempotent. */
   userProjectsUnhide: (targetPath: string): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:unhide', targetPath),
+  /**
+   * T661: main pushes the FULL hidden list after the `hide_folder` MCP verb changed it (the menu
+   * actions above never trigger it: their IPC response already carries the new list).
+   */
+  onUserProjectsHiddenChanged: (cb: (p: { hiddenPaths: string[] }) => void): (() => void) =>
+    subscribe('userProjects:hiddenChanged', cb),
 
   // ---- Helpers (split layout) persistence (F2) -----------------------------
   // Per-worktree helper-pane state lives in `<userData>/helpers.json` (see
@@ -1519,6 +1529,26 @@ const api = {
 
   helpersRemoveWorktree: (args: { worktreePath: string }): Promise<void> =>
     ipcRenderer.invoke('helpers:removeWorktree', args),
+
+  // ---- Session archive (T655) -----------------------------------------------
+  // The archived-session set lives in the main process (`<userData>/archived-sessions.json`),
+  // so the `archive_session` MCP verb works with the window closed. The renderer hydrates
+  // from `sessionArchiveGet`, writes menu actions through `sessionArchiveSet`, sends its old
+  // `localStorage` ids ONCE to `sessionArchiveImportLegacy` (main ignores every later call),
+  // and gets the full set pushed on `onSessionArchiveChanged` after any write, the verb's too.
+  sessionArchiveGet: (): Promise<{ ids: string[]; legacyImported: boolean }> =>
+    ipcRenderer.invoke('sessionArchive:get'),
+  sessionArchiveSet: (
+    sessionIds: string[],
+    archived: boolean
+  ): Promise<{ ok: boolean; ids?: string[] }> =>
+    ipcRenderer.invoke('sessionArchive:set', { sessionIds, archived }),
+  sessionArchiveImportLegacy: (
+    sessionIds: string[]
+  ): Promise<{ ok: boolean; imported?: boolean; ids?: string[] }> =>
+    ipcRenderer.invoke('sessionArchive:importLegacy', { sessionIds }),
+  onSessionArchiveChanged: (cb: (p: { ids: string[] }) => void): (() => void) =>
+    subscribe('sessionArchive:changed', cb),
 
   /**
    * Delete a session's JSONL transcript from disk and, best-effort, remove its

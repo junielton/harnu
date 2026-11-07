@@ -40,8 +40,18 @@ import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
 import { formatWindowTitle } from './stores/attention'
 import { useUiStore, SETTINGS_TAB_IDS } from './stores/ui'
-import { useHelpersStore, isAgentTerminalPane, HELPER_SPLIT_RATIO_DEFAULT } from './stores/helpers'
-import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
+import {
+  useHelpersStore,
+  isAgentTerminalPane,
+  applyExpandToRing,
+  HELPER_SPLIT_RATIO_DEFAULT
+} from './stores/helpers'
+import {
+  useLayoutStore,
+  helperPanelVisible,
+  inboxRailWidthFor,
+  slowDurationMs
+} from './stores/layout'
 import { useSettingsStore } from './stores/settings'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
@@ -69,7 +79,7 @@ import {
   type FolderAction,
   type RepoGroupAction
 } from './composables/useFolderMenuActions'
-import { notInTextEntry } from './lib/text-entry'
+import { notInTextEntry, isTextEntryTarget } from './lib/text-entry'
 import {
   DESCRIPTOR_BY_ID,
   defaultKeysFor,
@@ -212,7 +222,8 @@ watch(mainRowEl, (el) => {
   if (!el || typeof ResizeObserver === 'undefined') return
   mainRowObserver = new ResizeObserver((entries) => {
     const box = entries[0]?.contentRect
-    if (box) layout.setMainAreaSize(box.width, box.height)
+    // While a pane is expanded the area is far wider than usual: `auto` must not flip on that.
+    if (box && !expandMode.value) layout.setMainAreaSize(box.width, box.height)
   })
   mainRowObserver.observe(el)
 })
@@ -500,6 +511,115 @@ const showHelperStack = computed(
 )
 
 /**
+ * T628 — expand to window. The expanded pane id, and what the expanded view hides (the "Expand hides"
+ * setting) while it is in force; `null` when nothing is expanded or the helper stack is not on screen.
+ * Collapsing is CSS (`.lm-collapse*` in `main.css`): nothing is moved, re-parented or remounted.
+ */
+const expandedPaneId = computed(() => helpers.expandedPaneIdForCurrentWorktree)
+const expandMode = computed<'everything' | 'session-only' | null>(() =>
+  expandedPaneId.value && showHelperStack.value ? settings.expandHides : null
+)
+/** The sidebar is out of the way: collapsed by the operator, or hidden by the expanded view. */
+const sidebarHidden = computed(() => layout.sidebarCollapsed || expandMode.value === 'everything')
+
+/**
+ * T628 — layout motion (design.md §7). Each of these is a layout STATE change (never a drag, which
+ * only moves a width or a ratio), so each raises the transient motion flag first: the `pre` flush
+ * runs before this component patches, so the flag and the new sizes land in the same frame and the
+ * transitions in `main.css` see both. The store also freezes browser panes for the duration.
+ */
+const sessionIslandEl = ref<HTMLElement | null>(null)
+const helperColEl = ref<HTMLElement | null>(null)
+/** The size the main terminal's host is pinned to while the session area is collapsed (px). */
+const pinnedTerminal = ref<{ width: number; height: number } | null>(null)
+/** Set for an orientation switch: transitions are off for it, the FLIP below animates instead. */
+const flipping = ref(false)
+
+watch(
+  [
+    expandMode,
+    () => helpers.maximizedPaneIdForCurrentWorktree,
+    () => layout.sidebarCollapsed,
+    () => layout.inboxRailState
+  ],
+  () => void layout.beginLayoutMotion(),
+  { flush: 'pre' }
+)
+
+// The main terminal sits inside the session area. Collapsing that area to zero would resize its host
+// and reflow the PTY to two columns, so its host keeps the pixel size it had until the area is back.
+watch(
+  expandMode,
+  (mode, prev) => {
+    if (!mode || prev) return
+    const box = sessionIslandEl.value?.getBoundingClientRect()
+    if (box && box.width > 0 && box.height > 0) {
+      pinnedTerminal.value = { width: box.width, height: box.height }
+    }
+  },
+  { flush: 'pre' }
+)
+watch([() => layout.layoutMotion, expandMode], ([moving, mode]) => {
+  if (!mode && !moving) pinnedTerminal.value = null
+})
+watch(
+  () => layout.layoutMotion,
+  (moving) => {
+    if (!moving) flipping.value = false
+  }
+)
+const terminalHostStyle = computed(() =>
+  pinnedTerminal.value
+    ? {
+        inset: 'auto',
+        top: '0',
+        left: '0',
+        width: `${pinnedTerminal.value.width}px`,
+        height: `${pinnedTerminal.value.height}px`
+      }
+    : undefined
+)
+
+/**
+ * The orientation switch flips a flex row into a column, which no CSS transition can interpolate.
+ * FLIP instead: measure both big boxes before the switch, let the layout change, then animate each
+ * from its old box to its new one with a transform (one pass, `--dur-slow`, `--ease`).
+ */
+watch(
+  () => layout.splitOrientation,
+  () => {
+    const els = [sessionIslandEl.value, helperColEl.value].filter((e): e is HTMLElement => !!e)
+    if (!els.length || !layout.beginLayoutMotion()) return
+    const before = els.map((e) => e.getBoundingClientRect())
+    flipping.value = true
+    void nextTick(() => {
+      if (typeof document === 'undefined') return
+      const css = getComputedStyle(document.documentElement)
+      const duration = slowDurationMs()
+      const easing = css.getPropertyValue('--ease').trim() || 'ease-out'
+      layout.beginLayoutMotion() // the animations below start now: keep the flag (and the freeze) for them
+      els.forEach((el, i) => {
+        if (typeof el.animate !== 'function') return
+        const from = before[i]
+        const to = el.getBoundingClientRect()
+        if (to.width < 1 || to.height < 1) return
+        el.animate(
+          [
+            {
+              transformOrigin: 'top left',
+              transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`
+            },
+            { transformOrigin: 'top left', transform: 'none' }
+          ],
+          { duration, easing }
+        )
+      })
+    })
+  },
+  { flush: 'pre' }
+)
+
+/**
  * The Inbox rail renders unless it's `hidden` — it is fleet-global, so unlike the
  * helper stack it does NOT depend on the selected session/worktree (that's the
  * whole point: you must see a blocked session while looking at another folder).
@@ -629,13 +749,18 @@ onUnmounted(installKeyOrigin())
  */
 const paneDeps: PaneCommandDeps = {
   ring: () =>
-    paneRing({
-      mainForeground: showTerminalForeground.value,
-      stackShown: showHelperStack.value,
-      helperCollapsed: layout.helperCollapsed,
-      paneIds: helpers.panesForCurrentWorktree.map((p) => p.id),
-      maximizedId: helpers.maximizedPaneIdForCurrentWorktree
-    }),
+    paneRing(
+      applyExpandToRing(
+        {
+          mainForeground: showTerminalForeground.value,
+          stackShown: showHelperStack.value,
+          helperCollapsed: layout.helperCollapsed,
+          paneIds: helpers.panesForCurrentWorktree.map((p) => p.id),
+          maximizedId: helpers.maximizedPaneIdForCurrentWorktree
+        },
+        expandMode.value ? expandedPaneId.value : null
+      )
+    ),
   current: () => focusedRegionId(),
   focus: (id) => void focusRegion(id),
   close: (id) => closeRegion(id),
@@ -657,6 +782,45 @@ const paneDeps: PaneCommandDeps = {
   },
   blur: () => (document.activeElement as HTMLElement | null)?.blur(),
   afterRender: (fn) => void nextTick(fn)
+}
+
+/**
+ * T628 — the expanded view: Esc exits it. A window listener in the bubble phase, so a dialog, a menu
+ * or a text field that already took the key keeps it, and a terminal (xterm stops the event) keeps
+ * its own Esc: Claude Code cancels with it. A terminal exits with the button or ⌘⇧M.
+ */
+function onExpandEscape(ev: KeyboardEvent): void {
+  if (ev.key !== 'Escape' || ev.defaultPrevented) return
+  const wt = helpers.currentWorktreePath
+  if (!wt || !helpers.expandedPaneId(wt)) return
+  if (anyOverlayOpen.value || isTextEntryTarget()) return
+  if (ev.target instanceof Element && ev.target.closest('.xterm')) return
+  helpers.exitExpand(wt)
+}
+onMounted(() => window.addEventListener('keydown', onExpandEscape))
+onUnmounted(() => window.removeEventListener('keydown', onExpandEscape))
+
+/** `pane.toggleMaximize` (⌘⇧M): while a pane is expanded it exits the expanded view instead. */
+function onToggleMaximizeChord(): void {
+  const wt = helpers.currentWorktreePath
+  if (wt && helpers.expandedPaneId(wt)) {
+    helpers.exitExpand(wt)
+    return
+  }
+  togglePaneMaximize(paneDeps)
+}
+
+/** `pane.expandToWindow` (unbound): toggle the focused helper pane; with none focused, exit. */
+function onExpandToWindow(): void {
+  const wt = helpers.currentWorktreePath
+  if (!wt) return
+  const focused = focusedRegionId()
+  if (focused && helpers.panesForCurrentWorktree.some((p) => p.id === focused)) {
+    helpers.toggleExpandPane(wt, focused)
+    void nextTick(() => void focusRegion(focused))
+    return
+  }
+  helpers.exitExpand(wt)
 }
 
 function kb(id: ShortcutActionId): string | undefined {
@@ -841,7 +1005,14 @@ useShortcuts(
       id: 'pane.toggleMaximize',
       scope: 'global',
       keys: kb('pane.toggleMaximize'),
-      handler: () => togglePaneMaximize(paneDeps)
+      handler: onToggleMaximizeChord
+    },
+    {
+      // T628 — unbound. Expand the focused helper pane to the window, or leave the expanded view.
+      id: 'pane.expandToWindow',
+      scope: 'global',
+      keys: kb('pane.expandToWindow'),
+      handler: onExpandToWindow
     },
     {
       // Unbound. Runs the focused pane's own close (discard guards hold).
@@ -1724,8 +1895,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-screen w-screen bg-bg text-text">
-    <div class="flex min-h-0 flex-1">
+  <div
+    class="flex flex-col h-screen w-screen bg-bg text-text"
+    data-app-shell
+    :data-expand="expandMode ?? undefined"
+    :data-layout-motion="layout.layoutMotion ? 'on' : undefined"
+    :data-lm-flip="flipping ? '' : undefined"
+  >
+    <div class="flex min-h-0 flex-1" data-columns>
       <!--
         Left sidebar collapse (design.md §6 — Colapsar sidebars). `v-show` (not
         `v-if`) keeps the sidebar mounted so its scroll position / filter / zone
@@ -1733,10 +1910,13 @@ onUnmounted(() => {
         `v-if`'d out while collapsed (no width to drag). Reopen affordance: the
         panel-toggle button in the Topbar (always visible) + ⌘B / Ctrl+B.
       -->
-      <Sidebar v-show="!layout.sidebarCollapsed" />
+      <Sidebar data-lm :class="{ 'lm-collapse-w': sidebarHidden }" :inert="sidebarHidden" />
       <div
         v-if="!layout.sidebarCollapsed"
+        data-lm
         class="group flex w-1.5 shrink-0 cursor-col-resize justify-start"
+        :class="{ 'lm-collapse-w': sidebarHidden }"
+        data-float-divider
         role="separator"
         aria-orientation="vertical"
         :aria-label="$t('sidebar.resize')"
@@ -1745,7 +1925,7 @@ onUnmounted(() => {
       >
         <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
       </div>
-      <main class="flex min-w-0 flex-1 flex-col">
+      <main class="flex min-w-0 flex-1 flex-col" data-main>
         <Topbar />
         <div ref="mainRowEl" class="flex min-h-0 flex-1" :class="{ 'flex-col': stackedLayout }">
           <!--
@@ -1756,7 +1936,11 @@ onUnmounted(() => {
             being mutually exclusive takeovers.
           -->
           <div
+            ref="sessionIslandEl"
             class="relative flex min-w-0 min-h-0 flex-col"
+            :class="{ 'lm-collapse': expandMode }"
+            data-lm
+            data-island="session"
             :style="showHelperStack ? { flex: `${activeSplitRatio} 1 0` } : { flex: '1 1 0' }"
           >
             <!--
@@ -1789,6 +1973,7 @@ onUnmounted(() => {
             -->
             <div
               class="absolute inset-0"
+              :style="terminalHostStyle"
               data-test="terminal-pane-host"
               :class="{
                 invisible: !showTerminalForeground,
@@ -1851,7 +2036,10 @@ onUnmounted(() => {
                stays flush against the helper stack's edge (right when side by side, top when stacked). -->
           <div
             v-if="showHelperStack && !stackedLayout"
+            data-lm
             class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
+            :class="{ 'lm-collapse-w': expandMode }"
+            data-float-divider
             role="separator"
             aria-orientation="vertical"
             @mousedown="onMainDividerMouseDown"
@@ -1861,7 +2049,10 @@ onUnmounted(() => {
           </div>
           <div
             v-else-if="showHelperStack"
+            data-lm
             class="group flex h-1.5 shrink-0 cursor-row-resize items-end"
+            :class="{ 'lm-collapse-h': expandMode }"
+            data-float-divider
             role="separator"
             aria-orientation="horizontal"
             @mousedown="onMainDividerMouseDown"
@@ -1871,8 +2062,10 @@ onUnmounted(() => {
           </div>
           <div
             v-if="showHelperStack"
+            ref="helperColEl"
+            data-lm
             class="flex min-w-0 min-h-0 flex-col"
-            :style="{ flex: `${1 - activeSplitRatio} 1 0` }"
+            :style="{ flex: expandMode ? '1 1 0' : `${1 - activeSplitRatio} 1 0` }"
           >
             <HelperStack />
           </div>
@@ -1892,7 +2085,10 @@ onUnmounted(() => {
       <template v-if="showInboxRail">
         <div
           v-if="layout.inboxRailState === 'expanded'"
+          data-lm
           class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
+          :class="{ 'lm-collapse-w': expandMode === 'everything' }"
+          data-float-divider
           role="separator"
           aria-orientation="vertical"
           :aria-label="$t('approvalInbox.rail.resize')"
@@ -1901,7 +2097,15 @@ onUnmounted(() => {
         >
           <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
         </div>
-        <div class="flex min-h-0 shrink-0 flex-col" :style="{ width: `${inboxRailPx}px` }">
+        <div
+          data-lm
+          class="flex min-h-0 shrink-0 flex-col"
+          :class="{ 'lm-collapse-w': expandMode === 'everything' }"
+          :inert="expandMode === 'everything'"
+          data-rail-column
+          :data-rail-state="layout.inboxRailState"
+          :style="{ width: `${inboxRailPx}px` }"
+        >
           <InboxRail />
         </div>
       </template>
