@@ -152,7 +152,9 @@ reason }`. It never moves the headline ("Step N of M") and keeps its origin
   they end a campaign, and `CAMPAIGN_CLOSED` means stop and report.
 
 **Declare the mission now — after the topology line and the Phase 1b go, before any
-dispatch.** Call `mission_create` right after that go, not after the first unit is out: the mission is
+dispatch.** A delivery whose spec `harnu:spec` wrote already has its mission: adopt it
+as _The spec-born mission_ (end of this phase) says, and add the slice steps there.
+The rest of this paragraph is for a delivery with no such mission. Call `mission_create` right after that go, not after the first unit is out: the mission is
 how the operator sees the delivery, and an end they never agreed to is a finish
 line they will dispute at the close. Propose the declared end from the spec
 (kind, target, evidence) and confirm it with the operator in ONE AskUserQuestion —
@@ -202,6 +204,37 @@ Rules that keep the cost bounded:
   delivery, not an incident.
 
 Commit the spec bundle on `feat/<epic>` so every child worktree inherits it.
+
+### The spec-born mission
+
+`harnu:spec` opens a mission the moment an entry leaves Small: one human "Approve spec" step,
+the spec bundle as `scope`, and, under D-5, the delivery's end as its declared end. One
+mission per body of work, so you adopt that one and never call `mission_create` a second time:
+
+1. **Find it.** `mission_list` on your `folder`, then `mission_get` on each open row until one's
+   `scope` names the spec (`derived.scope` lists the paths it resolved). Keep its
+   `missionId`, the "Approve spec" step's id and its declared end. Two missions name the
+   spec: ask the operator which one, in one question.
+2. **Confirm the end.** The Phase 1b end question runs on the end that mission declares. A
+   correction is staged with `mission_set_end` and a reason, never a second mission.
+3. **Add one step per slice** with `mission_add_step`, in the spec's slice order, each
+   inserted before the fixed end: title `S-n · <slice title>` (the slice heading verbatim),
+   verification `verifier`, and a `reason` naming the spec. The approval already gave the
+   mission a proof, so the verb requires the reason. Keep each `stepId` from the ACK: the
+   slice → step map is what Phase 2 links children to and what its decision nodes block.
+
+```json
+{
+  "folder": "<absolute path of the repo>",
+  "missionId": "<mnt-… of the spec-born mission>",
+  "title": "S-n · <slice title>",
+  "verification": "verifier",
+  "reason": "Slice S-n of <spec path>, adopted at dispatch (D-5)"
+}
+```
+
+When none does (`harnu:spec` is off, or the spec was written by hand), declare the mission
+with `mission_create` as above.
 
 ## Phase 1b — Delivery map
 
@@ -356,6 +389,8 @@ For each unit, create a card (`create_card`, with kind + complexity +
   on the card (the unit's own `AC-C` changelog line, say) stay card-only and
   unhashed. The orchestrator pastes this block and the scope boundary below from the
   spec; the executor's packet still names skills by name only, never restated steps.
+  When `harnu:spec` is staged, its planner writes this block and the scope line for you
+  (_Cards from a spec_, below); copying them by hand is the fallback.
 
 - **Provisional ACs — mark what you invented.** ACs traceable to a committed
   spec, a design node or the tracker are the contract. ACs you wrote yourself,
@@ -487,6 +522,115 @@ For each unit, create a card (`create_card`, with kind + complexity +
   each live child — the `mission` skill's owner rules say how.
 
 A packet an executor can misread is your defect, not theirs.
+
+### Cards from a spec — the derive planner
+
+When the units are a spec's slices, the cards come from the planner `harnu:spec` stages
+beside this skill, not from your hand. You are told this skill's base directory when it
+loads; the planner is its sibling `../spec/scripts/spec-derive.mjs`, a dependency-free Node
+script that reads the spec and the board, prints a plan and writes nothing.
+
+1. **Write the board file.** One entry per card file in the main checkout's
+   `.harnu/memory/roadmap/`: `slug` (the file name without `.md`), `status` and `title`
+   from its frontmatter, `spec` from its frontmatter `spec:` line when it has one, and
+   `body`, the text below the frontmatter. Write the JSON array to
+   `.harnu/out/<delivery>/board.json`; `.harnu/` stays writable even when you are promoted.
+2. **Run the planner** from the repo root. It prints `{ create, update, skip, refuse }` and
+   exits 1 when `refuse` is not empty:
+
+   ```sh
+   node <this skill's base directory>/../spec/scripts/spec-derive.mjs <spec-path> --board .harnu/out/<delivery>/board.json
+   ```
+
+3. **Execute the plan**, entry by entry:
+   - `create`: one `create_card` per entry, its `title` as the title, the spec path as
+     `spec`, and a body that opens with the `spec-slice: S-n` marker line, then the entry's
+     `block` verbatim, then your envelope (objective, return address, exit sequence,
+     method, honest exit clause: the bullets above). Every card carries the marker, a slice
+     an open D-n gates too: its card stays in the backlog while its decision node holds the
+     dispatch (_Open decisions become decision nodes_, below).
+   - `update`: `update_card` has no splice. Take the card's body (from the board file, or
+     the card file again if it changed since), replace only the span between the markers
+     `<!-- spec:begin S-n -->` and `<!-- spec:end S-n -->`, both included, with the entry's
+     `block`, keep every other byte, and send the whole result as `replaceBody`. A ticked
+     box survives: the planner already kept it in `block`. Send the executor the delta, as
+     for any changed AC.
+   - `skip`: nothing to write. A card past `ready` belongs to its executor now; an `orphan`
+     is a card whose slice the spec dropped: tell the operator, never delete it.
+   - `refuse`: that slice goes back to the spec with the reason (its author amends the
+     spec, then you run the planner again); the other slices go on. Never hand-write a
+     refused slice's card.
+
+   The envelope is yours: you write everything outside the markers, and on a later run
+   the planner never touches it. The block is the planner's: never retype it. A second run
+   over the board you just wrote prints an empty plan; anything else is a defect to report.
+
+4. **Hand the card map to the wave's bookkeeping unit (D-3).** The marker alone lets the
+   next run match every card from the board. The spec still records the map, as `card` rows
+   of its Amendments table (`S-n → <card slug>`), but a promoted orchestrator cannot edit the
+   spec: its guard stops writes outside `.harnu/` and the scratchpad. So list the `card` rows
+   of every card you created in the packet of one docs-only card per wave, scoped to the spec
+   file, which commits them (and the D-n resolutions of the wave) on the integration branch.
+
+```json
+{
+  "folder": "<absolute path of the repo>",
+  "title": "<the create entry's title: S-n · slice title>",
+  "kind": "feature",
+  "complexity": "standard",
+  "substrate": "worktree",
+  "spec": "<spec-path>",
+  "body": "spec-slice: S-n\n\n<block>\n\n<envelope: objective, return address, exit sequence, method, honest exit clause>"
+}
+```
+
+```json
+{
+  "folder": "<absolute path of the repo>",
+  "slug": "<the update entry's slug>",
+  "replaceBody": "<the card body with only the marked span swapped for the entry's block>"
+}
+```
+
+**When `harnu:spec` is switched off** the sibling is not staged and
+`../spec/scripts/spec-derive.mjs` does not exist. Keep the Wave A hand derivation (the AC
+block copied from the spec, above), say in one line that
+the derive planner was unavailable, and still write the `spec-slice: S-n` marker on each card.
+
+### Open decisions become decision nodes
+
+A spec can reach dispatch with rows of status `open` in its Open decisions table. Each one
+that gates work becomes a decision node on the mission, so it locks only what it gates:
+
+- For each row with status `open`, add one `mission_add_step` with a `decision`: title
+  `D-n · <question>`, verification `human`, `options` the row's options cell split at `;`,
+  and `blocks` exactly the steps of the slices whose `gated-by:` names it (their `stepId`s
+  from Phase 1).
+- A D-n that gates no slice gets no node: it is a question for `harnu:one-by-one`, not a
+  lock. A resolved row gates nothing.
+- The slices no open D-n gates are dispatched now (`submit_manifest`, below). A gated
+  slice's card is created all the same and waits in the backlog.
+- The choice is the operator's: point them at the node's **Choose…** door in the mission
+  popover, and never write `chosen` (the verb refuses it). Once they choose, the blocked
+  steps unlock: the resolution joins the wave's spec rows (step 4 above), the planner runs
+  again if the choice changed an AC, and the held slices go out with `submit_manifest`.
+
+```json
+{
+  "folder": "<absolute path of the repo>",
+  "missionId": "<mnt-… of the mission>",
+  "title": "D-n · <question>",
+  "verification": "human",
+  "reason": "Open decision D-n of <spec path> gates S-a and S-b",
+  "decision": {
+    "title": "<question>",
+    "options": ["<option 1>", "<option 2>"],
+    "blocks": ["stp-3", "stp-4"]
+  }
+}
+```
+
+`blocks` holds the gated slices' step ids (here `stp-3` for S-a and `stp-4` for S-b).
 
 ### Done conditions — checkable by the worker alone
 
