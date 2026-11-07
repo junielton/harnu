@@ -4,6 +4,9 @@
  * T601 S-4 (card T668) — the Medium-and-up authoring text: facts before decisions, open D-n
  * rows left open, the Goldfish review before the approval question, amendment-only edits once a
  * slice has a card, the Complex bundle at tracked paths, and the template's four conventions (D-1).
+ * T601 S-5 (card T670) — the mission born at triage (its `mission_create` payload parsed against
+ * the real verb schema) and the approval order: mission, `open_file`, one question, the header
+ * flip and Mark verified on a yes, an operator-owned `mission_set_blocker` with nobody there.
  *
  * A skill is prose, so what is graded is the contract its text states (stable anchors: headings,
  * the verbatim funnel table, door and tier bullets, verb invocations, fenced command lines) and
@@ -17,6 +20,7 @@ import { existsSync, promises as fs, readFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { it, expect, vi } from 'vitest'
+import type { z } from 'zod'
 
 import { parseSkillFrontmatter } from '../src/main/bundled-skills-core'
 import {
@@ -24,6 +28,7 @@ import {
   parseSpec
 } from '../resources/skills/skills/spec/scripts/spec-check-core.mjs'
 import { parseHeader } from '../resources/skills/skills/spec/scripts/spec-gate-core.mjs'
+import { toolByName } from '../src/main/mcp/tool-catalog'
 
 const h = vi.hoisted(() => ({ userDataDir: '', appPath: '', home: '' }))
 
@@ -760,4 +765,270 @@ it('staging copies scripts beside SKILL.md and the staged checker runs anywhere'
 
   expect(run('missing.md').status).toBe(2)
   expect(run().status).toBe(2)
+})
+
+// ---- S-5: the mission at triage and the approval question ----------------------------------------
+//
+// The S-5 mutations live here rather than in a fixture file: the slice's files-may-touch is this
+// test, SKILL.md and CATALOG.md, so its fixtures stay inside this file.
+
+const S5_MUTATIONS: Record<string, Mutation[]> = {
+  missionPayload: [
+    {
+      target: 'skill',
+      find: '"verification": "human"',
+      replace: '"verification": "verifier"',
+      why: 'the Approve spec step is a human step'
+    },
+    {
+      target: 'skill',
+      find: '"title": "Approve spec"',
+      replace: '"title": "Spec approved"',
+      why: 'the step is titled "Approve spec"'
+    },
+    {
+      target: 'skill',
+      find: '"declaredEnd": {',
+      replace: '"end": {',
+      why: 'the payload must parse against mission_create'
+    },
+    {
+      target: 'skill',
+      pattern: ',\\s*"docs/adr/NNNN-<slug>\\.md"',
+      replace: '',
+      why: 'the scope lists the ADR path the tier carries'
+    },
+    {
+      target: 'skill',
+      pattern: '"docs/prds/<card>-<slug>\\.md",\\s*',
+      replace: '',
+      why: 'the scope lists the PRD path the tier carries'
+    },
+    {
+      target: 'skill',
+      find: 'written or not',
+      replace: 'once written',
+      why: 'the scope lists the paths before they are written'
+    },
+    {
+      target: 'skill',
+      find: "the delivery's end",
+      replace: 'the spec approval',
+      why: "D-5: the mission declares the delivery's end"
+    },
+    {
+      target: 'skill',
+      find: 'the moment the entry leaves Small',
+      replace: 'once the spec is approved',
+      why: 'the mission is born at triage'
+    }
+  ],
+  approvalOrder: [
+    {
+      target: 'skill',
+      pattern: '1\\. \\*\\*The mission first\\.\\*\\*',
+      replace: '1. **The file first.**',
+      why: 'the mission comes first'
+    },
+    {
+      target: 'skill',
+      pattern: '2\\. \\*\\*Hand it over\\.\\*\\* ([^\\n]*)`open_file`',
+      replace: '2. **Hand it over.** $1`open_editor`',
+      why: 'the file is handed over with open_file'
+    },
+    {
+      target: 'skill',
+      find: 'never ticks the step',
+      replace: 'ticks the step itself',
+      why: 'the skill never ticks the Approve spec step'
+    },
+    {
+      target: 'skill',
+      find: '**Mark verified**',
+      replace: '**Done**',
+      why: "the operator is pointed at the step's Mark verified control"
+    },
+    {
+      target: 'skill',
+      find: '`status: draft` to `status: approved`',
+      replace: '`status: draft` to `status: final`',
+      why: 'a yes flips the header to approved'
+    },
+    {
+      target: 'skill',
+      find: '"owner": "operator"',
+      replace: '"owner": "agent"',
+      why: "with nobody there the blocker is the operator's"
+    },
+    {
+      target: 'skill',
+      find: '"unblocks": ',
+      replace: '"clears": ',
+      why: 'the blocker payload must parse against mission_set_blocker'
+    },
+    {
+      target: 'skill',
+      find: 're-nudges with back-off, and stop.',
+      replace: 're-nudges with back-off, and wait.',
+      why: 'with nobody there the skill stops'
+    }
+  ]
+}
+
+const MISSION_CREATE_SCOPE = [
+  'docs/specs/YYYY-MM-DD-<slug>/spec.md',
+  COMPLEX_HEADER.prd,
+  COMPLEX_HEADER.adr
+]
+
+/** The real texts pass `check`; every inline S-5 mutation of its group fails it. */
+function expectS5Check(group: string, check: (d: Docs) => string[]): void {
+  const docs = realDocs()
+  expect(check(docs)).toEqual([])
+  const mutations = S5_MUTATIONS[group]
+  expect(mutations.length).toBeGreaterThan(0)
+  for (const m of mutations) {
+    expect(check(mutate(docs, m)), `mutation should fail: ${m.why}`).not.toEqual([])
+  }
+}
+
+/** The fenced `json` blocks of a text, parsed (unparsable blocks are skipped). */
+function jsonFences(md: string): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = []
+  let body: string[] | null = null
+  let lang = ''
+  for (const line of md.split('\n')) {
+    const open = /^\s*```(\S*)/.exec(line)
+    if (open) {
+      if (body) {
+        if (lang === 'json') {
+          try {
+            const parsed: unknown = JSON.parse(body.join('\n'))
+            if (parsed && typeof parsed === 'object') out.push(parsed as Record<string, unknown>)
+          } catch {
+            // an unparsable block is no payload
+          }
+        }
+        body = null
+      } else {
+        body = []
+        lang = open[1]
+      }
+    } else if (body) body.push(line)
+  }
+  return out
+}
+
+/** A payload's problems against a verb's real input schema: unknown keys, or a failed parse. */
+function verbSchemaProblems(verb: string, payload: Record<string, unknown> | undefined): string[] {
+  if (!payload) return [`no fenced ${verb} payload`]
+  const schema = toolByName(verb)?.inputSchema as z.ZodObject<z.ZodRawShape> | undefined
+  if (!schema) return [`${verb} is not in the tool catalog`]
+  const problems: string[] = []
+  const known = new Set(Object.keys(schema.shape))
+  for (const k of Object.keys(payload))
+    if (!known.has(k)) problems.push(`${verb}: unknown key ${k}`)
+  const result = schema.safeParse(payload)
+  if (!result.success) problems.push(`${verb}: ${result.error.issues.map((i) => i.message)}`)
+  return problems
+}
+
+const missionOf = (skill: string): string => section(skill, /^## The mission\s*$/)
+const approvalOf = (skill: string): string => section(skill, /^## The approval question\s*$/)
+
+/** AC-20: the mission_create payload parses, has the human "Approve spec" step and the scope. */
+function missionPayloadProblems({ skill }: Docs): string[] {
+  const sec = missionOf(skill)
+  if (!sec) return ['no "## The mission" section']
+  const payload = jsonFences(sec).find((p) => 'declaredEnd' in p || 'title' in p)
+  const problems = verbSchemaProblems('mission_create', payload)
+  if (payload) {
+    const steps = Array.isArray(payload.steps) ? (payload.steps as Record<string, unknown>[]) : []
+    const approve = steps.filter((s) => s.title === 'Approve spec')
+    if (approve.length !== 1) problems.push(`${approve.length} "Approve spec" steps (expected 1)`)
+    else if (approve[0].verification !== 'human')
+      problems.push('the "Approve spec" step is not a human step')
+    const scope = Array.isArray(payload.scope) ? (payload.scope as string[]) : []
+    if (scope.join(' | ') !== MISSION_CREATE_SCOPE.join(' | '))
+      problems.push(`the scope is ${scope.join(', ')}, not the spec, PRD and ADR paths`)
+  }
+  const f = flat(sec)
+  if (!/the moment the entry leaves Small/.test(f))
+    problems.push('the mission is not born the moment the entry leaves Small')
+  if (!/written or not/.test(f)) problems.push('the scope does not list unwritten paths')
+  if (!/Drop the PRD and ADR paths a tier does not carry/.test(f))
+    problems.push('the scope is not sized by tier')
+  if (!/the delivery's end/.test(f) || !/D-5/.test(f))
+    problems.push("the declared end is not the delivery's end (D-5)")
+  if (!/`mission_set_end`/.test(f))
+    problems.push('a changed end is not re-scoped with mission_set_end')
+  if (!/`stepId`/.test(f)) problems.push('the "Approve spec" step id is not kept')
+  if (!/Small entry[^.]*no mission/.test(f)) problems.push('a Small entry may get a mission')
+  // The authoring procedure starts from the mission.
+  const medium = flat(mediumOf(skill))
+  const intro = medium.slice(0, medium.indexOf('1. **Facts first'))
+  if (!/_The mission_/.test(intro) || !/before step 1/i.test(intro))
+    problems.push('the authoring procedure does not create the mission before step 1')
+  return problems
+}
+
+/** AC-21: mission, then open_file, then one question; yes flips the header; nobody → blocker. */
+function approvalOrderProblems({ skill }: Docs): string[] {
+  const sec = approvalOf(skill)
+  if (!sec) return ['no "## The approval question" section']
+  const problems: string[] = []
+  const steps: { n: number; label: string; text: string }[] = []
+  for (const line of sec.split('\n')) {
+    const m = /^(\d+)\. \*\*([^*]+?)\.?\*\*(.*)$/.exec(line)
+    if (m) steps.push({ n: Number(m[1]), label: m[2], text: m[3] })
+    else if (steps.length && /^\s+\S/.test(line)) steps[steps.length - 1].text += ` ${line.trim()}`
+  }
+  const labels = steps.map((s) => s.label)
+  if (labels.slice(0, 3).join(' | ') !== 'The mission first | Hand it over | One question')
+    problems.push(`the approval steps are ${labels.join(' | ')}`)
+  steps.forEach((s, i) => {
+    if (s.n !== i + 1) problems.push(`step "${s.label}" is numbered ${s.n}, expected ${i + 1}`)
+  })
+  const [mission, hand, question] = steps
+  if (mission && !/_The mission_/.test(mission.text)) problems.push('step 1 is not the mission')
+  if (hand && !/`open_file`/.test(hand.text)) problems.push('step 2 does not use open_file')
+  if (question && !/`Approve this spec\?`/.test(question.text))
+    problems.push('step 3 does not ask `Approve this spec?`')
+  if (question && !/one question/i.test(question.text))
+    problems.push('step 3 asks more than one question')
+
+  const f = flat(sec)
+  if (!/`status: approved`/.test(f)) problems.push('a yes does not flip the header to approved')
+  if (!/\*\*Mark verified\*\*/.test(f) || !/"Approve spec" step/.test(f))
+    problems.push('the operator is not pointed at Mark verified on the "Approve spec" step')
+  if (!/never ticks the step/.test(f)) problems.push('the skill may tick the step')
+  for (const verb of ['mission_update_step', 'mission_verify_step', 'mission_add_check'])
+    if (f.includes(`\`${verb}\``)) problems.push(`the approval names ${verb}`)
+  if (!/`harnu:orchestrate-delivery`/.test(f)) problems.push('the next step is not named')
+
+  const blocker = jsonFences(sec).find((p) => 'unblocks' in p || 'owner' in p || 'reason' in p)
+  problems.push(...verbSchemaProblems('mission_set_blocker', blocker))
+  if (blocker) {
+    if (blocker.owner !== 'operator') problems.push("the blocker is not the operator's")
+    if (!('stepId' in blocker)) problems.push('the blocker is not on the "Approve spec" step')
+  }
+  if (!/`mission_set_blocker`/.test(f)) problems.push('no mission_set_blocker with nobody there')
+  if (!/chimes/.test(f) || !/re-nudges/.test(f))
+    problems.push('the blocker does not say Harnu chimes and re-nudges')
+  if (!/and stop\./.test(f)) problems.push('with nobody there the skill does not stop')
+  if (!/`mission_clear_blocker`/.test(f)) problems.push('the blocker is never cleared')
+
+  // The authoring step 7 hands over to this section and still opens with the no-code check.
+  const step7 = authoringSteps(skill).find((s) => /^Approval question$/.test(s.label))
+  if (!step7 || !/_The approval question_/.test(flat(step7.text)))
+    problems.push('authoring step 7 does not run _The approval question_')
+  return problems
+}
+
+it('triage mission payload parses against mission_create', () => {
+  expectS5Check('missionPayload', missionPayloadProblems)
+})
+
+it('approval order and the operator blocker payload', () => {
+  expectS5Check('approvalOrder', approvalOrderProblems)
 })
