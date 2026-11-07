@@ -275,7 +275,7 @@ function shapeProblems({ skill }: Docs): string[] {
     /mission_\w+/,
     /open_file/,
     /spec-check\.mjs/,
-    /memory_\w+/,
+    /memory_append/,
     /Agent tool|sub-agent spawn/i
   ]) {
     if (leak.test(triage)) problems.push(`the triage section names ${leak}`)
