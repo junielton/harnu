@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-07
+
+### Added
+
+- **A new bundled skill, `spec`, sizes up every piece of work before it starts.** Switch it on in **Settings → Skills** (off by default, like every bundled skill). It names the door you came in by and how big the work is, in one message: most entries (a one-line bug, a PR comment, a red CI, a question) end right there as Small, with their first step and nothing written. Bigger work gets a spec, and `/harnu:spec check` lints a spec in any repo (with `--cards`, it also checks the board cards against it).
+
 ## 2026-11-06
 
 ### Added
