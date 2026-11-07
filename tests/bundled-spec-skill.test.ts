@@ -7,6 +7,8 @@
  * T601 S-5 (card T670) — the mission born at triage (its `mission_create` payload parsed against
  * the real verb schema) and the approval order: mission, `open_file`, one question, the header
  * flip and Mark verified on a yes, an operator-owned `mission_set_blocker` with nobody there.
+ * T601 S-8 (card T672) — the three contracts: the awareness doc's `harnu:spec` paragraph and its
+ * marker, the user guide's `spec` section, and one CHANGELOG entry that names the skill.
  *
  * A skill is prose, so what is graded is the contract its text states (stable anchors: headings,
  * the verbatim funnel table, door and tier bullets, verb invocations, fenced command lines) and
@@ -59,13 +61,17 @@ interface Docs {
   catalog: string
   userDoc: string
   template: string
+  features: string
+  changelog: string
 }
 
 const realDocs = (): Docs => ({
   skill: readOr(path.join(SKILL_DIR, 'SKILL.md')),
   catalog: readOr(path.join(REPO_ROOT, 'resources', 'skills', 'CATALOG.md')),
   userDoc: readOr(path.join(REPO_ROOT, 'docs', 'user', 'bundled-skills.md')),
-  template: readOr(path.join(REPO_ROOT, 'docs', 'specs', 'TEMPLATE.md'))
+  template: readOr(path.join(REPO_ROOT, 'docs', 'specs', 'TEMPLATE.md')),
+  features: readOr(path.join(REPO_ROOT, 'docs', 'harnu-features.md')),
+  changelog: readOr(path.join(REPO_ROOT, 'CHANGELOG.md'))
 })
 
 interface Mutation {
@@ -1031,4 +1037,197 @@ it('triage mission payload parses against mission_create', () => {
 
 it('approval order and the operator blocker payload', () => {
   expectS5Check('approvalOrder', approvalOrderProblems)
+})
+
+// ---- S-8 (card T672): the awareness doc, the user guide and the changelog ----------------------
+
+/** The bundled-skills part of the awareness doc: from its heading to "Nothing is on by default". */
+function bundledSkillsPart(features: string): string {
+  const start = features.indexOf('**Bundled skills — OFF until switched on.**')
+  const end = features.indexOf('**Nothing is on by default**', start)
+  return start === -1 || end === -1 ? '' : features.slice(start, end)
+}
+
+/** The paragraph (blank-line separated) of a text that opens with `opener`, flattened. */
+function paragraphOpening(text: string, opener: RegExp): string {
+  return flat(text.split(/\n\s*\n/).find((p) => opener.test(p.trimStart())) ?? '')
+}
+
+/** AC-28: the bundled-skills paragraph names `harnu:spec`, triage-first, the two verbs, any repo. */
+function awarenessProblems({ features }: Docs): string[] {
+  const problems: string[] = []
+  const marker = /^<!-- harnu-features v(\d+) /.exec(features)
+  if (!marker || Number(marker[1]) < 113) problems.push('the awareness marker is below v113')
+  const part = bundledSkillsPart(features)
+  if (!part) return [...problems, 'no bundled-skills paragraph in docs/harnu-features.md']
+  const p = paragraphOpening(part, /^`harnu:spec`/)
+  if (!p) return [...problems, 'no paragraph opening with `harnu:spec` in the bundled-skills part']
+  if (!/runs first at every entry/.test(p)) problems.push('the paragraph does not say triage-first')
+  if (!/door/.test(p) || !/tier/.test(p))
+    problems.push('triage does not name the door and the tier')
+  if (!/Small/.test(p) || !/write nothing/.test(p))
+    problems.push('the Small path is not stated as writing nothing')
+  for (const verb of ['`/harnu:spec <entry>`', '`/harnu:spec check [--cards]`'])
+    if (!p.includes(verb)) problems.push(`the paragraph does not name ${verb}`)
+  if (!/staged/.test(p) || !/works in any repo/.test(p))
+    problems.push('the paragraph does not say `check` works in any repo because it is staged')
+  // The finished skill, once: the mission at triage, the approval door, the hand-off.
+  if (!/`mission_create`/.test(p) || !/"Approve spec"/.test(p))
+    problems.push('the paragraph does not name the mission born at triage')
+  if (!/\*\*Mark verified\*\*/.test(p) || !/never tick/.test(p))
+    problems.push('the paragraph does not leave the approval to the operator')
+  if (!/`harnu:orchestrate-delivery` adopts/.test(p))
+    problems.push('the paragraph does not say orchestrate-delivery adopts the mission')
+  // SKILL.md wins: the ADR is scope only when the spec records an architectural decision.
+  if (ADR_ALWAYS.test(p)) problems.push('the paragraph lists the ADR for every Complex spec')
+  return problems
+}
+
+/** "the PRD and the ADR" with no "when … architectural decision" later in the same sentence. */
+const ADR_ALWAYS = /PRD and the ADR(?![^.]*\bwhen\b[^.]*architectural decision)/
+
+/** The one `## YYYY-MM-DD` changelog bullet that introduces the skill, and the bullets naming it. */
+function specChangelogBullets(changelog: string): string[] {
+  return changelog
+    .split('\n')
+    .filter((l) => /^- \*\*/.test(l) && /`spec`|`harnu:spec`/.test(l) && /bundled skill/.test(l))
+}
+
+/** AC-29: the user guide has a `spec` section; the changelog has one entry naming the skill. */
+function userGuideProblems({ userDoc, changelog, skill }: Docs): string[] {
+  const problems: string[] = []
+  const sec = (() => {
+    const lines = userDoc.split('\n')
+    const start = lines.findIndex((l) => /^### `spec`/.test(l))
+    if (start === -1) return ''
+    const end = lines.findIndex((l, i) => i > start && /^#{2,3} /.test(l))
+    return flat(lines.slice(start, end === -1 ? undefined : end).join('\n'))
+  })()
+  if (!sec) problems.push('no "### `spec`" section in docs/user/bundled-skills.md')
+  else {
+    if (!/door/.test(sec) || !/\bSmall\b/.test(sec) || !/Medium/.test(sec) || !/Complex/.test(sec))
+      problems.push('the section does not say what triage decides')
+    if (!/docs\/specs\/YYYY-MM-DD-<slug>\/spec\.md/.test(sec))
+      problems.push('the section does not say what it writes')
+    if (
+      !/`Approve this spec\?`|"Approve this spec\?"/.test(sec) ||
+      !/\*\*Mark verified\*\*/.test(sec)
+    )
+      problems.push('the section does not say how to approve')
+    if (!sec.includes('`/harnu:spec check`') || !sec.includes('`--cards`'))
+      problems.push('the section does not name the `check` verbs')
+    if (!/works in any repo/.test(sec))
+      problems.push('the section does not say `check` works in any repo')
+    if (ADR_ALWAYS.test(sec)) problems.push('the section lists the ADR for every Complex spec')
+  }
+
+  const entries = specChangelogBullets(changelog)
+  if (entries.length !== 1)
+    problems.push(`CHANGELOG.md has ${entries.length} entries introducing the spec skill, not one`)
+  const entry = entries[0] ?? ''
+  if (entry && !/Settings → Skills/.test(entry))
+    problems.push('the entry does not say how to turn it on')
+  // SKILL.md lists the ADR only for an architectural decision; no changelog line may say otherwise.
+  for (const line of changelog.split('\n').filter((l) => /`spec`/.test(l)))
+    if (ADR_ALWAYS.test(line))
+      problems.push('a changelog line lists the ADR for every Complex spec')
+  if (
+    !/only when\s+the spec records an architectural decision|when it records an\s+architectural decision/.test(
+      flat(skill)
+    )
+  )
+    problems.push('SKILL.md no longer scopes the ADR to an architectural decision')
+  return problems
+}
+
+const S8_MUTATIONS: Record<string, Mutation[]> = {
+  awareness: [
+    {
+      target: 'features',
+      pattern: '^<!-- harnu-features v\\d+ ',
+      replace: '<!-- harnu-features v112 ',
+      why: 'the marker is at least v113'
+    },
+    {
+      target: 'features',
+      find: '`harnu:spec` runs first at every entry',
+      replace: '`harnu:spec` runs at some entries',
+      why: 'the paragraph states triage-first'
+    },
+    {
+      target: 'features',
+      find: '`/harnu:spec check [--cards]`',
+      replace: '`/harnu:spec lint`',
+      why: 'the paragraph names both verbs'
+    },
+    {
+      target: 'features',
+      find: 'works in any repo',
+      replace: 'works in this repo',
+      why: '`check` works in any repo'
+    },
+    {
+      target: 'features',
+      find: '**Bundled skills — OFF until switched on.**',
+      replace: '**Bundled skills.**',
+      why: 'the paragraph lives in the bundled-skills part'
+    },
+    {
+      target: 'features',
+      find: '`harnu:orchestrate-delivery` adopts',
+      replace: '`harnu:orchestrate-delivery` creates',
+      why: 'orchestrate-delivery adopts the spec-born mission'
+    }
+  ],
+  userGuide: [
+    {
+      target: 'userDoc',
+      pattern: '^### `spec`',
+      replace: '### Spec',
+      why: 'the user guide has a `spec` section'
+    },
+    {
+      target: 'userDoc',
+      find: '**Mark verified**',
+      replace: 'Verify',
+      why: 'the section says how to approve'
+    },
+    {
+      target: 'userDoc',
+      pattern: 'works in any repo',
+      replace: 'works here',
+      why: 'the section says `check` works in any repo'
+    },
+    {
+      target: 'changelog',
+      find: '## 2026-11-07\n',
+      replace:
+        '## 2026-11-07\n\n- **A second bundled skill entry, `spec`, duplicated.** Switch it on in **Settings → Skills**.\n',
+      why: 'the changelog introduces the skill once'
+    },
+    {
+      target: 'changelog',
+      find: 'the PRD and, when it records an architectural decision, the ADR',
+      replace: 'the PRD and the ADR',
+      why: 'the changelog follows SKILL.md on the ADR'
+    }
+  ]
+}
+
+function expectS8Check(group: string, check: (d: Docs) => string[]): void {
+  const docs = realDocs()
+  expect(check(docs)).toEqual([])
+  const mutations = S8_MUTATIONS[group]
+  expect(mutations.length).toBeGreaterThan(0)
+  for (const m of mutations) {
+    expect(check(mutate(docs, m)), `mutation should fail: ${m.why}`).not.toEqual([])
+  }
+}
+
+it('the awareness doc names the skill and the marker is bumped', () => {
+  expectS8Check('awareness', awarenessProblems)
+})
+
+it('user guide section and changelog entry exist', () => {
+  expectS8Check('userGuide', userGuideProblems)
 })
