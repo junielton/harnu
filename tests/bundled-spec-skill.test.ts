@@ -850,8 +850,8 @@ const S5_MUTATIONS: Record<string, Mutation[]> = {
     },
     {
       target: 'skill',
-      find: '`status: approved`',
-      replace: '`status: final`',
+      find: '`status: draft` to `status: approved`',
+      replace: '`status: draft` to `status: final`',
       why: 'a yes flips the header to approved'
     },
     {
@@ -868,8 +868,8 @@ const S5_MUTATIONS: Record<string, Mutation[]> = {
     },
     {
       target: 'skill',
-      find: 'and stop.',
-      replace: 'and wait.',
+      find: 're-nudges with back-off, and stop.',
+      replace: 're-nudges with back-off, and wait.',
       why: 'with nobody there the skill stops'
     }
   ]
