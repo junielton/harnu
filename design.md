@@ -9125,10 +9125,12 @@ global shortcut would die).
   - **Card inset:** 8px left/right margin + 4px bottom margin per card
     (`FleetBoardCard.vue`, not a wrapper's padding) + 6px top padding on the
     scroll body, so the first card's ring never touches the header's
-    bottom border. `overflow-x: hidden` + `scrollbar-gutter: stable` +
+    bottom border. `overflow-x: hidden` + `scrollbar-gutter: stable both-edges` +
     `.scrollable` (§9) on the scroll body, so an incoming card's entrance
     slide (§7) or the vertical scrollbar appearing never shifts existing
-    card widths.
+    card widths. `both-edges` reserves the scrollbar's width on the left too, so
+    the cards stay centred in the rail (equal left/right inset, with or without a
+    visible scrollbar) instead of sitting one scrollbar-width closer to the left border.
   - **Empty fleet:** "You're all caught up" (`--text-4`, centered) — the
     same copy the pending queue used to show, now the fleet's own empty
     state (an idle-only fleet has nothing left to render once idle is
