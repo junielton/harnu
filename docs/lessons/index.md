@@ -96,6 +96,7 @@ every lesson in the tree should skip them.
 - [`testing/005-mcp-gate-tests-never-exercised-the-renderer-actuation-path.md`](./testing/005-mcp-gate-tests-never-exercised-the-renderer-actuation-path.md) — exhaustive per-gate unit tests missed a bug that only existed in the full chain
 - [`framework/006-electron-builder-skips-publish-when-release-type-mismatches.md`](./framework/006-electron-builder-skips-publish-when-release-type-mismatches.md) — v0.3.3/v0.3.5 shipped with zero assets; electron-builder silently skips upload when `releaseType` doesn't match an already-published release
 - [`testing/006-eval-harness-grades-state-through-the-real-transport.md`](./testing/006-eval-harness-grades-state-through-the-real-transport.md) — "eval harness" is a house term: grade `.harnu/missions/*.md` state through Harnu's real MCP transport, never a model verdict, and prove every grader fails on a deliberately broken copy
+- [`testing/007-bumping-the-harnu-features-marker-grep-every-test.md`](./testing/007-bumping-the-harnu-features-marker-grep-every-test.md) — a marker bump leaves red CI when a test pins the bare `'vN'`; grep the prefixed and the bare form, then run the pinned tests
 
 ## How to add a lesson
 
