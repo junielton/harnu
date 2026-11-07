@@ -114,7 +114,8 @@
    * for every dark theme and for extension themes (they never define it); the four light
    * themes override it below with a hand-picked value. */
   --color-canvas: color-mix(in oklab, var(--color-bg) 62%, black);
-  --float-gap: 6px;
+  --float-gap: 4px;
+  --float-radius: 4px;
   --float-band: 42px;
 
   --term-ansi-black: #302a25;
