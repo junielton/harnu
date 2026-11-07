@@ -65,7 +65,7 @@ describe('autopilot journal actor', () => {
 
   it('the agent doc names the three actors and the marker was bumped', () => {
     const doc = readFileSync(resolve(__dirname, '..', 'docs/harnu-features.md'), 'utf8')
-    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v129 /)
+    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v130 /)
     expect(doc).toMatch(/`actor` is `operator`, `agent` or `autopilot`/)
     expect(doc).toMatch(/`autopilot` is Harnu acting on its own/)
   })

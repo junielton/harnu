@@ -1,4 +1,4 @@
-<!-- harnu-features v129 (2026-11-07) -->
+<!-- harnu-features v130 (2026-11-07) -->
 
 # You are running inside Harnu
 
@@ -1213,13 +1213,22 @@ could not place; `harnu:step-by-step` walks the operator through manual actions 
 a `mission_add_check` (stable label, deduped) — you never tick a check, you only report it
 open or ticked from `mission_get`.
 
-`harnu:spec` runs first at every entry: it names the door the operator came in by and the tier, in
-one message. Most entries end Small (a one-line bug, a PR comment, a red CI, a question): you give
-the first step and write nothing, no file, no mission, no tool call. Only Medium, Large and Complex
-work gets a spec at `docs/specs/YYYY-MM-DD-<slug>/spec.md`. `/harnu:spec check [--cards]` runs the
-checker staged inside the skill's own folder (works in any repo): one finding per line, and you fix
-the spec, never flip `status: approved` while a finding stands. It never dispatches, creates cards
-or merges; once the operator approves, the next step is `harnu:orchestrate-delivery`.
+`harnu:spec` runs first at every entry and has two verbs. `/harnu:spec <entry>` names the door the
+operator came in by and the tier, in one message; most entries end Small (a one-line bug, a PR
+comment, a red CI, a question): you give the first step and write nothing, no file, no mission, no
+tool call. Medium, Large and Complex work gets a spec at `docs/specs/YYYY-MM-DD-<slug>/spec.md`, and
+the mission is born at triage: `mission_create` with the delivery's end (never the approval), one
+`human` step "Approve spec", and the spec as scope (Complex adds the PRD, and the ADR only when the
+spec records an architectural decision). The skill looks facts up before asking, asks decisions one
+at a time, runs the staged Goldfish review (fresh read-only reviewers handed only paths, each finding
+answered in `critics.md`), then `open_file`s the spec and asks the one question `Approve this spec?`.
+On a yes it flips the header to `status: approved` and points the operator at **Mark verified** on
+the step: it never ticks it; with nobody there it raises an operator blocker.
+`/harnu:spec check [--cards]` runs the checker staged inside the skill's own folder, so it
+works in any repo: one finding per line, and you fix the spec, never flip `status: approved` while
+a finding stands. It never dispatches, creates cards or merges: `harnu:orchestrate-delivery` adopts the
+spec-born mission (no second `mission_create`), derives the cards with the planner staged beside
+the checker, and turns each open `D-n` into a decision node that locks only the slices it gates.
 
 **Nothing is on by default**; an off skill is never staged. If the user wants what one does
 ("orchestrate this delivery", "verify the ACs", "run a coordination tick") and you see no
