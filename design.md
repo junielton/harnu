@@ -2330,15 +2330,16 @@ one.
 
 #### `RETURN HERE` zone (closure axis)
 
-An attention zone **at the top of the sidebar, above the folder list**.
+An attention zone **at the bottom of the sidebar, between the folder list and the dock** (T660;
+it used to sit at the top, where it competed with the toolbar).
 Lists the sessions the operator **forgot**: a `needs-input` session they haven't
 viewed for ~10 min and which is **not** the currently selected one (the closure
 axis is orthogonal to `taskState` — it answers "have you seen this session's
 current state?"). The goal is that a blocked-and-abandoned session doesn't get
-lost below the fold.
+lost.
 
-**Calm-tech — only when there's something.** The whole zone (eyebrow + list +
-divider) renders **only when the forgotten set is non-empty**. Zero persistent
+**Calm-tech — only when there's something.** The whole zone (divider + eyebrow +
+list) renders **only when the forgotten set is non-empty**. Zero persistent
 chrome: it vanishes the instant the last session is seen/dispatched.
 
 **Eyebrow** (Section-label): reuses the Section-label typography (uppercase
@@ -2361,8 +2362,11 @@ owning folder
   **dismiss** (× on the right, `role="button"` — never a `<button>` nested in a
   `<button>`; `--text-3` → `--text` on hover, `@click.stop` so it doesn't jump
   along) → `markSessionSeen(id)` (stamps last-viewed = now → the predicate
-  flips and the row leaves). **Zone divider**: 1px `--border` line with
-  `margin: 6px 0`, separating `RETURN HERE` from the folder list below it.
+  flips and the row leaves). **Zone divider**: a 1px `--border` top rule
+  (`data-return-divider`, no margin), separating the folder list above from `RETURN HERE`; the
+  dock below draws its own top rule. **Height cap**: the zone is at most `168px` tall (about
+  four rows plus the eyebrow); the eyebrow stays put and only the rows scroll, so a long list never
+  pushes the dock off-screen. The folder list keeps the remaining height.
   **No new tokens** — Section-label, `--color-warning`, `--border`, all
   already exist.
 
@@ -4084,17 +4088,28 @@ it does without this section: the setting adds no pixel to the default layout.
   not `--bg`: `color-mix(in oklab, var(--bg) 62%, black)` on every dark theme, a **hand-picked**
   value on each light theme (the mix would read as a heavy grey slab there). See the per-theme
   table in §9. An extension theme inherits the dark-theme mix.
-- **Gap = 6px, everywhere.** `--float-gap` is the empty space between two islands' outer borders
+- **Gap = 4px, everywhere.** `--float-gap` is the empty space between two islands' outer borders
   AND between an island and the window edge (top, left, right, and the bottom edge above the
-  footer). The row of columns carries `padding: var(--float-gap)`.
-- **Radius.** Every island is fully rounded with `--radius` (7px). `--radius-sm` (5px) is used
-  only for surfaces **inside** an island (rows, minicards, buttons), unchanged.
+  footer). The row of columns carries `padding: var(--float-gap)`. **One token moves every gap**:
+  the frame padding, the gaps in the sidebar and Fleet rail stacks, the Topbar margin, the three
+  column dividers, the helper-pane gap (flex gap side by side, width splitter when stacked) and the
+  Fleet rail divider all read `--float-gap`. Nothing hardcodes a pixel value.
+- **Radius.** Every island is rounded with `--float-radius` (4px), a token of its own that sits next
+  to `--float-gap`. The global `--radius` stays 7px, so buttons, inputs, popovers and every surface
+  inside an island are unchanged. `--radius-sm` (5px) is used only for surfaces **inside** an
+  island (rows, minicards, buttons), unchanged.
 - **Border.** Each island has its **own** 1px `--border` on all four sides and never shares an edge
   with another island. A flat inner divider that used to separate two regions of one box
-  (`border-b` under the sidebar toolbar, `border-t` over the Fleet rail sections, the Return here
-  zone's bottom rule) is replaced by the island gap and is not drawn.
-- **Island background.** Sidebar-family islands (sidebar toolbar, Return here, folder list, dock,
-  Fleet rail header/list/sections) paint `--sidebar`; content-family islands (Topbar, the session
+  (`border-t` over the Fleet rail sections, the Return here zone's top rule) is replaced by the island gap and is not drawn.
+- **Joined heads.** The sidebar toolbar and the Fleet rail header are **not** islands: each is the
+  **head of its list island** (T659). Toolbar + folder list are ONE island (`sidebar-list`), header +
+  fleet list are ONE island (`rail-list`), with no gap between them; the head's own `border-b` stays
+  as the **inner divider rule**. A head carries `data-island-head` (and `data-island-band`) instead
+  of `data-island`. Because it sits inside the island's 1px top border, a head is
+  `calc(var(--float-band) - 1px)` tall, which puts its inner rule on the Topbar's bottom edge. The
+  drill view renders inside the same `sidebar-list` island, under the same toolbar.
+- **Island background.** Sidebar-family islands (Return here, the folder list with its toolbar, dock,
+  the Fleet rail list with its header and the sections) paint `--sidebar`; content-family islands (Topbar, the session
   area, every helper pane) paint `--bg`.
 
 ##### Islands and the grid
@@ -4102,30 +4117,31 @@ it does without this section: the setting adds no pixel to the default layout.
 One grid, three columns. The sidebar column and the Fleet rail column are stacks of islands; the
 middle column is the Topbar over a row holding the session area and the helper stack.
 
-| Column     | Island, top to bottom (`data-island`)                                                                  |
-| ---------- | ------------------------------------------------------------------------------------------------------ |
-| Sidebar    | `sidebar-toolbar` · [`sidebar-return`] · `sidebar-list` · `sidebar-dock`                               |
-| Middle     | `topbar` · then `session` and each helper pane (`helper-pane`), side by side or stacked                |
-| Fleet rail | `rail-header` · `rail-list` · [`rail-needs-you`] · `rail-would-have` (minimized: one `rail-minimized`) |
+| Column     | Island, top to bottom (`data-island`)                                                                             |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- |
+| Sidebar    | `sidebar-list` (toolbar head + folder list) · [`sidebar-return`] · `sidebar-dock`                                 |
+| Middle     | `topbar` · then `session` and each helper pane (`helper-pane`), side by side or stacked                           |
+| Fleet rail | `rail-list` (header head + fleet list) · [`rail-needs-you`] · `rail-would-have` (minimized: one `rail-minimized`) |
 
 - **Top band.** `sidebar-toolbar`, `topbar` and `rail-header` are the **band**: three islands of
   `--float-band` (42px) on one line, sharing top and bottom (y = gap … gap + 42). They are marked
-  `data-island-band`.
+  `data-island-band`. `topbar` is an island of its own; the other two are the heads of their list
+  islands (see "Joined heads"), so the band reads as three bars on one line.
 - **Below the band.** The first island under each column starts at the same y: band + gap
-  (`6 + 42 + 6 = 54px` from the window top). That island is `sidebar-return` when it shows, else
-  `sidebar-list`; the session area and the first helper pane in the middle column; `rail-list`
-  in the Fleet rail.
+  (`4 + 42 + 4 = 50px` from the window top). Under a joined head the list simply continues; below
+  the Topbar it is the session area and the first helper pane in the middle column.
 - **Columns are separated by the dividers.** The three vertical dividers are exactly
-  `--float-gap` wide (6px, the same `w-1.5` hit column as today), so the divider **is** the gap
-  and the drag handle at once. Between two helper panes the gap is `--float-gap` as well
-  (a flex gap in side-by-side; the width splitter itself, 6px, when stacked).
+  `--float-gap` wide (4px; the five column dividers carry `data-float-divider`, and the floating
+  rule sets their width/height from the token), so the divider **is** the gap and the drag handle at
+  once. With the layout off they keep the 6px `w-1.5` / `h-1.5` hit area. Between two helper panes the gap is `--float-gap` as well
+  (a flex gap in side-by-side; the width splitter itself, `--float-gap` wide, when stacked).
 - **Main is not one box.** The Topbar, the session area and each helper pane float on their own.
   The Topbar is separated from the row below by `--float-gap`.
 - **Bottom edge.** The lowest island of every column ends `--float-gap` above the footer.
 
 ##### Dividers in the floating layout
 
-- **At rest** no line is drawn. The 6px hit column stays (`cursor-col-resize` / `row-resize`,
+- **At rest** no line is drawn. The `--float-gap` hit column stays (`cursor-col-resize` / `row-resize`,
   drag, double-click reset all unchanged); it sits **in the gap**.
 - **On hover** a short **grip** appears centered in the gap: **2px × 36px**, fully rounded
   (`999px`), `--accent-line`, with the `--dur-fast` / `--ease` color transition. The stacked
@@ -4141,14 +4157,16 @@ side border. It keeps `--surface` and a 1px `--border` **top rule**. The islands
 
 ##### Sidebar column: Return here and drill Back row
 
-- `sidebar-return` (the Return here zone) is its **own island** between the toolbar and the list,
-  `--float-gap` from both. When the zone is empty it is not rendered and the toolbar and the list
-  are 6px apart as usual. Its internal bottom divider (the `aria-hidden` `border-t`) is hidden;
-  the island gap separates it from the list.
-- In **drill mode** `sidebar-list` is the drill view's own root, and it **starts with the pinned
-  Back row** (`data-drill-back`, BUG-248): the Back row is the first child of the island, so it
-  sits on the island's top edge and the island's rounded corners clip it. No extra rule is needed
-  (the Back row already lives outside the scroller); the default layout is untouched.
+- `sidebar-return` (the Return here zone) is its **own island** between the list island and the
+  dock, `--float-gap` from both (T660). When the zone is empty it is not rendered and the list and
+  the dock are `--float-gap` apart as usual. Its internal top divider (the `aria-hidden` `border-t`)
+  is hidden; the island gap separates it from the list. Its height is capped (see `RETURN HERE`
+  zone) and the rows scroll inside.
+- In **drill mode** the drill view (`data-drill-view`) renders inside the same `sidebar-list`
+  island, **under the joined toolbar head** (T659). Its pinned Back row (`data-drill-back`, BUG-248)
+  is the first row below the toolbar's inner rule, still outside the scroller; the toolbar, not the
+  Back row, sits on the island's top edge and is clipped by its rounded corners. The default layout is
+  untouched.
 
 ##### Sidebar dock (slot)
 
@@ -4182,7 +4200,7 @@ The lowest one sits `--float-gap` above the footer. A future section is another
 
 A divider that disappears must never take the gap with it. With the switch on:
 
-| State                | What supplies the 6px                                                                        |
+| State                | What supplies the `--float-gap`                                                              |
 | -------------------- | -------------------------------------------------------------------------------------------- |
 | Fleet rail minimized | The rail column carries `margin-left: var(--float-gap)` (its divider is not rendered).       |
 | Fleet rail hidden    | The row's own padding is the gap to the window edge.                                         |
@@ -4299,7 +4317,7 @@ hides is the **Expand hides** setting.
 - **Focus.** The F6 ring holds only the expanded pane (the main terminal and the other panes are
   not reachable while hidden). Entering expand focuses the pane; exiting returns focus to it.
 - **Both layouts, both orientations.** With Floating panels on, the Topbar island, the expanded
-  pane's island and the footer keep the 6px gap and the canvas frame; with it off, the pane meets
+  pane's island and the footer keep the `--float-gap` gap and the canvas frame; with it off, the pane meets
   the footer as today. Side by side and stacked expand the same way (the collapsed session area
   gives up its share along the split axis).
 - **Browser panes.** A native view cannot follow the animation, so it is swapped for the JPEG
@@ -14776,7 +14794,8 @@ codebase is a bug to fix.
 
   /* floating panels (§6 "Floating panels layout"), used only under :root[data-floating] */
   --canvas: color-mix(in oklab, var(--bg) 62%, black); /* dark themes; light themes override it */
-  --float-gap: 6px; /* between islands, and from an island to the window edge */
+  --float-gap: 4px; /* between islands, and from an island to the window edge */
+  --float-radius: 4px; /* corners of every island; the global --radius (7px) is unchanged */
   --float-band: 42px; /* height of the three top-band islands */
 }
 
