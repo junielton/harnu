@@ -499,9 +499,10 @@ function reviewProblems({ skill }: Docs): string[] {
   if (check === -1) problems.push('no "Check" step')
   if (review === -1) problems.push('no "Goldfish review" step')
   if (approval === -1) problems.push('no "Approval question" step')
-  if (review !== -1 && approval !== -1 && review > approval)
+  const n = (i: number): number => steps[i].n
+  if (review !== -1 && approval !== -1 && (review > approval || n(review) > n(approval)))
     problems.push('the approval question is asked before the Goldfish review')
-  if (check !== -1 && review !== -1 && check > review)
+  if (check !== -1 && review !== -1 && (check > review || n(check) > n(review)))
     problems.push('the Goldfish review runs before the spec is checked')
   if (/builder[- ]check/i.test(skill)) problems.push('the text still describes a builder-check')
 
@@ -592,7 +593,7 @@ function complexPathProblems({ skill }: Docs): string[] {
   }
   if (!/only when [^.]*architectural decision/.test(f))
     problems.push('the ADR is not conditional on an architectural decision')
-  if (!/mockup[^.]*\bUI\b|\bUI\b[^.]*mockup/.test(f))
+  if (!/mockup folder\*\*, only when [^.]*\bUI\b/.test(f))
     problems.push('the mockup is not conditional on UI')
   if (!/tracked/.test(f)) problems.push('the bundle paths are not required to be tracked')
   if (!/never [^.]*`\.harnu\/out\/`/.test(f))

@@ -1,4 +1,4 @@
-<!-- harnu-skills v14 (2026-11-07) -->
+<!-- harnu-skills v15 (2026-11-07) -->
 
 # Harnu bundled skills
 

@@ -116,6 +116,22 @@ it('recorded authoring runs pass the gate and the checks', async () => {
     expect(result.stdout, `${where}: checker findings`).toBe('')
     expect(result.status, `${where}: checker exit`).toBe(0)
 
+    // The same run with one uncited atom added must fail, so a checker that stopped looking
+    // could not pass the line above.
+    const defective = path.join(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-spec-defect-')),
+      'repo'
+    )
+    await fs.cp(path.join(dir, 'repo'), defective, { recursive: true })
+    await fs.writeFile(
+      path.join(defective, run.spec),
+      specText.replace(/^(- R-1 .*)$/m, '$1\n- R-99 An atom no AC, non-goal or decision cites.'),
+      'utf8'
+    )
+    const failed = await checkInFreshRepo(defective, run.spec)
+    expect(failed.status, `${where}: defective exit`).toBe(1)
+    expect(failed.stdout, `${where}: defective finding`).toMatch(/\[uncovered-atom\] .*R-99/)
+
     // The session note: the triage answer names the tier, facts come before decisions, and the
     // checker ran exactly once, clean.
     const session = readFileSync(path.join(dir, run.session), 'utf8')
@@ -134,7 +150,7 @@ it('recorded authoring runs pass the gate and the checks', async () => {
       [...order].sort((a, b) => a - b),
       `${where}: session order`
     ).toEqual(order)
-    const runsOfChecker = session.split('\n').filter((l) => /^\$ node \S*spec-check\.mjs /.test(l))
+    const runsOfChecker = session.split('\n').filter((l) => /^\$ node .*spec-check\.mjs /.test(l))
     expect(runsOfChecker, `${where}: checker runs recorded`).toEqual([
       `$ node <skill directory>/scripts/spec-check.mjs ${run.spec}`
     ])

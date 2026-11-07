@@ -119,8 +119,8 @@
     },
     {
       "target": "template",
-      "find": "existing:",
-      "replace": "legacy:",
+      "find": "- consumes: existing:example-store",
+      "replace": "- consumes: legacy:example-store",
       "why": "D-1: a consumed capability from the repo is written existing:"
     },
     {
@@ -131,7 +131,7 @@
     },
     {
       "target": "template",
-      "pattern": "- NG-1 [^\\n]*\\n",
+      "find": "- NG-1 What this spec deliberately does not do, citing the atoms it covers (R-2).\n",
       "replace": "",
       "why": "D-1: a non-goal is an NG-n bullet citing its atoms"
     }

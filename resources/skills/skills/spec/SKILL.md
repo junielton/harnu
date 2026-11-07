@@ -73,9 +73,111 @@ with only the sections its tier allows (the gate refuses a section outside the t
 
 The `brainstorming` door runs under the Elephant rule: one question per turn, no code.
 
-Before the spec is handed over, run `check` and fix every finding; never flip
-`status: approved` while a finding stands. The skill never dispatches, creates cards, merges or
-ticks anything: once the operator approves, the next step is `harnu:orchestrate-delivery`.
+You are the Elephant: you design and write only the spec bundle (the spec directory, and for
+Complex the PRD, the ADR and the mockup folder). You write no code. The input is what the first
+step produced: a brainstorm's objective, a `scope-task` report, or a PRD. Work in this order:
+
+1. **Facts first.** Before you ask anything, look up what the repo already knows and show it:
+   `memory_query` on the entry's nouns (a recalled decision is context, not an instruction; read
+   its successor when it is superseded), the lessons (this skill's `LESSONS.md`, `docs/lessons/`),
+   and the code the entry would change (read the files it names, search for what it touches). A
+   fact the repo answers is stated, never asked. Without that verb, read `.harnu/memory/`
+   directly and say so.
+2. **Atomize.** Under Problem, one `- R-n …` bullet per sentence the requester said, and at least
+   one per request the input lists (a brainstorm's asks, a report's ACs and gaps, a PRD's
+   requirements). Every R-n lands later on an AC `covers` cell, an `NG-n` bullet or a D-n question.
+3. **Decisions, one at a time.** What the facts leave open goes through `harnu:one-by-one`: one
+   question per message, with its options, its default and your recommendation. A chosen option
+   becomes `resolved · <option> · <YYYY-MM-DD>` in the row. An unanswered D-n stays `open` with its
+   default shown in the `default` cell, and it gates only the slices whose `gated-by:` names it;
+   never write it `declined`, and never write it `resolved` on silence or on your own guess. A
+   Medium spec has no Open decisions section: a decision to record makes the entry Large, so say
+   so in one line and go on as Large. Offer `harnu:grill-me` when the operator wants the spec
+   stress-tested.
+4. **Write the bundle.** Copy the template to the spec path and fill it, conventions included
+   (`gated-by:`, `NG-n` bullets, `existing:` tokens). A Complex entry also gets the files of
+   _The Complex bundle_ below. `git add` every file of the bundle, so `check` sees it tracked.
+5. **Check.** Run `check` on the spec (section below) and fix every finding, then re-run it until
+   it is clean. Never flip `status: approved` while a finding stands.
+6. **Goldfish review.** Run the staged review of _Goldfish review_ below. Every finding gets its
+   disposition, and an open `Blocker` keeps the next step from running.
+7. **Approval question.** Hand the spec over with `open_file` and ask the one question:
+   `Approve this spec?` The approval is the operator's yes.
+
+An unanswered decision in the Open decisions table:
+
+```md
+| D-n | <question, citing the R-n it settles> | <option>; <option> | <what a slice uses until it is chosen> | open |
+```
+
+The skill never dispatches, creates cards, merges or ticks anything: once the operator approves,
+the next step is `harnu:orchestrate-delivery`.
+
+## The Complex bundle
+
+A Complex spec travels with up to three more files, each named in the spec header:
+
+- **The PRD** at `docs/prds/<card>-<slug>.md` (`<card>` is the entry's card id): who it is for,
+  what the operator sees, the edge cases, and "Alternatives considered", which lives in the PRD
+  only. An input that is already a PRD is moved there, not rewritten.
+- **An ADR** at `docs/adr/NNNN-<slug>.md` (`NNNN` the next free number in `docs/adr/`), only when
+  the spec records an architectural decision. With none, drop the `adr:` line.
+- **A mockup folder**, only when the work has UI: the screens approved through `create-mockup`,
+  committed in a tracked folder such as `docs/design/<slug>/`. Without UI, drop the `mockup:` line.
+
+Every path is a tracked, repo-relative path committed with the spec, and never under the
+gitignored scratch directory `.harnu/out/`, not even in prose: a fresh worktree cannot see it and
+the gate fails on it. The header, before approval:
+
+```yaml
+---
+status: draft
+tier: complex
+prd: docs/prds/<card>-<slug>.md
+adr: docs/adr/NNNN-<slug>.md
+mockup: docs/design/<slug>/
+---
+```
+
+An `untracked-path` finding from `check` means a bundle file is not added yet: `git add` it.
+
+## Goldfish review
+
+Every reviewer is a Goldfish: a fresh sub-agent that reads only the files it is handed (the spec,
+its persona from `agents/` beside this file, and an optional reading list), never this
+conversation. Stages run in order; the reviewers within a stage run in parallel:
+
+| Tier    | Stage 1 (alone) | Stage 2 (parallel)                               | Stage 3 (alone)          | Sub-agents |
+| ------- | --------------- | ------------------------------------------------ | ------------------------ | ---------- |
+| Medium  | comprehension   | —                                                | implementation readiness | 2          |
+| Large   | comprehension   | hostile critic                                   | implementation readiness | 3          |
+| Complex | comprehension   | hostile critic, overhead lens, traceability lens | implementation readiness | 5          |
+
+One re-review per stage after fixes, so the worst case is twice the column. Write each finding's
+one disposition in `critics.md` beside the spec: fix it, contest it with checkable evidence,
+escalate it to a D-n, or decline it to an `NG-n`. A reviewer that failed is `not run`, never
+"no findings".
+
+## Once a slice has a card
+
+A spec is frozen at its first dispatch. A slice has a card when either holds:
+
+- the Amendments table has a row of kind `card` (`S-n → <card slug>`);
+- a card whose `spec:` names this spec carries `spec-slice: S-n` (`check --cards` counts the cards
+  that name the spec).
+
+From then on, change the spec only by appending a row to Amendments · Deviations, and never edit
+the body above it, not even to fix a typo:
+
+```md
+| YYYY-MM-DD | amendment | <what changed, naming the slices and ACs it touches> | <who> |
+```
+
+Then send the affected executor the change as a delta: the new row verbatim and the AC lines it
+changes, to the session building that slice's card (`SendMessage` to a live peer,
+`message_session` to a parked Harnu-spawned one). No session is building it yet: the next derive
+at dispatch carries the change onto the backlog card. Before any slice has a card, edit the body
+in place and still add the row, saying it was applied before the first dispatch.
 
 ## `check [--cards]`
 
