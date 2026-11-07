@@ -636,7 +636,12 @@ onMounted(() => {
       -->
         <div
           class="scrollable min-h-0 flex-1"
-          style="overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding-top: 6px"
+          style="
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-gutter: stable both-edges;
+            padding-top: 6px;
+          "
         >
           <FleetBoardCard
             v-for="card in visibleFleetCards"

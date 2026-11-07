@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-07
+
+### Fixed
+
+- **Session cards in the Fleet rail now sit centred.** The gap between a card and the rail's right border was wider than the gap on the left, because room for the scrollbar was always reserved on the right even when nothing scrolled. The same room is now reserved on the left too, so both gaps match with or without a visible scrollbar, and cards still don't change width when the scrollbar appears.
+
 ## 2026-11-06
 
 ### Added
