@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-07
+
+### Fixed
+
+- **A cold start now reads as "loading", not "empty".** With drill-in on and a remembered drill screen, the sidebar used to show a Back row over an empty list while your folders were still loading (the "Loading folders…" spinner only appeared after clicking Back), and the main pane showed "Welcome to Harnu" as if you had no folders. Now the sidebar shows the spinner and the main pane stays on its ready screen until folders load; then your remembered drill screen comes back exactly as before. The welcome screen still appears when loading finishes with no folders.
+
 ## 2026-11-06
 
 ### Added

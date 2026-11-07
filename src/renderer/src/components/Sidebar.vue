@@ -85,6 +85,20 @@ const treeStatus = computed(
     (sessions.visibleFolders.length === 0 && !!sessions.filterQuery.trim())
 )
 
+/**
+ * Cold boot: the folder model has not loaded yet. A persisted drill stack (T289) must not
+ * mount the drill view over an empty list during this window (BUG-257) — the loading
+ * state shows until `reloadModel()` resolves and `reconcileDrillStack()` has run.
+ */
+const bootLoading = computed(() => sessions.folders.length === 0 && sessions.foldersLoading)
+
+/** The drill view owns the screen only when there is a drilled screen AND folders to show. */
+const showDrillView = computed(
+  () =>
+    sessions.drillModeEnabled &&
+    !(treeStatus.value && (sessions.drillStack.length === 0 || bootLoading.value))
+)
+
 const filterInputRef = ref<HTMLInputElement | null>(null)
 const asideRef = ref<HTMLElement | null>(null)
 
@@ -357,11 +371,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
       <!-- Tree (folder view). In drill mode the drill view owns its own scroller so
          its Back row can sit ABOVE it (BUG-248); this wrapper then only mounts to
          host the loading / empty states while the root screen has nothing to show. -->
-      <div
-        v-if="!sessions.drillModeEnabled || (treeStatus && sessions.drillStack.length === 0)"
-        class="scrollable flex-1 overflow-y-auto"
-        style="padding: 6px 0"
-      >
+      <div v-if="!showDrillView" class="scrollable flex-1 overflow-y-auto" style="padding: 6px 0">
         <template v-if="sessions.folders.length === 0 && sessions.foldersLoading">
           <div data-sidebar-loading class="flex h-full flex-col items-center justify-center gap-3">
             <RefreshCw :size="20" :stroke-width="1.5" class="text-accent anim-spin" />
@@ -435,9 +445,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
           </template>
         </template>
       </div>
-      <SidebarDrillView
-        v-if="sessions.drillModeEnabled && !(treeStatus && sessions.drillStack.length === 0)"
-      />
+      <SidebarDrillView v-if="showDrillView" />
     </div>
 
     <!-- RETURN HERE zone (T37 — closure axis, T660) — forgotten needs-input sessions. Sits at the
