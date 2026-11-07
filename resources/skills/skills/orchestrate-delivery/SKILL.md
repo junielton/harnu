@@ -608,12 +608,17 @@ that gates work becomes a decision node on the mission, so it locks only what it
   from Phase 1).
 - A D-n that gates no slice gets no node: it is a question for `harnu:one-by-one`, not a
   lock. A resolved row gates nothing.
+- A row with a single option is not a choice and cannot be a node: `mission_add_step` takes
+  2 to 10 `options`. Never invent a second option. Settle the row with `harnu:one-by-one`
+  first, and until then hold those slices' cards in the backlog, out of the manifest.
 - The slices no open D-n gates are dispatched now (`submit_manifest`, below). A gated
   slice's card is created all the same and waits in the backlog.
 - The choice is the operator's: point them at the node's **Choose…** door in the mission
   popover, and never write `chosen` (the verb refuses it). Once they choose, the blocked
   steps unlock: the resolution joins the wave's spec rows (step 4 above), the planner runs
   again if the choice changed an AC, and the held slices go out with `submit_manifest`.
+  An `update_card` on a card already stamped by a manifest (a `ready` card the drain has not
+  picked up yet) voids its stamp: submit a fresh `submit_manifest` for it after the edit.
 
 ```json
 {

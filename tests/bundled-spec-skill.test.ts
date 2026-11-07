@@ -300,7 +300,7 @@ function shapeProblems({ skill }: Docs): string[] {
     /mission_\w+/,
     /open_file/,
     /spec-check\.mjs/,
-    /memory_append/,
+    /memory_(?!query\b)\w+/,
     /Agent tool|sub-agent spawn/i
   ]) {
     if (leak.test(triage)) problems.push(`the triage section names ${leak}`)
@@ -1086,11 +1086,23 @@ function awarenessProblems({ features }: Docs): string[] {
 /** "the PRD and the ADR" with no "when … architectural decision" later in the same sentence. */
 const ADR_ALWAYS = /PRD and the ADR(?![^.]*\bwhen\b[^.]*architectural decision)/
 
-/** The one `## YYYY-MM-DD` changelog bullet that introduces the skill, and the bullets naming it. */
+/**
+ * The changelog bullets that introduce the skill. A bullet counts when it names `spec` /
+ * `harnu:spec` in backticks and either sits under an `### Added` heading, leads with the skill's
+ * name in its bold headline, or calls itself a bundled skill, so a duplicate does not escape by
+ * rewording. The `### Changed` bullet that only mentions the skill is not an introduction.
+ */
 function specChangelogBullets(changelog: string): string[] {
-  return changelog
-    .split('\n')
-    .filter((l) => /^- \*\*/.test(l) && /`spec`|`harnu:spec`/.test(l) && /bundled skill/.test(l))
+  const out: string[] = []
+  let heading = ''
+  for (const l of changelog.split('\n')) {
+    if (/^#{2,3} /.test(l)) heading = l
+    if (!/^- \*\*/.test(l) || !/`spec`|`harnu:spec`/.test(l)) continue
+    const lead = /^- \*\*(.*?)\*\*/.exec(l)?.[1] ?? ''
+    if (/^### Added\b/.test(heading) || /`spec`|`harnu:spec`/.test(lead) || /bundled skill/.test(l))
+      out.push(l)
+  }
+  return out
 }
 
 /** AC-29: the user guide has a `spec` section; the changelog has one entry naming the skill. */
