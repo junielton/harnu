@@ -596,7 +596,12 @@ export function checkCritics(critics, parsed) {
       .replace(/[`*_.!]/g, '')
       .trim()
       .toLowerCase()
-    if (!evidence || WEAK_EVIDENCE_RE.test(evidence)) {
+    // "Intentional, by design." is two weak claims, not evidence: weak when every part is.
+    const parts = evidence
+      .split(/\s*(?:[,;]|\band\b)\s*/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+    if (parts.length === 0 || parts.every((p) => WEAK_EVIDENCE_RE.test(p))) {
       findings.push({
         line: f.line,
         rule: 'weak-contest',

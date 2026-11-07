@@ -227,15 +227,19 @@ whose last round failed).
 ```
 
 Each resolved D-n, answered in step 3 or escalated here and answered, is one `memory_append` to
-`decisions`: its `watches` lists the `files-may-touch` of the slices whose `gated-by:` names it.
-When `harnu:one-by-one` drained the decision, its memory line is this one: hand it the `watches`.
+`decisions`. Its `watches` lists
+the literal directory prefix of each `files-may-touch` glob of the slices whose `gated-by:` names it,
+plus single-word topics from the question. Recall matches only a literal path or a directory prefix,
+never a glob, so a literal file path stays as it is and a glob gives its prefix:
+`resources/skills/skills/spec/agents/*.md` → `resources/skills/skills/spec/agents/`. When
+`harnu:one-by-one` drained the decision, its memory line is this one: hand it the `watches`.
 
 ```json
 {
   "folder": "<absolute path of the repo>",
   "page": "decisions",
   "entry": "D-n · <question> · chosen: <option> · <YYYY-MM-DD>",
-  "watches": ["<a files-may-touch path of a gated slice>"],
+  "watches": ["src/badge/", "badge"],
   "mission": "<mnt-…>"
 }
 ```
@@ -252,7 +256,7 @@ authoring begins, note `git rev-parse HEAD` as `<base>`. Before the approval que
 path changed since then that lies outside the bundle:
 
 ```sh
-{ git diff --name-only <base>; git ls-files --others --exclude-standard; } | sort -u | grep -v -e '^<spec directory>/' -e '^<prd>$' -e '^<adr>$' -e '^<mockup folder>' -e '^\.harnu/'
+{ git diff --no-renames --name-only <base>; git ls-files --others --exclude-standard; } | sort -u | grep -v -e '^<spec directory>/' -e '^<prd>$' -e '^<adr>$' -e '^<mockup folder>' -e '^\.harnu/'
 ```
 
 Drop the `-e` of a file the tier does not carry. Nothing printed: go on. Any line is a stop: name
