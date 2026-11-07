@@ -1,4 +1,4 @@
-<!-- harnu-features v128 (2026-11-06) -->
+<!-- harnu-features v129 (2026-11-07) -->
 
 # You are running inside Harnu
 
@@ -1212,6 +1212,14 @@ item as a `D-n` row, an Amendments row or a non-goal, ending with what it wrote 
 could not place; `harnu:step-by-step` walks the operator through manual actions and adds each as
 a `mission_add_check` (stable label, deduped) — you never tick a check, you only report it
 open or ticked from `mission_get`.
+
+`harnu:spec` runs first at every entry: it names the door the operator came in by and the tier, in
+one message. Most entries end Small (a one-line bug, a PR comment, a red CI, a question): you give
+the first step and write nothing, no file, no mission, no tool call. Only Medium, Large and Complex
+work gets a spec at `docs/specs/YYYY-MM-DD-<slug>/spec.md`. `/harnu:spec check [--cards]` runs the
+checker staged inside the skill's own folder (works in any repo): one finding per line, and you fix
+the spec, never flip `status: approved` while a finding stands. It never dispatches, creates cards
+or merges; once the operator approves, the next step is `harnu:orchestrate-delivery`.
 
 **Nothing is on by default**; an off skill is never staged. If the user wants what one does
 ("orchestrate this delivery", "verify the ACs", "run a coordination tick") and you see no
