@@ -3008,6 +3008,109 @@
           "show": "Mostrar pastas",
           "hide": "Ocultar pastas",
           "listLabel": "Pastas em que os volumes órfãos estão ocultos"
+        },
+        "slots": {
+          "title": "Redes do Docker",
+          "free": "{free} de {total} slots de rede livres",
+          "badgeLow": "Baixo",
+          "badgeZero": "Nenhum livre",
+          "badgeUnknown": "Desconhecido",
+          "captionDefault": "Pools de endereço padrão. A Limpeza age quando {mark} ou menos estão livres.",
+          "captionCustom": "Pools de endereço personalizados. A Limpeza age quando {mark} ou menos estão livres.",
+          "low": "No limite mínimo de {mark}. A Limpeza está removendo lixo e pausando as stacks ociosas há mais tempo.",
+          "lowOff": "No limite mínimo de {mark}. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "lowPaused": "No limite mínimo de {mark}. A limpeza automática do Docker está pausada, então nada será liberado sozinho.",
+          "zero": "Nada mais a liberar. Um novo compose up vai falhar até um slot abrir. A Atividade foi avisada.",
+          "zeroOff": "Um novo compose up vai falhar até um slot abrir. A limpeza automática do Docker está desligada, então nada será liberado sozinho.",
+          "zeroPaused": "Um novo compose up vai falhar até um slot abrir. A limpeza automática do Docker está pausada, então nada será liberado sozinho.",
+          "unknown": "Slots de rede desconhecidos",
+          "unknownFallback": "O Harnu ainda não leu os pools de endereço deste motor.",
+          "stillCleans": "A Limpeza ainda remove lixo e pausa stacks ociosas."
+        },
+        "paused": {
+          "title": "Stacks pausadas",
+          "count": "{n} pausada | {n} pausadas",
+          "none": "Nenhuma pausada",
+          "would": "Pausaria {n}",
+          "idle": "ociosa há {age}",
+          "copy": "Copiar o comando de restauração de {name}",
+          "more": "+ {n} em Inspecionar stacks",
+          "note": "Parada quando ociosa; volumes mantidos. Suba de novo com o comando compose up -d."
+        },
+        "actions": {
+          "title": "Ações automáticas",
+          "lastCycle": "último ciclo",
+          "nothingChanged": "nada foi alterado",
+          "empty": "Nada automático ainda. Redes vazias, stacks órfãs e stacks ociosas são tratadas a cada ciclo.",
+          "showAll": "Ver tudo em Atividade",
+          "wouldHave": "Teria",
+          "ago": "há {age}",
+          "done": {
+            "network": "Rede vazia {target} removida",
+            "orphan": "Stack órfã {target} removida",
+            "pause": "{target} pausada"
+          },
+          "would": {
+            "network": "Removeria a rede vazia {target}",
+            "orphan": "Removeria a stack órfã {target}",
+            "pause": "Pausaria {target}"
+          },
+          "detail": {
+            "network": "Nenhum container estava conectado; o compose up recria as redes.",
+            "orphan": "A worktree dela foi removida. Volumes mantidos: {volumes}.",
+            "orphanNone": "A worktree dela foi removida. Os volumes ficam em Volumes órfãos.",
+            "pause": "Ociosa há {idle}.",
+            "orphanGroup": "As worktrees delas foram removidas. Os volumes ficam em Volumes órfãos.",
+            "pauseOne": "Ociosa há {age}.",
+            "pauseMany": "Ociosas há {age} ou mais."
+          },
+          "sentence": {
+            "network": "Removeria a rede vazia {target} — nenhum container",
+            "orphan": "Removeria a stack órfã {target} — worktree removida, volumes mantidos: {volumes}",
+            "orphanNone": "Removeria a stack órfã {target} — worktree removida, volumes mantidos",
+            "pause": "Pausaria {target} — ociosa há {idle}"
+          },
+          "groups": {
+            "done": {
+              "network": "{n} rede vazia removida | {n} redes vazias removidas",
+              "orphan": "{n} stack órfã removida | {n} stacks órfãs removidas",
+              "pause": "{n} stack pausada | {n} stacks pausadas"
+            },
+            "would": {
+              "network": "Removeria {n} rede vazia | Removeria {n} redes vazias",
+              "orphan": "Removeria {n} stack órfã | Removeria {n} stacks órfãs",
+              "pause": "Pausaria {n} stack | Pausaria {n} stacks"
+            },
+            "volumesKept": "{v} volume mantido | {v} volumes mantidos",
+            "source": "pela Limpeza",
+            "expand": "Mostrar as {n} ações",
+            "collapse": "Ocultar as ações"
+          }
+        },
+        "report": {
+          "badge": "Só relatório · primeiro ciclo",
+          "review": "Revisar nas Configurações"
+        },
+        "age": {
+          "min": "{n} min",
+          "h": "{n} h",
+          "d": "{n} d"
+        },
+        "pool": {
+          "offer": "O Docker está nos pools de endereço padrão e os slots de rede ficaram escassos.",
+          "offerOpen": "Ver como adicionar mais",
+          "eyebrow": "Pools de endereço do Docker",
+          "title": "Dê mais espaço às redes do Docker",
+          "intro": "O Docker está usando os pools de endereço padrão, que comportam {total} redes. Os slots livres caíram para {free} nesta máquina. Um pool maior dá espaço para todo projeto compose iniciar.",
+          "step1": "Adicione isto em {file}",
+          "step1Hint": "Se o arquivo já existir, adicione a chave nele em vez de substituí-lo. Escolha uma faixa que sua VPN e sua LAN não usem.",
+          "copy": "Copiar",
+          "copied": "Copiado",
+          "size": "256 redes /24, a partir de 10.200.0.0/16.",
+          "step2": "Reinicie o daemon do Docker",
+          "step2Hint": "Por exemplo {command}. Containers sem live-restore param enquanto ele reinicia.",
+          "note": "O Harnu nunca edita este arquivo. Você só verá isto uma vez.",
+          "dismiss": "Dispensar"
         }
       },
       "split": {
@@ -3665,6 +3768,15 @@
       "body": "{names} — abra Containers para revisar",
       "more": "+{n} a mais"
     },
+    "staleVolume": {
+      "title": "Os dados deste volume podem estar desatualizados",
+      "titleMany": "Os dados destes volumes podem estar desatualizados",
+      "body": "O projeto {project} monta o volume {volume}, que pertencia a uma worktree removida ({worktree}). Os dados dele podem estar desatualizados.",
+      "bodyMany": "O projeto {project} monta os volumes {volumes}, que pertenciam a uma worktree removida ({worktree}). Os dados deles podem estar desatualizados.",
+      "groupTitle": "{n} projetos montam volumes que podem estar desatualizados",
+      "itemDescription": "Usado por {project} · da worktree removida {worktree}",
+      "open": "Abrir Containers"
+    },
     "scannedAgo": "verificado {ago}",
     "readingDocker": "lendo o docker…",
     "scanNow": "Verificar agora",
@@ -3904,7 +4016,8 @@
         "when": "Pausada",
         "folder": "Pasta",
         "ports": "Portas usadas",
-        "build": "Recompila ao restaurar"
+        "build": "Recompila ao restaurar",
+        "buildYes": "Sim"
       },
       "actor": {
         "autopilot": "Cleanup",

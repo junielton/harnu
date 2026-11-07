@@ -10,6 +10,22 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-07
+
+### Added
+
+- **The Cleanup Docker card shows the network slots, the Paused stacks and what Cleanup did on its own.** Two new blocks lead the card: **Docker networks** ("16 of 31 network slots free" with a gauge; **Low** at 3 free or fewer, **None left** at zero, and **Unknown** with the reason on Docker Desktop, rootless and remote engines) and **Paused stacks** (how many, the newest three with how long they have been paused, and a button that copies each one's `compose up -d` command). A third block, **Automatic actions**, closes the card: the newest 5 things Cleanup did by itself, folded one row per pass and kind ("4 empty networks removed", "6 orphan stacks removed · 9 volumes kept", "2 stacks paused") with the names, the reason, how long ago and who did it, each row opening to the individual journal lines; and a **Show all in Activity** link. While Docker cleanup is still in its report-only first cycle the card says **Report only · first cycle**, lists what it _would_ do as "Would have" rows and links to the acknowledgement in Settings → Cleanup.
+
+- **Cleanup tells you once how to give Docker more network slots.** When Docker is on its default address pools and the free slots have run low, the Docker card shows one callout, **See how to add more**, that opens a short guided dialog: a `default-address-pools` snippet for `/etc/docker/daemon.json` (a `10.200.0.0/16` pool of 256 `/24` networks, with a note to pick a range your VPN and LAN don't use) to copy, and the command to restart the Docker daemon. Harnu never edits that file. Dismiss it once and it does not come back unless the pools change.
+
+- **Activity warns when a project reuses a volume from a removed worktree.** If a live compose project mounts a volume Cleanup kept when it removed an orphan stack, an Activity entry says so ("Project `ext-12` mounts volume `ext-12_mysql` that belonged to a removed worktree (`feat-old`). Its data may be stale.") with an **Open Containers** button. Several projects in one scan fold into one entry. Each volume warns once, and again only if a different worktree later mounts it.
+
+### Fixed
+
+- **The first-report list says what Cleanup _would_ do.** In Settings → Cleanup → _Docker: pausing and garbage_ the list read like the journal ("Removed empty network `x`") for things not yet done; it now reads "Would remove empty network `x` — no containers" (and the orphan-stack and pause equivalents, in Portuguese too).
+
+- **"Rebuilds on restore" reads "Yes".** In a Paused stack's detail the value was lowercase.
+
 ## 2026-11-06
 
 ### Added

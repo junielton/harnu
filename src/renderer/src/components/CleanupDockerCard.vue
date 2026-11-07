@@ -1,17 +1,25 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useNow } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import { Container, EyeOff, Recycle, Trash2 } from 'lucide-vue-next'
+import { Container, EyeOff, Info, Recycle, Trash2 } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
+import CleanupDockerActions from './CleanupDockerActions.vue'
+import CleanupDockerPaused from './CleanupDockerPaused.vue'
+import CleanupDockerSlots from './CleanupDockerSlots.vue'
 import { formatBytes } from './system-monitor-format'
+import { automaticActionGroups, slotsState, wouldHaveGroups } from '../lib/docker-card-view'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
 import type {
   CycleRecord,
+  DockerReportItem,
+  DockerWatchRecord,
   GcDockerCard,
   OrphanVolumeItem,
   StackLeftoverItem
 } from '../../../main/gc/gc-wire'
+import type { PausedStack, Tombstone } from '../../../main/containers/containers-wire'
 
 /**
  * Docker region of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Docker card").
@@ -28,6 +36,16 @@ const props = defineProps<{
   prefs: GcPrefs
   /** What removed worktrees left in Docker (AC-D3); the block shows only when this is not empty. */
   leftovers?: StackLeftoverItem[]
+  /** The capacity watcher's last pass (U3.6); null before it has read anything. */
+  dockerWatch?: DockerWatchRecord | null
+  /** Stacks Cleanup brought down and that have not come back (U3.4). */
+  paused?: readonly PausedStack[]
+  /** The Containers journal, newest first; the automatic lines are the card's "Automatic actions". */
+  recent?: readonly Tombstone[]
+  /** What "Acknowledge first report" will do (U3.6); null once acknowledged or when nothing is planned. */
+  report?: { items: DockerReportItem[]; found: number } | null
+  /** The one-time address-pool advice is on offer (default pools, a squeeze seen, not dismissed). */
+  poolAdvice?: boolean
 }>()
 const emit = defineEmits<{
   toggle: [category: 'dockerCache', value: boolean]
@@ -36,8 +54,36 @@ const emit = defineEmits<{
   cleanLeftovers: [ids: string[]]
   /** Remove these leftover volumes (ids `volume:<name>`), each behind its own confirm. */
   removeLeftoverVolumes: [ids: string[]]
+  /** The report-only badge's link: Settings → Cleanup, where the acknowledgement lives. */
+  openSettings: []
+  /** "Show all in Activity". */
+  showAll: []
+  /** "See how to add more": opens the address-pool advice dialog. */
+  openAdvice: []
 }>()
 const { t } = useI18n()
+
+const nowMs = computed(() => now.value.getTime())
+const now = useNow({ interval: 30_000 })
+
+/** The first Docker cycle only reports; the card says so and lists what it WOULD do. */
+const reporting = computed(
+  () => props.prefs.docker.enabled && !props.prefs.docker.firstReportAcknowledged
+)
+const slots = computed(() =>
+  slotsState(props.dockerWatch ?? null, props.prefs.docker.lowWaterSlots)
+)
+/** Pauses the first pass WOULD make; null (show the real count) when it has none to announce. */
+const wouldPause = computed(() => {
+  if (!reporting.value || !props.report) return null
+  const n = props.report.items.filter((i) => i.kind === 'pause').length
+  return n > 0 ? n : null
+})
+const actionGroups = computed(() =>
+  reporting.value && props.report
+    ? wouldHaveGroups(props.report)
+    : automaticActionGroups(props.recent ?? [])
+)
 
 const housekeeping = computed(() => props.lastCycle?.housekeeping ?? null)
 
@@ -154,6 +200,21 @@ const splitSegments = computed(() =>
       <Container :size="14" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
       <span class="text-ui font-medium text-text">{{ t('cleanup.gc.docker.title') }}</span>
       <span class="text-caption text-text-4" data-testid="docker-sub">{{ subtitle }}</span>
+      <template v-if="reporting">
+        <span
+          class="inline-flex items-center rounded-full border border-accent-line bg-accent-soft px-2 py-0.5 text-caption text-accent"
+          data-testid="docker-report-badge"
+          >{{ t('cleanup.gc.docker.report.badge') }}</span
+        >
+        <button
+          type="button"
+          class="text-caption font-medium text-text-2 transition hover:text-text"
+          data-testid="docker-report-settings"
+          @click="emit('openSettings')"
+        >
+          {{ t('cleanup.gc.docker.report.review') }}
+        </button>
+      </template>
       <!-- The Containers takeover stays the inspector (per-stack start/stop); this is its door. -->
       <button
         type="button"
@@ -187,8 +248,29 @@ const splitSegments = computed(() =>
         :data-seg="seg.key"
       />
     </div>
+    <!-- One-time offer of the address-pool advice; it never opens the dialog by itself. -->
+    <div v-if="poolAdvice" class="px-3 pb-2">
+      <div
+        class="flex items-center gap-2 rounded-xs border border-accent-line bg-accent-soft px-3 py-2"
+        data-testid="docker-pool-offer"
+      >
+        <Info :size="14" :stroke-width="1.7" class="shrink-0 text-accent" aria-hidden="true" />
+        <span class="text-ui text-text">{{ t('cleanup.gc.docker.pool.offer') }}</span>
+        <Button
+          class="ml-auto"
+          variant="soft"
+          data-testid="docker-pool-offer-open"
+          @click="emit('openAdvice')"
+        >
+          {{ t('cleanup.gc.docker.pool.offerOpen') }}
+        </Button>
+      </div>
+    </div>
     <!-- Auto-fit columns, each block as tall as its own content: no stretching to the tallest sibling. -->
     <div class="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] items-start gap-2 px-3 pb-3">
+      <CleanupDockerSlots :state="slots" :mark="prefs.docker.lowWaterSlots" />
+      <CleanupDockerPaused :paused="paused ?? []" :now="nowMs" :would-pause="wouldPause" />
+
       <div :class="blockClass(prefs.categories.dockerCache)" data-testid="docker-cache">
         <div class="flex items-center gap-2">
           <span class="text-ui font-medium text-text">{{ t('cleanup.gc.docker.buildCache') }}</span>
@@ -403,6 +485,13 @@ const splitSegments = computed(() =>
           </Button>
         </div>
       </div>
+
+      <CleanupDockerActions
+        :groups="actionGroups"
+        :reporting="reporting && !!report"
+        :now="nowMs"
+        @show-all="emit('showAll')"
+      />
     </div>
   </section>
 </template>

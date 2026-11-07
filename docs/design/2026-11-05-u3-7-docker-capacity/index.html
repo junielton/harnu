@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — Autonomous Cleanup U3.7</title>
+    <style>
+      :root {
+        --ix-bg: #f6f6f7;
+        --ix-fg: #1b1b1f;
+        --ix-muted: #6b6b76;
+        --ix-line: #dcdce2;
+        --ix-card: #fff;
+        --ix-accent: #2f5bea;
+        --ix-draft: #b7791f;
+        --ix-ok: #2f855a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ix-bg: #121216;
+          --ix-fg: #ececf1;
+          --ix-muted: #9a9aa6;
+          --ix-line: #2b2b33;
+          --ix-card: #1b1b21;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        color: var(--ix-fg);
+        background: var(--ix-bg);
+      }
+      header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--ix-line);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ix-draft);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status[data-status='approved'] {
+        background: var(--ix-ok);
+      }
+      nav.toc {
+        font-size: 13px;
+        color: var(--ix-muted);
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      nav.toc a {
+        color: inherit;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        margin-bottom: 48px;
+      }
+      section > h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .prose {
+        max-width: 80ch;
+        color: var(--ix-fg);
+      }
+      .prose p {
+        margin: 0 0 10px;
+      }
+      .prose table {
+        border-collapse: collapse;
+        font-size: 13px;
+        width: 100%;
+      }
+      .prose th,
+      .prose td {
+        text-align: left;
+        padding: 4px 10px 4px 0;
+        border-bottom: 1px solid var(--ix-line);
+        vertical-align: top;
+      }
+      .screen {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .screen .bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .screen h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .screen h3 code {
+        font-size: 12px;
+        color: var(--ix-muted);
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .screen .notes {
+        font-size: 13px;
+        color: var(--ix-muted);
+        margin: 0 0 12px;
+        max-width: 80ch;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chips button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--ix-line);
+        background: transparent;
+        color: var(--ix-fg);
+        cursor: pointer;
+      }
+      .chips button[aria-pressed='true'] {
+        background: var(--ix-accent);
+        border-color: var(--ix-accent);
+        color: #fff;
+      }
+      .open {
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .viewport {
+        overflow: hidden;
+        border: 1px solid var(--ix-line);
+        border-radius: 6px;
+        background: #fff;
+      }
+      .viewport iframe {
+        display: block;
+        border: 0;
+        transform-origin: top left;
+      }
+      .screen .approval {
+        font-size: 12px;
+        margin-top: 8px;
+        color: var(--ix-muted);
+      }
+      .flow {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .flow ol {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 0;
+        margin: 8px 0 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .flow li {
+        counter-increment: step;
+        font-size: 13px;
+      }
+      .flow li::before {
+        content: counter(step) '. ';
+        color: var(--ix-muted);
+      }
+      .flow li + li::before {
+        content: '→ ' counter(step) '. ';
+      }
+      .flow li small {
+        color: var(--ix-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Autonomous Cleanup U3.7 — Docker capacity UI</h1>
+      <span class="status" data-status="approved">approved</span>
+      <nav class="toc">
+        <a href="#contexto">Context</a><a href="#telas">Screens</a><a href="#fluxos">Flows</a
+        ><a href="parts/index.html">Parts</a>
+      </nav>
+    </header>
+    <main>
+      <section id="contexto">
+        <h2>Context and decisions</h2>
+        <div class="prose">
+          <p>
+            U3 of the Autonomous Cleanup spec makes Cleanup watch Docker's bridge-network slots,
+            pause idle stacks, and remove garbage on its own. These three screens are the
+            operator-facing surface: what the Docker card shows, the one-time address-pool advice,
+            and the stale-volume warning in Activity. Approve them one by one.
+          </p>
+          <p>
+            Decisions taken here: the existing card structure and its three blocks stay as they are;
+            two blocks lead the grid and one full-width list closes it; the advice dialog is its own
+            screen (the spec makes it a dedicated guided dialog), reached from a one-time callout on
+            the card; the stale-volume warning reuses the Activity row anatomy (kind bar, optional
+            action pill, grouped entry for several).
+          </p>
+          <p>
+            Copy (design.md §8: short labels, no trailing period; "Paused" in the UI, never
+            "parked"):
+          </p>
+          <table>
+            <tr>
+              <th>Where</th>
+              <th>English</th>
+              <th>pt-BR</th>
+            </tr>
+            <tr>
+              <td>Slots, known</td>
+              <td>{n} of {total} network slots free</td>
+              <td>{n} de {total} vagas de rede livres</td>
+            </tr>
+            <tr>
+              <td>Slots, unknown</td>
+              <td>Network slots unknown</td>
+              <td>Vagas de rede desconhecidas</td>
+            </tr>
+            <tr>
+              <td>Paused block</td>
+              <td>Paused stacks · {n} paused</td>
+              <td>Stacks pausadas · {n} pausadas</td>
+            </tr>
+            <tr>
+              <td>Actions block</td>
+              <td>Automatic actions</td>
+              <td>Ações automáticas</td>
+            </tr>
+            <tr>
+              <td>Pool advice</td>
+              <td>Restart the Docker daemon. Harnu never edits this file.</td>
+              <td>Reinicie o daemon do Docker. O Harnu nunca edita este arquivo.</td>
+            </tr>
+            <tr>
+              <td>Stale volume</td>
+              <td>Data in this volume may be stale · Open Containers</td>
+              <td>Os dados deste volume podem estar desatualizados · Abrir Containers</td>
+            </tr>
+          </table>
+        </div>
+      </section>
+
+      <section id="telas">
+        <h2>Screens</h2>
+
+        <article
+          class="screen"
+          data-screen="docker-card"
+          data-states="default capacity-low capacity-zero unknown-desktop unknown-rootless unknown-remote no-actions report-only advice-offer"
+        >
+          <div class="bar">
+            <h3>Cleanup → Docker card <code>docker-card</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/docker-card.html" target="_blank">open alone ↗</a>
+          </div>
+          <p class="notes">
+            Look at the first two blocks (Docker networks, Paused stacks) and the Automatic actions
+            list. States cover healthy, low, zero, the three "unknown" reasons, nothing yet, the
+            report-only first cycle, and the one-time advice offer.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="docker-card"></iframe></div>
+          <p class="approval">Approval: <strong>draft</strong></p>
+        </article>
+
+        <article class="screen" data-screen="docker-pool-advice" data-states="default copied">
+          <div class="bar">
+            <h3>Address-pool advice <code>docker-pool-advice</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/docker-pool-advice.html" target="_blank">open alone ↗</a>
+          </div>
+          <p class="notes">
+            Shown once. Copy puts the snippet on the clipboard; Dismiss closes it for good. The
+            backdrop here only stands in for the real overlay.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="docker-pool-advice"></iframe></div>
+          <p class="approval">Approval: <strong>draft</strong></p>
+        </article>
+
+        <article class="screen" data-screen="activity-stale-volume" data-states="default several">
+          <div class="bar">
+            <h3>Activity → stale-volume warning <code>activity-stale-volume</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/activity-stale-volume.html" target="_blank"
+              >open alone ↗</a
+            >
+          </div>
+          <p class="notes">
+            One project, or several folded into one grouped entry. The two rows below the warning
+            are filler to show rhythm.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="activity-stale-volume"></iframe></div>
+          <p class="approval">Approval: <strong>draft</strong></p>
+        </article>
+      </section>
+
+      <section id="fluxos">
+        <h2>Flows</h2>
+        <article class="flow" data-flow="capacity-squeeze">
+          <h3>
+            Slots run low, operator follows the advice —
+            <a href="screens/docker-card.html?state=advice-offer" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/docker-card.html?state=advice-offer" target="_blank">docker-card</a>
+              <small>via "See how to add more"</small>
+            </li>
+            <li>
+              <a href="screens/docker-pool-advice.html?state=default" target="_blank"
+                >docker-pool-advice</a
+              >
+              <small>via "Copy"</small>
+            </li>
+            <li>
+              <a href="screens/docker-pool-advice.html?state=copied" target="_blank"
+                >docker-pool-advice · copied</a
+              >
+              <small>via "Dismiss"</small>
+            </li>
+            <li>
+              <a href="screens/docker-card.html?state=capacity-low" target="_blank"
+                >docker-card · low, offer gone</a
+              >
+            </li>
+          </ol>
+        </article>
+      </section>
+    </main>
+    <script>
+      ;(() => {
+        const VIEWPORTS = [1280, 800] // MUST mirror mockup.json "viewports"
+        const frames = new Map()
+        const fit = (card) => {
+          const vp = card.querySelector('.viewport'),
+            ifr = vp.querySelector('iframe'),
+            f = frames.get(ifr)
+          const s = Math.min(1, vp.parentElement.clientWidth / f.w)
+          ifr.style.width = f.w + 'px'
+          ifr.style.height = f.h + 'px'
+          ifr.style.transform = `scale(${s})`
+          vp.style.height = Math.ceil(f.h * s) + 'px'
+          vp.style.width = Math.ceil(f.w * s) + 'px'
+        }
+        const load = (card) => {
+          const ifr = card.querySelector('iframe')
+          const state =
+            card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state ||
+            card.dataset.states.split(/\s+/)[0]
+          ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`
+        }
+        document.querySelectorAll('.screen').forEach((card) => {
+          const ifr = card.querySelector('iframe')
+          frames.set(ifr, { w: VIEWPORTS[0], h: 600 })
+          const vps = card.querySelector('[data-role="viewports"]')
+          VIEWPORTS.forEach((w, i) => {
+            const b = document.createElement('button')
+            b.textContent = w + 'px'
+            b.dataset.w = w
+            b.setAttribute('aria-pressed', String(i === 0))
+            b.onclick = () => {
+              vps
+                .querySelectorAll('button')
+                .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+              frames.get(ifr).w = w
+              fit(card)
+            }
+            vps.append(b)
+          })
+          const sts = card.querySelector('[data-role="states"]')
+          card.dataset.states
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((st, i) => {
+              const b = document.createElement('button')
+              b.textContent = st
+              b.dataset.state = st
+              b.setAttribute('aria-pressed', String(i === 0))
+              b.onclick = () => {
+                sts
+                  .querySelectorAll('button')
+                  .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+                load(card)
+              }
+              sts.append(b)
+            })
+          new IntersectionObserver(
+            (es, io) =>
+              es.forEach((e) => {
+                if (e.isIntersecting) {
+                  io.disconnect()
+                  load(card)
+                }
+              }),
+            { rootMargin: '600px' }
+          ).observe(card)
+          fit(card)
+        })
+        addEventListener('message', (e) => {
+          const m = e.data
+          if (!m || m.type !== 'mockup:size') return
+          for (const [ifr, f] of frames)
+            if (ifr.contentWindow === e.source) {
+              f.h = Math.max(320, m.height)
+              fit(ifr.closest('.screen'))
+            }
+        })
+        addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit))
+      })()
+    </script>
+  </body>
+</html>

@@ -203,7 +203,8 @@ import type {
   StackActResult as ContainersStackActResult,
   ActErrorCode as ContainersActErrorCode,
   ContainersPrefs,
-  NewZombiesAlert as ContainersNewZombiesAlert
+  NewZombiesAlert as ContainersNewZombiesAlert,
+  StaleVolumesAlert as ContainersStaleVolumesAlert
 } from '../main/containers/containers-wire'
 
 // Renderer-facing aliases. The shapes are defined once on the main side
@@ -385,7 +386,8 @@ export type {
   ContainersStackActResult,
   ContainersActErrorCode,
   ContainersPrefs,
-  ContainersNewZombiesAlert
+  ContainersNewZombiesAlert,
+  ContainersStaleVolumesAlert
 }
 // PR Stack Canvas wire types (T198). The snapshot and its worktree rows come
 // from the pure core; the prefs are the Settings → PR Stack contract.
@@ -3148,6 +3150,9 @@ const api = {
   /** Fires once per stack, on the scan where it first becomes a zombie (pref-gated in main). */
   onContainersNewZombies: (cb: (alert: ContainersNewZombiesAlert) => void): (() => void) =>
     subscribe('containers:newZombies', cb),
+  /** Fires once per (volume, removed worktree, mounting worktree): a live project mounts a volume kept for a removed worktree (U3.7). */
+  onContainersStaleVolumes: (cb: (alert: ContainersStaleVolumesAlert) => void): (() => void) =>
+    subscribe('containers:staleVolumes', cb),
 
   // ---- System Monitor (T127 S1) ---------------------------------------------
   // The always-on heap heartbeat (`onMonitorHeap`) feeds the footer gauge and

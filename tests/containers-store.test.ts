@@ -44,7 +44,8 @@ function installApi(initial: ContainersSnapshot | null): {
       onContainersNewZombies: (cb: (alert: ContainersNewZombiesAlert) => void) => {
         alertHandler = cb
         return () => (alertHandler = null)
-      }
+      },
+      onContainersStaleVolumes: () => () => undefined
     })
   }
   // The containers store keeps nothing in localStorage; the notifications store

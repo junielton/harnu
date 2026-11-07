@@ -7,6 +7,7 @@ import type {
   ContainersNewZombiesAlert,
   ContainersPausedStack,
   ContainersSnapshot,
+  ContainersStaleVolumesAlert,
   ContainersTombstone,
   StackRow
 } from '../../../preload'
@@ -75,6 +76,59 @@ function recordNewZombies(alert: ContainersNewZombiesAlert): void {
   })
 }
 
+/**
+ * U3.7: a quiet Activity warning when a live compose project mounts a volume Harnu kept for a removed
+ * worktree. Main decides WHEN (once per volume and mounting worktree); this words it. One project is
+ * one row; several projects in one alert fold into ONE grouped entry with a line per project.
+ */
+function recordStaleVolumes(alert: ContainersStaleVolumesAlert): void {
+  if (alert.warnings.length === 0) return
+  const { t } = i18n.global
+  const byProject = new Map<string, { volumes: string[]; worktrees: string[] }>()
+  for (const w of alert.warnings) {
+    const entry = byProject.get(w.project) ?? { volumes: [], worktrees: [] }
+    if (!entry.volumes.includes(w.volume)) entry.volumes.push(w.volume)
+    if (w.worktree && !entry.worktrees.includes(w.worktree)) entry.worktrees.push(w.worktree)
+    byProject.set(w.project, entry)
+  }
+  const notifications = useNotificationsStore()
+  const base = {
+    ts: Date.now(),
+    source: 'app' as const,
+    kind: 'warning' as const,
+    action: { label: t('containers.staleVolume.open') },
+    target: { view: 'containers' as const }
+  }
+  if (byProject.size === 1) {
+    const [project, e] = [...byProject][0]!
+    const many = e.volumes.length > 1
+    notifications.notify({
+      ...base,
+      title: t(many ? 'containers.staleVolume.titleMany' : 'containers.staleVolume.title'),
+      description: t(many ? 'containers.staleVolume.bodyMany' : 'containers.staleVolume.body', {
+        project,
+        volume: e.volumes[0],
+        volumes: e.volumes.join(', '),
+        worktree: e.worktrees.join(', ')
+      })
+    })
+    return
+  }
+  notifications.notify({
+    ...base,
+    title: t('containers.staleVolume.groupTitle', { n: byProject.size }),
+    items: [...byProject].map(([project, e]) => ({
+      id: project,
+      title: e.volumes.join(', '),
+      description: t('containers.staleVolume.itemDescription', {
+        project,
+        worktree: e.worktrees.join(', ')
+      }),
+      target: { view: 'containers' as const }
+    }))
+  })
+}
+
 function baselineFor(verb: ActVerb, stack: StackRow): string[] {
   if (verb === 'stop') return stack.containers.filter((c) => c.running).map((c) => c.id)
   if (verb === 'start') return stack.containers.filter((c) => !c.running).map((c) => c.id)
@@ -121,6 +175,7 @@ export const useContainersStore = defineStore('containers', () => {
 
   let unsubUpdate: (() => void) | null = null
   let unsubNewZombies: (() => void) | null = null
+  let unsubStaleVolumes: (() => void) | null = null
   let polling = false
 
   const available = computed(() => (snapshot.value?.dockerAvailable ? snapshot.value : null))
@@ -166,6 +221,8 @@ export const useContainersStore = defineStore('containers', () => {
     unsubUpdate = window.api.onContainersUpdate(setSnapshot)
     unsubNewZombies?.()
     unsubNewZombies = window.api.onContainersNewZombies(recordNewZombies)
+    unsubStaleVolumes?.()
+    unsubStaleVolumes = window.api.onContainersStaleVolumes(recordStaleVolumes)
     const snap = await window.api.containersSnapshot()
     // A push that landed while the request was in flight is at least as fresh.
     if (snap && !snapshot.value) setSnapshot(snap)

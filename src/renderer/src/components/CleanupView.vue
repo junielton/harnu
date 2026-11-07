@@ -21,6 +21,7 @@ import {
 import { useUiStore } from '../stores/ui'
 import { useReaperStore } from '../stores/reaper'
 import { useGcStore } from '../stores/gc'
+import { useContainersStore } from '../stores/containers'
 import { relativeTime } from '../composables/useRelativeTime'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate, canRehydrate } from './cleanup-row'
@@ -63,6 +64,7 @@ import CleanupSelectionBar from './CleanupSelectionBar.vue'
 import CleanupFirstCycleBanner from './CleanupFirstCycleBanner.vue'
 import CleanupRecoveryNotices from './CleanupRecoveryNotices.vue'
 import CleanupDockerCard from './CleanupDockerCard.vue'
+import CleanupPoolAdviceDialog from './CleanupPoolAdviceDialog.vue'
 import CleanupArchivesCard from './CleanupArchivesCard.vue'
 import CleanupTrashCard from './CleanupTrashCard.vue'
 import CleanupShelvedCard from './CleanupShelvedCard.vue'
@@ -98,6 +100,7 @@ import type { ArchiveEntry, ArchiveRepoGroup, TrashListEntry } from '../../../ma
 const ui = useUiStore()
 const reaper = useReaperStore()
 const gc = useGcStore()
+const containers = useContainersStore()
 const { t } = useI18n()
 const now = useNow({ interval: 30_000 })
 
@@ -132,13 +135,46 @@ onMounted(async () => {
   // every window capture listener — so a dialog, palette or menu opened over
   // Cleanup (they register later, and stop Esc) keeps its Esc (T486 §6.1).
   document.addEventListener('keydown', onKeydown, true)
+  // The Docker card reads Paused stacks and the journal from the Containers snapshot (U3.7).
+  void containers
+    .init()
+    // Always scan: Cleanup's own Docker actions write the journal without going through the service.
+    .then(() => containers.scanNow())
+    .catch(() => undefined)
   await Promise.all([gc.init(), reaper.init()])
   if (!reaper.snapshot) await scanFirst()
 })
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown, true))
 
+/**
+ * Cleanup's own Docker actions (the capacity watcher, the hourly cycle) write the Containers journal
+ * without going through the Containers service, so its snapshot does not know about them. When a pass
+ * reports that it acted, scan once so the card's Paused stacks and Automatic actions are current.
+ */
+watch(
+  () => {
+    const w = gc.dockerWatch
+    const c = gc.snapshot?.lastCycle
+    return `${w && w.acted > 0 ? w.at : 0}:${c?.docker && c.docker.acted > 0 ? c.at : 0}`
+  },
+  (key) => {
+    if (key !== '0:0') void containers.scanNow().catch(() => undefined)
+  }
+)
+
 const model = computed(() => gc.model)
 const prefs = computed(() => gc.prefs)
+
+/** The address-pool advice dialog (U3.7), opened only from the Docker card's one-time callout. */
+const adviceOpen = ref(false)
+const adviceCapacity = computed(() => {
+  const c = gc.dockerWatch?.capacity
+  return c && c.known ? c : null
+})
+function dismissAdvice(): void {
+  adviceOpen.value = false
+  gc.dismissPoolAdvice()
+}
 
 // ---- view state ---------------------------------------------------------------------------------
 
@@ -1220,6 +1256,14 @@ async function confirmExhaust(): Promise<void> {
             :last-cycle="gc.snapshot?.lastCycle ?? null"
             :prefs="prefs"
             :leftovers="stackLeftovers"
+            :docker-watch="gc.dockerWatch"
+            :paused="containers.paused"
+            :recent="containers.recent"
+            :report="gc.dockerReport"
+            :pool-advice="gc.poolAdviceOffer"
+            @open-advice="adviceOpen = true"
+            @open-settings="ui.openSettings('cleanup')"
+            @show-all="ui.openPopover('activity')"
             @clean-leftovers="openDockerConfirm('stack', $event)"
             @remove-leftover-volumes="openDockerConfirm('volumes', $event)"
             @inspect="ui.openContainers()"
@@ -1381,6 +1425,12 @@ async function confirmExhaust(): Promise<void> {
     :items="dockerConfirm.items"
     @confirm="confirmDocker()"
     @cancel="dockerConfirm = null"
+  />
+  <CleanupPoolAdviceDialog
+    v-if="adviceOpen && adviceCapacity"
+    :free="adviceCapacity.free"
+    :total="adviceCapacity.total"
+    @dismiss="dismissAdvice()"
   />
   <CleanupTranscriptsConfirmDialog
     v-if="transcriptItems"

@@ -84,7 +84,7 @@ async function copyCommand(): Promise<void> {
 
         <template v-if="paused.hasBuild">
           <span class="text-text-4">{{ t('containers.paused.evidence.build') }}</span>
-          <span class="text-text-2">{{ t('containers.value.yes') }}</span>
+          <span class="text-text-2">{{ t('containers.paused.evidence.buildYes') }}</span>
         </template>
       </div>
 

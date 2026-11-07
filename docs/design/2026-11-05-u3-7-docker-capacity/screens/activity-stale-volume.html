@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: activity-stale-volume</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa='activity-stale-volume'] {
+        min-height: 420px;
+      } /* no token: stage height so the popover is not clipped */
+      [data-dsqa='activity-stale-volume'] .only {
+        display: none;
+      }
+      [data-dsqa='activity-stale-volume'][data-state='default'] .only[data-only~='default'],
+      [data-dsqa='activity-stale-volume'][data-state='several'] .only[data-only~='several'] {
+        display: contents;
+      }
+    </style>
+  </head>
+  <body data-states="default several">
+    <div data-dsqa="activity-stale-volume" data-testid="activity-popover">
+      <div class="topbar">
+        <button type="button" class="bell" aria-label="Activity">
+          <mk-icon name="bell" size="14"></mk-icon
+          ><span class="count tnum"
+            ><span class="only" data-only="default">3</span
+            ><span class="only" data-only="several">3</span></span
+          >
+        </button>
+      </div>
+      <div class="popwrap">
+        <div class="pop" role="dialog" aria-label="Activity">
+          <div class="pop-head">
+            <span class="t-ui fw-500 c-text">Activity</span>
+            <span class="t-caption c-4 tnum">3</span>
+            <button type="button" class="link-btn push">Clear all</button>
+          </div>
+
+          <!-- NEW: stale-volume warning, one project -->
+          <div class="arow" data-dsqa-part="stale-volume-row">
+            <span class="bar bar--warning"></span>
+            <div class="main">
+              <span class="t-ui fw-500 c-text">
+                <span class="only" data-only="default">Data in this volume may be stale</span>
+                <span class="only" data-only="several"
+                  >2 projects mount volumes that may be stale</span
+                >
+              </span>
+
+              <div class="only" data-only="default">
+                <div class="t-caption c-3">
+                  Project <span class="mono c-2">ext-12</span> mounts volume
+                  <span class="mono c-2">ext-12_mysql</span> that belonged to a removed worktree
+                  (<span class="mono c-2">feat-old</span>). Its data may be stale.
+                </div>
+                <button type="button" class="pill" data-goto="activity-stale-volume?state=default">
+                  <mk-icon name="container" size="12"></mk-icon>Open Containers
+                </button>
+              </div>
+
+              <div class="only" data-only="several">
+                <div class="items">
+                  <button
+                    type="button"
+                    class="item"
+                    data-goto="activity-stale-volume?state=default"
+                  >
+                    <span class="item-line"
+                      ><span class="t-ui fw-500 c-text mono ellip">ext-12_mysql</span></span
+                    >
+                    <span class="t-caption c-3 ellip">Used by ext-12 · from removed feat-old</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="item"
+                    data-goto="activity-stale-volume?state=default"
+                  >
+                    <span class="item-line"
+                      ><span class="t-ui fw-500 c-text mono ellip">proj-34_redis</span></span
+                    >
+                    <span class="t-caption c-3 ellip"
+                      >Used by proj-34 · from removed feat-old-2</span
+                    >
+                  </button>
+                </div>
+                <button type="button" class="pill" data-goto="activity-stale-volume?state=default">
+                  <mk-icon name="container" size="12"></mk-icon>Open Containers
+                </button>
+              </div>
+            </div>
+            <span class="ts tnum">2 min ago</span>
+          </div>
+
+          <!-- neighbours, for rhythm only -->
+          <div class="arow">
+            <span class="bar bar--success"></span>
+            <div class="main">
+              <span class="t-ui fw-500 c-text">Cleanup freed 2.1 GB</span>
+              <div class="t-caption c-3">3 worktrees removed, 6 orphan stacks cleared.</div>
+            </div>
+            <span class="ts tnum">1 h ago</span>
+          </div>
+          <div class="arow">
+            <span class="bar bar--info"></span>
+            <div class="main">
+              <span class="t-ui fw-500 c-text">Session finished</span>
+              <div class="t-caption c-3">feat-docs has no pending work.</div>
+            </div>
+            <span class="ts tnum">3 h ago</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="../parts/icon.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

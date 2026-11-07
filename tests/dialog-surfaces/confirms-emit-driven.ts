@@ -18,6 +18,7 @@ import { vi } from 'vitest'
 import { i18n } from '@renderer/i18n'
 import CleanupBulkConfirmDialog from '../../src/renderer/src/components/CleanupBulkConfirmDialog.vue'
 import CleanupDockerConfirmDialog from '../../src/renderer/src/components/CleanupDockerConfirmDialog.vue'
+import CleanupPoolAdviceDialog from '../../src/renderer/src/components/CleanupPoolAdviceDialog.vue'
 import CleanupExhaustDialog from '../../src/renderer/src/components/CleanupExhaustDialog.vue'
 import CleanupGuidedDialog from '../../src/renderer/src/components/CleanupGuidedDialog.vue'
 import CleanupTranscriptsConfirmDialog from '../../src/renderer/src/components/CleanupTranscriptsConfirmDialog.vue'
@@ -147,6 +148,21 @@ const cleanupDockerConfirm: SurfaceSpec = {
       confirm: () => q('[data-testid="docker-confirm-confirm"]'),
       // The ✕ has no test hook and there is no <header>: it is the first button in the card.
       close: () => q('[role="dialog"] button')
+    })
+  }
+}
+
+const cleanupPoolAdvice: SurfaceSpec = {
+  file: 'CleanupPoolAdviceDialog.vue',
+  async open(): Promise<OpenedSurface> {
+    const w = mount(CleanupPoolAdviceDialog, {
+      props: { free: 3, total: 31 },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    // One button: Dismiss is both the safe default and the only way out.
+    return emitSurface(w, ['dismiss'], {
+      cancel: () => q('[data-testid="pool-advice-dismiss"]')
     })
   }
 }
@@ -529,6 +545,7 @@ export const SURFACES_B: SurfaceSpec[] = [
   cleanupDockerConfirm,
   cleanupExhaust,
   cleanupGuided,
+  cleanupPoolAdvice,
   cleanupTranscripts,
   containersRemove,
   dehydrateConfirm,

@@ -3008,6 +3008,109 @@
           "show": "Show folders",
           "hide": "Hide folders",
           "listLabel": "Folders where orphan volumes are hidden"
+        },
+        "slots": {
+          "title": "Docker networks",
+          "free": "{free} of {total} network slots free",
+          "badgeLow": "Low",
+          "badgeZero": "None left",
+          "badgeUnknown": "Unknown",
+          "captionDefault": "Default address pools. Cleanup acts when {mark} or fewer are free.",
+          "captionCustom": "Custom address pools. Cleanup acts when {mark} or fewer are free.",
+          "low": "At the low-water mark of {mark}. Cleanup is clearing garbage and pausing the longest-idle stacks.",
+          "lowOff": "At the low-water mark of {mark}. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "lowPaused": "At the low-water mark of {mark}. Automatic Docker cleanup is paused, so nothing will be freed on its own.",
+          "zero": "Nothing left to free. A new compose up will fail until a slot opens. Activity was notified.",
+          "zeroOff": "A new compose up will fail until a slot opens. Automatic Docker cleanup is off, so nothing will be freed on its own.",
+          "zeroPaused": "A new compose up will fail until a slot opens. Automatic Docker cleanup is paused, so nothing will be freed on its own.",
+          "unknown": "Network slots unknown",
+          "unknownFallback": "Harnu has not read this engine's address pools yet.",
+          "stillCleans": "Cleanup still removes garbage and pauses idle stacks."
+        },
+        "paused": {
+          "title": "Paused stacks",
+          "count": "{n} paused",
+          "none": "None paused",
+          "would": "Would pause {n}",
+          "idle": "idle {age}",
+          "copy": "Copy restore command for {name}",
+          "more": "+ {n} more in Inspect stacks",
+          "note": "Stopped when idle; volumes kept. Start one again with its compose up -d command."
+        },
+        "actions": {
+          "title": "Automatic actions",
+          "lastCycle": "last cycle",
+          "nothingChanged": "nothing was changed",
+          "empty": "Nothing automatic yet. Empty networks, orphan stacks and idle stacks are handled each cycle.",
+          "showAll": "Show all in Activity",
+          "wouldHave": "Would have",
+          "ago": "{age} ago",
+          "done": {
+            "network": "Removed empty network {target}",
+            "orphan": "Removed orphan stack {target}",
+            "pause": "Paused {target}"
+          },
+          "would": {
+            "network": "Would remove empty network {target}",
+            "orphan": "Would remove orphan stack {target}",
+            "pause": "Would pause {target}"
+          },
+          "detail": {
+            "network": "No containers were attached; compose up recreates them.",
+            "orphan": "Its worktree was removed. Volumes kept: {volumes}.",
+            "orphanNone": "Its worktree was removed. Its volumes stay under Orphan volumes.",
+            "pause": "Idle for {idle}.",
+            "orphanGroup": "Their worktrees were removed. The volumes stay under Orphan volumes.",
+            "pauseOne": "Idle for {age}.",
+            "pauseMany": "Idle for {age} or more."
+          },
+          "sentence": {
+            "network": "Would remove empty network {target} — no containers",
+            "orphan": "Would remove orphan stack {target} — worktree gone, volumes kept: {volumes}",
+            "orphanNone": "Would remove orphan stack {target} — worktree gone, volumes kept",
+            "pause": "Would pause {target} — idle {idle}"
+          },
+          "groups": {
+            "done": {
+              "network": "{n} empty network removed | {n} empty networks removed",
+              "orphan": "{n} orphan stack removed | {n} orphan stacks removed",
+              "pause": "{n} stack paused | {n} stacks paused"
+            },
+            "would": {
+              "network": "Would remove {n} empty network | Would remove {n} empty networks",
+              "orphan": "Would remove {n} orphan stack | Would remove {n} orphan stacks",
+              "pause": "Would pause {n} stack | Would pause {n} stacks"
+            },
+            "volumesKept": "{v} volume kept | {v} volumes kept",
+            "source": "by Cleanup",
+            "expand": "Show the {n} actions",
+            "collapse": "Hide the actions"
+          }
+        },
+        "report": {
+          "badge": "Report only · first cycle",
+          "review": "Review in Settings"
+        },
+        "age": {
+          "min": "{n} min",
+          "h": "{n} h",
+          "d": "{n} d"
+        },
+        "pool": {
+          "offer": "Docker is on its default address pools and network slots ran low.",
+          "offerOpen": "See how to add more",
+          "eyebrow": "Docker address pools",
+          "title": "Add more room for Docker networks",
+          "intro": "Docker is using its default address pools, which hold {total} networks. Free slots fell to {free} on this machine. A wider pool gives every compose project room to start.",
+          "step1": "Add this to {file}",
+          "step1Hint": "If the file already exists, add the key to it instead of replacing the file. Pick a range your VPN and LAN don't use.",
+          "copy": "Copy",
+          "copied": "Copied",
+          "size": "256 networks of /24, from 10.200.0.0/16.",
+          "step2": "Restart the Docker daemon",
+          "step2Hint": "For example {command}. Containers without live-restore stop while it restarts.",
+          "note": "Harnu never edits this file. You'll only see this once.",
+          "dismiss": "Dismiss"
         }
       },
       "split": {
@@ -3665,6 +3768,15 @@
       "body": "{names} — open Containers to review",
       "more": "+{n} more"
     },
+    "staleVolume": {
+      "title": "Data in this volume may be stale",
+      "titleMany": "Data in these volumes may be stale",
+      "body": "Project {project} mounts volume {volume} that belonged to a removed worktree ({worktree}). Its data may be stale.",
+      "bodyMany": "Project {project} mounts volumes {volumes} that belonged to a removed worktree ({worktree}). Their data may be stale.",
+      "groupTitle": "{n} projects mount volumes that may be stale",
+      "itemDescription": "Used by {project} · from removed {worktree}",
+      "open": "Open Containers"
+    },
     "scannedAgo": "scanned {ago}",
     "readingDocker": "reading docker…",
     "scanNow": "Scan now",
@@ -3904,7 +4016,8 @@
         "when": "Paused",
         "folder": "Folder",
         "ports": "Ports held",
-        "build": "Rebuilds on restore"
+        "build": "Rebuilds on restore",
+        "buildYes": "Yes"
       },
       "actor": {
         "autopilot": "Cleanup",

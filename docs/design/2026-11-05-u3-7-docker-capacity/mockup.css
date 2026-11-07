@@ -1,0 +1,674 @@
+/* mockup.css — anatomy shared by the U3.7 screens. Every color is var(--token) from tokens.css.
+ * Type sizes are design.md §3 "Scale" (Tailwind text-* utilities in the app). They live in main.css's
+ * @theme, not in themes.css, so they are written here as plain numbers with the scale name. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif; /* no token: --font-sans, design.md §3 */
+  font-size: 13px; /* no token: Body 13/20 */
+  line-height: 20px;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+}
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.mono {
+  font-family:
+    'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; /* no token: --font-mono */
+}
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* type scale */
+.t-ui {
+  font-size: 12.5px;
+  line-height: 18px;
+} /* no token: text-ui */
+.t-caption {
+  font-size: 11px;
+  line-height: 16px;
+} /* no token: text-caption */
+.t-subtitle {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+} /* no token: text-subtitle */
+.t-eyebrow {
+  font-size: 10.5px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+} /* no token: text-eyebrow */
+.fw-500 {
+  font-weight: 500;
+}
+.c-text {
+  color: var(--color-text);
+}
+.c-2 {
+  color: var(--color-text-2);
+}
+.c-3 {
+  color: var(--color-text-3);
+}
+.c-4 {
+  color: var(--color-text-4);
+}
+.c-green {
+  color: var(--color-green);
+}
+.c-warning {
+  color: var(--color-warning);
+}
+.c-red {
+  color: var(--color-red);
+}
+.c-accent {
+  color: var(--color-accent);
+}
+
+/* icons (mk-icon part) */
+mk-icon {
+  display: inline-flex;
+  flex: none;
+}
+mk-icon svg {
+  display: block;
+}
+
+/* ---------- Buttons (design.md §6 Buttons) ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 18px; /* no token: Inter 12.5/500 */
+  border: 1px solid transparent;
+  background: transparent;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.btn--soft {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.btn--soft:hover {
+  background: var(--color-surface-2);
+}
+.btn--ghost {
+  color: var(--color-text-2);
+  border-color: var(--color-border);
+}
+.btn--ghost:hover {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+.btn--focus {
+  outline: 1px solid var(--color-accent-line);
+  outline-offset: 1px;
+}
+.btn--success {
+  background: var(--color-green-soft);
+  color: var(--color-green);
+  border-color: var(--color-green-line);
+}
+.btn--sm {
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 16px;
+} /* no token: compact row action, same as the Activity pill size */
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--color-text-2);
+}
+.link-btn:hover {
+  color: var(--color-text);
+}
+
+/* ---------- Badges (design.md §6 Badges) ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px; /* no token: Badge 11px */
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-3);
+}
+.badge--accent {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: var(--color-accent-line);
+}
+.badge--success {
+  background: var(--color-green-soft);
+  color: var(--color-green);
+  border-color: var(--color-green-line);
+}
+.badge--warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-color: var(--color-warning-line);
+}
+.badge--danger {
+  background: var(--color-red-soft);
+  color: var(--color-red);
+  border-color: var(--color-red-line);
+}
+
+/* ---------- Docker card (mirrors CleanupDockerCard.vue) ---------- */
+.dk {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.dk-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--color-text-2);
+}
+.dk-head .link-btn {
+  margin-left: auto;
+}
+.dk-head .only .link-btn {
+  margin-left: 0;
+}
+.dk-scope {
+  padding: 0 12px 8px;
+}
+.dk-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(240px, 1fr)
+  ); /* no token: design.md "Docker card" minmax(240px,1fr) */
+  gap: 8px;
+  align-items: start;
+  padding: 0 12px 12px;
+}
+.dk-grid .span-all {
+  grid-column: 1 / -1;
+}
+
+.blk {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px; /* no token: --radius-xs 3px (main.css @theme), design.md §4 */
+  background: var(--color-surface-2);
+}
+.blk--ready {
+  border-color: var(--color-green-line);
+  background: var(--color-green-soft);
+}
+.blk--review {
+  border-color: var(--color-warning-line);
+  background: var(--color-warning-soft);
+}
+.blk--danger {
+  border-color: var(--color-red-line);
+  background: var(--color-red-soft);
+}
+.blk--accent {
+  border-color: var(--color-accent-line);
+  background: var(--color-accent-soft);
+}
+.blk--off {
+  opacity: 0.6;
+}
+.blk-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.blk-row .push {
+  margin-left: auto;
+}
+
+/* toggle (ToggleSwitch look; static) */
+.sw {
+  width: 26px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--color-border-2);
+  position: relative;
+  flex: none;
+} /* no token: 26x14 switch */
+.sw::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-text-2);
+  transition: transform var(--dur) var(--ease);
+}
+.sw--on {
+  background: var(--color-green);
+}
+.sw--on::after {
+  transform: translateX(12px);
+  background: var(--color-bg);
+}
+
+/* capacity gauge: 4px track like the split bar */
+.gauge {
+  display: flex;
+  height: 4px;
+  gap: 2px;
+  margin-top: 2px;
+}
+.gauge > span {
+  border-radius: 999px;
+}
+.gauge .free {
+  background: var(--color-green);
+}
+.gauge .used {
+  background: var(--color-border-2);
+}
+.gauge--low .free {
+  background: var(--color-warning);
+}
+.gauge--zero .free {
+  background: var(--color-red);
+}
+.gauge--unknown {
+  display: none;
+}
+
+/* paused list */
+.plist {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.plist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-top: 1px solid var(--color-border);
+}
+.plist li:first-child {
+  border-top: 0;
+}
+.plist .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-3);
+} /* no token: icon-only 22px, design.md §6 Buttons */
+.icon-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* automatic actions list */
+.alist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.alist li {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  column-gap: 8px;
+  align-items: start;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border);
+} /* no token: icon column 20px, like the orphan row grid */
+.alist li:first-child {
+  border-top: 0;
+}
+.alist .ico {
+  padding-top: 2px;
+  color: var(--color-text-3);
+}
+.alist .when {
+  padding-top: 1px;
+  white-space: nowrap;
+}
+.alist .would {
+  margin-right: 6px;
+}
+
+/* offer callout on the card */
+.blk.offer {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.blk.offer .push {
+  margin-left: auto;
+}
+
+/* ---------- Dialog (design.md §6 Dialog, guided-dialog anatomy) ---------- */
+.stage {
+  position: relative;
+  min-height: 600px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+} /* no token: stage height for the mockup canvas only */
+.stage .ghost-bg {
+  position: absolute;
+  inset: 0;
+  padding: 12px;
+  overflow: hidden;
+}
+.stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--color-bg);
+  opacity: 0.7;
+  z-index: 1;
+} /* backdrop: design.md says rgba(0,0,0,.55); no token, approximated with --color-bg */
+.dlg {
+  position: relative;
+  z-index: 2;
+  width: min(480px, 90vw); /* no token: guided dialog 480px */
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+}
+.dlg-head {
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dlg-body {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dlg-foot {
+  padding: 10px 14px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  counter-reset: s;
+}
+.steps > li {
+  counter-increment: s;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  column-gap: 8px;
+} /* no token: step marker column */
+.steps > li > div {
+  min-width: 0;
+}
+.steps > li::before {
+  content: counter(s);
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-3);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+} /* no token: 18px marker */
+.code {
+  margin-top: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+}
+.code pre {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--color-text-2);
+  overflow-x: auto;
+} /* no token: Code 13/20 */
+.callout {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 3px;
+  border: 1px solid var(--color-warning-line);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+} /* no token: --radius-xs 3px */
+.callout--info {
+  border-color: var(--color-accent-line);
+  background: var(--color-accent-soft);
+  color: var(--color-text-2);
+}
+
+/* ---------- Activity popover (design.md §6 Activity bell) ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-sidebar);
+} /* no token: topbar fragment height */
+.bell {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 0;
+} /* no token: 26x26 bell, design.md */
+.bell .count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+} /* no token: bell badge */
+.popwrap {
+  position: relative;
+  height: 0;
+}
+.pop {
+  position: absolute;
+  right: 12px;
+  top: 4px;
+  width: 340px;
+  max-height: 520px; /* no token: design.md popover 340x520 */
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  z-index: 3;
+}
+.pop-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+.pop-head .push {
+  margin-left: auto;
+}
+.arow {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border);
+  position: relative;
+}
+.arow .bar {
+  width: 2px;
+  align-self: stretch;
+  border-radius: 999px;
+  flex: none;
+} /* no token: 2px kind-bar */
+.arow .bar--info {
+  background: var(--color-accent);
+}
+.arow .bar--success {
+  background: var(--color-green);
+}
+.arow .bar--warning {
+  background: var(--color-warning);
+}
+.arow .bar--danger {
+  background: var(--color-red);
+}
+.arow .main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.arow .ts {
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--color-text-4);
+  white-space: nowrap;
+} /* no token: Activity timestamp 10px */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+}
+.pill:hover {
+  background: var(--color-accent-line);
+}
+.arow .items {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+.arow .item {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border);
+  background: transparent;
+  text-align: left;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  width: 100%;
+}
+.arow .item:hover {
+  background: var(--color-surface-2);
+}
+.item-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.item-line .push {
+  margin-left: auto;
+}
+.ellip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.empty {
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--color-text-4);
+}

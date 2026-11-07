@@ -26,6 +26,8 @@ import { unavailableSnapshot } from './containers-core'
 import { appendTombstone, journalFile, readJournal } from './containers-journal'
 import { normalizePrefs, prefsFile, readPrefs, writePrefs } from './containers-prefs'
 import { dockerActions, scanContainers, type ScanRequest } from './containers-shell'
+import { findStaleVolumes } from '../gc/stale-volume-core'
+import { readStaleLedger, staleLedgerFile, writeStaleLedger } from '../gc/stale-volume-shell'
 import { pauseRun, readRestoreFacts } from './park-shell'
 import { pauseStack, type PauseDecision, type PauseOutcome } from './park-core'
 import type {
@@ -35,6 +37,7 @@ import type {
   ContainersSnapshot,
   NewZombiesAlert,
   StackRow,
+  StaleVolumesAlert,
   Tombstone
 } from './containers-wire'
 
@@ -97,6 +100,8 @@ export interface ContainersServiceDeps {
   push(snap: ContainersSnapshot): void
   /** The new-zombie alert; called only while `notifyOnNewZombies` is on. */
   alert?(alert: NewZombiesAlert): void
+  /** The stale-volume alert (U3.7): a live project mounts a volume kept for a removed worktree. */
+  alertStaleVolumes?(alert: StaleVolumesAlert): void
   now(): number
 }
 
@@ -160,6 +165,30 @@ export function createContainersService(deps: ContainersServiceDeps): Containers
     }
   }
 
+  const stalePath = staleLedgerFile(deps.userDataDir)
+  let staleSeen: Set<string> | null = null
+
+  /** U3.7: once per (volume, removed worktree, mounting worktree), remembered across restarts. */
+  const noteStaleVolumes = async (
+    snap: ContainersSnapshot,
+    journal: Tombstone[]
+  ): Promise<void> => {
+    if (!snap.dockerAvailable) return // an outage is not a finding
+    const known = staleSeen ?? (await readStaleLedger(stalePath))
+    const { fresh, seen } = findStaleVolumes({ journal, stacks: snap.stacks, seen: known })
+    staleSeen = seen
+    if (seen.size !== known.size) {
+      await writeStaleLedger(stalePath, seen).catch((err) =>
+        console.error('[containers] could not persist stale-volume warnings', err)
+      )
+    }
+    if (fresh.length > 0) {
+      deps.alertStaleVolumes?.({
+        warnings: fresh.map(({ volume, project, worktree }) => ({ volume, project, worktree }))
+      })
+    }
+  }
+
   const runScan = async (): Promise<ContainersSnapshot> => {
     const now = deps.now()
     const journal = await readJournal(journalPath)
@@ -174,6 +203,9 @@ export function createContainersService(deps: ContainersServiceDeps): Containers
     last = snap
     await noteNewZombies(snap).catch((err) =>
       console.error('[containers] new-zombie check failed', err)
+    )
+    await noteStaleVolumes(snap, journal).catch((err) =>
+      console.error('[containers] stale-volume check failed', err)
     )
     return snap
   }
@@ -309,6 +341,10 @@ export function registerContainersHandlers(
     alert: (a) => {
       const win = getWindow()
       if (win && !win.isDestroyed()) win.webContents.send('containers:newZombies', a)
+    },
+    alertStaleVolumes: (a) => {
+      const win = getWindow()
+      if (win && !win.isDestroyed()) win.webContents.send('containers:staleVolumes', a)
     },
     now: () => Date.now()
   })

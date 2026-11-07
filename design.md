@@ -11313,6 +11313,75 @@ cycle has run, a second 11px `--text-3` line adds "Last cycle reclaimed {size}".
 summary line and in the split bar's Ready segment while `categories.dockerCache` is on. Zero state: real
 zeros when Docker says so.
 
+**Capacity, Paused and Automatic actions (autonomous cleanup U3.7).** Mockup: `docs/design/2026-11-05-u3-7-docker-capacity/`
+(`screens/docker-card.html`). Two blocks **lead** the grid and one full-width block **closes** it; the three existing
+blocks and the leftovers block are unchanged.
+
+- **Docker networks** (`data-testid="docker-slots"`, neutral `--surface` block, a 4px `--radius-full` gauge). Heading
+  "Docker networks" with a badge on the right. _Known:_ "{free} of {total} network slots free" (13px, tabular numbers) over
+  a gauge whose free part is `--green` and used part `--surface-2`, and a caption "Default address pools. Cleanup acts when
+  {mark} or fewer are free." (`daemon.json` pools: "Custom address pools. …"). The mark is `prefs.docker.lowWaterSlots`
+  (3 by default). _Low_ (free ≤ mark, above 0): the number in `--warning`, the Warning badge **Low**, the free part of the
+  gauge `--warning`, caption "At the low-water mark of {mark}. Cleanup is clearing garbage and pausing the longest-idle
+  stacks." — or, while the Docker switch is off or the global pause is on, "Automatic Docker cleanup is off|paused, so
+  nothing will be freed on its own." _None left_ (free = 0): `--red` number, Danger badge **None left**, caption "Nothing
+  left to free. A new `compose up` will fail until a slot opens. Activity was notified." _Unknown_ (`capacity.known ===
+false`, or no pass has read it yet): neutral badge **Unknown**, an `Info` 12px glyph with "Network slots unknown" in
+  `--text-3`, the reason sentence U3.6 sends (Docker Desktop / rootless / remote engine) in 11px `--text-3`, and the muted
+  line "Cleanup still removes garbage and pauses idle stacks."
+- **Paused stacks** (`data-testid="docker-paused"`). Heading "Paused stacks"; "{n} paused" (13px, tabular) or "None paused"
+  in `--text-3`; during the report-only first cycle "Would pause {n}" counts the plan's `pause` items instead. Up to 3 rows,
+  newest first: mono 11px stack name, "idle {age}" in `--text-4` (the time since the pause), and an icon-only **Copy restore
+  command** button (22px, `Copy` 12px) that copies the stack's `compose up -d` command; a fourth and later stack reads "+ {n}
+  more in Inspect stacks". Footer caption: "Stopped when idle; volumes kept. Start one again with its `compose up -d` command."
+  The word is **Paused**, never "parked".
+- **Automatic actions** (`data-testid="docker-actions"`, `col-span-full`, last in the grid). Heading "Automatic actions" with
+  the caption "last cycle". **One row per pass and kind**, as the approved mockup draws it: a pass is a run of automatic
+  journal lines with no gap over 3 minutes between neighbours (the journal has no pass id), and a pass with three kinds is
+  three rows. Each row: a 14px kind glyph (`Network`, `Trash2`, `Pause`), the folded title with plural forms (13px `--text`:
+  "{n} empty networks removed", "{n} orphan stacks removed · {v} volumes kept", "{n} stacks paused"), a mono 11px `--text-4`
+  line with the first three names and "+{n} more", a one-line reason in 11px `--text-3` ("No containers were attached;
+  compose up recreates them.", "Their worktrees were removed. The volumes stay under Orphan volumes.", "Idle for {age} or
+  more."), and at the right the age and the source ("12 min ago · by Cleanup"; the journal does not record whether the
+  hourly cycle or the watcher acted, so the source is Cleanup). A row of more than one action has a 22px chevron button
+  (`aria-expanded`) that reveals the per-item journal lines, each with its own wording ("Removed empty network `x`"), reason
+  and age, indented under a 1px `--border` rule. **"Newest 5" counts folded rows.** Below the list a text link **Show all in
+  Activity** opens the Activity bell. Empty: "Nothing automatic yet. Empty networks, orphan stacks and idle stacks are
+  handled each cycle." in `--text-3`.
+- **Report-only first cycle.** The header gains the Accent badge **Report only · first cycle** followed by the text link
+  **Review in Settings** (opens Settings → Cleanup, where **Acknowledge first report** stays the only control that arms the
+  cycle). The Automatic actions block then lists the held first-report list instead of the journal, each row prefixed by the
+  Accent chip **Would have** and its verb rewritten from the past tense ("Removed empty network `x` — no containers" reads
+  "Would remove empty network `x` — no containers"; "Removed orphan stack" → "Would remove orphan stack"; "Paused" →
+  "Would pause"); the caption reads "nothing was changed". The Settings → Cleanup → Docker first-report list rewrites the
+  verb the same way.
+- **Address-pool offer.** A one-time callout above the grid (Accent block triple, `Info` 14px, "Docker is on its default
+  address pools and network slots ran low." and a Soft small button **See how to add more**) opens the dialog below. It shows
+  only while the engine reads default pools (`capacity.source === 'default'`), a squeeze was observed (free at or below the
+  mark at least once), and the advice was not dismissed for these pools. It never opens by itself.
+- Tokens only: gauge `--green` / `--warning` / `--red`, badges the Cleanup badge family, rows `--border` hairlines. No new
+  colour, radius, easing or row height.
+
+#### Address-pool advice dialog (autonomous cleanup U3.7)
+
+`CleanupPoolAdviceDialog.vue`, `data-testid="pool-advice-dialog"`. The standard 480px guided dialog (`Dialog` shell, the real
+overlay class for the backdrop, Esc and a focus trap), opened only from the card's one-time callout. Mockup screen
+`docker-pool-advice.html`. Eyebrow "Docker address pools", title "Add more room for Docker networks", body "Docker is using
+its default address pools, which hold {total} networks. Free slots fell to {free} on this machine. A wider pool gives every
+compose project room to start." Two numbered steps:
+
+1. "Add this to `/etc/docker/daemon.json`" with the caption "If the file already exists, add the key to it instead of
+   replacing the file. Pick a range your VPN and LAN don't use." and a mono code block holding
+   `{ "default-address-pools": [ { "base": "10.200.0.0/16", "size": 24 } ] }` with an inline **Copy** button (Soft small,
+   `Copy` 12px) that becomes the Success **Copied** (`Check` 12px) for 2 seconds, and the note "256 networks of /24, from
+   10.200.0.0/16." (the VPN/LAN clash note is the step's caption: Harnu cannot detect a clash).
+2. "Restart the Docker daemon" with "For example `sudo systemctl restart docker`. Containers without live-restore stop while
+   it restarts."
+
+An info note closes the body: "Harnu never edits this file. You'll only see this once." The footer holds one Ghost button,
+**Dismiss**, focused first. Dismissing (or Esc) stores that the advice was seen for the current pools; the callout does not
+return unless the pools change (a different `total`, or `source` becoming `daemon.json` and back to default).
+
 #### Other leftovers — transcripts of folders that are gone (unit D, AC-D1)
 
 Removing a worktree takes the folder and never the Claude transcripts under `~/.claude/projects/<slug>/`,
@@ -11657,6 +11726,24 @@ first report is not acknowledged, the status line is followed by a **list of wha
 the reason as a muted second line (`--text-3`). At most 8 rows; beyond that a muted "+{n} more" line. Empty list:
 the existing report-only sentence stands alone. After the acknowledgement the list is gone. No new color, size
 or radius: the rows reuse the Shelved card's label/target/reason anatomy.
+
+#### Stale-volume Activity warning (autonomous cleanup U3.7)
+
+When Harnu removed an orphan stack on its own it kept the stack's volumes and journaled who they belonged to
+(`keptVolumeOwner`: the project and the removed worktree). If a **live** compose project later mounts one of those volumes,
+the new project inherits a removed worktree's data, and Activity says so. A plain `NotificationRecord` in the Activity bell
+(`ActivityBell.vue`; no new component): `source: 'app'`, `kind: 'warning'`, quiet (no toast, no sound). Mockup screen
+`activity-stale-volume.html`.
+
+- **One project.** Title "Data in this volume may be stale"; description "Project `{project}` mounts volume `{volume}` that
+  belonged to a removed worktree (`{worktree}`). Its data may be stale." (names in the mono face); one action pill **Open
+  Containers** (`Container` 12px) that opens the Containers takeover.
+- **Several projects.** One grouped entry, titled "{n} projects mount volumes that may be stale", listing one line per volume
+  (mono volume name; caption "Used by {project} · from removed {worktree}") and the same pill. One row per project, never one
+  per volume of the same project (its volumes share the row).
+- **Once per volume.** A volume warns once for the worktree that mounts it; it warns again only when a **different** worktree
+  later mounts it. A restart or a rescan never repeats a warning. The record lives in the main process, so it survives a
+  restart. Wording follows §8: titles are short sentences without a trailing period, descriptions end with one.
 
 #### Settings → Cleanup (supersedes the Cleanup and Containers panes' overlapping controls)
 

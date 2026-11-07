@@ -66,7 +66,7 @@ A paused stack has no containers, so it is not a zombie or an orphan and has no 
 - **Paused by** — Cleanup, you, or an agent — and **when**.
 - **Folder** — the folder it ran from.
 - **Ports held** — the host ports it used. They must be free again when you bring it back.
-- **Rebuilds on restore** — shown only when a service has a `build:` section.
+- **Rebuilds on restore** — **Yes**, shown only when a service has a `build:` section.
 - **To bring it back** — one command, with a copy button, for example `docker compose -p proj-82 --project-directory ~/org/proj/www -f ~/org/proj/www/compose.yml up -d`. It carries every compose file, profile and env file the stack ran with and `--build` when a service builds. Paste it in a terminal (or have a session run it) and the stack comes back on the same ports with its data. There is no Start button: with no containers there is nothing to start, and the command is the way back.
 
 Harnu remembers paused stacks across restarts, because they are read from the [journal](#recent-and-undo). A stack stops being paused as soon as it has containers again — when you bring it back, or when something else recreates it — or when a later action on it is journaled.
@@ -76,6 +76,8 @@ Harnu checks every container of the project, running or stopped, because `compos
 **Cleanup pauses an idle stack by itself**, once you have acknowledged its first report: the rules (2 hours idle, 30 minutes since the last start, at most 6 an hour) and everything that protects a stack are in [Cleanup → Docker: pausing and garbage](cleanup.md#docker-pausing-and-garbage). Every pause sends a notification and leaves an entry in **Recent** with the same command to bring the stack back.
 
 **When Docker is nearly out of network slots.** Every compose stack takes a network, and Docker has a limited number of slots for them. Cleanup watches the free slots and, when they run low, removes empty networks and orphan stacks and pauses the longest-idle stacks at once (see [Cleanup → The capacity watcher](cleanup.md)). If that is not enough, an **Activity** entry tells you Docker is nearly out of network slots, and another when none is left. Stopping a stack you do not need is the fastest fix.
+
+**When a project reuses a volume from a removed worktree.** When Cleanup removes the stack of a worktree that is gone, it keeps the stack's volumes. If a live compose project later mounts one of those volumes (for example because a new worktree got the same project name), the project starts from a removed worktree's data, which may be out of date. Harnu adds a warning to the Activity bell: "Project `ext-12` mounts volume `ext-12_mysql` that belonged to a removed worktree (`feat-old`). Its data may be stale." with an **Open Containers** button. Several projects found in one scan share one entry. Each volume is warned about once; it is warned about again only if a different worktree later mounts it. Harnu never touches the volume: check the data, or remove the volume yourself in Cleanup and start the project again.
 
 ## Recent and undo
 

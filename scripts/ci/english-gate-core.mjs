@@ -28,6 +28,10 @@ export const ALLOWED_PATHS = [
   /^tests\/push-relay\.test\.ts$/,
   // Asserts the pt-BR name of the review bucket (D2): a locale fixture.
   /^tests\/cleanup-gc-i18n\.test\.ts$/,
+  // Asserts the pt-BR wording of the Docker card's would-do sentences (U3.7): a locale fixture.
+  /^tests\/docker-card-copy\.test\.ts$/,
+  // The approved U3.7 mockup carries its bilingual copy table (English + pt-BR) in its index page.
+  /^docs\/design\/2026-11-05-u3-7-docker-capacity\/index\.html$/,
   /^tests\/branch-slug\.test\.ts$/,
   /^tests\/claude-watcher\.test\.ts$/,
   /^tests\/pr-stack-format\.test\.ts$/,

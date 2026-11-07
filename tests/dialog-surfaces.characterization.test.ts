@@ -94,7 +94,7 @@ const ui = (f: string, init: string, name: Row['accessibleName'] = 'labelledby')
 })
 const STORE = 'ui.dialog=null'
 
-/** The 31 mountable components — spec §1.2 "Surface" rows, current behaviour. */
+/** The 32 mountable components — spec §1.2 "Surface" rows, current behaviour. */
 const TABLE: Record<string, Row> = {
   'AddFolderDialog.vue': ui(STORE, 'input'),
   'CardCreateModal.vue': ui('close[[]]', 'input', 'label'),
@@ -104,6 +104,7 @@ const TABLE: Record<string, Row> = {
   'CleanupDockerConfirmDialog.vue': ui('cancel[]', 'cancel'),
   'CleanupExhaustDialog.vue': ui('cancel[]', 'cancel'),
   'CleanupGuidedDialog.vue': ui('cancel[]', 'cancel'),
+  'CleanupPoolAdviceDialog.vue': ui('dismiss[]', 'cancel', 'label'),
   'CleanupTranscriptsConfirmDialog.vue': ui('cancel[]', 'cancel'),
   'CommandPalette.vue': ui('ui.palette.open=false', 'input', 'label'),
   'ContainersRemoveDialog.vue': ui('close[null]', 'cancel'),
@@ -198,7 +199,7 @@ describe('characterization table — coverage (AC-2)', () => {
       .sort()
     // `ui/` primitives live in a subfolder and are not listed by this top-level read.
     expect(Object.keys(TABLE).sort()).toEqual(onDisk)
-    expect(Object.keys(TABLE)).toHaveLength(31)
+    expect(Object.keys(TABLE)).toHaveLength(32)
   })
 
   it('lists the two inline overlays with a reason instead of mounting them', () => {

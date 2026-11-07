@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: docker-pool-advice</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa='docker-pool-advice'] .only {
+        display: none;
+      }
+      [data-dsqa='docker-pool-advice'][data-state='default'] .only[data-only~='default'],
+      [data-dsqa='docker-pool-advice'][data-state='copied'] .only[data-only~='copied'] {
+        display: contents;
+      }
+      [data-dsqa='docker-pool-advice'] .path {
+        margin-top: 2px;
+      }
+    </style>
+  </head>
+  <body data-states="default copied">
+    <div class="stage" data-dsqa="docker-pool-advice" data-testid="pool-advice-dialog">
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="pa-title">
+        <header class="dlg-head">
+          <span class="t-eyebrow c-4">Docker address pools</span>
+          <span id="pa-title" class="t-subtitle c-text">Add more room for Docker networks</span>
+        </header>
+        <div class="dlg-body">
+          <p class="c-2" style="margin: 0">
+            Docker is using its default address pools, which hold 31 networks. Free slots fell to 3
+            on this machine. A wider pool gives every compose project room to start.
+          </p>
+
+          <ol class="steps">
+            <li>
+              <div>
+                <div class="t-ui c-text">
+                  Add this to <span class="mono">/etc/docker/daemon.json</span>
+                </div>
+                <div class="t-caption c-3">
+                  If the file already exists, add the key to it instead of replacing the file. Pick
+                  a range your VPN and LAN don't use.
+                </div>
+                <div class="code" data-dsqa-part="snippet">
+                  <pre class="mono">
+{
+  "default-address-pools": [
+    { "base": "10.200.0.0/16", "size": 24 }
+  ]
+}</pre>
+                  <span class="only" data-only="default"
+                    ><button
+                      type="button"
+                      class="btn btn--soft btn--sm"
+                      data-goto="docker-pool-advice?state=copied"
+                    >
+                      <mk-icon name="copy" size="12"></mk-icon>Copy
+                    </button></span
+                  >
+                  <span class="only" data-only="copied"
+                    ><button type="button" class="btn btn--success btn--sm">
+                      <mk-icon name="check" size="12"></mk-icon>Copied
+                    </button></span
+                  >
+                </div>
+                <div class="t-caption c-4">256 networks of /24, from 10.200.0.0/16.</div>
+              </div>
+            </li>
+            <li>
+              <div>
+                <div class="t-ui c-text">Restart the Docker daemon</div>
+                <div class="t-caption c-3">
+                  For example <span class="mono c-2">sudo systemctl restart docker</span>.
+                  Containers without live-restore stop while it restarts.
+                </div>
+              </div>
+            </li>
+          </ol>
+
+          <div class="callout callout--info t-caption" role="note" data-dsqa-part="never-edits">
+            <mk-icon name="info" size="12"></mk-icon>
+            <span>Harnu never edits this file. You'll only see this once.</span>
+          </div>
+        </div>
+        <footer class="dlg-foot">
+          <button
+            type="button"
+            class="btn btn--ghost btn--focus"
+            data-goto="docker-card?state=capacity-low"
+          >
+            Dismiss
+          </button>
+        </footer>
+      </div>
+    </div>
+    <script src="../parts/icon.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>parts: Autonomous Cleanup U3.7</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      .cell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="cell" data-dsqa="part--icon--container">
+      <mk-icon name="container" size="14"></mk-icon><span class="mono c-3">container</span>
+    </div>
+    <div class="cell" data-dsqa="part--icon--network">
+      <mk-icon name="network" size="14"></mk-icon><span class="mono c-3">network</span>
+    </div>
+    <div class="cell" data-dsqa="part--icon--pause">
+      <mk-icon name="pause" size="14"></mk-icon><span class="mono c-3">pause</span>
+    </div>
+    <div class="cell" data-dsqa="part--icon--trash">
+      <mk-icon name="trash" size="14"></mk-icon><span class="mono c-3">trash</span>
+    </div>
+    <div class="cell" data-dsqa="part--icon--volume">
+      <mk-icon name="volume" size="14"></mk-icon><span class="mono c-3">volume</span>
+    </div>
+    <div class="cell" data-dsqa="part--icon--copy">
+      <mk-icon name="copy" size="14"></mk-icon><span class="mono c-3">copy</span>
+    </div>
+    <div class="cell" data-dsqa="part--icon--check">
+      <mk-icon name="check" size="14"></mk-icon><span class="mono c-3">check</span>
+    </div>
+    <div class="cell" data-dsqa="part--icon--bell">
+      <mk-icon name="bell" size="14"></mk-icon><span class="mono c-3">bell</span>
+    </div>
+    <script src="icon.js"></script>
+  </body>
+</html>
