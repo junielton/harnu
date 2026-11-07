@@ -1182,8 +1182,8 @@ const S8_MUTATIONS: Record<string, Mutation[]> = {
   userGuide: [
     {
       target: 'userDoc',
-      pattern: '^### `spec`',
-      replace: '### Spec',
+      find: '### `spec` sizes up',
+      replace: '### Spec sizes up',
       why: 'the user guide has a `spec` section'
     },
     {

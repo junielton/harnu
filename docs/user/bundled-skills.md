@@ -67,6 +67,46 @@ It stays quiet when nothing is parked, and with "carry last result" on it will n
 notify twice about the same finding — it only speaks again when something actually
 moved. If it never says anything, that is the intended behaviour, not a broken worker.
 
+### `spec` sizes up the work first, and writes a spec only when it needs one
+
+Run `/harnu:spec <what you have>` at the start of any piece of work. Its first answer is
+one message: the **door** you came in by (a vague idea, a ticket, a bug, a question, a PR
+comment or red CI, a design, a recurring pain, "where did we leave off?"), the **tier**
+with a one-line reason, and the next step. Say `small`, `medium`, `large` or `complex` to
+override the tier; it takes your word without arguing.
+
+- **Small ends there.** A one-line bug, a PR comment, a red CI or a question gets its
+  first step and nothing else: no file, no mission, no sub-agent. A question that grows
+  into an architectural decision gets an ADR, never a spec.
+- **Medium, Large and Complex get a spec** at `docs/specs/YYYY-MM-DD-<slug>/spec.md`, in
+  the shape of the repo's spec template. Before asking you anything, the session looks
+  up what the repo already knows (project memory, lessons, the code); then it asks the
+  decisions that remain one at a time. A decision you don't answer stays open with its
+  default, never guessed. Large adds goals and open decisions; Complex adds a PRD, an ADR
+  only when the spec records an architectural decision, and a mockup folder when there
+  is UI.
+- **A mission starts the moment the work leaves Small.** Its finish line is the delivery
+  itself, not the spec, and it has one step, "Approve spec", that only you can mark.
+- **Fresh reviewers read the spec cold.** Two for Medium, three for Large, five for
+  Complex, each started on a different model when one is available and handed nothing but
+  file paths. Every finding gets one written answer in `critics.md` beside the spec.
+
+**How you approve.** When the spec is clean and reviewed, the session opens it in a pane
+beside the session and asks one question: `Approve this spec?`. On a yes it marks the spec
+approved; you then click the mission pill → **Mark verified** on the "Approve spec" step,
+because the skill never ticks it for you. If you are away when it asks, it raises a
+blocker in your name, so Harnu chimes and reminds you. Once a slice of the spec has a
+card, the spec is frozen: later changes are added as rows of its **Amendments** table.
+After you approve, `orchestrate-delivery` picks up the same mission, turns each slice
+into a card and holds back the slices an open decision still gates.
+
+**The `check` verbs.** `/harnu:spec check` lints a spec: the spec gate's rules, that every
+capability is built before it is used, that every request lands on an acceptance criterion,
+a non-goal or a decision, and the reviewers' answers in `critics.md`. Add `--cards` to also compare the
+board cards against the spec (acceptance criteria that drifted, went missing or were
+invented). It prints one finding per line and changes nothing. The checker ships inside
+the skill, so it works in any repo, not just Harnu's own.
+
 ### `one-by-one`, `grill-me` and `step-by-step` leave a record
 
 These three are conversation skills — they talk to you one question or one step at a
