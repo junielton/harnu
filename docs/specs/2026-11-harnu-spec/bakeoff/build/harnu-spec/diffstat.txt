@@ -1,0 +1,11 @@
+ASSUMPTIONS.md               |  12 ++
+ docs/cli-reference.rst       |  16 +++
+ docs/cli.rst                 |  41 +++++++
+ docs/python-api.rst          |  26 +++++
+ sqlite_utils/cli.py          |  62 +++++++++-
+ sqlite_utils/utils.py        |  91 ++++++++++++++-
+ tests/test_cli_bulk.py       |  36 ++++++
+ tests/test_cli_insert.py     | 262 +++++++++++++++++++++++++++++++++++++++++++
+ tests/test_cli_memory.py     | 119 ++++++++++++++++++++
+ tests/test_rows_from_file.py | 136 +++++++++++++++++++++-
+ 10 files changed, 792 insertions(+), 9 deletions(-)

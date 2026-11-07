@@ -1,0 +1,16 @@
+....................................................F                    [100%]
+=================================== FAILURES ===================================
+_________________ test_docs_cli_and_python_api_mention_options _________________
+
+    def test_docs_cli_and_python_api_mention_options():
+        """O-15"""
+        assert "--auto-key" in (DOCS / "cli.rst").read_text()
+>       assert "auto_key" in (DOCS / "python-api.rst").read_text()
+E       AssertionError: assert 'auto_key' in '.. _python_api:\n\n=============================\n sqlite_utils Python library\n=============================\n\n.. c..._index\n   :noindex:\n\n.. note::\n    In the CLI: :ref:`sqlite-utils create-spatial-index <cli_spatialite_indexes>`\n'
+E        +  where '.. _python_api:\n\n=============================\n sqlite_utils Python library\n=============================\n\n.. c..._index\n   :noindex:\n\n.. note::\n    In the CLI: :ref:`sqlite-utils create-spatial-index <cli_spatialite_indexes>`\n' = read_text()
+E        +    where read_text = (PosixPath('<scratch>/build/tlc/docs') / 'python-api.rst').read_text
+
+tests/test_hidden_bakeoff.py:440: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_hidden_bakeoff.py::test_docs_cli_and_python_api_mention_options
+1 failed, 52 passed in 0.13s

@@ -1,0 +1,30 @@
+.........................................FF..........                    [100%]
+=================================== FAILURES ===================================
+_______ test_rows_from_file_explicit_non_json_format_raises[Format.CSV] ________
+
+fmt = <Format.CSV: 1>
+
+    @pytest.mark.parametrize("fmt", (Format.CSV, Format.TSV, Format.NL))
+    def test_rows_from_file_explicit_non_json_format_raises(fmt):
+        """O-9"""
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+tests/test_hidden_bakeoff.py:340: Failed
+_______ test_rows_from_file_explicit_non_json_format_raises[Format.TSV] ________
+
+fmt = <Format.TSV: 2>
+
+    @pytest.mark.parametrize("fmt", (Format.CSV, Format.TSV, Format.NL))
+    def test_rows_from_file_explicit_non_json_format_raises(fmt):
+        """O-9"""
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+tests/test_hidden_bakeoff.py:340: Failed
+=========================== short test summary info ============================
+FAILED tests/test_hidden_bakeoff.py::test_rows_from_file_explicit_non_json_format_raises[Format.CSV]
+FAILED tests/test_hidden_bakeoff.py::test_rows_from_file_explicit_non_json_format_raises[Format.TSV]
+2 failed, 51 passed in 0.16s

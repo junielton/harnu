@@ -1,0 +1,50 @@
+{
+  "spec": "Spec R",
+  "atoms": {
+    "R-1": "covered",
+    "R-2": "covered",
+    "R-3": "covered",
+    "R-4": "covered",
+    "R-5": "covered",
+    "R-6": "covered",
+    "R-7": "covered",
+    "R-8": "covered",
+    "O-1": "covered",
+    "O-2": "covered",
+    "O-3": "covered",
+    "O-4": "covered",
+    "O-5": "covered",
+    "O-6": "covered",
+    "O-7": "covered",
+    "O-8": "covered",
+    "O-9": "covered",
+    "O-10": "covered",
+    "O-11": "covered",
+    "O-12": "covered",
+    "O-13": "partial",
+    "O-14": "partial",
+    "O-15": "partial",
+    "O-16": "covered"
+  },
+  "decisions_left": [
+    "What happens when --key or --auto-key meets a top-level scalar JSON value (for example `5`). Only the top-level list case is specified.",
+    "Whether --delimiter, --quotechar, --sniff and --no-headers, which silently switch input to CSV, count as non-JSON input for the new error.",
+    "How --key and --auto-key interact with --code, and which error wins when several misuse errors apply together.",
+    "Whether `--key \"\"` (the empty-string key) is a real key lookup or counts as 'not given'.",
+    "Whether --auto-key on a top-level array through the CLI imports as today. Only the Python case has a check.",
+    "Whether `docs/python-api.rst` must be edited (only the docstring is named), and whether a version bump or changelog edit is forbidden.",
+    "Whether memory table names stay the file stem for every input, including stdin.",
+    "Whether errors must show no traceback. The message and exit code are specified, but there is no traceback check."
+  ],
+  "contradictions": [],
+  "acceptance_criteria": { "total": 40, "executable": 40 },
+  "builder_guesses": [
+    "Does `--key` with a top-level scalar raise RowsFromFileBadJSON, and with what message?",
+    "Is `--key` with --delimiter or --sniff a usage error?",
+    "Which error comes first when --key is combined with --code or other invalid options?",
+    "Is `key=\"\"` handled as a literal key or treated as unset?",
+    "Does `docs/python-api.rst` need a new section, or is the docstring enough?",
+    "Are --convert, --alter and --stop-after really applied to the extracted rows? 'Normally' is loose."
+  ],
+  "notes": "Well-structured spec with exact error messages and a named test per check, and it matches the operator decisions closely, including ValueError for explicit CSV, TSV and NL in Python and the memory :nl choice. It leaves several edge cases open (top-level scalar, the implicit CSV-switching flags, --code interplay, key=\"\"). It is also vague on the python-api.rst edit and on the version and changelog rule."
+}
