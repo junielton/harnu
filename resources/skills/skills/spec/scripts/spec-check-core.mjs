@@ -5,7 +5,8 @@
 // into plain data. `acHash(statement, proof)` is the Wave A content hash of an AC line.
 // `checkSpecFile` runs the gate's rules as if the draft were approved, then the capability-order
 // and atom-coverage checks, and returns every finding. `parseCard` and `checkCards` are the
-// `--cards` drift lint: card AC lines compared with the spec rows, never graded.
+// `--cards` drift lint: card AC lines compared with the spec rows, never graded. `parseCritics`
+// and `checkCritics` lint the Goldfish review record (`critics.md`) beside the spec (S-9).
 //
 // Dependency-free ES module (Node built-ins only), vendored in the skill directory so the
 // staging copies it into any session that has the skill. No I/O: the CLI in spec-check.mjs
@@ -483,6 +484,141 @@ export function checkCards(parsed, specPath, cards) {
 
   const byLine = (a, b) => (a.path === b.path ? a.line - b.line : a.path < b.path ? -1 : 1)
   return { matched, findings: findings.sort(byLine), info: info.sort(byLine) }
+}
+
+/** The `## <heading>` sections of a markdown text, by lowercase heading, as `{ line, no }` lists. */
+function markdownSections(content) {
+  const out = new Map()
+  let current = null
+  let inFence = false
+  content.split('\n').forEach((line, i) => {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
+    const h = !inFence && /^##\s+(.+?)\s*$/.exec(line)
+    if (h) {
+      current = []
+      out.set(h[1].toLowerCase(), current)
+      return
+    }
+    if (current && !inFence) current.push({ line, no: i + 1 })
+  })
+  return out
+}
+
+/**
+ * The Goldfish review record beside a spec (`critics.md`), in the shape the skill documents: a
+ * `## Reviewers` table (`reviewer | round | model | status`) and a `## Findings` table
+ * (`id | reviewer | severity | finding | disposition | evidence`).
+ * @param {string} content  the critics.md text
+ * @returns {{ structured: boolean,
+ *   reviewers: { reviewer: string, round: number, model: string, status: string, line: number }[],
+ *   findings: { id: string, reviewer: string, severity: string, finding: string,
+ *     disposition: string, evidence: string, line: number }[] }}
+ *   `structured` is false when the file has neither table (a free-form record, not linted).
+ */
+export function parseCritics(content) {
+  const secs = markdownSections(content)
+  const plain = (text) => text.replace(/[`*]/g, '').trim()
+  const reviewers = tableRows(secs.get('reviewers') ?? [])
+    .map((row) => ({
+      reviewer: plain(row.get('reviewer')),
+      round: Number.parseInt(plain(row.get('round')), 10) || 1,
+      model: plain(row.get('model')),
+      status: plain(row.get('status')),
+      line: row.line
+    }))
+    .filter((r) => r.reviewer)
+  const findings = tableRows(secs.get('findings') ?? [])
+    .map((row) => ({
+      id: plain(row.get('id')),
+      reviewer: plain(row.get('reviewer')),
+      severity: plain(row.get('severity')),
+      finding: row.get('finding').trim(),
+      disposition: cellText(plain(row.get('disposition'))),
+      evidence: cellText(row.get('evidence')),
+      line: row.line
+    }))
+    .filter((f) => f.id)
+  return { structured: secs.has('reviewers') || secs.has('findings'), reviewers, findings }
+}
+
+/** Evidence that says only "it is meant to be": not checkable. */
+const WEAK_EVIDENCE_RE =
+  /^(?:(?:this|it) is |it's )?(?:intentional(?:ly so)?|intended|deliberate|on purpose|by design|as designed|working as intended)$/
+
+/**
+ * The `critics.md` lint (`spec check`, T601 S-9): every finding has one disposition (`fix`,
+ * `contest`, `escalate D-n` naming a D-n of the spec, `decline NG-n` naming an NG-n of the spec),
+ * a contest carries checkable evidence and never contests a comprehension gap, and no reviewer's
+ * latest round is `not run` or `failed`.
+ * @param {ReturnType<typeof parseCritics>} critics
+ * @param {ReturnType<typeof parseSpec>} parsed  the spec the review is of
+ * @returns {{ line: number, rule: 'undisposed-finding' | 'weak-contest' | 'reviewer-not-run', message: string }[]}
+ */
+export function checkCritics(critics, parsed) {
+  const decisions = new Set(parsed.decisions.map((d) => d.id))
+  const nonGoals = new Set(parsed.nonGoals.map((n) => n.id))
+  const findings = []
+
+  for (const f of critics.findings) {
+    const verb = /^([a-z]+)\b/i.exec(f.disposition)?.[1]?.toLowerCase() ?? ''
+    const named = (re) => re.exec(f.disposition)?.[0] ?? null
+    let undisposed = null
+    if (!f.disposition) undisposed = 'has no disposition'
+    else if (verb === 'escalate') {
+      const id = named(/\bD-\d+\b/)
+      if (!id) undisposed = 'is escalated to no D-n'
+      else if (!decisions.has(id))
+        undisposed = `is escalated to ${id}, which the spec does not have`
+    } else if (verb === 'decline') {
+      const id = named(/\bNG-\d+\b/)
+      if (!id) undisposed = 'is declined to no NG-n'
+      else if (!nonGoals.has(id)) undisposed = `is declined to ${id}, which the spec does not have`
+    } else if (verb !== 'fix' && verb !== 'contest')
+      undisposed = `has the disposition "${f.disposition}"`
+    if (undisposed) {
+      findings.push({
+        line: f.line,
+        rule: 'undisposed-finding',
+        message: `${f.id} ${undisposed} — give it one: fix, contest (with checkable evidence), escalate D-n (an Open decisions row) or decline NG-n (a non-goal)`
+      })
+      continue
+    }
+    if (verb !== 'contest') continue
+    if (/^comprehension$/i.test(f.reviewer)) {
+      findings.push({
+        line: f.line,
+        rule: 'weak-contest',
+        message: `${f.id} contests a comprehension gap — a reader who got the spec wrong is evidence the spec is unclear; fix the spec instead`
+      })
+      continue
+    }
+    const evidence = f.evidence
+      .replace(/[`*_.!]/g, '')
+      .trim()
+      .toLowerCase()
+    if (!evidence || WEAK_EVIDENCE_RE.test(evidence)) {
+      findings.push({
+        line: f.line,
+        rule: 'weak-contest',
+        message: `${f.id} is contested with ${evidence ? `"${f.evidence}"` : 'no evidence'} — a contest cites something checkable (a spec line, an AC proof, a file), not intent`
+      })
+    }
+  }
+
+  const latest = new Map()
+  for (const r of critics.reviewers) {
+    const prev = latest.get(r.reviewer)
+    if (!prev || r.round >= prev.round) latest.set(r.reviewer, r)
+  }
+  for (const r of latest.values()) {
+    if (!/^(?:not run|failed)\b/i.test(r.status)) continue
+    findings.push({
+      line: r.line,
+      rule: 'reviewer-not-run',
+      message: `reviewer ${r.reviewer} did not run (round ${r.round}: ${r.status}) — a failed reviewer is not "no findings"; run it again and add a row for the new round`
+    })
+  }
+  return findings.sort((a, b) => a.line - b.line)
 }
 
 /**

@@ -6,7 +6,9 @@
 // (`missing-producer`, `producer-not-before`), then the atom-coverage check (`no-atoms`,
 // `uncovered-atom`). With `--cards` it also reads the board cards whose `spec:` names the spec
 // and reports card-versus-spec drift per AC line (`hash-diverged`, `unknown-ac`, `missing-ac`);
-// card-only (unhashed) ACs are printed as `path:line info: message` and are not findings. The
+// card-only (unhashed) ACs are printed as `path:line info: message` and are not findings. When a
+// `critics.md` sits beside the spec it lints the Goldfish review record too (`undisposed-finding`,
+// `weak-contest`, `reviewer-not-run`); a free-form critics.md is noted on stderr, not linted. The
 // cards are read from `--cards-dir`, default `.harnu/memory/roadmap` of the repo's main checkout
 // (resolved with `git rev-parse --path-format=absolute --git-common-dir`). Every finding goes to
 // stdout as `path:line [rule] message`; nothing short-circuits. Exit 0 clean, 1 on any finding,
@@ -22,7 +24,13 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { checkCards, checkSpecFile, parseSpec } from './spec-check-core.mjs'
+import {
+  checkCards,
+  checkCritics,
+  checkSpecFile,
+  parseCritics,
+  parseSpec
+} from './spec-check-core.mjs'
 import { parseHeader, PATH_FIELDS } from './spec-gate-core.mjs'
 
 const USAGE = 'usage: node spec-check.mjs <spec-path> [--cards [--cards-dir <dir>]]'
@@ -167,6 +175,28 @@ function main(argv) {
   const findings = checkSpecFile(content, specPath, trackedFiles(specPath, content))
   for (const f of findings) console.log(`${specPath}:${f.line} [${f.rule}] ${f.message}`)
 
+  let criticFindings = 0
+  const criticsPath = join(dirname(specPath), 'critics.md')
+  if (existsSync(criticsPath)) {
+    let criticsText
+    try {
+      criticsText = readFileSync(criticsPath, 'utf8')
+    } catch (err) {
+      console.error(`spec-check: cannot read ${criticsPath}: ${err.code ?? err.message}`)
+      return 2
+    }
+    const critics = parseCritics(criticsText)
+    if (!critics.structured) {
+      console.error(
+        `spec-check: ${criticsPath} has no \`## Reviewers\` or \`## Findings\` table; a free-form record is not linted`
+      )
+    } else {
+      const found = checkCritics(critics, parseSpec(content))
+      for (const f of found) console.log(`${criticsPath}:${f.line} [${f.rule}] ${f.message}`)
+      criticFindings = found.length
+    }
+  }
+
   let cardFindings = 0
   if (cards) {
     const drift = checkCards(parseSpec(content), repoRelative(specPath), cards.list)
@@ -184,7 +214,7 @@ function main(argv) {
     )
   }
 
-  const total = findings.length + cardFindings
+  const total = findings.length + criticFindings + cardFindings
   if (total === 0) {
     console.error(`spec-check: ${specPath} is clean`)
     return 0
