@@ -8,20 +8,21 @@ say so.
 
 ## What ships
 
-| Skill                  | What it does                                                                                                                                                                                                                                                                    |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `orchestrate-delivery` | Decompose an objective into board cards, dispatch one Harnu session per unit, monitor until each opens a PR, then hand back a report.                                                                                                                                           |
-| `delivery-verifier`    | Grade a finished unit's acceptance criteria one at a time, from evidence in the repo rather than from what the session says about itself.                                                                                                                                       |
-| `mission`              | Run one coordination tick over dispatched work and report a single line.                                                                                                                                                                                                        |
-| `delivery-watchdog`    | The tick of a mission's steward (verify-dispatch, nudge, rebase, log). Without a steward: sweep a repo for delivery work that is finished but parked — pushed with no PR, a card the board is lying about — and raise one notification naming the fix.                          |
-| `conductor`            | Drive the Harnu fleet through the `harnu` MCP verbs — see every session and worktree, create sessions, terminals and worktrees.                                                                                                                                                 |
-| `status`               | Render a fixed six-line "glance card" of where every feature or mission stands, plus the links worth opening, built from the board, the mission files and open PRs.                                                                                                             |
-| `read-aloud`           | Speak a short, ear-friendly summary of a result out loud — through Harnu's own voice inside the app, or a text-to-speech command on your PATH outside it.                                                                                                                       |
-| `report-back`          | The final-report format every multi-step run ends with: one line per step with its concrete outcome, what you owe (always printed, even when it is nothing), the links worth opening, and a summary of at most three lines.                                                     |
-| `draft-to-prompt`      | Turn a rough idea or a messy draft into a finished prompt for a Claude model — including a boot prompt for a new session or worktree — with the model, effort and any long-running harness it needs spelled out as run instructions.                                            |
-| `one-by-one`           | Work through a pile of open decisions one question at a time, and write each answer where it lasts — the resolved row in your spec, a line in project memory, and a pointer to the Mission's **Choose…** button when the mission has a decision for it.                         |
-| `grill-me`             | Have a spec or plan stress-tested by one question at a time, with a recommended answer each. Every question that survives is written into the spec — an open decision, an amendment, or a non-goal — and the session ends by listing what it wrote and what it could not place. |
-| `step-by-step`         | Be walked through a list of manual actions only you can do — dashboard clicks, DNS, secrets, a release — one step per message. Each action also becomes a check on the relevant Mission step, which only you can tick.                                                          |
+| Skill                  | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `orchestrate-delivery` | Decompose an objective into board cards, dispatch one Harnu session per unit, monitor until each opens a PR, then hand back a report.                                                                                                                                                                                                                                                                                                                                    |
+| `delivery-verifier`    | Grade a finished unit's acceptance criteria one at a time, from evidence in the repo rather than from what the session says about itself.                                                                                                                                                                                                                                                                                                                                |
+| `mission`              | Run one coordination tick over dispatched work and report a single line.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `delivery-watchdog`    | The tick of a mission's steward (verify-dispatch, nudge, rebase, log). Without a steward: sweep a repo for delivery work that is finished but parked — pushed with no PR, a card the board is lying about — and raise one notification naming the fix.                                                                                                                                                                                                                   |
+| `conductor`            | Drive the Harnu fleet through the `harnu` MCP verbs — see every session and worktree, create sessions, terminals and worktrees.                                                                                                                                                                                                                                                                                                                                          |
+| `status`               | Render a fixed six-line "glance card" of where every feature or mission stands, plus the links worth opening, built from the board, the mission files and open PRs.                                                                                                                                                                                                                                                                                                      |
+| `read-aloud`           | Speak a short, ear-friendly summary of a result out loud — through Harnu's own voice inside the app, or a text-to-speech command on your PATH outside it.                                                                                                                                                                                                                                                                                                                |
+| `report-back`          | The final-report format every multi-step run ends with: one line per step with its concrete outcome, what you owe (always printed, even when it is nothing), the links worth opening, and a summary of at most three lines.                                                                                                                                                                                                                                              |
+| `draft-to-prompt`      | Turn a rough idea or a messy draft into a finished prompt for a Claude model — including a boot prompt for a new session or worktree — with the model, effort and any long-running harness it needs spelled out as run instructions.                                                                                                                                                                                                                                     |
+| `one-by-one`           | Work through a pile of open decisions one question at a time, and write each answer where it lasts — the resolved row in your spec, a line in project memory, and a pointer to the Mission's **Choose…** button when the mission has a decision for it.                                                                                                                                                                                                                  |
+| `grill-me`             | Have a spec or plan stress-tested by one question at a time, with a recommended answer each. Every question that survives is written into the spec — an open decision, an amendment, or a non-goal — and the session ends by listing what it wrote and what it could not place.                                                                                                                                                                                          |
+| `step-by-step`         | Be walked through a list of manual actions only you can do — dashboard clicks, DNS, secrets, a release — one step per message. Each action also becomes a check on the relevant Mission step, which only you can tick.                                                                                                                                                                                                                                                   |
+| `spec`                 | Run it at the start of any piece of work: it names what you came in with and how big the work is, in one message. Most entries — a one-line bug, a PR comment, a red CI, a question — end right there with their first step and nothing written. Bigger work gets a spec and a mission with one step, "Approve spec", that you mark yourself after answering its one question; `/harnu:spec check` lints a spec (and, with `--cards`, the cards against it) in any repo. |
 
 Each row in the panel shows the skill's name and its own one-line purpose, taken
 straight from the skill file — so the panel can never describe a skill differently
@@ -65,6 +66,46 @@ it re-arms its own loop when you do.
 It stays quiet when nothing is parked, and with "carry last result" on it will not
 notify twice about the same finding — it only speaks again when something actually
 moved. If it never says anything, that is the intended behaviour, not a broken worker.
+
+### `spec` sizes up the work first, and writes a spec only when it needs one
+
+Run `/harnu:spec <what you have>` at the start of any piece of work. Its first answer is
+one message: the **door** you came in by (a vague idea, a ticket, a bug, a question, a PR
+comment or red CI, a design, a recurring pain, "where did we leave off?"), the **tier**
+with a one-line reason, and the next step. Say `small`, `medium`, `large` or `complex` to
+override the tier; it takes your word without arguing.
+
+- **Small ends there.** A one-line bug, a PR comment, a red CI or a question gets its
+  first step and nothing else: no file, no mission, no sub-agent. A question that grows
+  into an architectural decision gets an ADR, never a spec.
+- **Medium, Large and Complex get a spec** at `docs/specs/YYYY-MM-DD-<slug>/spec.md`, in
+  the shape of the repo's spec template. Before asking you anything, the session looks
+  up what the repo already knows (project memory, lessons, the code); then it asks the
+  decisions that remain one at a time. A decision you don't answer stays open with its
+  default, never guessed. Large adds goals and open decisions; Complex adds a PRD, an ADR
+  only when the spec records an architectural decision, and a mockup folder when there
+  is UI.
+- **A mission starts the moment the work leaves Small.** Its finish line is the delivery
+  itself, not the spec, and it has one step, "Approve spec", that only you can mark.
+- **Fresh reviewers read the spec cold.** Two for Medium, three for Large, five for
+  Complex, each started on a different model when one is available and handed nothing but
+  file paths. Every finding gets one written answer in `critics.md` beside the spec.
+
+**How you approve.** When the spec is clean and reviewed, the session opens it in a pane
+beside the session and asks one question: `Approve this spec?`. On a yes it marks the spec
+approved; you then click the mission pill → **Mark verified** on the "Approve spec" step,
+because the skill never ticks it for you. If you are away when it asks, it raises a
+blocker in your name, so Harnu chimes and reminds you. Once a slice of the spec has a
+card, the spec is frozen: later changes are added as rows of its **Amendments** table.
+After you approve, `orchestrate-delivery` picks up the same mission, turns each slice
+into a card and holds back the slices an open decision still gates.
+
+**The `check` verbs.** `/harnu:spec check` lints a spec: the spec gate's rules, that every
+capability is built before it is used, that every request lands on an acceptance criterion,
+a non-goal or a decision, and the reviewers' answers in `critics.md`. Add `--cards` to also compare the
+board cards against the spec (acceptance criteria that drifted, went missing or were
+invented). It prints one finding per line and changes nothing. The checker ships inside
+the skill, so it works in any repo, not just Harnu's own.
 
 ### `one-by-one`, `grill-me` and `step-by-step` leave a record
 

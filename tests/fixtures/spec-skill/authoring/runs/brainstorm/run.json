@@ -1,0 +1,8 @@
+{
+  "kind": "brainstorm",
+  "input": "input.md",
+  "session": "session.md",
+  "spec": "docs/specs/2026-11-07-archive-idle-sessions/spec.md",
+  "tier": "medium",
+  "requests": { "heading": "What was asked", "item": "^- " }
+}

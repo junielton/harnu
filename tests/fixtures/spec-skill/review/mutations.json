@@ -1,0 +1,203 @@
+{
+  "_note": "Each mutation is applied to the real text it targets (skill = SKILL.md, or a persona file under agents/ by its name). A mutation names a literal `find` or a regex `pattern`; the test first asserts it matches, then that the named check reports at least one problem on the mutated text.",
+  "stages": [
+    {
+      "target": "skill",
+      "find": "| Complex | comprehension   | hostile critic, overhead lens, traceability lens | implementation readiness | 5          |",
+      "replace": "| Complex | comprehension   | hostile critic, overhead lens, traceability lens | implementation readiness | 6          |",
+      "why": "the Sub-agents column counts the reviewers of its row"
+    },
+    {
+      "target": "skill",
+      "find": "at most five sub-agents",
+      "replace": "at most eight sub-agents",
+      "why": "a round spawns at most five sub-agents"
+    },
+    {
+      "target": "skill",
+      "find": "One re-review per stage",
+      "replace": "Re-review until clean",
+      "why": "one re-review per stage, so the worst case is bounded"
+    },
+    {
+      "target": "skill",
+      "find": "a Small entry spawns none",
+      "replace": "a Small entry spawns one",
+      "why": "a Small entry spawns no sub-agent"
+    }
+  ],
+  "personas": [
+    {
+      "target": "critic",
+      "find": "read-only",
+      "replace": "careful",
+      "why": "every persona opens with the read-only mandate"
+    },
+    {
+      "target": "traceability",
+      "find": "no history",
+      "replace": "the full history",
+      "why": "every persona opens with the no-history mandate"
+    },
+    {
+      "target": "overhead",
+      "pattern": "`Nit`",
+      "replace": "`Minor`",
+      "why": "the output severities are Blocker, Major and Nit"
+    },
+    {
+      "target": "skill",
+      "find": "Spec: <absolute path of spec.md>\n",
+      "replace": "Spec: <absolute path of spec.md>\nContext: <a summary of this conversation>\n",
+      "why": "the spawn payload carries absolute paths only, never transcript text"
+    },
+    {
+      "target": "skill",
+      "find": "`subagent_type: \"general-purpose\"`",
+      "replace": "`subagent_type: \"fork\"`",
+      "why": "a fork inherits the conversation; a Goldfish is a general-purpose sub-agent"
+    }
+  ],
+  "comprehension": [
+    {
+      "target": "comprehension",
+      "find": "## What this proposes\n",
+      "replace": "## Gaps first\n",
+      "why": "the report opens with the paraphrase"
+    },
+    {
+      "target": "comprehension",
+      "find": "## How the system works, per this spec\n",
+      "replace": "## Notes\n",
+      "why": "the second heading is the system paraphrase"
+    },
+    {
+      "target": "skill",
+      "pattern": "\\| comprehension +\\| `agents/comprehension\\.md` +\\| none: the spec alone +\\|",
+      "replace": "| comprehension            | `agents/comprehension.md` | optional                      |",
+      "why": "comprehension reads the spec alone, with no reading list"
+    },
+    {
+      "target": "skill",
+      "find": "a wrong paraphrase is a finding",
+      "replace": "a wrong paraphrase is a note",
+      "why": "the Elephant records a wrong paraphrase as a finding"
+    }
+  ],
+  "readiness": [
+    {
+      "target": "readiness",
+      "find": "zero-decision rule",
+      "replace": "readiness rule",
+      "why": "the persona applies the zero-decision rule by name"
+    },
+    {
+      "target": "readiness",
+      "pattern": "(design choice[^\\n]*)`Blocker`",
+      "replace": "$1`Major`",
+      "why": "a slice that leaves a design choice is a Blocker"
+    },
+    {
+      "target": "readiness",
+      "pattern": "(concrete path[^\\n]*)`Blocker`",
+      "replace": "$1`Nit`",
+      "why": "a files-may-touch that is not a concrete path is a Blocker"
+    }
+  ],
+  "noCode": [
+    {
+      "target": "skill",
+      "find": " git ls-files --others --exclude-standard;",
+      "replace": "",
+      "why": "an untracked file outside the bundle must stop the check"
+    },
+    {
+      "target": "skill",
+      "find": "| sort -u | grep -v",
+      "replace": "| sort -u | grep -v -e '^src/'",
+      "why": "a code path outside the bundle must be listed"
+    },
+    {
+      "target": "skill",
+      "find": "7. **Approval question.** Run the no-code check",
+      "replace": "7. **Approval question.** Skip the no-code check",
+      "why": "the no-code check runs before the approval question"
+    },
+    {
+      "target": "skill",
+      "find": "`orchestrator_arm`",
+      "replace": "`orchestrator_disarm`",
+      "why": "D-10: an agent-spawned session arms the orchestrator guard"
+    },
+    {
+      "target": "skill",
+      "find": "git diff --no-renames --name-only",
+      "replace": "git diff --name-only",
+      "why": "rename detection hides a code path moved into the bundle"
+    }
+  ],
+  "dispositions": [
+    {
+      "target": "skill",
+      "find": "\"stepId\": \"<stp-n of the Approve spec step>\"",
+      "replace": "\"step\": \"<stp-n of the Approve spec step>\"",
+      "why": "the payload must parse against mission_log"
+    },
+    {
+      "target": "skill",
+      "find": "\"kind\": \"decision\"",
+      "replace": "\"kind\": \"verdict\"",
+      "why": "mission_log kind is decision or surprise"
+    },
+    {
+      "target": "skill",
+      "find": "the approval question is not asked",
+      "replace": "the approval question may still be asked",
+      "why": "an open Blocker holds the approval question"
+    },
+    {
+      "target": "skill",
+      "find": "`'surprise'`",
+      "replace": "`'note'`",
+      "why": "a finding that changed the design is logged as a surprise"
+    }
+  ],
+  "decisions": [
+    {
+      "target": "skill",
+      "find": "\"page\": \"decisions\"",
+      "replace": "\"page\": \"hot\"",
+      "why": "a resolved D-n lands on the decisions page"
+    },
+    {
+      "target": "skill",
+      "find": "\"watches\": [",
+      "replace": "\"watch\": [",
+      "why": "the payload must parse against memory_append, with watches"
+    },
+    {
+      "target": "skill",
+      "find": "the literal directory prefix of each `files-may-touch` glob of the slices whose `gated-by:` names it",
+      "replace": "the `files-may-touch` of the slices whose `gated-by:` names it",
+      "why": "watches carry the literal directory prefix of each glob, not the glob"
+    },
+    {
+      "target": "skill",
+      "find": "→ `resources/skills/skills/spec/agents/`",
+      "replace": "→ `resources/skills/skills/spec/agents/*.md`",
+      "why": "the worked example maps a glob to its directory prefix"
+    },
+    {
+      "target": "skill",
+      "find": "\"src/badge/\"",
+      "replace": "\"src/badge/*.ts\"",
+      "why": "a glob watch is never recalled"
+    },
+    {
+      "target": "skill",
+      "find": ", \"badge\"]",
+      "replace": "]",
+      "why": "watches carry single-word topics too"
+    }
+  ]
+}

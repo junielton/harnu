@@ -1,0 +1,45 @@
+# Assumptions
+
+Places where the spec (`docs/superpowers/specs/…-design.md`) and plan
+(`docs/superpowers/plans/…json-key-extraction.md`) did not settle something, and
+what I assumed.
+
+- **`upsert` docstring bullet.** The plan says to add "- Use --key or --auto-key to read
+  rows from a key of a JSON object" after the `--nl` bullet in both the `insert` and
+  `upsert` docstrings, but the `upsert` docstring has no bullet list and no `--nl`
+  bullet. I added the bullet to `insert` only and left the `upsert` docstring alone
+  (its `--help` still lists both options).
+- **CSV-implying options count as non-JSON input.** The spec lists `--csv`, `--tsv`,
+  `--nl`, `--lines`, `--text` as conflicting with `--key`/`--auto-key`. It does not say
+  what happens with `--delimiter`, `--quotechar`, `--sniff` or `--no-headers`, which
+  the existing code turns into `--csv`. Because the check runs after that conversion
+  (where the plan places it), those options also produce
+  `--key/--auto-key can only be used with JSON input`.
+- **Precedence among conflict errors in `insert`/`upsert`/`bulk`.** The spec says the
+  conflict checks run "alongside the existing conflict checks" before input is read,
+  but not their relative order. I used: `--key and --auto-key cannot be used together`
+  first, then the existing `--code` checks (with the two options added to the
+  input-format list), then the existing "Provide either a FILE argument or --code"
+  check, then the JSON-only check, then `Use just one of --nl, --csv or --tsv` and the
+  other existing checks. So `--key X --nl --csv` reports the JSON-only error.
+- **Precedence of the two `ValueError`s in `rows_from_file()`.** With `key=` and
+  `auto_key=True` plus an explicit CSV `format=`, the "cannot be used together" error
+  wins. Both come after the existing `ignore_extras=`/`extras_key=` check.
+- **Empty input with `format=None`.** `rows_from_file()` detects empty input as CSV
+  with zero rows today; with `key=`/`auto_key=True` it still does that, with no error
+  (the arguments only apply when JSON is detected).
+- **`--encoding` with `--key`.** The existing `--encoding must be used with --csv or
+  --tsv` error is unchanged, so `--encoding` plus `--key` on `insert` still fails with
+  that message; `memory --encoding` (CSV-only there) is unaffected.
+- **JSON type name for an unexpected Python type.** The fixed mapping covers every type
+  `json.load` can produce; for anything else (unreachable from decoded JSON) the helper
+  falls back to the Python type name.
+- **Test coverage layout.** "Every row of the two behavior tables needs a test" — I
+  test every row at the `rows_from_file()` level, and a representative row per error
+  and success path at the CLI level for each command (all rows for `insert`), rather
+  than repeating every table row for each of `upsert`, `bulk` and `memory`. Each
+  command has its own non-opt-in regression test for a plain object being one row.
+- **Docs placement in `docs/cli.rst`.** The new section sits directly before
+  `.. _cli_inserting_data_binary:` as the plan asks; the `memory` and `bulk` sections
+  link to it with `:ref:`. No other places in the docs refer back to the insert
+  formats, so nothing else was changed.

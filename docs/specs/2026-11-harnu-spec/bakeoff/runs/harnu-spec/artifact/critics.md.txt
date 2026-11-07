@@ -1,0 +1,93 @@
+# Goldfish review
+
+Author model: claude-opus-5-5 · reviewer model: sonnet (D-14)
+Persona files are read by a general-purpose sub-agent, so `CLAUDE.md` may reach the reviewer (D-9).
+
+## Reviewers
+
+| reviewer      | round | model  | status |
+| ------------- | ----- | ------ | ------ |
+| comprehension | 1     | sonnet | ran    |
+| comprehension | 2     | sonnet | ran    |
+| critic        | 1     | sonnet | ran    |
+| critic        | 2     | sonnet | ran    |
+| readiness     | 1     | sonnet | ran    |
+| readiness     | 2     | sonnet | ran    |
+
+## Findings
+
+| id   | reviewer      | severity | finding | disposition | evidence |
+| ---- | ------------- | -------- | ------- | ----------- | -------- |
+| F-1  | comprehension | Major    | R-4 says "single key" but D-1 B counts candidate keys among several; "candidate" undefined. | fix | Problem now defines "candidate key"; a note says D-1 settled R-4's wording because the Alaska example has two keys. |
+| F-2  | comprehension | Major    | Unclear whether empty/scalar/mixed lists are candidates, or what an object with only such lists does. | fix | Problem defines "list of objects" and "candidate key"; S-1 rule 3 states such an object has zero candidate keys; AC-4 lists the four inputs. |
+| F-3  | comprehension | Major    | `--auto-key` on a top-level array "as today" ambiguous for odd arrays. | fix | S-1 rule 3: a top-level array bypasses candidate detection and goes through rule 1 (today's behaviour). |
+| F-4  | comprehension | Major    | Behaviour when the format is auto-detected as non-JSON is unstated; unclear whether `bulk` has every format flag. | fix | Problem now states that `insert`/`upsert`/`bulk` share `_import_options` (all flags) and detect nothing, that `--delimiter`/`--quotechar`/`--sniff`/`--no-headers` switch to CSV, and how `rows_from_file()` detects; S-2 places the check after the CSV switch; AC-15 adds `--delimiter ,`. |
+| F-5  | comprehension | Major    | A single-line JSON object might be NL or JSON under detection. | fix | Problem states the existing rule: a first byte `[` or `{` is JSON, single-line objects included (detection unchanged, NG-5). |
+| F-6  | comprehension | Major    | In `memory`, whether one failing JSON input fails the call and whether the message names the file. | fix | S-2 states the whole call fails with `Error: <message>`; NG-6 records no per-file prefix. |
+| F-7  | comprehension | Major    | AC-10 does not state column types or row order. | fix | AC-10 now states file order and the types `Description` str, `Id` int, `ExternalId` str with `""`. |
+| F-8  | comprehension | Major    | AC-13 gives no SQL or parameter names for `bulk`. | fix | AC-13 now gives the exact SQL with `:Id` and `:Description` and the expected rows. |
+| F-9  | comprehension | Major    | ClickException (exit 1) and UsageError (exit 2) both allowed without saying which. | fix | S-2 now uses `click.ClickException` for every error, matching the existing `--empty-null`/`--encoding` checks; AC-15 and AC-21 require exit 1. |
+| F-10 | comprehension | Major    | What `rows_from_file()` does today for a top-level array of non-objects is unstated, so NG-4 is unclear for Python. | fix | Problem states the `Format.JSON` branch returns a top-level array unchanged with no element check; NG-4 now says so for `rows_from_file()` too. |
+| F-11 | comprehension | Major    | No "unchanged without the option" AC for `upsert`, `bulk` or `memory`. | fix | Problem states `insert`/`upsert`/`bulk` share `insert_upsert_implementation()`, so AC-14 covers that one path; new AC-24 covers `memory`; G-3 names every entry point. |
+| F-12 | comprehension | Nit      | "Following the existing ignore_extras/extras_key check" refers to unseen code. | fix | S-1 now quotes both `ValueError` messages. |
+| F-13 | comprehension | Nit      | The helper has no name or signature. | fix | S-1 names `_rows_for_json_key(data, key=None, auto_key=False) -> list` and its rules in order. |
+| F-14 | comprehension | Nit      | Approximate line numbers will drift. | fix | Problem now names the sites by function and expression only. |
+| F-15 | comprehension | Nit      | AC-9 greps only `auto_key`, not `key=` or the docstring. | fix | AC-9 now also greps `:param key:` and `:param auto_key:` in `sqlite_utils/utils.py`. |
+| F-16 | comprehension | Nit      | `uv run cog` / `uv run pytest` may not be how the repo runs them. | fix | S-2 now cites the repo's Justfile recipe (`uv run --group docs cog -r README.md docs/*.rst`; the lint recipe runs `uv run cog --check README.md docs/*.rst`). |
+| F-17 | comprehension | Nit      | "tier" undefined; Amendments table empty. | fix | Problem says why the tier is `large`; Amendments now has the round-1 row. |
+| F-18 | comprehension | Nit      | D-3's "seven proposed defaults" are not listed. | fix | D-3 options now list the seven items by number, and the status names which were kept and which were replaced. |
+| F-19 | comprehension | Major    | Round 2: R-4 still reads "single key"; the reader must cross-read D-1. | fix | R-4 now carries "(Superseded by D-1: exactly one candidate key, other keys ignored, behind `--auto-key`)". |
+| F-20 | comprehension | Major    | Round 2: NG-4 (no element check under `--key`) is stated but never proven. | fix | New AC-25: `insert --key k` on `{"k": [1, 2]}` gives the existing `Error: Rows must all be dictionaries, got: 1` (raised by `verify_is_dict` in `cli.py`, shared by insert/upsert/bulk). |
+| F-21 | comprehension | Major    | Round 2: `memory --key` with no JSON input at all is unspecified. | fix | S-2 now says the options pass to every `rows_from_file()` call whatever the `:format` suffix, and a call with no JSON input imports as without them; new AC-26. |
+| F-22 | comprehension | Major    | Round 2: the order of the `--code`, both-options and non-JSON checks is undefined. | fix | S-2 now says the checks run in the listed order and the first failure is the error. |
+| F-23 | comprehension | Major    | Round 2: AC-15 tests `--delimiter` only, not the other CSV-switching flags. | fix | S-2's non-JSON check names all four flags; AC-15 now lists `--delimiter ,`, `--quotechar '"'`, `--sniff` and `--no-headers`. |
+| F-24 | comprehension | Major    | Round 2: AC-1 "and `Format.JSON`" is a fragment; the return type is unstated. | fix | AC-1 now says it returns the tuple `(rows, Format.JSON)`. |
+| F-25 | comprehension | Major    | Round 2: AC-22's cog command lacks `--group docs`; AC-23 sits only on S-2. | fix | AC-22 now runs `uv run --group docs cog --check README.md docs/*.rst`; S-2 says AC-23 is the final gate, run on the S-2 branch that already holds S-1. |
+| F-26 | comprehension | Major    | Round 2: R-3 (the before state) and R-5 have no proof. | fix | AC-14 (the one-row result without the option, today's state) now covers R-3; R-5 stays on AC-10 and AC-23, the repo's own tests. |
+| F-27 | comprehension | Nit      | Round 2: S-1 repeats the candidate definition in other words. | fix | S-1 rule 3 now points to the definition of a candidate key. |
+| F-28 | comprehension | Nit      | Round 2: the Amendments row cites a file the reader was not given. | fix | The row now names what changed. |
+| F-29 | comprehension | Nit      | Round 2: the tier criterion is undefined. | fix | Problem now says `large` is the spec template's tier for work that records decisions and non-goals. |
+| F-30 | comprehension | Nit      | Round 2: it is unclear whether `tests/test_rows_from_file.py` exists. | fix | S-1 `files-may-touch` marks it `(existing)`. |
+| F-31 | critic        | Major    | S-2 never adds `key`/`auto_key` to `insert_upsert_implementation()`, its three call sites or the command signatures, and `RowsFromFileBadJSON` is not imported in `cli.py`. | fix | S-2 "Plumbing" paragraph names the new parameters, the three calls (positional from insert/upsert, keyword from bulk) and the imports. |
+| F-32 | critic        | Major    | With neither option the CLI would route through the helper, changing the error for a top-level scalar (contradicts G-3). | fix | S-2 now calls the helper only when `key is not None` or `auto_key`; with neither, today's code runs unchanged; NG-7 records it. |
+| F-33 | critic        | Major    | A top-level scalar under `key=`/`auto_key=True` is unspecified. | fix | S-1 rules 2 and 3 now raise `RowsFromFileBadJSON` for a top-level scalar; AC-6 tests `5` with either option. |
+| F-34 | critic        | Major    | No CLI AC for `--auto-key` on a top-level array (R-12). | fix | New AC-27 (`insert --auto-key` on stdin `[{"x": 1}]`). |
+| F-35 | critic        | Major    | Decision provenance unclear; D-3 defaults not listed; D-2 options lack `bulk`. | fix | D-1 to D-3 status cells now say "chosen by the operator in chat"; D-2 options gain "other (the operator's own)"; D-3 options list the seven defaults by number (since round 1 of comprehension). |
+| F-36 | critic        | Major    | Order of the new JSON-input check against the existing `>= 2`, `--flatten`, `--empty-null`, `--encoding` checks is unstated. | fix | S-2 places it right after the CSV switch line and before those checks; AC-15 adds `--key --csv --flatten`. |
+| F-37 | critic        | Major    | The Justfile recipe is cited with no source. | fix | S-2 cites `Justfile` line 27 (`uv run --group docs cog -r README.md docs/*.rst`) and line 21 (`uv run cog --check README.md docs/*.rst`). |
+| F-38 | critic        | Nit      | R-13 reads wider than S-2: invalid JSON in `memory` still tracebacks. | decline NG-7 | NG-7: error paths these options do not add stay as today; R-13 now points at NG-7. |
+| F-39 | critic        | Nit      | "usage error" (R-14) vs `ClickException` exit 1. | fix | S-2 states R-14's "usage error" is a `click.ClickException` (exit 1), like the existing option checks. |
+| F-40 | critic        | Nit      | `--key ""` ambiguous. | fix | S-1 rule 2 says `key is not None`, so `key=""` looks up the empty-string key. |
+| F-41 | critic        | Nit      | `--code` tested with `--key` only. | fix | AC-15 now tests `--key` and `--auto-key` each with `--code`. |
+| F-42 | critic        | Nit      | AC-9's grep passes on any mention. | fix | AC-9 now greps `auto_key=True` (an example) plus the two `:param` lines. |
+| F-43 | critic        | Nit      | S-1 has no full-suite gate. | fix | New AC-28 on S-1 (`uv run pytest`). |
+| F-44 | critic        | Nit      | S-2 test files not marked existing. | fix | S-2 `files-may-touch` marks them "(all existing)". |
+| F-45 | critic        | Nit      | The tier sentence cites a template not given. | fix | Problem now says why: decisions and non-goals have no section in a `medium` spec. |
+| F-46 | critic        | Major    | Round 2: R-14 says Python errors are `RowsFromFileBadJSON`, but S-1/AC-7 raise `ValueError` for both options. | fix | R-14 now names the exception: the both-options misuse is a `ValueError` in Python, as `ignore_extras=` with `extras_key=` is. |
+| F-47 | critic        | Major    | Round 2: `key=""` vs truthiness in the existing `--code` and guard checks. | fix | S-1 says every "key given" test in S-1 and S-2 is `key is not None`; S-2's `--code` entry is `key is not None`; AC-15 adds `--key "" --csv`; new AC-30 (`--key ""` on `{"": [...]}`). |
+| F-48 | critic        | Major    | Round 2: `--key k --flatten` on non-object elements gives an `AttributeError` traceback (`_flatten` runs before `verify_is_dict`). | decline NG-4 | NG-4 now names this case: it fails exactly as a top-level `[1]` with `--flatten` fails today (`cli.py`: `_flatten(doc)` runs before `verify_is_dict`), an existing path the options do not add (NG-7). |
+| F-49 | critic        | Major    | Round 2: AC-12 fixture has no primary key. | fix | AC-12 now creates `records` as `Id INTEGER PRIMARY KEY, Description TEXT, ExternalId TEXT`, with `Id` 1 `Old`. |
+| F-50 | critic        | Major    | Round 2: no `upsert`/`bulk` error AC and no unchanged AC; `bulk` is wired separately. | fix | New AC-29 (a `bulk --key Missing` error and an `upsert --auto-key` two-candidate error); G-3 now says the no-option path is proven through `insert` (AC-14), since all three share `insert_upsert_implementation()`, and through `memory` (AC-24). |
+| F-51 | critic        | Nit      | Round 2: no lint AC; `cog -r` may rewrite files outside S-2. | fix | New AC-31 (`just lint`); S-2 says only `docs/cli-reference.rst` embeds this help (the one other cog block, in `docs/cli.rst`, lists tabulate formats), and any other cog change is a stop. |
+| F-52 | critic        | Nit      | Round 2: R-3 and R-5 proven only by unchanged-behaviour or full-suite ACs. | contest | AC-10 covers both R-3 (the import runs with no `jq` step) and R-5 (a feature test in this repo's suite); AC-11 also covers R-3. See the `covers` column of AC-10 and AC-11. |
+| F-53 | critic        | Nit      | Round 2: the decisions have no trace to their source. | fix | Amendments now has one row per D-n resolved, by `operator`, dated 2026-11-07. |
+| F-54 | critic        | Nit      | Round 2: AC-9's grep cannot prove the example is right. | contest | AC-9 proves the docs are present; AC-1 and AC-2 prove the behaviour the docs show, on the same Alaska example (`test_rows_from_file_key`, `test_rows_from_file_auto_key`). |
+| F-55 | critic        | Nit      | Round 2: which `ValueError` wins when both conflicts happen. | fix | S-1 now says the new check runs right after the existing `ignore_extras`/`extras_key` guard, so that guard wins. |
+| F-56 | critic        | Nit      | Round 2: one candidate key beside non-candidate lists is not tested. | fix | AC-2 adds `{"a": [{"x": 1}], "b": [], "c": [1]}` returning `[{"x": 1}]`. |
+| F-57 | readiness     | Blocker  | The cog "stop" has no instruction; `README.md` is passed to cog but is not in `files-may-touch`. | fix | Slices preface defines a stop (halt, commit nothing outside `files-may-touch`, report the path to the orchestrator); S-2 states that `README.md` has no cog block (only `docs/cli.rst` and `docs/cli-reference.rst` carry `[[[cog`), so cog rewrites only `docs/cli-reference.rst`. |
+| F-58 | readiness     | Blocker  | Whole-repo proofs (cog check, `just lint`, `uv run pytest`) have no rule for a failure that predates the slice. | fix | Slices preface: a failure that also happens on the base commit is reported in the PR, not fixed; one the slice introduces is fixed. |
+| F-59 | readiness     | Blocker  | Fixtures for AC-8, AC-20, AC-26 and the Alaska file are not given. | fix | Slices preface fixes `alaska.json`, `data.csv`, `data.tsv` and `data.jsonl:nl` contents, and says "changes nothing" asserts equality with the same call without the option; AC-8 and AC-20 name the fixtures. |
+| F-60 | readiness     | Major    | AC-15 parametrization is left to the executor. | fix | AC-15 now says one `pytest.mark.parametrize` case per listed call. |
+| F-61 | readiness     | Major    | The `--code` condition and the CSV switch are not quoted. | fix | S-2 quotes both conditions from `cli.py` and places the new check after the CSV switch line. |
+| F-62 | readiness     | Major    | The position of `memory`'s both-options check and the number of `rows_from_file()` calls are unstated. | fix | S-2: the check is the first statement of the body, before any input opens; `memory` has one `rows_from_file()` call inside its `for i, path in enumerate(paths)` loop. |
+| F-63 | readiness     | Major    | Where the new keyword parameters go in the positional signature. | fix | S-2: appended after the current last parameter `code=None`. |
+| F-64 | readiness     | Major    | `stdin:json` table naming is not described. | fix | AC-19 now says `memory` names a stdin input's table `stdin` (`file_table = "stdin"` in `cli.py`) and queries `select * from stdin`. |
+| F-65 | readiness     | Major    | The `docs/cli.rst` section's title and level are unspecified. | fix | S-2 gives the label `cli_inserting_data_key`, the title "Importing records held under a top-level key", a `---` underline and the content. |
+| F-66 | readiness     | Nit      | Rule 3's "goes through rule 1" reads oddly. | fix | Now reads "is handled exactly as rule 1 handles it". |
+| F-67 | readiness     | Nit      | R-13's "Read with NG-7" narrows the atom. | contest | Request atoms keep the operator's words; the scope note stays a pointer, and NG-7 holds the narrowing, citing R-13 (see NG-7 in Goals). |
+| F-68 | readiness     | Nit      | AC-9 can pass without the Alaska example. | fix | AC-9 now also greps `Nonpartisan` in `docs/python-api.rst`. |
+| F-69 | readiness     | Major    | Round 2: a lint or suite failure in S-1's files can surface only in S-2, which may not touch them. | fix | New AC-32 (`just lint` on S-1); the whole-repo rule now makes a failure in the other slice's files a stop. |
+| F-70 | readiness     | Major    | Round 2: AC-22 does not check the specified label, title or `--key List`. | fix | AC-22 now greps `_cli_inserting_data_key:`, the section title, `--key List` and `--auto-key` before `cog --check`. |
+| F-71 | readiness     | Nit      | Round 2: top-level array and scalar messages under `key` are unfixed. | fix | Slices preface: error wording is free wherever an AC constrains only what a message contains. |
+| F-72 | readiness     | Nit      | Round 2: the whole-repo rule omits AC-9 and the cog half of AC-22. | fix | The rule now covers every `script:` proof. |
+| F-73 | readiness     | Nit      | Round 2: `memory` may have `.db` paths that never reach `rows_from_file()`. | contest | `cli.py` `memory`: the `for i, path in enumerate(paths)` loop opens every path (or stdin) and passes it to `rows_from_file(fp, format=format, encoding=encoding)`, with no branch for `.db` files; the spec's description matches that loop. |

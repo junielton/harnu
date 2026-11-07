@@ -10,6 +10,16 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-07
+
+### Added
+
+- **A new bundled skill, `spec`, sizes up every piece of work before it starts, and writes a spec only when the work needs one.** Switch it on in **Settings → Skills** (off by default, like every bundled skill). Its first answer is one message naming the door you came in by and how big the work is: most entries (a one-line bug, a PR comment, a red CI, a question) end right there as Small, with their first step and nothing written. Medium-and-up work gets a spec at `docs/specs/YYYY-MM-DD-<slug>/spec.md`: the skill looks up what the repo already knows, splits your request into numbered requirements and asks the decisions that remain one at a time (one you don't answer stays open with its default, never guessed). A Complex spec travels with its PRD, an ADR when it records an architectural decision, and a mockup folder when there is UI. As soon as the work leaves Small it opens a Harnu mission whose end is the delivery itself, with one step, "Approve spec", that only you can mark; its scope lists the spec, and for Complex work the PRD and, when it records an architectural decision, the ADR. Fresh reviewers then read the spec cold (two for Medium, three for Large, five for Complex): read-only personas, each on a different model from the author's when one is available and handed nothing but file paths, and every finding gets one written answer in `critics.md`. Once nothing outside the spec bundle has changed, it opens the spec in a pane beside the session and asks one question, "Approve this spec?". On a yes it marks the spec approved and you click the mission pill → **Mark verified** on the step, because the skill never ticks it for you; if nobody answers, it raises a blocker in your name so Harnu chimes and reminds you. Once a slice has a card, the spec is frozen and changes go only into its Amendments table. `/harnu:spec check` lints a spec, and the reviewers' answers in `critics.md`, in any repo; with `--cards` it also checks the board cards against the spec.
+
+### Changed
+
+- **`orchestrate-delivery` picks up the mission a spec started.** When the delivery comes from a spec written by the `spec` skill, the orchestrating session adopts that mission instead of opening a second one, adds one step per slice, makes the cards with the skill's own planner, and turns each open decision into a decision step that holds back only the slices it gates. The other slices are dispatched as usual. With the `spec` skill switched off it derives the cards by hand, as before, and says so.
+
 ## 2026-11-06
 
 ### Added

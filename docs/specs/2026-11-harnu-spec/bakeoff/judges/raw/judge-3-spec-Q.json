@@ -1,0 +1,42 @@
+{
+  "spec": "Spec Q",
+  "atoms": {
+    "R-1": "covered",
+    "R-2": "covered",
+    "R-3": "covered",
+    "R-4": "covered",
+    "R-5": "covered",
+    "R-6": "covered",
+    "R-7": "covered",
+    "R-8": "covered",
+    "O-1": "covered",
+    "O-2": "covered",
+    "O-3": "covered",
+    "O-4": "covered",
+    "O-5": "covered",
+    "O-6": "covered",
+    "O-7": "covered",
+    "O-8": "covered",
+    "O-9": "covered",
+    "O-10": "covered",
+    "O-11": "covered",
+    "O-12": "covered",
+    "O-13": "partial",
+    "O-14": "covered",
+    "O-15": "covered",
+    "O-16": "covered"
+  },
+  "decisions_left": [
+    "Whether memory table names stay the file stem when --key is used: only implied by the 'alaska' example in the tests, not stated as a rule.",
+    "Which of the two errors wins when --key, --auto-key and --code are all given: the plan puts the both-options check before the --code block, but never says so as a rule.",
+    "Which top-level JSON scalar behavior --auto-key has in the CLI: 'as today' is stated, but there is no CLI test for it."
+  ],
+  "contradictions": [],
+  "acceptance_criteria": { "total": 37, "executable": 35 },
+  "builder_guesses": [
+    "Should memory table names stay the file stem with --key?",
+    "Which error wins when --key, --auto-key and --code are combined?",
+    "How exactly should the 'Inserting JSON nested under a key' section be worded? The prose has no assertion."
+  ],
+  "notes": "A near-complete spec with exact error texts, failing tests written in full, and the operator decisions carried: Python explicit CSV/TSV/NL raises ValueError, memory leaves CSV and NL alone, and there is no changelog edit or version bump. It has no formal acceptance-criteria list. I counted the 33 named tests plus four documentation or gate steps, of which the two prose docs sections are not machine-checked. The only real gap is that the file-stem rule for memory table names is never stated."
+}
