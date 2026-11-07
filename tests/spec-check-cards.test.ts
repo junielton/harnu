@@ -130,7 +130,7 @@ it('reports diverged, invented and missing ACs and never grades', () => {
   const out = res.stdout.trim().split('\n')
   const rules = out.map((l) => /^.+:\d+ \[([a-z-]+)\] .+$/.exec(l)?.[1]).filter(Boolean)
   expect(rules.sort()).toEqual(['hash-diverged', 'missing-ac', 'unknown-ac'])
-  expect(out.filter((l) => /^.+:\d+ info: .+AC-C/.test(l))).toHaveLength(2)
+  expect(out.filter((l) => /^.+:\d+ info: .*AC-C/.test(l))).toHaveLength(2)
   expect(out.some((l) => l.includes('other-spec-card') || l.includes('no-spec-card'))).toBe(false)
   for (const l of [...out, ...res.stderr.trim().split('\n')]) expect(l).not.toMatch(VERDICT_RE)
 
