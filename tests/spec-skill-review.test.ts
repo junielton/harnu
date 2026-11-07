@@ -25,6 +25,7 @@ import {
   parseCritics,
   parseSpec
 } from '../resources/skills/skills/spec/scripts/spec-check-core.mjs'
+import { recallEntries } from '../src/main/mcp/memory-entries'
 import { toolByName } from '../src/main/mcp/tool-catalog'
 
 vi.mock('electron', () => ({
@@ -392,7 +393,8 @@ it('critics lint rejects undisposed findings, weak contests and missing reviewer
 
   expect(lint('weak-contest.md').map((f) => [f.rule, f.message.split(' ')[0]])).toEqual([
     ['weak-contest', 'F-1'],
-    ['weak-contest', 'F-2']
+    ['weak-contest', 'F-2'],
+    ['weak-contest', 'F-3']
   ])
   const gap = lint('comprehension-contest.md')
   expect(gap.map((f) => f.rule)).toEqual(['weak-contest'])
@@ -453,7 +455,7 @@ const BUNDLE = {
 }
 
 /** Run the section's fenced check in a fresh repo; returns the paths it prints. */
-function runNoCodeCheck(command: string, stray: boolean): string[] {
+function runNoCodeCheck(command: string, mode: 'stray' | 'clean' | 'rename'): string[] {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'harnu-spec-nocode-'))
   const git = (...args: string[]): string =>
     execFileSync('git', ['-c', 'init.defaultBranch=main', ...args], {
@@ -477,10 +479,12 @@ function runNoCodeCheck(command: string, stray: boolean): string[] {
   write(`${BUNDLE['<mockup folder>']}screen-1.html`)
   write('.harnu/out/note.md')
   git('add', BUNDLE['<prd>'])
-  if (stray) {
+  if (mode === 'stray') {
     write('README.md', 'changed\n')
     write('src/stray.ts')
   }
+  // A file moved INTO the bundle still deletes a path outside it; rename detection must not hide it.
+  if (mode === 'rename') git('mv', 'src/app.ts', `${BUNDLE['<spec directory>']}/app.ts`)
   let cmd = command.replaceAll('<base>', base)
   for (const [k, v] of Object.entries(BUNDLE)) cmd = cmd.replaceAll(k, v)
   const r = spawnSync('sh', ['-c', cmd], { cwd: dir, encoding: 'utf8' })
@@ -494,11 +498,16 @@ function noCodeProblems({ skill }: Docs): string[] {
   const sh = fences(sec).find((x) => x.lang === 'sh' && /<base>/.test(x.body))
   if (!sh) return [...problems, 'no fenced shell check']
   const command = sh.body.trim()
-  const withStray = runNoCodeCheck(command, true)
+  const withStray = runNoCodeCheck(command, 'stray')
   if (withStray.join(',') !== 'README.md,src/stray.ts')
     problems.push(`the check printed ${withStray.join(', ') || 'nothing'} for two stray paths`)
-  const clean = runNoCodeCheck(command, false)
+  const clean = runNoCodeCheck(command, 'clean')
   if (clean.length > 0) problems.push(`the check printed ${clean.join(', ')} for a clean bundle`)
+  const renamed = runNoCodeCheck(command, 'rename')
+  if (renamed.join(',') !== 'src/app.ts')
+    problems.push(
+      `the check printed ${renamed.join(', ') || 'nothing'} for a code file moved into the bundle`
+    )
 
   const f = flat(sec)
   for (const part of ['spec directory', 'PRD', 'ADR', 'mockup folder'])
@@ -557,9 +566,60 @@ function decisionProblems({ skill }: Docs): string[] {
   const f = flat(review)
   if (!/one `memory_append` to `decisions`/.test(f))
     problems.push('a resolved D-n is not one memory_append to decisions')
-  if (!/`watches` lists the `files-may-touch` of the slices whose `gated-by:` names it/.test(f))
-    problems.push('watches is not the files-may-touch of the gated slices')
+  if (
+    !/`watches` lists the literal directory prefix of each `files-may-touch` glob of the slices whose `gated-by:` names it/.test(
+      f
+    )
+  )
+    problems.push("watches is not the directory prefix of the gated slices' files-may-touch")
+  if (!/single-word topics/.test(f)) problems.push('watches carries no single-word topics')
+
+  // The worked example maps a glob to its literal directory prefix, and recall finds a file
+  // under the glob through that prefix (recall matches literal paths and directory prefixes only).
+  const pairs = [...f.matchAll(/`([^`\s]*\*[^`\s]*)` → `([^`\s]+\/)`/g)]
+  if (pairs.length === 0) problems.push('no worked glob → directory-prefix example')
+  for (const [, glob, prefix] of pairs) {
+    if (prefix !== literalPrefix(glob)) problems.push(`${glob} → ${prefix} is not its prefix`)
+    if (!recalled([prefix], sampleUnder(glob)))
+      problems.push(`a watch on ${prefix} does not recall ${sampleUnder(glob)}`)
+  }
+
+  const watches = Array.isArray(payload?.watches) ? (payload!.watches as string[]) : []
+  const pathWatches = watches.filter((w) => w.includes('/'))
+  if (pathWatches.length === 0) problems.push('the example watches carry no path')
+  for (const w of pathWatches)
+    if (/[*?[\]{}]/.test(w))
+      problems.push(`the example watch ${w} is a glob, which recall never matches`)
+  if (!watches.some((w) => /^[A-Za-z0-9-]+$/.test(w)))
+    problems.push('the example watches carry no single-word topic')
+  for (const w of pathWatches) {
+    const sample = w.endsWith('/') ? `${w}example.ts` : w
+    if (!recalled(watches, sample)) problems.push(`the example watches do not recall ${sample}`)
+  }
   return problems
+}
+
+/** The literal directory prefix of a glob: every segment before the first wildcard one. */
+function literalPrefix(glob: string): string {
+  const segs = glob.split('/')
+  const first = segs.findIndex((x) => /[*?[\]{}]/.test(x))
+  return first <= 0 ? '' : `${segs.slice(0, first).join('/')}/`
+}
+
+/** A concrete file the glob matches. */
+const sampleUnder = (glob: string): string => glob.replace(/\*\*/g, 'x').replace(/\*/g, 'x')
+
+/** True when a decisions entry watching `watches` is recalled by a mission scoped to `file`. */
+function recalled(watches: string[], file: string): boolean {
+  const content = [
+    '# Decisions',
+    '',
+    'D-1 · Which storage? · chosen: file · 2026-11-07',
+    `> entry: e-0000abcd · valid_from=2026-11-07 · watches=${watches.join(',')}`,
+    '> provenance: test',
+    ''
+  ].join('\n')
+  return recallEntries([{ page: 'decisions', content }], { paths: [file], topics: [] }).length > 0
 }
 
 it('resolved decisions land in memory with watches', () => {

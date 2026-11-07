@@ -10,7 +10,8 @@
 
 ## Findings
 
-| id  | reviewer | severity | finding                              | disposition | evidence     |
-| --- | -------- | -------- | ------------------------------------ | ----------- | ------------ |
-| F-1 | critic   | Major    | The badge ignores archived sessions. | contest     | Intentional. |
-| F-2 | critic   | Nit      | AC-2 has no empty-state case.        | contest     | by design    |
+| id  | reviewer | severity | finding                              | disposition | evidence                |
+| --- | -------- | -------- | ------------------------------------ | ----------- | ----------------------- |
+| F-1 | critic   | Major    | The badge ignores archived sessions. | contest     | Intentional.            |
+| F-2 | critic   | Nit      | AC-2 has no empty-state case.        | contest     | by design               |
+| F-3 | critic   | Nit      | The badge has no tooltip.            | contest     | Intentional, by design. |
