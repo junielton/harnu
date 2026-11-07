@@ -1,0 +1,821 @@
+# Spec Q — the whole bundle a builder receives
+
+
+=== file: docs/[tool]/specs/2026-11-07-json-key-extraction-design.md ===
+
+# Loading JSON records nested under a top-level key — design
+
+Date: 2026-11-07
+
+## Intent
+
+A lot of real-world JSON wraps its records in an object, like this export from
+https://www.elections.alaska.gov/election-results/e/ :
+
+```json
+{
+  "Version": "5.5.52.6",
+  "List": [
+    {"Description": "Nonpartisan", "Id": 1, "ExternalId": ""},
+    {"Description": "Undeclared", "Id": 2, "ExternalId": ""}
+  ]
+}
+```
+
+Today `sqlite-utils` treats a top-level object as a single row, so this file goes in
+as one row with `List` stored as a JSON text column. Users have to run it through
+`jq .List` first. This feature lets sqlite-utils take the records out of the wrapper
+itself, either from a key the user names or by finding the one key that holds a
+list of objects.
+
+## Goals
+
+- `--key KEY`: read the rows from the named top-level key.
+- `--auto-key`: find the single top-level key that holds a non-empty list of objects
+  and read the rows from it.
+- Available on `insert`, `upsert`, `bulk` and `memory`, and in Python through
+  `sqlite_utils.utils.rows_from_file(..., key=None, auto_key=False)`.
+- Every other option (`--flatten`, `--pk`, `--alter`, `--convert`, `--stop-after`,
+  `--batch-size`, …) works normally on the extracted rows.
+
+## Non-goals and anti-goals
+
+- **No change for anyone who doesn't opt in.** Without `--key` / `--auto-key` (or
+  `key=` / `auto_key=` in Python), every command and `rows_from_file()` behaves
+  exactly as it does now. In particular `{"id": 1, "name": "Cleo"}` is still
+  inserted as one row. Breaking this would be a failure even if the feature works.
+- No automatic detection without the flag.
+- No nested paths (`--key a.b`), no JSONPath or jq syntax.
+- No version bump and no `docs/changelog.rst` edit.
+
+## Behavior (decided by the operator)
+
+### "Qualifying" key (for `--auto-key`)
+
+A top-level key **qualifies** when its value is a **non-empty list in which every
+element is an object** (a dict). An empty list does not qualify.
+
+### `--auto-key` / `auto_key=True`
+
+| Input                            | Result                                                         |
+| -------------------------------- | -------------------------------------------------------------- |
+| top-level list                   | no-op: imports exactly as today                                |
+| object, exactly one key qualifies | that list becomes the rows; sibling keys (e.g. `Version`) are ignored |
+| object, no key qualifies          | error                                                          |
+| object, more than one qualifies   | error that names **every** qualifying key                      |
+
+### `--key KEY` / `key="KEY"`
+
+| Input                                         | Result                                                     |
+| --------------------------------------------- | ---------------------------------------------------------- |
+| top-level list                                | error (there's no object to read a key from)               |
+| object without `KEY`                          | error that names the key                                   |
+| `KEY` holds an object                         | that object is one row                                     |
+| `KEY` holds a string, number, boolean or null | error                                                      |
+| `KEY` holds a list of objects                 | those are the rows                                         |
+| `KEY` holds a list containing non-objects     | handled exactly like a top-level list of non-objects today (no new rule) |
+| `KEY` holds an empty list                     | zero rows, success, exactly like an empty top-level list today |
+
+### Combinations
+
+- `--key` and `--auto-key` together: error. In Python, `key=` and `auto_key=True`
+  together raise `ValueError`.
+- `insert`, `upsert`, `bulk`: either option combined with `--csv`, `--tsv`, `--nl`,
+  `--lines` or `--text` is an error.
+- `memory`: the options apply to the inputs that are JSON. CSV/TSV inputs in the same
+  call import as today, with no error.
+- `rows_from_file()`: an explicit `format=` of `Format.CSV`, `Format.TSV` or
+  `Format.NL` together with `key=`/`auto_key=True` raises `ValueError`. With format
+  detection (`format=None`), the arguments apply only when JSON is detected, and a
+  detected CSV/TSV file reads as today.
+
+### Errors
+
+- CLI: every new error is a normal Click error, with a message, a non-zero exit code
+  and no traceback. That includes `memory`.
+- Python: a missing key, `key=` on a top-level list, a `key=` value that is a
+  scalar or null, and no or several qualifying keys under `auto_key=True` all raise
+  `sqlite_utils.utils.RowsFromFileBadJSON`. The message includes the key name or names
+  where it applies.
+
+### Docs
+
+- `docs/cli.rst`: a new subsection under "Inserting JSON data" (`cli_inserting_data`)
+  that uses the Alaska example above for both `--key List` and `--auto-key`. Mention
+  the options in the `memory` section ("Running queries directly against CSV or JSON")
+  and wherever `bulk` refers back to the insert formats.
+- `docs/python-api.rst`: the "Reading rows from a file" section
+  (`python_api_rows_from_file`) documents `key=` and `auto_key=` with an example,
+  in addition to the autodoc'd docstring.
+- The `rows_from_file()` docstring gets `:param key:` and `:param auto_key:` entries.
+- `docs/cli-reference.rst` is regenerated with cog (`just cog`), not edited by hand.
+
+## Builder's calls (made by me, the designer; not requested by the operator)
+
+1. **`memory` with an explicit `file:nl` input:** imports as today with no error and
+   the options don't apply, the same way CSV/TSV inputs are handled in `memory`.
+   The options apply to inputs with format `:json` or detected as JSON. (In
+   `memory`, `--nl` is an *output* option, so there's no input-format conflict to
+   check.)
+2. **`memory` with several JSON inputs:** the options apply to each JSON input
+   separately. With `--auto-key`, each file resolves its own qualifying key. With
+   `--key`, every JSON input must contain that key, or the call fails.
+3. **`--code` together with `--key`/`--auto-key`:** error. Add both options to the
+   existing "--code cannot be used with input format options" check in
+   `insert_upsert_implementation`, which keeps that message.
+4. **Error wording** (CLI and `RowsFromFileBadJSON` share the same text):
+   - `--key and --auto-key cannot be used together` (Python: `key= and auto_key= cannot be used together`)
+   - `--key/--auto-key can only be used with JSON input` (`insert`/`upsert`/`bulk` with `--csv`, `--tsv`, `--nl`, `--lines` or `--text`). Python's `ValueError` for an explicit CSV/TSV/NL `format=` reads `key= and auto_key= can only be used with JSON`.
+   - `Key 'List' not found in JSON object`
+   - `Key 'List' must contain a list or an object, got string`. The last word is the
+     JSON type name from a fixed mapping (`string`, `number`, `boolean`, `null`), not
+     the Python type name. Check `bool` before `int`/`float`, because `True` is an
+     `int` in Python.
+   - `Cannot use key 'List': JSON is a list, not an object`
+   - `No key in JSON object contains a list of objects`
+   - `Multiple keys contain a list of objects: 'A', 'B' - use --key to pick one` (keys listed in document order)
+5. **Where the logic lives:** one helper in `sqlite_utils/utils.py` that takes a decoded
+   JSON value plus `key`/`auto_key` and returns the decoded value to treat as rows (or
+   raises `RowsFromFileBadJSON`). The `rows_from_file()` JSON branch calls it, and so
+   does the JSON branch of `insert_upsert_implementation` in `cli.py`, which turns
+   `RowsFromFileBadJSON` into `click.ClickException`. `memory` catches
+   `RowsFromFileBadJSON` around `rows_from_file()` **only when `--key`/`--auto-key`
+   was given**, so the existing non-opt-in traceback for bad JSON there stays as it
+   is (keeping non-opt-in behavior unchanged).
+6. **Order:** key extraction happens right after `json.load`, before the existing
+   "dict → [dict]" wrapping, `--flatten`, `--convert` and `--stop-after`. A `--key`
+   value that holds an object is then wrapped as one row by the same existing code.
+7. **Top-level JSON scalar** (`5`, `"x"`, `null`): with `--auto-key` this behaves
+   exactly as today, because the option is a no-op for anything that isn't an object.
+   With `--key` it is an error, `Cannot use key 'List': JSON is a <type>, not an object`,
+   using the same JSON type names. Python raises `RowsFromFileBadJSON`.
+8. **Order of validation:** the option-conflict checks (`--key` with `--auto-key`,
+   either option with a non-JSON input flag or `--code`) run before any input is read,
+   alongside the existing conflict checks such as `Use just one of --nl, --csv or --tsv`.
+9. **`bulk`** calls `insert_upsert_implementation` with keyword arguments, so `bulk`
+   passes the two new values through explicitly.
+10. **Help text:** `--key` reads "Read rows from this top-level key of a JSON object",
+   and `--auto-key` reads "Read rows from the single top-level key of a JSON object
+   that holds a list of objects". For `insert`/`upsert`/`bulk` add the options to
+   `_import_options` (all three use them). For `memory`, add them as separate options
+   on the command.
+
+## Left to the builder
+
+- Exact test layout. Expected homes: `tests/test_cli_insert.py`, `tests/test_cli_bulk.py`,
+  `tests/test_cli_memory.py`, `tests/test_rows_from_file.py`. Every row of the two
+  behavior tables above needs a test, plus a regression test that a plain object
+  without the flags is still a single row in each command.
+- Running the repo's own gates: `just test` and `just lint` (black, flake8, mypy,
+  pyright, ty, `cog --check`, codespell).
+
+
+=== file: docs/[tool]/plans/2026-11-07-json-key-extraction.md ===
+
+# JSON Rows From a Top-Level Key Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use [tool] (recommended) or [tool] to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add opt-in `--key KEY` / `--auto-key` (CLI: `insert`, `upsert`, `bulk`, `memory`) and `key=` / `auto_key=` (`rows_from_file()`), so JSON records wrapped in an object such as `{"Version": ..., "List": [...]}` import without running them through `jq` first.
+
+**Architecture:** A single helper in `sqlite_utils/utils.py` (`_extract_json_rows`) takes a decoded JSON value and returns the value to treat as rows, raising `RowsFromFileBadJSON` on failure. `rows_from_file()`'s JSON branch calls it, and so does the JSON branch of `insert_upsert_implementation` in `sqlite_utils/cli.py`. The CLI turns `RowsFromFileBadJSON` into `click.ClickException`. `memory` passes the options through to `rows_from_file()` only for JSON inputs.
+
+**Tech Stack:** Python ≥3.10, Click, pytest with `click.testing.CliRunner`, Sphinx RST docs, and cog for `docs/cli-reference.rst`. Tooling runs through `uv` and `just`.
+
+**Spec:** `docs/[tool]/specs/2026-11-07-json-key-extraction-design.md`. Read it before starting: the behavior tables and the "Builder's calls" error wording are normative.
+
+## Global Constraints
+
+- Without `--key`/`--auto-key` (or `key=`/`auto_key=`), every command and `rows_from_file()` behaves exactly as today. `{"id": 1, "name": "Cleo"}` stays one row.
+- Exact error text (CLI prints it as `Error: <text>` and exits with code 1, with no traceback. Python raises `RowsFromFileBadJSON(<text>)` for the key/data errors):
+  - `--key and --auto-key cannot be used together` (Python `ValueError`: `key= and auto_key= cannot be used together`)
+  - `--key/--auto-key can only be used with JSON input` (Python `ValueError` for an explicit CSV/TSV/NL `format=`: `key= and auto_key= can only be used with JSON`)
+  - `Key '{key}' not found in JSON object`
+  - `Key '{key}' must contain a list or an object, got {jsontype}`
+  - `Cannot use key '{key}': JSON is a {jsontype}, not an object`
+  - `No key in JSON object contains a list of objects`
+  - `Multiple keys contain a list of objects: 'A', 'B' - use --key to pick one` (each key `repr`-quoted with single quotes, in document order, joined by `, `)
+- JSON type names come from a fixed mapping, checked in this order: `bool`→`boolean`, `int`/`float`→`number`, `str`→`string`, `None`→`null`, `list`→`list`, `dict`→`object`.
+- A qualifying key (for auto-key) has a value that is a **non-empty** `list` whose every element is a `dict`.
+- `key` is checked with `is not None`, never truthiness, because `--key ""` is a valid key.
+- `--code` combined with either option: `--code cannot be used with input format options` (the existing message).
+- No version bump and no `docs/changelog.rst` edit. `docs/cli-reference.rst` is regenerated with cog, never hand-edited.
+- Commit messages follow the repo's style: a plain sentence in the imperative, no prefix.
+
+## Review Focus
+
+1. **`--key ""` (empty-string key)**: a truthiness check would silently ignore it. Expect the rows under the `""` key. → test in Task 1.
+2. **Key names are case-sensitive**: `--key list` on the Alaska file should fail and name `'list'`, not quietly match `List`. → test in Task 1.
+3. **Sibling keys that look almost like records**: an empty list, a list mixing objects and scalars, or an object nesting a list one level down must not count as qualifying, and must not cause a "multiple keys" error. → test in Task 1.
+4. **Piped stdin (`-`) combined with `--flatten` and `--stop-after`**: the most common real use. The rows are extracted first, then flattened and truncated. → test in Task 2.
+5. **`memory` mixing a JSON file with CSV and `:nl` inputs under `--auto-key`**: the non-JSON inputs must import untouched and must not raise the explicit-format `ValueError`. → test in Task 3.
+
+---
+
+### Task 1: `_extract_json_rows` helper and `rows_from_file(key=, auto_key=)`
+
+**Files:**
+- Modify: `sqlite_utils/utils.py` (the `rows_from_file` function, currently around lines 288–415. Add the helpers just above it.)
+- Test: `tests/test_rows_from_file.py`
+
+**Interfaces:**
+- Produces:
+  - `_json_type_name(value: object) -> str`, using the mapping in Global Constraints.
+  - `_extract_json_rows(decoded: object, key: str | None = None, auto_key: bool = False) -> object`. It returns the value to treat as the rows: the list or the object found under the key, or `decoded` itself when auto-key meets a top-level list or scalar. It raises `RowsFromFileBadJSON` with the exact Global Constraints texts. It does not check for `key` and `auto_key` both being set, because callers do that.
+  - `rows_from_file(fp, format=None, dialect=None, encoding=None, ignore_extras=False, extras_key=None, key: str | None = None, auto_key: bool = False)`. The new parameters go last.
+
+- [ ] **Step 1: Write the failing tests** (append to `tests/test_rows_from_file.py`, adding `RowsFromFileBadJSON` to the existing `sqlite_utils.utils` import)
+
+```python
+ALASKA = {
+    "Version": "5.5.52.6",
+    "List": [
+        {"Description": "Nonpartisan", "Id": 1, "ExternalId": ""},
+        {"Description": "Undeclared", "Id": 2, "ExternalId": ""},
+    ],
+}
+
+
+def _json_bytes(obj):
+    return BytesIO(json.dumps(obj).encode("utf-8"))
+
+
+def _bad_json_message(obj, **kwargs):
+    with pytest.raises(RowsFromFileBadJSON) as ex:
+        rows_from_file(_json_bytes(obj), format=Format.JSON, **kwargs)
+    return str(ex.value)
+
+
+@pytest.mark.parametrize("format", (None, Format.JSON))
+@pytest.mark.parametrize("kwargs", ({"key": "List"}, {"auto_key": True}))
+def test_rows_from_file_key_and_auto_key(format, kwargs):
+    rows, format_used = rows_from_file(_json_bytes(ALASKA), format=format, **kwargs)
+    assert list(rows) == ALASKA["List"]
+    assert format_used == Format.JSON
+
+
+def test_rows_from_file_without_key_unchanged():
+    rows, _ = rows_from_file(_json_bytes({"id": 1, "name": "Cleo"}))
+    assert list(rows) == [{"id": 1, "name": "Cleo"}]
+    rows, _ = rows_from_file(_json_bytes(ALASKA))
+    assert list(rows) == [ALASKA]
+
+
+def test_rows_from_file_auto_key_ignores_non_qualifying_siblings():
+    data = {
+        "Version": "1",
+        "empty": [],
+        "mixed": [1, {"a": 1}],
+        "nested": {"items": [{"a": 1}]},
+        "List": [{"id": 1}],
+    }
+    rows, _ = rows_from_file(_json_bytes(data), auto_key=True)
+    assert list(rows) == [{"id": 1}]
+
+
+@pytest.mark.parametrize(
+    "data",
+    (
+        {"id": 1, "name": "Cleo"},
+        {"data": {"items": [{"a": 1}]}},
+        {"List": []},
+    ),
+)
+def test_rows_from_file_auto_key_no_qualifying_key(data):
+    assert (
+        _bad_json_message(data, auto_key=True)
+        == "No key in JSON object contains a list of objects"
+    )
+
+
+def test_rows_from_file_auto_key_multiple_qualifying_keys():
+    data = {"A": [{"a": 1}], "Version": "x", "B": [{"b": 1}]}
+    assert (
+        _bad_json_message(data, auto_key=True)
+        == "Multiple keys contain a list of objects: 'A', 'B' - use --key to pick one"
+    )
+
+
+def test_rows_from_file_auto_key_top_level_list_is_noop():
+    rows, _ = rows_from_file(_json_bytes([{"id": 1}]), auto_key=True)
+    assert list(rows) == [{"id": 1}]
+
+
+def test_rows_from_file_auto_key_top_level_scalar_as_today():
+    with pytest.raises(RowsFromFileBadJSON) as today:
+        rows_from_file(BytesIO(b"5"), format=Format.JSON)
+    with pytest.raises(RowsFromFileBadJSON) as with_auto_key:
+        rows_from_file(BytesIO(b"5"), format=Format.JSON, auto_key=True)
+    assert str(with_auto_key.value) == str(today.value)
+
+
+@pytest.mark.parametrize("key", ("Missing", "list"))
+def test_rows_from_file_key_missing(key):
+    assert (
+        _bad_json_message(ALASKA, key=key) == f"Key '{key}' not found in JSON object"
+    )
+
+
+def test_rows_from_file_key_object_value_is_one_row():
+    rows, _ = rows_from_file(_json_bytes({"meta": {"a": 1}}), key="meta")
+    assert list(rows) == [{"a": 1}]
+
+
+@pytest.mark.parametrize(
+    "value,type_name",
+    (("x", "string"), (1, "number"), (1.5, "number"), (True, "boolean"), (None, "null")),
+)
+def test_rows_from_file_key_scalar_value(value, type_name):
+    assert (
+        _bad_json_message({"v": value}, key="v")
+        == f"Key 'v' must contain a list or an object, got {type_name}"
+    )
+
+
+def test_rows_from_file_key_empty_list():
+    rows, _ = rows_from_file(_json_bytes({"List": []}), key="List")
+    assert list(rows) == []
+
+
+def test_rows_from_file_key_list_of_non_objects_as_today():
+    rows, _ = rows_from_file(_json_bytes({"v": [1, 2]}), key="v")
+    today, _ = rows_from_file(BytesIO(b"[1, 2]"))
+    assert list(rows) == list(today)
+
+
+@pytest.mark.parametrize(
+    "content,type_name", ((b'[{"id": 1}]', "list"), (b'"x"', "string"), (b"5", "number"))
+)
+def test_rows_from_file_key_on_non_object(content, type_name):
+    with pytest.raises(RowsFromFileBadJSON) as ex:
+        rows_from_file(BytesIO(content), format=Format.JSON, key="List")
+    assert (
+        str(ex.value) == f"Cannot use key 'List': JSON is a {type_name}, not an object"
+    )
+
+
+def test_rows_from_file_key_empty_string():
+    rows, _ = rows_from_file(_json_bytes({"": [{"a": 1}]}), key="")
+    assert list(rows) == [{"a": 1}]
+
+
+def test_rows_from_file_key_and_auto_key_together():
+    with pytest.raises(ValueError) as ex:
+        rows_from_file(_json_bytes(ALASKA), key="List", auto_key=True)
+    assert str(ex.value) == "key= and auto_key= cannot be used together"
+
+
+@pytest.mark.parametrize("format", (Format.CSV, Format.TSV, Format.NL))
+@pytest.mark.parametrize("kwargs", ({"key": "List"}, {"auto_key": True}))
+def test_rows_from_file_key_with_explicit_non_json_format(format, kwargs):
+    with pytest.raises(ValueError) as ex:
+        rows_from_file(BytesIO(b"id,name\n1,Cleo"), format=format, **kwargs)
+    assert str(ex.value) == "key= and auto_key= can only be used with JSON"
+
+
+@pytest.mark.parametrize("kwargs", ({"key": "List"}, {"auto_key": True}))
+def test_rows_from_file_key_ignored_for_detected_csv(kwargs):
+    rows, format_used = rows_from_file(BytesIO(b"id,name\n1,Cleo"), **kwargs)
+    assert list(rows) == [{"id": "1", "name": "Cleo"}]
+    assert format_used == Format.CSV
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/test_rows_from_file.py -v`
+Expected: the new tests FAIL with `TypeError: rows_from_file() got an unexpected keyword argument 'key'` / `'auto_key'`, while the pre-existing tests still PASS.
+
+- [ ] **Step 3: Implement `_json_type_name`, `_extract_json_rows` and the new `rows_from_file` parameters in `sqlite_utils/utils.py`**
+
+- At the top of `rows_from_file`, next to the existing `ignore_extras`/`extras_key` check, raise the two `ValueError`s. The "can only be used with JSON" check fires only when `format` is `Format.CSV`, `Format.TSV` or `Format.NL` **and** `key is not None or auto_key`.
+- JSON branch: right after `json.load(fp)`, when `key is not None or auto_key`, replace `decoded` with `_extract_json_rows(decoded, key, auto_key)`. The existing `dict → [dict]` wrapping and the "JSON must be a list or a dictionary" check then run unchanged. That is what turns a `--key` object value into one row and keeps the auto-key scalar case identical to today.
+- Detection branch (`format is None`): pass `key=key, auto_key=auto_key` only into the recursive `rows_from_file(buffered, format=Format.JSON)` call. The CSV/TSV recursive calls stay as they are.
+- `_extract_json_rows`: when `key is not None`, a non-`dict` input raises `Cannot use key ...`, a missing key raises `not found`, and a value that is neither a `list` nor a `dict` raises `must contain ...`. Otherwise it returns the value. Under auto-key, a non-`dict` input is returned untouched. For a `dict`, it collects the qualifying keys in iteration order: zero raises `No key ...`, more than one raises `Multiple keys ...`, and exactly one returns that key's value.
+- Add `:param key:` and `:param auto_key:` lines to the docstring, and update its first line to mention that JSON rows can be read from a top-level key.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/test_rows_from_file.py -v`
+Expected: all PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sqlite_utils/utils.py tests/test_rows_from_file.py
+git commit -m "Add key= and auto_key= to rows_from_file() for JSON nested under a top-level key"
+```
+
+---
+
+### Task 2: `--key` / `--auto-key` for `insert`, `upsert` and `bulk`
+
+**Files:**
+- Modify: `sqlite_utils/cli.py`: `_import_options` (~line 934), `insert_upsert_implementation` (~line 1061), `insert` (~1355), `upsert` (~1491), `bulk` (~1591), and the `insert`/`upsert` docstring bullet lists.
+- Test: `tests/test_cli_insert.py`, `tests/test_cli_bulk.py`
+
+**Interfaces:**
+- Consumes: `_extract_json_rows(decoded, key, auto_key)` and `RowsFromFileBadJSON` from `sqlite_utils.utils` (Task 1).
+- Produces:
+  - Two new entries at the end of `_import_options`: `click.option("--key", help="Read rows from this top-level key of a JSON object")` and `click.option("--auto-key", is_flag=True, help="Read rows from the single top-level key of a JSON object that holds a list of objects")`. Because `insert`, `upsert` and `bulk` all use `_import_options`, each command function gains `key` and `auto_key` parameters.
+  - `insert_upsert_implementation(..., key=None, auto_key=False)`: new keyword parameters. `insert`, `upsert` and `bulk` pass `key=key, auto_key=auto_key`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_cli_insert.py`:
+
+```python
+ALASKA = {
+    "Version": "5.5.52.6",
+    "List": [
+        {"Description": "Nonpartisan", "Id": 1, "ExternalId": ""},
+        {"Description": "Undeclared", "Id": 2, "ExternalId": ""},
+    ],
+}
+
+
+@pytest.mark.parametrize("option", (["--key", "List"], ["--auto-key"]))
+@pytest.mark.parametrize("command", (["insert"], ["upsert", "--pk", "Id"]))
+def test_insert_upsert_key(tmpdir, option, command):
+    db_path = str(tmpdir / "data.db")
+    result = CliRunner().invoke(
+        cli.cli,
+        [command[0], db_path, "parties", "-"] + command[1:] + option,
+        input=json.dumps(ALASKA),
+    )
+    assert result.exit_code == 0, result.output
+    db = Database(db_path)
+    assert db.table("parties").columns_dict.keys() == {"Description", "Id", "ExternalId"}
+    assert list(db.query("select * from parties order by Id")) == ALASKA["List"]
+
+
+def test_insert_wrapped_object_without_key_unchanged(tmpdir):
+    db_path = str(tmpdir / "data.db")
+    result = CliRunner().invoke(
+        cli.cli, ["insert", db_path, "t", "-"], input=json.dumps(ALASKA)
+    )
+    assert result.exit_code == 0, result.output
+    db = Database(db_path)
+    assert list(db.table("t").columns_dict.keys()) == ["Version", "List"]
+    assert db.table("t").count == 1
+
+
+@pytest.mark.parametrize(
+    "args,input,expected",
+    (
+        (["--key", "Missing"], ALASKA, "Key 'Missing' not found in JSON object"),
+        (
+            ["--key", "Version"],
+            ALASKA,
+            "Key 'Version' must contain a list or an object, got string",
+        ),
+        (
+            ["--key", "List"],
+            [{"id": 1}],
+            "Cannot use key 'List': JSON is a list, not an object",
+        ),
+        (
+            ["--auto-key"],
+            {"id": 1, "name": "Cleo"},
+            "No key in JSON object contains a list of objects",
+        ),
+        (
+            ["--auto-key"],
+            {"A": [{"a": 1}], "B": [{"b": 1}]},
+            "Multiple keys contain a list of objects: 'A', 'B' - use --key to pick one",
+        ),
+        (
+            ["--key", "List", "--auto-key"],
+            ALASKA,
+            "--key and --auto-key cannot be used together",
+        ),
+        (["--key", "List", "--nl"], ALASKA, "--key/--auto-key can only be used with JSON input"),
+        (["--auto-key", "--csv"], ALASKA, "--key/--auto-key can only be used with JSON input"),
+        (["--key", "List", "--tsv"], ALASKA, "--key/--auto-key can only be used with JSON input"),
+        (["--auto-key", "--lines"], ALASKA, "--key/--auto-key can only be used with JSON input"),
+        (["--auto-key", "--text"], ALASKA, "--key/--auto-key can only be used with JSON input"),
+    ),
+)
+def test_insert_key_errors(tmpdir, args, input, expected):
+    db_path = str(tmpdir / "data.db")
+    result = CliRunner().invoke(
+        cli.cli, ["insert", db_path, "t", "-"] + args, input=json.dumps(input)
+    )
+    assert result.exit_code == 1
+    assert result.output.strip() == f"Error: {expected}"
+    assert "Traceback" not in result.output
+
+
+@pytest.mark.parametrize("option", (["--key", "List"], ["--auto-key"]))
+def test_insert_key_with_code_errors(tmpdir, option):
+    db_path = str(tmpdir / "data.db")
+    result = CliRunner().invoke(
+        cli.cli, ["insert", db_path, "t", "--code", "rows = [{'a': 1}]"] + option
+    )
+    assert result.exit_code == 1
+    assert result.output.strip() == "Error: --code cannot be used with input format options"
+
+
+def test_insert_key_object_value_is_one_row(tmpdir):
+    db_path = str(tmpdir / "data.db")
+    result = CliRunner().invoke(
+        cli.cli,
+        ["insert", db_path, "t", "-", "--key", "meta"],
+        input=json.dumps({"meta": {"a": 1, "b": 2}}),
+    )
+    assert result.exit_code == 0, result.output
+    assert list(Database(db_path).query("select * from t")) == [{"a": 1, "b": 2}]
+
+
+def test_insert_key_empty_list_matches_empty_top_level_list(tmpdir):
+    with_key = str(tmpdir / "with_key.db")
+    today = str(tmpdir / "today.db")
+    r1 = CliRunner().invoke(
+        cli.cli, ["insert", with_key, "t", "-", "--key", "List"], input='{"List": []}'
+    )
+    r2 = CliRunner().invoke(cli.cli, ["insert", today, "t", "-"], input="[]")
+    assert r1.exit_code == r2.exit_code == 0
+    assert Database(with_key).table_names() == Database(today).table_names()
+
+
+def test_insert_key_list_of_non_objects_matches_today(tmpdir):
+    db_path = str(tmpdir / "data.db")
+    r1 = CliRunner().invoke(
+        cli.cli, ["insert", db_path, "t", "-", "--key", "v"], input='{"v": [1, 2]}'
+    )
+    r2 = CliRunner().invoke(cli.cli, ["insert", db_path, "t", "-"], input="[1, 2]")
+    assert r1.exit_code == r2.exit_code == 1
+    assert r1.output == r2.output
+
+
+def test_insert_auto_key_top_level_list_is_noop(tmpdir):
+    db_path = str(tmpdir / "data.db")
+    result = CliRunner().invoke(
+        cli.cli, ["insert", db_path, "t", "-", "--auto-key"], input='[{"id": 1}]'
+    )
+    assert result.exit_code == 0, result.output
+    assert list(Database(db_path).query("select * from t")) == [{"id": 1}]
+
+
+def test_insert_auto_key_stdin_with_flatten_and_stop_after(tmpdir):
+    db_path = str(tmpdir / "data.db")
+    data = {
+        "Version": "x",
+        "List": [{"id": 1, "meta": {"a": 1}}, {"id": 2, "meta": {"a": 2}}],
+    }
+    result = CliRunner().invoke(
+        cli.cli,
+        ["insert", db_path, "t", "-", "--auto-key", "--flatten", "--stop-after", "1"],
+        input=json.dumps(data),
+    )
+    assert result.exit_code == 0, result.output
+    assert list(Database(db_path).query("select * from t")) == [{"id": 1, "meta_a": 1}]
+```
+
+Append to `tests/test_cli_bulk.py` (it uses the existing `test_db_and_path` fixture, whose `example` table holds ids 1 and 2):
+
+```python
+@pytest.mark.parametrize("option", (["--key", "List"], ["--auto-key"]))
+def test_cli_bulk_key(test_db_and_path, option):
+    db, db_path = test_db_and_path
+    result = CliRunner().invoke(
+        cli.cli,
+        ["bulk", db_path, "insert into example (id, name) values (:id, :name)", "-"]
+        + option,
+        input='{"Version": "x", "List": [{"id": 3, "name": "Three"}]}',
+    )
+    assert result.exit_code == 0, result.output
+    assert [
+        {"id": 1, "name": "One"},
+        {"id": 2, "name": "Two"},
+        {"id": 3, "name": "Three"},
+    ] == list(db.table("example").rows)
+
+
+def test_cli_bulk_key_with_nl_errors(test_db_and_path):
+    db, db_path = test_db_and_path
+    result = CliRunner().invoke(
+        cli.cli,
+        ["bulk", db_path, "insert into example (id) values (:id)", "-", "--nl", "--key", "List"],
+        input='{"id": 3}\n',
+    )
+    assert result.exit_code == 1
+    assert result.output.strip() == "Error: --key/--auto-key can only be used with JSON input"
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/test_cli_insert.py tests/test_cli_bulk.py -v -k "key"`
+Expected: FAIL with exit code 2 and `No such option: --key` / `--auto-key` in the output.
+
+- [ ] **Step 3: Wire the options through `sqlite_utils/cli.py`**
+
+- Add the two options to `_import_options`, and the `key`, `auto_key` parameters to `insert`, `upsert` and `bulk`, passing `key=key, auto_key=auto_key` into `insert_upsert_implementation`.
+- In `insert_upsert_implementation`, before the `if code is not None:` block, raise `--key and --auto-key cannot be used together` when `key is not None and auto_key`. Add `key is not None` and `auto_key` to the `--code` conflict `any([...])` list.
+- After the existing `if (delimiter or quotechar or sniff or no_headers) and not tsv: csv = True` line, raise `--key/--auto-key can only be used with JSON input` when `(key is not None or auto_key) and (nl or csv or tsv or lines or text)`.
+- In the JSON `else:` branch, right after `docs = json.load(decoded)` and before `if isinstance(docs, dict)`, when `key is not None or auto_key`, call `_extract_json_rows(docs, key, auto_key)`. Catch `RowsFromFileBadJSON` and re-raise it as `click.ClickException(str(ex))`.
+- In the `insert` and `upsert` docstrings, add the bullet `- Use --key or --auto-key to read rows from a key of a JSON object` after the `--nl` bullet.
+
+- [ ] **Step 4: Run the tests to verify they pass, along with the full insert/bulk suites (for regressions)**
+
+Run: `uv run pytest tests/test_cli_insert.py tests/test_cli_bulk.py tests/test_upsert.py tests/test_cli.py -v`
+Expected: all PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sqlite_utils/cli.py tests/test_cli_insert.py tests/test_cli_bulk.py
+git commit -m "Add --key and --auto-key options to insert, upsert and bulk"
+```
+
+---
+
+### Task 3: `--key` / `--auto-key` for `memory`
+
+**Files:**
+- Modify: `sqlite_utils/cli.py`: the `memory` command (~line 2050 decorators, ~2105 function and loop)
+- Test: `tests/test_cli_memory.py`
+
+**Interfaces:**
+- Consumes: `rows_from_file(..., key=, auto_key=)` and `RowsFromFileBadJSON` (Task 1).
+- Produces: `memory` gains `--key` and `--auto-key` options, with the same help text as Task 2. They are declared directly on `memory` because it does not use `_import_options`. The function gains `key=None, auto_key=False` parameters, placed before `return_db`.
+
+- [ ] **Step 1: Write the failing tests** (append to `tests/test_cli_memory.py`)
+
+```python
+ALASKA = {
+    "Version": "5.5.52.6",
+    "List": [
+        {"Description": "Nonpartisan", "Id": 1, "ExternalId": ""},
+        {"Description": "Undeclared", "Id": 2, "ExternalId": ""},
+    ],
+}
+ALASKA_ROWS = [{"Id": 1, "Description": "Nonpartisan"}, {"Id": 2, "Description": "Undeclared"}]
+
+
+@pytest.mark.parametrize("option", (["--key", "List"], ["--auto-key"]))
+@pytest.mark.parametrize("source", ("file", "file:json", "stdin"))
+def test_memory_key(tmpdir, option, source):
+    input = None
+    if source == "stdin":
+        path, table = "-", "stdin"
+        input = json.dumps(ALASKA)
+    else:
+        path, table = str(tmpdir / "alaska.json"), "alaska"
+        with open(path, "w") as fp:
+            json.dump(ALASKA, fp)
+        if source == "file:json":
+            path += ":json"
+    result = CliRunner().invoke(
+        cli.cli,
+        ["memory", path, f"select Id, Description from {table} order by Id"] + option,
+        input=input,
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output.strip()) == ALASKA_ROWS
+
+
+def test_memory_wrapped_object_without_key_unchanged(tmpdir):
+    path = str(tmpdir / "alaska.json")
+    with open(path, "w") as fp:
+        json.dump(ALASKA, fp)
+    result = CliRunner().invoke(
+        cli.cli, ["memory", path, "select count(*) as n, Version from alaska"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output.strip()) == [{"n": 1, "Version": "5.5.52.6"}]
+
+
+def test_memory_auto_key_leaves_csv_and_nl_inputs_alone(tmpdir):
+    json_path = str(tmpdir / "alaska.json")
+    with open(json_path, "w") as fp:
+        json.dump(ALASKA, fp)
+    csv_path = str(tmpdir / "dogs.csv")
+    with open(csv_path, "w") as fp:
+        fp.write("id,name\n1,Cleo\n2,Pancakes")
+    nl_path = str(tmpdir / "cats.dat")
+    with open(nl_path, "w") as fp:
+        fp.write('{"id": 1}\n{"id": 2}\n{"id": 3}\n')
+    result = CliRunner().invoke(
+        cli.cli,
+        [
+            "memory",
+            json_path,
+            csv_path,
+            nl_path + ":nl",
+            "select (select count(*) from alaska) as a, "
+            "(select count(*) from dogs) as d, (select count(*) from cats) as c",
+            "--auto-key",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output.strip()) == [{"a": 2, "d": 2, "c": 3}]
+
+
+@pytest.mark.parametrize(
+    "args,data,expected",
+    (
+        (["--key", "Missing"], ALASKA, "Key 'Missing' not found in JSON object"),
+        (
+            ["--auto-key"],
+            {"id": 1, "name": "Cleo"},
+            "No key in JSON object contains a list of objects",
+        ),
+        (
+            ["--key", "List", "--auto-key"],
+            ALASKA,
+            "--key and --auto-key cannot be used together",
+        ),
+    ),
+)
+def test_memory_key_errors(tmpdir, args, data, expected):
+    path = str(tmpdir / "data.json")
+    with open(path, "w") as fp:
+        json.dump(data, fp)
+    result = CliRunner().invoke(cli.cli, ["memory", path, "select 1"] + args)
+    assert result.exit_code == 1
+    assert result.output.strip() == f"Error: {expected}"
+    assert "Traceback" not in result.output
+
+
+def test_memory_key_must_exist_in_every_json_input(tmpdir):
+    good = str(tmpdir / "good.json")
+    bad = str(tmpdir / "bad.json")
+    with open(good, "w") as fp:
+        json.dump(ALASKA, fp)
+    with open(bad, "w") as fp:
+        json.dump({"Other": [{"a": 1}]}, fp)
+    result = CliRunner().invoke(
+        cli.cli, ["memory", good, bad, "select 1", "--key", "List"]
+    )
+    assert result.exit_code == 1
+    assert result.output.strip() == "Error: Key 'List' not found in JSON object"
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/test_cli_memory.py -v -k "key"`
+Expected: the option tests FAIL with exit code 2 and `No such option: --key` / `--auto-key`. The `_without_key_unchanged` test already PASSES (it is the regression guard).
+
+- [ ] **Step 3: Implement in `memory`**
+
+- Before the paths loop, raise `click.ClickException("--key and --auto-key cannot be used together")` when both are given.
+- In the loop, pass `key=key, auto_key=auto_key` to `rows_from_file()` only when the input's `format` is `None` (detection) or `Format.JSON`. Otherwise pass `key=None, auto_key=False`, so `:csv`/`:tsv`/`:nl` inputs import as today and never hit the `ValueError`.
+- Catch `RowsFromFileBadJSON` around that call. Re-raise it as `click.ClickException(str(ex))` **only when `key is not None or auto_key`**, and otherwise re-raise it unchanged, so the non-opt-in behavior stays identical.
+
+- [ ] **Step 4: Run the tests to verify they pass, plus the full memory suite**
+
+Run: `uv run pytest tests/test_cli_memory.py -v`
+Expected: all PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sqlite_utils/cli.py tests/test_cli_memory.py
+git commit -m "Add --key and --auto-key options to sqlite-utils memory"
+```
+
+---
+
+### Task 4: Documentation, cog and the full gate
+
+**Files:**
+- Modify: `docs/cli.rst`, `docs/python-api.rst`, `docs/cli-reference.rst` (regenerated only)
+
+**Interfaces:**
+- Consumes: the option names and help text from Tasks 2–3, and the `rows_from_file` parameters from Task 1.
+
+- [ ] **Step 1: Write the `docs/cli.rst` changes**
+
+- Add a new section labelled `.. _cli_inserting_data_key:`, titled `Inserting JSON nested under a key`, with the `---` underline style the sibling subsections use. Put it directly before `.. _cli_inserting_data_binary:`. Show the Alaska example from the spec verbatim as an `alaska.json` code block, then `sqlite-utils insert data.db parties alaska.json --key List` and `sqlite-utils insert data.db parties alaska.json --auto-key`. Say in one sentence each:
+  - which keys qualify for `--auto-key` (a non-empty list of objects);
+  - that sibling keys such as `Version` are ignored;
+  - that `--auto-key` fails when no key or more than one key qualifies;
+  - that `--key` can name a key holding a single object;
+  - that both options work with `upsert`, `bulk` and `memory`;
+  - that without them a top-level object is still inserted as a single row.
+- In "Running queries directly against CSV or JSON" (`cli_memory_csv_json`), after the sentence "If your data is JSON it should be the same format …", add a sentence that `--key` and `--auto-key` work there too and apply only to JSON inputs, linking `:ref:`cli_inserting_data_key``.
+- In "Executing SQL in bulk" (`cli_bulk`), add `--key` and `--auto-key` to the sentence "This command takes the same options as the ``sqlite-utils insert`` command …".
+
+- [ ] **Step 2: Write the `docs/python-api.rst` change**
+
+In "Reading rows from a file" (`python_api_rows_from_file`), before `.. autofunction::`, add a paragraph and an example. The example is `rows, format = rows_from_file(open("alaska.json", "rb"), key="List")`, together with an `auto_key=True` variant. The paragraph explains that:
+- the two arguments only apply to JSON;
+- an explicit CSV/TSV/NL `format=` or passing both arguments raises `ValueError`;
+- the other failures raise `sqlite_utils.utils.RowsFromFileBadJSON`.
+
+- [ ] **Step 3: Regenerate the CLI reference with cog**
+
+Run: `just cog`
+Expected: `docs/cli-reference.rst` now lists `--key TEXT` and `--auto-key` under `insert`, `upsert`, `bulk` and `memory`, plus the new docstring bullet. `git diff --stat` shows only that file changed by this step.
+
+- [ ] **Step 4: Run the full gate**
+
+Run: `just test` then `just lint`
+Expected: pytest is all green (including `tests/test_docs.py`). black, flake8, mypy, pyright, ty, `cog --check` and codespell all pass. If black reformats the test files from Tasks 1–3, run `just black` and include the result in this commit.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/cli.rst docs/python-api.rst docs/cli-reference.rst
+git commit -m "Document --key, --auto-key and rows_from_file(key=, auto_key=)"
+```
