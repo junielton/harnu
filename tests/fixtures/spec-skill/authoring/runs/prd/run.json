@@ -1,0 +1,8 @@
+{
+  "kind": "prd",
+  "input": "input.md",
+  "session": "session.md",
+  "spec": "docs/specs/2026-11-07-scheduler-run-retention/spec.md",
+  "tier": "complex",
+  "requests": { "heading": "Requirements", "item": "^\\d+\\. " }
+}

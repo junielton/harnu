@@ -1,0 +1,8 @@
+{
+  "kind": "scope-task",
+  "input": "input.md",
+  "session": "session.md",
+  "spec": "docs/specs/2026-11-07-scheduler-runs-csv-export/spec.md",
+  "tier": "large",
+  "requests": { "heading": "Acceptance criteria", "item": "^- \\[ \\] AC-\\d+ " }
+}

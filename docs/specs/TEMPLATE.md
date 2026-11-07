@@ -30,6 +30,17 @@ own acceptance criteria are the spec.
 
 Write the committed path of every artifact. Do not cite the gitignored scratch directory
 anywhere in the file, not even in prose; the gate fails on it.
+
+FOUR CONVENTIONS (`spec-check.mjs` of the `harnu:spec` skill reads them; the gate accepts them)
+  gated-by:   a slice bullet listing the open decisions that lock it (`gated-by: D-1`). An open
+              D-n becomes a decision node that blocks only the slices naming it.
+  NG-n        each non-goal is a bullet that starts `NG-n` and cites the request atoms it
+              covers, e.g. `- NG-1 No import (R-3)`.
+  existing:   a `consumes:` token no slice produces is written `existing:<name>` (a capability
+              already in the repo or another spec); any other token must be produced by a slice.
+  `card` rows the slice-to-card map is kept as Amendments rows of kind `card` with the text
+              `S-n → <card slug>`; the last row per slice wins. The card also carries
+              `spec-slice: S-n`, and when the two disagree the card wins.
 -->
 
 # Title of the feature
@@ -46,7 +57,9 @@ atoms, one per sentence the requester said, so every AC can say which atom it co
 
 - G-1 What the operator sees or can do once this ships.
 
-**Non-goals:** what this spec deliberately does not do.
+**Non-goals:**
+
+- NG-1 What this spec deliberately does not do, citing the atoms it covers (R-2).
 
 **Anti-goals:** outcomes that would make the work a failure even if every AC passed.
 
@@ -63,7 +76,8 @@ with its id from the table; it never invents either.
 - substrate: worktree
 - files-may-touch: `src/main/example.ts`, `tests/example.test.ts`
 - produces: example-capability
-- consumes: —
+- consumes: existing:example-store
+- gated-by: D-1
 - acs: AC-1, AC-2
 
 ### S-2 · Name of the second slice
@@ -95,19 +109,21 @@ keep true. `covers` lists the request atoms it closes.
 
 ## Open decisions
 
-Resolve one at a time. A resolved row is also recorded as ONE line in project memory
+Resolve one at a time. An unanswered row stays `open` with its default shown, and it locks only
+the slices whose `gated-by:` names it. A resolved row is also recorded as ONE line in project memory
 (`memory_append` to `decisions`): `D-n · <question> · chosen: <option> · <date>`.
 
-| id  | question                            | options  | default | status |
-| --- | ----------------------------------- | -------- | ------- | ------ |
-| D-1 | Which storage does the example use? | file, db | file    | open   |
+| id  | question                                  | options  | default | status |
+| --- | ----------------------------------------- | -------- | ------- | ------ |
+| D-1 | Which storage does the example use (R-1)? | file, db | file    | open   |
 
 ## Amendments · Deviations
 
 Append-only after approval. Never edit the sections above once the first card is dispatched;
 record the change here and send the affected executor a delta.
 
-| date       | kind      | what changed                                  | by           |
-| ---------- | --------- | --------------------------------------------- | ------------ |
-| 2026-11-01 | amendment | S-2 moved to a later wave                     | orchestrator |
-| 2026-11-02 | deviation | AC-2 met by a capture at a different viewport | verifier     |
+| date       | kind      | what changed                                  | by               |
+| ---------- | --------- | --------------------------------------------- | ---------------- |
+| 2026-11-01 | amendment | S-2 moved to a later wave                     | orchestrator     |
+| 2026-11-02 | card      | S-1 → T900-example-storage                    | bookkeeping unit |
+| 2026-11-02 | deviation | AC-2 met by a capture at a different viewport | verifier         |
