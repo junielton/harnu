@@ -20,6 +20,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **`orchestrate-delivery` picks up the mission a spec started.** When the delivery comes from a spec written by the `spec` skill, the orchestrating session adopts that mission instead of opening a second one, adds one step per slice, makes the cards with the skill's own planner, and turns each open decision into a decision step that holds back only the slices it gates. The other slices are dispatched as usual. With the `spec` skill switched off it derives the cards by hand, as before, and says so.
 
+### Fixed
+
+- **The `spec` skill now works in a repo that has no spec template.** The skill used to expect `docs/specs/TEMPLATE.md` to exist in the repo, so writing a spec outside Harnu's own repo meant copying the template in by hand. The template now travels with the skill, and the skill uses the repo's own template when there is one and its own copy otherwise.
+
 ## 2026-11-06
 
 ### Added

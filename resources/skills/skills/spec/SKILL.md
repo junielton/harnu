@@ -95,7 +95,9 @@ mission exists: create it as _The mission_ below says. Then work in this order:
    Medium spec has no Open decisions section: a decision to record makes the entry Large, so say
    so in one line and go on as Large. Offer `harnu:grill-me` when the operator wants the spec
    stress-tested.
-4. **Write the bundle.** Copy the template to the spec path and fill it, conventions included
+4. **Write the bundle.** Copy the template to the spec path and fill it — the repo's own
+   `docs/specs/TEMPLATE.md` when it has one, otherwise the `TEMPLATE.md` beside this skill (staged
+   with it, so authoring works in a repo that has no `docs/specs/`) — conventions included
    (`gated-by:`, `NG-n` bullets, `existing:` tokens). A Complex entry also gets the files of
    _The Complex bundle_ below. `git add` every file of the bundle, so `check` sees it tracked.
 5. **Check.** Run `check` on the spec (section below) and fix every finding, then re-run it until
