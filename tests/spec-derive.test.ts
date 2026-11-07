@@ -285,8 +285,13 @@ describe('update rewrites only the marked block for a marker and for a map row',
           `${id} ${acHash(row.statement, row.proof)} — ${row.statement} — proof: ${row.proof}`
         )
       }
-      // The second pass over the updated board changes nothing.
-      expect(plan(SPEC, SPEC_REL, [{ ...card, body: after }])).toEqual(EMPTY_PLAN)
+      // The second pass over the updated card changes nothing on it (the board holds only this
+      // card, so the other slices are still planned as creates).
+      const again = plan(SPEC, SPEC_REL, [{ ...card, body: after }])
+      expect(again.update).toEqual([])
+      expect(again.skip).toEqual([])
+      expect(again.refuse).toEqual([])
+      expect(again.create.map((c) => c.slice)).not.toContain(slice)
     })
   }
 
