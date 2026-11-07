@@ -50,9 +50,6 @@ const HAND_ROLLED_SHELLS: readonly string[] = [
   'CleanupDockerConfirmDialog.vue',
   'CleanupExhaustDialog.vue',
   'CleanupGuidedDialog.vue',
-  // U3.7: added while `ui/Dialog.vue` does not exist yet (same reason as MergeBatchDialog); the Cleanup dialogs'
-  // anatomy, migrate with the rest and delete this line.
-  'CleanupPoolAdviceDialog.vue',
   'CleanupTranscriptsConfirmDialog.vue',
   'CommandPalette.vue',
   'ContainersRemoveDialog.vue',
