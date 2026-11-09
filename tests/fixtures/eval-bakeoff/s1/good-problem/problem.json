@@ -1,0 +1,26 @@
+{
+  "id": "good-problem",
+  "split": "dev",
+  "kind": "feature",
+  "language": "javascript",
+  "target": {
+    "repo": "https://example.invalid/org/example-web",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "setup": [],
+  "versions": "node --version",
+  "test": "node --test",
+  "hidden": {
+    "files": ["check.hidden.js"],
+    "dest": "test/",
+    "cmd": "node --test --test-reporter=junit --test-reporter-destination=\"$BAKEOFF_JUNIT\" test/check.hidden.js",
+    "compileErrorPattern": "(SyntaxError|Cannot find module)"
+  },
+  "provenance": {
+    "authoredAt": "2026-11-09T00:00:00Z",
+    "authoredBy": "bakeoff loader fixture",
+    "sandbox": true,
+    "reviewedAt": "2026-11-09T00:00:00Z",
+    "reviewedBy": "bakeoff loader fixture"
+  }
+}

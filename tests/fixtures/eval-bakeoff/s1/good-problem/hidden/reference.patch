@@ -1,0 +1,4 @@
+--- a/index.js
++++ b/index.js
+@@ -0,0 +1 @@
++export const greet = (name) => `hello ${name.trim()}`
