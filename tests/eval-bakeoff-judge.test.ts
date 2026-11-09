@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 const FAKE = resolve(__dirname, 'fixtures/eval-bakeoff/fake-claude.mjs')
+const LISTING_FAKE = resolve(__dirname, 'fixtures/eval-bakeoff/s3/listing-claude.mjs')
 const PROBLEM_DIR = resolve(__dirname, 'fixtures/eval-bakeoff/s3/problem')
 const SCORE_SHEET = resolve(__dirname, '../scripts/eval/bakeoff/prompts/score-sheet.md')
 const S10_SCORE_SHEET = resolve(
@@ -25,6 +26,7 @@ const S10_SCORE_SHEET = resolve(
   '../docs/specs/2026-11-harnu-spec/bakeoff/judges/score-sheet.md'
 )
 const PROBLEM = { id: 'fixture-problem', dir: PROBLEM_DIR }
+const ROUND_ID = 'round-20261109-1900'
 const SLOW_TEST_MS = 120_000
 
 const ALL_IDS = ['harnu-spec', 'superpowers', 'tlc-spec-driven']
@@ -153,11 +155,14 @@ function writeTree(dir: string, files: Record<string, string>): void {
   }
 }
 
+/** Where the spec puts a round's units, under a work root that is `tmp` here. */
+const unitsRoot = (): string => join(tmp, 'rounds', ROUND_ID, 'units')
+
 /** The arguments of `runJudge` for one unit, with its artifact on disk. */
 function judgeArgs(overrides: Json = {}, files: Record<string, string> = ARTIFACT): Json {
   const contestant = overrides.contestant ?? { id: 'harnu-spec' }
   const repeat = overrides.repeat ?? 1
-  const unitDir = join(tmp, 'units', PROBLEM.id, contestant.id, `r${repeat}`)
+  const unitDir = join(unitsRoot(), PROBLEM.id, contestant.id, `r${repeat}`)
   const artifactDir = join(unitDir, 'artifact')
   writeTree(artifactDir, files)
   return {
@@ -263,7 +268,7 @@ it(
     expect(second.label).toBe('R')
     const bundleFile = readFileSync(join(args.unitDir, 'judge-1/bundle.md'), 'utf8')
     expect(bundleFile).toBe(`Bundle label: R\n${ALL_TELLS_BUNDLE}`)
-    const labelsPath = join(tmp, 'units', PROBLEM.id, 'labels-r1.json')
+    const labelsPath = join(unitsRoot(), PROBLEM.id, 'labels-r1.json')
     const labelsBytes = readFileSync(labelsPath, 'utf8')
     expect(JSON.parse(labelsBytes)).toEqual(assignLabels('seed-a', PROBLEM.id, 1, ALL_IDS))
     expect(readdirSync(dirname(labelsPath)).filter((f) => f.includes('.tmp'))).toEqual([])
@@ -304,7 +309,7 @@ it(
     expect(readJson(join(args.unitDir, 'judge-1.json'))).toEqual(good)
 
     const [first] = invocations()
-    expect(realpathSync(first.cwd)).toBe(join(args.unitDir, 'judge-1'))
+    expect(dirname(realpathSync(dirname(first.cwd)))).toBe(tmp)
     expect(flag(first.argv, '--model')).toBe('judge-model-id')
     expect(flag(first.argv, '--max-turns')).toBe('2')
     expect(flag(first.argv, '--tools')).toBe('')
@@ -398,6 +403,45 @@ it(
     // A missing artifact directory is the same empty artifact.
     const missingArgs = judgeArgs({ contestant: { id: 'tlc-spec-driven' }, repeat: 2 }, {})
     expect((await runJudge(missingArgs)).reason).toBe('empty-artifact')
+  },
+  SLOW_TEST_MS
+)
+
+it(
+  'each judge session runs in a neutral directory holding the bundle alone',
+  async () => {
+    const listings = join(tmp, 'listings.jsonl')
+    vi.stubEnv('HARNU_BAKEOFF_CLAUDE_BIN', LISTING_FAKE)
+    vi.stubEnv('S3_LISTING_LOG', listings)
+    const { runJudge } = await import('../scripts/eval/bakeoff/judge.mjs')
+    setScenario([{ reply: validReply('R') }, { reply: 'broken' }, { reply: validReply('R') }])
+    const args = judgeArgs()
+
+    await runJudge(args)
+    await runJudge({ ...args, n: 2 })
+
+    const seen = invocations()
+    expect(seen).toHaveLength(3)
+    for (const { cwd } of seen) {
+      for (const id of ALL_IDS) expect(cwd).not.toContain(id)
+      expect(cwd).not.toContain(PROBLEM.id)
+      expect(cwd).not.toContain(ROUND_ID)
+      expect(cwd).toMatch(new RegExp(`^${tmp}/judge-cwd/[0-9a-f-]{36}$`))
+    }
+    expect(new Set(seen.map((i) => i.cwd)).size).toBe(3)
+
+    const held = jsonLines(listings)
+    const expected = readFileSync(join(args.unitDir, 'judge-1/bundle.md'), 'utf8')
+    expect(held.map((l) => l.files)).toEqual([['bundle.md'], ['bundle.md'], ['bundle.md']])
+    expect(held.map((l) => l.bundle)).toEqual([expected, expected, expected])
+
+    // Removed after each session; every result still lands under the unit.
+    expect(readdirSync(join(tmp, 'judge-cwd'))).toEqual([])
+    expect(existsSync(join(args.unitDir, 'judge-1.json'))).toBe(true)
+    expect(readdirSync(join(args.unitDir, 'judge-1'))).toEqual(['bundle.md'])
+    expect(readdirSync(join(args.unitDir, 'transcripts/judge-1'))).toHaveLength(1)
+    expect(readJson(join(args.unitDir, 'judge-2/discarded.json'))).toHaveLength(1)
+    expect(readdirSync(join(args.unitDir, 'discarded/1/judge-2'))).toHaveLength(1)
   },
   SLOW_TEST_MS
 )
@@ -534,6 +578,7 @@ it(
     expect(await killAll()).toEqual([sessionId])
 
     expect(await running).toEqual({ status: 'interrupted' })
+    expect(readdirSync(join(tmp, 'judge-cwd'))).toEqual([])
     expect(existsSync(join(args.unitDir, 'judge-1.json'))).toBe(false)
     expect(readJson(join(args.unitDir, 'judge-1/discarded.json'))).toHaveLength(1)
     expect(existsSync(join(args.unitDir, `discarded/1/judge-1/${sessionId}.jsonl`))).toBe(true)

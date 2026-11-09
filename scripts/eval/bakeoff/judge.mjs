@@ -13,7 +13,7 @@ import {
   rmSync,
   writeFileSync
 } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignLabels, buildBundle } from './anonymize.mjs'
 import { moveTranscripts, runClaude } from './claude.mjs'
@@ -121,6 +121,13 @@ export function scoreReply(parsed, atomIds) {
   }
 }
 
+/**
+ * The root above `rounds/<round-id>/units/<problem>/<contestant>/r<k>`. Claude Code puts the
+ * working directory in its system prompt, so a judge running under the unit directory would
+ * read the contestant's id there; each session runs under this root instead.
+ */
+const workRootOf = (unitDir) => resolve(unitDir, '../../../../../..')
+
 /** Only this judge writes `discarded/<k>/<role>`, so its numbering cannot race another unit's. */
 function nextAttempt(unitDir, role) {
   const root = join(unitDir, 'discarded')
@@ -218,18 +225,26 @@ export async function runJudge(args) {
   const maxAttempts = 1 + limits.retries.invalidJudgeReply
   for (let attempt = 1; ; attempt++) {
     const sessionId = randomUUID()
-    const turn = await runClaude({
-      role,
-      prompt,
-      cwd: judgeDir,
-      model,
-      tools: [],
-      addDirs: [],
-      sessionId,
-      deadlineMs: limits.invocationMs.judge,
-      maxTurns: limits.maxTurns.judge,
-      streamPath
-    })
+    const cwd = join(workRootOf(unitDir), 'judge-cwd', randomUUID())
+    mkdirSync(cwd, { recursive: true })
+    writeFileSync(join(cwd, 'bundle.md'), bundleText)
+    let turn
+    try {
+      turn = await runClaude({
+        role,
+        prompt,
+        cwd,
+        model,
+        tools: [],
+        addDirs: [],
+        sessionId,
+        deadlineMs: limits.invocationMs.judge,
+        maxTurns: limits.maxTurns.judge,
+        streamPath
+      })
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
     if (turn.interrupted) {
       discardAttempt(context, sessionId)
       return { status: 'interrupted' }
