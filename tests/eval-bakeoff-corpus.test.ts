@@ -399,6 +399,24 @@ function sourceRepo(): { source: string; pinned: string; later: string } {
   return { source, pinned, later }
 }
 
+/**
+ * Puts a logging `nice` first on PATH. Reading the niceness alone proves nothing
+ * when the test runner is itself under `nice -n 19`: the child inherits 19 anyway.
+ */
+function logNiceCalls(): string {
+  const real = execFileSync('sh', ['-c', 'command -v nice'], { encoding: 'utf8' }).trim()
+  const bin = join(tmp, 'bin')
+  const log = join(tmp, 'nice.log')
+  mkdirSync(bin)
+  writeFileSync(
+    join(bin, 'nice'),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${real}' "$@"\n`,
+    { mode: 0o755 }
+  )
+  vi.stubEnv('PATH', `${bin}:${process.env.PATH}`)
+  return log
+}
+
 const SETUP_PROBE =
   'nice > probe-nice; printf "%s|%s|%s" "$GOMAXPROCS" "$PYTEST_ADDOPTS" "$npm_config_jobs" > probe-env'
 
@@ -407,9 +425,13 @@ it('checkout pins the commit, drops the remote and reuses the mirror', async () 
   const { source, pinned, later } = sourceRepo()
   const cacheRoot = join(tmp, 'cache')
   const problem = { target: { repo: source, commit: pinned }, setup: [SETUP_PROBE] }
+  const niceLog = logNiceCalls()
 
   const dest = join(tmp, 'clone-1')
   expect(await checkoutTarget(problem, dest, { cacheRoot })).toEqual({ dir: dest, commit: pinned })
+  const niceCalls = readFileSync(niceLog, 'utf8').trim().split('\n')
+  expect(niceCalls).toContain(`-n 19 sh -c ${SETUP_PROBE}`)
+  for (const call of niceCalls) expect(call).toMatch(/^-n 19 /)
   expect(git(dest, 'rev-parse', 'HEAD')).toBe(pinned)
   expect(git(dest, 'remote')).toBe('')
   expect(existsSync(join(dest, 'pinned.txt'))).toBe(true)
