@@ -8,6 +8,7 @@
  * - HARNU_BAKEOFF_CLAUDE_PROJECTS  where transcripts go; also holds the array's cursor
  * - FAKE_CLAUDE_LOG          optional: one JSON line { cwd, argv } per invocation
  * - FAKE_CLAUDE_PROMPT_LOG   optional: one JSON line { prompt } per invocation, in the same order
+ * - FAKE_CLAUDE_ENV_LOG      optional: one JSON line { env: [names] } per invocation, names only
  * - FAKE_CLAUDE_DELAY_MS     optional: extra wait before the first output
  *
  * The transcript is written before any wait, like the real CLI's, which writes as it goes: a
@@ -98,6 +99,10 @@ function logInvocation(prompt) {
   }
   if (process.env.FAKE_CLAUDE_PROMPT_LOG) {
     appendFileSync(process.env.FAKE_CLAUDE_PROMPT_LOG, `${JSON.stringify({ prompt })}\n`)
+  }
+  if (process.env.FAKE_CLAUDE_ENV_LOG) {
+    const names = Object.keys(process.env).sort()
+    appendFileSync(process.env.FAKE_CLAUDE_ENV_LOG, `${JSON.stringify({ env: names })}\n`)
   }
 }
 

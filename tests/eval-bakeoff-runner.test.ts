@@ -899,3 +899,36 @@ it(
   },
   SLOW_TEST_MS
 )
+
+it(
+  'no session inherits the holdout, work or cache location',
+  async () => {
+    const { resolveModel } = await import('../scripts/eval/bakeoff/claude.mjs')
+    const envLog = join(tmp, 'env.jsonl')
+    vi.stubEnv('FAKE_CLAUDE_ENV_LOG', envLog)
+    vi.stubEnv('HARNU_BAKEOFF_HOLDOUT', join(tmp, 'private-holdout'))
+    vi.stubEnv('HARNU_BAKEOFF_WORK', join(tmp, 'private-work'))
+    vi.stubEnv('HARNU_BAKEOFF_CACHE', join(tmp, 'private-cache'))
+
+    setScenario([{ reply: 'ok' }])
+    await resolveModel(['haiku'])
+    const result = await run('env', [
+      { reply: 'QUESTION TO OPERATOR: Which?' },
+      { reply: operatorReply('none', 'That one.') },
+      { reply: 'ARTIFACT DONE: a.md', writes: [{ path: 'a.md', content: 'a\n' }] }
+    ])
+    expect(result.status).toBe('done')
+
+    // The probe, the contestant's first turn, the operator and the contestant's resume.
+    const sessions = jsonl(envLog).map((line) => line.env as string[])
+    expect(sessions).toHaveLength(4)
+    for (const names of sessions) {
+      // A control: the recording does see what the harness passes on.
+      expect(names).toContain('HARNU_BAKEOFF_CLAUDE_PROJECTS')
+      for (const hidden of ['HARNU_BAKEOFF_HOLDOUT', 'HARNU_BAKEOFF_WORK', 'HARNU_BAKEOFF_CACHE']) {
+        expect(names).not.toContain(hidden)
+      }
+    }
+  },
+  SLOW_TEST_MS
+)
