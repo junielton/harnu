@@ -12,15 +12,21 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import * as os from 'node:os'
-import type { JudgeNew, Verdict } from './core'
-import { buildJudgeArgs, judgeConcurrency, parseEnrichment, parseVerdict } from './gate'
+import type { Verdict } from './core'
+import {
+  buildJudgeArgs,
+  judgeConcurrency,
+  parseEnrichment,
+  parseVerdict,
+  type EnrichedCard
+} from './gate'
 
 export type JudgeOutcome =
   | { ok: true; verdict: Verdict; costUsd: number; durationMs: number }
   | { ok: false; reason: string }
 
 export type EnrichOutcome =
-  | { ok: true; cards: JudgeNew[]; costUsd: number; durationMs: number }
+  | { ok: true; cards: EnrichedCard[]; costUsd: number; durationMs: number }
   | { ok: false; reason: string }
 
 export interface JudgeRunner {

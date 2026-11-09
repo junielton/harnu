@@ -7,8 +7,10 @@
  * - `new` and `update` are the UNION of the two runs, so a miss needs both runs to miss;
  * - `close` is the INTERSECTION, because a wrong close loses a card;
  * - one failed run falls back to the other; only two failed runs fail the segment;
- * - enrichment only ever adds fields: if it fails, returns invalid JSON, zero cards, or fewer
- *   cards than the distinct candidates, the candidates themselves are filed.
+ * - enrichment only ever adds fields and merges duplicates. Each card says which candidates
+ *   it `covers`; a candidate no card covers is filed as its own card, so a merge can never
+ *   cost a card. If enrichment fails, returns invalid JSON or zero cards, the candidates
+ *   themselves are filed.
  */
 
 import type { JudgeNew, Verdict } from './core'
@@ -68,6 +70,8 @@ export type SegmentJudgment =
       /** Detector runs that failed (0 or 1; two failures fail the segment). */
       detectorFailures: number
       enrichment: 'none' | 'enriched' | 'fallback'
+      /** Candidates no enriched card covered, filed as they were detected. */
+      uncovered?: number
       enrichFailure?: string
     }
   | { ok: false; reason: string }
@@ -98,13 +102,25 @@ export async function judgeSegment(
   }
   const enriched = await deps.enrich(renderForEnrich(open, entries, candidates))
   if (enriched.ok) cost += enriched.costUsd
-  if (enriched.ok && enriched.cards.length >= candidates.length) {
+  if (enriched.ok && enriched.cards.length > 0) {
+    // Only integer indexes inside the candidate list count; anything else is ignored.
+    const covered = new Set<number>()
+    for (const card of enriched.cards) {
+      for (const i of card.covers ?? []) {
+        if (Number.isInteger(i) && (i as number) >= 0 && (i as number) < candidates.length) {
+          covered.add(i as number)
+        }
+      }
+    }
+    const uncovered = candidates.filter((_, i) => !covered.has(i))
+    const cards = enriched.cards.map(({ covers: _covers, ...card }) => card)
     return {
       ok: true,
-      verdict: { ...verdict, new: enriched.cards },
+      verdict: { ...verdict, new: [...cards, ...uncovered] },
       costUsd: cost,
       detectorFailures,
-      enrichment: 'enriched'
+      enrichment: 'enriched',
+      uncovered: uncovered.length
     }
   }
   return {
@@ -113,8 +129,6 @@ export async function judgeSegment(
     costUsd: cost,
     detectorFailures,
     enrichment: 'fallback',
-    enrichFailure: enriched.ok
-      ? `returned ${enriched.cards.length} of ${candidates.length} cards`
-      : enriched.reason
+    enrichFailure: enriched.ok ? 'returned no cards' : enriched.reason
   }
 }

@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { CARD_KINDS, type JudgeNew, type Verdict } from './core'
 
 export const GATE_V1_SHA256 = '873be6bd858a8e8fe71712ad2744ddaf4c4dda423af077dec9cb18b265d4e310'
-export const ENRICH_V1_SHA256 = '5a329eed05d2aabe6cf8b0b8d50895b3f47b14d0d9337dea7cf7da47e2ea633e'
+export const ENRICH_V1_SHA256 = '3267c57bac7d82e85aa7bb003fb0d0dbcf1cc3cbb2ba5bae470d42183d86abcc'
 
 /**
  * Isolated invocation: no session, no settings, no MCP, no slash commands, no tools. The
@@ -77,7 +77,16 @@ const verdictSchema = z.object({
   close: z.array(z.string()).default([])
 })
 
-const enrichmentSchema = z.object({ new: z.array(newSchema).default([]) })
+// `covers` lists the candidate indexes an enriched card stands for. Unknown values are
+// tolerated here (the pipeline ignores them): a sloppy index must never void the enrichment.
+const enrichedSchema = newSchema.extend({
+  covers: z.array(z.unknown()).nullish().transform(nullToUndefined)
+})
+
+const enrichmentSchema = z.object({ new: z.array(enrichedSchema).default([]) })
+
+/** A card the enrichment call wrote, with the candidates it claims to cover. */
+export type EnrichedCard = JudgeNew & { covers?: unknown[] }
 
 const envelopeSchema = z.object({
   is_error: z.boolean().optional(),
@@ -142,7 +151,7 @@ export function parseVerdict(
 /** The enrichment reply: `{"new":[…]}`. An empty list parses; the caller decides it is not enough. */
 export function parseEnrichment(
   stdout: string
-): { ok: true; cards: JudgeNew[]; costUsd: number } | { ok: false; reason: string } {
+): { ok: true; cards: EnrichedCard[]; costUsd: number } | { ok: false; reason: string } {
   const read = readEnvelope(stdout)
   if (!read.ok) return read
   const v = enrichmentSchema.safeParse(read.body)
