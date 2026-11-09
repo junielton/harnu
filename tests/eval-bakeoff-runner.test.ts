@@ -555,7 +555,8 @@ it('a project directory left with only an empty memory directory is removed', as
   // project directory's name carries the problem id.
   if (process.getuid?.() === 0) return
   const stuck = projectWith('-holdout-problem-id')
-  chmodSync(join(stuck, 'memory'), 0o000)
+  // Writable, so the transcript moves; unlistable, so the directory cannot be judged.
+  chmodSync(stuck, 0o300)
   const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
   try {
     expect(moveTranscripts(['session-a'], moved()).moved).toEqual(['session-a'])
@@ -564,7 +565,7 @@ it('a project directory left with only an empty memory directory is removed', as
     expect(logged).not.toContain('holdout-problem-id')
   } finally {
     stderr.mockRestore()
-    chmodSync(join(stuck, 'memory'), 0o755)
+    chmodSync(stuck, 0o755)
   }
   expect(existsSync(join(stuck, 'memory'))).toBe(true)
 })

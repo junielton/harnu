@@ -29,6 +29,10 @@ import { escalate } from '../mission-behavior/procs.mjs'
 import { limits } from './limits.mjs'
 import { sumUsage } from './usage.mjs'
 
+const MEMORY_DIR = 'memory'
+/** What `rmdir` says of a directory that has content, is a file, or is already gone. */
+const HOLDS_SOMETHING_ELSE = new Set(['ENOTEMPTY', 'EEXIST', 'ENOTDIR', 'ENOENT'])
+
 const CPU_ENV = { GOMAXPROCS: '1', PYTEST_ADDOPTS: '-p no:xdist', npm_config_jobs: '1' }
 const MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku'])
 const STDERR_TAIL_CHARS = 64 * 1024
@@ -248,9 +252,29 @@ function move(src, dest) {
 }
 
 /**
+ * Removes a project directory that holds nothing, or only the empty `memory/` the CLI leaves.
+ * `rmdir` refuses anything with content, so nothing but empty directories can go. Harnu watches
+ * the projects directory, and a leftover shows up in its sidebar as a ghost folder.
+ *
+ * A failure is logged by its code alone: the directory's name carries the unit's path, and on a
+ * holdout round that names the problem.
+ */
+function removeIfBare(dir) {
+  try {
+    const entries = readdirSync(dir)
+    if (entries.some((name) => name !== MEMORY_DIR)) return
+    if (entries.length > 0) rmdirSync(join(dir, MEMORY_DIR))
+    rmdirSync(dir)
+  } catch (err) {
+    if (HOLDS_SOMETHING_ELSE.has(err.code)) return
+    process.stderr.write(`A session's project directory could not be removed (${err.code}).\n`)
+  }
+}
+
+/**
  * Move each session's transcript and sub-agent transcripts out of the projects directory.
  * The session's directory moves whole, so nothing of it stays behind; a project directory
- * is removed only when that leaves it empty.
+ * is removed only when that leaves it empty, an empty `memory/` aside.
  *
  * @param {(string | null | undefined)[]} sessionIds
  * @param {string} destDir the caller's role directory
@@ -279,11 +303,7 @@ export function moveTranscripts(sessionIds, destDir) {
       if (here.length === 0) continue
       found = true
       for (const [src, dest] of here) move(src, dest)
-      try {
-        rmdirSync(dir)
-      } catch {
-        /* it holds something else, or it is already gone */
-      }
+      removeIfBare(dir)
     }
     if (found) moved.push(id)
   }
