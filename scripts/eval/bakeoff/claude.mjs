@@ -89,7 +89,10 @@ function claudeArgs({ model, maxTurns, tools, addDirs, sessionId, resume }) {
     'stream-json',
     '--verbose',
     '--setting-sources',
-    'project'
+    'project',
+    // With no --mcp-config beside it, no MCP server loads: the operator's own servers
+    // would inflate the token totals and hand contestants tools the spec does not list.
+    '--strict-mcp-config'
   ]
   if (tools.length > 0) args.push('--tools', tools.join(','), '--allowedTools', tools.join(','))
   else args.push('--tools', '')
