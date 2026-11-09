@@ -223,12 +223,7 @@ export function advanceCursor(
   now: number
 ): YourMoveState {
   const prev = s.cursors[sessionId]
-  const next: SessionCursor = {
-    offset: prev?.offset ?? to,
-    ...prev,
-    [field]: to,
-    lastInspectedAt: now
-  }
+  const next: SessionCursor = { ...(prev ?? { offset: to }), [field]: to, lastInspectedAt: now }
   return { ...s, cursors: { ...s.cursors, [sessionId]: next } }
 }
 
