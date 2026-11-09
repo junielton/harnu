@@ -97,7 +97,8 @@ export interface JudgeNew {
 
 export interface Verdict {
   new: JudgeNew[]
-  update: { id: string; ask: string }[]
+  /** Gate v1 sends bare ids: a judge update bumps `updatedAt` and keeps `ask`, unless one is given. */
+  update: { id: string; ask?: string }[]
   close: string[]
 }
 
@@ -202,9 +203,9 @@ export function applyVerdict(
   const cards = s.cards.map((c) => {
     if (!isOpen(c) || c.sessionId !== sessionId || !isJudgeOwned(c)) return c
     if (closes.has(c.id)) return { ...c, closedAt: now, closedBy: 'judge' as const }
-    const ask = updates.get(c.id)
-    if (ask !== undefined && ask.trim().length > 0) return { ...c, ask: ask.trim(), updatedAt: now }
-    return c
+    if (!updates.has(c.id)) return c
+    const ask = updates.get(c.id)?.trim()
+    return { ...c, ask: ask ? ask : c.ask, updatedAt: now }
   })
   const known = new Set(cards.map((c) => c.id))
   verdict.new.forEach((n, i) => {

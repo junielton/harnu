@@ -51,10 +51,10 @@ export interface InspectNowResult {
   reason?: string
 }
 
-function gatePath(): string {
+function promptPath(name: string): string {
   return app.isPackaged
-    ? path.join(process.resourcesPath, 'your-move', 'gate-v2.md')
-    : path.join(app.getAppPath(), 'resources', 'your-move', 'gate-v2.md')
+    ? path.join(process.resourcesPath, 'your-move', name)
+    : path.join(app.getAppPath(), 'resources', 'your-move', name)
 }
 
 /** `~/.claude/projects/<slug>/<id>.jsonl`, found by id: the renderer never names a path. */
@@ -124,7 +124,8 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       if (!bin) throw new Error('claude CLI not found')
       return bin
     },
-    gatePath: gatePath(),
+    detectPath: promptPath('gate-v1.md'),
+    enrichPath: promptPath('enrich-v1.md'),
     emptyDir,
     env: sanitizeSpawnEnv(process.env),
     cores: os.availableParallelism()
@@ -137,7 +138,8 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       createInspector({
         store,
         read: readFrom,
-        judge: (input) => judge.run(input),
+        detect: (input) => judge.detect(input),
+        enrich: (input) => judge.enrich(input),
         now: () => Date.now(),
         mintId: () => randomUUID(),
         isBlocked: (folder) => isFolderDenied(folder, denyFolders),

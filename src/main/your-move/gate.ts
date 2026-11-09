@@ -2,15 +2,17 @@
  * The judge's frozen contract: the exact `claude` argv, the verdict schema and the
  * concurrency cap. Pure: no spawning here (see `judge.ts`).
  *
- * `resources/your-move/gate-v2.md` is the system prompt. Its hash is pinned below because
- * the recall numbers in the PR belong to those exact bytes: a wording change must re-run
- * the eval (plan Task 4) and update the constant in the same commit.
+ * Two prompt resources: `gate-v1.md`, the frozen detector (its recall numbers belong to those
+ * exact bytes, so it is shipped verbatim), and `enrich-v1.md`, which completes the candidates
+ * the detector found. Both hashes are pinned below: a wording change must re-run the eval and
+ * update the constant in the same commit.
  */
 
 import { z } from 'zod'
-import { CARD_KINDS, type Verdict } from './core'
+import { CARD_KINDS, type JudgeNew, type Verdict } from './core'
 
-export const GATE_V2_SHA256 = 'a9f0904f256e8c5e73bcaa1d4fca7cf38ed6a1ccf33409435319b10fa1a9345c'
+export const GATE_V1_SHA256 = '873be6bd858a8e8fe71712ad2744ddaf4c4dda423af077dec9cb18b265d4e310'
+export const ENRICH_V1_SHA256 = '5a329eed05d2aabe6cf8b0b8d50895b3f47b14d0d9337dea7cf7da47e2ea633e'
 
 /**
  * Isolated invocation: no session, no settings, no MCP, no slash commands, no tools. The
@@ -60,9 +62,22 @@ const newSchema = z.object({
 
 const verdictSchema = z.object({
   new: z.array(newSchema).default([]),
-  update: z.array(z.object({ id: z.string().min(1), ask: z.string() })).default([]),
+  // Gate v1 sends bare ids; an {id, ask} object is accepted too. A bare id carries no ask.
+  update: z
+    .array(
+      z.union([
+        z
+          .string()
+          .min(1)
+          .transform((id) => ({ id })),
+        z.object({ id: z.string().min(1), ask: z.string().optional() })
+      ])
+    )
+    .default([]),
   close: z.array(z.string()).default([])
 })
+
+const enrichmentSchema = z.object({ new: z.array(newSchema).default([]) })
 
 const envelopeSchema = z.object({
   is_error: z.boolean().optional(),
@@ -74,10 +89,10 @@ function stripUndefined<T extends object>(o: T): T {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T
 }
 
-/** Read the CLI's `--output-format json` envelope and validate the verdict inside it. */
-export function parseVerdict(
+/** Read the CLI's `--output-format json` envelope and the JSON object inside its `result`. */
+function readEnvelope(
   stdout: string
-): { ok: true; verdict: Verdict; costUsd: number } | { ok: false; reason: string } {
+): { ok: true; body: unknown; costUsd: number } | { ok: false; reason: string } {
   let envelope: z.infer<typeof envelopeSchema>
   try {
     const parsed = envelopeSchema.safeParse(JSON.parse(stdout))
@@ -86,28 +101,53 @@ export function parseVerdict(
   } catch {
     return { ok: false, reason: 'CLI output is not JSON' }
   }
-  if (envelope.is_error)
+  if (envelope.is_error) {
     return { ok: false, reason: `CLI reported an error: ${envelope.result.slice(0, 200)}` }
+  }
   const text = envelope.result.replace(/^```(?:json)?|```$/g, '').trim()
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start === -1 || end <= start) return { ok: false, reason: 'reply holds no JSON object' }
-  let body: unknown
   try {
-    body = JSON.parse(text.slice(start, end + 1))
+    return {
+      ok: true,
+      body: JSON.parse(text.slice(start, end + 1)),
+      costUsd: envelope.total_cost_usd ?? 0
+    }
   } catch {
     return { ok: false, reason: 'reply is not valid JSON' }
   }
-  const v = verdictSchema.safeParse(body)
-  if (!v.success)
+}
+
+export function parseVerdict(
+  stdout: string
+): { ok: true; verdict: Verdict; costUsd: number } | { ok: false; reason: string } {
+  const read = readEnvelope(stdout)
+  if (!read.ok) return read
+  const v = verdictSchema.safeParse(read.body)
+  if (!v.success) {
     return { ok: false, reason: `invalid verdict: ${v.error.issues[0]?.message ?? 'shape'}` }
+  }
   return {
     ok: true,
-    costUsd: envelope.total_cost_usd ?? 0,
+    costUsd: read.costUsd,
     verdict: {
       new: v.data.new.map((n) => stripUndefined(n)),
       update: v.data.update,
       close: v.data.close
     }
   }
+}
+
+/** The enrichment reply: `{"new":[…]}`. An empty list parses; the caller decides it is not enough. */
+export function parseEnrichment(
+  stdout: string
+): { ok: true; cards: JudgeNew[]; costUsd: number } | { ok: false; reason: string } {
+  const read = readEnvelope(stdout)
+  if (!read.ok) return read
+  const v = enrichmentSchema.safeParse(read.body)
+  if (!v.success) {
+    return { ok: false, reason: `invalid enrichment: ${v.error.issues[0]?.message ?? 'shape'}` }
+  }
+  return { ok: true, costUsd: read.costUsd, cards: v.data.new.map((n) => stripUndefined(n)) }
 }

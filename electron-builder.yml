@@ -46,7 +46,7 @@ extraResources:
   # into the JS — ship it unpacked so a packaged build can stage it too.
   - from: 'resources/skills'
     to: 'skills'
-  # Your move: the judge's system prompt (gate-v2.md) is read at runtime by `claude
+  # Your move: the judge's prompts (gate-v1.md, enrich-v1.md) are read at runtime by `claude
   # --system-prompt-file`, so it ships as a plain file, not bundled into the JS.
   - from: 'resources/your-move'
     to: 'your-move'

@@ -1,24 +1,31 @@
 /**
- * Runs the isolated Haiku judge: one `claude -p` child per attempt.
+ * Runs the isolated Haiku calls: one `claude -p` child per attempt.
  *
- * Not `runHaiku`: that helper passes the prompt in argv, runs from the home directory and
- * has no isolation flags. The judge reads untrusted segment text, so it gets no tools, no
- * settings, no MCP and no project files around it (cwd is an empty directory), and the
- * prompt travels on stdin. Concurrency is capped at half the cores and the children run at
- * low priority: the operator keeps working while it runs.
+ * Two kinds of call share one runner and one concurrency cap: `detect` (the frozen gate v1
+ * prompt: is anything waiting on the operator?) and `enrich` (a second prompt that completes
+ * the candidates the detector found). Not `runHaiku`: that helper passes the prompt in argv,
+ * runs from the home directory and has no isolation flags. These calls read untrusted segment
+ * text, so they get no tools, no settings, no MCP and no project files around them (cwd is an
+ * empty directory), and the prompt travels on stdin. Concurrency is capped at half the cores
+ * and the children run at low priority: the operator keeps working while they run.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import * as os from 'node:os'
-import type { Verdict } from './core'
-import { buildJudgeArgs, judgeConcurrency, parseVerdict } from './gate'
+import type { JudgeNew, Verdict } from './core'
+import { buildJudgeArgs, judgeConcurrency, parseEnrichment, parseVerdict } from './gate'
 
 export type JudgeOutcome =
   | { ok: true; verdict: Verdict; costUsd: number; durationMs: number }
   | { ok: false; reason: string }
 
+export type EnrichOutcome =
+  | { ok: true; cards: JudgeNew[]; costUsd: number; durationMs: number }
+  | { ok: false; reason: string }
+
 export interface JudgeRunner {
-  run(input: string): Promise<JudgeOutcome>
+  detect(input: string): Promise<JudgeOutcome>
+  enrich(input: string): Promise<EnrichOutcome>
   /** Kill live children and refuse new work (app quit). */
   closeAll(): void
 }
@@ -27,9 +34,12 @@ const ATTEMPTS = 3
 const ATTEMPT_TIMEOUT_MS = 120_000
 const RETRY_DELAY_MS = 4_000
 
+type Parsed<T> = { ok: true; value: T; costUsd: number } | { ok: false; reason: string }
+
 export function createJudgeRunner(deps: {
   binary: () => Promise<string>
-  gatePath: string
+  detectPath: string
+  enrichPath: string
   emptyDir: string
   env: NodeJS.ProcessEnv
   cores: number
@@ -57,17 +67,20 @@ export function createJudgeRunner(deps: {
     else active--
   }
 
-  async function attempt(input: string): Promise<JudgeOutcome> {
-    const started = Date.now()
+  /** One child: stdout on success, a reason on failure. */
+  async function attempt(
+    input: string,
+    promptPath: string
+  ): Promise<{ ok: true; stdout: string } | { ok: false; reason: string }> {
     let bin: string
     try {
       bin = await deps.binary()
     } catch (e) {
       return { ok: false, reason: `claude binary not found: ${(e as Error).message}` }
     }
-    return new Promise<JudgeOutcome>((resolve) => {
+    return new Promise((resolve) => {
       let settled = false
-      const finish = (o: JudgeOutcome): void => {
+      const finish = (o: { ok: true; stdout: string } | { ok: false; reason: string }): void => {
         if (settled) return
         settled = true
         clearTimeout(timer)
@@ -75,7 +88,7 @@ export function createJudgeRunner(deps: {
       }
       let child: ChildProcess
       try {
-        child = spawn(bin, buildJudgeArgs(deps.gatePath), {
+        child = spawn(bin, buildJudgeArgs(promptPath), {
           cwd: deps.emptyDir,
           env: {
             ...deps.env,
@@ -109,41 +122,63 @@ export function createJudgeRunner(deps: {
       })
       child.on('close', (code) => {
         children.delete(child)
-        const parsed = parseVerdict(stdout)
-        if (parsed.ok) {
-          finish({
-            ok: true,
-            verdict: parsed.verdict,
-            costUsd: parsed.costUsd,
-            durationMs: Date.now() - started
-          })
-        } else {
-          finish({
-            ok: false,
-            reason: code === 0 ? parsed.reason : `exit ${code}: ${stderr.trim() || parsed.reason}`
-          })
-        }
+        finish(
+          code === 0 || stdout.trim() !== ''
+            ? { ok: true, stdout }
+            : { ok: false, reason: `exit ${code}: ${stderr.trim() || 'no output'}` }
+        )
       })
       child.stdin?.end(input)
     })
   }
 
-  return {
-    async run(input) {
-      if (closed) return { ok: false, reason: 'judge closed' }
-      await acquire()
-      try {
-        let last: JudgeOutcome = { ok: false, reason: 'no attempt' }
-        for (let n = 1; n <= ATTEMPTS; n++) {
-          if (closed) return { ok: false, reason: 'judge closed' }
-          last = await attempt(input)
-          if (last.ok) return last
-          if (n < ATTEMPTS) await delay(RETRY_DELAY_MS * n)
+  /** Up to 3 attempts, a growing delay between them, under the shared concurrency cap. */
+  async function call<T>(
+    input: string,
+    promptPath: string,
+    parse: (stdout: string) => Parsed<T> | { ok: false; reason: string }
+  ): Promise<
+    { ok: true; value: T; costUsd: number; durationMs: number } | { ok: false; reason: string }
+  > {
+    if (closed) return { ok: false, reason: 'judge closed' }
+    await acquire()
+    try {
+      const started = Date.now()
+      let last = 'no attempt'
+      for (let n = 1; n <= ATTEMPTS; n++) {
+        if (closed) return { ok: false, reason: 'judge closed' }
+        const out = await attempt(input, promptPath)
+        const parsed = out.ok ? parse(out.stdout) : out
+        if (parsed.ok) {
+          return { ...parsed, durationMs: Date.now() - started }
         }
-        return last
-      } finally {
-        release()
+        last = parsed.reason
+        if (n < ATTEMPTS) await delay(RETRY_DELAY_MS * n)
       }
+      return { ok: false, reason: last }
+    } finally {
+      release()
+    }
+  }
+
+  return {
+    async detect(input) {
+      const out = await call(input, deps.detectPath, (s) => {
+        const p = parseVerdict(s)
+        return p.ok ? { ok: true, value: p.verdict, costUsd: p.costUsd } : p
+      })
+      return out.ok
+        ? { ok: true, verdict: out.value, costUsd: out.costUsd, durationMs: out.durationMs }
+        : out
+    },
+    async enrich(input) {
+      const out = await call(input, deps.enrichPath, (s) => {
+        const p = parseEnrichment(s)
+        return p.ok ? { ok: true, value: p.cards, costUsd: p.costUsd } : p
+      })
+      return out.ok
+        ? { ok: true, cards: out.value, costUsd: out.costUsd, durationMs: out.durationMs }
+        : out
     },
     closeAll() {
       closed = true

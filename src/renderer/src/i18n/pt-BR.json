@@ -2596,7 +2596,7 @@
   },
   "yourMove": {
     "eyebrow": "Sua vez",
-    "intro": "O Harnu pode ler uma sessão quando ela para e avisar quando a bola está com você: uma pergunta, uma decisão, um passo manual. Cada checagem é uma chamada curta e isolada do Claude.",
+    "intro": "O Harnu pode ler uma sessão quando ela para e avisar quando a bola está com você: uma pergunta, uma decisão, um passo manual. Cada checagem são algumas chamadas curtas e isoladas do Claude.",
     "mode": {
       "label": "Modo",
       "off": "Desligado",
@@ -2607,7 +2607,7 @@
         "observe": "O Harnu checa as sessões e guarda o que encontra na lista abaixo. Nada aparece na barra lateral e nada faz som.",
         "live": "Sua escolha fica salva. Até a fila chegar, o Ao vivo se comporta como o Observar."
       },
-      "cost": "Cada checagem usa a sua própria cota do Claude: cerca de US$ 0,0004 e alguns segundos."
+      "cost": "Cada checagem usa a sua própria cota do Claude: cerca de US$ 0,002 e vários segundos."
     },
     "inspect": {
       "label": "Inspecionar agora",

@@ -138,6 +138,7 @@ Limits: the 178 turns where both models agreed were not checked by a person, so 
 - **No ×.** Replaced by Not for me, which records why.
 - **All confidence levels are equal**, by operator decision after seeing the real data.
 - **Recall over noise**, by operator decision. Any future tuning of the gate must not trade missed items for fewer false alarms.
+- **The judge is two gate v1 detector runs plus an enrichment call**, by operator decision (replaces the gate v2 schema change). `new` and `update` are the union of the two runs and `close` is the intersection; enrichment only adds fields and never reduces the cards found. See the 2026-11-09 amendments in `spec.md`.
 
 ## Details settled during review
 

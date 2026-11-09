@@ -10084,7 +10084,7 @@ line, then stacked blocks. No section chrome around the setting itself.
 **Live**, and a `SettingHint` under it. The hint under the selected option says what it does:
 Off judges nothing; Observe runs the judge and stores cards for the list below, with no queue,
 no sound; Live is recorded now and behaves like Observe until the queue ships. A second hint says
-the judge spends the operator's own Claude quota, about US$ 0.0004 per check. A change writes
+the judge spends the operator's own Claude quota, about US$ 0.002 per check (two detection calls and one to write the cards). A change writes
 through at once (`yourMoveSetPrefs`) and re-syncs from the response, so the control always shows
 what was persisted. U1 ships with **Off**.
 

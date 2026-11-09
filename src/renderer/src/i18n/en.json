@@ -2596,7 +2596,7 @@
   },
   "yourMove": {
     "eyebrow": "Your move",
-    "intro": "Harnu can read a session when it stops and tell you when the ball is yours: a question, a decision, a manual step. Each check is one short, isolated Claude call.",
+    "intro": "Harnu can read a session when it stops and tell you when the ball is yours: a question, a decision, a manual step. Each check is a few short, isolated Claude calls.",
     "mode": {
       "label": "Mode",
       "off": "Off",
@@ -2607,7 +2607,7 @@
         "observe": "Harnu checks sessions and stores what it finds in the list below. Nothing shows in the sidebar and nothing makes a sound.",
         "live": "Your choice is saved. Until the queue ships, Live behaves like Observe."
       },
-      "cost": "Each check uses your own Claude quota: about US$ 0.0004 and a few seconds."
+      "cost": "Each check uses your own Claude quota: about US$ 0.002 and several seconds."
     },
     "inspect": {
       "label": "Inspect now",

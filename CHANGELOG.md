@@ -14,7 +14,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
-- **A new Settings tab, Your move, lets Harnu check whether a session left something only you can unblock.** Choose **Off**, **Observe** or **Live**. It ships **Off**: nothing is read and nothing is spent until you pick a mode. With **Observe**, when a session stops Harnu can read what it wrote since the last check and ask one short, isolated Claude call (Haiku, no tools, no project files) whether a question, a decision or a manual step is waiting on you; what it finds is stored as a card and listed in the tab, with no sidebar entry and no sound yet. **Live** is saved but behaves like Observe until the queue ships. Each check uses your own Claude quota, about US$ 0.0004. **Inspect selected session** runs one check by hand. Switching from Off back to Observe never judges the days you spent Off.
+- **A new Settings tab, Your move, lets Harnu check whether a session left something only you can unblock.** Choose **Off**, **Observe** or **Live**. It ships **Off**: nothing is read and nothing is spent until you pick a mode. With **Observe**, when a session stops Harnu can read what it wrote since the last check and ask two independent, isolated Claude calls (Haiku, no tools, no project files) whether a question, a decision or a manual step is waiting on you, and a third to write each card clearly; what it finds is stored as a card and listed in the tab, with no sidebar entry and no sound yet. **Live** is saved but behaves like Observe until the queue ships. Each check uses your own Claude quota, about US$ 0.002. **Inspect selected session** runs one check by hand. Switching from Off back to Observe never judges the days you spent Off.
 
 ## 2026-11-07
 

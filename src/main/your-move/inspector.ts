@@ -9,7 +9,7 @@
  * - a session first seen at its Stop has its recent tail judged (recall over noise);
  * - mid-turn inspection moves only `shadowOffset`, so a later Stop judges the same text.
  *
- * The transcript text never leaves this module except to the judge: the inspection log
+ * The transcript text never leaves this module except to the judge calls: the inspection log
  * rows carry counts and outcomes only.
  */
 
@@ -22,11 +22,11 @@ import {
   type YourMoveMode
 } from './core'
 import type { JudgeRunner } from './judge'
+import { judgeSegment } from './pipeline'
 import {
   buildSegment,
   hasOperatorEntry,
   isJudgeable,
-  renderForJudge,
   splitSegment,
   type SegmentEntry
 } from './segment'
@@ -49,7 +49,8 @@ export type InspectOutcome = 'first-sight' | 'skipped' | 'empty' | 'judged' | 'f
 export interface InspectorDeps {
   store: YourMoveStore
   read: typeof readFrom
-  judge: JudgeRunner['run']
+  detect: JudgeRunner['detect']
+  enrich: JudgeRunner['enrich']
   now(): number
   mintId(): string
   isBlocked(folder: string): boolean
@@ -218,11 +219,15 @@ export function createInspector(deps: InspectorDeps): {
     let working = deps.store.state()
     let cost = 0
     let filed = 0
+    let detectorFailures = 0
+    let fallbacks = 0
     for (const part of parts) {
       const open = openCardsFor(working, req.sessionId, lane).map((c) => ({ id: c.id, ask: c.ask }))
-      const outcome = await deps.judge(renderForJudge(open, part))
+      const outcome = await judgeSegment({ detect: deps.detect, enrich: deps.enrich }, open, part)
       if (!outcome.ok) return fail(req, outcome.reason)
       cost += outcome.costUsd
+      detectorFailures += outcome.detectorFailures
+      if (outcome.enrichment === 'fallback') fallbacks++
       // Ids are minted once per part so a re-fold at commit reuses them.
       const fold: Fold = {
         verdict: outcome.verdict,
@@ -260,7 +265,13 @@ export function createInspector(deps: InspectorDeps): {
       }
     })
     if (!ok) return 'failed'
-    log(req, 'judged', { parts: parts.length, filed, costUsd: cost })
+    log(req, 'judged', {
+      parts: parts.length,
+      filed,
+      costUsd: cost,
+      detectorFailures,
+      enrichFallbacks: fallbacks
+    })
     try {
       deps.onSuccess?.(req)
     } catch {

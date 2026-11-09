@@ -89,6 +89,15 @@ export function renderForJudge(
   return `OPEN_CARDS: ${cards}\n\nSEGMENT:\n${lines.join('\n')}`
 }
 
+/** The enrichment input: the detector input plus the candidates it must complete. */
+export function renderForEnrich(
+  open: readonly { id: string; ask: string }[],
+  entries: readonly SegmentEntry[],
+  candidates: readonly unknown[]
+): string {
+  return `${renderForJudge(open, entries)}\n\nCANDIDATES: ${JSON.stringify(candidates)}`
+}
+
 function cut(text: string, max: number): [string, string] {
   let at = Math.min(max, text.length)
   const code = text.charCodeAt(at - 1)

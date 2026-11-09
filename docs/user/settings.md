@@ -192,10 +192,10 @@ The marks you set with **Keep**, and whether you have acknowledged the first rep
 The mode has three values:
 
 - **Off** — the default. Nothing is read and nothing is spent.
-- **Observe** — when a session stops, Harnu reads what it wrote since the last check and asks one short, isolated Claude call whether anything is waiting on you. What it finds is stored as a card and listed at the bottom of the tab. Nothing shows in the sidebar and nothing makes a sound.
+- **Observe** — when a session stops, Harnu reads what it wrote since the last check and asks two independent, isolated Claude calls whether anything is waiting on you, then one more call to write each card clearly (a short context, what it blocks, the options and a recommendation when the session gave one). If either detection call fails, Harnu uses the other; if the writing call fails or comes back short, the cards are filed as the detection found them, never fewer. What it finds is stored as a card and listed at the bottom of the tab. Nothing shows in the sidebar and nothing makes a sound.
 - **Live** — saved, but until the queue ships it behaves exactly like Observe.
 
-Each check uses your own Claude quota: about US$ 0.0004 and a few seconds, run in the background at low priority and never more than half your CPU cores at once. The call is isolated: it has no tools, no settings and no project files, and it never answers or changes a session.
+Each check uses your own Claude quota: about US$ 0.002 and several seconds across those calls, run in the background at low priority and never more than half your CPU cores at once. The calls are isolated: it has no tools, no settings and no project files, and it never answers or changes a session.
 
 **Inspect selected session** runs one check on the session you have selected, so you can see a card appear without waiting for a stop. The result sits beside the button: checked, nothing new, skipped (the mode is Off, the folder is blocked for agents, or the session is archived) or failed, with the reason.
 
