@@ -605,6 +605,20 @@ it('a problem command reports its exit and is killed with its children at the ti
   expect(noCwd.timedOut).toBe(false)
 }, 30_000)
 
+it('a problem command is not told where the holdout, work or cache roots are', async () => {
+  const { runProblemCommand } = await import('../scripts/eval/bakeoff/checkout.mjs')
+  const names = ['HARNU_BAKEOFF_HOLDOUT', 'HARNU_BAKEOFF_WORK', 'HARNU_BAKEOFF_CACHE']
+  for (const name of names) vi.stubEnv(name, `/secret/${name}`)
+  const printAll = names.map((name) => `echo "${name}=\${${name}-unset}"`).join('; ')
+  const expected = names.map((name) => `${name}=unset\n`).join('')
+
+  expect((await runProblemCommand(printAll, tmp, {})).stdout).toBe(expected)
+
+  // Not even when a caller passes them in.
+  const env = Object.fromEntries(names.map((name) => [name, `/secret/${name}`]))
+  expect((await runProblemCommand(printAll, tmp, { env })).stdout).toBe(expected)
+})
+
 it.skipIf(process.platform !== 'linux')(
   'a daemon that left the process group cannot hold a timed-out command open',
   async () => {
