@@ -1,0 +1,26 @@
+{
+  "id": "sqlite-utils-json-key",
+  "split": "dev",
+  "kind": "feature",
+  "language": "python",
+  "target": {
+    "repo": "https://github.com/simonw/sqlite-utils",
+    "commit": "9c66bafa52ae23d40499c74b0db3b635bcddb876"
+  },
+  "setup": ["python3 -m venv .venv", ".venv/bin/pip install -e '.[test]'"],
+  "versions": "python3 --version",
+  "test": ".venv/bin/python -m pytest -q",
+  "hidden": {
+    "files": ["test_hidden_bakeoff.py"],
+    "dest": "tests/",
+    "cmd": ".venv/bin/python -m pytest -q tests/test_hidden_bakeoff.py --junitxml=\"$BAKEOFF_JUNIT\"",
+    "compileErrorPattern": "(ImportError|ModuleNotFoundError|SyntaxError)"
+  },
+  "provenance": {
+    "authoredAt": "2026-11-07T15:09:11-03:00",
+    "authoredBy": "T601 S-10 orchestrator",
+    "sandbox": false,
+    "reviewedAt": null,
+    "reviewedBy": null
+  }
+}

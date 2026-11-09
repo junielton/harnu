@@ -24,7 +24,8 @@ validation will reject the whole problem.
 
 `out/<id>/problem.json` has `id`, `split`, `kind`, `language`, `target`, `setup`, `test`, `versions`
 and `hidden.cmd` set, and `out/<id>/request.md` holds the request verbatim. **Do not change any of
-them.** Name your hidden test file exactly as `hidden.cmd` does.
+them.** Name your hidden test file exactly as `hidden.cmd` does, and if `hidden.cmd` filters test
+names (a `-run` or `-t` argument), name your tests so the filter selects them.
 
 ## What you write
 
