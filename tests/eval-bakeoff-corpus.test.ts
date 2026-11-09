@@ -22,7 +22,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const FIXTURE = resolve(__dirname, 'fixtures/eval-bakeoff/s1/good-problem')
@@ -144,6 +144,12 @@ const DEFECTS: Defect[] = [
     expected: { code: 'ATOMS_EMPTY', file: 'good-problem/hidden/atoms.md', field: null }
   },
   {
+    name: 'atoms.md has a row whose id is malformed',
+    mutate: (dir) =>
+      writeFileSync(join(dir, 'hidden/atoms.md'), '| id |\n| --- |\n| R-1 |\n| lowercase-2 |\n'),
+    expected: { code: 'ATOMS_EMPTY', file: 'good-problem/hidden/atoms.md', field: null }
+  },
+  {
     name: 'holdout problem not authored in the sandbox',
     split: 'holdout',
     edit: (p) => {
@@ -177,6 +183,12 @@ it('loader validates a problem and names every defect', async () => {
   expect(loaded.errors).toEqual([])
   expect(loaded.problems).toHaveLength(1)
   expect(loaded.problems[0]).toMatchObject({ id: 'good-problem', kind: 'feature', dir: good.dir })
+
+  // A relative root works too, and `dir` still comes back absolute.
+  const relativeRoot = relative(process.cwd(), good.root)
+  const viaRelative = loadCorpus(relativeRoot, { split: 'dev' })
+  expect(viaRelative.errors).toEqual([])
+  expect(viaRelative.problems[0].dir).toBe(good.dir)
 
   // Each defect alone gives exactly one error, with its code, file and field.
   for (const [i, d] of DEFECTS.entries()) {
@@ -404,6 +416,9 @@ it('checkout pins the commit, drops the remote and reuses the mirror', async () 
   expect(existsSync(join(dest, 'future.txt'))).toBe(false)
   // Nothing after the pin is reachable from the clone: the real fix cannot leak.
   expect(() => git(dest, 'cat-file', '-e', later)).toThrow()
+  // Nor does the clone say where the mirror (which holds those commits) lives.
+  expect(existsSync(join(dest, '.git/FETCH_HEAD'))).toBe(false)
+  expect(readFileSync(join(dest, '.git/config'), 'utf8')).not.toContain(cacheRoot)
 
   // `setup` ran under nice 19 with the single-thread variables.
   expect(readFileSync(join(dest, 'probe-nice'), 'utf8').trim()).toBe('19')
@@ -476,6 +491,23 @@ it('concurrent checkouts of one URL share a single complete mirror', async () =>
   expect(readdirSync(join(cacheRoot, 'mirrors'))).toHaveLength(1)
 }, 60_000)
 
+it('a pin newer than the mirror is fetched into it', async () => {
+  const { checkoutTarget } = await import('../scripts/eval/bakeoff/checkout.mjs')
+  const { source, pinned } = sourceRepo()
+  const cacheRoot = join(tmp, 'cache')
+  const first = { target: { repo: source, commit: pinned }, setup: [] }
+  expect(await checkoutTarget(first, join(tmp, 'c-1'), { cacheRoot })).toMatchObject({
+    commit: pinned
+  })
+  const newer = commitFile(source, 'newer.txt')
+  expect(
+    await checkoutTarget({ ...first, target: { repo: source, commit: newer } }, join(tmp, 'c-2'), {
+      cacheRoot
+    })
+  ).toMatchObject({ commit: newer })
+  expect(readdirSync(join(cacheRoot, 'mirrors'))).toHaveLength(1)
+}, 30_000)
+
 it('a checkout refuses a destination that already holds files', async () => {
   const { checkoutTarget } = await import('../scripts/eval/bakeoff/checkout.mjs')
   const { source, pinned } = sourceRepo()
@@ -488,6 +520,14 @@ it('a checkout refuses a destination that already holds files', async () => {
     })
   ).toMatchObject({ code: 'CHECKOUT_FAILED' })
   expect(readdirSync(dest)).toEqual(['keep.txt'])
+
+  // A destination that is a file is a coded error too, never a throw.
+  const file = join(dest, 'keep.txt')
+  expect(
+    await checkoutTarget({ target: { repo: source, commit: pinned }, setup: [] }, file, {
+      cacheRoot: join(tmp, 'cache')
+    })
+  ).toMatchObject({ code: 'CHECKOUT_FAILED' })
 }, 30_000)
 
 it('a problem command reports its exit and is killed with its children at the timeout', async () => {
@@ -518,6 +558,17 @@ it('a problem command reports its exit and is killed with its children at the ti
   expect(noCwd.exitCode).not.toBe(0)
   expect(noCwd.timedOut).toBe(false)
 }, 30_000)
+
+it.skipIf(process.platform !== 'linux')(
+  'a daemon that left the process group cannot hold a timed-out command open',
+  async () => {
+    const { runProblemCommand } = await import('../scripts/eval/bakeoff/checkout.mjs')
+    const r = await runProblemCommand('setsid sleep 8 & wait', tmp, { timeoutMs: 200 })
+    expect(r.timedOut).toBe(true)
+    expect(r.ms).toBeLessThan(6_000)
+  },
+  30_000
+)
 
 it('limits scale the time limits and leave the counts alone', async () => {
   const { limits } = await import('../scripts/eval/bakeoff/limits.mjs')
