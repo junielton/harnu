@@ -17,10 +17,11 @@ import { classifyTranscriptLines } from '../claude-watcher'
 import { addTaskEventObserver, getTaskStates } from '../detect/task-state-hub'
 import { resolveClaudePath } from '../claude-cli'
 import { isFolderDenied } from '../mcp/permission-core'
+import { setPtyExitObserver } from '../pty'
 import { getSessionArchive } from '../session-archive-core'
 import { readUserProjects } from '../user-projects'
 import { pruneClosed, resetCursors, type CardView, type YourMoveCard } from './core'
-import { createInspector, type InspectOutcome, type InspectRequest } from './inspector'
+import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
 import {
   effectiveMode,
@@ -34,7 +35,13 @@ import {
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
 import { buildSegment } from './segment'
 import { readFrom } from './transcript'
-import { SWEEP_MS, createEnsureCursor, createMidTurnSweep, createTriggers } from './triggers'
+import {
+  SWEEP_MS,
+  createEnsureCursor,
+  createMidTurnSweep,
+  createSystemCards,
+  createTriggers
+} from './triggers'
 
 const STATE_FILE = 'your-move.json'
 const PREFS_FILE = 'your-move-prefs.json'
@@ -176,54 +183,74 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   })
   const judge = runner
 
+  const mode = (): YourMoveMode => (prefs ? effectiveMode(prefs) : 'off')
+  const eligible = async (sessionId: string, folder: string): Promise<boolean> => {
+    await refreshDeny()
+    return (
+      !isFolderDenied(folder, denyFolders) &&
+      !(getSessionArchive()?.has(sessionId) ?? false) &&
+      !(prefs ? isFolderDisabled(prefs, folder) : false)
+    )
+  }
+  const resolveFolder = async (
+    _id: string,
+    cwd: string | undefined,
+    file: string
+  ): Promise<string | null> => cwd ?? (await cwdFromTranscript(file))
+
+  // Cards that come from no judge: a death, and a session that could not be checked.
+  const systems = ready.then((store) =>
+    store === null
+      ? null
+      : createSystemCards({
+          store,
+          mode,
+          lane: () => laneFor(mode(), 'stop', prefs?.midTurnLive ?? false),
+          eligible,
+          locate: locateTranscript,
+          resolveFolder,
+          mintId: () => randomUUID(),
+          now: () => Date.now()
+        })
+  )
+
   let inspectorPromise: Promise<ReturnType<typeof createInspector> | null> | null = null
   /** Null while the store is unavailable: nothing reaches the judge then. */
   const inspector = (): Promise<ReturnType<typeof createInspector> | null> =>
-    (inspectorPromise ??= ready.then((store) =>
-      store === null
-        ? null
-        : createInspector({
-            store,
-            read: readFrom,
-            detect: (input) => judge.detect(input),
-            enrich: (input) => judge.enrich(input),
-            now: () => Date.now(),
-            mintId: () => randomUUID(),
-            isBlocked: (folder) => isFolderDenied(folder, denyFolders),
-            isArchived: (id) => getSessionArchive()?.has(id) ?? false,
-            isFolderOff: (folder) => (prefs ? isFolderDisabled(prefs, folder) : false),
-            mode: () => (prefs ? effectiveMode(prefs) : 'off'),
-            midTurnLive: () => prefs?.midTurnLive ?? false,
-            classify: classifyTranscriptLines,
-            onFailure: (_req, reason) => {
-              lastFailure = reason
-            },
-            appendInspection: (row) => {
-              void fs.appendFile(inspectionsPath, JSON.stringify(row) + '\n').catch(() => undefined)
-            }
-          })
-    ))
+    (inspectorPromise ??= ready.then(async (store) => {
+      if (store === null) return null
+      const system = await systems
+      return createInspector({
+        store,
+        read: readFrom,
+        detect: (input) => judge.detect(input),
+        enrich: (input) => judge.enrich(input),
+        now: () => Date.now(),
+        mintId: () => randomUUID(),
+        isBlocked: (folder) => isFolderDenied(folder, denyFolders),
+        isArchived: (id) => getSessionArchive()?.has(id) ?? false,
+        isFolderOff: (folder) => (prefs ? isFolderDisabled(prefs, folder) : false),
+        mode,
+        midTurnLive: () => prefs?.midTurnLive ?? false,
+        classify: classifyTranscriptLines,
+        onFailure: (req, reason) => {
+          lastFailure = reason
+          system?.onInspectFailure(req, reason)
+        },
+        onSuccess: (req) => system?.onInspectSuccess(req),
+        appendInspection: (row) => {
+          void fs.appendFile(inspectionsPath, JSON.stringify(row) + '\n').catch(() => undefined)
+        }
+      })
+    }))
 
   // Sources: wired only once the store is open. With no store nothing is observed, read or
   // judged, and nothing here throws.
   void ready
     .then(async (store) => {
       const insp = store ? await inspector() : null
-      if (!store || !insp || runner === null) return
-      const mode = (): YourMoveMode => (prefs ? effectiveMode(prefs) : 'off')
-      const eligible = async (sessionId: string, folder: string): Promise<boolean> => {
-        await refreshDeny()
-        return (
-          !isFolderDenied(folder, denyFolders) &&
-          !(getSessionArchive()?.has(sessionId) ?? false) &&
-          !(prefs ? isFolderDisabled(prefs, folder) : false)
-        )
-      }
-      const resolveFolder = async (
-        _id: string,
-        cwd: string | undefined,
-        file: string
-      ): Promise<string | null> => cwd ?? (await cwdFromTranscript(file))
+      const system = store ? await systems : null
+      if (!store || !insp || !system || runner === null) return
       const triggers = createTriggers({
         inspector: insp,
         store,
@@ -255,9 +282,14 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       })
       const sweepTimer = setInterval(() => void sweep.tick(), SWEEP_MS)
       sweepTimer.unref()
-      const unobserve = addTaskEventObserver(triggers.onTaskEvent)
+      const unobserve = addTaskEventObserver((ev) => {
+        triggers.onTaskEvent(ev)
+        system.onTaskEvent(ev)
+      })
+      setPtyExitObserver(system.onPtyExit)
       stopTriggers = () => {
         unobserve()
+        setPtyExitObserver(null)
         clearInterval(sweepTimer)
         sweep.dispose()
         triggers.dispose()

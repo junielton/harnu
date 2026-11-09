@@ -8,8 +8,16 @@
  */
 
 import type { HookTaskEvent } from '../detect/task-state-hub'
-import type { TaskState } from '../hook-state'
-import { advanceCursor, type YourMoveMode } from './core'
+import type { FailureReason, TaskState } from '../hook-state'
+import type { PtyExitFact } from '../pty'
+import {
+  advanceCursor,
+  reconcileSource,
+  upsertStructured,
+  type CardLane,
+  type StructuredDraft,
+  type YourMoveMode
+} from './core'
 import type { InspectOutcome, InspectRequest } from './inspector'
 import { buildSegment, hasAssistantText } from './segment'
 import type { YourMoveStore } from './store'
@@ -253,6 +261,176 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       disposed = true
       running.clear()
       where.clear()
+    }
+  }
+}
+
+// ─── Death and judge-failure cards ────────────────────────────────────────────
+
+/** A Ctrl+C this recent before the exit means the operator ended the session on purpose. */
+export const CTRL_C_GRACE_MS = 5_000
+
+/**
+ * Did a session's process die on the operator without them choosing it? Counts a natural exit
+ * while the session was working or waiting, or whose state is unknown (nothing proves it idle:
+ * a false alarm costs one click, a session dying unnoticed costs the work). Does not count
+ * Harnu's own quit or the operator's close (the record was removed first), a hibernation, a
+ * Ctrl+C just before, or an exit while the session sat idle or already finished.
+ */
+export function isDeathExit(x: PtyExitFact): boolean {
+  if (x.removedFirst || x.reason !== 'natural') return false
+  if (x.lastCtrlCAt !== undefined && x.now - x.lastCtrlCAt <= CTRL_C_GRACE_MS) return false
+  return x.taskState === undefined || x.taskState === 'working' || x.taskState === 'needs-input'
+}
+
+const humanReason = (r: string): string => r.replace(/_/g, ' ')
+
+export function deathDraft(input: {
+  sessionId: string
+  folder: string
+  failureReason?: FailureReason
+  lane: CardLane
+}): StructuredDraft {
+  const reason = input.failureReason
+    ? humanReason(input.failureReason)
+    : 'the process ended while it was working'
+  return {
+    sessionId: input.sessionId,
+    folder: input.folder,
+    kind: 'do',
+    ask: `Session stopped: ${reason}`,
+    askKey: { key: 'yourMove.system.stopped', params: { reason } },
+    source: 'death',
+    sourceKey: `death:${input.sessionId}`,
+    lane: input.lane
+  }
+}
+
+export function failureDraft(input: {
+  sessionId: string
+  folder: string
+  reason: string
+  lane: CardLane
+}): StructuredDraft {
+  return {
+    sessionId: input.sessionId,
+    folder: input.folder,
+    kind: 'do',
+    ask: `Could not check this session: ${input.reason}`,
+    askKey: { key: 'yourMove.system.couldNotCheck', params: { reason: input.reason } },
+    source: 'judge-failure',
+    sourceKey: `judge-failure:${input.sessionId}`,
+    lane: input.lane
+  }
+}
+
+export interface SystemCardDeps {
+  store: YourMoveStore
+  mode(): YourMoveMode
+  /** The lane a Stop-driven card lands in right now. */
+  lane(): CardLane
+  eligible(sessionId: string, folder: string): Promise<boolean>
+  locate(sessionId: string): Promise<string | null>
+  resolveFolder(
+    sessionId: string,
+    cwd: string | undefined,
+    transcriptPath: string
+  ): Promise<string | null>
+  mintId(): string
+  now(): number
+}
+
+/**
+ * Cards that come from no judge: a session that stopped on an error or died, and a session
+ * Harnu could not check. Both are one card per session (the source key), and neither retries
+ * anything: the next trigger tries again.
+ */
+export function createSystemCards(deps: SystemCardDeps): {
+  onTaskEvent(ev: HookTaskEvent): void
+  onPtyExit(x: PtyExitFact): void
+  onInspectFailure(req: InspectRequest, reason: string): void
+  onInspectSuccess(req: InspectRequest): void
+  /** Resolves when every write started so far has settled. */
+  idle(): Promise<void>
+} {
+  const pending = new Set<Promise<unknown>>()
+  const track = (what: string, work: () => Promise<void>): void => {
+    const p = work()
+      .catch((e) => console.error(`[your-move] ${what} failed: ${(e as Error)?.message ?? e}`))
+      .finally(() => pending.delete(p))
+    pending.add(p)
+  }
+
+  /** Files the card, or refreshes the open one for this session: the clock keeps running. */
+  const file = (draft: StructuredDraft): Promise<void> =>
+    deps.store.transact((s) => ({
+      next: upsertStructured(s, draft, deps.mintId, deps.now()),
+      result: undefined
+    }))
+
+  const resolve = (source: 'death' | 'judge-failure', sessionId: string): Promise<void> =>
+    deps.store.transact((s) => ({
+      next: reconcileSource(s, { source, sessionId }, [], deps.mintId, deps.now()),
+      result: undefined
+    }))
+
+  async function folderFor(sessionId: string, cwd: string | undefined): Promise<string | null> {
+    if (cwd) return cwd
+    const path = await deps.locate(sessionId)
+    return path ? await deps.resolveFolder(sessionId, undefined, path) : null
+  }
+
+  return {
+    onTaskEvent(ev) {
+      if (deps.mode() === 'off' || ev.agentId !== undefined) return
+      if (ev.event === 'StopFailure') {
+        track('death card', async () => {
+          const folder = await folderFor(ev.sessionId, ev.payload?.cwd)
+          if (!folder || !(await deps.eligible(ev.sessionId, folder))) return
+          await file(
+            deathDraft({
+              sessionId: ev.sessionId,
+              folder,
+              failureReason: ev.failureReason ?? 'unknown',
+              lane: deps.lane()
+            })
+          )
+        })
+      } else if (ev.event === 'Stop') {
+        // A turn that ended well closes the card a failed one opened.
+        track('death card close', () => resolve('death', ev.sessionId))
+      }
+    },
+    onPtyExit(x) {
+      if (deps.mode() === 'off' || !isDeathExit(x)) return
+      track('death card', async () => {
+        const folder = await folderFor(x.sessionKey, x.cwd)
+        if (!folder || !(await deps.eligible(x.sessionKey, folder))) return
+        await file(deathDraft({ sessionId: x.sessionKey, folder, lane: deps.lane() }))
+      })
+    },
+    onInspectFailure(req, reason) {
+      // A mid-turn run is a hidden shadow of the Stop one, and a manual run answers to the
+      // operator who pressed the button; only a Stop that could not be checked is a card.
+      if (deps.mode() === 'off' || req.trigger !== 'stop') return
+      track('failure card', async () => {
+        if (!(await deps.eligible(req.sessionId, req.folder))) return
+        await file(
+          failureDraft({
+            sessionId: req.sessionId,
+            folder: req.folder,
+            reason,
+            lane: deps.lane()
+          })
+        )
+      })
+    },
+    onInspectSuccess(req) {
+      if (req.trigger === 'mid-turn') return
+      track('failure card close', () => resolve('judge-failure', req.sessionId))
+    },
+    async idle() {
+      while (pending.size > 0) await Promise.allSettled([...pending])
     }
   }
 }
