@@ -253,8 +253,9 @@ describe('runBuild (AC-10)', () => {
       expect(readJson(join(unit, 'build.json'))).toEqual(result)
       expect(hiddenRuns('demo', 'pristine')).toBe(2)
 
-      // The hidden copy overwrote the builder's plant, and only after its session had ended.
-      expect(read(join(clone, 'tests/emit-junit.mjs'))).toContain('follows a plan')
+      // The scores above came from the real hidden file, so it overwrote the builder's plant
+      // after its session ended; once the hidden runs are over the builder's own file is back.
+      expect(read(join(clone, 'tests/emit-junit.mjs'))).toBe(sabotage)
 
       const [invocation] = jsonl(log)
       expect(jsonl(log)).toHaveLength(1)
@@ -340,6 +341,28 @@ describe('runBuild (AC-10)', () => {
         flaky: [],
         failed: ['hidden::c']
       })
+    },
+    SLOW_TEST_MS
+  )
+
+  it(
+    'the existing suite never sees the hidden files, so a failing hidden test leaves it green',
+    async () => {
+      setScenario([{ reply: 'done' }])
+      // Runs every file under `hidden.dest`: the copied hidden suite would make it exit 1.
+      const collector =
+        'for f in tests/*.mjs; do [ -e "$f" ] || continue; node "$f" || exit 1; done'
+      const result = await build(
+        makeProblem({
+          pristine: [{ cases: { a: 'fail', b: 'pass', c: 'pass' } }],
+          test: collector
+        }),
+        makeArtifact(SPEC)
+      )
+      expect(result.hidden).toMatchObject({ passed: 2, failed: ['hidden::a'] })
+      expect(hiddenRuns('demo', 'pristine')).toBe(2)
+      expect(result.existing).toEqual({ exitCode: 0 })
+      expect(existsSync(join(unitDirOf(), 'build-clone/tests/emit-junit.mjs'))).toBe(false)
     },
     SLOW_TEST_MS
   )
