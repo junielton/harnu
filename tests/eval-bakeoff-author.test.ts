@@ -18,6 +18,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { Readable } from 'node:stream'
 
 const REPO = resolve(__dirname, '..')
 const AUTHOR_MODULE = resolve(REPO, 'scripts/eval/bakeoff/author.mjs')
@@ -137,7 +138,7 @@ function fakeCtx(
   const ctx = {
     roots,
     models: null,
-    stdin: { text: stdin },
+    stdin: Readable.from([stdin]),
     stdout: { write: (s: string) => ((out += s), true) },
     stderr: { write: (s: string) => ((err += s), true) },
     env: {}
