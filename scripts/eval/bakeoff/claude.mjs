@@ -48,7 +48,8 @@ function childEnv() {
     'GIT_WORK_TREE',
     'GIT_INDEX_FILE',
     'HARNU_BAKEOFF_HOLDOUT',
-    'HARNU_BAKEOFF_WORK'
+    'HARNU_BAKEOFF_WORK',
+    'HARNU_BAKEOFF_CACHE'
   ]) {
     delete env[k]
   }
