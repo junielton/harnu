@@ -136,7 +136,12 @@ async function readMemory(memoryDir, wantFiles) {
     index: await readMaybe(path.join(memoryDir, 'index.md')),
     decisions: await readMaybe(path.join(memoryDir, 'decisions.md')),
     names,
+    cards: [],
     files: []
+  }
+  for (const n of names.roadmap) {
+    const content = await readMaybe(path.join(memoryDir, 'roadmap', n))
+    if (content !== null) memory.cards.push({ page: `roadmap/${n.replace(/\.md$/, '')}`, content })
   }
   if (wantFiles) {
     for (const id of listPageIds(names)) {

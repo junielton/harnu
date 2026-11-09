@@ -477,7 +477,7 @@ describe('parseCardMeta', () => {
 })
 
 describe('buildMemoryIndex (deterministic)', () => {
-  it('groups cards by status in the canonical order', () => {
+  it('lists the in-progress cards before the ready ones and no other status', () => {
     const md = buildMemoryIndex({
       hasHot: true,
       hasDecisions: true,
@@ -492,10 +492,11 @@ describe('buildMemoryIndex (deterministic)', () => {
     })
     expect(md).toContain('# Harnu — memory index (auto-generated)')
     expect(md).toContain('updated 2026-07-06')
-    // ready before in-progress before backlog.
-    expect(md.indexOf('**ready**')).toBeLessThan(md.indexOf('**in-progress**'))
-    expect(md.indexOf('**in-progress**')).toBeLessThan(md.indexOf('**backlog**'))
+    expect(md.indexOf('## In progress')).toBeLessThan(md.indexOf('## Ready'))
     expect(md).toContain('[[roadmap/T74|T74: Markdown]]')
+    expect(md).toContain('[[roadmap/T67|T67: Fleet]]')
+    expect(md).not.toContain('T80')
+    expect(md).toContain('roadmap/** — cards (1 file = 1 item, `status` frontmatter). 3 cards.')
     expect(md).toContain('sessions/** — session digests. 1 files.')
     expect(md).toContain('archive/** — frozen, read-only history. 2 files.')
   })
@@ -529,9 +530,13 @@ describe('buildMemoryIndex (deterministic)', () => {
     expect(md).toContain('roadmap/** — cards (1 file = 1 item, `status` frontmatter). 800 cards.')
     expect(md).toContain('sessions/** — session digests. 1300 files.')
     expect(md).toContain('archive/** — frozen, read-only history. 3 files.')
-    // In-progress cards are listed first, then ready ones; no other status group is.
+    // The active cards are listed in-progress first; the tail that does not fit is counted, and
+    // no other status group is listed.
+    const listed = md.match(/^- \[\[roadmap\//gm) ?? []
     expect(md).toContain('[[roadmap/T0001-')
-    expect(md.indexOf('T0001:')).toBeLessThan(md.indexOf('T0061:'))
+    expect(listed.length).toBeGreaterThan(0)
+    expect(listed.length).toBeLessThan(120)
+    expect(md).toContain(`_${120 - listed.length} more active cards are not listed here._`)
     expect(md).not.toContain('T0121:')
     expect(md).not.toMatch(/\*\*(backlog|done|review)\*\*/)
     // The rest is one call away.
@@ -540,7 +545,7 @@ describe('buildMemoryIndex (deterministic)', () => {
     expect(buildMemoryIndex(input)).toBe(md)
   })
 
-  it('handles a card with no status (trails under no-status)', () => {
+  it('handles a card with no status (counted in the layers, not listed)', () => {
     const md = buildMemoryIndex({
       hasHot: false,
       hasDecisions: false,
@@ -549,7 +554,8 @@ describe('buildMemoryIndex (deterministic)', () => {
       archive: [],
       generatedAt: '2026-07-06'
     })
-    expect(md).toContain('**no-status**')
+    expect(md).toContain('1 cards.')
+    expect(md).not.toContain('T1')
     expect(md).not.toContain('hot.md** — where we left off')
   })
 

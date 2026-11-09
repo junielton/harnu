@@ -337,6 +337,7 @@ describe('AC-4: the mirrors agree with the real memory_read and memory_query', (
       ] as const) {
         const memoryDir = join(dir, name)
         await writeMemoryTree(memoryDir, shape, hot)
+        await fsp.writeFile(join(memoryDir, 'index.md'), '# index\n')
         const real = await readMemoryDefault(memoryDir)
         const mem = fixtureMemory(memoryDir)
         expect(

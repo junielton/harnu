@@ -5,8 +5,9 @@
 //
 // Two functions here MIRROR product code and must change with it (the AC-4 parity test in
 // tests/memory-bench-core.test.ts fails otherwise):
-//   - memoryReadDefaultBytes / listPageIds  ← memoryReadHandler + readMemoryOverview
-//     (src/main/mcp/tool-handlers.ts, src/main/mcp/memory-store.ts)
+//   - memoryReadDefaultPayload / listPageIds ← memoryReadHandler + readMemoryDefault +
+//     buildMemoryReadAnswer (src/main/mcp/tool-handlers.ts, memory-store.ts, memory-core.ts):
+//     U2 D-6, the bench rebuilds the F-1 answer from the files
 //   - grepMemory / recall                     ← queryMemory + grepMemory
 //     (src/main/mcp/memory-store.ts, src/main/mcp/memory-core.ts)
 
@@ -301,22 +302,168 @@ export function listPageIds(names) {
   return ids
 }
 
-/** The text memory_read({ folder }) returns with no page; its UTF-8 byte length is M5. */
-export function memoryReadDefaultPayload({ hot, index, pages }) {
-  if (hot === null && index === null && pages.length === 0) {
-    return JSON.stringify({
-      ok: true,
-      memory: null,
-      message:
-        'No project memory yet for this repo. The first memory_append (e.g. page:decisions or page:hot) scaffolds `.harnu/memory/`.'
-    })
+// The U2 F-1 constants, as memory-core.ts names them.
+export const MEMORY_READ_MAX_BYTES = 16_384
+export const READ_HOT_MAX_BYTES = 8_192
+export const READ_CARD_ROWS_MAX = 40
+export const READ_TITLE_MAX_CHARS = 120
+
+const STATUS_ORDER = ['ready', 'in-progress', 'review', 'backlog', 'done', 'dropped']
+
+const utf8Bytes = (text) => Buffer.byteLength(text, 'utf8')
+
+/** splitFrontmatter (memory-core.ts): the body after a leading `---` block, else the whole text. */
+function bodyAfterFrontmatter(content) {
+  const m = /^---\r?\n/.exec(content)
+  if (!m) return { frontmatter: '', body: content }
+  const afterOpen = content.slice(m[0].length)
+  const close = /\r?\n---[ \t]*(?:\r?\n|$)/.exec(afterOpen)
+  if (!close) return { frontmatter: '', body: content }
+  const end = m[0].length + close.index + close[0].length
+  return { frontmatter: content.slice(0, end), body: content.slice(end) }
+}
+
+/** parseCardMeta (memory-core.ts): the top-level `id`, `title`, `status`, `executedIn`. */
+function parseCardMeta(content) {
+  const { frontmatter } = bodyAfterFrontmatter(content)
+  const meta = {}
+  if (!frontmatter) return meta
+  for (const rawLine of frontmatter.split(/\r?\n/)) {
+    const m = /^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$/.exec(rawLine)
+    if (!m) continue
+    const value = m[2].trim().replace(/^["']|["']$/g, '')
+    if (m[1] === 'id' && value) meta.id = value
+    else if (m[1] === 'title' && value) meta.title = value
+    else if (m[1] === 'status' && value) meta.status = value
+    else if (m[1] === 'executedIn' && value && value !== 'null') meta.executedIn = value
   }
-  return JSON.stringify({ ok: true, memory: { hot: hot ?? '', index: index ?? '', pages } })
+  return meta
+}
+
+const clipChars = (text, max) => {
+  const chars = Array.from(text)
+  return chars.length <= max ? text : chars.slice(0, max - 1).join('') + '…'
+}
+
+const statusOf = (c) => (c.status ?? 'no-status').trim() || 'no-status'
+const statusRank = (status) => {
+  const i = STATUS_ORDER.indexOf(status)
+  return i === -1 ? STATUS_ORDER.length : i
+}
+
+/** hotForRead (memory-core.ts): no frontmatter, no provenance stamp, trimmed. */
+function hotForRead(hot) {
+  return bodyAfterFrontmatter(hot)
+    .body.split(/\r?\n/)
+    .filter((l) => !l.trim().startsWith('> provenance:'))
+    .join('\n')
+    .trim()
+}
+
+/** cutToBytes (memory-core.ts): at most `maxBytes` bytes, on a line boundary. */
+function cutToBytes(text, maxBytes) {
+  if (utf8Bytes(text) <= maxBytes) return { text, cut: false }
+  const kept = []
+  let used = 0
+  for (const line of text.split('\n')) {
+    const next = used + utf8Bytes(line) + (kept.length > 0 ? 1 : 0)
+    if (next > maxBytes) break
+    kept.push(line)
+    used = next
+  }
+  if (kept.length === 0) {
+    let out = ''
+    for (const ch of text) {
+      if (utf8Bytes(out + ch) > maxBytes) break
+      out += ch
+    }
+    return { text: out, cut: true }
+  }
+  return { text: kept.join('\n'), cut: true }
+}
+
+const NO_MEMORY_MESSAGE =
+  'No project memory yet for this repo. The first memory_append (e.g. page:decisions or page:hot) scaffolds `.harnu/memory/`.'
+
+/**
+ * The text memory_read({ folder }) returns with no page (U2 F-1); its UTF-8 byte length is M5.
+ * Rebuilt from the files: `hot` (text or null), `decisions` (text or null), `names` (.md names
+ * per location, as listPageIds takes them) and `cards` = `[{ page, content }]` for every
+ * roadmap file. Mirrors readMemoryDefault + buildMemoryReadAnswer, parity-tested.
+ */
+export function memoryReadDefaultPayload({ hot, decisions, names, cards }) {
+  const md = (list) => (list ?? []).filter((n) => n.endsWith('.md'))
+  const pageCount = PAGE_DIRS.reduce((n, d) => n + md(names?.[d]).length, md(names?.root).length)
+  if (hot === null && pageCount === 0) {
+    return JSON.stringify({ ok: true, memory: null, message: NO_MEMORY_MESSAGE })
+  }
+
+  const metas = cards.map((c) => ({ ...parseCardMeta(c.content), page: c.page }))
+  const byPage = (status) =>
+    metas
+      .filter((c) => statusOf(c) === status)
+      .sort((a, b) => (a.page < b.page ? -1 : a.page > b.page ? 1 : 0))
+  const inProgressAll = byPage('in-progress')
+  const readyAll = byPage('ready')
+  const row = (c, withBranch) => {
+    const id = c.id ?? c.page.replace(/^roadmap\//, '')
+    const out = { id, title: clipChars(c.title ?? id, READ_TITLE_MAX_CHARS), page: c.page }
+    if (withBranch && c.executedIn) out.executedIn = c.executedIn
+    return out
+  }
+  let inProgress = inProgressAll.slice(0, READ_CARD_ROWS_MAX).map((c) => row(c, true))
+  let ready = readyAll.slice(0, READ_CARD_ROWS_MAX).map((c) => row(c, false))
+
+  const cardCounts = new Map()
+  for (const c of metas) cardCounts.set(statusOf(c), (cardCounts.get(statusOf(c)) ?? 0) + 1)
+  const counts = {
+    cards: Object.fromEntries(
+      [...cardCounts.entries()].sort(
+        (a, b) => statusRank(a[0]) - statusRank(b[0]) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)
+      )
+    ),
+    sessions: md(names?.sessions).length,
+    decisions: decisions ? parseBlocks(decisions).filter((b) => b.entryId).length : 0,
+    archive: md(names?.archive).length,
+    learning: md(names?.learning).length
+  }
+  const more = {
+    cards: "memory_read({ folder, page: 'cards', status?, limit?, cursor? })",
+    sessions: "memory_read({ folder, page: 'sessions', limit?, cursor? })",
+    page: "memory_read({ folder, page: '<page id>' })"
+  }
+  const hotCut = cutToBytes(hotForRead(hot ?? ''), READ_HOT_MAX_BYTES)
+
+  const assemble = (bytes) => {
+    const omitted = inProgressAll.length - inProgress.length + (readyAll.length - ready.length)
+    const memory = {
+      hot: hotCut.text,
+      cards: { inProgress, ready },
+      counts,
+      more,
+      truncated: hotCut.cut || omitted > 0
+    }
+    if (omitted > 0) memory.cardsOmitted = omitted
+    memory.bytes = bytes
+    return { ok: true, memory }
+  }
+  const measure = () => utf8Bytes(JSON.stringify(assemble(MEMORY_READ_MAX_BYTES)))
+  while (measure() > MEMORY_READ_MAX_BYTES && (ready.length > 0 || inProgress.length > 0)) {
+    if (ready.length > 0) ready = ready.slice(0, -1)
+    else inProgress = inProgress.slice(0, -1)
+  }
+  let bytes = 0
+  for (let i = 0; i < 6; i++) {
+    const next = utf8Bytes(JSON.stringify(assemble(bytes)))
+    if (next === bytes) break
+    bytes = next
+  }
+  return JSON.stringify(assemble(bytes))
 }
 
 /** M5: byte length of {@link memoryReadDefaultPayload}. */
-export function memoryReadDefaultBytes(overview) {
-  return Buffer.byteLength(memoryReadDefaultPayload(overview), 'utf8')
+export function memoryReadDefaultBytes(input) {
+  return utf8Bytes(memoryReadDefaultPayload(input))
 }
 
 /**
@@ -472,6 +619,7 @@ function median(values) {
  *   window: { since, until } (YYYY-MM-DD or null)
  *   memory: null when absent, else { hot, hotMtimeMs, index, decisions, names, files }
  *           names = { root, roadmap, sessions, archive, learning } (.md file names)
+ *           cards = [{ page, content }] for every roadmap file (the M5 mirror needs them)
  *           files = [{ page, content }] in memory_read order (only needed with questions)
  *   sessions: [{ sessionId, cwd, startMs, endMs, operatorTurns, bytes, cwdExists }]
  *   questions: validated question set or null
@@ -544,8 +692,13 @@ export function computeScorecard(input) {
 
   // M5 memory_read default payload.
   const overview = memory
-    ? { hot: memory.hot, index: memory.index, pages: listPageIds(memory.names) }
-    : { hot: null, index: null, pages: [] }
+    ? {
+        hot: memory.hot,
+        decisions: memory.decisions,
+        names: memory.names,
+        cards: memory.cards ?? []
+      }
+    : { hot: null, decisions: null, names: {}, cards: [] }
 
   // M6 hot freshness.
   const ended = sessions

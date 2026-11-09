@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-09
+
+### Changed
+
+- **A session's first look at project memory is now a small answer instead of the whole archive.** Asking for memory without naming a page used to return `hot.md`, the full `index.md` and a list of every page (235 KB on this repo's own memory, mostly the card catalog); it now returns the "where we left off" note, the cards in progress and ready to start, and counts, capped at 16 KB with a `truncated` flag that says when rows were left out. Every card and every session digest is still reachable: `page: 'cards'` and `page: 'sessions'` list them a page at a time, with a `limit`, a `status` filter for cards and a `cursor` to continue. The `index.md` Harnu regenerates is capped at 8 KB the same way: counts per folder, the cards in progress and ready, and a pointer to the card list. The memory benchmark's `memory_read` size now measures the new answer.
+
 ## 2026-11-07
 
 ### Added

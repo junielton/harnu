@@ -28,9 +28,20 @@ import {
   type RecallQuery
 } from './memory-entries'
 import {
+  buildListAnswer,
   buildMemoryIndex,
+  buildMemoryReadAnswer,
   buildMemoryWrite,
   buildTimeline,
+  cardListItem,
+  decodeCursor,
+  digestListItem,
+  LIST_LIMIT_DEFAULT,
+  LIST_LIMIT_MAX,
+  type ListItem,
+  parseDigestMeta,
+  sortCards,
+  sortDigestNames,
   buildWhereBacklink,
   extractHotPreview,
   formatMemoryDate,
@@ -157,6 +168,26 @@ export async function ensureScaffold(
   await regenerateIndex(memoryDir, now)
 }
 
+/** Roadmap cards read in small batches: a repo can hold thousands, and fds are finite. */
+const CARD_READ_BATCH = 32
+
+/** Parse every roadmap card's frontmatter into an {@link IndexCard} (page order as listed). */
+async function loadCards(memoryDir: string, names?: string[]): Promise<IndexCard[]> {
+  const files = names ?? (await listMd(path.join(memoryDir, 'roadmap')))
+  const cards: IndexCard[] = []
+  for (let i = 0; i < files.length; i += CARD_READ_BATCH) {
+    const batch = await Promise.all(
+      files.slice(i, i + CARD_READ_BATCH).map(async (name) => {
+        const content = await readMaybe(path.join(memoryDir, 'roadmap', name))
+        const meta = content ? parseCardMeta(content) : {}
+        return { ...meta, page: `roadmap/${name.replace(/\.md$/, '')}` }
+      })
+    )
+    cards.push(...batch)
+  }
+  return cards
+}
+
 // ---- Index regeneration (deterministic, on every write) ---------------------
 
 /**
@@ -174,12 +205,7 @@ export async function regenerateIndex(memoryDir: string, now: number): Promise<v
     listMd(path.join(memoryDir, 'learning'))
   ])
 
-  const cards: IndexCard[] = []
-  for (const name of cardFiles) {
-    const content = await readMaybe(path.join(memoryDir, 'roadmap', name))
-    const meta = content ? parseCardMeta(content) : {}
-    cards.push({ ...meta, page: `roadmap/${name.replace(/\.md$/, '')}` })
-  }
+  const cards = await loadCards(memoryDir, cardFiles)
 
   const index = buildMemoryIndex({
     hasHot: hot !== null,
@@ -195,42 +221,76 @@ export async function regenerateIndex(memoryDir: string, now: number): Promise<v
 
 // ---- Read -------------------------------------------------------------------
 
-/** The tiered top a page-less `memory_read` returns (`hot` + catalog + page list). */
-export interface MemoryOverview {
-  hot: string
-  index: string
-  pages: string[]
-}
-
-/** List every readable page id under the memory dir (root + roadmap/sessions/archive/learning). */
-async function listReadablePages(memoryDir: string): Promise<string[]> {
-  const [root, roadmap, sessions, archive, learning] = await Promise.all([
+/**
+ * The page-less `memory_read` (U2 F-1): `hot`, the in-progress and ready cards and the counts,
+ * under the byte cap (see `buildMemoryReadAnswer`). Returns `null` when no memory exists yet for
+ * the folder (a fresh repo). Neither the index body nor the page ids are read or returned.
+ */
+export async function readMemoryDefault(memoryDir: string): Promise<{
+  ok: true
+  memory: Record<string, unknown>
+} | null> {
+  const [hot, decisions, root, cardNames, sessions, archive, learning] = await Promise.all([
+    readMaybe(path.join(memoryDir, 'hot.md')),
+    readMaybe(path.join(memoryDir, 'decisions.md')),
     listMd(memoryDir),
     listMd(path.join(memoryDir, 'roadmap')),
     listMd(path.join(memoryDir, 'sessions')),
     listMd(path.join(memoryDir, 'archive')),
     listMd(path.join(memoryDir, 'learning'))
   ])
-  const strip = (n: string): string => n.replace(/\.md$/, '')
-  return [
-    ...root.map(strip),
-    ...roadmap.map((n) => `roadmap/${strip(n)}`),
-    ...sessions.map((n) => `sessions/${strip(n)}`),
-    ...archive.map((n) => `archive/${strip(n)}`),
-    ...learning.map((n) => `learning/${strip(n)}`)
-  ]
+  const pageCount =
+    root.length + cardNames.length + sessions.length + archive.length + learning.length
+  if (hot === null && pageCount === 0) return null
+  return buildMemoryReadAnswer({
+    hot,
+    cards: await loadCards(memoryDir, cardNames),
+    sessions: sessions.length,
+    decisions: decisions ? parseEntries(decisions).length : 0,
+    archive: archive.length,
+    learning: learning.length
+  })
 }
 
+/** Outcome of a paginated list view (`page: 'cards'` / `page: 'sessions'`). */
+export type ListReadResult =
+  ReturnType<typeof buildListAnswer> | { ok: false; error: 'BAD_CURSOR'; detail: string }
+
 /**
- * The page-less `memory_read`: the tiered top (`hot.md` + `index.md` + the page
- * list). Returns `null` when no memory exists yet for the folder (a fresh repo).
+ * A paginated list view (U2 F-2). Cards sort by status order then page id and may be filtered by
+ * `status`; sessions are the digests newest first, and only the window being returned is read
+ * from disk. A cursor from another view or filter is refused `BAD_CURSOR`.
  */
-export async function readMemoryOverview(memoryDir: string): Promise<MemoryOverview | null> {
-  const hot = await readMaybe(path.join(memoryDir, 'hot.md'))
-  const index = await readMaybe(path.join(memoryDir, 'index.md'))
-  const pages = await listReadablePages(memoryDir)
-  if (hot === null && index === null && pages.length === 0) return null
-  return { hot: hot ?? '', index: index ?? '', pages }
+export async function readMemoryList(
+  memoryDir: string,
+  opts: { view: 'cards' | 'sessions'; status?: string; limit?: number; cursor?: string }
+): Promise<ListReadResult> {
+  const limit = Math.min(
+    LIST_LIMIT_MAX,
+    Math.max(1, Number.isInteger(opts.limit) ? (opts.limit as number) : LIST_LIMIT_DEFAULT)
+  )
+  const status = opts.view === 'cards' && opts.status ? opts.status : undefined
+  let offset = 0
+  if (opts.cursor) {
+    const decoded = decodeCursor(opts.cursor, opts.view, status)
+    if (!decoded.ok) return { ok: false, error: 'BAD_CURSOR', detail: decoded.detail }
+    offset = decoded.offset
+  }
+
+  if (opts.view === 'cards') {
+    const all = sortCards(await loadCards(memoryDir))
+    const rows = status ? all.filter((c) => (c.status ?? 'no-status').trim() === status) : all
+    const items = rows.slice(offset, offset + limit).map(cardListItem)
+    return buildListAnswer({ view: 'cards', items, total: rows.length, offset, status })
+  }
+
+  const names = sortDigestNames(await listMd(path.join(memoryDir, 'sessions')))
+  const items: ListItem[] = []
+  for (const name of names.slice(offset, offset + limit)) {
+    const content = await readMaybe(path.join(memoryDir, 'sessions', name))
+    if (content !== null) items.push(digestListItem(parseDigestMeta(name, content)))
+  }
+  return buildListAnswer({ view: 'sessions', items, total: names.length, offset })
 }
 
 /** Read outcome for a single memory page. */

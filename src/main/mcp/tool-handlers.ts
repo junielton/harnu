@@ -248,7 +248,8 @@ import {
 import {
   appendMemoryEntry,
   queryMemory,
-  readMemoryOverview,
+  readMemoryDefault,
+  readMemoryList,
   readMemoryPage,
   recallForScope,
   resolveMemoryLocation
@@ -594,13 +595,25 @@ const memoryReadHandler: Handler = async (args) => {
   const folder = strField(args, 'folder') ?? ''
   const { memoryDir } = await resolveMemoryLocation(folder)
   const page = strField(args, 'page')
+  // U2: `cards` and `sessions` are reserved list views, handled before the page gate (they can
+  // never collide with a page file: the gate accepts only hot | decisions | index at the root).
+  if (page === 'cards' || page === 'sessions') {
+    const limit = typeof args.limit === 'number' ? args.limit : undefined
+    const list = await readMemoryList(memoryDir, {
+      view: page,
+      status: strField(args, 'status'),
+      limit,
+      cursor: strField(args, 'cursor')
+    })
+    return textResult(list)
+  }
   if (page) {
     const read = await readMemoryPage(memoryDir, page)
     if (!read.ok) return textResult({ ok: false, error: read.error, detail: read.detail })
     return textResult({ ok: true, page: read.page, content: read.content })
   }
-  const overview = await readMemoryOverview(memoryDir)
-  if (!overview) {
+  const answer = await readMemoryDefault(memoryDir)
+  if (!answer) {
     return textResult({
       ok: true,
       memory: null,
@@ -608,7 +621,7 @@ const memoryReadHandler: Handler = async (args) => {
         'No project memory yet for this repo. The first memory_append (e.g. page:decisions or page:hot) scaffolds `.harnu/memory/`.'
     })
   }
-  return textResult({ ok: true, memory: overview })
+  return textResult(answer)
 }
 
 const memoryQueryHandler: Handler = async (args) => {

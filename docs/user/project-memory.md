@@ -12,12 +12,23 @@ On disk, it's just files:
 
 - **`hot.md`** — a short (kept under ~500 words), frequently-replaced snapshot of where things stand right now. This is the first thing a session should read when it starts.
 - **`decisions.md`** — a running, dated log of decisions and the reasoning behind them, appended to over time rather than rewritten.
-- **`index.md`** — an auto-maintained catalog of everything else: counts and a breakdown of roadmap cards by status, links to the other pages.
+- **`index.md`** — an auto-maintained, short catalog (never more than 8 KB, however many cards the repo has): counts for each folder below, the cards in progress and ready to start as links, and a line pointing at the paged card list for the rest.
 - **`roadmap/`** — one file per [roadmap board](roadmap-board.md) card.
 - **`sessions/`** — dated digests that Harnu writes for your sessions, one file per session and day (see [When a digest is written](#when-a-digest-is-written)).
 - **`archive/`** — older material that's been superseded but kept for reference.
 
 Because it's plain markdown in your repo, you can read or edit any of it by hand in your normal editor — nothing about the format requires going through Harnu, and hand-editing or deleting a file never corrupts anything else.
+
+## Reading memory in small pieces
+
+A session that asks for memory without naming a page gets a small answer, never more than 16 KB: the `hot.md` note, the cards in progress and the cards ready to start (up to 40 of each), and counts of everything else (cards by status, session digests, decisions, archive files). It never carries the index text or a list of every page. When a repo has more active cards than fit, the answer says so: `truncated` is true and `cardsOmitted` says how many were left out, ready cards first.
+
+Everything else is one call away, a page at a time:
+
+- **Cards.** The whole card list, ready first, then in progress, review, backlog and done, each with its id, title, status and page. A session can narrow it to one status.
+- **Sessions.** Every digest, newest first, with its date, title and, when the digest has it, the branch and session id.
+
+Each page holds 50 rows unless the session asks for fewer or more (at most 200), ends early rather than pass the 16 KB limit, and hands back a cursor for the next page until the list is done. A cursor only works for the list and the filter it came from.
 
 ## When a digest is written
 
