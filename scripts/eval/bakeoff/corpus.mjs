@@ -75,9 +75,11 @@ function fieldDefects(p, dirName, { split, forRun }) {
   if (!KINDS.has(p.kind))
     out.push(['KIND_INVALID', 'kind', `kind must be one of ${[...KINDS].join(', ')}`])
 
-  const missing = (field) => out.push(['FIELD_MISSING', field, `${field} is required`])
+  const missing = (field, message = `${field} is required`) =>
+    out.push(['FIELD_MISSING', field, message])
   if (!isText(p.language)) missing('language')
   if (!Array.isArray(p.setup)) missing('setup')
+  else if (!p.setup.every(isText)) missing('setup', 'setup entries must be non-empty strings')
   if (!isText(p.versions)) missing('versions')
   if (!isText(p.test)) missing('test')
 
@@ -94,8 +96,9 @@ function fieldDefects(p, dirName, { split, forRun }) {
   if (!Array.isArray(hidden.files) || hidden.files.length === 0) missing('hidden.files')
   if (!isText(hidden.dest)) missing('hidden.dest')
   if (!isText(hidden.cmd)) missing('hidden.cmd')
-  if (!isText(hidden.compileErrorPattern) || !compiles(hidden.compileErrorPattern)) {
-    missing('hidden.compileErrorPattern')
+  if (!isText(hidden.compileErrorPattern)) missing('hidden.compileErrorPattern')
+  else if (!compiles(hidden.compileErrorPattern)) {
+    missing('hidden.compileErrorPattern', 'hidden.compileErrorPattern does not compile as a RegExp')
   }
 
   const provenance = isObject(p.provenance) ? p.provenance : {}
