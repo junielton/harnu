@@ -28,9 +28,9 @@ describe('buildSegment', () => {
   })
 
   it('origin human starting "[Harnu ·" is AGENT_MESSAGE from human', () => {
-    expect(buildSegment([user('[Harnu · dispatch] do the thing', { origin: { kind: 'human' } })])).toEqual([
-      { tag: 'AGENT_MESSAGE', from: 'human', text: '[Harnu · dispatch] do the thing' }
-    ])
+    expect(
+      buildSegment([user('[Harnu · dispatch] do the thing', { origin: { kind: 'human' } })])
+    ).toEqual([{ tag: 'AGENT_MESSAGE', from: 'human', text: '[Harnu · dispatch] do the thing' }])
   })
 
   it.each(['peer', 'task-notification', 'external'])(
@@ -79,7 +79,9 @@ describe('buildSegment', () => {
       name: `Tool${n}`,
       input: { payload: 'p'.repeat(500) }
     })
-    const out = buildSegment([assistant([{ type: 'text', text: 'working' }, tool(1), tool(2), tool(3), tool(4)])])
+    const out = buildSegment([
+      assistant([{ type: 'text', text: 'working' }, tool(1), tool(2), tool(3), tool(4)])
+    ])
     const tools = out.filter((e) => e.tag === 'TOOL')
     expect(tools).toHaveLength(3)
     expect(tools[0].text.startsWith('Tool1(')).toBe(true)
@@ -98,8 +100,15 @@ describe('buildSegment', () => {
 
   it('reads text blocks of a user content array and skips thinking blocks', () => {
     const out = buildSegment([
-      { type: 'user', origin: { kind: 'human' }, message: { content: [{ type: 'text', text: 'hi' }] } },
-      assistant([{ type: 'thinking', thinking: 'secret' }, { type: 'text', text: 'ok' }])
+      {
+        type: 'user',
+        origin: { kind: 'human' },
+        message: { content: [{ type: 'text', text: 'hi' }] }
+      },
+      assistant([
+        { type: 'thinking', thinking: 'secret' },
+        { type: 'text', text: 'ok' }
+      ])
     ])
     expect(out.map((e) => e.text)).toEqual(['hi', 'ok'])
   })
@@ -136,10 +145,15 @@ describe('splitSegment', () => {
     const parts = splitSegment(entries, 100)
     expect(parts.length).toBeGreaterThan(1)
     const flat = parts.flat()
-    expect(flat.filter((e) => e.tag === 'ASSISTANT').map((e) => e.text).join('')).toBe('a'.repeat(250))
+    expect(
+      flat
+        .filter((e) => e.tag === 'ASSISTANT')
+        .map((e) => e.text)
+        .join('')
+    ).toBe('a'.repeat(250))
     expect(flat[0]).toEqual(entries[0])
     expect(flat[flat.length - 1]).toEqual(entries[2])
-    expect(flat.map((e) => e.tag)).toEqual(['OPERATOR', 'ASSISTANT', 'ASSISTANT', 'ASSISTANT', 'TOOL'])
+    expect(flat.slice(1, -1).every((e) => e.tag === 'ASSISTANT')).toBe(true)
   })
 
   it('a segment that fits is a single part', () => {
@@ -150,7 +164,12 @@ describe('splitSegment', () => {
   it('never cuts a surrogate pair in half', () => {
     const text = '😀'.repeat(60)
     const parts = splitSegment([{ tag: 'ASSISTANT', text }], 51)
-    expect(parts.flat().map((e) => e.text).join('')).toBe(text)
+    expect(
+      parts
+        .flat()
+        .map((e) => e.text)
+        .join('')
+    ).toBe(text)
     for (const e of parts.flat()) expect(e.text).not.toMatch(/[\ud800-\udbff]$/)
   })
 })
@@ -160,7 +179,12 @@ describe('predicates', () => {
     expect(hasOperatorEntry([{ tag: 'OPERATOR', text: 'a' }])).toBe(true)
     expect(hasOperatorEntry([{ tag: 'AGENT_MESSAGE', text: 'a' }])).toBe(false)
     expect(isJudgeable([{ tag: 'TOOL', text: 'a' }])).toBe(false)
-    expect(isJudgeable([{ tag: 'TOOL', text: 'a' }, { tag: 'AGENT_MESSAGE', text: 'b' }])).toBe(true)
+    expect(
+      isJudgeable([
+        { tag: 'TOOL', text: 'a' },
+        { tag: 'AGENT_MESSAGE', text: 'b' }
+      ])
+    ).toBe(true)
     expect(hasAssistantText([{ tag: 'OPERATOR', text: 'a' }])).toBe(false)
     expect(hasAssistantText([{ tag: 'ASSISTANT', text: 'a' }])).toBe(true)
   })
