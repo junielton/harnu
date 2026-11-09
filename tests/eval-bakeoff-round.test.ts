@@ -761,7 +761,6 @@ it(
       path === root || path.startsWith(root + sep)
 
     const events = observed()
-    let judgeRetries = 0
     for (const { problems, units } of rounds) {
       for (const problem of problems) {
         for (const contestant of ids) {
@@ -781,18 +780,6 @@ it(
             expect(e.files).toEqual(['answer-sheet.md'])
           }
 
-          const judgeRuns = at('judge-1')
-          expect(judgeRuns.length).toBeGreaterThan(0)
-          for (const e of judgeRuns) {
-            expect(flagValues(e.argv, '--add-dir')).toEqual([])
-            const extra = e.files.filter((f) => f !== 'bundle.md')
-            if (extra.length > 0) {
-              expect(extra).toEqual(['discarded.json'])
-              judgeRetries += 1
-            }
-            expect(e.files).toContain('bundle.md')
-          }
-
           const builderRuns = at('build-clone')
           expect(builderRuns.length).toBeGreaterThan(0)
           for (const e of builderRuns) {
@@ -805,7 +792,18 @@ it(
         }
       }
     }
-    expect(judgeRetries).toBeGreaterThan(0)
+
+    // A judge runs in a neutral directory that names no contestant, so it is matched by its place,
+    // not by its unit. Each unit has one judge, and each problem's invalid reply costs one retry.
+    const judgeStarts = events.filter(
+      (e) => e.event === 'start' && /[\\/]judge-cwd[\\/][0-9a-f-]{36}$/.test(e.cwd)
+    )
+    const unitCount = rounds.reduce((sum, r) => sum + r.problems.length * ids.length, 0)
+    expect(judgeStarts.length).toBeGreaterThan(unitCount)
+    for (const e of judgeStarts) {
+      expect(flagValues(e.argv, '--add-dir')).toEqual([])
+      expect(e.files).toEqual(['bundle.md'])
+    }
 
     for (const e of events.filter((x) => x.event === 'start' && !isProbe(x))) {
       for (const root of forbidden) {
