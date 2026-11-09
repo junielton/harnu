@@ -104,18 +104,25 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
     }
   }
 
-  const ready = (async () => {
-    const store = await openYourMoveStore(path.join(userData, STATE_FILE))
-    setYourMoveStore(store)
-    await store.transact((s) => ({ next: pruneClosed(s, Date.now()), result: null }))
-    prefs = await readYourMovePrefs(prefsPath)
-    await fs.mkdir(emptyDir, { recursive: true })
-    await trimInspections(inspectionsPath)
-    unsubscribe = store.onChange(() => {
-      const win = getWindow()
-      if (win && !win.isDestroyed()) win.webContents.send('yourMove:changed')
-    })
-    return store
+  // A store that cannot be opened (an unreadable file, a failed copy-aside) leaves Your move
+  // inactive: the failure is logged, every channel keeps answering, and app boot goes on.
+  const ready: Promise<YourMoveStore | null> = (async () => {
+    try {
+      const store = await openYourMoveStore(path.join(userData, STATE_FILE))
+      await store.transact((s) => ({ next: pruneClosed(s, Date.now()), result: null }))
+      prefs = await readYourMovePrefs(prefsPath)
+      await fs.mkdir(emptyDir, { recursive: true })
+      await trimInspections(inspectionsPath)
+      unsubscribe = store.onChange(() => {
+        const win = getWindow()
+        if (win && !win.isDestroyed()) win.webContents.send('yourMove:changed')
+      })
+      setYourMoveStore(store)
+      return store
+    } catch (e) {
+      console.error(`[your-move] inactive: the store could not be opened: ${(e as Error).message}`)
+      return null
+    }
   })()
 
   runner = createJudgeRunner({
@@ -136,7 +143,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   const inspector = (): Promise<ReturnType<typeof createInspector>> =>
     (inspectorPromise ??= ready.then((store) =>
       createInspector({
-        store,
+        store: store as YourMoveStore,
         read: readFrom,
         detect: (input) => judge.detect(input),
         enrich: (input) => judge.enrich(input),
@@ -158,14 +165,23 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
     ))
 
   const view = (p: YourMovePrefs): YourMovePrefsView => ({ ...p, mode: effectiveMode(p) })
+  /** What the pane sees while the store is unavailable: Off, and nothing is persisted. */
+  const inactiveView = (): YourMovePrefsView => ({
+    version: 1,
+    mode: 'off',
+    disabledFolders: [],
+    firstRunNoticeSeen: false,
+    midTurnLive: false
+  })
 
   ipcMain.handle('yourMove:prefs:get', async (): Promise<YourMovePrefsView> => {
-    await ready
+    if (!(await ready)) return inactiveView()
     return view(prefs as YourMovePrefs)
   })
 
   ipcMain.handle('yourMove:prefs:set', async (_e, patch: unknown): Promise<YourMovePrefsView> => {
     const store = await ready
+    if (!store) return inactiveView()
     const prev = effectiveMode(prefs as YourMovePrefs)
     const next = await writeYourMovePrefs(prefsPath, (patch ?? {}) as Partial<YourMovePrefs>)
     prefs = next
@@ -178,6 +194,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle('yourMove:list', async (): Promise<CardView[]> => {
     const store = await ready
+    if (!store) return []
     const cards = store.state().cards
     const open = cards.filter((c) => c.closedAt === undefined)
     const closed = cards
@@ -202,9 +219,9 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
     ) {
       return { outcome: 'skipped', reason: 'bad request' }
     }
+    if (!(await ready)) return { outcome: 'skipped', reason: 'unavailable' }
     const transcriptPath = await locateTranscript(a.sessionId)
     if (!transcriptPath) return { outcome: 'skipped', reason: 'transcript not found' }
-    await ready
     await refreshDeny()
     lastFailure = ''
     const req: InspectRequest = {

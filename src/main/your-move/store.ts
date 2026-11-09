@@ -3,10 +3,12 @@
  *
  * Same discipline as the session archive store: writes are queued, and a write lands on
  * disk before it becomes the in-memory state, so a failed write (disk full, EACCES) leaves
- * the state and the listeners exactly as they were. Electron-free on purpose.
+ * the state and the listeners exactly as they were. An unreadable file is never overwritten
+ * unseen: only a missing file opens empty, a corrupt or unknown-version file is copied aside
+ * first, and any other read error rejects. Electron-free on purpose.
  */
 
-import { promises as fs } from 'node:fs'
+import { constants as fsConstants, promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { atomicWriteFile } from '../mcp/atomic-write'
 import { emptyState, type YourMoveState } from './core'
@@ -23,28 +25,57 @@ export interface YourMoveStore {
   onChange(cb: (s: YourMoveState) => void): () => void
 }
 
+/** Only a missing file means first run; anything else must never be read as "empty". */
+const isMissing = (e: unknown): boolean => (e as NodeJS.ErrnoException)?.code === 'ENOENT'
+
+/**
+ * Copy the unreadable bytes next to the file BEFORE the store opens empty, so the first write
+ * cannot destroy unanswered cards (or a newer version's file after a downgrade). If the copy
+ * cannot be made this throws and the store does not open: losing the evidence silently is
+ * the anti-goal of this feature. Returns the path of the copy.
+ */
+async function keepAside(filePath: string, why: string): Promise<string> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  for (let n = 0; ; n++) {
+    const dest = `${filePath}.unreadable-${stamp}${n === 0 ? '' : `-${n}`}`
+    try {
+      await fs.copyFile(filePath, dest, fsConstants.COPYFILE_EXCL)
+      console.warn(`[your-move] ${why}: kept the file aside at ${dest} and starting empty`)
+      return dest
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+    }
+  }
+}
+
 async function readState(filePath: string): Promise<YourMoveState> {
   let raw: string
   try {
     raw = await fs.readFile(filePath, 'utf8')
-  } catch {
-    return emptyState()
+  } catch (e) {
+    if (isMissing(e)) return emptyState()
+    throw e // EACCES, EIO, EISDIR…: the file is left exactly as it is
   }
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(raw) as Partial<YourMoveState> | null
-    if (!parsed || typeof parsed !== 'object' || parsed.version !== 1) return emptyState()
-    return {
-      version: 1,
-      cards: Array.isArray(parsed.cards) ? parsed.cards : [],
-      cursors:
-        parsed.cursors && typeof parsed.cursors === 'object' && !Array.isArray(parsed.cursors)
-          ? parsed.cursors
-          : {}
-    }
+    parsed = JSON.parse(raw)
   } catch {
-    // Corrupt JSON: open empty; the next write repairs the file.
+    await keepAside(filePath, 'state file is not valid JSON')
     return emptyState()
   }
+  const o = parsed as Partial<YourMoveState> | null
+  if (!o || typeof o !== 'object' || Array.isArray(o) || o.version !== 1) {
+    await keepAside(filePath, 'state file has an unknown version')
+    return emptyState()
+  }
+  const cursorsOk =
+    o.cursors === undefined ||
+    (typeof o.cursors === 'object' && o.cursors !== null && !Array.isArray(o.cursors))
+  if ((o.cards !== undefined && !Array.isArray(o.cards)) || !cursorsOk) {
+    await keepAside(filePath, 'state file has an unexpected shape')
+    return emptyState()
+  }
+  return { version: 1, cards: o.cards ?? [], cursors: o.cursors ?? {} }
 }
 
 export async function openYourMoveStore(filePath: string): Promise<YourMoveStore> {
