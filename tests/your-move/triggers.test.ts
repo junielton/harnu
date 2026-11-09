@@ -238,7 +238,9 @@ describe('first sight sets the cursor', () => {
       const h = harness({ ensureCursor: ensure })
       h.t.onTaskEvent(ev(event, { sessionId: id, payload: { transcriptPath: file, cwd: '/c' } }))
       await h.fireAll()
-      expect(store.state().cursors[id]).toMatchObject({ offset: size, shadowOffset: size })
+      await vi.waitFor(() =>
+        expect(store.state().cursors[id]).toMatchObject({ offset: size, shadowOffset: size })
+      )
     }
     // a second event never moves an existing cursor
     await writeFile(file, jsonl([asst('hello'), asst('world'), asst('more')]))
