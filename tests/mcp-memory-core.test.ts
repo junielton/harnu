@@ -500,6 +500,46 @@ describe('buildMemoryIndex (deterministic)', () => {
     expect(md).toContain('archive/** — frozen, read-only history. 2 files.')
   })
 
+  it('index is capped and points at the cards view', () => {
+    const cards = Array.from({ length: 800 }, (_, i) => {
+      const status = i < 60 ? 'in-progress' : i < 120 ? 'ready' : i % 2 ? 'backlog' : 'done'
+      const id = `T${String(i + 1).padStart(4, '0')}`
+      return {
+        page: `roadmap/${id}-memory-ch-${(i % 9) + 1}-slice-${i + 1}-tiered-read-capped-index`,
+        id,
+        title: `Memory ch.${(i % 9) + 1} · slice ${i + 1} · tiered read, capped index and a long title`,
+        status
+      }
+    })
+    const input = {
+      hasHot: true,
+      hasDecisions: true,
+      cards,
+      sessions: Array.from(
+        { length: 1300 },
+        (_, i) => `2025-01-01-${String(i).padStart(8, '0')}.md`
+      ),
+      archive: ['a.md', 'b.md', 'c.md'],
+      generatedAt: '2026-11-09'
+    }
+    const md = buildMemoryIndex(input)
+    // D-1/F-3: at most 8,192 bytes, whatever the corpus.
+    expect(Buffer.byteLength(md, 'utf8')).toBeLessThanOrEqual(8_192)
+    // Layers with their counts survive.
+    expect(md).toContain('roadmap/** — cards (1 file = 1 item, `status` frontmatter). 800 cards.')
+    expect(md).toContain('sessions/** — session digests. 1300 files.')
+    expect(md).toContain('archive/** — frozen, read-only history. 3 files.')
+    // In-progress cards are listed first, then ready ones; no other status group is.
+    expect(md).toContain('[[roadmap/T0001-')
+    expect(md.indexOf('T0001:')).toBeLessThan(md.indexOf('T0061:'))
+    expect(md).not.toContain('T0121:')
+    expect(md).not.toMatch(/\*\*(backlog|done|review)\*\*/)
+    // The rest is one call away.
+    expect(md).toContain("memory_read({ folder, page: 'cards' })")
+    // Deterministic: the same tree regenerates byte-identical.
+    expect(buildMemoryIndex(input)).toBe(md)
+  })
+
   it('handles a card with no status (trails under no-status)', () => {
     const md = buildMemoryIndex({
       hasHot: false,
