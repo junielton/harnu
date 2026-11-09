@@ -512,7 +512,7 @@ describe('parseJunit', () => {
   it('accepts a single testsuite root and a suite with no testcases', async () => {
     const { parseJunit } = await load()
     expect(parseJunit('<testsuite name="s" tests="0"></testsuite>')).toEqual({ testcases: [] })
-    expect(parseJunit('﻿<testsuites/>\n')).toEqual({ testcases: [] })
+    expect(parseJunit('\uFEFF<testsuites/>\n')).toEqual({ testcases: [] })
   })
 
   it.each([
@@ -537,6 +537,7 @@ describe('parseJunit', () => {
       `<testsuites><testcase classname="" name="t">${inner}</testcase></testsuites>`
     expect(hasCollectionError(wrap('<error message="Collection failure">trace</error>'))).toBe(true)
     expect(hasCollectionError(wrap('<error>error while collecting</error>'))).toBe(true)
+    expect(hasCollectionError(wrap('<error><![CDATA[error while collecting]]></error>'))).toBe(true)
     // A traceback that merely imports `collections` is not a collection failure.
     expect(
       hasCollectionError(wrap('<error message="boom">from collections import x</error>'))
@@ -850,6 +851,7 @@ describe('validateCommand (AC-11)', () => {
       expect(out.stderr).toContain('bad-one')
       expect(out.stderr).toContain('hidden::a')
       expect(out.stderr).toContain('PRISTINE_PASSES')
+      expect(out.stderr).toContain(`details in ${join(roots.cache, 'validation')}`)
       expect(out.stdout).toContain('good-one')
     },
     SLOW_TEST_MS
