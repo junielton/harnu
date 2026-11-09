@@ -255,6 +255,12 @@ it(
     expect(op2).not.toContain('--session-id')
     expect(result.operatorSessionId).not.toBe(result.sessionId)
 
+    // No MCP server loads in any session, first turn or resume, contestant or operator.
+    for (const { argv } of calls) {
+      expect(argv).toContain('--strict-mcp-config')
+      expect(argv).not.toContain('--mcp-config')
+    }
+
     // Every answer goes back by resuming the contestant.
     for (const argv of [resume1, resume2]) {
       expect(flag(argv, '--resume')).toBe(result.sessionId)
@@ -678,6 +684,8 @@ it(
     for (const { argv } of calls) {
       expect(argv[0]).toBe('-p')
       expect(flag(argv, '--max-turns')).toBe('1')
+      expect(argv).toContain('--strict-mcp-config')
+      expect(argv).not.toContain('--mcp-config')
       expect(flag(argv, '--output-format')).toBe('stream-json')
       expect(argv).toContain('--verbose')
     }
