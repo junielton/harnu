@@ -44,19 +44,18 @@ export function judgeConcurrency(cores: number): number {
 }
 
 // Models write `null` for fields they were told to omit: treat it as absent.
-const optional = <T extends z.ZodTypeAny>(t: T) =>
-  t.nullish().transform((v) => (v === null ? undefined : v))
+const nullToUndefined = <T>(v: T | null | undefined): T | undefined => (v === null ? undefined : v)
 
 const newSchema = z.object({
   kind: z.enum(CARD_KINDS),
   ask: z.string().trim().min(1),
-  context: optional(z.string()),
-  blocks: optional(z.string()),
-  options: optional(z.array(z.string())),
-  recommended: optional(z.string()),
-  link: optional(z.string()),
-  confidence: optional(z.enum(['high', 'low'])),
-  evidence: optional(z.string())
+  context: z.string().nullish().transform(nullToUndefined),
+  blocks: z.string().nullish().transform(nullToUndefined),
+  options: z.array(z.string()).nullish().transform(nullToUndefined),
+  recommended: z.string().nullish().transform(nullToUndefined),
+  link: z.string().nullish().transform(nullToUndefined),
+  confidence: z.enum(['high', 'low']).nullish().transform(nullToUndefined),
+  evidence: z.string().nullish().transform(nullToUndefined)
 })
 
 const verdictSchema = z.object({

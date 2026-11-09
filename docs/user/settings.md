@@ -15,6 +15,7 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 - **Interceptor** — an optional, separate layer that lets Harnu answer Claude Code's own permission prompts (not to be confused with the MCP approvals above) — see [Intercepting Claude Code's own prompts](approval-inbox.md#intercepting-claude-codes-own-prompts) for how its shadow/active modes work.
 - **Memory** — where [project memory](project-memory.md) behavior is configured.
 - **Hibernation policy** — covered below.
+- **Your move** — whether Harnu checks sessions for something only you can unblock; covered [below](#your-move).
 - **Usage history** — covered in [Usage](usage.md#usage-history-settings-tab); the working-days control for the daily budget is [below](#daily-budget).
 - **Changelog** — renders this repo's `CHANGELOG.md` in-app, so you can see what shipped without leaving Harnu.
 - **Cleanup** — the autopilot, what it cleans, the never-clean list and the background scan behind the [Cleanup](cleanup.md) screen; covered [below](#cleanup).
@@ -183,6 +184,24 @@ The marks you set with **Keep**, and whether you have acknowledged the first rep
 ## Containers
 
 **Settings → Containers** now holds only what the [Containers](containers.md#settings) inspector needs for itself: its own background scan, the idle clock for stacks that do not run from a worktree, and the new-zombie notification. A stack that runs from a worktree is judged by Cleanup, so there is no setting for it here. A note at the top of the tab says so and has an **Open Cleanup settings** link.
+
+## Your move
+
+**Settings → Your move** is where you choose whether Harnu reads your sessions to tell when the ball is yours: a question left unanswered, a decision, a step only you can do. It is built in stages, and this first one is a way to watch it work before it ever interrupts you.
+
+The mode has three values:
+
+- **Off** — the default. Nothing is read and nothing is spent.
+- **Observe** — when a session stops, Harnu reads what it wrote since the last check and asks one short, isolated Claude call whether anything is waiting on you. What it finds is stored as a card and listed at the bottom of the tab. Nothing shows in the sidebar and nothing makes a sound.
+- **Live** — saved, but until the queue ships it behaves exactly like Observe.
+
+Each check uses your own Claude quota: about US$ 0.0004 and a few seconds, run in the background at low priority and never more than half your CPU cores at once. The call is isolated: it has no tools, no settings and no project files, and it never answers or changes a session.
+
+**Inspect selected session** runs one check on the session you have selected, so you can see a card appear without waiting for a stop. The result sits beside the button: checked, nothing new, skipped (the mode is Off, the folder is blocked for agents, or the session is archived) or failed, with the reason.
+
+The list shows every card Harnu stored, open ones first and then the newest closed ones. A card carries a kind (Decide, Go / no-go, Provide, Do or Check), the folder and session it came from, and the one-line ask, shown exactly as the model wrote it. The list is read-only: no card can be answered or dismissed yet.
+
+When you switch from Off to Observe or Live, Harnu forgets where it had read up to in every session, so the days spent Off are never judged. The first stop after that reads the most recent part of the transcript, up to 256 KiB.
 
 ## Hibernation policy
 

@@ -68,7 +68,10 @@ describe('YourMovePane', () => {
 
   it('lists stored cards as text; markup in ask is shown literally', async () => {
     const ask = '<img src=x onerror="boom()"> Merge **now**'
-    const w = await mountPane([card({ ask }), card({ id: 'c2', ask: 'Closed one', closedAt: 5, closedBy: 'not-for-me' })])
+    const w = await mountPane([
+      card({ ask }),
+      card({ id: 'c2', ask: 'Closed one', closedAt: 5, closedBy: 'not-for-me' })
+    ])
     expect(w.text()).toContain(ask)
     expect(w.find('img').exists()).toBe(false)
     expect(w.text()).toContain('Closed one')

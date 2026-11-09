@@ -40,7 +40,7 @@ describe('readFrom', () => {
   })
 
   it('counts offsets in bytes, not characters', async () => {
-    const first = '{"t":"ação"}\n'
+    const first = '{"t":"✓✓✓"}\n'
     await writeFile(file, first + '{"b":2}\n')
     const r = await readFrom(file, Buffer.byteLength(first))
     expect(r.lines).toEqual([{ b: 2 }])

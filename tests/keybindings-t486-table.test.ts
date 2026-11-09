@@ -149,7 +149,7 @@ const SPEC_ROWS: Record<string, SpecRow> = {
 const U2_IDS = 20
 const U3_IDS = 21
 const U4A_IDS = 9
-const U4B_IDS = 5 + 21
+const U4B_IDS = 5 + 22
 const U5B_IDS = 5
 
 describe('AC-11 — the §3 ids exist with their §3 values', () => {
@@ -166,7 +166,7 @@ describe('AC-11 — the §3 ids exist with their §3 values', () => {
     })
   }
 
-  it('adds the 20 §3.2 + §3.3 ids, 21 §3.4, 9 §3.5 popover, 5 §3.6, 21 Settings-tab and 5 §3.7 ids', () => {
+  it('adds the 20 §3.2 + §3.3 ids, 21 §3.4, 9 §3.5 popover, 5 §3.6, 22 Settings-tab and 5 §3.7 ids', () => {
     expect(Object.keys(SPEC_ROWS)).toHaveLength(U2_IDS + U3_IDS + U4A_IDS + U4B_IDS + U5B_IDS)
   })
 

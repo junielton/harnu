@@ -108,7 +108,7 @@ export function createInspector(deps: InspectorDeps): {
     req: InspectRequest,
     outcome: InspectOutcome,
     extra: Record<string, unknown> = {}
-  ) => {
+  ): void => {
     try {
       deps.appendInspection?.({
         at: deps.now(),

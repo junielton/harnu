@@ -1165,6 +1165,7 @@
       "mods": "Mods",
       "memory": "Memória",
       "hibernationPolicy": "Política de hibernação",
+      "yourMove": "Sua vez",
       "usageHistory": "Histórico de uso",
       "changelog": "Changelog",
       "claudeCode": "Claude Code",
@@ -1476,6 +1477,7 @@
       "view_settings_mods": "Abrir Configurações: Mods",
       "view_settings_memory": "Abrir Configurações: Memória",
       "view_settings_hibernationPolicy": "Abrir Configurações: Política de hibernação",
+      "view_settings_yourMove": "Abrir Configurações: Sua vez",
       "view_settings_usageHistory": "Abrir Configurações: Histórico de uso",
       "view_settings_changelog": "Abrir Configurações: Changelog",
       "view_settings_claudeCode": "Abrir Configurações: Claude Code",
@@ -2591,6 +2593,63 @@
       "hint": "Por quanto tempo uma sessão pode ficar ociosa antes que a varredura periódica a hiberne, independente do número de sessões."
     },
     "minutesSuffix": "min"
+  },
+  "yourMove": {
+    "eyebrow": "Sua vez",
+    "intro": "O Harnu pode ler uma sessão quando ela para e avisar quando a bola está com você: uma pergunta, uma decisão, um passo manual. Cada checagem é uma chamada curta e isolada do Claude.",
+    "mode": {
+      "label": "Modo",
+      "off": "Desligado",
+      "observe": "Observar",
+      "live": "Ao vivo",
+      "hint": {
+        "off": "Nada é checado e nada é gasto.",
+        "observe": "O Harnu checa as sessões e guarda o que encontra na lista abaixo. Nada aparece na barra lateral e nada faz som.",
+        "live": "Sua escolha fica salva. Até a fila chegar, o Ao vivo se comporta como o Observar."
+      },
+      "cost": "Cada checagem usa a sua própria cota do Claude: cerca de US$ 0,0004 e alguns segundos."
+    },
+    "inspect": {
+      "label": "Inspecionar agora",
+      "button": "Inspecionar a sessão selecionada",
+      "hintNone": "Selecione uma sessão na barra lateral primeiro.",
+      "hint": "Lê o que a sessão selecionada escreveu desde a última checagem e julga uma vez.",
+      "running": "Checando…",
+      "outcome": {
+        "judged": "Checada",
+        "empty": "Nada novo para checar",
+        "skipped": "Ignorada: o modo está Desligado, a pasta está bloqueada ou desligada, ou a sessão está arquivada",
+        "failed": "Falhou: {reason}",
+        "first-sight": "Primeira olhada: o Harnu lê daqui para frente"
+      }
+    },
+    "list": {
+      "eyebrow": "Cards guardados · {count}",
+      "empty": "Nenhum card ainda. Escolha Observar, deixe uma sessão parar ou use Inspecionar agora.",
+      "session": "sessão {id}",
+      "closed": "fechado · {reason}"
+    },
+    "kind": {
+      "decide": "Decidir",
+      "go_no_go": "Go / no-go",
+      "provide": "Fornecer",
+      "do": "Fazer",
+      "check": "Conferir"
+    },
+    "lane": {
+      "observe": "Observar",
+      "live": "Ao vivo",
+      "mid-turn": "Meio do turno"
+    },
+    "closedBy": {
+      "answered": "respondido",
+      "judge": "resposta vista na sessão",
+      "not-for-me": "não é para mim",
+      "already-handled": "já resolvido",
+      "source-resolved": "resolvido na origem",
+      "archived": "sessão arquivada",
+      "folder-removed": "pasta removida"
+    }
   },
   "cleanup": {
     "title": "Limpeza",

@@ -10071,6 +10071,44 @@ field always shows what was actually persisted, never a stale optimistic guess.
 (`monitor:policyGet`'s backing store) on every cap/sweep check rather than a cached
 constant — a save here changes real hibernation behavior on the very next check.
 
+### Your move pane (Settings tab)
+
+The home of the Your move setting (`docs/specs/2026-11-09-your-move/`, U1). A Settings tab like
+every other simple one (`stores/ui.ts`'s `SettingsTabId` union plus `SettingsDialog.vue`'s `tabs`
+array), placed right after Hibernation policy. No dialog, no modal-over-modal, no new tokens.
+
+**Layout: the same anatomy as `HibernationPolicyPane`** — an uppercase eyebrow, a muted intro
+line, then stacked blocks. No section chrome around the setting itself.
+
+**Block 1 — the mode.** A `SegmentedControl` with three options, **Off**, **Observe** and
+**Live**, and a `SettingHint` under it. The hint under the selected option says what it does:
+Off judges nothing; Observe runs the judge and stores cards for the list below, with no queue,
+no sound; Live is recorded now and behaves like Observe until the queue ships. A second hint says
+the judge spends the operator's own Claude quota, about US$ 0.0004 per check. A change writes
+through at once (`yourMoveSetPrefs`) and re-syncs from the response, so the control always shows
+what was persisted. U1 ships with **Off**.
+
+**Block 2 — Inspect now.** A row with a ghost `Button` ("Inspect selected session") and a one-line
+result beside it (the outcome word, `--text-3`). Disabled, with its reason in the hint, while no
+session is selected. It is the manual trigger the debug list is verified with.
+
+**Block 3 — the debug list.** An uppercase sub-eyebrow with the count ("Stored cards · N"), then
+one row per card, open first then the newest closed, newest first inside each group. A row is
+`bg-surface`, `border-border`, `--radius`, `padding: 8px 10px`, `gap: 6px` between rows:
+
+- first line: a kind chip (`bg-accent-soft text-accent`, mono, 10.5px, the localized kind name:
+  Decide, Go / no-go, Provide, Do or Check), then `folder-alias · session` in `--text-3`, right-aligned the lane and
+  the age in `--text-4`;
+- second line: the ask in `--text-2`, 12px, wrapping, **rendered with text interpolation only**:
+  it is model output and never markup;
+- closed rows drop to `--text-4` and add `closed · <reason>` after the age.
+
+With nothing stored the list shows one muted line, never an empty box. The list is a debug view:
+it has no buttons that act on a card, because no card is answerable in U1.
+
+**States.** Loading: the blocks render without the list until `yourMoveList` answers. The list
+refreshes on the `yourMove:changed` event.
+
 ### Cleanup takeover (CleanupView.vue, Reaper PR3)
 
 A fourth main-pane takeover — same shape/rules as

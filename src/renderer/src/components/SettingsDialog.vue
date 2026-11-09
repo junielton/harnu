@@ -34,6 +34,7 @@ import BundledSkillsPane from './BundledSkillsPane.vue'
 import ModsAuditPane from './ModsAuditPane.vue'
 import MemoryLocationPane from './MemoryLocationPane.vue'
 import HibernationPolicyPane from './HibernationPolicyPane.vue'
+import YourMovePane from './YourMovePane.vue'
 import CleanupSettingsPane from './CleanupSettingsPane.vue'
 import ContainersSettingsPane from './ContainersSettingsPane.vue'
 import PrStackSettingsPane from './PrStackSettingsPane.vue'
@@ -312,6 +313,29 @@ const tabs: Array<{ id: SettingsTabId; labelKey: string; keywords: string[] }> =
       'maxlive',
       'sessions',
       'monitor'
+    ]
+  },
+  {
+    id: 'yourMove',
+    labelKey: 'settings.tabs.yourMove',
+    keywords: [
+      'your move',
+      'sua vez',
+      'ball',
+      'bola',
+      'judge',
+      'juiz',
+      'observe',
+      'observar',
+      'live',
+      'queue',
+      'fila',
+      'waiting',
+      'esperando',
+      'cards',
+      'attention',
+      'atencao',
+      'atenção'
     ]
   },
   {
@@ -1268,6 +1292,7 @@ onBeforeUnmount(() => {
             <ModsAuditPane v-else-if="activeTab === 'mods'" />
             <MemoryLocationPane v-else-if="activeTab === 'memory'" />
             <HibernationPolicyPane v-else-if="activeTab === 'hibernationPolicy'" />
+            <YourMovePane v-else-if="activeTab === 'yourMove'" />
             <CleanupSettingsPane v-else-if="activeTab === 'cleanup'" />
             <ContainersSettingsPane v-else-if="activeTab === 'containers'" @navigate="goToTab" />
             <PrStackSettingsPane v-else-if="activeTab === 'prStack'" />

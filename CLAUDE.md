@@ -328,6 +328,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | System Monitor history + folder hue (T591)         | `lib/monitor-history.ts` + `stores/monitor.ts`; `lib/folder-hue.ts`              |
 | Heap gauge (footer, T127 S3)                       | `src/renderer/src/components/HeapGauge.vue`                                      |
 | Hibernation policy pane (Settings tab, T127 S4)    | `src/renderer/src/components/HibernationPolicyPane.vue`                          |
+| Your move pane (Settings tab, §6 — U1)             | `src/renderer/src/components/YourMovePane.vue` + `src/main/your-move/`           |
 | Cleanup takeover (unified Workspace GC, T443)      | `src/renderer/src/components/CleanupView.vue`                                    |
 | Cleanup treemap (repo → bucket → block, T443)      | `src/renderer/src/components/CleanupTreemap.vue` + `lib/gc-treemap.ts`           |
 | Cleanup list fallback (T443)                       | `src/renderer/src/components/CleanupListView.vue`                                |

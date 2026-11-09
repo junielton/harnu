@@ -68,6 +68,9 @@ export interface YourMoveCard {
   cue?: { lastCuedAt: number; nudges: number }
 }
 
+/** What the renderer is handed for one card: the card plus what the queue may offer on it. */
+export type CardView = YourMoveCard & { answerable: boolean; optionDeliverable: boolean[] }
+
 export interface SessionCursor {
   offset: number
   shadowOffset?: number

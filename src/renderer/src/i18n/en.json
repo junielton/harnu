@@ -1165,6 +1165,7 @@
       "mods": "Mods",
       "memory": "Memory",
       "hibernationPolicy": "Hibernation policy",
+      "yourMove": "Your move",
       "usageHistory": "Usage history",
       "changelog": "Changelog",
       "claudeCode": "Claude Code",
@@ -1476,6 +1477,7 @@
       "view_settings_mods": "Open Settings: Mods",
       "view_settings_memory": "Open Settings: Memory",
       "view_settings_hibernationPolicy": "Open Settings: Hibernation policy",
+      "view_settings_yourMove": "Open Settings: Your move",
       "view_settings_usageHistory": "Open Settings: Usage history",
       "view_settings_changelog": "Open Settings: Changelog",
       "view_settings_claudeCode": "Open Settings: Claude Code",
@@ -2591,6 +2593,63 @@
       "hint": "How long a session can sit idle before the periodic sweep parks it, regardless of the session count."
     },
     "minutesSuffix": "min"
+  },
+  "yourMove": {
+    "eyebrow": "Your move",
+    "intro": "Harnu can read a session when it stops and tell you when the ball is yours: a question, a decision, a manual step. Each check is one short, isolated Claude call.",
+    "mode": {
+      "label": "Mode",
+      "off": "Off",
+      "observe": "Observe",
+      "live": "Live",
+      "hint": {
+        "off": "Nothing is checked and nothing is spent.",
+        "observe": "Harnu checks sessions and stores what it finds in the list below. Nothing shows in the sidebar and nothing makes a sound.",
+        "live": "Your choice is saved. Until the queue ships, Live behaves like Observe."
+      },
+      "cost": "Each check uses your own Claude quota: about US$ 0.0004 and a few seconds."
+    },
+    "inspect": {
+      "label": "Inspect now",
+      "button": "Inspect selected session",
+      "hintNone": "Select a session in the sidebar first.",
+      "hint": "Reads what the selected session wrote since the last check and judges it once.",
+      "running": "Checking…",
+      "outcome": {
+        "judged": "Checked",
+        "empty": "Nothing new to check",
+        "skipped": "Skipped: the mode is Off, the folder is blocked or switched off, or the session is archived",
+        "failed": "Failed: {reason}",
+        "first-sight": "First look: Harnu will read from here on"
+      }
+    },
+    "list": {
+      "eyebrow": "Stored cards · {count}",
+      "empty": "No cards yet. Choose Observe, then let a session stop, or use Inspect now.",
+      "session": "session {id}",
+      "closed": "closed · {reason}"
+    },
+    "kind": {
+      "decide": "Decide",
+      "go_no_go": "Go / no-go",
+      "provide": "Provide",
+      "do": "Do",
+      "check": "Check"
+    },
+    "lane": {
+      "observe": "Observe",
+      "live": "Live",
+      "mid-turn": "Mid-turn"
+    },
+    "closedBy": {
+      "answered": "answered",
+      "judge": "answer seen in the session",
+      "not-for-me": "not for me",
+      "already-handled": "already handled",
+      "source-resolved": "resolved at the source",
+      "archived": "session archived",
+      "folder-removed": "folder removed"
+    }
   },
   "cleanup": {
     "title": "Cleanup",
