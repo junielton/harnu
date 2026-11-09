@@ -84,7 +84,8 @@ describe('parseVerdict', () => {
   })
 
   it('accepts a fenced reply, an empty verdict and null for omitted optional fields', () => {
-    const fenced = '```json\n{"new":[{"kind":"do","ask":"Merge","link":null,"context":null}],"update":[],"close":[]}\n```'
+    const fenced =
+      '```json\n{"new":[{"kind":"do","ask":"Merge","link":null,"context":null}],"update":[],"close":[]}\n```'
     const out = parseVerdict(envelope(fenced))
     expect(out.ok).toBe(true)
     if (out.ok) expect(out.verdict.new[0]).toEqual({ kind: 'do', ask: 'Merge' })
