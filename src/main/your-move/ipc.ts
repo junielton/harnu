@@ -14,7 +14,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { sanitizeSpawnEnv } from '../appimage-env'
 import { classifyTranscriptLines } from '../claude-watcher'
-import { addTaskEventObserver } from '../detect/task-state-hub'
+import { addTaskEventObserver, getTaskStates } from '../detect/task-state-hub'
 import { resolveClaudePath } from '../claude-cli'
 import { isFolderDenied } from '../mcp/permission-core'
 import { getSessionArchive } from '../session-archive-core'
@@ -34,7 +34,7 @@ import {
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
 import { buildSegment } from './segment'
 import { readFrom } from './transcript'
-import { createEnsureCursor, createTriggers } from './triggers'
+import { SWEEP_MS, createEnsureCursor, createMidTurnSweep, createTriggers } from './triggers'
 
 const STATE_FILE = 'your-move.json'
 const PREFS_FILE = 'your-move-prefs.json'
@@ -211,20 +211,26 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       const insp = store ? await inspector() : null
       if (!store || !insp || runner === null) return
       const mode = (): YourMoveMode => (prefs ? effectiveMode(prefs) : 'off')
+      const eligible = async (sessionId: string, folder: string): Promise<boolean> => {
+        await refreshDeny()
+        return (
+          !isFolderDenied(folder, denyFolders) &&
+          !(getSessionArchive()?.has(sessionId) ?? false) &&
+          !(prefs ? isFolderDisabled(prefs, folder) : false)
+        )
+      }
+      const resolveFolder = async (
+        _id: string,
+        cwd: string | undefined,
+        file: string
+      ): Promise<string | null> => cwd ?? (await cwdFromTranscript(file))
       const triggers = createTriggers({
         inspector: insp,
         store,
         mode,
-        eligible: async (sessionId, folder) => {
-          await refreshDeny()
-          return (
-            !isFolderDenied(folder, denyFolders) &&
-            !(getSessionArchive()?.has(sessionId) ?? false) &&
-            !(prefs ? isFolderDisabled(prefs, folder) : false)
-          )
-        },
+        eligible,
         locate: locateTranscript,
-        resolveFolder: async (_id, cwd, file) => cwd ?? (await cwdFromTranscript(file)),
+        resolveFolder,
         now: () => Date.now(),
         setTimer: (fn, ms) => setTimeout(fn, ms).unref(),
         ensureCursor: createEnsureCursor({
@@ -236,9 +242,24 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         transcriptHas: transcriptHasReply,
         delay: sleep
       })
+      const sweep = createMidTurnSweep({
+        inspector: insp,
+        store,
+        mode,
+        eligible,
+        locate: locateTranscript,
+        resolveFolder,
+        read: readFrom,
+        states: getTaskStates,
+        now: () => Date.now()
+      })
+      const sweepTimer = setInterval(() => void sweep.tick(), SWEEP_MS)
+      sweepTimer.unref()
       const unobserve = addTaskEventObserver(triggers.onTaskEvent)
       stopTriggers = () => {
         unobserve()
+        clearInterval(sweepTimer)
+        sweep.dispose()
         triggers.dispose()
       }
     })

@@ -8,8 +8,10 @@
  */
 
 import type { HookTaskEvent } from '../detect/task-state-hub'
+import type { TaskState } from '../hook-state'
 import { advanceCursor, type YourMoveMode } from './core'
 import type { InspectOutcome, InspectRequest } from './inspector'
+import { buildSegment, hasAssistantText } from './segment'
 import type { YourMoveStore } from './store'
 import type { readFrom } from './transcript'
 
@@ -18,6 +20,10 @@ export const STOP_SETTLE_MS = 2_000
 /** How many times the transcript is re-read for a reply the hook carried but the file lacks. */
 const REREADS = 3
 const REREAD_DELAY_MS = 500
+/** A working session that was last inspected longer ago than this is looked at again. */
+export const MID_TURN_AFTER_MS = 5 * 60_000
+/** How often the sweep looks at the working sessions. */
+export const SWEEP_MS = 60_000
 /** First sight classifies the session from the newest 256 KiB: small files are read whole. */
 const CLASSIFY_TAIL_BYTES = 256 * 1024
 
@@ -157,6 +163,96 @@ export function createTriggers(deps: TriggerDeps): {
     dispose() {
       disposed = true
       pendingStop.clear()
+    }
+  }
+}
+
+export interface MidTurnDeps {
+  inspector: { request(r: InspectRequest): Promise<InspectOutcome> }
+  store: Pick<YourMoveStore, 'state'>
+  mode(): YourMoveMode
+  eligible(sessionId: string, folder: string): Promise<boolean>
+  locate(sessionId: string): Promise<string | null>
+  resolveFolder(
+    sessionId: string,
+    cwd: string | undefined,
+    transcriptPath: string
+  ): Promise<string | null>
+  read: typeof readFrom
+  /** The folded task state of every live session. */
+  states(): ReadonlyMap<string, TaskState>
+  now(): number
+}
+
+/**
+ * Long turns that never reach a Stop: a working session with no inspection for five minutes
+ * and new assistant text since is inspected as `mid-turn`. That run moves only the shadow
+ * cursor, so the text it judged is judged again, on the live cursor, at the Stop.
+ */
+export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; dispose(): void } {
+  let disposed = false
+  /** Sessions with a sweep request still running: never asked twice. */
+  const running = new Set<string>()
+  /** Where each swept session lives, found once. */
+  const where = new Map<string, { path: string; folder: string }>()
+
+  async function look(sessionId: string): Promise<void> {
+    const cursor = deps.store.state().cursors[sessionId]
+    if (cursor && deps.now() - cursor.lastInspectedAt < MID_TURN_AFTER_MS) return
+    let spot = where.get(sessionId)
+    if (!spot) {
+      const path = await deps.locate(sessionId)
+      if (!path) return
+      const folder = await deps.resolveFolder(sessionId, undefined, path)
+      if (!folder) return
+      spot = { path, folder }
+      where.set(sessionId, spot)
+    }
+    if (!(await deps.eligible(sessionId, spot.folder)) || disposed) return
+    if (cursor) {
+      // Tool-only progress is not worth a judge call, and moving the shadow cursor over it
+      // would hide nothing: it is left to be read together with the next text.
+      const from = cursor.shadowOffset ?? cursor.offset
+      const res = await deps.read(spot.path, from)
+      if (res.shrunk) {
+        // a rewritten file: the inspector resets the cursors
+      } else if (!hasAssistantText(buildSegment(res.lines))) {
+        return
+      }
+    }
+    running.add(sessionId)
+    void deps.inspector
+      .request({
+        sessionId,
+        folder: spot.folder,
+        transcriptPath: spot.path,
+        trigger: 'mid-turn'
+      })
+      .catch((e) =>
+        console.error(`[your-move] mid-turn inspection failed: ${(e as Error).message}`)
+      )
+      .finally(() => running.delete(sessionId))
+  }
+
+  return {
+    async tick() {
+      if (disposed || deps.mode() === 'off') return
+      const working: string[] = []
+      for (const [id, state] of deps.states()) if (state === 'working') working.push(id)
+      for (const id of [...where.keys()]) if (!working.includes(id)) where.delete(id)
+      for (const id of working) {
+        if (disposed || running.has(id)) continue
+        try {
+          await look(id)
+        } catch (e) {
+          console.error(`[your-move] sweep skipped a session: ${(e as Error).message}`)
+        }
+      }
+    },
+    dispose() {
+      disposed = true
+      running.clear()
+      where.clear()
     }
   }
 }

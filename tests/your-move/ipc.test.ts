@@ -27,6 +27,7 @@ vi.mock('electron', () => ({
   BrowserWindow: class {}
 }))
 vi.mock('../../src/main/detect/task-state-hub', () => ({
+  getTaskStates: () => new Map(),
   addTaskEventObserver: (): (() => void) => {
     h.observed++
     return () => undefined
