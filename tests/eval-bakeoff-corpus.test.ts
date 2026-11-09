@@ -95,6 +95,7 @@ interface Defect {
   split?: 'dev' | 'holdout'
   forRun?: boolean
   edit?: (p: ProblemJson) => void
+  message?: RegExp
   mutate?: (dir: string) => void
   expected: { code: string; file: string; field: string | null }
 }
@@ -131,6 +132,18 @@ const DEFECTS: Defect[] = [
     name: 'compileErrorPattern missing',
     edit: (p) => void delete p.hidden.compileErrorPattern,
     expected: { code: 'FIELD_MISSING', file: JSON_FILE, field: 'hidden.compileErrorPattern' }
+  },
+  {
+    name: 'compileErrorPattern does not compile',
+    edit: (p) => void (p.hidden.compileErrorPattern = '('),
+    expected: { code: 'FIELD_MISSING', file: JSON_FILE, field: 'hidden.compileErrorPattern' },
+    message: /does not compile/
+  },
+  {
+    name: 'a setup entry is not a command string',
+    edit: (p) => void (p as unknown as { setup: unknown[] }).setup.push(1),
+    expected: { code: 'FIELD_MISSING', file: JSON_FILE, field: 'setup' },
+    message: /string/
   },
   ...[
     'pick.md',
@@ -208,6 +221,7 @@ it('loader validates a problem and names every defect', async () => {
     expect(result.errors, d.name).toHaveLength(1)
     expect(result.errors[0], d.name).toMatchObject(d.expected)
     expect(result.errors[0].message, d.name).toEqual(expect.any(String))
+    if (d.message) expect(result.errors[0].message, d.name).toMatch(d.message)
     expect(result.problems, d.name).toEqual([])
   }
 
