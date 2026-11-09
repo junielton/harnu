@@ -16,7 +16,8 @@
  * (§ "Merge with a user-provided --settings" below).
  *
  * Deliberately NARROW event set (spec §2): UserPromptSubmit → working · Stop →
- * idle (its payload natively carries `last_assistant_message`) · Notification →
+ * idle (its payload natively carries `last_assistant_message`) · StopFailure → failed
+ * (why a turn died, for Your move's death cards) · Notification →
  * needs-you / idle (routed by `notification_type`) · SessionStart / SessionEnd →
  * lifecycle. High-frequency PreToolUse/PostToolUse and the decision-carrying
  * PreToolUse/PermissionRequest are OMITTED on purpose — chatty events would spam
@@ -91,6 +92,7 @@ export function buildHookSettingsBlob(port: number, token: string): HookSettings
   const hooks: Record<string, MatcherEntry[]> = {
     UserPromptSubmit: [{ hooks: [httpHandler(port, token, 'UserPromptSubmit', '_')] }],
     Stop: [{ hooks: [httpHandler(port, token, 'Stop', '_')] }],
+    StopFailure: [{ hooks: [httpHandler(port, token, 'StopFailure', '_')] }],
     SessionStart: [{ hooks: [httpHandler(port, token, 'SessionStart', '_')] }],
     SessionEnd: [{ hooks: [httpHandler(port, token, 'SessionEnd', '_')] }],
     Notification: NOTIFICATION_TYPES.map((t) => ({

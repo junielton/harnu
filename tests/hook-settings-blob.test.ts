@@ -32,7 +32,14 @@ describe('buildHookSettingsBlob', () => {
 
   it('subscribes exactly the narrow state event set (no chatty/decision events)', () => {
     expect(Object.keys(blob.hooks).sort()).toEqual(
-      ['Notification', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'].sort()
+      [
+        'Notification',
+        'SessionEnd',
+        'SessionStart',
+        'Stop',
+        'StopFailure',
+        'UserPromptSubmit'
+      ].sort()
     )
     // never the high-frequency / decision-carrying events (those stay global-only)
     expect(blob.hooks.PreToolUse).toBeUndefined()
