@@ -14,6 +14,8 @@ const CORPUS = resolve(REPO, 'scripts/eval/bakeoff/corpus/dev')
 const CORPUS_MODULE = resolve(REPO, 'scripts/eval/bakeoff/corpus.mjs')
 const S10 = resolve(REPO, 'docs/specs/2026-11-harnu-spec/bakeoff')
 const P1 = 'sqlite-utils-json-key'
+const RECONSTRUCTED_REFERENCE_SHA256 =
+  'daa790468d8a2f29e56ab3c280972b9120e759a61c0e1dbd8c9cfa73966a94fc'
 
 interface Problem {
   id: string
@@ -81,11 +83,14 @@ it('the S-10 input is migrated byte for byte', async () => {
   for (const [mine, theirs] of [
     ['answer-sheet.md', 'input/answer-sheet.md'],
     ['hidden/atoms.md', 'hidden/atoms.md'],
-    ['hidden/test_hidden_bakeoff.py', 'hidden/test_hidden_bakeoff.py'],
-    ['hidden/reference.patch', 'hidden/reference.patch']
+    ['hidden/test_hidden_bakeoff.py', 'hidden/test_hidden_bakeoff.py']
   ]) {
     expect(sha256(join(dir, mine)), mine).toBe(sha256(join(S10, theirs)))
   }
+  // The one deviation from byte-for-byte (spec Amendments): the S-10 reference.patch is compacted
+  // `rtk git diff` output, which `git apply` refuses, so validation could never pass with it. P1
+  // carries the patch rebuilt from that file by restoring the leading context it dropped.
+  expect(sha256(join(dir, 'hidden/reference.patch'))).toBe(RECONSTRUCTED_REFERENCE_SHA256)
   expect(readFileSync(join(dir, 'request.md'), 'utf8')).toBe(s10Request())
   expect(problem?.hidden.compileErrorPattern).toBe('(ImportError|ModuleNotFoundError|SyntaxError)')
   expect(problem?.provenance).toMatchObject({

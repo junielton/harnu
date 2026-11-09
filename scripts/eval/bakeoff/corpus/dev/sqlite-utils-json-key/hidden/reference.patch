@@ -1,230 +1,291 @@
-docs/cli-reference.rst | 12 ++++++++++++
- docs/cli.rst           |  2 ++
- docs/python-api.rst    |  2 ++
- sqlite_utils/cli.py    | 52 +++++++++++++++++++++++++++++++++++++++++++++++++-
- sqlite_utils/utils.py  | 42 ++++++++++++++++++++++++++++++++++++++--
- 5 files changed, 107 insertions(+), 3 deletions(-)
-
---- Changes ---
-
-docs/cli-reference.rst
-  @@ -213,6 +213,9 @@ See :ref:`cli_memory`.
-  +      --key TEXT                  Read JSON records from this top-level key
-  +      --auto-key                  Read JSON records from the one top-level key that
-  +                                  holds a list of objects
-         --schema                    Show SQL schema for in-memory database
-         --dump                      Dump SQL for in-memory database
-         --save FILE                 Save in-memory database to this file
-  @@ -305,6 +308,9 @@ See :ref:`cli_inserting_data`, :ref:`cli_insert_csv_tsv`, :ref:`cli_insert_unstr
-  +      --key TEXT                Read the JSON records from this top-level key
-  +      --auto-key                Read the JSON records from the one top-level key
-  +                                that holds a list of objects
-         --batch-size INTEGER      Commit every X records
-         --stop-after INTEGER      Stop after X records
-         --alter                   Alter existing table to add any missing columns
-  @@ -369,6 +375,9 @@ See :ref:`cli_upsert`.
-  +      --key TEXT                Read the JSON records from this top-level key
-  +      --auto-key                Read the JSON records from the one top-level key
-  +                                that holds a list of objects
-         --batch-size INTEGER      Commit every X records
-         --stop-after INTEGER      Stop after X records
-         --alter                   Alter existing table to add any missing columns
-  @@ -424,6 +433,9 @@ See :ref:`cli_bulk`.
-  +      --key TEXT             Read the JSON records from this top-level key
-  +      --auto-key             Read the JSON records from the one top-level key that
-  +                             holds a list of objects
-         --load-extension TEXT  Path to SQLite extension, with optional :entrypoint
-         -h, --help             Show this message and exit.
-   
-  +12 -0
-
-docs/cli.rst
-  @@ -1139,6 +1139,8 @@ Use ``--stop-before`` to stop before a named migration. The option can be passed
-  +If the records sit under one top-level key of a JSON object, pass ``--key List`` to read that key, or ``--auto-key`` to find the one key that holds a list of objects. Both also work with ``upsert``, ``bulk`` and ``memory``.
-  +
-   If you have data as JSON, you can use ``sqlite-utils insert tablename`` to insert it into a database. The table will be created with the correct (automatically detected) columns if it does not already exist.
-   
-   You can pass in a single JSON object or a list of JSON objects, either as a filename or piped directly to standard-in (by using ``-`` as the filename).
-  +2 -0
-
-docs/python-api.rst
-  @@ -3381,6 +3381,8 @@ If that option isn't relevant to your use-case you can to quote a string for use
-  +.. Pass ``key=`` or ``auto_key=True`` to read records held under a top-level key.
-  +
-   Reading rows from a file
-   ========================
-   
-  +2 -0
-
-sqlite_utils/cli.py
-  @@ -47,6 +47,8 @@ from .utils import (
-  +    extract_json_records,
-  +    RowsFromFileBadJSON,
-       sqlite3,
-   )
-   from .utils import (
-  @@ -967,6 +969,12 @@ _import_options = (
-  +    click.option("--key", help="Read the JSON records from this top-level key"),
-  +    click.option(
-  +        "--auto-key",
-  +        is_flag=True,
-  +        help="Read the JSON records from the one top-level key that holds a list of objects",
-  +    ),
-   )
-   
-   
-  @@ -1095,7 +1103,13 @@ def insert_upsert_implementation(
-  +    key=None,
-  +    auto_key=False,
-   ):
-  +    if key and auto_key:
-  +        raise click.ClickException("Use just one of --key or --auto-key")
-  +    if (key or auto_key) and (nl or csv or tsv or lines or text):
-  +        raise click.ClickException("--key and --auto-key only work with JSON input")
-       db = sqlite_utils.Database(path)
-       _register_db_for_cleanup(db)
-       _load_extensions(db, load_extension)
-  @@ -1277,6 +1291,10 @@ def insert_upsert_implementation(
-  +                    try:
-  +                        docs = extract_json_records(docs, key=key, auto_key=auto_key)
-  +                    except RowsFromFileBadJSON as ex:
-  +                        raise click.ClickException(str(ex))
-                       if isinstance(docs, dict):
-                           docs = [docs]
-               except json.decoder.JSONDecodeError as ex:
-  @@ -1372,6 +1390,8 @@ def insert(
-  +    key,
-  +    auto_key,
-       batch_size,
-       stop_after,
-       alter,
-  @@ -1481,6 +1501,8 @@ def insert(
-  +            key=key,
-  +            auto_key=auto_key,
-           )
-       except UnicodeDecodeError as ex:
-           raise click.ClickException(UNICODE_ERROR.format(ex))
-  @@ -1510,6 +1532,8 @@ def upsert(
-  +    key,
-  +    auto_key,
-       alter,
-       not_null,
-       default,
-  @@ -1571,6 +1595,8 @@ def upsert(
-  +            key=key,
-  +            auto_key=auto_key,
-           )
-       except UnicodeDecodeError as ex:
-           raise click.ClickException(UNICODE_ERROR.format(ex))
-  @@ -1608,6 +1634,8 @@ def bulk(
-  +    key,
-  +    auto_key,
-       load_extension,
-   ):
-       """
-  @@ -1654,6 +1682,8 @@ def bulk(
-  +            key=key,
-  +            auto_key=auto_key,
-           )
-       except (OperationalError, sqlite3.IntegrityError) as e:
-           raise click.ClickException(str(e))
-  @@ -2089,6 +2119,12 @@ def query(
-  +@click.option("--key", help="Read JSON records from this top-level key")
-  +@click.option(
-  +    "--auto-key",
-  +    is_flag=True,
-  +    help="Read JSON records from the one top-level key that holds a list of objects",
-  +)
-   @click.option("--schema", is_flag=True, help="Show SQL schema for in-memory database")
-   @click.option("--dump", is_flag=True, help="Dump SQL for in-memory database")
-   @click.option(
-  @@ -2122,6 +2158,8 @@ def memory(
-  +    key,
-  +    auto_key,
-       schema,
-       dump,
-       save,
-  @@ -2187,7 +2225,19 @@ def memory(
-  -            rows, format_used = rows_from_file(fp, format=format, encoding=encoding)
-  +            if key and auto_key:
-  +                raise click.ClickException("Use just one of --key or --auto-key")
-  +            json_format = format in (None, Format.JSON)
-  +            try:
-  +                rows, format_used = rows_from_file(
-  +                    fp,
-  +                    format=format,
-  +                    encoding=encoding,
-  +                    key=key if json_format else None,
-  +                    auto_key=auto_key if json_format else False,
-  +                )
-  +            except RowsFromFileBadJSON as ex:
-  +                raise click.ClickException(str(ex))
-               tracker = None
-               if format_used in (Format.CSV, Format.TSV) and not no_detect_types:
-                   tracker = TypeTracker()
-  +51 -1
-
-sqlite_utils/utils.py
-  @@ -285,6 +285,34 @@ def _extra_key_strategy(
-  +def extract_json_records(decoded, key=None, auto_key=False):
-  +    """Apply key= / auto_key= to decoded JSON, returning a list or a dict."""
-  +    if key is not None:
-  +        if not isinstance(decoded, dict):
-  +            raise RowsFromFileBadJSON("key= needs a JSON object at the top level")
-  +        if key not in decoded:
-  +            raise RowsFromFileBadJSON(f"Key '{key}' not found in JSON object")
-  +        value = decoded[key]
-  +        if not isinstance(value, (list, dict)):
-  +            raise RowsFromFileBadJSON(f"Key '{key}' must hold a list or an object")
-  +        return value
-  +    if auto_key and isinstance(decoded, dict):
-  +        candidates = [
-  +            k
-  +            for k, v in decoded.items()
-  +            if isinstance(v, list) and v and all(isinstance(o, dict) for o in v)
-  +        ]
-  +        if not candidates:
-  +            raise RowsFromFileBadJSON("No top-level key holds a list of objects")
-  +        if len(candidates) > 1:
-  +            raise RowsFromFileBadJSON(
-  +                "Several top-level keys hold a list of objects: "
-  +                + ", ".join(candidates)
-  +            )
-  +        return decoded[candidates[0]]
-  +    return decoded
-  +
-  +
-   def rows_from_file(
-       fp: BinaryIO,
-       format: Format | None = None,
-  @@ -292,6 +320,8 @@ def rows_from_file(
-  +    key: str | None = None,
-  +    auto_key: bool = False,
-   ) -> tuple[Iterable[Row], Format]:
-       """
-       Load a sequence of dictionaries from a file-like object containing one of four different formats.
-  @@ -332,11 +362,17 @@ def rows_from_file(
-  +    :param key: read the records from this top-level key of a JSON object
-  +    :param auto_key: find the one top-level key of a JSON object that holds a list of objects
-       """
-       if ignore_extras and extras_key:
-           raise ValueError("Cannot use ignore_extras= and extras_key= together")
-  +    if key and auto_key:
-  +        raise ValueError("Cannot use key= and auto_key= together")
-  +    if (key or auto_key) and format in (Format.CSV, Format.TSV, Format.NL):
-  +        raise ValueError("key= and auto_key= only work with JSON")
-       if format == Format.JSON:
-  -        decoded = json.load(fp)
-  +        decoded = extract_json_records(json.load(fp), key=key, auto_key=auto_key)
-           if isinstance(decoded, dict):
-               decoded = [decoded]
-           if not isinstance(decoded, list):
-  @@ -387,7 +423,9 @@ def rows_from_file(
-  -                return rows_from_file(buffered, format=Format.JSON)
-  +                return rows_from_file(
-  +                    buffered, format=Format.JSON, key=key, auto_key=auto_key
-  +                )
-           else:
-               dialect = csv.Sniffer().sniff(
-                   first_bytes.decode(encoding or "utf-8-sig", "ignore")
-  +40 -2
+diff --git a/docs/cli-reference.rst b/docs/cli-reference.rst
+--- a/docs/cli-reference.rst
++++ b/docs/cli-reference.rst
+@@ -213,6 +213,9 @@ See :ref:`cli_memory`.
+       --encoding TEXT             Character encoding for CSV input, defaults to
+                                   utf-8
+       -n, --no-detect-types       Treat all CSV/TSV columns as TEXT
++      --key TEXT                  Read JSON records from this top-level key
++      --auto-key                  Read JSON records from the one top-level key that
++                                  holds a list of objects
+       --schema                    Show SQL schema for in-memory database
+       --dump                      Dump SQL for in-memory database
+       --save FILE                 Save in-memory database to this file
+@@ -305,6 +308,9 @@ See :ref:`cli_inserting_data`, :ref:`cli_insert_csv_tsv`, :ref:`cli_insert_unstr
+       --sniff                   Detect delimiter and quote character
+       --no-headers              CSV file has no header row
+       --encoding TEXT           Character encoding for input, defaults to utf-8
++      --key TEXT                Read the JSON records from this top-level key
++      --auto-key                Read the JSON records from the one top-level key
++                                that holds a list of objects
+       --batch-size INTEGER      Commit every X records
+       --stop-after INTEGER      Stop after X records
+       --alter                   Alter existing table to add any missing columns
+@@ -369,6 +375,9 @@ See :ref:`cli_upsert`.
+       --sniff                   Detect delimiter and quote character
+       --no-headers              CSV file has no header row
+       --encoding TEXT           Character encoding for input, defaults to utf-8
++      --key TEXT                Read the JSON records from this top-level key
++      --auto-key                Read the JSON records from the one top-level key
++                                that holds a list of objects
+       --batch-size INTEGER      Commit every X records
+       --stop-after INTEGER      Stop after X records
+       --alter                   Alter existing table to add any missing columns
+@@ -424,6 +433,9 @@ See :ref:`cli_bulk`.
+       --sniff                Detect delimiter and quote character
+       --no-headers           CSV file has no header row
+       --encoding TEXT        Character encoding for input, defaults to utf-8
++      --key TEXT             Read the JSON records from this top-level key
++      --auto-key             Read the JSON records from the one top-level key that
++                             holds a list of objects
+       --load-extension TEXT  Path to SQLite extension, with optional :entrypoint
+       -h, --help             Show this message and exit.
+ 
+diff --git a/docs/cli.rst b/docs/cli.rst
+--- a/docs/cli.rst
++++ b/docs/cli.rst
+@@ -1139,6 +1139,8 @@ Use ``--stop-before`` to stop before a named migration. The option can be passed
+ Inserting JSON data
+ ===================
+ 
++If the records sit under one top-level key of a JSON object, pass ``--key List`` to read that key, or ``--auto-key`` to find the one key that holds a list of objects. Both also work with ``upsert``, ``bulk`` and ``memory``.
++
+ If you have data as JSON, you can use ``sqlite-utils insert tablename`` to insert it into a database. The table will be created with the correct (automatically detected) columns if it does not already exist.
+ 
+ You can pass in a single JSON object or a list of JSON objects, either as a filename or piped directly to standard-in (by using ``-`` as the filename).
+diff --git a/docs/python-api.rst b/docs/python-api.rst
+--- a/docs/python-api.rst
++++ b/docs/python-api.rst
+@@ -3381,6 +3381,8 @@ If that option isn't relevant to your use-case you can to quote a string for use
+ 
+ .. _python_api_rows_from_file:
+ 
++.. Pass ``key=`` or ``auto_key=True`` to read records held under a top-level key.
++
+ Reading rows from a file
+ ========================
+ 
+diff --git a/sqlite_utils/cli.py b/sqlite_utils/cli.py
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -47,6 +47,8 @@ from .utils import (
+     find_spatialite,
+     progressbar,
+     rows_from_file,
++    extract_json_records,
++    RowsFromFileBadJSON,
+     sqlite3,
+ )
+ from .utils import (
+@@ -967,6 +969,12 @@ _import_options = (
+         "--encoding",
+         help="Character encoding for input, defaults to utf-8",
+     ),
++    click.option("--key", help="Read the JSON records from this top-level key"),
++    click.option(
++        "--auto-key",
++        is_flag=True,
++        help="Read the JSON records from the one top-level key that holds a list of objects",
++    ),
+ )
+ 
+ 
+@@ -1095,7 +1103,13 @@ def insert_upsert_implementation(
+     functions=None,
+     strict=False,
+     code=None,
++    key=None,
++    auto_key=False,
+ ):
++    if key and auto_key:
++        raise click.ClickException("Use just one of --key or --auto-key")
++    if (key or auto_key) and (nl or csv or tsv or lines or text):
++        raise click.ClickException("--key and --auto-key only work with JSON input")
+     db = sqlite_utils.Database(path)
+     _register_db_for_cleanup(db)
+     _load_extensions(db, load_extension)
+@@ -1277,6 +1291,10 @@ def insert_upsert_implementation(
+                     docs = (json.loads(line) for line in decoded if line.strip())
+                 else:
+                     docs = json.load(decoded)
++                    try:
++                        docs = extract_json_records(docs, key=key, auto_key=auto_key)
++                    except RowsFromFileBadJSON as ex:
++                        raise click.ClickException(str(ex))
+                     if isinstance(docs, dict):
+                         docs = [docs]
+             except json.decoder.JSONDecodeError as ex:
+@@ -1372,6 +1390,8 @@ def insert(
+     sniff,
+     no_headers,
+     encoding,
++    key,
++    auto_key,
+     batch_size,
+     stop_after,
+     alter,
+@@ -1481,6 +1501,8 @@ def insert(
+             types=types,
+             strict=strict,
+             code=code,
++            key=key,
++            auto_key=auto_key,
+         )
+     except UnicodeDecodeError as ex:
+         raise click.ClickException(UNICODE_ERROR.format(ex))
+@@ -1510,6 +1532,8 @@ def upsert(
+     sniff,
+     no_headers,
+     encoding,
++    key,
++    auto_key,
+     alter,
+     not_null,
+     default,
+@@ -1571,6 +1595,8 @@ def upsert(
+             silent=silent,
+             strict=strict,
+             code=code,
++            key=key,
++            auto_key=auto_key,
+         )
+     except UnicodeDecodeError as ex:
+         raise click.ClickException(UNICODE_ERROR.format(ex))
+@@ -1608,6 +1634,8 @@ def bulk(
+     sniff,
+     no_headers,
+     encoding,
++    key,
++    auto_key,
+     load_extension,
+ ):
+     """
+@@ -1654,6 +1682,8 @@ def bulk(
+             silent=False,
+             bulk_sql=sql,
+             functions=functions,
++            key=key,
++            auto_key=auto_key,
+         )
+     except (OperationalError, sqlite3.IntegrityError) as e:
+         raise click.ClickException(str(e))
+@@ -2089,6 +2119,12 @@ def query(
+     is_flag=True,
+     help="Treat all CSV/TSV columns as TEXT",
+ )
++@click.option("--key", help="Read JSON records from this top-level key")
++@click.option(
++    "--auto-key",
++    is_flag=True,
++    help="Read JSON records from the one top-level key that holds a list of objects",
++)
+ @click.option("--schema", is_flag=True, help="Show SQL schema for in-memory database")
+ @click.option("--dump", is_flag=True, help="Dump SQL for in-memory database")
+ @click.option(
+@@ -2122,6 +2158,8 @@ def memory(
+     param,
+     encoding,
+     no_detect_types,
++    key,
++    auto_key,
+     schema,
+     dump,
+     save,
+@@ -2187,7 +2225,19 @@ def memory(
+             fp = file_path.open("rb")
+             should_close_fp = True
+         try:
+-            rows, format_used = rows_from_file(fp, format=format, encoding=encoding)
++            if key and auto_key:
++                raise click.ClickException("Use just one of --key or --auto-key")
++            json_format = format in (None, Format.JSON)
++            try:
++                rows, format_used = rows_from_file(
++                    fp,
++                    format=format,
++                    encoding=encoding,
++                    key=key if json_format else None,
++                    auto_key=auto_key if json_format else False,
++                )
++            except RowsFromFileBadJSON as ex:
++                raise click.ClickException(str(ex))
+             tracker = None
+             if format_used in (Format.CSV, Format.TSV) and not no_detect_types:
+                 tracker = TypeTracker()
+diff --git a/sqlite_utils/utils.py b/sqlite_utils/utils.py
+--- a/sqlite_utils/utils.py
++++ b/sqlite_utils/utils.py
+@@ -285,6 +285,34 @@ def _extra_key_strategy(
+             yield row_out
+ 
+ 
++def extract_json_records(decoded, key=None, auto_key=False):
++    """Apply key= / auto_key= to decoded JSON, returning a list or a dict."""
++    if key is not None:
++        if not isinstance(decoded, dict):
++            raise RowsFromFileBadJSON("key= needs a JSON object at the top level")
++        if key not in decoded:
++            raise RowsFromFileBadJSON(f"Key '{key}' not found in JSON object")
++        value = decoded[key]
++        if not isinstance(value, (list, dict)):
++            raise RowsFromFileBadJSON(f"Key '{key}' must hold a list or an object")
++        return value
++    if auto_key and isinstance(decoded, dict):
++        candidates = [
++            k
++            for k, v in decoded.items()
++            if isinstance(v, list) and v and all(isinstance(o, dict) for o in v)
++        ]
++        if not candidates:
++            raise RowsFromFileBadJSON("No top-level key holds a list of objects")
++        if len(candidates) > 1:
++            raise RowsFromFileBadJSON(
++                "Several top-level keys hold a list of objects: "
++                + ", ".join(candidates)
++            )
++        return decoded[candidates[0]]
++    return decoded
++
++
+ def rows_from_file(
+     fp: BinaryIO,
+     format: Format | None = None,
+@@ -292,6 +320,8 @@ def rows_from_file(
+     encoding: str | None = None,
+     ignore_extras: bool | None = False,
+     extras_key: str | None = None,
++    key: str | None = None,
++    auto_key: bool = False,
+ ) -> tuple[Iterable[Row], Format]:
+     """
+     Load a sequence of dictionaries from a file-like object containing one of four different formats.
+@@ -332,11 +362,17 @@ def rows_from_file(
+     :param encoding: the character encoding to use when reading CSV/TSV data
+     :param ignore_extras: ignore any extra fields on rows
+     :param extras_key: put any extra fields in a list with this key
++    :param key: read the records from this top-level key of a JSON object
++    :param auto_key: find the one top-level key of a JSON object that holds a list of objects
+     """
+     if ignore_extras and extras_key:
+         raise ValueError("Cannot use ignore_extras= and extras_key= together")
++    if key and auto_key:
++        raise ValueError("Cannot use key= and auto_key= together")
++    if (key or auto_key) and format in (Format.CSV, Format.TSV, Format.NL):
++        raise ValueError("key= and auto_key= only work with JSON")
+     if format == Format.JSON:
+-        decoded = json.load(fp)
++        decoded = extract_json_records(json.load(fp), key=key, auto_key=auto_key)
+         if isinstance(decoded, dict):
+             decoded = [decoded]
+         if not isinstance(decoded, list):
+@@ -387,7 +423,9 @@ def rows_from_file(
+             # including when parsing raises an error.
+             # TODO: Detect newline-JSON
+             with buffered:
+-                return rows_from_file(buffered, format=Format.JSON)
++                return rows_from_file(
++                    buffered, format=Format.JSON, key=key, auto_key=auto_key
++                )
+         else:
+             dialect = csv.Sniffer().sniff(
+                 first_bytes.decode(encoding or "utf-8-sig", "ignore")
