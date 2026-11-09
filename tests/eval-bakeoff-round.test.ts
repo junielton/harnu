@@ -201,14 +201,14 @@ beforeAll(async () => {
   mkdirSync(join(root, 'docs/specs'), { recursive: true })
   writeFileSync(join(root, 'docs/specs/TEMPLATE.md'), '# Template\n')
   symlinkSync(join(REAL_ROOT, 'node_modules'), join(root, 'node_modules'))
+  const corpus = join(harness, 'corpus/dev')
+  addProblem(corpus, 'alpha', 'dev', [COMMAND_PROBE])
+  addProblem(corpus, 'beta', 'dev')
   git(root, 'init', '-q', '-b', 'main')
   writeFileSync(join(root, '.git/info/exclude'), '/node_modules\n')
   git(root, 'add', '-A')
   git(root, 'commit', '-q', '-m', 'harness')
 
-  const corpus = join(harness, 'corpus/dev')
-  addProblem(corpus, 'alpha', 'dev', [COMMAND_PROBE])
-  addProblem(corpus, 'beta', 'dev')
   addProblem(join(template, 'holdout'), 'zeta', 'holdout')
   addProblem(join(template, 'holdout'), 'yak', 'holdout')
   const tool = join(template, 'cache/tools', `superpowers@${SUPERPOWERS_PIN}`)
@@ -687,10 +687,11 @@ it('the harness is a dependency-free script under scripts/eval', () => {
     expect.arrayContaining(['run.mjs', 'round.mjs', 'budget.mjs'])
   )
 
-  const specifier = /(?:\bfrom\s+|\bimport\s*\(?\s*)['"]([^'"]+)['"]/g
+  const specifier =
+    /^\s*(?:import|export)\b[^'"]*?\bfrom\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]/gm
   for (const file of modules) {
     for (const match of read(file).matchAll(specifier)) {
-      const spec = match[1]
+      const spec = match[1] ?? match[2] ?? match[3]
       const allowed =
         spec.startsWith('node:') ||
         /^\.\/[^/]+\.mjs$/.test(spec) ||
@@ -947,6 +948,28 @@ it(
     expect(run.assertJudgeModel('m', 'm', { dryRun: true })).toBeNull()
     expect(run.assertJudgeModel('m', 'n', { dryRun: false })).toBeNull()
 
+    // The real entry point, through the package script's own runner.
+    const realEntry = await new Promise<Cli>((done) => {
+      const child = spawn(
+        process.execPath,
+        [
+          join(REAL_ROOT, 'node_modules/vite-node/vite-node.mjs'),
+          'scripts/eval/bakeoff/run.mjs',
+          '--',
+          'validate',
+          '--problems',
+          'no-such-problem'
+        ],
+        { cwd: REAL_ROOT, env: baseEnv(tmp), stdio: ['ignore', 'pipe', 'pipe'] }
+      )
+      let output = ''
+      child.stdout.on('data', (d) => (output += d))
+      child.stderr.on('data', (d) => (output += d))
+      child.on('close', (code) => done({ code, output }))
+    })
+    expect(realEntry.output).toContain('PROBLEM_UNKNOWN')
+    expect(realEntry.code).toBe(2)
+
     const absent = await cli(['report', 'whatever'])
     expect(absent.code).toBe(2)
     expect(absent.output).toContain('NOT_YET')
@@ -1068,21 +1091,24 @@ it(
     expect(loaded.problems[0].provenance.reviewedAt).toEqual(expect.any(String))
 
     setScenario([{ reply: 'probe' }, contestantDone, judgeEntry('P'), builderDone])
-    const result = await cli([
-      'run',
-      '--dry-run',
-      '--split',
-      'holdout',
-      '--model',
-      'opus',
-      '--with-tlc',
-      '--repeats',
-      '5',
-      '--judges',
-      '5',
-      '--budget',
-      '77'
-    ])
+    const result = await cli(
+      [
+        'run',
+        '--dry-run',
+        '--split',
+        'holdout',
+        '--model',
+        'opus',
+        '--with-tlc',
+        '--repeats',
+        '5',
+        '--judges',
+        '5',
+        '--budget',
+        '77'
+      ],
+      { HARNU_BAKEOFF_HOLDOUT: '' }
+    )
     expect(result.code, result.output).toBe(0)
     const id = onlyRoundId()
     const round = roundFile(id)

@@ -40,6 +40,7 @@
     "e2e": "playwright test --project=smoke",
     "e2e:ci": "playwright test --project=ci",
     "eval:mission": "vite-node scripts/eval/mission-behavior/run.mjs --",
+    "eval:bakeoff": "vite-node scripts/eval/bakeoff/run.mjs --",
     "memory:bench": "node scripts/memory-bench.mjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev -- --remote-debugging-port=9222 --disable-gpu",
