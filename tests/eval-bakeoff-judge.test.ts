@@ -227,6 +227,7 @@ it(
     // The tells are matched longest first: `harnu:spec` is one replacement, not `[tool]:spec`.
     expect(bundle).not.toContain('[tool]:spec')
     expect(bundle).not.toContain('[tool]-spec-driven')
+    expect(buildBundle(artifactDir, [...ALL_TELLS].reverse())).toBe(ALL_TELLS_BUNDLE)
 
     // Pinned from an independent implementation of Judging's shuffle.
     expect(assignLabels('seed-a', PROBLEM.id, 1, ALL_IDS)).toEqual({
@@ -497,6 +498,13 @@ it('the score sheet is the S-10 sheet with its one edit', () => {
   expect(readFileSync(SCORE_SHEET, 'utf8')).toBe(
     source.replace(from, 'For every id in `atoms.md`, say')
   )
+})
+
+it('a front matter behind a byte-order mark is still stripped', async () => {
+  const { buildBundle } = await import('../scripts/eval/bakeoff/anonymize.mjs')
+  const artifactDir = join(tmp, 'artifact')
+  writeTree(artifactDir, { 'bom.md': '﻿---\nname: x\n---\nBody.\n' })
+  expect(buildBundle(artifactDir, [])).toBe('=== file: bom.md ===\nBody.\n')
 })
 
 it('a symlink in the artifact is never followed', async () => {
