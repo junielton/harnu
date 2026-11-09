@@ -10,7 +10,7 @@ import {
   type InspectRequest,
   type InspectorDeps
 } from '../../src/main/your-move/inspector'
-import type { JudgeOutcome } from '../../src/main/your-move/judge'
+import type { EnrichOutcome, JudgeOutcome } from '../../src/main/your-move/judge'
 import { openYourMoveStore, type YourMoveStore } from '../../src/main/your-move/store'
 import { readFrom, type ReadResult } from '../../src/main/your-move/transcript'
 
@@ -52,6 +52,7 @@ interface Harness {
   store: YourMoveStore
   deps: InspectorDeps
   judge: ReturnType<typeof vi.fn>
+  enrich: ReturnType<typeof vi.fn>
   read: ReturnType<typeof vi.fn>
   rows: Record<string, unknown>[]
   onFailure: ReturnType<typeof vi.fn>
@@ -64,6 +65,11 @@ async function harness(
 ): Promise<Harness> {
   const store = await openYourMoveStore(path.join(dir, 'your-move.json'))
   const judge = vi.fn(async (_input: string) => verdictWith())
+  // Default: enrichment is unavailable, so every filed card is a plain candidate.
+  const enrich = vi.fn(async (_input: string): Promise<EnrichOutcome> => ({
+    ok: false,
+    reason: 'enrichment off'
+  }))
   const read = vi.fn(async (p: string, off: number | { tail: number }): Promise<ReadResult> => {
     const f = files[p] ?? { lines: [], size: 0 }
     const size = f.size ?? 1000
@@ -78,7 +84,8 @@ async function harness(
   const deps: InspectorDeps = {
     store,
     read: read as unknown as InspectorDeps['read'],
-    judge,
+    detect: judge,
+    enrich,
     now: () => 1000,
     mintId: () => `id${++n}`,
     isBlocked: () => false,
@@ -91,7 +98,7 @@ async function harness(
     appendInspection: (r) => rows.push(r),
     ...over
   }
-  return { store, deps, judge, read, rows, onFailure, mode }
+  return { store, deps, judge, enrich, read, rows, onFailure, mode }
 }
 
 const req = (over: Partial<InspectRequest> = {}): InspectRequest => ({
@@ -145,7 +152,7 @@ describe('first sight', () => {
       {},
       {
         read: readFrom,
-        judge: async (input) => {
+        detect: async (input) => {
           inputs.push(input)
           return verdictWith()
         }
@@ -157,7 +164,8 @@ describe('first sight', () => {
       expect(await createInspector(h.deps).request(req({ transcriptPath: file, trigger }))).toBe(
         'judged'
       )
-      expect(inputs).toHaveLength(1)
+      expect(inputs).toHaveLength(2) // two independent detector runs
+      expect(inputs[1]).toBe(inputs[0])
       const lines = inputs[0].split('\n').filter((l) => l.startsWith('[ASSISTANT] '))
       expect(lines.length).toBeGreaterThan(100)
       expect(lines.length).toBeLessThan(4000)
@@ -239,7 +247,7 @@ describe('verdict and cursor', () => {
     expect(h.store.state().cursors.s1.offset).toBe(900)
   })
 
-  it('the judge sees only open cards of its own lane', async () => {
+  it('the detector sees only open cards of its own lane', async () => {
     const mk = (id: string, lane: YourMoveCard['lane']): YourMoveCard => ({
       id,
       sessionId: 's1',
@@ -309,15 +317,15 @@ describe('splitting, coalescing, shrinking', () => {
       '/t/s1.jsonl': { lines: [big('a'), big('b'), big('c')], size: 900 }
     })
     await seed(h.store, (s) => ({ ...s, cursors: { s1: { offset: 100, lastInspectedAt: 1 } } }))
-    let call = 0
-    h.judge.mockImplementation(async () => {
-      call++
-      return verdictWith(call === 1 ? { new: [{ kind: 'provide', ask: 'Need the key' }] } : {})
-    })
+    h.judge.mockImplementation(async (input: string) =>
+      verdictWith(
+        input.includes('OPEN_CARDS: []') ? { new: [{ kind: 'provide', ask: 'Need the key' }] } : {}
+      )
+    )
     expect(await createInspector(h.deps).request(req())).toBe('judged')
-    expect(h.judge.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(h.judge.mock.calls.length).toBeGreaterThanOrEqual(4) // 2 runs per part
     expect(h.judge.mock.calls[0][0]).toContain('OPEN_CARDS: []')
-    expect(h.judge.mock.calls[1][0]).toContain('"ask":"Need the key"')
+    expect(h.judge.mock.calls[2][0]).toContain('"ask":"Need the key"')
     expect(h.store.state().cards).toHaveLength(1)
   })
 
@@ -365,20 +373,20 @@ describe('splitting, coalescing, shrinking', () => {
     h.judge.mockImplementation(async () => {
       running++
       max = Math.max(max, running)
-      if (h.judge.mock.calls.length === 1) await gate
+      if (h.judge.mock.calls.length <= 2) await gate
       running--
       return verdictWith()
     })
     const inspector = createInspector(h.deps)
     const first = inspector.request(req())
-    await vi.waitFor(() => expect(h.judge).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(h.judge).toHaveBeenCalledTimes(2)) // the first inspection's two runs
     const second = inspector.request(req({ trigger: 'manual' }))
     const third = inspector.request(req({ lastAssistantMessage: 'late text' }))
     release()
     await Promise.all([first, second, third])
     await inspector.idle()
-    expect(max).toBe(1)
-    expect(h.judge).toHaveBeenCalledTimes(2)
+    expect(max).toBe(2) // one inspection at a time: only its own two runs overlap
+    expect(h.judge).toHaveBeenCalledTimes(4) // two inspections, not three
   })
 
   it('different sessions run independently', async () => {
@@ -398,7 +406,7 @@ describe('splitting, coalescing, shrinking', () => {
       inspector.request(req()),
       inspector.request(req({ sessionId: 's2', transcriptPath: '/t/s2.jsonl' }))
     ])
-    expect(h.judge).toHaveBeenCalledTimes(2)
+    expect(h.judge).toHaveBeenCalledTimes(4)
   })
 
   it('a shrunk file resets the cursor to end of file and logs the row', async () => {
@@ -449,5 +457,169 @@ describe('lanes and the shadow cursor', () => {
     }))
     await createInspector(h.deps).request(req({ trigger: 'mid-turn' }))
     expect(h.read).toHaveBeenCalledWith('/t/s1.jsonl', 400)
+  })
+})
+
+describe('detector runs and enrichment', () => {
+  const lines = { '/t/s1.jsonl': { lines: [asst('Pick A or B?')], size: 900 } }
+  const withCursor = async (h: Harness) =>
+    seed(h.store, (st) => ({ ...st, cursors: { s1: { offset: 100, lastInspectedAt: 1 } } }))
+  /** The detector answers run 1, run 2, run 3… from the list; the last entry repeats. */
+  const runs = (h: Harness, answers: JudgeOutcome[]) => {
+    let n = 0
+    h.judge.mockImplementation(async () => answers[Math.min(n++, answers.length - 1)])
+  }
+  const cardOf = (ask: string, over: Record<string, unknown> = {}) => ({
+    kind: 'decide' as const,
+    ask,
+    ...over
+  })
+  const asks = (h: Harness) =>
+    h.store
+      .state()
+      .cards.map((c) => c.ask)
+      .sort()
+
+  it('new is the union of both detector runs', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    runs(h, [
+      verdictWith({ new: [cardOf('Approve the migration')] }),
+      verdictWith({ new: [cardOf('Send the API key'), cardOf('approve the MIGRATION.')] })
+    ])
+    h.enrich.mockImplementation(async (input: string) => {
+      expect(input).toContain('CANDIDATES:')
+      return {
+        ok: true,
+        costUsd: 0,
+        durationMs: 1,
+        cards: [
+          cardOf('Approve the migration', { context: 'it unblocks the release' }),
+          cardOf('Send the API key', { context: 'the deploy needs it' })
+        ]
+      }
+    })
+    expect(await createInspector(h.deps).request(req())).toBe('judged')
+    // the same item found by both runs (same normalized text) is one candidate
+    expect(asks(h)).toEqual(['Approve the migration', 'Send the API key'])
+    expect(h.store.state().cards.every((c) => c.context)).toBe(true)
+    expect(h.enrich).toHaveBeenCalledTimes(1)
+  })
+
+  it('close needs both detector runs', async () => {
+    const open = {
+      id: 'a',
+      sessionId: 's1',
+      folder: '/f',
+      kind: 'decide' as const,
+      ask: 'A or B',
+      source: 'judge' as const,
+      lane: 'observe' as const,
+      openedAt: 1,
+      updatedAt: 1
+    }
+    const answered = { '/t/s1.jsonl': { lines: [human('A'), asst('doing A')], size: 900 } }
+    const h = await harness(answered)
+    await seed(h.store, (st) => ({
+      ...st,
+      cards: [open],
+      cursors: { s1: { offset: 100, lastInspectedAt: 1 } }
+    }))
+    runs(h, [verdictWith({ close: ['a'] }), verdictWith({})])
+    await createInspector(h.deps).request(req())
+    expect(h.store.state().cards[0].closedAt).toBeUndefined() // one run alone cannot close it
+    expect(h.enrich).not.toHaveBeenCalled()
+    await seed(h.store, (st) => ({ ...st, cursors: { s1: { offset: 100, lastInspectedAt: 1 } } }))
+    runs(h, [verdictWith({ close: ['a'] })])
+    await createInspector(h.deps).request(req())
+    expect(h.store.state().cards[0]).toMatchObject({ closedBy: 'judge' })
+  })
+
+  it('one failed detector run still produces a verdict', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    runs(h, [{ ok: false, reason: 'timeout' }, verdictWith({ new: [cardOf('Pick A or B')] })])
+    expect(await createInspector(h.deps).request(req())).toBe('judged')
+    expect(asks(h)).toEqual(['Pick A or B'])
+    expect(h.store.state().cursors.s1.offset).toBe(900)
+    expect(h.onFailure).not.toHaveBeenCalled()
+    expect(h.rows.find((r) => r.outcome === 'judged')).toMatchObject({ detectorFailures: 1 })
+  })
+
+  it('both failed runs leave the cursor in place', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    runs(h, [
+      { ok: false, reason: 'timeout' },
+      { ok: false, reason: 'bad json' }
+    ])
+    expect(await createInspector(h.deps).request(req())).toBe('failed')
+    expect(h.store.state().cursors.s1).toEqual({ offset: 100, lastInspectedAt: 1 })
+    expect(h.store.state().cards).toEqual([])
+    expect(h.onFailure).toHaveBeenCalledOnce()
+    expect(h.enrich).not.toHaveBeenCalled()
+  })
+
+  it('enrichment failure files the candidates', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    runs(h, [
+      verdictWith({ new: [cardOf('Approve the migration'), cardOf('Send the API key')] }),
+      verdictWith({ new: [cardOf('approve the migration')] })
+    ])
+    h.enrich.mockResolvedValue({ ok: false, reason: 'timeout' })
+    expect(await createInspector(h.deps).request(req())).toBe('judged')
+    expect(asks(h)).toEqual(['Approve the migration', 'Send the API key'])
+    expect(h.store.state().cursors.s1.offset).toBe(900)
+  })
+
+  it('enrichment returning fewer cards files the candidates', async () => {
+    for (const cards of [
+      [], // zero cards
+      [cardOf('Approve the migration', { context: 'only one of two' })] // fewer than the candidates
+    ]) {
+      const h = await harness(lines)
+      await withCursor(h)
+      runs(h, [verdictWith({ new: [cardOf('Approve the migration'), cardOf('Send the API key')] })])
+      h.enrich.mockResolvedValue({ ok: true, costUsd: 0, durationMs: 1, cards })
+      expect(await createInspector(h.deps).request(req())).toBe('judged')
+      expect(asks(h)).toEqual(['Approve the migration', 'Send the API key'])
+      // the whole enrichment answer is set aside, not half-used
+      expect(h.store.state().cards.some((c) => c.context)).toBe(false)
+    }
+  })
+
+  it('enrichment returning at least as many cards files the enriched cards', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    runs(h, [verdictWith({ new: [cardOf('Approve the migration')] })])
+    h.enrich.mockResolvedValue({
+      ok: true,
+      costUsd: 0,
+      durationMs: 1,
+      cards: [
+        cardOf('Approve the migration', {
+          context: 'it unblocks the release',
+          blocks: 'the release',
+          options: ['yes', 'no'],
+          recommended: 'yes'
+        })
+      ]
+    })
+    await createInspector(h.deps).request(req())
+    expect(h.store.state().cards[0]).toMatchObject({
+      context: 'it unblocks the release',
+      blocks: 'the release',
+      recommended: 'yes'
+    })
+  })
+
+  it('no enrichment call when both runs are empty', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    runs(h, [verdictWith({}), verdictWith({ update: ['x'] })])
+    expect(await createInspector(h.deps).request(req())).toBe('judged')
+    expect(h.enrich).not.toHaveBeenCalled()
+    expect(h.store.state().cursors.s1.offset).toBe(900)
   })
 })

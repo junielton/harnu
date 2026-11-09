@@ -66,6 +66,14 @@ describe('applyVerdict', () => {
     expect(next.cards[0]).toMatchObject({ ask: 'new', updatedAt: 9, openedAt: 1 })
   })
 
+  it('a judge update with a bare id bumps updatedAt and keeps ask and openedAt', () => {
+    const next = applyVerdict(stateOf(card()), {
+      ...base,
+      verdict: { new: [], update: [{ id: 'a' }], close: [] }
+    })
+    expect(next.cards[0]).toMatchObject({ ask: 'old ask', updatedAt: 9, openedAt: 1 })
+  })
+
   it('close is ignored without an [OPERATOR] entry', () => {
     const next = applyVerdict(stateOf(card()), {
       ...base,

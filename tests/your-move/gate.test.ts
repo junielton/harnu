@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  GATE_V2_SHA256,
+  ENRICH_V1_SHA256,
+  GATE_V1_SHA256,
   buildJudgeArgs,
   judgeConcurrency,
+  parseEnrichment,
   parseVerdict
 } from '../../src/main/your-move/gate'
 
@@ -57,7 +59,7 @@ describe('parseVerdict', () => {
             evidence: 'quote'
           }
         ],
-        update: [{ id: 'c1', ask: 'refreshed' }],
+        update: ['c1'],
         close: ['c2']
       })
     )
@@ -77,7 +79,7 @@ describe('parseVerdict', () => {
             evidence: 'quote'
           }
         ],
-        update: [{ id: 'c1', ask: 'refreshed' }],
+        update: [{ id: 'c1' }],
         close: ['c2']
       }
     })
@@ -92,12 +94,20 @@ describe('parseVerdict', () => {
     expect(parseVerdict(envelope({ new: [], update: [], close: [] }))).toMatchObject({ ok: true })
   })
 
-  it('rejects an unknown kind, a missing ask, and update entries that are bare strings', () => {
+  it('rejects an unknown kind, a missing ask, and update entries that are not ids', () => {
     const bad = (v: unknown) => parseVerdict(envelope(v))
     expect(bad({ new: [{ kind: 'nope', ask: 'x' }], update: [], close: [] }).ok).toBe(false)
     expect(bad({ new: [{ kind: 'decide' }], update: [], close: [] }).ok).toBe(false)
     expect(bad({ new: [{ kind: 'decide', ask: '' }], update: [], close: [] }).ok).toBe(false)
-    expect(bad({ new: [], update: ['c1'], close: [] }).ok).toBe(false)
+    expect(bad({ new: [], update: [7], close: [] }).ok).toBe(false)
+    expect(bad({ new: [], update: [{ ask: 'no id' }], close: [] }).ok).toBe(false)
+  })
+
+  it("accepts v1's bare-id update and an {id, ask} object alike; a bare id carries no ask", () => {
+    const out = parseVerdict(
+      envelope({ new: [], update: ['c1', { id: 'c2', ask: 'x' }], close: [] })
+    )
+    expect(out.ok && out.verdict.update).toEqual([{ id: 'c1' }, { id: 'c2', ask: 'x' }])
   })
 
   it('fails on a CLI error envelope, non-JSON stdout and a reply with no object', () => {
@@ -123,19 +133,52 @@ describe('judgeConcurrency', () => {
   })
 })
 
-describe('gate-v2.md', () => {
-  const file = readFileSync(path.join(__dirname, '../../resources/your-move/gate-v2.md'), 'utf8')
-
-  it('gate-v2.md hash equals GATE_V2_SHA256', () => {
-    expect(createHash('sha256').update(file).digest('hex')).toBe(GATE_V2_SHA256)
+describe('parseEnrichment', () => {
+  it('reads the enriched cards from the envelope, with the extra fields', () => {
+    const out = parseEnrichment(
+      envelope({
+        new: [
+          {
+            kind: 'do',
+            ask: 'Merge PR #1',
+            context: 'it unblocks the deploy',
+            blocks: 'the deploy',
+            link: 'https://example.com/pr/1',
+            confidence: 'high'
+          }
+        ]
+      })
+    )
+    expect(out).toMatchObject({ ok: true, costUsd: 0.0004 })
+    expect(out.ok && out.cards[0]).toMatchObject({ kind: 'do', context: 'it unblocks the deploy' })
   })
 
-  it('carries the v2 schema: refreshed ask in update, the extra fields, the new reply shape', () => {
-    expect(file).toContain(
-      'put its id and a refreshed one-line `ask` in `update` and do not file it again.'
-    )
-    expect(file).toContain('`blocks`, what cannot move until this is answered')
-    expect(file).toContain('"update":[{"id":"card-id","ask":"..."}]')
-    expect(file).not.toContain('"update":["card-id"]')
+  it('an empty list parses (the caller decides it is not enough); junk does not', () => {
+    expect(parseEnrichment(envelope({ new: [] }))).toMatchObject({ ok: true, cards: [] })
+    expect(parseEnrichment(envelope('no json here')).ok).toBe(false)
+    expect(parseEnrichment(envelope({ new: [{ kind: 'nope', ask: 'x' }] })).ok).toBe(false)
+    expect(parseEnrichment('boom').ok).toBe(false)
+  })
+})
+
+describe('prompt resources', () => {
+  const read = (name: string) =>
+    readFileSync(path.join(__dirname, '../../resources/your-move', name), 'utf8')
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex')
+
+  it('gate-v1.md hash equals GATE_V1_SHA256, and that is the frozen gate v1', () => {
+    expect(sha(read('gate-v1.md'))).toBe(GATE_V1_SHA256)
+    // the bytes the 2026-11-08/09 eval was measured on
+    expect(GATE_V1_SHA256).toBe('873be6bd858a8e8fe71712ad2744ddaf4c4dda423af077dec9cb18b265d4e310')
+    expect(read('gate-v1.md')).toContain('"update":["card-id"]')
+  })
+
+  it('enrich-v1.md hash equals ENRICH_V1_SHA256; a wording change must re-run the eval', () => {
+    expect(sha(read('enrich-v1.md'))).toBe(ENRICH_V1_SHA256)
+    expect(read('enrich-v1.md')).toContain('CANDIDATES')
+  })
+
+  it('gate v2 is gone', () => {
+    expect(existsSync(path.join(__dirname, '../../resources/your-move/gate-v2.md'))).toBe(false)
   })
 })
