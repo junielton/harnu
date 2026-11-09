@@ -260,7 +260,9 @@ describe('T120 declarative gate fields — the def is the single source of truth
     // recipient scope enforced in the handler, not this flag.
     'message_session'
   ]
-  const alwaysAllowableExpected = grantableExpected
+  // Your move (U3): `your_move` is durable-allow-eligible but NOT grantable: it files one
+  // rate-capped card, so a mission grant never needs to buy it.
+  const alwaysAllowableExpected = [...grantableExpected, 'your_move']
   const dangerousExpected = ['create_worktree', 'spawn_terminal']
   // Post-reversal this is EVERY mutating verb except the one that must always face a
   // human: `plan_mission` (mints a grant). `submit_manifest` (T187) carries this flag
@@ -303,6 +305,8 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'archive_session',
     // T661: hide_folder only flips the sidebar's hidden flag and is reversible, so it runs free too.
     'hide_folder',
+    // Your move (U3): files one rate-capped card and can never close one, so it runs free.
+    'your_move',
     // T238: free like every other mutating verb, but NOT grantable and NOT
     // always-allowable — its real gate is the operator's voice switch, which
     // nothing may buy on their behalf.

@@ -17,6 +17,7 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 import { promises as fs, constants as fsConstants } from 'node:fs'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { app } from 'electron'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import { MCP_TOOLS, type McpOp, type McpToolDef } from './tool-catalog'
@@ -33,6 +34,9 @@ import {
 } from './agent-inflight-registry'
 import { getStashedApproval } from './approval-stash'
 import { appendAudit } from './audit-log'
+import { YOUR_MOVE_LIMIT_PER_HOUR, fileFromVerb } from '../your-move/core'
+import { effectiveMode, isFolderDisabled, readYourMovePrefs } from '../your-move/prefs'
+import { getYourMoveStore } from '../your-move/store'
 import type { ApprovalStatusResult } from './approval-status'
 import type { ManifestCardDisclosure } from './confirm-core'
 import type { CommandBridge } from '../command-bridge'
@@ -3311,6 +3315,110 @@ const hideFolderHandler: Handler = (args, ctx) => {
         })`
       )
   )
+}
+
+// ---- Your move `your_move` ----------------------------------------------------
+
+/** Calls per session and UTC hour: the count is kept per session, reset when the hour turns. */
+const yourMoveCounters = new Map<string, { hour: number; count: number }>()
+
+function takeYourMoveSlot(sessionId: string, now: number): boolean {
+  const hour = Math.floor(now / 3_600_000)
+  const existing = yourMoveCounters.get(sessionId)
+  const current = existing && existing.hour === hour ? existing.count : 0
+  if (current >= YOUR_MOVE_LIMIT_PER_HOUR) return false
+  yourMoveCounters.set(sessionId, { hour, count: current + 1 })
+  return true
+}
+
+/**
+ * The file `src/main/your-move/ipc.ts` keeps the operator's mode in. The prefs are written
+ * before the in-memory copy changes, so reading the file here always sees the current mode.
+ */
+const YOUR_MOVE_PREFS_FILE = 'your-move-prefs.json'
+
+/**
+ * File or refresh one Your move card. Answers with a refusal, never a throw: a store that
+ * could not be opened, a mode that is Off, a spent rate slot and a failed write each come
+ * back as an error result naming what to do. A refused call files nothing. There is no close
+ * path here by design: only the operator, the judge (with an operator entry) and a source
+ * resolving can close a card.
+ */
+const yourMoveHandler: Handler = async (args) => {
+  const store = getYourMoveStore()
+  if (!store) {
+    return errorResult(
+      'YOUR_MOVE_UNAVAILABLE: the Your move queue could not be opened, so nothing was filed. Say what you need from the operator in your reply instead.'
+    )
+  }
+  const folder = strField(args, 'folder') ?? ''
+  const sessionId = strField(args, 'sessionId') ?? ''
+  const kind = strField(args, 'kind')
+  const ask = strField(args, 'ask')
+  if (!folder || !sessionId || !kind || !ask) {
+    return errorResult('BAD_ARGS: folder, sessionId, kind and ask are required')
+  }
+  const cardId = strField(args, 'cardId')
+
+  const prefs = await readYourMovePrefs(path.join(app.getPath('userData'), YOUR_MOVE_PREFS_FILE))
+  const mode = effectiveMode(prefs)
+  if (mode === 'off' || isFolderDisabled(prefs, folder)) {
+    return errorResult(
+      'YOUR_MOVE_OFF: Your move is off (for everything, or for this folder), so nothing was filed. Do not retry; say what you need from the operator in your reply instead.'
+    )
+  }
+
+  const now = Date.now()
+  if (!takeYourMoveSlot(sessionId, now)) {
+    appendAudit({
+      ts: now,
+      tool: 'your_move',
+      folder,
+      verdict: 'deny',
+      disclosedPayloadSummary: `session ${sessionId.slice(0, 8)} reached ${YOUR_MOVE_LIMIT_PER_HOUR} cards this hour`,
+      result: 'YOUR_MOVE_RATE_LIMIT'
+    })
+    return errorResult(
+      `YOUR_MOVE_RATE_LIMIT: this session already filed ${YOUR_MOVE_LIMIT_PER_HOUR} cards this UTC hour, so this one was refused and logged. It is a loop-abandon backstop; say what you need in your reply instead.`
+    )
+  }
+
+  const options = Array.isArray(args.options)
+    ? args.options.filter((o): o is string => typeof o === 'string')
+    : undefined
+  try {
+    const out = await store.transact((s) => {
+      const filed = fileFromVerb(
+        s,
+        {
+          folder,
+          sessionId,
+          kind: kind as 'decide' | 'go_no_go' | 'provide' | 'do' | 'check',
+          ask,
+          blocks: strField(args, 'blocks'),
+          options,
+          recommended: strField(args, 'recommended'),
+          cardId,
+          lane: mode === 'live' ? 'live' : 'observe'
+        },
+        () => randomUUID(),
+        now
+      )
+      return 'error' in filed
+        ? { next: s, result: filed }
+        : { next: filed.state, result: { cardId: filed.cardId, refreshed: filed.refreshed } }
+    })
+    if ('error' in out) {
+      return errorResult(
+        "CARD_NOT_FOUND: no open card of yours has that cardId (it is unknown, already closed, or another session's). File a new card without cardId."
+      )
+    }
+    return textResult({ ok: true, op: 'your_move', cardId: out.cardId, refreshed: out.refreshed })
+  } catch (err) {
+    return errorResult(
+      `YOUR_MOVE_WRITE_FAILED: ${err instanceof Error ? err.message : String(err)}. Nothing was changed.`
+    )
+  }
 }
 
 // ---- mission_* verbs (T358 S3 — design.md §4) -------------------------------
@@ -7680,6 +7788,7 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   release_worktree: releaseWorktreeHandler,
   archive_session: archiveSessionHandler,
   hide_folder: hideFolderHandler,
+  your_move: yourMoveHandler,
   stop_containers: stopContainersHandler,
   start_containers: startContainersHandler,
   remove_containers: removeContainersHandler,

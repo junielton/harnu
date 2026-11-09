@@ -206,6 +206,10 @@ export const MCP_OPS = [
   // action does. The state is the same `hiddenPaths` in `projects.json`; it deletes and moves
   // nothing and is reversible, so it carries `silentAllowInAgentFolder` like `archive_session`.
   'hide_folder',
+  // Your move (U3): file or refresh one card in the operator's global queue, from inside a
+  // turn. It can never close a card (only the operator, the judge with an operator entry, or
+  // a source resolving can), so it carries `silentAllowInAgentFolder` like `notify`.
+  'your_move',
   // T614 (T611 U3): the shared GitHub API budget, read-only, so an agent can back off its `gh` polling.
   'github_budget',
   // T329: the Containers actions. Each calls the SAME main-process action
@@ -2129,6 +2133,48 @@ export const MCP_TOOLS: McpToolDef[] = [
     silentAllowInAgentFolder: true
     // Deliberately NOT grantable/alwaysAllowable: it deletes nothing and is reversible, so the
     // free-by-default posture already covers it.
+  },
+  {
+    name: 'your_move',
+    description:
+      "File ONE card in the operator's global 'Your move' queue: something only the operator can unblock (a decision, a go/no-go, a value only they hold, an action only they can take, a check only they can do). Call it mid-turn the moment you know the ball is theirs, so it does not rely on the end-of-turn judge. Write the card to stand alone: say WHAT is being asked (never 'D-9 is unanswered' — say what D-9 is), put what it blocks in `blocks`, and for a decision give `options` (at most 6) and the one you would pick in `recommended` (it must be one of `options`). `kind` is one of `decide`, `go_no_go`, `provide`, `do`, `check`. Pass the `cardId` from an earlier ACK to refresh that card in place (new `ask`, `updatedAt` moves, `openedAt` and the clock never do); without it a NEW card is filed and the judge reconciles duplicates. There is deliberately NO close operation: a card leaves only when the operator deals with it or its source resolves, never because you say so. Runs free. ACK: `{ ok: true, op: 'your_move', cardId, refreshed }`. Refuses: YOUR_MOVE_OFF (Your move is Off, or switched off for this folder; nothing was filed, do not retry, say it in your reply instead), YOUR_MOVE_RATE_LIMIT (more than 30 calls this UTC hour for this session; the refusal is audited, say it in your reply instead), CARD_NOT_FOUND (`cardId` is unknown, closed, or another session's), YOUR_MOVE_UNAVAILABLE (the queue's store could not be opened) and YOUR_MOVE_WRITE_FAILED (nothing was changed). `sessionId` is your own session id, taken on your word like every other verb.",
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .describe('Absolute path of the folder/worktree this session runs in (gate anchor).'),
+      sessionId: z.string().min(1).describe('Your OWN session id.'),
+      kind: z
+        .enum(['decide', 'go_no_go', 'provide', 'do', 'check'])
+        .describe('What the operator must do: decide, go_no_go, provide, do or check.'),
+      ask: z
+        .string()
+        .min(1)
+        .max(500)
+        .describe('What is asked, in a sentence that makes sense with no other context (1..500).'),
+      blocks: z.string().max(500).optional().describe('What stays stuck until they answer.'),
+      options: z
+        .array(z.string().min(1).max(120))
+        .max(6)
+        .optional()
+        .describe('The choices for a decision, at most 6, 1..120 chars each.'),
+      recommended: z
+        .string()
+        .max(120)
+        .optional()
+        .describe('The option you would pick; it must be one of `options`.'),
+      cardId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('The `cardId` of a card you filed earlier, to refresh it instead of filing anew.')
+    }),
+    mutates: true,
+    op: 'your_move',
+    alwaysAllowable: true,
+    silentAllowInAgentFolder: true
+    // Deliberately NOT grantable: it files one card and is rate-capped, so the
+    // free-by-default posture already covers it and no grant should ever be needed.
   },
   {
     name: 'stop_containers',

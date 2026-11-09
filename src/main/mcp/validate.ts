@@ -1126,6 +1126,42 @@ export function parseHideFolder(input: unknown): ParseResult<HideFolderArgs> {
   return { ok: true, value }
 }
 
+/** Validated args for the `your_move` mutation tool (Your move, U3). */
+export interface YourMoveArgs {
+  folder: string
+  sessionId: string
+  kind: 'decide' | 'go_no_go' | 'provide' | 'do' | 'check'
+  ask: string
+  blocks?: string
+  options?: string[]
+  recommended?: string
+  cardId?: string
+}
+
+const YourMoveSchema = z.object({
+  folder: absolutePathSchema,
+  sessionId: z.string().min(1),
+  kind: z.enum(['decide', 'go_no_go', 'provide', 'do', 'check']),
+  ask: z.string().min(1).max(500),
+  blocks: z.string().max(500).optional(),
+  options: z.array(z.string().min(1).max(120)).max(6).optional(),
+  recommended: z.string().max(120).optional(),
+  cardId: z.string().min(1).optional()
+})
+
+/** Validate `your_move` args. There is no close field: unknown keys are dropped. */
+export function parseYourMove(input: unknown): ParseResult<YourMoveArgs> {
+  const parsed = YourMoveSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const { folder, sessionId, kind, ask, blocks, options, recommended, cardId } = parsed.data
+  const value: YourMoveArgs = { folder, sessionId, kind, ask }
+  if (blocks !== undefined) value.blocks = blocks
+  if (options !== undefined) value.options = options
+  if (recommended !== undefined) value.recommended = recommended
+  if (cardId !== undefined) value.cardId = cardId
+  return { ok: true, value }
+}
+
 /** Stack ids from `list_containers`: a non-empty list of non-empty strings. */
 const StackIdsSchema = z.array(z.string().min(1)).min(1)
 
@@ -1975,6 +2011,8 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   archive_session: parseArchiveSession,
   // T661: folders are named by absolute path; the handler refuses a blocked one per path.
   hide_folder: parseHideFolder,
+  // Your move (U3): anchored on `folder`; the verb has no close operation.
+  your_move: parseYourMove,
   stop_containers: parseStopContainers,
   start_containers: parseStartContainers,
   remove_containers: parseRemoveContainers,

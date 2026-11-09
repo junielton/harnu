@@ -49,7 +49,10 @@ const FOLDER = '/org/proj/www'
 const SESSION = 'sess-0001-aaaa'
 const HOUR = 3_600_000
 /** The start of a UTC hour, so a run of calls never straddles a boundary. */
-const T0 = Date.UTC(2026, 10, 9, 10, 0, 0)
+const T_START = Date.UTC(2026, 10, 9, 10, 0, 0)
+/** Each test runs in its own hour: the rate counter is module state shared by the file. */
+let T0 = T_START
+let testNo = 0
 
 let store: YourMoveStore
 let prefsFile: string
@@ -91,6 +94,7 @@ beforeEach(async () => {
   setYourMoveStore(store)
   await writeYourMovePrefs(prefsFile, { mode: 'live' })
   clearAuditLog()
+  T0 = T_START + 3 * HOUR * ++testNo
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(T0 + 5 * 60_000)
 })
