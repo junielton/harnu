@@ -112,7 +112,10 @@ describe('applyVerdict', () => {
           close: []
         }
       }).cards[0]
-    expect(mk('javascript:alert(1)', 'C')).toMatchObject({ recommended: undefined, link: undefined })
+    expect(mk('javascript:alert(1)', 'C')).toMatchObject({
+      recommended: undefined,
+      link: undefined
+    })
     expect(mk('file:///etc/passwd', 'A').link).toBeUndefined()
     expect(mk('https://example.com/x', 'A')).toMatchObject({
       recommended: 'A',
@@ -150,7 +153,10 @@ describe('applyVerdict', () => {
   it('does not mutate its input', () => {
     const s = stateOf(card())
     const snapshot = JSON.stringify(s)
-    applyVerdict(s, { ...base, verdict: { new: [], update: [{ id: 'a', ask: 'n' }], close: ['a'] } })
+    applyVerdict(s, {
+      ...base,
+      verdict: { new: [], update: [{ id: 'a', ask: 'n' }], close: ['a'] }
+    })
     expect(JSON.stringify(s)).toBe(snapshot)
   })
 })
@@ -192,7 +198,13 @@ describe('structured cards', () => {
     const mint = () => `id${++n}`
     let s = upsertStructured(emptyState(), draft({ sourceKey: 'k1' }), mint, 1)
     s = upsertStructured(s, draft({ sourceKey: 'k2' }), mint, 1)
-    s = reconcileSource(s, { source: 'mission', sessionId: 's1' }, [draft({ sourceKey: 'k2' })], mint, 8)
+    s = reconcileSource(
+      s,
+      { source: 'mission', sessionId: 's1' },
+      [draft({ sourceKey: 'k2' })],
+      mint,
+      8
+    )
     expect(s.cards.find((c) => c.sourceKey === 'k1')).toMatchObject({
       closedAt: 8,
       closedBy: 'source-resolved'
@@ -237,12 +249,19 @@ describe('closing and housekeeping', () => {
     const bySession = closeForSessions(s, ['s1'], 'archived', 4)
     expect(bySession.cards.map((c) => c.closedBy)).toEqual(['archived', undefined, undefined])
     const byFolder = closeForFolder(s, '/org/other', 'folder-removed', 4)
-    expect(byFolder.cards.map((c) => c.closedBy)).toEqual([undefined, 'folder-removed', 'folder-removed'])
+    expect(byFolder.cards.map((c) => c.closedBy)).toEqual([
+      undefined,
+      'folder-removed',
+      'folder-removed'
+    ])
   })
 
   it('closeCard never reopens or re-stamps an already closed card', () => {
     const s = closeCard(stateOf(card()), 'a', 'answered', 3)
-    expect(closeCard(s, 'a', 'archived', 9).cards[0]).toMatchObject({ closedAt: 3, closedBy: 'answered' })
+    expect(closeCard(s, 'a', 'archived', 9).cards[0]).toMatchObject({
+      closedAt: 3,
+      closedBy: 'answered'
+    })
   })
 
   it('resetCursors drops every cursor and keeps every card', () => {
