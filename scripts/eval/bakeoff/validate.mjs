@@ -71,9 +71,11 @@ const namesWithStatus = (testcases, status) =>
 /** The one defect of a pristine run, or null when the suite fails the way it must. */
 function pristineDefect(problem, run) {
   const compileError = new RegExp(problem.hidden.compileErrorPattern)
-  if (run.exitCode !== 0 && (compileError.test(run.stdout) || compileError.test(run.stderr))) {
-    return null
-  }
+  // Only a run that reported no testcase can be a compile failure: one that reported any is
+  // judged by them, or a suite that passes on pristine could exit 1 and print the pattern.
+  const noTestcases = run.junit === null || 'code' in run.junit || run.junit.testcases.length === 0
+  const matches = compileError.test(run.stdout) || compileError.test(run.stderr)
+  if (run.exitCode !== 0 && noTestcases && matches) return null
   if (run.junit === null) {
     const detail = outputTail(run)
     return defect('PRISTINE_JUNIT_MISSING', 'No JUnit XML was written.', { detail })
