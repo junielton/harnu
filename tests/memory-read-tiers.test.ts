@@ -59,10 +59,32 @@ afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
+type Row = Record<string, string>
+
+/** The shapes of the answers under test (F-1 and F-2), as parsed JSON. */
+interface Answer {
+  ok: boolean
+  error?: string
+  page?: string
+  content?: string
+  items: Row[]
+  total: number
+  nextCursor: string | null
+  memory: {
+    hot: string
+    cards: { inProgress: Row[]; ready: Row[] }
+    counts: { cards: Record<string, number>; sessions: number }
+    more: Record<string, string>
+    truncated: boolean
+    cardsOmitted?: number
+    bytes: number
+  } | null
+}
+
 async function read(
   folder: string,
   extra: Record<string, unknown> = {}
-): Promise<{ text: string; json: Record<string, any> }> {
+): Promise<{ text: string; json: Answer }> {
   const res: CallToolResult = await handler({ folder, ...extra }, {
     folder,
     folders: [],
@@ -71,14 +93,14 @@ async function read(
   } as never)
   const first = res.content[0]
   if (!first || first.type !== 'text') throw new Error('expected text content')
-  return { text: first.text, json: JSON.parse(first.text) }
+  return { text: first.text, json: JSON.parse(first.text) as Answer }
 }
 
 describe('memory_read tiers (U2 S-1)', () => {
   it('default read returns hot, active cards and counts only', async () => {
     const { text, json } = await read(folders.small)
     expect(json.ok).toBe(true)
-    const m = json.memory
+    const m = json.memory!
     expect(Object.keys(m).sort()).toEqual(['bytes', 'cards', 'counts', 'hot', 'more', 'truncated'])
     expect(Object.keys(m.cards).sort()).toEqual(['inProgress', 'ready'])
     // No index body and no page-id list anywhere in the answer.
@@ -107,7 +129,7 @@ describe('memory_read tiers (U2 S-1)', () => {
 
   it('default read stays under the byte cap and says what it dropped', async () => {
     const { text, json } = await read(folders.large)
-    const m = json.memory
+    const m = json.memory!
     const bytes = Buffer.byteLength(text, 'utf8')
     expect(bytes).toBeLessThanOrEqual(MEMORY_READ_MAX_BYTES)
     expect(m.bytes).toBe(bytes)
@@ -130,11 +152,11 @@ describe('memory_read tiers (U2 S-1)', () => {
   it('cards view paginates every card once', async () => {
     const walk = async (
       extra: Record<string, unknown>
-    ): Promise<{ ids: string[]; pages: number; first: Record<string, any> }> => {
+    ): Promise<{ ids: string[]; pages: number; first: Answer }> => {
       const ids: string[] = []
       let cursor: string | null | undefined
       let pages = 0
-      let first: Record<string, any> = {}
+      let first = {} as Answer
       do {
         const { text, json } = await read(folders.large, {
           page: 'cards',
@@ -194,7 +216,7 @@ describe('memory_read tiers (U2 S-1)', () => {
     const pages: string[] = []
     const dates: string[] = []
     let cursor: string | null | undefined
-    let first: Record<string, any> | undefined
+    let first: Answer | undefined
     let rounds = 0
     do {
       const { text, json } = await read(folders.large, {
