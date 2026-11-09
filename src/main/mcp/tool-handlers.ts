@@ -4245,7 +4245,7 @@ export function youItems(
 }
 
 /** One {@link MissionYouItem} as an English sentence. */
-function youSentence(item: MissionYouItem): string {
+export function youSentence(item: MissionYouItem): string {
   const s = (n: number): string => (n === 1 ? '' : 's')
   switch (item.kind) {
     case 'rescope':

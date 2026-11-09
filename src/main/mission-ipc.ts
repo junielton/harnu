@@ -490,11 +490,32 @@ export async function runOperatorDoor(
   }
 }
 
+/** The one in-main observer of the polled list (Your move's mission source). */
+let missionListObserver: ((r: MissionListResult, roots: string[]) => void) | null = null
+
+export function setMissionListObserver(
+  fn: ((r: MissionListResult, roots: string[]) => void) | null
+): void {
+  missionListObserver = fn
+}
+
 /** Registers the renderer-facing channels. Called once from `src/main/index.ts`. */
 export function registerMissionIpc(): void {
-  ipcMain.handle('mission:list', async (_e, folders: unknown): Promise<MissionListResult> =>
-    listMissionViews(Array.isArray(folders) ? (folders as string[]) : [])
-  )
+  ipcMain.handle('mission:list', async (_e, folders: unknown): Promise<MissionListResult> => {
+    const asked = Array.isArray(folders) ? (folders as string[]) : []
+    const result = await listMissionViews(asked)
+    // Your move reads the same poll the renderer makes: no extra read, no extra GitHub budget.
+    if (missionListObserver) {
+      try {
+        missionListObserver(result, [
+          ...new Set(asked.filter((f) => typeof f === 'string').map(missionRoot))
+        ])
+      } catch (err) {
+        console.error('[mission-ipc] list observer threw', err)
+      }
+    }
+    return result
+  })
   ipcMain.handle('mission:operatorDoor', async (_e, door: unknown): Promise<MissionDoorResult> =>
     runOperatorDoor(door)
   )

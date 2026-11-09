@@ -202,9 +202,9 @@ describe('reconcileMissions', () => {
     )
     // no door, no mission_* verb, no file write: it only reads the list the poll already made
     expect(src).not.toMatch(/mission_[a-z_]+\(/)
-    expect(src).not.toMatch(
-      /runOperatorDoor|operatorDoor|atomicWrite|writeFile|from '\.\.\/mission-ipc'/
-    )
+    expect(src).not.toMatch(/runOperatorDoor|operatorDoor|atomicWrite|writeFile/)
+    // types from the mission list are fine; a value import from the mission module is not
+    expect(src).not.toMatch(/import\s+(?!type\b)[^;]*?from\s+'\.\.\/mission-ipc'/)
     expect(src).not.toMatch(/from '\.\.\/mission-store'|from '\.\.\/mcp\/mission/)
   })
 })

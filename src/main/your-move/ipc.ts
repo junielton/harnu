@@ -17,6 +17,7 @@ import { classifyTranscriptLines } from '../claude-watcher'
 import { addTaskEventObserver, getTaskStates } from '../detect/task-state-hub'
 import { resolveClaudePath } from '../claude-cli'
 import { isFolderDenied } from '../mcp/permission-core'
+import { setMissionListObserver } from '../mission-ipc'
 import { setPtyExitObserver } from '../pty'
 import { getSessionArchive } from '../session-archive-core'
 import { readUserProjects } from '../user-projects'
@@ -34,6 +35,7 @@ import {
 } from './prefs'
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
 import { buildSegment } from './segment'
+import { reconcileMissions } from './source-mission'
 import { readFrom } from './transcript'
 import {
   SWEEP_MS,
@@ -287,9 +289,34 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         system.onTaskEvent(ev)
       })
       setPtyExitObserver(system.onPtyExit)
+      setMissionListObserver((result, roots) => {
+        if (mode() === 'off') return
+        // The owner's archive and a folder switched off keep a mission's items out of the queue:
+        // a card closed by archiving must not come back with the next poll.
+        const views = result.views.filter(
+          (v) =>
+            !(getSessionArchive()?.has(v.mission.owner.sessionId) ?? false) &&
+            !(prefs ? isFolderDisabled(prefs, v.root) : false)
+        )
+        const lane = laneFor(mode(), 'stop', prefs?.midTurnLive ?? false)
+        store
+          .transact((s) => ({
+            next: reconcileMissions(
+              s,
+              { views, unreadable: result.unreadable },
+              roots,
+              lane,
+              () => randomUUID(),
+              Date.now()
+            ),
+            result: undefined
+          }))
+          .catch((e) => console.error(`[your-move] mission source failed: ${(e as Error).message}`))
+      })
       stopTriggers = () => {
         unobserve()
         setPtyExitObserver(null)
+        setMissionListObserver(null)
         clearInterval(sweepTimer)
         sweep.dispose()
         triggers.dispose()

@@ -26,6 +26,11 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: class {}
 }))
+vi.mock('../../src/main/mission-ipc', () => ({
+  setMissionListObserver: (fn: unknown): void => {
+    if (fn) h.observed++
+  }
+}))
 vi.mock('../../src/main/pty', () => ({
   setPtyExitObserver: (fn: unknown): void => {
     if (fn) h.observed++
