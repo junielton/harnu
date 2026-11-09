@@ -13,7 +13,7 @@ const v = (over: Partial<Verdict> = {}): Verdict => ({ new: [], update: [], clos
 describe('normalizeAsk', () => {
   it('ignores case, punctuation, accents and spacing', () => {
     expect(normalizeAsk('  Merge   PR #167 (hotfix)! ')).toBe(normalizeAsk('merge pr 167 hotfix'))
-    expect(normalizeAsk('Aprovação da migração?')).toBe(normalizeAsk('aprovacao da migracao'))
+    expect(normalizeAsk('Café déjà vu?')).toBe(normalizeAsk('cafe deja vu'))
     expect(normalizeAsk('Pick A')).not.toBe(normalizeAsk('Pick B'))
   })
 })
