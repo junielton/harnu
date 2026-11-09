@@ -494,8 +494,8 @@ describe('detector runs and enrichment', () => {
         costUsd: 0,
         durationMs: 1,
         cards: [
-          cardOf('Approve the migration', { context: 'it unblocks the release' }),
-          cardOf('Send the API key', { context: 'the deploy needs it' })
+          cardOf('Approve the migration', { context: 'it unblocks the release', covers: [0] }),
+          cardOf('Send the API key', { context: 'the deploy needs it', covers: [1] })
         ]
       }
     })
@@ -573,23 +573,78 @@ describe('detector runs and enrichment', () => {
     expect(h.store.state().cursors.s1.offset).toBe(900)
   })
 
-  it('enrichment returning fewer cards files the candidates', async () => {
-    for (const cards of [
-      [], // zero cards
-      [cardOf('Approve the migration', { context: 'only one of two' })] // fewer than the candidates
-    ]) {
-      const h = await harness(lines)
-      await withCursor(h)
-      runs(h, [verdictWith({ new: [cardOf('Approve the migration'), cardOf('Send the API key')] })])
-      h.enrich.mockResolvedValue({ ok: true, costUsd: 0, durationMs: 1, cards })
-      expect(await createInspector(h.deps).request(req())).toBe('judged')
-      expect(asks(h)).toEqual(['Approve the migration', 'Send the API key'])
-      // the whole enrichment answer is set aside, not half-used
-      expect(h.store.state().cards.some((c) => c.context)).toBe(false)
-    }
+  it('enrichment returning zero cards files the candidates', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    runs(h, [verdictWith({ new: [cardOf('Approve the migration'), cardOf('Send the API key')] })])
+    h.enrich.mockResolvedValue({ ok: true, costUsd: 0, durationMs: 1, cards: [] })
+    expect(await createInspector(h.deps).request(req())).toBe('judged')
+    expect(asks(h)).toEqual(['Approve the migration', 'Send the API key'])
+    expect(h.rows.find((r) => r.outcome === 'judged')).toMatchObject({ enrichFallbacks: 1 })
   })
 
-  it('enrichment returning at least as many cards files the enriched cards', async () => {
+  it('enrichment merging two candidates files one card', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    // the two detector runs word the same item differently, so normalized text keeps both
+    runs(h, [
+      verdictWith({ new: [cardOf('Approve the migration plan')] }),
+      verdictWith({ new: [cardOf('Sign off on the DB migration')] })
+    ])
+    h.enrich.mockImplementation(async (input: string) => {
+      expect(input).toContain('"index":0')
+      expect(input).toContain('"index":1')
+      return {
+        ok: true,
+        costUsd: 0,
+        durationMs: 1,
+        cards: [
+          cardOf('Approve the migration plan', {
+            context: 'the release waits on it',
+            covers: [0, 1]
+          })
+        ]
+      }
+    })
+    expect(await createInspector(h.deps).request(req())).toBe('judged')
+    expect(h.store.state().cards).toHaveLength(1)
+    expect(h.store.state().cards[0]).toMatchObject({ context: 'the release waits on it' })
+    expect(h.rows.find((r) => r.outcome === 'judged')).toMatchObject({ enrichFallbacks: 0 })
+  })
+
+  it('a candidate no card covers is filed as its own card', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    runs(h, [verdictWith({ new: [cardOf('Approve the migration'), cardOf('Send the API key')] })])
+    h.enrich.mockResolvedValue({
+      ok: true,
+      costUsd: 0,
+      durationMs: 1,
+      cards: [cardOf('Approve the migration', { context: 'it unblocks the release', covers: [0] })]
+    })
+    expect(await createInspector(h.deps).request(req())).toBe('judged')
+    expect(asks(h)).toEqual(['Approve the migration', 'Send the API key'])
+    const byAsk = (a: string) => h.store.state().cards.find((c) => c.ask === a)
+    expect(byAsk('Approve the migration')?.context).toBe('it unblocks the release')
+    expect(byAsk('Send the API key')?.context).toBeUndefined() // filed as the detector found it
+  })
+
+  it('unknown covers indexes are ignored', async () => {
+    const h = await harness(lines)
+    await withCursor(h)
+    runs(h, [verdictWith({ new: [cardOf('Approve the migration')] })])
+    h.enrich.mockResolvedValue({
+      ok: true,
+      costUsd: 0,
+      durationMs: 1,
+      cards: [cardOf('Approve the migration', { context: 'why', covers: [0, 7, -1, 1.5] })]
+    })
+    expect(await createInspector(h.deps).request(req())).toBe('judged')
+    expect(asks(h)).toEqual(['Approve the migration'])
+    expect(h.store.state().cards[0].context).toBe('why')
+  })
+
+  it('an enriched card carries its extra fields onto the filed card', async () => {
     const h = await harness(lines)
     await withCursor(h)
     runs(h, [verdictWith({ new: [cardOf('Approve the migration')] })])
@@ -602,7 +657,8 @@ describe('detector runs and enrichment', () => {
           context: 'it unblocks the release',
           blocks: 'the release',
           options: ['yes', 'no'],
-          recommended: 'yes'
+          recommended: 'yes',
+          covers: [0]
         })
       ]
     })

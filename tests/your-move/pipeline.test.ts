@@ -38,10 +38,10 @@ describe('combineDetections', () => {
 })
 
 describe('renderForEnrich', () => {
-  it('appends the candidates to the detector input', () => {
+  it('appends the numbered candidates to the detector input', () => {
     const out = renderForEnrich([], [{ tag: 'ASSISTANT', text: 'hi' }], [c('X')])
     expect(out).toBe(
-      'OPEN_CARDS: []\n\nSEGMENT:\n[ASSISTANT] hi\n\nCANDIDATES: [{"kind":"decide","ask":"X"}]'
+      'OPEN_CARDS: []\n\nSEGMENT:\n[ASSISTANT] hi\n\nCANDIDATES: [{"index":0,"kind":"decide","ask":"X"}]'
     )
   })
 })

@@ -153,6 +153,18 @@ describe('parseEnrichment', () => {
     expect(out.ok && out.cards[0]).toMatchObject({ kind: 'do', context: 'it unblocks the deploy' })
   })
 
+  it('reads covers as candidate indexes; a card with none covers nothing', () => {
+    const out = parseEnrichment(
+      envelope({
+        new: [
+          { kind: 'do', ask: 'A', covers: [0, 2] },
+          { kind: 'do', ask: 'B' }
+        ]
+      })
+    )
+    expect(out.ok && out.cards.map((c) => c.covers)).toEqual([[0, 2], undefined])
+  })
+
   it('an empty list parses (the caller decides it is not enough); junk does not', () => {
     expect(parseEnrichment(envelope({ new: [] }))).toMatchObject({ ok: true, cards: [] })
     expect(parseEnrichment(envelope('no json here')).ok).toBe(false)
