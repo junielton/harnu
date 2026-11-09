@@ -151,6 +151,19 @@ async function captureImplementation(clone, buildDir, specCommit) {
   return stat.stdout.trim()
 }
 
+/**
+ * Takes the hidden files back out, so `existing.exitCode` is about the existing suite alone. A file
+ * a hidden one had replaced comes back from the index, which holds the builder's final state.
+ */
+async function removeHiddenFiles(problem, clone) {
+  for (const file of problem.hidden.files) {
+    const path = join(problem.hidden.dest, file)
+    rmSync(join(clone, path), { force: true })
+    // Fails harmlessly for a path the index does not hold, the usual case.
+    await gitIn(clone, `checkout -q -- ${shellQuote(path)}`)
+  }
+}
+
 /** Copies `ASSUMPTIONS.md` out and counts its numbered items; 0 when the file is missing. */
 function captureAssumptions(clone, buildDir) {
   const source = join(clone, 'ASSUMPTIONS.md')
@@ -273,6 +286,7 @@ export async function runBuild(args) {
     junits.push(junit)
   }
 
+  await removeHiddenFiles(problem, clone)
   const existing = await runProblemCommand(problem.test, clone, { timeoutMs: limits.commandMs })
   writeFileSync(join(buildDir, 'existing-suite.txt'), existing.stdout + existing.stderr)
 
