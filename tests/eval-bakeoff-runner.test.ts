@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { execFileSync, spawn } from 'node:child_process'
 import {
+  chmodSync,
   accessSync,
   constants,
   cpSync,
@@ -511,6 +512,62 @@ it(
   },
   SLOW_TEST_MS
 )
+
+it('a project directory left with only an empty memory directory is removed', async () => {
+  const { moveTranscripts } = await import('../scripts/eval/bakeoff/claude.mjs')
+  const transcript = join(S2, 'transcripts/session-a.jsonl')
+  const projectWith = (name: string): string => {
+    const dir = join(projects, name)
+    mkdirSync(join(dir, 'memory'), { recursive: true })
+    cpSync(transcript, join(dir, 'session-a.jsonl'))
+    return dir
+  }
+  const moved = (): string => join(tmp, `moved-${readdirSync(tmp).length}`)
+
+  const bare = projectWith('-bare')
+  expect(moveTranscripts(['session-a'], moved()).moved).toEqual(['session-a'])
+  expect(existsSync(bare)).toBe(false)
+
+  // Memory with something in it is a real project's: nothing of it goes.
+  const remembered = projectWith('-remembered')
+  writeFileSync(join(remembered, 'memory/MEMORY.md'), 'kept\n')
+  moveTranscripts(['session-a'], moved())
+  expect(readFileSync(join(remembered, 'memory/MEMORY.md'), 'utf8')).toBe('kept\n')
+  rmSync(remembered, { recursive: true })
+
+  // Anything beside an empty memory keeps the directory, and the memory with it.
+  const shared = projectWith('-shared')
+  writeFileSync(join(shared, 'other-session.jsonl'), '')
+  moveTranscripts(['session-a'], moved())
+  expect(readdirSync(shared).sort()).toEqual(['memory', 'other-session.jsonl'])
+  rmSync(shared, { recursive: true })
+
+  // A file that happens to be called memory is not the CLI's directory.
+  const odd = join(projects, '-odd')
+  mkdirSync(odd, { recursive: true })
+  cpSync(transcript, join(odd, 'session-a.jsonl'))
+  writeFileSync(join(odd, 'memory'), 'a file\n')
+  moveTranscripts(['session-a'], moved())
+  expect(readFileSync(join(odd, 'memory'), 'utf8')).toBe('a file\n')
+  rmSync(odd, { recursive: true })
+
+  // A real failure is logged and not fatal, and the log names no path: on a holdout round the
+  // project directory's name carries the problem id.
+  if (process.getuid?.() === 0) return
+  const stuck = projectWith('-holdout-problem-id')
+  chmodSync(join(stuck, 'memory'), 0o000)
+  const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+  try {
+    expect(moveTranscripts(['session-a'], moved()).moved).toEqual(['session-a'])
+    const logged = stderr.mock.calls.map(([text]) => String(text)).join('')
+    expect(logged).toContain('EACCES')
+    expect(logged).not.toContain('holdout-problem-id')
+  } finally {
+    stderr.mockRestore()
+    chmodSync(join(stuck, 'memory'), 0o755)
+  }
+  expect(existsSync(join(stuck, 'memory'))).toBe(true)
+})
 
 it(
   'contestants resolve their pinned tool directories',
