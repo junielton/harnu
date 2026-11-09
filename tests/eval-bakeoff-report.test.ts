@@ -637,117 +637,121 @@ it(
   SLOW_TEST_MS
 )
 
-it('dev and holdout are reported apart with spread per measure', async () => {
-  const runs: RunsFixture = {
-    'prob-a': {
-      'harnu-spec': [
-        { passed: 90, judges: [{ scores: scores(2, 4, 2) }, { scores: scores(4, 2, 2) }] },
-        { passed: 100, judges: [{ scores: scores(3, 4, 4) }, { scores: scores(3, 4, 4) }] }
-      ],
-      superpowers: [
-        // One judge counted no acceptance criterion: left out of the share's mean.
-        { passed: 80, judges: [{ scores: scores(4, 0, 0) }, { scores: scores(4, 4, 1) }] },
-        // No judge counted one: the run has no share at all.
-        { passed: 70, judges: [{ scores: scores(4, 0, 0) }, { scores: scores(4, 0, 0) }] }
-      ]
-    },
-    'prob-b': {
-      'harnu-spec': [plainRun(60), plainRun(64)],
-      superpowers: [
-        {
-          passed: 50,
-          // An invalid reply has no scores, so it is counted in runs and in no mean.
-          judges: [{ scores: scores(2, 2, 2) }, { status: 'not-run', reason: 'invalid-reply' }],
-          flaky: ['flaky::one'],
-          failed: ['pkg::failing-test', 'flaky::one']
-        },
-        plainRun(50)
-      ]
+it(
+  'dev and holdout are reported apart with spread per measure',
+  async () => {
+    const runs: RunsFixture = {
+      'prob-a': {
+        'harnu-spec': [
+          { passed: 90, judges: [{ scores: scores(2, 4, 2) }, { scores: scores(4, 2, 2) }] },
+          { passed: 100, judges: [{ scores: scores(3, 4, 4) }, { scores: scores(3, 4, 4) }] }
+        ],
+        superpowers: [
+          // One judge counted no acceptance criterion: left out of the share's mean.
+          { passed: 80, judges: [{ scores: scores(4, 0, 0) }, { scores: scores(4, 4, 1) }] },
+          // No judge counted one: the run has no share at all.
+          { passed: 70, judges: [{ scores: scores(4, 0, 0) }, { scores: scores(4, 0, 0) }] }
+        ]
+      },
+      'prob-b': {
+        'harnu-spec': [plainRun(60), plainRun(64)],
+        superpowers: [
+          {
+            passed: 50,
+            // An invalid reply has no scores, so it is counted in runs and in no mean.
+            judges: [{ scores: scores(2, 2, 2) }, { status: 'not-run', reason: 'invalid-reply' }],
+            flaky: ['flaky::one'],
+            failed: ['pkg::failing-test', 'flaky::one']
+          },
+          plainRun(50)
+        ]
+      }
     }
-  }
 
-  fixtureUnits('dev-round', 'dev', runs)
-  const dev = await cli(['report', 'dev-round'])
-  expect(dev.code, dev.output).toBe(0)
-  const devReport = reportJson('dev-round')
-  expect(devReport.split).toBe('dev')
+    fixtureUnits('dev-round', 'dev', runs)
+    const dev = await cli(['report', 'dev-round'])
+    expect(dev.code, dev.output).toBe(0)
+    const devReport = reportJson('dev-round')
+    expect(devReport.split).toBe('dev')
 
-  // Per run, the mean and the spread (max - min across repeats) of one problem and contestant.
-  expect(ROW(devReport, 'hiddenPassRate', 'prob-a', 'harnu-spec')).toEqual({
-    problem: 'prob-a',
-    contestant: 'harnu-spec',
-    values: [90, 100],
-    mean: 95,
-    spread: 10
-  })
-  // The judge mean per run: coverage is a percentage of the atoms.
-  expect(ROW(devReport, 'coverage', 'prob-a', 'harnu-spec').values).toEqual([75, 75])
-  expect(ROW(devReport, 'executableShare', 'prob-a', 'harnu-spec').values).toEqual([0.75, 1])
-  expect(ROW(devReport, 'executableShare', 'prob-a', 'superpowers')).toEqual({
-    problem: 'prob-a',
-    contestant: 'superpowers',
-    values: [0.25, null],
-    mean: 0.25,
-    spread: 0
-  })
-  // Mean of the problem means, mean of the problem spreads.
-  expect(SUMMARY(devReport, 'hiddenPassRate', 'harnu-spec')).toEqual({
-    contestant: 'harnu-spec',
-    mean: (95 + 62) / 2,
-    spread: (10 + 4) / 2,
-    n: 2
-  })
-  expect(devReport.runs.find((r: Json) => r.contestant === 'superpowers')).toEqual({
-    contestant: 'superpowers',
-    done: 4,
-    incomplete: 0,
-    failed: 0,
-    judgesInvalidReply: 1,
-    flakyHiddenTests: 1
-  })
-  const detail = devReport.details.find(
-    (d: Json) => d.problem === 'prob-b' && d.contestant === 'superpowers' && d.repeat === 1
-  )
-  expect(detail.failedHiddenTests).toEqual(['pkg::failing-test', 'flaky::one'])
-  expect(detail.judgeNotes).toEqual(['note 1'])
+    // Per run, the mean and the spread (max - min across repeats) of one problem and contestant.
+    expect(ROW(devReport, 'hiddenPassRate', 'prob-a', 'harnu-spec')).toEqual({
+      problem: 'prob-a',
+      contestant: 'harnu-spec',
+      values: [90, 100],
+      mean: 95,
+      spread: 10
+    })
+    // The judge mean per run: coverage is a percentage of the atoms.
+    expect(ROW(devReport, 'coverage', 'prob-a', 'harnu-spec').values).toEqual([75, 75])
+    expect(ROW(devReport, 'executableShare', 'prob-a', 'harnu-spec').values).toEqual([0.75, 1])
+    expect(ROW(devReport, 'executableShare', 'prob-a', 'superpowers')).toEqual({
+      problem: 'prob-a',
+      contestant: 'superpowers',
+      values: [0.25, null],
+      mean: 0.25,
+      spread: 0
+    })
+    // Mean of the problem means, mean of the problem spreads.
+    expect(SUMMARY(devReport, 'hiddenPassRate', 'harnu-spec')).toEqual({
+      contestant: 'harnu-spec',
+      mean: (95 + 62) / 2,
+      spread: (10 + 4) / 2,
+      n: 2
+    })
+    expect(devReport.runs.find((r: Json) => r.contestant === 'superpowers')).toEqual({
+      contestant: 'superpowers',
+      done: 4,
+      incomplete: 0,
+      failed: 0,
+      judgesInvalidReply: 1,
+      flakyHiddenTests: 1
+    })
+    const detail = devReport.details.find(
+      (d: Json) => d.problem === 'prob-b' && d.contestant === 'superpowers' && d.repeat === 1
+    )
+    expect(detail.failedHiddenTests).toEqual(['pkg::failing-test', 'flaky::one'])
+    expect(detail.judgeNotes).toEqual(['note 1'])
 
-  const devMd = reportMd('dev-round')
-  expect(devMd).toContain('| prob-a | harnu-spec | 90.00 | 100.00 | 95.00 | 10.00 |')
-  expect(devMd).toContain('| (summary) | harnu-spec |  |  | 78.50 | 7.00 |')
-  expect(devMd).toContain('| prob-a | superpowers | 0.25 | n/a | 0.25 | 0.00 |')
-  expect(devMd).toContain('pkg::failing-test')
-  expect(devMd).toContain('note 1')
-  expect(devMd).toContain('## Budget')
-  expect(devMd).toContain('## Confounds')
-  expect(devMd).toMatch(/structur/i)
+    const devMd = reportMd('dev-round')
+    expect(devMd).toContain('| prob-a | harnu-spec | 90.00 | 100.00 | 95.00 | 10.00 |')
+    expect(devMd).toContain('| (summary) | harnu-spec |  |  | 78.50 | 7.00 |')
+    expect(devMd).toContain('| prob-a | superpowers | 0.25 | n/a | 0.25 | 0.00 |')
+    expect(devMd).toContain('pkg::failing-test')
+    expect(devMd).toContain('note 1')
+    expect(devMd).toContain('## Budget')
+    expect(devMd).toContain('## Confounds')
+    expect(devMd).toMatch(/structur/i)
 
-  fixtureUnits('held-round', 'holdout', runs)
-  const held = await cli(['report', 'held-round'])
-  expect(held.code, held.output).toBe(0)
-  const heldReport = reportJson('held-round')
-  expect(heldReport.split).toBe('holdout')
-  expect(heldReport.details).toBeUndefined()
-  for (const measure of Object.keys(heldReport.measures)) {
-    expect(heldReport.measures[measure].rows).toBeUndefined()
-  }
-  expect(SUMMARY(heldReport, 'hiddenPassRate', 'harnu-spec')).toEqual({
-    contestant: 'harnu-spec',
-    mean: (95 + 62) / 2,
-    spread: (10 + 4) / 2,
-    n: 2
-  })
-  expect(heldReport.confounds.join(' ')).toMatch(/structur/i)
+    fixtureUnits('held-round', 'holdout', runs)
+    const held = await cli(['report', 'held-round'])
+    expect(held.code, held.output).toBe(0)
+    const heldReport = reportJson('held-round')
+    expect(heldReport.split).toBe('holdout')
+    expect(heldReport.details).toBeUndefined()
+    for (const measure of Object.keys(heldReport.measures)) {
+      expect(heldReport.measures[measure].rows).toBeUndefined()
+    }
+    expect(SUMMARY(heldReport, 'hiddenPassRate', 'harnu-spec')).toEqual({
+      contestant: 'harnu-spec',
+      mean: (95 + 62) / 2,
+      spread: (10 + 4) / 2,
+      n: 2
+    })
+    expect(heldReport.confounds.join(' ')).toMatch(/structur/i)
 
-  const heldMd = reportMd('held-round')
-  expect(heldMd).toContain('| harnu-spec | 78.50 | 7.00 | 2.00 |')
-  expect(heldMd).toContain('## Budget')
-  expect(heldMd).toContain('## Confounds')
-  expect(heldMd).toMatch(/structur/i)
-  for (const secret of ['prob-a', 'prob-b', 'pkg::failing-test', 'note 1', 'H-1', 'H-2']) {
-    expect(heldMd).not.toContain(secret)
-    expect(JSON.stringify(heldReport)).not.toContain(secret)
-  }
-})
+    const heldMd = reportMd('held-round')
+    expect(heldMd).toContain('| harnu-spec | 78.50 | 7.00 | 2.00 |')
+    expect(heldMd).toContain('## Budget')
+    expect(heldMd).toContain('## Confounds')
+    expect(heldMd).toMatch(/structur/i)
+    for (const secret of ['prob-a', 'prob-b', 'pkg::failing-test', 'note 1', 'H-1', 'H-2']) {
+      expect(heldMd).not.toContain(secret)
+      expect(JSON.stringify(heldReport)).not.toContain(secret)
+    }
+  },
+  SLOW_TEST_MS
+)
 
 it(
   'no holdout text reaches the repo or the report',
@@ -916,58 +920,62 @@ it(
   SLOW_TEST_MS
 )
 
-it('a holdout problem used in more than 3 accepted comparisons warns', async () => {
-  const held = (mean: number, hash = 'shared-hash'): RoundFixture => ({
-    split: 'holdout',
-    scores: { 'used-problem': [mean, 0] },
-    hashes: { 'used-problem': hash }
-  })
-  const WARNING = /warning: 1 holdout problem/
+it(
+  'a holdout problem used in more than 3 accepted comparisons warns',
+  async () => {
+    const held = (mean: number, hash = 'shared-hash'): RoundFixture => ({
+      split: 'holdout',
+      scores: { 'used-problem': [mean, 0] },
+      hashes: { 'used-problem': hash }
+    })
+    const WARNING = /warning: 1 holdout problem/
 
-  fixtureRound('h-0', held(90))
-  for (const [i, id] of ['h-1', 'h-2', 'h-3', 'h-4'].entries()) fixtureRound(id, held(90 + i))
-  fixtureRound('h-rejected', held(10))
+    fixtureRound('h-0', held(90))
+    for (const [i, id] of ['h-1', 'h-2', 'h-3', 'h-4'].entries()) fixtureRound(id, held(90 + i))
+    fixtureRound('h-rejected', held(10))
 
-  for (const [i, candidate] of ['h-1', 'h-2', 'h-3'].entries()) {
-    const result = await compare('h-0', candidate)
-    expect(result.code, result.output).toBe(0)
-    expect(result.output).not.toMatch(WARNING)
-    expect(readJson(usageFile()).counts).toEqual({ 'shared-hash': i + 1 })
-  }
+    for (const [i, candidate] of ['h-1', 'h-2', 'h-3'].entries()) {
+      const result = await compare('h-0', candidate)
+      expect(result.code, result.output).toBe(0)
+      expect(result.output).not.toMatch(WARNING)
+      expect(readJson(usageFile()).counts).toEqual({ 'shared-hash': i + 1 })
+    }
 
-  // The same pair twice is counted once, and a rejected comparison not at all.
-  await compare('h-0', 'h-3')
-  const rejected = await compare('h-0', 'h-rejected')
-  expect(rejected.code).toBe(1)
-  expect(readJson(usageFile())).toEqual({
-    counts: { 'shared-hash': 3 },
-    pairs: ['h-0:h-1', 'h-0:h-2', 'h-0:h-3']
-  })
+    // The same pair twice is counted once, and a rejected comparison not at all.
+    await compare('h-0', 'h-3')
+    const rejected = await compare('h-0', 'h-rejected')
+    expect(rejected.code).toBe(1)
+    expect(readJson(usageFile())).toEqual({
+      counts: { 'shared-hash': 3 },
+      pairs: ['h-0:h-1', 'h-0:h-2', 'h-0:h-3']
+    })
 
-  const fourth = await compare('h-0', 'h-4')
-  expect(fourth.code, fourth.output).toBe(0)
-  expect(fourth.output).toMatch(WARNING)
-  expect(fourth.output).not.toContain('used-problem')
-  expect(fourth.output).not.toContain('shared-hash')
-  expect(Object.keys(readJson(usageFile())).sort()).toEqual(['counts', 'pairs'])
-  expect(readJson(usageFile()).counts).toEqual({ 'shared-hash': 4 })
+    const fourth = await compare('h-0', 'h-4')
+    expect(fourth.code, fourth.output).toBe(0)
+    expect(fourth.output).toMatch(WARNING)
+    expect(fourth.output).not.toContain('used-problem')
+    expect(fourth.output).not.toContain('shared-hash')
+    expect(Object.keys(readJson(usageFile())).sort()).toEqual(['counts', 'pairs'])
+    expect(readJson(usageFile()).counts).toEqual({ 'shared-hash': 4 })
 
-  // Past 3, the same pair still warns and still counts nothing.
-  const again = await compare('h-0', 'h-4')
-  expect(again.output).toMatch(WARNING)
-  expect(readJson(usageFile()).counts).toEqual({ 'shared-hash': 4 })
+    // Past 3, the same pair still warns and still counts nothing.
+    const again = await compare('h-0', 'h-4')
+    expect(again.output).toMatch(WARNING)
+    expect(readJson(usageFile()).counts).toEqual({ 'shared-hash': 4 })
 
-  // Dev keeps no such count and never warns.
-  rmSync(usageFile())
-  fixtureRound('d-0', { scores: { p: [80, 0] } })
-  for (const n of [1, 2, 3, 4, 5]) {
-    fixtureRound(`d-${n}`, { scores: { p: [90, 0] } })
-    const result = await compare('d-0', `d-${n}`)
-    expect(result.code, result.output).toBe(0)
-    expect(result.output).not.toMatch(/warning/)
-  }
-  expect(existsSync(usageFile())).toBe(false)
-})
+    // Dev keeps no such count and never warns.
+    rmSync(usageFile())
+    fixtureRound('d-0', { scores: { p: [80, 0] } })
+    for (const n of [1, 2, 3, 4, 5]) {
+      fixtureRound(`d-${n}`, { scores: { p: [90, 0] } })
+      const result = await compare('d-0', `d-${n}`)
+      expect(result.code, result.output).toBe(0)
+      expect(result.output).not.toMatch(/warning/)
+    }
+    expect(existsSync(usageFile())).toBe(false)
+  },
+  SLOW_TEST_MS
+)
 
 it(
   'budget accounting adds up by phase and contestant',
@@ -1038,98 +1046,102 @@ it(
   SLOW_TEST_MS
 )
 
-it('compare refuses rounds that differ in what it compares', async () => {
-  const dev = (over: Partial<RoundFixture> = {}): RoundFixture => ({
-    scores: { p: [90, 0] },
-    ...over
-  })
-  const better = (over: Partial<RoundFixture> = {}): RoundFixture => ({
-    scores: { p: [99, 0] },
-    ...over
-  })
-  const expectRefused = (result: Cli, needle: string): void => {
-    expect(result.code, result.output).toBe(2)
-    expect(result.output).toContain(needle)
-  }
-
-  expectRefused(await verdictOf(dev(), { split: 'holdout', scores: { p: [99, 0] } }), 'split')
-  expectRefused(
-    await verdictOf(dev(), better({ models: { ...MODELS, contestant: 'other' } })),
-    'models.contestant'
-  )
-  expectRefused(
-    await verdictOf(dev(), better({ models: { ...MODELS, operator: 'other' } })),
-    'models.operator'
-  )
-  expectRefused(
-    await verdictOf(dev(), better({ models: { ...MODELS, judge: 'other' } })),
-    'models.judge'
-  )
-  expectRefused(await verdictOf(dev(), better({ judges: 1 })), 'judges')
-  expectRefused(await verdictOf(dev(), better({ repeats: 3 })), 'repeats')
-  expectRefused(
-    await verdictOf(dev(), better({ pins: { ...PINS, superpowers: 'd'.repeat(40) } })),
-    'pins.superpowers'
-  )
-
-  // Different seeds and a different skill pin are what a comparison is for.
-  const seeds = await verdictOf(
-    dev({ seed: 'one' }),
-    better({ seed: 'two', pins: { ...PINS, 'harnu-spec': 'e'.repeat(40) } })
-  )
-  expect(seeds.code, seeds.output).toBe(0)
-
-  // Shared means the same real id and the same content hash: only `p` is scored here.
-  const partly = await verdictOf(
-    {
-      scores: { p: [90, 0], gone: [0, 0], changed: [0, 0] },
-      hashes: { changed: 'old' }
-    },
-    {
-      scores: { p: [93, 0], added: [100, 0], changed: [100, 0] },
-      hashes: { changed: 'new' }
+it(
+  'compare refuses rounds that differ in what it compares',
+  async () => {
+    const dev = (over: Partial<RoundFixture> = {}): RoundFixture => ({
+      scores: { p: [90, 0] },
+      ...over
+    })
+    const better = (over: Partial<RoundFixture> = {}): RoundFixture => ({
+      scores: { p: [99, 0] },
+      ...over
+    })
+    const expectRefused = (result: Cli, needle: string): void => {
+      expect(result.code, result.output).toBe(2)
+      expect(result.output).toContain(needle)
     }
-  )
-  expect(partly.code, partly.output).toBe(0)
-  expect(partly.output).toMatch(/gain 3\.00/)
 
-  // A problem whose only change is its provenance keeps its hash, so it stays shared.
-  const dir = join(tmp, 'corpus-copy/p')
-  addProblem(join(tmp, 'corpus-copy'), 'p', 'dev')
-  const before = contentHash(dir)
-  const parsed = readJson(join(dir, 'problem.json'))
-  writeJson(join(dir, 'problem.json'), {
-    ...parsed,
-    provenance: { ...parsed.provenance, reviewedBy: 'someone else' }
-  })
-  const after = contentHash(dir)
-  const reviewed = await verdictOf(
-    { scores: { p: [90, 0] }, hashes: { p: before } },
-    { scores: { p: [93, 0] }, hashes: { p: after } }
-  )
-  expect(reviewed.code, reviewed.output).toBe(0)
+    expectRefused(await verdictOf(dev(), { split: 'holdout', scores: { p: [99, 0] } }), 'split')
+    expectRefused(
+      await verdictOf(dev(), better({ models: { ...MODELS, contestant: 'other' } })),
+      'models.contestant'
+    )
+    expectRefused(
+      await verdictOf(dev(), better({ models: { ...MODELS, operator: 'other' } })),
+      'models.operator'
+    )
+    expectRefused(
+      await verdictOf(dev(), better({ models: { ...MODELS, judge: 'other' } })),
+      'models.judge'
+    )
+    expectRefused(await verdictOf(dev(), better({ judges: 1 })), 'judges')
+    expectRefused(await verdictOf(dev(), better({ repeats: 3 })), 'repeats')
+    expectRefused(
+      await verdictOf(dev(), better({ pins: { ...PINS, superpowers: 'd'.repeat(40) } })),
+      'pins.superpowers'
+    )
 
-  expectRefused(
-    await verdictOf(
-      { scores: { p: [90, 0] }, hashes: { p: 'one' } },
-      { scores: { p: [93, 0] }, hashes: { p: 'two' } }
-    ),
-    'NO_SHARED_PROBLEMS'
-  )
-  expectRefused(
-    await verdictOf({ scores: { p: [90, 0] } }, { scores: { q: [93, 0] } }),
-    'NO_SHARED_PROBLEMS'
-  )
+    // Different seeds and a different skill pin are what a comparison is for.
+    const seeds = await verdictOf(
+      dev({ seed: 'one' }),
+      better({ seed: 'two', pins: { ...PINS, 'harnu-spec': 'e'.repeat(40) } })
+    )
+    expect(seeds.code, seeds.output).toBe(0)
 
-  fixtureRound('held-a', { split: 'holdout', scores: { p: [90, 0] } })
-  fixtureRound('held-b', { split: 'holdout', scores: { p: [93, 0] } })
-  expectRefused(await compare('held-a', 'held-b', { HARNU_BAKEOFF_HOLDOUT: '' }), 'HOLDOUT_UNSET')
+    // Shared means the same real id and the same content hash: only `p` is scored here.
+    const partly = await verdictOf(
+      {
+        scores: { p: [90, 0], gone: [0, 0], changed: [0, 0] },
+        hashes: { changed: 'old' }
+      },
+      {
+        scores: { p: [93, 0], added: [100, 0], changed: [100, 0] },
+        hashes: { changed: 'new' }
+      }
+    )
+    expect(partly.code, partly.output).toBe(0)
+    expect(partly.output).toMatch(/gain 3\.00/)
 
-  expectRefused(await compare('held-a', 'no-such-round'), 'ROUND_NOT_FOUND')
-  expectRefused(await cli(['compare', 'held-a']), 'USAGE')
-  // A refusal leaves no verdict behind.
-  expect(existsSync(join(roundDir('held-b'), 'compare.json'))).toBe(false)
-})
+    // A problem whose only change is its provenance keeps its hash, so it stays shared.
+    const dir = join(tmp, 'corpus-copy/p')
+    addProblem(join(tmp, 'corpus-copy'), 'p', 'dev')
+    const before = contentHash(dir)
+    const parsed = readJson(join(dir, 'problem.json'))
+    writeJson(join(dir, 'problem.json'), {
+      ...parsed,
+      provenance: { ...parsed.provenance, reviewedBy: 'someone else' }
+    })
+    const after = contentHash(dir)
+    const reviewed = await verdictOf(
+      { scores: { p: [90, 0] }, hashes: { p: before } },
+      { scores: { p: [93, 0] }, hashes: { p: after } }
+    )
+    expect(reviewed.code, reviewed.output).toBe(0)
+
+    expectRefused(
+      await verdictOf(
+        { scores: { p: [90, 0] }, hashes: { p: 'one' } },
+        { scores: { p: [93, 0] }, hashes: { p: 'two' } }
+      ),
+      'NO_SHARED_PROBLEMS'
+    )
+    expectRefused(
+      await verdictOf({ scores: { p: [90, 0] } }, { scores: { q: [93, 0] } }),
+      'NO_SHARED_PROBLEMS'
+    )
+
+    fixtureRound('held-a', { split: 'holdout', scores: { p: [90, 0] } })
+    fixtureRound('held-b', { split: 'holdout', scores: { p: [93, 0] } })
+    expectRefused(await compare('held-a', 'held-b', { HARNU_BAKEOFF_HOLDOUT: '' }), 'HOLDOUT_UNSET')
+
+    expectRefused(await compare('held-a', 'no-such-round'), 'ROUND_NOT_FOUND')
+    expectRefused(await cli(['compare', 'held-a']), 'USAGE')
+    // A refusal leaves no verdict behind.
+    expect(existsSync(join(roundDir('held-b'), 'compare.json'))).toBe(false)
+  },
+  SLOW_TEST_MS
+)
 
 it('list prints a count for the holdout', async () => {
   const dev = await cli(['list'])
