@@ -41,7 +41,12 @@ const toolOnly = () => ({
 const jsonl = (rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join('\n') + '\n'
 
 const verdictWith = (over: Partial<{ new: unknown[]; update: unknown[]; close: string[] }> = {}) =>
-  ({ ok: true, costUsd: 0.0004, durationMs: 5, verdict: { new: [], update: [], close: [], ...over } }) as JudgeOutcome
+  ({
+    ok: true,
+    costUsd: 0.0004,
+    durationMs: 5,
+    verdict: { new: [], update: [], close: [], ...over }
+  }) as JudgeOutcome
 
 interface Harness {
   store: YourMoveStore
@@ -62,7 +67,8 @@ async function harness(
   const read = vi.fn(async (p: string, off: number | { tail: number }): Promise<ReadResult> => {
     const f = files[p] ?? { lines: [], size: 0 }
     const size = f.size ?? 1000
-    if (typeof off === 'number' && off > size) return { lines: [], nextOffset: size, size, shrunk: true }
+    if (typeof off === 'number' && off > size)
+      return { lines: [], nextOffset: size, size, shrunk: true }
     return { lines: f.lines ?? [], nextOffset: size, size, shrunk: false }
   })
   const rows: Record<string, unknown>[] = []
@@ -118,7 +124,10 @@ describe('inspector gating', () => {
   })
 
   it('a programmatic transcript skips without judging and without a cursor', async () => {
-    const h = await harness({ '/t/s1.jsonl': { lines: [asst('hi')] } }, { classify: () => 'programmatic' })
+    const h = await harness(
+      { '/t/s1.jsonl': { lines: [asst('hi')] } },
+      { classify: () => 'programmatic' }
+    )
     expect(await createInspector(h.deps).request(req())).toBe('skipped')
     expect(h.judge).not.toHaveBeenCalled()
     expect(h.store.state().cursors).toEqual({})
@@ -145,7 +154,9 @@ describe('first sight', () => {
     for (const trigger of ['stop', 'manual'] as const) {
       await h.store.transact((s) => ({ next: emptyState(), result: s }))
       inputs.length = 0
-      expect(await createInspector(h.deps).request(req({ transcriptPath: file, trigger }))).toBe('judged')
+      expect(await createInspector(h.deps).request(req({ transcriptPath: file, trigger }))).toBe(
+        'judged'
+      )
       expect(inputs).toHaveLength(1)
       const lines = inputs[0].split('\n').filter((l) => l.startsWith('[ASSISTANT] '))
       expect(lines.length).toBeGreaterThan(100)
@@ -183,7 +194,12 @@ describe('verdict and cursor', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     const after = h.store.state()
     expect(after.cards).toHaveLength(1)
-    expect(after.cards[0]).toMatchObject({ id: 'id1', sessionId: 's1', source: 'judge', lane: 'observe' })
+    expect(after.cards[0]).toMatchObject({
+      id: 'id1',
+      sessionId: 's1',
+      source: 'judge',
+      lane: 'observe'
+    })
     expect(after.cursors.s1.offset).toBe(700)
     // and a store that cannot commit leaves neither the card nor the cursor moved
     const h2 = await harness({ '/t/s1.jsonl': { lines: [asst('Pick?')], size: 700 } })
@@ -202,7 +218,10 @@ describe('verdict and cursor', () => {
     h.judge.mockResolvedValue({ ok: false, reason: 'timeout' })
     expect(await createInspector(h.deps).request(req())).toBe('failed')
     expect(h.store.state().cursors.s1).toEqual({ offset: 100, lastInspectedAt: 1 })
-    expect(h.onFailure).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1' }), 'timeout')
+    expect(h.onFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 's1' }),
+      'timeout'
+    )
   })
 
   it('calls onSuccess after a committed verdict', async () => {
@@ -324,7 +343,10 @@ describe('splitting, coalescing, shrinking', () => {
     h.judge.mockImplementation(async () => {
       // the operator clicks "Not for me" while the judge is still running
       await h.store.transact((s) => ({
-        next: { ...s, cards: s.cards.map((c) => ({ ...c, closedAt: 5, closedBy: 'not-for-me' as const })) },
+        next: {
+          ...s,
+          cards: s.cards.map((c) => ({ ...c, closedAt: 5, closedBy: 'not-for-me' as const }))
+        },
         result: null
       }))
       return verdictWith({ update: [{ id: 'a', ask: 'refreshed' }] })

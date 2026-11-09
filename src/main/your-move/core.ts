@@ -16,6 +16,8 @@ export type CardKind = (typeof CARD_KINDS)[number]
 export type CardSource = 'judge' | 'verb' | 'mission' | 'human-gate' | 'death' | 'judge-failure'
 /** Which stream of inspections filed the card: what the queue may show is decided per lane. */
 export type CardLane = 'live' | 'observe' | 'mid-turn'
+/** The one setting: Off judges nothing, Observe stores cards for the debug view, Live feeds the queue. */
+export type YourMoveMode = 'off' | 'observe' | 'live'
 export type CloseReason =
   | 'answered'
   | 'judge'
