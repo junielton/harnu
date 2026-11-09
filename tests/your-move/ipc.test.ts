@@ -9,6 +9,7 @@ import * as path from 'node:path'
 
 const h = vi.hoisted(() => ({
   userData: '',
+  observed: 0,
   handlers: new Map<string, (...args: unknown[]) => Promise<unknown>>()
 }))
 
@@ -24,6 +25,12 @@ vi.mock('electron', () => ({
     }
   },
   BrowserWindow: class {}
+}))
+vi.mock('../../src/main/detect/task-state-hub', () => ({
+  addTaskEventObserver: (): (() => void) => {
+    h.observed++
+    return () => undefined
+  }
 }))
 vi.mock('../../src/main/claude-watcher', () => ({ classifyTranscriptLines: () => null }))
 vi.mock('../../src/main/claude-cli', () => ({ resolveClaudePath: async () => null }))
@@ -42,6 +49,7 @@ beforeEach(async () => {
   dir = await mkdtemp(path.join(os.tmpdir(), 'your-move-ipc-'))
   h.userData = dir
   h.handlers.clear()
+  h.observed = 0
 })
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -68,5 +76,15 @@ describe('registerYourMove with a store that cannot open', () => {
     // and the failure was logged, with its reason
     expect(error.mock.calls.flat().join(' ')).toContain('EACCES')
     closeYourMove()
+  })
+
+  it('wires no observer and starts no source when the store is unavailable', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { registerYourMove, closeYourMove } = await import('../../src/main/your-move/ipc')
+    registerYourMove(() => null)
+    await h.handlers.get('yourMove:list')?.({})
+    await new Promise((r) => setTimeout(r, 20))
+    expect(h.observed).toBe(0)
+    expect(() => closeYourMove()).not.toThrow()
   })
 })

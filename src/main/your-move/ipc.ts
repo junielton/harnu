@@ -14,6 +14,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { sanitizeSpawnEnv } from '../appimage-env'
 import { classifyTranscriptLines } from '../claude-watcher'
+import { addTaskEventObserver } from '../detect/task-state-hub'
 import { resolveClaudePath } from '../claude-cli'
 import { isFolderDenied } from '../mcp/permission-core'
 import { getSessionArchive } from '../session-archive-core'
@@ -31,7 +32,9 @@ import {
   type YourMovePrefs
 } from './prefs'
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
+import { buildSegment } from './segment'
 import { readFrom } from './transcript'
+import { createEnsureCursor, createTriggers } from './triggers'
 
 const STATE_FILE = 'your-move.json'
 const PREFS_FILE = 'your-move-prefs.json'
@@ -78,8 +81,42 @@ async function locateTranscript(sessionId: string): Promise<string | null> {
   return null
 }
 
+/** The first `cwd` the transcript names: where a session with no hook payload runs. */
+async function cwdFromTranscript(file: string): Promise<string | null> {
+  let fh: Awaited<ReturnType<typeof fs.open>> | null = null
+  try {
+    fh = await fs.open(file, 'r')
+    const buf = Buffer.alloc(16 * 1024)
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
+    for (const line of buf.toString('utf8', 0, bytesRead).split('\n')) {
+      try {
+        const o = JSON.parse(line) as { cwd?: unknown }
+        if (typeof o.cwd === 'string' && o.cwd !== '') return o.cwd
+      } catch {
+        /* a partial or malformed line */
+      }
+    }
+    return null
+  } catch {
+    return null
+  } finally {
+    await fh?.close().catch(() => undefined)
+  }
+}
+
+/** Does the newest part of the transcript already hold this reply? */
+async function transcriptHasReply(file: string, text: string): Promise<boolean> {
+  const wanted = text.trim()
+  if (wanted === '') return true
+  const res = await readFrom(file, { tail: 128 * 1024 })
+  return buildSegment(res.lines).some((e) => e.tag === 'ASSISTANT' && e.text.includes(wanted))
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
 let runner: JudgeRunner | null = null
 let unsubscribe: (() => void) | null = null
+let stopTriggers: (() => void) | null = null
 
 export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   const userData = app.getPath('userData')
@@ -139,30 +176,73 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   })
   const judge = runner
 
-  let inspectorPromise: Promise<ReturnType<typeof createInspector>> | null = null
-  const inspector = (): Promise<ReturnType<typeof createInspector>> =>
+  let inspectorPromise: Promise<ReturnType<typeof createInspector> | null> | null = null
+  /** Null while the store is unavailable: nothing reaches the judge then. */
+  const inspector = (): Promise<ReturnType<typeof createInspector> | null> =>
     (inspectorPromise ??= ready.then((store) =>
-      createInspector({
-        store: store as YourMoveStore,
-        read: readFrom,
-        detect: (input) => judge.detect(input),
-        enrich: (input) => judge.enrich(input),
-        now: () => Date.now(),
-        mintId: () => randomUUID(),
-        isBlocked: (folder) => isFolderDenied(folder, denyFolders),
-        isArchived: (id) => getSessionArchive()?.has(id) ?? false,
-        isFolderOff: (folder) => (prefs ? isFolderDisabled(prefs, folder) : false),
-        mode: () => (prefs ? effectiveMode(prefs) : 'off'),
-        midTurnLive: () => prefs?.midTurnLive ?? false,
-        classify: classifyTranscriptLines,
-        onFailure: (_req, reason) => {
-          lastFailure = reason
-        },
-        appendInspection: (row) => {
-          void fs.appendFile(inspectionsPath, JSON.stringify(row) + '\n').catch(() => undefined)
-        }
-      })
+      store === null
+        ? null
+        : createInspector({
+            store,
+            read: readFrom,
+            detect: (input) => judge.detect(input),
+            enrich: (input) => judge.enrich(input),
+            now: () => Date.now(),
+            mintId: () => randomUUID(),
+            isBlocked: (folder) => isFolderDenied(folder, denyFolders),
+            isArchived: (id) => getSessionArchive()?.has(id) ?? false,
+            isFolderOff: (folder) => (prefs ? isFolderDisabled(prefs, folder) : false),
+            mode: () => (prefs ? effectiveMode(prefs) : 'off'),
+            midTurnLive: () => prefs?.midTurnLive ?? false,
+            classify: classifyTranscriptLines,
+            onFailure: (_req, reason) => {
+              lastFailure = reason
+            },
+            appendInspection: (row) => {
+              void fs.appendFile(inspectionsPath, JSON.stringify(row) + '\n').catch(() => undefined)
+            }
+          })
     ))
+
+  // Sources: wired only once the store is open. With no store nothing is observed, read or
+  // judged, and nothing here throws.
+  void ready
+    .then(async (store) => {
+      const insp = store ? await inspector() : null
+      if (!store || !insp || runner === null) return
+      const mode = (): YourMoveMode => (prefs ? effectiveMode(prefs) : 'off')
+      const triggers = createTriggers({
+        inspector: insp,
+        store,
+        mode,
+        eligible: async (sessionId, folder) => {
+          await refreshDeny()
+          return (
+            !isFolderDenied(folder, denyFolders) &&
+            !(getSessionArchive()?.has(sessionId) ?? false) &&
+            !(prefs ? isFolderDisabled(prefs, folder) : false)
+          )
+        },
+        locate: locateTranscript,
+        resolveFolder: async (_id, cwd, file) => cwd ?? (await cwdFromTranscript(file)),
+        now: () => Date.now(),
+        setTimer: (fn, ms) => setTimeout(fn, ms).unref(),
+        ensureCursor: createEnsureCursor({
+          store,
+          read: readFrom,
+          classify: classifyTranscriptLines,
+          now: () => Date.now()
+        }),
+        transcriptHas: transcriptHasReply,
+        delay: sleep
+      })
+      const unobserve = addTaskEventObserver(triggers.onTaskEvent)
+      stopTriggers = () => {
+        unobserve()
+        triggers.dispose()
+      }
+    })
+    .catch((e) => console.error(`[your-move] sources not started: ${(e as Error).message}`))
 
   const view = (p: YourMovePrefs): YourMovePrefsView => ({ ...p, mode: effectiveMode(p) })
   /** What the pane sees while the store is unavailable: Off, and nothing is persisted. */
@@ -230,7 +310,9 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       transcriptPath,
       trigger: 'manual'
     }
-    const outcome = await (await inspector()).request(req)
+    const insp = await inspector()
+    if (!insp) return { outcome: 'skipped', reason: 'unavailable' }
+    const outcome = await insp.request(req)
     return outcome === 'failed' ? { outcome, reason: lastFailure } : { outcome }
   })
 }
@@ -253,6 +335,8 @@ export function closeYourMove(): void {
   runner = null
   unsubscribe?.()
   unsubscribe = null
+  stopTriggers?.()
+  stopTriggers = null
   setYourMoveStore(null)
 }
 
