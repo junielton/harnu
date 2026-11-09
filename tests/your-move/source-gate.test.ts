@@ -345,6 +345,19 @@ describe('closes on archive and folder removal', () => {
     stop()
   })
 
+  it('cards of a session archived while the app was closed are closed when the watch starts', async () => {
+    await seed([card('a', 'sess-1', '/f'), card('b', 'sess-2', '/f')])
+    watchArchive({
+      store,
+      archive: { onChange: () => () => undefined, has: (id) => id === 'sess-1' },
+      now: () => 77
+    })
+    await vi.waitFor(() =>
+      expect(store.state().cards.find((c) => c.id === 'a')?.closedBy).toBe('archived')
+    )
+    expect(store.state().cards.find((c) => c.id === 'b')?.closedAt).toBeUndefined()
+  })
+
   it('unarchiving a session closes nothing', async () => {
     await seed([card('a', 'sess-1', '/f')])
     let listener: ((ids: string[]) => void) | undefined

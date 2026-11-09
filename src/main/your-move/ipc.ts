@@ -20,7 +20,7 @@ import { isFolderDenied } from '../mcp/permission-core'
 import { setMissionListObserver } from '../mission-ipc'
 import { setPtyExitObserver } from '../pty'
 import { getSessionArchive } from '../session-archive-core'
-import { readUserProjects } from '../user-projects'
+import { onFolderRemoved, readUserProjects } from '../user-projects'
 import { pruneClosed, resetCursors, type CardView, type YourMoveCard } from './core'
 import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
@@ -35,6 +35,7 @@ import {
 } from './prefs'
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
 import { buildSegment } from './segment'
+import { createGateWatch, watchArchive, watchFolderRemoval } from './source-gate'
 import { reconcileMissions } from './source-mission'
 import { readFrom } from './transcript'
 import {
@@ -282,12 +283,46 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         states: getTaskStates,
         now: () => Date.now()
       })
-      const sweepTimer = setInterval(() => void sweep.tick(), SWEEP_MS)
+      const gate = createGateWatch({
+        store,
+        mode,
+        lane: () => laneFor(mode(), 'stop', prefs?.midTurnLive ?? false),
+        eligible,
+        locate: locateTranscript,
+        resolveFolder,
+        read: readFrom,
+        states: getTaskStates,
+        mintId: () => randomUUID(),
+        now: () => Date.now()
+      })
+      const sweepTimer = setInterval(() => {
+        void sweep.tick()
+        void gate.tick()
+      }, SWEEP_MS)
       sweepTimer.unref()
       const unobserve = addTaskEventObserver((ev) => {
         triggers.onTaskEvent(ev)
         system.onTaskEvent(ev)
+        gate.onTaskEvent(ev)
       })
+      const stopFolderWatch = watchFolderRemoval({
+        store,
+        subscribe: onFolderRemoved,
+        now: () => Date.now()
+      })
+      // The archive store opens on its own schedule: attach as soon as it is there.
+      let stopArchive: (() => void) | null = null
+      let archiveRetry: ReturnType<typeof setTimeout> | null = null
+      const attachArchive = (tries: number): void => {
+        const archive = getSessionArchive()
+        if (archive) {
+          stopArchive = watchArchive({ store, archive, now: () => Date.now() })
+        } else if (tries < 60) {
+          archiveRetry = setTimeout(() => attachArchive(tries + 1), 1_000)
+          archiveRetry.unref()
+        }
+      }
+      attachArchive(0)
       setPtyExitObserver(system.onPtyExit)
       setMissionListObserver((result, roots) => {
         if (mode() === 'off') return
@@ -318,6 +353,10 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         setPtyExitObserver(null)
         setMissionListObserver(null)
         clearInterval(sweepTimer)
+        if (archiveRetry) clearTimeout(archiveRetry)
+        stopArchive?.()
+        stopFolderWatch()
+        gate.dispose()
         sweep.dispose()
         triggers.dispose()
       }

@@ -46,7 +46,11 @@ vi.mock('../../src/main/detect/task-state-hub', () => ({
 vi.mock('../../src/main/claude-watcher', () => ({ classifyTranscriptLines: () => null }))
 vi.mock('../../src/main/claude-cli', () => ({ resolveClaudePath: async () => null }))
 vi.mock('../../src/main/user-projects', () => ({
-  readUserProjects: async () => ({ version: 1, projects: [] })
+  readUserProjects: async () => ({ version: 1, projects: [] }),
+  onFolderRemoved: (): (() => void) => {
+    h.observed++
+    return () => undefined
+  }
 }))
 vi.mock('../../src/main/your-move/store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/main/your-move/store')>()),

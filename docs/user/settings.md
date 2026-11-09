@@ -201,6 +201,18 @@ Each check uses your own Claude quota: about US$ 0.002 and several seconds acros
 
 The list shows every card Harnu stored, open ones first and then the newest closed ones. A card carries a kind (Decide, Go / no-go, Provide, Do or Check), the folder and session it came from, and the one-line ask, shown exactly as the model wrote it. The list is read-only: no card can be answered or dismissed yet.
 
+### What files a card
+
+With **Observe** or **Live**, a card is filed for each of these, with no button to press:
+
+- **A finished turn.** Two seconds after a session stops, Harnu reads what it wrote and asks whether anything is waiting on you. This never delays the session: Harnu answers the stop first.
+- **A long turn that never stops.** A session that has been working for five minutes without a check is looked at again; what it finds is kept in a separate lane that stays hidden for now, and the real check still happens when the turn ends.
+- **A session that died or could not be checked.** A stop on an error (rate limit, overload, billing) or a process that ended while the session was working or waiting files "Session stopped"; a session Harnu failed to check files one "Could not check this session" for the whole run of failures. Your own Ctrl+C, closing the session and parking it are not deaths. A later good turn closes these cards.
+- **A mission.** Every blocker you own, a re-scope to approve, a close to confirm, a paused steward, due checks, a human step, an imported end to review and a red main after a merge. The card points at the mission's owner session and closes when the mission stops owing it; it never changes the mission, and a child session's approvals and waiting-for-input items file nothing.
+- **A question parked in a session.** A session waiting on `AskUserQuestion` or `ExitPlanMode` files a card that opens the session. A normal tool permission does not: it stays in the Approval Inbox.
+
+Archiving a session closes its cards, and so does removing its folder from the sidebar. Hiding a folder does not. Harnu's own background runs (the auto-namer, the usage poller) are never checked, and with the mode **Off** nothing is read at all.
+
 When you switch from Off to Observe or Live, Harnu forgets where it had read up to in every session, so the days spent Off are never judged. The first stop after that reads the most recent part of the transcript, up to 256 KiB.
 
 ## Hibernation policy
