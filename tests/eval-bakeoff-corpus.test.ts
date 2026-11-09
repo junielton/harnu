@@ -65,9 +65,19 @@ function commitFile(repo: string, name: string): string {
   return git(repo, 'rev-parse', 'HEAD')
 }
 
+interface ProblemJson {
+  id: string
+  split: string
+  kind: string
+  versions?: string
+  target: Record<string, string>
+  hidden: Record<string, unknown>
+  provenance: Record<string, unknown>
+}
+
 /** A copy of the valid fixture under `<tmp>/<rootName>/<dir>`, with `edit` applied to its JSON. */
 function problemCopy(
-  edit: (p: Record<string, any>) => void = () => {},
+  edit: (p: ProblemJson) => void = () => {},
   { rootName = 'root', dir = 'good-problem' } = {}
 ): { root: string; dir: string } {
   const root = join(tmp, rootName)
@@ -84,7 +94,7 @@ interface Defect {
   name: string
   split?: 'dev' | 'holdout'
   forRun?: boolean
-  edit?: (p: Record<string, any>) => void
+  edit?: (p: ProblemJson) => void
   mutate?: (dir: string) => void
   expected: { code: string; file: string; field: string | null }
 }
@@ -271,7 +281,7 @@ it('content hash ignores provenance and follows every other byte', async () => {
 async function repoWithLinkedWorktree(): Promise<{
   main: string
   worktree: string
-  resolveRoots: (o: { split: string; env: Record<string, string> }) => any
+  resolveRoots: (o: { split: string; env: Record<string, string> }) => Record<string, unknown>
   outside: string
 }> {
   const main = join(tmp, 'main')
