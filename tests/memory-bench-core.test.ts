@@ -21,6 +21,7 @@ import {
   listPageIds,
   mapLimit,
   memoryReadDefaultBytes,
+  memoryReadDefaultPayload,
   parseBlocks,
   parseDigestName,
   parsePathMaps,
@@ -30,7 +31,9 @@ import {
   summarizeTranscript,
   validateQuestions
 } from '../scripts/memory-bench-core.mjs'
-import { queryMemory, readMemoryOverview } from '../src/main/mcp/memory-store'
+import { promises as fsp } from 'node:fs'
+import { queryMemory, readMemoryDefault } from '../src/main/mcp/memory-store'
+import { LARGE, SMALL, writeMemoryTree } from './fixtures/memory-read/fixture'
 
 /**
  * The memory efficiency benchmark (T620, spec docs/specs/2026-11-04-memory-benchmark/spec.md).
@@ -123,6 +126,10 @@ function fixtureMemory(dir = MEM) {
     archive: md(join(dir, 'archive')),
     learning: md(join(dir, 'learning'))
   }
+  const cards = names.roadmap.map((n: string) => ({
+    page: `roadmap/${n.replace(/\.md$/, '')}`,
+    content: readFileSync(join(dir, 'roadmap', n), 'utf8')
+  }))
   const files = listPageIds(names).map((page: string) => ({
     page,
     content: readFileSync(join(dir, `${page}.md`), 'utf8')
@@ -133,6 +140,7 @@ function fixtureMemory(dir = MEM) {
     index: readFileSync(join(dir, 'index.md'), 'utf8'),
     decisions: readFileSync(join(dir, 'decisions.md'), 'utf8'),
     names,
+    cards,
     files
   }
 }
@@ -296,18 +304,58 @@ describe('memory-bench CLI', () => {
 
 describe('AC-4: the mirrors agree with the real memory_read and memory_query', () => {
   it('memory_read_default_bytes equals the real page-less memory_read payload', async () => {
-    const overview = await readMemoryOverview(MEM)
-    expect(overview).not.toBeNull()
-    const real = Buffer.byteLength(JSON.stringify({ ok: true, memory: overview }), 'utf8')
+    const real = await readMemoryDefault(MEM)
+    expect(real).not.toBeNull()
     const mem = fixtureMemory()
-    expect(listPageIds(mem.names)).toEqual(overview?.pages)
-    expect(memoryReadDefaultBytes({ hot: mem.hot, index: mem.index, pages: overview!.pages })).toBe(
-      real
-    )
+    const mirror = memoryReadDefaultPayload({
+      hot: mem.hot,
+      decisions: mem.decisions,
+      names: mem.names,
+      cards: mem.cards
+    })
+    expect(mirror).toBe(JSON.stringify(real))
+    expect(memoryReadDefaultBytes({ ...mem })).toBe(Buffer.byteLength(JSON.stringify(real), 'utf8'))
+  })
+
+  it('the mirror matches the real answer on cards, a capped corpus and a cut hot page', async () => {
+    const dir = await fsp.mkdtemp(join(tmpdir(), 'harnu-bench-parity-'))
+    try {
+      // 6 cards, then 800 cards / 1,300 digests (rows dropped), then a hot page past 8,192 bytes
+      // with frontmatter, a provenance stamp and multi-byte text.
+      const longHot = [
+        '---',
+        'kind: handoff',
+        '---',
+        '# Où nous en sommes',
+        ...Array.from({ length: 400 }, (_, i) => `- ligne ${i} · café ☕ ${'x'.repeat(20)}`),
+        '> provenance: author=harnu · at=2026-11-09T10:00:00Z'
+      ].join('\n')
+      for (const [name, shape, hot] of [
+        ['small', SMALL, undefined],
+        ['large', LARGE, undefined],
+        ['hot', SMALL, longHot]
+      ] as const) {
+        const memoryDir = join(dir, name)
+        await writeMemoryTree(memoryDir, shape, hot)
+        const real = await readMemoryDefault(memoryDir)
+        const mem = fixtureMemory(memoryDir)
+        expect(
+          memoryReadDefaultPayload({
+            hot: mem.hot,
+            decisions: mem.decisions,
+            names: mem.names,
+            cards: mem.cards
+          }),
+          name
+        ).toBe(JSON.stringify(real))
+      }
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true })
+    }
   })
 
   it('an absent memory dir costs exactly the real "no memory yet" payload', async () => {
-    expect(await readMemoryOverview(join(FX, 'no-such-memory'))).toBeNull()
+    expect(await readMemoryDefault(join(FX, 'no-such-memory'))).toBeNull()
     const real = Buffer.byteLength(
       JSON.stringify({
         ok: true,
@@ -317,7 +365,7 @@ describe('AC-4: the mirrors agree with the real memory_read and memory_query', (
       }),
       'utf8'
     )
-    expect(memoryReadDefaultBytes({ hot: null, index: null, pages: [] })).toBe(real)
+    expect(memoryReadDefaultBytes({ hot: null, decisions: null, names: {}, cards: [] })).toBe(real)
   })
 
   it('the grep mirror returns the same pages and lines as memory_query', async () => {
@@ -423,6 +471,7 @@ describe('memory-bench core', () => {
     index: '',
     decisions: null,
     names: { root: ['hot.md'], sessions: [] },
+    cards: [],
     files: [],
     ...over
   })
@@ -510,12 +559,13 @@ describe('memory-bench core', () => {
   })
 
   it('metric memory_read_default_bytes: UTF-8 bytes of the payload', () => {
-    const small = memoryReadDefaultBytes({ hot: 'é', index: '', pages: ['hot'] })
-    expect(small).toBe(
-      Buffer.byteLength(
-        JSON.stringify({ ok: true, memory: { hot: 'é', index: '', pages: ['hot'] } })
-      )
-    )
+    const input = { hot: 'é', decisions: null, names: { root: ['hot.md'] }, cards: [] }
+    const small = memoryReadDefaultBytes(input)
+    const payload = JSON.parse(memoryReadDefaultPayload(input))
+    expect(small).toBe(Buffer.byteLength(JSON.stringify(payload), 'utf8'))
+    // The answer states its own size, itself included.
+    expect(payload.memory.bytes).toBe(small)
+    expect(payload.memory.hot).toBe('é')
     expect(
       listPageIds({ root: ['z.md', 'a.md', 'x.txt'], sessions: ['s.md'], learning: ['l.md'] })
     ).toEqual(['a', 'z', 'sessions/s', 'learning/l'])
