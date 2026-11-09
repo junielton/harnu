@@ -685,6 +685,35 @@ describe('validateProblem (AC-11)', () => {
     SLOW_TEST_MS
   )
 
+  it(
+    'a matching pattern does not excuse a run that reported passing testcases',
+    async () => {
+      const result = await validate(
+        makeProblem({
+          pristine: [{ ...ALL_PASS, exit: 1, stdout: GO_OUTPUT }],
+          fixed: [ALL_PASS],
+          compileErrorPattern: 'undefined: '
+        })
+      )
+      expect(codes(result)).toEqual(['PRISTINE_PASSES'])
+    },
+    SLOW_TEST_MS
+  )
+
+  it(
+    'a matching pattern does not excuse a collection failure reported as a testcase',
+    async () => {
+      const result = await validate(
+        makeProblem({
+          pristine: [{ cases: { a: 'collect' }, exit: 2, stdout: 'ImportError: no module\n' }],
+          compileErrorPattern: 'ImportError'
+        })
+      )
+      expect(codes(result)).toEqual(['PRISTINE_COLLECTION_FAILURE'])
+    },
+    SLOW_TEST_MS
+  )
+
   it.each<[string, HiddenRun[], string, string[]]>([
     [
       'a test that fails on every run',
