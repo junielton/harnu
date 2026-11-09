@@ -15,7 +15,7 @@ import {
   rmSync,
   writeFileSync
 } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkoutTarget, runProblemCommand } from './checkout.mjs'
 import { moveTranscripts, runClaude } from './claude.mjs'
@@ -104,7 +104,7 @@ function discardAttempt(ctx, sessions) {
   moveTranscripts([sessions.operator], operatorDir)
   mkdirSync(dest, { recursive: true })
   for (const stream of streamFiles(unitDir)) {
-    renameSync(stream, join(dest, stream.slice(unitDir.length + 1)))
+    renameSync(stream, join(dest, basename(stream)))
   }
   const file = join(unitDir, 'contestant', 'discarded.json')
   const entries = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : []
@@ -119,7 +119,7 @@ function discardAttempt(ctx, sessions) {
 
 /** Drives one attempt's turns; returns its outcome and counters. */
 async function runTurns(ctx, sessions, prompts) {
-  const { unitDir, contestant, model, operatorModel } = ctx
+  const { unitDir, model, operatorModel } = ctx
   const clone = join(unitDir, 'clone')
   const operatorDir = join(unitDir, 'operator')
   const logPath = join(unitDir, 'operator-log.md')
@@ -186,7 +186,7 @@ async function runTurns(ctx, sessions, prompts) {
       const reply = await invoke(
         {
           role: 'operator',
-          prompt: first ? fill(prompts.operator, { QUESTION: question }) : question,
+          prompt: first ? prompts.operatorFirst(question) : question,
           cwd: operatorDir,
           model: operatorModel,
           tools: [],
@@ -308,14 +308,14 @@ export async function runContestant(args) {
     mkdirSync(operatorDir, { recursive: true })
     const sheetCopy = join(operatorDir, 'answer-sheet.md')
     cpSync(answerSheetPath, sheetCopy)
-    const operator = fill(readFileSync(join(PROMPTS, 'operator.md'), 'utf8').trim(), {
-      ANSWER_SHEET: readFileSync(sheetCopy, 'utf8').trim(),
-      QUESTION: '{{QUESTION}}'
-    })
+    const operatorTemplate = readFileSync(join(PROMPTS, 'operator.md'), 'utf8').trim()
+    const sheet = readFileSync(sheetCopy, 'utf8').trim()
+    const operatorFirst = (question) =>
+      fill(operatorTemplate, { ANSWER_SHEET: sheet, QUESTION: question })
 
     const sessions = { contestant: randomUUID(), operator: randomUUID() }
-    const prompts = { first: firstPrompt, nudge, operator }
-    const outcome = await runTurns({ ...args }, sessions, prompts)
+    const prompts = { first: firstPrompt, nudge, operatorFirst }
+    const outcome = await runTurns(args, sessions, prompts)
 
     if (outcome.status === 'interrupted') {
       discardAttempt(args, sessions)

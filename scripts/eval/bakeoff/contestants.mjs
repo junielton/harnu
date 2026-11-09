@@ -154,7 +154,12 @@ export async function resolveTool(contestant, { skillRef, repo, cacheRoot, dest,
       try {
         if (source.kind === 'repo') await fillFromRepo(source, local ?? repo, sha, aside)
         else await fillFromGit(source, local ?? source.url, sha, aside)
-        if (!existsSync(cached)) renameSync(aside, cached)
+        try {
+          renameSync(aside, cached)
+        } catch (err) {
+          // A concurrent unit got there first; its copy is as good as this one.
+          if (!existsSync(cached)) throw err
+        }
       } finally {
         rmSync(aside, { recursive: true, force: true })
       }

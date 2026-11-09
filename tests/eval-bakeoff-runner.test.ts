@@ -36,6 +36,9 @@ const OPERATOR_GONE =
   'The operator is unavailable. Answer from your best judgement, finish the artifact and reply ' +
   'ARTIFACT DONE: <paths>.'
 
+/** Parsed JSON: the shapes under test are asserted field by field below. */
+type Json = ReturnType<typeof JSON.parse>
+
 /** One scripted invocation of the fake `claude`. */
 interface Entry {
   reply?: string
@@ -117,7 +120,7 @@ function setScenario(entries: Entry[]): void {
   rmSync(promptLog, { force: true })
 }
 
-const jsonl = (path: string): any[] =>
+const jsonl = (path: string): Json[] =>
   existsSync(path)
     ? readFileSync(path, 'utf8')
         .split('\n')
@@ -151,13 +154,13 @@ function fakeRepo(): string {
   }).dir
 }
 
-async function contestantNamed(id: string): Promise<any> {
+async function contestantNamed(id: string): Promise<Json> {
   const { contestants } = await import('../scripts/eval/bakeoff/contestants.mjs')
   return contestants.find((c: { id: string }) => c.id === id)
 }
 
 /** Everything `runContestant` needs for one `harnu-spec` (or the named) run. */
-async function runArgs(unit: string, id = 'harnu-spec'): Promise<any> {
+async function runArgs(unit: string, id = 'harnu-spec'): Promise<Json> {
   const repo = existsSync(join(tmp, 'repo')) ? join(tmp, 'repo') : fakeRepo()
   return {
     problem,
@@ -172,7 +175,7 @@ async function runArgs(unit: string, id = 'harnu-spec'): Promise<any> {
   }
 }
 
-async function run(unit: string, entries: Entry[], id?: string): Promise<any> {
+async function run(unit: string, entries: Entry[], id?: string): Promise<Json> {
   const { runContestant } = await import('../scripts/eval/bakeoff/contestant-run.mjs')
   setScenario(entries)
   return runContestant(await runArgs(unit, id))
@@ -508,7 +511,7 @@ it(
   async () => {
     const { contestants, selectContestants, resolveTool } =
       await import('../scripts/eval/bakeoff/contestants.mjs')
-    const byId = (id: string): any => contestants.find((c: { id: string }) => c.id === id)
+    const byId = (id: string): Json => contestants.find((c: { id: string }) => c.id === id)
     const ids = (list: { id: string }[]): string[] => list.map((c) => c.id)
     expect(ids(selectContestants({ withTlc: false }))).toEqual(['harnu-spec', 'superpowers'])
     expect(ids(selectContestants({ withTlc: true }))).toEqual([
@@ -713,7 +716,7 @@ it(
         child.on('close', (code) => done({ code, out, err }))
         child.stdin.end(input)
       })
-    const events = (out: string): any[] =>
+    const events = (out: string): Json[] =>
       out
         .split('\n')
         .filter(Boolean)
