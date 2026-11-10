@@ -36,6 +36,10 @@ function childEnv(extra) {
   const env = { ...cleanEnv(), ...extra, ...CPU_ENV }
   // Set inside a git hook; they would point a child's `git` at another repository.
   for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete env[k]
+  // A problem command is third-party code: it is not told where the private roots are.
+  for (const k of ['HARNU_BAKEOFF_HOLDOUT', 'HARNU_BAKEOFF_WORK', 'HARNU_BAKEOFF_CACHE']) {
+    delete env[k]
+  }
   return env
 }
 
