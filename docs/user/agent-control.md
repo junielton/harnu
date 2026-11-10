@@ -122,6 +122,31 @@ A session can open a **browser pane** in a folder's split stack — a real page,
 
 Blocking a folder from its right-click menu also stops every browser verb there.
 
+## Telling you the ball is yours
+
+When you turn on [Your move](settings.md#your-move), a session can file a card in your
+queue the moment it knows something only you can unblock, instead of waiting for its turn to
+end. It does that with the `your_move` verb: a decision with options and a recommendation, a
+go or no-go, something only you hold, a manual step, or a check. It runs free and never asks
+you first, because all it does is add one line to your list.
+
+- **A card says what it asks on its own.** The session is told to write it so you never have
+  to open the session to learn what it wants, and to say what stays stuck until you answer.
+- **A session can refresh a card, but it cannot close one.** It can sharpen a card it filed before
+  and the clock on it keeps running, but nothing a session can call closes a card. A card leaves
+  when you deal with it or when whatever raised it is resolved. A session cannot tell Harnu
+  you handled something.
+- **It is capped.** A session can file at most 30 cards per hour. Past that, the call is
+  refused and recorded in the audit log, so a looping session cannot bury the queue.
+- **With Your move **Off** (the default), or switched off for that folder, it files nothing.**
+  The session is told so and says what it needs in its reply instead.
+- **It is not what makes sure you hear about it.** With Your move on, Harnu inspects every
+  turn that ends on its own, two detector runs and one more call to write the card clearly,
+  and files what only you can unblock whether or not the session knows about the verb. The
+  verb, and the optional `your-move` skill under [bundled skills](bundled-skills.md), make
+  the cards better and earlier. Until the queue ships in the sidebar, a card from the verb
+  shows in the list under **Settings → Your move**.
+
 ## Sessions talking out loud
 
 A session can say one short line through your speakers — "the migration finished, zero conflicts" — for the times you're not at the screen. This is **not** a notification: it's heard once and then it's gone. Nothing lands in the Activity bell, nothing pops a toast, and there's nothing to come back to later. That's deliberate: if every read-aloud also filed a notice, your Activity history would fill up with sentences you'd already heard. A session that wants you to be able to find the message later posts a "Session says" notice instead (or does both).
