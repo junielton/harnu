@@ -347,6 +347,9 @@ export interface SystemCardDeps {
     cwd: string | undefined,
     transcriptPath: string
   ): Promise<string | null>
+  /** Reads a transcript, to tell Harnu's own headless runs from a session. */
+  read: typeof readFrom
+  classify(lines: readonly unknown[]): 'interactive' | 'programmatic' | null
   mintId(): string
   now(): number
 }
@@ -385,19 +388,59 @@ export function createSystemCards(deps: SystemCardDeps): {
       result: undefined
     }))
 
-  async function folderFor(sessionId: string, cwd: string | undefined): Promise<string | null> {
-    if (cwd) return cwd
+  /**
+   * Whether each session's current turn has not ended: set by a prompt, cleared by a Stop or a
+   * StopFailure. SessionEnd folds `working` to `completed` before the process exits, so a CLI
+   * that shuts down gracefully mid-turn would otherwise read as finished.
+   */
+  const turnOpen = new Map<string, boolean>()
+  /** The newest working directory a hook reported for each session. */
+  const lastCwd = new Map<string, string>()
+  const MAX_TRACKED = 5_000
+  const remember = <V>(map: Map<string, V>, id: string, value: V): void => {
+    map.delete(id)
+    map.set(id, value)
+    if (map.size > MAX_TRACKED) map.delete(map.keys().next().value as string)
+  }
+
+  /** The best folder known: the hook's, the PTY's, then wherever the transcript says it runs. */
+  async function folderFor(
+    sessionId: string,
+    ...known: (string | undefined)[]
+  ): Promise<string | null> {
+    for (const k of known) if (k) return k
     const path = await deps.locate(sessionId)
     return path ? await deps.resolveFolder(sessionId, undefined, path) : null
+  }
+
+  /** Harnu's own headless `claude -p` runs fire the same hooks and are never a session of the operator. */
+  async function isProgrammatic(sessionId: string, hint: string | undefined): Promise<boolean> {
+    try {
+      const path = hint ?? (await deps.locate(sessionId))
+      if (!path) return false
+      const res = await deps.read(path, { tail: CLASSIFY_TAIL_BYTES })
+      return deps.classify(res.lines) === 'programmatic'
+    } catch {
+      return false // could not tell: file the card, a false alarm beats a silent death
+    }
   }
 
   return {
     onTaskEvent(ev) {
       if (deps.mode() === 'off' || ev.agentId !== undefined) return
-      if (ev.event === 'StopFailure') {
+      if (ev.payload?.cwd) remember(lastCwd, ev.sessionId, ev.payload.cwd)
+      if (ev.event === 'UserPromptSubmit') {
+        remember(turnOpen, ev.sessionId, true)
+      } else if (ev.event === 'StopFailure') {
+        remember(turnOpen, ev.sessionId, false)
         track('death card', async () => {
-          const folder = await folderFor(ev.sessionId, ev.payload?.cwd)
-          if (!folder || !(await deps.eligible(ev.sessionId, folder))) return
+          const folder = await folderFor(ev.sessionId, ev.payload?.cwd, lastCwd.get(ev.sessionId))
+          if (!folder) {
+            console.error(`[your-move] no folder known for ${ev.sessionId}: death card not filed`)
+            return
+          }
+          if (!(await deps.eligible(ev.sessionId, folder))) return
+          if (await isProgrammatic(ev.sessionId, ev.payload?.transcriptPath)) return
           await file(
             deathDraft({
               sessionId: ev.sessionId,
@@ -408,15 +451,27 @@ export function createSystemCards(deps: SystemCardDeps): {
           )
         })
       } else if (ev.event === 'Stop') {
+        remember(turnOpen, ev.sessionId, false)
         // A turn that ended well closes the card a failed one opened.
         track('death card close', () => resolve('death', ev.sessionId))
       }
     },
     onPtyExit(x) {
-      if (deps.mode() === 'off' || !isDeathExit(x)) return
+      const open = turnOpen.get(x.sessionKey) === true
+      const hookCwd = lastCwd.get(x.sessionKey)
+      turnOpen.delete(x.sessionKey)
+      lastCwd.delete(x.sessionKey)
+      if (deps.mode() === 'off') return
+      // No Stop for the current turn means the turn was still running, whatever SessionEnd made of the state.
+      const fact: PtyExitFact = open ? { ...x, taskState: 'working' } : x
+      if (!isDeathExit(fact)) return
       track('death card', async () => {
-        const folder = await folderFor(x.sessionKey, x.cwd)
-        if (!folder || !(await deps.eligible(x.sessionKey, folder))) return
+        const folder = await folderFor(x.sessionKey, hookCwd, x.cwd)
+        if (!folder) {
+          console.error(`[your-move] no folder known for ${x.sessionKey}: death card not filed`)
+          return
+        }
+        if (!(await deps.eligible(x.sessionKey, folder))) return
         await file(deathDraft({ sessionId: x.sessionKey, folder, lane: deps.lane() }))
       })
     },
