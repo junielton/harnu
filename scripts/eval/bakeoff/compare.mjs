@@ -13,6 +13,8 @@ import { privateRoundDir, repoRoundDir } from './paths.mjs'
 
 const HARNU_SPEC = 'harnu-spec'
 const FLOOR_POINTS = 2
+/** Pass rates are doubles: a gain of exactly the tolerance can land a hair to either side of it. */
+const EPSILON_POINTS = 1e-9
 const MAX_ACCEPTED_USES = 3
 const COMPARED_MODELS = ['contestant', 'operator', 'judge']
 
@@ -170,7 +172,7 @@ export function compareRounds(baselineRoundId, candidateRoundId, ctx) {
   const candidate = summaryOf((pair) => pair.cand)
   const gain = mean(pairs.map(({ base: b, cand: c }) => c.mean - b.mean))
   const spread = Math.max(baseline.spread, candidate.spread, FLOOR_POINTS)
-  const accepted = isHoldout ? gain >= -spread : gain > spread
+  const accepted = isHoldout ? gain >= -spread - EPSILON_POINTS : gain > spread + EPSILON_POINTS
   return {
     ...fields,
     baseline,
