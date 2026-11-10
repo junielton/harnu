@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest'
 import type { MissionListResult, MissionView } from '../../src/main/mission-ipc'
 import type { MissionYouItem } from '../../src/main/mcp/tool-handlers'
 import { emptyState, type YourMoveState } from '../../src/main/your-move/core'
-import { missionDrafts, reconcileMissions } from '../../src/main/your-move/source-mission'
+import {
+  missionDrafts,
+  reconcileMissions,
+  selectForReconcile
+} from '../../src/main/your-move/source-mission'
 
 const view = (
   id: string,
@@ -206,5 +210,57 @@ describe('reconcileMissions', () => {
     // types from the mission list are fine; a value import from the mission module is not
     expect(src).not.toMatch(/import\s+(?!type\b)[^;]*?from\s+'\.\.\/mission-ipc'/)
     expect(src).not.toMatch(/from '\.\.\/mission-store'|from '\.\.\/mcp\/mission/)
+  })
+})
+
+describe('which missions the queue follows', () => {
+  const roots = ['/org/proj/www', '/org/other/www']
+  const owed = [{ kind: 'close' } as MissionYouItem]
+
+  it('switching a folder off leaves its mission cards open', () => {
+    const a = view('mnt-1', owed, { root: '/org/proj/www' })
+    const b = view('mnt-2', owed, { root: '/org/other/www', owner: 'sess-owner-2' })
+    const filed = reconcileMissions(emptyState(), result([a, b]), roots, 'live', mint, 1_000)
+    expect(open(filed)).toHaveLength(2)
+
+    // the folder of mnt-1 is switched off: its view and its root leave the pass
+    const picked = selectForReconcile(result([a, b]), roots, {
+      ownerArchived: () => false,
+      folderOff: (root) => root === '/org/proj/www'
+    })
+    const after = reconcileMissions(filed, picked.result, picked.roots, 'live', mint, 2_000)
+    // still owed, still open, same clock: nothing was resolved
+    expect(
+      open(after)
+        .map((c) => c.mission?.missionId)
+        .sort()
+    ).toEqual(['mnt-1', 'mnt-2'])
+    expect(open(after).find((c) => c.mission?.missionId === 'mnt-1')?.openedAt).toBe(1_000)
+
+    // switching it back on keeps the very same card and its clock
+    const back = reconcileMissions(after, result([a, b]), roots, 'live', mint, 3_000)
+    expect(open(back)).toHaveLength(2)
+    expect(open(back).find((c) => c.mission?.missionId === 'mnt-1')?.openedAt).toBe(1_000)
+  })
+
+  it('a mission whose owner is archived leaves the pass, and its cards close', () => {
+    const a = view('mnt-1', owed, { owner: 'sess-archived' })
+    const b = view('mnt-2', owed, { owner: 'sess-live' })
+    const filed = reconcileMissions(emptyState(), result([a, b]), roots, 'live', mint, 1_000)
+    const picked = selectForReconcile(result([a, b]), roots, {
+      ownerArchived: (id) => id === 'sess-archived',
+      folderOff: () => false
+    })
+    const after = reconcileMissions(filed, picked.result, picked.roots, 'live', mint, 2_000)
+    expect(open(after).map((c) => c.mission?.missionId)).toEqual(['mnt-2'])
+  })
+
+  it('unreadable missions are carried through untouched', () => {
+    const picked = selectForReconcile(result([], ['broken.md']), roots, {
+      ownerArchived: () => false,
+      folderOff: () => false
+    })
+    expect(picked.result.unreadable).toEqual(['broken.md'])
+    expect(picked.roots).toEqual(roots)
   })
 })
