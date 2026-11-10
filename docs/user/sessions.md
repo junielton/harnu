@@ -84,7 +84,7 @@ Each card shows its kind (Decide, Go / no-go, Provide, Do or Check), the project
 - For now the answer buttons take you to the session instead of answering for you. Answering from the card comes in a later release.
 - Every card also has two exits that tell the session nothing: **Not for me** (a false alarm) and **Already handled** (it was real, but someone else dealt with it or it no longer matters). Harnu keeps them as separate labels.
 
-There is no × on a card. A card leaves the box when you use one of the exits or answer it, or when the thing it was about is resolved: you answered in the session, a mission stopped owing it, or you archived the session or removed its folder.
+There is no × on a card. A card leaves the box when you use one of the exits, or when the thing it was about is resolved: you answered in the session, a mission stopped owing it, or you archived the session or removed its folder. For now the answer buttons only open the session and never close the card; answering from a card comes in a later release.
 
 Everything a card says was written by a model, so Harnu shows it as plain text and only follows a link that starts with `http://` or `https://`.
 

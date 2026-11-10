@@ -444,10 +444,17 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
     const cardId = a.cardId
     const label = a.label as ExitLabel
     const now = Date.now()
-    const seen = await store.transact((s) => {
-      const open = s.cards.find((c) => c.id === cardId && c.closedAt === undefined) ?? null
-      return { next: open ? closeCard(s, cardId, label, now) : s, result: open }
-    })
+    let seen: YourMoveCard | null
+    try {
+      seen = await store.transact((s) => {
+        const open = s.cards.find((c) => c.id === cardId && c.closedAt === undefined) ?? null
+        return { next: open ? closeCard(s, cardId, label, now) : s, result: open }
+      })
+    } catch (e) {
+      // A store that cannot write (EACCES, ENOSPC): the card stays open and the caller is told.
+      console.error(`[your-move] exit not saved: ${(e as Error).message}`)
+      return { ok: false, reason: 'write failed' }
+    }
     if (!seen) return { ok: false, reason: 'not found' }
     try {
       await fs.appendFile(labelsPath, JSON.stringify({ ts: now, label, card: seen }) + '\n', {

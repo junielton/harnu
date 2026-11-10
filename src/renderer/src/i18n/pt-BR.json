@@ -2654,7 +2654,8 @@
     },
     "exits": {
       "notForMe": "Não é para mim",
-      "alreadyHandled": "Já resolvido"
+      "alreadyHandled": "Já resolvido",
+      "failed": "Não foi possível salvar. O cartão continua aqui; tente de novo."
     },
     "card": {
       "blocks": "Bloqueia: {what}",

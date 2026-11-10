@@ -2654,7 +2654,8 @@
     },
     "exits": {
       "notForMe": "Not for me",
-      "alreadyHandled": "Already handled"
+      "alreadyHandled": "Already handled",
+      "failed": "Could not save that. The card is still here; try again."
     },
     "card": {
       "blocks": "Blocks: {what}",

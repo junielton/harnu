@@ -10,7 +10,7 @@
  * operator deals with it (a button, Not for me, Already handled) or when its source resolves, and
  * opening the session leaves it where it is.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { CardView } from '../../../main/your-move/core'
 import {
@@ -64,6 +64,20 @@ const deliveryFailure = computed(() => {
   } as const
   return t(`yourMove.delivery.${keys[d.failure ?? 'refused']}`)
 })
+
+/** Not for me / Already handled could not be saved: say so and keep the card for a retry. */
+const exitFailed = ref(false)
+const exiting = ref(false)
+async function leave(label: 'not-for-me' | 'already-handled'): Promise<void> {
+  if (exiting.value) return
+  exiting.value = true
+  exitFailed.value = false
+  try {
+    exitFailed.value = !(await yourMove.exit(props.card.id, label))
+  } finally {
+    exiting.value = false
+  }
+}
 
 const buttonLabel = (b: CardButton): string => b.label ?? t(b.labelKey ?? '')
 
@@ -177,7 +191,7 @@ async function run(action: CardAction): Promise<void> {
           type="button"
           class="cursor-pointer text-text-3 transition hover:text-text"
           style="font-size: 11px"
-          @click="yourMove.exit(card.id, 'not-for-me')"
+          @click="leave('not-for-me')"
         >
           {{ $t('yourMove.exits.notForMe') }}
         </button>
@@ -185,11 +199,20 @@ async function run(action: CardAction): Promise<void> {
           type="button"
           class="cursor-pointer text-text-3 transition hover:text-text"
           style="font-size: 11px"
-          @click="yourMove.exit(card.id, 'already-handled')"
+          @click="leave('already-handled')"
         >
           {{ $t('yourMove.exits.alreadyHandled') }}
         </button>
       </div>
+      <p
+        v-if="exitFailed"
+        class="text-red"
+        style="font-size: 11.5px; line-height: 1.4"
+        role="alert"
+        data-testid="your-move-exit-error"
+      >
+        {{ $t('yourMove.exits.failed') }}
+      </p>
     </div>
   </div>
 </template>

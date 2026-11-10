@@ -72,10 +72,21 @@ export const useYourMoveStore = defineStore('yourMove', () => {
     { immediate: true }
   )
 
-  /** Not for me / Already handled: close the card and log the label. Main answers `ok:false` if it was already gone. */
-  async function exit(cardId: string, label: CardExitLabel): Promise<void> {
-    await window.api.yourMoveExit({ cardId, label })
+  /**
+   * Not for me / Already handled: close the card and log the label. Resolves `true` when there is
+   * nothing left to do (closed, or already gone) and `false` when the exit could not be saved, so
+   * the card can say so and stay open for a retry.
+   */
+  async function exit(cardId: string, label: CardExitLabel): Promise<boolean> {
+    let saved = true
+    try {
+      const res = await window.api.yourMoveExit({ cardId, label })
+      saved = res.ok || res.reason === 'not found'
+    } catch {
+      saved = false
+    }
     await refresh()
+    return saved
   }
 
   /** Until the answering unit, an answer button takes the operator to the session. */
