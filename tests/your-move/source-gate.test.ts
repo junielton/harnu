@@ -402,9 +402,40 @@ describe('closes on archive and folder removal', () => {
 
     await userProjects.removeUserProject(root)
     await vi.waitFor(() =>
-      expect(store.state().cards.filter((c) => c.closedBy === 'folder-removed')).toHaveLength(2)
+      expect(store.state().cards.filter((c) => c.closedBy === 'folder-removed')).toHaveLength(1)
     )
+    expect(store.state().cards.find((c) => c.id === 'a')?.closedBy).toBe('folder-removed')
     expect(store.state().cards.find((c) => c.id === 'c')?.closedAt).toBeUndefined()
+    stop()
+  })
+
+  it('removing a folder leaves cards of a folder nested under it', async () => {
+    const userProjects = await import('../../src/main/user-projects')
+    const root = '/nonexistent/your-move/mono'
+    await seed([card('a', 's1', root), card('b', 's2', `${root}/app`)])
+    const stop = watchFolderRemoval({
+      store,
+      subscribe: userProjects.onFolderRemoved,
+      now: () => 99
+    })
+    await userProjects.addUserProject({
+      path: root,
+      alias: 'mono',
+      addedAt: '2026-01-01',
+      worktrees: []
+    })
+    await userProjects.addUserProject({
+      path: `${root}/app`,
+      alias: 'app',
+      addedAt: '2026-01-01',
+      worktrees: []
+    })
+    await userProjects.removeUserProject(root)
+    await vi.waitFor(() =>
+      expect(store.state().cards.find((c) => c.id === 'a')?.closedBy).toBe('folder-removed')
+    )
+    // the separately pinned subfolder was not removed: its card stays
+    expect(store.state().cards.find((c) => c.id === 'b')?.closedAt).toBeUndefined()
     stop()
   })
 

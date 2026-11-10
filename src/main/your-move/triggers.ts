@@ -12,6 +12,7 @@ import type { FailureReason, TaskState } from '../hook-state'
 import type { PtyExitFact } from '../pty'
 import {
   advanceCursor,
+  followLive,
   reconcileSource,
   upsertStructured,
   type CardLane,
@@ -69,20 +70,20 @@ export function createEnsureCursor(deps: {
   now(): number
 }): (sessionId: string, path: string) => Promise<void> {
   return async (sessionId, path) => {
-    if (deps.store.state().cursors[sessionId]) return
+    if (deps.store.state().cursors[sessionId]?.offset !== undefined) return
     const res = await deps.read(path, { tail: CLASSIFY_TAIL_BYTES })
     if (deps.classify(res.lines) === 'programmatic') return
     const end = res.nextOffset
     await deps.store.transact((s) =>
-      s.cursors[sessionId]
+      s.cursors[sessionId]?.offset !== undefined
         ? { next: s, result: undefined }
         : {
-            next: advanceCursor(
+            // The live cursor starts at the end; a shadow cursor a mid-turn first sight already set
+            // is kept, and only ever moves forward.
+            next: followLive(
               advanceCursor(s, sessionId, 'offset', end, deps.now()),
               sessionId,
-              'shadowOffset',
-              end,
-              deps.now()
+              end
             ),
             result: undefined
           }
@@ -110,7 +111,7 @@ export function createTriggers(deps: TriggerDeps): {
   }
 
   async function firstSight(ev: HookTaskEvent): Promise<void> {
-    if (deps.store.state().cursors[ev.sessionId]) return
+    if (deps.store.state().cursors[ev.sessionId]?.offset !== undefined) return
     const path = await pathFor(ev.sessionId, ev.payload?.transcriptPath)
     if (!path || disposed) return
     const folder = await deps.resolveFolder(ev.sessionId, ev.payload?.cwd, path)
@@ -203,10 +204,17 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
   const running = new Set<string>()
   /** Where each swept session lives, found once. */
   const where = new Map<string, { path: string; folder: string }>()
+  /**
+   * When each session was last asked for, whether or not it worked. A failed inspection moves no
+   * cursor and no `lastInspectedAt`, so without this a failing judge would be asked again on
+   * every tick, two detector runs each.
+   */
+  const lastAttempt = new Map<string, number>()
 
   async function look(sessionId: string): Promise<void> {
     const cursor = deps.store.state().cursors[sessionId]
-    if (cursor && deps.now() - cursor.lastInspectedAt < MID_TURN_AFTER_MS) return
+    const last = Math.max(cursor?.lastInspectedAt ?? 0, lastAttempt.get(sessionId) ?? 0)
+    if (last > 0 && deps.now() - last < MID_TURN_AFTER_MS) return
     let spot = where.get(sessionId)
     if (!spot) {
       const path = await deps.locate(sessionId)
@@ -217,10 +225,10 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       where.set(sessionId, spot)
     }
     if (!(await deps.eligible(sessionId, spot.folder)) || disposed) return
-    if (cursor) {
+    const from = cursor?.shadowOffset ?? cursor?.offset
+    if (from !== undefined) {
       // Tool-only progress is not worth a judge call, and moving the shadow cursor over it
       // would hide nothing: it is left to be read together with the next text.
-      const from = cursor.shadowOffset ?? cursor.offset
       const res = await deps.read(spot.path, from)
       if (res.shrunk) {
         // a rewritten file: the inspector resets the cursors
@@ -229,6 +237,7 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       }
     }
     running.add(sessionId)
+    lastAttempt.set(sessionId, deps.now())
     void deps.inspector
       .request({
         sessionId,
@@ -248,6 +257,7 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       const working: string[] = []
       for (const [id, state] of deps.states()) if (state === 'working') working.push(id)
       for (const id of [...where.keys()]) if (!working.includes(id)) where.delete(id)
+      for (const id of [...lastAttempt.keys()]) if (!working.includes(id)) lastAttempt.delete(id)
       for (const id of working) {
         if (disposed || running.has(id)) continue
         try {
@@ -261,6 +271,7 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       disposed = true
       running.clear()
       where.clear()
+      lastAttempt.clear()
     }
   }
 }
